@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[borrowed reader-adapter increment](stdlib-io-adapters.md) adds Take quotas and
+Chain concatenation through independent Read/BufRead implementations. Provider
+errors, permanent first-source handoff, full-width quota and manual borrowing
+have explicit contracts. All seven library tests pass, including 1,576 model
+cases / 14,544 actions and four reached allocation denials with recovery. All
+four concat_bytes groups/115 cases and standalone build/examples also pass.
+This finite native Linux x86_64 increment is accepted. Historical stream
+receipts retain their original scope.
+The preceding
 [strong-component increment](extended-graph-components.md) adds independent
 component mappings and canonical condensation graphs, with component IDs ordered
 by minimum original node and explicit admission/cleanup contracts. All six new

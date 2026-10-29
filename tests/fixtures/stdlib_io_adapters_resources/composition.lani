@@ -1,0 +1,71 @@
+module app::main;
+import alloc::buffered;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn mixed(first:&alloc::buffered::Reader<core::io::SliceReader>,second:&alloc::buffered::Reader<core::io::SliceReader>) {
+    let limited:core::io::Take<alloc::buffered::Reader<core::io::SliceReader>> =core::io::take(first,3);
+    let joined:core::io::Chain<core::io::Take<alloc::buffered::Reader<core::io::SliceReader>>,alloc::buffered::Reader<core::io::SliceReader>> =core::io::chain(limited.borrow(),second);
+    let initial:core::slice::View<u8> =joined.fill_buf().unwrap(); assert(initial.length==3 && initial.get(0).unwrap()==0 && initial.get(2).unwrap()==2);
+    assert(joined.consume(2).unwrap()==2 && limited.limit()==1 && !joined.is_first_done());
+    let destination:[u8;8]=[99,99,99,99,99,99,99,99];
+    assert(joined.read(destination,2,4).unwrap()==1 && destination[2]==2 && limited.limit()==0);
+    let index:i32=0; while(index<8) { if(index!=2) { assert(destination[index]==99); } index+=1; }
+    assert(first.buffered().length==5 && first.buffered().get(0).unwrap()==3);
+    let later:core::slice::View<u8> =joined.fill_buf().unwrap(); assert(joined.is_first_done() && later.length==5 && later.get(0).unwrap()==128);
+    assert(joined.consume(2).unwrap()==2); assert(limited.set_limit(4).unwrap()==4);
+    // Reopening Take cannot undo Chain's already-committed first EOF.
+    assert(joined.read(destination,1,6).unwrap()==3);
+    assert(destination[0]==99 && destination[1]==130 && destination[2]==131 && destination[3]==132 && destination[4]==99 && destination[5]==99 && destination[6]==99 && destination[7]==99);
+    assert(limited.limit()==4 && first.buffered().length==5 && second.buffered().length==0);
+}
+fn delimited(first:&alloc::buffered::Reader<core::io::SliceReader>,second:&alloc::buffered::Reader<core::io::SliceReader>) -> alloc::io::ReadBytes {
+    mark(80);
+    let limited:core::io::Take<alloc::buffered::Reader<core::io::SliceReader>> =core::io::take(first,2);
+    let joined:core::io::Chain<core::io::Take<alloc::buffered::Reader<core::io::SliceReader>>,alloc::buffered::Reader<core::io::SliceReader>> =core::io::chain(limited.borrow(),second);
+    assert(!joined.is_first_done() && limited.limit()==2); mark(112);
+    mark(67); let result:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until(joined.borrow(),135,alloc::io::ReadLimits { max_bytes:32,max_calls:32 }); mark(70);
+    let output:alloc::io::ReadBytes=result.unwrap(); mark(80);
+    assert(output.bytes.len()==5 && output.calls==6 && output.consumed==5 && limited.limit()==0 && joined.is_first_done());
+    assert(match(output.ending) { alloc::io::ReadEnding::Delimiter->true,_ ->false });
+    assert(first.buffered().length==7 && second.buffered().length==2); mark(112);
+    return output;
+}
+fn main() -> i32 {
+    let first_bytes:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(32).unwrap();
+    let second_bytes:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(24).unwrap();
+    mark(80); let index:i32=0; while(index<32) { first_bytes.try_push(index as u8).unwrap(); index+=1; }
+    index=0; while(index<24) { second_bytes.try_push((128+index) as u8).unwrap(); index+=1; }
+    let first_source:core::io::SliceReader=core::io::slice_reader(first_bytes.as_slice(),32).unwrap();
+    let second_source:core::io::SliceReader=core::io::slice_reader(second_bytes.as_slice(),24).unwrap(); mark(112);
+    mark(67); let made_first:core::result::Result<alloc::buffered::Reader<core::io::SliceReader>,core::io::Error> =alloc::buffered::reader(first_source.borrow(),8); mark(70);
+    let first:alloc::buffered::Reader<core::io::SliceReader> =made_first.unwrap();
+    mark(67); let made_second:core::result::Result<alloc::buffered::Reader<core::io::SliceReader>,core::io::Error> =alloc::buffered::reader(second_source.borrow(),5); mark(70);
+    let second:alloc::buffered::Reader<core::io::SliceReader> =made_second.unwrap();
+    mark(80); mixed(first.borrow(),second.borrow());
+    assert(first.is_active() && second.is_active() && first_source.position()==8 && second_source.position()==5);
+    let remaining:core::slice::View<u8> =first.fill_buf().unwrap(); assert(remaining.length==5);
+    index=0; while(index<5) { assert(remaining.get(index).unwrap()==(index+3) as u8); index+=1; }
+    assert(first.consume(4).unwrap()==4 && first.buffered().get(0).unwrap()==7); mark(112);
+    let output:alloc::io::ReadBytes=delimited(first.borrow(),second.borrow());
+    assert(first.discard()==7 && second.discard()==2);
+    mark(80); assert(first.discard()==0 && second.discard()==0);
+    assert(!first.is_active() && !second.is_active());
+    let destination:[u8;4]=[99,99,99,99];
+    assert(first_source.read(destination,1,2).unwrap()==2 && destination[0]==99 && destination[1]==16 && destination[2]==17 && destination[3]==99);
+    assert(second_source.read(destination,0,1).unwrap()==1 && destination[0]==138);
+    assert(first_source.position()==18 && second_source.position()==11);
+    index=0; while(index<32) { assert(first_bytes.at(index)==index as u8); index+=1; }
+    index=0; while(index<24) { assert(second_bytes.at(index)==(128+index) as u8); index+=1; } mark(112);
+    second_bytes.destroy(); first_bytes.destroy();
+    mark(80); let expected:[u8;5]=[7,8,133,134,135]; index=0;
+    while(index<5) { assert(output.bytes.at(index)==expected[index]); index+=1; } mark(112);
+    assert(std::io::write_stdout(output.bytes.storage,5)==5);
+    output.destroy(); mark(80); output.destroy(); mark(112); mark(68); return 0;
+}

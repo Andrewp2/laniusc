@@ -1,0 +1,24 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+struct ReadOnly {}
+impl ReadOnly { fn borrow(&self) -> &ReadOnly { return self; } }
+pub impl core::io::Read for ReadOnly {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+struct BufferedOnly {}
+impl BufferedOnly { fn borrow(&self) -> &BufferedOnly { return self; } }
+pub impl core::io::BufRead for BufferedOnly {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> { return core::result::Err(core::io::Error::Host(-1)); }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(count); }
+}
+fn require_read<R>(value:&R) -> i32 where R:core::io::Read { return 0; }
+fn require_bufread<R>(value:&R) -> i32 where R:core::io::BufRead { return 0; }
+fn main() -> i32 {
+    let read:ReadOnly=ReadOnly {}; let buffered:BufferedOnly=BufferedOnly {};
+    let adapter:core::io::Chain<ReadOnly,BufferedOnly> =core::io::chain(read.borrow(),buffered.borrow());
+    let rejected_adapter_bound:i32=require_bufread(adapter.borrow());
+    return rejected_adapter_bound;
+}

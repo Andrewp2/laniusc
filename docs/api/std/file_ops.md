@@ -30,7 +30,7 @@ Declaration counts: constant: 3; enum: 7; field: 38; function: 37; impl: 4; meth
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [core::io](../core/io.md) · [source](../../../stdlib/std/file_ops.lani#L3)
-- [core::io::Error](../core/io.md) (item: enum) · [declaration](../../../stdlib/core/io.lani#L7) · [source](../../../stdlib/std/file_ops.lani#L4)
+- [core::io::Error](../core/io.md) (item: enum) · [declaration](../../../stdlib/core/io.lani#L8) · [source](../../../stdlib/std/file_ops.lani#L4)
 - [core::mem](../core/mem.md) · [source](../../../stdlib/std/file_ops.lani#L5)
 - [core::option](../core/option.md) · [source](../../../stdlib/std/file_ops.lani#L6)
 - [core::path](../core/path.md) · [source](../../../stdlib/std/file_ops.lani#L7)

@@ -1,6 +1,7 @@
 // Allocation-free stream and positional I/O contracts and operations.
 // See docs/stdlib-streams.md and docs/stdlib-positional-io.md.
 module core::io;
+import core::mem;
 import core::result;
 import core::slice;
 
@@ -517,4 +518,178 @@ pub fn skip_until<B>(reader:&B, delimiter:u8, byte_limit:u64, max_calls:i32)
     // caller. The engine's copying=false path never reads or writes it.
     let unused:[u8;1] = [0];
     return delimiter_engine(reader,delimiter,unused,0,byte_limit,max_calls,false);
+}
+
+// Borrowed forwarding adapters own no source or buffer. Keep one active
+// handle, all providers and their backing alive; copied handles share sources.
+// Buffered views expire before any adapter/provider mutation, including a
+// quota reset. These adapters never close, destroy, seek or retry a provider.
+pub struct Take<R> { inner: &R, remaining: u64, faulted: bool }
+pub struct Chain<A,B> { first: &A, second: &B, first_done: bool, faulted: bool }
+
+// Construction is inert. Read and BufRead are independent conditional bounds.
+pub fn take<R>(inner: &R, limit: u64) -> Take<R> {
+    return Take { inner: inner, remaining: limit, faulted: false };
+}
+
+pub fn chain<A,B>(first: &A, second: &B) -> Chain<A,B> {
+    return Chain { first: first, second: second, first_done: false, faulted: false };
+}
+
+pub impl<R> Take<R> {
+    pub fn borrow(&self) -> &Take<R> { return self; }
+    pub fn limit(&self) -> u64 { return self.remaining; }
+    pub fn is_faulted(&self) -> bool { return self.faulted; }
+    pub fn set_limit(&self, limit: u64) -> core::result::Result<u64,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        self.remaining = limit;
+        return core::result::Ok(limit);
+    }
+}
+
+pub impl<A,B> Chain<A,B> {
+    pub fn borrow(&self) -> &Chain<A,B> { return self; }
+    pub fn is_first_done(&self) -> bool { return self.first_done; }
+    pub fn is_faulted(&self) -> bool { return self.faulted; }
+}
+
+pub impl<R> Read for Take<R> where R: Read {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (!valid_range(offset,count)) { return core::result::Err(Error::InvalidInput); }
+        if (count == 0 || self.remaining == 0) { return core::result::Ok(0); }
+        let requested: i32 = count;
+        // Only narrow the quota when it is smaller than a valid i32 count.
+        if (self.remaining < (count as u64)) { requested = self.remaining as i32; }
+        let inner: &R = self.inner;
+        let received: core::result::Result<i32,Error> = inner.read(destination,offset,requested);
+        if (received.is_err()) { return received; }
+        let actual: i32 = received.unwrap();
+        if (actual < 0 || actual > requested) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        // EOF spends nothing and is not cached. Broken-provider effects are
+        // not rolled back, and only validated successful counts spend quota.
+        self.remaining -= actual as u64;
+        return core::result::Ok(actual);
+    }
+}
+
+pub impl<R> BufRead for Take<R> where R: BufRead {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (self.remaining == 0) {
+            let empty: ptr = 0;
+            let values: [u8] = core::mem::typed_slice_from_raw_parts<u8>(empty,0);
+            return core::result::Ok(core::slice::View { values: values, start: 0, length: 0 });
+        }
+        let inner: &R = self.inner;
+        let filled: core::result::Result<core::slice::View<u8>,Error> = inner.fill_buf();
+        if (filled.is_err()) { return filled; }
+        let view: core::slice::View<u8> = filled.unwrap();
+        // Validate the full provider range before limiting exposure. Preserve
+        // values/start and the actual physical descriptor, including stride.
+        if (!valid_range(view.start,view.length)) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        if (self.remaining < (view.length as u64)) { view.length = self.remaining as i32; }
+        return core::result::Ok(view);
+    }
+    pub fn consume(&self, count: i32) -> core::result::Result<i32,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (count < 0) { return core::result::Err(Error::InvalidInput); }
+        if ((count as u64) > self.remaining) { return core::result::Err(Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        let inner: &R = self.inner;
+        let consumed: core::result::Result<i32,Error> = inner.consume(count);
+        if (consumed.is_err()) { return consumed; }
+        if (consumed.unwrap() != count) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        self.remaining -= count as u64;
+        return core::result::Ok(count);
+    }
+}
+
+pub impl<A,B> Read for Chain<A,B> where A: Read, B: Read {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (!valid_range(offset,count)) { return core::result::Err(Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        if (!self.first_done) {
+            let first: &A = self.first;
+            let received: core::result::Result<i32,Error> = first.read(destination,offset,count);
+            if (received.is_err()) { return received; }
+            let actual: i32 = received.unwrap();
+            if (actual < 0 || actual > count) {
+                self.faulted = true;
+                return core::result::Err(Error::InvalidCount);
+            }
+            if (actual > 0) { return core::result::Ok(actual); }
+            // This actual first EOF commits the handoff even if the second
+            // provider errors. A short positive read never reaches second.
+            self.first_done = true;
+        }
+        let second: &B = self.second;
+        let received: core::result::Result<i32,Error> = second.read(destination,offset,count);
+        if (received.is_err()) { return received; }
+        let actual: i32 = received.unwrap();
+        if (actual < 0 || actual > count) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        // Second EOF is observational; future operations still consult it.
+        return core::result::Ok(actual);
+    }
+}
+
+pub impl<A,B> BufRead for Chain<A,B> where A: BufRead, B: BufRead {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (!self.first_done) {
+            let first: &A = self.first;
+            let filled: core::result::Result<core::slice::View<u8>,Error> = first.fill_buf();
+            if (filled.is_err()) { return filled; }
+            let view: core::slice::View<u8> = filled.unwrap();
+            if (!valid_range(view.start,view.length)) {
+                self.faulted = true;
+                return core::result::Err(Error::InvalidCount);
+            }
+            if (view.length > 0) { return core::result::Ok(view); }
+            self.first_done = true;
+        }
+        let second: &B = self.second;
+        let filled: core::result::Result<core::slice::View<u8>,Error> = second.fill_buf();
+        if (filled.is_err()) { return filled; }
+        let view: core::slice::View<u8> = filled.unwrap();
+        if (!valid_range(view.start,view.length)) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        return core::result::Ok(view);
+    }
+    pub fn consume(&self, count: i32) -> core::result::Result<i32,Error> {
+        if (self.faulted) { return core::result::Err(Error::InvalidCount); }
+        if (count < 0) { return core::result::Err(Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        // Consumption does not refill or discover EOF. Read and BufRead use
+        // this same committed selection state, without a last-fill cache.
+        let consumed: core::result::Result<i32,Error> = core::result::Ok(0);
+        if (self.first_done) {
+            let second: &B = self.second;
+            consumed = second.consume(count);
+        } else {
+            let first: &A = self.first;
+            consumed = first.consume(count);
+        }
+        if (consumed.is_err()) { return consumed; }
+        if (consumed.unwrap() != count) {
+            self.faulted = true;
+            return core::result::Err(Error::InvalidCount);
+        }
+        return core::result::Ok(count);
+    }
 }

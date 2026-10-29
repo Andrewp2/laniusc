@@ -1,0 +1,34 @@
+module app::main;
+import core::io;
+import core::result;
+import core::slice;
+
+fn read<R>(source:&R,destination:[u8],offset:i32,count:i32) -> i32 where R:core::io::Read {
+    let result:core::result::Result<i32,core::io::Error> =source.read(destination,offset,count); return result.unwrap();
+}
+fn fill<B>(source:&B) -> core::slice::View<u8> where B:core::io::BufRead {
+    let result:core::result::Result<core::slice::View<u8>,core::io::Error> =source.fill_buf(); return result.unwrap();
+}
+fn main() -> i32 {
+    let first_bytes:[u8;3]=[0,13,10]; let second_bytes:[u8;2]=[255,65]; let output:[u8;6]=[91;6];
+    let first:core::io::SliceReader=core::io::slice_reader(first_bytes,3).unwrap();
+    let second:core::io::SliceReader=core::io::slice_reader(second_bytes,2).unwrap();
+    let joined:core::io::Chain<core::io::SliceReader,core::io::SliceReader> =core::io::chain(first.borrow(),second.borrow());
+    let capped:core::io::Take<core::io::Chain<core::io::SliceReader,core::io::SliceReader>> =core::io::take(joined.borrow(),4);
+    assert(read(capped.borrow(),output,1,2)==2 && capped.limit()==2 && !joined.is_first_done());
+    let one:core::slice::View<u8> =fill(capped.borrow()); assert(one.length==1 && one.values[one.start]==10);
+    assert(capped.consume(1).unwrap()==1 && capped.limit()==1);
+    let next:core::slice::View<u8> =fill(capped.borrow()); assert(next.length==1 && next.values[next.start]==255 && joined.is_first_done());
+    assert(capped.consume(1).unwrap()==1 && capped.limit()==0 && fill(capped.borrow()).length==0);
+    assert(capped.set_limit(2).unwrap()==2 && read(capped.borrow(),output,3,2)==1 && capped.limit()==1);
+    assert(read(capped.borrow(),output,4,1)==0 && capped.limit()==1 && first.position()==3 && second.position()==2);
+    assert(output[0]==91 && output[1]==0 && output[2]==13 && output[3]==65 && output[4]==91 && output[5]==91);
+    let left:core::io::Take<core::io::SliceReader> =core::io::take(first.borrow(),0);
+    let fresh:core::io::SliceReader=core::io::slice_reader(second_bytes,2).unwrap();
+    let right:core::io::Take<core::io::SliceReader> =core::io::take(fresh.borrow(),1);
+    let nested:core::io::Chain<core::io::Take<core::io::SliceReader>,core::io::Take<core::io::SliceReader>> =core::io::chain(left.borrow(),right.borrow());
+    assert(read(nested.borrow(),output,4,2)==1 && output[4]==255 && nested.is_first_done() && right.limit()==0 && fresh.position()==1);
+    assert(!capped.is_faulted() && !joined.is_faulted() && !nested.is_faulted());
+    assert(first_bytes[0]==0 && first_bytes[1]==13 && first_bytes[2]==10 && second_bytes[0]==255 && second_bytes[1]==65);
+    return 0;
+}

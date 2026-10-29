@@ -9,6 +9,17 @@ bindings.
 Read/Write contracts, and provides explicit close and ownership transfer.
 Descriptor adapters below continue to borrow handles.
 
+The separate [borrowed reader-adapter increment](stdlib-io-adapters.md) adds
+Take byte quotas and Chain concatenation directly to core::io. Read and BufRead
+remain independent capabilities. Actual first-source EOF permanently advances
+Chain; Take can observe a later source recovery. Invalid successful replies
+fault an adapter, while ordinary provider errors propagate without retry.
+All seven library tests pass, including the 1,576-case independent model, actual
+buffer ownership and four reached allocation denials. The concat_bytes program
+passes all four groups/115 cases and its standalone build/examples on native
+Linux x86_64.
+Historical receipts below do not establish these additions.
+
 The [shared Seek increment](stdlib-seek.md) adds SeekFrom, a Seek-only bound
 and checked offset/position/rewind helpers. It replaces memory cursors' old
 inherent seek(i32) with canonical trait methods and adds opt-in File/buffered

@@ -1,0 +1,208 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+
+// Positive read/fill action caps a successful operation; zero observes EOF.
+// -1..-10 are ordinary provider errors. -20/-21 are invalid read counts;
+// fill -20/-21/-22 are invalid metadata; consume -20/-21/-22 are wrong acks.
+struct Probe {
+    data:[u8], start:i32, length:i32, cursor:i32, read_action:i32, fill_action:i32, consume_action:i32,
+    reads:i32, fills:i32, consumes:i32, last_offset:i32, last_count:i32, id:i32, events:[i32], used:[i32]
+}
+fn probe(data:[u8],start:i32,length:i32,id:i32,events:[i32],used:[i32]) -> Probe {
+    return Probe { data:data,start:start,length:length,cursor:0,read_action:2147483647,fill_action:2147483647,consume_action:0,
+        reads:0,fills:0,consumes:0,last_offset:-1,last_count:-1,id:id,events:events,used:used };
+}
+impl Probe {
+    fn borrow(&self) -> &Probe { return self; }
+    fn record(&self,operation:i32) { let at:i32=self.used[0]; assert(at<64); self.events[at]=10*self.id+operation; self.used[0]=at+1; }
+}
+fn cause(value:core::io::Error) -> i32 {
+    return match(value) {
+        core::io::Error::Interrupted -> -1, core::io::Error::WouldBlock -> -2, core::io::Error::Host(code) -> code,
+        core::io::Error::InvalidCount -> -4, core::io::Error::InvalidInput -> -5, core::io::Error::UnexpectedEof -> -6,
+        core::io::Error::WriteZero -> -7, core::io::Error::CountOverflow -> -8, core::io::Error::LimitExceeded -> -9,
+        core::io::Error::AllocationFailed -> -10
+    };
+}
+fn error(action:i32) -> core::io::Error {
+    if(action==-1) { return core::io::Error::Interrupted; } if(action==-2) { return core::io::Error::WouldBlock; }
+    if(action==-3) { return core::io::Error::Host(-7301); } if(action==-4) { return core::io::Error::InvalidCount; }
+    if(action==-5) { return core::io::Error::InvalidInput; } if(action==-6) { return core::io::Error::UnexpectedEof; }
+    if(action==-7) { return core::io::Error::WriteZero; } if(action==-8) { return core::io::Error::CountOverflow; }
+    if(action==-9) { return core::io::Error::LimitExceeded; } assert(action==-10); return core::io::Error::AllocationFailed;
+}
+fn failed<T>(value:core::result::Result<T,core::io::Error>,expected:i32) { assert(value.is_err()); assert(cause(value.unwrap_err())==expected); }
+pub impl core::io::Read for Probe {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(core::io::valid_range(offset,count) && count>0); self.record(1); self.reads+=1; self.last_offset=offset; self.last_count=count;
+        let action:i32=self.read_action; if(action>=-10 && action<0) { return core::result::Err(error(action)); }
+        if(action==-20) { return core::result::Ok(-1); }
+        if(action==-21) { destination[offset]=231; self.cursor+=1; return core::result::Ok(count+1); }
+        assert(action>=0); let amount:i32=count; if(amount>action) { amount=action; }
+        if(amount>self.length-self.cursor) { amount=self.length-self.cursor; }
+        let i:i32=0; while(i<amount) { destination[offset+i]=self.data[self.start+self.cursor+i]; i+=1; }
+        self.cursor+=amount; return core::result::Ok(amount);
+    }
+}
+pub impl core::io::BufRead for Probe {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> {
+        self.record(2); self.fills+=1; let action:i32=self.fill_action;
+        if(action>=-10 && action<0) { return core::result::Err(error(action)); }
+        let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+        if(action==-20) { return core::result::Ok(core::slice::View { values:unread,start:-1,length:0 }); }
+        if(action==-21) { return core::result::Ok(core::slice::View { values:unread,start:0,length:-1 }); }
+        if(action==-22) { return core::result::Ok(core::slice::View { values:unread,start:2147483647,length:1 }); }
+        if(action==-23) { return core::result::Ok(core::slice::View { values:unread,start:2147483647,length:0 }); }
+        assert(action>=0); let amount:i32=self.length-self.cursor; if(amount>action) { amount=action; }
+        return core::result::Ok(core::slice::View { values:self.data,start:self.start+self.cursor,length:amount });
+    }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count>0); self.record(3); self.consumes+=1; self.last_count=count; let action:i32=self.consume_action;
+        if(action>=-10 && action<0) { return core::result::Err(error(action)); }
+        if(action==-20) { return core::result::Ok(-1); } if(action==-21) { return core::result::Ok(count+1); }
+        if(action==-22) { return core::result::Ok(count-1); }
+        if(count>self.length-self.cursor) { return core::result::Err(core::io::Error::InvalidInput); }
+        assert(action==0); self.cursor+=count; return core::result::Ok(count);
+    }
+}
+fn calls(value:&Probe,reads:i32,fills:i32,consumes:i32,cursor:i32) {
+    assert(value.reads==reads && value.fills==fills && value.consumes==consumes && value.cursor==cursor);
+}
+fn bytes(actual:[u8],expected:[u8],count:i32) { let i:i32=0; while(i<count) { assert(actual[i]==expected[i]); i+=1; } }
+fn trace(events:[i32],used:[i32],expected:[i32],count:i32) { assert(used[0]==count); let i:i32=0; while(i<count) { assert(events[i]==expected[i]); i+=1; } }
+fn stopped<R>(value:&R,output:[u8]) where R:core::io::Read,R:core::io::BufRead {
+    let a:core::result::Result<i32,core::io::Error> =value.read(output,-1,-1); failed(a,-4);
+    let b:core::result::Result<i32,core::io::Error> =value.read(output,2147483647,0); failed(b,-4);
+    let c:core::result::Result<core::slice::View<u8>,core::io::Error> =value.fill_buf(); failed(c,-4);
+    let d:core::result::Result<i32,core::io::Error> =value.consume(-1); failed(d,-4);
+    let e:core::result::Result<i32,core::io::Error> =value.consume(0); failed(e,-4);
+}
+fn take_strides_quota_and_refill() {
+    let stack:[u8;8]=[99,128,0,255,10,65,77,88]; let stack_output:[u8;8]=[199;8];
+    let source_words:[i32;2]=[0;2]; let output_words:[i32;2]=[0;2];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(source_words),8);
+    let packed_output:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),8);
+    assert(core::mem::slice_stride(stack)<0 && core::mem::slice_stride(stack_output)<0 && core::mem::slice_stride(packed)==1 && core::mem::slice_stride(packed_output)==1);
+    let mode:i32=0; while(mode<2) {
+        let source:[u8]=stack; let output:[u8]=packed_output; if(mode==1) { source=packed; output=stack_output; }
+        let i:i32=0; while(i<8) { source[i]=stack[i]; output[i]=199; i+=1; }
+        let events:[i32;64]=[0;64]; let used:[i32;1]=[0]; let inner:Probe=probe(source,1,5,1,events,used);
+        let value:core::io::Take<Probe> =core::io::take(inner.borrow(),3); assert(value.limit()==3 && used[0]==0 && !value.is_faulted());
+        let first:core::slice::View<u8> =value.fill_buf().unwrap(); assert(first.start==1 && first.length==3 && core::mem::slice_stride(first.values)==core::mem::slice_stride(source));
+        assert(first.values[first.start]==128 && first.values[first.start+1]==0 && first.values[first.start+2]==255 && value.limit()==3 && inner.cursor==0);
+        assert(value.consume(1).unwrap()==1 && value.limit()==2);
+        assert(value.read(output,2,4).unwrap()==2 && value.limit()==0 && inner.last_offset==2 && inner.last_count==2);
+        assert(value.read(output,4,2).unwrap()==0 && value.fill_buf().unwrap().length==0 && value.consume(0).unwrap()==0); calls(inner.borrow(),1,1,1,3);
+        assert(value.set_limit(18446744073709551615).unwrap()==18446744073709551615);
+        inner.read_action=1; assert(value.read(output,4,3).unwrap()==1 && value.limit()==18446744073709551614 && inner.last_count==3);
+        let last:core::slice::View<u8> =value.fill_buf().unwrap(); assert(last.start==5 && last.length==1 && last.values[last.start]==65);
+        assert(value.consume(1).unwrap()==1 && value.limit()==18446744073709551613);
+        assert(value.read(output,5,1).unwrap()==0 && value.limit()==18446744073709551613);
+        assert(value.set_limit(4294967296).unwrap()==4294967296 && value.limit()==4294967296);
+        let expected:[u8;8]=[199,199,0,255,10,199,199,199]; let original:[u8;8]=[99,128,0,255,10,65,77,88]; bytes(output,expected,8); bytes(source,original,8);
+        let expected_events:[i32;7]=[12,13,11,11,12,13,11]; trace(events,used,expected_events,7); calls(inner.borrow(),3,2,2,5); mode+=1;
+    }
+}
+fn observed_eof_and_permanent_handoff() {
+    let data:[u8;4]=[128,0,255,65]; let output:[u8;8]=[199;8]; let events:[i32;64]=[0;64]; let used:[i32;1]=[0];
+    let inner:Probe=probe(data,0,4,1,events,used); inner.read_action=0; inner.fill_action=0;
+    let capped:core::io::Take<Probe> =core::io::take(inner.borrow(),4);
+    assert(capped.read(output,1,2).unwrap()==0 && capped.fill_buf().unwrap().length==0 && capped.limit()==4);
+    inner.read_action=1; assert(capped.read(output,1,2).unwrap()==1 && capped.limit()==3);
+    inner.fill_action=3; let fresh:core::slice::View<u8> =capped.fill_buf().unwrap(); assert(fresh.length==3 && fresh.values[fresh.start]==0);
+    calls(inner.borrow(),2,2,0,1); let expected_take:[i32;4]=[11,12,11,12]; trace(events,used,expected_take,4);
+    used[0]=0; let first:Probe=probe(data,0,2,1,events,used); let second:Probe=probe(data,2,2,2,events,used);
+    first.read_action=1; let joined:core::io::Chain<Probe,Probe> =core::io::chain(first.borrow(),second.borrow());
+    assert(joined.read(output,2,4).unwrap()==1 && !joined.is_first_done()); calls(second.borrow(),0,0,0,0);
+    first.fill_action=0; second.fill_action=-2; failed(joined.fill_buf(),-2); assert(joined.is_first_done() && !joined.is_faulted());
+    first.fill_action=2; first.read_action=2; second.fill_action=0;
+    assert(joined.fill_buf().unwrap().length==0 && joined.is_first_done()); second.fill_action=2;
+    let view:core::slice::View<u8> =joined.fill_buf().unwrap(); assert(view.start==2 && view.length==2 && view.values[view.start]==255 && view.values[view.start+1]==65);
+    assert(joined.consume(1).unwrap()==1); assert(joined.read(output,3,3).unwrap()==1 && output[3]==65);
+    second.read_action=0; assert(joined.read(output,4,1).unwrap()==0); second.cursor=0; second.read_action=1;
+    assert(joined.read(output,4,1).unwrap()==1 && output[4]==255); calls(first.borrow(),1,1,0,1); calls(second.borrow(),3,3,1,1);
+    let expected_chain:[i32;9]=[11,12,22,22,22,23,21,21,21]; trace(events,used,expected_chain,9);
+    let expected:[u8;8]=[199,128,128,65,255,199,199,199]; bytes(output,expected,8);
+    // A valid empty fill at the largest start also transitions, without a read.
+    used[0]=0; let a:Probe=probe(data,0,4,1,events,used); let b:Probe=probe(data,0,4,2,events,used); a.fill_action=-23;
+    let valid_empty:core::io::Chain<Probe,Probe> =core::io::chain(a.borrow(),b.borrow());
+    assert(valid_empty.fill_buf().unwrap().length==4 && valid_empty.is_first_done()); calls(a.borrow(),0,1,0,0); calls(b.borrow(),0,1,0,0);
+}
+fn ordinary_errors_do_not_fault_or_retry() {
+    let data:[u8;4]=[11,0,128,255]; let action:i32=-10;
+    while(action<0) {
+        let output:[u8;6]=[199;6]; let events:[i32;64]=[0;64]; let used:[i32;1]=[0]; let expected:i32=action; if(action==-3) { expected=-7301; }
+        let inner:Probe=probe(data,0,4,1,events,used); let capped:core::io::Take<Probe> =core::io::take(inner.borrow(),4);
+        inner.read_action=action; failed(capped.read(output,1,2),expected); inner.fill_action=action; failed(capped.fill_buf(),expected);
+        inner.consume_action=action; failed(capped.consume(1),expected); assert(!capped.is_faulted() && capped.limit()==4); calls(inner.borrow(),1,1,1,0);
+        inner.read_action=1; assert(capped.read(output,1,2).unwrap()==1 && capped.limit()==3); inner.fill_action=2; assert(capped.fill_buf().unwrap().length==2);
+        inner.consume_action=0; assert(capped.consume(1).unwrap()==1 && capped.limit()==2); calls(inner.borrow(),2,2,2,2);
+        used[0]=0; let first:Probe=probe(data,0,2,1,events,used); let second:Probe=probe(data,2,2,2,events,used);
+        let joined:core::io::Chain<Probe,Probe> =core::io::chain(first.borrow(),second.borrow());
+        first.read_action=action; failed(joined.read(output,2,2),expected); first.fill_action=action; failed(joined.fill_buf(),expected);
+        first.consume_action=action; failed(joined.consume(1),expected); assert(!joined.is_first_done() && !joined.is_faulted()); calls(first.borrow(),1,1,1,0); calls(second.borrow(),0,0,0,0);
+        // First EOF commits before the second ordinary error; later calls select second.
+        first.read_action=0; second.read_action=action; failed(joined.read(output,2,2),expected); assert(joined.is_first_done() && !joined.is_faulted());
+        second.read_action=1; assert(joined.read(output,2,2).unwrap()==1); second.fill_action=action; failed(joined.fill_buf(),expected);
+        second.consume_action=action; failed(joined.consume(1),expected); assert(!joined.is_faulted()); calls(first.borrow(),2,1,1,0); calls(second.borrow(),2,1,1,1);
+        second.consume_action=0; assert(joined.consume(1).unwrap()==1); calls(second.borrow(),2,1,2,2);
+        let expected_output:[u8;6]=[199,11,128,199,199,199]; bytes(output,expected_output,6); action+=1;
+    }
+}
+fn successful_provider_violations_fault_permanently() {
+    let data:[u8;5]=[11,22,0,128,255]; let category:i32=0;
+    while(category<3) {
+        let variant:i32=0; let variants:i32=3; if(category==0) { variants=2; }
+        while(variant<variants) {
+            let action:i32=-20-variant; let output:[u8;6]=[199;6]; let events:[i32;64]=[0;64]; let used:[i32;1]=[0];
+            let inner:Probe=probe(data,0,5,1,events,used); let value:core::io::Take<Probe> =core::io::take(inner.borrow(),3);
+            inner.read_action=1; assert(value.read(output,1,2).unwrap()==1 && value.limit()==2);
+            if(category==0) { inner.read_action=action; failed(value.read(output,2,2),-4); }
+            if(category==1) { inner.fill_action=action; failed(value.fill_buf(),-4); }
+            if(category==2) { inner.consume_action=action; failed(value.consume(1),-4); }
+            assert(value.is_faulted() && value.limit()==2); let before:i32=used[0]; stopped(value.borrow(),output);
+            failed(value.set_limit(0),-4); failed(value.set_limit(18446744073709551615),-4); assert(value.limit()==2 && used[0]==before);
+            let expected:[u8;6]=[199,11,199,199,199,199]; let cursor:i32=1;
+            if(category==0 && variant==1) { expected[2]=231; cursor=2; } bytes(output,expected,6); assert(inner.cursor==cursor);
+            // Repeat at first and second selection, preserving committed handoff.
+            let selected:i32=0; while(selected<2) {
+                used[0]=0; let clear:i32=0; while(clear<6) { output[clear]=199; clear+=1; }
+                let first:Probe=probe(data,0,5,1,events,used); let second:Probe=probe(data,0,5,2,events,used);
+                let joined:core::io::Chain<Probe,Probe> =core::io::chain(first.borrow(),second.borrow());
+                if(selected==0) { first.read_action=action; first.fill_action=action; first.consume_action=action; }
+                else { first.read_action=0; first.fill_action=0; second.read_action=action; second.fill_action=action; second.consume_action=action;
+                    if(category==2) { first.fill_action=0; second.fill_action=5; assert(joined.fill_buf().unwrap().length==5 && joined.is_first_done()); }
+                }
+                if(category==0) { failed(joined.read(output,2,2),-4); }
+                if(category==1) { failed(joined.fill_buf(),-4); }
+                if(category==2) { failed(joined.consume(1),-4); }
+                assert(joined.is_faulted() && joined.is_first_done()==(selected==1)); before=used[0]; stopped(joined.borrow(),output); assert(used[0]==before);
+                let chain_expected:[u8;6]=[199;6]; if(category==0 && variant==1) { chain_expected[2]=231; } bytes(output,chain_expected,6);
+                if(selected==0) { calls(second.borrow(),0,0,0,0); } selected+=1;
+            }
+            variant+=1;
+        }
+        category+=1;
+    }
+    let original:[u8;5]=[11,22,0,128,255]; bytes(data,original,5);
+}
+fn consume_is_not_fill_and_no_cache_is_required() {
+    let data:[u8;4]=[11,22,33,44]; let events:[i32;64]=[0;64]; let used:[i32;1]=[0];
+    let first:Probe=probe(data,0,2,1,events,used); let second:Probe=probe(data,2,2,2,events,used);
+    let joined:core::io::Chain<Probe,Probe> =core::io::chain(first.borrow(),second.borrow());
+    failed(joined.consume(3),-5); assert(!joined.is_first_done() && !joined.is_faulted()); calls(first.borrow(),0,0,1,0); calls(second.borrow(),0,0,0,0);
+    assert(joined.consume(2).unwrap()==2 && !joined.is_first_done()); failed(joined.consume(1),-5); calls(first.borrow(),0,0,3,2);
+    assert(joined.fill_buf().unwrap().length==2 && joined.is_first_done()); assert(joined.consume(2).unwrap()==2); calls(second.borrow(),0,1,1,2);
+    let inner:Probe=probe(data,0,4,3,events,used); let capped:core::io::Take<Probe> =core::io::take(inner.borrow(),2);
+    failed(capped.consume(3),-5); calls(inner.borrow(),0,0,0,0); assert(capped.limit()==2);
+    assert(capped.consume(2).unwrap()==2 && capped.limit()==0); assert(capped.set_limit(4).unwrap()==4);
+    failed(capped.consume(3),-5); assert(capped.limit()==4 && !capped.is_faulted()); calls(inner.borrow(),0,0,2,2);
+    let expected:[i32;8]=[13,13,13,12,22,23,33,33]; trace(events,used,expected,8);
+}
+fn main() -> i32 {
+    take_strides_quota_and_refill(); observed_eof_and_permanent_handoff(); ordinary_errors_do_not_fault_or_retry();
+    successful_provider_violations_fault_permanently(); consume_is_not_fill_and_no_cache_is_required(); return 0;
+}

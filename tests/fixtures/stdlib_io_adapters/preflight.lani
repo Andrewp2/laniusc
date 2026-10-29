@@ -1,0 +1,87 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+
+struct Never { calls:[i32] }
+impl Never { fn borrow(&self) -> &Never { return self; } }
+pub impl core::io::Read for Never {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> { self.calls[0]+=1; assert(false); return core::result::Ok(0); }
+}
+pub impl core::io::BufRead for Never {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> { self.calls[0]+=1; assert(false); return core::result::Err(core::io::Error::Host(-701)); }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> { self.calls[0]+=1; assert(false); return core::result::Ok(0); }
+}
+struct Neither {}
+impl Neither { fn borrow(&self) -> &Neither { return self; } }
+struct ReadOnly { calls:i32, offset:i32, count:i32 }
+impl ReadOnly { fn borrow(&self) -> &ReadOnly { return self; } }
+pub impl core::io::Read for ReadOnly {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls+=1; self.offset=offset; self.count=count; assert(count>0); destination[offset]=173; return core::result::Ok(1);
+    }
+}
+struct BufferedOnly { data:[u8], calls:i32, consumed:i32 }
+impl BufferedOnly { fn borrow(&self) -> &BufferedOnly { return self; } }
+pub impl core::io::BufRead for BufferedOnly {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> {
+        self.calls+=1; return core::result::Ok(core::slice::View { values:self.data,start:self.consumed,length:2-self.consumed });
+    }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls+=1; if(count<0 || count>2-self.consumed) { return core::result::Err(core::io::Error::InvalidInput); }
+        self.consumed+=count; return core::result::Ok(count);
+    }
+}
+fn invalid<T>(value:core::result::Result<T,core::io::Error>) {
+    assert(value.is_err()); assert(match(value.unwrap_err()) { core::io::Error::InvalidInput -> true,_ -> false });
+}
+fn read_one<R>(reader:&R,output:[u8],offset:i32,count:i32) -> i32 where R:core::io::Read {
+    let result:core::result::Result<i32,core::io::Error> =reader.read(output,offset,count); return result.unwrap();
+}
+fn fill_one<B>(reader:&B) -> core::slice::View<u8> where B:core::io::BufRead {
+    let result:core::result::Result<core::slice::View<u8>,core::io::Error> =reader.fill_buf(); return result.unwrap();
+}
+fn consume_one<B>(reader:&B,count:i32) -> i32 where B:core::io::BufRead {
+    let result:core::result::Result<i32,core::io::Error> =reader.consume(count); return result.unwrap();
+}
+fn validation_before_empty_and_zero_provider_calls() {
+    let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0); let calls:[i32;1]=[0];
+    let inner:Never=Never { calls:calls }; let first:Never=Never { calls:calls }; let second:Never=Never { calls:calls };
+    let capped:core::io::Take<Never> =core::io::take(inner.borrow(),18446744073709551615);
+    let joined:core::io::Chain<Never,Never> =core::io::chain(first.borrow(),second.borrow());
+    let offsets:[i32;5]=[-1,0,2147483647,1,-2147483648]; let lengths:[i32;5]=[0,-1,1,2147483647,0];
+    let i:i32=0; while(i<5) { invalid(capped.read(unread,offsets[i],lengths[i])); invalid(joined.read(unread,offsets[i],lengths[i])); i+=1; }
+    assert(capped.limit()==18446744073709551615 && !capped.is_faulted() && !joined.is_first_done() && !joined.is_faulted());
+    assert(capped.read(unread,2147483647,0).unwrap()==0 && joined.read(unread,2147483647,0).unwrap()==0);
+    invalid(capped.consume(-1)); invalid(joined.consume(-2147483648)); assert(capped.consume(0).unwrap()==0 && joined.consume(0).unwrap()==0);
+    assert(capped.set_limit(0).unwrap()==0); i=0; while(i<5) { invalid(capped.read(unread,offsets[i],lengths[i])); i+=1; }
+    assert(capped.read(unread,0,2147483647).unwrap()==0 && capped.limit()==0);
+    let empty:core::slice::View<u8> =capped.fill_buf().unwrap(); assert(empty.length==0 && empty.start==0);
+    invalid(capped.consume(1)); assert(capped.consume(0).unwrap()==0 && calls[0]==0 && !joined.is_first_done());
+    assert(capped.set_limit(9223372036854775808).unwrap()==9223372036854775808 && capped.limit()==9223372036854775808 && calls[0]==0);
+    assert(capped.set_limit(18446744073709551615).unwrap()==18446744073709551615 && calls[0]==0);
+    let none:Neither=Neither {}; let free_take:core::io::Take<Neither> =core::io::take(none.borrow(),17);
+    let free_chain:core::io::Chain<Neither,Neither> =core::io::chain(none.borrow(),none.borrow());
+    assert(free_take.limit()==17 && free_take.set_limit(0).unwrap()==0 && !free_take.is_faulted());
+    assert(!free_chain.is_first_done() && !free_chain.is_faulted());
+}
+fn independent_protocols_and_original_destination() {
+    let output:[u8;7]=[199;7]; let first:ReadOnly=ReadOnly { calls:0,offset:-1,count:-1 }; let second:ReadOnly=ReadOnly { calls:0,offset:-1,count:-1 };
+    let capped:core::io::Take<ReadOnly> =core::io::take(first.borrow(),1);
+    assert(read_one(capped.borrow(),output,3,3)==1 && output[3]==173 && first.offset==3 && first.count==1 && first.calls==1 && capped.limit()==0);
+    let joined:core::io::Chain<ReadOnly,ReadOnly> =core::io::chain(first.borrow(),second.borrow());
+    assert(read_one(joined.borrow(),output,4,2)==1 && first.offset==4 && first.count==2 && first.calls==2 && second.calls==0 && !joined.is_first_done());
+    let data:[u8;2]=[0,255]; let left:BufferedOnly=BufferedOnly { data:data,calls:0,consumed:0 }; let right:BufferedOnly=BufferedOnly { data:data,calls:0,consumed:0 };
+    let buffered_take:core::io::Take<BufferedOnly> =core::io::take(left.borrow(),1);
+    let view:core::slice::View<u8> =fill_one(buffered_take.borrow()); assert(view.length==1 && view.values[view.start]==0 && left.calls==1);
+    assert(consume_one(buffered_take.borrow(),1)==1 && buffered_take.limit()==0 && left.consumed==1 && left.calls==2);
+    let buffered_chain:core::io::Chain<BufferedOnly,BufferedOnly> =core::io::chain(left.borrow(),right.borrow());
+    let remaining:core::slice::View<u8> =fill_one(buffered_chain.borrow()); assert(remaining.length==1 && remaining.values[remaining.start]==255 && !buffered_chain.is_first_done());
+    assert(consume_one(buffered_chain.borrow(),1)==1);
+    let switched:core::slice::View<u8> =fill_one(buffered_chain.borrow()); assert(switched.length==2 && switched.values[switched.start]==0 && switched.values[switched.start+1]==255 && buffered_chain.is_first_done());
+    assert(left.calls==5 && left.consumed==2 && right.calls==1 && right.consumed==0);
+    assert(output[0]==199 && output[1]==199 && output[2]==199 && output[3]==173 && output[4]==173 && output[5]==199 && output[6]==199);
+    assert(data[0]==0 && data[1]==255);
+}
+fn main() -> i32 { validation_before_empty_and_zero_provider_calls(); independent_protocols_and_original_destination(); return 0; }
