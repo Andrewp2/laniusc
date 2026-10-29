@@ -170,7 +170,9 @@ still a parse tree of the same tokens. Trusted:
 
 - **The lexer.** `Lanius.Compiler.Lexer.lexCanonical`
   (`Lanius/Compiler/LexerCanonical.lean`) is the meaning of Lanius's lexical
-  syntax. `lexTokens` adds one keyword that `keywordRules` lacks: `as` is
+  syntax. The self program's own lexer, `lex_source` in `frontend.lani`, is
+  proved equal to it (`lexSource_eq`, `Mini/LexCorrect.lean`), so it is not
+  trusted. `lexTokens` adds one keyword that `keywordRules` lacks: `as` is
   token code 195, as in laniusc. Token kinds are laniusc's codes
   (`TokenKind.gpuCode`). The difftest below compares these tokens with
   laniusc's lexer (kind, start and length). The keywords `requires` and

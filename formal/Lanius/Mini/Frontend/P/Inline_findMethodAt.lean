@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Frontend.P.buildFiles
 public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail
@@ -9,6 +10,9 @@ public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.intLiteralAt
 public import Lanius.Mini.Frontend.P.isEmptyUsize
+public import Lanius.Mini.Frontend.P.lxBlockEnd
+public import Lanius.Mini.Frontend.P.lxSpaceEnd
+public import Lanius.Mini.Frontend.P.lxSymbolStart
 public import Lanius.Mini.Frontend.P.matchArms
 public import Lanius.Mini.Frontend.P.monoLoop
 public import Lanius.Mini.Frontend.P.noToken
@@ -73,7 +77,85 @@ namespace Lanius.Mini
   else
     tyLocal trest tid
 
-@[expose] def Inline.pAdd : Nat :=
-  147
+@[expose] def Inline.lxIdentRunAt (ib : Nat) (imore : List Nat) : Nat :=
+  if lxIdentContinue ib then
+    lxIdentRun imore + 1
+  else
+    0
+
+@[expose] def Inline.lxSpaceRunAt (sb : Nat) (smore : List Nat) : Nat :=
+  if lxSpace sb then
+    lxSpaceRun smore + 1
+  else
+    0
+
+@[expose] def Inline.lxLineRunAt (lb : Nat) (lmore : List Nat) : Nat :=
+  if lb ≠ 10 then
+    lxLineRun lmore + 1
+  else
+    0
+
+@[expose] def Inline.lxQuotedAt (qdelim : Nat) (qescaping : Bool) (qb : Nat) (qmore : List Nat) (qoffset : Nat) : Scan :=
+  if qescaping then
+    lxQuoted qdelim false qmore (qoffset + 1)
+  else
+    if qb = 10 then
+      Scan.scanFail qoffset
+    else
+      if qb = qdelim then
+        Scan.scanDone (qoffset + 1)
+      else
+        if qb = 92 then
+          lxQuoted qdelim true qmore (qoffset + 1)
+        else
+          lxQuoted qdelim false qmore (qoffset + 1)
+
+@[expose] def Inline.lxBlockAt (kb : Nat) (kmore : List Nat) (koffset : Nat) : Scan :=
+  match kmore with
+  | [] => Scan.scanFail (koffset + 1)
+  | next :: tail =>
+    if decide (kb = 42) && decide (next = 47) then
+      Scan.scanDone (koffset + 2)
+    else
+      lxBlock kmore (koffset + 1)
+
+@[expose] def Inline.lxBlockNext (nb : Nat) (nnext : Nat) (nmore : List Nat) (noffset : Nat) : Scan :=
+  if decide (nb = 42) && decide (nnext = 47) then
+    Scan.scanDone (noffset + 2)
+  else
+    lxBlock nmore (noffset + 1)
+
+@[expose] def Inline.lxDigitTailAt (dbase : Nat) (db : Nat) (dmore : List Nat) (doffset : Nat) : Scan :=
+  if lxBaseDigit db dbase then
+    lxDigitTail dbase dmore (doffset + 1)
+  else
+    if db = 95 then
+      match dmore with
+      | [] => Scan.scanFail (doffset + 1)
+      | next :: after =>
+        if lxBaseDigit next dbase then
+          lxDigitTail dbase after (doffset + 2)
+        else
+          Scan.scanFail (doffset + 1)
+    else
+      Scan.scanDone doffset
+
+@[expose] def Inline.lxDigitSep (ebase : Nat) (enext : Nat) (eafter : List Nat) (eoffset : Nat) : Scan :=
+  if lxBaseDigit enext ebase then
+    lxDigitTail ebase eafter (eoffset + 2)
+  else
+    Scan.scanFail (eoffset + 1)
+
+@[expose] def Inline.lxDigitRunAt (rfirst : Nat) (rrest : List Nat) (rstart : Nat) (rbase : Nat) : Scan :=
+  if lxBaseDigit rfirst rbase then
+    lxDigitTail rbase rrest (rstart + 1)
+  else
+    Scan.scanFail rstart
+
+@[expose] def Inline.lxExponentSign (xb : Nat) (xe : Nat) : Nat :=
+  if decide (xb = 43) || decide (xb = 45) then
+    xe + 1 + 1
+  else
+    xe + 1
 
 end Lanius.Mini

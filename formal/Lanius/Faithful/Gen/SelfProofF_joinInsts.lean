@@ -9,7 +9,7 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_lxFilterAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pAddTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pAndTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArgsMore

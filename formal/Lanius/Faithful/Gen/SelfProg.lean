@@ -80,6 +80,7 @@ public import Lanius.Faithful.Gen.SelfSrcC_wordWidth
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_attachNode
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_attachParent
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_findMethodAt
+public import Lanius.Faithful.Gen.SelfSrcF_Inline_lxFilterAt
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pAddTail
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pAndTail
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_pArgsMore
@@ -144,6 +145,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_letClosed
 public import Lanius.Faithful.Gen.SelfSrcF_letStructClosed
 public import Lanius.Faithful.Gen.SelfSrcF_localExpr
 public import Lanius.Faithful.Gen.SelfSrcF_lowerTy
+public import Lanius.Faithful.Gen.SelfSrcF_lxCanonicalKind
 public import Lanius.Faithful.Gen.SelfSrcF_matchArms
 public import Lanius.Faithful.Gen.SelfSrcF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfSrcF_methodCallOf

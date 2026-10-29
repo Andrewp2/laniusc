@@ -56,56 +56,16 @@ def frontEndFiles (g : List Rule) (files : List FileInput) : Option SrcProgram :
   | none => none
   | some roots => buildFiles (filesFuel files) roots
 
-def wordNum (w : BitVec 32) : Nat :=
-  w.toNat
+def lxIdentStart (b : Nat) : Bool :=
+  decide (97 ≤ b) && decide (b ≤ 122) || decide (65 ≤ b) && decide (b ≤ 90) || decide (b = 95)
 
-def numsAfter (n : Nat) (read : Option NumsRead) : Option NumsRead :=
-  match read with
-  | none => none
-  | some r => some ({ nums := n :: r.nums, rest := r.rest } : NumsRead)
+def lxDigit (b : Nat) : Bool :=
+  decide (48 ≤ b) && decide (b ≤ 57)
 
-/-- `count` numbers, then the words after them. -/
-def readNums (words : List (BitVec 32)) (count : Nat) : Option NumsRead :=
-  if count = 0 then
-    some ({ nums := [], rest := words } : NumsRead)
-  else
-    match words with
-    | [] => none
-    | w :: rest => numsAfter (wordNum w) (readNums rest (count - 1))
+def lxIdentContinue (b : Nat) : Bool :=
+  lxIdentStart b || lxDigit b
 
-/-- A count, then that many numbers. -/
-def readCountedNums (words : List (BitVec 32)) : Option NumsRead :=
-  match words with
-  | [] => none
-  | w :: rest => readNums rest (wordNum w)
-
-def readTokenText (kind : Nat) (start : Nat) (text : Option NumsRead) : Option TokenRead :=
-  match text with
-  | none => none
-  | some t => some ({ token := ({ kind := kind, start := start, text := t.nums } : Token), rest := t.rest } : TokenRead)
-
-def readTokenStart (kind : Nat) (words : List (BitVec 32)) : Option TokenRead :=
-  match words with
-  | [] => none
-  | start :: rest => readTokenText kind (wordNum start) (readCountedNums rest)
-
-/-- A token: its kind, start and counted text. -/
-def readToken (words : List (BitVec 32)) : Option TokenRead :=
-  match words with
-  | [] => none
-  | kind :: rest => readTokenStart (wordNum kind) rest
-
-def tokensAfter (token : Token) (read : Option TokensRead) : Option TokensRead :=
-  match read with
-  | none => none
-  | some r => some ({ tokens := token :: r.tokens, rest := r.rest } : TokensRead)
-
-def readTokens (words : List (BitVec 32)) (count : Nat) : Option TokensRead :=
-  if count = 0 then
-    some ({ tokens := [], rest := words } : TokensRead)
-  else
-    match readToken words with
-    | none => none
-    | some t => tokensAfter t.token (readTokens t.rest (count - 1))
+def lxSpace (b : Nat) : Bool :=
+  decide (b = 32) || decide (b = 9) || decide (b = 10) || decide (b = 13)
 
 end Lanius.Mini

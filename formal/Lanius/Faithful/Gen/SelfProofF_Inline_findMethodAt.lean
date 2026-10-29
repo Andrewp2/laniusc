@@ -90,15 +90,6 @@ theorem step_mono_next {prog : SrcProgram} {prims : Prims} {ix_mono_next ix_plus
   simp only [src_mono_next] at h
   faithful [Lanius.Mini.Inline.monoNext]
 
-theorem proof_p_add {prog : SrcProgram} {prims : Prims} {ix_p_add : Nat} (fn : prog.funcs[ix_p_add]? = some (src_p_add)) (np : prims.isPrim ix_p_add = false) {n : Nat} :
-    Stmt_p_add prog prims ix_p_add n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_add] at h
-  faithful [Lanius.Mini.Inline.pAdd]
-
 theorem step_param_of {prog : SrcProgram} {prims : Prims} {ix_param_of ix_minus ix_node_prod ix_kid_token ix_member ix_params_of ix_ty_of ix_p_param_named ix_p_param_self ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local : Nat} (fn : prog.funcs[ix_param_of]? = some (src_param_of ix_minus ix_node_prod ix_kid_token ix_member ix_params_of ix_ty_of ix_p_param_named ix_p_param_self ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local)) (np : prims.isPrim ix_param_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))

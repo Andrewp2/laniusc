@@ -6,7 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_readCountedTokens
 public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtF_buildFiles
+public import Lanius.Faithful.Gen.SelfStmtF_lxCanonicalKind
 public import Lanius.Faithful.Gen.SelfStmtF_readCountedTokens
 import all Lanius.Faithful.Gen.SelfSrcF_readCountedTokens
 import all Lanius.Mini.Frontend.P.readCountedTokens

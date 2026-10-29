@@ -341,6 +341,37 @@ structure FileInput where
   parents : List Nat
   deriving DecidableEq, Repr
 
+/-- A token before canonicalizing: its kind code and its bytes' offsets. -/
+structure RawTok where
+  kind : Nat
+  start : Nat
+  finish : Nat
+  deriving DecidableEq, Repr
+
+/-- A scan's end: where it stopped, or the offset of the error. -/
+inductive Scan where
+  | scanDone : Nat → Scan
+  | scanFail : Nat → Scan
+  deriving DecidableEq, Repr
+
+/-- A number's kind code and end, or the offset of the error. -/
+inductive NumScan where
+  | numDone : Nat → Nat → NumScan
+  | numFail : Nat → NumScan
+  deriving DecidableEq, Repr
+
+/-- One token, or the offset of the error. -/
+inductive OneTok where
+  | oneDone : RawTok → OneTok
+  | oneFail : Nat → OneTok
+  deriving DecidableEq, Repr
+
+/-- A fixed spelling and its token kind code. -/
+structure SymRule where
+  spelling : List Nat
+  kind : Nat
+  deriving DecidableEq, Repr
+
 structure NumsRead where
   nums : List Nat
   rest : List (BitVec 32)

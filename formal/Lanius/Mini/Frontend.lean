@@ -72,6 +72,14 @@ public import Lanius.Mini.Frontend.P.firstSrc
 public import Lanius.Mini.Frontend.P.negWideI32
 public import Lanius.Mini.Frontend.P.knownExpr
 public import Lanius.Mini.Frontend.P.buildFiles
+public import Lanius.Mini.Frontend.P.lxSymbolStart
+public import Lanius.Mini.Frontend.P.lxSpaceEnd
+public import Lanius.Mini.Frontend.P.lxBlockEnd
+public import Lanius.Mini.Frontend.P.lxExponent
+public import Lanius.Mini.Frontend.P.lxLeadingDot
+public import Lanius.Mini.Frontend.P.lxFixed
+public import Lanius.Mini.Frontend.P.lxDotAt
+public import Lanius.Mini.Frontend.P.lxCanonicalKind
 public import Lanius.Mini.Frontend.P.readCountedTokens
 public import Lanius.Mini.Frontend.P.frontEndRead
 public import Lanius.Mini.Frontend.P.frontEndWords
@@ -82,6 +90,8 @@ public import Lanius.Mini.Frontend.P.Inline_attachParent
 public import Lanius.Mini.Frontend.P.Inline_positionAt
 public import Lanius.Mini.Frontend.P.Inline_variantsNamedAt
 public import Lanius.Mini.Frontend.P.Inline_findMethodAt
+public import Lanius.Mini.Frontend.P.Inline_lxAfterFractionAt
+public import Lanius.Mini.Frontend.P.Inline_lxFilterAt
 public import Lanius.Mini.Frontend.P.Inline_pAddTail
 public import Lanius.Mini.Frontend.P.Inline_pAndTail
 public import Lanius.Mini.Frontend.P.Inline_pArgsMore
@@ -115,6 +125,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 104 parts, `.P0` on, in source order, whose bodies
+The definitions are in 114 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

@@ -32,10 +32,6 @@ abbrev Stmt_mono_next (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.Decls} {x3 : List Lanius.Mini.Inst} {x4 : List Lanius.Mini.MFunc} {x5 : Nat} {x6 : Option Lanius.Mini.MFunc} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepNat x1 v1 → RepDecls x2 v2 → (RepList 134 RepInst) x3 v3 → (RepList 157 RepMFunc) x4 v4 → RepNat x5 v5 → (RepOption 185 RepMFunc) x6 v6 →
     (RepOption 155 RepMono) (Lanius.Mini.Inline.monoNext x0 x1 x2 x3 x4 x5 x6) w
 
-abbrev Stmt_p_add (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pAdd) w
-
 abbrev Stmt_param_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Local} {x4 : Lanius.Mini.CTree} {x5 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepFnDecl x2 v2 → (RepList 213 RepLocal) x3 v3 → RepCTree x4 v4 → (RepList 76 RepCTree) x5 v5 →
     (RepOption 211 RepMParams) (Lanius.Mini.Inline.paramOf x0 x1 x2 x3 x4 x5) w

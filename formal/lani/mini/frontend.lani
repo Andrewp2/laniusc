@@ -7693,6 +7693,747 @@ pub fn front_end_files(g: List<Rule>, files: List<FileInput>) -> core::option::O
     };
 }
 
+// ---------------------------------------------------------------- the lexer
+
+// The Lean lexer (`Lanius.Compiler.Lexer.lexCanonical`, with `as` read as the
+// cast keyword as in `lexTokens`) written over byte values, with laniusc's
+// token kind codes: each function is the Lean one of the same shape, and
+// `Lanius/Mini/LexCorrect.lean` proves `lex_source` equal to `lexTokens`.
+// Offsets are into `source`, which the stream driver sets to what is left of
+// the file.
+
+// A token before canonicalizing: its kind code and its bytes' offsets.
+pub struct RawTok {
+    kind: usize,
+    start: usize,
+    finish: usize,
+}
+
+// A scan's end: where it stopped, or the offset of the error.
+pub enum Scan {
+    ScanDone(usize),
+    ScanFail(usize),
+}
+
+// A number's kind code and end, or the offset of the error.
+pub enum NumScan {
+    NumDone(usize, usize),
+    NumFail(usize),
+}
+
+// One token, or the offset of the error.
+pub enum OneTok {
+    OneDone(RawTok),
+    OneFail(usize),
+}
+
+// A fixed spelling and its token kind code.
+pub struct SymRule {
+    spelling: List<usize>,
+    kind: usize,
+}
+
+pub fn lx_ident_start(b: usize) -> bool {
+    return (97 <= b && b <= 122) || (65 <= b && b <= 90) || b == 95;
+}
+
+pub fn lx_digit(b: usize) -> bool {
+    return 48 <= b && b <= 57;
+}
+
+pub fn lx_ident_continue(b: usize) -> bool {
+    return lx_ident_start(b) || lx_digit(b);
+}
+
+pub fn lx_space(b: usize) -> bool {
+    return b == 32 || b == 9 || b == 10 || b == 13;
+}
+
+pub fn lx_symbol_start(b: usize) -> bool {
+    return b == 40 || b == 41 || b == 43 || b == 42 || b == 61 || b == 45 || b == 47 || b == 33 || b == 91 || b == 93 || b == 123 || b == 125 || b == 60 || b == 62 || b == 38 || b == 124 || b == 37 || b == 94 || b == 126 || b == 44 || b == 59 || b == 58 || b == 63 || b == 46;
+}
+
+pub fn lx_drop(items: List<usize>, n: usize) -> List<usize> {
+    if (n == 0) {
+        return items;
+    }
+    return match (items) {
+        Nil -> empty(),
+        Cons(b, more) -> lx_drop(unbox(more), minus(n, 1)),
+    };
+}
+
+pub fn lx_take(items: List<usize>, n: usize) -> List<usize> {
+    if (n == 0) {
+        return empty();
+    }
+    return match (items) {
+        Nil -> empty(),
+        Cons(b, more) -> cons(b, lx_take(unbox(more), minus(n, 1))),
+    };
+}
+
+pub fn lx_is_byte(b: core::option::Option<usize>, v: usize) -> bool {
+    return match (b) {
+        None -> false,
+        Some(x) -> x == v,
+    };
+}
+
+// The number of leading identifier bytes.
+pub fn lx_ident_run(rest: List<usize>) -> usize {
+    return match (rest) {
+        Nil -> 0,
+        Cons(b, more) -> lx_ident_run_at(b, unbox(more)),
+    };
+}
+
+// extract: inline
+fn lx_ident_run_at(ib: usize, imore: List<usize>) -> usize {
+    if (lx_ident_continue(ib)) {
+        return plus(lx_ident_run(imore), 1);
+    }
+    return 0;
+}
+
+// The number of leading whitespace bytes.
+pub fn lx_space_run(rest: List<usize>) -> usize {
+    return match (rest) {
+        Nil -> 0,
+        Cons(b, more) -> lx_space_run_at(b, unbox(more)),
+    };
+}
+
+// extract: inline
+fn lx_space_run_at(sb: usize, smore: List<usize>) -> usize {
+    if (lx_space(sb)) {
+        return plus(lx_space_run(smore), 1);
+    }
+    return 0;
+}
+
+// The number of leading bytes that are not a newline.
+pub fn lx_line_run(rest: List<usize>) -> usize {
+    return match (rest) {
+        Nil -> 0,
+        Cons(b, more) -> lx_line_run_at(b, unbox(more)),
+    };
+}
+
+// extract: inline
+fn lx_line_run_at(lb: usize, lmore: List<usize>) -> usize {
+    if (lb != 10) {
+        return plus(lx_line_run(lmore), 1);
+    }
+    return 0;
+}
+
+pub fn lx_ident_end(source: List<usize>, start: usize) -> usize {
+    return plus(plus(start, 1), lx_ident_run(lx_drop(source, plus(start, 1))));
+}
+
+pub fn lx_space_end(source: List<usize>, start: usize) -> usize {
+    return plus(plus(start, 1), lx_space_run(lx_drop(source, plus(start, 1))));
+}
+
+pub fn lx_line_end(source: List<usize>, start: usize) -> usize {
+    return plus(plus(start, 2), lx_line_run(lx_drop(source, plus(start, 2))));
+}
+
+// `scanQuotedBody`: a string or character literal's body after its opening
+// delimiter.
+pub fn lx_quoted(delim: usize, escaping: bool, rest: List<usize>, offset: usize) -> Scan {
+    return match (rest) {
+        Nil -> ScanFail(offset),
+        Cons(b, more) -> lx_quoted_at(delim, escaping, b, unbox(more), offset),
+    };
+}
+
+// extract: inline
+fn lx_quoted_at(qdelim: usize, qescaping: bool, qb: usize, qmore: List<usize>, qoffset: usize) -> Scan {
+    if (qescaping) {
+        return lx_quoted(qdelim, false, qmore, plus(qoffset, 1));
+    }
+    if (qb == 10) {
+        return ScanFail(qoffset);
+    }
+    if (qb == qdelim) {
+        return ScanDone(plus(qoffset, 1));
+    }
+    if (qb == 92) {
+        return lx_quoted(qdelim, true, qmore, plus(qoffset, 1));
+    }
+    return lx_quoted(qdelim, false, qmore, plus(qoffset, 1));
+}
+
+// `scanBlockBody`: a block comment's body after its `/*`.
+pub fn lx_block(rest: List<usize>, offset: usize) -> Scan {
+    return match (rest) {
+        Nil -> ScanFail(offset),
+        Cons(b, more) -> lx_block_at(b, unbox(more), offset),
+    };
+}
+
+// extract: inline
+fn lx_block_at(kb: usize, kmore: List<usize>, koffset: usize) -> Scan {
+    return match (kmore) {
+        Nil -> ScanFail(plus(koffset, 1)),
+        Cons(next, tail) -> lx_block_next(kb, next, kmore, koffset),
+    };
+}
+
+// extract: inline
+fn lx_block_next(nb: usize, nnext: usize, nmore: List<usize>, noffset: usize) -> Scan {
+    if (nb == 42 && nnext == 47) {
+        return ScanDone(plus(noffset, 2));
+    }
+    return lx_block(nmore, plus(noffset, 1));
+}
+
+pub fn lx_block_end(source: List<usize>, start: usize) -> Scan {
+    return lx_block(lx_drop(source, plus(start, 2)), plus(start, 2));
+}
+
+pub fn lx_base_digit(b: usize, base: usize) -> bool {
+    if (48 <= b && b <= 57) {
+        return minus(b, 48) < base;
+    }
+    if (97 <= b && b <= 102) {
+        return plus(minus(b, 97), 10) < base;
+    }
+    if (65 <= b && b <= 70) {
+        return plus(minus(b, 65), 10) < base;
+    }
+    return false;
+}
+
+// `scanDigitTail`: digits of the base, each `_` followed by one.
+pub fn lx_digit_tail(base: usize, rest: List<usize>, offset: usize) -> Scan {
+    return match (rest) {
+        Nil -> ScanDone(offset),
+        Cons(b, more) -> lx_digit_tail_at(base, b, unbox(more), offset),
+    };
+}
+
+// extract: inline
+fn lx_digit_tail_at(dbase: usize, db: usize, dmore: List<usize>, doffset: usize) -> Scan {
+    if (lx_base_digit(db, dbase)) {
+        return lx_digit_tail(dbase, dmore, plus(doffset, 1));
+    }
+    if (db == 95) {
+        return match (dmore) {
+            Nil -> ScanFail(plus(doffset, 1)),
+            Cons(next, after) -> lx_digit_sep(dbase, next, unbox(after), doffset),
+        };
+    }
+    return ScanDone(doffset);
+}
+
+// extract: inline
+fn lx_digit_sep(ebase: usize, enext: usize, eafter: List<usize>, eoffset: usize) -> Scan {
+    if (lx_base_digit(enext, ebase)) {
+        return lx_digit_tail(ebase, eafter, plus(eoffset, 2));
+    }
+    return ScanFail(plus(eoffset, 1));
+}
+
+// `scanDigitRun`: a digit of the base, then its tail.
+pub fn lx_digit_run(source: List<usize>, start: usize, base: usize) -> Scan {
+    return match (lx_drop(source, start)) {
+        Nil -> ScanFail(start),
+        Cons(first, rest) -> lx_digit_run_at(first, unbox(rest), start, base),
+    };
+}
+
+// extract: inline
+fn lx_digit_run_at(rfirst: usize, rrest: List<usize>, rstart: usize, rbase: usize) -> Scan {
+    if (lx_base_digit(rfirst, rbase)) {
+        return lx_digit_tail(rbase, rrest, plus(rstart, 1));
+    }
+    return ScanFail(rstart);
+}
+
+pub fn lx_exponent_digits(source: List<usize>, e: usize) -> usize {
+    return match (get(source, plus(e, 1))) {
+        None -> plus(e, 1),
+        Some(b) -> lx_exponent_sign(b, e),
+    };
+}
+
+// extract: inline
+fn lx_exponent_sign(xb: usize, xe: usize) -> usize {
+    if (xb == 43 || xb == 45) {
+        return plus(plus(xe, 1), 1);
+    }
+    return plus(xe, 1);
+}
+
+pub fn lx_exponent(source: List<usize>, e: usize) -> NumScan {
+    return match (lx_digit_run(source, lx_exponent_digits(source, e), 10)) {
+        ScanDone(finish) -> NumDone(33, finish),
+        ScanFail(error) -> NumFail(error),
+    };
+}
+
+// After a fraction's digits: an exponent, or the float's end.
+pub fn lx_after_fraction(source: List<usize>, fe: usize) -> NumScan {
+    return match (get(source, fe)) {
+        None -> NumDone(33, fe),
+        Some(x) -> lx_after_fraction_at(source, fe, x),
+    };
+}
+
+// extract: inline
+fn lx_after_fraction_at(asource: List<usize>, afe: usize, ax: usize) -> NumScan {
+    if (ax == 101 || ax == 69) {
+        return lx_exponent(asource, afe);
+    }
+    return NumDone(33, afe);
+}
+
+pub fn lx_fraction_digits(source: List<usize>, run: Scan) -> NumScan {
+    return match (run) {
+        ScanFail(error) -> NumFail(error),
+        ScanDone(fe) -> lx_after_fraction(source, fe),
+    };
+}
+
+// The fraction after a decimal point at fs - 1.
+pub fn lx_fraction(source: List<usize>, fs: usize) -> NumScan {
+    return match (get(source, fs)) {
+        None -> NumDone(33, fs),
+        Some(first) -> lx_fraction_at(source, fs, first),
+    };
+}
+
+// extract: inline
+fn lx_fraction_at(fsource: List<usize>, ffs: usize, ffirst: usize) -> NumScan {
+    if (48 <= ffirst && ffirst <= 57) {
+        return lx_fraction_digits(fsource, lx_digit_run(fsource, ffs, 10));
+    }
+    if (ffirst == 101 || ffirst == 69) {
+        return lx_exponent(fsource, ffs);
+    }
+    return NumDone(33, ffs);
+}
+
+// `finishDecimal`: what follows a decimal integer's digits.
+pub fn lx_finish_decimal(source: List<usize>, ie: usize) -> NumScan {
+    return match (get(source, ie)) {
+        None -> NumDone(2, ie),
+        Some(next) -> lx_decimal_next(source, ie, next),
+    };
+}
+
+// extract: inline
+fn lx_decimal_next(csource: List<usize>, cie: usize, cnext: usize) -> NumScan {
+    if (cnext == 101 || cnext == 69) {
+        return lx_exponent(csource, cie);
+    }
+    if (cnext != 46) {
+        return NumDone(2, cie);
+    }
+    if (lx_is_byte(get(csource, plus(cie, 1)), 46)) {
+        return NumDone(2, cie);
+    }
+    return lx_fraction(csource, plus(cie, 1));
+}
+
+pub fn lx_base_of(p: usize) -> core::option::Option<usize> {
+    if (p == 120 || p == 88) {
+        return Some(16);
+    }
+    if (p == 98 || p == 66) {
+        return Some(2);
+    }
+    if (p == 111 || p == 79) {
+        return Some(8);
+    }
+    return None;
+}
+
+// `prefixedBase`: 16, 2 or 8 after `0x`, `0b` or `0o`.
+pub fn lx_prefixed_base(source: List<usize>, start: usize) -> core::option::Option<usize> {
+    if (!lx_is_byte(get(source, start), 48)) {
+        return None;
+    }
+    return match (get(source, plus(start, 1))) {
+        None -> None,
+        Some(p) -> lx_base_of(p),
+    };
+}
+
+// `scanNumber`.
+pub fn lx_number(source: List<usize>, start: usize) -> NumScan {
+    return match (lx_prefixed_base(source, start)) {
+        Some(base) -> match (lx_digit_run(source, plus(start, 2), base)) {
+            ScanDone(finish) -> NumDone(2, finish),
+            ScanFail(error) -> NumFail(error),
+        },
+        None -> match (lx_digit_run(source, start, 10)) {
+            ScanDone(ie) -> lx_finish_decimal(source, ie),
+            ScanFail(error) -> NumFail(error),
+        },
+    };
+}
+
+// `scanLeadingDotNumber`: a float that starts with its point.
+pub fn lx_leading_dot(source: List<usize>, start: usize) -> NumScan {
+    return lx_fraction_digits(source, lx_digit_run(source, plus(start, 1), 10));
+}
+
+pub fn lx_starts_with(expected: List<usize>, actual: List<usize>) -> bool {
+    return match (expected) {
+        Nil -> true,
+        Cons(e, er) -> match (actual) {
+            Nil -> false,
+            Cons(a, ar) -> (e == a) && lx_starts_with(unbox(er), unbox(ar)),
+        },
+    };
+}
+
+pub fn lx_longer(candidate: SymRule, current: SymRule) -> SymRule {
+    if (length(current.spelling) < length(candidate.spelling)) {
+        return candidate;
+    }
+    return current;
+}
+
+pub fn lx_best_at(rule: SymRule, tail_best: core::option::Option<SymRule>, input: List<usize>) -> core::option::Option<SymRule> {
+    if (lx_starts_with(rule.spelling, input)) {
+        return match (tail_best) {
+            None -> Some(rule),
+            Some(current) -> Some(lx_longer(rule, current)),
+        };
+    }
+    return tail_best;
+}
+
+// `bestMatching`: the longest rule whose spelling starts the input, the
+// earliest of equal ones.
+pub fn lx_best(rules: List<SymRule>, input: List<usize>) -> core::option::Option<SymRule> {
+    return match (rules) {
+        Nil -> None,
+        Cons(rule, more) -> lx_best_at(rule, lx_best(unbox(more), input), input),
+    };
+}
+
+pub fn lx_delimited(kind: usize, start: usize, scan: Scan) -> OneTok {
+    return match (scan) {
+        ScanDone(finish) -> OneDone(RawTok { kind: kind, start: start, finish: finish }),
+        ScanFail(error) -> OneFail(error),
+    };
+}
+
+pub fn lx_from_number(start: usize, scan: NumScan) -> OneTok {
+    return match (scan) {
+        NumDone(kind, finish) -> OneDone(RawTok { kind: kind, start: start, finish: finish }),
+        NumFail(error) -> OneFail(error),
+    };
+}
+
+pub fn lx_fixed_at(source: List<usize>, start: usize, rule: SymRule) -> OneTok {
+    if (rule.kind == 10) {
+        return OneDone(RawTok { kind: rule.kind, start: start, finish: lx_line_end(source, start) });
+    }
+    if (rule.kind == 11) {
+        return lx_delimited(rule.kind, start, lx_block_end(source, start));
+    }
+    return OneDone(RawTok { kind: rule.kind, start: start, finish: plus(start, length(rule.spelling)) });
+}
+
+// `scanFixedSymbol`.
+pub fn lx_fixed(rules: List<SymRule>, source: List<usize>, start: usize) -> OneTok {
+    return match (lx_best(rules, lx_take(lx_drop(source, start), 3))) {
+        None -> OneFail(start),
+        Some(rule) -> lx_fixed_at(source, start, rule),
+    };
+}
+
+pub fn lx_dot_at(rules: List<SymRule>, source: List<usize>, start: usize, following: usize) -> OneTok {
+    if (lx_digit(following)) {
+        return lx_from_number(start, lx_leading_dot(source, start));
+    }
+    return lx_fixed(rules, source, start);
+}
+
+pub fn lx_symbol_at(rules: List<SymRule>, source: List<usize>, start: usize, first: usize) -> OneTok {
+    if (first == 46) {
+        return match (get(source, plus(start, 1))) {
+            Some(following) -> lx_dot_at(rules, source, start, following),
+            None -> lx_fixed(rules, source, start),
+        };
+    }
+    return lx_fixed(rules, source, start);
+}
+
+// `scanSymbol`: a float that starts with its point, or a fixed symbol.
+pub fn lx_symbol(rules: List<SymRule>, source: List<usize>, start: usize) -> OneTok {
+    return match (get(source, start)) {
+        None -> OneFail(start),
+        Some(first) -> lx_symbol_at(rules, source, start, first),
+    };
+}
+
+pub fn lx_one_first(rules: List<SymRule>, source: List<usize>, start: usize, first: usize) -> OneTok {
+    if (lx_ident_start(first)) {
+        return OneDone(RawTok { kind: 1, start: start, finish: lx_ident_end(source, start) });
+    }
+    if (lx_digit(first)) {
+        return lx_from_number(start, lx_number(source, start));
+    }
+    if (lx_space(first)) {
+        return OneDone(RawTok { kind: 3, start: start, finish: lx_space_end(source, start) });
+    }
+    if (first == 34) {
+        return lx_delimited(32, start, lx_quoted(34, false, lx_drop(source, plus(start, 1)), plus(start, 1)));
+    }
+    if (first == 39) {
+        return lx_delimited(34, start, lx_quoted(39, false, lx_drop(source, plus(start, 1)), plus(start, 1)));
+    }
+    if (lx_symbol_start(first)) {
+        return lx_symbol(rules, source, start);
+    }
+    return OneFail(start);
+}
+
+// `scanOneAt`: the token at start, by its first byte.
+pub fn lx_one_at(rules: List<SymRule>, source: List<usize>, start: usize) -> OneTok {
+    return match (get(source, start)) {
+        None -> OneFail(start),
+        Some(first) -> lx_one_first(rules, source, start, first),
+    };
+}
+
+pub fn lx_shift(offset: usize, t: RawTok) -> RawTok {
+    return RawTok { kind: t.kind, start: plus(offset, t.start), finish: plus(offset, t.finish) };
+}
+
+pub fn lx_prepend(t: RawTok, rest: core::option::Option<List<RawTok>>) -> core::option::Option<List<RawTok>> {
+    return match (rest) {
+        None -> None,
+        Some(ts) -> Some(cons(t, ts)),
+    };
+}
+
+// `lexRawFromRest`: the tokens of what is left of the file, rest, which
+// starts at offset.
+pub fn lx_raw(rules: List<SymRule>, rest: List<usize>, fuel: usize, offset: usize) -> core::option::Option<List<RawTok>> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (rest) {
+        Nil -> Some(empty()),
+        Cons(b, more) -> match (lx_one_at(rules, rest, 0)) {
+            OneFail(error) -> None,
+            OneDone(t) -> lx_prepend(lx_shift(offset, t), lx_raw(rules, lx_drop(rest, minus(plus(offset, t.finish), offset)), minus(fuel, 1), plus(offset, t.finish))),
+        },
+    };
+}
+
+pub fn lx_trivia(kind: usize) -> bool {
+    return kind == 3 || kind == 10 || kind == 11;
+}
+
+// `exactKeywordKind`.
+pub fn lx_keyword(spelling: List<usize>, rules: List<SymRule>) -> core::option::Option<usize> {
+    return match (rules) {
+        Nil -> None,
+        Cons(rule, more) -> lx_keyword_at(spelling, rule, unbox(more)),
+    };
+}
+
+// extract: inline
+fn lx_keyword_at(wspelling: List<usize>, wrule: SymRule, wmore: List<SymRule>) -> core::option::Option<usize> {
+    if (same_text(wspelling, wrule.spelling)) {
+        return Some(wrule.kind);
+    }
+    return lx_keyword(wspelling, wmore);
+}
+
+pub fn lx_drop_to(source: List<usize>, rest: List<usize>, pos: usize, target: usize) -> List<usize> {
+    if (pos <= target) {
+        return lx_drop(rest, minus(target, pos));
+    }
+    return lx_drop(source, target);
+}
+
+pub fn lx_canonical_kind(keywords: List<SymRule>, here: List<usize>, t: RawTok) -> usize {
+    if (t.kind == 1) {
+        return match (lx_keyword(lx_take(here, minus(t.finish, t.start)), keywords)) {
+            None -> 1,
+            Some(k) -> k,
+        };
+    }
+    return t.kind;
+}
+
+// `filterRetagFrom`: the tokens without trivia, keywords retagged; rest is
+// source from pos.
+pub fn lx_filter(keywords: List<SymRule>, source: List<usize>, rest: List<usize>, pos: usize, tokens: List<RawTok>) -> List<RawTok> {
+    return match (tokens) {
+        Nil -> empty(),
+        Cons(t, more) -> lx_filter_at(keywords, source, lx_drop_to(source, rest, pos, t.start), t, unbox(more)),
+    };
+}
+
+// extract: inline
+fn lx_filter_at(fkeywords: List<SymRule>, fsource: List<usize>, fhere: List<usize>, ft: RawTok, fmore: List<RawTok>) -> List<RawTok> {
+    if (lx_trivia(ft.kind)) {
+        return lx_filter(fkeywords, fsource, fhere, ft.start, fmore);
+    }
+    return cons(RawTok { kind: lx_canonical_kind(fkeywords, fhere, ft), start: ft.start, finish: ft.finish }, lx_filter(fkeywords, fsource, fhere, ft.start, fmore));
+}
+
+pub fn lx_range_pair(current: RawTok, next: RawTok) -> RawTok {
+    if (current.kind == 182 && next.kind == 8 && next.start == current.finish) {
+        return RawTok { kind: 189, start: current.start, finish: current.finish };
+    }
+    return current;
+}
+
+// `retagInclusiveRanges`: `..` then `=` right after it is `..=`.
+pub fn lx_ranges(tokens: List<RawTok>) -> List<RawTok> {
+    return match (tokens) {
+        Nil -> empty(),
+        Cons(t, more) -> lx_ranges_at(t, unbox(more)),
+    };
+}
+
+// extract: inline
+fn lx_ranges_at(gt: RawTok, gmore: List<RawTok>) -> List<RawTok> {
+    return match (gmore) {
+        Nil -> single(gt),
+        Cons(next, rest) -> cons(lx_range_pair(gt, next), lx_ranges(gmore)),
+    };
+}
+
+// The bytes of `as`.
+pub fn lx_as_text() -> List<usize> {
+    return cons(97, single(115));
+}
+
+pub fn lx_token_text(t: RawTok, text: List<usize>) -> Token {
+    if (t.kind == 1 && same_text(text, lx_as_text())) {
+        return Token { kind: 195, start: t.start, text: text };
+    }
+    return Token { kind: t.kind, start: t.start, text: text };
+}
+
+// `toTokenAt`: the token with its bytes; the identifier `as` is the cast
+// keyword, 195.
+pub fn lx_token(here: List<usize>, t: RawTok) -> Token {
+    return lx_token_text(t, lx_take(here, minus(t.finish, t.start)));
+}
+
+// `toTokensFrom`.
+pub fn lx_tokens(source: List<usize>, rest: List<usize>, pos: usize, tokens: List<RawTok>) -> List<Token> {
+    return match (tokens) {
+        Nil -> empty(),
+        Cons(t, more) -> lx_tokens_at(source, lx_drop_to(source, rest, pos, t.start), t, unbox(more)),
+    };
+}
+
+// extract: inline
+fn lx_tokens_at(tsource: List<usize>, there: List<usize>, tt: RawTok, tmore: List<RawTok>) -> List<Token> {
+    return cons(lx_token(there, tt), lx_tokens(tsource, there, tt.start, tmore));
+}
+
+// `symbolRules`: each fixed symbol's bytes and token code.
+pub fn lx_symbol_rules() -> List<SymRule> {
+    return
+        cons(SymRule { spelling: cons(60, cons(60, single(61))), kind: 52 },
+        cons(SymRule { spelling: cons(62, cons(62, single(61))), kind: 53 },
+        cons(SymRule { spelling: cons(60, single(60)), kind: 43 },
+        cons(SymRule { spelling: cons(60, single(61)), kind: 14 },
+        cons(SymRule { spelling: cons(60, single(62)), kind: 24 },
+        cons(SymRule { spelling: cons(62, single(62)), kind: 44 },
+        cons(SymRule { spelling: cons(62, single(61)), kind: 15 },
+        cons(SymRule { spelling: cons(43, single(61)), kind: 46 },
+        cons(SymRule { spelling: cons(43, single(43)), kind: 56 },
+        cons(SymRule { spelling: cons(45, single(61)), kind: 47 },
+        cons(SymRule { spelling: cons(45, single(45)), kind: 57 },
+        cons(SymRule { spelling: cons(45, single(62)), kind: 75 },
+        cons(SymRule { spelling: cons(61, single(61)), kind: 16 },
+        cons(SymRule { spelling: cons(61, single(62)), kind: 113 },
+        cons(SymRule { spelling: cons(47, single(47)), kind: 10 },
+        cons(SymRule { spelling: cons(47, single(42)), kind: 11 },
+        cons(SymRule { spelling: cons(47, single(61)), kind: 49 },
+        cons(SymRule { spelling: cons(38, single(38)), kind: 17 },
+        cons(SymRule { spelling: cons(38, single(61)), kind: 54 },
+        cons(SymRule { spelling: cons(124, single(124)), kind: 18 },
+        cons(SymRule { spelling: cons(124, single(61)), kind: 55 },
+        cons(SymRule { spelling: cons(33, single(61)), kind: 40 },
+        cons(SymRule { spelling: cons(42, single(61)), kind: 48 },
+        cons(SymRule { spelling: cons(37, single(61)), kind: 50 },
+        cons(SymRule { spelling: cons(94, single(61)), kind: 51 },
+        cons(SymRule { spelling: cons(46, single(46)), kind: 182 },
+        cons(SymRule { spelling: single(60), kind: 12 },
+        cons(SymRule { spelling: single(62), kind: 13 },
+        cons(SymRule { spelling: single(43), kind: 6 },
+        cons(SymRule { spelling: single(45), kind: 27 },
+        cons(SymRule { spelling: single(61), kind: 8 },
+        cons(SymRule { spelling: single(47), kind: 9 },
+        cons(SymRule { spelling: single(38), kind: 25 },
+        cons(SymRule { spelling: single(124), kind: 26 },
+        cons(SymRule { spelling: single(33), kind: 19 },
+        cons(SymRule { spelling: single(42), kind: 7 },
+        cons(SymRule { spelling: single(37), kind: 41 },
+        cons(SymRule { spelling: single(94), kind: 42 },
+        cons(SymRule { spelling: single(46), kind: 35 },
+        cons(SymRule { spelling: single(40), kind: 4 },
+        cons(SymRule { spelling: single(41), kind: 5 },
+        cons(SymRule { spelling: single(91), kind: 20 },
+        cons(SymRule { spelling: single(93), kind: 21 },
+        cons(SymRule { spelling: single(123), kind: 22 },
+        cons(SymRule { spelling: single(125), kind: 23 },
+        cons(SymRule { spelling: single(126), kind: 45 },
+        cons(SymRule { spelling: single(44), kind: 36 },
+        cons(SymRule { spelling: single(59), kind: 37 },
+        cons(SymRule { spelling: single(58), kind: 38 },
+        cons(SymRule { spelling: single(63), kind: 39 },
+        empty()))))))))))))))))))))))))))))))))))))))))))))))))));
+}
+
+// `keywordRules`: each keyword's bytes and token code.
+pub fn lx_keyword_rules() -> List<SymRule> {
+    return
+        cons(SymRule { spelling: cons(112, cons(117, single(98))), kind: 66 },
+        cons(SymRule { spelling: cons(102, single(110)), kind: 67 },
+        cons(SymRule { spelling: cons(105, single(110)), kind: 101 },
+        cons(SymRule { spelling: cons(108, cons(101, single(116))), kind: 68 },
+        cons(SymRule { spelling: cons(102, cons(111, single(114))), kind: 100 },
+        cons(SymRule { spelling: cons(114, cons(101, cons(116, cons(117, cons(114, single(110)))))), kind: 69 },
+        cons(SymRule { spelling: cons(105, single(102)), kind: 70 },
+        cons(SymRule { spelling: cons(101, cons(108, cons(115, single(101)))), kind: 71 },
+        cons(SymRule { spelling: cons(119, cons(104, cons(105, cons(108, single(101))))), kind: 72 },
+        cons(SymRule { spelling: cons(98, cons(114, cons(101, cons(97, single(107))))), kind: 73 },
+        cons(SymRule { spelling: cons(99, cons(111, cons(110, cons(116, cons(105, cons(110, cons(117, single(101)))))))), kind: 74 },
+        cons(SymRule { spelling: cons(116, cons(114, cons(117, single(101)))), kind: 90 },
+        cons(SymRule { spelling: cons(102, cons(97, cons(108, cons(115, single(101))))), kind: 91 },
+        cons(SymRule { spelling: cons(99, cons(111, cons(110, cons(115, single(116))))), kind: 92 },
+        cons(SymRule { spelling: cons(101, cons(110, cons(117, single(109)))), kind: 93 },
+        cons(SymRule { spelling: cons(101, cons(120, cons(116, cons(101, cons(114, single(110)))))), kind: 102 },
+        cons(SymRule { spelling: cons(105, cons(109, cons(112, cons(111, cons(114, single(116)))))), kind: 96 },
+        cons(SymRule { spelling: cons(105, cons(109, cons(112, single(108)))), kind: 98 },
+        cons(SymRule { spelling: cons(109, cons(97, cons(116, cons(99, single(104))))), kind: 95 },
+        cons(SymRule { spelling: cons(109, cons(111, cons(100, cons(117, cons(108, single(101)))))), kind: 97 },
+        cons(SymRule { spelling: cons(115, cons(101, cons(108, single(102)))), kind: 105 },
+        cons(SymRule { spelling: cons(115, cons(116, cons(114, cons(117, cons(99, single(116)))))), kind: 94 },
+        cons(SymRule { spelling: cons(116, cons(114, cons(97, cons(105, single(116))))), kind: 99 },
+        cons(SymRule { spelling: cons(116, cons(121, cons(112, single(101)))), kind: 103 },
+        cons(SymRule { spelling: cons(119, cons(104, cons(101, cons(114, single(101))))), kind: 104 },
+        empty())))))))))))))))))))))))));
+}
+
+// `lexTokens`: the tokens of a file's bytes, if it lexes.
+pub fn lex_source(source: List<usize>) -> core::option::Option<List<Token>> {
+    return match (lx_raw(lx_symbol_rules(), source, plus(length(source), 1), 0)) {
+        None -> None,
+        Some(raw) -> Some(lx_tokens(source, source, 0, lx_ranges(lx_filter(lx_keyword_rules(), source, source, 0, raw)))),
+    };
+}
+
 // ---------------------------------------------------------------- the driver's input
 
 // The front end's input as a driver reads it, one 32-bit word each: the file
