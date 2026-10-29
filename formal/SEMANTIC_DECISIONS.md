@@ -453,10 +453,18 @@ compiled code fault (`ud2` or `#DE`): `arrayBounds`, `invalidShift`,
 out of heap or of stack faults too. An allocation whose end would pass 2^64
 is an allocation failure, not a wrap (`bump` tests the carry). Undefined
 traps are a premise of the compiler's theorems, as undefined behaviour is in
-CompCert: `rawMemoryBounds`, `invalidPointer`, `doubleFree` and
-`allocatorContract`. Impossible traps cannot happen in a program the
-compiler accepts: `typeMismatch`, `uninitializedLocal`, `missingReturn` and
-`nonExhaustiveMatch`.
+CompCert: `rawMemoryBounds`, `invalidPointer`, `doubleFree`,
+`allocatorContract` and (decided 10-29) `typeMismatch`. A typed program
+reaches `typeMismatch` only by reading an invalid bit pattern from raw
+memory (a `bool` byte of 2, say) or through a raw slice of an element type
+past Core's native layout limits, so it is a raw memory error too.
+Impossible traps cannot happen in a program the compiler accepts:
+`uninitializedLocal`, `missingReturn` and `nonExhaustiveMatch`.
+
+The compiled code checks in Core's order. A store `slice[i] = v` evaluates
+`i`, checks `i` against the length, and only then evaluates `v` (10-29:
+proving `compileSource_stops` found the old order, `v` before the check,
+wrong when `i` is out of bounds and `v` reaches an undefined trap).
 
 ## Decisions still required
 

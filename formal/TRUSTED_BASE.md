@@ -60,6 +60,7 @@ the statement, so a reader has to agree that each one says what is intended:
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (below) |
 | `Below`, `Binary.stackNeed`, `Binary.guard` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |
 | `Det`, `Live`, `Faults`, `Fault` | `Mini/StepDet.lean`, `X86/Machine/Scalar.lean` | every run agrees but for flags and does not stop early; a run that stops, stops at an architectural fault (`ud2`, `#DE`) |
+| `undefinedTrap`, `Failing` | `Mini/Fails.lean` | for `compileSource_stops`: a Core run fails at a fuel when it runs out of fuel, stops at a trap that is not undefined, or completes with the heap past the mini heap's limit; the undefined traps are the raw memory errors and `typeMismatch` |
 | `Stops`, `Program.Stops` | `Mini/Stops.lean`, `Mini/StopsCorrect.lean` | for `compileProgram_stops`: a mini run that, within `n` ticks (loop iterations and calls), has not finished or has stopped at an allocation past the limit from a cursor within it, or at a division by zero or of the least value by -1 |
 | `CodeAt`, `Steps`, `Step` | `X86/Machine/State.lean`, `X86/Machine/Scalar.lean` | the image is loaded, and the machine runs (see section 6) |
 | `linkProgram`, `Stmt.rename`, `Binary.executable`, `Executable.stackNeed` | `Mini/Compiler.lean` (extracted), `Mini/Link.lean` | for the step 9 theorems `link_eq` and `linked_correct`: which mini program a list of modules *is* (their functions in link order, each callee renamed to its program index, imports checked for owner, function and arity), and what of a binary a linked executable keeps |
@@ -547,6 +548,10 @@ Today no verified loader exists. The images run natively only from a
 hand-written ctypes stub, which checks the mini difftest's image and is kept
 outside the repository with the scratch work. The ELF startup and exit wrapper (`X86/StartupExitCheck.lean`) has
 not been composed with the theorem yet.
+
+`compileSource_stops` (Mini/SourceStops.lean) has the same premises, without
+`stackNeed depth ≤ window`, and with a heap limit of at least 1; its
+conclusion is `Faults`.
 
 - **Image.** `CodeAt s.memory imageBase binary.image`: the image is loaded
   byte for byte at any base and is executable. Its bytes are apart from the

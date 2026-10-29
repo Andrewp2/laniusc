@@ -107,8 +107,18 @@ heap or of stack is a fault too.
   64 bits, so a size near 2^64 wrapped, passed the limit test and moved
   the cursor back. `bump` now tests the carry (`add r11, rax; jb` to the
   `ud2`), 58 bytes.
-- V2d. Core to mini: Core out of fuel at `k` gives `Stops ((k - d) / (D + 1))`
-  (`D` the deepest nesting in a body); a checked trap, or a heap past the
-  limit, gives `Stops` for every `n`.
+- V2d. Core to mini: a Core run that fails at every fuel (out of fuel, a
+  trap that is not undefined, or a heap past the limit; `Fails`,
+  Mini/Fails.lean) gives `Stops` for every `n`. Done (10-29):
+  `stmtStops_all` (Mini/EvalStops.lean), by induction on `n` and then on
+  the statement and its effectful expressions (`effStops_all`), with a
+  loop's next iteration and a callee's body at `n - 1`; and
+  `compileSource_stops` (Mini/SourceStops.lean): a failing Core call makes
+  the compiled code `Faults`. Standard axioms. `typeMismatch` became an
+  undefined trap (SEMANTIC_DECISIONS.md), and the proof found that
+  `slice[i] = v` evaluated `v` before the bounds check; it now checks
+  first, as Core does. Follow-up: `lowerSlice` should reject element types
+  past Core's native layout limits, so `typeMismatch` can return to the
+  impossible traps.
 - V2e. `compileSource_behaviour`: an x86 run that returns is a Core run
   that returns, with the same results, unless Core hits an undefined trap.
