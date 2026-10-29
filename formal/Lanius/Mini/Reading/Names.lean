@@ -212,202 +212,183 @@ theorem wellNamed_sound {c : Collected} (h : wellNamed c = true) : WellNamed c :
 
 /-! ## The lookups
 
-A lookup finds a declaration of the module with the spelling, or reports
-that there is none. -/
+A lookup finds the first declaration of the module with the spelling, or
+reports that there is none. Under `WellNamed` the first is the only one. -/
 
-/-- Type `i` of the declarations is module `m`'s struct or enum `name`. -/
-def TypeNamed (d : Decls) (m : ModPath) (name : Name) (i : Nat) : Prop :=
-  ∃ t, d.types[i]? = some t ∧ t.home = m ∧ t.name = name
+/-- `x`, at position `i`, is the first element of `xs` that satisfies `p`. -/
+def FirstWith {α : Type} (xs : List α) (p : α → Prop) (i : Nat) (x : α) : Prop :=
+  xs[i]? = some x ∧ p x ∧ ∀ j < i, ∀ y, xs[j]? = some y → ¬p y
 
-/-- Function `i` is module `m`'s free function `name`. -/
-def FnNamed (d : Decls) (m : ModPath) (name : Name) (i : Nat) : Prop :=
-  ∃ f, d.fns[i]? = some f ∧ f.inImpl = false ∧ f.home = m ∧ f.name = name
+theorem firstWith_zero {α : Type} {y x : α} {xs : List α} {p : α → Prop} (e : x = y) (h : p y) :
+    FirstWith (y :: xs) p 0 x :=
+  ⟨by simp [e], e ▸ h, fun _ lt => absurd lt (Nat.not_lt_zero _)⟩
 
-def ConstNamed (d : Decls) (m : ModPath) (name : Name) (c : ConstDecl) : Prop :=
-  c ∈ d.consts ∧ c.home = m ∧ c.name = name
+theorem firstWith_succ {α : Type} {y x : α} {xs : List α} {p : α → Prop} {i : Nat} (n : ¬p y)
+    (h : FirstWith xs p i x) : FirstWith (y :: xs) p (i + 1) x := by
+  obtain ⟨at', px, before⟩ := h
+  refine ⟨by simpa using at', px, fun j lt z hz => ?_⟩
+  cases j with
+  | zero => simp at hz; exact hz ▸ n
+  | succ j => exact before j (by omega) z (by simpa using hz)
 
-def AliasNamed (d : Decls) (m : ModPath) (name : Name) (a : AliasDecl) : Prop :=
-  a ∈ d.aliases ∧ a.home = m ∧ a.name = name
-
-/-- Variant `v.index` of type `v.owner` is spelled `name`, and the type is
-an enum of module `m`. -/
-def VariantNamed (d : Decls) (m : ModPath) (name : Name) (v : VariantAt) : Prop :=
-  ∃ t, d.types[v.owner]? = some t ∧ t.isEnum = true ∧ t.home = m ∧ t.variants[v.index]? = some name
-
-theorem position_sound : ∀ (names : List Name) (name : Name) (k j : Nat),
-    position names name k = some j → k ≤ j ∧ names[j - k]? = some name
-  | [], _, _, _, h => by simp [position] at h
-  | n :: rest, name, k, j, h => by
-    rw [position] at h
-    by_cases e : sameText n name = true
+/-- An index-returning search: the position (counted from `k`) of the first
+element that passes the test. -/
+theorem find_sound {α : Type} (p : α → Bool) (q : α → Prop) (hpq : ∀ x, p x = true ↔ q x)
+    (f : List α → Nat → Option Nat) (nil : ∀ k, f [] k = none)
+    (cons : ∀ y xs k, f (y :: xs) k = if p y = true then some k else f xs (k + 1)) :
+    ∀ (xs : List α) (k i : Nat), f xs k = some i → k ≤ i ∧ ∃ x, FirstWith xs q (i - k) x
+  | [], k, i, h => by rw [nil] at h; cases h
+  | y :: xs, k, i, h => by
+    rw [cons] at h
+    by_cases e : p y = true
     · rw [if_pos e] at h
       cases h
-      exact ⟨Nat.le_refl _, by simp [(sameText_iff _ _).1 e]⟩
+      exact ⟨Nat.le_refl _, y, by simpa using firstWith_zero rfl ((hpq y).1 e)⟩
     · rw [if_neg e] at h
-      obtain ⟨le, got⟩ := position_sound rest name (k + 1) j h
-      refine ⟨by omega, ?_⟩
-      rw [show j - k = (j - (k + 1)) + 1 by omega]
-      simpa using got
+      obtain ⟨le, x, fx⟩ := find_sound p q hpq f nil cons xs (k + 1) i h
+      refine ⟨by omega, x, ?_⟩
+      rw [show i - k = (i - (k + 1)) + 1 by omega]
+      exact firstWith_succ (fun hq => e ((hpq y).2 hq)) fx
 
-theorem position_none : ∀ (names : List Name) (name : Name) (k : Nat),
-    position names name k = none → name ∉ names
-  | [], _, _, _ => by simp
-  | n :: rest, name, k, h => by
-    rw [position] at h
-    by_cases e : sameText n name = true
+theorem find_none {α : Type} (p : α → Bool) (q : α → Prop) (hpq : ∀ x, p x = true ↔ q x)
+    (f : List α → Nat → Option Nat)
+    (cons : ∀ y xs k, f (y :: xs) k = if p y = true then some k else f xs (k + 1)) :
+    ∀ (xs : List α) (k : Nat), f xs k = none → ∀ x ∈ xs, ¬q x
+  | [], _, _ => by simp
+  | y :: xs, k, h => by
+    rw [cons] at h
+    by_cases e : p y = true
     · rw [if_pos e] at h; cases h
     · rw [if_neg e] at h
-      have := position_none rest name (k + 1) h
-      rw [sameText_iff] at e
-      simp only [List.mem_cons, not_or]
-      exact ⟨fun h => e h.symm, this⟩
+      intro x mem
+      rcases List.mem_cons.1 mem with rfl | mem
+      · exact fun hq => e ((hpq x).2 hq)
+      · exact find_none p q hpq f cons xs (k + 1) h x mem
 
-theorem findType_sound' : ∀ (types : List TypeDecl) (m : ModPath) (name : Name) (k i : Nat),
-    findType types m name k = some i → k ≤ i ∧ ∃ t, types[i - k]? = some t ∧ t.home = m ∧ t.name = name
-  | [], _, _, _, _, h => by simp [findType] at h
-  | t :: rest, m, name, k, i, h => by
-    rw [findType] at h
-    by_cases e : (sameText t.name name && sameSpellings t.home m) = true
+/-- A value-returning search: the first element that passes the test. -/
+theorem pick_sound {α : Type} (p : α → Bool) (q : α → Prop) (hpq : ∀ x, p x = true ↔ q x)
+    (f : List α → Option α) (nil : f [] = none) (cons : ∀ y xs, f (y :: xs) = if p y = true then some y else f xs) :
+    ∀ (xs : List α) (x : α), f xs = some x → ∃ i, FirstWith xs q i x
+  | [], _, h => by rw [nil] at h; cases h
+  | y :: xs, x, h => by
+    rw [cons] at h
+    by_cases e : p y = true
     · rw [if_pos e] at h
       cases h
-      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
-      exact ⟨Nat.le_refl _, t, by simp, e.2, e.1⟩
+      exact ⟨0, firstWith_zero rfl ((hpq _).1 e)⟩
     · rw [if_neg e] at h
-      obtain ⟨le, t', got, rest'⟩ := findType_sound' rest m name (k + 1) i h
-      refine ⟨by omega, t', ?_, rest'⟩
-      rw [show i - k = (i - (k + 1)) + 1 by omega]
-      simpa using got
+      obtain ⟨i, fx⟩ := pick_sound p q hpq f nil cons xs x h
+      exact ⟨i + 1, firstWith_succ (fun hq => e ((hpq y).2 hq)) fx⟩
+
+theorem pick_none {α : Type} (p : α → Bool) (q : α → Prop) (hpq : ∀ x, p x = true ↔ q x)
+    (f : List α → Option α) (cons : ∀ y xs, f (y :: xs) = if p y = true then some y else f xs) :
+    ∀ (xs : List α), f xs = none → ∀ x ∈ xs, ¬q x
+  | [], _ => by simp
+  | y :: xs, h => by
+    rw [cons] at h
+    by_cases e : p y = true
+    · rw [if_pos e] at h; cases h
+    · rw [if_neg e] at h
+      intro x mem
+      rcases List.mem_cons.1 mem with rfl | mem
+      · exact fun hq => e ((hpq x).2 hq)
+      · exact pick_none p q hpq f cons xs h x mem
+
+/-- Type `i` is the first of module `m`'s structs and enums spelled `name`. -/
+def TypeNamed (d : Decls) (m : ModPath) (name : Name) (i : Nat) : Prop :=
+  ∃ t, FirstWith d.types (fun t => t.home = m ∧ t.name = name) i t
+
+/-- Function `i` is the first of module `m`'s free functions spelled `name`. -/
+def FnNamed (d : Decls) (m : ModPath) (name : Name) (i : Nat) : Prop :=
+  ∃ f, FirstWith d.fns (fun f => f.inImpl = false ∧ f.home = m ∧ f.name = name) i f
+
+def ConstNamed (d : Decls) (m : ModPath) (name : Name) (c : ConstDecl) : Prop :=
+  ∃ i, FirstWith d.consts (fun c => c.home = m ∧ c.name = name) i c
+
+def AliasNamed (d : Decls) (m : ModPath) (name : Name) (a : AliasDecl) : Prop :=
+  ∃ i, FirstWith d.aliases (fun a => a.home = m ∧ a.name = name) i a
+
+/-- Variant `v.index` of type `v.owner`, an enum of module `m`, is its
+first variant spelled `name`. -/
+def VariantNamed (d : Decls) (m : ModPath) (name : Name) (v : VariantAt) : Prop :=
+  ∃ t, d.types[v.owner]? = some t ∧ t.isEnum = true ∧ t.home = m ∧ FirstWith t.variants (· = name) v.index name
+
+theorem typeTest (m : ModPath) (name : Name) (t : TypeDecl) :
+    (sameText t.name name && sameSpellings t.home m) = true ↔ (t.home = m ∧ t.name = name) := by
+  rw [Bool.and_eq_true, sameText_iff, sameSpellings_iff, and_comm]
 
 theorem findType_sound {d : Decls} {m : ModPath} {name : Name} {i : Nat}
     (h : findType d.types m name 0 = some i) : TypeNamed d m name i := by
   unfold TypeNamed
-  simpa using (findType_sound' d.types m name 0 i h).2
+  simpa using (find_sound _ _ (typeTest m name) (fun xs k => findType xs m name k) (fun _ => rfl)
+    (fun _ _ _ => rfl) d.types 0 i h).2
 
-theorem findType_none : ∀ (types : List TypeDecl) (m : ModPath) (name : Name) (k : Nat),
-    findType types m name k = none → ∀ t ∈ types, ¬(t.home = m ∧ t.name = name)
-  | [], _, _, _, _ => by simp
-  | t :: rest, m, name, k, h => by
-    rw [findType] at h
-    by_cases e : (sameText t.name name && sameSpellings t.home m) = true
-    · rw [if_pos e] at h; cases h
-    · rw [if_neg e] at h
-      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
-      intro u mem
-      rcases List.mem_cons.1 mem with rfl | mem
-      · exact fun ⟨a, b⟩ => e ⟨b, a⟩
-      · exact findType_none rest m name (k + 1) h u mem
+theorem findType_none {d : Decls} {m : ModPath} {name : Name} (h : findType d.types m name 0 = none) :
+    ∀ t ∈ d.types, ¬(t.home = m ∧ t.name = name) :=
+  find_none _ _ (typeTest m name) (fun xs k => findType xs m name k) (fun _ _ _ => rfl) d.types 0 h
 
-theorem findFn_sound' : ∀ (fns : List FnDecl) (m : ModPath) (name : Name) (k i : Nat),
-    findFn fns m name k = some i →
-      k ≤ i ∧ ∃ f, fns[i - k]? = some f ∧ f.inImpl = false ∧ f.home = m ∧ f.name = name
-  | [], _, _, _, _, h => by simp [findFn] at h
-  | f :: rest, m, name, k, i, h => by
-    rw [findFn] at h
-    by_cases e : (!f.inImpl && sameText f.name name && sameSpellings f.home m) = true
-    · rw [if_pos e] at h
-      cases h
-      simp only [Bool.and_eq_true, Bool.not_eq_true', sameText_iff, sameSpellings_iff] at e
-      exact ⟨Nat.le_refl _, f, by simp, e.1.1, e.2, e.1.2⟩
-    · rw [if_neg e] at h
-      obtain ⟨le, f', got, rest'⟩ := findFn_sound' rest m name (k + 1) i h
-      refine ⟨by omega, f', ?_, rest'⟩
-      rw [show i - k = (i - (k + 1)) + 1 by omega]
-      simpa using got
+theorem fnTest (m : ModPath) (name : Name) (f : FnDecl) :
+    (!f.inImpl && sameText f.name name && sameSpellings f.home m) = true ↔
+      (f.inImpl = false ∧ f.home = m ∧ f.name = name) := by
+  simp only [Bool.and_eq_true, Bool.not_eq_true', sameText_iff, sameSpellings_iff]
+  exact ⟨fun ⟨⟨a, b⟩, c⟩ => ⟨a, c, b⟩, fun ⟨a, c, b⟩ => ⟨⟨a, b⟩, c⟩⟩
 
 theorem findFn_sound {d : Decls} {m : ModPath} {name : Name} {i : Nat}
     (h : findFn d.fns m name 0 = some i) : FnNamed d m name i := by
   unfold FnNamed
-  simpa using (findFn_sound' d.fns m name 0 i h).2
+  simpa using (find_sound _ _ (fnTest m name) (fun xs k => findFn xs m name k) (fun _ => rfl)
+    (fun _ _ _ => rfl) d.fns 0 i h).2
 
-theorem findFn_none : ∀ (fns : List FnDecl) (m : ModPath) (name : Name) (k : Nat),
-    findFn fns m name k = none → ∀ f ∈ fns, ¬(f.inImpl = false ∧ f.home = m ∧ f.name = name)
-  | [], _, _, _, _ => by simp
-  | f :: rest, m, name, k, h => by
-    rw [findFn] at h
-    by_cases e : (!f.inImpl && sameText f.name name && sameSpellings f.home m) = true
-    · rw [if_pos e] at h; cases h
-    · rw [if_neg e] at h
-      simp only [Bool.and_eq_true, Bool.not_eq_true', sameText_iff, sameSpellings_iff] at e
-      intro u mem
-      rcases List.mem_cons.1 mem with rfl | mem
-      · exact fun ⟨a, b, c⟩ => e ⟨⟨a, c⟩, b⟩
-      · exact findFn_none rest m name (k + 1) h u mem
-
-theorem findConst_sound' : ∀ (consts : List ConstDecl) (m : ModPath) (name : Name) (c : ConstDecl),
-    findConst consts m name = some c → c ∈ consts ∧ c.home = m ∧ c.name = name
-  | [], _, _, _, h => by simp [findConst] at h
-  | x :: rest, m, name, c, h => by
-    rw [findConst] at h
-    by_cases e : (sameText x.name name && sameSpellings x.home m) = true
-    · rw [if_pos e] at h
-      cases h
-      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
-      exact ⟨by simp, e.2, e.1⟩
-    · rw [if_neg e] at h
-      obtain ⟨mem, rest'⟩ := findConst_sound' rest m name c h
-      exact ⟨List.mem_cons_of_mem _ mem, rest'⟩
+theorem findFn_none {d : Decls} {m : ModPath} {name : Name} (h : findFn d.fns m name 0 = none) :
+    ∀ f ∈ d.fns, ¬(f.inImpl = false ∧ f.home = m ∧ f.name = name) :=
+  find_none _ _ (fnTest m name) (fun xs k => findFn xs m name k) (fun _ _ _ => rfl) d.fns 0 h
 
 theorem findConst_sound {d : Decls} {m : ModPath} {name : Name} {c : ConstDecl}
     (h : findConst d.consts m name = some c) : ConstNamed d m name c :=
-  findConst_sound' d.consts m name c h
+  pick_sound (fun c => sameText c.name name && sameSpellings c.home m) _
+    (fun c => by rw [Bool.and_eq_true, sameText_iff, sameSpellings_iff, and_comm])
+    (fun xs => findConst xs m name) rfl (fun _ _ => rfl) d.consts c h
 
-theorem findConst_none : ∀ (consts : List ConstDecl) (m : ModPath) (name : Name),
-    findConst consts m name = none → ∀ c ∈ consts, ¬(c.home = m ∧ c.name = name)
-  | [], _, _, _ => by simp
-  | x :: rest, m, name, h => by
-    rw [findConst] at h
-    by_cases e : (sameText x.name name && sameSpellings x.home m) = true
-    · rw [if_pos e] at h; cases h
-    · rw [if_neg e] at h
-      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
-      intro u mem
-      rcases List.mem_cons.1 mem with rfl | mem
-      · exact fun ⟨a, b⟩ => e ⟨b, a⟩
-      · exact findConst_none rest m name h u mem
-
-theorem findAlias_sound' : ∀ (aliases : List AliasDecl) (m : ModPath) (name : Name) (a : AliasDecl),
-    findAlias aliases m name = some a → a ∈ aliases ∧ a.home = m ∧ a.name = name
-  | [], _, _, _, h => by simp [findAlias] at h
-  | x :: rest, m, name, a, h => by
-    rw [findAlias] at h
-    by_cases e : (sameText x.name name && sameSpellings x.home m) = true
-    · rw [if_pos e] at h
-      cases h
-      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
-      exact ⟨by simp, e.2, e.1⟩
-    · rw [if_neg e] at h
-      obtain ⟨mem, rest'⟩ := findAlias_sound' rest m name a h
-      exact ⟨List.mem_cons_of_mem _ mem, rest'⟩
+theorem findConst_none {d : Decls} {m : ModPath} {name : Name} (h : findConst d.consts m name = none) :
+    ∀ c ∈ d.consts, ¬(c.home = m ∧ c.name = name) :=
+  pick_none (fun c => sameText c.name name && sameSpellings c.home m) _
+    (fun c => by rw [Bool.and_eq_true, sameText_iff, sameSpellings_iff, and_comm])
+    (fun xs => findConst xs m name) (fun _ _ => rfl) d.consts h
 
 theorem findAlias_sound {d : Decls} {m : ModPath} {name : Name} {a : AliasDecl}
     (h : findAlias d.aliases m name = some a) : AliasNamed d m name a :=
-  findAlias_sound' d.aliases m name a h
+  pick_sound (fun a => sameText a.name name && sameSpellings a.home m) _
+    (fun a => by rw [Bool.and_eq_true, sameText_iff, sameSpellings_iff, and_comm])
+    (fun xs => findAlias xs m name) rfl (fun _ _ => rfl) d.aliases a h
 
-theorem findAlias_none : ∀ (aliases : List AliasDecl) (m : ModPath) (name : Name),
-    findAlias aliases m name = none → ∀ a ∈ aliases, ¬(a.home = m ∧ a.name = name)
-  | [], _, _, _ => by simp
-  | x :: rest, m, name, h => by
-    rw [findAlias] at h
-    by_cases e : (sameText x.name name && sameSpellings x.home m) = true
-    · rw [if_pos e] at h; cases h
-    · rw [if_neg e] at h
-      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
-      intro u mem
-      rcases List.mem_cons.1 mem with rfl | mem
-      · exact fun ⟨a, b⟩ => e ⟨b, a⟩
-      · exact findAlias_none rest m name h u mem
+theorem findAlias_none {d : Decls} {m : ModPath} {name : Name} (h : findAlias d.aliases m name = none) :
+    ∀ a ∈ d.aliases, ¬(a.home = m ∧ a.name = name) :=
+  pick_none (fun a => sameText a.name name && sameSpellings a.home m) _
+    (fun a => by rw [Bool.and_eq_true, sameText_iff, sameSpellings_iff, and_comm])
+    (fun xs => findAlias xs m name) (fun _ _ => rfl) d.aliases h
+
+theorem position_sound {names : List Name} {name : Name} {j : Nat}
+    (h : position names name 0 = some j) : FirstWith names (· = name) j name := by
+  obtain ⟨-, x, fx⟩ := find_sound (fun n => sameText n name) (· = name) (fun n => sameText_iff n name)
+    (fun xs k => position xs name k) (fun _ => rfl) (fun _ _ _ => rfl) names 0 j h
+  simp only [Nat.sub_zero] at fx
+  exact fx.2.1 ▸ fx
+
+theorem position_none {names : List Name} {name : Name} (h : position names name 0 = none) : name ∉ names :=
+  fun mem => find_none (fun n => sameText n name) (· = name) (fun n => sameText_iff n name)
+    (fun xs k => position xs name k) (fun _ _ _ => rfl) names 0 h name mem rfl
 
 /-- Every variant `variantsNamed` lists is a variant of module `m`'s enums
 spelled `name` (types counted from `k`). -/
 theorem variantsNamed_sound' : ∀ (types : List TypeDecl) (m : ModPath) (name : Name) (k : Nat),
     ∀ v ∈ variantsNamed types m name k, k ≤ v.owner ∧
-      ∃ t, types[v.owner - k]? = some t ∧ t.isEnum = true ∧ t.home = m ∧ t.variants[v.index]? = some name
+      ∃ t, types[v.owner - k]? = some t ∧ t.isEnum = true ∧ t.home = m ∧ FirstWith t.variants (· = name) v.index name
   | [], _, _, _, _, h => by simp [variantsNamed] at h
   | t :: rest, m, name, k, v, h => by
     rw [variantsNamed] at h
     have tail : v ∈ variantsNamed rest m name (k + 1) → k ≤ v.owner ∧
         ∃ t', (t :: rest)[v.owner - k]? = some t' ∧ t'.isEnum = true ∧ t'.home = m ∧
-          t'.variants[v.index]? = some name := by
+          FirstWith t'.variants (· = name) v.index name := by
       intro mem
       obtain ⟨le, t', got, more⟩ := variantsNamed_sound' rest m name (k + 1) v mem
       refine ⟨by omega, t', ?_, more⟩
@@ -421,8 +402,7 @@ theorem variantsNamed_sound' : ∀ (types : List TypeDecl) (m : ModPath) (name :
       | some j =>
         rw [hp] at h
         rcases List.mem_cons.1 h with rfl | h
-        · obtain ⟨-, got⟩ := position_sound _ _ _ _ hp
-          exact ⟨Nat.le_refl _, t, by simp, e.1, e.2, by simpa using got⟩
+        · exact ⟨Nat.le_refl _, t, by simp, e.1, e.2, position_sound hp⟩
         · exact tail h
     · rw [if_neg e] at h
       exact tail h
