@@ -79,11 +79,14 @@ heap or of stack is a fault too.
   every element read or write first tests `index < length`. The stack
   check is done: the prologue ends with `cmp r15, rsp; jbe +2; ud2`, so
   a frame that reaches below the limit in r15 faults before it writes a
-  slot. `HeapAt` and `Frame.Fits` require r15 to be the window or more
-  below the return address, which makes every returning run pass the
-  check (`stackCheck_det`, Mini/HeapSteps.lean). A call's pushes
-  (`8 * args + 16` bytes) land before the callee's check, so a runtime
-  keeps a page below r15 mapped.
+  slot; with enough stack every check passes (`stackCheck_det`,
+  Mini/HeapSteps.lean), and otherwise one fails (`stackCheck_fails`). A call's pushes
+  (`8 * args + 16` bytes) land before the callee's check, so the window
+  reaches `binary.guard` bytes below r15 (`StackAt`).
+  The x86 contract is now "returns, or the window is short of the need
+  and the run stops at a fault" (`Faults`: every run that stops, stops at
+  a `ud2` or `#DE`), and `Det` also says no run stops early (`Live`).
+  With `stackNeed depth ≤ window` the forward theorems are unchanged.
 - V2b. `Stops prog depth env heap stmt n` on the mini IR: the run faults,
   or does not finish within `n` ticks (a tick is a loop iteration or a
   call).

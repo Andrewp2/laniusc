@@ -79,8 +79,8 @@ theorem compileSource_correct_from {sp : SrcProgram} {binary : Binary}
         s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0) →
         (∀ k (bound : k < bits.length),
           read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
-        HeapAt window s heap →
-        ∃ n s', Steps n s s' ∧ Returned window s s' results after := by
+        HeapAt window s heap → StackAt binary.guard window s →
+        ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after := by
   obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
   cases fuel with
   | zero => simp [Semantics.evalExpr] at runs
@@ -93,9 +93,9 @@ theorem compileSource_correct_from {sp : SrcProgram} {binary : Binary}
       body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
         fresh hc typed bitsLen bodyRun result fits
     exact ⟨depth, results, after, holds, len, hc',
-      fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt =>
+      fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt stack =>
         compileOptimized_correct compiledProgram returns s imageBase window enough bounded loaded apart
-          imageHeap entry params heapAt⟩
+          imageHeap entry params heapAt stack⟩
 
 /-- Core runs `f(args)` from the empty state to `v`, ending with its heap's
 next free address at `final.heap.nextAddress`, and `bits` lay the arguments
@@ -125,8 +125,8 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
         s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0) →
         (∀ k (bound : k < bits.length),
           read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
-        HeapAt window s heap →
-        ∃ n s', Steps n s s' ∧ Returned window s s' results after := by
+        HeapAt window s heap → StackAt binary.guard window s →
+        ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after := by
   obtain ⟨depth, results, after, holds, len, hc, run⟩ := compileSource_correct_from compiled found typed bitsLen
     (st := {}) ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small) runs fits
   exact ⟨depth, results, after, holds, len, hc.cursor, run⟩

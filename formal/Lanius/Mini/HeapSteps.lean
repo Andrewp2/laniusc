@@ -287,6 +287,32 @@ theorem stackCheck_det (s : State)
   simp only [s1, State.compare64, stackCompareBytes, List.length_cons, List.length_nil]
   bv_omega
 
+/-- The check fails when rsp is below r15: the run stops at the `ud2`. -/
+theorem stackCheck_fails (s : State)
+    (loaded : CodeAt s.memory s.rip (stackCompareBytes ++ (branchBytes 6 2 ++ trapBytes)))
+    (below : (s.registers rspRegister).toNat < (s.registers stackRegister).toNat) :
+    Steps 2 s (stackChecked s) ∧ Det 2 s (stackChecked s) ∧ Fault (stackChecked s) := by
+  let s1 := s.compare64 stackRegister rspRegister stackCompareBytes.length
+  have t1 : Lanius.X86.Machine.Step s s1 :=
+    Lanius.X86.Machine.Step.decoded stackCompareBytes loaded.prefix (.compare64 stackRegister rspRegister) 3
+      (by decide) rfl rfl
+  have c1 := loaded.next (s' := s1) rfl rfl
+  have notTaken : condition s1.flags 6 = false := by
+    show condition (subtractFlags s.flags (s.registers stackRegister) (s.registers rspRegister))
+      (CmpOp.code .u64 .le) = false
+    rw [CmpOp.conditionU]
+    simp only [CmpOp.holdsU, BitVec.ule, decide_eq_false_iff_not]
+    omega
+  obtain ⟨t2, rip2⟩ := branch_step_rip_not_taken s1 (stackChecked s) 6 2 c1.prefix notTaken rfl
+  refine ⟨.cons t1 (.cons t2 (.refl _)),
+    Det.pairCons t1 (Writes.of (i := .compare64 stackRegister rspRegister) (k := 3) loaded.prefix (by decide) rfl)
+      t2 (Det.refl _), .ud2 ?_⟩
+  have tail := c1.suffix
+  rw [show (stackChecked s).memory = s1.memory from rfl, rip2,
+    show s1.rip + 6#64 + 0 = s1.rip + BitVec.ofNat 64 (branchBytes 6 2).length from by
+      simp [branchBytes, displacementBytes]]
+  exact tail
+
 theorem stackChecked_registers (s : State) : (stackChecked s).registers = s.registers := rfl
 theorem stackChecked_memory (s : State) : (stackChecked s).memory = s.memory := rfl
 

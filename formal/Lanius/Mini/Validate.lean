@@ -1054,12 +1054,12 @@ theorem compileOptimized_correct {prog : Program} {binary : Binary} (compiled : 
     (entry : s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
-    (heapAt : HeapAt window s heap) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value after := by
+    (heapAt : HeapAt window s heap) (stack : StackAt binary.guard window s) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' value after := by
   rcases compileOptimized_some compiled with original | ⟨q, accepted, optimized⟩
   · exact compileProgram_correct original returns s imageBase window enough bounded loaded apart imageHeap entry
-      params heapAt
+      params heapAt stack
   · exact compileProgram_correct optimized (returns.validated accepted) s imageBase window enough bounded loaded
-      apart imageHeap entry params heapAt
+      apart imageHeap entry params heapAt stack
 
 end Lanius.Mini

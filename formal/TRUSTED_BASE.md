@@ -53,8 +53,9 @@ the statement, so a reader has to agree that each one says what is intended:
 |---|---|---|
 | `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position |
 | `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address |
-| `Returned`, `HeapAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (below) |
-| `Below`, `Binary.stackNeed` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |
+| `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (below) |
+| `Below`, `Binary.stackNeed`, `Binary.guard` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |
+| `Det`, `Live`, `Faults`, `Fault` | `Mini/StepDet.lean`, `X86/Machine/Scalar.lean` | every run agrees but for flags and does not stop early; a run that stops, stops at an architectural fault (`ud2`, `#DE`) |
 | `CodeAt`, `Steps`, `Step` | `X86/Machine/State.lean`, `X86/Machine/Scalar.lean` | the image is loaded, and the machine runs (see section 6) |
 | `linkProgram`, `Stmt.rename`, `Binary.executable`, `Executable.stackNeed` | `Mini/Compiler.lean` (extracted), `Mini/Link.lean` | for the step 9 theorems `link_eq` and `linked_correct`: which mini program a list of modules *is* (their functions in link order, each callee renamed to its program index, imports checked for owner, function and arity), and what of a binary a linked executable keeps |
 
@@ -552,17 +553,19 @@ not been composed with the theorem yet.
   last one is also in rax. This is not the SysV convention, so a stub has to
   translate between the two.
 - **Stack.**
-  - The window must satisfy `binary.stackNeed depth ≤ window ≤ 2^62`. Its
-    bytes must be mapped and writable, and they must be apart from the image.
+  - r15 holds the stack limit, and the window is the stack from
+    `binary.guard` bytes below r15 up to the return address (`StackAt`:
+    `r15 + window = rsp + guard`, r15 above 4 GiB and at most 8 bytes above
+    rsp). Its bytes must be mapped and writable, and they must be apart from
+    the image. `binary.guard` is one frame plus 8 bytes: what a call writes
+    (arguments, return address) before the callee's check.
+  - Each prologue ends with `cmp r15, rsp; jbe +2; ud2`, so a frame that
+    would end below r15 faults before it writes a slot. The contract of
+    every function is therefore "returns, or the window is short of
+    `binary.stackNeed depth` and the run stops at a fault"; with
+    `binary.stackNeed depth ≤ window ≤ 2^62` it returns.
   - `depth` is existential in `compileSource_correct`, so nobody can compute
     the needed stack before the run.
-  - r15 holds the stack limit: `HeapAt.stack` requires
-    `r15 + window ≤ rsp`, and r15 is preserved. Each prologue ends with
-    `cmp r15, rsp; jbe +2; ud2`, so a frame that would end below r15
-    faults before it writes a slot. The arguments and return address a
-    call pushes (`8 * args + 16` bytes) are written before the callee's
-    check, so the runtime keeps at least that much mapped below r15 (the
-    stubs set r15 a page or more above the mapped stack's bottom).
 - **Heap (`HeapAt`).**
   - The base is in r12, the cursor (an offset) in r13, and the limit in r14,
     with `limit < 2^62`.

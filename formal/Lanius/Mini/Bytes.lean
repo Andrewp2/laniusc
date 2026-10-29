@@ -475,8 +475,12 @@ def frameNeed : List Code → Nat
   | [] => 0
   | code :: rest => max (frameBytes code.slots + 16) (frameNeed rest)
 
-/-- Stack bytes below the return address that a call nesting fewer than
-`depth` calls deep needs. -/
-def Binary.stackNeed (binary : Binary) (depth : Nat) : Nat := (depth + 1) * frameNeed binary.codes
+/-- Stack bytes below the limit in r15 that a call may write before the
+callee's stack check: its arguments and return address. -/
+def Binary.guard (binary : Binary) : Nat := frameNeed binary.codes + 8
+
+/-- Stack bytes below the return address, down to `binary.guard` below the
+limit in r15, that a call nesting fewer than `depth` calls deep needs. -/
+def Binary.stackNeed (binary : Binary) (depth : Nat) : Nat := (depth + 2) * frameNeed binary.codes
 
 end Lanius.Mini

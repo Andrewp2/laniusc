@@ -612,14 +612,20 @@ def slotsNeed : List Nat → Nat
   | slots :: rest => max (frameBytes slots + 16) (slotsNeed rest)
 
 /-- `Binary.stackNeed` of the executable's frames. -/
-def Executable.stackNeed (exe : Executable) (depth : Nat) : Nat := (depth + 1) * slotsNeed exe.slots
+def Executable.stackNeed (exe : Executable) (depth : Nat) : Nat := (depth + 2) * slotsNeed exe.slots
+
+/-- `Binary.guard` of the executable's frames. -/
+def Executable.guard (exe : Executable) : Nat := slotsNeed exe.slots + 8
+
+theorem slotsNeed_map (codes : List Code) : slotsNeed (codes.map (·.slots)) = frameNeed codes := by
+  induction codes <;> simp_all [slotsNeed, frameNeed]
 
 theorem executable_stackNeed (binary : Binary) (depth : Nat) :
     binary.executable.stackNeed depth = binary.stackNeed depth := by
-  have : ∀ codes : List Code, slotsNeed (codes.map (·.slots)) = frameNeed codes := by
-    intro codes
-    induction codes <;> simp_all [slotsNeed, frameNeed]
-  simp [Executable.stackNeed, Binary.stackNeed, Binary.executable, this]
+  simp [Executable.stackNeed, Binary.stackNeed, Binary.executable, slotsNeed_map]
+
+theorem executable_guard (binary : Binary) : binary.executable.guard = binary.guard := by
+  simp [Executable.guard, Binary.guard, Binary.executable, slotsNeed_map]
 
 /-- **Separately compiled modules are correct.** `compileProgram_correct`
 for a linked executable: if function `f` of the modules' program returns
@@ -639,13 +645,13 @@ theorem linked_correct {ms : List Module} {objs : List Object} {exe : Executable
     (entry : s.rip = imageBase + BitVec.ofNat 64 (exe.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
-    (heapAt : HeapAt window s heap) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value after := by
+    (heapAt : HeapAt window s heap) (stack : StackAt exe.guard window s) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' value after := by
   obtain ⟨prog', binary, meaning', binaryOf, same⟩ := linked_spec compiled linked
   rw [meaning, Option.some.injEq] at meaning'
   subst meaning' same
   exact compileProgram_correct binaryOf returns s imageBase window (by rwa [← executable_stackNeed]) bounded
-    loaded apart imageHeap entry params heapAt
+    loaded apart imageHeap entry params heapAt (by rwa [← executable_guard])
 
 /-- `compileProgram_deterministic` for a linked executable: every run of the
 same length returns the same way. -/
@@ -663,13 +669,13 @@ theorem linked_deterministic {ms : List Module} {objs : List Object} {exe : Exec
     (entry : s.rip = imageBase + BitVec.ofNat 64 (exe.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
-    (heapAt : HeapAt window s heap) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value after ∧
+    (heapAt : HeapAt window s heap) (stack : StackAt exe.guard window s) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' value after ∧
       ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t value after := by
   obtain ⟨prog', binary, meaning', binaryOf, same⟩ := linked_spec compiled linked
   rw [meaning, Option.some.injEq] at meaning'
   subst meaning' same
   exact compileProgram_deterministic binaryOf returns s imageBase window (by rwa [← executable_stackNeed])
-    bounded loaded apart imageHeap entry params heapAt
+    bounded loaded apart imageHeap entry params heapAt (by rwa [← executable_guard])
 
 end Lanius.Mini

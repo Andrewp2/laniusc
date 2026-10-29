@@ -93,8 +93,8 @@ def MachineReturns (binary : Binary) (depth f : Nat) (bits : List (BitVec 64)) (
     s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0) →
     (∀ k (bound : k < bits.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
-    HeapAt window s heap →
-    ∃ n s', Steps n s s' ∧ Returned window s s' results after
+    HeapAt window s heap → StackAt binary.guard window s →
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after
 
 /-- A call that Core runs without touching the heap, by a Std spec, through
 the verified compiler: the compiled call returns slots representing the same

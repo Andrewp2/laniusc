@@ -44,13 +44,13 @@ theorem compileProgram_deterministic {prog : Program} {binary : Binary}
     (entry : s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
-    (heapAt : HeapAt window s heap) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value after ∧
+    (heapAt : HeapAt window s heap) (stack : StackAt binary.guard window s) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' value after ∧
       ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t value after := by
   obtain ⟨n, s', steps, det, returned⟩ :=
-    (compiled_contract compiled imageBase depth f args heap value after returns).mono enough s bounded loaded apart
-      imageHeap entry params heapAt
-  exact ⟨n, s', steps, returned, fun t run => ⟨det.final run, returned.congr (det.final run)⟩⟩
+    compileProgram_correct compiled returns s imageBase window enough bounded loaded apart imageHeap entry params
+      heapAt stack
+  exact ⟨n, s', steps, det, returned, fun t run => ⟨det.final run, returned.congr (det.final run)⟩⟩
 
 /-- `compileProgram_deterministic` through the optimizer: the image is the
 original program's or a validated one's, and either returns the same way on
@@ -68,14 +68,14 @@ theorem compileOptimized_deterministic {prog : Program} {binary : Binary}
     (entry : s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0))
     (params : ∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
-    (heapAt : HeapAt window s heap) :
-    ∃ n s', Steps n s s' ∧ Returned window s s' value after ∧
+    (heapAt : HeapAt window s heap) (stack : StackAt binary.guard window s) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' value after ∧
       ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t value after := by
   rcases compileOptimized_some compiled with original | ⟨q, accepted, optimized⟩
   · exact compileProgram_deterministic original returns s imageBase window enough bounded loaded apart imageHeap
-      entry params heapAt
+      entry params heapAt stack
   · exact compileProgram_deterministic optimized (returns.validated accepted) s imageBase window enough bounded
-      loaded apart imageHeap entry params heapAt
+      loaded apart imageHeap entry params heapAt stack
 
 /-- `compileSource_correct`, with every run of the compiled call returning
 the same way: the results representing `v` and the heap cursor at Core's final
@@ -100,8 +100,8 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
         s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0) →
         (∀ k (bound : k < bits.length),
           read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
-        HeapAt window s heap →
-        ∃ n s', Steps n s s' ∧ Returned window s s' results after ∧
+        HeapAt window s heap → StackAt binary.guard window s →
+        ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after ∧
           ∀ t, Steps n s t → DataEq s' t ∧ Returned window s t results after := by
   obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
   cases fuel with
@@ -115,8 +115,8 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
       body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
         ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small) typed bitsLen bodyRun result fits
     exact ⟨depth, results, after, holds, len, hc.cursor,
-      fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt =>
+      fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt stack =>
         compileOptimized_deterministic compiledProgram returns s imageBase window enough bounded loaded apart
-          imageHeap entry params heapAt⟩
+          imageHeap entry params heapAt stack⟩
 
 end Lanius.Mini

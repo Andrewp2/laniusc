@@ -9,7 +9,7 @@ RFLAGS again, unless the instruction reads the flags (`jcc`, `setcc`); and
 after CMP, TEST, ADD, SUB, AND, OR or XOR the flag bits a condition code reads
 agree as well. `Det n s s'` packages this for runs: every `n`-step run from a
 state that agrees with `s` but for its flags ends agreeing with `s'` but for
-its flags. -/
+its flags, and none of them stops before its `n`th step. -/
 
 namespace Lanius.X86.Machine
 
@@ -272,9 +272,42 @@ theorem Results.condEq {i : Instruction} {k : Nat} (same : DataEq s t) (ra : Res
 
 /-! Runs. -/
 
+/-- Whether `s` can step depends on its data, not its flags. -/
+theorem Step.live (sa : Step s a) (same : DataEq s t) : ∃ b, Step t b := by
+  have code : ∀ {bytes}, CodeAt s.memory s.rip bytes → CodeAt t.memory t.rip bytes := fun h => by
+    rw [← same.memory, ← same.rip]; exact h
+  cases sa with
+  | decoded bytes loaded i k decoded _ nonDivision => exact ⟨_, .decoded bytes (code loaded) i k decoded rfl nonDivision⟩
+  | tested bytes loaded l r k decoded aux _ => exact ⟨_, .tested bytes (code loaded) l r k decoded aux rfl⟩
+  | tested64 bytes loaded l r k decoded aux _ => exact ⟨_, .tested64 bytes (code loaded) l r k decoded aux rfl⟩
+  | arithmetic bytes loaded op d src k decoded aux _ =>
+    exact ⟨_, .arithmetic bytes (code loaded) op d src k decoded aux rfl⟩
+  | arithmetic64 bytes loaded op d src k decoded aux _ =>
+    exact ⟨_, .arithmetic64 bytes (code loaded) op d src k decoded aux rfl⟩
+  | multiplied bytes loaded width d src k decoded f _ =>
+    exact ⟨_, .multiplied bytes (code loaded) width d src k decoded f rfl⟩
+  | negated bytes loaded width d k decoded f _ => exact ⟨_, .negated bytes (code loaded) width d k decoded f rfl⟩
+  | shifted bytes loaded width op d k decoded f _ =>
+    exact ⟨_, .shifted bytes (code loaded) width op d k decoded f rfl⟩
+  | divided bytes loaded width signed divisor k decoded q r success f _ =>
+    refine ⟨_, .divided bytes (code loaded) width signed divisor k decoded q r ?_ f rfl⟩
+    have registers : t.registers = s.registers := same.registers.symm
+    simpa only [DivisionSuccess, divisionByZero, divisionFits, signedDivisionDividend, divisionDivisor,
+      divisionDividend, registers] using success
+  | jumped bytes loaded d k decoded _ => exact ⟨_, .jumped bytes (code loaded) d k decoded rfl⟩
+  | called bytes loaded d k decoded _ => exact ⟨_, .called bytes (code loaded) d k decoded rfl⟩
+  | addressed bytes loaded d b i sc disp k decoded _ =>
+    exact ⟨_, .addressed bytes (code loaded) d b i sc disp k decoded rfl⟩
+  | ripAddressed bytes loaded d disp k decoded _ => exact ⟨_, .ripAddressed bytes (code loaded) d disp k decoded rfl⟩
+
+/-- No run from a state that agrees with `s` but for its flags stops before
+its `n`th step. -/
+def Live (n : Nat) (s : State) : Prop := ∀ j t u, j < n → DataEq s t → Steps j t u → ∃ v, Step u v
+
 /-- Every `n`-step run from a state that agrees with `s` but for its flags ends
-agreeing with `s'` but for its flags. -/
-def Det (n : Nat) (s s' : State) : Prop := ∀ t t', DataEq s t → Steps n t t' → DataEq s' t'
+agreeing with `s'` but for its flags, and none stops before its `n`th step. -/
+def Det (n : Nat) (s s' : State) : Prop :=
+  (∀ t t', DataEq s t → Steps n t t' → DataEq s' t') ∧ Live n s
 
 theorem Steps.split : ∀ {n m : Nat} {s u : State}, Steps (n + m) s u → ∃ v, Steps n s v ∧ Steps m v u
   | 0, m, s, u, run => ⟨s, .refl s, by simpa using run⟩
@@ -286,20 +319,24 @@ theorem Steps.split : ∀ {n m : Nat} {s u : State}, Steps (n + m) s u → ∃ v
       exact ⟨v, .cons step first, second⟩
 
 theorem Det.refl (s : State) : Det 0 s s := by
-  intro t t' same run
+  refine ⟨fun t t' same run => ?_, fun j _ _ small => absurd small (Nat.not_lt_zero j)⟩
   cases run
   exact same
 
 theorem Det.trans (first : Det n s m) (second : Det k m s') : Det (n + k) s s' := by
-  intro t t' same run
-  obtain ⟨v, one, two⟩ := Steps.split run
-  exact second v t' (first t v same one) two
+  refine ⟨fun t t' same run => ?_, fun j t u small same run => ?_⟩
+  · obtain ⟨v, one, two⟩ := Steps.split run
+    exact second.1 v t' (first.1 t v same one) two
+  · by_cases early : j < n
+    · exact first.2 j t u early same run
+    · obtain ⟨v, one, two⟩ := Steps.split (show Steps (n + (j - n)) t u by rw [Nat.add_sub_cancel' (by omega)]; exact run)
+      exact second.2 (j - n) v u (by omega) (first.1 t v same one) two
 
 theorem Det.congr (det : Det n s s') (same : DataEq s' s'') : Det n s s'' :=
-  fun t t' start run => same.symm.trans (det t t' start run)
+  ⟨fun t t' start run => same.symm.trans (det.1 t t' start run), det.2⟩
 
 /-- The run that `Det` describes ends where every other run does. -/
-theorem Det.final (det : Det n s s') (run : Steps n s t) : DataEq s' t := det s t (.refl s) run
+theorem Det.final (det : Det n s s') (run : Steps n s t) : DataEq s' t := det.1 s t (.refl s) run
 
 /-- The instruction at rip does not read the flags. -/
 def NoRead (s : State) : Prop := ∃ i k, DecodesAt s i k ∧ i.readsFlags = false
@@ -344,11 +381,14 @@ theorem Step.condEq_of_writes (same : DataEq s t) (sa : Step s a) (tb : Step t b
 
 /-- A step whose instruction reads no flags. -/
 theorem Det.step (sa : Step s a) (no : NoRead s) : Det 1 s a := by
-  intro t t' same run
-  cases run with
-  | cons tb rest =>
-    cases rest
-    exact Step.dataEq_of_noRead same sa tb no
+  refine ⟨fun t t' same run => ?_, fun j t u small same run => ?_⟩
+  · cases run with
+    | cons tb rest =>
+      cases rest
+      exact Step.dataEq_of_noRead same sa tb no
+  · obtain rfl : j = 0 := by omega
+    cases run
+    exact sa.live same
 
 theorem Det.cons (sa : Step s a) (no : NoRead s) (rest : Det n a s') : Det (n + 1) s s' := by
   rw [Nat.add_comm]
@@ -357,21 +397,102 @@ theorem Det.cons (sa : Step s a) (no : NoRead s) (rest : Det n a s') : Det (n + 
 /-- A flag-setting instruction followed by any instruction, which may read
 the flags it set (`cmp; setcc`, `test; jz`, `cmp; jbe`). -/
 theorem Det.pair (sa : Step s a) (w : Writes s) (ab : Step a b) : Det 2 s b := by
-  intro t t' same run
-  cases run with
-  | cons tu rest =>
-    cases rest with
-    | cons uv rest =>
-      cases rest
-      have first := Step.dataEq_of_noRead same sa tu (by
-        obtain ⟨i, k, d, sets⟩ := w
-        refine ⟨i, k, d, ?_⟩
-        cases i <;> simp_all [Instruction.setsFlags, Instruction.readsFlags])
-      exact Step.dataEq_of_condEq first ab uv (Step.condEq_of_writes same sa tu w)
+  have no : NoRead s := by
+    obtain ⟨i, k, d, sets⟩ := w
+    refine ⟨i, k, d, ?_⟩
+    cases i <;> simp_all [Instruction.setsFlags, Instruction.readsFlags]
+  refine ⟨fun t t' same run => ?_, fun j t u small same run => ?_⟩
+  · cases run with
+    | cons tu rest =>
+      cases rest with
+      | cons uv rest =>
+        cases rest
+        have first := Step.dataEq_of_noRead same sa tu no
+        exact Step.dataEq_of_condEq first ab uv (Step.condEq_of_writes same sa tu w)
+  · cases run with
+    | refl => exact sa.live same
+    | cons tu rest =>
+      cases rest with
+      | refl => exact ab.live (Step.dataEq_of_noRead same sa tu no)
+      | cons _ _ => omega
 
 theorem Det.pairCons (sa : Step s a) (w : Writes s) (ab : Step a b) (rest : Det n b s') :
     Det (n + 2) s s' := by
   rw [Nat.add_comm]
   exact (Det.pair sa w ab).trans rest
+
+/-! Faults. -/
+
+theorem decode_ud2 (rest : List UInt8) : decode (15 :: 11 :: rest) = none := by
+  rcases rest with _ | ⟨m, tail⟩
+  · decide
+  · simp [decode, Lanius.X86.Register.Rex.decode?, decodeOpcode, escapedForm, Alu.ofOpcode?,
+      Lanius.X86.Control.decode]
+
+/-- A fault has no step. -/
+theorem Fault.stuck (fault : Fault s) (step : Step s t) : False := by
+  obtain ⟨i, k, ⟨bytes, loaded, decoded⟩, results⟩ := step.results
+  cases fault with
+  | ud2 code =>
+    by_cases two : 2 ≤ bytes.length
+    · have front := CodeAt.take_eq code loaded (n := 2) (by simp) two
+      have split : bytes = 15 :: 11 :: bytes.drop 2 := by
+        conv => lhs; rw [← List.take_append_drop 2 bytes, ← front]
+        simp
+      rw [split, decode_ud2] at decoded
+      cases decoded
+    · have front := CodeAt.take_eq code loaded (n := bytes.length) (by simp; omega) (Nat.le_refl _)
+      rw [List.take_length] at front
+      rcases bytes with _ | ⟨a, _ | ⟨b, rest⟩⟩
+      · simp [decode] at decoded
+      · simp only [List.length_cons, List.length_nil, List.take_succ_cons, List.take_zero] at front
+        rw [← front, show decode [15] = none by decide] at decoded
+        cases decoded
+      · simp at two
+  | divideByZero bytes' code width signed divisor same zero =>
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (decode_unique code loaded same decoded)
+    cases width <;> obtain ⟨q, r, f, success, -⟩ := results <;> exact success.1 zero
+  | divideOverflow bytes' code width signed divisor same overflow =>
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (decode_unique code loaded same decoded)
+    cases width <;> obtain ⟨q, r, f, success, -⟩ := results <;> exact overflow.2 success.2.1
+
+theorem Fault.congr (fault : Fault s) (same : DataEq s t) : Fault t := by
+  have code : ∀ {bytes}, CodeAt s.memory s.rip bytes → CodeAt t.memory t.rip bytes := fun h => by
+    rw [← same.memory, ← same.rip]; exact h
+  have registers : t.registers = s.registers := same.registers.symm
+  cases fault with
+  | ud2 loaded => exact .ud2 (code loaded)
+  | divideByZero bytes loaded width signed divisor decoded zero =>
+    exact .divideByZero _ (code loaded) width signed divisor decoded (by
+      simpa only [divisionByZero, registers] using zero)
+  | divideOverflow bytes loaded width signed divisor decoded overflow =>
+    exact .divideOverflow _ (code loaded) width signed divisor decoded (by
+      simpa only [divisionOverflow, divisionByZero, divisionFits, signedDivisionDividend, divisionDivisor,
+        divisionDividend, registers] using overflow)
+
+/-- Every run from a state that agrees with `s` but for its flags that stops,
+stops at a fault. -/
+def Faults (s : State) : Prop := ∀ n t u, DataEq s t → Steps n t u → (∀ v, ¬Step u v) → Fault u
+
+theorem Fault.faults (fault : Fault s) : Faults s := by
+  intro n t u same run stuck
+  cases run with
+  | refl => exact fault.congr same
+  | cons step _ => exact ((fault.congr same).stuck step).elim
+
+theorem Det.faults (det : Det k s m) (faults : Faults m) : Faults s := by
+  intro n t u same run stuck
+  by_cases early : n < k
+  · obtain ⟨v, step⟩ := det.2 n t u early same run
+    exact (stuck v step).elim
+  · obtain ⟨v, one, two⟩ := Steps.split (show Steps (k + (n - k)) t u by
+      rw [Nat.add_sub_cancel' (by omega)]; exact run)
+    exact faults (n - k) v u (det.1 t v same one) two stuck
+
+/-- A run that never stops faults vacuously. -/
+theorem Faults.of_live (live : ∀ n, Live n s) : Faults s := by
+  intro n t u same run stuck
+  obtain ⟨v, step⟩ := live (n + 1) n t u (by omega) same run
+  exact (stuck v step).elim
 
 end Lanius.X86.Machine

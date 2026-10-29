@@ -51,6 +51,8 @@ structure Frame where
   preserved : Register → BitVec 64
   /-- Memory at entry. -/
   entry : Memory
+  /-- Stack bytes below the limit in r15 that a call may write before the callee's check. -/
+  guard : Nat
 
 def Frame.heapBase (frame : Frame) : BitVec 64 := frame.preserved heapBaseRegister
 def Frame.heapLimit (frame : Frame) : Nat := (frame.preserved limitRegister).toNat
@@ -64,8 +66,11 @@ structure Frame.Fits (frame : Frame) : Prop where
   bounded : frame.window ≤ 2 ^ 62
   heapSmall : frame.heapLimit < 2 ^ 62
   heapApart : ∀ address, frame.InHeap address → ¬Below (frame.top + 8) (frame.window + 8) address
-  /-- The stack limit in r15 is the window or more below the return address. -/
-  stack : (frame.preserved stackRegister).toNat + frame.window ≤ frame.top.toNat
+  /-- The window runs from `guard` bytes below the stack limit in r15, which is above 4 GiB. -/
+  stack : (frame.preserved stackRegister).toNat + frame.window = frame.top.toNat + frame.guard
+  high : 2 ^ 32 ≤ (frame.preserved stackRegister).toNat
+  /-- The prologue's check passed. -/
+  checked : frameBytes frame.slots + 8 + frame.guard ≤ frame.window
 
 /-- The x86 state holds the abstract machine in this activation. -/
 structure Rel (frame : Frame) (s : State) (m : Machine) : Prop where
@@ -1021,13 +1026,20 @@ structure HeapAt (window : Nat) (s : State) (heap : Heap) : Prop where
   small : heap.limit < 2 ^ 62
   bytes : ∀ a, a < heap.limit → s.memory (s.registers heapBaseRegister + BitVec.ofNat 64 a) = heap.bytes a
   apart : ∀ address, s.InHeap address → ¬Below (s.registers rspRegister + 8) (window + 8) address
-  /-- The stack limit in r15 is the window or more below the return address. -/
-  stack : (s.registers stackRegister).toNat + window ≤ (s.registers rspRegister).toNat
+
+/-- The `window` stack bytes below the return address run from `guard` bytes
+below the limit in r15, which is above 4 GiB. -/
+structure StackAt (guard window : Nat) (s : State) : Prop where
+  limit : (s.registers stackRegister).toNat + window = (s.registers rspRegister).toNat + guard
+  high : 2 ^ 32 ≤ (s.registers stackRegister).toNat
+  /-- r15 is at most 8 bytes above the return address. -/
+  low : guard ≤ window + 8
 
 /-- Function `callee` of `binary`, loaded at `imageBase` and entered by a near
-call with `args` just below the return address, returns `values` using at most
-`window` stack bytes. -/
-def Contract (binary : Binary) (imageBase : BitVec 64) (window callee : Nat) (args : List (BitVec 64))
+call with `args` just below the return address and `window` bytes of stack,
+returns `values` within the window, or, with fewer than `need` bytes, may
+instead stop at a fault (the prologue's stack check). -/
+def Contract (binary : Binary) (imageBase : BitVec 64) (need window callee : Nat) (args : List (BitVec 64))
     (heap : Heap) (values : List (BitVec 64)) (after : Heap) : Prop :=
   ∀ s : State, window ≤ 2 ^ 62 → CodeAt s.memory imageBase binary.image →
     (∀ index, index < binary.image.length →
@@ -1036,21 +1048,17 @@ def Contract (binary : Binary) (imageBase : BitVec 64) (window callee : Nat) (ar
     s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD callee 0) →
     (∀ k (bound : k < args.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k]) →
-    HeapAt window s heap →
-    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' values after
+    HeapAt window s heap → StackAt binary.guard window s →
+    (∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' values after) ∨ (window < need ∧ Faults s)
 
-theorem Contract.mono {binary : Binary} {imageBase : BitVec 64} {window window' callee : Nat}
+theorem Contract.mono {binary : Binary} {imageBase : BitVec 64} {need need' window callee : Nat}
     {args values : List (BitVec 64)} {heap after : Heap}
-    (contract : Contract binary imageBase window callee args heap values after)
-    (larger : window ≤ window') : Contract binary imageBase window' callee args heap values after := by
-  intro s bounded loaded apart imageHeap entry params heapAt
-  obtain ⟨n, s', steps, det, returned⟩ := contract s (by omega) loaded
-    (fun index bound below => apart index bound (below.mono larger)) imageHeap entry params
-    { heapAt with
-      apart := fun address inHeap below => heapAt.apart address inHeap (below.mono (by omega))
-      stack := by have := heapAt.stack; omega }
-  exact ⟨n, s', steps, det, { returned with
-    unchanged := fun address outside => returned.unchanged address (fun below => outside (below.mono larger)) }⟩
+    (contract : Contract binary imageBase need window callee args heap values after)
+    (larger : need ≤ need') : Contract binary imageBase need' window callee args heap values after := by
+  intro s bounded loaded apart imageHeap entry params heapAt stack
+  rcases contract s bounded loaded apart imageHeap entry params heapAt stack with returned | ⟨short, faults⟩
+  · exact .inl returned
+  · exact .inr ⟨by omega, faults⟩
 
 /-- A call: copy the arguments below the stack, `call rel32`, the callee's
 contract carries the activation across, then copy the results to `target`. -/
@@ -1071,13 +1079,15 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
     (imageApart : ∀ index, index < binary.image.length →
       ¬Below frame.top frame.window (imageBase + BitVec.ofNat 64 index))
     (imageHeap : ∀ index, index < binary.image.length → ¬frame.InHeap (imageBase + BitVec.ofNat 64 index))
-    {inner : Nat} (innerFits : frameBytes frame.slots + 16 + inner ≤ frame.window)
+    (guard : frame.guard = binary.guard)
+    {inner : Nat} (innerFits : frameBytes frame.slots + 16 + inner = frame.window)
     (room : 8 * args.length + 16 ≤ inner)
-    {values : List (BitVec 64)} {after : Heap}
-    (contract : Contract binary imageBase inner callee (readSlots m.slots args) m.heap values after)
+    {need : Nat} {values : List (BitVec 64)} {after : Heap}
+    (contract : Contract binary imageBase need inner callee (readSlots m.slots args) m.heap values after)
     (counted : values.length = count) :
-    ∃ n s', Steps n s s' ∧ Det n s s' ∧
-      Rel frame s' { m with pc := m.pc + (Instr.call callee args target count).size, acc := values.getLastD m.acc, slots := writeSlots m.slots target values, heap := after } := by
+    (∃ n s', Steps n s s' ∧ Det n s s' ∧
+      Rel frame s' { m with pc := m.pc + (Instr.call callee args target count).size, acc := values.getLastD m.acc, slots := writeSlots m.slots target values, heap := after }) ∨
+      (inner < need ∧ Faults s) := by
   have limit : frame.slots ≤ 2 ^ 20 := fits.slots
   have bounded := fits.bounded
   have big := frameBytes_slots frame.slots
@@ -1214,16 +1224,21 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
       apart := fun address inHeap below => by
         rw [heap2] at inHeap
         rw [rsp2, shifted] at below
-        exact fits.notHeap ((below.shift (by omega)).mono (by omega)) inHeap
-      stack := by
-        rw [registers2 _ (by decide) (by decide), rel.preserved _ stack_not_scratch, rsp2]
-        have := fits.stack
-        have := fits.window
-        have := fits.bounded
-        rw [BitVec.toNat_sub, BitVec.toNat_ofNat]
-        omega }
+        exact fits.notHeap ((below.shift (by omega)).mono (by omega)) inHeap }
+  have stack2 : StackAt binary.guard inner s2 := by
+    have stack := fits.stack
+    have high := fits.high
+    have checked := fits.checked
+    rw [← guard]
+    constructor
+    · rw [registers2 _ (by decide) (by decide), rel.preserved _ stack_not_scratch, rsp2, BitVec.toNat_sub,
+        BitVec.toNat_ofNat]
+      omega
+    · rw [registers2 _ (by decide) (by decide), rel.preserved _ stack_not_scratch]
+      exact high
+    · omega
   -- the callee
-  obtain ⟨n3, s3, steps3, det3, returned⟩ := contract s2 (by omega)
+  rcases contract s2 (by omega)
     (by
       intro index bound
       rw [outside2 _ (imageApart index bound) (imageHeap index bound)]
@@ -1242,7 +1257,8 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
       intro i lane
       rw [targetLane k bound i.val (by omega), pushLane lane.val lane.isLt]
       exact depth_ne _ (by omega) (by omega) (by omega))
-    heapAt2
+    heapAt2 stack2 with ⟨n3, s3, steps3, det3, returned⟩ | ⟨short, faults⟩
+  case inr => exact .inr ⟨short, (det1.trans (Det.step step2 (call_noRead callLoaded))).faults faults⟩
   -- the activation after the call
   have frameKept : ∀ d, d ≤ fb + 8 → 0 < d →
       s3.memory (frame.top - BitVec.ofNat 64 d) = s.memory (frame.top - BitVec.ofNat 64 d) := by
@@ -1335,7 +1351,7 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
     rw [List.getElem_map, ← results3 k bound']
     simp only [slotRange_eq, List.getElem_range', Nat.one_mul]
   rw [got, slotRange_length] at rel4
-  refine ⟨_, s4, (steps1.trans (.cons step2 steps3)).trans steps4,
+  refine .inl ⟨_, s4, (steps1.trans (.cons step2 steps3)).trans steps4,
     (det1.trans (Det.cons step2 (call_noRead callLoaded) det3)).trans det4, rel4.congr ?_ ?_ (fun _ _ => rfl) rfl⟩
   · simp only [Machine.copied, m3, size]
     omega
@@ -1545,6 +1561,7 @@ structure Body (frame : Frame) (binary : Binary) (imageBase : BitVec 64) (place 
   fits : ∀ i ∈ instrs, i.Fits frame.slots (codeSize instrs) binary.codes.length
   codeHeap : ∀ index, index < codeSize instrs → ¬frame.InHeap (frame.base + BitVec.ofNat 64 index)
   imageHeap : ∀ index, index < binary.image.length → ¬frame.InHeap (imageBase + BitVec.ofNat 64 index)
+  guard : frame.guard = binary.guard
 
 variable {binary : Binary} {imageBase : BitVec 64} {place : Place} {instrs : List Instr}
 
@@ -1577,11 +1594,12 @@ theorem Body.fetch (body : Body frame binary imageBase place instrs) (rel : Rel 
 
 /-- One abstract step, given the callees' contracts. -/
 theorem step_simulates (body : Body frame binary imageBase place instrs) (fits : frame.Fits) {calls : Calls}
-    (callContract : ∀ callee vals heap value after, calls callee vals heap value after → ∃ inner,
-      frameBytes frame.slots + 16 + inner ≤ frame.window ∧ 8 * vals.length + 16 ≤ inner ∧
-        Contract binary imageBase inner callee vals heap value after)
+    {need : Nat}
+    (callContract : ∀ callee vals heap value after, calls callee vals heap value after → ∃ needC,
+      needC + frameBytes frame.slots + 16 ≤ need ∧ 8 * vals.length + 16 ≤ frame.window - (frameBytes frame.slots + 16) ∧
+        Contract binary imageBase needC (frame.window - (frameBytes frame.slots + 16)) callee vals heap value after)
     (rel : Rel frame s m) {m' : Machine} (step : Step calls instrs m m') :
-    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' m' := by
+    (∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' m') ∨ (frame.window < need ∧ Faults s) := by
   have small := body.small
   have limit : imageLimit = 2 ^ 30 := rfl
   cases step with
@@ -1589,72 +1607,79 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
     obtain ⟨loaded, -, -⟩ := body.fetch rel fetched
     have fitted := body.fits i (fetch_mem fetched)
     cases i with
-    | imm value => exact imm_simulates rel loaded
-    | load slot => exact load_simulates rel fitted loaded
-    | store slot => exact store_simulates rel fits fitted loaded
-    | neg => exact neg_simulates rel loaded
-    | op word operation slot => exact op_simulates word operation rel fitted loaded
-    | cmp word operation slot => exact cmp_simulates word operation rel fitted loaded
+    | imm value => exact .inl <| imm_simulates rel loaded
+    | load slot => exact .inl <| load_simulates rel fitted loaded
+    | store slot => exact .inl <| store_simulates rel fits fitted loaded
+    | neg => exact .inl <| neg_simulates rel loaded
+    | op word operation slot => exact .inl <| op_simulates word operation rel fitted loaded
+    | cmp word operation slot => exact .inl <| cmp_simulates word operation rel fitted loaded
     | jmp | jz | call | ret | bump | loadAt | storeAt | loadWordAt | storeWordAt | div =>
       simp [Instr.straight] at isStraight
   | @jmp target _ fetched =>
     obtain ⟨loaded, -, bound, -⟩ := body.fetch rel fetched
     have fitted : target ≤ codeSize instrs := body.fits _ (fetch_mem fetched)
-    exact jmp_simulates rel (by simp only [Instr.size] at bound; omega) (by omega) loaded
+    exact .inl <| jmp_simulates rel (by simp only [Instr.size] at bound; omega) (by omega) loaded
   | @jzTaken target _ fetched zero =>
     obtain ⟨loaded, -, bound, -⟩ := body.fetch rel fetched
     have fitted : target ≤ codeSize instrs := body.fits _ (fetch_mem fetched)
     have := jz_simulates rel (by simp only [Instr.size] at bound; omega) (by omega) loaded
-    rwa [if_pos zero] at this
+    exact .inl (by rwa [if_pos zero] at this)
   | @jzNot target _ fetched nonzero =>
     obtain ⟨loaded, -, bound, -⟩ := body.fetch rel fetched
     have fitted : target ≤ codeSize instrs := body.fits _ (fetch_mem fetched)
     have := jz_simulates rel (by simp only [Instr.size] at bound; omega) (by omega) loaded
-    rwa [if_neg nonzero] at this
+    exact .inl (by rwa [if_neg nonzero] at this)
   | @call callee args target count values after _ fetched returns counted =>
     obtain ⟨loaded, apart, bound, codeHeap⟩ := body.fetch rel fetched
     obtain ⟨-, argsCount, argsFit, targetFit, positive⟩ := body.fits _ (fetch_mem fetched)
-    obtain ⟨inner, innerFits, room, contract⟩ := callContract _ _ _ _ _ returns
+    obtain ⟨needC, needFits, room, contract⟩ := callContract _ _ _ _ _ returns
     rw [readSlots_length] at room
-    exact call_simulates rel fits loaded apart codeHeap body.slots body.entries body.base (by omega)
+    have window := fits.window
+    rcases call_simulates rel fits loaded apart codeHeap body.slots body.entries body.base (by omega)
       (by have := body.entrySmall callee; omega) argsFit argsCount targetFit positive body.image body.imageApart
-      body.imageHeap innerFits room contract counted
+      body.imageHeap body.guard (by omega) room contract counted with done | ⟨short, faults⟩
+    · exact .inl done
+    · exact .inr ⟨by omega, faults⟩
   | bump fetched room =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact bump_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded room
+    exact .inl <| bump_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded room
   | loadAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact loadAt_simulates rel loaded inside
+    exact .inl <| loadAt_simulates rel loaded inside
   | storeAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact storeAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
+    exact .inl <| storeAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
   | loadWordAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact loadWordAt_simulates rel loaded inside
+    exact .inl <| loadWordAt_simulates rel loaded inside
   | storeWordAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact storeWordAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
+    exact .inl <| storeWordAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
   | div fetched defined =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact div_simulates _ _ rel (body.fits _ (fetch_mem fetched)) loaded defined
+    exact .inl <| div_simulates _ _ rel (body.fits _ (fetch_mem fetched)) loaded defined
 
 /-- The bytes of a body simulate its abstract run to `ret`. -/
 theorem body_simulates (body : Body frame binary imageBase place instrs) (fits : frame.Fits) {calls : Calls}
-    (callContract : ∀ callee vals heap value after, calls callee vals heap value after → ∃ inner,
-      frameBytes frame.slots + 16 + inner ≤ frame.window ∧ 8 * vals.length + 16 ≤ inner ∧
-        Contract binary imageBase inner callee vals heap value after)
+    {need : Nat}
+    (callContract : ∀ callee vals heap value after, calls callee vals heap value after → ∃ needC,
+      needC + frameBytes frame.slots + 16 ≤ need ∧ 8 * vals.length + 16 ≤ frame.window - (frameBytes frame.slots + 16) ∧
+        Contract binary imageBase needC (frame.window - (frameBytes frame.slots + 16)) callee vals heap value after)
     {m m' : Machine} {sources : List Nat} (run : Star calls instrs m m')
     (atRet : fetch instrs m'.pc = some (.ret sources)) :
-    ∀ s, Rel frame s m → ∃ n s', Steps n s s' ∧ Det n s s' ∧ frame.Exit s' (readSlots m'.slots sources) m'.heap := by
+    ∀ s, Rel frame s m → (∃ n s', Steps n s s' ∧ Det n s s' ∧ frame.Exit s' (readSlots m'.slots sources) m'.heap) ∨
+      (frame.window < need ∧ Faults s) := by
   induction run with
   | refl m =>
     intro s rel
     obtain ⟨loaded, apart, -, codeHeap⟩ := body.fetch rel atRet
-    exact ret_simulates rel fits loaded apart codeHeap (body.fits _ (fetch_mem atRet))
+    exact .inl (ret_simulates rel fits loaded apart codeHeap (body.fits _ (fetch_mem atRet)))
   | step head _ ih =>
     intro s rel
-    obtain ⟨n, middle, steps, det, middleRel⟩ := step_simulates body fits callContract rel head
-    obtain ⟨n', s', rest, det', exit⟩ := ih atRet middle middleRel
-    exact ⟨_, s', steps.trans rest, det.trans det', exit⟩
+    rcases step_simulates body fits callContract rel head with ⟨n, middle, steps, det, middleRel⟩ | bad
+    · rcases ih atRet middle middleRel with ⟨n', s', rest, det', exit⟩ | ⟨short, faults⟩
+      · exact .inl ⟨_, s', steps.trans rest, det.trans det', exit⟩
+      · exact .inr ⟨short, det.faults faults⟩
+    · exact .inr bad
 
 end Lanius.Mini
