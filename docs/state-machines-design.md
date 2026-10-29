@@ -1,10 +1,12 @@
 # State machines: a `machine` item in Lanius
 
-Status: design proposal, 2026-10-27. M0 to M4 are done: see
+Status: design proposal, 2026-10-27. M0 to M5 are done: see
 [M0 result](#m0-result), [M1 decisions](#m1-decisions),
 [M1 result](#m1-result), [M2 result](#m2-result),
-[M3 decisions](#m3-decisions), [M3 result](#m3-result) and
-[M4 result](#m4-result). The syntax below is the implemented one except
+[M3 decisions](#m3-decisions), [M3 result](#m3-result),
+[M4 result](#m4-result), [M5 decisions](#m5-decisions),
+[Suspended scope-stack data](#suspended-scope-stack-data) and
+[M5 result](#m5-result). The syntax below is the implemented one except
 where M1 decisions says otherwise (no `|` patterns, the constructor).
 
 ## Summary
@@ -326,7 +328,7 @@ and whose per-state data is the locals live across each point, as in Rust's
 coroutine pass. Lanius will define `gen fn` that way, as an elaboration into
 a `machine`, so it inherits R1-R5 and the proof story with no new semantics.
 
-It is phase M5, not M1. A suspended frame's dynamically sized locals must
+It is phase M5, not M1 ([M5 decisions](#m5-decisions)). A suspended frame's dynamically sized locals must
 survive while the caller keeps using its stacks, which conflicts with R4 of
 the scoped-stacks design (one growable per stack top) and needs its own
 design; explicit machines avoid this because their data is declared (below).
@@ -735,6 +737,100 @@ iteration reads the reference.
 Before the rule, the first of them compiled and returned the stepped value
 through the old reference.
 
+## M5 decisions
+
+- **`gen fn` elaborates to a `machine`, before machines do**
+  (`compiler/machine_elaboration/generators.rs`). `gen fn name(params) -> T`
+  becomes `enum NameResume { Next }`, `machine Name on NameResume ->
+  core::option::Option<T>`, `fn name(params) -> Name` and `Name::next(&mut
+  self)`, which is `self.step(NameResume::Next)`. The parameters are machine
+  fields. The states are `Start`, one `YieldK` per `yield` in source order
+  and `final state Done`. `YieldK`'s data are the locals in scope at that
+  yield, so the per-state data is exactly what Rust's coroutine pass keeps,
+  approximated by scope instead of liveness.
+- **Each state's code is the body from its point to the next yield.** In
+  every arm `yield v;` is `goto YieldK(locals) with core::option::Some(v);`,
+  and `return;` or the end of the body is `goto Done with
+  core::option::None();`. `YieldK`'s arm declares the locals from its data,
+  runs the rest of the yield's block and then the rest of each enclosing
+  statement outward; a `while` around the yield runs again whole. A loop
+  without a yield stays one loop. The machine rules check the result: every
+  yield is reachable from `Start` (R4), every arm ends in a transition (R2).
+- **The subset**, checked with LNC0076: each local is declared once with its
+  type; parameters are read-only (each arm copies them from the fields);
+  `return` takes no value; a loop that yields is a `while` without `break` or
+  `continue` of its own, because the code after a yield runs outside the
+  loop; `yield` and `return` appear in the body's statements, `if` and
+  `while`, not inside a `match`, `for` or plain block. The file imports
+  `core::option`, the type `next` returns. Generic generators wait for
+  generic machines.
+
+## Suspended scope-stack data
+
+A suspended generator is a machine value, so its data follows the machine
+rules in [Fit with scoped stacks](#fit-with-scoped-stacks-and-mut):
+
+- **The frame lives where the generator value lives.** `let it = evens(n);`
+  puts the parameters and the current state's locals in `it`, in the
+  caller's scope, like any struct. Resuming allocates nothing; a `next`
+  call is one `step`.
+- **Locals live across a yield are per-state data, so they are fixed size or
+  rooted outside the generator.** A `yield` stores them into the machine,
+  which is the store rule of the root check: a reference among them must be
+  rooted in a scope that contains the generator's. A reference into the
+  caller's data, passed as a parameter, qualifies; a reference to the
+  generator's own temporaries does not.
+- **A growable buffer is never held across a yield.** Between two yields the
+  body may use scope-stack temporaries; each arm is one `step`, a scope,
+  and they are released when it returns. A buffer that must survive
+  suspension is a parameter: a `Scratch` or `Vec` owned by the caller and
+  passed in, which the generator fills and the caller resets. This is the
+  same rule as machine-wide buffers in `ext::openssl_tls`.
+- So S4's R4 (one growable per stack top) is never violated by suspension:
+  the generator holds no growable of its own while suspended. When the root
+  check exists (S1), `yield` checks its stored locals with the rule `goto`
+  uses.
+
+## M5 result
+
+Done 2026-10-28.
+
+**Generators.** `gen fn` elaborates as in [M5 decisions](#m5-decisions)
+(`compiler/machine_elaboration/generators.rs`), so the GPU frontend sees
+only the machine and its elaboration. A diagnostic in a generator's body
+maps back through both elaborations to the generator's line. Machine
+elaboration now ends a type at `=`, which a generator's `let` needs.
+
+**Evidence.** `tests/machines_execution.rs`: `generators.lani` runs three
+generators to exhaustion: odd squares from a `while` with an `if` around the
+yield; grid cells from two nested `while`s, with a local of the outer body
+live across the inner yield and a yield after both loops; and signs, from
+an `if`/`else` with a yield in each branch and an early `return`. Every
+`next` after the end is `None`. `reject_generator_type.lani` reports a type
+error in a generator's body at its source line. The elaboration's unit
+tests check the machine text and the subset's five rejections.
+
+**Speed** (`benchmark_artifacts/machines_m5/`). The sum of odd squares
+below 200000000:
+
+| Program | Min (s) |
+|---|---|
+| `core::iter` `filter` and `map` over a counting iterator | 9.895 |
+| `gen fn` | 3.899 |
+| one fused hand-written `next` | 1.086 |
+
+The generator is 2.5 times faster than the adapter chain it replaces, so
+iterator adapters written as generators beat today's hand-written adapters.
+It does not match a fused hand-written loop: it is 3.6 times slower. The
+benchmark's `src/lowering/` takes the elaboration apart layer by layer.
+Removing the `step` call, the event match and the handler call, and keeping
+yield locals in fields instead of the state's payload, recovers at most
+1.5 times. The rest is the backend, which keeps every temporary in a stack
+slot: two hand-written loops doing the same work differ by 1.6 times in how
+their locals move through those slots. Matching a fused loop needs the
+backend to keep locals in registers, and then inlining `step` and the
+handlers. Both belong to the backend's optimizer, not to machines.
+
 ## Open questions
 
 - **Spelling of the output.** `goto S with out` reads well but adds a keyword.
@@ -746,6 +842,14 @@ through the old reference.
 - **`run` over iterators.** M3 takes a slice and a count. Running over an `Iterator`
   needs the iterator's `next` inlined into each state block.
 - **Early exit from `run`** at a `final` state, reporting the position.
+- **Generator lowering cost.** `next` calls `step`, which calls the state's
+  handler, which matches the only event. A generator could lower `next` to
+  the dispatch itself; machines in general could inline handlers into
+  `step`. Worth it once the backend keeps locals in registers
+  ([M5 result](#m5-result)).
+- **Generic generators and generator adapters.** `gen fn` takes no type
+  parameters, so it cannot yet wrap another iterator; that waits for
+  generic machines.
 - **Growable per-state data.** A per-machine `Scratch` reset when entering a
   named state would allow owned buffers in states. It needs a root rule for
   data that dies on a transition rather than a scope exit.

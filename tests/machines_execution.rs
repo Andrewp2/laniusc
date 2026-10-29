@@ -1,4 +1,4 @@
-//! `machine` items (docs/state-machines-design.md, M1): elaboration, the
+//! `machine` items and `gen fn` (docs/state-machines-design.md, M1-M5): elaboration, the
 //! rules R2-R5, and the elaborated code against the same machine by hand.
 
 mod common;
@@ -100,4 +100,15 @@ fn a_reference_is_not_used_after_the_machine_changes() {
     let label = "this `&mut` use changes a value that a reference still in use points into";
     assert_rejected("reject_reference_across_step.lani", &["LNC0006", label, "reject_reference_across_step.lani:24"]);
     assert_rejected("reject_reference_across_loop.lani", &["LNC0006", label, "reject_reference_across_loop.lani:27"]);
+}
+
+// M5: `gen fn` elaborates to a machine whose `next` is one step.
+#[test]
+fn generators_yield_through_loops_branches_and_returns() {
+    assert_exit("generators.lani", 0);
+}
+
+#[test]
+fn a_generator_diagnostic_points_at_its_source() {
+    assert_rejected("reject_generator_type.lani", &["LNC0006", "reject_generator_type.lani:7"]);
 }

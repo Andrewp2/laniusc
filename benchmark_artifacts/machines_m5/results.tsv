@@ -1,0 +1,4 @@
+benchmark	min_s	median_s	peak_rss_kb	checksum
+iter_gen	3.899	3.901	264	2136519936
+iter_hand	1.086	1.093	264	2136519936
+iter_adapters	9.895	10.016	264	2136519936

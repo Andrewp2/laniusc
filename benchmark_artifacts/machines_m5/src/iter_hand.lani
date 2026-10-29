@@ -1,0 +1,29 @@
+// The same sum, pulled from a hand-written iterator: a struct and `next`.
+import core::option;
+const LIMIT: i64 = 200000000;
+
+struct OddSquares { i: i64, limit: i64 }
+
+impl OddSquares {
+    fn next(&mut self) -> core::option::Option<i64> {
+        while (self.i < self.limit) {
+            let v: i64 = self.i;
+            self.i += 1;
+            if (v % 2 == 1) { return core::option::Some(v * v); }
+        }
+        return core::option::None();
+    }
+}
+
+fn main() -> i32 {
+    let it: OddSquares = OddSquares { i: 0, limit: LIMIT };
+    let total: i64 = 0;
+    while (true) {
+        match (it.next()) {
+            Some(v) -> { total += v; continue; },
+            None -> { break; },
+        };
+    }
+    print(total);
+    return 0;
+}

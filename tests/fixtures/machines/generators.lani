@@ -1,0 +1,73 @@
+// `gen fn` (M5): functions that yield, as machines.
+import core::option;
+
+gen fn odd_squares(limit: i64) -> i64 {
+    let i: i64 = 0;
+    while (i < limit) {
+        if (i % 2 == 1) { yield i * i; }
+        i += 1;
+    }
+}
+
+// Nested loops, a local of the outer loop's body, a yield after the loops.
+gen fn cells(rows: i32, cols: i32) -> i32 {
+    let r: i32 = 0;
+    while (r < rows) {
+        let c: i32 = 0;
+        while (c < cols) {
+            yield r * 10 + c;
+            c += 1;
+        }
+        r += 1;
+    }
+    yield 999;
+}
+
+// An early return, and an if/else around yields.
+gen fn signs(limit: i32) -> i32 {
+    let i: i32 = 0 - 2;
+    while (i <= limit) {
+        if (i == 3) { return; }
+        if (i < 0) { yield 0 - 1; } else { yield i; }
+        i += 1;
+    }
+}
+
+fn main() -> i32 {
+    let squares: OddSquares = odd_squares(10);
+    let total: i64 = 0;
+    while (true) {
+        match (squares.next()) {
+            Some(v) -> { total += v; continue; },
+            None -> { break; },
+        };
+    }
+    // 1 + 9 + 25 + 49 + 81
+    if (total != 165) { return 1; }
+    // Exhausted: every later next is None.
+    if (core::option::is_some(squares.next())) { return 2; }
+
+    let grid: Cells = cells(2, 3);
+    let count: i32 = 0;
+    let weighted: i32 = 0;
+    while (true) {
+        match (grid.next()) {
+            Some(v) -> { count += 1; weighted += v * count; continue; },
+            None -> { break; },
+        };
+    }
+    // 0,1,2,10,11,12,999 weighted by position
+    if (count != 7 || weighted != 0 * 1 + 1 * 2 + 2 * 3 + 10 * 4 + 11 * 5 + 12 * 6 + 999 * 7) { return 3; }
+
+    let s: Signs = signs(10);
+    let seen: i32 = 0;
+    while (true) {
+        match (s.next()) {
+            Some(v) -> { seen = seen * 10 + v + 1; continue; },
+            None -> { break; },
+        };
+    }
+    // -1, -1, 0, 1, 2 then return at 3: digits 0,0,1,2,3
+    if (seen != 123) { return 4; }
+    return 0;
+}

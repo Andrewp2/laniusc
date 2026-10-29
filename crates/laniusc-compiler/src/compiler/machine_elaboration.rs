@@ -23,6 +23,8 @@ use std::{
 
 use super::{CompileError, Diagnostic, diagnostic_label_from_source_span};
 
+mod generators;
+
 /// Identifiers starting with this prefix are reserved for elaborated code.
 pub(crate) const RESERVED_PREFIX: &str = "__lanius_";
 
@@ -42,17 +44,27 @@ struct Segment {
     copied: bool,
 }
 
-/// A source file with its machines elaborated.
+/// A source file with its machines elaborated. `inner` is the elaboration
+/// of its generators (M5) when it has any: its text is this one's original.
 #[derive(Debug)]
 pub(crate) struct Elaborated {
     pub(crate) text: String,
     original: String,
     segments: Vec<Segment>,
+    inner: Option<Box<Elaborated>>,
 }
 
 impl Elaborated {
     /// The source span an elaborated span came from.
     fn original_span(&self, start: usize, len: usize) -> (usize, usize) {
+        let (start, len) = self.own_span(start, len);
+        match &self.inner {
+            Some(inner) => inner.original_span(start, len),
+            None => (start, len),
+        }
+    }
+
+    fn own_span(&self, start: usize, len: usize) -> (usize, usize) {
         let index = self.segments.partition_point(|segment| segment.out_start + segment.out_len <= start);
         let Some(segment) = self.segments.get(index) else {
             return (self.original.len(), 0);
@@ -87,7 +99,10 @@ pub(crate) fn original_span(source: &str, start: usize, len: usize) -> Option<(A
 
 impl Elaborated {
     pub(crate) fn original(&self) -> &str {
-        &self.original
+        match &self.inner {
+            Some(inner) => inner.original(),
+            None => &self.original,
+        }
     }
 }
 
@@ -100,7 +115,20 @@ pub(crate) fn elaborate_source(path: &Path, source: String) -> Result<String, Co
     {
         return Ok(source);
     }
-    match elaborate(path, &source)? {
+    // Generators elaborate into machines first.
+    let generated = generators::elaborate(path, &source)?;
+    let machines = match &generated {
+        Some(inner) => elaborate(path, &inner.text, true)?,
+        None => elaborate(path, &source, false)?,
+    };
+    let elaborated = match (machines, generated) {
+        (Some(mut outer), inner) => {
+            outer.inner = inner.map(Box::new);
+            Some(outer)
+        }
+        (None, inner) => inner,
+    };
+    match elaborated {
         None => Ok(source),
         Some(elaborated) => {
             let text = elaborated.text.clone();
@@ -291,7 +319,7 @@ impl<'a> Elaborator<'a> {
     }
 
     /// The token after a type that starts at `token`: a type ends at a `,`,
-    /// `;`, `)`, `{` or `->` outside its own `<>`, `()` and `[]`.
+    /// `;`, `)`, `{`, `=` or `->` outside its own `<>`, `()` and `[]`.
     fn type_end(&self, mut token: usize, limit: usize) -> usize {
         let mut angles = 0usize;
         while token < limit {
@@ -300,7 +328,7 @@ impl<'a> Elaborator<'a> {
                 "(" | "[" => token = self.partner[token],
                 "<" => angles += 1,
                 ">" if angles > 0 => angles -= 1,
-                "," | ";" | ")" | "{" | "->" if angles == 0 => return token,
+                "," | ";" | ")" | "{" | "=" | "->" if angles == 0 => return token,
                 _ => {}
             }
             token += 1;
@@ -541,8 +569,9 @@ fn integer_type(text: &str) -> bool {
     matches!(text, "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "isize" | "usize")
 }
 
-/// Elaborates `source`'s machines; `None` when it declares none.
-fn elaborate(path: &Path, source: &str) -> Result<Option<Elaborated>, CompileError> {
+/// Elaborates `source`'s machines; `None` when it declares none. `generated`
+/// when `source` is elaborated generators, which name `__lanius_gen_` locals.
+fn elaborate(path: &Path, source: &str, generated: bool) -> Result<Option<Elaborated>, CompileError> {
     if !source.contains("machine") && !source.contains(RESERVED_PREFIX) {
         return Ok(None);
     }
@@ -559,7 +588,12 @@ fn elaborate(path: &Path, source: &str) -> Result<Option<Elaborated>, CompileErr
     let e = &mut elaborator;
     for index in 0..e.tokens.len() {
         // Generic instance copies (`__lanius_inst_`) are generated text too.
-        if e.ident(index) && e.text(index).starts_with(RESERVED_PREFIX) && !e.text(index).starts_with("__lanius_inst_") {
+        let text = e.text(index);
+        if e.ident(index)
+            && text.starts_with(RESERVED_PREFIX)
+            && !text.starts_with("__lanius_inst_")
+            && !(generated && text.starts_with("__lanius_gen_"))
+        {
             return Err(e.fail(index, format!("identifiers starting with `{RESERVED_PREFIX}` are reserved for the compiler")));
         }
     }
@@ -591,7 +625,7 @@ fn elaborate(path: &Path, source: &str) -> Result<Option<Elaborated>, CompileErr
     }
     e.copy(copied_until, source.len());
     let Elaborator { out, segments, .. } = elaborator;
-    Ok(Some(Elaborated { text: out, original: source.to_string(), segments }))
+    Ok(Some(Elaborated { text: out, original: source.to_string(), segments, inner: None }))
 }
 
 fn elaborate_machine(e: &mut Elaborator<'_>, m: &Machine) -> Result<(), CompileError> {
@@ -1128,11 +1162,11 @@ mod tests {
     use super::*;
 
     fn elaborated(source: &str) -> String {
-        elaborate(Path::new("door.lani"), source).unwrap().unwrap().text
+        elaborate(Path::new("door.lani"), source, false).unwrap().unwrap().text
     }
 
     fn rejected(source: &str) -> String {
-        match elaborate(Path::new("door.lani"), source) {
+        match elaborate(Path::new("door.lani"), source, false) {
             Err(CompileError::Diagnostic(diagnostic)) => format!("{diagnostic:?}"),
             other => panic!("expected a machine diagnostic, got {other:?}"),
         }
@@ -1193,7 +1227,7 @@ machine Pair on Op {
 
     #[test]
     fn diagnostics_map_back_to_the_machine() {
-        let elaborated = elaborate(Path::new("door.lani"), DOOR).unwrap().unwrap();
+        let elaborated = elaborate(Path::new("door.lani"), DOOR, false).unwrap().unwrap();
         let copied = elaborated.text.find("Reply::Done").unwrap();
         let (start, len) = elaborated.original_span(copied, 11);
         assert_eq!(&DOOR[start..start + len], "Reply::Done");
@@ -1204,7 +1238,7 @@ machine Pair on Op {
 
     #[test]
     fn files_without_machines_are_unchanged() {
-        assert!(elaborate(Path::new("a.lani"), "fn machine() -> i32 { return 1; }").unwrap().is_none());
+        assert!(elaborate(Path::new("a.lani"), "fn machine() -> i32 { return 1; }", false).unwrap().is_none());
     }
 
     #[test]
