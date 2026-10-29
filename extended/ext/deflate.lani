@@ -6,7 +6,19 @@ import core::result;
 import core::slice;
 
 pub enum Error { Bounds, ScratchTooSmall(i32), Capacity(i32), SizeOverflow }
+pub enum Status { NeedInput, NeedOutput, Done }
+pub struct Step { read: i32, written: i32, status: Status }
+pub struct Failure { error: Error, read: i32, written: i32 }
 
+// One active cursor borrows these disjoint workspaces. Copies are inactive
+// aliases; no transient input/output view or external cleanup is retained.
+pub struct Encoder {
+    block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>,
+    buffered: i32, front: i32, back: i32, final_block: bool, done: bool
+}
+
+pub fn input_buffer_len() -> i32 { return 32768; }
+pub fn output_buffer_len() -> i32 { return 32773; }
 pub fn scratch_len() -> i32 { return 32768; }
 fn valid_bytes(view: core::slice::View<u8>) -> bool {
     return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length;
@@ -80,11 +92,12 @@ impl Writer {
 
 // Reset scratch for each pass. Search exactly the most recent matching hash,
 // verify its bytes, and insert every consumed position that has three bytes.
-fn fixed_pass(input: core::slice::View<u8>, scratch: core::slice::View<i32>, output: core::slice::View<u8>, writing: bool) -> u64 {
+fn fixed_pass(input: core::slice::View<u8>, scratch: core::slice::View<i32>, output: core::slice::View<u8>, writing: bool, final_block: bool) -> u64 {
     let index: i32 = 0;
     while (index < 32768) { scratch.values[scratch.start+index] = -1; index += 1; }
     let writer: Writer = Writer { output: output, writing: writing, position: 0, pending: 0, width: 0, total: 0 };
-    writer.bits(3,3); // BFINAL=1, BTYPE=01, in low-bit-first field order.
+    let header: i32 = 2; if (final_block) { header = 3; }
+    writer.bits(header,3); // BTYPE=01, with the selected BFINAL bit.
     let position: i32 = 0;
     while (position < input.length) {
         let length: i32 = 0; let distance: i32 = 0;
@@ -116,7 +129,16 @@ fn fixed_pass(input: core::slice::View<u8>, scratch: core::slice::View<i32>, out
             position += 1;
         }
     }
-    writer.symbol(256); writer.finish(); return writer.total;
+    writer.symbol(256);
+    if (!final_block) {
+        // Empty nonfinal stored block: its header precedes byte alignment.
+        // Measurement does not update Writer.width, so derive padding from
+        // the bit total, exactly as for the writing pass.
+        writer.bits(0,3);
+        let padding: i32 = ((8-(writer.total%8))%8) as i32;
+        writer.bits(0,padding); writer.bits(0,16); writer.bits(65535,16);
+    }
+    writer.finish(); return writer.total;
 }
 fn stored_len(length: i32) -> u64 {
     let blocks: u64 = ((length as u64)+65534)/65535; if (blocks == 0) { blocks = 1; }
@@ -130,14 +152,15 @@ fn checked_size(fixed: u64, stored: u64) -> core::result::Result<i32, Error> {
 pub fn encoded_len(input: core::slice::View<u8>, scratch: core::slice::View<i32>) -> core::result::Result<i32, Error> {
     if (!valid_bytes(input) || !valid_scratch(scratch)) { return core::result::Err(Error::Bounds); }
     if (scratch.length < scratch_len()) { return core::result::Err(Error::ScratchTooSmall(scratch_len())); }
-    let fixed: u64 = fixed_pass(input,scratch,input,false);
+    let fixed: u64 = fixed_pass(input,scratch,input,false,true);
     return checked_size(fixed,stored_len(input.length));
 }
-fn stored_into(input: core::slice::View<u8>, output: core::slice::View<u8>) {
+fn stored_into(input: core::slice::View<u8>, output: core::slice::View<u8>, final_block: bool) {
     let position: i32 = 0; let target: i32 = 0;
     while (true) {
         let count: i32 = input.length-position; if (count > 65535) { count = 65535; }
-        let final: i32 = 0; if (count == input.length-position) { final = 1; }
+        let last: bool = count == input.length-position;
+        let final: i32 = 0; if (last && final_block) { final = 1; }
         output.values[output.start+target] = final as u8;
         output.values[output.start+target+1] = (count & 255) as u8;
         output.values[output.start+target+2] = (count >> 8) as u8;
@@ -146,7 +169,7 @@ fn stored_into(input: core::slice::View<u8>, output: core::slice::View<u8>) {
         output.values[output.start+target+4] = (complement >> 8) as u8;
         target += 5; let end: i32 = position+count;
         while (position < end) { output.values[output.start+target] = input.values[input.start+position]; position += 1; target += 1; }
-        if (final == 1) { return; }
+        if (last) { return; }
     }
 }
 
@@ -155,12 +178,91 @@ fn stored_into(input: core::slice::View<u8>, output: core::slice::View<u8>) {
 pub fn encode_into(input: core::slice::View<u8>, output: core::slice::View<u8>, scratch: core::slice::View<i32>) -> core::result::Result<i32, Error> {
     if (!valid_bytes(input) || !valid_bytes(output) || !valid_scratch(scratch)) { return core::result::Err(Error::Bounds); }
     if (scratch.length < scratch_len()) { return core::result::Err(Error::ScratchTooSmall(scratch_len())); }
-    let fixed: u64 = fixed_pass(input,scratch,input,false); let stored: u64 = stored_len(input.length);
+    let fixed: u64 = fixed_pass(input,scratch,input,false,true); let stored: u64 = stored_len(input.length);
     let measured: core::result::Result<i32, Error> = checked_size(fixed,stored);
     if (core::result::is_err(measured)) { return core::result::Err(core::result::unwrap_err(measured)); }
     let size: i32 = core::result::unwrap(measured);
     if (output.length < size) { return core::result::Err(Error::Capacity(size)); }
-    if (stored < (fixed+7)/8) { stored_into(input,output); }
-    else { fixed_pass(input,scratch,output,true); }
+    if (stored < (fixed+7)/8) { stored_into(input,output,true); }
+    else { fixed_pass(input,scratch,output,true,true); }
     return core::result::Ok(size);
+}
+
+// Validate complete metadata before capacity checks; construction neither
+// reads nor initializes backing. Extra workspace entries remain untouched.
+pub fn encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>) -> core::result::Result<Encoder,Error> {
+    if (!valid_bytes(block) || !valid_bytes(pending) || !valid_scratch(scratch)) { return core::result::Err(Error::Bounds); }
+    if (block.length < input_buffer_len()) { return core::result::Err(Error::ScratchTooSmall(input_buffer_len())); }
+    if (pending.length < output_buffer_len()) { return core::result::Err(Error::Capacity(output_buffer_len())); }
+    if (scratch.length < scratch_len()) { return core::result::Err(Error::ScratchTooSmall(scratch_len())); }
+    return core::result::Ok(Encoder {
+        block: core::slice::View { values: block.values, start: block.start, length: input_buffer_len() },
+        pending: core::slice::View { values: pending.values, start: pending.start, length: output_buffer_len() },
+        scratch: core::slice::View { values: scratch.values, start: scratch.start, length: scratch_len() },
+        buffered: 0, front: 0, back: 0, final_block: false, done: false
+    });
+}
+
+pub impl Encoder {
+    pub fn borrow(&self) -> &Encoder { return self; }
+    pub fn is_done(&self) -> bool { return self.done; }
+    // Abandon pending bytes and restart without inspecting or clearing backing.
+    pub fn reset(&self) {
+        self.buffered = 0; self.front = 0; self.back = 0;
+        self.final_block = false; self.done = false;
+    }
+
+    // Called only with no pending bytes. Every block starts with fresh match
+    // history; measurement includes the nonfinal fixed-block alignment cost.
+    fn prepare(&self, final_block: bool) {
+        let input: core::slice::View<u8> = core::slice::View { values: self.block.values, start: self.block.start, length: self.buffered };
+        let fixed: u64 = fixed_pass(input,self.scratch,self.pending,false,final_block);
+        let stored: u64 = stored_len(input.length);
+        let size: u64 = (fixed+7)/8;
+        if (stored < size) { size = stored; stored_into(input,self.pending,final_block); }
+        else { fixed_pass(input,self.scratch,self.pending,true,final_block); }
+        // Stored form bounds every selected representation by 32768+5 bytes.
+        self.buffered = 0; self.front = 0; self.back = size as i32;
+        self.final_block = final_block;
+    }
+
+    pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure> {
+        if (!valid_bytes(input) || !valid_bytes(output)) {
+            return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 });
+        }
+        if (self.done) { return core::result::Ok(Step { read: 0, written: 0, status: Status::Done }); }
+        let read: i32 = 0; let written: i32 = 0;
+        while (true) {
+            // Publish confirmed pending bytes before admitting any new input.
+            while (self.front < self.back && written < output.length) {
+                output.values[output.start+written] = self.pending.values[self.pending.start+self.front];
+                self.front += 1; written += 1;
+            }
+            if (self.front < self.back) {
+                return core::result::Ok(Step { read: read, written: written, status: Status::NeedOutput });
+            }
+            self.front = 0; self.back = 0;
+            if (self.final_block) {
+                self.done = true;
+                return core::result::Ok(Step { read: read, written: written, status: Status::Done });
+            }
+            let count: i32 = input.length-read;
+            if (count > input_buffer_len()-self.buffered) { count = input_buffer_len()-self.buffered; }
+            let index: i32 = 0;
+            while (index < count) {
+                self.block.values[self.block.start+self.buffered+index] = input.values[input.start+read+index];
+                index += 1;
+            }
+            self.buffered += count; read += count;
+            if (self.buffered == input_buffer_len()) {
+                // Even the last full block is nonfinal; finalization emits a
+                // subsequent partial block, which may contain zero bytes.
+                self.prepare(false);
+            } else {
+                if (final_input) { self.prepare(true); }
+                else { return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput }); }
+            }
+        }
+        return core::result::Ok(Step { read: read, written: written, status: Status::NeedInput });
+    }
 }

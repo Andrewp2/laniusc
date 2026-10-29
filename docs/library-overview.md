@@ -1,6 +1,14 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[resumable compression encoder](extended-streaming-deflate.md) adds fixed
+32 KiB blocks, retained pending output and u64 raw/zlib/gzip limits over shared
+block helpers. The [file compressor](extended-compress-file.md) uses fixed
+workspace and NoReplace publication. All five library groups and five
+application groups/99 native cases pass, including the 112-case chunk/block
+model and nine reached application allocation denials. This finite native
+Linux x86_64 increment is accepted; earlier receipts keep their source/API scope.
+The preceding
 [vector-transfer increment](stdlib-vec-transfer.md) adds whole-owner `take`,
 consuming append, suffix split and owned range extraction to `alloc::vec`.
 Ordered shallow transfer, unchanged owners on error, retained source capacity
@@ -24,8 +32,8 @@ scale shapes with at most 16 KiB scratch. The application passes four groups/
 image groups, three old consumer groups/346 cases, standalone compilation and
 both documented examples pass separately. This finite native Linux x86_64
 increment is accepted; historical receipts retain their original scopes.
-Streaming compression encoders and the other roadmap
-gaps remain separate work. The preceding
+Other codec capabilities and the broader roadmap gaps remain separate work.
+The preceding
 [ordered form-byte increment](extended-form.md) adds borrowed form parsing,
 forgiving percent decoding, canonical streaming serialization and an optional
 packed Form owner. Ordered duplicates and arbitrary decoded bytes survive;

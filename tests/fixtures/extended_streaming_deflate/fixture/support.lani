@@ -1,0 +1,35 @@
+module fixture::support;
+import alloc::vec;
+import core::mem;
+import core::slice;
+import ext::deflate;
+import std::io;
+pub struct Workspace { block:alloc::vec::Vec<u8>,pending:alloc::vec::Vec<u8>,scratch:alloc::vec::Vec<i32> }
+pub fn view(values:[u8],start:i32,length:i32) -> core::slice::View<u8> { return core::slice::View { values:values,start:start,length:length }; }
+pub fn words(values:[i32],start:i32,length:i32) -> core::slice::View<i32> { return core::slice::View { values:values,start:start,length:length }; }
+pub fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+pub fn workspace() -> Workspace {
+    let block:alloc::vec::Vec<u8> = alloc::vec::new(); block.try_resize(32772,77).unwrap();
+    let pending:alloc::vec::Vec<u8> = alloc::vec::new(); pending.try_resize(32777,99).unwrap();
+    let scratch:alloc::vec::Vec<i32> = alloc::vec::new(); scratch.try_resize(32772,12345).unwrap();
+    return Workspace { block:block,pending:pending,scratch:scratch };
+}
+pub impl Workspace {
+    pub fn borrow(&self) -> &Workspace { return self; }
+    pub fn input(&self) -> core::slice::View<u8> { return self.block.as_view().subview(2,32770).unwrap(); }
+    pub fn output(&self) -> core::slice::View<u8> { return self.pending.as_view().subview(2,32775).unwrap(); }
+    pub fn hash(&self) -> core::slice::View<i32> { return self.scratch.as_view().subview(2,32770).unwrap(); }
+    pub fn pristine(&self) {
+        let i:i32 = 0; while(i<32772) { assert(self.block.at(i)==77 && self.scratch.at(i)==12345); i+=1; }
+        i=0; while(i<32777) { assert(self.pending.at(i)==99); i+=1; }
+    }
+    pub fn guards(&self) {
+        assert(self.block.at(0)==77 && self.block.at(1)==77 && self.block.at(32770)==77 && self.block.at(32771)==77);
+        assert(self.pending.at(0)==99 && self.pending.at(1)==99 && self.pending.at(32775)==99 && self.pending.at(32776)==99);
+        assert(self.scratch.at(0)==12345 && self.scratch.at(1)==12345 && self.scratch.at(32770)==12345 && self.scratch.at(32771)==12345);
+    }
+    pub fn destroy(&self) { self.scratch.destroy(); self.pending.destroy(); self.block.destroy(); }
+}
+pub fn status(value:ext::deflate::Status) -> i32 { return match(value) { ext::deflate::Status::NeedInput -> 1,ext::deflate::Status::NeedOutput -> 2,ext::deflate::Status::Done -> 3 }; }
+pub fn progress(value:ext::deflate::Step,read:i32,written:i32,state:i32) { assert(value.read==read && value.written==written && status(value.status)==state); }
+pub fn publish(pointer:ptr,length:i32) { let sent:i32 = 0; while(sent<length) { let n:i32 = std::io::write_stdout(pointer+(sent as usize),(length-sent) as usize); assert(n>0 && n<=length-sent); sent+=n; } }

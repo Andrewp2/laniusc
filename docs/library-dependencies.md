@@ -3,6 +3,16 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [resumable encoder](extended-streaming-deflate.md) uses existing integer,
+checksum and View contracts with fixed caller storage; its
+[file consumer](extended-compress-file.md) composes existing File/AtomicFile
+services. No host codec or new compiler capability is required by the design.
+All five library groups and five application groups/99 native cases pass on
+Linux x86_64 CPU output. No compiler repair was needed.
+Workspace/encoder/I/O disjointness, stable
+backing and the call-local final-input promise remain manual obligations.
+Other hosts, device execution, enforced cleanup and formal proof remain separate.
+
 The [vector-transfer increment](stdlib-vec-transfer.md) uses the existing
 `alloc::vec` allocator and capacity-dependent typed storage. Four direct
 methods add no trait or host-service dependency. Exclusive owner descriptors,

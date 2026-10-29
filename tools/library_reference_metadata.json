@@ -882,12 +882,16 @@
       "guides": [
         "docs/extended-compression.md",
         "docs/extended-streaming-inflate.md",
-        "docs/extended-decompress-file.md"
+        "docs/extended-decompress-file.md",
+        "docs/extended-streaming-deflate.md",
+        "docs/extended-compress-file.md"
       ],
-      "note": "Resumable RawDeflate/Zlib/Gzip framing borrows 32768 history bytes and the raw 707 i32 workspace, with no allocation during step/reset. Metadata-first and sticky-error rules compose with whole-offered-span input admission, actual consumed-byte accounting and pending-byte output-limit detection. Streaming output remains provisional until validated final EOF; gzip members reset logical history/checksums. Owned decode now allocates ring/workspace once and grows output without member replay, releasing all private owners on error and publishing only after complete validation. Fixed workspace AllocationFailed may precede later malformed-format discovery after full input/limit metadata admission. Encoding is unchanged. All seven new library tests pass on native Linux x86_64 CPU output: four direct groups, a 1925-case independent model with 311 reset passes and two resource groups. Fixed caller backing remains 35601 requested allocation bytes including guards at 2 MiB and 4 MiB output; 28 reached owned allocation failures preserve exact cleanup. The atomic file decompressor passes seven groups/98 native cases, including eight reached allocation failures and actual publication outcomes. All 14 new registered library/application tests are accepted on the finite native Linux x86_64 profile. Other targets, device execution, enforced lifetimes and proofs remain separate. Old whole-buffer and performance receipts retain historical source scopes.",
+      "note": "Borrowed Encoder adds raw/zlib/gzip output with u64 EncodeLimits, consumed-byte checksums, partial deterministic header/trailer state and exact per-call counts. Whole input offers are admitted before effects; required bytes beyond output allowance latch OutputLimit, while exact-fit Done succeeds. Bounds is recoverable before terminal handling, other errors sticky until reset. Fixed workspace and Encoder/input/output disjointness remain manual. All five encoding library groups and five file-compressor groups/99 native cases pass, including the 112-case/260-pass independent model and nine reached application allocation denials. Four selected old groups and standalone examples retain separate receipts. This finite Linux x86_64 CPU increment is accepted. The following accepted receipts concern the earlier decoder increment. Resumable RawDeflate/Zlib/Gzip framing borrows 32768 history bytes and the raw 707 i32 workspace, with no allocation during step/reset. Metadata-first and sticky-error rules compose with whole-offered-span input admission, actual consumed-byte accounting and pending-byte output-limit detection. Streaming output remains provisional until validated final EOF; gzip members reset logical history/checksums. Owned decode now allocates ring/workspace once and grows output without member replay, releasing all private owners on error and publishing only after complete validation. Fixed workspace AllocationFailed may precede later malformed-format discovery after full input/limit metadata admission. The owned whole-input encoding policy and allocation order remain unchanged through shared raw block helpers. That decoder increment passed seven library tests on native Linux x86_64 CPU output: four direct groups, a 1925-case independent model with 311 reset passes and two resource groups. Fixed caller backing remains 35601 requested allocation bytes including guards at 2 MiB and 4 MiB output; 28 reached owned allocation failures preserve exact cleanup. The atomic file decompressor passes seven groups/98 native cases, including eight reached allocation failures and actual publication outcomes. Its 14 registered library/application tests are accepted on the finite native Linux x86_64 profile. Other targets, device execution, enforced lifetimes and proofs remain separate. Old whole-buffer and performance receipts retain historical source scopes.",
       "declarations": {
         "decoder": "Constructs borrowed raw/zlib/gzip framing state with 32768 history bytes and 707 i32 table entries after limits/backing admission. Step limits entire input offers before reading, charges only consumed bytes, shares raw statuses and retains no offered views. No owner transfer.",
-        "decode": "Owned complete-input decoding through the same persistent state with one ring/workspace allocation and geometric result growth. Workspace failures may precede later format validation. Success transfers only the result Vec; every error releases private owners and returns no partial owner."
+        "decode": "Owned complete-input decoding through the same persistent state with one ring/workspace allocation and geometric result growth. Workspace failures may precede later format validation. Success transfers only the result Vec; every error releases private owners and returns no partial owner.",
+        "default_encode_limits": "Returns u64 allowances of 16 MiB consumed input and 64 MiB encoded output, including container framing.",
+        "encoder": "Constructs a borrowed fixed-storage raw/zlib/gzip encoder through the raw workspace admission. Metadata errors map to Bounds, capacity errors to Encode(raw error). No allocation, I/O or cleanup transfer; step/reset contracts and accepted native scope are in the streaming-encoding guide."
       }
     },
     "ext::config": {
@@ -917,8 +921,15 @@
     },
     "ext::deflate": {
       "guides": [
-        "docs/extended-deflate.md"
-      ]
+        "docs/extended-deflate.md",
+        "docs/extended-streaming-deflate.md"
+      ],
+      "note": "Borrowed Encoder retains 32768 input bytes, 32773 pending bytes and 32768 i32 hash entries, with no allocation or host calls. Each full block is nonfinal and independently chooses fixed versus stored including alignment cost; a final partial block, possibly empty, closes the stream. Caller partitions do not change encoded bytes. Whole-input encoding keeps its complete-span size choice and output-atomic errors through the same block helpers. Workspace, Encoder storage and each step input/output must be disjoint; final_input is a call-local caller promise. Metadata is checked before terminal state; reset abandons pending state without clearing caller backing. All five library groups pass on Linux x86_64 CPU output, including 112 independent cases/260 passes across four entry routes and three wire formats, exact metadata/progress guards and eight fixed-storage scale streams. Earlier whole-input receipts retain their source/API scope. Other targets, device execution, enforced lifetimes and proofs remain separate.",
+      "declarations": {
+        "input_buffer_len": "Required borrowed streaming block prefix: 32768 byte elements.",
+        "output_buffer_len": "Required borrowed streaming pending-output prefix: 32773 byte elements.",
+        "encoder": "Checks all workspace metadata before block, pending and scratch capacities. Construction reads/initializes no backing; success borrows fixed prefixes without allocation or cleanup transfer."
+      }
     },
     "ext::der": {
       "guides": [

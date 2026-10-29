@@ -46,6 +46,9 @@ strategy. Its [focused native comparison](extended-streaming-inflate.md#focused-
 has separate before/after receipts for six 1 MiB decode workloads. These older
 rows retain their measured source scope and are not current throughput claims.
 
+The [resumable encoder](extended-streaming-deflate.md) also has a distinct
+bounded block policy; these historical results do not measure that API.
+
 The [raw encoder measurements](extended-deflate.md#native-measurements) separately
 cover 512 KiB random, repetitive and textual data, including incompressible
 stored-block output. Whole-input byte limits and output ownership are described

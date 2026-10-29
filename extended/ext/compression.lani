@@ -73,6 +73,151 @@ pub fn encode(input: core::slice::View<u8>, format: Format, max_output: i32) -> 
     return core::result::Ok(output);
 }
 
+// Streaming encoding retains fixed caller workspace and scalar framing state.
+// Workspaces, this object and each call's input/output must be disjoint and
+// remain live; copies are inactive aliases, not independent encoders.
+pub struct EncodeLimits { max_input: u64, max_output: u64 }
+pub struct EncodeFailure { error: Error, read: i32, written: i32 }
+pub fn default_encode_limits() -> EncodeLimits {
+    return EncodeLimits { max_input: DEFAULT_MAX_INPUT as u64, max_output: DEFAULT_MAX_OUTPUT as u64 };
+}
+const ENCODE_HEADER: i32 = 0;
+const ENCODE_BODY: i32 = 1;
+const ENCODE_TRAILER: i32 = 2;
+const ENCODE_FINISHED: i32 = 3;
+const ENCODE_FAILED: i32 = 4;
+pub struct Encoder {
+    raw: ext::deflate::Encoder, kind: i32, limits: EncodeLimits,
+    phase: i32, failure: Error, read_total: u64, written_total: u64,
+    checksum: u32, member_size: u32, field_count: i32
+}
+fn encode_initial_checksum(kind: i32) -> u32 {
+    if (kind == 1) { return core::adler32::INITIAL; }
+    return core::crc32::INITIAL;
+}
+// Raw construction validates all workspace metadata before capacities and
+// neither reads nor initializes backing. Limits need no signed validation.
+pub fn encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>, format: Format, limits: EncodeLimits) -> core::result::Result<Encoder,Error> {
+    let made: core::result::Result<ext::deflate::Encoder,ext::deflate::Error> = ext::deflate::encoder(block,pending,scratch);
+    if (core::result::is_err(made)) {
+        let error: ext::deflate::Error = core::result::unwrap_err(made);
+        return core::result::Err(match (error) { ext::deflate::Error::Bounds -> Error::Bounds, _ -> Error::Encode(error) });
+    }
+    let kind: i32 = format_kind(format);
+    return core::result::Ok(Encoder {
+        raw: core::result::unwrap(made), kind: kind, limits: limits,
+        phase: ENCODE_HEADER, failure: Error::Bounds, read_total: 0, written_total: 0,
+        checksum: encode_initial_checksum(kind), member_size: 0, field_count: 0
+    });
+}
+fn encode_progress(call: &Call, status: ext::deflate::Status) -> core::result::Result<ext::deflate::Step,EncodeFailure> {
+    return core::result::Ok(ext::deflate::Step { read: call.read, written: call.written, status: status });
+}
+fn encode_fail(state: &Encoder, call: &Call, error: Error) -> core::result::Result<ext::deflate::Step,EncodeFailure> {
+    state.phase = ENCODE_FAILED; state.failure = error;
+    return core::result::Err(EncodeFailure { error: error, read: call.read, written: call.written });
+}
+fn encode_header_byte(kind: i32, index: i32) -> u8 {
+    if (kind == 1) { if (index == 0) { return 120; } return 1; }
+    if (index == 0) { return 31; }
+    if (index == 1) { return 139; }
+    if (index == 2) { return 8; }
+    if (index == 9) { return 255; }
+    return 0;
+}
+fn encode_trailer_byte(state: &Encoder) -> u8 {
+    if (state.kind == 1) { return ((state.checksum >> ((3-state.field_count)*8)) & 255) as u8; }
+    if (state.field_count < 4) { return ((core::crc32::finish(state.checksum) >> (state.field_count*8)) & 255) as u8; }
+    return ((state.member_size >> ((state.field_count-4)*8)) & 255) as u8;
+}
+fn encode_put(state: &Encoder, call: &Call, value: u8) {
+    call.output.values[call.output.start+call.written] = value;
+    call.written += 1; state.written_total += 1; state.field_count += 1;
+}
+fn encode_account_body(state: &Encoder, call: &Call, read: i32, written: i32) {
+    // Only the prefix actually copied by the raw encoder affects checksums.
+    if (state.kind == 1) {
+        state.checksum = core::result::unwrap(core::adler32::update(state.checksum,part(call.input,call.read,call.read+read)));
+    }
+    if (state.kind == 2) {
+        let index: i32 = 0;
+        while (index < read) { state.checksum = core::crc32::update_byte(state.checksum,byte(call.input,call.read+index)); index += 1; }
+    }
+    call.read += read; state.read_total += read as u64;
+    call.written += written; state.written_total += written as u64;
+    state.member_size = (((state.member_size as u64)+(read as u64)) & 4294967295) as u32;
+}
+fn encode_run(state: &Encoder, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<ext::deflate::Step,EncodeFailure> {
+    // Bad descriptors remain recoverable even after a sticky error or Done.
+    if (!valid(input) || !valid(output)) { return core::result::Err(EncodeFailure { error: Error::Bounds, read: 0, written: 0 }); }
+    let call: Call = Call { input: input, output: output, read: 0, written: 0 };
+    if (state.phase == ENCODE_FINISHED) { return encode_progress(call.borrow(),ext::deflate::Status::Done); }
+    if (state.phase == ENCODE_FAILED) { return core::result::Err(EncodeFailure { error: state.failure, read: 0, written: 0 }); }
+    // Admission covers the whole offer, including bytes a pending header or
+    // body may prevent this call from consuming. Failure precedes all effects.
+    if ((input.length as u64) > state.limits.max_input-state.read_total) { return encode_fail(state,call.borrow(),Error::InputLimit); }
+    while (true) {
+        if (state.phase == ENCODE_HEADER) {
+            let length: i32 = 0; if (state.kind == 1) { length = 2; } if (state.kind == 2) { length = 10; }
+            while (state.field_count < length) {
+                if (state.written_total == state.limits.max_output) { return encode_fail(state,call.borrow(),Error::OutputLimit); }
+                if (call.written == output.length) { return encode_progress(call.borrow(),ext::deflate::Status::NeedOutput); }
+                encode_put(state,call.borrow(),encode_header_byte(state.kind,state.field_count));
+            }
+            state.field_count = 0; state.phase = ENCODE_BODY;
+        }
+        if (state.phase == ENCODE_BODY) {
+            let count: i32 = output.length-call.written;
+            let remaining: u64 = state.limits.max_output-state.written_total;
+            if ((count as u64) > remaining) { count = remaining as i32; }
+            // A zero-length raw output still admits input or observes Done.
+            // Only confirmed pending bytes justify an OutputLimit failure.
+            let result: core::result::Result<ext::deflate::Step,ext::deflate::Failure> = state.raw.step(part(input,call.read,input.length),part(output,call.written,call.written+count),final_input);
+            if (core::result::is_err(result)) {
+                let failure: ext::deflate::Failure = core::result::unwrap_err(result);
+                encode_account_body(state,call.borrow(),failure.read,failure.written);
+                return encode_fail(state,call.borrow(),Error::Encode(failure.error));
+            }
+            let progress: ext::deflate::Step = core::result::unwrap(result);
+            encode_account_body(state,call.borrow(),progress.read,progress.written);
+            let need_input: bool = match (progress.status) { ext::deflate::Status::NeedInput -> true, _ -> false };
+            if (need_input) { return encode_progress(call.borrow(),ext::deflate::Status::NeedInput); }
+            let need_output: bool = match (progress.status) { ext::deflate::Status::NeedOutput -> true, _ -> false };
+            if (need_output) {
+                if (state.written_total == state.limits.max_output) { return encode_fail(state,call.borrow(),Error::OutputLimit); }
+                return encode_progress(call.borrow(),ext::deflate::Status::NeedOutput);
+            }
+            state.field_count = 0; state.phase = ENCODE_TRAILER;
+        }
+        if (state.phase == ENCODE_TRAILER) {
+            let length: i32 = 0; if (state.kind == 1) { length = 4; } if (state.kind == 2) { length = 8; }
+            while (state.field_count < length) {
+                if (state.written_total == state.limits.max_output) { return encode_fail(state,call.borrow(),Error::OutputLimit); }
+                if (call.written == output.length) { return encode_progress(call.borrow(),ext::deflate::Status::NeedOutput); }
+                encode_put(state,call.borrow(),encode_trailer_byte(state));
+            }
+            state.phase = ENCODE_FINISHED;
+            return encode_progress(call.borrow(),ext::deflate::Status::Done);
+        }
+    }
+    return encode_progress(call.borrow(),ext::deflate::Status::Done);
+}
+pub impl Encoder {
+    pub fn borrow(&self) -> &Encoder { return self; }
+    pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<ext::deflate::Step,EncodeFailure> { return encode_run(self,input,output,final_input); }
+    pub fn total_read(&self) -> u64 { return self.read_total; }
+    pub fn total_written(&self) -> u64 { return self.written_total; }
+    pub fn is_done(&self) -> bool { return self.phase == ENCODE_FINISHED; }
+    pub fn is_failed(&self) -> bool { return self.phase == ENCODE_FAILED; }
+    // Reset discards pending output without clearing or reading workspace.
+    pub fn reset(&self, format: Format, limits: EncodeLimits) {
+        self.raw.reset(); self.kind = format_kind(format); self.limits = limits;
+        self.phase = ENCODE_HEADER; self.failure = Error::Bounds;
+        self.read_total = 0; self.written_total = 0;
+        self.checksum = encode_initial_checksum(self.kind); self.member_size = 0; self.field_count = 0;
+    }
+}
+
 // Framing retains only scalar progress and the raw decoder's caller borrows.
 // Input/output views belong to one call and may be recycled after it returns.
 pub struct DecodeFailure { error: Error, read: i32, written: i32 }

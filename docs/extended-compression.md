@@ -14,6 +14,14 @@ streaming guide records selected current regressions separately.
 Historical container receipts below retain their
 original source/API scope.
 
+The [resumable encoder](extended-streaming-deflate.md) adds borrowed fixed
+block/pending/hash storage, u64 limits and partial framing progress. Its
+[file compressor](extended-compress-file.md) defers publication until complete
+encoding and input close. All five streaming library groups and five
+application groups/99 cases pass on the finite native profile.
+Owned encode keeps its whole-input policy and allocation order through shared
+raw block helpers.
+
 Executable evidence covers **x86_64 Linux using the GPU compiler**. Other
 hosts and GPU-kernel execution have not been established.
 
@@ -111,7 +119,8 @@ AllocationFailed can precede discovery of malformed compressed data. This
 allocation-order change has its own runtime acceptance in the
 [streaming guide](extended-streaming-inflate.md). All private workspace/output
 owners retire on failure; success transfers only the independent result Vec.
-Encoding keeps its earlier implementation and allocation order.
+Owned encoding keeps its complete-input policy and allocation order; the new
+borrowed encoder has a separate bounded block policy over shared raw helpers.
 
 Logical metadata checks reject negative starts and lengths and overflowing
 `start + length`. The caller must provide sufficient physical backing storage
