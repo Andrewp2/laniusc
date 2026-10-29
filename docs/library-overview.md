@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[relocatable development SDK](library-sdk.md) packages a supplied Linux x86_64
+compiler and shaders with library sources, offline contract guides, three
+examples and existing suite/vendor tools. Compiler identity, source snapshot
+and selected-resolution notice inputs stay separate. Thirty host controls, one
+trace-parser control and all four relocated native gates pass, covering six
+application executions. The guide binds these receipts to the tested debug
+snapshot and records earlier timeouts and host prerequisites. Stable releases,
+broader target support and the whole library goal remain open.
+The preceding
 [resumable TOML serializer](extended-toml-streaming.md) shares one byte machine
 across sizing, borrowed Read, owned encoding and direct caller-buffer output.
 Reader construction admits preflight and replay under the explicit 2W policy;

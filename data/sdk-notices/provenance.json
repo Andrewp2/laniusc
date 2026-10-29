@@ -1,0 +1,259 @@
+{
+  "format_version": 1,
+  "description": "Original upstream notices and package declarations at the published crate revisions, with explicitly identified standard-license supplements. Attribution inputs, not a legal certification or proof of binary provenance.",
+  "packages": [
+    {
+      "name": "encase_derive",
+      "version": "0.11.1",
+      "repository": "https://github.com/teoxoy/encase",
+      "revision": "8a951fac901b6cb9b24d6e4da070b1c4178003f2",
+      "license_expression": "MIT-0",
+      "path_in_vcs": "derive",
+      "revision_evidence": {
+        "source": "published crate .cargo_vcs_info.json",
+        "sha256": "c33972c7624b58002edb6d0d9f56f8d73716bf335ff5f323c192923f28fe3a1a"
+      },
+      "files": [
+        {
+          "path": "encase_derive-0.11.1/derive/Cargo.toml",
+          "url": "https://raw.githubusercontent.com/teoxoy/encase/8a951fac901b6cb9b24d6e4da070b1c4178003f2/derive/Cargo.toml",
+          "sha256": "af253c3f2beed9efd4272fe5d3a0177ca6048034d0007fbc946878afcfff5c0e",
+          "source_kind": "upstream_manifest"
+        },
+        {
+          "path": "encase_derive-0.11.1/LICENSE",
+          "url": "https://raw.githubusercontent.com/teoxoy/encase/8a951fac901b6cb9b24d6e4da070b1c4178003f2/LICENSE",
+          "sha256": "8876cdca96eb380d16d5ea32bf4529d85e87dedc7765ae2861a9bec7f34acbed",
+          "source_kind": "upstream_notice"
+        }
+      ],
+      "manifest_evidence": {
+        "source": "published crate Cargo.toml.orig",
+        "sha256": "af253c3f2beed9efd4272fe5d3a0177ca6048034d0007fbc946878afcfff5c0e",
+        "comparison": "identical"
+      }
+    },
+    {
+      "name": "encase_derive_impl",
+      "version": "0.11.1",
+      "repository": "https://github.com/teoxoy/encase",
+      "revision": "8a951fac901b6cb9b24d6e4da070b1c4178003f2",
+      "license_expression": "MIT-0",
+      "path_in_vcs": "derive/impl",
+      "revision_evidence": {
+        "source": "published crate .cargo_vcs_info.json",
+        "sha256": "1d0ca998f3e716d17496de474fd88db9d901cf0acda21aaa6a52ecfc784bc6b8"
+      },
+      "files": [
+        {
+          "path": "encase_derive_impl-0.11.1/derive/impl/Cargo.toml",
+          "url": "https://raw.githubusercontent.com/teoxoy/encase/8a951fac901b6cb9b24d6e4da070b1c4178003f2/derive/impl/Cargo.toml",
+          "sha256": "ffcd377d22b7094ca9b3dc685758318caab01684da2f69540d8756ce3c95856e",
+          "source_kind": "upstream_manifest"
+        },
+        {
+          "path": "encase_derive_impl-0.11.1/LICENSE",
+          "url": "https://raw.githubusercontent.com/teoxoy/encase/8a951fac901b6cb9b24d6e4da070b1c4178003f2/LICENSE",
+          "sha256": "8876cdca96eb380d16d5ea32bf4529d85e87dedc7765ae2861a9bec7f34acbed",
+          "source_kind": "upstream_notice"
+        }
+      ],
+      "manifest_evidence": {
+        "source": "published crate Cargo.toml.orig",
+        "sha256": "ffcd377d22b7094ca9b3dc685758318caab01684da2f69540d8756ce3c95856e",
+        "comparison": "identical"
+      }
+    },
+    {
+      "name": "gpu-descriptor",
+      "version": "0.3.2",
+      "repository": "https://github.com/zakarumych/gpu-descriptor",
+      "revision": "bb28b4e55b742e0ea3e7a0968e7ee6287ba0e06a",
+      "license_expression": "MIT OR Apache-2.0",
+      "path_in_vcs": "gpu-descriptor",
+      "revision_evidence": {
+        "source": "published crate .cargo_vcs_info.json",
+        "sha256": "045201f2caa0bbaa6f031b28a34dbb3097f54bba5fe928c0e0d6b4ef6b7871ba"
+      },
+      "files": [
+        {
+          "path": "gpu-descriptor-0.3.2/gpu-descriptor/Cargo.toml",
+          "url": "https://raw.githubusercontent.com/zakarumych/gpu-descriptor/bb28b4e55b742e0ea3e7a0968e7ee6287ba0e06a/gpu-descriptor/Cargo.toml",
+          "sha256": "43f3e446023248f7d6afb05a1d946aa6397bf1100f838efee65bc3242e845049",
+          "source_kind": "upstream_manifest"
+        },
+        {
+          "path": "gpu-descriptor-0.3.2/COPYING",
+          "url": "https://raw.githubusercontent.com/zakarumych/gpu-descriptor/bb28b4e55b742e0ea3e7a0968e7ee6287ba0e06a/COPYING",
+          "sha256": "f72143f7e9d9fb8bd336b139fa22f825a299591c29f2f7338c5566347b137613",
+          "source_kind": "upstream_notice"
+        },
+        {
+          "path": "gpu-descriptor-0.3.2/standard/LICENSE-APACHE-2.0.txt",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "source_kind": "standard_license"
+        },
+        {
+          "path": "gpu-descriptor-0.3.2/standard/LICENSE-MIT.txt",
+          "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/MIT.txt",
+          "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+          "source_kind": "standard_license",
+          "source_revision": "d46e94e2c78ceede1cfc63cfa0396472d2798d4c"
+        }
+      ],
+      "note": "This exact upstream revision contains COPYING but no full license texts. The supplementary standard texts below are not upstream repository files; the unmodified MIT template is paired with the original COPYING copyright notice.",
+      "manifest_evidence": {
+        "source": "published crate Cargo.toml.orig",
+        "sha256": "910ea169101f3225effe299ab0d1eca065d2bc06c140b41627ce6c4ac63c3fae",
+        "comparison": "identical after CRLF-to-LF normalization; vendored upstream bytes are unchanged"
+      }
+    },
+    {
+      "name": "gpu-descriptor-types",
+      "version": "0.2.0",
+      "repository": "https://github.com/zakarumych/gpu-descriptor",
+      "revision": "9f2fb9546591322e7b77ee1e79385e01effd85e4",
+      "license_expression": "MIT OR Apache-2.0",
+      "path_in_vcs": "types",
+      "revision_evidence": {
+        "source": "published crate .cargo_vcs_info.json",
+        "sha256": "c983f24271f15bd818873b0cb75237cae4c895b0b4ebf16a772d21640599fc44"
+      },
+      "files": [
+        {
+          "path": "gpu-descriptor-types-0.2.0/types/Cargo.toml",
+          "url": "https://raw.githubusercontent.com/zakarumych/gpu-descriptor/9f2fb9546591322e7b77ee1e79385e01effd85e4/types/Cargo.toml",
+          "sha256": "90d76cb4f71ef264c9c13dccd1d93700fd6a92abab07d7d95095534c4f31af38",
+          "source_kind": "upstream_manifest"
+        },
+        {
+          "path": "gpu-descriptor-types-0.2.0/COPYING",
+          "url": "https://raw.githubusercontent.com/zakarumych/gpu-descriptor/9f2fb9546591322e7b77ee1e79385e01effd85e4/COPYING",
+          "sha256": "f72143f7e9d9fb8bd336b139fa22f825a299591c29f2f7338c5566347b137613",
+          "source_kind": "upstream_notice"
+        },
+        {
+          "path": "gpu-descriptor-types-0.2.0/standard/LICENSE-APACHE-2.0.txt",
+          "url": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "source_kind": "standard_license"
+        },
+        {
+          "path": "gpu-descriptor-types-0.2.0/standard/LICENSE-MIT.txt",
+          "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/MIT.txt",
+          "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+          "source_kind": "standard_license",
+          "source_revision": "d46e94e2c78ceede1cfc63cfa0396472d2798d4c"
+        }
+      ],
+      "note": "This exact upstream revision contains COPYING but no full license texts. The supplementary standard texts below are not upstream repository files; the unmodified MIT template is paired with the original COPYING copyright notice.",
+      "manifest_evidence": {
+        "source": "published crate Cargo.toml.orig",
+        "sha256": "8ef585d1ff360285f0a41ae2f29cc1473affc16a5751801759af3bb7f96e7f32",
+        "comparison": "identical after CRLF-to-LF normalization; vendored upstream bytes are unchanged"
+      }
+    },
+    {
+      "name": "hexf-parse",
+      "version": "0.2.1",
+      "repository": "https://github.com/lifthrasiir/hexf",
+      "revision": "4225763d744183d720f575ae96d04161b4d08ea0",
+      "license_expression": "CC0-1.0",
+      "path_in_vcs": null,
+      "revision_evidence": {
+        "source": "published crate .cargo_vcs_info.json",
+        "sha256": "7c5579b3abe5e2dcdcba1c845849b7d2f20f028de49fb27437227fd32545aae7"
+      },
+      "files": [
+        {
+          "path": "hexf-parse-0.2.1/parse/Cargo.toml",
+          "url": "https://raw.githubusercontent.com/lifthrasiir/hexf/4225763d744183d720f575ae96d04161b4d08ea0/parse/Cargo.toml",
+          "sha256": "4a56dbdbc12054fd33b7a2634a45cbbe6fe12f5e6f4081002cbfa527f7220c70",
+          "source_kind": "upstream_manifest"
+        },
+        {
+          "path": "hexf-parse-0.2.1/standard/LICENSE-CC0-1.0.txt",
+          "url": "https://raw.githubusercontent.com/spdx/license-list-data/d46e94e2c78ceede1cfc63cfa0396472d2798d4c/text/CC0-1.0.txt",
+          "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+          "source_kind": "standard_license",
+          "source_revision": "d46e94e2c78ceede1cfc63cfa0396472d2798d4c"
+        }
+      ],
+      "note": "This exact upstream revision contains no standalone license or copyright file. The original package manifest declares CC0-1.0 and its author. The supplementary CC0 text is from the official SPDX license list, not the upstream repository.",
+      "manifest_evidence": {
+        "source": "published crate Cargo.toml.orig",
+        "sha256": "4a56dbdbc12054fd33b7a2634a45cbbe6fe12f5e6f4081002cbfa527f7220c70",
+        "comparison": "identical"
+      }
+    },
+    {
+      "name": "profiling",
+      "version": "1.0.17",
+      "repository": "https://github.com/aclysma/profiling",
+      "revision": "740d74c82212f1f0584cfa5c6d884c5ab5367101",
+      "license_expression": "MIT OR Apache-2.0",
+      "path_in_vcs": "profiling",
+      "revision_evidence": {
+        "source": "published crate .cargo_vcs_info.json",
+        "sha256": "e5a98684e0a7fefd5968abeda46bc88f653d9fad4c0d8a63373020b043dd45ba"
+      },
+      "files": [
+        {
+          "path": "profiling-1.0.17/profiling/Cargo.toml",
+          "url": "https://raw.githubusercontent.com/aclysma/profiling/740d74c82212f1f0584cfa5c6d884c5ab5367101/profiling/Cargo.toml",
+          "sha256": "dc822869139176bfdf3af32081e3bba5eee2c017f4c38732c01625158d62b38c",
+          "source_kind": "upstream_manifest"
+        },
+        {
+          "path": "profiling-1.0.17/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/aclysma/profiling/740d74c82212f1f0584cfa5c6d884c5ab5367101/LICENSE-APACHE",
+          "sha256": "10d30a673cd5e9349bdc02aeb48f14b3386d27d0da32df8f0a555d4aa16aa551",
+          "source_kind": "upstream_notice"
+        },
+        {
+          "path": "profiling-1.0.17/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/aclysma/profiling/740d74c82212f1f0584cfa5c6d884c5ab5367101/LICENSE-MIT",
+          "sha256": "c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333",
+          "source_kind": "upstream_notice"
+        }
+      ],
+      "manifest_evidence": {
+        "source": "published crate Cargo.toml.orig",
+        "sha256": "dc822869139176bfdf3af32081e3bba5eee2c017f4c38732c01625158d62b38c",
+        "comparison": "identical"
+      }
+    },
+    {
+      "name": "spirv",
+      "version": "0.4.0+sdk-1.4.341.0",
+      "repository": "https://github.com/gfx-rs/rspirv",
+      "revision": "8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4",
+      "license_expression": "Apache-2.0",
+      "path_in_vcs": "spirv",
+      "revision_evidence": {
+        "source": "published crate .cargo_vcs_info.json",
+        "sha256": "d6c805477fb7dd3f7ac6cd6589be6e91acb67f4976954a144278258409b8fa04"
+      },
+      "files": [
+        {
+          "path": "spirv-0.4.0+sdk-1.4.341.0/spirv/Cargo.toml",
+          "url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/spirv/Cargo.toml",
+          "sha256": "4d19e7aaeba0b0dd52eaa00bb592dfc6015813385fc47badcee396c353cc1d61",
+          "source_kind": "upstream_manifest"
+        },
+        {
+          "path": "spirv-0.4.0+sdk-1.4.341.0/LICENSE",
+          "url": "https://raw.githubusercontent.com/gfx-rs/rspirv/8afc3d0ac8e158128cd1410bb2e4b4c26ab11bb4/LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "source_kind": "upstream_notice"
+        }
+      ],
+      "manifest_evidence": {
+        "source": "published crate Cargo.toml.orig",
+        "sha256": "4d19e7aaeba0b0dd52eaa00bb592dfc6015813385fc47badcee396c353cc1d61",
+        "comparison": "identical"
+      }
+    }
+  ]
+}
