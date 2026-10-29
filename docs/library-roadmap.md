@@ -913,6 +913,34 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [native numeric byte order](stdlib-native-endian.md) implements 24 concrete
+  u64/i16/i32/i64/f32/f64 functions, bringing `core::endian` to 36. The raw
+  caller-length/fallback/boolean contract remains explicit: full field bounds
+  precede access, rejected writes do not mutate, valid operations retain
+  native slice stride, and physical backing/lifetime remain manual.
+  Native u64 composes existing u32 packing, signed fields preserve
+  two's-complement bits and float fields use existing exact bit transfers.
+  IEEE corner and fallback encodings need new executable evidence; existing
+  float receipts and historical endian12 do not cover these additions.
+  Direct native/trap coverage passes two tests in 8.33s: all 24 additions,
+  58 literal vectors across orders/layouts and four physical-overclaim exits101.
+  The selected old endian runtime passes one test/seven fixtures in 8.48s,
+  and UTF-16 consumer one test/two fixtures passes in 5.82s. The independent
+  model passes 16,032 cases in 6.96s (10,624 admitted/5,408 rejected), checking
+  independent read bits/write bytes. Two memory tests pass in 7.73s, covering
+  672 rejected accesses, three real backing forms, exact fits/selected NaN
+  generic transport and no host calls in pure phases. The 32,768-record scale
+  workload has 196,608 writes and 196,608 reads with one exact backing release;
+  lifecycle times are not isolated performance ratios. The
+  [record-repacking application](stdlib-repack-records.md) passes four
+  groups/96 cases across model27/7.80s and CLI23+rejection30+I/O16/7.62s,
+  including all conversion pairs, high-bit count admission before narrowing,
+  a 65,536-record frame and four selected allocation denials. Static inventory
+  separately passes one CPU test for all 36 names; it is not runtime evidence.
+  The selected increment is accepted on native Linux x86_64 CPU output from
+  the GPU compiler.
+  Broader target support and
+  the whole library goal remain open; Unix-domain IPC is separate future work.
 - Accepted [advisory file locking](stdlib-file-locks.md) adds Shared/Exclusive
   and Blocking/Nonblocking modes mapped to one
   borrowed File flock attempt; only exact-zero success is acknowledged.

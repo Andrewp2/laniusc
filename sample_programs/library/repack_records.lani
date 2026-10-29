@@ -1,0 +1,138 @@
+// Framed native numeric records decoded and reencoded through core::endian.
+module app::main;
+import alloc::io;
+import core::endian;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::slice::View;
+import std::args;
+import std::signal;
+import std::stream;
+
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:core::result::Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap(); if ((count <= 0) || (count > bytes.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("repack_records: operation failed\n",33),2,8); return status; }
+fn read(input:&alloc::io::Buffer) -> i32 {
+    let source = std::stream::stdin(); let scratch:[u8;4096] = [0;4096]; let calls:i32 = 0;
+    while(true) {
+        if (calls == 8192) { return 2; } calls += 1;
+        let remaining:i32 = 2097160-input.len(); let wanted:i32 = remaining;
+        if (wanted > 4096) { wanted = 4096; }
+        // The extra probe distinguishes a full valid frame from trailing bytes.
+        if (wanted == 0) { wanted = 1; }
+        let received:core::result::Result<i32,core::io::Error> = source.read(scratch,0,wanted);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let count:i32 = received.unwrap();
+        if ((count < 0) || (count > wanted)) { return 3; }
+        if (count == 0) { return 0; }
+        if (count > remaining) { return 2; }
+        let saved:core::result::Result<i32,core::io::Error> = input.write(scratch,0,count);
+        if (saved.is_err()) { return match(saved.unwrap_err()) { core::io::Error::AllocationFailed -> 4, _ -> 6 }; }
+        if (saved.unwrap() != count) { return 6; }
+    }
+    return 3;
+}
+fn recode_record(bytes:[u8], length:i32, offset:i32, from_little:bool, to_little:bool) -> bool {
+    let identifier:u64 = 0; let timestamp:i64 = 0; let channel:i32 = 0;
+    let sample:f32 = 0.0; let reading:f64 = 0.0;
+    // The complete frame establishes every field's logical and physical backing.
+    // Float values undergo only bit-preserving decode, local transfer and encode.
+    if (from_little) {
+        identifier = core::endian::read_u64_le_or(bytes,length,offset,0);
+        timestamp = core::endian::read_i64_le_or(bytes,length,offset+8,0);
+        channel = core::endian::read_i32_le_or(bytes,length,offset+16,0);
+        sample = core::endian::read_f32_le_or(bytes,length,offset+20,0.0);
+        reading = core::endian::read_f64_le_or(bytes,length,offset+24,0.0);
+    } else {
+        identifier = core::endian::read_u64_be_or(bytes,length,offset,0);
+        timestamp = core::endian::read_i64_be_or(bytes,length,offset+8,0);
+        channel = core::endian::read_i32_be_or(bytes,length,offset+16,0);
+        sample = core::endian::read_f32_be_or(bytes,length,offset+20,0.0);
+        reading = core::endian::read_f64_be_or(bytes,length,offset+24,0.0);
+    }
+    if (to_little) {
+        if (!core::endian::write_u64_le(bytes,length,offset,identifier)) { return false; }
+        if (!core::endian::write_i64_le(bytes,length,offset+8,timestamp)) { return false; }
+        if (!core::endian::write_i32_le(bytes,length,offset+16,channel)) { return false; }
+        if (!core::endian::write_f32_le(bytes,length,offset+20,sample)) { return false; }
+        if (!core::endian::write_f64_le(bytes,length,offset+24,reading)) { return false; }
+    } else {
+        if (!core::endian::write_u64_be(bytes,length,offset,identifier)) { return false; }
+        if (!core::endian::write_i64_be(bytes,length,offset+8,timestamp)) { return false; }
+        if (!core::endian::write_i32_be(bytes,length,offset+16,channel)) { return false; }
+        if (!core::endian::write_f32_be(bytes,length,offset+20,sample)) { return false; }
+        if (!core::endian::write_f64_be(bytes,length,offset+24,reading)) { return false; }
+    }
+    return true;
+}
+fn recode(input:&alloc::io::Buffer, from_little:bool, to_little:bool) -> i32 {
+    let length:i32 = input.len(); if (length < 8) { return 2; }
+    let bytes:[u8] = input.as_bytes();
+    if ((bytes[0] != 76) || (bytes[1] != 78) || (bytes[2] != 82) || (bytes[3] != 49)) { return 2; }
+    let count:u32 = 0;
+    if (from_little) { count = core::endian::read_u32_le_or(bytes,length,4,0); }
+    else { count = core::endian::read_u32_be_or(bytes,length,4,0); }
+    // Bound before narrowing and multiplication. Count zero is a complete frame.
+    if (count > 65536) { return 2; }
+    if (length != 8+(count as i32)*32) { return 2; }
+    if (to_little) { if (!core::endian::write_u32_le(bytes,length,4,count)) { return 6; } }
+    else { if (!core::endian::write_u32_be(bytes,length,4,count)) { return 6; } }
+    let index:i32 = 0;
+    while(index < (count as i32)) {
+        if (!recode_record(bytes,length,8+index*32,from_little,to_little)) { return 6; }
+        index += 1;
+    }
+    return 0;
+}
+fn run(from_little:bool, to_little:bool) -> i32 {
+    let made:core::result::Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(2097160);
+    if (made.is_err()) { return 4; }
+    let input = made.unwrap(); let status:i32 = read(input.borrow());
+    if (status == 0) { status = recode(input.borrow(),from_little,to_little); }
+    if ((status == 0) && !write(core::slice::view(input.as_bytes(),input.len()).unwrap(),1,8192)) { status = 5; }
+    input.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    if (values.length == 1) {
+        let first:View<u8> = values.values[values.start];
+        if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) {
+            let help = literal("Usage: repack_records FROM TO\nConvert LNR1 record frames from stdin to stdout; FROM and TO are exactly le or be.\nFrame: LNR1, u32 count, then 32-byte records: u64/i64/i32/f32/f64 at offsets 0/8/16/20/24.\nAll float bits are preserved. Same-order conversion is byte identity.\nLimits: 65536 records, 2097160 input/output bytes, 8192 input and output calls each.\nValidate the complete frame and EOF before output. A sole --help or -h shows help.\n",442);
+            if (!write(help,1,64)) { return report(5); } return 0;
+        }
+    }
+    if (values.length != 2) { return report(2); }
+    let from:View<u8> = values.values[values.start]; let to:View<u8> = values.values[values.start+1];
+    let from_little:bool = equals(from,literal("le",2)); let to_little:bool = equals(to,literal("le",2));
+    if ((!from_little && !equals(from,literal("be",2))) || (!to_little && !equals(to,literal("be",2)))) { return report(2); }
+    let status:i32 = run(from_little,to_little); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,2,64);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status:i32 = arguments(values.as_view()); values.destroy(); return status;
+}

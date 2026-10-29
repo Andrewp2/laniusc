@@ -1,0 +1,189 @@
+// Test-only binary adapter: kind, order, layout, len, offset, value bits,
+// fallback bits and identity, followed by 32 independently supplied read bytes.
+// Read results and actual write bytes are observed separately.
+module app::main;
+
+import core::endian;
+import core::f32;
+import core::f64;
+import core::mem;
+import std::io;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        value |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return value;
+}
+
+struct Output { bytes: [u8], pointer: ptr, used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer, self.used); self.used = 0; }
+    fn word(&self, value: u64) {
+        if (self.used == 4096) { self.flush(); }
+        let index: i32 = 0;
+        while (index < 8) {
+            self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8;
+            index += 1;
+        }
+        self.used += 8;
+    }
+}
+
+fn run(input: [u8], output: &Output) {
+    let kind: u64 = get64(input, 0);
+    let order: u64 = get64(input, 8);
+    let layout: u64 = get64(input, 16);
+    let length: i32 = get64(input, 24) as i32;
+    let offset: i32 = get64(input, 32) as i32;
+    let value_bits: u64 = get64(input, 40);
+    let fallback_bits: u64 = get64(input, 48);
+    let identity: u64 = get64(input, 56);
+    assert(kind <= 5 && order <= 1 && layout <= 1);
+    let native_read: [u8; 32] = [0; 32];
+    let native_write: [u8; 32] = [0; 32];
+    let read_words: [i32; 8] = [0; 8];
+    let write_words: [i32; 8] = [0; 8];
+    let packed_read: [u8] = core::mem::typed_slice_from_raw_parts<u8>(
+        core::mem::i32_array_data_ptr(read_words), 32);
+    let packed_write: [u8] = core::mem::typed_slice_from_raw_parts<u8>(
+        core::mem::i32_array_data_ptr(write_words), 32);
+    let reading: [u8] = native_read;
+    let writing: [u8] = native_write;
+    if (layout == 1) { reading = packed_read; writing = packed_write; }
+    if (layout == 0) {
+        assert(core::mem::slice_stride(reading) < 0 && core::mem::slice_stride(writing) < 0);
+    } else {
+        assert(core::mem::slice_stride(reading) == 1 && core::mem::slice_stride(writing) == 1);
+    }
+    let index: i32 = 0;
+    while (index < 32) {
+        reading[index] = input[64 + index];
+        writing[index] = ((identity * 19 + (index as u64) * 23 + 11) & 255) as u8;
+        index += 1;
+    }
+    let observed: u64 = 0;
+    let written: bool = false;
+    if (kind == 0) {
+        let value: u64 = value_bits;
+        let fallback: u64 = fallback_bits;
+        if (order == 0) {
+            observed = core::endian::read_u64_be_or(reading, length, offset, fallback);
+            written = core::endian::write_u64_be(writing, length, offset, value);
+        } else {
+            observed = core::endian::read_u64_le_or(reading, length, offset, fallback);
+            written = core::endian::write_u64_le(writing, length, offset, value);
+        }
+    }
+    if (kind == 1) {
+        let value: i16 = (value_bits as u16) as i16;
+        let fallback: i16 = (fallback_bits as u16) as i16;
+        let read_value: i16 = fallback;
+        if (order == 0) {
+            read_value = core::endian::read_i16_be_or(reading, length, offset, fallback);
+            written = core::endian::write_i16_be(writing, length, offset, value);
+        } else {
+            read_value = core::endian::read_i16_le_or(reading, length, offset, fallback);
+            written = core::endian::write_i16_le(writing, length, offset, value);
+        }
+        observed = (read_value as u16) as u64;
+    }
+    if (kind == 2) {
+        let value: i32 = (value_bits as u32) as i32;
+        let fallback: i32 = (fallback_bits as u32) as i32;
+        let read_value: i32 = fallback;
+        if (order == 0) {
+            read_value = core::endian::read_i32_be_or(reading, length, offset, fallback);
+            written = core::endian::write_i32_be(writing, length, offset, value);
+        } else {
+            read_value = core::endian::read_i32_le_or(reading, length, offset, fallback);
+            written = core::endian::write_i32_le(writing, length, offset, value);
+        }
+        observed = (read_value as u32) as u64;
+    }
+    if (kind == 3) {
+        let value: i64 = value_bits as i64;
+        let fallback: i64 = fallback_bits as i64;
+        let read_value: i64 = fallback;
+        if (order == 0) {
+            read_value = core::endian::read_i64_be_or(reading, length, offset, fallback);
+            written = core::endian::write_i64_be(writing, length, offset, value);
+        } else {
+            read_value = core::endian::read_i64_le_or(reading, length, offset, fallback);
+            written = core::endian::write_i64_le(writing, length, offset, value);
+        }
+        observed = read_value as u64;
+    }
+    if (kind == 4) {
+        let value: f32 = core::f32::from_bits(value_bits as u32);
+        let fallback: f32 = core::f32::from_bits(fallback_bits as u32);
+        let read_value: f32 = fallback;
+        if (order == 0) {
+            read_value = core::endian::read_f32_be_or(reading, length, offset, fallback);
+            written = core::endian::write_f32_be(writing, length, offset, value);
+        } else {
+            read_value = core::endian::read_f32_le_or(reading, length, offset, fallback);
+            written = core::endian::write_f32_le(writing, length, offset, value);
+        }
+        observed = core::f32::to_bits(read_value) as u64;
+    }
+    if (kind == 5) {
+        let value: f64 = core::f64::from_bits(value_bits);
+        let fallback: f64 = core::f64::from_bits(fallback_bits);
+        let read_value: f64 = fallback;
+        if (order == 0) {
+            read_value = core::endian::read_f64_be_or(reading, length, offset, fallback);
+            written = core::endian::write_f64_be(writing, length, offset, value);
+        } else {
+            read_value = core::endian::read_f64_le_or(reading, length, offset, fallback);
+            written = core::endian::write_f64_le(writing, length, offset, value);
+        }
+        observed = core::f64::to_bits(read_value);
+    }
+    output.word(kind);
+    output.word(order);
+    output.word(layout);
+    output.word(observed);
+    output.word(written as u64);
+    index = 0;
+    while (index < 32) { output.word(reading[index] as u64); index += 1; }
+    index = 0;
+    while (index < 32) { output.word(writing[index] as u64); index += 1; }
+}
+
+fn main() -> i32 {
+    let input_words: [i32; 24] = [0; 24];
+    let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(input_pointer, 96);
+    let output_words: [i32; 1024] = [0; 1024];
+    let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words);
+    let output_bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(output_pointer, 4096);
+    let output: Output = Output { bytes: output_bytes, pointer: output_pointer, used: 0 };
+    while (read_exact(input_pointer, 96, true)) { run(input, output.borrow()); }
+    output.flush();
+    return 0;
+}

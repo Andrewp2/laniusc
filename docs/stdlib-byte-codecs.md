@@ -8,7 +8,7 @@ values. They make no host calls and create no owned buffers.
 | `core::base64` | Strict padded standard Base64 | Byte count, or fallback / `-1` |
 | `core::binary` | Shortest unsigned binary ASCII | ASCII byte or parsed value, with fallback |
 | `core::hex` | Shortest unsigned hexadecimal ASCII | ASCII byte or parsed value, with fallback |
-| `core::endian` | Fixed-width unsigned bytes, either byte order | Value with fallback; boolean write success |
+| `core::endian` | Fixed-width unsigned, signed and IEEE float encodings, either byte order | Value with fallback; boolean write success |
 | `core::crc32` | Reflected CRC-32/ISO-HDLC | Unfinished state or finished checksum |
 | `core::varint` | Canonical unsigned 32-bit LEB128 | Status, value and next offset |
 | `core::varint_i32` | Signed 32-bit ZigZag followed by canonical LEB128 | The unsigned reader's status/progress, with signed value access |
@@ -126,13 +126,28 @@ and a zero-based `offset` measured in bytes. They do not advance a cursor.
 | --- | ---: | --- | --- |
 | `u16` | 2 | `read_u16_be_or`, `read_u16_le_or` | `write_u16_be`, `write_u16_le` |
 | `u32` | 4 | `read_u32_be_or`, `read_u32_le_or` | `write_u32_be`, `write_u32_le` |
+| Native `u64` | 8 | `read_u64_be_or`, `read_u64_le_or` | `write_u64_be`, `write_u64_le` |
+| `i16` / `i32` / `i64` | 2 / 4 / 8 | `read_i16/i32/i64_be_or`, `read_i16/i32/i64_le_or` | `write_i16/i32/i64_be`, `write_i16/i32/i64_le` |
+| `f32` / `f64` | 4 / 8 | `read_f32/f64_be_or`, `read_f32/f64_le_or` | `write_f32/f64_be`, `write_f32/f64_le` |
 | `core::wide_u64::WideU64` | 8 | `read_wide_u64_be_or`, `read_wide_u64_le_or` | `write_wide_u64_be`, `write_wide_u64_le` |
 
 Big endian puts the most significant byte first; little endian puts the least
 significant byte first. The u32 value 305,419,896 uses bytes `12 34 56 78`
 in big endian or `78 56 34 12` in little endian (byte literals shown in hex).
-The eight-byte functions preserve both u32 words of `WideU64`; they do not
-expose a separate native-u64 overload.
+The explicit `wide_u64` names preserve both u32 words of `WideU64`; native
+u64 has its own concrete functions. Signed encodings preserve same-width
+two's-complement bits, and floats reuse existing exact to_bits/from_bits
+transport without arithmetic. Slash notation above denotes separate concrete
+function names. The [native numeric increment](stdlib-native-endian.md) adds
+24 functions for a 36-function module. Two direct native tests pass with all
+24 additions, 58 literal base vectors and four physical-overclaim traps.
+The independent model passes 16,032 cases; two memory/scale tests pass
+672 rejections and a 32,768-record workload. The record-repacking program
+passes four groups/96 cases. This finite Linux x86_64 increment is accepted.
+The separate static call inventory covers all 36 names and is not runtime
+evidence.
+Historical receipts cover the original twelve u16/u32/represented-WideU64
+functions; current old-family and UTF-16 regressions have separate receipts.
 
 For width `w`, valid logical bounds are `len >= w`, `offset >= 0` and
 `offset <= len-w`. This subtraction-based check avoids an overflowing

@@ -1,0 +1,8 @@
+module app::main;
+import core::endian;
+import core::f64;
+fn main() -> i32 {
+    let short:[u8;7]=[0;7];
+    if (core::endian::write_f64_le(short,8,0,core::f64::from_bits(18442240478968899465))) { return 1; }
+    return 2;
+}

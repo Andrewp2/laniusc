@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **273 modules**, **13353 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **273 modules**, **13377 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -35,7 +35,7 @@ Inventory: **273 modules**, **13353 declaration/member entries**. Counts include
 | [core::crc32](core/crc32.md) | [source](../../stdlib/core/crc32.lani#L3) | 6 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::decimal](core/decimal.md) | [source](../../stdlib/core/decimal.lani#L3) | 70 | Source inventory | [stdlib-decimal](../stdlib-decimal.md) |
 | [core::decimal_number](core/decimal_number.md) | [source](../../stdlib/core/decimal_number.lani#L4) | 36 | Source inventory | [stdlib-decimal-number](../stdlib-decimal-number.md) |
-| [core::endian](core/endian.md) | [source](../../stdlib/core/endian.lani#L2) | 12 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
+| [core::endian](core/endian.md) | [source](../../stdlib/core/endian.lani#L2) | 36 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md), [stdlib-native-endian](../stdlib-native-endian.md), [stdlib-repack-records](../stdlib-repack-records.md) |
 | [core::f32](core/f32.md) | [source](../../stdlib/core/f32.lani#L3) | 57 | Source inventory | [stdlib-floats](../stdlib-floats.md) |
 | [core::f64](core/f64.md) | [source](../../stdlib/core/f64.lani#L3) | 57 | Source inventory | [stdlib-floats](../stdlib-floats.md) |
 | [core::float_decimal](core/float_decimal.md) | [source](../../stdlib/core/float_decimal.lani#L4) | 36 | Source inventory | [stdlib-float-decimal](../stdlib-float-decimal.md), [stdlib-float-precision](../stdlib-float-precision.md) |

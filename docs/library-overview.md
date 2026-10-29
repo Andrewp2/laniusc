@@ -1,6 +1,18 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[native numeric byte-order increment](stdlib-native-endian.md) adds 24
+concrete u64/signed/IEEE-float functions to `core::endian`, bringing its public
+surface to 36 functions. Complete logical-field admission, exact fallback
+and float encodings, explicit byte order and caller backing remain part of
+the contract. Two direct native tests pass with all 24 additions, 58 literal
+vectors and four separate physical-overclaim traps. The independent
+16,032-case model and two memory/scale gates also pass. The record-repacking
+application passes four groups/96 cases, including a 65,536-record frame.
+This finite Linux x86_64 increment is accepted; static inventory covers all
+36 names separately from runtime evidence.
+Historical twelve-function endian and existing float receipts retain their
+source/API scope. The preceding
 [advisory-locking increment](stdlib-file-locks.md) adds one-attempt borrowed
 File lock/unlock and an explicit cooperative file-patch mode. Open-description
 lifetime, duplicate sharing, failed-conversion uncertainty and manual cleanup
@@ -190,6 +202,40 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Native numeric byte order.**
+
+The [24 new endian functions](stdlib-native-endian.md) complete multibyte
+native u64, i16/i32/i64 and f32/f64 fields alongside the existing u16/u32 and
+represented-WideU64 family. Reads return the exact caller fallback and writes
+return false before backing access on invalid complete logical bounds. Valid
+writes select only the field; physical backing/lifetime remain caller duties.
+
+Native u64 composes u32 packing; signed wrappers retain two's-complement bits.
+Float wrappers use existing exact bit-transfer APIs without arithmetic,
+preserving zero signs and NaN payload/signaling encodings as a target contract.
+The module allocates no heap storage and uses no host service or implicit
+machine byte order. Two new native tests pass in 8.33s with all 24 additions,
+58 literal vectors, exact IEEE/fallback bits, no memory services in the direct
+contract and four separate overclaim traps (101). The selected old endian
+runtime passes one test/seven fixtures in 8.48s; UTF-16 passes one test/two
+fixtures in 5.82s. The independent model passes 16,032 cases in 6.96s,
+checking read words and encoded write bytes independently without Python
+floats. Two memory tests pass in 7.73s: 672 rejected-access calls, three real
+backing forms, selected signaling-NaN generic transport, zero host calls
+inside traced pure phases and one exact owner release per fixture.
+The 32,768-record workload makes 196,608 writes and 196,608 reads;
+its instrumented whole lifecycle is separate from isolated throughput.
+The [record-repacking application](stdlib-repack-records.md) passes all four
+groups/96 cases across model27/7.80s and CLI23+rejection30+I/O16/7.62s. It
+preserves per-field integer/IEEE bytes in all four conversion pairs, validates
+high-bit counts before narrowing and executes a 65,536-record frame. Four
+selected allocation denials and exact output-prefix/EOF failures retain their
+finite owner/I/O scopes. The static 36-function call inventory passes one CPU
+test; it is bookkeeping separate from runtime acceptance. This selected
+increment is accepted on native Linux x86_64 CPU output from the GPU compiler;
+earlier twelve-function and float evidence retains its scope. The whole
+library goal, broader targets, automatic lifetimes and formal proofs remain open.
 
 **Advisory file locks.**
 

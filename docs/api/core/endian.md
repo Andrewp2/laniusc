@@ -8,24 +8,30 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
+The native numeric increment adds 24 concrete u64/i16/i32/i64/f32/f64 functions alongside the historical twelve u16/u32/represented-WideU64 functions, for 36 public free functions. Two new native tests pass in 8.33s against source 3f00b736: all 24 additions, 58 literal base vectors across both orders and native-negative/packed-positive byte layouts, plus four separate physical-overclaim exits 101. The direct process has an empty memory-service trace. The first driver build failed a missing Rust mutable borrow before any native attempt; the harness-only correction changes no Lanius body. One selected old-endian test/seven native fixtures passes in 8.48s, and one UTF-16 consumer test/two fixtures passes in 5.82s, separately from historical receipts. Each call chooses be/le independently of host byte order. For width W, require len>=W, offset>=0 and offset<=len-W before any backing access; rejected reads return exact fallback and rejected writes return false without mutation. Valid operations preserve actual slice stride and selected field boundaries; physical backing/lifetime remain caller obligations and physical overclaims may trap after partial writes. Native u64 composes u32 packing, signed fields preserve same-width two's-complement bits, and floats use existing to_bits/from_bits without arithmetic or numeric casts. Exact zero/NaN/fallback bits have selected direct native observations; older float and twelve-function endian receipts do not establish the new wrappers or another target. Allocation-free Lanius, no host service, implicit host-order representation or owner transfer. Selected executable profile is native Linux x86_64 CPU output from the GPU compiler; device execution, broader targets and proofs are unclaimed. The independent model passes one test/6.96s with 16032 cases (10624 admitted/5408 rejected), all 24 additions/two orders/two layouts/seed 0xe0d1a0261030, comparing read bits and actual write bytes without Python floats. Memory/scale passes two tests/7.73s: 672 rejected-access calls across null+three real backing layouts, exact fits/selected sNaN generic/struct/enum transport, zero any-host calls in pure phases, and one exact backing release per fixture. Scale 32768 records performs 196608 writes and 196608 reads over 1114112 payload bytes/1179650 owned bytes; observed 4ms/122ms whole instrumented lifecycles include setup/checks/cleanup and are not isolated codec throughput or compiler ratios. The record-repacking application passes four registered groups/96 unique cases across model 27/7.80s and CLI 23 + rejection 30 + I/O 16/7.62s, including all conversion pairs, a 65536-record frame, high-bit count 0x80000000 rejection in both orders before narrowing, four selected reached allocation denials and a 1024-byte confirmed output prefix before later failure. Required-EOF faults publish nothing; persistent 8192-call interruption summaries do not establish owner releases. Static public-call inventory passes one CPU test/0.00s with the runtime test filtered: all 36 names occur across the old/new executing producers; this is separate bookkeeping, not runtime acceptance. All five new library tests and four application groups are accepted on the finite native Linux x86_64 profile; the full library goal remains open.
+
 ## Contract and evidence guides
 
 - [stdlib-byte-codecs](../../stdlib-byte-codecs.md)
+- [stdlib-native-endian](../../stdlib-native-endian.md)
+- [stdlib-repack-records](../../stdlib-repack-records.md)
 
-Declaration counts: function: 12.
+Declaration counts: function: 36.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [core::bits](bits.md) · [source](../../../stdlib/core/endian.lani#L3)
-- [core::wide_u64](wide_u64.md) · [source](../../../stdlib/core/endian.lani#L4)
+- [core::f32](f32.md) · [source](../../../stdlib/core/endian.lani#L4)
+- [core::f64](f64.md) · [source](../../../stdlib/core/endian.lani#L5)
+- [core::wide_u64](wide_u64.md) · [source](../../../stdlib/core/endian.lani#L6)
 
 ## Free functions and extern declarations
 
 ### function: read_u16_be_or
 
-[Source line 12](../../../stdlib/core/endian.lani#L12)
+[Source line 14](../../../stdlib/core/endian.lani#L14)
 
 ```lanius
 pub fn read_u16_be_or(bytes: [u8], len: i32, offset: i32, fallback: u16) -> u16
@@ -33,7 +39,7 @@ pub fn read_u16_be_or(bytes: [u8], len: i32, offset: i32, fallback: u16) -> u16
 
 ### function: read_u16_le_or
 
-[Source line 25](../../../stdlib/core/endian.lani#L25)
+[Source line 27](../../../stdlib/core/endian.lani#L27)
 
 ```lanius
 pub fn read_u16_le_or(bytes: [u8], len: i32, offset: i32, fallback: u16) -> u16
@@ -41,7 +47,7 @@ pub fn read_u16_le_or(bytes: [u8], len: i32, offset: i32, fallback: u16) -> u16
 
 ### function: read_u32_be_or
 
-[Source line 38](../../../stdlib/core/endian.lani#L38)
+[Source line 40](../../../stdlib/core/endian.lani#L40)
 
 ```lanius
 pub fn read_u32_be_or(bytes: [u8], len: i32, offset: i32, fallback: u32) -> u32
@@ -49,7 +55,7 @@ pub fn read_u32_be_or(bytes: [u8], len: i32, offset: i32, fallback: u32) -> u32
 
 ### function: read_u32_le_or
 
-[Source line 46](../../../stdlib/core/endian.lani#L46)
+[Source line 48](../../../stdlib/core/endian.lani#L48)
 
 ```lanius
 pub fn read_u32_le_or(bytes: [u8], len: i32, offset: i32, fallback: u32) -> u32
@@ -57,7 +63,7 @@ pub fn read_u32_le_or(bytes: [u8], len: i32, offset: i32, fallback: u32) -> u32
 
 ### function: read_wide_u64_be_or
 
-[Source line 56](../../../stdlib/core/endian.lani#L56)
+[Source line 58](../../../stdlib/core/endian.lani#L58)
 
 ```lanius
 pub fn read_wide_u64_be_or(
@@ -67,7 +73,7 @@ pub fn read_wide_u64_be_or(
 
 ### function: read_wide_u64_le_or
 
-[Source line 67](../../../stdlib/core/endian.lani#L67)
+[Source line 69](../../../stdlib/core/endian.lani#L69)
 
 ```lanius
 pub fn read_wide_u64_le_or(
@@ -77,7 +83,7 @@ pub fn read_wide_u64_le_or(
 
 ### function: write_u16_be
 
-[Source line 80](../../../stdlib/core/endian.lani#L80)
+[Source line 82](../../../stdlib/core/endian.lani#L82)
 
 ```lanius
 pub fn write_u16_be(bytes: [u8], len: i32, offset: i32, value: u16) -> bool
@@ -85,7 +91,7 @@ pub fn write_u16_be(bytes: [u8], len: i32, offset: i32, value: u16) -> bool
 
 ### function: write_u16_le
 
-[Source line 94](../../../stdlib/core/endian.lani#L94)
+[Source line 96](../../../stdlib/core/endian.lani#L96)
 
 ```lanius
 pub fn write_u16_le(bytes: [u8], len: i32, offset: i32, value: u16) -> bool
@@ -93,7 +99,7 @@ pub fn write_u16_le(bytes: [u8], len: i32, offset: i32, value: u16) -> bool
 
 ### function: write_u32_be
 
-[Source line 108](../../../stdlib/core/endian.lani#L108)
+[Source line 110](../../../stdlib/core/endian.lani#L110)
 
 ```lanius
 pub fn write_u32_be(bytes: [u8], len: i32, offset: i32, value: u32) -> bool
@@ -101,7 +107,7 @@ pub fn write_u32_be(bytes: [u8], len: i32, offset: i32, value: u32) -> bool
 
 ### function: write_u32_le
 
-[Source line 119](../../../stdlib/core/endian.lani#L119)
+[Source line 121](../../../stdlib/core/endian.lani#L121)
 
 ```lanius
 pub fn write_u32_le(bytes: [u8], len: i32, offset: i32, value: u32) -> bool
@@ -109,7 +115,7 @@ pub fn write_u32_le(bytes: [u8], len: i32, offset: i32, value: u32) -> bool
 
 ### function: write_wide_u64_be
 
-[Source line 132](../../../stdlib/core/endian.lani#L132)
+[Source line 134](../../../stdlib/core/endian.lani#L134)
 
 ```lanius
 pub fn write_wide_u64_be(
@@ -119,10 +125,250 @@ pub fn write_wide_u64_be(
 
 ### function: write_wide_u64_le
 
-[Source line 149](../../../stdlib/core/endian.lani#L149)
+[Source line 151](../../../stdlib/core/endian.lani#L151)
 
 ```lanius
 pub fn write_wide_u64_le(
     bytes: [u8], len: i32, offset: i32, value: core::wide_u64::WideU64
 ) -> bool
 ```
+
+### function: read_u64_be_or
+
+[Source line 170](../../../stdlib/core/endian.lani#L170)
+
+```lanius
+pub fn read_u64_be_or(bytes:[u8],len:i32,offset:i32,fallback:u64) -> u64
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 8 selected logical bytes as big-endian u64; exact original fallback before backing access on invalid bounds. Preserves the full specified-width integer bit pattern.
+
+### function: read_u64_le_or
+
+[Source line 176](../../../stdlib/core/endian.lani#L176)
+
+```lanius
+pub fn read_u64_le_or(bytes:[u8],len:i32,offset:i32,fallback:u64) -> u64
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 8 selected logical bytes as little-endian u64; exact original fallback before backing access on invalid bounds. Preserves the full specified-width integer bit pattern.
+
+### function: write_u64_be
+
+[Source line 182](../../../stdlib/core/endian.lani#L182)
+
+```lanius
+pub fn write_u64_be(bytes:[u8],len:i32,offset:i32,value:u64) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 8-byte field before writing big-endian u64; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses the shared unsigned-width packing engine.
+
+### function: write_u64_le
+
+[Source line 190](../../../stdlib/core/endian.lani#L190)
+
+```lanius
+pub fn write_u64_le(bytes:[u8],len:i32,offset:i32,value:u64) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 8-byte field before writing little-endian u64; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses the shared unsigned-width packing engine.
+
+### function: read_i16_be_or
+
+[Source line 201](../../../stdlib/core/endian.lani#L201)
+
+```lanius
+pub fn read_i16_be_or(bytes:[u8],len:i32,offset:i32,fallback:i16) -> i16
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 2 selected logical bytes as big-endian i16; exact original fallback before backing access on invalid bounds. Preserves the full specified-width integer bit pattern.
+
+### function: read_i16_le_or
+
+[Source line 205](../../../stdlib/core/endian.lani#L205)
+
+```lanius
+pub fn read_i16_le_or(bytes:[u8],len:i32,offset:i32,fallback:i16) -> i16
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 2 selected logical bytes as little-endian i16; exact original fallback before backing access on invalid bounds. Preserves the full specified-width integer bit pattern.
+
+### function: write_i16_be
+
+[Source line 209](../../../stdlib/core/endian.lani#L209)
+
+```lanius
+pub fn write_i16_be(bytes:[u8],len:i32,offset:i32,value:i16) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 2-byte field before writing big-endian i16; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses the shared unsigned-width packing engine.
+
+### function: write_i16_le
+
+[Source line 213](../../../stdlib/core/endian.lani#L213)
+
+```lanius
+pub fn write_i16_le(bytes:[u8],len:i32,offset:i32,value:i16) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 2-byte field before writing little-endian i16; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses the shared unsigned-width packing engine.
+
+### function: read_i32_be_or
+
+[Source line 217](../../../stdlib/core/endian.lani#L217)
+
+```lanius
+pub fn read_i32_be_or(bytes:[u8],len:i32,offset:i32,fallback:i32) -> i32
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 4 selected logical bytes as big-endian i32; exact original fallback before backing access on invalid bounds. Preserves the full specified-width integer bit pattern.
+
+### function: read_i32_le_or
+
+[Source line 221](../../../stdlib/core/endian.lani#L221)
+
+```lanius
+pub fn read_i32_le_or(bytes:[u8],len:i32,offset:i32,fallback:i32) -> i32
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 4 selected logical bytes as little-endian i32; exact original fallback before backing access on invalid bounds. Preserves the full specified-width integer bit pattern.
+
+### function: write_i32_be
+
+[Source line 225](../../../stdlib/core/endian.lani#L225)
+
+```lanius
+pub fn write_i32_be(bytes:[u8],len:i32,offset:i32,value:i32) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 4-byte field before writing big-endian i32; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses the shared unsigned-width packing engine.
+
+### function: write_i32_le
+
+[Source line 229](../../../stdlib/core/endian.lani#L229)
+
+```lanius
+pub fn write_i32_le(bytes:[u8],len:i32,offset:i32,value:i32) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 4-byte field before writing little-endian i32; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses the shared unsigned-width packing engine.
+
+### function: read_i64_be_or
+
+[Source line 233](../../../stdlib/core/endian.lani#L233)
+
+```lanius
+pub fn read_i64_be_or(bytes:[u8],len:i32,offset:i32,fallback:i64) -> i64
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 8 selected logical bytes as big-endian i64; exact original fallback before backing access on invalid bounds. Preserves the full specified-width integer bit pattern.
+
+### function: read_i64_le_or
+
+[Source line 237](../../../stdlib/core/endian.lani#L237)
+
+```lanius
+pub fn read_i64_le_or(bytes:[u8],len:i32,offset:i32,fallback:i64) -> i64
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 8 selected logical bytes as little-endian i64; exact original fallback before backing access on invalid bounds. Preserves the full specified-width integer bit pattern.
+
+### function: write_i64_be
+
+[Source line 241](../../../stdlib/core/endian.lani#L241)
+
+```lanius
+pub fn write_i64_be(bytes:[u8],len:i32,offset:i32,value:i64) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 8-byte field before writing big-endian i64; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses the shared unsigned-width packing engine.
+
+### function: write_i64_le
+
+[Source line 245](../../../stdlib/core/endian.lani#L245)
+
+```lanius
+pub fn write_i64_le(bytes:[u8],len:i32,offset:i32,value:i64) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 8-byte field before writing little-endian i64; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses the shared unsigned-width packing engine.
+
+### function: read_f32_be_or
+
+[Source line 252](../../../stdlib/core/endian.lani#L252)
+
+```lanius
+pub fn read_f32_be_or(bytes:[u8],len:i32,offset:i32,fallback:f32) -> f32
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 4 selected logical bytes as big-endian f32; exact original fallback before backing access on invalid bounds. Preserves IEEE encoding bits through the existing from_bits target contract, without arithmetic.
+
+### function: read_f32_le_or
+
+[Source line 257](../../../stdlib/core/endian.lani#L257)
+
+```lanius
+pub fn read_f32_le_or(bytes:[u8],len:i32,offset:i32,fallback:f32) -> f32
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 4 selected logical bytes as little-endian f32; exact original fallback before backing access on invalid bounds. Preserves IEEE encoding bits through the existing from_bits target contract, without arithmetic.
+
+### function: write_f32_be
+
+[Source line 262](../../../stdlib/core/endian.lani#L262)
+
+```lanius
+pub fn write_f32_be(bytes:[u8],len:i32,offset:i32,value:f32) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 4-byte field before writing big-endian f32; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses existing to_bits without arithmetic or canonicalization.
+
+### function: write_f32_le
+
+[Source line 267](../../../stdlib/core/endian.lani#L267)
+
+```lanius
+pub fn write_f32_le(bytes:[u8],len:i32,offset:i32,value:f32) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 4-byte field before writing little-endian f32; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses existing to_bits without arithmetic or canonicalization.
+
+### function: read_f64_be_or
+
+[Source line 272](../../../stdlib/core/endian.lani#L272)
+
+```lanius
+pub fn read_f64_be_or(bytes:[u8],len:i32,offset:i32,fallback:f64) -> f64
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 8 selected logical bytes as big-endian f64; exact original fallback before backing access on invalid bounds. Preserves IEEE encoding bits through the existing from_bits target contract, without arithmetic.
+
+### function: read_f64_le_or
+
+[Source line 277](../../../stdlib/core/endian.lani#L277)
+
+```lanius
+pub fn read_f64_le_or(bytes:[u8],len:i32,offset:i32,fallback:f64) -> f64
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Read 8 selected logical bytes as little-endian f64; exact original fallback before backing access on invalid bounds. Preserves IEEE encoding bits through the existing from_bits target contract, without arithmetic.
+
+### function: write_f64_be
+
+[Source line 282](../../../stdlib/core/endian.lani#L282)
+
+```lanius
+pub fn write_f64_be(bytes:[u8],len:i32,offset:i32,value:f64) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 8-byte field before writing big-endian f64; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses existing to_bits without arithmetic or canonicalization.
+
+### function: write_f64_le
+
+[Source line 287](../../../stdlib/core/endian.lani#L287)
+
+```lanius
+pub fn write_f64_le(bytes:[u8],len:i32,offset:i32,value:f64) -> bool
+```
+
+Accepted on the finite native Linux x86_64 profile; direct/model/memory/application scopes are separate in the guide. Validate the complete 8-byte field before writing little-endian f64; false leaves storage unchanged on invalid logical bounds. True writes the field and preserves outside elements; physical backing/lifetime remain manual. Uses existing to_bits without arithmetic or canonicalization.

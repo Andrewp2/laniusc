@@ -1,0 +1,198 @@
+// Literal byte vectors independently check reads and writes, not just pairs.
+module app::main;
+import core::endian;
+import core::f32;
+import core::f64;
+import core::mem;
+
+fn clear(bytes:[u8]) { let index:i32=0; while (index<16) { bytes[index]=171; index+=1; } }
+fn prepare(bytes:[u8],big:[u8],width:i32,little:bool) {
+    clear(bytes); let index:i32=0;
+    while (index<width) { let source:i32=index; if (little) { source=width-1-index; } bytes[3+index]=big[source]; index+=1; }
+}
+fn verify(bytes:[u8],big:[u8],width:i32,little:bool) {
+    let index:i32=0;
+    while (index<16) {
+        let expected:u8=171;
+        if (index>=3 && index<3+width) { let source:i32=index-3; if (little) { source=width-1-source; } expected=big[source]; }
+        assert(bytes[index]==expected); index+=1;
+    }
+}
+fn u64_case(bytes:[u8],value:u64,big:[u8]) {
+    let mode:i32=0;
+    while (mode<2) {
+        let little:bool=mode==1; prepare(bytes,big,8,little);
+        if (little) { assert(core::endian::read_u64_le_or(bytes,11,3,99)==value); }
+        else { assert(core::endian::read_u64_be_or(bytes,11,3,99)==value); }
+        verify(bytes,big,8,little); clear(bytes);
+        if (little) { assert(core::endian::write_u64_le(bytes,11,3,value)); }
+        else { assert(core::endian::write_u64_be(bytes,11,3,value)); }
+        verify(bytes,big,8,little); mode+=1;
+    }
+}
+fn i16_case(bytes:[u8],value:i16,big:[u8]) {
+    let mode:i32=0;
+    while (mode<2) {
+        let little:bool=mode==1; prepare(bytes,big,2,little);
+        if (little) { assert(core::endian::read_i16_le_or(bytes,5,3,99)==value); }
+        else { assert(core::endian::read_i16_be_or(bytes,5,3,99)==value); }
+        verify(bytes,big,2,little); clear(bytes);
+        if (little) { assert(core::endian::write_i16_le(bytes,5,3,value)); }
+        else { assert(core::endian::write_i16_be(bytes,5,3,value)); }
+        verify(bytes,big,2,little); mode+=1;
+    }
+}
+fn i32_case(bytes:[u8],value:i32,big:[u8]) {
+    let mode:i32=0;
+    while (mode<2) {
+        let little:bool=mode==1; prepare(bytes,big,4,little);
+        if (little) { assert(core::endian::read_i32_le_or(bytes,7,3,99)==value); }
+        else { assert(core::endian::read_i32_be_or(bytes,7,3,99)==value); }
+        verify(bytes,big,4,little); clear(bytes);
+        if (little) { assert(core::endian::write_i32_le(bytes,7,3,value)); }
+        else { assert(core::endian::write_i32_be(bytes,7,3,value)); }
+        verify(bytes,big,4,little); mode+=1;
+    }
+}
+fn i64_case(bytes:[u8],value:i64,big:[u8]) {
+    let mode:i32=0;
+    while (mode<2) {
+        let little:bool=mode==1; prepare(bytes,big,8,little);
+        if (little) { assert(core::endian::read_i64_le_or(bytes,11,3,99)==value); }
+        else { assert(core::endian::read_i64_be_or(bytes,11,3,99)==value); }
+        verify(bytes,big,8,little); clear(bytes);
+        if (little) { assert(core::endian::write_i64_le(bytes,11,3,value)); }
+        else { assert(core::endian::write_i64_be(bytes,11,3,value)); }
+        verify(bytes,big,8,little); mode+=1;
+    }
+}
+fn f32_case(bytes:[u8],bits:u32,big:[u8]) {
+    let mode:i32=0;
+    while (mode<2) {
+        let little:bool=mode==1; prepare(bytes,big,4,little);
+        let fallback:f32=core::f32::from_bits(4286578979);
+        if (little) { assert(core::f32::to_bits(core::endian::read_f32_le_or(bytes,7,3,fallback))==bits); }
+        else { assert(core::f32::to_bits(core::endian::read_f32_be_or(bytes,7,3,fallback))==bits); }
+        verify(bytes,big,4,little); clear(bytes);
+        let value:f32=core::f32::from_bits(bits);
+        if (little) { assert(core::endian::write_f32_le(bytes,7,3,value)); }
+        else { assert(core::endian::write_f32_be(bytes,7,3,value)); }
+        verify(bytes,big,4,little); mode+=1;
+    }
+}
+fn f64_case(bytes:[u8],bits:u64,big:[u8]) {
+    let mode:i32=0;
+    while (mode<2) {
+        let little:bool=mode==1; prepare(bytes,big,8,little);
+        let fallback:f64=core::f64::from_bits(18442240478968899465);
+        if (little) { assert(core::f64::to_bits(core::endian::read_f64_le_or(bytes,11,3,fallback))==bits); }
+        else { assert(core::f64::to_bits(core::endian::read_f64_be_or(bytes,11,3,fallback))==bits); }
+        verify(bytes,big,8,little); clear(bytes);
+        let value:f64=core::f64::from_bits(bits);
+        if (little) { assert(core::endian::write_f64_le(bytes,11,3,value)); }
+        else { assert(core::endian::write_f64_be(bytes,11,3,value)); }
+        verify(bytes,big,8,little); mode+=1;
+    }
+}
+fn integer_vectors(bytes:[u8]) {
+    u64_case(bytes,0,[0,0,0,0,0,0,0,0]);
+    u64_case(bytes,1,[0,0,0,0,0,0,0,1]);
+    u64_case(bytes,18446744073709551615,[255,255,255,255,255,255,255,255]);
+    u64_case(bytes,9223372036854775808,[128,0,0,0,0,0,0,0]);
+    u64_case(bytes,81985529216486895,[1,35,69,103,137,171,205,239]);
+    u64_case(bytes,18364758544493064720,[254,220,186,152,118,84,50,16]);
+    i16_case(bytes,0,[0,0]); i16_case(bytes,1,[0,1]); i16_case(bytes,-1,[255,255]);
+    i16_case(bytes,-32768,[128,0]); i16_case(bytes,32767,[127,255]); i16_case(bytes,-30293,[137,171]);
+    i32_case(bytes,0,[0,0,0,0]); i32_case(bytes,1,[0,0,0,1]); i32_case(bytes,-1,[255,255,255,255]);
+    i32_case(bytes,-2147483648,[128,0,0,0]); i32_case(bytes,2147483647,[127,255,255,255]); i32_case(bytes,-1985229329,[137,171,205,239]);
+    i64_case(bytes,0,[0,0,0,0,0,0,0,0]); i64_case(bytes,1,[0,0,0,0,0,0,0,1]);
+    i64_case(bytes,-1,[255,255,255,255,255,255,255,255]);
+    i64_case(bytes,-9223372036854775808,[128,0,0,0,0,0,0,0]);
+    i64_case(bytes,9223372036854775807,[127,255,255,255,255,255,255,255]);
+    i64_case(bytes,81985529216486895,[1,35,69,103,137,171,205,239]);
+    i64_case(bytes,-81985529216486896,[254,220,186,152,118,84,50,16]);
+}
+fn ieee_vectors(bytes:[u8]) {
+    f32_case(bytes,0,[0,0,0,0]); f32_case(bytes,2147483648,[128,0,0,0]);
+    f32_case(bytes,1,[0,0,0,1]); f32_case(bytes,2147483649,[128,0,0,1]);
+    f32_case(bytes,8388607,[0,127,255,255]); f32_case(bytes,8388608,[0,128,0,0]);
+    f32_case(bytes,1065353216,[63,128,0,0]); f32_case(bytes,3212836864,[191,128,0,0]);
+    f32_case(bytes,2139095039,[127,127,255,255]); f32_case(bytes,4286578687,[255,127,255,255]);
+    f32_case(bytes,2139095040,[127,128,0,0]); f32_case(bytes,4286578688,[255,128,0,0]);
+    f32_case(bytes,2143289345,[127,192,0,1]); f32_case(bytes,4290847557,[255,193,35,69]);
+    f32_case(bytes,2139095041,[127,128,0,1]); f32_case(bytes,2141266757,[127,161,35,69]);
+    f32_case(bytes,4286578979,[255,128,1,35]);
+    f64_case(bytes,0,[0,0,0,0,0,0,0,0]); f64_case(bytes,9223372036854775808,[128,0,0,0,0,0,0,0]);
+    f64_case(bytes,1,[0,0,0,0,0,0,0,1]); f64_case(bytes,9223372036854775809,[128,0,0,0,0,0,0,1]);
+    f64_case(bytes,4503599627370495,[0,15,255,255,255,255,255,255]);
+    f64_case(bytes,4503599627370496,[0,16,0,0,0,0,0,0]);
+    f64_case(bytes,4607182418800017408,[63,240,0,0,0,0,0,0]);
+    f64_case(bytes,13830554455654793216,[191,240,0,0,0,0,0,0]);
+    f64_case(bytes,9218868437227405311,[127,239,255,255,255,255,255,255]);
+    f64_case(bytes,18442240474082181119,[255,239,255,255,255,255,255,255]);
+    f64_case(bytes,9218868437227405312,[127,240,0,0,0,0,0,0]);
+    f64_case(bytes,18442240474082181120,[255,240,0,0,0,0,0,0]);
+    f64_case(bytes,9221120237041090561,[127,248,0,0,0,0,0,1]);
+    f64_case(bytes,18444512289894210236,[255,248,18,52,86,120,154,188]);
+    f64_case(bytes,9218868437227405313,[127,240,0,0,0,0,0,1]);
+    f64_case(bytes,18442260490080524988,[255,240,18,52,86,120,154,188]);
+}
+fn rejected8(bytes:[u8],len:i32,offset:i32) {
+    assert(core::endian::read_u64_be_or(bytes,len,offset,18364758544493064720)==18364758544493064720);
+    assert(core::endian::read_u64_le_or(bytes,len,offset,18364758544493064720)==18364758544493064720);
+    assert(!core::endian::write_u64_be(bytes,len,offset,18364758544493064720));
+    assert(!core::endian::write_u64_le(bytes,len,offset,18364758544493064720));
+    assert(core::endian::read_i64_be_or(bytes,len,offset,-4294967297)==-4294967297);
+    assert(core::endian::read_i64_le_or(bytes,len,offset,-4294967297)==-4294967297);
+    assert(!core::endian::write_i64_be(bytes,len,offset,-4294967297));
+    assert(!core::endian::write_i64_le(bytes,len,offset,-4294967297));
+    let fallback:f64=core::f64::from_bits(18442240478968899465);
+    assert(core::f64::to_bits(core::endian::read_f64_be_or(bytes,len,offset,fallback))==18442240478968899465);
+    assert(core::f64::to_bits(core::endian::read_f64_le_or(bytes,len,offset,fallback))==18442240478968899465);
+    assert(!core::endian::write_f64_be(bytes,len,offset,fallback));
+    assert(!core::endian::write_f64_le(bytes,len,offset,fallback));
+}
+fn rejected4(bytes:[u8],len:i32,offset:i32) {
+    assert(core::endian::read_i32_be_or(bytes,len,offset,-123456789)==-123456789);
+    assert(core::endian::read_i32_le_or(bytes,len,offset,-123456789)==-123456789);
+    assert(!core::endian::write_i32_be(bytes,len,offset,-123456789));
+    assert(!core::endian::write_i32_le(bytes,len,offset,-123456789));
+    let fallback:f32=core::f32::from_bits(4286578979);
+    assert(core::f32::to_bits(core::endian::read_f32_be_or(bytes,len,offset,fallback))==4286578979);
+    assert(core::f32::to_bits(core::endian::read_f32_le_or(bytes,len,offset,fallback))==4286578979);
+    assert(!core::endian::write_f32_be(bytes,len,offset,fallback));
+    assert(!core::endian::write_f32_le(bytes,len,offset,fallback));
+}
+fn rejected2(bytes:[u8],len:i32,offset:i32) {
+    assert(core::endian::read_i16_be_or(bytes,len,offset,-1234)==-1234);
+    assert(core::endian::read_i16_le_or(bytes,len,offset,-1234)==-1234);
+    assert(!core::endian::write_i16_be(bytes,len,offset,-1234));
+    assert(!core::endian::write_i16_le(bytes,len,offset,-1234));
+}
+fn rejected_all(bytes:[u8],len:i32,offset:i32) { rejected8(bytes,len,offset); rejected4(bytes,len,offset); rejected2(bytes,len,offset); }
+fn admission(bytes:[u8]) {
+    let nowhere:ptr=0; let empty:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    rejected_all(empty,0,0); rejected_all(empty,-1,0); rejected_all(empty,1,0);
+    rejected_all(empty,2147483647,-1); rejected_all(empty,2147483647,2147483647);
+    rejected_all(empty,-2147483648,2147483647);
+    rejected_all(empty,2147483647,-2147483648);
+    clear(bytes);
+    // The first u32 would fit: a full-width rejection must precede its write.
+    rejected8(bytes,12,5); rejected8(bytes,7,0);
+    rejected4(bytes,6,3); rejected4(bytes,3,0);
+    rejected2(bytes,4,3); rejected2(bytes,1,0);
+    let index:i32=0; while (index<16) { assert(bytes[index]==171); index+=1; }
+    // A near-MAX offset must not wrap its eight-byte endpoint into admission.
+    rejected8(empty,2147483647,2147483640);
+}
+fn main() -> i32 {
+    let native:[u8;16]=[171;16]; let words:[i32;4]=[0;4];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),16);
+    assert(core::mem::slice_stride(native)<0 && core::mem::slice_stride(packed)==1);
+    let layout:i32=0;
+    while (layout<2) {
+        let bytes:[u8]=native; if (layout==1) { bytes=packed; }
+        integer_vectors(bytes); ieee_vectors(bytes); admission(bytes); layout+=1;
+    }
+    return 0;
+}
