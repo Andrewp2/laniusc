@@ -210,4 +210,263 @@ theorem wellNamed_sound {c : Collected} (h : wellNamed c = true) : WellNamed c :
     constNamesIn_eq, enumsNamedOk_iff] at ok
   exact ok
 
+/-! ## The lookups
+
+A lookup finds a declaration of the module with the spelling, or reports
+that there is none. -/
+
+/-- Type `i` of the declarations is module `m`'s struct or enum `name`. -/
+def TypeNamed (d : Decls) (m : ModPath) (name : Name) (i : Nat) : Prop :=
+  ∃ t, d.types[i]? = some t ∧ t.home = m ∧ t.name = name
+
+/-- Function `i` is module `m`'s free function `name`. -/
+def FnNamed (d : Decls) (m : ModPath) (name : Name) (i : Nat) : Prop :=
+  ∃ f, d.fns[i]? = some f ∧ f.inImpl = false ∧ f.home = m ∧ f.name = name
+
+def ConstNamed (d : Decls) (m : ModPath) (name : Name) (c : ConstDecl) : Prop :=
+  c ∈ d.consts ∧ c.home = m ∧ c.name = name
+
+def AliasNamed (d : Decls) (m : ModPath) (name : Name) (a : AliasDecl) : Prop :=
+  a ∈ d.aliases ∧ a.home = m ∧ a.name = name
+
+/-- Variant `v.index` of type `v.owner` is spelled `name`, and the type is
+an enum of module `m`. -/
+def VariantNamed (d : Decls) (m : ModPath) (name : Name) (v : VariantAt) : Prop :=
+  ∃ t, d.types[v.owner]? = some t ∧ t.isEnum = true ∧ t.home = m ∧ t.variants[v.index]? = some name
+
+theorem position_sound : ∀ (names : List Name) (name : Name) (k j : Nat),
+    position names name k = some j → k ≤ j ∧ names[j - k]? = some name
+  | [], _, _, _, h => by simp [position] at h
+  | n :: rest, name, k, j, h => by
+    rw [position] at h
+    by_cases e : sameText n name = true
+    · rw [if_pos e] at h
+      cases h
+      exact ⟨Nat.le_refl _, by simp [(sameText_iff _ _).1 e]⟩
+    · rw [if_neg e] at h
+      obtain ⟨le, got⟩ := position_sound rest name (k + 1) j h
+      refine ⟨by omega, ?_⟩
+      rw [show j - k = (j - (k + 1)) + 1 by omega]
+      simpa using got
+
+theorem position_none : ∀ (names : List Name) (name : Name) (k : Nat),
+    position names name k = none → name ∉ names
+  | [], _, _, _ => by simp
+  | n :: rest, name, k, h => by
+    rw [position] at h
+    by_cases e : sameText n name = true
+    · rw [if_pos e] at h; cases h
+    · rw [if_neg e] at h
+      have := position_none rest name (k + 1) h
+      rw [sameText_iff] at e
+      simp only [List.mem_cons, not_or]
+      exact ⟨fun h => e h.symm, this⟩
+
+theorem findType_sound' : ∀ (types : List TypeDecl) (m : ModPath) (name : Name) (k i : Nat),
+    findType types m name k = some i → k ≤ i ∧ ∃ t, types[i - k]? = some t ∧ t.home = m ∧ t.name = name
+  | [], _, _, _, _, h => by simp [findType] at h
+  | t :: rest, m, name, k, i, h => by
+    rw [findType] at h
+    by_cases e : (sameText t.name name && sameSpellings t.home m) = true
+    · rw [if_pos e] at h
+      cases h
+      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
+      exact ⟨Nat.le_refl _, t, by simp, e.2, e.1⟩
+    · rw [if_neg e] at h
+      obtain ⟨le, t', got, rest'⟩ := findType_sound' rest m name (k + 1) i h
+      refine ⟨by omega, t', ?_, rest'⟩
+      rw [show i - k = (i - (k + 1)) + 1 by omega]
+      simpa using got
+
+theorem findType_sound {d : Decls} {m : ModPath} {name : Name} {i : Nat}
+    (h : findType d.types m name 0 = some i) : TypeNamed d m name i := by
+  unfold TypeNamed
+  simpa using (findType_sound' d.types m name 0 i h).2
+
+theorem findType_none : ∀ (types : List TypeDecl) (m : ModPath) (name : Name) (k : Nat),
+    findType types m name k = none → ∀ t ∈ types, ¬(t.home = m ∧ t.name = name)
+  | [], _, _, _, _ => by simp
+  | t :: rest, m, name, k, h => by
+    rw [findType] at h
+    by_cases e : (sameText t.name name && sameSpellings t.home m) = true
+    · rw [if_pos e] at h; cases h
+    · rw [if_neg e] at h
+      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
+      intro u mem
+      rcases List.mem_cons.1 mem with rfl | mem
+      · exact fun ⟨a, b⟩ => e ⟨b, a⟩
+      · exact findType_none rest m name (k + 1) h u mem
+
+theorem findFn_sound' : ∀ (fns : List FnDecl) (m : ModPath) (name : Name) (k i : Nat),
+    findFn fns m name k = some i →
+      k ≤ i ∧ ∃ f, fns[i - k]? = some f ∧ f.inImpl = false ∧ f.home = m ∧ f.name = name
+  | [], _, _, _, _, h => by simp [findFn] at h
+  | f :: rest, m, name, k, i, h => by
+    rw [findFn] at h
+    by_cases e : (!f.inImpl && sameText f.name name && sameSpellings f.home m) = true
+    · rw [if_pos e] at h
+      cases h
+      simp only [Bool.and_eq_true, Bool.not_eq_true', sameText_iff, sameSpellings_iff] at e
+      exact ⟨Nat.le_refl _, f, by simp, e.1.1, e.2, e.1.2⟩
+    · rw [if_neg e] at h
+      obtain ⟨le, f', got, rest'⟩ := findFn_sound' rest m name (k + 1) i h
+      refine ⟨by omega, f', ?_, rest'⟩
+      rw [show i - k = (i - (k + 1)) + 1 by omega]
+      simpa using got
+
+theorem findFn_sound {d : Decls} {m : ModPath} {name : Name} {i : Nat}
+    (h : findFn d.fns m name 0 = some i) : FnNamed d m name i := by
+  unfold FnNamed
+  simpa using (findFn_sound' d.fns m name 0 i h).2
+
+theorem findFn_none : ∀ (fns : List FnDecl) (m : ModPath) (name : Name) (k : Nat),
+    findFn fns m name k = none → ∀ f ∈ fns, ¬(f.inImpl = false ∧ f.home = m ∧ f.name = name)
+  | [], _, _, _, _ => by simp
+  | f :: rest, m, name, k, h => by
+    rw [findFn] at h
+    by_cases e : (!f.inImpl && sameText f.name name && sameSpellings f.home m) = true
+    · rw [if_pos e] at h; cases h
+    · rw [if_neg e] at h
+      simp only [Bool.and_eq_true, Bool.not_eq_true', sameText_iff, sameSpellings_iff] at e
+      intro u mem
+      rcases List.mem_cons.1 mem with rfl | mem
+      · exact fun ⟨a, b, c⟩ => e ⟨⟨a, c⟩, b⟩
+      · exact findFn_none rest m name (k + 1) h u mem
+
+theorem findConst_sound' : ∀ (consts : List ConstDecl) (m : ModPath) (name : Name) (c : ConstDecl),
+    findConst consts m name = some c → c ∈ consts ∧ c.home = m ∧ c.name = name
+  | [], _, _, _, h => by simp [findConst] at h
+  | x :: rest, m, name, c, h => by
+    rw [findConst] at h
+    by_cases e : (sameText x.name name && sameSpellings x.home m) = true
+    · rw [if_pos e] at h
+      cases h
+      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
+      exact ⟨by simp, e.2, e.1⟩
+    · rw [if_neg e] at h
+      obtain ⟨mem, rest'⟩ := findConst_sound' rest m name c h
+      exact ⟨List.mem_cons_of_mem _ mem, rest'⟩
+
+theorem findConst_sound {d : Decls} {m : ModPath} {name : Name} {c : ConstDecl}
+    (h : findConst d.consts m name = some c) : ConstNamed d m name c :=
+  findConst_sound' d.consts m name c h
+
+theorem findConst_none : ∀ (consts : List ConstDecl) (m : ModPath) (name : Name),
+    findConst consts m name = none → ∀ c ∈ consts, ¬(c.home = m ∧ c.name = name)
+  | [], _, _, _ => by simp
+  | x :: rest, m, name, h => by
+    rw [findConst] at h
+    by_cases e : (sameText x.name name && sameSpellings x.home m) = true
+    · rw [if_pos e] at h; cases h
+    · rw [if_neg e] at h
+      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
+      intro u mem
+      rcases List.mem_cons.1 mem with rfl | mem
+      · exact fun ⟨a, b⟩ => e ⟨b, a⟩
+      · exact findConst_none rest m name h u mem
+
+theorem findAlias_sound' : ∀ (aliases : List AliasDecl) (m : ModPath) (name : Name) (a : AliasDecl),
+    findAlias aliases m name = some a → a ∈ aliases ∧ a.home = m ∧ a.name = name
+  | [], _, _, _, h => by simp [findAlias] at h
+  | x :: rest, m, name, a, h => by
+    rw [findAlias] at h
+    by_cases e : (sameText x.name name && sameSpellings x.home m) = true
+    · rw [if_pos e] at h
+      cases h
+      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
+      exact ⟨by simp, e.2, e.1⟩
+    · rw [if_neg e] at h
+      obtain ⟨mem, rest'⟩ := findAlias_sound' rest m name a h
+      exact ⟨List.mem_cons_of_mem _ mem, rest'⟩
+
+theorem findAlias_sound {d : Decls} {m : ModPath} {name : Name} {a : AliasDecl}
+    (h : findAlias d.aliases m name = some a) : AliasNamed d m name a :=
+  findAlias_sound' d.aliases m name a h
+
+theorem findAlias_none : ∀ (aliases : List AliasDecl) (m : ModPath) (name : Name),
+    findAlias aliases m name = none → ∀ a ∈ aliases, ¬(a.home = m ∧ a.name = name)
+  | [], _, _, _ => by simp
+  | x :: rest, m, name, h => by
+    rw [findAlias] at h
+    by_cases e : (sameText x.name name && sameSpellings x.home m) = true
+    · rw [if_pos e] at h; cases h
+    · rw [if_neg e] at h
+      simp only [Bool.and_eq_true, sameText_iff, sameSpellings_iff] at e
+      intro u mem
+      rcases List.mem_cons.1 mem with rfl | mem
+      · exact fun ⟨a, b⟩ => e ⟨b, a⟩
+      · exact findAlias_none rest m name h u mem
+
+/-- Every variant `variantsNamed` lists is a variant of module `m`'s enums
+spelled `name` (types counted from `k`). -/
+theorem variantsNamed_sound' : ∀ (types : List TypeDecl) (m : ModPath) (name : Name) (k : Nat),
+    ∀ v ∈ variantsNamed types m name k, k ≤ v.owner ∧
+      ∃ t, types[v.owner - k]? = some t ∧ t.isEnum = true ∧ t.home = m ∧ t.variants[v.index]? = some name
+  | [], _, _, _, _, h => by simp [variantsNamed] at h
+  | t :: rest, m, name, k, v, h => by
+    rw [variantsNamed] at h
+    have tail : v ∈ variantsNamed rest m name (k + 1) → k ≤ v.owner ∧
+        ∃ t', (t :: rest)[v.owner - k]? = some t' ∧ t'.isEnum = true ∧ t'.home = m ∧
+          t'.variants[v.index]? = some name := by
+      intro mem
+      obtain ⟨le, t', got, more⟩ := variantsNamed_sound' rest m name (k + 1) v mem
+      refine ⟨by omega, t', ?_, more⟩
+      rw [show v.owner - k = (v.owner - (k + 1)) + 1 by omega]
+      simpa using got
+    by_cases e : (t.isEnum && sameSpellings t.home m) = true
+    · rw [if_pos e] at h
+      simp only [Bool.and_eq_true, sameSpellings_iff] at e
+      cases hp : position t.variants name 0 with
+      | none => rw [hp] at h; exact tail h
+      | some j =>
+        rw [hp] at h
+        rcases List.mem_cons.1 h with rfl | h
+        · obtain ⟨-, got⟩ := position_sound _ _ _ _ hp
+          exact ⟨Nat.le_refl _, t, by simp, e.1, e.2, by simpa using got⟩
+        · exact tail h
+    · rw [if_neg e] at h
+      exact tail h
+
+theorem variantsNamed_sound {d : Decls} {m : ModPath} {name : Name} {v : VariantAt}
+    (h : v ∈ variantsNamed d.types m name 0) : VariantNamed d m name v := by
+  unfold VariantNamed
+  simpa using (variantsNamed_sound' d.types m name 0 v h).2
+
+/-- A variant `importedVariants` lists belongs to a module that `m` imports. -/
+theorem importedVariants_sound {d : Decls} {m : ModPath} {name : Name} {v : VariantAt} :
+    ∀ (imports : List ImportDecl), v ∈ importedVariants d.types imports m name →
+      ∃ i ∈ imports, i.home = m ∧ VariantNamed d i.target name v
+  | [], h => by simp [importedVariants] at h
+  | i :: rest, h => by
+    rw [importedVariants] at h
+    by_cases e : sameSpellings i.home m = true
+    · rw [if_pos e] at h
+      rcases List.mem_append.1 h with h | h
+      · exact ⟨i, by simp, (sameSpellings_iff _ _).1 e, variantsNamed_sound h⟩
+      · obtain ⟨j, mem, rest'⟩ := importedVariants_sound rest h
+        exact ⟨j, List.mem_cons_of_mem _ mem, rest'⟩
+    · rw [if_neg e] at h
+      obtain ⟨j, mem, rest'⟩ := importedVariants_sound rest h
+      exact ⟨j, List.mem_cons_of_mem _ mem, rest'⟩
+
+theorem onlyVariant_sound : ∀ {vs : List VariantAt} {v : VariantAt}, onlyVariant vs = some v → vs = [v]
+  | [], _, h => by simp [onlyVariant] at h
+  | [w], _, h => by simp [onlyVariant] at h; rw [h]
+  | _ :: _ :: _, _, h => by simp [onlyVariant] at h
+
+/-- A bare variant name is the one variant with that spelling among the
+current module's enums, or, when they have none, the one among the imported
+modules' enums. -/
+inductive BareVariant (d : Decls) (m : ModPath) (name : Name) : VariantAt → Prop
+  | here {v} : variantsNamed d.types m name 0 = [v] → BareVariant d m name v
+  | imported {v} : variantsNamed d.types m name 0 = [] → importedVariants d.types d.imports m name = [v] →
+      BareVariant d m name v
+
+theorem bareVariant_sound {env : FrontEnv} {name : Name} {v : VariantAt}
+    (h : bareVariant env name = some v) : BareVariant env.decls env.home name v := by
+  unfold bareVariant at h
+  cases hv : variantsNamed env.decls.types env.home name 0 with
+  | nil => rw [hv] at h; exact .imported hv (onlyVariant_sound h)
+  | cons w rest => rw [hv] at h; exact .here (hv.trans (onlyVariant_sound h))
+
 end Lanius.Mini.Reading
