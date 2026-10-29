@@ -39,7 +39,7 @@ is not part of this goal.
 | # | step | status |
 |---|------|--------|
 | V1 | Extraction joined: a Core run of the self program's `compile_source` and `front_end_files` returns what the extracted Lean functions return (`call_sim`, the certificates and the representation relations in one theorem) | done (10-28): `driver_faithful` (`Faithful/SelfDriver.lean`, standard axioms). A completed Core run of the self program's entry `w` on input words `W` returns -1 or the length of `compileWords (frontEndWords grammar W)`, with the output view reading those words. It covers the driver's `oracle_read`, `oracle_put` and `oracle_write` by hand and the three roots by `call_sim` and their certificates; the representation relations are internal. Premises are in `TRUSTED_BASE.md`. Gate: all 21 steps pass, including `self-host-fixpoint` |
-| V2 | Every behaviour: when Core traps or runs out of every fuel, the compiled code does not return; so every x86 return is a Core return with the same value | |
+| V2 | Every behaviour: when Core traps or runs out of every fuel, the compiled code does not return; so every x86 return is a Core return with the same value | done (10-29): `compileSource_stops` and `compileSource_behaviour` (`Mini/SourceStops.lean`, standard axioms); plan and record below |
 | V3 | A lexer in the verified compiler, proved equal to the lexical rules (`lexCanonical`) | |
 | V4 | The grammar is unambiguous on the subset, so the tree laniusc's parser gives is the only one | |
 | V5 | One theorem from source text and an untrusted parse tree to x86 (`compileText_correct`) | |
@@ -122,3 +122,10 @@ heap or of stack is a fault too.
   impossible traps.
 - V2e. `compileSource_behaviour`: an x86 run that returns is a Core run
   that returns, with the same results, unless Core hits an undefined trap.
+  Done (10-29, Mini/SourceStops.lean): a run of the compiled `f` from its
+  entry that ends at a state with no step that is not a fault (the
+  caller's exit) comes from a Core call that completes within the heap
+  limit, whose results `compileSource_correct` gives, or that reaches an
+  undefined trap. Standard axioms. The gate's `traps` step runs checked
+  traps, stack and heap exhaustion natively (each faults) and a loop that
+  never ends (it runs on).

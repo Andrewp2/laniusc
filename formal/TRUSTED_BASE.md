@@ -551,7 +551,8 @@ not been composed with the theorem yet.
 
 `compileSource_stops` (Mini/SourceStops.lean) has the same premises, without
 `stackNeed depth ≤ window`, and with a heap limit of at least 1; its
-conclusion is `Faults`.
+conclusion is `Faults`. `compileSource_behaviour` has those premises too,
+and a run to a state with no step that is not a fault.
 
 - **Image.** `CodeAt s.memory imageBase binary.image`: the image is loaded
   byte for byte at any base and is executable. Its bytes are apart from the

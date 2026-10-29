@@ -1429,7 +1429,7 @@ def run_stmt(s, env, funcs):
         value = ev_eff(s[3], env, funcs)
         env[s[1]][0][s[2]] = value
     elif kind == 'setIndexEval':
-        # Core's order: the index, then the value, then the store.
+        # Core's order: the index, its bounds, then the value, then the store.
         k, elements = ev_eff(s[2], env, funcs), env[s[1]][0]
         if not 0 <= k < len(elements):
             raise SystemExit('a generated index is out of bounds')

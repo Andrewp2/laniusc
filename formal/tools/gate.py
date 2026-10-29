@@ -42,6 +42,8 @@ STEPS = [
     ('mini', ['mini_difftest.py', '{w}', '--count', '40', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], True),
     ('oracle', ['oracle_difftest.py', '{w}', '--count', '40', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], True),
     ('optimize', ['optimize_test.py', '{w}', '--count', '60', '--seed', '{s}'], ['lean'], True),
+    # V2e: checked traps, stack and heap exhaustion fault natively; a loop that never ends runs on.
+    ('traps', ['trap_test.py', '{w}'], ['lean'], True),
     ('frontend-cases', ['frontend_difftest.py', '{w}', '--cases', T + 'frontend_cases'], ['lean', 'laniusc', 'stdlib'],
      True),
     ('fn', ['fn_difftest.py', '{w}', '--per-fn', '5', '--seed', '{s}'], ['lean', 'lani', 'laniusc', 'stdlib'], True),
