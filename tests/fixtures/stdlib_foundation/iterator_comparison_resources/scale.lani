@@ -1,0 +1,62 @@
+module app::main;
+import alloc::vec;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::pair;
+import core::result;
+import core::slice;
+import std::io;
+struct Count{calls:i32,unordered:i32,strict:bool}
+impl Count{fn borrow(&self)->&Count{return self;}}
+struct Row{id:i32,key:i32,seal:u64,count:&Count}
+struct Cursor<T>{values:core::slice::View<T>,position:i32,pulls:i32,ceiling:i32}
+impl<T> Cursor<T>{fn borrow(&self)->&Cursor<T>{return self;}}
+pub impl<T> core::iter::Iterator<T> for Cursor<T>{pub fn next(&self)->core::option::Option<T>{assert(self.pulls<self.ceiling);self.pulls+=1;if(self.position==self.values.length){return core::option::None();}let item:T=self.values.get(self.position).unwrap();self.position+=1;return core::option::Some(item);}}
+fn cursor<T>(values:core::slice::View<T>,ceiling:i32)->Cursor<T>{return Cursor {values:values,position:0,pulls:0,ceiling:ceiling};}
+struct Equal{count:&Count}
+struct Compare{count:&Count}
+struct Partial{count:&Count}
+struct Adjacent{count:&Count}
+impl Equal{fn borrow(&self)->&Equal{return self;}}
+impl Compare{fn borrow(&self)->&Compare{return self;}}
+impl Partial{fn borrow(&self)->&Partial{return self;}}
+impl Adjacent{fn borrow(&self)->&Adjacent{return self;}}
+fn check(row:Row){assert(row.id>=0&&row.id<65536&&row.seal==18446744073709551615-(row.id as u64));}
+fn compare_row(row:Row,value:u64)->core::ordering::Ordering{check(row);let key:u64=9223372036854775808+(row.key as u64);if(key<value){return core::ordering::Ordering::Less;}if(key>value){return core::ordering::Ordering::Greater;}return core::ordering::Ordering::Equal;}
+fn partial_compare(value:core::ordering::Ordering)->core::cmp::PartialOrdering{return match(value){core::ordering::Ordering::Less->core::cmp::PartialOrdering::Less,core::ordering::Ordering::Equal->core::cmp::PartialOrdering::Equal,core::ordering::Ordering::Greater->core::cmp::PartialOrdering::Greater};}
+pub impl core::iter::Mapper<core::pair::Pair<Row,u64>,bool> for Equal{pub fn apply(&self,pair:core::pair::Pair<Row,u64>)->bool{self.count.calls+=1;return match(compare_row(pair.first,pair.second)){core::ordering::Ordering::Equal->true,_ ->false};}}
+pub impl core::ordering::Comparator<Row,u64> for Compare{pub fn compare(&self,left:Row,right:u64)->core::ordering::Ordering{self.count.calls+=1;return compare_row(left,right);}}
+pub impl core::iter::Mapper<core::pair::Pair<Row,u64>,core::cmp::PartialOrdering> for Partial{pub fn apply(&self,pair:core::pair::Pair<Row,u64>)->core::cmp::PartialOrdering{self.count.calls+=1;check(pair.first);if(pair.first.id==self.count.unordered){return core::cmp::PartialOrdering::Unordered;}return partial_compare(compare_row(pair.first,pair.second));}}
+pub impl core::iter::Mapper<core::pair::Pair<Row,Row>,bool> for Adjacent{pub fn apply(&self,pair:core::pair::Pair<Row,Row>)->bool{self.count.calls+=1;check(pair.first);check(pair.second);assert(pair.second.id==pair.first.id+1);if(self.count.strict){return pair.first.key<pair.second.key;}return pair.first.key<=pair.second.key;}}
+fn mark(value:i32){let byte:[i32;1]=[value];assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1);}
+fn order(value:core::ordering::Ordering)->i32{return match(value){core::ordering::Ordering::Less-> -1,core::ordering::Ordering::Equal->0,core::ordering::Ordering::Greater->1};}
+fn partial(value:core::cmp::PartialOrdering)->i32{return match(value){core::cmp::PartialOrdering::Less-> -1,core::cmp::PartialOrdering::Equal->0,core::cmp::PartialOrdering::Greater->1,core::cmp::PartialOrdering::Unordered->2};}
+fn main()->i32{
+    let count:Count=Count {calls:0,unordered:-1,strict:false};let rows:alloc::vec::Vec<Row> =alloc::vec::with_capacity<Row>(65536).unwrap();let numbers:alloc::vec::Vec<u64> =alloc::vec::with_capacity<u64>(65536).unwrap();let index:i32=0;
+    while(index<65536){rows.try_push(Row {id:index,key:index/4,seal:18446744073709551615-(index as u64),count:count.borrow()}).unwrap();numbers.try_push(9223372036854775808+((index/4) as u64)).unwrap();index+=1;}
+    assert(core::mem::slice_stride(rows.as_slice())<0&&core::mem::slice_stride(numbers.as_slice())<0);
+    let equal:Equal=Equal {count:count.borrow()};let cmp:Compare=Compare {count:count.borrow()};let part:Partial=Partial {count:count.borrow()};let sorted:Adjacent=Adjacent {count:count.borrow()};let sizes:[i32;3]=[257,4096,65536];let size:i32=0;
+    while(size<3){let length:i32=sizes[size];let case:i32=0;
+        while(case<11){count.calls=0;count.unordered=-1;count.strict=false;let changed:i32=-1;
+            if(case==4){changed=0;}if(case==5){changed=length/2;}if(case==6){changed=length-1;}
+            if(changed>=0){numbers.set(changed,9223372036854775809+((changed/4) as u64)).unwrap();}
+            if(case==7){count.unordered=length/2;}if(case==9){let row:Row=rows.at(length-1);row.key=-1;rows.set(length-1,row).unwrap();}if(case==10){count.strict=true;}
+            let right_length:i32=length;if(case==8){right_length=length-1;}
+            let left:Cursor<Row> =cursor(rows.as_view().subview(0,length).unwrap(),length+1);let right:Cursor<u64> =cursor(numbers.as_view().subview(0,right_length).unwrap(),length+1);let result:i32=-99;
+            mark(80);
+            if(case==0||case==4){result=0;if(core::iter::eq_by<Cursor<Row>,Cursor<u64>,Equal,Row,u64>(left.borrow(),right.borrow(),equal.borrow())){result=1;}}
+            if(case==1||case==5||case==6||case==8){result=order(core::iter::cmp_by<Cursor<Row>,Cursor<u64>,Compare,Row,u64>(left.borrow(),right.borrow(),cmp.borrow()));}
+            if(case==2||case==7){result=partial(core::iter::partial_cmp_by<Cursor<Row>,Cursor<u64>,Partial,Row,u64>(left.borrow(),right.borrow(),part.borrow()));}
+            if(case==3||case==9||case==10){result=0;if(core::iter::is_sorted_by<Cursor<Row>,Adjacent,Row>(left.borrow(),sorted.borrow())){result=1;}}
+            assert(count.calls<=length&&left.pulls<=length+1&&right.pulls<=length+1);index=0;
+            while(index<length){let row:Row=rows.at(index);check(row);let key:i32=index/4;if(case==9&&index==length-1){key=-1;}assert(row.key==key);
+                let number:u64=9223372036854775808+((index/4) as u64);if(index==changed){number+=1;}assert(numbers.at(index)==number);index+=1;}
+            mark(112);let words:[i32;8]=[length,case,result,left.pulls,right.pulls,count.calls,left.position,right.position];assert(std::io::write_stdout(core::mem::i32_array_data_ptr(words),32)==32);
+            if(changed>=0){numbers.set(changed,9223372036854775808+((changed/4) as u64)).unwrap();}if(case==9){let row:Row=rows.at(length-1);row.key=(length-1)/4;rows.set(length-1,row).unwrap();}case+=1;
+        }size+=1;
+    }
+    numbers.destroy();rows.destroy();mark(68);return 0;
+}

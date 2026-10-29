@@ -1,6 +1,13 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[iterator sequence increment](stdlib-iterator-sequences.md) adds equality,
+total/partial lexicographic comparison and sortedness through canonical
+Iterator/Mapper/Comparator protocols. Exact pull order, prefix witnesses,
+shared-state aliases and manual cleanup are explicit. All eight library tests,
+all 119 program cases and three migrated-consumer regressions pass, as do the
+standalone build/examples. This finite native Linux x86_64 increment is accepted.
+Historical slice and iterator evidence retains its original scope. The preceding
 [owned delimiter/line increment](stdlib-owned-delimited.md) composes BufRead
 with retained records, exact fill/consume budgets and terminal UTF-8 adoption.
 Unacknowledged staged bytes, pending provider data and manual cleanup remain
@@ -712,6 +719,19 @@ filtered; the historical lookahead application and trap were not rerun.
 This selected finite increment is accepted. Historical slice/iterator/fold
 evidence retains its original source scope; no device execution, formal proof
 or automatic ownership follows.
+
+**Iterator sequence comparisons.**
+
+The [eight sequence consumers](stdlib-iterator-sequences.md) compare actual
+remaining sources with left-before-right pulls, immediate decisive returns and
+no count or identity shortcuts. Equality uses PartialEq, total order Ord and
+partial order the existing four-variant PartialOrdering. Natural sortedness
+uses PartialOrd; custom sortedness is a bool adjacency policy. Owners remain
+manual, including values discarded by result-only consumers. All eight library
+tests pass, including the 11,502-case model and owner/guard/scale gates. All 119
+program cases and three selected migrated-consumer regressions pass separately,
+alongside the standalone build/examples. This finite native Linux x86_64
+increment is accepted; the full library goal remains open.
 
 **Iterator reductions and bounded folds.**
 

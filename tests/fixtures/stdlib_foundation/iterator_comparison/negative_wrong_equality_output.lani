@@ -1,0 +1,13 @@
+module app::main;
+import core::iter;
+import core::pair;
+struct Wrong {}
+impl Wrong { fn borrow(&self) -> &Wrong { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i32,u64>,i32> for Wrong {
+    pub fn apply(&self,pair:core::pair::Pair<i32,u64>) -> i32 { return pair.first; }
+}
+fn main() -> i32 {
+    let left:core::iter::Once<i32> =core::iter::once<i32>(1); let right:core::iter::Once<u64> =core::iter::once<u64>(1); let callback:Wrong=Wrong {};
+    let rejected:bool=core::iter::eq_by<core::iter::Once<i32>,core::iter::Once<u64>,Wrong,i32,u64>(left.borrow(),right.borrow(),callback.borrow()); // rejected_sequence_bound
+    return 0;
+}

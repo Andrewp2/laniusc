@@ -1,0 +1,8 @@
+module app::main;
+import core::iter;
+struct Token { value:i32 }
+fn main() -> i32 {
+    let source:core::iter::Once<Token> =core::iter::once<Token>(Token { value:1 });
+    let rejected:bool=core::iter::is_sorted<core::iter::Once<Token>,Token>(source.borrow()); // rejected_sequence_bound
+    return 0;
+}

@@ -1,0 +1,13 @@
+module app::main;
+import core::iter;
+import core::ordering;
+struct Reversed {}
+impl Reversed { fn borrow(&self) -> &Reversed { return self; } }
+pub impl core::ordering::Comparator<u64,i32> for Reversed {
+    pub fn compare(&self,left:u64,right:i32) -> core::ordering::Ordering { return core::ordering::Ordering::Equal; }
+}
+fn main() -> i32 {
+    let left:core::iter::Once<i32> =core::iter::once<i32>(1); let right:core::iter::Once<u64> =core::iter::once<u64>(1); let callback:Reversed=Reversed {};
+    let rejected:core::ordering::Ordering=core::iter::cmp_by<core::iter::Once<i32>,core::iter::Once<u64>,Reversed,i32,u64>(left.borrow(),right.borrow(),callback.borrow()); // rejected_sequence_bound
+    return 0;
+}

@@ -1,0 +1,122 @@
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::cmp;
+import core::f64;
+import core::iter;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::pair;
+import core::result;
+import core::slice;
+import std::io;
+
+struct Context { pointers:[ptr;24], capacities:[i32;24], eq:i32, lt:i32, partial:i32, le:i32, custom:i32 }
+impl Context { fn borrow(&self)->&Context { return self; } fn reset(&self) { self.eq=0;self.lt=0;self.partial=0;self.le=0;self.custom=0; } }
+struct Payload { wide:[u64;3], floats:[f64;2], flag:core::option::Option<bool> }
+struct Record<T> { id:i32,key:i32,text:alloc::string::String,numbers:alloc::vec::Vec<u64>,payload:T,context:&Context }
+struct Lookup { key:i32,position:i32,flag:core::option::Option<bool> }
+struct Cursor<T> { values:core::slice::View<T>,position:i32,pulls:i32,ceiling:i32 }
+impl<T> Cursor<T> { fn borrow(&self)->&Cursor<T> { return self; } }
+pub impl<T> core::iter::Iterator<T> for Cursor<T> {
+    pub fn next(&self)->core::option::Option<T> { assert(self.pulls<self.ceiling);self.pulls+=1;if(self.position==self.values.length){return core::option::None();}let item:T=self.values.get(self.position).unwrap();self.position+=1;return core::option::Some(item); }
+}
+fn cursor<T>(values:core::slice::View<T>,ceiling:i32)->Cursor<T>{return Cursor { values:values,position:0,pulls:0,ceiling:ceiling };}
+fn mark(value:i32){let byte:[i32;1]=[value];assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1);}
+fn key(id:i32)->i32{let values:[i32;6]=[1,1,2,3,5,8];return values[id%6];}
+fn check<T>(value:Record<T>){
+    let id:i32=value.id;assert(id>=0&&id<12);let context:&Context=value.context;
+    assert(value.text.bytes.storage==context.pointers[id*2]&&value.text.capacity()==context.capacities[id*2]&&value.text.byte_len()==4);
+    assert(value.text.byte_at(0).unwrap()==(65+id) as u8&&value.text.byte_at(1).unwrap()==0&&value.text.byte_at(2).unwrap()==194&&value.text.byte_at(3).unwrap()==162);
+    assert(value.numbers.storage==context.pointers[id*2+1]&&value.numbers.capacity()==context.capacities[id*2+1]&&value.numbers.len()==3);
+    assert(value.numbers.at(0)==9223372036854775808+(id as u64)&&value.numbers.at(1)==18446744073709551615-(id as u64)&&value.numbers.at(2)==281479271743489);
+}
+fn check_payload(value:Record<Payload>){check(value);assert(value.payload.wide[0]==9223372036854775808+(value.id as u64)&&value.payload.wide[1]==18446744073709551615&&value.payload.wide[2]==281479271743489);
+    assert(core::f64::to_bits(value.payload.floats[0])==9218868437227405313&&core::f64::to_bits(value.payload.floats[1])==9223372036854775808&&value.payload.flag.unwrap());}
+fn compare<T>(left:Record<T>,right:Record<T>)->core::cmp::PartialOrdering{if(left.key<right.key){return core::cmp::PartialOrdering::Less;}if(left.key>right.key){return core::cmp::PartialOrdering::Greater;}return core::cmp::PartialOrdering::Equal;}
+pub impl<T> core::cmp::PartialEq<Record<T>> for Record<T>{
+    pub fn partial_eq(left:Record<T>,right:Record<T>)->bool{check(left);check(right);left.context.eq+=1;return left.key==right.key;}
+    pub fn partial_ne(left:Record<T>,right:Record<T>)->bool{return left.key!=right.key;}
+}
+pub impl<T> core::cmp::Ord<Record<T>> for Record<T>{
+    pub fn lt(left:Record<T>,right:Record<T>)->bool{check(left);check(right);left.context.lt+=1;return left.key<right.key;}
+    pub fn le(left:Record<T>,right:Record<T>)->bool{return left.key<=right.key;}
+    pub fn gt(left:Record<T>,right:Record<T>)->bool{return left.key>right.key;}
+    pub fn ge(left:Record<T>,right:Record<T>)->bool{return left.key>=right.key;}
+}
+pub impl<T> core::cmp::PartialOrd<Record<T>> for Record<T>{
+    pub fn partial_lt(left:Record<T>,right:Record<T>)->bool{return left.key<right.key;}
+    pub fn partial_le(left:Record<T>,right:Record<T>)->bool{check(left);check(right);left.context.le+=1;return left.key<=right.key;}
+    pub fn partial_gt(left:Record<T>,right:Record<T>)->bool{return left.key>right.key;}
+    pub fn partial_ge(left:Record<T>,right:Record<T>)->bool{return left.key>=right.key;}
+    pub fn partial_cmp(left:Record<T>,right:Record<T>)->core::cmp::PartialOrdering{check(left);check(right);left.context.partial+=1;return compare(left,right);}
+}
+struct EqualLookup { context:&Context }
+struct OrderLookup { context:&Context }
+struct PartialLookup { context:&Context }
+struct OwnerOrder { context:&Context }
+struct Adjacent { context:&Context }
+impl EqualLookup { fn borrow(&self)->&EqualLookup{return self;} }
+impl OrderLookup { fn borrow(&self)->&OrderLookup{return self;} }
+impl PartialLookup { fn borrow(&self)->&PartialLookup{return self;} }
+impl OwnerOrder { fn borrow(&self)->&OwnerOrder{return self;} }
+impl Adjacent { fn borrow(&self)->&Adjacent{return self;} }
+fn lookup(left:Record<Payload>,right:Lookup){check_payload(left);assert(left.id%6==right.position&&right.flag.unwrap());}
+pub impl core::iter::Mapper<core::pair::Pair<Record<Payload>,Lookup>,bool> for EqualLookup{
+    pub fn apply(&self,pair:core::pair::Pair<Record<Payload>,Lookup>)->bool{lookup(pair.first,pair.second);self.context.custom+=1;return pair.first.key==pair.second.key;}
+}
+pub impl core::ordering::Comparator<Record<Payload>,Lookup> for OrderLookup{
+    pub fn compare(&self,left:Record<Payload>,right:Lookup)->core::ordering::Ordering{lookup(left,right);self.context.custom+=1;return core::ordering::compare_i32(left.key,right.key);}
+}
+pub impl core::iter::Mapper<core::pair::Pair<Record<Payload>,Lookup>,core::cmp::PartialOrdering> for PartialLookup{
+    pub fn apply(&self,pair:core::pair::Pair<Record<Payload>,Lookup>)->core::cmp::PartialOrdering{lookup(pair.first,pair.second);self.context.custom+=1;if(pair.second.position==1){return core::cmp::PartialOrdering::Unordered;}return core::cmp::PartialOrdering::Equal;}
+}
+pub impl core::ordering::Comparator<Record<Payload>,Record<Payload>> for OwnerOrder{
+    pub fn compare(&self,left:Record<Payload>,right:Record<Payload>)->core::ordering::Ordering{check_payload(left);check_payload(right);self.context.custom+=1;return core::ordering::compare_i32(left.key,right.key);}
+}
+pub impl core::iter::Mapper<core::pair::Pair<Record<Payload>,Record<Payload>>,bool> for Adjacent{
+    pub fn apply(&self,pair:core::pair::Pair<Record<Payload>,Record<Payload>>)->bool{check_payload(pair.first);check_payload(pair.second);self.context.custom+=1;return pair.first.key<=pair.second.key;}
+}
+// Every owning Some first moves cleanup authority into a pre-reserved keeper.
+// The comparison sees a shallow observation; it does not retire that owner.
+struct Recorder { inner:&alloc::vec::IntoIter<Record<Payload>>,kept:&alloc::vec::Vec<Record<Payload>>,pulls:i32 }
+impl Recorder { fn borrow(&self)->&Recorder{return self;} }
+pub impl core::iter::Iterator<Record<Payload>> for Recorder{
+    pub fn next(&self)->core::option::Option<Record<Payload>>{self.pulls+=1;let item:core::option::Option<Record<Payload>> =self.inner.next();if(item.is_some()){self.kept.try_push(item.unwrap()).unwrap();}return item;}
+}
+fn source(first:i32,context:&Context)->alloc::vec::Vec<Record<Payload>>{
+    let values:alloc::vec::Vec<Record<Payload>> =alloc::vec::with_capacity<Record<Payload>>(6).unwrap();let index:i32=0;
+    while(index<6){let id:i32=first+index;let data:[u8;4]=[(65+id) as u8,0,194,162];let text:alloc::string::String=alloc::string::from_utf8(data,4).unwrap();
+        let numbers:alloc::vec::Vec<u64> =alloc::vec::with_capacity<u64>(3).unwrap();numbers.try_push(9223372036854775808+(id as u64)).unwrap();numbers.try_push(18446744073709551615-(id as u64)).unwrap();numbers.try_push(281479271743489).unwrap();
+        context.pointers[id*2]=text.bytes.storage;context.pointers[id*2+1]=numbers.storage;context.capacities[id*2]=text.capacity();context.capacities[id*2+1]=numbers.capacity();
+        let payload:Payload=Payload { wide:[9223372036854775808+(id as u64),18446744073709551615,281479271743489],floats:[core::f64::from_bits(9218868437227405313),core::f64::from_bits(9223372036854775808)],flag:core::option::Some(true) };
+        values.try_push(Record { id:id,key:key(id),text:text,numbers:numbers,payload:payload,context:context }).unwrap();index+=1;
+    }assert(core::mem::slice_stride(values.as_slice())<0);return values;
+}
+fn order(value:core::ordering::Ordering)->i32{return match(value){core::ordering::Ordering::Less-> -1,core::ordering::Ordering::Equal->0,core::ordering::Ordering::Greater->1};}
+fn partial(value:core::cmp::PartialOrdering)->i32{return match(value){core::cmp::PartialOrdering::Less-> -1,core::cmp::PartialOrdering::Equal->0,core::cmp::PartialOrdering::Greater->1,core::cmp::PartialOrdering::Unordered->2};}
+fn report(phase:i32,result:i32,left:i32,right:i32,context:&Context){let words:[i32;9]=[phase,result,left,right,context.eq,context.lt,context.partial,context.le,context.custom];assert(std::io::write_stdout(core::mem::i32_array_data_ptr(words),36)==36);}
+fn release(values:&alloc::vec::Vec<Record<Payload>>,seen:[i32]){let index:i32=0;while(index<values.len()){let value:Record<Payload> =values.at(index);check_payload(value);assert(seen[value.id]==0);seen[value.id]=1;value.text.destroy();value.numbers.destroy();index+=1;}}
+fn main()->i32{
+    let empty:ptr=0;let context:Context=Context { pointers:[empty;24],capacities:[0;24],eq:0,lt:0,partial:0,le:0,custom:0 };
+    let left:alloc::vec::Vec<Record<Payload>> =source(0,context.borrow());let right:alloc::vec::Vec<Record<Payload>> =source(6,context.borrow());
+    let held_left:alloc::vec::Vec<Record<Payload>> =alloc::vec::with_capacity<Record<Payload>>(6).unwrap();let held_right:alloc::vec::Vec<Record<Payload>> =alloc::vec::with_capacity<Record<Payload>>(6).unwrap();
+    let keys:[Lookup;6]=[Lookup {key:1,position:0,flag:core::option::Some(true)},Lookup {key:1,position:1,flag:core::option::Some(true)},Lookup {key:2,position:2,flag:core::option::Some(true)},Lookup {key:3,position:3,flag:core::option::Some(true)},Lookup {key:5,position:4,flag:core::option::Some(true)},Lookup {key:8,position:5,flag:core::option::Some(true)}];
+    let eq:EqualLookup=EqualLookup {context:context.borrow()};let cmp:OrderLookup=OrderLookup {context:context.borrow()};let part:PartialLookup=PartialLookup {context:context.borrow()};let own:OwnerOrder=OwnerOrder {context:context.borrow()};let adjacent:Adjacent=Adjacent {context:context.borrow()};
+    let a:Cursor<Record<Payload>> =cursor(left.as_view(),7);let b:Cursor<Record<Payload>> =cursor(right.as_view(),7);mark(80);assert(core::iter::eq<Cursor<Record<Payload>>,Cursor<Record<Payload>>,Record<Payload>>(a.borrow(),b.borrow()));mark(112);report(1,1,a.pulls,b.pulls,context.borrow());
+    context.reset();let a:Cursor<Record<Payload>> =cursor(left.as_view(),7);let b:Cursor<Lookup> =cursor(core::slice::view(keys,6).unwrap(),7);mark(80);assert(core::iter::eq_by<Cursor<Record<Payload>>,Cursor<Lookup>,EqualLookup,Record<Payload>,Lookup>(a.borrow(),b.borrow(),eq.borrow()));mark(112);report(2,1,a.pulls,b.pulls,context.borrow());
+    context.reset();let a:Cursor<Record<Payload>> =cursor(left.as_view(),6);let b:Cursor<Record<Payload>> =cursor(right.as_view().subview(0,5).unwrap(),6);mark(80);let result:i32=order(core::iter::cmp<Cursor<Record<Payload>>,Cursor<Record<Payload>>,Record<Payload>>(a.borrow(),b.borrow()));assert(result==1);mark(112);report(3,result,a.pulls,b.pulls,context.borrow());
+    let changed:Lookup=keys[2];changed.key=3;keys[2]=changed;context.reset();let a:Cursor<Record<Payload>> =cursor(left.as_view(),3);let b:Cursor<Lookup> =cursor(core::slice::view(keys,6).unwrap(),3);mark(80);let result:i32=order(core::iter::cmp_by<Cursor<Record<Payload>>,Cursor<Lookup>,OrderLookup,Record<Payload>,Lookup>(a.borrow(),b.borrow(),cmp.borrow()));assert(result==-1&&a.position==3&&b.position==3);mark(112);report(4,result,a.pulls,b.pulls,context.borrow());changed.key=2;keys[2]=changed;
+    context.reset();let a:Cursor<Record<Payload>> =cursor(left.as_view(),7);let b:Cursor<Record<Payload>> =cursor(right.as_view(),7);mark(80);let result:i32=partial(core::iter::partial_cmp<Cursor<Record<Payload>>,Cursor<Record<Payload>>,Record<Payload>>(a.borrow(),b.borrow()));assert(result==0);mark(112);report(5,result,a.pulls,b.pulls,context.borrow());
+    context.reset();let a:Cursor<Record<Payload>> =cursor(left.as_view(),2);let b:Cursor<Lookup> =cursor(core::slice::view(keys,6).unwrap(),2);mark(80);let result:i32=partial(core::iter::partial_cmp_by<Cursor<Record<Payload>>,Cursor<Lookup>,PartialLookup,Record<Payload>,Lookup>(a.borrow(),b.borrow(),part.borrow()));assert(result==2&&a.position==2&&b.position==2);mark(112);report(6,result,a.pulls,b.pulls,context.borrow());
+    context.reset();let a:Cursor<Record<Payload>> =cursor(left.as_view(),7);mark(80);assert(core::iter::is_sorted<Cursor<Record<Payload>>,Record<Payload>>(a.borrow()));mark(112);report(7,1,a.pulls,0,context.borrow());
+    let value:Record<Payload> =right.at(1);value.key=0;right.set(1,value).unwrap();let inner_left:alloc::vec::IntoIter<Record<Payload>> =left.take_iter();let inner_right:alloc::vec::IntoIter<Record<Payload>> =right.take_iter();
+    let a:Recorder=Recorder {inner:inner_left.borrow(),kept:held_left.borrow(),pulls:0};let b:Recorder=Recorder {inner:inner_right.borrow(),kept:held_right.borrow(),pulls:0};
+    context.reset();mark(80);let result:i32=order(core::iter::cmp_by<Recorder,Recorder,OwnerOrder,Record<Payload>,Record<Payload>>(a.borrow(),b.borrow(),own.borrow()));assert(result==1&&held_left.len()==2&&held_right.len()==2&&inner_left.remaining()==4&&inner_right.remaining()==4);mark(112);report(8,result,a.pulls,b.pulls,context.borrow());
+    context.reset();mark(80);assert(core::iter::is_sorted_by<Recorder,Adjacent,Record<Payload>>(a.borrow(),adjacent.borrow())&&held_left.len()==6&&inner_left.remaining()==0);mark(112);report(9,1,a.pulls,b.pulls,context.borrow());
+    context.reset();mark(80);let result:i32=order(core::iter::cmp<Recorder,Recorder,Record<Payload>>(a.borrow(),b.borrow()));assert(result==-1&&held_right.len()==3&&inner_right.remaining()==3);mark(112);report(10,result,a.pulls,b.pulls,context.borrow());
+    let rest_left:alloc::vec::Vec<Record<Payload>> =inner_left.take_remaining();let rest_right:alloc::vec::Vec<Record<Payload>> =inner_right.take_remaining();assert(rest_left.len()==0&&rest_right.len()==3&&left.capacity()==0&&right.capacity()==0);
+    let seen:[i32;12]=[0;12];release(held_left.borrow(),seen);release(held_right.borrow(),seen);release(rest_right.borrow(),seen);let index:i32=0;while(index<12){assert(seen[index]==1);index+=1;}
+    held_left.destroy();held_right.destroy();rest_right.destroy();rest_left.destroy();assert(inner_left.try_finish().is_none()&&inner_right.try_finish().is_none());left.destroy();right.destroy();mark(68);return 0;
+}

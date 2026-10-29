@@ -1,0 +1,327 @@
+// Compare bounded CSV integer series through shared iterator consumers.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::cmp;
+import core::decimal;
+import core::io;
+import core::io::SliceWriter;
+import core::iter;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::ordering;
+import core::pair;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::Iter;
+import core::slice::View;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::csv_write;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Options { descending:bool, help:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Report { left:u64, right:u64, equal:bool, order:core::ordering::Ordering, left_sorted:bool, right_sorted:bool }
+struct Staged { calls:u64 }
+impl Staged { fn borrow(&self) -> &Staged { return self; } }
+struct DescendingOrder {}
+impl DescendingOrder { fn borrow(&self) -> &DescendingOrder { return self; } }
+pub impl core::ordering::Comparator<i64,i64> for DescendingOrder {
+    pub fn compare(&self, left:i64, right:i64) -> core::ordering::Ordering {
+        if (left < right) { return core::ordering::Ordering::Greater; }
+        if (left > right) { return core::ordering::Ordering::Less; }
+        return core::ordering::Ordering::Equal;
+    }
+}
+struct DescendingAdjacent {}
+impl DescendingAdjacent { fn borrow(&self) -> &DescendingAdjacent { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i64,i64>,bool> for DescendingAdjacent {
+    pub fn apply(&self, pair:core::pair::Pair<i64,i64>) -> bool { return pair.first >= pair.second; }
+}
+
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn text(value:View<u8>) -> core::text::Text {
+    return core::text::from_utf8_unchecked(value.values,value.start,value.length);
+}
+fn write(value:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle);
+    let completed:i32 = 0;
+    let calls:i32 = 0;
+    while(completed < value.length) {
+        if (calls == maximum) { return false; }
+        calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(value.values,value.start+completed,value.length-completed);
+        if (sent.is_err()) {
+            if (core::io::is_interrupted(sent.unwrap_err())) { continue; }
+            return false;
+        }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > value.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 {
+    write(literal("compare_series: operation failed\n",33),2,8);
+    return status;
+}
+fn csv_status(error:ext::csv::Error) -> i32 {
+    return match(error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 };
+}
+fn input_status(error:alloc::io::ReadError) -> i32 {
+    return match(error) {
+        alloc::io::ReadError::InvalidLimits -> 6,
+        alloc::io::ReadError::CallLimit -> 2,
+        alloc::io::ReadError::ByteLimit -> 2,
+        alloc::io::ReadError::Io(detail) -> match(detail) {
+            core::io::Error::AllocationFailed -> 4,
+            core::io::Error::InvalidInput -> 6,
+            core::io::Error::InvalidCount -> 6,
+            core::io::Error::CountOverflow -> 6,
+            _ -> 3
+        },
+        alloc::io::ReadError::Storage(detail) -> match(detail) { alloc::vec::Error::AllocationFailed -> 4, _ -> 6 },
+        alloc::io::ReadError::Text(detail) -> match(detail) { alloc::string::Error::AllocationFailed -> 4, _ -> 6 }
+    };
+}
+fn accept_record(parser:&ext::csv::Decoder, left:&Vec<i64>, right:&Vec<i64>) -> i32 {
+    let width = parser.field_count();
+    if (width.is_none()) { return 6; }
+    if (width.unwrap() != 2) { return 2; }
+    let first = parser.field(0);
+    let second = parser.field(1);
+    if (first.is_err()) { return csv_status(first.unwrap_err()); }
+    if (second.is_err()) { return csv_status(second.unwrap_err()); }
+    let side:core::text::Text = first.unwrap();
+    let value:core::text::Text = second.unwrap();
+    if (parser.records_read() == 1) {
+        if (!side.equals(text(literal("side",4))) || !value.equals(text(literal("value",5)))) { return 2; }
+        return 0;
+    }
+    if (left.len()+right.len() == 65536) { return 2; }
+    if ((value.length < 1) || (value.length > 64)) { return 2; }
+    let number = core::decimal::parse_i64_range(value.bytes,value.start,value.length);
+    if (number.is_err()) { return 2; }
+    let saved:Result<i32,alloc::vec::Error> = core::result::Err(alloc::vec::Error::Bounds);
+    if (side.equals(text(literal("left",4)))) { saved = left.try_push(number.unwrap()); }
+    else {
+        if (!side.equals(text(literal("right",5)))) { return 2; }
+        saved = right.try_push(number.unwrap());
+    }
+    if (saved.is_err()) {
+        return match(saved.unwrap_err()) {
+            alloc::vec::Error::AllocationFailed -> 4,
+            alloc::vec::Error::CapacityOverflow -> 2,
+            _ -> 6
+        };
+    }
+    return 0;
+}
+fn parse(input:&Vec<u8>, left:&Vec<i64>, right:&Vec<i64>) -> i32 {
+    let dialect = ext::csv::default_options();
+    dialect.max_records = 65537;
+    dialect.max_fields = 2;
+    dialect.max_field_bytes = 64;
+    dialect.max_record_bytes = 128;
+    let made = ext::csv::decoder(dialect);
+    if (made.is_err()) { return csv_status(made.unwrap_err()); }
+    let parser = made.unwrap();
+    let offset:i32 = 0;
+    let status:i32 = 0;
+    while((status == 0) && (offset < input.len())) {
+        let remaining:i32 = input.len()-offset;
+        let fed:Result<ext::csv::Progress,ext::csv::Error> = parser.feed(input.as_slice(),offset,remaining);
+        if (fed.is_err()) { status = csv_status(fed.unwrap_err()); break; }
+        let progress = fed.unwrap();
+        if ((progress.consumed <= 0) || (progress.consumed > remaining)) { status = 6; break; }
+        offset += progress.consumed;
+        if (progress.record) { status = accept_record(parser.borrow(),left,right); }
+    }
+    if (status == 0) {
+        let ended = parser.finish();
+        if (ended.is_err()) { status = csv_status(ended.unwrap_err()); }
+        else { if (ended.unwrap()) { status = accept_record(parser.borrow(),left,right); } }
+    }
+    if ((status == 0) && (parser.records_read() == 0)) { status = 2; }
+    parser.destroy();
+    return status;
+}
+fn analyze(left:&Vec<i64>, right:&Vec<i64>, descending:bool) -> Report {
+    // Every consumer receives independent cursors over the same live backing.
+    let equality_left = left.as_view().iter();
+    let equality_right = right.as_view().iter();
+    let equal:bool = core::iter::eq<Iter<i64>,Iter<i64>,i64>(equality_left.borrow(),equality_right.borrow());
+    let compare_left = left.as_view().iter();
+    let compare_right = right.as_view().iter();
+    let sorted_left = left.as_view().iter();
+    let sorted_right = right.as_view().iter();
+    let order:core::ordering::Ordering = core::ordering::Ordering::Equal;
+    let left_sorted:bool = false;
+    let right_sorted:bool = false;
+    if (descending) {
+        let comparison = DescendingOrder {};
+        let left_relation = DescendingAdjacent {};
+        let right_relation = DescendingAdjacent {};
+        order = core::iter::cmp_by<Iter<i64>,Iter<i64>,DescendingOrder,i64,i64>(compare_left.borrow(),compare_right.borrow(),comparison.borrow());
+        left_sorted = core::iter::is_sorted_by<Iter<i64>,DescendingAdjacent,i64>(sorted_left.borrow(),left_relation.borrow());
+        right_sorted = core::iter::is_sorted_by<Iter<i64>,DescendingAdjacent,i64>(sorted_right.borrow(),right_relation.borrow());
+    } else {
+        order = core::iter::cmp<Iter<i64>,Iter<i64>,i64>(compare_left.borrow(),compare_right.borrow());
+        left_sorted = core::iter::is_sorted<Iter<i64>,i64>(sorted_left.borrow());
+        right_sorted = core::iter::is_sorted<Iter<i64>,i64>(sorted_right.borrow());
+    }
+    return Report { left:left.len() as u64,right:right.len() as u64,equal:equal,order:order,left_sorted:left_sorted,right_sorted:right_sorted };
+}
+fn boolean(value:bool) -> View<u8> {
+    if (value) { return literal("true",4); }
+    return literal("false",5);
+}
+fn emit(writer:&SliceWriter, record:&ext::csv::Record, state:&Staged, fields:View<View<u8>>) -> i32 {
+    if ((state.calls > 16) || (writer.position() < 0) || (writer.position() > 512)) { return 6; }
+    record.clear();
+    let index:i32 = 0;
+    while(index < fields.length) {
+        let saved = record.try_push_field(text(fields.values[fields.start+index]));
+        if (saved.is_err()) {
+            return match(saved.unwrap_err()) { ext::csv::Error::AllocationFailed -> 4, _ -> 6 };
+        }
+        index += 1;
+    }
+    let remaining:u64 = writer.remaining() as u64;
+    let calls:u64 = 16-state.calls;
+    let limits = ext::csv_write::Limits { max_output:remaining,max_write_calls:calls };
+    let sent:Result<ext::csv_write::Progress,ext::csv_write::Failure> = ext::csv_write::write_record<SliceWriter>(writer,record,limits);
+    if (sent.is_err()) {
+        let failure = sent.unwrap_err();
+        if ((failure.written > remaining) || (failure.write_calls > calls)) { return 6; }
+        state.calls += failure.write_calls;
+        return match(failure.cause) {
+            ext::csv_write::Cause::Csv(detail) -> match(detail) { ext::csv::Error::AllocationFailed -> 4, _ -> 6 },
+            ext::csv_write::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4,core::io::Error::LimitExceeded -> 2,_ -> 6 },
+            _ -> 2
+        };
+    }
+    let progress = sent.unwrap();
+    if ((progress.written > remaining) || (progress.write_calls > calls)) { return 6; }
+    state.calls += progress.write_calls;
+    return 0;
+}
+fn render(value:Report, output:[u8]) -> Result<i32,i32> {
+    let made = core::io::slice_writer(output,512);
+    if (made.is_err()) { return core::result::Err(6); }
+    let writer = made.unwrap();
+    let record = ext::csv::new();
+    let staged = Staged { calls:0 };
+    let header:[View<u8>;6] = [literal("left_count",10),literal("right_count",11),literal("equal",5),literal("order",5),literal("left_sorted",11),literal("right_sorted",12)];
+    let status:i32 = emit(writer.borrow(),record.borrow(),staged.borrow(),core::slice::view(header,6).unwrap());
+    let left_bytes:[u8;20] = [0;20];
+    let right_bytes:[u8;20] = [0;20];
+    if (status == 0) {
+        let left_count = core::decimal::format_u64(left_bytes,0,20,value.left);
+        let right_count = core::decimal::format_u64(right_bytes,0,20,value.right);
+        if (left_count.is_err() || right_count.is_err()) { status = 6; }
+        else {
+            let order:View<u8> = match(value.order) {
+                core::ordering::Ordering::Less -> literal("less",4),
+                core::ordering::Ordering::Equal -> literal("equal",5),
+                core::ordering::Ordering::Greater -> literal("greater",7)
+            };
+            let fields:[View<u8>;6] = [core::slice::view(left_bytes,left_count.unwrap()).unwrap(),core::slice::view(right_bytes,right_count.unwrap()).unwrap(),boolean(value.equal),order,boolean(value.left_sorted),boolean(value.right_sorted)];
+            status = emit(writer.borrow(),record.borrow(),staged.borrow(),core::slice::view(fields,6).unwrap());
+        }
+    }
+    record.destroy();
+    if (status != 0) { return core::result::Err(status); }
+    let length:i32 = writer.position();
+    if ((length < 1) || (length > 124)) { return core::result::Err(6); }
+    return core::result::Ok(length);
+}
+fn prepare(options:&Options, output:[u8]) -> Result<i32,i32> {
+    let source = std::stream::stdin();
+    let limits = alloc::io::ReadLimits { max_bytes:1048576,max_calls:8192 };
+    let received:Result<Vec<u8>,alloc::io::ReadFailure> = alloc::io::read_to_end<std::stream::Descriptor>(source.borrow(),limits);
+    if (received.is_err()) {
+        let failure = received.unwrap_err();
+        let status:i32 = input_status(failure.cause);
+        failure.destroy();
+        return core::result::Err(status);
+    }
+    let input = received.unwrap();
+    let left:Vec<i64> = alloc::vec::new();
+    let right:Vec<i64> = alloc::vec::new();
+    let status:i32 = parse(input.borrow(),left.borrow(),right.borrow());
+    input.destroy();
+    if (status != 0) { left.destroy(); right.destroy(); return core::result::Err(status); }
+    let summary:Report = analyze(left.borrow(),right.borrow(),options.descending);
+    left.destroy();
+    right.destroy();
+    return render(summary,output);
+}
+fn arguments(values:View<View<u8>>) -> Result<Options,i32> {
+    let specs:[ext::cli::Spec;2] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("descending",10),short:114,arity:ext::cli::Arity::Flag }
+    ];
+    let made = ext::cli::parser(values,core::slice::view(specs,2).unwrap(),ext::cli::Ordering::Intermixed);
+    if (made.is_err()) { return core::result::Err(2); }
+    let parser = made.unwrap();
+    let options = Options { descending:false,help:false };
+    while(true) {
+        let event:Result<Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (event.is_err()) { return core::result::Err(2); }
+        let next = event.unwrap();
+        if (next.is_none()) { break; }
+        let occurrence:Option<ext::cli::Occurrence> = match(next.unwrap()) {
+            ext::cli::Event::Option(value) -> core::option::Some(value),
+            _ -> core::option::None()
+        };
+        if (occurrence.is_none()) { return core::result::Err(2); }
+        let found = occurrence.unwrap();
+        if (found.id == 1) {
+            if (options.help) { return core::result::Err(2); }
+            options.help = true;
+        } else {
+            if ((found.id != 2) || options.descending) { return core::result::Err(2); }
+            options.descending = true;
+        }
+    }
+    return core::result::Ok(options);
+}
+fn help() -> i32 {
+    let value = literal("Usage: compare_series [--descending] [--help]\nRead CSV side,value from stdin; side is left or right and value is a signed i64.\nPreserve the input order within each side, including interleaved rows.\nReport counts, equality, lexicographic order and whether each side is sorted.\n--descending reverses numeric element order; a shorter equal prefix remains less.\nSortedness allows equal adjacent values. Header-only input means two empty series.\nLimits: 1 MiB input, 65536 data rows, 64 decoded bytes per field, 8192 read attempts.\nInput is fully validated before output; input errors publish no data.\nShort options: -r, -h. Duplicate options and operands are errors.\nHelp accepts otherwise valid flags and does not read stdin.\n",723);
+    if (!write(value,1,64)) { return 5; }
+    return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,8,1024);
+    if (captured.is_err()) {
+        return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4,std::args::Error::HostRead(index) -> 3,_ -> 2 });
+    }
+    let owner = captured.unwrap();
+    let parsed:Result<Options,i32> = arguments(owner.as_view());
+    owner.destroy();
+    if (parsed.is_err()) { return report(parsed.unwrap_err()); }
+    let options = parsed.unwrap();
+    if (options.help) {
+        let status:i32 = help();
+        if (status != 0) { return report(status); }
+        return 0;
+    }
+    let output:[u8;512] = [0;512];
+    let prepared:Result<i32,i32> = prepare(options.borrow(),output);
+    if (prepared.is_err()) { return report(prepared.unwrap_err()); }
+    if (!write(core::slice::view(output,prepared.unwrap()).unwrap(),1,64)) { return report(5); }
+    return 0;
+}

@@ -1,0 +1,270 @@
+module app::main;
+import core::cmp;
+import core::f32;
+import core::f64;
+import core::iter;
+import core::option;
+import core::ordering;
+import core::pair;
+import core::result;
+
+struct Log { events:[i64], used:i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn add(&self,value:i64) { assert(self.used<48); self.events[self.used]=value; self.used+=1; }
+    fn check(&self,expected:[i64],count:i32) { assert(self.used==count); let i:i32=0; while(i<count) { assert(self.events[i]==expected[i]); i+=1; } }
+}
+struct Probe<T> { values:[T], front:i32, back:i32, role:i64, pulls:i32, backs:i32, queries:i32, log:&Log }
+fn probe<T>(values:[T],count:i32,role:i64,log:&Log) -> Probe<T> {
+    return Probe { values:values,front:0,back:count,role:role,pulls:0,backs:0,queries:0,log:log };
+}
+impl<T> Probe<T> { fn borrow(&self) -> &Probe<T> { return self; } }
+pub impl<T> core::iter::Iterator<T> for Probe<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        self.pulls+=1; let log:&Log=self.log;
+        if(self.front==self.back) { log.add(0-self.role); return core::option::None(); }
+        log.add(self.role+(self.front as i64)); let value:T=self.values[self.front]; self.front+=1; return core::option::Some(value);
+    }
+}
+pub impl<T> core::iter::DoubleEndedIterator<T> for Probe<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        self.backs+=1; let log:&Log=self.log;
+        if(self.front==self.back) { log.add(0-self.role-1000); return core::option::None(); }
+        self.back-=1; log.add(self.role+1000+(self.back as i64)); let value:T=self.values[self.back]; return core::option::Some(value);
+    }
+}
+pub impl<T> core::iter::ExactSizeIterator<T> for Probe<T> {
+    pub fn remaining_count(&self) -> u64 { self.queries+=1; let log:&Log=self.log; log.add(-999); return (self.back-self.front) as u64; }
+}
+fn total(value:core::ordering::Ordering) -> i32 { return core::ordering::to_i32(value); }
+fn partial(value:core::cmp::PartialOrdering) -> i32 {
+    return match(value) { core::cmp::PartialOrdering::Less -> -1,core::cmp::PartialOrdering::Equal -> 0,core::cmp::PartialOrdering::Greater -> 1,core::cmp::PartialOrdering::Unordered -> 2 };
+}
+fn truth(value:bool) -> i32 { if(value) { return 0; } return 9; }
+struct Equal { calls:i32, log:&Log }
+impl Equal { fn borrow(&self) -> &Equal { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,bool> for Equal {
+    pub fn apply(&self,pair:core::pair::Pair<i32,i32>) -> bool { self.calls+=1; let log:&Log=self.log; log.add(1000+(pair.first as i64)*10+(pair.second as i64)); return pair.first==pair.second; }
+}
+struct Compare { calls:i32, reverse:bool, log:&Log }
+impl Compare { fn borrow(&self) -> &Compare { return self; } }
+pub impl core::ordering::Comparator<i32,i32> for Compare {
+    pub fn compare(&self,left:i32,right:i32) -> core::ordering::Ordering {
+        self.calls+=1; let log:&Log=self.log; log.add(1000+(left as i64)*10+(right as i64));
+        let order:core::ordering::Ordering=core::ordering::compare_i32(left,right);
+        if(self.reverse) { return core::ordering::reverse(order); } return order;
+    }
+}
+struct Part { calls:i32, log:&Log }
+impl Part { fn borrow(&self) -> &Part { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,core::cmp::PartialOrdering> for Part {
+    pub fn apply(&self,pair:core::pair::Pair<i32,i32>) -> core::cmp::PartialOrdering {
+        self.calls+=1; let log:&Log=self.log; log.add(1000+(pair.first as i64)*10+(pair.second as i64));
+        if(pair.first==9 || pair.second==9) { return core::cmp::PartialOrdering::Unordered; }
+        if(pair.first<pair.second) { return core::cmp::PartialOrdering::Less; }
+        if(pair.first>pair.second) { return core::cmp::PartialOrdering::Greater; } return core::cmp::PartialOrdering::Equal;
+    }
+}
+struct Adjacent { calls:i32, reverse:bool, strict:bool, log:&Log }
+impl Adjacent { fn borrow(&self) -> &Adjacent { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,bool> for Adjacent {
+    pub fn apply(&self,pair:core::pair::Pair<i32,i32>) -> bool {
+        self.calls+=1; let log:&Log=self.log; log.add(1000+(pair.first as i64)*10+(pair.second as i64));
+        if(self.reverse) { if(self.strict) { return pair.first>pair.second; } return pair.first>=pair.second; }
+        if(self.strict) { return pair.first<pair.second; } return pair.first<=pair.second;
+    }
+}
+fn sequence(mode:i32,left:&Probe<i32>,right:&Probe<i32>,equal:&Equal,compare:&Compare,part:&Part) -> i32 {
+    if(mode==0) { return truth(core::iter::eq<Probe<i32>,Probe<i32>,i32>(left,right)); }
+    if(mode==1) { return truth(core::iter::eq_by<Probe<i32>,Probe<i32>,Equal,i32,i32>(left,right,equal)); }
+    if(mode==2) { return total(core::iter::cmp<Probe<i32>,Probe<i32>,i32>(left,right)); }
+    if(mode==3) { return total(core::iter::cmp_by<Probe<i32>,Probe<i32>,Compare,i32,i32>(left,right,compare)); }
+    if(mode==4) { return partial(core::iter::partial_cmp<Probe<i32>,Probe<i32>,i32>(left,right)); }
+    assert(mode==5); return partial(core::iter::partial_cmp_by<Probe<i32>,Probe<i32>,Part,i32,i32>(left,right,part));
+}
+fn unused_metadata(left:&Probe<i32>,right:&Probe<i32>) { assert(left.queries==0 && right.queries==0 && left.backs==0 && right.backs==0); }
+fn pairwise_empty_equal_mismatch_and_prefix_effects() {
+    let events:[i64;48]=[0;48]; let log:Log=Log { events:events,used:0 };
+    let a:[i32;3]=[1,4,7]; let b:[i32;3]=[1,3,8]; let equal_values:[i32;3]=[1,2,7]; let longer:[i32;3]=[1,2,9];
+    let equal:Equal=Equal { calls:0,log:log.borrow() }; let compare:Compare=Compare { calls:0,reverse:false,log:log.borrow() }; let part:Part=Part { calls:0,log:log.borrow() };
+    let mode:i32=0; while(mode<6) {
+        let custom:bool=mode==1 || mode==3 || mode==5; let per_pair:i32=0; if(custom) { per_pair=1; }
+        let left:Probe<i32> =probe<i32>(a,0,100,log.borrow()); let right:Probe<i32> =probe<i32>(b,0,200,log.borrow());
+        log.used=0; assert(sequence(mode,left.borrow(),right.borrow(),equal.borrow(),compare.borrow(),part.borrow())==0);
+        let empty:[i64;2]=[-100,-200]; log.check(empty,2); assert(left.pulls==1 && right.pulls==1);
+        log.used=0; left=probe<i32>(a,0,100,log.borrow()); right=probe<i32>(longer,3,200,log.borrow());
+        let result:i32=sequence(mode,left.borrow(),right.borrow(),equal.borrow(),compare.borrow(),part.borrow());
+        let wanted:i32=-1; if(mode<2) { wanted=9; } assert(result==wanted);
+        let right_only:[i64;2]=[-100,200]; log.check(right_only,2); assert(left.front==0 && right.front==1 && right.next().unwrap()==2);
+        log.used=0; left=probe<i32>(longer,3,100,log.borrow()); right=probe<i32>(b,0,200,log.borrow());
+        result=sequence(mode,left.borrow(),right.borrow(),equal.borrow(),compare.borrow(),part.borrow()); wanted=1; if(mode<2) { wanted=9; } assert(result==wanted);
+        let left_only:[i64;2]=[100,-200]; log.check(left_only,2); assert(left.front==1 && right.front==0 && left.next().unwrap()==2);
+        log.used=0; equal.calls=0; compare.calls=0; part.calls=0;
+        left=probe<i32>(equal_values,2,100,log.borrow()); right=probe<i32>(equal_values,2,200,log.borrow());
+        assert(sequence(mode,left.borrow(),right.borrow(),equal.borrow(),compare.borrow(),part.borrow())==0);
+        let equal_custom:[i64;8]=[100,200,1011,101,201,1022,-100,-200]; let equal_natural:[i64;6]=[100,200,101,201,-100,-200];
+        if(custom) { log.check(equal_custom,8); } else { log.check(equal_natural,6); }
+        assert(left.pulls==3 && right.pulls==3 && equal.calls+compare.calls+part.calls==2*per_pair); unused_metadata(left.borrow(),right.borrow());
+        log.used=0; equal.calls=0; compare.calls=0; part.calls=0; left=probe<i32>(a,3,100,log.borrow()); right=probe<i32>(b,3,200,log.borrow());
+        result=sequence(mode,left.borrow(),right.borrow(),equal.borrow(),compare.borrow(),part.borrow()); wanted=1; if(mode<2) { wanted=9; } assert(result==wanted);
+        let mismatch_custom:[i64;6]=[100,200,1011,101,201,1043]; let mismatch_natural:[i64;4]=[100,200,101,201];
+        if(custom) { log.check(mismatch_custom,6); } else { log.check(mismatch_natural,4); }
+        assert(left.pulls==2 && right.pulls==2 && equal.calls+compare.calls+part.calls==2*per_pair); unused_metadata(left.borrow(),right.borrow());
+        assert(left.next().unwrap()==7 && right.next().unwrap()==8);
+        log.used=0; equal.calls=0; compare.calls=0; part.calls=0; left=probe<i32>(longer,1,100,log.borrow()); right=probe<i32>(longer,3,200,log.borrow());
+        result=sequence(mode,left.borrow(),right.borrow(),equal.borrow(),compare.borrow(),part.borrow()); wanted=-1; if(mode<2) { wanted=9; } assert(result==wanted);
+        let prefix_custom:[i64;5]=[100,200,1011,-100,201]; let prefix_natural:[i64;4]=[100,200,-100,201];
+        if(custom) { log.check(prefix_custom,5); } else { log.check(prefix_natural,4); }
+        assert(left.pulls==2 && right.pulls==2 && right.front==2 && equal.calls+compare.calls+part.calls==per_pair); assert(right.next().unwrap()==9);
+        log.used=0; left=probe<i32>(longer,3,100,log.borrow()); right=probe<i32>(longer,1,200,log.borrow());
+        result=sequence(mode,left.borrow(),right.borrow(),equal.borrow(),compare.borrow(),part.borrow()); wanted=1; if(mode<2) { wanted=9; } assert(result==wanted);
+        let reverse_custom:[i64;5]=[100,200,1011,101,-200]; let reverse_natural:[i64;4]=[100,200,101,-200];
+        if(custom) { log.check(reverse_custom,5); } else { log.check(reverse_natural,4); }
+        assert(left.front==2 && left.next().unwrap()==9); unused_metadata(left.borrow(),right.borrow()); mode+=1;
+    }
+    compare.reverse=true; log.used=0;
+    let short:Probe<i32> =probe<i32>(longer,1,100,log.borrow()); let long:Probe<i32> =probe<i32>(longer,3,200,log.borrow());
+    assert(total(core::iter::cmp_by<Probe<i32>,Probe<i32>,Compare,i32,i32>(short.borrow(),long.borrow(),compare.borrow()))==-1);
+    assert(short.front==1 && long.front==2); // Descending elements preserve structural shorter-prefix order.
+}
+
+struct Identity { calls:i32, log:&Log }
+impl Identity { fn borrow(&self) -> &Identity { return self; } }
+pub impl core::iter::Mapper<i32,i32> for Identity {
+    pub fn apply(&self,value:i32) -> i32 { self.calls+=1; let log:&Log=self.log; log.add(2000+(value as i64)); return value; }
+}
+fn aliases_current_remainders_and_adapter_composition() {
+    let events:[i64;48]=[0;48]; let log:Log=Log { events:events,used:0 }; let values:[i32;4]=[7;4];
+    let equal:Equal=Equal { calls:0,log:log.borrow() }; let compare:Compare=Compare { calls:0,reverse:false,log:log.borrow() }; let part:Part=Part { calls:0,log:log.borrow() };
+    let mode:i32=0; while(mode<6) {
+        let custom:bool=mode==1 || mode==3 || mode==5; log.used=0;
+        let shared:Probe<i32> =probe<i32>(values,3,100,log.borrow()); let result:i32=sequence(mode,shared.borrow(),shared.borrow(),equal.borrow(),compare.borrow(),part.borrow());
+        let wanted:i32=1; if(mode<2) { wanted=9; } assert(result==wanted && shared.front==3 && shared.pulls==4);
+        let odd_custom:[i64;5]=[100,101,1077,102,-100]; let odd_natural:[i64;4]=[100,101,102,-100];
+        if(custom) { log.check(odd_custom,5); } else { log.check(odd_natural,4); }
+        log.used=0; shared=probe<i32>(values,4,100,log.borrow()); assert(sequence(mode,shared.borrow(),shared.borrow(),equal.borrow(),compare.borrow(),part.borrow())==0);
+        let even_custom:[i64;8]=[100,101,1077,102,103,1077,-100,-100]; let even_natural:[i64;6]=[100,101,102,103,-100,-100];
+        if(custom) { log.check(even_custom,8); } else { log.check(even_natural,6); }
+        assert(shared.pulls==6 && shared.front==4 && shared.queries==0 && shared.backs==0); mode+=1;
+    }
+    let guarded:[i32;5]=[99,2,3,4,88]; let rhs:[i32;3]=[2,3,9];
+    let left:Probe<i32> =probe<i32>(guarded,5,100,log.borrow()); let right:Probe<i32> =probe<i32>(rhs,3,200,log.borrow());
+    assert(left.next().unwrap()==99 && left.next_back().unwrap()==88); log.used=0;
+    assert(total(core::iter::cmp_by<Probe<i32>,Probe<i32>,Compare,i32,i32>(left.borrow(),right.borrow(),compare.borrow()))==-1);
+    assert(left.front==4 && left.back==4 && left.pulls==4 && left.backs==1 && right.front==3 && left.queries==0 && right.queries==0);
+    let mixed:[i64;9]=[101,200,1022,102,201,1033,103,202,1049]; log.check(mixed,9);
+    let backwards:[i32;3]=[3,2,1]; let forwards:[i32;3]=[1,2,3];
+    let original:Probe<i32> =probe<i32>(backwards,3,100,log.borrow()); let underlying:Probe<i32> =probe<i32>(forwards,3,200,log.borrow());
+    let mapper:Identity=Identity { calls:0,log:log.borrow() }; let reversed:core::iter::Rev<Probe<i32>,i32> =core::iter::rev<Probe<i32>,i32>(original.borrow());
+    let mapped:core::iter::Map<Probe<i32>,Identity,i32,i32> =core::iter::map<Probe<i32>,Identity,i32,i32>(underlying.borrow(),mapper.borrow());
+    log.used=0; assert(core::iter::eq<core::iter::Rev<Probe<i32>,i32>,core::iter::Map<Probe<i32>,Identity,i32,i32>,i32>(reversed.borrow(),mapped.borrow()));
+    let composed:[i64;11]=[1102,200,2001,1101,201,2002,1100,202,2003,-1100,-200]; log.check(composed,11);
+    assert(original.backs==4 && original.pulls==0 && underlying.pulls==4 && mapper.calls==3 && original.queries==0 && underlying.queries==0);
+}
+
+fn sortedness_uses_adjacent_operands_and_resumes() {
+    let events:[i64;48]=[0;48]; let log:Log=Log { events:events,used:0 }; let values:[i32;4]=[1,1,2,9]; let inverted:[i32;4]=[1,3,2,9];
+    let relation:Adjacent=Adjacent { calls:0,reverse:false,strict:false,log:log.borrow() }; let mode:i32=0;
+    while(mode<2) {
+        let source:Probe<i32> =probe<i32>(values,0,100,log.borrow()); log.used=0; relation.calls=0;
+        let answer:bool=true; if(mode==0) { answer=core::iter::is_sorted<Probe<i32>,i32>(source.borrow()); } else { answer=core::iter::is_sorted_by<Probe<i32>,Adjacent,i32>(source.borrow(),relation.borrow()); }
+        assert(answer && source.pulls==1 && relation.calls==0); let empty:[i64;1]=[-100]; log.check(empty,1);
+        source=probe<i32>(values,1,100,log.borrow()); log.used=0;
+        if(mode==0) { answer=core::iter::is_sorted<Probe<i32>,i32>(source.borrow()); } else { answer=core::iter::is_sorted_by<Probe<i32>,Adjacent,i32>(source.borrow(),relation.borrow()); }
+        assert(answer && source.pulls==2 && relation.calls==0); let singleton:[i64;2]=[100,-100]; log.check(singleton,2);
+        source=probe<i32>(values,3,100,log.borrow()); log.used=0;
+        if(mode==0) { answer=core::iter::is_sorted<Probe<i32>,i32>(source.borrow()); } else { answer=core::iter::is_sorted_by<Probe<i32>,Adjacent,i32>(source.borrow(),relation.borrow()); }
+        assert(answer && source.pulls==4 && relation.calls==2*mode && source.queries==0 && source.backs==0);
+        let sorted_by:[i64;6]=[100,101,1011,102,1012,-100]; let sorted:[i64;4]=[100,101,102,-100]; if(mode==0) { log.check(sorted,4); } else { log.check(sorted_by,6); }
+        source=probe<i32>(inverted,4,100,log.borrow()); log.used=0; relation.calls=0;
+        if(mode==0) { answer=core::iter::is_sorted<Probe<i32>,i32>(source.borrow()); } else { answer=core::iter::is_sorted_by<Probe<i32>,Adjacent,i32>(source.borrow(),relation.borrow()); }
+        assert(!answer && source.pulls==3 && relation.calls==2*mode && source.front==3 && source.queries==0 && source.backs==0);
+        let rejected_by:[i64;5]=[100,101,1013,102,1032]; let rejected:[i64;3]=[100,101,102]; if(mode==0) { log.check(rejected,3); } else { log.check(rejected_by,5); } assert(source.next().unwrap()==9); mode+=1;
+    }
+    log.used=0; relation.calls=0; relation.strict=true; let source:Probe<i32> =probe<i32>(values,4,100,log.borrow());
+    assert(!core::iter::is_sorted_by<Probe<i32>,Adjacent,i32>(source.borrow(),relation.borrow()) && source.front==2 && relation.calls==1);
+    let strict:[i64;3]=[100,101,1011]; log.check(strict,3); assert(source.next().unwrap()==2);
+    let down:[i32;4]=[4,3,3,1]; relation.reverse=true; relation.strict=false; relation.calls=0; source=probe<i32>(down,4,100,log.borrow()); log.used=0;
+    assert(core::iter::is_sorted_by<Probe<i32>,Adjacent,i32>(source.borrow(),relation.borrow()) && source.pulls==5 && relation.calls==3);
+    let descending:[i64;8]=[100,101,1043,102,1033,103,1031,-100]; log.check(descending,8);
+}
+
+fn unordered_short_circuits_and_ieee_values() {
+    let events:[i64;48]=[0;48]; let log:Log=Log { events:events,used:0 }; let a:[i32;3]=[1,9,7]; let b:[i32;3]=[1,9,8]; let part:Part=Part { calls:0,log:log.borrow() };
+    let left:Probe<i32> =probe<i32>(a,3,100,log.borrow()); let right:Probe<i32> =probe<i32>(b,3,200,log.borrow());
+    assert(partial(core::iter::partial_cmp_by<Probe<i32>,Probe<i32>,Part,i32,i32>(left.borrow(),right.borrow(),part.borrow()))==2 && part.calls==2);
+    let decisive:[i64;6]=[100,200,1011,101,201,1099]; log.check(decisive,6); assert(left.next().unwrap()==7 && right.next().unwrap()==8);
+    let nan:f64=core::f64::from_bits(9221120237041090626); let zero:f64=core::f64::from_bits(9223372036854775808);
+    let infinity:f64=core::f64::from_bits(9218868437227405312); let negative_infinity:f64=core::f64::from_bits(18442240474082181120);
+    let numbers:[f64;3]=[nan,1.0,9.0]; let x:Probe<f64> =probe<f64>(numbers,3,100,log.borrow()); let y:Probe<f64> =probe<f64>(numbers,3,200,log.borrow()); log.used=0;
+    assert(!core::iter::eq<Probe<f64>,Probe<f64>,f64>(x.borrow(),y.borrow()) && x.front==1 && y.front==1);
+    let first:[i64;2]=[100,200]; log.check(first,2);
+    x=probe<f64>(numbers,3,100,log.borrow()); y=probe<f64>(numbers,3,200,log.borrow()); log.used=0;
+    assert(partial(core::iter::partial_cmp<Probe<f64>,Probe<f64>,f64>(x.borrow(),y.borrow()))==2 && x.front==1 && y.front==1); log.check(first,2);
+    assert(x.next().unwrap()==1.0 && y.next().unwrap()==1.0 && x.queries==0 && y.queries==0);
+    let lhs:[f64;2]=[1.0,nan]; let rhs:[f64;2]=[2.0,nan]; x=probe<f64>(lhs,2,100,log.borrow()); y=probe<f64>(rhs,2,200,log.borrow()); log.used=0;
+    assert(partial(core::iter::partial_cmp<Probe<f64>,Probe<f64>,f64>(x.borrow(),y.borrow()))==-1 && x.front==1 && y.front==1); log.check(first,2);
+    x=probe<f64>(numbers,0,100,log.borrow()); y=probe<f64>(numbers,3,200,log.borrow()); log.used=0;
+    assert(partial(core::iter::partial_cmp<Probe<f64>,Probe<f64>,f64>(x.borrow(),y.borrow()))==-1 && y.front==1); let prefix:[i64;2]=[-100,200]; log.check(prefix,2);
+    let zeros:[f64;2]=[zero,infinity]; let positives:[f64;2]=[0.0,infinity]; x=probe<f64>(zeros,2,100,log.borrow()); y=probe<f64>(positives,2,200,log.borrow());
+    assert(core::iter::eq<Probe<f64>,Probe<f64>,f64>(x.borrow(),y.borrow())); x=probe<f64>(zeros,2,100,log.borrow()); y=probe<f64>(positives,2,200,log.borrow());
+    assert(partial(core::iter::partial_cmp<Probe<f64>,Probe<f64>,f64>(x.borrow(),y.borrow()))==0);
+    let sorted:[f64;4]=[negative_infinity,zero,0.0,infinity]; x=probe<f64>(sorted,4,100,log.borrow());
+    assert(core::iter::is_sorted<Probe<f64>,f64>(x.borrow()) && x.pulls==5);
+    x=probe<f64>(numbers,1,100,log.borrow()); assert(core::iter::is_sorted<Probe<f64>,f64>(x.borrow()) && x.pulls==2);
+    x=probe<f64>(numbers,3,100,log.borrow()); assert(!core::iter::is_sorted<Probe<f64>,f64>(x.borrow()) && x.front==2 && x.pulls==2);
+    assert(core::f64::to_bits(numbers[0])==9221120237041090626 && core::f64::to_bits(zeros[0])==9223372036854775808);
+    let nan32:f32=core::f32::from_bits(2143289410); let n32:[f32;1]=[nan32]; let p32:Probe<f32> =probe<f32>(n32,1,100,log.borrow()); let q32:Probe<f32> =probe<f32>(n32,1,200,log.borrow()); log.used=0;
+    assert(!core::iter::eq<Probe<f32>,Probe<f32>,f32>(p32.borrow(),q32.borrow())); p32=probe<f32>(n32,1,100,log.borrow()); q32=probe<f32>(n32,1,200,log.borrow());
+    assert(partial(core::iter::partial_cmp<Probe<f32>,Probe<f32>,f32>(p32.borrow(),q32.borrow()))==2); p32=probe<f32>(n32,1,100,log.borrow());
+    assert(core::iter::is_sorted<Probe<f32>,f32>(p32.borrow()) && core::f32::to_bits(n32[0])==2143289410);
+}
+
+pub struct Fault { code:i32, stamp:u64 }
+pub type Payload=core::option::Option<core::result::Result<[u64;2],Fault>>;
+pub struct Record { key:i32, wide:u64, payload:Payload }
+pub struct Key { rank:i32, payload:core::option::Option<core::result::Result<u64,[i64;2]>> }
+fn record(key:i32) -> Record { let words:[u64;2]=[4294967297,18446744073709551615]; let payload:core::result::Result<[u64;2],Fault> =core::result::Ok(words); return Record { key:key,wide:18446744073709551615,payload:core::option::Some(payload) }; }
+fn key(rank:i32) -> Key { let words:[i64;2]=[-9223372036854775808,4294967297]; let payload:core::result::Result<u64,[i64;2]> =core::result::Err(words); return Key { rank:rank,payload:core::option::Some(payload) }; }
+fn record_key(value:Record) -> i32 { let words:[u64;2]=value.payload.unwrap().unwrap(); assert(value.wide==18446744073709551615 && words[0]==4294967297 && words[1]==18446744073709551615); return value.key; }
+fn lookup_key(value:Key) -> i32 { let words:[i64;2]=value.payload.unwrap().unwrap_err(); assert(words[0]==-9223372036854775808 && words[1]==4294967297); return value.rank; }
+struct RecordEq { calls:i32 }
+impl RecordEq { fn borrow(&self) -> &RecordEq { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Record,Key>,bool> for RecordEq { pub fn apply(&self,pair:core::pair::Pair<Record,Key>) -> bool { self.calls+=1; return record_key(pair.first)==lookup_key(pair.second); } }
+struct RecordCmp { calls:i32 }
+impl RecordCmp { fn borrow(&self) -> &RecordCmp { return self; } }
+pub impl core::ordering::Comparator<Record,Key> for RecordCmp { pub fn compare(&self,left:Record,right:Key) -> core::ordering::Ordering { self.calls+=1; return core::ordering::compare_i32(record_key(left),lookup_key(right)); } }
+struct RecordPartial { calls:i32 }
+impl RecordPartial { fn borrow(&self) -> &RecordPartial { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Record,Key>,core::cmp::PartialOrdering> for RecordPartial {
+    pub fn apply(&self,pair:core::pair::Pair<Record,Key>) -> core::cmp::PartialOrdering { self.calls+=1; let left:i32=record_key(pair.first); let right:i32=lookup_key(pair.second); if(left==4) { return core::cmp::PartialOrdering::Unordered; } assert(left==right); return core::cmp::PartialOrdering::Equal; }
+}
+struct RecordAdj { calls:i32 }
+impl RecordAdj { fn borrow(&self) -> &RecordAdj { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Record,Record>,bool> for RecordAdj { pub fn apply(&self,pair:core::pair::Pair<Record,Record>) -> bool { self.calls+=1; return record_key(pair.first)<=record_key(pair.second); } }
+struct OptionalEq { calls:i32, absent:i32 }
+impl OptionalEq { fn borrow(&self) -> &OptionalEq { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<core::option::Option<i32>,core::option::Option<i32>>,bool> for OptionalEq {
+    pub fn apply(&self,pair:core::pair::Pair<core::option::Option<i32>,core::option::Option<i32>>) -> bool { self.calls+=1; if(pair.first.is_none()) { self.absent+=1; return pair.second.is_none(); } return pair.second.is_some() && pair.first.unwrap()==pair.second.unwrap(); }
+}
+fn heterogeneous_compound_items_and_some_none() {
+    let events:[i64;48]=[0;48]; let log:Log=Log { events:events,used:0 }; let values:[Record;3]=[record(1),record(4),record(4)]; let keys:[Key;3]=[key(1),key(4),key(5)];
+    let source:Probe<Record> =probe<Record>(values,2,100,log.borrow()); let other:Probe<Key> =probe<Key>(keys,2,200,log.borrow()); let equal:RecordEq=RecordEq { calls:0 };
+    assert(core::iter::eq_by<Probe<Record>,Probe<Key>,RecordEq,Record,Key>(source.borrow(),other.borrow(),equal.borrow()) && equal.calls==2);
+    source=probe<Record>(values,3,100,log.borrow()); other=probe<Key>(keys,3,200,log.borrow()); let compare:RecordCmp=RecordCmp { calls:0 };
+    assert(total(core::iter::cmp_by<Probe<Record>,Probe<Key>,RecordCmp,Record,Key>(source.borrow(),other.borrow(),compare.borrow()))==-1 && compare.calls==3);
+    source=probe<Record>(values,3,100,log.borrow()); other=probe<Key>(keys,3,200,log.borrow()); let part:RecordPartial=RecordPartial { calls:0 };
+    assert(partial(core::iter::partial_cmp_by<Probe<Record>,Probe<Key>,RecordPartial,Record,Key>(source.borrow(),other.borrow(),part.borrow()))==2 && part.calls==2);
+    assert(source.front==2 && other.front==2 && record_key(source.next().unwrap())==4 && lookup_key(other.next().unwrap())==5);
+    source=probe<Record>(values,3,100,log.borrow()); let adjacent:RecordAdj=RecordAdj { calls:0 };
+    assert(core::iter::is_sorted_by<Probe<Record>,RecordAdj,Record>(source.borrow(),adjacent.borrow()) && adjacent.calls==2 && source.pulls==4);
+    assert(record_key(values[0])==1 && record_key(values[1])==4 && lookup_key(keys[2])==5 && source.queries==0 && other.queries==0);
+    let optional:[core::option::Option<i32>;2]=[core::option::None(),core::option::Some(7)]; log.used=0;
+    let left:Probe<core::option::Option<i32>> =probe<core::option::Option<i32>>(optional,2,100,log.borrow()); let right:Probe<core::option::Option<i32>> =probe<core::option::Option<i32>>(optional,2,200,log.borrow()); let predicate:OptionalEq=OptionalEq { calls:0,absent:0 };
+    assert(core::iter::eq_by<Probe<core::option::Option<i32>>,Probe<core::option::Option<i32>>,OptionalEq,core::option::Option<i32>,core::option::Option<i32>>(left.borrow(),right.borrow(),predicate.borrow()) && predicate.calls==2 && predicate.absent==1);
+    let expected:[i64;6]=[100,200,101,201,-100,-200]; log.check(expected,6);
+}
+fn main() -> i32 {
+    pairwise_empty_equal_mismatch_and_prefix_effects(); aliases_current_remainders_and_adapter_composition();
+    sortedness_uses_adjacent_operands_and_resumes(); unordered_short_circuits_and_ieee_values(); heterogeneous_compound_items_and_some_none(); return 0;
+}

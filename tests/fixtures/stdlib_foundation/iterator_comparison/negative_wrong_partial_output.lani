@@ -1,0 +1,15 @@
+module app::main;
+import core::cmp;
+import core::iter;
+import core::ordering;
+import core::pair;
+struct TotalOnly {}
+impl TotalOnly { fn borrow(&self) -> &TotalOnly { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,core::ordering::Ordering> for TotalOnly {
+    pub fn apply(&self,pair:core::pair::Pair<i32,i32>) -> core::ordering::Ordering { return core::ordering::compare_i32(pair.first,pair.second); }
+}
+fn main() -> i32 {
+    let left:core::iter::Once<i32> =core::iter::once<i32>(1); let right:core::iter::Once<i32> =core::iter::once<i32>(1); let callback:TotalOnly=TotalOnly {};
+    let rejected:core::cmp::PartialOrdering=core::iter::partial_cmp_by<core::iter::Once<i32>,core::iter::Once<i32>,TotalOnly,i32,i32>(left.borrow(),right.borrow(),callback.borrow()); // rejected_sequence_bound
+    return 0;
+}

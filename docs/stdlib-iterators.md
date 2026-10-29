@@ -24,6 +24,13 @@ application gates pass on native Linux x86_64, with selected old regressions
 and the compiler inference dependency recorded separately. Older receipts
 here retain their source/API scope.
 
+The new [sequence comparison consumers](stdlib-iterator-sequences.md) add
+equality, total/partial lexicographic order and adjacent sortedness through the
+same protocol. All eight new library tests, all 119 program cases and three
+selected migrated-consumer regressions pass on native Linux x86_64.
+Exact left/right pulls, retained previous items and discarded-owner cleanup
+are explicit, separately from the historical receipts here.
+
 [Collection, Text and bitset cursors](stdlib-collection-iterators.md) implement
 the same protocol. Their separate native gates check mixed traversal,
 compound map entries, borrowed String aliases and byte/scalar view behavior.

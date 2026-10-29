@@ -40,8 +40,13 @@ Option/result membership, slice equality searches and compaction, and vector
 and deque equality lookup require `PartialEq`. They can therefore search native
 floats, with NaN absent and either signed zero matching the other.
 
-Sorting, ordered binary searches, extrema and lexicographic ordering require
-`Ord`. Tree maps require `Ord`; hash maps require `Eq` and `Hash`; insertion
+Natural sorting, ordered binary searches, extrema and total lexicographic
+ordering require `Ord`. The new [iterator sequence consumers](stdlib-iterator-sequences.md)
+also provide partial lexicographic comparison and adjacency checks under
+`PartialOrd`, and equality under `PartialEq`; their finite native Linux x86_64
+runtime gates pass. Custom iterator sortedness takes a bool adjacency relation,
+while slice sortedness keeps its existing total Comparator/Ord contract.
+Tree maps require `Ord`; hash maps require `Eq` and `Hash`; insertion
 ordered maps and sets require `Eq`. Native floats cannot satisfy these key or
 sort bounds. This prevents an unordered NaN from replacing an arbitrary tree
 map key.

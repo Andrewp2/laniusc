@@ -457,6 +457,147 @@ pub fn max_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
     return core::option::Some(winner);
 }
 
+// Private call-scoped natural policies reuse the custom sequence engines.
+// Operands are shallow observations, never another cleanup authority.
+struct SequenceEquality<T> {}
+impl<T> SequenceEquality<T> {
+    fn borrow(&self) -> &SequenceEquality<T> { return self; }
+}
+pub impl<T> Mapper<core::pair::Pair<T,T>,bool> for SequenceEquality<T>
+    where T: core::cmp::PartialEq<T> {
+    pub fn apply(&self, values: core::pair::Pair<T,T>) -> bool {
+        return T::partial_eq(values.first,values.second);
+    }
+}
+struct SequencePartialComparison<T> {}
+impl<T> SequencePartialComparison<T> {
+    fn borrow(&self) -> &SequencePartialComparison<T> { return self; }
+}
+pub impl<T> Mapper<core::pair::Pair<T,T>,core::cmp::PartialOrdering> for SequencePartialComparison<T>
+    where T: core::cmp::PartialOrd<T> {
+    pub fn apply(&self, values: core::pair::Pair<T,T>) -> core::cmp::PartialOrdering {
+        let ordering: core::cmp::PartialOrdering = T::partial_cmp(values.first,values.second);
+        return ordering;
+    }
+}
+struct SequenceSorted<T> {}
+impl<T> SequenceSorted<T> {
+    fn borrow(&self) -> &SequenceSorted<T> { return self; }
+}
+pub impl<T> Mapper<core::pair::Pair<T,T>,bool> for SequenceSorted<T>
+    where T: core::cmp::PartialOrd<T> {
+    pub fn apply(&self, values: core::pair::Pair<T,T>) -> bool {
+        return T::partial_le(values.first,values.second);
+    }
+}
+
+pub fn eq<A,B,T>(left: &A, right: &B) -> bool
+    where A: Iterator<T>, B: Iterator<T>, T: core::cmp::PartialEq<T> {
+    let predicate: SequenceEquality<T> = SequenceEquality {};
+    return eq_by<A,B,SequenceEquality<T>,T,T>(left,right,predicate.borrow());
+}
+
+// Every round pulls left then right, including after left None. Call the
+// predicate only for two Some values and stop at its first false or a length
+// mismatch. The longer prefix's unmatched item has already been consumed.
+// Shared upstream cursors observe that pull order; pointer identity and exact
+// counts do not imply equality. No Clone/Destroy or source retirement occurs.
+pub fn eq_by<A,B,P,T,U>(left: &A, right: &B, predicate: &P) -> bool
+    where A: Iterator<T>, B: Iterator<U>, P: Mapper<core::pair::Pair<T,U>,bool> {
+    while (true) {
+        let first: core::option::Option<T> = left.next();
+        let second: core::option::Option<U> = right.next();
+        if (first.is_none()) { return second.is_none(); }
+        if (second.is_none()) { return false; }
+        let first_value: T = core::option::unwrap<T>(first);
+        let second_value: U = core::option::unwrap<U>(second);
+        let values: core::pair::Pair<T,U> = core::pair::Pair { first: first_value, second: second_value };
+        if (!predicate.apply(values)) { return false; }
+    }
+    return true;
+}
+
+pub fn cmp<A,B,T>(left: &A, right: &B) -> core::ordering::Ordering
+    where A: Iterator<T>, B: Iterator<T>, T: core::cmp::Ord<T> {
+    let comparator: core::ordering::Natural<T> = core::ordering::Natural {};
+    return cmp_by<A,B,core::ordering::Natural<T>,T,T>(left,right,comparator.borrow());
+}
+
+// First non-Equal pair wins; shorter equal prefixes are Less regardless of
+// the element policy. Both pulls happen before any EOF decision or callback.
+pub fn cmp_by<A,B,C,T,U>(left: &A, right: &B, comparator: &C) -> core::ordering::Ordering
+    where A: Iterator<T>, B: Iterator<U>, C: core::ordering::Comparator<T,U> {
+    while (true) {
+        let first: core::option::Option<T> = left.next();
+        let second: core::option::Option<U> = right.next();
+        if (first.is_none()) {
+            if (second.is_none()) { return core::ordering::Ordering::Equal; }
+            return core::ordering::Ordering::Less;
+        }
+        if (second.is_none()) { return core::ordering::Ordering::Greater; }
+        let first_value: T = core::option::unwrap<T>(first);
+        let second_value: U = core::option::unwrap<U>(second);
+        let ordering: core::ordering::Ordering = comparator.compare(first_value,second_value);
+        if (!core::ordering::is_equal(ordering)) { return ordering; }
+    }
+    return core::ordering::Ordering::Equal;
+}
+
+pub fn partial_cmp<A,B,T>(left: &A, right: &B) -> core::cmp::PartialOrdering
+    where A: Iterator<T>, B: Iterator<T>, T: core::cmp::PartialOrd<T> {
+    let comparator: SequencePartialComparison<T> = SequencePartialComparison {};
+    return partial_cmp_by<A,B,SequencePartialComparison<T>,T,T>(left,right,comparator.borrow());
+}
+
+// Unordered is decisive, not Equal or an absent result. The callback receives
+// one Pair in actual left/right pull order and is never called on absent data.
+pub fn partial_cmp_by<A,B,P,T,U>(left: &A, right: &B, comparator: &P) -> core::cmp::PartialOrdering
+    where A: Iterator<T>, B: Iterator<U>, P: Mapper<core::pair::Pair<T,U>,core::cmp::PartialOrdering> {
+    while (true) {
+        let first: core::option::Option<T> = left.next();
+        let second: core::option::Option<U> = right.next();
+        if (first.is_none()) {
+            if (second.is_none()) { return core::cmp::PartialOrdering::Equal; }
+            return core::cmp::PartialOrdering::Less;
+        }
+        if (second.is_none()) { return core::cmp::PartialOrdering::Greater; }
+        let first_value: T = core::option::unwrap<T>(first);
+        let second_value: U = core::option::unwrap<U>(second);
+        let values: core::pair::Pair<T,U> = core::pair::Pair { first: first_value, second: second_value };
+        let ordering: core::cmp::PartialOrdering = comparator.apply(values);
+        let equal: bool = match (ordering) { core::cmp::PartialOrdering::Equal -> true, _ -> false };
+        if (!equal) { return ordering; }
+    }
+    return core::cmp::PartialOrdering::Equal;
+}
+
+pub fn is_sorted<I,T>(source: &I) -> bool
+    where I: Iterator<T>, T: core::cmp::PartialOrd<T> {
+    let predicate: SequenceSorted<T> = SequenceSorted {};
+    return is_sorted_by<I,SequenceSorted<T>,T>(source,predicate.borrow());
+}
+
+// Empty/singleton sources are true. Each later item is compared once with
+// the retained previous item, returning at the first false without another
+// pull. The predicate must preserve both operands for their later adjacent
+// use; in particular, the retained shallow item must survive the next pull.
+// Discarded owners need external cleanup authority, including the bad pair.
+pub fn is_sorted_by<I,P,T>(source: &I, predicate: &P) -> bool
+    where I: Iterator<T>, P: Mapper<core::pair::Pair<T,T>,bool> {
+    let first: core::option::Option<T> = source.next();
+    if (first.is_none()) { return true; }
+    let previous: T = first.unwrap();
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { return true; }
+        let current: T = item.unwrap();
+        let values: core::pair::Pair<T,T> = core::pair::Pair { first: previous, second: current };
+        if (!predicate.apply(values)) { return false; }
+        previous = current;
+    }
+    return true;
+}
+
 // Empty identities are false for any and true for all. A decisive predicate
 // result consumes its item and returns immediately, leaving the rest untouched.
 pub fn any<I, P, T>(source: &I, predicate: &P) -> bool

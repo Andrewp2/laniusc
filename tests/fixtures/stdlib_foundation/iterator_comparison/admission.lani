@@ -1,0 +1,63 @@
+module app::main;
+import core::cmp;
+import core::f64;
+import core::iter;
+import core::ordering;
+import core::pair;
+import core::slice;
+
+struct EqualPair { calls:i32 }
+impl EqualPair { fn borrow(&self) -> &EqualPair { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i32,u64>,bool> for EqualPair {
+    pub fn apply(&self,pair:core::pair::Pair<i32,u64>) -> bool { self.calls+=1; return (pair.first as u64)==pair.second; }
+}
+struct ComparePair { calls:i32 }
+impl ComparePair { fn borrow(&self) -> &ComparePair { return self; } }
+pub impl core::ordering::Comparator<i32,u64> for ComparePair {
+    pub fn compare(&self,left:i32,right:u64) -> core::ordering::Ordering {
+        self.calls+=1; if((left as u64)<right) { return core::ordering::Ordering::Less; }
+        if((left as u64)>right) { return core::ordering::Ordering::Greater; } return core::ordering::Ordering::Equal;
+    }
+}
+struct PartialPair { calls:i32 }
+impl PartialPair { fn borrow(&self) -> &PartialPair { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i32,u64>,core::cmp::PartialOrdering> for PartialPair {
+    pub fn apply(&self,pair:core::pair::Pair<i32,u64>) -> core::cmp::PartialOrdering {
+        self.calls+=1; if(pair.first==2) { return core::cmp::PartialOrdering::Unordered; }
+        if((pair.first as u64)<pair.second) { return core::cmp::PartialOrdering::Less; }
+        if((pair.first as u64)>pair.second) { return core::cmp::PartialOrdering::Greater; } return core::cmp::PartialOrdering::Equal;
+    }
+}
+struct StrictPair { calls:i32 }
+impl StrictPair { fn borrow(&self) -> &StrictPair { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,bool> for StrictPair {
+    pub fn apply(&self,pair:core::pair::Pair<i32,i32>) -> bool { self.calls+=1; return pair.first<pair.second; }
+}
+fn main() -> i32 {
+    let a:[i32;3]=[1,2,2]; let b:[i32;3]=[1,2,3]; let wide:[u64;3]=[1,2,2]; let lower:[u64;3]=[1,2,1];
+    let av:core::slice::View<i32> =core::slice::view(a,3).unwrap(); let bv:core::slice::View<i32> =core::slice::view(b,3).unwrap();
+    let wv:core::slice::View<u64> =core::slice::view(wide,3).unwrap(); let lv:core::slice::View<u64> =core::slice::view(lower,3).unwrap();
+    let left:core::slice::Iter<i32> =av.iter(); let right:core::slice::Iter<i32> =av.iter();
+    assert(core::iter::eq<core::slice::Iter<i32>,core::slice::Iter<i32>,i32>(left.borrow(),right.borrow()));
+    left=av.iter(); let other:core::slice::Iter<u64> =wv.iter(); let equal:EqualPair=EqualPair { calls:0 };
+    assert(core::iter::eq_by<core::slice::Iter<i32>,core::slice::Iter<u64>,EqualPair,i32,u64>(left.borrow(),other.borrow(),equal.borrow()) && equal.calls==3);
+    left=av.iter(); right=bv.iter();
+    let total:core::ordering::Ordering=core::iter::cmp<core::slice::Iter<i32>,core::slice::Iter<i32>,i32>(left.borrow(),right.borrow());
+    assert(core::ordering::is_less(total) && left.front==3 && right.front==3);
+    left=av.iter(); other=lv.iter(); let compare:ComparePair=ComparePair { calls:0 };
+    let custom:core::ordering::Ordering=core::iter::cmp_by<core::slice::Iter<i32>,core::slice::Iter<u64>,ComparePair,i32,u64>(left.borrow(),other.borrow(),compare.borrow());
+    assert(core::ordering::is_greater(custom) && compare.calls==3);
+    let nan:f64=core::f64::from_bits(9221120237041090626); let floats:[f64;3]=[1.0,nan,9.0];
+    let fv:core::slice::View<f64> =core::slice::view(floats,3).unwrap();
+    let x:core::slice::Iter<f64> =fv.iter(); let y:core::slice::Iter<f64> =fv.iter();
+    let partial:core::cmp::PartialOrdering=core::iter::partial_cmp<core::slice::Iter<f64>,core::slice::Iter<f64>,f64>(x.borrow(),y.borrow());
+    assert(match(partial) { core::cmp::PartialOrdering::Unordered -> true,_ -> false }); assert(x.front==2 && y.front==2);
+    left=av.iter(); other=wv.iter(); let mapper:PartialPair=PartialPair { calls:0 };
+    let selected:core::cmp::PartialOrdering=core::iter::partial_cmp_by<core::slice::Iter<i32>,core::slice::Iter<u64>,PartialPair,i32,u64>(left.borrow(),other.borrow(),mapper.borrow());
+    assert(match(selected) { core::cmp::PartialOrdering::Unordered -> true,_ -> false }); assert(mapper.calls==2 && left.front==2 && other.front==2);
+    x=fv.iter(); assert(!core::iter::is_sorted<core::slice::Iter<f64>,f64>(x.borrow()) && x.front==2);
+    left=av.iter(); let strict:StrictPair=StrictPair { calls:0 };
+    assert(!core::iter::is_sorted_by<core::slice::Iter<i32>,StrictPair,i32>(left.borrow(),strict.borrow()) && strict.calls==2 && left.front==3);
+    assert(a[0]==1 && a[1]==2 && a[2]==2 && wide[0]==1 && wide[2]==2 && core::f64::to_bits(floats[1])==9221120237041090626);
+    return 0;
+}
