@@ -9,6 +9,7 @@ import core::hash;
 import core::iter;
 import core::option;
 import core::ordering;
+import core::pair;
 import core::result;
 import core::slice;
 import core::utf8;
@@ -17,6 +18,7 @@ pub enum Error { Bounds, NotCharBoundary, InvalidUtf8(i32) }
 pub struct Text { bytes: [u8], start: i32, length: i32 }
 pub struct Scalar { byte_index: i32, value: u32 }
 pub struct Scalars { text: Text, position: i32, back: i32 }
+pub struct MatchIndices { text: Text, needle: Text, position: i32, done: bool }
 pub struct Split { text: Text, separator: Text, position: i32, empty_head: bool, done: bool }
 pub struct SplitAsciiWhitespace { text: Text, position: i32, back: i32 }
 pub struct Lines { text: Text, front: i32, back: i32 }
@@ -158,6 +160,11 @@ pub impl Text {
             index -= 1;
         }
         return core::option::None();
+    }
+    // Leftmost nonoverlapping matches borrow the source, with relative byte
+    // indices. Empty needles match every scalar boundary, including both ends.
+    pub fn match_indices(&self, needle: Text) -> MatchIndices {
+        return MatchIndices { text: self.part(0, self.length), needle: needle, position: 0, done: false };
     }
     pub fn trim_ascii(&self) -> Text {
         let start: i32 = 0;
@@ -312,6 +319,32 @@ pub impl core::iter::DoubleEndedIterator<Text> for Lines {
         while (start > self.front && self.text.bytes[self.text.start + start - 1] != 10) { start -= 1; }
         self.back = start;
         return core::option::Some(self.text.part(start, end));
+    }
+}
+
+pub impl MatchIndices {
+    pub fn borrow(&self) -> &MatchIndices { return self; }
+}
+
+pub impl core::iter::Iterator<core::pair::Pair<i32,Text>> for MatchIndices {
+    pub fn next(&self) -> core::option::Option<core::pair::Pair<i32,Text>> {
+        if (self.done) { return core::option::None(); }
+        if (self.needle.is_empty()) {
+            let index: i32 = self.position;
+            if (index == self.text.length) { self.done = true; }
+            else {
+                let first: u8 = self.text.bytes[self.text.start+index];
+                self.position += core::utf8::sequence_len_or(first, 0) as i32;
+            }
+            // Keep the terminal index representable; never advance past len.
+            return core::option::Some(core::pair::Pair { first: index, second: self.text.part(index, index) });
+        }
+        let found: core::option::Option<i32> = self.text.find_from(self.needle, self.position);
+        if (core::option::is_none(found)) { self.done = true; return core::option::None(); }
+        let index: i32 = core::option::unwrap(found);
+        let end: i32 = index+self.needle.length;
+        self.position = end;
+        return core::option::Some(core::pair::Pair { first: index, second: self.text.part(index, end) });
     }
 }
 

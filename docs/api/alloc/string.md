@@ -8,15 +8,17 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-Existing UTF-8 copying construction, edits and explicit cleanup remain. New from_utf8_vec validates initialized bytes before transferring Vec backing/capacity without allocation or copying; invalid UTF-8 preserves its complete owner and reports the first malformed-sequence offset. into_bytes reverses the transfer and leaves an empty reusable String. End views and keep shallow aliases inactive; the destination assumes cleanup authority. The new transfer gate and one selected existing String regression (three old fixtures) pass on native Linux x86_64. The transfer memory/write filter observes no allocation/release/write inside validation/transfer phases, without an all-host-call claim. Linked guides separate collector/model/resource/application receipts and historical String scope; no automatic lifetime or proof follows.
+Literal replace/replacen construct independent results through the public Text match cursor, measuring before one exact nonempty reservation. Negative output caps return Bounds; complete-result CapacityOverflow precedes OutputLimit and AllocationFailed. Zero-count/no-match results still copy; empty output allocates nothing. All inputs may alias each other and remain immutable through both passes. All five literal-replacement library groups and four application groups/94 cases pass on native Linux x86_64, with the 440-case independent model and reached allocation failures. Selected existing regressions and standalone examples remain separate. Earlier String receipts retain their own source/API scope. Existing UTF-8 copying construction, edits and explicit cleanup remain. New from_utf8_vec validates initialized bytes before transferring Vec backing/capacity without allocation or copying; invalid UTF-8 preserves its complete owner and reports the first malformed-sequence offset. into_bytes reverses the transfer and leaves an empty reusable String. End views and keep shallow aliases inactive; the destination assumes cleanup authority. The new transfer gate and one selected existing String regression (three old fixtures) pass on native Linux x86_64. The transfer memory/write filter observes no allocation/release/write inside validation/transfer phases, without an all-host-call claim. Linked guides separate collector/model/resource/application receipts and historical String scope; no automatic lifetime or proof follows.
 
 ## Contract and evidence guides
 
 - [stdlib-string](../../stdlib-string.md)
 - [stdlib-clone](../../stdlib-clone.md)
 - [stdlib-owned-input](../../stdlib-owned-input.md)
+- [stdlib-text-replacement](../../stdlib-text-replacement.md)
+- [stdlib-literal-rewrite](../../stdlib-literal-rewrite.md)
 
-Declaration counts: enum: 1; field: 1; function: 8; impl: 8; method: 50; struct: 1; variant: 6.
+Declaration counts: enum: 1; field: 1; function: 10; impl: 8; method: 50; struct: 1; variant: 7.
 
 ## Declared imports
 
@@ -27,12 +29,14 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::cmp](../core/cmp.md) · [source](../../../stdlib/alloc/string.lani#L8)
 - [core::decimal](../core/decimal.md) · [source](../../../stdlib/alloc/string.lani#L9)
 - [core::hash](../core/hash.md) · [source](../../../stdlib/alloc/string.lani#L10)
-- [core::option](../core/option.md) · [source](../../../stdlib/alloc/string.lani#L11)
-- [core::result](../core/result.md) · [source](../../../stdlib/alloc/string.lani#L12)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/string.lani#L13)
-- [core::utf8](../core/utf8.md) · [source](../../../stdlib/alloc/string.lani#L14)
-- [core::text](../core/text.md) · [source](../../../stdlib/alloc/string.lani#L15)
-- [alloc::vec](vec.md) · [source](../../../stdlib/alloc/string.lani#L16)
+- [core::iter](../core/iter.md) · [source](../../../stdlib/alloc/string.lani#L11)
+- [core::option](../core/option.md) · [source](../../../stdlib/alloc/string.lani#L12)
+- [core::pair](../core/pair.md) · [source](../../../stdlib/alloc/string.lani#L13)
+- [core::result](../core/result.md) · [source](../../../stdlib/alloc/string.lani#L14)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/alloc/string.lani#L15)
+- [core::utf8](../core/utf8.md) · [source](../../../stdlib/alloc/string.lani#L16)
+- [core::text](../core/text.md) · [source](../../../stdlib/alloc/string.lani#L17)
+- [alloc::vec](vec.md) · [source](../../../stdlib/alloc/string.lani#L18)
 
 ## Types, fields and variants
 
@@ -40,7 +44,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 18](../../../stdlib/alloc/string.lani#L18)
+[Source line 20](../../../stdlib/alloc/string.lani#L20)
 
 ```lanius
 pub enum Error
@@ -48,7 +52,7 @@ pub enum Error
 
 #### variant: InvalidUtf8
 
-[Source line 19](../../../stdlib/alloc/string.lani#L19)
+[Source line 21](../../../stdlib/alloc/string.lani#L21)
 
 ```lanius
 InvalidUtf8(i32)
@@ -56,7 +60,7 @@ InvalidUtf8(i32)
 
 #### variant: InvalidScalar
 
-[Source line 20](../../../stdlib/alloc/string.lani#L20)
+[Source line 22](../../../stdlib/alloc/string.lani#L22)
 
 ```lanius
 InvalidScalar
@@ -64,7 +68,7 @@ InvalidScalar
 
 #### variant: Bounds
 
-[Source line 21](../../../stdlib/alloc/string.lani#L21)
+[Source line 23](../../../stdlib/alloc/string.lani#L23)
 
 ```lanius
 Bounds
@@ -72,7 +76,7 @@ Bounds
 
 #### variant: NotCharBoundary
 
-[Source line 22](../../../stdlib/alloc/string.lani#L22)
+[Source line 24](../../../stdlib/alloc/string.lani#L24)
 
 ```lanius
 NotCharBoundary
@@ -80,7 +84,7 @@ NotCharBoundary
 
 #### variant: CapacityOverflow
 
-[Source line 23](../../../stdlib/alloc/string.lani#L23)
+[Source line 25](../../../stdlib/alloc/string.lani#L25)
 
 ```lanius
 CapacityOverflow
@@ -88,15 +92,23 @@ CapacityOverflow
 
 #### variant: AllocationFailed
 
-[Source line 24](../../../stdlib/alloc/string.lani#L24)
+[Source line 26](../../../stdlib/alloc/string.lani#L26)
 
 ```lanius
 AllocationFailed
 ```
 
-### struct: String
+#### variant: OutputLimit
 
 [Source line 27](../../../stdlib/alloc/string.lani#L27)
+
+```lanius
+OutputLimit
+```
+
+### struct: String
+
+[Source line 30](../../../stdlib/alloc/string.lani#L30)
 
 ```lanius
 pub struct String
@@ -104,7 +116,7 @@ pub struct String
 
 #### field: bytes
 
-[Source line 28](../../../stdlib/alloc/string.lani#L28)
+[Source line 31](../../../stdlib/alloc/string.lani#L31)
 
 ```lanius
 bytes: alloc::vec::Vec<u8>
@@ -114,7 +126,7 @@ bytes: alloc::vec::Vec<u8>
 
 ### function: new
 
-[Source line 31](../../../stdlib/alloc/string.lani#L31)
+[Source line 34](../../../stdlib/alloc/string.lani#L34)
 
 ```lanius
 pub fn new() -> String
@@ -122,7 +134,7 @@ pub fn new() -> String
 
 ### function: from_utf8
 
-[Source line 38](../../../stdlib/alloc/string.lani#L38)
+[Source line 41](../../../stdlib/alloc/string.lani#L41)
 
 ```lanius
 pub fn from_utf8(bytes: [u8], count: i32) -> core::result::Result<String, Error>
@@ -130,7 +142,7 @@ pub fn from_utf8(bytes: [u8], count: i32) -> core::result::Result<String, Error>
 
 ### function: from_utf8_vec
 
-[Source line 50](../../../stdlib/alloc/string.lani#L50)
+[Source line 53](../../../stdlib/alloc/string.lani#L53)
 
 ```lanius
 pub fn from_utf8_vec(bytes: &alloc::vec::Vec<u8>) -> core::result::Result<String, Error>
@@ -140,7 +152,7 @@ O(n) UTF-8 validation precedes an O(1) transfer of existing Vec backing/capacity
 
 ### function: from_text
 
-[Source line 63](../../../stdlib/alloc/string.lani#L63)
+[Source line 66](../../../stdlib/alloc/string.lani#L66)
 
 ```lanius
 pub fn from_text(text: core::text::Text) -> core::result::Result<String, Error>
@@ -148,7 +160,7 @@ pub fn from_text(text: core::text::Text) -> core::result::Result<String, Error>
 
 ### function: join
 
-[Source line 72](../../../stdlib/alloc/string.lani#L72)
+[Source line 75](../../../stdlib/alloc/string.lani#L75)
 
 ```lanius
 pub fn join(parts: core::slice::View<core::text::Text>, separator: core::text::Text) -> core::result::Result<String, Error>
@@ -156,15 +168,35 @@ pub fn join(parts: core::slice::View<core::text::Text>, separator: core::text::T
 
 ### function: repeat
 
-[Source line 81](../../../stdlib/alloc/string.lani#L81)
+[Source line 84](../../../stdlib/alloc/string.lani#L84)
 
 ```lanius
 pub fn repeat(text: core::text::Text, count: i32) -> core::result::Result<String, Error>
 ```
 
+### function: replace
+
+[Source line 94](../../../stdlib/alloc/string.lani#L94)
+
+```lanius
+pub fn replace(text: core::text::Text, needle: core::text::Text, replacement: core::text::Text, max_output: i32) -> core::result::Result<String, Error>
+```
+
+Replace every original leftmost nonoverlapping literal match with an independent String result under max_output. Empty needles select scalar boundaries. Complete u64 sizing precedes exact allocation; errors preserve inputs. Accepted on native Linux x86_64.
+
+### function: replacen
+
+[Source line 102](../../../stdlib/alloc/string.lani#L102)
+
+```lanius
+pub fn replacen(text: core::text::Text, needle: core::text::Text, replacement: core::text::Text, max_matches: u64, max_output: i32) -> core::result::Result<String, Error>
+```
+
+As replace, selecting at most max_matches (u64) original matches. Zero count and no matches still make an independent copy. Bounds, CapacityOverflow, OutputLimit and AllocationFailed have explicit precedence. Accepted on native Linux x86_64.
+
 ### function: from_i64
 
-[Source line 117](../../../stdlib/alloc/string.lani#L117)
+[Source line 165](../../../stdlib/alloc/string.lani#L165)
 
 ```lanius
 pub fn from_i64(number: i64) -> core::result::Result<String, Error>
@@ -172,7 +204,7 @@ pub fn from_i64(number: i64) -> core::result::Result<String, Error>
 
 ### function: from_u64
 
-[Source line 122](../../../stdlib/alloc/string.lani#L122)
+[Source line 170](../../../stdlib/alloc/string.lani#L170)
 
 ```lanius
 pub fn from_u64(number: u64) -> core::result::Result<String, Error>
@@ -180,9 +212,9 @@ pub fn from_u64(number: u64) -> core::result::Result<String, Error>
 
 ## Implementation blocks and public methods
 
-### impl at line 147
+### impl at line 195
 
-[Source line 147](../../../stdlib/alloc/string.lani#L147)
+[Source line 195](../../../stdlib/alloc/string.lani#L195)
 
 ```lanius
 pub impl String
@@ -190,7 +222,7 @@ pub impl String
 
 #### method: byte_len
 
-[Source line 170](../../../stdlib/alloc/string.lani#L170)
+[Source line 218](../../../stdlib/alloc/string.lani#L218)
 
 ```lanius
 pub fn byte_len(&self) -> i32
@@ -198,7 +230,7 @@ pub fn byte_len(&self) -> i32
 
 #### method: capacity
 
-[Source line 171](../../../stdlib/alloc/string.lani#L171)
+[Source line 219](../../../stdlib/alloc/string.lani#L219)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -206,7 +238,7 @@ pub fn capacity(&self) -> i32
 
 #### method: is_empty
 
-[Source line 172](../../../stdlib/alloc/string.lani#L172)
+[Source line 220](../../../stdlib/alloc/string.lani#L220)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -214,7 +246,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: into_bytes
 
-[Source line 177](../../../stdlib/alloc/string.lani#L177)
+[Source line 225](../../../stdlib/alloc/string.lani#L225)
 
 ```lanius
 pub fn into_bytes(&self) -> alloc::vec::Vec<u8>
@@ -222,7 +254,7 @@ pub fn into_bytes(&self) -> alloc::vec::Vec<u8>
 
 #### method: as_bytes
 
-[Source line 185](../../../stdlib/alloc/string.lani#L185)
+[Source line 233](../../../stdlib/alloc/string.lani#L233)
 
 ```lanius
 pub fn as_bytes(&self) -> [u8]
@@ -230,7 +262,7 @@ pub fn as_bytes(&self) -> [u8]
 
 #### method: as_text
 
-[Source line 189](../../../stdlib/alloc/string.lani#L189)
+[Source line 237](../../../stdlib/alloc/string.lani#L237)
 
 ```lanius
 pub fn as_text(&self) -> core::text::Text
@@ -238,7 +270,7 @@ pub fn as_text(&self) -> core::text::Text
 
 #### method: byte_at
 
-[Source line 193](../../../stdlib/alloc/string.lani#L193)
+[Source line 241](../../../stdlib/alloc/string.lani#L241)
 
 ```lanius
 pub fn byte_at(&self, index: i32) -> core::option::Option<u8>
@@ -246,7 +278,7 @@ pub fn byte_at(&self, index: i32) -> core::option::Option<u8>
 
 #### method: is_char_boundary
 
-[Source line 197](../../../stdlib/alloc/string.lani#L197)
+[Source line 245](../../../stdlib/alloc/string.lani#L245)
 
 ```lanius
 pub fn is_char_boundary(&self, index: i32) -> bool
@@ -254,7 +286,7 @@ pub fn is_char_boundary(&self, index: i32) -> bool
 
 #### method: scalar_count
 
-[Source line 205](../../../stdlib/alloc/string.lani#L205)
+[Source line 253](../../../stdlib/alloc/string.lani#L253)
 
 ```lanius
 pub fn scalar_count(&self) -> i32
@@ -262,7 +294,7 @@ pub fn scalar_count(&self) -> i32
 
 #### method: scalar_at_byte
 
-[Source line 219](../../../stdlib/alloc/string.lani#L219)
+[Source line 267](../../../stdlib/alloc/string.lani#L267)
 
 ```lanius
 pub fn scalar_at_byte(&self, byte_index: i32) -> core::option::Option<u32>
@@ -270,7 +302,7 @@ pub fn scalar_at_byte(&self, byte_index: i32) -> core::option::Option<u32>
 
 #### method: try_reserve
 
-[Source line 237](../../../stdlib/alloc/string.lani#L237)
+[Source line 285](../../../stdlib/alloc/string.lani#L285)
 
 ```lanius
 pub fn try_reserve(&self, minimum: i32) -> core::result::Result<i32, Error>
@@ -278,7 +310,7 @@ pub fn try_reserve(&self, minimum: i32) -> core::result::Result<i32, Error>
 
 #### method: try_push_scalar
 
-[Source line 246](../../../stdlib/alloc/string.lani#L246)
+[Source line 294](../../../stdlib/alloc/string.lani#L294)
 
 ```lanius
 pub fn try_push_scalar(&self, scalar: u32) -> core::result::Result<i32, Error>
@@ -286,7 +318,7 @@ pub fn try_push_scalar(&self, scalar: u32) -> core::result::Result<i32, Error>
 
 #### method: try_append_utf8
 
-[Source line 270](../../../stdlib/alloc/string.lani#L270)
+[Source line 318](../../../stdlib/alloc/string.lani#L318)
 
 ```lanius
 pub fn try_append_utf8(&self, source: [u8], count: i32) -> core::result::Result<i32, Error>
@@ -294,7 +326,7 @@ pub fn try_append_utf8(&self, source: [u8], count: i32) -> core::result::Result<
 
 #### method: try_append_text
 
-[Source line 280](../../../stdlib/alloc/string.lani#L280)
+[Source line 328](../../../stdlib/alloc/string.lani#L328)
 
 ```lanius
 pub fn try_append_text(&self, source: core::text::Text) -> core::result::Result<i32, Error>
@@ -302,7 +334,7 @@ pub fn try_append_text(&self, source: core::text::Text) -> core::result::Result<
 
 #### method: try_append_joined
 
-[Source line 291](../../../stdlib/alloc/string.lani#L291)
+[Source line 339](../../../stdlib/alloc/string.lani#L339)
 
 ```lanius
 pub fn try_append_joined(&self, parts: core::slice::View<core::text::Text>, separator: core::text::Text) -> core::result::Result<i32, Error>
@@ -310,7 +342,7 @@ pub fn try_append_joined(&self, parts: core::slice::View<core::text::Text>, sepa
 
 #### method: try_append_repeated
 
-[Source line 309](../../../stdlib/alloc/string.lani#L309)
+[Source line 357](../../../stdlib/alloc/string.lani#L357)
 
 ```lanius
 pub fn try_append_repeated(&self, source: core::text::Text, count: i32) -> core::result::Result<i32, Error>
@@ -318,7 +350,7 @@ pub fn try_append_repeated(&self, source: core::text::Text, count: i32) -> core:
 
 #### method: try_append
 
-[Source line 322](../../../stdlib/alloc/string.lani#L322)
+[Source line 370](../../../stdlib/alloc/string.lani#L370)
 
 ```lanius
 pub fn try_append(&self, other: String) -> core::result::Result<i32, Error>
@@ -326,7 +358,7 @@ pub fn try_append(&self, other: String) -> core::result::Result<i32, Error>
 
 #### method: try_append_i64
 
-[Source line 328](../../../stdlib/alloc/string.lani#L328)
+[Source line 376](../../../stdlib/alloc/string.lani#L376)
 
 ```lanius
 pub fn try_append_i64(&self, number: i64) -> core::result::Result<i32, Error>
@@ -334,7 +366,7 @@ pub fn try_append_i64(&self, number: i64) -> core::result::Result<i32, Error>
 
 #### method: try_append_u64
 
-[Source line 333](../../../stdlib/alloc/string.lani#L333)
+[Source line 381](../../../stdlib/alloc/string.lani#L381)
 
 ```lanius
 pub fn try_append_u64(&self, number: u64) -> core::result::Result<i32, Error>
@@ -342,7 +374,7 @@ pub fn try_append_u64(&self, number: u64) -> core::result::Result<i32, Error>
 
 #### method: try_truncate
 
-[Source line 340](../../../stdlib/alloc/string.lani#L340)
+[Source line 388](../../../stdlib/alloc/string.lani#L388)
 
 ```lanius
 pub fn try_truncate(&self, length: i32) -> core::result::Result<i32, Error>
@@ -350,7 +382,7 @@ pub fn try_truncate(&self, length: i32) -> core::result::Result<i32, Error>
 
 #### method: pop_scalar
 
-[Source line 347](../../../stdlib/alloc/string.lani#L347)
+[Source line 395](../../../stdlib/alloc/string.lani#L395)
 
 ```lanius
 pub fn pop_scalar(&self) -> core::option::Option<u32>
@@ -358,7 +390,7 @@ pub fn pop_scalar(&self) -> core::option::Option<u32>
 
 #### method: clear
 
-[Source line 358](../../../stdlib/alloc/string.lani#L358)
+[Source line 406](../../../stdlib/alloc/string.lani#L406)
 
 ```lanius
 pub fn clear(&self)
@@ -366,7 +398,7 @@ pub fn clear(&self)
 
 #### method: try_clone
 
-[Source line 360](../../../stdlib/alloc/string.lani#L360)
+[Source line 408](../../../stdlib/alloc/string.lani#L408)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<String, Error>
@@ -374,7 +406,7 @@ pub fn try_clone(&self) -> core::result::Result<String, Error>
 
 #### method: equals
 
-[Source line 367](../../../stdlib/alloc/string.lani#L367)
+[Source line 415](../../../stdlib/alloc/string.lani#L415)
 
 ```lanius
 pub fn equals(&self, other: String) -> bool
@@ -382,7 +414,7 @@ pub fn equals(&self, other: String) -> bool
 
 #### method: compare
 
-[Source line 381](../../../stdlib/alloc/string.lani#L381)
+[Source line 429](../../../stdlib/alloc/string.lani#L429)
 
 ```lanius
 pub fn compare(&self, other: String) -> i32
@@ -390,7 +422,7 @@ pub fn compare(&self, other: String) -> i32
 
 #### method: starts_with
 
-[Source line 399](../../../stdlib/alloc/string.lani#L399)
+[Source line 447](../../../stdlib/alloc/string.lani#L447)
 
 ```lanius
 pub fn starts_with(&self, prefix: String) -> bool
@@ -398,7 +430,7 @@ pub fn starts_with(&self, prefix: String) -> bool
 
 #### method: ends_with
 
-[Source line 412](../../../stdlib/alloc/string.lani#L412)
+[Source line 460](../../../stdlib/alloc/string.lani#L460)
 
 ```lanius
 pub fn ends_with(&self, suffix: String) -> bool
@@ -406,7 +438,7 @@ pub fn ends_with(&self, suffix: String) -> bool
 
 #### method: try_substring
 
-[Source line 428](../../../stdlib/alloc/string.lani#L428)
+[Source line 476](../../../stdlib/alloc/string.lani#L476)
 
 ```lanius
 pub fn try_substring(&self, start: i32, end: i32) -> core::result::Result<String, Error>
@@ -414,7 +446,7 @@ pub fn try_substring(&self, start: i32, end: i32) -> core::result::Result<String
 
 #### method: try_replace_range
 
-[Source line 451](../../../stdlib/alloc/string.lani#L451)
+[Source line 499](../../../stdlib/alloc/string.lani#L499)
 
 ```lanius
 pub fn try_replace_range(&self, start: i32, end: i32, replacement: String) -> core::result::Result<i32, Error>
@@ -422,7 +454,7 @@ pub fn try_replace_range(&self, start: i32, end: i32, replacement: String) -> co
 
 #### method: try_insert
 
-[Source line 486](../../../stdlib/alloc/string.lani#L486)
+[Source line 534](../../../stdlib/alloc/string.lani#L534)
 
 ```lanius
 pub fn try_insert(&self, byte_index: i32, value: String) -> core::result::Result<i32, Error>
@@ -430,7 +462,7 @@ pub fn try_insert(&self, byte_index: i32, value: String) -> core::result::Result
 
 #### method: try_remove_range
 
-[Source line 490](../../../stdlib/alloc/string.lani#L490)
+[Source line 538](../../../stdlib/alloc/string.lani#L538)
 
 ```lanius
 pub fn try_remove_range(&self, start: i32, end: i32) -> core::result::Result<i32, Error>
@@ -438,7 +470,7 @@ pub fn try_remove_range(&self, start: i32, end: i32) -> core::result::Result<i32
 
 #### method: trim_ascii
 
-[Source line 497](../../../stdlib/alloc/string.lani#L497)
+[Source line 545](../../../stdlib/alloc/string.lani#L545)
 
 ```lanius
 pub fn trim_ascii(&self) -> i32
@@ -446,7 +478,7 @@ pub fn trim_ascii(&self) -> i32
 
 #### method: find
 
-[Source line 511](../../../stdlib/alloc/string.lani#L511)
+[Source line 559](../../../stdlib/alloc/string.lani#L559)
 
 ```lanius
 pub fn find(&self, needle: String) -> core::option::Option<i32>
@@ -454,15 +486,15 @@ pub fn find(&self, needle: String) -> core::option::Option<i32>
 
 #### method: destroy
 
-[Source line 529](../../../stdlib/alloc/string.lani#L529)
+[Source line 566](../../../stdlib/alloc/string.lani#L566)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 535
+### impl at line 572
 
-[Source line 535](../../../stdlib/alloc/string.lani#L535)
+[Source line 572](../../../stdlib/alloc/string.lani#L572)
 
 ```lanius
 pub impl core::cmp::Eq<String> for String
@@ -470,7 +502,7 @@ pub impl core::cmp::Eq<String> for String
 
 #### method: eq
 
-[Source line 536](../../../stdlib/alloc/string.lani#L536)
+[Source line 573](../../../stdlib/alloc/string.lani#L573)
 
 ```lanius
 pub fn eq(left: String, right: String) -> bool
@@ -478,15 +510,15 @@ pub fn eq(left: String, right: String) -> bool
 
 #### method: ne
 
-[Source line 537](../../../stdlib/alloc/string.lani#L537)
+[Source line 574](../../../stdlib/alloc/string.lani#L574)
 
 ```lanius
 pub fn ne(left: String, right: String) -> bool
 ```
 
-### impl at line 540
+### impl at line 577
 
-[Source line 540](../../../stdlib/alloc/string.lani#L540)
+[Source line 577](../../../stdlib/alloc/string.lani#L577)
 
 ```lanius
 pub impl core::hash::Hash<String> for String
@@ -494,15 +526,15 @@ pub impl core::hash::Hash<String> for String
 
 #### method: hash
 
-[Source line 541](../../../stdlib/alloc/string.lani#L541)
+[Source line 578](../../../stdlib/alloc/string.lani#L578)
 
 ```lanius
 pub fn hash(value: String) -> u32
 ```
 
-### impl at line 546
+### impl at line 583
 
-[Source line 546](../../../stdlib/alloc/string.lani#L546)
+[Source line 583](../../../stdlib/alloc/string.lani#L583)
 
 ```lanius
 pub impl core::cmp::Ord<String> for String
@@ -510,7 +542,7 @@ pub impl core::cmp::Ord<String> for String
 
 #### method: lt
 
-[Source line 547](../../../stdlib/alloc/string.lani#L547)
+[Source line 584](../../../stdlib/alloc/string.lani#L584)
 
 ```lanius
 pub fn lt(left: String, right: String) -> bool
@@ -518,7 +550,7 @@ pub fn lt(left: String, right: String) -> bool
 
 #### method: le
 
-[Source line 548](../../../stdlib/alloc/string.lani#L548)
+[Source line 585](../../../stdlib/alloc/string.lani#L585)
 
 ```lanius
 pub fn le(left: String, right: String) -> bool
@@ -526,7 +558,7 @@ pub fn le(left: String, right: String) -> bool
 
 #### method: gt
 
-[Source line 549](../../../stdlib/alloc/string.lani#L549)
+[Source line 586](../../../stdlib/alloc/string.lani#L586)
 
 ```lanius
 pub fn gt(left: String, right: String) -> bool
@@ -534,15 +566,15 @@ pub fn gt(left: String, right: String) -> bool
 
 #### method: ge
 
-[Source line 550](../../../stdlib/alloc/string.lani#L550)
+[Source line 587](../../../stdlib/alloc/string.lani#L587)
 
 ```lanius
 pub fn ge(left: String, right: String) -> bool
 ```
 
-### impl at line 553
+### impl at line 590
 
-[Source line 553](../../../stdlib/alloc/string.lani#L553)
+[Source line 590](../../../stdlib/alloc/string.lani#L590)
 
 ```lanius
 pub impl core::cmp::PartialEq<String> for String
@@ -550,7 +582,7 @@ pub impl core::cmp::PartialEq<String> for String
 
 #### method: partial_eq
 
-[Source line 554](../../../stdlib/alloc/string.lani#L554)
+[Source line 591](../../../stdlib/alloc/string.lani#L591)
 
 ```lanius
 pub fn partial_eq(left: String, right: String) -> bool
@@ -558,15 +590,15 @@ pub fn partial_eq(left: String, right: String) -> bool
 
 #### method: partial_ne
 
-[Source line 555](../../../stdlib/alloc/string.lani#L555)
+[Source line 592](../../../stdlib/alloc/string.lani#L592)
 
 ```lanius
 pub fn partial_ne(left: String, right: String) -> bool
 ```
 
-### impl at line 558
+### impl at line 595
 
-[Source line 558](../../../stdlib/alloc/string.lani#L558)
+[Source line 595](../../../stdlib/alloc/string.lani#L595)
 
 ```lanius
 pub impl core::cmp::PartialOrd<String> for String
@@ -574,7 +606,7 @@ pub impl core::cmp::PartialOrd<String> for String
 
 #### method: partial_lt
 
-[Source line 559](../../../stdlib/alloc/string.lani#L559)
+[Source line 596](../../../stdlib/alloc/string.lani#L596)
 
 ```lanius
 pub fn partial_lt(left: String, right: String) -> bool
@@ -582,7 +614,7 @@ pub fn partial_lt(left: String, right: String) -> bool
 
 #### method: partial_le
 
-[Source line 560](../../../stdlib/alloc/string.lani#L560)
+[Source line 597](../../../stdlib/alloc/string.lani#L597)
 
 ```lanius
 pub fn partial_le(left: String, right: String) -> bool
@@ -590,7 +622,7 @@ pub fn partial_le(left: String, right: String) -> bool
 
 #### method: partial_gt
 
-[Source line 561](../../../stdlib/alloc/string.lani#L561)
+[Source line 598](../../../stdlib/alloc/string.lani#L598)
 
 ```lanius
 pub fn partial_gt(left: String, right: String) -> bool
@@ -598,7 +630,7 @@ pub fn partial_gt(left: String, right: String) -> bool
 
 #### method: partial_ge
 
-[Source line 562](../../../stdlib/alloc/string.lani#L562)
+[Source line 599](../../../stdlib/alloc/string.lani#L599)
 
 ```lanius
 pub fn partial_ge(left: String, right: String) -> bool
@@ -606,15 +638,15 @@ pub fn partial_ge(left: String, right: String) -> bool
 
 #### method: partial_cmp
 
-[Source line 563](../../../stdlib/alloc/string.lani#L563)
+[Source line 600](../../../stdlib/alloc/string.lani#L600)
 
 ```lanius
 pub fn partial_cmp(left: String, right: String) -> core::cmp::PartialOrdering
 ```
 
-### impl at line 570
+### impl at line 607
 
-[Source line 570](../../../stdlib/alloc/string.lani#L570)
+[Source line 607](../../../stdlib/alloc/string.lani#L607)
 
 ```lanius
 pub impl core::clone::TryClone<String,Error> for String
@@ -622,15 +654,15 @@ pub impl core::clone::TryClone<String,Error> for String
 
 #### method: try_clone_value
 
-[Source line 571](../../../stdlib/alloc/string.lani#L571)
+[Source line 608](../../../stdlib/alloc/string.lani#L608)
 
 ```lanius
 pub fn try_clone_value(source: String) -> core::result::Result<String,Error>
 ```
 
-### impl at line 573
+### impl at line 610
 
-[Source line 573](../../../stdlib/alloc/string.lani#L573)
+[Source line 610](../../../stdlib/alloc/string.lani#L610)
 
 ```lanius
 pub impl core::clone::Destroy<String> for String
@@ -638,7 +670,7 @@ pub impl core::clone::Destroy<String> for String
 
 #### method: destroy_value
 
-[Source line 574](../../../stdlib/alloc/string.lani#L574)
+[Source line 611](../../../stdlib/alloc/string.lani#L611)
 
 ```lanius
 pub fn destroy_value(owned: String)

@@ -40,6 +40,7 @@ unchanged until their entries are removed or the map is destroyed.
 | `equals`, `compare` | Exact byte equality and lexicographic ordering (-1, 0, 1) |
 | `starts_with`, `ends_with` | Exact prefix/suffix matches; empty patterns match |
 | `find`, `rfind` | Optional byte offsets; empty patterns match at 0 and byte_len respectively |
+| `match_indices(needle)` | Forward nonoverlapping `Pair<i32, Text>` matches; [contract and accepted evidence](stdlib-text-replacement.md) |
 | `trim_ascii()` | Borrowed subview trimming HT, LF, VT, FF, CR and space |
 | `scalars()` | Iterator of `Scalar { byte_index, value: u32 }`, relative to this view |
 | `split(separator)` | Iterator of borrowed fields, preserving empty fields |
@@ -79,6 +80,9 @@ not revalidate already valid text.
 ## Owned and extended-library integration
 
 `alloc::string::from_text(view)` makes an independent owned copy.
+The [literal replacement increment](stdlib-text-replacement.md) adds bounded
+whole-result `replace`/`replacen` using the same match cursor. All five library
+groups and four literal-rewrite groups/94 cases pass on native Linux x86_64.
 The [composition APIs](stdlib-text-composition.md) join or repeat Text views
 into independent Strings, or append them atomically to an existing String.
 `String.try_append_text(view)` accepts a subview of the destination itself,

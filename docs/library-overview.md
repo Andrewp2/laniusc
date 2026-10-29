@@ -1,6 +1,16 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[literal text matching and replacement increment](stdlib-text-replacement.md)
+adds a borrowed match cursor and bounded independent String results over the
+existing search engine. Its [stdin/stdout consumer](stdlib-literal-rewrite.md)
+validates and constructs output before publication. All five library groups
+and four application groups/94 cases pass, including the 440-case independent
+model, one library allocation denial with recovery and 12 application denials.
+Selected old regressions and standalone build/examples pass separately. This
+finite Linux x86_64 CPU increment is accepted; earlier receipts retain their
+original API/source scope.
+The preceding
 [resumable compression encoder](extended-streaming-deflate.md) adds fixed
 32 KiB blocks, retained pending output and u64 raw/zlib/gzip limits over shared
 block helpers. The [file compressor](extended-compress-file.md) uses fixed

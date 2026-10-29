@@ -3,6 +3,17 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [literal text replacement increment](stdlib-text-replacement.md) uses
+existing Text search, UTF-8 boundaries, Iterator, Pair and Vec allocation. The
+borrowed cursor adds no allocator or host dependency; owned results use one
+checked exact reservation. Source/needle/replacement overlap is allowed, with
+immutable valid backing retained through both passes. All five library groups
+and four [stdin/stdout consumer](stdlib-literal-rewrite.md) groups/94 cases pass,
+including reached allocation failures and exact cleanup. No compiler repair
+was needed. Evidence is Linux x86_64 CPU output from the GPU compiler. Enforced
+lifetimes/destruction, other hosts, user-device execution and formal proof
+remain separate; this increment does not resolve older compiler reductions.
+
 The [resumable encoder](extended-streaming-deflate.md) uses existing integer,
 checksum and View contracts with fixed caller storage; its
 [file consumer](extended-compress-file.md) composes existing File/AtomicFile

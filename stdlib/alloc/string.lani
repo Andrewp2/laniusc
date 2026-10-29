@@ -8,7 +8,9 @@ import core::u8;
 import core::cmp;
 import core::decimal;
 import core::hash;
+import core::iter;
 import core::option;
+import core::pair;
 import core::result;
 import core::slice;
 import core::utf8;
@@ -22,6 +24,7 @@ pub enum Error {
     NotCharBoundary,
     CapacityOverflow,
     AllocationFailed,
+    OutputLimit,
 }
 
 pub struct String {
@@ -83,6 +86,51 @@ pub fn repeat(text: core::text::Text, count: i32) -> core::result::Result<String
     let status: core::result::Result<i32, Error> = value.try_append_repeated(text, count);
     if (core::result::is_err(status)) { return core::result::Err(core::result::unwrap_err(status)); }
     return core::result::Ok(value);
+}
+
+// Independent literal replacement over the original source. Inputs remain
+// borrowed and read-only, so they may overlap one another. Empty needles match
+// every scalar boundary, including both ends; inserted bytes are not searched.
+pub fn replace(text: core::text::Text, needle: core::text::Text, replacement: core::text::Text, max_output: i32) -> core::result::Result<String, Error> {
+    let all: u64 = 18446744073709551615;
+    return replacen(text,needle,replacement,all,max_output);
+}
+
+// Measure the complete result before allocation. Representational overflow
+// wins over the caller's output limit. A shrinking result may fit even when
+// the source does not. Text validity and stable backing remain preconditions.
+pub fn replacen(text: core::text::Text, needle: core::text::Text, replacement: core::text::Text, max_matches: u64, max_output: i32) -> core::result::Result<String, Error> {
+    if (max_output < 0) { return core::result::Err(Error::Bounds); }
+    let measure: core::text::MatchIndices = text.match_indices(needle);
+    let count: u64 = 0;
+    while (count < max_matches) {
+        let found: core::option::Option<core::pair::Pair<i32,core::text::Text>> = measure.next();
+        if (core::option::is_none(found)) { break; }
+        count += 1;
+    }
+    // Nonempty matches are disjoint, so removed bytes never exceed input.
+    // There are at most i32::MAX+1 matches and each Text is at most i32::MAX
+    // bytes; these products and the full result fit comfortably in u64.
+    let retained: u64 = (text.byte_len() as u64)-count*(needle.byte_len() as u64);
+    let needed: u64 = retained+count*(replacement.byte_len() as u64);
+    if (needed > 2147483647) { return core::result::Err(Error::CapacityOverflow); }
+    if (needed > (max_output as u64)) { return core::result::Err(Error::OutputLimit); }
+    if (needed == 0) { return core::result::Ok(new()); }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity(needed as i32);
+    if (core::result::is_err(allocated)) { return core::result::Err(Error::AllocationFailed); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
+    let matches: core::text::MatchIndices = text.match_indices(needle);
+    let filled: u64 = 0; let start: i32 = 0;
+    while (filled < count) {
+        let found: core::option::Option<core::pair::Pair<i32,core::text::Text>> = matches.next();
+        let matched: core::pair::Pair<i32,core::text::Text> = core::option::unwrap(found);
+        let prefix: core::text::Text = core::result::unwrap(text.slice(start,matched.first));
+        bytes = append_reserved(bytes,prefix);
+        bytes = append_reserved(bytes,replacement);
+        start = matched.first+matched.second.byte_len(); filled += 1;
+    }
+    bytes = append_reserved(bytes,core::result::unwrap(text.slice(start,text.byte_len())));
+    return core::result::Ok(String { bytes: bytes });
 }
 
 fn joined_length(parts: core::slice::View<core::text::Text>, separator: core::text::Text) -> core::result::Result<i32, Error> {
@@ -509,19 +557,8 @@ pub impl String {
 
     // First matching byte offset. The empty needle matches at zero.
     pub fn find(&self, needle: String) -> core::option::Option<i32> {
-        let length: i32 = self.bytes.len();
-        let count: i32 = needle.bytes.len();
-        if (count > length) { return core::option::None(); }
-        let bytes: [u8] = self.bytes.as_slice();
-        let pattern: [u8] = needle.bytes.as_slice();
-        let start: i32 = 0;
-        while (start <= length - count) {
-            let index: i32 = 0;
-            while (index < count && bytes[start + index] == pattern[index]) { index += 1; }
-            if (index == count) { return core::option::Some(start); }
-            start += 1;
-        }
-        return core::option::None();
+        let text: core::text::Text = self.as_text();
+        return text.find(needle.as_text());
     }
 
     // Release this owner's storage and reset it to an empty String. Copies

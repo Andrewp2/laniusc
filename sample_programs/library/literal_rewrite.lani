@@ -1,0 +1,229 @@
+// Literal UTF-8 replacement with complete staging before stdout.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::string::String;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option::Option;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice;
+import core::slice::View;
+import core::text;
+import core::text::Text;
+import ext::cli;
+import std::args;
+import std::signal;
+import std::stream;
+
+const MAX_INPUT:i32 = 262144;
+const MAX_OUTPUT:i32 = 1048576;
+enum Failure {
+    Arguments, ArgumentUtf8, ArgumentIo, InputBytes, InputCalls, InputUtf8,
+    InputIo, OutputBytes, OutputCalls, OutputIo, Allocation, Replacement,
+    HelpCalls, HelpIo
+}
+struct Problem { cause:Failure, written:u64 }
+struct Transfer { status:i32, written:u64 }
+struct Options { needle:Text, replacement:Text, count:u64, count_set:bool, operands:i32 }
+enum Command { Help, Rewrite(Options) }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+
+fn literal(value:str,count:i32) -> View<u8> {
+    return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),start:0,length:count };
+}
+fn same(left:View<u8>,right:View<u8>) -> bool {
+    if(left.length!=right.length) { return false; }
+    let index:i32=0; while(index<left.length) {
+        if(left.values[left.start+index]!=right.values[right.start+index]) { return false; } index+=1;
+    } return true;
+}
+fn problem(cause:Failure) -> Problem { return Problem { cause:cause,written:0 }; }
+fn status(cause:Failure) -> i32 {
+    return match(cause) {
+        Failure::Allocation->4,
+        Failure::ArgumentIo->3, Failure::InputIo->3, Failure::OutputIo->3, Failure::HelpIo->3,
+        _ ->2
+    };
+}
+// Help and diagnostics have their own bounded direct writes. Payload uses Copier.
+fn bounded_write(bytes:View<u8>,handle:i32) -> Transfer {
+    let sink=std::stream::from_handle(handle); let offset:i32=0; let calls:i32=0;
+    while(offset<bytes.length) {
+        if(calls==64) { return Transfer { status:2,written:offset as u64 }; } calls+=1;
+        let wanted:i32=bytes.length-offset; if(wanted>1024) { wanted=1024; }
+        let sent=sink.write(bytes.values,bytes.start+offset,wanted);
+        if(sent.is_err()) {
+            if(core::io::is_interrupted(sent.unwrap_err())) { continue; }
+            return Transfer { status:3,written:offset as u64 };
+        }
+        let count:i32=sent.unwrap();
+        if(count<=0 || count>wanted) { return Transfer { status:3,written:offset as u64 }; }
+        offset+=count;
+    } return Transfer { status:0,written:offset as u64 };
+}
+fn report(error:Problem) -> i32 {
+    let message:View<u8> = match(error.cause) {
+        Failure::Arguments->literal("literal_rewrite: invalid arguments",34),
+        Failure::ArgumentUtf8->literal("literal_rewrite: argument is not valid UTF-8",44),
+        Failure::ArgumentIo->literal("literal_rewrite: argument I/O failure",37),
+        Failure::InputBytes->literal("literal_rewrite: input exceeds 262144 bytes",43),
+        Failure::InputCalls->literal("literal_rewrite: input read-call limit",38),
+        Failure::InputUtf8->literal("literal_rewrite: input is not valid UTF-8",41),
+        Failure::InputIo->literal("literal_rewrite: input I/O failure",34),
+        Failure::OutputBytes->literal("literal_rewrite: output exceeds 1048576 bytes",45),
+        Failure::OutputCalls->literal("literal_rewrite: output call limit",34),
+        Failure::OutputIo->literal("literal_rewrite: output I/O failure",35),
+        Failure::Allocation->literal("literal_rewrite: allocation failed",34),
+        Failure::Replacement->literal("literal_rewrite: replacement failed",35),
+        Failure::HelpCalls->literal("literal_rewrite: help write-call limit",38),
+        Failure::HelpIo->literal("literal_rewrite: help I/O failure",33)
+    };
+    let bytes:[u8;128]=[0;128]; let length:i32=0;
+    while(length<message.length) { bytes[length]=message.values[message.start+length]; length+=1; }
+    let has_prefix:bool=match(error.cause) {
+        Failure::OutputCalls->true, Failure::OutputIo->true, Failure::HelpCalls->true, Failure::HelpIo->true, _ ->false
+    };
+    if(has_prefix) {
+        let suffix:View<u8> = literal("; written=",10); let index:i32=0;
+        while(index<suffix.length) { bytes[length]=suffix.values[suffix.start+index]; length+=1; index+=1; }
+        length+=core::decimal::format_u64(bytes,length,127-length,error.written).unwrap();
+    }
+    bytes[length]=10; length+=1;
+    bounded_write(core::slice::view(bytes,length).unwrap(),2);
+    // A failed diagnostic never replaces the original error status.
+    return status(error.cause);
+}
+fn number(bytes:View<u8>) -> Result<u64,Failure> {
+    if(bytes.length==0 || bytes.length>20) { return Err(Failure::Arguments); }
+    let index:i32=0; while(index<bytes.length) {
+        let byte:u8=bytes.values[bytes.start+index];
+        if(byte<48 || byte>57) { return Err(Failure::Arguments); } index+=1;
+    }
+    let value=core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.length);
+    if(value.is_err()) { return Err(Failure::Arguments); } return Ok(value.unwrap());
+}
+fn option(options:&Options,value:ext::cli::Occurrence) -> Result<bool,Failure> {
+    if(options.count_set || value.value.is_none()) { return Err(Failure::Arguments); }
+    let parsed=number(value.value.unwrap().bytes); if(parsed.is_err()) { return Err(parsed.unwrap_err()); }
+    options.count=parsed.unwrap(); options.count_set=true; return Ok(true);
+}
+fn operand(options:&Options,bytes:View<u8>) -> Result<bool,Failure> {
+    if(options.operands>=2) { return Err(Failure::Arguments); }
+    let maximum:i32=256; if(options.operands==1) { maximum=4096; }
+    if(bytes.length>maximum) { return Err(Failure::Arguments); }
+    let text=core::text::from_utf8_range(bytes.values,bytes.start,bytes.length);
+    if(text.is_err()) { return Err(Failure::ArgumentUtf8); }
+    if(options.operands==0) { options.needle=text.unwrap(); } else { options.replacement=text.unwrap(); }
+    options.operands+=1; return Ok(true);
+}
+fn arguments(values:View<View<u8>>) -> Result<Command,Failure> {
+    if(values.length==1) {
+        let only:View<u8> = values.get(0).unwrap();
+        if(same(only,literal("--help",6)) || same(only,literal("-h",2))) { return Ok(Command::Help); }
+    }
+    let empty:View<u8> = literal("",0);
+    let text=core::text::from_utf8(empty.values,0).unwrap();
+    let options=Options { needle:text,replacement:text,count:0,count_set:false,operands:0 };
+    let specs:[ext::cli::Spec;1]=[ext::cli::Spec { id:0,long:literal("count",5),short:0,arity:ext::cli::Arity::Required }];
+    let parser=ext::cli::parser(values,core::slice::view(specs,1).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    while(true) {
+        let next=parser.next(); if(next.is_err()) { return Err(Failure::Arguments); }
+        let event:Option<ext::cli::Event> = next.unwrap(); if(event.is_none()) { break; }
+        let checked=match(event.unwrap()) {
+            ext::cli::Event::Option(value)->option(options.borrow(),value),
+            ext::cli::Event::Operand(value)->operand(options.borrow(),value.bytes)
+        };
+        if(checked.is_err()) { return Err(checked.unwrap_err()); }
+    }
+    if(options.operands!=2) { return Err(Failure::Arguments); }
+    return Ok(Command::Rewrite(options));
+}
+fn read_failure(cause:alloc::io::ReadError) -> Failure {
+    return match(cause) {
+        alloc::io::ReadError::ByteLimit->Failure::InputBytes,
+        alloc::io::ReadError::CallLimit->Failure::InputCalls,
+        alloc::io::ReadError::Io(error)->Failure::InputIo,
+        alloc::io::ReadError::Storage(error)->match(error) {
+            alloc::vec::Error::AllocationFailed->Failure::Allocation, _ ->Failure::InputBytes
+        },
+        alloc::io::ReadError::Text(error)->Failure::InputUtf8,
+        _ ->Failure::Replacement
+    };
+}
+fn prepare(options:Options) -> Result<String,Problem> {
+    let source=std::stream::stdin();
+    let collected=alloc::io::read_to_string<std::stream::Descriptor>(source.borrow(),
+        alloc::io::ReadLimits { max_bytes:MAX_INPUT,max_calls:4096 });
+    if(collected.is_err()) {
+        let failure:alloc::io::ReadFailure=collected.unwrap_err(); let cause=read_failure(failure.cause);
+        failure.destroy(); return Err(problem(cause));
+    }
+    let input:String=collected.unwrap();
+    let replaced:Result<String,alloc::string::Error> = Err(alloc::string::Error::Bounds);
+    if(options.count_set) {
+        replaced=alloc::string::replacen(input.as_text(),options.needle,options.replacement,options.count,MAX_OUTPUT);
+    } else {
+        replaced=alloc::string::replace(input.as_text(),options.needle,options.replacement,MAX_OUTPUT);
+    }
+    input.destroy();
+    if(replaced.is_err()) {
+        return Err(problem(match(replaced.unwrap_err()) {
+            alloc::string::Error::AllocationFailed->Failure::Allocation,
+            alloc::string::Error::OutputLimit->Failure::OutputBytes,
+            alloc::string::Error::CapacityOverflow->Failure::OutputBytes,
+            _ ->Failure::Replacement
+        }));
+    } return Ok(replaced.unwrap());
+}
+fn publish(output:String) -> Result<bool,Problem> {
+    let source=core::io::slice_reader(output.as_bytes(),output.byte_len()).unwrap();
+    let sink=std::stream::stdout(); let scratch:[u8;1024]=[0;1024];
+    let copier=core::io::copier<core::io::SliceReader,std::stream::Descriptor>(
+        source.borrow(),sink.borrow(),core::slice::view(scratch,1024).unwrap()).unwrap();
+    // The extra byte of read quota permits the actual source EOF call.
+    let copied=copier.step((output.byte_len() as u64)+1,4096);
+    let done:bool=copier.is_done(); copier.abort();
+    if(copied.is_err()) { return Err(Problem { cause:Failure::OutputIo,written:copied.unwrap_err().written }); }
+    let progress:core::io::CopyStep=copied.unwrap();
+    let cause:Failure=match(progress.stop) { core::io::CopyStop::CallLimit->Failure::OutputCalls, _ ->Failure::OutputIo };
+    let eof:bool=match(progress.stop) { core::io::CopyStop::Eof->true, _ ->false };
+    if(eof && done && progress.read==(output.byte_len() as u64) && progress.written==progress.read) { return Ok(true); }
+    return Err(Problem { cause:cause,written:progress.written });
+}
+fn help() -> Result<bool,Problem> {
+    let sent=bounded_write(literal("Usage: literal_rewrite [--count N] [--] NEEDLE REPLACEMENT\nReplace literal, nonoverlapping matches in UTF-8 stdin; write UTF-8 stdout.\nAn empty needle inserts at Unicode scalar boundaries, including both ends.\nInserted text is not searched; bytes and line endings otherwise stay unchanged.\nNo normalization, case folding or automatic newline is performed.\n--count N replaces only the first N matches; omitted count replaces all.\nN is 1..20 ASCII digits in u64 range, including zero; leading zeros are allowed.\n--count=N is accepted; duplicate counts are rejected; options may be intermixed.\nUse -- before operands beginning with a dash. Sole -h or --help shows help.\nLimits: 262144 input bytes, 256 needle bytes, 4096 replacement bytes,\n1048576 output bytes; 4096 input calls and 4096 Copier provider calls.\nArguments: at most 8 tokens and 8192 bytes; help/diagnostics: 64 write attempts.\nValidate through EOF and stage the complete result before stdout.\nOutput failure may leave a prefix; diagnostics report confirmed written bytes.\nExit: 0 success, 2 invalid input or limit, 3 I/O failure, 4 allocation failure.\n",1114),1);
+    if(sent.status==0) { return Ok(true); }
+    let cause:Failure=Failure::HelpIo; if(sent.status==2) { cause=Failure::HelpCalls; }
+    return Err(Problem { cause:cause,written:sent.written });
+}
+fn main() -> i32 {
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured=std::args::snapshot(1,8,8192);
+    if(captured.is_err()) {
+        return report(problem(match(captured.unwrap_err()) {
+            std::args::Error::AllocationFailed->Failure::Allocation,
+            std::args::Error::HostRead(index)->Failure::ArgumentIo, _ ->Failure::Arguments
+        }));
+    }
+    let values:std::args::Arguments=captured.unwrap(); let parsed=arguments(values.as_view());
+    if(parsed.is_err()) { values.destroy(); return report(problem(parsed.unwrap_err())); }
+    let command:Command=parsed.unwrap();
+    let is_help:bool=match(command) { Command::Help->true, _ ->false };
+    if(is_help) {
+        values.destroy(); let shown=help(); if(shown.is_err()) { return report(shown.unwrap_err()); } return 0;
+    }
+    let prepared:Result<String,Problem> = match(command) {
+        Command::Rewrite(options)->prepare(options), Command::Help->Err(problem(Failure::Arguments))
+    };
+    values.destroy();
+    if(prepared.is_err()) { return report(prepared.unwrap_err()); }
+    let output:String=prepared.unwrap();
+    // The original input and argument backing are retired; only output owns heap storage.
+    let sent=publish(output); output.destroy();
+    if(sent.is_err()) { return report(sent.unwrap_err()); } return 0;
+}

@@ -1,0 +1,199 @@
+// Binary observations of real literal matching and independent owned results.
+module app::main;
+import alloc::string;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::result;
+import core::text;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32,allow_eof:bool) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(allow_eof && done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0); done+=got;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let index:i32=0;
+    while(index<8) { value|=(bytes[offset+index] as u64)<<(index*8); index+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn byte(&self,value:u8) {
+        if(self.used==4096) { self.flush(); }
+        self.bytes[self.used]=value; self.used+=1;
+    }
+    fn word(&self,value:u64) {
+        let index:i32=0;
+        while(index<8) { self.byte(((value>>(index*8))&255) as u8); index+=1; }
+    }
+}
+struct Backing { source:[u8],needle:[u8],replacement:[u8] }
+struct Texts { source:core::text::Text,needle:core::text::Text,replacement:core::text::Text }
+fn fill(backing:Backing,header:[u8],payload:[u8]) {
+    let index:i32=0;
+    while(index<2056) { backing.source[index]=((211+index*17)&255) as u8; index+=1; }
+    index=0; while(index<264) { backing.needle[index]=((101+index*13)&255) as u8; index+=1; }
+    index=0; while(index<136) { backing.replacement[index]=((53+index*19)&255) as u8; index+=1; }
+    let source_len:i32=get64(header,8) as i32; let needle_len:i32=get64(header,16) as i32;
+    index=0; while(index<source_len) { backing.source[(get64(header,32) as i32)+index]=payload[index]; index+=1; }
+    index=0; while(index<needle_len) { backing.needle[(get64(header,40) as i32)+index]=payload[source_len+index]; index+=1; }
+    index=0; while(index<get64(header,24) as i32) { backing.replacement[(get64(header,48) as i32)+index]=payload[source_len+needle_len+index]; index+=1; }
+}
+fn poison(backing:Backing) {
+    let index:i32=0;
+    while(index<2056) { backing.source[index]=((41+index*23)&255) as u8; index+=1; }
+    index=0; while(index<264) { backing.needle[index]=((61+index*29)&255) as u8; index+=1; }
+    index=0; while(index<136) { backing.replacement[index]=((71+index*31)&255) as u8; index+=1; }
+}
+fn snapshot(backing:Backing,output:&Output) {
+    let index:i32=0; while(index<2056) { output.byte(backing.source[index]); index+=1; }
+    index=0; while(index<264) { output.byte(backing.needle[index]); index+=1; }
+    index=0; while(index<136) { output.byte(backing.replacement[index]); index+=1; }
+}
+fn texts(backing:Backing,header:[u8]) -> Texts {
+    let source:core::text::Text=core::text::from_utf8_range(backing.source,get64(header,32) as i32,get64(header,8) as i32).unwrap();
+    let needle:core::text::Text=core::text::from_utf8_range(backing.needle,get64(header,40) as i32,get64(header,16) as i32).unwrap();
+    let replacement:core::text::Text=core::text::from_utf8_range(backing.replacement,get64(header,48) as i32,get64(header,24) as i32).unwrap();
+    let needle_alias:i32=get64(header,56) as i64 as i32; let replacement_alias:i32=get64(header,64) as i64 as i32;
+    if(needle_alias>=0) { needle=source.slice(needle_alias,needle_alias+(get64(header,16) as i32)).unwrap(); }
+    if(replacement_alias>=0) { replacement=source.slice(replacement_alias,replacement_alias+(get64(header,24) as i32)).unwrap(); }
+    return Texts { source:source,needle:needle,replacement:replacement };
+}
+fn descriptor(value:core::text::Text,output:&Output) {
+    output.word(value.start as u64); output.word(value.length as u64);
+    output.word(core::mem::slice_stride(value.bytes) as i64 as u64);
+}
+fn descriptors(values:Texts,output:&Output) {
+    descriptor(values.source,output); descriptor(values.needle,output); descriptor(values.replacement,output);
+}
+fn item(op:i32,value:core::option::Option<core::pair::Pair<i32,core::text::Text>>,output:&Output) -> bool {
+    output.byte(op as u8);
+    if(value.is_none()) { output.byte(0); return true; }
+    let pair:core::pair::Pair<i32,core::text::Text> = value.unwrap();
+    output.byte(1); output.word(pair.first as i64 as u64); descriptor(pair.second,output);
+    // A returned Text must borrow the complete source backing, not the needle.
+    output.byte(pair.second.bytes[0]); output.byte(pair.second.bytes[2055]);
+    let index:i32=0; while(index<pair.second.length) { output.byte(pair.second.byte_at(index).unwrap()); index+=1; }
+    return false;
+}
+fn exercise<I>(seed:I,actions:[u8],length:i32,output:&Output)
+    where I:core::iter::Iterator<core::pair::Pair<i32,core::text::Text>> {
+    let primary:I=seed; let fork:I=seed; let index:i32=0;
+    while(index<length) {
+        let op:i32=actions[index] as i32;
+        if(op>=2) {
+            if(op==2) { fork=primary; } if(op==3) { primary=fork; }
+            if(op==4) { primary=seed; } if(op==5) { fork=seed; }
+            output.byte(op as u8); output.byte(2);
+        } else {
+            if(op==0) { item(op,primary.next(),output); } else { item(op,fork.next(),output); }
+        }
+        index+=1;
+    }
+    let ended:bool=false; index=0;
+    while(!ended) { assert(index<=2050); ended=item(0,primary.next(),output); index+=1; }
+    ended=false; index=0;
+    while(!ended) { assert(index<=2050); ended=item(1,fork.next(),output); index+=1; }
+    // Copies of already-exhausted cursors must retain fused exhaustion.
+    fork=primary; output.byte(2); output.byte(2);
+    let probe:i32=0;
+    while(probe<6) { if(probe%2==0) { item(0,primary.next(),output); } else { item(1,fork.next(),output); } probe+=1; }
+}
+fn matches(backing:Backing,header:[u8],actions:[u8],output:&Output) {
+    let values:Texts=texts(backing,header); descriptors(values,output);
+    exercise<core::text::MatchIndices>(values.source.match_indices(values.needle),actions,get64(header,72) as i32,output);
+    let cursor:core::text::MatchIndices=values.source.match_indices(values.needle);
+    let limited:core::iter::Take<core::text::MatchIndices,core::pair::Pair<i32,core::text::Text>> = core::iter::take<core::text::MatchIndices,core::pair::Pair<i32,core::text::Text>>(cursor.borrow(),3);
+    let ended:bool=false; let index:i32=0;
+    while(!ended) { assert(index<=3); ended=item(6,limited.next(),output); index+=1; }
+    item(6,limited.next(),output); item(7,cursor.next(),output);
+    descriptors(values,output);
+}
+fn perform(backing:Backing,header:[u8],operations:[u8],at:i32,output:&Output) -> core::result::Result<alloc::string::String,alloc::string::Error> {
+    let values:Texts=texts(backing,header); descriptors(values,output);
+    let result:core::result::Result<alloc::string::String,alloc::string::Error> = core::result::Err(alloc::string::Error::Bounds);
+    if(get64(operations,at)==0) { result=alloc::string::replacen(values.source,values.needle,values.replacement,get64(operations,at+8),get64(operations,at+16) as i64 as i32); }
+    else { result=alloc::string::replace(values.source,values.needle,values.replacement,get64(operations,at+16) as i64 as i32); }
+    descriptors(values,output); return result;
+}
+fn error_code(error:alloc::string::Error) -> i32 {
+    return match(error) { alloc::string::Error::Bounds -> 1,alloc::string::Error::OutputLimit -> 2,
+        alloc::string::Error::CapacityOverflow -> 3,alloc::string::Error::AllocationFailed -> 4,
+        alloc::string::Error::InvalidScalar -> 5,alloc::string::Error::NotCharBoundary -> 6,
+        alloc::string::Error::InvalidUtf8(offset) -> 7 };
+}
+fn string_value(value:alloc::string::String,output:&Output) {
+    assert(value.capacity()>=value.byte_len()); if(value.byte_len()==0) { assert(value.capacity()==0); }
+    output.word(value.byte_len() as u64); output.word(value.scalar_count() as u64);
+    output.word(core::mem::slice_stride(value.as_bytes()) as i64 as u64);
+    let index:i32=0; while(index<value.byte_len()) { output.byte(value.byte_at(index).unwrap()); index+=1; }
+}
+fn run(header:[u8],payload:[u8],actions:[u8],operations:[u8],output:&Output) {
+    let source_native:[u8;2056]=[0;2056]; let source_words:[i32;514]=[0;514];
+    let needle_native:[u8;264]=[0;264]; let needle_words:[i32;66]=[0;66];
+    let replacement_native:[u8;136]=[0;136]; let replacement_words:[i32;34]=[0;34];
+    let source:[u8]=source_native; let needle:[u8]=needle_native; let replacement:[u8]=replacement_native;
+    let layout:u64=get64(header,0);
+    if((layout&1)!=0) { source=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(source_words),2056); }
+    if((layout&2)!=0) { needle=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(needle_words),264); }
+    if((layout&4)!=0) { replacement=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(replacement_words),136); }
+    let backing:Backing=Backing { source:source,needle:needle,replacement:replacement };
+    output.word(0x746578747265706c); output.word(layout); output.word(get64(header,80));
+    fill(backing,header,payload); matches(backing,header,actions,output); snapshot(backing,output);
+    let operation:i32=0;
+    while(operation<get64(header,80) as i32) {
+        fill(backing,header,payload); output.word(operation as u64);
+        let result:core::result::Result<alloc::string::String,alloc::string::Error> = perform(backing,header,operations,operation*24,output);
+        if(result.is_err()) { output.word(error_code(result.unwrap_err()) as u64); snapshot(backing,output); }
+        else {
+            output.word(0); let owned:alloc::string::String=result.unwrap(); string_value(owned,output); snapshot(backing,output);
+            // All borrowed Text/cursor observations have ended before backing is recycled.
+            poison(backing); string_value(owned,output);
+            owned.try_push_scalar(33).unwrap(); string_value(owned,output);
+            owned.destroy(); output.word(owned.byte_len() as u64); output.word(owned.capacity() as u64);
+            snapshot(backing,output);
+        }
+        operation+=1;
+    }
+    output.word(99);
+}
+fn main() -> i32 {
+    let header_words:[i32;22]=[0;22]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,88);
+    let payload_words:[i32;608]=[0;608]; let payload_pointer:ptr=core::mem::i32_array_data_ptr(payload_words);
+    let payload:[u8]=core::mem::typed_slice_from_raw_parts<u8>(payload_pointer,2432);
+    let action_words:[i32;8]=[0;8]; let action_pointer:ptr=core::mem::i32_array_data_ptr(action_words);
+    let actions:[u8]=core::mem::typed_slice_from_raw_parts<u8>(action_pointer,32);
+    let operation_words:[i32;96]=[0;96]; let operation_pointer:ptr=core::mem::i32_array_data_ptr(operation_words);
+    let operations:[u8]=core::mem::typed_slice_from_raw_parts<u8>(operation_pointer,384);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    while(read_exact(header_pointer,88,true)) {
+        assert(get64(header,0)<=7 && get64(header,8)<=2048 && get64(header,16)<=256 && get64(header,24)<=128);
+        assert(get64(header,32)<=7 && get64(header,40)<=7 && get64(header,48)<=7 && get64(header,72)<=32 && get64(header,80)<=16);
+        let length:i32=(get64(header,8)+get64(header,16)+get64(header,24)) as i32;
+        assert(read_exact(payload_pointer,length,false)); assert(read_exact(action_pointer,get64(header,72) as i32,false));
+        assert(read_exact(operation_pointer,(get64(header,80) as i32)*24,false));
+        let index:i32=0; while(index<get64(header,72) as i32) { assert(actions[index]<=5); index+=1; }
+        index=0; while(index<get64(header,80) as i32) { assert(get64(operations,index*24)<=1); index+=1; }
+        run(header,payload,actions,operations,output.borrow());
+    }
+    output.flush(); return 0;
+}

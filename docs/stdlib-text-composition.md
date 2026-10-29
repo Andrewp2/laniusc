@@ -5,6 +5,10 @@ views into packed owned Strings without consuming or destroying their inputs.
 Executable evidence currently covers **x86_64 Linux** using the GPU compiler;
 this does not establish GPU execution of user programs.
 
+[Literal matching and bounded replacement](stdlib-text-replacement.md) form a
+separate accepted native Linux x86_64 increment. The historical composition
+receipts below retain their join/repeat/word-split scope.
+
 ## API contracts
 
 | Operation | Result |
@@ -52,7 +56,9 @@ used by `core::u8` and text trimming. NUL, nonbreaking space and other Unicode
 whitespace are retained within words. Empty and whitespace-only text yield no
 words. The cursor stays exhausted after returning `None`. Copies have independent
 positions and share backing storage. Iteration takes O(input bytes) and allocates
-nothing. A shared generic iterator protocol remains a compiler dependency.
+nothing. The cursor now implements the canonical shared iterator protocol,
+including the separately accepted [bidirectional traversal](stdlib-bidirectional-text.md).
+The earlier receipts below predate that integration.
 
 ## Example: whitespace normalization
 
@@ -101,9 +107,10 @@ Run the suite with the absolute target directory and environment described in
 [stdlib-string.md](stdlib-string.md). Existing String and Text execution suites
 also pass after the shared append refactor (three and four groups respectively).
 
-The full text family still needs general formatting, additional Unicode
-operations and native `str` length access. Buffered stream adapters remain
-pending the separate [compiler dependency](library-dependencies.md).
+Formatting, Unicode operations and buffered streams now have separate guides
+and finite acceptance in the [roadmap](library-roadmap.md). Native `str` length
+access, broader targets and enforced lifetimes remain separate
+[dependencies](library-dependencies.md).
 
 ## Native construction cost
 
