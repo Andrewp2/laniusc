@@ -3,6 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.lookup
 import Lanius.Mini.Compiler.P.lowerCallSig
@@ -44,12 +45,13 @@ def lowerIf (condition : Option Expr) (thenBranch : Option Stmt) (elseBranch : O
       | none => none
       | some e => some (Stmt.ite c t e)
 
-def lowerWhile (condition : Option Expr) (body : Option Stmt) : Option Stmt :=
+/-- The body checks the condition's guard g before Core evaluates it again. -/
+def lowerWhile (slot : Nat) (g : Expr) (condition : Option Expr) (body : Option Stmt) : Option Stmt :=
   match condition with
   | none => none
   | some c =>
     match body with
     | none => none
-    | some b => some (Stmt.loop c b)
+    | some b => some (Stmt.loop c (thenCheck slot g b))
 
 end Lanius.Mini

@@ -1,4 +1,5 @@
 import Lanius.Mini.Source
+import Lanius.Mini.Guard
 import Lanius.Typing
 
 /-! Type checker soundness for the front pass (roadmap step 7).
@@ -1509,7 +1510,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
   | .nop, _, _, _, _, _, _, _, _ => .skip
   | .let id ty value body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLet] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLet] at h
     split at h
     · simp at h
     · rename_i vs hvs
@@ -1520,7 +1523,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
   | .letStruct id ty fields body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLet] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLet] at h
     split at h
     · simp at h
     · rename_i vs hvs
@@ -1531,7 +1536,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
   | .letCall id ty callee args body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLetCall] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLetCall] at h
     split at h
     · simp at h
     · rename_i a ha
@@ -1542,7 +1549,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
   | .letEnum id ty variant payload body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLet] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLet] at h
     split at h
     · simp at h
     · rename_i vs hvs
@@ -1563,7 +1572,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         exact .letLocal (lowerMatch_typed target ok hm)
           (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
   | .set id value, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerSet] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerSet] at h
     split at h
     · simp at h
     · rename_i b found
@@ -1573,7 +1584,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · rename_i vs hvs
         exact .expression (.assign (.local (ok id b found).1) (lowerValue_typed target ok hvs) .set)
   | .setField id index value, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerSetField] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerSetField] at h
     split at h
     · simp at h
     · rename_i b found
@@ -1600,7 +1613,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           · simp at h
       all_goals simp at h
   | .setCall id callee args, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerSetCall] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerSetCall] at h
     split at h
     · simp at h
     · rename_i b found
@@ -1622,7 +1637,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
           (SrcStmt.lower_typed target sigsOk second ok d.2 hb)
   | .if condition thenBranch elseBranch, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerIf] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerIf] at h
     split at h
     · simp at h
     · rename_i c hc
@@ -1637,7 +1654,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
             (SrcStmt.lower_typed target sigsOk elseBranch ok d.2 hb)
   | .while condition body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerWhile] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerWhile] at h
     split at h
     · simp at h
     · rename_i c hc
@@ -1646,14 +1665,18 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       · rename_i b hb
         exact .whileLoop (lowerAs_typed target ok hc) (SrcStmt.lower_typed target sigsOk body ok d hb)
   | .return value, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerReturn] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerReturn] at h
     split at h
     · simp at h
     · rename_i vs hvs
       exact .returnValue (lowerValue_typed target ok hvs)
   | .letAlloc id size shift body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerAlloc] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerAlloc] at h
     split at h
     · rename_i small
       split at h
@@ -1667,7 +1690,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     · simp at h
   | .letLoad id pointer offset body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLoad] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLoad] at h
     split at h
     · simp at h
     · rename_i a ha
@@ -1678,7 +1703,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         exact .letLocal (.loadByte (lowerAs_typed target ok hx) (lowerAs_typed target ok hy))
           (SrcStmt.lower_typed target sigsOk body (ok.cons (ty := .uint .uint8) (.uint _)) d hb)
   | .setByte pointer offset value, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerStore] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerStore] at h
     split at h
     · simp at h
     · rename_i a ha
@@ -1689,7 +1716,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
         exact .expression (.storeByte (lowerAs_typed target ok hx) (lowerAs_typed target ok hy)
           (lowerAs_typed target ok hv))
   | .free pointer size shift, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerFree] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerFree] at h
     split at h
     · rename_i small
       split at h
@@ -1703,7 +1732,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     · simp at h
   | .letSlice id element pointer length body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLet] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLet] at h
     split at h
     · simp at h
     · rename_i vs hvs
@@ -1726,7 +1757,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
               d.2 hb)
   | .letIndex id ty slice index body, scope, ctx, next, inLoop, out, ok, d, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower, lowerLetIndex] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerLetIndex] at h
     split at h
     case isFalse =>
       unfold lowerLoadType at h
@@ -1770,7 +1803,9 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
               (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 hb)
           · simp at ha
   | .setIndex slice index value, scope, ctx, next, inLoop, out, ok, _, h => by
-    simp only [SrcStmt.lower, lowerSetIndex] at h
+    simp only [SrcStmt.lower] at h
+    obtain ⟨_, h, -⟩ := guarded_some h
+    simp only [lowerSetIndex] at h
     split at h
     · simp at h
     · rename_i sb found

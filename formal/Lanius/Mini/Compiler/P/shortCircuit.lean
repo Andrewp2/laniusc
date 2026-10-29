@@ -2,7 +2,9 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.conjunction
+import Lanius.Mini.Compiler.P.guardAnd
 import Lanius.Mini.Compiler.P.lookup
 import Lanius.Mini.Compiler.P.lowerLocal
 
@@ -37,12 +39,31 @@ def shortCircuit (op : SrcOp) : Nat :=
 def evalRight (slot : Nat) (r : Evaluated) : Stmt :=
   Stmt.seq r.stmt (Stmt.assign slot (Expr.var (slot + 1)))
 
-/-- left in slot, right in slot + 1. && and || run the right side's code only when Core evaluates it. -/
+/-- left in slot, right in slot + 1. && and || run the right side's code only when Core evaluates it. The guard of op on evaluated operands, the right one at slot: shifts check their amount, after the result is in the left operand's slot. -/
+def operandGuard (op : SrcOp) (ty : SrcType) (slot : Nat) : Expr :=
+  match op with
+  | .plus => Expr.lit 1
+  | .minus => Expr.lit 1
+  | .times => Expr.lit 1
+  | .bitAnd => Expr.lit 1
+  | .bitOr => Expr.lit 1
+  | .bitXor => Expr.lit 1
+  | .shiftLeft => amountGuard (shiftWidth ty) (Expr.var slot)
+  | .shiftRight => amountGuard (shiftWidth ty) (Expr.var slot)
+  | .less => Expr.lit 1
+  | .lessEq => Expr.lit 1
+  | .greater => Expr.lit 1
+  | .greaterEq => Expr.lit 1
+  | .equal => Expr.lit 1
+  | .notEqual => Expr.lit 1
+  | .logicalAnd => Expr.lit 1
+  | .logicalOr => Expr.lit 1
+
 def evalOperands (op : SrcOp) (slot : Nat) (l : Evaluated) (r : Evaluated) : Option Evaluated :=
   if SrcType.isScalar l.ty && SrcType.isScalar r.ty && decide (shortCircuit op = 0) then
     match SrcOp.lower op ({ expr := Expr.var slot, ty := l.ty } : Typed) ({ expr := Expr.var (slot + 1), ty := r.ty } : Typed) with
     | none => none
-    | some t => some ({ stmt := Stmt.seq l.stmt (Stmt.seq r.stmt (Stmt.assign slot t.expr)), ty := t.ty } : Evaluated)
+    | some t => some ({ stmt := Stmt.seq l.stmt (Stmt.seq r.stmt (thenCheck (slot + 1) (operandGuard op l.ty (slot + 1)) (Stmt.assign slot t.expr))), ty := t.ty } : Evaluated)
   else
     if SrcType.isBool l.ty && SrcType.isBool r.ty && decide (shortCircuit op = 1) then
       some ({ stmt := Stmt.seq l.stmt (Stmt.ite (Expr.var slot) (evalRight slot r) Stmt.skip), ty := SrcType.bool } : Evaluated)

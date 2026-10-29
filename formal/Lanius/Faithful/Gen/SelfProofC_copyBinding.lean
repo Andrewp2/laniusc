@@ -10,9 +10,9 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
+public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_copyBinding
 public import Lanius.Faithful.Gen.SelfStmtC_lookup
-public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
 import all Lanius.Faithful.Gen.SelfSrcC_copyBinding
 import all Lanius.Mini.Compiler.P.copyBinding
 
@@ -77,12 +77,12 @@ theorem proof_copy_field_of {prog : SrcProgram} {prims : Prims} {ix_copy_field_o
   simp only [src_copy_field_of] at h
   faithful [Lanius.Mini.copyFieldOf]
 
-theorem step_lower_args {prog : SrcProgram} {prims : Prims} {ix_lower_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_lower_value ix_empty_of_mini_selfhost_Expr ix_lower_append ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr : Nat} (fn : prog.funcs[ix_lower_args]? = some (src_lower_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_lower_value ix_lower_args ix_empty_of_mini_selfhost_Expr ix_lower_append ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr)) (np : prims.isPrim ix_lower_args = false)
+theorem step_lower_args {prog : SrcProgram} {prims : Prims} {ix_lower_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_lower_value ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr ix_empty_of_mini_selfhost_Expr ix_lower_append : Nat} (fn : prog.funcs[ix_lower_args]? = some (src_lower_args ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_lower_value ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr ix_lower_args ix_empty_of_mini_selfhost_Expr ix_lower_append)) (np : prims.isPrim ix_lower_args = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_lower_value : Certified (∀ {n : Nat}, Stmt_lower_value prog prims ix_lower_value n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr n))
     (ext_empty_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Expr prog prims ix_empty_of_mini_selfhost_Expr n))
-    (ext_lower_append : Certified (∀ {n : Nat}, Stmt_lower_append prog prims ix_lower_append n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr n)) {n : Nat}
+    (ext_lower_append : Certified (∀ {n : Nat}, Stmt_lower_append prog prims ix_lower_append n)) {n : Nat}
     (ih_lower_args : Certified (Stmt_lower_args prog prims ix_lower_args n)) :
     Stmt_lower_args prog prims ix_lower_args (n + 1) := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2

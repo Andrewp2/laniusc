@@ -159,31 +159,13 @@ def SrcExpr.lower (self : SrcExpr) (scope : List Binding) : Option Typed :=
   | .cast ty operand => lowerCast ty (SrcExpr.lower operand scope)
   | .null => some ({ expr := Expr.lit 0, ty := SrcType.ptr } : Typed)
 
-def expectType (typed : Typed) (ty : SrcType) : Option Expr :=
-  if SrcType.same typed.ty ty then
-    some typed.expr
-  else
-    none
-
-/-- The expression, if it lowers and has type ty. -/
-def lowerAs (scope : List Binding) (e : SrcExpr) (ty : SrcType) : Option Expr :=
-  match SrcExpr.lower e scope with
-  | none => none
-  | some typed => expectType typed ty
-
-def lowerAppend (first : Option (List Expr)) (rest : Option (List Expr)) : Option (List Expr) :=
-  match first with
-  | none => none
-  | some es =>
-    match rest with
-    | none => none
-    | some more => some (es ++ more)
-
-/-- Var(slot), Var(slot + 1), ..., count of them. -/
-def slotVars (slot : Nat) (count : Nat) : List Expr :=
-  if count = 0 then
-    []
-  else
-    Expr.var slot :: slotVars (slot + 1) (count - 1)
+/-- The literal 1. -/
+def isOne (e : Expr) : Bool :=
+  match e with
+  | .lit value => decide (value = 1)
+  | .var slot => false
+  | .neg operand => false
+  | .binary word operation left right => false
+  | .compare word operation left right => false
 
 end Lanius.Mini

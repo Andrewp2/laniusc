@@ -49,3 +49,40 @@ is not part of this goal.
 
 Order: V1, V2, V3, V4, V5, V6, V7, V8. Each step updates
 `TRUSTED_BASE.md` with what it removes.
+
+### V2 plan (decided 10-28)
+
+Core's traps split three ways. Checked traps must make the compiled code
+fault (`ud2` or `#DE`, both `Fault` in the x86 model, which has no step from
+them): `arrayBounds`, `invalidShift`, `divisionByZero`,
+`signedDivisionOverflow`, `allocationFailure`. Undefined traps are a premise
+of the theorem, as undefined behaviour is in CompCert: `rawMemoryBounds`,
+`invalidPointer`, `doubleFree`, `allocatorContract` (raw memory errors,
+which only a check of every raw access could catch). Impossible traps are
+contradicted by the lowering's invariants: `typeMismatch`,
+`uninitializedLocal`, `missingReturn`, `nonExhaustiveMatch`. Running out of
+heap or of stack is a fault too.
+
+- V2a. Checks in the compiled code: index below length (`arrayBounds`),
+  shift amount below the width (`invalidShift`), and a stack-limit check
+  in the prologue against a limit register. A failed check divides by
+  zero, so the mini IR needs no trap statement. The forward theorems carry
+  over: on a returning run every check passes.
+  Shifts are done (10-29): each statement first tests its expressions'
+  guard (`SrcExpr.guard`, 1 when every shift Core evaluates has its amount
+  below the width) as `if g { s } else { 1 / 0 }`, so a passing check
+  changes no slot; a guard that is `Lit(1)` emits nothing, and the self
+  compiler's shifts are all constant. `SrcExpr.guard_sound`
+  (Mini/Guard.lean): a Core run that completes makes the guard 1. Index
+  checks and the stack check are next.
+- V2b. `Stops prog depth env heap stmt n` on the mini IR: the run faults,
+  or does not finish within `n` ticks (a tick is a loop iteration or a
+  call).
+- V2c. Mini to x86: `Stops` for every `n` gives an x86 run that never
+  returns (determinism up to flags, `rsp` below the entry `rsp` until the
+  return).
+- V2d. Core to mini: Core out of fuel at `k` gives `Stops ((k - d) / (D + 1))`
+  (`D` the deepest nesting in a body); a checked trap, or a heap past the
+  limit, gives `Stops` for every `n`.
+- V2e. `compileSource_behaviour`: an x86 run that returns is a Core run
+  that returns, with the same results, unless Core hits an undefined trap.

@@ -7,6 +7,7 @@ public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
+public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
 public import Lanius.Faithful.Gen.SelfStmtC_copyBinding
 public import Lanius.Faithful.Gen.SelfStmtC_lookup
@@ -56,6 +57,16 @@ theorem proof_eval_call_sig {prog : SrcProgram} {prims : Prims} {ix_eval_call_si
   simp only [src_eval_call_sig] at h
   faithful [Lanius.Mini.evalCallSig]
 
+theorem proof_eval_checked {prog : SrcProgram} {prims : Prims} {ix_eval_checked ix_check_then : Nat} (fn : prog.funcs[ix_eval_checked]? = some (src_eval_checked ix_check_then)) (np : prims.isPrim ix_eval_checked = false)
+    (ext_check_then : Certified (∀ {n : Nat}, Stmt_check_then prog prims ix_check_then n)) {n : Nat} :
+    Stmt_eval_checked prog prims ix_eval_checked n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_eval_checked] at h
+  faithful [Lanius.Mini.evalChecked]
+
 theorem proof_eval_copy {prog : SrcProgram} {prims : Prims} {ix_eval_copy ix_lower_value ix_eval_values : Nat} (fn : prog.funcs[ix_eval_copy]? = some (src_eval_copy ix_lower_value ix_eval_values)) (np : prims.isPrim ix_eval_copy = false)
     (ext_lower_value : Certified (∀ {n : Nat}, Stmt_lower_value prog prims ix_lower_value n))
     (ext_eval_values : Certified (∀ {n : Nat}, Stmt_eval_values prog prims ix_eval_values n)) {n : Nat} :
@@ -100,10 +111,11 @@ theorem proof_eval_field_type {prog : SrcProgram} {prims : Prims} {ix_eval_field
   simp only [src_eval_field_type] at h
   faithful [Lanius.Mini.evalFieldType]
 
-theorem proof_eval_pure {prog : SrcProgram} {prims : Prims} {ix_eval_pure ix_lookup ix_SrcExpr_lower ix_eval_scalar ix_eval_copy ix_eval_field_copy : Nat} (fn : prog.funcs[ix_eval_pure]? = some (src_eval_pure ix_lookup ix_SrcExpr_lower ix_eval_scalar ix_eval_copy ix_eval_field_copy)) (np : prims.isPrim ix_eval_pure = false)
+theorem proof_eval_pure {prog : SrcProgram} {prims : Prims} {ix_eval_pure ix_SrcExpr_guard ix_lookup ix_SrcExpr_lower ix_eval_checked ix_eval_copy ix_eval_field_copy : Nat} (fn : prog.funcs[ix_eval_pure]? = some (src_eval_pure ix_SrcExpr_guard ix_lookup ix_SrcExpr_lower ix_eval_checked ix_eval_copy ix_eval_field_copy)) (np : prims.isPrim ix_eval_pure = false)
+    (ext_SrcExpr_guard : Certified (∀ {n : Nat}, Stmt_SrcExpr_guard prog prims ix_SrcExpr_guard n))
     (ext_lookup : Certified (∀ {n : Nat}, Stmt_lookup prog prims ix_lookup n))
     (ext_SrcExpr_lower : Certified (∀ {n : Nat}, Stmt_SrcExpr_lower prog prims ix_SrcExpr_lower n))
-    (ext_eval_scalar : Certified (∀ {n : Nat}, Stmt_eval_scalar prog prims ix_eval_scalar n))
+    (ext_eval_checked : Certified (∀ {n : Nat}, Stmt_eval_checked prog prims ix_eval_checked n))
     (ext_eval_copy : Certified (∀ {n : Nat}, Stmt_eval_copy prog prims ix_eval_copy n))
     (ext_eval_field_copy : Certified (∀ {n : Nat}, Stmt_eval_field_copy prog prims ix_eval_field_copy n)) {n : Nat} :
     Stmt_eval_pure prog prims ix_eval_pure n := by
@@ -113,15 +125,6 @@ theorem proof_eval_pure {prog : SrcProgram} {prims : Prims} {ix_eval_pure ix_loo
   rw [pcall_succ np fn] at h
   simp only [src_eval_pure] at h
   faithful [Lanius.Mini.evalPure]
-
-theorem proof_eval_scalar {prog : SrcProgram} {prims : Prims} {ix_eval_scalar : Nat} (fn : prog.funcs[ix_eval_scalar]? = some (src_eval_scalar)) (np : prims.isPrim ix_eval_scalar = false) {n : Nat} :
-    Stmt_eval_scalar prog prims ix_eval_scalar n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_eval_scalar] at h
-  faithful [Lanius.Mini.evalScalar]
 
 theorem proof_eval_values {prog : SrcProgram} {prims : Prims} {ix_eval_values ix_assign_from : Nat} (fn : prog.funcs[ix_eval_values]? = some (src_eval_values ix_assign_from)) (np : prims.isPrim ix_eval_values = false)
     (ext_assign_from : Certified (∀ {n : Nat}, Stmt_assign_from prog prims ix_assign_from n)) {n : Nat} :

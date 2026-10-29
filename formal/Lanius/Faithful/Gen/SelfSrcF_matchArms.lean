@@ -26,7 +26,7 @@ def src_cons_arm (ix_cons_arm_tail : Nat) : SrcFunc := { params := [{ id := 9, t
 def src_cons_arm_tail (ix_cons_of_mini_selfhost_SrcArm : Nat) : SrcFunc := { params := [{ id := 14, ty := ty20 }, { id := 25, ty := ty310 }], ret := ty310, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 25)) ty310 ty310 [[168], []] [SrcEff.eVariant ty310 0 [SrcEff.eCall ix_cons_of_mini_selfhost_SrcArm [SrcEff.ePure (SrcExpr.local 14), SrcEff.ePure (SrcExpr.local 168)]], SrcEff.eVariant ty310 1 []]) }
 
 /-- mini::selfhost::is_some_name -/
-def src_is_some_name : SrcFunc := { params := [{ id := 13, ty := ty205 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 13)) ty205 (SrcType.bool) [[126], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
+def src_is_some_name : SrcFunc := { params := [{ id := 13, ty := ty207 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 13)) ty207 (SrcType.bool) [[126], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
 
 /-- mini::selfhost::match_arms -/
 def src_match_arms : SrcFunc := { params := [{ id := 11, ty := SrcType.uint (UintTy.usize) }, { id := 29, ty := ty148 }, { id := 38, ty := ty310 }], ret := ty279, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 38)) ty310 ty279 [[176], []] [SrcEff.eVariant ty279 0 [SrcEff.eVariant ty278 4 [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.local 29), SrcEff.ePure (SrcExpr.local 176)]], SrcEff.eVariant ty279 1 []]) }

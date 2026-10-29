@@ -5,6 +5,7 @@ public import Lanius.Mini.Compiler.P.BinOp_folds
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Expr_agrees
 public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.Stmt_kills
 public import Lanius.Mini.Compiler.P.Word_narrows
 public import Lanius.Mini.Compiler.P.binaryConstant
@@ -17,7 +18,6 @@ public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.indexOf
 public import Lanius.Mini.Compiler.P.lookup
 public import Lanius.Mini.Compiler.P.lowerBody
-public import Lanius.Mini.Compiler.P.lowerLocal
 public import Lanius.Mini.Compiler.P.lowerSetValues
 public import Lanius.Mini.Compiler.P.pow2
 public import Lanius.Mini.Compiler.P.structFields

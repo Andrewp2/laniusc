@@ -28,6 +28,10 @@ abbrev Stmt_eval_call_sig (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {x0 : Lanius.Mini.Sig} {x1 : Nat} {x2 : Nat} {x3 : Lanius.Mini.EvaluatedArgs} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSig x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepEvaluatedArgs x3 v3 →
     (RepOption 151 RepEvaluated) (Lanius.Mini.evalCallSig x0 x1 x2 x3) w
 
+abbrev Stmt_eval_checked (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepExpr x1 v1 → RepTyped x2 v2 →
+    RepEvaluated (Lanius.Mini.evalChecked x0 x1 x2) w
+
 abbrev Stmt_eval_copy (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcExpr} {x2 : Nat} {x3 : Option Lanius.Mini.Binding} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 128 RepBinding) x0 v0 → RepSrcExpr x1 v1 → RepNat x2 v2 → (RepOption 147 RepBinding) x3 v3 →
     (RepOption 151 RepEvaluated) (Lanius.Mini.evalCopy x0 x1 x2 x3) w
@@ -47,10 +51,6 @@ abbrev Stmt_eval_field_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
 abbrev Stmt_eval_pure (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcExpr} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 128 RepBinding) x0 v0 → RepSrcExpr x1 v1 → RepNat x2 v2 →
     (RepOption 151 RepEvaluated) (Lanius.Mini.evalPure x0 x1 x2) w
-
-abbrev Stmt_eval_scalar (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepTyped x1 v1 →
-    RepEvaluated (Lanius.Mini.evalScalar x0 x1) w
 
 abbrev Stmt_eval_values (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : Option (List Lanius.Mini.Expr)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepSrcType x1 v1 → (RepOption 145 (RepList 86 RepExpr)) x2 v2 →

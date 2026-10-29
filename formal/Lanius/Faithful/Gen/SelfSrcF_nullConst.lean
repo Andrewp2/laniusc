@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::literal_as -/
-def src_literal_as (ix_typed_literal : Nat) : SrcFunc := { params := [{ id := 11, ty := ty228 }, { id := 40, ty := ty280 }], ret := ty280, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty228 ty280 [[167], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 40)) ty280 ty280 [[229], []] [SrcEff.eCall ix_typed_literal [SrcEff.ePure (SrcExpr.local 167), SrcEff.ePure (SrcExpr.local 229)], SrcEff.eVariant ty280 1 []], SrcEff.eVariant ty280 1 []]) }
+def src_literal_as (ix_typed_literal : Nat) : SrcFunc := { params := [{ id := 11, ty := ty229 }, { id := 40, ty := ty280 }], ret := ty280, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty229 ty280 [[167], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 40)) ty280 ty280 [[229], []] [SrcEff.eCall ix_typed_literal [SrcEff.ePure (SrcExpr.local 167), SrcEff.ePure (SrcExpr.local 229)], SrcEff.eVariant ty280 1 []], SrcEff.eVariant ty280 1 []]) }
 
 /-- mini::selfhost::null_const -/
 def src_null_const : SrcFunc := { params := [{ id := 11, ty := SrcType.i32 }], ret := ty280, body := SrcStmt.then (SrcStmt.if (SrcExpr.apply (SrcOp.equal) (SrcExpr.cast (SrcType.uint (UintTy.uint32)) (SrcExpr.local 11)) (SrcExpr.unsigned (UintTy.uint32) 0x0000000000000000#64)) (SrcStmt.returnEval (SrcEff.eVariant ty280 0 [SrcEff.eVariant ty14 9 []])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty280 1 [])) }

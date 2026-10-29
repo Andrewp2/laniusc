@@ -2050,6 +2050,193 @@ impl SrcExpr {
     }
 }
 
+// Checked shifts. Core traps on a shift amount outside 0..bits of the
+// operand type, where x86 masks the amount, so the code first divides 1 by a
+// guard: a word that is 1 when every shift Core evaluates has its amount in
+// range, and 0 otherwise. A guard that is Lit(1) emits no check.
+
+// The literal 1.
+pub fn is_one(e: Expr) -> bool {
+    return match (e) {
+        Lit(value) -> value == 1,
+        Var(slot) -> false,
+        Expr::Neg(operand) -> false,
+        Binary(word, operation, left, right) -> false,
+        Compare(word, operation, left, right) -> false,
+    };
+}
+
+// Both guards hold.
+pub fn guard_and(a: Expr, b: Expr) -> Expr {
+    if (is_one(a)) {
+        return b;
+    }
+    if (is_one(b)) {
+        return a;
+    }
+    return Binary(U64, And, boxed(a), boxed(b));
+}
+
+// Either word is nonzero, as 1 or 0.
+pub fn guard_or(a: Expr, b: Expr) -> Expr {
+    if (is_one(a) || is_one(b)) {
+        return Lit(1);
+    }
+    return Compare(U64, Ne, boxed(Binary(U64, Or, boxed(a), boxed(b))), boxed(Lit(0)));
+}
+
+impl UintTy {
+    // Its width in bits.
+    pub fn bits(self) -> u64 {
+        return match (self) {
+            Uint8 -> 8,
+            Uint32 -> 32,
+            Uint64 -> 64,
+            Usize -> 64,
+        };
+    }
+}
+
+// The bits of a shift's operand type.
+pub fn shift_width(ty: SrcType) -> u64 {
+    return match (ty) {
+        I32 -> 32,
+        Bool -> 64,
+        Uint(kind) -> kind.bits(),
+        Struct(id, fields) -> 64,
+        Enum(id, variants) -> 64,
+        Ptr -> 64,
+        Slice(element) -> 64,
+        Unit -> 64,
+        Isize -> 64,
+    };
+}
+
+// A literal amount below width.
+pub fn literal_below(amount: Expr, width: u64) -> bool {
+    return match (amount) {
+        Lit(value) -> value < width,
+        Var(slot) -> false,
+        Expr::Neg(operand) -> false,
+        Binary(word, operation, left, right) -> false,
+        Compare(word, operation, left, right) -> false,
+    };
+}
+
+// amount below width, compared as unsigned words: a negative i32 or isize
+// amount is a large word. A literal amount below width needs no check.
+pub fn amount_guard(width: u64, amount: Expr) -> Expr {
+    if (literal_below(amount, width)) {
+        return Lit(1);
+    }
+    return Compare(U64, Lt, boxed(amount), boxed(Lit(width)));
+}
+
+// The guard of a shift of left by right, both lowered.
+pub fn shift_guard(left: core::option::Option<Typed>, right: core::option::Option<Typed>) -> Expr {
+    return match (left) {
+        None -> Lit(1),
+        Some(l) -> match (right) {
+            None -> Lit(1),
+            Some(r) -> amount_guard(shift_width(l.ty), r.expr),
+        },
+    };
+}
+
+// The left operand of && is false, as 1 or 0.
+pub fn left_false(left: core::option::Option<Typed>) -> Expr {
+    return match (left) {
+        None -> Lit(1),
+        Some(l) -> Compare(U64, Eq, boxed(l.expr), boxed(Lit(0))),
+    };
+}
+
+// The left operand of || is true.
+pub fn left_true(left: core::option::Option<Typed>) -> Expr {
+    return match (left) {
+        None -> Lit(1),
+        Some(l) -> l.expr,
+    };
+}
+
+// The guard of op on two operands with guards gl and gr: Core skips the right
+// operand of && and || when the left one decides.
+pub fn apply_guard(op: SrcOp, left: core::option::Option<Typed>, right: core::option::Option<Typed>, gl: Expr, gr: Expr) -> Expr {
+    return match (op) {
+        Plus -> guard_and(gl, gr),
+        Minus -> guard_and(gl, gr),
+        Times -> guard_and(gl, gr),
+        BitAnd -> guard_and(gl, gr),
+        BitOr -> guard_and(gl, gr),
+        BitXor -> guard_and(gl, gr),
+        ShiftLeft -> guard_and(guard_and(gl, gr), shift_guard(left, right)),
+        ShiftRight -> guard_and(guard_and(gl, gr), shift_guard(left, right)),
+        Less -> guard_and(gl, gr),
+        LessEq -> guard_and(gl, gr),
+        Greater -> guard_and(gl, gr),
+        GreaterEq -> guard_and(gl, gr),
+        Equal -> guard_and(gl, gr),
+        NotEqual -> guard_and(gl, gr),
+        LogicalAnd -> guard_and(gl, guard_or(left_false(left), gr)),
+        LogicalOr -> guard_and(gl, guard_or(left_true(left), gr)),
+    };
+}
+
+impl SrcExpr {
+    // The expression's guard: 1 when every shift Core evaluates in it has
+    // its amount in range.
+    pub fn guard(self, scope: List<Binding>) -> Expr {
+        return match (self) {
+            Int(value) -> Lit(1),
+            Boolean(value) -> Lit(1),
+            Unsigned(kind, value) -> Lit(1),
+            Local(id) -> Lit(1),
+            Field(id, index) -> Lit(1),
+            Negate(operand) -> unbox(operand).guard(scope),
+            Not(operand) -> unbox(operand).guard(scope),
+            Apply(op, left, right) -> apply_guard(op, unbox(left).lower(scope), unbox(right).lower(scope), unbox(left).guard(scope), unbox(right).guard(scope)),
+            Cast(ty, operand) -> unbox(operand).guard(scope),
+            Null -> Lit(1),
+        };
+    }
+}
+
+// The guards of expressions Core evaluates one after another.
+pub fn guard_all(scope: List<Binding>, es: List<SrcExpr>) -> Expr {
+    return match (es) {
+        Nil -> Lit(1),
+        Cons(e, rest) -> guard_and(e.guard(scope), guard_all(scope, unbox(rest))),
+    };
+}
+
+// 1 / 0 into slot: a division fault.
+pub fn trap(slot: usize) -> Stmt {
+    return Stmt::Divide(U64, UDiv, slot, Lit(1), Lit(0));
+}
+
+// The check of g, then s: s when g is nonzero, else the trap.
+pub fn check_then(slot: usize, g: Expr, s: Stmt) -> Stmt {
+    if (is_one(g)) {
+        return s;
+    }
+    return Ite(g, boxed(s), boxed(trap(slot)));
+}
+
+// s, then the check of g.
+pub fn then_check(slot: usize, g: Expr, s: Stmt) -> Stmt {
+    if (is_one(g)) {
+        return s;
+    }
+    return Seq(boxed(s), boxed(Ite(g, boxed(Skip), boxed(trap(slot)))));
+}
+
+pub fn guarded(slot: usize, g: Expr, s: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (s) {
+        None -> None,
+        Some(b) -> Some(check_then(slot, g, b)),
+    };
+}
+
 pub fn expect_type(typed: Typed, ty: SrcType) -> core::option::Option<Expr> {
     if (typed.ty.same(ty)) {
         return Some(typed.expr);
@@ -2280,15 +2467,24 @@ pub fn lower_arm_value(scope: core::option::Option<List<Binding>>, value: SrcExp
     };
 }
 
-// Arm k stores its value's slots from target; the last arm needs no tag test.
-pub fn lower_arm(slot: usize, target: usize, k: usize, values: core::option::Option<List<Expr>>, rest: List<SrcArm>, others: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+// The guard of an arm's value in the arm's scope.
+pub fn arm_guard(scope: core::option::Option<List<Binding>>, value: SrcExpr) -> Expr {
+    return match (scope) {
+        None -> Lit(1),
+        Some(s) -> value.guard(s),
+    };
+}
+
+// Arm k checks its guard g and stores its value's slots from target; the last
+// arm needs no tag test.
+pub fn lower_arm(slot: usize, target: usize, k: usize, g: Expr, values: core::option::Option<List<Expr>>, rest: List<SrcArm>, others: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (values) {
         None -> None,
         Some(vs) -> match (rest) {
-            Nil -> Some(assign_from(target, vs, Skip)),
+            Nil -> Some(check_then(target, g, assign_from(target, vs, Skip))),
             Cons(arm, more) -> match (others) {
                 None -> None,
-                Some(o) -> Some(Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(k as u64))), boxed(assign_from(target, vs, Skip)), boxed(o))),
+                Some(o) -> Some(Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(k as u64))), boxed(check_then(target, g, assign_from(target, vs, Skip))), boxed(o))),
             },
         },
     };
@@ -2300,7 +2496,7 @@ pub fn lower_arms(scope: List<Binding>, slot: usize, target: usize, ty: SrcType,
         Nil -> None,
         Cons(arm, rest) -> match (variants) {
             Nil -> None,
-            Cons(types, more) -> lower_arm(slot, target, k, lower_arm_value(arm_scope(arm.binders, types, plus(slot, 1), scope), arm.value, ty), unbox(rest), lower_arms(scope, slot, target, ty, plus(k, 1), unbox(more), unbox(rest))),
+            Cons(types, more) -> lower_arm(slot, target, k, arm_guard(arm_scope(arm.binders, types, plus(slot, 1), scope), arm.value), lower_arm_value(arm_scope(arm.binders, types, plus(slot, 1), scope), arm.value, ty), unbox(rest), lower_arms(scope, slot, target, ty, plus(k, 1), unbox(more), unbox(rest))),
         },
     };
 }
@@ -2373,6 +2569,11 @@ pub fn eval_scalar(slot: usize, t: Typed) -> Evaluated {
     return Evaluated { stmt: Assign(slot, t.expr), ty: t.ty };
 }
 
+// The value of a pure expression with guard g.
+pub fn eval_checked(slot: usize, g: Expr, t: Typed) -> Evaluated {
+    return Evaluated { stmt: check_then(slot, g, Assign(slot, t.expr)), ty: t.ty };
+}
+
 pub fn eval_typed(slot: usize, t: core::option::Option<Typed>) -> core::option::Option<Evaluated> {
     return match (t) {
         None -> None,
@@ -2436,7 +2637,7 @@ pub fn eval_field_copy(scope: List<Binding>, e: SrcExpr, slot: usize, binding: c
 
 pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option::Option<Evaluated> {
     return match (e.lower(scope)) {
-        Some(t) -> Some(eval_scalar(slot, t)),
+        Some(t) -> Some(eval_checked(slot, e.guard(scope), t)),
         None -> match (e) {
             Int(value) -> None,
             Boolean(value) -> None,
@@ -2505,11 +2706,34 @@ pub fn eval_right(slot: usize, r: Evaluated) -> Stmt {
 
 // left in slot, right in slot + 1. && and || run the right side's code
 // only when Core evaluates it.
+// The guard of op on evaluated operands, the right one at slot: shifts check
+// their amount, after the result is in the left operand's slot.
+pub fn operand_guard(op: SrcOp, ty: SrcType, slot: usize) -> Expr {
+    return match (op) {
+        Plus -> Lit(1),
+        Minus -> Lit(1),
+        Times -> Lit(1),
+        BitAnd -> Lit(1),
+        BitOr -> Lit(1),
+        BitXor -> Lit(1),
+        ShiftLeft -> amount_guard(shift_width(ty), Var(slot)),
+        ShiftRight -> amount_guard(shift_width(ty), Var(slot)),
+        Less -> Lit(1),
+        LessEq -> Lit(1),
+        Greater -> Lit(1),
+        GreaterEq -> Lit(1),
+        Equal -> Lit(1),
+        NotEqual -> Lit(1),
+        LogicalAnd -> Lit(1),
+        LogicalOr -> Lit(1),
+    };
+}
+
 pub fn eval_operands(op: SrcOp, slot: usize, l: Evaluated, r: Evaluated) -> core::option::Option<Evaluated> {
     if (l.ty.is_scalar() && r.ty.is_scalar() && (short_circuit(op) == 0)) {
         return match (op.lower(Typed { expr: Var(slot), ty: l.ty }, Typed { expr: Var(plus(slot, 1)), ty: r.ty })) {
             None -> None,
-            Some(t) -> Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Assign(slot, t.expr))))), ty: t.ty }),
+            Some(t) -> Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(then_check(plus(slot, 1), operand_guard(op, l.ty, plus(slot, 1)), Assign(slot, t.expr)))))), ty: t.ty }),
         };
     }
     if (l.ty.is_bool() && r.ty.is_bool() && (short_circuit(op) == 1)) {
@@ -2977,12 +3201,13 @@ pub fn lower_if(condition: core::option::Option<Expr>, then_branch: core::option
     };
 }
 
-pub fn lower_while(condition: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+// The body checks the condition's guard g before Core evaluates it again.
+pub fn lower_while(slot: usize, g: Expr, condition: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (condition) {
         None -> None,
         Some(c) -> match (body) {
             None -> None,
-            Some(b) -> Some(Loop(c, boxed(b))),
+            Some(b) -> Some(Loop(c, boxed(then_check(slot, g, b)))),
         },
     };
 }
@@ -3699,25 +3924,25 @@ impl SrcStmt {
     pub fn lower(self, sigs: List<Sig>, decls: SrcDecls, ret: SrcType, scope: List<Binding>, next: usize) -> core::option::Option<Stmt> {
         return match (self) {
             Nop -> Some(Skip),
-            Let(id, ty, value, body) -> lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            LetStruct(id, ty, fields, body) -> lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            LetCall(id, ty, callee, args, body) -> lower_let_call(next, ty.size(), callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            LetEnum(id, ty, variant, payload, body) -> lower_let(next, lower_enum_value(scope, ty, variant, payload), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
+            Let(id, ty, value, body) -> guarded(next, value.guard(scope), lower_let(next, lower_value(scope, value, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
+            LetStruct(id, ty, fields, body) -> guarded(next, guard_all(scope, fields), lower_let(next, lower_literal(scope, ty, fields), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
+            LetCall(id, ty, callee, args, body) -> guarded(next, guard_all(scope, args), lower_let_call(next, ty.size(), callee, lower_call(sigs, scope, callee, args, ty), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
+            LetEnum(id, ty, variant, payload, body) -> guarded(next, guard_all(scope, payload), lower_let(next, lower_enum_value(scope, ty, variant, payload), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
             LetMatch(id, ty, scrutinee, enum_id, arms, body) -> lower_then(lower_match(scope, lookup(scope, scrutinee), enum_id, arms, ty, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            Set(id, value) -> lower_set(lookup(scope, id), scope, value),
-            SetField(id, index, value) -> lower_set_field(lookup(scope, id), index, scope, value),
-            SetCall(id, callee, args) -> lower_set_call(sigs, scope, lookup(scope, id), callee, args),
+            Set(id, value) -> guarded(next, value.guard(scope), lower_set(lookup(scope, id), scope, value)),
+            SetField(id, index, value) -> guarded(next, value.guard(scope), lower_set_field(lookup(scope, id), index, scope, value)),
+            SetCall(id, callee, args) -> guarded(next, guard_all(scope, args), lower_set_call(sigs, scope, lookup(scope, id), callee, args)),
             Then(first, second) -> lower_then(unbox(first).lower(sigs, decls, ret, scope, next), unbox(second).lower(sigs, decls, ret, scope, next)),
-            If(condition, then_branch, else_branch) -> lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
-            While(condition, body) -> lower_while(lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next)),
-            Return(value) -> lower_return(lower_value(scope, value, ret)),
-            LetAlloc(id, size, shift, body) -> lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr }, scope), plus(next, 1))),
-            LetLoad(id, pointer, offset, body) -> lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1))),
-            SetByte(pointer, offset, value) -> lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8))),
-            Free(pointer, size, shift) -> lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize))),
-            LetSlice(id, element, pointer, length, body) -> lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 1))),
-            LetIndex(id, ty, slice, index, body) -> lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            SetIndex(slice, index, value) -> lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value),
+            If(condition, then_branch, else_branch) -> guarded(next, condition.guard(scope), lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next))),
+            While(condition, body) -> guarded(next, condition.guard(scope), lower_while(next, condition.guard(scope), lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next))),
+            Return(value) -> guarded(next, value.guard(scope), lower_return(lower_value(scope, value, ret))),
+            LetAlloc(id, size, shift, body) -> guarded(next, size.guard(scope), lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr }, scope), plus(next, 1)))),
+            LetLoad(id, pointer, offset, body) -> guarded(next, guard_and(pointer.guard(scope), offset.guard(scope)), lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1)))),
+            SetByte(pointer, offset, value) -> guarded(next, guard_and(pointer.guard(scope), guard_and(offset.guard(scope), value.guard(scope))), lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8)))),
+            Free(pointer, size, shift) -> guarded(next, guard_and(pointer.guard(scope), size.guard(scope)), lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize)))),
+            LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 1)))),
+            LetIndex(id, ty, slice, index, body) -> guarded(next, index.guard(scope), lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
+            SetIndex(slice, index, value) -> guarded(next, guard_and(index.guard(scope), value.guard(scope)), lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value)),
             LetEval(id, ty, value, body) -> lower_let_eval(ty, value.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, decls, scope, next)),
             IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, decls, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),

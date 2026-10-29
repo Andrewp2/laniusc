@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.armScope
 import Lanius.Mini.Compiler.P.copyBinding
 
@@ -22,17 +23,23 @@ def lowerArmValue (scope : Option (List Binding)) (value : SrcExpr) (ty : SrcTyp
   | none => none
   | some s => lowerValue s value ty
 
-/-- Arm k stores its value's slots from target; the last arm needs no tag test. -/
-def lowerArm (slot : Nat) (target : Nat) (k : Nat) (values : Option (List Expr)) (rest : List SrcArm) (others : Option Stmt) : Option Stmt :=
+/-- The guard of an arm's value in the arm's scope. -/
+def armGuard (scope : Option (List Binding)) (value : SrcExpr) : Expr :=
+  match scope with
+  | none => Expr.lit 1
+  | some s => SrcExpr.guard value s
+
+/-- Arm k checks its guard g and stores its value's slots from target; the last arm needs no tag test. -/
+def lowerArm (slot : Nat) (target : Nat) (k : Nat) (g : Expr) (values : Option (List Expr)) (rest : List SrcArm) (others : Option Stmt) : Option Stmt :=
   match values with
   | none => none
   | some vs =>
     match rest with
-    | [] => some (assignFrom target vs Stmt.skip)
+    | [] => some (checkThen target g (assignFrom target vs Stmt.skip))
     | arm :: more =>
       match others with
       | none => none
-      | some o => some (Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 64 k))) (assignFrom target vs Stmt.skip) o)
+      | some o => some (Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 64 k))) (checkThen target g (assignFrom target vs Stmt.skip)) o)
 
 /-- Arms k, k + 1, ... of a match on the enum at slot, one per variant from k. -/
 def lowerArms (scope : List Binding) (slot : Nat) (target : Nat) (ty : SrcType) (k : Nat) (variants : List (List SrcType)) (arms : List SrcArm) : Option Stmt :=
@@ -41,6 +48,6 @@ def lowerArms (scope : List Binding) (slot : Nat) (target : Nat) (ty : SrcType) 
   | arm :: rest =>
     match variants with
     | [] => none
-    | types :: more => lowerArm slot target k (lowerArmValue (armScope arm.binders types (slot + 1) scope) arm.value ty) rest (lowerArms scope slot target ty (k + 1) more rest)
+    | types :: more => lowerArm slot target k (armGuard (armScope arm.binders types (slot + 1) scope) arm.value) (lowerArmValue (armScope arm.binders types (slot + 1) scope) arm.value ty) rest (lowerArms scope slot target ty (k + 1) more rest)
 
 end Lanius.Mini

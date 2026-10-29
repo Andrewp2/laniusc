@@ -287,6 +287,22 @@ def EvalSound (sp : SrcProgram) (mp : Program) (fuel : Nat) : Prop :=
     st'.heap.nextAddress ≤ hp.limit →
     Evaluates mp hp slot st env ev v st'
 
+/-- The amount check of a shift of two evaluated operands passes. -/
+theorem operandGuard_pass {op : SrcOp} {slot : Nat} {lty rty : SrcType} {t : Typed}
+    (lowered : op.lower ⟨.var slot, lty⟩ ⟨.var (slot + 1), rty⟩ = some t) {env : Env} {vl vr v : Value}
+    (holdsl : lty.Holds vl ((Expr.var slot).eval env)) (holdsr : rty.Holds vr ((Expr.var (slot + 1)).eval env))
+    (evaluated : Semantics.evalBinaryValue .x86_64 op.toCore vl vr = .ok v) {x : BitVec 64} :
+    (operandGuard op lty (slot + 1)).eval (env.set slot x) ≠ 0 := by
+  have amount : (operandGuard op lty (slot + 1)).eval (env.set slot x) = 1 := by
+    cases op
+    case shiftLeft | shiftRight =>
+      refine amountGuard_one ?_
+      have lt := shift_amount (by simp) lowered holdsl holdsr evaluated
+      simpa [Expr.eval, Env.set] using lt
+    all_goals rfl
+  rw [amount]
+  decide
+
 section Cases
 
 variable {sp : SrcProgram} {mp : Program} {hp : Heap} {scope : List Binding} {slot : Nat}
@@ -299,10 +315,11 @@ theorem eval_pure {e : SrcExpr} {fuel : Nat} (ok : evalPure scope e slot = some 
   simp only [evalPure] at ok
   split at ok
   · rename_i t lowered
-    simp only [evalScalar, Option.some.injEq] at ok
+    simp only [evalChecked, Option.some.injEq] at ok
     subst ok
+    have one := e.guard_sound corr (SrcProgram.target_toCore sp) lowered run
     obtain ⟨rfl, holds⟩ := e.lower_sound corr (SrcProgram.target_toCore sp) lowered run
-    exact ⟨fresh, Keeps.refl _ _, rfl, by rw [SrcType.size_scalar holds.scalar]; decide, 0, _, hp, .assign,
+    exact ⟨fresh, Keeps.refl _ _, rfl, by rw [SrcType.size_scalar holds.scalar]; decide, 0, _, hp, Exec.assign.checkThen one,
       fun j below => set_below below, holdsAt_set holds env slot, hc⟩
   · cases e
     case «local» id =>
@@ -500,7 +517,9 @@ theorem eval_apply {k : Nat} (ihe : EvalSound sp mp k) {op : SrcOp} {l r : SrcEf
     have holdsl := holds_var (env := env2) (holds1.congr fun i below => same2 _ (by omega)) scalarL
     have holds := SrcOp.lower_holds lowered strict holdsl (holds_var holds2 scalarR) evaluated
     refine ⟨fresh2, keeps1.chain keeps2, locals2.trans locals1, by rw [SrcType.size_scalar holds.scalar]; decide,
-      max d1 d2, _, hp2, .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) .assign),
+      max d1 d2, _, hp2, .seq (exec1.mono (Nat.le_max_left _ _))
+        (.seq (exec2.mono (Nat.le_max_right _ _)) (Exec.assign.thenCheck (operandGuard_pass lowered holdsl
+          (holds_var holds2 scalarR) evaluated))),
       fun j below => by rw [set_below below, same2 j (by omega), same1 j below], holdsAt_set holds env2 slot, hc2⟩
   · rename_i notStrict
     split at ok

@@ -3,6 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.armScope
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
@@ -13,7 +14,6 @@ import Lanius.Mini.Compiler.P.evalSame
 import Lanius.Mini.Compiler.P.indexOf
 import Lanius.Mini.Compiler.P.lookup
 import Lanius.Mini.Compiler.P.lowerCallSig
-import Lanius.Mini.Compiler.P.lowerLocal
 import Lanius.Mini.Compiler.P.matchDst
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.pow2

@@ -20,13 +20,17 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+abbrev Stmt_arm_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option (List Lanius.Mini.Binding)} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 189 (RepList 128 RepBinding)) x0 v0 → RepSrcExpr x1 v1 →
+    RepExpr (Lanius.Mini.armGuard x0 x1) w
+
 abbrev Stmt_assign_from (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.Expr} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 86 RepExpr) x1 v1 → RepStmt x2 v2 →
     RepStmt (Lanius.Mini.assignFrom x0 x1 x2) w
 
 abbrev Stmt_lower_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Option (List Lanius.Mini.Expr)} {x4 : List Lanius.Mini.SrcArm} {x5 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 145 (RepList 86 RepExpr)) x3 v3 → (RepList 22 RepSrcArm) x4 v4 → (RepOption 127 RepStmt) x5 v5 →
-    (RepOption 127 RepStmt) (Lanius.Mini.lowerArm x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Option (List Lanius.Mini.Expr)} {x5 : List Lanius.Mini.SrcArm} {x6 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → (RepOption 145 (RepList 86 RepExpr)) x4 v4 → (RepList 22 RepSrcArm) x5 v5 → (RepOption 127 RepStmt) x6 v6 →
+    (RepOption 127 RepStmt) (Lanius.Mini.lowerArm x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_lower_arm_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.Binding)} {x1 : Lanius.Mini.SrcExpr} {x2 : Lanius.Mini.SrcType} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 189 (RepList 128 RepBinding)) x0 v0 → RepSrcExpr x1 v1 → RepSrcType x2 v2 →

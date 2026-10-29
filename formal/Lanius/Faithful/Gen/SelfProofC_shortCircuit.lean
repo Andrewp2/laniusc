@@ -9,7 +9,9 @@ public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
+public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_conjunction
+public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
 public import Lanius.Faithful.Gen.SelfStmtC_lookup
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
 public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
@@ -115,13 +117,15 @@ theorem proof_eval_negate {prog : SrcProgram} {prims : Prims} {ix_eval_negate ix
   simp only [src_eval_negate] at h
   faithful [Lanius.Mini.evalNegate]
 
-theorem proof_eval_operands {prog : SrcProgram} {prims : Prims} {ix_eval_operands ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_SrcType_is_bool ix_SrcOp_lower ix_short_circuit ix_eval_right : Nat} (fn : prog.funcs[ix_eval_operands]? = some (src_eval_operands ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_SrcType_is_bool ix_SrcOp_lower ix_short_circuit ix_eval_right)) (np : prims.isPrim ix_eval_operands = false)
+theorem proof_eval_operands {prog : SrcProgram} {prims : Prims} {ix_eval_operands ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_then_check ix_SrcOp_lower ix_SrcType_is_bool ix_short_circuit ix_operand_guard ix_eval_right : Nat} (fn : prog.funcs[ix_eval_operands]? = some (src_eval_operands ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_then_check ix_SrcOp_lower ix_SrcType_is_bool ix_short_circuit ix_operand_guard ix_eval_right)) (np : prims.isPrim ix_eval_operands = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
     (ext_SrcType_is_scalar : Certified (∀ {n : Nat}, Stmt_SrcType_is_scalar prog prims ix_SrcType_is_scalar n))
-    (ext_SrcType_is_bool : Certified (∀ {n : Nat}, Stmt_SrcType_is_bool prog prims ix_SrcType_is_bool n))
+    (ext_then_check : Certified (∀ {n : Nat}, Stmt_then_check prog prims ix_then_check n))
     (ext_SrcOp_lower : Certified (∀ {n : Nat}, Stmt_SrcOp_lower prog prims ix_SrcOp_lower n))
+    (ext_SrcType_is_bool : Certified (∀ {n : Nat}, Stmt_SrcType_is_bool prog prims ix_SrcType_is_bool n))
     (ext_short_circuit : Certified (∀ {n : Nat}, Stmt_short_circuit prog prims ix_short_circuit n))
+    (ext_operand_guard : Certified (∀ {n : Nat}, Stmt_operand_guard prog prims ix_operand_guard n))
     (ext_eval_right : Certified (∀ {n : Nat}, Stmt_eval_right prog prims ix_eval_right n)) {n : Nat} :
     Stmt_eval_operands prog prims ix_eval_operands n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
@@ -207,6 +211,17 @@ theorem proof_eval_variant {prog : SrcProgram} {prims : Prims} {ix_eval_variant 
   rw [pcall_succ np fn] at h
   simp only [src_eval_variant] at h
   faithful [Lanius.Mini.evalVariant]
+
+theorem proof_operand_guard {prog : SrcProgram} {prims : Prims} {ix_operand_guard ix_amount_guard ix_shift_width : Nat} (fn : prog.funcs[ix_operand_guard]? = some (src_operand_guard ix_amount_guard ix_shift_width)) (np : prims.isPrim ix_operand_guard = false)
+    (ext_amount_guard : Certified (∀ {n : Nat}, Stmt_amount_guard prog prims ix_amount_guard n))
+    (ext_shift_width : Certified (∀ {n : Nat}, Stmt_shift_width prog prims ix_shift_width n)) {n : Nat} :
+    Stmt_operand_guard prog prims ix_operand_guard n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_operand_guard] at h
+  faithful [Lanius.Mini.operandGuard]
 
 theorem proof_scalar_cast {prog : SrcProgram} {prims : Prims} {ix_scalar_cast ix_SrcType_is_scalar ix_cast_to : Nat} (fn : prog.funcs[ix_scalar_cast]? = some (src_scalar_cast ix_SrcType_is_scalar ix_cast_to)) (np : prims.isPrim ix_scalar_cast = false)
     (ext_SrcType_is_scalar : Certified (∀ {n : Nat}, Stmt_SrcType_is_scalar prog prims ix_SrcType_is_scalar n))

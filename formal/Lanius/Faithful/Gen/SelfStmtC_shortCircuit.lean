@@ -80,6 +80,10 @@ abbrev Stmt_eval_variant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : Nat} {x2 : Nat} {x3 : Option Lanius.Mini.EvaluatedArgs} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcType x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 173 RepEvaluatedArgs) x3 v3 →
     (RepOption 151 RepEvaluated) (Lanius.Mini.evalVariant x0 x1 x2 x3) w
 
+abbrev Stmt_operand_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Lanius.Mini.SrcType} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → RepSrcType x1 v1 → RepNat x2 v2 →
+    RepExpr (Lanius.Mini.operandGuard x0 x1 x2) w
+
 abbrev Stmt_scalar_cast (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → RepTyped x1 v1 →
     (RepOption 149 RepTyped) (Lanius.Mini.scalarCast x0 x1) w

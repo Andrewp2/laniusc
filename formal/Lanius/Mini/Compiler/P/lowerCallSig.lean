@@ -3,6 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.conjunction
@@ -32,6 +33,10 @@ def lowerCall (sigs : List Sig) (scope : List Binding) (callee : Nat) (args : Li
 
 def evalScalar (slot : Nat) (t : Typed) : Evaluated :=
   ({ stmt := Stmt.assign slot t.expr, ty := t.ty } : Evaluated)
+
+/-- The value of a pure expression with guard g. -/
+def evalChecked (slot : Nat) (g : Expr) (t : Typed) : Evaluated :=
+  ({ stmt := checkThen slot g (Stmt.assign slot t.expr), ty := t.ty } : Evaluated)
 
 def evalTyped (slot : Nat) (t : Option Typed) : Option Evaluated :=
   match t with
@@ -80,7 +85,7 @@ def evalFieldCopy (scope : List Binding) (e : SrcExpr) (slot : Nat) (binding : O
 
 def evalPure (scope : List Binding) (e : SrcExpr) (slot : Nat) : Option Evaluated :=
   match SrcExpr.lower e scope with
-  | some t => some (evalScalar slot t)
+  | some t => some (evalChecked slot (SrcExpr.guard e scope) t)
   | none =>
     match e with
     | .int value => none

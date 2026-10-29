@@ -37,7 +37,7 @@ abbrev Stmt_lower_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 127 RepStmt) (Lanius.Mini.lowerThen x0 x1) w
 
 abbrev Stmt_lower_while (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Expr} {x1 : Option Lanius.Mini.Stmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 148 RepExpr) x0 v0 → (RepOption 127 RepStmt) x1 v1 →
-    (RepOption 127 RepStmt) (Lanius.Mini.lowerWhile x0 x1) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepExpr x1 v1 → (RepOption 148 RepExpr) x2 v2 → (RepOption 127 RepStmt) x3 v3 →
+    (RepOption 127 RepStmt) (Lanius.Mini.lowerWhile x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

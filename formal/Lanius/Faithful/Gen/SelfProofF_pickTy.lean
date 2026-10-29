@@ -101,9 +101,9 @@ theorem step_expr_ty {prog : SrcProgram} {prims : Prims} {ix_expr_ty ix_minus ix
   simp only [src_expr_ty] at h
   faithful [Lanius.Mini.exprTy]
 
-theorem step_exprs_tys {prog : SrcProgram} {prims : Prims} {ix_exprs_tys ix_empty_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr ix_cons_ty ix_expr_ty : Nat} (fn : prog.funcs[ix_exprs_tys]? = some (src_exprs_tys ix_empty_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr ix_cons_ty ix_expr_ty ix_exprs_tys)) (np : prims.isPrim ix_exprs_tys = false)
-    (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
+theorem step_exprs_tys {prog : SrcProgram} {prims : Prims} {ix_exprs_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr ix_empty_of_mini_selfhost_Ty ix_cons_ty ix_expr_ty : Nat} (fn : prog.funcs[ix_exprs_tys]? = some (src_exprs_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr ix_empty_of_mini_selfhost_Ty ix_cons_ty ix_expr_ty ix_exprs_tys)) (np : prims.isPrim ix_exprs_tys = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr n))
+    (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_cons_ty : Certified (∀ {n : Nat}, Stmt_cons_ty prog prims ix_cons_ty n))
     (ext_expr_ty : Certified (∀ {n : Nat}, Stmt_expr_ty prog prims ix_expr_ty n)) {n : Nat}
     (ih_exprs_tys : Certified (Stmt_exprs_tys prog prims ix_exprs_tys n)) :
