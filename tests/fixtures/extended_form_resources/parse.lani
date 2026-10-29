@@ -1,0 +1,21 @@
+module app::main;
+import ext::form;
+import ext::form_owned;
+import fixture::support;
+
+fn main() -> i32 {
+    let mode:i32 = fixture::support::mode(); assert(mode==0 || mode==1);
+    fixture::support::mark(65); let input=fixture::support::input(257); let scratch=fixture::support::scratch(); fixture::support::mark(83);
+    fixture::support::mark(80); fixture::support::check_input(input.borrow(),257); fixture::support::mark(112);
+    fixture::support::mark(67); let result=ext::form_owned::parse(fixture::support::input_view(input.borrow(),257),ext::form::default_limits()); fixture::support::mark(70);
+    if(mode==1) {
+        assert(result.is_err() && match(result.unwrap_err()) { ext::form_owned::Error::AllocationFailed->true,_ ->false });
+        fixture::support::mark(80); fixture::support::check_input(input.borrow(),257); fixture::support::check_scratch(scratch.borrow()); fixture::support::mark(112);
+        fixture::support::mark(67); result=ext::form_owned::parse(fixture::support::input_view(input.borrow(),257),ext::form::default_limits()); fixture::support::mark(70);
+    }
+    let owner=result.unwrap(); fixture::support::mark(80); fixture::support::check_form(owner.borrow(),257,0); fixture::support::check_input(input.borrow(),257); fixture::support::mark(112);
+    fixture::support::mark(82); input.destroy();
+    fixture::support::mark(80); fixture::support::check_form(owner.borrow(),257,0); fixture::support::mark(112);
+    fixture::support::stream(owner.as_pairs(),scratch.borrow(),257,0);
+    owner.destroy(); scratch.destroy(); fixture::support::mark(69); fixture::support::mark(68); return 0;
+}

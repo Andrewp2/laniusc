@@ -1,0 +1,282 @@
+// Ordered application/x-www-form-urlencoded byte pairs. No allocation or
+// UTF-8 replacement conversion. See docs/library-form-plan.md for lifetimes.
+module ext::form;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+pub struct Pair { name: core::slice::View<u8>, value: core::slice::View<u8> }
+pub struct EncodedPair { name: core::slice::View<u8>, value: core::slice::View<u8> }
+pub struct PairSpan { name_start: i32, name_length: i32, value_length: i32 }
+pub enum PairSource {
+    Views(core::slice::View<Pair>),
+    Packed(core::slice::View<u8>, core::slice::View<PairSpan>)
+}
+pub struct Limits { max_input_bytes: i32, max_pairs: i32, max_component_bytes: i32, max_decoded_bytes: i32 }
+pub enum Error { InvalidLimits, Bounds, InputLimit, PairLimit, ComponentLimit, DecodedLimit, SizeOverflow, Capacity(u64), OutputLimit }
+pub struct Parsed { input: core::slice::View<u8>, pair_count: i32, decoded_bytes: i32 }
+// Copies fork position. Input and selected spans remain immutable and live.
+pub struct Pairs { input: core::slice::View<u8>, position: i32 }
+
+pub fn default_limits() -> Limits {
+    return Limits { max_input_bytes: 1048576, max_pairs: 65536, max_component_bytes: 1048576, max_decoded_bytes: 1048576 };
+}
+fn valid<T>(view: core::slice::View<T>) -> bool {
+    return view.start >= 0 && view.length >= 0 && view.start <= 2147483647 - view.length;
+}
+fn window(input: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> {
+    return core::slice::View { values: input.values, start: input.start + start, length: end - start };
+}
+fn hex_value(byte: u8) -> i32 {
+    if (byte >= 48 && byte <= 57) { return (byte - 48) as i32; }
+    if (byte >= 65 && byte <= 70) { return (byte - 55) as i32; }
+    if (byte >= 97 && byte <= 102) { return (byte - 87) as i32; }
+    return -1;
+}
+fn hex_digit(value: i32) -> u8 {
+    if (value < 10) { return (48 + value) as u8; }
+    return (55 + value) as u8;
+}
+fn literal(byte: u8) -> bool {
+    return (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57)
+        || byte == 42 || byte == 45 || byte == 46 || byte == 95;
+}
+fn encoded_width(byte: u8) -> i32 {
+    if (literal(byte) || byte == 32) { return 1; }
+    return 3;
+}
+// Shared byte expansion for the direct codec and streaming component cursor.
+fn encoded_byte(byte: u8, part: i32) -> u8 {
+    if (literal(byte)) { return byte; }
+    if (byte == 32) { return 43; }
+    if (part == 0) { return 37; }
+    if (part == 1) { return hex_digit((byte as i32) / 16); }
+    return hex_digit((byte as i32) % 16);
+}
+fn decoded_width(input: core::slice::View<u8>, position: i32) -> i32 {
+    if (input.values[input.start + position] != 37 || input.length - position < 3) { return 1; }
+    if (hex_value(input.values[input.start + position + 1]) < 0 || hex_value(input.values[input.start + position + 2]) < 0) { return 1; }
+    return 3;
+}
+fn decoded_count(input: core::slice::View<u8>) -> i32 {
+    let position: i32 = 0; let count: i32 = 0;
+    while (position < input.length) { position += decoded_width(input,position); count += 1; }
+    return count;
+}
+
+pub impl Pair {
+    pub fn name_text(&self) -> core::result::Result<core::text::Text,core::text::Error> {
+        return core::text::from_utf8_range(self.name.values,self.name.start,self.name.length);
+    }
+    pub fn value_text(&self) -> core::result::Result<core::text::Text,core::text::Error> {
+        return core::text::from_utf8_range(self.value.values,self.value.start,self.value.length);
+    }
+}
+pub impl Parsed {
+    pub fn pairs(&self) -> Pairs { return Pairs { input: self.input, position: 0 }; }
+}
+pub impl Pairs {
+    pub fn borrow(&self) -> &Pairs { return self; }
+}
+pub impl core::iter::Iterator<EncodedPair> for Pairs {
+    pub fn next(&self) -> core::option::Option<EncodedPair> {
+        let input: core::slice::View<u8> = self.input;
+        while (self.position < input.length && input.values[input.start + self.position] == 38) { self.position += 1; }
+        if (self.position == input.length) { return core::option::None(); }
+        let start: i32 = self.position; let equal: i32 = -1;
+        while (self.position < input.length && input.values[input.start + self.position] != 38) {
+            if (equal < 0 && input.values[input.start + self.position] == 61) { equal = self.position; }
+            self.position += 1;
+        }
+        let end: i32 = self.position;
+        let name: core::slice::View<u8> = window(input,start,end);
+        let value: core::slice::View<u8> = window(input,end,end);
+        if (equal >= 0) { name = window(input,start,equal); value = window(input,equal + 1,end); }
+        return core::option::Some(EncodedPair { name: name, value: value });
+    }
+}
+
+pub fn parse(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<Parsed,Error> {
+    if (limits.max_input_bytes < 0 || limits.max_pairs < 0 || limits.max_component_bytes < 0 || limits.max_decoded_bytes < 0) {
+        return core::result::Err(Error::InvalidLimits);
+    }
+    if (!valid<u8>(input)) { return core::result::Err(Error::Bounds); }
+    if (input.length > limits.max_input_bytes) { return core::result::Err(Error::InputLimit); }
+    let cursor: Pairs = Pairs { input: input, position: 0 };
+    let count: i32 = 0; let bytes: i32 = 0;
+    while (true) {
+        let next: core::option::Option<EncodedPair> = cursor.next();
+        if (next.is_none()) { break; }
+        if (count == limits.max_pairs) { return core::result::Err(Error::PairLimit); }
+        let pair: EncodedPair = next.unwrap();
+        let name: i32 = decoded_count(pair.name);
+        if (name > limits.max_component_bytes) { return core::result::Err(Error::ComponentLimit); }
+        let value: i32 = decoded_count(pair.value);
+        if (value > limits.max_component_bytes) { return core::result::Err(Error::ComponentLimit); }
+        if (name > limits.max_decoded_bytes - bytes) { return core::result::Err(Error::DecodedLimit); }
+        bytes += name;
+        if (value > limits.max_decoded_bytes - bytes) { return core::result::Err(Error::DecodedLimit); }
+        bytes += value; count += 1;
+    }
+    return core::result::Ok(Parsed { input: input, pair_count: count, decoded_bytes: bytes });
+}
+
+pub fn component_encoded_len(input: core::slice::View<u8>) -> core::result::Result<u64,Error> {
+    if (!valid<u8>(input)) { return core::result::Err(Error::Bounds); }
+    let count: u64 = 0; let index: i32 = 0;
+    while (index < input.length) { count += encoded_width(input.values[input.start + index]) as u64; index += 1; }
+    return core::result::Ok(count);
+}
+pub fn component_decoded_len(input: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid<u8>(input)) { return core::result::Err(Error::Bounds); }
+    return core::result::Ok(decoded_count(input));
+}
+// Validate both descriptors and exact size before writes. Same physical start
+// and stride permits in-place expansion; otherwise storage must be disjoint.
+pub fn encode_component_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid<u8>(input) || !valid<u8>(output)) { return core::result::Err(Error::Bounds); }
+    let measured: core::result::Result<u64,Error> = component_encoded_len(input);
+    let length: u64 = measured.unwrap();
+    if (length > output.length as u64) { return core::result::Err(Error::Capacity(length)); }
+    let source: i32 = input.length; let target: i32 = length as i32;
+    while (source > 0) {
+        source -= 1;
+        let byte: u8 = input.values[input.start + source]; let width: i32 = encoded_width(byte);
+        target -= width; let part: i32 = 0;
+        while (part < width) { output.values[output.start + target + part] = encoded_byte(byte,part); part += 1; }
+    }
+    return core::result::Ok(length as i32);
+}
+// Forgiving, single-pass byte decoding: decoded '+' is never decoded again.
+// Preflight makes every error atomic; same-start/same-stride shrinking works.
+pub fn decode_component_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (!valid<u8>(input) || !valid<u8>(output)) { return core::result::Err(Error::Bounds); }
+    let length: i32 = decoded_count(input);
+    if (length > output.length) { return core::result::Err(Error::Capacity(length as u64)); }
+    let source: i32 = 0; let target: i32 = 0;
+    while (source < input.length) {
+        let byte: u8 = input.values[input.start + source]; let width: i32 = decoded_width(input,source);
+        if (width == 3) {
+            byte = (hex_value(input.values[input.start + source + 1]) * 16 + hex_value(input.values[input.start + source + 2])) as u8;
+        } else { if (byte == 43) { byte = 32; } }
+        output.values[output.start + target] = byte; source += width; target += 1;
+    }
+    return core::result::Ok(length);
+}
+
+fn views_valid(pairs: core::slice::View<Pair>) -> bool {
+    if (!valid<Pair>(pairs)) { return false; }
+    let index: i32 = 0;
+    while (index < pairs.length) {
+        let pair: Pair = pairs.values[pairs.start + index];
+        if (!valid<u8>(pair.name) || !valid<u8>(pair.value)) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn packed_valid(bytes: core::slice::View<u8>, spans: core::slice::View<PairSpan>) -> bool {
+    if (!valid<u8>(bytes) || !valid<PairSpan>(spans)) { return false; }
+    let index: i32 = 0;
+    while (index < spans.length) {
+        let span: PairSpan = spans.values[spans.start + index];
+        if (span.name_start < 0 || span.name_length < 0 || span.value_length < 0 || span.name_start > bytes.length) { return false; }
+        if (span.name_length > bytes.length - span.name_start) { return false; }
+        if (span.value_length > bytes.length - span.name_start - span.name_length) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn source_valid(source: PairSource) -> bool {
+    return match (source) { PairSource::Views(pairs) -> views_valid(pairs), PairSource::Packed(bytes,spans) -> packed_valid(bytes,spans) };
+}
+fn source_count(source: PairSource) -> i32 {
+    return match (source) { PairSource::Views(pairs) -> pairs.length, PairSource::Packed(bytes,spans) -> spans.length };
+}
+fn packed_pair(bytes: core::slice::View<u8>, spans: core::slice::View<PairSpan>, index: i32) -> Pair {
+    let span: PairSpan = spans.values[spans.start + index]; let middle: i32 = span.name_start + span.name_length;
+    return Pair { name: window(bytes,span.name_start,middle), value: window(bytes,middle,middle + span.value_length) };
+}
+fn source_pair(source: PairSource, index: i32) -> Pair {
+    return match (source) {
+        PairSource::Views(pairs) -> pairs.values[pairs.start + index],
+        PairSource::Packed(bytes,spans) -> packed_pair(bytes,spans,index)
+    };
+}
+pub fn encoded_len(source: PairSource) -> core::result::Result<u64,Error> {
+    // All descriptors are checked before the first component-byte access.
+    if (!source_valid(source)) { return core::result::Err(Error::Bounds); }
+    let count: i32 = source_count(source); let index: i32 = 0; let total: u64 = 0;
+    while (index < count) {
+        let pair: Pair = source_pair(source,index);
+        let name: u64 = component_encoded_len(pair.name).unwrap();
+        let value: u64 = component_encoded_len(pair.value).unwrap();
+        let width: u64 = name + value + 1;
+        if (index > 0) { width += 1; }
+        if (width > 18446744073709551615 - total) { return core::result::Err(Error::SizeOverflow); }
+        total += width; index += 1;
+    }
+    return core::result::Ok(total);
+}
+
+struct ComponentCursor { position: i32, part: i32 }
+impl ComponentCursor {
+    fn pull(&self, input: core::slice::View<u8>) -> core::option::Option<u8> {
+        if (self.position == input.length) { return core::option::None(); }
+        let byte: u8 = input.values[input.start + self.position];
+        let result: u8 = encoded_byte(byte,self.part);
+        self.part += 1;
+        if (self.part == encoded_width(byte)) { self.part = 0; self.position += 1; }
+        return core::option::Some(result);
+    }
+}
+struct EncodingMachine { source: PairSource, count: i32, index: i32, value: bool, component: ComponentCursor }
+impl EncodingMachine {
+    fn pull(&self) -> core::option::Option<u8> {
+        if (self.index == self.count) { return core::option::None(); }
+        let pair: Pair = source_pair(self.source,self.index);
+        let input: core::slice::View<u8> = pair.name;
+        if (self.value) { input = pair.value; }
+        let next: core::option::Option<u8> = self.component.pull(input);
+        if (next.is_some()) { return next; }
+        self.component.position = 0; self.component.part = 0;
+        if (!self.value) { self.value = true; return core::option::Some(61); }
+        self.value = false; self.index += 1;
+        if (self.index == self.count) { return core::option::None(); }
+        return core::option::Some(38);
+    }
+}
+// Copies fork all progress, including partial escapes. Every source descriptor
+// and byte remains immutable/live until all copies end. No cleanup is owned.
+pub struct Encoding { machine: EncodingMachine, remaining_bytes: u64 }
+pub fn encoding(source: PairSource, max_output: u64) -> core::result::Result<Encoding,Error> {
+    let measured: core::result::Result<u64,Error> = encoded_len(source);
+    if (measured.is_err()) { return core::result::Err(measured.unwrap_err()); }
+    let length: u64 = measured.unwrap();
+    if (length > max_output) { return core::result::Err(Error::OutputLimit); }
+    let machine: EncodingMachine = EncodingMachine { source: source, count: source_count(source), index: 0, value: false, component: ComponentCursor { position: 0, part: 0 } };
+    return core::result::Ok(Encoding { machine: machine, remaining_bytes: length });
+}
+pub impl Encoding {
+    pub fn borrow(&self) -> &Encoding { return self; }
+    pub fn remaining(&self) -> u64 { return self.remaining_bytes; }
+}
+pub impl core::io::Read for Encoding {
+    // Backed destination must be disjoint from this cursor and all source
+    // descriptors/bytes. Invalid metadata and zero requests have no effects.
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        if (!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        let wanted: i32 = count;
+        if (self.remaining_bytes < count as u64) { wanted = self.remaining_bytes as i32; }
+        let completed: i32 = 0;
+        while (completed < wanted) {
+            let byte: core::option::Option<u8> = self.machine.pull();
+            destination[offset + completed] = byte.unwrap();
+            completed += 1; self.remaining_bytes -= 1;
+        }
+        return core::result::Ok(completed);
+    }
+}

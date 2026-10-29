@@ -1,0 +1,35 @@
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import ext::form;
+import ext::form_owned;
+
+fn read<R>(reader:&R,output:[u8],offset:i32,count:i32) -> i32 where R:core::io::Read {
+    let result:core::result::Result<i32,core::io::Error> =reader.read(output,offset,count); return result.unwrap();
+}
+fn main() -> i32 {
+    let source:[u8;9]=[91,97,61,49,38,97,61,43,93];
+    let input:core::slice::View<u8> =core::slice::View { values:source,start:1,length:7 };
+    let parsed:ext::form::Parsed=ext::form::parse(input,ext::form::default_limits()).unwrap();
+    assert(parsed.pair_count==2 && parsed.decoded_bytes==4);
+    let cursor:ext::form::Pairs=parsed.pairs(); let first:ext::form::EncodedPair=cursor.next().unwrap();
+    assert(first.name.start==1 && first.name.length==1 && first.value.start==3 && first.value.length==1 && first.value.values[3]==49);
+    let second:ext::form::EncodedPair=cursor.next().unwrap(); assert(second.name.start==5 && second.value.start==7 && second.value.values[7]==43);
+    assert(cursor.next().is_none() && cursor.next().is_none());
+    let escaped:[u8;6]=[43,37,50,66,37,71]; let decoded:[u8;6]=[177;6];
+    assert(ext::form::decode_component_into(core::slice::view(escaped,6).unwrap(),core::slice::View { values:decoded,start:1,length:4 }).unwrap()==4);
+    assert(decoded[0]==177 && decoded[1]==32 && decoded[2]==43 && decoded[3]==37 && decoded[4]==71 && decoded[5]==177);
+    let owned:ext::form_owned::Form=ext::form_owned::parse(input,ext::form::default_limits()).unwrap();
+    assert(owned.len()==2 && owned.byte_len()==4); let pair:ext::form::Pair=owned.pair(1).unwrap(); assert(pair.value.length==1 && pair.value.values[pair.value.start]==32);
+    let empty:[u8;1]=[0]; let tilde:[u8;1]=[126];
+    assert(owned.try_append(ext::form::Pair { name:core::slice::view(empty,0).unwrap(),value:core::slice::view(tilde,1).unwrap() }).unwrap()==3);
+    let encoding:ext::form::Encoding=owned.encoding(12).unwrap(); assert(encoding.remaining()==12);
+    let output:[u8;14]=[199;14]; let count:i32=0; while(count<12) { let got:i32=read(encoding.borrow(),output,1+count,3); assert(got>0); count+=got; }
+    assert(read(encoding.borrow(),output,0,1)==0 && encoding.remaining()==0);
+    let expected:[u8;12]=[97,61,49,38,97,61,43,38,61,37,55,69]; let i:i32=0;
+    while(i<12) { assert(output[i+1]==expected[i]); i+=1; } assert(output[0]==199 && output[13]==199);
+    assert(source[0]==91 && source[8]==93 && source[7]==43); owned.destroy(); return 0;
+}

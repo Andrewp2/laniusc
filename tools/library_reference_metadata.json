@@ -954,6 +954,32 @@
         "docs/extended-dns-client.md"
       ]
     },
+    "ext::form": {
+      "guides": [
+        "docs/extended-form.md"
+      ],
+      "note": "Ordered application/x-www-form-urlencoded byte pairs before the WHATWG UTF-8 replacement step. Original plus becomes space, valid percent triplets decode once and malformed percent bytes remain literal. Preserve order, duplicate names and arbitrary bytes; explicit Text projections validate UTF-8. Complete parse/sizing preflight, caller-buffer atomic errors and one borrowed Read serializer have frozen contracts; all nine library gates and four application groups/86 native cases pass, including a 607-case independent model. Library resource gates reach six selected allocation denials with recovery; the application separately reaches 20. Standalone examples and an executing compiler-dependency control retain separate counts. Manual immutable backing and disjoint cursor/destination obligations remain explicit. Initial target is Linux x86_64 CPU output from the GPU compiler, not device execution or formal proof.",
+      "declarations": {
+        "default_limits": "Defaults: 1 MiB encoded input, 65536 nonempty pairs, 1 MiB per decoded component and 1 MiB total decoded bytes.",
+        "parse": "Rejects negative limits, logical bounds and encoded input cap before scanning; then checks each pair count, decoded name, decoded value and cumulative decoded cap before publishing borrowed Parsed metadata.",
+        "component_encoded_len": "Exact u64 form component size: ASCII alphanumerics and *-._ remain literal, space becomes plus, other bytes use uppercase percent triplets.",
+        "component_decoded_len": "Exact decoded i32 size under plus-as-space and forgiving single-pass percent conversion; does not perform UTF-8 conversion.",
+        "encode_component_into": "Validates both descriptors and exact size before writing; returns the written prefix length. Disjoint or identical-physical-start/same-stride storage is supported, including negative strides; errors preserve all output.",
+        "decode_component_into": "Validates both descriptors and exact size before forward decoding; original plus becomes space while decoded plus remains plus. Same-start/same-stride or disjoint storage is supported; errors preserve all output.",
+        "encoded_len": "Validates all Views or Packed source and field/span metadata, including complete span extents within the selected byte view, before reading component bytes; then measures the exact checked u64 wire size.",
+        "encoding": "Runs complete sizing before max_output admission and returns a borrowed core::io::Read cursor. Copied cursors fork complete progress; requests may split escape triplets; exhaustion is fused."
+      }
+    },
+    "ext::form_owned": {
+      "guides": [
+        "docs/extended-form.md"
+      ],
+      "note": "Optional packed form owner with one byte Vec and one span Vec. Owned parse completes borrowed admission before reserving exact storage; append reserves bytes then spans with capped growth and publishes only after fallible work succeeds. Append errors preserve logical pairs/bytes but may change capacities and backing, so every prior borrow ends before each attempt; append inputs may not alias owned storage. Borrowed pair cursors implement Iterator/ExactSizeIterator. Owned encode uses the canonical form Encoding and alloc::io collector, releasing partial output and preserving the source. All nine library gates pass, including the 607-case independent model and six reached allocation denials with same-process recovery; four application groups/86 native cases also pass, with 20 reached denials separate; ownership/lifetimes and cleanup remain manual.",
+      "declarations": {
+        "new": "Validate owned limits and return an empty Form owner; subsequent append retains those pair/component/decoded-byte caps.",
+        "parse": "Complete ext::form admission before allocation, reserve decoded bytes and spans, decode into independent packed storage, and release partial owners on every error."
+      }
+    },
     "ext::geometry": {
       "guides": [
         "docs/extended-geometry.md"

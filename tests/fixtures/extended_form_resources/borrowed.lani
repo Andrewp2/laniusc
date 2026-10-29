@@ -1,0 +1,56 @@
+module app::main;
+import alloc::vec;
+import core::io;
+import core::iter;
+import core::slice;
+import ext::form;
+import fixture::support;
+
+fn early(input:&alloc::vec::Vec<u8>,data:&alloc::vec::Vec<u8>,spans:&alloc::vec::Vec<ext::form::PairSpan>,scratch:&alloc::vec::Vec<u8>,count:i32) {
+    let parsed=ext::form::parse(fixture::support::input_view(input,count),ext::form::default_limits()).unwrap();
+    assert(parsed.pair_count==count && parsed.decoded_bytes==count*8);
+    let cursor=parsed.pairs(); let first=cursor.next().unwrap();
+    assert(first.name.length==2 && first.value.length==10);
+    let fork=cursor; let second=cursor.next().unwrap(); let copied=fork.next().unwrap();
+    assert(second.name.get(1).unwrap()==66 && copied.name.get(1).unwrap()==66);
+    let source:ext::form::PairSource = ext::form::PairSource::Packed(data.as_view().subview(3,count*8+3).unwrap(),spans.as_view().subview(1,count+1).unwrap());
+    assert(ext::form::encoded_len(source).unwrap()==(fixture::support::wire_len(count) as u64));
+    let encoder=ext::form::encoding(source,fixture::support::wire_len(count) as u64).unwrap();
+    assert(encoder.read(scratch.as_slice(),-1,1).is_err());
+    assert(encoder.read(scratch.as_slice(),5,0).unwrap()==0 && encoder.remaining()==(fixture::support::wire_len(count) as u64));
+    assert(encoder.read(scratch.as_slice(),5,5).unwrap()==5);
+    let clone=encoder;
+    assert(encoder.read(scratch.as_slice(),5,1).unwrap()==1 && scratch.at(5)==fixture::support::wire_byte(0,5));
+    assert(clone.read(scratch.as_slice(),5,1).unwrap()==1 && scratch.at(5)==fixture::support::wire_byte(0,5));
+    assert(encoder.remaining()==clone.remaining());
+}
+fn cycle(count:i32) {
+    fixture::support::mark(65); let input=fixture::support::input(count); let data=fixture::support::decoded(count,0);
+    let spans:alloc::vec::Vec<ext::form::PairSpan> = alloc::vec::with_capacity<ext::form::PairSpan>(count+2).unwrap();
+    let guard:ext::form::PairSpan = ext::form::PairSpan { name_start:901,name_length:902,value_length:903 };
+    spans.try_push(guard).unwrap(); let index:i32 = 0;
+    while(index<count) { spans.try_push(ext::form::PairSpan { name_start:index*8,name_length:2,value_length:6 }).unwrap(); index+=1; }
+    spans.try_push(guard).unwrap(); let scratch=fixture::support::scratch(); fixture::support::mark(83);
+    fixture::support::mark(80); early(input.borrow(),data.borrow(),spans.borrow(),scratch.borrow(),count);
+    let parsed=ext::form::parse(fixture::support::input_view(input.borrow(),count),ext::form::default_limits()).unwrap();
+    let cursor=parsed.pairs(); index=0;
+    while(index<count) {
+        let pair=cursor.next().unwrap(); assert(pair.name.length==2 && pair.value.length==10);
+        let offset:i32 = 0; while(offset<2) { assert(pair.name.get(offset).unwrap()==fixture::support::raw_byte(index,offset)); offset+=1; }
+        offset=0; while(offset<10) { assert(pair.value.get(offset).unwrap()==fixture::support::raw_byte(index,offset+3)); offset+=1; }
+        assert(ext::form::decode_component_into(pair.name,scratch.as_view().subview(5,7).unwrap()).unwrap()==2);
+        assert(ext::form::decode_component_into(pair.value,scratch.as_view().subview(7,13).unwrap()).unwrap()==6);
+        offset=0; while(offset<8) { assert(scratch.at(offset+5)==fixture::support::data_byte(index,offset)); offset+=1; }
+        index+=1;
+    }
+    assert(cursor.next().is_none() && cursor.next().is_none()); fixture::support::check_input(input.borrow(),count); fixture::support::mark(112);
+    fixture::support::stream(ext::form::PairSource::Packed(data.as_view().subview(3,count*8+3).unwrap(),spans.as_view().subview(1,count+1).unwrap()),scratch.borrow(),count,0);
+    fixture::support::mark(80); fixture::support::check_input(input.borrow(),count); fixture::support::check_decoded(data.borrow(),count,0); fixture::support::check_scratch(scratch.borrow());
+    assert(spans.len()==count+2 && spans.capacity()==count+2); index=0;
+    while(index<count+2) { let span=spans.at(index);
+        if(index==0 || index==count+1) { assert(span.name_start==901 && span.name_length==902 && span.value_length==903); }
+        else { assert(span.name_start==(index-1)*8 && span.name_length==2 && span.value_length==6); } index+=1;
+    }
+    fixture::support::mark(112); fixture::support::mark(82); input.destroy(); data.destroy(); spans.destroy(); scratch.destroy(); fixture::support::mark(69);
+}
+fn main() -> i32 { cycle(256); cycle(16384); fixture::support::mark(68); return 0; }

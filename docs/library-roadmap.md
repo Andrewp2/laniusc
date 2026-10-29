@@ -53,7 +53,7 @@ tests, target support, and relevant performance evidence.
 
 | Family | Deliverables |
 | --- | --- |
-| Data formats | JSON, CSV, TOML, binary serialization, schema/validation utilities |
+| Data formats | JSON, CSV, TOML, binary serialization, schema/validation utilities; [ordered form byte pairs](extended-form.md) have a fixed borrowed/owned contract with all nine library gates and four application groups/86 native cases accepted on the finite native Linux x86_64 profile |
 | Text and parsing | Unicode properties and normalization, regex, lexers, parser utilities, diff and patch |
 | Files and packaging | Globs, directory walking utilities, compression, archives |
 | Network protocols | The [borrowed WebSocket server upgrade](extended-websocket-upgrade.md#server-api-and-policy-boundary) now pauses for caller policy before staging/flush and server-role conversion; a real [one-client echo service](extended-websocket-echo.md) passes eight separate native groups plus one Lanius-client integration. Six server and eleven current-client scripted scenario functions pass in separate raw processes; the shared bounded HTTP encoder passes three actual Rust runtime tests. Persistent/concurrent service and existing HTTP-server/scheduler adoption remain open. A [borrowed WebSocket client upgrade](extended-websocket-upgrade.md) and [frame stream](extended-websocket-stream.md) preserve coalesced bytes and partial I/O over the same caller-owned transport. One raw contract process executes eleven scenario functions; the real [one-message client](extended-websocket-once.md) passes separate plain9/rejection12/CLI17/I/O3/TLS5 groups on Linux x86_64/OpenSSL 3. Manual ownership, entropy/deadline policy, quotas and explicit cleanup remain required; broader server orchestration, ws/wss URLs and failure/target coverage remain open. [WebSocket upgrade responses](extended-websocket.md#http-upgrade-response-syntax) validate/encode portable 101 wire data using externally computed Accept; the separate OpenSSL helper and offline response tool retain their finite native provider/error and functional acceptance. [URL-based HTTP/HTTPS](extended-url-client.md) now composes strict owned URL policy, one ordered connector and the canonical clients with finite native exchange, boundary/failure and real-program functional acceptance. Original URL identity/Host, exact selected-socket transfer and no post-selection replay are explicit; remaining source-OOM and broader schedule coverage is documented. HTTP client/server, WebSocket request/frame processing, DNS and client TLS with peer verification through OpenSSL; TLS stream/HTTPS executes with numeric endpoints and explicit trust/deadlines/manual ownership; server TLS, required mutual TLS and bounded health/echo HTTPS modes execute; one-thread/poll cleartext batches and their CSV-to-ZIP application have separately accepted historical receipts; the current resumable HTTPS batches pass 108 connected cases, plain batches pass 103, and migrated HTTPS/mutual-TLS applications pass 63/101 cases through separate receipts; the current fetch-many also passes all five groups, and a minimal nested-pattern limitation plus executable explicit-match control are confirmed; excluded buffered/prepared-context receipts retain older scope; current server source has finite direct/scheduler/plain-and-TLS application passes but full concurrent-server acceptance, application authorization and broader orchestration remain open |
@@ -78,7 +78,13 @@ traverse paths.
 [Borrowed URI parsing](extended-uri.md), [component percent coding](extended-percent.md)
 and a [component-extraction application](extended-uri-component.md) execute on
 x86_64 Linux. Parsing validates generic RFC 3986 syntax while preserving encoded
-spelling; decoding is an explicit later operation.
+spelling; decoding is an explicit later operation. The new
+[form-byte codec](extended-form.md) adds ordered duplicate name/value fields,
+plus-as-space and forgiving percent spelling in a separate module; it preserves
+arbitrary decoded bytes before any explicit Text conversion. Its borrowed
+serializer and optional packed owners pass all nine library gates, including
+a 607-case independent model, plus four application groups/86 native cases on
+the finite native Linux x86_64 profile.
 [Owned URI resolution and recomposition](extended-uri-resolve.md), including
 RFC dot-segment removal, execute with a [command-line resolver](extended-uri-resolve-program.md).
 The [owned HTTP(S) URL profile](extended-http-url.md) and its [connected-client composition](extended-url-client.md) now have separate finite native acceptance; other scheme/protocol policies remain work.
@@ -926,6 +932,19 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [ordered form-byte increment](extended-form.md) adds core-only
+  borrowed parsing/component conversion and one canonical Read serializer,
+  plus an optional packed owner using existing alloc modules. Duplicate order,
+  arbitrary bytes, malformed-percent preservation and explicit UTF-8 projections
+  are specified. Append errors preserve logical contents while permitting
+  capacity/backing changes; all prior borrows end before each attempt. The
+  [field-selection consumer](extended-form-select.md) shares one serializer/copier.
+  All nine library gates pass, including the 607-case independent model and six
+  reached allocation denials with same-process recovery. All four application
+  groups/86 native cases pass, including 20 reached allocation denials, as do
+  standalone build/examples. Historical percent/URI/HTTP evidence retains its
+  scope. A reduced nested error-match dependency has an executing typed-helper
+  control; no compiler repair or general nested-match restriction is claimed.
 - Accepted [scoped map-value update](stdlib-map-updates.md) adds one-lookup
   HashMap/TreeMap transformations through Mapper<V,Pair<V,R>>. Missing keys do
   not call the callback; present values are restored before R returns, including

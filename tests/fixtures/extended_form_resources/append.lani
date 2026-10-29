@@ -1,0 +1,35 @@
+module app::main;
+import core::io;
+import ext::form;
+import ext::form_owned;
+import fixture::support;
+
+fn main() -> i32 {
+    let mode:i32 = fixture::support::mode(); assert(mode>=0 && mode<=2);
+    fixture::support::mark(65); let input=fixture::support::input(257); let extra=fixture::support::decoded(1,257); let scratch=fixture::support::scratch();
+    let owner=ext::form_owned::parse(fixture::support::input_view(input.borrow(),257),ext::form::default_limits()).unwrap(); fixture::support::mark(83);
+    let pair:ext::form::Pair = ext::form::Pair { name:extra.as_view().subview(3,5).unwrap(),value:extra.as_view().subview(5,11).unwrap() };
+    let old_bytes=owner.bytes.storage; let old_spans=owner.spans.storage;
+    fixture::support::mark(80); fixture::support::check_form(owner.borrow(),257,0); assert(owner.bytes.capacity()==2056 && owner.spans.capacity()==257); fixture::support::mark(112);
+    // No Form borrow survives the checking helper above. Append borrows only
+    // the separate extra owner, including when a failed reserve moves bytes.
+    fixture::support::mark(67); let result=owner.try_append(pair); fixture::support::mark(70);
+    if(mode>0) {
+        assert(result.is_err() && match(result.unwrap_err()) { ext::form_owned::Error::AllocationFailed->true,_ ->false });
+        fixture::support::mark(80); fixture::support::check_form(owner.borrow(),257,0); fixture::support::check_input(input.borrow(),257); fixture::support::check_decoded(extra.borrow(),1,257);
+        assert(owner.spans.storage==old_spans && owner.spans.capacity()==257);
+        if(mode==1) { assert(owner.bytes.storage==old_bytes && owner.bytes.capacity()==2056); }
+        else { assert(owner.bytes.storage!=old_bytes && owner.bytes.capacity()==4112); }
+        fixture::support::mark(112); fixture::support::mark(67); result=owner.try_append(pair); fixture::support::mark(70);
+    }
+    assert(result.unwrap()==258); fixture::support::mark(80); fixture::support::check_form(owner.borrow(),258,0);
+    assert(owner.bytes.capacity()==4112 && owner.spans.capacity()==514 && owner.bytes.storage!=old_bytes && owner.spans.storage!=old_spans);
+    fixture::support::check_input(input.borrow(),257); fixture::support::check_decoded(extra.borrow(),1,257); fixture::support::mark(112);
+    fixture::support::stream(owner.as_pairs(),scratch.borrow(),258,0);
+    fixture::support::mark(80); let kept_bytes=owner.bytes.storage; let kept_spans=owner.spans.storage; owner.clear();
+    assert(owner.len()==0 && owner.byte_len()==0 && owner.bytes.storage==kept_bytes && owner.spans.storage==kept_spans);
+    assert(owner.try_append(pair).unwrap()==1); fixture::support::check_form(owner.borrow(),1,257);
+    assert(owner.bytes.storage==kept_bytes && owner.spans.storage==kept_spans && owner.bytes.capacity()==4112 && owner.spans.capacity()==514);
+    fixture::support::check_input(input.borrow(),257); fixture::support::check_decoded(extra.borrow(),1,257); fixture::support::check_scratch(scratch.borrow()); fixture::support::mark(112);
+    fixture::support::mark(82); owner.destroy(); input.destroy(); extra.destroy(); scratch.destroy(); fixture::support::mark(69); fixture::support::mark(68); return 0;
+}

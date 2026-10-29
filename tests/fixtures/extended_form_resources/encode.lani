@@ -1,0 +1,25 @@
+module app::main;
+import alloc::string;
+import ext::form;
+import ext::form_owned;
+import fixture::support;
+
+fn main() -> i32 {
+    let mode:i32 = fixture::support::mode(); assert(mode==0 || mode==1);
+    fixture::support::mark(65); let input=fixture::support::input(16384);
+    let owner=ext::form_owned::parse(fixture::support::input_view(input.borrow(),16384),ext::form::default_limits()).unwrap(); fixture::support::mark(83);
+    fixture::support::mark(80); fixture::support::check_form(owner.borrow(),16384,0); assert(owner.encode(-1).is_err()); fixture::support::mark(112);
+    fixture::support::mark(67); let result=owner.encode(fixture::support::wire_len(16384)); fixture::support::mark(70);
+    if(mode==1) {
+        assert(result.is_err() && match(result.unwrap_err()) { ext::form_owned::Error::AllocationFailed->true,_ ->false });
+        fixture::support::mark(80); fixture::support::check_form(owner.borrow(),16384,0); fixture::support::check_input(input.borrow(),16384); fixture::support::mark(112);
+        fixture::support::mark(67); result=owner.encode(fixture::support::wire_len(16384)); fixture::support::mark(70);
+    }
+    let output:alloc::string::String = result.unwrap(); fixture::support::mark(80);
+    fixture::support::check_form(owner.borrow(),16384,0); fixture::support::check_input(input.borrow(),16384);
+    assert(output.byte_len()==fixture::support::wire_len(16384)); let bytes=output.as_bytes(); let index:i32 = 0;
+    while(index<output.byte_len()) { assert(bytes[index]==fixture::support::wire_byte(0,index)); index+=1; } fixture::support::mark(112);
+    fixture::support::mark(82); owner.destroy(); input.destroy();
+    fixture::support::mark(80); index=0; while(index<output.byte_len()) { assert(bytes[index]==fixture::support::wire_byte(0,index)); index+=1; } fixture::support::mark(112);
+    fixture::support::publish(output.bytes.storage,output.byte_len()); output.destroy(); fixture::support::mark(69); fixture::support::mark(68); return 0;
+}

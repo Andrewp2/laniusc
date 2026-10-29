@@ -9,7 +9,9 @@ The encoder preserves ASCII letters, digits, `-`, `.`, `_` and `~`. Every other
 byte becomes `%HH` using uppercase hexadecimal. The decoder accepts both hex
 cases and leaves a literal `+` unchanged. This is a codec for component data;
 choose component boundaries before decoding. It does not validate a URI, apply
-form encoding, normalize paths or interpret UTF-8.
+form encoding, normalize paths or interpret UTF-8. The separate
+[form-byte increment](extended-form.md) specifies plus-as-space, its own literal
+byte set and forgiving malformed escapes; its runtime status is recorded there.
 
 For example, encoding `a b+c/d` produces `a%20b%2Bc%2Fd`. Decoding `%2f%00%FF+`
 produces the bytes `[47, 0, 255, 43]`. NUL and non-UTF-8 bytes are data. Encoding

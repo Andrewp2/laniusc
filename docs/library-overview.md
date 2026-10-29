@@ -1,6 +1,19 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[ordered form-byte increment](extended-form.md) adds borrowed form parsing,
+forgiving percent decoding, canonical streaming serialization and an optional
+packed Form owner. Ordered duplicates and arbitrary decoded bytes survive;
+checked Text projections retain explicit UTF-8 errors. Append preserves logical
+contents on error but may relocate backing, so prior borrows end before every
+attempt. The borrowed serializer is shared by owned output and a
+[field-selection consumer](extended-form-select.md). All nine library gates pass,
+including the 607-case independent model and six reached allocation denials with
+same-process recovery. The application passes four groups/86 native cases,
+including 20 reached allocation denials; standalone build/examples pass
+separately. This finite native Linux x86_64 increment is accepted. A reduced
+nested-error-match compiler dependency retains an executing typed-helper
+control; no production or compiler repair was needed. The preceding
 [scoped map-update increment](stdlib-map-updates.md) adds a value transformation
 to HashMap and TreeMap using Mapper<V,Pair<V,R>>. One lookup preserves the exact
 stored key and map structure; a present callback returns the latest V even when

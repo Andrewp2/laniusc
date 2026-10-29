@@ -83,7 +83,9 @@ normalization and network operations belong to their respective layers.
 
 [Owned reference resolution and recomposition](extended-uri-resolve.md) live in
 `ext::uri_resolve`. [Percent coding](extended-percent.md) is a separate explicit
-operation. The [component-extraction application](extended-uri-component.md)
+operation. The [form-byte codec](extended-form.md) selects form semantics only
+when the caller supplies this encoded query view; generic URI parsing does not
+interpret query pairs. Its runtime status is recorded in its own guide. The [component-extraction application](extended-uri-component.md)
 combines parsing, optional decoding and checked output.
 
 ## Errors and bounds

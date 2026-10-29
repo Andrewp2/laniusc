@@ -3,6 +3,24 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [ordered form-byte increment](extended-form.md) belongs in the extended
+format layer. Borrowed parsing, component conversion and serialization use only
+existing core View/Iterator/Read contracts; owned forms and output use existing
+alloc Vec/String/collector facilities. URI query selection and HTTP transport
+remain separate, and strict ext::percent semantics are unchanged. The byte
+profile precedes WHATWG's UTF-8 replacement step; checked Text conversion is
+explicit. Append may relocate storage on error, so aliases and cleanup remain
+manual obligations even when logical contents are preserved. All nine library
+gates and four application groups/86 native cases pass on Linux x86_64 CPU
+output from the GPU compiler. Other hosts, device programs, enforced lifetimes
+and proofs remain separate. The initial independent-model fixture and its
+[reduced original](../tests/fixtures/extended_form_model/compiler_dependency/README.md)
+reject with LNC0047 in imported nested error matching before native execution.
+An explicitly typed helper control executes, and the same factorization admits
+the complete unchanged 607-case corpus. The narrow compiler dependency remains.
+The helper workaround changes only fixture reporting; it includes no compiler
+or ABI repair. The evidence establishes no general nested-match limitation.
+
 The [scoped map-value increment](stdlib-map-updates.md) reuses the existing
 HashMap/TreeMap lookup and storage engines plus Mapper and Pair. Map-owned
 lookup/reinstall work adds no allocation or host binding; user key operations
@@ -184,6 +202,7 @@ package resolver.
 
 | Dependency | Evidence | Affected APIs | Status |
 | --- | --- | --- | --- |
+| Imported nested form-error payload match | [Minimal original, executing typed-helper control and complete-source reconstruction](../tests/fixtures/extended_form_model/compiler_dependency/README.md); `target/stdlib-work/form-nested-{original,helper-build,helper-runtime}.log` | Test reporting extracts a u64 Capacity payload from `ext::form_owned::Error::Format(ext::form::Error)` using nested matches | The complete initial producer rejects LNC0047 before execution (0/1 in 4.62s, build 1.83s). The minimal original also rejects at 7:77 with exit 1. Moving only the inner match into an explicitly typed helper compiles and executes all six assertions with exit 0 and empty output. The revised full model passes 607 cases in 9.02s (build 0.22s), with its corpus/oracle/driver unchanged. This is a scoped compiler-admission dependency, distinct from the older nested Result/LNC0005 source; no production runtime failure, compiler repair or general root cause is claimed. |
 | Chained generic Iterator result followed by an Option query | [Reduced chained expression and executing typed-match control](../tests/fixtures/stdlib_compiler_state/text_option_chain/README.md); `target/stdlib-work/text-option-chain-dependency.log` | `source.next().is_none()` inside a helper bounded by canonical `Iterator<T>` | The typed `Option<T>` local/direct-match control executes with strict ELF/jump checks and a complete no-host-effects trace. The corresponding chained expression rejects with LNC0027 at line 7. Both sources import the same modules and use the same empty slice-cursor instantiation. The explicitly run ignored positive-expected test therefore reports 0 passed / 1 failed in 4.79s, after a separate 1.69s Rust build; it is not an accepted behavior gate. Original Text fixtures also failed at next/next_back chains; typed helpers preserve their pulls and all four ordinary direct groups now pass. No compiler/ABI or production Text repair was made, and no general Option/iterator failure or compiler root cause is established. |
 | Enum payload projections in a complete imported Seek method | [Import-only entry, captured module variants and executable controls](../tests/fixtures/stdlib_foundation/buffered_seek/README.md) | The original inline Start/Current payload matches in the borrowed buffered Reader method; the current public generic Seek implementation executes | After correcting unsupported block-arm syntax, the captured complete scalar-match source reports LNC0005 at its wildcard fallback. Renaming payload binders or using typed zero locals still rejects. Standalone literal/typed fallbacks and local/imported nested-bound controls all execute, so no general wildcard, literal or generic-bound restriction is established. Factoring only two private enum projections into ordinary exhaustive-match helpers admits the actual module; all three buffered behavior tests pass in 9.95s and the real reverse-records application passes four tests/86 cases in 8.00s. Generic bounds, query/arithmetic/fault/flush contracts and test assertions are retained. The original forms and exact reconstruction patches remain compiler follow-up evidence; no compiler repair or proven internal cause is claimed. The initial unsupported block-arm form produced a misleading LNC0008 Iterator label, recorded separately from the later projection failure. |
 | Name resolution in a native response-provider test composition | [Two failed complete sources, successful scalar controls and active fixture](../tests/fixtures/stdlib_compiler_state/response_none_match/README.md) | An unnecessary second extraction of the same imported `Failure<files::Error>.cause` in one test consumer; public response APIs and the KV application execute | Both preserved full sources fail with LNC0005 at the wildcard arm's visible `None()` item or typed `absent` local. Both smaller Option<i32> controls compile and execute, so no general None/wildcard restriction is established. A fixture rewrite consolidates the duplicate matches into one Provider-arm report helper, preserves the diagnostic fields and runtime assertions, and passes 39 direct native file-provider cases. This broader rewrite does not isolate the responsible expression or compiler pass. Production library/compiler code is unchanged; further reduction remains open. |

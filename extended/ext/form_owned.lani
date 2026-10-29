@@ -1,0 +1,209 @@
+// Ordered decoded form bytes in two manual owners. Views and cursors borrow
+// them; copies of Form do not create additional cleanup authority.
+module ext::form_owned;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::form;
+
+pub struct Limits { max_pairs:i32, max_component_bytes:i32, max_decoded_bytes:i32 }
+pub enum Error { Format(ext::form::Error), AllocationFailed, CapacityOverflow }
+pub struct Form { bytes:alloc::vec::Vec<u8>, spans:alloc::vec::Vec<ext::form::PairSpan>, limits:Limits }
+pub struct Pairs { bytes:core::slice::View<u8>, spans:core::slice::View<ext::form::PairSpan>, position:i32 }
+
+fn valid_limits(limits:Limits) -> bool {
+    return limits.max_pairs>=0 && limits.max_component_bytes>=0 && limits.max_decoded_bytes>=0;
+}
+fn span_capacity_limit() -> i32 { return (2147483647/core::mem::size_of<ext::form::PairSpan>()) as i32; }
+fn vec_error(error:alloc::vec::Error) -> Error {
+    return match(error) {
+        alloc::vec::Error::AllocationFailed -> Error::AllocationFailed,
+        alloc::vec::Error::CapacityOverflow -> Error::CapacityOverflow,
+        _ -> Error::Format(ext::form::Error::Bounds)
+    };
+}
+fn growth(capacity:i32, needed:i32, maximum:i32) -> i32 {
+    let target:i32=maximum;
+    if(capacity<=maximum/2) { target=capacity*2; }
+    if(target<4 && maximum>=4) { target=4; }
+    if(target<needed) { target=needed; }
+    return target;
+}
+fn selected(bytes:core::slice::View<u8>, span:ext::form::PairSpan) -> ext::form::Pair {
+    return ext::form::Pair {
+        name:core::slice::View { values:bytes.values,start:bytes.start+span.name_start,length:span.name_length },
+        value:core::slice::View { values:bytes.values,start:bytes.start+span.name_start+span.name_length,length:span.value_length }
+    };
+}
+
+pub fn new(limits:Limits) -> core::result::Result<Form,Error> {
+    if(!valid_limits(limits)) { return core::result::Err(Error::Format(ext::form::Error::InvalidLimits)); }
+    let bytes:alloc::vec::Vec<u8> =alloc::vec::new();
+    let spans:alloc::vec::Vec<ext::form::PairSpan> =alloc::vec::new();
+    return core::result::Ok(Form { bytes:bytes,spans:spans,limits:limits });
+}
+
+// Borrowed admission already established exact sizes. Input stays immutable
+// while both passes run; no source descriptor is retained by the new owner.
+fn decode(form:&Form, parsed:ext::form::Parsed) -> core::result::Result<i32,Error> {
+    let cursor:ext::form::Pairs=parsed.pairs(); let offset:i32=0;
+    while(true) {
+        let next:core::option::Option<ext::form::EncodedPair> =cursor.next();
+        if(next.is_none()) { break; }
+        if(form.spans.len()>=parsed.pair_count) { return core::result::Err(Error::Format(ext::form::Error::Bounds)); }
+        let pair:ext::form::EncodedPair=next.unwrap();
+        let name_size=ext::form::component_decoded_len(pair.name);
+        if(name_size.is_err()) { return core::result::Err(Error::Format(name_size.unwrap_err())); }
+        let value_size=ext::form::component_decoded_len(pair.value);
+        if(value_size.is_err()) { return core::result::Err(Error::Format(value_size.unwrap_err())); }
+        let name_length:i32=name_size.unwrap(); let value_length:i32=value_size.unwrap();
+        if(name_length>form.bytes.len()-offset || value_length>form.bytes.len()-offset-name_length) {
+            return core::result::Err(Error::Format(ext::form::Error::Bounds));
+        }
+        let name:core::slice::View<u8> =core::slice::View { values:form.bytes.as_slice(),start:offset,length:name_length };
+        let value:core::slice::View<u8> =core::slice::View { values:form.bytes.as_slice(),start:offset+name_length,length:value_length };
+        let decoded_name=ext::form::decode_component_into(pair.name,name);
+        if(decoded_name.is_err()) { return core::result::Err(Error::Format(decoded_name.unwrap_err())); }
+        let decoded_value=ext::form::decode_component_into(pair.value,value);
+        if(decoded_value.is_err()) { return core::result::Err(Error::Format(decoded_value.unwrap_err())); }
+        let span:ext::form::PairSpan=ext::form::PairSpan { name_start:offset,name_length:name_length,value_length:value_length };
+        let appended=form.spans.try_push(span);
+        if(appended.is_err()) { return core::result::Err(vec_error(appended.unwrap_err())); }
+        offset+=name_length+value_length;
+    }
+    if(offset!=parsed.decoded_bytes || form.spans.len()!=parsed.pair_count) {
+        return core::result::Err(Error::Format(ext::form::Error::Bounds));
+    }
+    return core::result::Ok(form.spans.len());
+}
+
+pub fn parse(input:core::slice::View<u8>, limits:ext::form::Limits) -> core::result::Result<Form,Error> {
+    let admitted=ext::form::parse(input,limits);
+    if(admitted.is_err()) { return core::result::Err(Error::Format(admitted.unwrap_err())); }
+    let parsed:ext::form::Parsed=admitted.unwrap();
+    if(parsed.pair_count>span_capacity_limit()) { return core::result::Err(Error::CapacityOverflow); }
+    let made=new(Limits { max_pairs:limits.max_pairs,max_component_bytes:limits.max_component_bytes,max_decoded_bytes:limits.max_decoded_bytes });
+    if(made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    let owner:Form=made.unwrap();
+    // Resize initializes exactly the admitted byte extent, including zero.
+    // Both reservations finish before component decoding begins.
+    let bytes=owner.bytes.try_resize(parsed.decoded_bytes,0 as u8);
+    if(bytes.is_err()) { let error:Error=vec_error(bytes.unwrap_err()); owner.destroy(); return core::result::Err(error); }
+    let spans=owner.spans.try_reserve(parsed.pair_count);
+    if(spans.is_err()) { let error:Error=vec_error(spans.unwrap_err()); owner.destroy(); return core::result::Err(error); }
+    let filled=decode(owner.borrow(),parsed);
+    if(filled.is_err()) { let error:Error=filled.unwrap_err(); owner.destroy(); return core::result::Err(error); }
+    return core::result::Ok(owner);
+}
+
+pub impl Form {
+    pub fn borrow(&self) -> &Form { return self; }
+    pub fn len(&self) -> i32 { return self.spans.len(); }
+    pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
+    pub fn pair(&self, index:i32) -> core::option::Option<ext::form::Pair> {
+        if(index<0 || index>=self.spans.len()) { return core::option::None(); }
+        let span:ext::form::PairSpan=self.spans.at(index);
+        return core::option::Some(selected(self.bytes.as_view(),span));
+    }
+    pub fn pairs(&self) -> Pairs { return Pairs { bytes:self.bytes.as_view(),spans:self.spans.as_view(),position:0 }; }
+    pub fn as_pairs(&self) -> ext::form::PairSource { return ext::form::PairSource::Packed(self.bytes.as_view(),self.spans.as_view()); }
+    fn valid_storage(&self) -> bool {
+        return self.bytes.len()>=0 && self.bytes.capacity()>=self.bytes.len()
+            && self.spans.len()>=0 && self.spans.capacity()>=self.spans.len() && self.spans.capacity()<=span_capacity_limit();
+    }
+    // End every earlier borrow before any attempt. Input views must be stable
+    // and disjoint from this owner's storage. Err preserves logical contents,
+    // but an earlier successful reservation can change capacities/backing.
+    pub fn try_append(&self, pair:ext::form::Pair) -> core::result::Result<i32,Error> {
+        if(!valid_limits(self.limits)) { return core::result::Err(Error::Format(ext::form::Error::InvalidLimits)); }
+        if(!self.valid_storage() || !core::io::valid_range(pair.name.start,pair.name.length)
+            || !core::io::valid_range(pair.value.start,pair.value.length)) {
+            return core::result::Err(Error::Format(ext::form::Error::Bounds));
+        }
+        let count:i32=self.spans.len(); let before:i32=self.bytes.len();
+        if(count>=self.limits.max_pairs) { return core::result::Err(Error::Format(ext::form::Error::PairLimit)); }
+        if(pair.name.length>self.limits.max_component_bytes || pair.value.length>self.limits.max_component_bytes) {
+            return core::result::Err(Error::Format(ext::form::Error::ComponentLimit));
+        }
+        let total:u64=(before as u64)+(pair.name.length as u64)+(pair.value.length as u64);
+        if(total>self.limits.max_decoded_bytes as u64) { return core::result::Err(Error::Format(ext::form::Error::DecodedLimit)); }
+        if(count>=span_capacity_limit() || total>2147483647) { return core::result::Err(Error::CapacityOverflow); }
+        let needed:i32=total as i32;
+        if(needed>self.bytes.capacity()) {
+            let reserved=self.bytes.try_reserve(growth(self.bytes.capacity(),needed,self.limits.max_decoded_bytes)-before);
+            if(reserved.is_err()) { return core::result::Err(vec_error(reserved.unwrap_err())); }
+        }
+        if(count==self.spans.capacity()) {
+            let maximum:i32=self.limits.max_pairs; if(maximum>span_capacity_limit()) { maximum=span_capacity_limit(); }
+            let reserved=self.spans.try_reserve(growth(self.spans.capacity(),count+1,maximum)-count);
+            if(reserved.is_err()) { return core::result::Err(vec_error(reserved.unwrap_err())); }
+        }
+        // All remaining operations fit reserved initialized owners and cannot
+        // allocate. Source storage cannot be invalidated by either reservation.
+        self.bytes.try_extend(pair.name).unwrap(); self.bytes.try_extend(pair.value).unwrap();
+        self.spans.try_push(ext::form::PairSpan { name_start:before,name_length:pair.name.length,value_length:pair.value.length }).unwrap();
+        return core::result::Ok(count+1);
+    }
+    // End all pair views, cursors and encoders before clear or destroy.
+    // Clear retains capacity; destroy leaves this same owner reusable.
+    pub fn clear(&self) { self.bytes.clear(); self.spans.clear(); }
+    pub fn destroy(&self) { self.bytes.destroy(); self.spans.destroy(); }
+    pub fn encoding(&self, max_output:u64) -> core::result::Result<ext::form::Encoding,ext::form::Error> {
+        return ext::form::encoding(self.as_pairs(),max_output);
+    }
+    pub fn encode(&self, max_output:i32) -> core::result::Result<alloc::string::String,Error> {
+        if(max_output<0) { return core::result::Err(Error::Format(ext::form::Error::InvalidLimits)); }
+        let made=self.encoding(max_output as u64);
+        if(made.is_err()) { return core::result::Err(Error::Format(made.unwrap_err())); }
+        let cursor:ext::form::Encoding=made.unwrap(); let length:u64=cursor.remaining();
+        // Admitted length fits max_output:i32. Exact fills need these positive
+        // chunk calls plus one actual EOF observation, including empty forms.
+        let limits:alloc::io::ReadLimits=alloc::io::ReadLimits { max_bytes:length as i32,max_calls:(length+1023)/1024+1 };
+        let collected:core::result::Result<alloc::string::String,alloc::io::ReadFailure> =alloc::io::read_to_string<ext::form::Encoding>(cursor.borrow(),limits);
+        if(collected.is_err()) {
+            let failure:alloc::io::ReadFailure=collected.unwrap_err(); let error:Error=collection_error(failure.cause);
+            failure.destroy(); return core::result::Err(error);
+        }
+        return core::result::Ok(collected.unwrap());
+    }
+}
+
+pub impl Pairs { pub fn borrow(&self) -> &Pairs { return self; } }
+pub impl core::iter::Iterator<ext::form::Pair> for Pairs {
+    pub fn next(&self) -> core::option::Option<ext::form::Pair> {
+        if(self.position>=self.spans.length) { return core::option::None(); }
+        let span:ext::form::PairSpan=self.spans.values[self.spans.start+self.position]; self.position+=1;
+        return core::option::Some(selected(self.bytes,span));
+    }
+}
+pub impl core::iter::ExactSizeIterator<ext::form::Pair> for Pairs {
+    pub fn remaining_count(&self) -> u64 { return (self.spans.length-self.position) as u64; }
+}
+
+// Valid admitted Encoding can only fail collection through storage. Preserve
+// precise categories for that path; unexpected internal errors remain errors.
+fn collection_error(error:alloc::io::ReadError) -> Error {
+    return match(error) {
+        alloc::io::ReadError::InvalidLimits -> Error::Format(ext::form::Error::InvalidLimits),
+        alloc::io::ReadError::CallLimit -> Error::Format(ext::form::Error::OutputLimit),
+        alloc::io::ReadError::ByteLimit -> Error::Format(ext::form::Error::OutputLimit),
+        alloc::io::ReadError::Storage(detail) -> vec_error(detail),
+        alloc::io::ReadError::Io(detail) -> match(detail) {
+            core::io::Error::AllocationFailed -> Error::AllocationFailed,
+            core::io::Error::CountOverflow -> Error::CapacityOverflow,
+            core::io::Error::LimitExceeded -> Error::Format(ext::form::Error::OutputLimit),
+            _ -> Error::Format(ext::form::Error::Bounds)
+        },
+        alloc::io::ReadError::Text(detail) -> match(detail) {
+            alloc::string::Error::AllocationFailed -> Error::AllocationFailed,
+            alloc::string::Error::CapacityOverflow -> Error::CapacityOverflow,
+            _ -> Error::Format(ext::form::Error::Bounds)
+        }
+    };
+}
