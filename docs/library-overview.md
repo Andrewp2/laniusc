@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[shared random-source budget increment](stdlib-random-budget.md) adds a
+borrowed Source64 adapter that composes one draw allowance across existing
+samplers, fills and shuffles. Rejected/failed draws charge before delegation;
+source duration/internal host calls and manual owners remain separate.
+Malformed shuffle/choose Views reject before source or element access. Native
+admission/direct/model/owner gates, the 98-case sampling program and one
+selected existing contract regression pass. This finite native Linux x86_64
+increment is accepted.
+The preceding
 [checked slice-selection increment](stdlib-slice-selection.md) specifies
 comparator/natural nth-element selection, strict metadata/rank admission and
 an aliased one-element result. Whole-value permutation, outside guards,
@@ -259,6 +268,19 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Shared random-source budgets.**
+
+The [draw-budget guide](stdlib-random-budget.md) specifies one borrowed adapter,
+shared/copy/nesting semantics, exact errors and fill-prefix/shuffle-suffix
+progress. Existing unlimited sampling remains an intentional policy. Exhaustion
+returns DrawLimit without a biased fallback; quota counts Source64 calls,
+not host calls, time or memory. All five new library tests pass, including the
+7,130-case/57,040-action independent model and actual nested-owner/stride
+checks with 41 exact releases and seven no-host-call phases. The real
+[sampling program](stdlib-sample-integers.md) passes four groups/98 native cases.
+One selected existing randomness contract passes separately; historical receipts
+keep their API/source scope. This finite native Linux x86_64 increment is accepted.
 
 **Checked slice selection.**
 

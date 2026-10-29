@@ -1,0 +1,31 @@
+module app::main;
+import core::random;
+import core::result;
+
+struct Script { words:[u64], calls:i32 }
+impl Script { fn borrow(&self) -> &Script { return self; } }
+pub impl core::random::Source64 for Script {
+    pub fn draw(&self) -> core::result::Result<u64,core::random::Error> {
+        assert(self.calls<3); let word:u64=self.words[self.calls]; self.calls+=1;
+        return core::result::Ok(word);
+    }
+}
+fn draw<R>(source:&R) -> core::result::Result<u64,core::random::Error> where R:core::random::Source64 {
+    return source.draw();
+}
+fn main() -> i32 {
+    let words:[u64;3]=[0,5,18446744073709551615]; let source:Script=Script { words:words,calls:0 };
+    let budget:core::random::DrawBudget=core::random::draw_budget(2);
+    let limited:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    let rank:core::result::Result<u64,core::random::Error> =core::random::below<core::random::Budgeted<Script>>(limited.borrow(),3);
+    assert(rank.unwrap()==2 && source.calls==2 && budget.remaining()==0);
+    let copied:core::random::Budgeted<Script> =limited;
+    let exhausted:core::result::Result<u64,core::random::Error> =draw<core::random::Budgeted<Script>>(copied.borrow());
+    assert(match(exhausted.unwrap_err()) { core::random::Error::DrawLimit -> true, _ -> false });
+    assert(source.calls==2 && budget.remaining()==0);
+    let last:core::random::DrawBudget=core::random::draw_budget(1);
+    let next:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),last.borrow());
+    let flag:core::result::Result<bool,core::random::Error> =core::random::boolean<core::random::Budgeted<Script>>(next.borrow());
+    assert(flag.unwrap() && source.calls==3 && last.remaining()==0);
+    return 0;
+}

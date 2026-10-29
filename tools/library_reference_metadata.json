@@ -490,8 +490,15 @@
     },
     "core::random": {
       "guides": [
-        "docs/stdlib-randomness.md"
-      ]
+        "docs/stdlib-randomness.md",
+        "docs/stdlib-random-budget.md",
+        "docs/stdlib-sample-integers.md"
+      ],
+      "note": "Borrowed Budgeted<R> composes one DrawBudget across existing Source64 samplers without duplicate bounded APIs. At zero it returns DrawLimit without delegation; otherwise it decrements before forwarding and preserves the exact Result. Rejected/failed draws spend quota; no-draw cases spend none. Adapter copies share references, counter copies are independent, and nested adapters charge each encountered counter. Unlimited sources intentionally retain their rejection policy. Quota limits delegated source calls, not duration, internal host calls or memory. Shuffle/choose reject malformed full View metadata before empty/singleton cases or access; fill retains initialized-prefix progress and shuffle counts completed suffix swaps, not draws. Physical backing, noninterference and manual owners remain caller obligations. All five new library tests pass on finite native Linux x86_64 CPU output from the GPU compiler, including an independent operation model and actual owner/stride checks. The real sample-integers program passes four groups/98 cases; one selected existing randomness contract passes separately. Detailed receipts and conditional-uniformity assumptions are in the guides. No cryptographic algorithm, biased fallback, user-GPU execution, automatic ownership or formal verification claim is added.",
+      "declarations": {
+        "draw_budget": "Construct one u64 source-call counter without drawing or acquiring resources; zero and MAX are valid. Borrowing shares the counter, while a value copy makes an independent remaining count. No implicit reset/refill or underflow.",
+        "budgeted": "Borrow a live Source64 and DrawBudget without drawing. Its Source64 implementation returns DrawLimit at zero without delegation; otherwise decrements once before forwarding and preserves the exact success/error. Copies share references; nested adapters charge each encountered counter. Bounds source calls rather than time/internal host calls/memory; manual lifetime and noninterference obligations remain."
+      }
     },
     "core::range": {
       "guides": [

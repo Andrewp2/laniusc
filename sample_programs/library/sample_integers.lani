@@ -1,0 +1,131 @@
+// Seeded integer samples sharing one public random-source draw budget.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::random;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Options { seed:u64, bound:u64, count:u64, limit:u64, help:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Writes { calls:i32 }
+impl Writes { fn borrow(&self) -> &Writes { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+// The caller retains this one counter across every output batch.
+fn write(bytes:View<u8>, handle:i32, maximum:i32, budget:&Writes) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0;
+    while(completed < bytes.length) {
+        if (budget.calls == maximum) { return false; } budget.calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > bytes.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 {
+    let budget = Writes { calls:0 };
+    write(literal("sample_integers: operation failed\n",34),2,8,budget.borrow()); return status;
+}
+fn sample(options:&Options, values:&Vec<u64>) -> i32 {
+    let source:core::random::Xoshiro256PlusPlus = core::random::from_seed(options.seed);
+    let budget:core::random::DrawBudget = core::random::draw_budget(options.limit);
+    let bounded:core::random::Budgeted<core::random::Xoshiro256PlusPlus> = core::random::budgeted<core::random::Xoshiro256PlusPlus>(source.borrow(),budget.borrow());
+    let index:u64 = 0;
+    while(index < options.count) {
+        let drawn:Result<u64,core::random::Error> = core::random::below<core::random::Budgeted<core::random::Xoshiro256PlusPlus>>(bounded.borrow(),options.bound);
+        if (drawn.is_err()) { return match(drawn.unwrap_err()) { core::random::Error::DrawLimit -> 2, _ -> 6 }; }
+        if ((drawn.unwrap() >= options.bound) || (values.len() == 4096)) { return 6; }
+        let saved:Result<i32,alloc::vec::Error> = values.try_push(drawn.unwrap());
+        if (saved.is_err()) { return match(saved.unwrap_err()) { alloc::vec::Error::AllocationFailed -> 4, _ -> 6 }; }
+        index += 1;
+    }
+    if ((values.len() as u64) != options.count) { return 6; }
+    return 0;
+}
+fn render(values:&Vec<u64>) -> i32 {
+    let output:[u8;1024] = [0;1024]; let pending:i32 = 0;
+    let writes = Writes { calls:0 }; let index:i32 = 0;
+    while(index < values.len()) {
+        let value = values.get(index); if (value.is_none()) { return 6; }
+        let line:[u8;21] = [0;21];
+        let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_u64(line,0,20,value.unwrap());
+        if (formatted.is_err()) { return 6; } let length:i32 = formatted.unwrap();
+        if ((length < 1) || (length > 20)) { return 6; } line[length] = 10;
+        let at:i32 = 0;
+        while(at < length+1) {
+            output[pending] = line[at]; pending += 1; at += 1;
+            if (pending == 1024) {
+                if (!write(core::slice::view(output,1024).unwrap(),1,128,writes.borrow())) { return 5; }
+                pending = 0;
+            }
+        }
+        index += 1;
+    }
+    if (pending != 0) {
+        if (!write(core::slice::view(output,pending).unwrap(),1,128,writes.borrow())) { return 5; }
+    }
+    return 0;
+}
+fn run(options:&Options) -> i32 {
+    let created:Result<Vec<u64>,alloc::vec::Error> = alloc::vec::with_capacity<u64>(options.count as i32);
+    if (created.is_err()) { return match(created.unwrap_err()) { alloc::vec::Error::AllocationFailed -> 4, _ -> 6 }; }
+    let values = created.unwrap(); let status:i32 = sample(options,values.borrow());
+    if (status == 0) { status = render(values.borrow()); }
+    values.destroy(); return status;
+}
+fn help() -> i32 {
+    let budget = Writes { calls:0 }; let text = literal("Usage: sample_integers SEED BOUND COUNT DRAW_LIMIT\nPrint COUNT deterministic non-cryptographic integers in [0, BOUND), one per line.\nAll arguments are unsigned decimal u64 with at most 20 bytes; leading zeros are allowed.\nBOUND must be positive; COUNT is 0..4096. DRAW_LIMIT is shared across the whole request.\nRejected draws spend the limit. Exhaustion returns status 2 without output.\nCOUNT zero produces empty output; BOUND one needs no draws. No stdin is read.\nOutput permits 128 write attempts. A sole --help or -h shows help.\n",532);
+    if (!write(text,1,128,budget.borrow())) { return 5; } return 0;
+}
+fn arguments(values:View<View<u8>>) -> Result<Options,i32> {
+    if (values.length == 1) {
+        let first:View<u8> = values.values[values.start];
+        if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) {
+            return core::result::Ok(Options { seed:0,bound:1,count:0,limit:0,help:true });
+        }
+    }
+    if (values.length != 4) { return core::result::Err(2); }
+    let numbers:[u64;4] = [0;4]; let index:i32 = 0;
+    while(index < 4) {
+        let token:View<u8> = values.values[values.start+index];
+        if ((token.length < 1) || (token.length > 20)) { return core::result::Err(2); }
+        let parsed:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(token.values,token.start,token.length);
+        if (parsed.is_err()) { return core::result::Err(2); }
+        numbers[index] = parsed.unwrap(); index += 1;
+    }
+    if ((numbers[1] == 0) || (numbers[2] > 4096)) { return core::result::Err(2); }
+    return core::result::Ok(Options { seed:numbers[0],bound:numbers[1],count:numbers[2],limit:numbers[3],help:false });
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,4,80);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let owner = captured.unwrap(); let parsed:Result<Options,i32> = arguments(owner.as_view()); owner.destroy();
+    if (parsed.is_err()) { return report(parsed.unwrap_err()); } let options:Options = parsed.unwrap();
+    let status:i32 = 0;
+    if (options.help) { status = help(); } else { status = run(options.borrow()); }
+    if (status != 0) { return report(status); } return 0;
+}

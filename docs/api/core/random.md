@@ -8,11 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
+Borrowed Budgeted<R> composes one DrawBudget across existing Source64 samplers without duplicate bounded APIs. At zero it returns DrawLimit without delegation; otherwise it decrements before forwarding and preserves the exact Result. Rejected/failed draws spend quota; no-draw cases spend none. Adapter copies share references, counter copies are independent, and nested adapters charge each encountered counter. Unlimited sources intentionally retain their rejection policy. Quota limits delegated source calls, not duration, internal host calls or memory. Shuffle/choose reject malformed full View metadata before empty/singleton cases or access; fill retains initialized-prefix progress and shuffle counts completed suffix swaps, not draws. Physical backing, noninterference and manual owners remain caller obligations. All five new library tests pass on finite native Linux x86_64 CPU output from the GPU compiler, including an independent operation model and actual owner/stride checks. The real sample-integers program passes four groups/98 cases; one selected existing randomness contract passes separately. Detailed receipts and conditional-uniformity assumptions are in the guides. No cryptographic algorithm, biased fallback, user-GPU execution, automatic ownership or formal verification claim is added.
+
 ## Contract and evidence guides
 
 - [stdlib-randomness](../../stdlib-randomness.md)
+- [stdlib-random-budget](../../stdlib-random-budget.md)
+- [stdlib-sample-integers](../../stdlib-sample-integers.md)
 
-Declaration counts: enum: 1; field: 7; function: 11; impl: 2; method: 7; struct: 3; trait: 1; trait member: 1; variant: 7.
+Declaration counts: enum: 1; field: 10; function: 13; impl: 5; method: 11; struct: 5; trait: 1; trait member: 1; variant: 8.
 
 ## Declared imports
 
@@ -90,6 +94,14 @@ NoProgress
 InvalidCount
 ```
 
+#### variant: DrawLimit
+
+[Source line 10](../../../stdlib/core/random.lani#L10)
+
+```lanius
+DrawLimit
+```
+
 ### struct: Failure
 
 [Source line 11](../../../stdlib/core/random.lani#L11)
@@ -114,9 +126,49 @@ cause: Error
 completed: i32
 ```
 
+### struct: DrawBudget
+
+[Source line 15](../../../stdlib/core/random.lani#L15)
+
+```lanius
+pub struct DrawBudget
+```
+
+#### field: draws_left
+
+[Source line 15](../../../stdlib/core/random.lani#L15)
+
+```lanius
+draws_left: u64
+```
+
+### struct: Budgeted
+
+[Source line 16](../../../stdlib/core/random.lani#L16)
+
+```lanius
+pub struct Budgeted<R>
+```
+
+#### field: source
+
+[Source line 16](../../../stdlib/core/random.lani#L16)
+
+```lanius
+source: &R
+```
+
+#### field: budget
+
+[Source line 16](../../../stdlib/core/random.lani#L16)
+
+```lanius
+budget: &DrawBudget
+```
+
 ### struct: State
 
-[Source line 13](../../../stdlib/core/random.lani#L13)
+[Source line 17](../../../stdlib/core/random.lani#L17)
 
 ```lanius
 pub struct State
@@ -124,7 +176,7 @@ pub struct State
 
 #### field: s0
 
-[Source line 13](../../../stdlib/core/random.lani#L13)
+[Source line 17](../../../stdlib/core/random.lani#L17)
 
 ```lanius
 s0: u64
@@ -132,7 +184,7 @@ s0: u64
 
 #### field: s1
 
-[Source line 13](../../../stdlib/core/random.lani#L13)
+[Source line 17](../../../stdlib/core/random.lani#L17)
 
 ```lanius
 s1: u64
@@ -140,7 +192,7 @@ s1: u64
 
 #### field: s2
 
-[Source line 13](../../../stdlib/core/random.lani#L13)
+[Source line 17](../../../stdlib/core/random.lani#L17)
 
 ```lanius
 s2: u64
@@ -148,7 +200,7 @@ s2: u64
 
 #### field: s3
 
-[Source line 13](../../../stdlib/core/random.lani#L13)
+[Source line 17](../../../stdlib/core/random.lani#L17)
 
 ```lanius
 s3: u64
@@ -156,7 +208,7 @@ s3: u64
 
 ### struct: Xoshiro256PlusPlus
 
-[Source line 14](../../../stdlib/core/random.lani#L14)
+[Source line 18](../../../stdlib/core/random.lani#L18)
 
 ```lanius
 pub struct Xoshiro256PlusPlus
@@ -164,7 +216,7 @@ pub struct Xoshiro256PlusPlus
 
 #### field: state
 
-[Source line 14](../../../stdlib/core/random.lani#L14)
+[Source line 18](../../../stdlib/core/random.lani#L18)
 
 ```lanius
 state: State
@@ -172,9 +224,29 @@ state: State
 
 ## Free functions and extern declarations
 
-### function: from_seed
+### function: draw_budget
+
+[Source line 20](../../../stdlib/core/random.lani#L20)
+
+```lanius
+pub fn draw_budget(limit: u64) -> DrawBudget
+```
+
+Construct one u64 source-call counter without drawing or acquiring resources; zero and MAX are valid. Borrowing shares the counter, while a value copy makes an independent remaining count. No implicit reset/refill or underflow.
+
+### function: budgeted
 
 [Source line 25](../../../stdlib/core/random.lani#L25)
+
+```lanius
+pub fn budgeted<R>(source: &R, budget: &DrawBudget) -> Budgeted<R> where R: Source64
+```
+
+Borrow a live Source64 and DrawBudget without drawing. Its Source64 implementation returns DrawLimit at zero without delegation; otherwise decrements once before forwarding and preserves the exact success/error. Copies share references; nested adapters charge each encountered counter. Bounds source calls rather than time/internal host calls/memory; manual lifetime and noninterference obligations remain.
+
+### function: from_seed
+
+[Source line 53](../../../stdlib/core/random.lani#L53)
 
 ```lanius
 pub fn from_seed(seed: u64) -> Xoshiro256PlusPlus
@@ -182,7 +254,7 @@ pub fn from_seed(seed: u64) -> Xoshiro256PlusPlus
 
 ### function: from_state
 
-[Source line 30](../../../stdlib/core/random.lani#L30)
+[Source line 58](../../../stdlib/core/random.lani#L58)
 
 ```lanius
 pub fn from_state(state: State) -> core::result::Result<Xoshiro256PlusPlus, Error>
@@ -190,7 +262,7 @@ pub fn from_state(state: State) -> core::result::Result<Xoshiro256PlusPlus, Erro
 
 ### function: below
 
-[Source line 77](../../../stdlib/core/random.lani#L77)
+[Source line 105](../../../stdlib/core/random.lani#L105)
 
 ```lanius
 pub fn below<R>(source: &R, bound: u64) -> core::result::Result<u64, Error> where R: Source64
@@ -198,7 +270,7 @@ pub fn below<R>(source: &R, bound: u64) -> core::result::Result<u64, Error> wher
 
 ### function: inclusive_u64
 
-[Source line 88](../../../stdlib/core/random.lani#L88)
+[Source line 116](../../../stdlib/core/random.lani#L116)
 
 ```lanius
 pub fn inclusive_u64<R>(source: &R, low: u64, high: u64) -> core::result::Result<u64, Error> where R: Source64
@@ -206,7 +278,7 @@ pub fn inclusive_u64<R>(source: &R, low: u64, high: u64) -> core::result::Result
 
 ### function: inclusive_i64
 
-[Source line 96](../../../stdlib/core/random.lani#L96)
+[Source line 124](../../../stdlib/core/random.lani#L124)
 
 ```lanius
 pub fn inclusive_i64<R>(source: &R, low: i64, high: i64) -> core::result::Result<i64, Error> where R: Source64
@@ -214,7 +286,7 @@ pub fn inclusive_i64<R>(source: &R, low: i64, high: i64) -> core::result::Result
 
 ### function: unit_f32
 
-[Source line 103](../../../stdlib/core/random.lani#L103)
+[Source line 131](../../../stdlib/core/random.lani#L131)
 
 ```lanius
 pub fn unit_f32<R>(source: &R) -> core::result::Result<f32, Error> where R: Source64
@@ -222,7 +294,7 @@ pub fn unit_f32<R>(source: &R) -> core::result::Result<f32, Error> where R: Sour
 
 ### function: boolean
 
-[Source line 108](../../../stdlib/core/random.lani#L108)
+[Source line 136](../../../stdlib/core/random.lani#L136)
 
 ```lanius
 pub fn boolean<R>(source: &R) -> core::result::Result<bool, Error> where R: Source64
@@ -230,7 +302,7 @@ pub fn boolean<R>(source: &R) -> core::result::Result<bool, Error> where R: Sour
 
 ### function: unit_f64
 
-[Source line 113](../../../stdlib/core/random.lani#L113)
+[Source line 141](../../../stdlib/core/random.lani#L141)
 
 ```lanius
 pub fn unit_f64<R>(source: &R) -> core::result::Result<f64, Error> where R: Source64
@@ -238,7 +310,7 @@ pub fn unit_f64<R>(source: &R) -> core::result::Result<f64, Error> where R: Sour
 
 ### function: fill
 
-[Source line 120](../../../stdlib/core/random.lani#L120)
+[Source line 148](../../../stdlib/core/random.lani#L148)
 
 ```lanius
 pub fn fill<R>(source: &R, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, Failure> where R: Source64
@@ -246,7 +318,7 @@ pub fn fill<R>(source: &R, bytes: [u8], offset: i32, count: i32) -> core::result
 
 ### function: shuffle
 
-[Source line 134](../../../stdlib/core/random.lani#L134)
+[Source line 162](../../../stdlib/core/random.lani#L162)
 
 ```lanius
 pub fn shuffle<R,T>(source: &R, values: core::slice::View<T>) -> core::result::Result<i32, Failure> where R: Source64
@@ -254,7 +326,7 @@ pub fn shuffle<R,T>(source: &R, values: core::slice::View<T>) -> core::result::R
 
 ### function: choose
 
-[Source line 145](../../../stdlib/core/random.lani#L145)
+[Source line 176](../../../stdlib/core/random.lani#L176)
 
 ```lanius
 pub fn choose<R,T>(source: &R, values: core::slice::View<T>) -> core::result::Result<core::option::Option<T>, Error> where R: Source64
@@ -280,9 +352,65 @@ pub fn draw(&self) -> core::result::Result<u64, Error>;
 
 ## Implementation blocks and public methods
 
-### impl at line 34
+### impl at line 21
 
-[Source line 34](../../../stdlib/core/random.lani#L34)
+[Source line 21](../../../stdlib/core/random.lani#L21)
+
+```lanius
+pub impl DrawBudget
+```
+
+#### method: borrow
+
+[Source line 22](../../../stdlib/core/random.lani#L22)
+
+```lanius
+pub fn borrow(&self) -> &DrawBudget
+```
+
+#### method: remaining
+
+[Source line 23](../../../stdlib/core/random.lani#L23)
+
+```lanius
+pub fn remaining(&self) -> u64
+```
+
+### impl at line 28
+
+[Source line 28](../../../stdlib/core/random.lani#L28)
+
+```lanius
+pub impl<R> Budgeted<R>
+```
+
+#### method: borrow
+
+[Source line 29](../../../stdlib/core/random.lani#L29)
+
+```lanius
+pub fn borrow(&self) -> &Budgeted<R>
+```
+
+### impl at line 31
+
+[Source line 31](../../../stdlib/core/random.lani#L31)
+
+```lanius
+pub impl<R> Source64 for Budgeted<R> where R: Source64
+```
+
+#### method: draw
+
+[Source line 32](../../../stdlib/core/random.lani#L32)
+
+```lanius
+pub fn draw(&self) -> core::result::Result<u64, Error>
+```
+
+### impl at line 62
+
+[Source line 62](../../../stdlib/core/random.lani#L62)
 
 ```lanius
 pub impl Xoshiro256PlusPlus
@@ -290,7 +418,7 @@ pub impl Xoshiro256PlusPlus
 
 #### method: borrow
 
-[Source line 35](../../../stdlib/core/random.lani#L35)
+[Source line 63](../../../stdlib/core/random.lani#L63)
 
 ```lanius
 pub fn borrow(&self) -> &Xoshiro256PlusPlus
@@ -298,7 +426,7 @@ pub fn borrow(&self) -> &Xoshiro256PlusPlus
 
 #### method: snapshot
 
-[Source line 36](../../../stdlib/core/random.lani#L36)
+[Source line 64](../../../stdlib/core/random.lani#L64)
 
 ```lanius
 pub fn snapshot(&self) -> State
@@ -306,7 +434,7 @@ pub fn snapshot(&self) -> State
 
 #### method: next_u64
 
-[Source line 37](../../../stdlib/core/random.lani#L37)
+[Source line 65](../../../stdlib/core/random.lani#L65)
 
 ```lanius
 pub fn next_u64(&self) -> u64
@@ -314,7 +442,7 @@ pub fn next_u64(&self) -> u64
 
 #### method: next_u32
 
-[Source line 46](../../../stdlib/core/random.lani#L46)
+[Source line 74](../../../stdlib/core/random.lani#L74)
 
 ```lanius
 pub fn next_u32(&self) -> u32
@@ -322,7 +450,7 @@ pub fn next_u32(&self) -> u32
 
 #### method: jump
 
-[Source line 62](../../../stdlib/core/random.lani#L62)
+[Source line 90](../../../stdlib/core/random.lani#L90)
 
 ```lanius
 pub fn jump(&self)
@@ -330,15 +458,15 @@ pub fn jump(&self)
 
 #### method: long_jump
 
-[Source line 66](../../../stdlib/core/random.lani#L66)
+[Source line 94](../../../stdlib/core/random.lani#L94)
 
 ```lanius
 pub fn long_jump(&self)
 ```
 
-### impl at line 71
+### impl at line 99
 
-[Source line 71](../../../stdlib/core/random.lani#L71)
+[Source line 99](../../../stdlib/core/random.lani#L99)
 
 ```lanius
 pub impl Source64 for Xoshiro256PlusPlus
@@ -346,7 +474,7 @@ pub impl Source64 for Xoshiro256PlusPlus
 
 #### method: draw
 
-[Source line 72](../../../stdlib/core/random.lani#L72)
+[Source line 100](../../../stdlib/core/random.lani#L100)
 
 ```lanius
 pub fn draw(&self) -> core::result::Result<u64, Error>

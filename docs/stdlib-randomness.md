@@ -10,6 +10,13 @@ uses portable Lanius operations and no allocation or host services. Other target
 including GPU execution of user programs, have not been established by these
 tests. The entropy module requires the existing Linux getrandom binding.
 
+The [shared draw-budget adapter](stdlib-random-budget.md) composes one
+Source64 allowance across existing samplers; malformed shuffle/choose Views
+reject before access. All five new library tests and the real sampling
+program's four groups/98 cases pass on native Linux x86_64. One selected
+existing contract regression passes separately. Earlier receipts below retain
+their source/API scope; draw budgets do not bound time or internal host calls.
+
 ## Deterministic generator
 
 `from_seed(seed: u64)` constructs `Xoshiro256PlusPlus` using xoshiro256++ 1.0.
@@ -64,9 +71,13 @@ The scalar functions return `Result<value, Error>`. Singleton intervals and
 singleton choice consume no random word. Full-width integer intervals consume
 one word. Other integer ranges use rejection sampling: discard words below
 `2^64 mod bound`, then reduce modulo bound. This removes modulo bias. A draw can
-be rejected repeatedly; there is no fixed retry cap. An unsuitable custom source
-can therefore run indefinitely. Source errors propagate immediately, including
-after rejected words. Source state and host reads are never rolled back.
+be rejected repeatedly. Ordinary sources intentionally retain an unlimited
+rejection policy; an unsuitable custom source can run indefinitely. Pass the
+borrowed [Budgeted adapter](stdlib-random-budget.md) to select a shared draw
+limit without changing samplers or substituting biased fallback values. Its
+counter charges rejected and failed draws and does not bound source duration
+or internal host calls. Source errors propagate immediately, including after
+rejected words; source state and host reads are never rolled back.
 
 Floating results occupy fixed equally spaced grids in `[0, 1)`; one is never
 returned. This is not a distribution over every representable floating value.
@@ -87,6 +98,11 @@ accessing the source or destination. The caller must physically back the claimed
 range: the compiler still lacks slice-length projection. Indexed stores honor
 the byte slice's stride, including native arrays and packed storage.
 
+Shuffle and choose reject negative View start/length or an overflowing
+start+length before empty/singleton handling, draws or element access. Shuffle
+reports Bounds with completed zero; choose returns Bounds. Physical backing
+still cannot be inferred from those checks.
+
 Shuffle uses descending Fisher–Yates steps, choosing a position in the remaining
 prefix and swapping it with that prefix's last element. The expected number of
 draws is O(n), and storage is O(1). It touches only the selected view. Empty and
@@ -106,7 +122,8 @@ their documented backing and lifetime preconditions.
 The [bounded nonblocking entropy API](stdlib-entropy-bounded.md) adds shared
 attempt budgets, a single-attempt `read_some` operation and `fill_bounded` with
 completed-prefix errors. Its new calls use `GRND_NONBLOCK`; the APIs described
-below retain their flags-zero behavior.
+below retain their flags-zero behavior. Entropy attempt budgets count host
+calls; core DrawBudget counts delegated Source64 calls. Neither is a deadline.
 
 `std::entropy::fill(bytes, offset, count)` returns the number of bytes copied or
 `core::random::Failure { cause, completed }`. It uses packed stack staging to
@@ -171,6 +188,11 @@ accepted limit; output failure can leave a written prefix. There is no streaming
 or reservoir-sampling claim.
 
 ## Execution evidence
+
+These receipts predate the new shared DrawBudget adapter and strict
+shuffle/choose View admission. The incremental gates are tracked separately in
+the [budget guide](stdlib-random-budget.md); historical counts are not extended
+to the additions.
 
 `tests/randomness_execution.rs` compiles the real Lanius modules and runs native
 executables. Its six groups cover:

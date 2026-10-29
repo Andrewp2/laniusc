@@ -1,0 +1,9 @@
+module app::main;
+import core::random;
+struct Missing {}
+impl Missing { fn borrow(&self) -> &Missing { return self; } }
+fn main() -> i32 {
+    let source:Missing=Missing {}; let budget:core::random::DrawBudget=core::random::draw_budget(0);
+    let rejected:core::random::Budgeted<Missing> =core::random::budgeted<Missing>(source.borrow(),budget.borrow()); // rejected_source_bound
+    return 0;
+}

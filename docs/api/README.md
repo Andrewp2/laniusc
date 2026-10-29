@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **274 modules**, **13484 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **274 modules**, **13499 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -64,7 +64,7 @@ Inventory: **274 modules**, **13484 declaration/member entries**. Counts include
 | [core::panic](core/panic.md) | [source](../../stdlib/core/panic.lani#L3) | 29 | Source inventory | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
 | [core::path](core/path.md) | [source](../../stdlib/core/path.lani#L5) | 78 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [core::path_rules](core/path_rules.md) | [source](../../stdlib/core/path_rules.lani#L3) | 59 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
-| [core::random](core/random.md) | [source](../../stdlib/core/random.lani#L5) | 40 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
+| [core::random](core/random.md) | [source](../../stdlib/core/random.lani#L5) | 55 | Source inventory | [stdlib-randomness](../stdlib-randomness.md), [stdlib-random-budget](../stdlib-random-budget.md), [stdlib-sample-integers](../stdlib-sample-integers.md) |
 | [core::range](core/range.md) | [source](../../stdlib/core/range.lani#L9) | 51 | Source inventory | [stdlib-ranges](../stdlib-ranges.md) |
 | [core::result](core/result.md) | [source](../../stdlib/core/result.lani#L7) | 27 | Source inventory | [stdlib-result](../stdlib-result.md), [stdlib-outcome-composition](../stdlib-outcome-composition.md), [stdlib-optional-sum](../stdlib-optional-sum.md) |
 | [core::runtime](core/runtime.md) | [source](../../stdlib/core/runtime.lani#L15) | 113 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
