@@ -1,0 +1,70 @@
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+struct Unit {}
+struct Swap<T> { value:T,calls:i32 }
+impl<T> Swap<T> { fn borrow(&self) -> &Swap<T> { return self; } }
+pub impl<T> core::iter::Mapper<T,core::pair::Pair<T,T>> for Swap<T> {
+    pub fn apply(&self,old:T) -> core::pair::Pair<T,T> { self.calls+=1; return core::pair::Pair { first:self.value,second:old }; }
+}
+struct UnitToBool { calls:i32 }
+impl UnitToBool { fn borrow(&self) -> &UnitToBool { return self; } }
+pub impl core::iter::Mapper<Unit,core::pair::Pair<Unit,bool>> for UnitToBool {
+    pub fn apply(&self,old:Unit) -> core::pair::Pair<Unit,bool> { self.calls+=1; return core::pair::Pair { first:old,second:true }; }
+}
+struct BoolToUnit { calls:i32 }
+impl BoolToUnit { fn borrow(&self) -> &BoolToUnit { return self; } }
+pub impl core::iter::Mapper<bool,core::pair::Pair<bool,Unit>> for BoolToUnit {
+    pub fn apply(&self,old:bool) -> core::pair::Pair<bool,Unit> { assert(!old); self.calls+=1; return core::pair::Pair { first:true,second:Unit {} }; }
+}
+fn hash_shapes() {
+    let booleans:alloc::hash_map::HashMap<i32,bool> =alloc::hash_map::new(); assert(booleans.try_insert(2,false).is_ok());
+    let bool_update:Swap<bool> =Swap { value:true,calls:0 };
+    let old:core::option::Option<bool> =booleans.update_value(2,bool_update.borrow()); assert(old.is_some() && !old.unwrap() && bool_update.calls==1);
+    assert(booleans.get(2).unwrap()); booleans.destroy();
+    let first:[u64;3]=[0,18446744073709551615,9223372036854775811]; let replacement:[u64;3]=[18446744073709551614,37,0];
+    let arrays:alloc::hash_map::HashMap<i32,[u64;3]> =alloc::hash_map::new(); assert(arrays.try_insert(4,first).is_ok());
+    let array_update:Swap<[u64;3]> =Swap { value:replacement,calls:0 };
+    let prior:core::option::Option<[u64;3]> =arrays.update_value(4,array_update.borrow()); assert(prior.is_some() && array_update.calls==1);
+    let old_array:[u64;3]=prior.unwrap(); let new_array:[u64;3]=arrays.get(4).unwrap(); let i:i32=0;
+    while(i<3) { assert(old_array[i]==first[i] && new_array[i]==replacement[i]); i+=1; } arrays.destroy();
+    let unit_values:alloc::hash_map::HashMap<i32,Unit> =alloc::hash_map::new(); assert(unit_values.try_insert(5,Unit {}).is_ok());
+    let to_bool:UnitToBool=UnitToBool { calls:0 }; let answer:core::option::Option<bool> =unit_values.update_value(5,to_bool.borrow());
+    assert(answer.is_some() && answer.unwrap() && to_bool.calls==1 && unit_values.get(5).is_some()); unit_values.destroy();
+    let unit_results:alloc::hash_map::HashMap<i32,bool> =alloc::hash_map::new(); assert(unit_results.try_insert(6,false).is_ok());
+    let to_unit:BoolToUnit=BoolToUnit { calls:0 }; let empty_result:core::option::Option<Unit> =unit_results.update_value(6,to_unit.borrow());
+    assert(empty_result.is_some() && to_unit.calls==1 && unit_results.get(6).unwrap()); unit_results.destroy();
+    // Both callback outputs are zero-sized. Keep this distinct from the two
+    // singly zero-sized paths above so a compiler limitation remains visible.
+    let units:alloc::hash_map::HashMap<i32,Unit> =alloc::hash_map::new(); assert(units.try_insert(7,Unit {}).is_ok());
+    let zero:Swap<Unit> =Swap { value:Unit {},calls:0 }; let zero_result:core::option::Option<Unit> =units.update_value(7,zero.borrow());
+    assert(zero_result.is_some() && zero.calls==1 && units.get(7).is_some() && units.len()==1); units.destroy();
+}
+fn tree_shapes() {
+    let booleans:alloc::tree_map::TreeMap<i32,bool> =alloc::tree_map::new(); assert(booleans.try_insert(2,false).is_ok());
+    let bool_update:Swap<bool> =Swap { value:true,calls:0 };
+    let old:core::option::Option<bool> =booleans.update_value(2,bool_update.borrow()); assert(old.is_some() && !old.unwrap() && bool_update.calls==1);
+    assert(booleans.get(2).unwrap()); booleans.destroy();
+    let first:[u64;3]=[0,18446744073709551615,9223372036854775811]; let replacement:[u64;3]=[18446744073709551614,37,0];
+    let arrays:alloc::tree_map::TreeMap<i32,[u64;3]> =alloc::tree_map::new(); assert(arrays.try_insert(4,first).is_ok());
+    let array_update:Swap<[u64;3]> =Swap { value:replacement,calls:0 };
+    let prior:core::option::Option<[u64;3]> =arrays.update_value(4,array_update.borrow()); assert(prior.is_some() && array_update.calls==1);
+    let old_array:[u64;3]=prior.unwrap(); let new_array:[u64;3]=arrays.get(4).unwrap(); let i:i32=0;
+    while(i<3) { assert(old_array[i]==first[i] && new_array[i]==replacement[i]); i+=1; } arrays.destroy();
+    let unit_values:alloc::tree_map::TreeMap<i32,Unit> =alloc::tree_map::new(); assert(unit_values.try_insert(5,Unit {}).is_ok());
+    let to_bool:UnitToBool=UnitToBool { calls:0 }; let answer:core::option::Option<bool> =unit_values.update_value(5,to_bool.borrow());
+    assert(answer.is_some() && answer.unwrap() && to_bool.calls==1 && unit_values.get(5).is_some()); unit_values.destroy();
+    let unit_results:alloc::tree_map::TreeMap<i32,bool> =alloc::tree_map::new(); assert(unit_results.try_insert(6,false).is_ok());
+    let to_unit:BoolToUnit=BoolToUnit { calls:0 }; let empty_result:core::option::Option<Unit> =unit_results.update_value(6,to_unit.borrow());
+    assert(empty_result.is_some() && to_unit.calls==1 && unit_results.get(6).unwrap()); unit_results.destroy();
+    // Both callback outputs are zero-sized. Keep this distinct from the two
+    // singly zero-sized paths above so a compiler limitation remains visible.
+    let units:alloc::tree_map::TreeMap<i32,Unit> =alloc::tree_map::new(); assert(units.try_insert(7,Unit {}).is_ok());
+    let zero:Swap<Unit> =Swap { value:Unit {},calls:0 }; let zero_result:core::option::Option<Unit> =units.update_value(7,zero.borrow());
+    assert(zero_result.is_some() && zero.calls==1 && units.get(7).is_some() && units.len()==1); units.destroy();
+}
+fn main() -> i32 { hash_shapes(); tree_shapes(); return 0; }

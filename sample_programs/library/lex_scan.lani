@@ -8,8 +8,10 @@ import core::decimal;
 import core::fmt;
 import core::format;
 import core::io;
+import core::iter;
 import core::mem;
 import core::option;
+import core::pair;
 import core::path;
 import core::result;
 import core::slice;
@@ -32,6 +34,14 @@ impl Config { fn borrow(&self) -> &Config { return self; } }
 struct Detail { stage: i32, rule: i32, offset: i32 }
 impl Detail { fn borrow(&self) -> &Detail { return self; } }
 struct Kind { id: i32, skip: bool }
+struct IncrementCount {}
+impl IncrementCount { fn borrow(&self) -> &IncrementCount { return self; } }
+pub impl core::iter::Mapper<u64,core::pair::Pair<u64,bool>> for IncrementCount {
+    pub fn apply(&self, value: u64) -> core::pair::Pair<u64,bool> {
+        if (value == 18446744073709551615) { return core::pair::Pair { first: value, second: false }; }
+        return core::pair::Pair { first: value+1, second: true };
+    }
+}
 struct Plan { lexer: ext::lexer::Lexer, kinds: alloc::vec::Vec<Kind>, counts: alloc::hash_map::HashMap<i32,u64> }
 impl Plan {
     fn borrow(&self) -> &Plan { return self; }
@@ -164,16 +174,14 @@ fn row(output: &alloc::io::Buffer, id: i32, first: u64, second: u64, counts: boo
 fn scan(plan: &Plan, config: Config, input: core::text::Text, output: &alloc::io::Buffer, detail: &Detail) -> i32 {
     let limits = ext::lexer::default_scan_limits(); limits.max_input_bytes = config.input; limits.max_steps = 1000000; limits.max_tokens = config.tokens; limits.max_calls = config.calls; limits.max_work = config.work;
     let made = plan.lexer.scan(input,limits); if (made.is_err()) { return fail(detail,lexer_status(made.unwrap_err(),detail),5); }
-    let cursor = made.unwrap(); let status: i32 = 0;
+    let cursor = made.unwrap(); let status: i32 = 0; let increment = IncrementCount {};
     if (config.counts) { status = append(output,bytes("id,count\n",9)); } else { status = append(output,bytes("id,start,end\n",13)); }
     while (status == 0) {
         let next = cursor.next(); if (next.is_err()) { status = fail(detail,lexer_status(next.unwrap_err(),detail),5); break; }
         let found = next.unwrap(); if (found.is_none()) { break; } let token = found.unwrap();
         if (config.counts) {
-            let previous = plan.counts.get(token.id); if (previous.is_none() || previous.unwrap() == 18446744073709551615) { status = 2; break; }
-            let value: u64 = previous.unwrap()+1;
-            let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<i32,u64>>,alloc::hash_map::Error> = plan.counts.try_insert(token.id,value);
-            if (inserted.is_err()) { status = 4; break; }
+            let updated: core::option::Option<bool> = plan.counts.update_value<IncrementCount,bool>(token.id,increment.borrow());
+            if (updated.is_none() || !updated.unwrap()) { status = 2; break; }
         } else { status = row(output,token.id,token.span.start as u64,token.span.end as u64,false); }
     }
     cursor.destroy();

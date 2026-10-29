@@ -112,9 +112,10 @@
         "docs/stdlib-iterator-collection-sinks.md",
         "docs/stdlib-owning-hash.md",
         "docs/stdlib-replacement-sinks.md",
-        "docs/stdlib-exact-size-iterators.md"
+        "docs/stdlib-exact-size-iterators.md",
+        "docs/stdlib-map-updates.md"
       ],
-      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope."
+      "note": "Scoped update_value performs one lookup, preserves the exact stored key and structure, and reinstalls Pair.first before returning Some(Pair.second), including when R is a Result error. Manual callback exclusivity and ownership are required. All seven new library gates and four word-concordance groups/103 native cases pass on the finite native Linux x86_64 profile; the map-update guide defines exact scope. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope."
     },
     "alloc::hash_set": {
       "guides": [
@@ -180,9 +181,10 @@
         "docs/stdlib-owning-tree.md",
         "docs/stdlib-replacement-sinks.md",
         "docs/stdlib-latest-values.md",
-        "docs/stdlib-exact-size-iterators.md"
+        "docs/stdlib-exact-size-iterators.md",
+        "docs/stdlib-map-updates.md"
       ],
-      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope."
+      "note": "Scoped update_value performs one lookup, preserves the exact stored key and structure, and reinstalls Pair.first before returning Some(Pair.second), including when R is a Result error. Manual callback exclusivity and ownership are required. All seven new library gates and four word-concordance groups/103 native cases pass on the finite native Linux x86_64 profile; the map-update guide defines exact scope. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope."
     },
     "alloc::tree_set": {
       "guides": [

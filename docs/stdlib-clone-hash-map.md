@@ -128,12 +128,17 @@ copies, table views and owner aliases become invalid. Trait
 shallow copies elsewhere. Use the borrowed-owner helper when the active map
 variable must be reset for reuse.
 
-Remove a pair to transfer its owners before changing a key or growing a
-nested String/vector. Reinsert the updated descriptors and handle the
-insertion result, including any displaced pair. A copied descriptor returned
-by `get` or iteration is a borrow; growing it can leave the descriptor stored
-inside the map stale. The fixtures transfer a row out, transfer its String
-out, grow the String, then restore both owners before recursive release.
+Remove a pair to transfer its owners before changing key identity, then
+reinsert the updated descriptors and handle any displaced pair. For value-only
+growth or replacement, the new [scoped update](stdlib-map-updates.md) reinstalls
+the callback's latest V descriptor on every normal return, even when R is a
+Result error. Its current runtime scope is recorded separately in that guide.
+A copied descriptor returned by `get` or iteration remains a borrow; growing
+it can leave the descriptor inside the map stale. Within a nested Vec value,
+transfer and reinstall any growing child String before returning the Vec.
+The older clone fixtures transfer a row out, transfer its String out, grow the
+String, then restore both owners before recursive release; that receipt does
+not establish the new update method.
 
 These operations follow the existing [clone protocols](stdlib-clone.md),
 [nested Vec ownership](stdlib-nested-clone.md) and

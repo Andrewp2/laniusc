@@ -7,6 +7,7 @@ import core::iter;
 import core::hash;
 import core::mem;
 import core::option;
+import core::pair;
 import core::result;
 
 pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed }
@@ -114,6 +115,23 @@ pub impl<K, V> HashMap<K, V> {
             Some(item) -> core::option::Some(item.value), None -> core::option::None(),
         };
         return result;
+    }
+    // Lend the stored value exclusively for one callback; restore its returned
+    // descriptor even when R reports failure. End old borrows/cursors first.
+    // The callback must not access this map or change key identity through an
+    // alias. No implicit destruction, rollback or map allocation occurs.
+    pub fn update_value<M, R>(&self, key: K, update: &M) -> core::option::Option<R>
+        where K: core::hash::Hash<K>, K: core::cmp::Eq<K>, M: core::iter::Mapper<V, core::pair::Pair<V, R>> {
+        let hash: u32 = K::hash(key);
+        let index: i32 = self.find(key, hash);
+        if (index < 0) { return core::option::None(); }
+        let slots: [Slot<K, V>] = self.slots();
+        let item: Entry<K, V> = core::option::unwrap(entry(slots[index]));
+        let changed: core::pair::Pair<V, R> = update.apply(item.value);
+        item.value = changed.first;
+        // find matched this exact cached hash; the stored key is unchanged.
+        slots[index] = Slot::Full(hash, item);
+        return core::option::Some(changed.second);
     }
     // Construct a replacement in full before changing or freeing this owner.
     fn rehash(&self, buckets: i32) -> core::result::Result<i32, Error> {

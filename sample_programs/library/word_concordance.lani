@@ -1,0 +1,229 @@
+// UTF-8 words -> sorted borrowed keys with owned byte-position vectors.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::tree_map;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::option;
+import core::option::Option;
+import core::pair;
+import core::result;
+import core::result::Result;
+import core::text;
+import core::text::Text;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct AppendPosition { position:u64 }
+impl AppendPosition { fn borrow(&self) -> &AppendPosition { return self; } }
+pub impl core::iter::Mapper<alloc::vec::Vec<u64>,core::pair::Pair<alloc::vec::Vec<u64>,Result<i32,alloc::vec::Error>>> for AppendPosition {
+    pub fn apply(&self, positions:alloc::vec::Vec<u64>) -> core::pair::Pair<alloc::vec::Vec<u64>,Result<i32,alloc::vec::Error>> {
+        let added:Result<i32,alloc::vec::Error> = positions.try_push(self.position);
+        // Always restore the latest descriptor, including on allocation error.
+        return core::pair::Pair { first:positions,second:added };
+    }
+}
+
+fn vector_status(error:alloc::vec::Error) -> i32 {
+    return match (error) { alloc::vec::Error::AllocationFailed -> 4, _ -> 2 };
+}
+fn map_status(error:alloc::tree_map::Error) -> i32 {
+    return match (error) { alloc::tree_map::Error::AllocationFailed -> 4, _ -> 2 };
+}
+fn read_status(error:alloc::io::ReadError) -> i32 {
+    return match (error) {
+        alloc::io::ReadError::InvalidLimits -> 2,
+        alloc::io::ReadError::CallLimit -> 2,
+        alloc::io::ReadError::ByteLimit -> 2,
+        alloc::io::ReadError::Io(cause) -> match (cause) {
+            core::io::Error::AllocationFailed -> 4,
+            core::io::Error::LimitExceeded -> 2,
+            _ -> 3
+        },
+        alloc::io::ReadError::Storage(cause) -> vector_status(cause),
+        alloc::io::ReadError::Text(cause) -> match (cause) {
+            alloc::string::Error::AllocationFailed -> 4,
+            _ -> 2
+        }
+    };
+}
+
+fn index_words(words:&alloc::tree_map::TreeMap<Text,alloc::vec::Vec<u64>>, input:Text) -> i32 {
+    let cursor:core::text::SplitAsciiWhitespace = input.split_ascii_whitespace();
+    while (true) {
+        let selected:Option<Text> = cursor.next();
+        if (selected.is_none()) { return 0; }
+        let word:Text = selected.unwrap();
+        let position:u64 = (word.start-input.start) as u64;
+        let append:AppendPosition = AppendPosition { position:position };
+        let updated:Option<Result<i32,alloc::vec::Error>> = words.update_value<AppendPosition,Result<i32,alloc::vec::Error>>(word,append.borrow());
+        if (updated.is_some()) {
+            let added:Result<i32,alloc::vec::Error> = updated.unwrap();
+            if (added.is_err()) { return vector_status(added.unwrap_err()); }
+        } else {
+            if (words.len() >= 65536) { return 2; }
+            let positions:alloc::vec::Vec<u64> = alloc::vec::new();
+            let added:Result<i32,alloc::vec::Error> = positions.try_push(position);
+            if (added.is_err()) { positions.destroy(); return vector_status(added.unwrap_err()); }
+            let inserted:Result<Option<alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>>>,alloc::tree_map::Error> = words.try_insert(word,positions);
+            if (inserted.is_err()) { positions.destroy(); return map_status(inserted.unwrap_err()); }
+            // Stable keys make replacement impossible after update returned
+            // None. Still retire a displaced owner if that invariant fails.
+            let previous:Option<alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>>> = inserted.unwrap();
+            if (previous.is_some()) {
+                let old:alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>> = previous.unwrap();
+                old.value.destroy();
+                return 3;
+            }
+        }
+    }
+    return 0;
+}
+
+fn digits(value:u64) -> i32 {
+    let remaining:u64 = value;
+    let count:i32 = 1;
+    while (remaining >= 10) { remaining /= 10; count += 1; }
+    return count;
+}
+fn add_length(total:i32, amount:i32) -> Result<i32,i32> {
+    if (amount < 0 || amount > 8388608-total) { return core::result::Err(2); }
+    return core::result::Ok(total+amount);
+}
+fn output_length(words:&alloc::tree_map::TreeMap<Text,alloc::vec::Vec<u64>>) -> Result<i32,i32> {
+    let cursor:alloc::tree_map::Cursor<Text,alloc::vec::Vec<u64>> = words.iter();
+    let total:i32 = 0;
+    while (true) {
+        let selected:Option<alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>>> = cursor.next();
+        if (selected.is_none()) { return core::result::Ok(total); }
+        let item:alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>> = selected.unwrap();
+        if (item.value.is_empty()) { return core::result::Err(3); }
+        total = add_length(total,item.key.length)?;
+        total = add_length(total,2)?; // TAB and LF.
+        total = add_length(total,item.value.len()-1)?; // Commas.
+        let index:i32 = 0;
+        while (index < item.value.len()) {
+            total = add_length(total,digits(item.value.at(index)))?;
+            index += 1;
+        }
+    }
+    return core::result::Ok(total);
+}
+
+// Fixed caller-backed output staging keeps small fields from spending one
+// host call each. Only Interrupted retries; all calls share one global budget.
+struct Output { bytes:[u8], used:i32, calls:i32 }
+impl Output {
+    fn flush(&self) -> i32 {
+        let sink:std::stream::Descriptor = std::stream::stdout();
+        let sent:i32 = 0;
+        while (sent < self.used) {
+            if (self.calls >= 131072) { return 2; }
+            self.calls += 1;
+            let written:Result<i32,core::io::Error> = sink.write(self.bytes,sent,self.used-sent);
+            if (written.is_err()) {
+                if (core::io::is_interrupted(written.unwrap_err())) { continue; }
+                return 3;
+            }
+            let count:i32 = written.unwrap();
+            if (count <= 0 || count > self.used-sent) { return 3; }
+            sent += count;
+        }
+        self.used = 0;
+        return 0;
+    }
+    fn append(&self, bytes:[u8], start:i32, count:i32) -> i32 {
+        let copied:i32 = 0;
+        while (copied < count) {
+            if (self.used == 1024) { let status:i32 = self.flush(); if (status != 0) { return status; } }
+            let amount:i32 = 1024-self.used;
+            if (amount > count-copied) { amount = count-copied; }
+            let index:i32 = 0;
+            while (index < amount) { self.bytes[self.used+index] = bytes[start+copied+index]; index += 1; }
+            self.used += amount;
+            copied += amount;
+        }
+        return 0;
+    }
+    fn byte(&self, value:u8) -> i32 {
+        if (self.used == 1024) { let status:i32 = self.flush(); if (status != 0) { return status; } }
+        self.bytes[self.used] = value;
+        self.used += 1;
+        return 0;
+    }
+}
+
+fn publish(words:&alloc::tree_map::TreeMap<Text,alloc::vec::Vec<u64>>) -> i32 {
+    let scratch:[u8;1024] = [0;1024];
+    let decimal:[u8;20] = [0;20];
+    let output:Output = Output { bytes:scratch,used:0,calls:0 };
+    let cursor:alloc::tree_map::Cursor<Text,alloc::vec::Vec<u64>> = words.iter();
+    while (true) {
+        let selected:Option<alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>>> = cursor.next();
+        if (selected.is_none()) { return output.flush(); }
+        let item:alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>> = selected.unwrap();
+        let status:i32 = output.append(item.key.bytes,item.key.start,item.key.length);
+        if (status != 0) { return status; }
+        status = output.byte(9); if (status != 0) { return status; }
+        let index:i32 = 0;
+        while (index < item.value.len()) {
+            if (index > 0) { status = output.byte(44); if (status != 0) { return status; } }
+            let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_u64(decimal,0,20,item.value.at(index));
+            if (formatted.is_err()) { return 3; }
+            status = output.append(decimal,0,formatted.unwrap()); if (status != 0) { return status; }
+            index += 1;
+        }
+        status = output.byte(10); if (status != 0) { return status; }
+    }
+    return 3;
+}
+
+fn destroy_words(words:&alloc::tree_map::TreeMap<Text,alloc::vec::Vec<u64>>) {
+    let cursor:alloc::tree_map::Cursor<Text,alloc::vec::Vec<u64>> = words.iter();
+    while (true) {
+        let selected:Option<alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>>> = cursor.next();
+        if (selected.is_none()) { break; }
+        let item:alloc::tree_map::Entry<Text,alloc::vec::Vec<u64>> = selected.unwrap();
+        // Each nested owner is released once. Tree storage only shallowly
+        // stores its descriptor and does not destroy nested values itself.
+        item.value.destroy();
+    }
+    words.destroy();
+}
+
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured = std::args::snapshot(1,0,0);
+    if (captured.is_err()) {
+        return match (captured.unwrap_err()) {
+            std::args::Error::AllocationFailed -> 4,
+            std::args::Error::HostRead(index) -> 3,
+            _ -> 2
+        };
+    }
+    let arguments = captured.unwrap(); arguments.destroy();
+    let source:std::stream::Descriptor = std::stream::stdin();
+    let collected:Result<alloc::string::String,alloc::io::ReadFailure> =
+        alloc::io::read_to_string<std::stream::Descriptor>(source.borrow(),alloc::io::ReadLimits { max_bytes:1048576,max_calls:16384 });
+    if (collected.is_err()) {
+        let failure:alloc::io::ReadFailure = collected.unwrap_err();
+        let status:i32 = read_status(failure.cause);
+        failure.destroy(); return status;
+    }
+    let input:alloc::string::String = collected.unwrap();
+    let words:alloc::tree_map::TreeMap<Text,alloc::vec::Vec<u64>> = alloc::tree_map::new();
+    let status:i32 = index_words(words.borrow(),input.as_text());
+    if (status == 0) {
+        let measured:Result<i32,i32> = output_length(words.borrow());
+        if (measured.is_err()) { status = measured.unwrap_err(); }
+        else { status = publish(words.borrow()); }
+    }
+    // Every key borrows this input, so release values and map before input.
+    destroy_words(words.borrow());
+    input.destroy();
+    return status;
+}

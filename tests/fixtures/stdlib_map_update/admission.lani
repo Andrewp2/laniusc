@@ -1,0 +1,54 @@
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+
+struct Value { count:i32, flag:core::option::Option<bool>, stamp:u64 }
+struct Swap<T> { next:T, calls:i32 }
+impl<T> Swap<T> { fn borrow(&self) -> &Swap<T> { return self; } }
+pub impl<T> core::iter::Mapper<T,core::pair::Pair<T,T>> for Swap<T> {
+    pub fn apply(&self,old:T) -> core::pair::Pair<T,T> {
+        self.calls+=1; return core::pair::Pair { first:self.next,second:old };
+    }
+}
+struct Update { calls:i32 }
+impl Update { fn borrow(&self) -> &Update { return self; } }
+pub impl core::iter::Mapper<Value,core::pair::Pair<Value,core::result::Result<core::option::Option<bool>,u64>>> for Update {
+    pub fn apply(&self,old:Value) -> core::pair::Pair<Value,core::result::Result<core::option::Option<bool>,u64>> {
+        self.calls+=1; assert(old.count==7 && old.stamp==18446744073709551614);
+        let current:Value=Value { count:old.count+1,flag:core::option::Some(false),stamp:18446744073709551615 };
+        let result:core::result::Result<core::option::Option<bool>,u64> =core::result::Err(9223372036854775813);
+        return core::pair::Pair { first:current,second:result };
+    }
+}
+fn hash_update<K,V,M,R>(map:&alloc::hash_map::HashMap<K,V>,key:K,mapper:&M) -> core::option::Option<R>
+    where K:core::hash::Hash<K>,K:core::cmp::Eq<K>,M:core::iter::Mapper<V,core::pair::Pair<V,R>> {
+    return map.update_value(key,mapper);
+}
+fn tree_update<K,V,M,R>(map:&alloc::tree_map::TreeMap<K,V>,key:K,mapper:&M) -> core::option::Option<R>
+    where K:core::cmp::Ord<K>,M:core::iter::Mapper<V,core::pair::Pair<V,R>> {
+    return map.update_value(key,mapper);
+}
+fn main() -> i32 {
+    let original:Value=Value { count:7,flag:core::option::Some(true),stamp:18446744073709551614 };
+    let next:Value=Value { count:19,flag:core::option::None(),stamp:9223372036854775809 };
+    let hash:alloc::hash_map::HashMap<i32,Value> =alloc::hash_map::new();
+    let swap:Swap<Value> =Swap { next:next,calls:0 };
+    let absent:core::option::Option<Value> =hash_update(hash.borrow(),3,swap.borrow()); assert(absent.is_none() && swap.calls==0);
+    assert(hash.try_insert(3,original).is_ok()); let old:core::option::Option<Value> =hash_update(hash.borrow(),3,swap.borrow());
+    assert(old.is_some() && swap.calls==1); let before:Value=old.unwrap(); assert(before.count==7 && before.stamp==18446744073709551614 && before.flag.unwrap());
+    let installed:Value=hash.get(3).unwrap(); assert(installed.count==19 && installed.stamp==9223372036854775809 && installed.flag.is_none() && hash.len()==1);
+    let tree:alloc::tree_map::TreeMap<i32,Value> =alloc::tree_map::new(); assert(tree.try_insert(9,original).is_ok());
+    let update:Update=Update { calls:0 }; let missing:core::option::Option<core::result::Result<core::option::Option<bool>,u64>> =tree_update(tree.borrow(),8,update.borrow());
+    assert(missing.is_none() && update.calls==0);
+    let result:core::option::Option<core::result::Result<core::option::Option<bool>,u64>> =tree_update(tree.borrow(),9,update.borrow());
+    assert(result.is_some() && update.calls==1); let reported:core::result::Result<core::option::Option<bool>,u64> =result.unwrap();
+    assert(reported.is_err() && reported.unwrap_err()==9223372036854775813);
+    let saved:Value=tree.get(9).unwrap(); assert(saved.count==8 && saved.stamp==18446744073709551615 && !saved.flag.unwrap() && tree.len()==1);
+    hash.destroy(); tree.destroy(); return 0;
+}

@@ -1,6 +1,18 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[scoped map-update increment](stdlib-map-updates.md) adds a value transformation
+to HashMap and TreeMap using Mapper<V,Pair<V,R>>. One lookup preserves the exact
+stored key and map structure; a present callback returns the latest V even when
+R is a Result error. Manual exclusive authority and cleanup remain explicit.
+All seven new library gates pass on Linux x86_64 CPU output, including the
+72-case operation model and four reached callback-allocation failures with
+latest-owner reinstall and same-process recovery. The
+[word-concordance consumer](stdlib-word-concordance.md) passes four groups/103
+native cases, including 38 reached allocation failures. Three selected old
+regressions and standalone build/exact examples also pass. This finite native
+increment is accepted; earlier map and clone receipts retain their original
+scope. The preceding
 [stream-encoding increment](library-stream-encoding-plan.md) joins a portable
 [resumable copier](stdlib-resumable-copy.md) to a borrowed
 [JSON byte reader](extended-json-streaming.md). Pending suffixes, direct-call
@@ -1808,7 +1820,10 @@ passes four groups/102 native cases.
 The [byte stream APIs](stdlib-streams.md) provide shared reader/writer
 contracts, owned byte buffers and native descriptor adapters.
 The [generic hash map](stdlib-hash-collections.md) provides hashed lookup,
-explicit allocation errors and returned displaced keys/values.
+explicit allocation errors and returned displaced keys/values. The new
+[scoped HashMap/TreeMap value update](stdlib-map-updates.md) preserves the stored
+key while restoring the callback's latest value descriptor. All seven new
+library gates and four word-concordance groups/103 native cases pass.
 [Opt-in deep HashMap cloning](stdlib-clone-hash-map.md) now executes with
 independent nested owners, typed key/value errors and allocation-failure cleanup.
 [Opt-in recursive deque cloning](stdlib-clone-deque.md) also executes across

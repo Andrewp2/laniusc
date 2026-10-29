@@ -1,0 +1,389 @@
+// Test-only raw-binary map actions, full contents and mapper event capture.
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::result;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32,allow_eof:bool) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(allow_eof && done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0); done+=got;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let i:i32=0;
+    while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn byte(&self,value:u8) {
+        if(self.used==4096) { self.flush(); }
+        self.bytes[self.used]=value; self.used+=1;
+    }
+    fn word(&self,value:u64) {
+        let i:i32=0; while(i<8) { self.byte(((value>>(i*8))&255) as u8); i+=1; }
+    }
+}
+struct Key { identity:i32,stamp:u64,hashing:i32 }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(a:Key,b:Key) -> bool { return a.identity==b.identity; }
+    pub fn ne(a:Key,b:Key) -> bool { return a.identity!=b.identity; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(a:Key,b:Key) -> bool { return a.identity<b.identity; }
+    pub fn le(a:Key,b:Key) -> bool { return a.identity<=b.identity; }
+    pub fn gt(a:Key,b:Key) -> bool { return a.identity>b.identity; }
+    pub fn ge(a:Key,b:Key) -> bool { return a.identity>=b.identity; }
+}
+pub impl core::hash::Hash<Key> for Key {
+    pub fn hash(key:Key) -> u32 {
+        if(key.hashing==0) { return 65535; }
+        if(key.hashing==1) { return (key.identity%3) as u32; }
+        return (key.identity as u32)*2654435761;
+    }
+}
+fn emit_key(key:Key,output:&Output) {
+    output.word(key.identity as u64); output.word(key.stamp); output.word(key.hashing as u64);
+}
+struct Payload { number:u64,mark:core::option::Option<bool>,words:[i32;3] }
+struct Receipt { before:Payload,tick:u64 }
+struct Failure { after:Payload,token:u64 }
+fn payload(token:u64) -> Payload {
+    let n:i32=(token%2000001) as i32-1000000;
+    let mark:core::option::Option<bool> = core::option::None();
+    if(token%3!=0) { mark=core::option::Some((token&1)!=0); }
+    let words:[i32;3]=[n,-n,n/2];
+    return Payload { number:token^10494147739710322440,mark:mark,words:words };
+}
+fn emit_payload(value:Payload,output:&Output) {
+    output.word(value.number);
+    if(value.mark.is_none()) { output.byte(0); }
+    else { if(value.mark.unwrap()) { output.byte(2); } else { output.byte(1); } }
+    let i:i32=0; while(i<3) { output.word(value.words[i] as i64 as u64); i+=1; }
+}
+fn emit_scalar(value:u64,output:&Output) { output.word(value); }
+fn emit_optional(value:core::option::Option<u64>,output:&Output) {
+    if(value.is_none()) { output.byte(0); return; }
+    output.byte(1); output.word(value.unwrap());
+}
+fn emit_result(value:core::result::Result<Receipt,Failure>,output:&Output) {
+    if(value.is_ok()) {
+        let receipt:Receipt=value.unwrap(); output.byte(0);
+        emit_payload(receipt.before,output); output.word(receipt.tick);
+    } else {
+        let failure:Failure=value.unwrap_err(); output.byte(1);
+        emit_payload(failure.after,output); output.word(failure.token);
+    }
+}
+struct Context { calls:u64,mode:i32,token:u64,output:&Output }
+impl Context { fn borrow(&self) -> &Context { return self; } }
+struct ScalarUpdate { state:&Context }
+impl ScalarUpdate { fn borrow(&self) -> &ScalarUpdate { return self; } }
+struct CompoundUpdate { state:&Context }
+impl CompoundUpdate { fn borrow(&self) -> &CompoundUpdate { return self; } }
+pub impl core::iter::Mapper<u64,core::pair::Pair<u64,core::option::Option<u64>>> for ScalarUpdate {
+    pub fn apply(&self,old:u64) -> core::pair::Pair<u64,core::option::Option<u64>> {
+        let state:&Context=self.state; state.calls+=1;
+        let tick:u64=state.calls; let token:u64=state.token;
+        let new:u64=old^token^(tick<<32);
+        let answer:core::option::Option<u64> = core::option::None();
+        if(state.mode%3!=0) { answer=core::option::Some(old^token^(tick<<17)); }
+        let output:&Output=state.output;
+        output.byte(202); output.word(tick); output.word(state.mode as u64); output.word(token);
+        emit_scalar(old,output); emit_scalar(new,output); emit_optional(answer,output);
+        return core::pair::Pair { first:new,second:answer };
+    }
+}
+pub impl core::iter::Mapper<Payload,core::pair::Pair<Payload,core::result::Result<Receipt,Failure>>> for CompoundUpdate {
+    pub fn apply(&self,old:Payload) -> core::pair::Pair<Payload,core::result::Result<Receipt,Failure>> {
+        let state:&Context=self.state; state.calls+=1;
+        let tick:u64=state.calls; let token:u64=state.token;
+        let mark:core::option::Option<bool> = core::option::None();
+        if(state.mode==0 && old.mark.is_some()) { mark=core::option::Some(!old.mark.unwrap()); }
+        if(state.mode>=2) { mark=core::option::Some(((token^tick)&1)!=0); }
+        let words:[i32;3]=[old.words[1],old.words[2],(token%2000001) as i32-1000000];
+        let new:Payload=Payload { number:old.number^token^(tick<<32),mark:mark,words:words };
+        let answer:core::result::Result<Receipt,Failure> = core::result::Ok(Receipt { before:old,tick:tick });
+        if(state.mode%2!=0) { answer=core::result::Err(Failure { after:new,token:token }); }
+        let output:&Output=state.output;
+        output.byte(202); output.word(tick); output.word(state.mode as u64); output.word(token);
+        emit_payload(old,output); emit_payload(new,output); emit_result(answer,output);
+        return core::pair::Pair { first:new,second:answer };
+    }
+}
+
+fn entry_hash_scalar(found:core::option::Option<alloc::hash_map::Entry<Key,u64>>,output:&Output) {
+    if(found.is_none()) { output.byte(0); return; }
+    let entry:alloc::hash_map::Entry<Key,u64> = found.unwrap();
+    output.byte(1); emit_key(entry.key,output); emit_scalar(entry.value,output);
+}
+fn snapshot_hash_scalar(map:&alloc::hash_map::HashMap<Key,u64>,query:Key,output:&Output) {
+    let current:core::option::Option<alloc::hash_map::Entry<Key,u64>> = map.get_entry(query);
+    entry_hash_scalar(current,output);
+    output.word(map.len() as u64);
+    if(map.is_empty()) { output.byte(1); } else { output.byte(0); }
+    let cursor:alloc::hash_map::Iter<Key,u64> = map.iter(); let count:i32=0;
+    while(true) {
+        let found:core::option::Option<alloc::hash_map::Entry<Key,u64>> = cursor.next();
+        entry_hash_scalar(found,output);
+        if(found.is_none()) { break; }
+        count+=1; assert(count<=31);
+    }
+    let exhausted:core::option::Option<alloc::hash_map::Entry<Key,u64>> = cursor.next();
+    assert(exhausted.is_none()); output.byte(1);
+}
+fn run_hash_scalar(header:[u8],actions:[u8],output:&Output) {
+    let map:alloc::hash_map::HashMap<Key,u64> = alloc::hash_map::new();
+    let state:Context=Context { calls:0,mode:0,token:0,output:output };
+    let mapper:ScalarUpdate=ScalarUpdate { state:state.borrow() };
+    let count:i32=get64(header,32) as i32; let i:i32=0;
+    while(i<count) {
+        let offset:i32=i*40; let op:i32=get64(actions,offset) as i32;
+        let key:Key=Key { identity:get64(actions,offset+8) as i32,stamp:get64(actions,offset+16),hashing:get64(header,24) as i32 };
+        let token:u64=get64(actions,offset+24); let mode:i32=get64(actions,offset+32) as i32;
+        assert(op>=0 && op<=4 && key.identity>=0 && key.identity<31 && mode>=0 && mode<4);
+        output.byte(218); output.byte(op as u8);
+        if(op==0) {
+            let put:core::result::Result<core::option::Option<alloc::hash_map::Entry<Key,u64>>,alloc::hash_map::Error> = map.try_insert(key,token);
+            let prior:core::option::Option<alloc::hash_map::Entry<Key,u64>> = put.unwrap();
+            output.byte(219); entry_hash_scalar(prior,output);
+        } else { if(op==1) {
+            let prior:core::option::Option<alloc::hash_map::Entry<Key,u64>> = map.remove(key);
+            output.byte(219); entry_hash_scalar(prior,output);
+        } else { if(op==2) {
+            state.mode=mode; state.token=token;
+            let storage:ptr=map.storage; let length:i32=map.length; let capacity:i32=map.capacity();
+            let buckets:i32=map.buckets; let occupied:i32=map.occupied;
+            let answer:core::option::Option<core::option::Option<u64>> = map.update_value<ScalarUpdate,core::option::Option<u64>>(key,mapper.borrow());
+            assert(map.storage==storage && map.length==length && map.capacity()==capacity);
+            assert(map.buckets==buckets && map.occupied==occupied);
+            output.byte(219);
+            if(answer.is_none()) { output.byte(0); } else { output.byte(1); emit_optional(answer.unwrap(),output); }
+        } else {
+            if(op==3) { map.clear(); }
+            output.byte(219);
+        } } }
+        output.word(state.calls); snapshot_hash_scalar(map.borrow(),key,output); i+=1;
+    }
+    map.destroy();
+}
+
+fn entry_hash_compound(found:core::option::Option<alloc::hash_map::Entry<Key,Payload>>,output:&Output) {
+    if(found.is_none()) { output.byte(0); return; }
+    let entry:alloc::hash_map::Entry<Key,Payload> = found.unwrap();
+    output.byte(1); emit_key(entry.key,output); emit_payload(entry.value,output);
+}
+fn snapshot_hash_compound(map:&alloc::hash_map::HashMap<Key,Payload>,query:Key,output:&Output) {
+    let current:core::option::Option<alloc::hash_map::Entry<Key,Payload>> = map.get_entry(query);
+    entry_hash_compound(current,output);
+    output.word(map.len() as u64);
+    if(map.is_empty()) { output.byte(1); } else { output.byte(0); }
+    let cursor:alloc::hash_map::Iter<Key,Payload> = map.iter(); let count:i32=0;
+    while(true) {
+        let found:core::option::Option<alloc::hash_map::Entry<Key,Payload>> = cursor.next();
+        entry_hash_compound(found,output);
+        if(found.is_none()) { break; }
+        count+=1; assert(count<=31);
+    }
+    let exhausted:core::option::Option<alloc::hash_map::Entry<Key,Payload>> = cursor.next();
+    assert(exhausted.is_none()); output.byte(1);
+}
+fn run_hash_compound(header:[u8],actions:[u8],output:&Output) {
+    let map:alloc::hash_map::HashMap<Key,Payload> = alloc::hash_map::new();
+    let state:Context=Context { calls:0,mode:0,token:0,output:output };
+    let mapper:CompoundUpdate=CompoundUpdate { state:state.borrow() };
+    let count:i32=get64(header,32) as i32; let i:i32=0;
+    while(i<count) {
+        let offset:i32=i*40; let op:i32=get64(actions,offset) as i32;
+        let key:Key=Key { identity:get64(actions,offset+8) as i32,stamp:get64(actions,offset+16),hashing:get64(header,24) as i32 };
+        let token:u64=get64(actions,offset+24); let mode:i32=get64(actions,offset+32) as i32;
+        assert(op>=0 && op<=4 && key.identity>=0 && key.identity<31 && mode>=0 && mode<4);
+        output.byte(218); output.byte(op as u8);
+        if(op==0) {
+            let put:core::result::Result<core::option::Option<alloc::hash_map::Entry<Key,Payload>>,alloc::hash_map::Error> = map.try_insert(key,payload(token));
+            let prior:core::option::Option<alloc::hash_map::Entry<Key,Payload>> = put.unwrap();
+            output.byte(219); entry_hash_compound(prior,output);
+        } else { if(op==1) {
+            let prior:core::option::Option<alloc::hash_map::Entry<Key,Payload>> = map.remove(key);
+            output.byte(219); entry_hash_compound(prior,output);
+        } else { if(op==2) {
+            state.mode=mode; state.token=token;
+            let storage:ptr=map.storage; let length:i32=map.length; let capacity:i32=map.capacity();
+            let buckets:i32=map.buckets; let occupied:i32=map.occupied;
+            let answer:core::option::Option<core::result::Result<Receipt,Failure>> = map.update_value<CompoundUpdate,core::result::Result<Receipt,Failure>>(key,mapper.borrow());
+            assert(map.storage==storage && map.length==length && map.capacity()==capacity);
+            assert(map.buckets==buckets && map.occupied==occupied);
+            output.byte(219);
+            if(answer.is_none()) { output.byte(0); } else { output.byte(1); emit_result(answer.unwrap(),output); }
+        } else {
+            if(op==3) { map.clear(); }
+            output.byte(219);
+        } } }
+        output.word(state.calls); snapshot_hash_compound(map.borrow(),key,output); i+=1;
+    }
+    map.destroy();
+}
+
+fn entry_tree_scalar(found:core::option::Option<alloc::tree_map::Entry<Key,u64>>,output:&Output) {
+    if(found.is_none()) { output.byte(0); return; }
+    let entry:alloc::tree_map::Entry<Key,u64> = found.unwrap();
+    output.byte(1); emit_key(entry.key,output); emit_scalar(entry.value,output);
+}
+fn snapshot_tree_scalar(map:&alloc::tree_map::TreeMap<Key,u64>,query:Key,output:&Output) {
+    let current:core::option::Option<alloc::tree_map::Entry<Key,u64>> = map.get_entry(query);
+    entry_tree_scalar(current,output);
+    output.word(map.len() as u64);
+    if(map.is_empty()) { output.byte(1); } else { output.byte(0); }
+    let cursor:alloc::tree_map::Cursor<Key,u64> = map.iter(); let count:i32=0;
+    while(true) {
+        let found:core::option::Option<alloc::tree_map::Entry<Key,u64>> = cursor.next();
+        entry_tree_scalar(found,output);
+        if(found.is_none()) { break; }
+        count+=1; assert(count<=31);
+    }
+    let exhausted:core::option::Option<alloc::tree_map::Entry<Key,u64>> = cursor.next();
+    assert(exhausted.is_none()); output.byte(1);
+}
+fn run_tree_scalar(header:[u8],actions:[u8],output:&Output) {
+    let map:alloc::tree_map::TreeMap<Key,u64> = alloc::tree_map::new();
+    let state:Context=Context { calls:0,mode:0,token:0,output:output };
+    let mapper:ScalarUpdate=ScalarUpdate { state:state.borrow() };
+    let count:i32=get64(header,32) as i32; let i:i32=0;
+    while(i<count) {
+        let offset:i32=i*40; let op:i32=get64(actions,offset) as i32;
+        let key:Key=Key { identity:get64(actions,offset+8) as i32,stamp:get64(actions,offset+16),hashing:get64(header,24) as i32 };
+        let token:u64=get64(actions,offset+24); let mode:i32=get64(actions,offset+32) as i32;
+        assert(op>=0 && op<=4 && key.identity>=0 && key.identity<31 && mode>=0 && mode<4);
+        output.byte(218); output.byte(op as u8);
+        if(op==0) {
+            let put:core::result::Result<core::option::Option<alloc::tree_map::Entry<Key,u64>>,alloc::tree_map::Error> = map.try_insert(key,token);
+            let prior:core::option::Option<alloc::tree_map::Entry<Key,u64>> = put.unwrap();
+            output.byte(219); entry_tree_scalar(prior,output);
+        } else { if(op==1) {
+            let prior:core::option::Option<alloc::tree_map::Entry<Key,u64>> = map.remove(key);
+            output.byte(219); entry_tree_scalar(prior,output);
+        } else { if(op==2) {
+            state.mode=mode; state.token=token;
+            let storage:ptr=map.storage; let length:i32=map.length; let capacity:i32=map.capacity();
+            let reserved:i32=map.reserved; let used:i32=map.used; let root:i32=map.root; let free:i32=map.free;
+            let answer:core::option::Option<core::option::Option<u64>> = map.update_value<ScalarUpdate,core::option::Option<u64>>(key,mapper.borrow());
+            assert(map.storage==storage && map.length==length && map.capacity()==capacity);
+            assert(map.reserved==reserved && map.used==used && map.root==root && map.free==free);
+            output.byte(219);
+            if(answer.is_none()) { output.byte(0); } else { output.byte(1); emit_optional(answer.unwrap(),output); }
+        } else {
+            if(op==3) { map.clear(); }
+            output.byte(219);
+        } } }
+        output.word(state.calls); snapshot_tree_scalar(map.borrow(),key,output); i+=1;
+    }
+    map.destroy();
+}
+
+fn entry_tree_compound(found:core::option::Option<alloc::tree_map::Entry<Key,Payload>>,output:&Output) {
+    if(found.is_none()) { output.byte(0); return; }
+    let entry:alloc::tree_map::Entry<Key,Payload> = found.unwrap();
+    output.byte(1); emit_key(entry.key,output); emit_payload(entry.value,output);
+}
+fn snapshot_tree_compound(map:&alloc::tree_map::TreeMap<Key,Payload>,query:Key,output:&Output) {
+    let current:core::option::Option<alloc::tree_map::Entry<Key,Payload>> = map.get_entry(query);
+    entry_tree_compound(current,output);
+    output.word(map.len() as u64);
+    if(map.is_empty()) { output.byte(1); } else { output.byte(0); }
+    let cursor:alloc::tree_map::Cursor<Key,Payload> = map.iter(); let count:i32=0;
+    while(true) {
+        let found:core::option::Option<alloc::tree_map::Entry<Key,Payload>> = cursor.next();
+        entry_tree_compound(found,output);
+        if(found.is_none()) { break; }
+        count+=1; assert(count<=31);
+    }
+    let exhausted:core::option::Option<alloc::tree_map::Entry<Key,Payload>> = cursor.next();
+    assert(exhausted.is_none()); output.byte(1);
+}
+fn run_tree_compound(header:[u8],actions:[u8],output:&Output) {
+    let map:alloc::tree_map::TreeMap<Key,Payload> = alloc::tree_map::new();
+    let state:Context=Context { calls:0,mode:0,token:0,output:output };
+    let mapper:CompoundUpdate=CompoundUpdate { state:state.borrow() };
+    let count:i32=get64(header,32) as i32; let i:i32=0;
+    while(i<count) {
+        let offset:i32=i*40; let op:i32=get64(actions,offset) as i32;
+        let key:Key=Key { identity:get64(actions,offset+8) as i32,stamp:get64(actions,offset+16),hashing:get64(header,24) as i32 };
+        let token:u64=get64(actions,offset+24); let mode:i32=get64(actions,offset+32) as i32;
+        assert(op>=0 && op<=4 && key.identity>=0 && key.identity<31 && mode>=0 && mode<4);
+        output.byte(218); output.byte(op as u8);
+        if(op==0) {
+            let put:core::result::Result<core::option::Option<alloc::tree_map::Entry<Key,Payload>>,alloc::tree_map::Error> = map.try_insert(key,payload(token));
+            let prior:core::option::Option<alloc::tree_map::Entry<Key,Payload>> = put.unwrap();
+            output.byte(219); entry_tree_compound(prior,output);
+        } else { if(op==1) {
+            let prior:core::option::Option<alloc::tree_map::Entry<Key,Payload>> = map.remove(key);
+            output.byte(219); entry_tree_compound(prior,output);
+        } else { if(op==2) {
+            state.mode=mode; state.token=token;
+            let storage:ptr=map.storage; let length:i32=map.length; let capacity:i32=map.capacity();
+            let reserved:i32=map.reserved; let used:i32=map.used; let root:i32=map.root; let free:i32=map.free;
+            let answer:core::option::Option<core::result::Result<Receipt,Failure>> = map.update_value<CompoundUpdate,core::result::Result<Receipt,Failure>>(key,mapper.borrow());
+            assert(map.storage==storage && map.length==length && map.capacity()==capacity);
+            assert(map.reserved==reserved && map.used==used && map.root==root && map.free==free);
+            output.byte(219);
+            if(answer.is_none()) { output.byte(0); } else { output.byte(1); emit_result(answer.unwrap(),output); }
+        } else {
+            if(op==3) { map.clear(); }
+            output.byte(219);
+        } } }
+        output.word(state.calls); snapshot_tree_compound(map.borrow(),key,output); i+=1;
+    }
+    map.destroy();
+}
+
+fn main() -> i32 {
+    let prefix_words:[i32;4]=[0;4]; let prefix_pointer:ptr=core::mem::i32_array_data_ptr(prefix_words);
+    let prefix:[u8]=core::mem::typed_slice_from_raw_parts<u8>(prefix_pointer,16);
+    assert(read_exact(prefix_pointer,16,false)); assert(get64(prefix,0)==7881704472574189940);
+    let cases:i32=get64(prefix,8) as i32; assert(cases>=0 && cases<=128);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    output.word(7881704472574189940); output.word(cases as u64);
+    let header_words:[i32;10]=[0;10]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,40);
+    let action_words:[i32;1920]=[0;1920]; let action_pointer:ptr=core::mem::i32_array_data_ptr(action_words);
+    let actions:[u8]=core::mem::typed_slice_from_raw_parts<u8>(action_pointer,7680);
+    let i:i32=0;
+    while(i<cases) {
+        assert(read_exact(header_pointer,40,false)); assert(get64(header,0)==i as u64);
+        let family:i32=get64(header,8) as i32; let shape:i32=get64(header,16) as i32;
+        assert(family>=0 && family<2 && shape>=0 && shape<2 && get64(header,24)<3);
+        let count:i32=get64(header,32) as i32; assert(count>=0 && count<=192);
+        assert(read_exact(action_pointer,count*40,false)); output.word(i as u64);
+        if(family==0) {
+            if(shape==0) { run_hash_scalar(header,actions,output.borrow()); }
+            else { run_hash_compound(header,actions,output.borrow()); }
+        } else {
+            if(shape==0) { run_tree_scalar(header,actions,output.borrow()); }
+            else { run_tree_compound(header,actions,output.borrow()); }
+        }
+        i+=1;
+    }
+    assert(!read_exact(prefix_pointer,1,true)); output.word(7308889666217866608); output.flush(); return 0;
+}

@@ -3,6 +3,20 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [scoped map-value increment](stdlib-map-updates.md) reuses the existing
+HashMap/TreeMap lookup and storage engines plus Mapper and Pair. Map-owned
+lookup/reinstall work adds no allocation or host binding; user key operations
+and mapper callbacks retain their own costs/effects and have no wall-time bound.
+A separate Result error still reinstalls the returned V.
+Stored key identity is preserved, and callback access through map aliases is
+forbidden. Lifetimes, exclusive value authority and nested cleanup remain
+manual; no panic recovery or compiler-enforced ownership is supplied. All seven
+new library gates pass on Linux x86_64 CPU output, including the independent
+model and reached callback-allocation failures. Four word-concordance groups/
+103 native cases, three selected old regressions and standalone build/examples
+also pass. Other hosts, GPU device execution and formal proofs remain separate. No compiler or ABI repair is part of this
+increment. Existing generic shorthand reductions below retain their scope.
+
 The [stream-encoding increment](library-stream-encoding-plan.md) composes the
 existing Read/Write contracts through a [resumable copier](stdlib-resumable-copy.md)
 and [borrowed JSON reader](extended-json-streaming.md). Portable transfer and

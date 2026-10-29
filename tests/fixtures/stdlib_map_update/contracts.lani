@@ -1,0 +1,128 @@
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::result;
+
+struct Log { words:[u64],used:i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn record(&self,op:u64,a:u64,b:u64,c:u64,d:u64) {
+        assert(self.used<128); let at:i32=self.used*5; self.words[at]=op; self.words[at+1]=a; self.words[at+2]=b; self.words[at+3]=c; self.words[at+4]=d; self.used+=1;
+    }
+}
+struct Key { rank:i32,tag:u64,log:&Log }
+fn key(rank:i32,tag:u64,log:&Log) -> Key { return Key { rank:rank,tag:tag,log:log }; }
+pub impl core::hash::Hash<Key> for Key {
+    pub fn hash(value:Key) -> u32 { value.log.record(1,value.rank as u64,0,value.tag,0); return 13; }
+}
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { left.log.record(2,left.rank as u64,right.rank as u64,left.tag,right.tag); return left.rank==right.rank; }
+    pub fn ne(left:Key,right:Key) -> bool { return !Key::eq(left,right); }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left:Key,right:Key) -> bool { left.log.record(3,left.rank as u64,right.rank as u64,left.tag,right.tag); return left.rank<right.rank; }
+    pub fn le(left:Key,right:Key) -> bool { return !Key::lt(right,left); }
+    pub fn gt(left:Key,right:Key) -> bool { return Key::lt(right,left); }
+    pub fn ge(left:Key,right:Key) -> bool { return !Key::lt(left,right); }
+}
+struct Report { old:u64,new:u64,ordinal:i32 }
+struct Update { log:&Log,calls:i32 }
+impl Update { fn borrow(&self) -> &Update { return self; } }
+pub impl core::iter::Mapper<u64,core::pair::Pair<u64,Report>> for Update {
+    pub fn apply(&self,old:u64) -> core::pair::Pair<u64,Report> {
+        self.calls+=1; let next:u64=old+17; self.log.record(4,old,next,self.calls as u64,0);
+        return core::pair::Pair { first:next,second:Report { old:old,new:next,ordinal:self.calls } };
+    }
+}
+// Test-only mirrors size the existing storage for byte snapshots. They are
+// never used as replacement map engines or read as potentially inactive fields.
+enum HashStorage { Empty,Deleted,Full(u32,alloc::hash_map::Entry<Key,u64>) }
+struct TreeStorage { item:alloc::tree_map::Entry<Key,u64>,left:i32,right:i32,parent:i32,height:i32,next_free:i32 }
+fn marker(rank:i32) -> u64 { return 1234605616436508416+(rank as u64)*256; }
+fn snapshot(source:[u8],saved:[u8],length:i32) { let i:i32=0; while(i<length) { saved[i]=source[i]; i+=1; } }
+fn identical_except_value(saved:[u8],actual:[u8],length:i32,old:u64,next:u64,changed:bool) {
+    let location:i32=-1; let matches:i32=0;
+    if(changed) {
+        let i:i32=0; while(i<=length-8) { let same:bool=true; let j:i32=0;
+            while(j<8) { if(saved[i+j]!=((old>>(j*8))&255) as u8) { same=false; } j+=1; }
+            if(same) { location=i; matches+=1; } i+=1;
+        } assert(matches==1);
+    }
+    let i:i32=0; while(i<length) {
+        let expected:u8=saved[i]; if(changed && i>=location && i<location+8) { expected=((next>>((i-location)*8))&255) as u8; }
+        assert(actual[i]==expected); i+=1;
+    }
+}
+fn lookup_prefix(log:&Log,saved:[u64],calls:i32,changed:bool,old:u64,next:u64,ordinal:i32) {
+    let expected:i32=calls; if(changed) { expected+=1; } assert(log.used==expected);
+    let i:i32=0; while(i<calls*5) { assert(log.words[i]==saved[i]); i+=1; }
+    if(changed) { let at:i32=calls*5; assert(log.words[at]==4 && log.words[at+1]==old && log.words[at+2]==next && log.words[at+3]==ordinal as u64 && log.words[at+4]==0); }
+}
+fn hash_contract() {
+    let words:[u64;640]=[0;640]; let log:Log=Log { words:words,used:0 };
+    let map:alloc::hash_map::HashMap<Key,u64> =alloc::hash_map::new(); assert(map.try_reserve(16).is_ok());
+    let ranks:[i32;7]=[4,2,6,1,3,5,7]; let i:i32=0;
+    while(i<7) { let rank:i32=ranks[i]; assert(map.try_insert(key(rank,1000+rank as u64,log.borrow()),marker(rank)).is_ok()); i+=1; }
+    assert(map.remove(key(2,8002,log.borrow())).is_some()); assert(map.remove(key(6,8006,log.borrow())).is_some());
+    assert(map.try_insert(key(8,1008,log.borrow()),marker(8)).is_ok()); assert(map.try_insert(key(9,1009,log.borrow()),marker(9)).is_ok());
+    assert(map.remove(key(1,8001,log.borrow())).is_some()); assert(map.len()==6 && map.occupied>map.length);
+    let pointer:ptr=map.storage; let capacity:i32=map.capacity(); let buckets:i32=map.buckets; let occupied:i32=map.occupied;
+    let length:i32=(core::mem::size_of<HashStorage>()*(buckets as usize)) as i32; assert(length>0 && length<=2048);
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,length); let before:[u8;2048]=[0;2048]; let prefix:[u64;640]=[0;640];
+    let update:Update=Update { log:log.borrow(),calls:0 }; let queries:[i32;5]=[4,6,8,99,7]; i=0;
+    while(i<5) {
+        let rank:i32=queries[i]; let query:Key=key(rank,9000+rank as u64,log.borrow()); log.used=0;
+        let existing:core::option::Option<alloc::hash_map::Entry<Key,u64>> =map.get_entry(query); let present:bool=existing.is_some();
+        let old:u64=0; if(present) { let found:alloc::hash_map::Entry<Key,u64> =existing.unwrap(); old=found.value; assert(found.key.tag==1000+rank as u64); }
+        let calls:i32=log.used; let j:i32=0; while(j<calls*5) { prefix[j]=words[j]; j+=1; }
+        assert(calls>=1 && prefix[0]==1); snapshot(raw,before,length); log.used=0; let previous:i32=update.calls;
+        let result:core::option::Option<Report> =map.update_value(query,update.borrow()); assert(result.is_some()==present);
+        let next:u64=old; if(present) { let report:Report=result.unwrap(); next=old+17; assert(report.old==old && report.new==next && report.ordinal==previous+1); }
+        assert(update.calls==previous+(present as i32)); lookup_prefix(log.borrow(),prefix,calls,present,old,next,update.calls);
+        identical_except_value(before,raw,length,old,next,present);
+        assert(map.storage==pointer && map.buckets==buckets && map.occupied==occupied && map.len()==6 && map.capacity()==capacity && query.tag==9000+rank as u64);
+        i+=1;
+    }
+    assert(update.calls==3); let cursor:alloc::hash_map::Iter<Key,u64> =map.iter(); let seen:i32=0;
+    while(true) { let next:core::option::Option<alloc::hash_map::Entry<Key,u64>> =cursor.next(); if(next.is_none()) { break; }
+        let item:alloc::hash_map::Entry<Key,u64> =next.unwrap(); let rank:i32=item.key.rank; assert(rank==3 || rank==4 || rank==5 || rank==7 || rank==8 || rank==9);
+        let expected:u64=marker(rank); if(rank==4 || rank==7 || rank==8) { expected+=17; } assert(item.value==expected && item.key.tag==1000+rank as u64); seen+=1;
+    } assert(seen==6); map.destroy();
+}
+fn tree_contract() {
+    let words:[u64;640]=[0;640]; let log:Log=Log { words:words,used:0 };
+    let map:alloc::tree_map::TreeMap<Key,u64> =alloc::tree_map::with_capacity<Key,u64>(16).unwrap(); let ranks:[i32;7]=[4,2,6,1,3,5,7]; let i:i32=0;
+    while(i<7) { let rank:i32=ranks[i]; assert(map.try_insert(key(rank,1000+rank as u64,log.borrow()),marker(rank)).is_ok()); i+=1; }
+    assert(map.remove(key(2,8002,log.borrow())).is_some()); assert(map.remove(key(6,8006,log.borrow())).is_some());
+    assert(map.try_insert(key(8,1008,log.borrow()),marker(8)).is_ok()); assert(map.try_insert(key(9,1009,log.borrow()),marker(9)).is_ok());
+    assert(map.remove(key(1,8001,log.borrow())).is_some()); assert(map.len()==6 && map.free>=0);
+    let pointer:ptr=map.storage; let reserved:i32=map.reserved; let used:i32=map.used; let root:i32=map.root; let free:i32=map.free;
+    let length:i32=(core::mem::size_of<TreeStorage>()*(reserved as usize)) as i32; assert(length>0 && length<=2048);
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,length); let before:[u8;2048]=[0;2048]; let prefix:[u64;640]=[0;640];
+    let update:Update=Update { log:log.borrow(),calls:0 }; let queries:[i32;5]=[4,6,8,99,7]; i=0;
+    while(i<5) {
+        let rank:i32=queries[i]; let query:Key=key(rank,9000+rank as u64,log.borrow()); log.used=0;
+        let existing:core::option::Option<alloc::tree_map::Entry<Key,u64>> =map.get_entry(query); let present:bool=existing.is_some();
+        let old:u64=0; if(present) { let found:alloc::tree_map::Entry<Key,u64> =existing.unwrap(); old=found.value; assert(found.key.tag==1000+rank as u64); }
+        let calls:i32=log.used; let j:i32=0; while(j<calls*5) { prefix[j]=words[j]; j+=1; } assert(calls>0 && prefix[0]==3);
+        snapshot(raw,before,length); log.used=0; let previous:i32=update.calls;
+        let result:core::option::Option<Report> =map.update_value(query,update.borrow()); assert(result.is_some()==present);
+        let next:u64=old; if(present) { let report:Report=result.unwrap(); next=old+17; assert(report.old==old && report.new==next && report.ordinal==previous+1); }
+        assert(update.calls==previous+(present as i32)); lookup_prefix(log.borrow(),prefix,calls,present,old,next,update.calls);
+        identical_except_value(before,raw,length,old,next,present);
+        assert(map.storage==pointer && map.reserved==reserved && map.used==used && map.root==root && map.free==free && map.len()==6 && query.tag==9000+rank as u64);
+        i+=1;
+    }
+    assert(update.calls==3); let cursor:alloc::tree_map::Cursor<Key,u64> =map.iter(); let expected_ranks:[i32;6]=[3,4,5,7,8,9]; i=0;
+    while(i<6) { let item:alloc::tree_map::Entry<Key,u64> =cursor.next().unwrap(); let rank:i32=expected_ranks[i]; let expected:u64=marker(rank);
+        if(rank==4 || rank==7 || rank==8) { expected+=17; } assert(item.key.rank==rank && item.key.tag==1000+rank as u64 && item.value==expected); i+=1;
+    }
+    assert(cursor.next().is_none()); map.destroy();
+}
+fn main() -> i32 { hash_contract(); tree_contract(); return 0; }

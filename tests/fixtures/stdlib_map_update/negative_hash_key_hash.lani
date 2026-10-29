@@ -1,0 +1,23 @@
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::pair;
+struct Callback { marker:i32 }
+impl Callback { fn borrow(&self) -> &Callback { return self; } }
+pub impl core::iter::Mapper<u64,core::pair::Pair<u64,bool>> for Callback {
+    pub fn apply(&self,value:u64) -> core::pair::Pair<u64,bool> { return core::pair::Pair { first:value,second:true }; }
+}
+struct Key { rank:i32 }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { return left.rank==right.rank; }
+    pub fn ne(left:Key,right:Key) -> bool { return left.rank!=right.rank; }
+}
+fn main() -> i32 {
+    let map:alloc::hash_map::HashMap<Key,u64> =alloc::hash_map::new(); let callback:Callback=Callback { marker:1 };
+    let rejected_update_bound:core::option::Option<bool> =map.update_value<Callback,bool>(Key { rank:1 },callback.borrow());
+    return 0;
+}

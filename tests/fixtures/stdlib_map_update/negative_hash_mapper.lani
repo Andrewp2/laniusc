@@ -1,0 +1,15 @@
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::pair;
+struct Callback { marker:i32 }
+impl Callback { fn borrow(&self) -> &Callback { return self; } }
+fn main() -> i32 {
+    let map:alloc::hash_map::HashMap<i32,u64> =alloc::hash_map::new(); let callback:Callback=Callback { marker:1 };
+    let rejected_update_bound:core::option::Option<bool> =map.update_value<Callback,bool>(1,callback.borrow());
+    return 0;
+}

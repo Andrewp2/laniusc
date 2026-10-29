@@ -1,0 +1,121 @@
+module fixture::owners;
+import alloc::string;
+import alloc::vec;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::mem;
+import core::pair;
+import core::result;
+import std::io;
+
+pub struct Key { rank:i32, representative:i32, text:alloc::string::String }
+pub struct Setup {
+    stored:Key, query:Key,
+    value:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,
+    replacement:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>
+}
+pub enum Fault { Allocation(i32), Report(alloc::string::String) }
+pub struct Grow { calls:i32 }
+pub struct Replace { calls:i32, replacement:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String> }
+pub impl Grow { pub fn borrow(&self) -> &Grow { return self; } }
+pub impl Replace { pub fn borrow(&self) -> &Replace { return self; } }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { return left.rank==right.rank; }
+    pub fn ne(left:Key,right:Key) -> bool { return left.rank!=right.rank; }
+}
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value:Key) -> u32 { return value.rank as u32; } }
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left:Key,right:Key) -> bool { return left.rank<right.rank; }
+    pub fn le(left:Key,right:Key) -> bool { return left.rank<=right.rank; }
+    pub fn gt(left:Key,right:Key) -> bool { return left.rank>right.rank; }
+    pub fn ge(left:Key,right:Key) -> bool { return left.rank>=right.rank; }
+}
+pub fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+pub fn mode() -> i32 {
+    let byte:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(byte),1)==1);
+    let result:i32=byte[0]&255; assert(result>=0 && result<=2); return result;
+}
+fn bytes(value:str,count:i32) -> [u8] { return core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); }
+fn string(value:str,count:i32) -> alloc::string::String { return alloc::string::from_utf8(bytes(value,count),count).unwrap(); }
+pub fn text(value:alloc::string::String,wanted:str,count:i32) {
+    assert(value.byte_len()==count); let expected:[u8]=bytes(wanted,count); let index:i32=0;
+    while(index<count) { assert(value.byte_at(index).unwrap()==expected[index]); index+=1; }
+}
+pub fn setup() -> Setup {
+    let stored:Key=Key { rank:7,representative:111,text:string("stored-key",10) };
+    let query:Key=Key { rank:7,representative:222,text:string("query-key",9) };
+    let data:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(3).unwrap();
+    data.try_push(1).unwrap(); data.try_push(2).unwrap(); data.try_push(3).unwrap();
+    let label:alloc::string::String=string("seed",4);
+    let other:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(2).unwrap();
+    other.try_push(90).unwrap(); other.try_push(91).unwrap();
+    let other_label:alloc::string::String=string("new!",4);
+    return Setup { stored:stored,query:query,value:core::pair::Pair { first:data,second:label },
+        replacement:core::pair::Pair { first:other,second:other_label } };
+}
+pub fn missing() -> Key { return Key { rank:99,representative:333,text:alloc::string::new() }; }
+pub fn keys(stored:Key,query:Key,stored_pointer:ptr,query_pointer:ptr) {
+    assert(stored.rank==7 && stored.representative==111 && stored.text.bytes.storage==stored_pointer);
+    assert(query.rank==7 && query.representative==222 && query.text.bytes.storage==query_pointer);
+    assert(stored_pointer!=query_pointer); text(stored.text,"stored-key",10); text(query.text,"query-key",9);
+}
+pub fn value(value:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,stage:i32) {
+    let count:i32=3; let capacity:i32=3; if(stage>0) { count=4; capacity=6; }
+    assert(value.first.len()==count && value.first.capacity()==capacity);
+    assert(value.first.at(0)==1 && value.first.at(1)==2 && value.first.at(2)==3);
+    if(stage>0) { assert(value.first.at(3)==42); }
+    if(stage<2) { text(value.second,"seed",4); assert(value.second.capacity()==4); }
+    else { text(value.second,"seedé🙂!",11); assert(value.second.capacity()==11); }
+}
+pub fn replacement(value:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>) {
+    assert(value.first.len()==2 && value.first.capacity()==2 && value.first.at(0)==90 && value.first.at(1)==91);
+    text(value.second,"new!",4); assert(value.second.capacity()==4);
+}
+fn allocation(value:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,stage:i32)
+    -> core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::result::Result<i32,Fault>> {
+    let result:core::result::Result<i32,Fault> =core::result::Err(Fault::Allocation(stage)); mark(98);
+    return core::pair::Pair { first:value,second:result };
+}
+pub impl core::iter::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::result::Result<i32,Fault>>> for Grow {
+    pub fn apply(&self,owned:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>)
+        -> core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::result::Result<i32,Fault>> {
+        mark(66); self.calls+=1;
+        // A retry skips a successful earlier stage. Pair.first always carries
+        // the current descriptors, including normal Err returns.
+        if(owned.first.len()==3) {
+            let changed=owned.first.try_push(42);
+            if(changed.is_err()) { assert(match(changed.unwrap_err()) { alloc::vec::Error::AllocationFailed->true,_ ->false }); return allocation(owned,1); }
+        }
+        if(owned.second.byte_len()==4) {
+            let changed=owned.second.try_append_utf8(bytes("é🙂!",7),7);
+            if(changed.is_err()) { assert(match(changed.unwrap_err()) { alloc::string::Error::AllocationFailed->true,_ ->false }); return allocation(owned,2); }
+        }
+        value(owned,2);
+        let separate:alloc::string::String=string("owned-error",11);
+        let result:core::result::Result<i32,Fault> =core::result::Err(Fault::Report(separate));
+        mark(98); return core::pair::Pair { first:owned,second:result };
+    }
+}
+pub impl core::iter::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>>> for Replace {
+    pub fn apply(&self,owned:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>)
+        -> core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>> {
+        mark(66); self.calls+=1; value(owned,2); replacement(self.replacement);
+        mark(98); return core::pair::Pair { first:self.replacement,second:owned };
+    }
+}
+pub fn denied(result:core::result::Result<i32,Fault>,stage:i32) {
+    assert(result.is_err()); assert(match(result.unwrap_err()) { Fault::Allocation(actual)->actual==stage,_ ->false });
+}
+fn unexpected() -> alloc::string::String { assert(false); return alloc::string::new(); }
+pub fn report(result:core::result::Result<i32,Fault>) -> alloc::string::String {
+    assert(result.is_err()); return match(result.unwrap_err()) { Fault::Report(owner)->owner,_ ->unexpected() };
+}
+pub fn publish(pointer:ptr,count:i32) {
+    let position:i32=0; while(position<count) {
+        let used:i32=std::io::write_stdout(pointer+(position as usize),(count-position) as usize);
+        assert(used>0 && used<=count-position); position+=used;
+    }
+}
+pub fn publish_text(value:alloc::string::String) { publish(value.bytes.storage,value.byte_len()); }
+pub fn destroy_value(value:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>) { value.first.destroy(); value.second.destroy(); }

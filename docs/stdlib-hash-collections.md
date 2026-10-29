@@ -47,6 +47,7 @@ counts.destroy();
 | `len()`, `is_empty()`, `capacity()` | Live size and capacity in entries |
 | `contains_key(key)`, `get(key)` | Presence and optional copied value |
 | `get_entry(key)` | Optional copied `Entry { key, value }`, including the stored key |
+| `update_value(key, update)` | One lookup; missing returns None, present reinstalls callback Pair.first and returns Some(Pair.second), preserving the stored key; [current evidence](stdlib-map-updates.md) |
 | `try_insert(key, value)` | Result containing the displaced entry, or None for a new key |
 | `remove(key)` | Optional removed entry; does not allocate |
 | `try_reserve(additional)` | Reserve for additional distinct keys; return resulting capacity |
@@ -60,6 +61,13 @@ Replacing an existing key does not allocate, even when the table is at capacity.
 Both its old key and old value are returned. A failed insertion retains the
 supplied key/value with the caller and preserves every existing entry and the
 table allocation. Reserve, shrink and clone failures also preserve the source.
+
+The [scoped value update](stdlib-map-updates.md) can grow or replace an owned
+value without removing its key. End prior borrows/cursors first; the callback
+returns the latest V descriptor even when its separate result is an error.
+The callback may not reenter this map or change key identity through aliases.
+All seven new library gates pass on the finite native Linux x86_64 profile;
+the dedicated guide records their scope and the accepted 103-case application. Older receipts below do not establish it.
 
 The map copies values and does **not** deeply clone or destroy allocations
 inside them. The application chooses their ownership:
@@ -135,8 +143,10 @@ timeout --kill-after=2s 100s env \
 ```
 
 Native execution is established for x86_64 Linux. GPU user-program execution
-and other hosts remain unverified. Keyed hashing, automatic/deep destruction,
-borrowed-key lookup and shared iterator-protocol integration remain work.
+and other hosts remain unverified. Keyed hashing, automatic destruction and
+lookup through a distinct borrowed key type remain work. Later
+[shared cursor integration](stdlib-collection-iterators.md) and
+[opt-in deep cleanup](stdlib-clone-hash-map.md) have separate accepted evidence.
 
 ## Hash sets and the earlier wrapper dependency
 

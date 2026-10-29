@@ -6,6 +6,7 @@ import core::cmp;
 import core::iter;
 import core::mem;
 import core::option;
+import core::pair;
 import core::result;
 import core::slice;
 
@@ -132,6 +133,24 @@ pub impl<K, V> TreeMap<K, V> {
     pub fn get(&self, key: K) -> core::option::Option<V> where K: core::cmp::Ord<K> {
         let found: core::option::Option<Entry<K, V>> = self.get_entry(key);
         let result: core::option::Option<V> = match (found) { Some(item) -> core::option::Some(item.value), None -> core::option::None() }; return result;
+    }
+    // Missing keys never call update. A present value is lent exclusively to
+    // the mapper, which returns its latest valid descriptor in Pair.first,
+    // even when Pair.second is a Result error. No rollback or Destroy occurs.
+    // End previous value borrows/cursors first. The callback must not access
+    // this map through any alias or change key ordering through shared backing.
+    // The query key remains caller-owned; only the stored value is replaced.
+    pub fn update_value<M, R>(&self, key: K, update: &M) -> core::option::Option<R>
+        where K: core::cmp::Ord<K>, M: core::iter::Mapper<V, core::pair::Pair<V, R>> {
+        let index: i32 = self.find(key);
+        if (index < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = self.nodes();
+        let node: Node<K, V> = nodes[index];
+        let item: Entry<K, V> = node.item;
+        let updated: core::pair::Pair<V, R> = update.apply(item.value);
+        node.item = Entry { key: item.key, value: updated.first };
+        nodes[index] = node;
+        return core::option::Some(updated.second);
     }
     pub fn first(&self) -> core::option::Option<Entry<K, V>> {
         let nodes: [Node<K, V>] = self.nodes(); let index: i32 = endpoint(nodes, self.root, false);
