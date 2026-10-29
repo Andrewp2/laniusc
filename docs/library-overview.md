@@ -1,6 +1,18 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[Unix stream/socket-pair increment](stdlib-unix-streams.md) specifies local
+AF_UNIX owners, borrowed pathname/abstract addresses and the existing staged
+stream/readiness contracts. One-attempt connect, exact pair publication,
+manual descriptor/path cleanup and explicit failure behavior are fixed;
+source is frozen and pair/direct/address gates pass. The real request
+application passes four groups/84 cases; all six new library tests pass across
+separate receipts. Three selected IP tests and one real TCP-application test
+also pass. This finite native Linux x86_64 increment is accepted. A narrow
+generic Result-chain dependency retains an executable typed-local control.
+Earlier IP socket receipts do not cover the added surface or replace the
+selected current regressions.
+The preceding
 [eager outcome-composition increment](stdlib-outcome-composition.md) widens
 Option/Result selection across payload or error types and adds Result
 flattening and both transpose directions. All four specialized methods pass
@@ -211,6 +223,45 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Unix streams and socket pairs.**
+
+The [Unix-stream guide](stdlib-unix-streams.md) records three constructors,
+19 inherent owner methods and Read/Write/flush. Borrowed pathname names admit
+1..107 non-NUL bytes, while Linux abstract names admit 0..107 arbitrary bytes
+with significant NULs. Address validation/copying uses stack storage; stream
+transfers share the existing descriptor engine, with no library allocation.
+Pairs publish two independently owned connected endpoints together; copies,
+duplicates, shutdown and retire-before-close preserve explicit ownership.
+Connect makes one host attempt and never interprets Unix EAGAIN as IP pending
+connection success. Source `44f6739d…` has 25 added public entries (60 total).
+One registered real-pair admission passes in 7.30s with bidirectional binary
+bytes, offset views, sentinels and explicit close. The real
+[framed request program](stdlib-unix-request.md) passes four groups/84 cases:
+model 24/8.49s and CLI 19, I/O 24, rejection 17/21.50s, including two real
+five-second deadlines. The direct contract test passes in 8.11s with generic
+Read/Write through typed Result locals; the original immediate generic
+unwrap call failed compilation. The address test passes 90 probes in 6.90s:
+52 independent peers, 36 boundary/lifetime cases and two real backlog cases.
+Bounds/no-host and descriptor-lifecycle gates pass in the first mixed 13.15s
+command, which also has a fault-harness failure. The final fault-only gate
+passes in 8.40s with 63 schedules/13 genuine baselines/50 reached injections;
+three skipped-close descriptors remain until process exit, with no invented
+kernel-close claim. Exact warning/hex-result parser fixes leave production
+unchanged. All six new library tests pass across separate receipts. A
+socket-free immediate generic unwrap reproduction fails with LNC0027 while
+its typed-local control executes;
+the explicit ignored positive-test command is not a green two-test gate.
+The [dependency ledger](library-dependencies.md) preserves that narrow boundary.
+Three selected IP regressions pass in 10.93s, covering
+ownership/ordinary transport, full datagrams and absolute-deadline retry;
+old Internet connect-EAGAIN/malformed-accept groups were filtered and retain
+historical scope. One selected real TCP-application test passes in 8.86s with
+six IPv4/IPv6 exchanges at lengths 0, 257 and 1,048,576; three other tests were
+filtered. This finite increment is accepted on native Linux x86_64 CPU output
+from the GPU compiler. Address queries, Unix datagrams, seqpacket, credentials,
+ancillary descriptor passing, broader targets and automatic lifetime/proof
+work remain open.
 
 **Eager outcome composition.**
 

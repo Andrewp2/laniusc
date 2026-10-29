@@ -1,0 +1,206 @@
+// One bounded length-framed Unix stream request and fully admitted response.
+module app::main;
+import alloc::io;
+import core::endian;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::time;
+import std::args;
+import std::clock;
+import std::signal;
+import std::socket;
+import std::stream;
+
+struct Budget { deadline:core::time::Deadline, last:core::time::Instant, calls:i32 }
+impl Budget {
+    fn borrow(&self) -> &Budget { return self; }
+    fn check(&self) -> bool {
+        let read:Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+        if (read.is_err()) { return false; }
+        let now:core::time::Instant = read.unwrap();
+        if ((now.compare(self.last) < 0) || self.deadline.is_expired(now)) { return false; }
+        self.last = now; return true;
+    }
+    // This counts public transfer invocations. Inner readiness/host attempts
+    // follow the same absolute deadline and are not a raw-syscall quota.
+    fn before(&self) -> i32 {
+        if (self.calls == 8192) { return 2; }
+        if (!self.check()) { return 6; }
+        self.calls += 1; return 0;
+    }
+}
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > bytes.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("unix_request: operation failed\n",31),2,8); return status; }
+fn read(input:&alloc::io::Buffer) -> i32 {
+    let source = std::stream::stdin(); let scratch:[u8;4096] = [0;4096]; let calls:i32 = 0;
+    while(true) {
+        if (calls == 8192) { return 2; } calls += 1;
+        let remaining:i32 = 1048576-input.len(); let wanted:i32 = remaining;
+        if (wanted > 4096) { wanted = 4096; }
+        if (wanted == 0) { wanted = 1; }
+        let received:Result<i32,core::io::Error> = source.read(scratch,0,wanted);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let count:i32 = received.unwrap();
+        if ((count < 0) || (count > wanted)) { return 3; }
+        if (count == 0) { return 0; }
+        if (count > remaining) { return 2; }
+        let saved:Result<i32,core::io::Error> = input.write(scratch,0,count);
+        if (saved.is_err()) { return match(saved.unwrap_err()) { core::io::Error::AllocationFailed -> 4, _ -> 7 }; }
+        if (saved.unwrap() != count) { return 7; }
+    }
+    return 3;
+}
+fn send(socket:&std::socket::UnixStream, input:View<u8>, budget:&Budget) -> i32 {
+    let completed:i32 = 0;
+    while(completed < input.length) {
+        let admitted:i32 = budget.before(); if (admitted != 0) { return admitted; }
+        let remaining:View<u8> = core::slice::View { values:input.values,start:input.start+completed,length:input.length-completed };
+        let sent:Result<i32,core::io::Error> = socket.send_until(remaining,budget.deadline);
+        if (sent.is_err()) { return 6; } let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > remaining.length)) { return 6; }
+        completed += count;
+        // A positive transfer does not renew the aggregate deadline.
+        if (!budget.check()) { return 6; }
+    }
+    return 0;
+}
+fn receive_exact(socket:&std::socket::UnixStream, output:View<u8>, budget:&Budget) -> i32 {
+    let completed:i32 = 0;
+    while(completed < output.length) {
+        let admitted:i32 = budget.before(); if (admitted != 0) { return admitted; }
+        let remaining:View<u8> = core::slice::View { values:output.values,start:output.start+completed,length:output.length-completed };
+        let received:Result<i32,core::io::Error> = socket.receive_until(remaining,budget.deadline);
+        if (received.is_err()) { return 6; } let count:i32 = received.unwrap();
+        if ((count <= 0) || (count > remaining.length)) { return 6; }
+        completed += count;
+        if (!budget.check()) { return 6; }
+    }
+    return 0;
+}
+fn exchange(socket:&std::socket::UnixStream, endpoint:std::socket::UnixAddress, input:&alloc::io::Buffer, output:&alloc::io::Buffer, budget:&Budget) -> i32 {
+    if (!budget.check()) { return 6; }
+    // AF_UNIX connect is one acknowledged attempt, never a TCP-style pending
+    // connection followed by readiness or a retry on EINTR/EAGAIN.
+    let connected:Result<i32,core::io::Error> = socket.connect(endpoint);
+    if (connected.is_err()) { return 6; }
+    if ((connected.unwrap() != 0) || !budget.check()) { return 6; }
+    let header:[u8;4] = [0;4];
+    if (!core::endian::write_u32_be(header,4,0,input.len() as u32)) { return 7; }
+    let status:i32 = send(socket,core::slice::view(header,4).unwrap(),budget);
+    if (status != 0) { return status; }
+    status = send(socket,core::slice::view(input.as_bytes(),input.len()).unwrap(),budget);
+    if (status != 0) { return status; }
+    if (!budget.check()) { return 6; }
+    let ended:Result<i32,core::io::Error> = socket.shutdown(std::socket::Shutdown::Write);
+    if (ended.is_err()) { return 6; }
+    if ((ended.unwrap() != 0) || !budget.check()) { return 6; }
+
+    status = receive_exact(socket,core::slice::view(header,4).unwrap(),budget);
+    if (status != 0) { return status; }
+    let declared:u32 = core::endian::read_u32_be_or(header,4,0,0);
+    // Guard the full unsigned value before narrowing to a logical count.
+    if (declared > 1048576) { return 6; }
+    let length:i32 = declared as i32; let scratch:[u8;4096] = [0;4096];
+    while(output.len() < length) {
+        let wanted:i32 = length-output.len(); if (wanted > 4096) { wanted = 4096; }
+        let admitted:i32 = budget.before(); if (admitted != 0) { return admitted; }
+        let received:Result<i32,core::io::Error> = socket.receive_until(core::slice::view(scratch,wanted).unwrap(),budget.deadline);
+        if (received.is_err()) { return 6; } let count:i32 = received.unwrap();
+        if ((count <= 0) || (count > wanted)) { return 6; }
+        if (!budget.check()) { return 6; }
+        let saved:Result<i32,core::io::Error> = output.write(scratch,0,count);
+        if (saved.is_err()) { return match(saved.unwrap_err()) { core::io::Error::AllocationFailed -> 4, _ -> 7 }; }
+        if (saved.unwrap() != count) { return 7; }
+    }
+    // A complete payload is not an admitted response until actual EOF.
+    let admitted:i32 = budget.before(); if (admitted != 0) { return admitted; }
+    let probe:[u8;1] = [0;1];
+    let eof:Result<i32,core::io::Error> = socket.receive_until(core::slice::view(probe,1).unwrap(),budget.deadline);
+    if (eof.is_err()) { return 6; }
+    if ((eof.unwrap() != 0) || !budget.check()) { return 6; }
+    return 0;
+}
+fn network(endpoint:std::socket::UnixAddress, input:&alloc::io::Buffer, output:&alloc::io::Buffer) -> i32 {
+    let read:Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+    if (read.is_err()) { return 6; } let initial:core::time::Instant = read.unwrap();
+    let shifted:Result<core::time::Instant,core::time::Error> = initial.checked_add(core::time::from_secs(5));
+    if (shifted.is_err()) { return 6; }
+    let budget = Budget { deadline:core::time::deadline_at(shifted.unwrap()),last:initial,calls:0 };
+    let made:Result<std::socket::UnixStream,core::io::Error> = std::socket::unix_stream(true);
+    if (made.is_err()) { return 6; } let socket = made.unwrap();
+    let status:i32 = exchange(socket.borrow(),endpoint,input,output,budget.borrow());
+    // This lexical owner closes once on every path, even after protocol or
+    // allocation failure. A later close error preserves an earlier status.
+    let closed:Result<i32,core::io::Error> = socket.close();
+    if (status == 0) {
+        if (closed.is_err()) { status = 6; }
+        else { if ((closed.unwrap() != 0) || !budget.check()) { status = 6; } }
+    }
+    return status;
+}
+fn run(endpoint:std::socket::UnixAddress) -> i32 {
+    let made:Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(1048576);
+    if (made.is_err()) { return 7; } let input = made.unwrap(); let status:i32 = read(input.borrow());
+    if (status != 0) { input.destroy(); return status; }
+    let created:Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(1048576);
+    if (created.is_err()) { input.destroy(); return 7; } let output = created.unwrap();
+    status = network(endpoint,input.borrow(),output.borrow()); input.destroy();
+    if ((status == 0) && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,8192)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    if (values.length == 1) {
+        let first:View<u8> = values.values[values.start];
+        if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) {
+            let help = literal("Usage: unix_request path|abstract NAME\nSend one binary stdin request over a Unix stream and print one admitted response.\nNamespaces are explicit: path NAME is 1..107 bytes; abstract NAME is 0..107 bytes.\nWire format: big-endian u32 length plus payload; each payload is at most 1048576 bytes.\nRequire stdin EOF before connect, shutdown Write after request, and response EOF before output.\nLimits: 8192 stdin calls, 8192 public network transfers, 8192 output calls; one 5-second network deadline.\nA sole --help or -h shows help. NAME is raw argv bytes; @ has no special meaning.\n",577);
+            if (!write(help,1,64)) { return report(5); } return 0;
+        }
+    }
+    if (values.length != 2) { return report(2); }
+    let kind:View<u8> = values.values[values.start]; let name:View<u8> = values.values[values.start+1];
+    let endpoint:std::socket::UnixAddress = std::socket::UnixAddress::Abstract(name);
+    if (equals(kind,literal("path",4))) {
+        if ((name.length < 1) || (name.length > 107)) { return report(2); }
+        let path:Result<core::path::Path,core::path::Error> = core::path::from_view(name);
+        if (path.is_err()) { return report(2); }
+        endpoint = std::socket::UnixAddress::Pathname(path.unwrap());
+    } else {
+        if (!equals(kind,literal("abstract",8)) || (name.length > 107)) { return report(2); }
+    }
+    let status:i32 = run(endpoint); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,2,128);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status:i32 = arguments(values.as_view()); values.destroy(); return status;
+}

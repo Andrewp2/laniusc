@@ -1610,8 +1610,16 @@
     },
     "std::socket": {
       "guides": [
-        "docs/stdlib-sockets.md"
-      ]
+        "docs/stdlib-sockets.md",
+        "docs/stdlib-unix-streams.md",
+        "docs/stdlib-unix-request.md"
+      ],
+      "note": "Linux AF_UNIX streams are separate from numeric IPv4/IPv6 Socket TCP/UDP. Frozen source 44f6739d adds three factories, 19 inherent UnixStream methods and three Read/Write/flush members, giving 60 module-wide public entries. Borrowed pathnames admit 1..107 non-NUL bytes and Linux abstract names 0..107 arbitrary bytes; complete metadata/NUL admission precedes stack copying and host calls. Creation/pair/accept request CLOEXEC and mode atomically. Pair publication requires exact-zero status and distinct nonnegative descriptors; adoption requires exclusive ownership, copies alias one cleanup authority, duplicates share endpoint state and close retires before one attempt. Connect preserves AF_UNIX EAGAIN as WouldBlock. Shared 1024-byte stream staging retains full-width counts, confirmed-prefix copying, MSG_NOSIGNAL and absolute-deadline retries without heap allocation. All six new library tests pass across separate pair/direct/address/effect receipts, including 90 address probes and 63 fault schedules (13 genuine/50 injected). Three skipped-close actual descriptors remain until process exit; those attempts are not executed kernel closes. Four unix-request groups pass 84 cases; three selected IP regressions pass separately, with Internet connect-EAGAIN/malformed-accept groups filtered. One selected real TCP-application test passes in 8.86s with six IPv4/IPv6 exchanges at payload lengths 0, 257 and 1048576; three other application tests were filtered. This finite Unix increment is accepted. A socket-free generic Write-result immediate unwrap reports LNC0027 while a typed Result-local native control executes; that ignored positive-test command is not a green gate, and no compiler fix is claimed. Historical IP receipts retain their scope. Address queries, Unix datagrams/seqpacket, credentials, ancillary descriptors, broader targets, automatic lifetimes and proofs remain open. Finite target is Linux x86_64 CPU output from the GPU compiler.",
+      "declarations": {
+        "unix_stream": "Creates one unconnected AF_UNIX/SOCK_STREAM owner, requesting CLOEXEC and the selected nonblocking mode atomically. No automatic destructor or pathname cleanup; callers close or transfer one cleanup authority.",
+        "unix_pair": "Creates two connected unnamed Unix stream endpoints with CLOEXEC and the selected mode. Exact-zero status and two distinct nonnegative descriptors publish both owners together; full-width status checks precede narrowing, and malformed invented outputs grant no authority to close arbitrary integers.",
+        "unix_from_owned_handle": "Adopts an exclusively owned live Unix-stream descriptor. Rejects a negative number only; family, type, state and flags are caller preconditions. It does not duplicate the descriptor or set CLOEXEC."
+      }
     },
     "std::stream": {
       "guides": [

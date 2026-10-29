@@ -1,0 +1,183 @@
+// Direct native Unix stream behavior; independent peers/faults are separate.
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::linux;
+import std::socket;
+
+fn deadline() -> core::time::Deadline {
+    let now:core::time::Instant=std::clock::monotonic_now().unwrap();
+    return core::time::deadline_after(now,core::time::from_secs(2)).unwrap();
+}
+fn expired() -> core::time::Deadline { return core::time::deadline_at(core::time::instant(core::time::zero())); }
+fn endpoint() -> std::socket::UnixAddress {
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("listener"),8);
+    let path:core::path::Path=core::path::from_view(core::slice::view<u8>(bytes,8).unwrap()).unwrap();
+    return std::socket::UnixAddress::Pathname(path);
+}
+fn host(error:core::io::Error,expected:i32) { assert(match(error) { core::io::Error::Host(code) -> code==expected, _ -> false }); }
+fn invalid(error:core::io::Error) { assert(match(error) { core::io::Error::InvalidInput -> true, _ -> false }); }
+fn cloexec(stream:&std::socket::UnixStream) {
+    let args:[std::linux::Argument;3]=[std::linux::Argument::Word(stream.raw_handle().unwrap() as i64),std::linux::Argument::Word(1),std::linux::Argument::Word(0)];
+    let flags:i64=std::linux::call(72,core::slice::view(args,3).unwrap()).unwrap(); assert(flags>=0 && (flags&1)==1);
+}
+fn write_exact<W>(stream:&W,bytes:[u8],offset:i32,count:i32) where W:core::io::Write {
+    let completed:i32=0; let calls:i32=0;
+    while (completed<count && calls<16) {
+        let written:core::result::Result<i32,core::io::Error> =stream.write(bytes,offset+completed,count-completed);
+        let amount:i32=written.unwrap(); assert(amount>0 && amount<=count-completed && amount<=1024); completed+=amount; calls+=1;
+    }
+    assert(completed==count);
+    let flushed:core::result::Result<i32,core::io::Error> =stream.flush(); assert(flushed.unwrap()==0);
+}
+fn read_exact<R>(stream:&R,bytes:[u8],offset:i32,count:i32) where R:core::io::Read {
+    let completed:i32=0; let calls:i32=0;
+    while (completed<count && calls<16) {
+        let received:core::result::Result<i32,core::io::Error> =stream.read(bytes,offset+completed,count-completed);
+        let amount:i32=received.unwrap(); assert(amount>0 && amount<=count-completed && amount<=1024); completed+=amount; calls+=1;
+    }
+    assert(completed==count);
+}
+fn close_checks(stream:&std::socket::UnixStream) {
+    assert(stream.close().unwrap()==0 && stream.close().unwrap()==0 && !stream.is_open());
+    assert(stream.raw_handle().is_none() && stream.take_handle().is_none());
+    let nowhere:ptr=0; let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let empty:core::slice::View<u8> =core::slice::View { values:bytes,start:2147483647,length:0 };
+    host(stream.send(empty).unwrap_err(),9); host(stream.receive(empty).unwrap_err(),9);
+    host(stream.send_until(empty,expired()).unwrap_err(),9); host(stream.receive_until(empty,expired()).unwrap_err(),9);
+    host(stream.read(bytes,2147483647,0).unwrap_err(),9); host(stream.write(bytes,2147483647,0).unwrap_err(),9);
+    host(stream.flush().unwrap_err(),9); host(stream.try_clone().unwrap_err(),9);
+    host(stream.is_nonblocking().unwrap_err(),9); host(stream.set_nonblocking(true).unwrap_err(),9);
+    host(stream.bind(endpoint()).unwrap_err(),9); host(stream.listen(1).unwrap_err(),9);
+    host(stream.connect(endpoint()).unwrap_err(),9); host(stream.accept(false).unwrap_err(),9);
+    host(stream.shutdown(std::socket::Shutdown::Both).unwrap_err(),9);
+    host(stream.wait_ms(true,false,0).unwrap_err(),9);
+    host(stream.wait_until(true,false,deadline()).unwrap_err(),9);
+}
+fn zero_and_invalid(stream:&std::socket::UnixStream) {
+    let nowhere:ptr=0; let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let empty:core::slice::View<u8> =core::slice::View { values:bytes,start:2147483647,length:0 };
+    assert(stream.send(empty).unwrap()==0 && stream.receive(empty).unwrap()==0);
+    assert(stream.send_until(empty,expired()).unwrap()==0 && stream.receive_until(empty,expired()).unwrap()==0);
+    assert(stream.read(bytes,2147483647,0).unwrap()==0 && stream.write(bytes,2147483647,0).unwrap()==0 && stream.flush().unwrap()==0);
+    let malformed:core::slice::View<u8> =core::slice::View { values:bytes,start:-1,length:0 };
+    let kind:i32=0;
+    while (kind<3) {
+        if (kind==1) { malformed.start=0; malformed.length=-1; }
+        if (kind==2) { malformed.start=2147483647; malformed.length=1; }
+        invalid(stream.send(malformed).unwrap_err()); invalid(stream.receive(malformed).unwrap_err());
+        invalid(stream.send_until(malformed,expired()).unwrap_err()); invalid(stream.receive_until(malformed,expired()).unwrap_err()); kind+=1;
+    }
+    invalid(stream.read(bytes,-1,0).unwrap_err()); invalid(stream.write(bytes,2147483647,1).unwrap_err());
+    invalid(stream.wait_ms(true,false,-2).unwrap_err());
+    let destination:[u8;8]=[171;8];
+    let bad:core::slice::View<u8> =core::slice::View { values:destination,start:1,length:2147483647 };
+    invalid(stream.receive(bad).unwrap_err()); let index:i32=0; while (index<8) { assert(destination[index]==171); index+=1; }
+}
+fn pattern(index:i32) -> u8 { return ((index*73+19)%256) as u8; }
+fn check_pattern(bytes:[u8],offset:i32,count:i32,sentinel:u8) {
+    let index:i32=0;
+    while (index<2058) { let expected:u8=sentinel; if (index>=offset && index<offset+count) { expected=pattern(index-offset); } assert(bytes[index]==expected); index+=1; }
+}
+fn large_staging_and_write_half_close() {
+    let pair:std::socket::UnixPair=std::socket::unix_pair(false).unwrap();
+    let first:std::socket::UnixStream=pair.first; let second:std::socket::UnixStream=pair.second;
+    assert(!first.is_nonblocking().unwrap() && !second.is_nonblocking().unwrap()); cloexec(first.borrow()); cloexec(second.borrow());
+    zero_and_invalid(first.borrow());
+    let native:[u8;2058]=[171;2058]; let words:[i32;515]=[0;515];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),2058);
+    assert(core::mem::slice_stride(native)<0 && core::mem::slice_stride(packed)==1);
+    let layout:i32=0;
+    while (layout<2) {
+        let source:[u8]=native; let target:[u8]=packed;
+        if (layout==1) { source=packed; target=native; }
+        let index:i32=0; while (index<2058) { source[index]=171; target[index]=211; index+=1; }
+        index=0; while (index<2053) { source[3+index]=pattern(index); index+=1; }
+        let sent:i32=first.send(core::slice::view_range<u8>(source,3,2053).unwrap()).unwrap(); assert(sent>0 && sent<=1024);
+        write_exact<std::socket::UnixStream>(first.borrow(),source,3+sent,2053-sent);
+        read_exact<std::socket::UnixStream>(second.borrow(),target,2,2053);
+        check_pattern(source,3,2053,171); check_pattern(target,2,2053,211);
+        index=0; while (index<2058) { source[index]=171; index+=1; }
+        write_exact<std::socket::UnixStream>(second.borrow(),target,2,2053);
+        read_exact<std::socket::UnixStream>(first.borrow(),source,4,2053);
+        check_pattern(source,4,2053,171); check_pattern(target,2,2053,211); layout+=1;
+    }
+    let one:[u8;1]=[99]; let output:[u8;3]=[171;3];
+    assert(first.shutdown(std::socket::Shutdown::Write).unwrap()==0);
+    assert(second.receive(core::slice::view_range<u8>(output,1,1).unwrap()).unwrap()==0 && output[1]==171);
+    host(first.send(core::slice::view<u8>(one,1).unwrap()).unwrap_err(),32);
+    assert(second.send(core::slice::view<u8>(one,1).unwrap()).unwrap()==1);
+    assert(first.receive(core::slice::view_range<u8>(output,1,1).unwrap()).unwrap()==1 && output[0]==171 && output[1]==99 && output[2]==171);
+    close_checks(first.borrow()); close_checks(second.borrow());
+}
+fn clone_transfer_and_shared_flags() {
+    let pair:std::socket::UnixPair=std::socket::unix_pair(true).unwrap();
+    let first:std::socket::UnixStream=pair.first; let second:std::socket::UnixStream=pair.second;
+    let duplicate:std::socket::UnixStream=first.try_clone().unwrap();
+    assert(first.raw_handle().unwrap()!=duplicate.raw_handle().unwrap()); cloexec(first.borrow()); cloexec(second.borrow()); cloexec(duplicate.borrow());
+    assert(first.is_nonblocking().unwrap() && duplicate.is_nonblocking().unwrap() && second.is_nonblocking().unwrap());
+    assert(duplicate.set_nonblocking(false).unwrap()==0);
+    assert(!first.is_nonblocking().unwrap() && !duplicate.is_nonblocking().unwrap() && second.is_nonblocking().unwrap());
+    assert(first.set_nonblocking(true).unwrap()==0 && duplicate.is_nonblocking().unwrap());
+    assert(duplicate.set_nonblocking(false).unwrap()==0 && second.set_nonblocking(false).unwrap()==0);
+    let raw:i32=first.take_handle().unwrap(); assert(!first.is_open() && first.raw_handle().is_none() && first.take_handle().is_none()); close_checks(first.borrow());
+    let adopted:std::socket::UnixStream=std::socket::unix_from_owned_handle(raw).unwrap();
+    assert(adopted.raw_handle().unwrap()==raw && !adopted.is_nonblocking().unwrap()); cloexec(adopted.borrow());
+    let input:[u8;1]=[255]; let output:[u8;1]=[0];
+    assert(adopted.send(core::slice::view<u8>(input,1).unwrap()).unwrap()==1);
+    assert(second.receive(core::slice::view<u8>(output,1).unwrap()).unwrap()==1 && output[0]==255);
+    assert(duplicate.shutdown(std::socket::Shutdown::Write).unwrap()==0);
+    assert(second.receive(core::slice::view<u8>(output,1).unwrap()).unwrap()==0);
+    host(adopted.send(core::slice::view<u8>(input,1).unwrap()).unwrap_err(),32);
+    assert(duplicate.close().unwrap()==0); close_checks(duplicate.borrow());
+    assert(adopted.is_open() && second.send(core::slice::view<u8>(input,1).unwrap()).unwrap()==1);
+    output[0]=0; assert(adopted.receive(core::slice::view<u8>(output,1).unwrap()).unwrap()==1 && output[0]==255);
+    invalid(std::socket::unix_from_owned_handle(-1).unwrap_err());
+    close_checks(adopted.borrow()); close_checks(second.borrow());
+}
+fn readiness_deadlines_and_read_half_close() {
+    let pair:std::socket::UnixPair=std::socket::unix_pair(false).unwrap();
+    let first:std::socket::UnixStream=pair.first; let second:std::socket::UnixStream=pair.second;
+    assert(second.wait_ms(true,false,0).unwrap().timed_out);
+    let writable:std::socket::Ready=first.wait_ms(false,true,0).unwrap(); assert(writable.writable && !writable.timed_out);
+    assert(second.wait_until(true,false,expired()).unwrap().timed_out);
+    let source:[u8;2]=[0,255]; let output:[u8;4]=[171;4]; let part:core::slice::View<u8> =core::slice::view_range<u8>(output,1,2).unwrap();
+    // Per-call initial nonblocking operations precede the expired deadline.
+    assert(first.send_until(core::slice::view<u8>(source,2).unwrap(),expired()).unwrap()==2);
+    assert(second.wait_until(true,false,deadline()).unwrap().readable);
+    assert(second.receive_until(part,expired()).unwrap()==2 && output[0]==171 && output[1]==0 && output[2]==255 && output[3]==171);
+    host(second.receive_until(part,expired()).unwrap_err(),110);
+    assert(output[0]==171 && output[1]==0 && output[2]==255 && output[3]==171);
+    assert(second.shutdown(std::socket::Shutdown::Read).unwrap()==0 && second.receive(part).unwrap()==0);
+    host(first.send(core::slice::view<u8>(source,2).unwrap()).unwrap_err(),32);
+    assert(second.send(core::slice::view<u8>(source,2).unwrap()).unwrap()==2);
+    read_exact<std::socket::UnixStream>(first.borrow(),output,1,2); assert(output[1]==0 && output[2]==255);
+    assert(first.shutdown(std::socket::Shutdown::Both).unwrap()==0);
+    close_checks(first.borrow()); close_checks(second.borrow());
+}
+fn same_process_listener() {
+    let listener:std::socket::UnixStream=std::socket::unix_stream(true).unwrap(); cloexec(listener.borrow());
+    assert(listener.is_nonblocking().unwrap()); assert(listener.bind(endpoint()).unwrap()==0 && listener.listen(2).unwrap()==0);
+    let client:std::socket::UnixStream=std::socket::unix_stream(false).unwrap(); cloexec(client.borrow());
+    assert(client.connect(endpoint()).unwrap()==0 && listener.wait_ms(true,false,0).unwrap().readable);
+    let server:std::socket::UnixStream=listener.accept(false).unwrap(); cloexec(server.borrow());
+    assert(listener.is_nonblocking().unwrap() && !server.is_nonblocking().unwrap() && !client.is_nonblocking().unwrap());
+    let input:[u8;5]=[171,0,128,255,171]; let output:[u8;7]=[99;7];
+    assert(client.send_until(core::slice::view_range<u8>(input,1,3).unwrap(),deadline()).unwrap()==3);
+    assert(server.receive_until(core::slice::view_range<u8>(output,2,3).unwrap(),deadline()).unwrap()==3);
+    assert(output[0]==99 && output[1]==99 && output[2]==0 && output[3]==128 && output[4]==255 && output[5]==99 && output[6]==99);
+    write_exact<std::socket::UnixStream>(server.borrow(),input,1,3);
+    read_exact<std::socket::UnixStream>(client.borrow(),output,1,3); assert(output[1]==0 && output[2]==128 && output[3]==255);
+    assert(server.shutdown(std::socket::Shutdown::Both).unwrap()==0);
+    assert(client.receive(core::slice::view_range<u8>(output,1,1).unwrap()).unwrap()==0);
+    close_checks(server.borrow()); close_checks(client.borrow()); close_checks(listener.borrow());
+}
+fn main() -> i32 {
+    large_staging_and_write_half_close(); clone_transfer_and_shared_flags();
+    readiness_deadlines_and_read_half_close(); same_process_listener(); return 0;
+}

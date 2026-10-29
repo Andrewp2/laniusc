@@ -383,6 +383,13 @@ and allocation-failure proofs remain separate work. Offline wire/provider
 receipts retain their earlier scopes.
 The [owned socket API](stdlib-sockets.md) and [TCP exchange program](stdlib-tcp-exchange.md)
 provide executable numeric-address TCP/UDP transport independently.
+The separate [Unix-stream increment](stdlib-unix-streams.md) specifies local
+pathname/abstract streams and unnamed connected pairs with explicit manual
+ownership. All six new library tests, four application groups and selected
+IP/TCP-application regressions pass on the finite native Linux x86_64 profile.
+A narrow generic Result-chain dependency has an executable typed-local
+control. Address queries, datagrams, seqpacket and ancillary/credential APIs
+remain separate work. Existing IP receipts retain their source/API scope.
 [DNS transport](extended-dns-client.md) now adds explicit-server queries, fresh
 connected UDP attempts, fixed retry windows, full-question correlation and one
 framed TCP fallback, with a real DNS query program. Independent loopback peers,
@@ -913,6 +920,39 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [Unix streams and socket pairs](stdlib-unix-streams.md) are the
+  current increment. Three constructors, 19 inherent owner methods and Read/Write/flush
+  reuse existing Linux descriptor, readiness and stack-staging contracts.
+  Borrowed pathname/abstract length/NUL rules, atomic CLOEXEC/mode acquisition,
+  exact pair publication, retire-before-close and one-shot connect are explicit.
+  Unix EAGAIN remains WouldBlock; no IP pending-connect policy is copied.
+  Source `44f6739d…` is frozen with 25 added entries (60 module-wide). Small
+  real-pair admission passes one native test in 7.30s with bidirectional binary
+  bytes, offsets, sentinels and explicit close. Direct contracts pass one
+  test/8.11s; named addresses pass one/6.90s with 90 probes (52 independent
+  peers, 36 boundary/lifetime and two real backlog cases). The
+  [framed request program](stdlib-unix-request.md)
+  passes all four groups/84 cases: model 24/8.49s, then CLI 19, I/O 24 and
+  rejection 17/21.50s, including two actual five-second deadline cases.
+  The direct generic chained-call fixture uses typed Result locals while
+  retaining its bounds. The socket-free immediate unwrap reproduction reports
+  LNC0027 while its typed-local native control passes; their explicit ignored
+  positive-test command is not a green gate. The
+  [dependency ledger](library-dependencies.md) records this exact boundary.
+  Bounds/no-host and real descriptor-lifecycle tests pass in the initial
+  mixed 13.15s command (whose fault harness failed); the final fault-only test
+  passes in 8.40s with 63 schedules/13 genuine baselines/50 reached injections.
+  Three skipped-close actual descriptors remain until exit; warning/hex-parser
+  corrections change no production source. All six new library tests pass
+  across separate receipts. One selected real TCP-application test passes
+  in 8.86s with six IPv4/IPv6 exchanges at lengths 0, 257 and 1,048,576;
+  three other application tests were filtered.
+  Three selected IP regressions pass in 10.93s for ordinary
+  ownership/transport, full datagrams and absolute-deadline retry; Internet
+  connect-EAGAIN and malformed accept were filtered, retaining old receipts.
+  Native Linux x86_64 CPU output from the GPU compiler is the accepted finite
+  profile; address queries, Unix datagrams, seqpacket, credentials,
+  ancillary descriptor passing and broader targets remain separate work.
 - Accepted [eager outcome composition](stdlib-outcome-composition.md)
   widens Option `and` and Result `and`/`or`, adds Result flattening and both
   transpose directions, and supplies four specialized nested methods. Both
@@ -960,7 +1000,8 @@ the rest of the family scope above stays open.
   The selected increment is accepted on native Linux x86_64 CPU output from
   the GPU compiler.
   Broader target support and
-  the whole library goal remain open; Unix-domain IPC is separate future work.
+  the whole library goal remain open; the separate
+  [Unix-stream increment](stdlib-unix-streams.md) tracks current local IPC work.
 - Accepted [advisory file locking](stdlib-file-locks.md) adds Shared/Exclusive
   and Blocking/Nonblocking modes mapped to one
   borrowed File flock attempt; only exact-zero success is acknowledged.

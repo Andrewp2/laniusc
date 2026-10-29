@@ -1,10 +1,11 @@
-// Owned IPv4/IPv6 Linux sockets. Copies alias one descriptor; close once or
-// transfer it explicitly. See docs/stdlib-sockets.md for lifetime and I/O rules.
+// Owned Internet sockets and Unix streams on Linux. Copies alias one descriptor;
+// close once or transfer it explicitly. See docs/stdlib-sockets.md for I/O rules.
 module std::socket;
 import core::io;
 import core::mem;
 import core::net;
 import core::option;
+import core::path;
 import core::result;
 import core::slice;
 import core::time;
@@ -128,6 +129,141 @@ fn option_code(setting: Setting) -> OptionCode {
 fn clock_error(error: std::clock::Error) -> core::io::Error {
     let value: core::io::Error = match (error) { std::clock::Error::Host(code) -> host_error(code), _ -> core::io::Error::InvalidCount }; return value;
 }
+
+// Shared descriptor policies. Public owner wrappers retain family-specific
+// admission and error precedence; no helper fabricates another owner type.
+fn descriptor_flags(handle:i32) -> core::result::Result<i64,core::io::Error> {
+    if(handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+    let args:[std::linux::Argument;6]=[word(handle as i64),word(3),word(0),word(0),word(0),word(0)];
+    let result:core::result::Result<i64,core::io::Error> =invoke(72,args);
+    if(result.is_err()) { return result; }
+    let flags:i64=result.unwrap();
+    if(flags<0 || flags>2147483647) { return core::result::Err(core::io::Error::InvalidCount); }
+    return result;
+}
+fn descriptor_is_nonblocking(handle:i32) -> core::result::Result<bool,core::io::Error> {
+    let result:core::result::Result<i64,core::io::Error> =descriptor_flags(handle);
+    if(result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    return core::result::Ok((result.unwrap()&2048)!=0);
+}
+fn descriptor_set_nonblocking(handle:i32,enabled:bool) -> core::result::Result<i32,core::io::Error> {
+    let read:core::result::Result<i64,core::io::Error> =descriptor_flags(handle);
+    if(read.is_err()) { return core::result::Err(read.unwrap_err()); }
+    let flags:i64=read.unwrap()&-2049;
+    if(enabled) { flags=flags|2048; }
+    let args:[std::linux::Argument;6]=[word(handle as i64),word(4),word(flags),word(0),word(0),word(0)];
+    return status(invoke(72,args));
+}
+fn descriptor_wait_ms(handle:i32,readable:bool,writable:bool,milliseconds:i32) -> core::result::Result<Ready,core::io::Error> {
+    if(handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+    if(milliseconds< -1) { return core::result::Err(core::io::Error::InvalidInput); }
+    let events:i32=0; if(readable) { events=events|1; } if(writable) { events=events|4; }
+    let words:[i32;2]=[handle,events]; let pointer:ptr=core::mem::i32_array_data_ptr(words);
+    let args:[std::linux::Argument;6]=[address(pointer),word(1),word(milliseconds as i64),word(0),word(0),word(0)];
+    let result:core::result::Result<i64,core::io::Error> =invoke(7,args);
+    if(result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    let count:i64=result.unwrap();
+    if(count<0 || count>1) { return core::result::Err(core::io::Error::InvalidCount); }
+    let ready:u32=(words[1] as u32)>>16;
+    if((ready&32)!=0) { return core::result::Err(core::io::Error::Host(9)); }
+    if((count==0 && ready!=0) || (count==1 && ready==0)) { return core::result::Err(core::io::Error::InvalidCount); }
+    return core::result::Ok(Ready { readable:(ready&1)!=0,writable:(ready&4)!=0,hangup:(ready&16)!=0,error:(ready&8)!=0,timed_out:count==0 });
+}
+fn descriptor_wait_until(handle:i32,readable:bool,writable:bool,deadline:core::time::Deadline) -> core::result::Result<Ready,core::io::Error> {
+    let previous:core::option::Option<core::time::Instant> =core::option::None();
+    while(true) {
+        let read:core::result::Result<core::time::Instant,std::clock::Error> =std::clock::monotonic_now();
+        if(read.is_err()) { return core::result::Err(clock_error(read.unwrap_err())); }
+        let now:core::time::Instant=read.unwrap();
+        if(previous.is_some() && now.compare(previous.unwrap())<0) { return core::result::Err(core::io::Error::InvalidCount); }
+        previous=core::option::Some(now);
+        if(deadline.is_expired(now)) { return core::result::Ok(Ready { readable:false,writable:false,hangup:false,error:false,timed_out:true }); }
+        let remaining:core::time::Duration=deadline.remaining(now);
+        let milliseconds:i32=2147483647;
+        if(remaining.seconds<=2147483 as u64) {
+            let amount:u64=remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000;
+            if(amount<2147483647 as u64) { milliseconds=amount as i32; }
+        }
+        let result:core::result::Result<Ready,core::io::Error> =descriptor_wait_ms(handle,readable,writable,milliseconds);
+        if(result.is_err()) {
+            let error:core::io::Error=result.unwrap_err();
+            let retry:bool=match(error) { core::io::Error::Interrupted->true, _->false };
+            if(retry) { continue; }
+            return core::result::Err(error);
+        }
+        let ready:Ready=result.unwrap();
+        if(!ready.timed_out) { return core::result::Ok(ready); }
+    }
+    return core::result::Err(core::io::Error::InvalidCount);
+}
+
+// Packed stream transfers preserve a logical view's native stride. The whole
+// metadata range is admitted before reading source or publishing destination.
+fn stream_send(handle:i32,input:core::slice::View<u8>,nonblocking:bool) -> core::result::Result<i32,core::io::Error> {
+    if(handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+    if(!valid(input)) { return core::result::Err(core::io::Error::InvalidInput); }
+    if(input.length==0) { return core::result::Ok(0); }
+    let count:i32=input.length; if(count>1024) { count=1024; }
+    let storage:[i32;256]=[0;256]; let pointer:ptr=core::mem::i32_array_data_ptr(storage);
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,1024);
+    let index:i32=0; while(index<count) { packed[index]=input.values[input.start+index]; index+=1; }
+    let flags:i64=16384; if(nonblocking) { flags=flags|64; }
+    let args:[std::linux::Argument;6]=[word(handle as i64),address(pointer),word(count as i64),word(flags),address(null()),word(0)];
+    let result:core::result::Result<i64,core::io::Error> =invoke(44,args);
+    if(result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    let sent:i64=result.unwrap(); let count_wide:i64=count as i64;
+    if(sent<0 || sent>count_wide) { return core::result::Err(core::io::Error::InvalidCount); }
+    return core::result::Ok(sent as i32);
+}
+fn stream_receive(handle:i32,output:core::slice::View<u8>,nonblocking:bool) -> core::result::Result<i32,core::io::Error> {
+    if(handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+    if(!valid(output)) { return core::result::Err(core::io::Error::InvalidInput); }
+    if(output.length==0) { return core::result::Ok(0); }
+    let count:i32=output.length; if(count>1024) { count=1024; }
+    let storage:[i32;256]=[0;256]; let pointer:ptr=core::mem::i32_array_data_ptr(storage);
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,1024);
+    let flags:i64=0; if(nonblocking) { flags=64; }
+    let args:[std::linux::Argument;6]=[word(handle as i64),address(pointer),word(count as i64),word(flags),address(null()),address(null())];
+    let result:core::result::Result<i64,core::io::Error> =invoke(45,args);
+    if(result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    let received:i64=result.unwrap(); let count_wide:i64=count as i64;
+    if(received<0 || received>count_wide) { return core::result::Err(core::io::Error::InvalidCount); }
+    let index:i32=0;
+    while(index<(received as i32)) { output.values[output.start+index]=packed[index]; index+=1; }
+    return core::result::Ok(received as i32);
+}
+fn stream_send_until(handle:i32,input:core::slice::View<u8>,deadline:core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+    while(true) {
+        let result:core::result::Result<i32,core::io::Error> =stream_send(handle,input,true);
+        if(result.is_ok()) { return result; }
+        let error:core::io::Error=result.unwrap_err();
+        let retry:bool=match(error) { core::io::Error::WouldBlock->true, core::io::Error::Interrupted->true, _->false };
+        if(!retry) { return core::result::Err(error); }
+        let ready:core::result::Result<Ready,core::io::Error> =descriptor_wait_until(handle,false,true,deadline);
+        if(ready.is_err()) { return core::result::Err(ready.unwrap_err()); }
+        if(ready.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
+    }
+    return core::result::Err(core::io::Error::InvalidCount);
+}
+fn stream_receive_until(handle:i32,output:core::slice::View<u8>,deadline:core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+    while(true) {
+        let result:core::result::Result<i32,core::io::Error> =stream_receive(handle,output,true);
+        if(result.is_ok()) { return result; }
+        let error:core::io::Error=result.unwrap_err();
+        let retry:bool=match(error) { core::io::Error::WouldBlock->true, core::io::Error::Interrupted->true, _->false };
+        if(!retry) { return core::result::Err(error); }
+        let ready:core::result::Result<Ready,core::io::Error> =descriptor_wait_until(handle,true,false,deadline);
+        if(ready.is_err()) { return core::result::Err(ready.unwrap_err()); }
+        if(ready.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
+    }
+    return core::result::Err(core::io::Error::InvalidCount);
+}
+fn descriptor_shutdown(handle:i32,direction:Shutdown) -> core::result::Result<i32,core::io::Error> {
+    if(handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+    let how:i64=match(direction) { Shutdown::Read->0, Shutdown::Write->1, Shutdown::Both->2 };
+    let args:[std::linux::Argument;6]=[word(handle as i64),word(how),word(0),word(0),word(0),word(0)];
+    return status(invoke(48,args));
+}
 pub impl Socket {
     fn option_valid(&self, setting: Setting) -> bool {
         let valid: bool = match (setting) { Setting::NoDelay -> !self.datagram, Setting::KeepAlive -> !self.datagram, Setting::Ipv6Only -> self.domain == 10, _ -> true }; return valid;
@@ -167,59 +303,19 @@ pub impl Socket {
         return core::result::Ok(core::option::Some(code));
     }
     pub fn is_nonblocking(&self) -> core::result::Result<bool,core::io::Error> {
-        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
-        let args: [std::linux::Argument;6] = [word(self.handle as i64),word(3),word(0),word(0),word(0),word(0)];
-        let result: core::result::Result<i64,core::io::Error> = invoke(72,args);
-        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
-        if (result.unwrap() < 0 || result.unwrap() > 2147483647) { return core::result::Err(core::io::Error::InvalidCount); }
-        return core::result::Ok((result.unwrap() & 2048) != 0);
+        return descriptor_is_nonblocking(self.handle);
     }
     // Duplicated handles share status flags, including nonblocking state.
     pub fn set_nonblocking(&self, enabled: bool) -> core::result::Result<i32,core::io::Error> {
-        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
-        let args: [std::linux::Argument;6] = [word(self.handle as i64),word(3),word(0),word(0),word(0),word(0)];
-        let read: core::result::Result<i64,core::io::Error> = invoke(72,args);
-        if (read.is_err()) { return core::result::Err(read.unwrap_err()); }
-        if (read.unwrap() < 0 || read.unwrap() > 2147483647) { return core::result::Err(core::io::Error::InvalidCount); }
-        let flags: i64 = read.unwrap() & -2049; if (enabled) { flags = flags | 2048; }
-        args[1] = word(4); args[2] = word(flags); return status(invoke(72,args));
+        return descriptor_set_nonblocking(self.handle,enabled);
     }
     // One poll attempt. -1 waits indefinitely; zero performs a readiness probe.
     pub fn wait_ms(&self, readable: bool, writable: bool, milliseconds: i32) -> core::result::Result<Ready,core::io::Error> {
-        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
-        if (milliseconds < -1) { return core::result::Err(core::io::Error::InvalidInput); }
-        let events: i32 = 0; if (readable) { events = events | 1; } if (writable) { events = events | 4; }
-        let words: [i32;2] = [self.handle,events]; let pointer: ptr = core::mem::i32_array_data_ptr(words);
-        let args: [std::linux::Argument;6] = [address(pointer),word(1),word(milliseconds as i64),word(0),word(0),word(0)];
-        let result: core::result::Result<i64,core::io::Error> = invoke(7,args);
-        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
-        let count: i64 = result.unwrap(); if (count < 0 || count > 1) { return core::result::Err(core::io::Error::InvalidCount); }
-        let ready: u32 = (words[1] as u32) >> 16;
-        if ((ready & 32) != 0) { return core::result::Err(core::io::Error::Host(9)); }
-        if ((count == 0 && ready != 0) || (count == 1 && ready == 0)) { return core::result::Err(core::io::Error::InvalidCount); }
-        return core::result::Ok(Ready { readable: (ready & 1) != 0, writable: (ready & 4) != 0, hangup: (ready & 16) != 0, error: (ready & 8) != 0, timed_out: count == 0 });
+        return descriptor_wait_ms(self.handle,readable,writable,milliseconds);
     }
     // Interrupts and long-duration chunks preserve the original absolute deadline.
     pub fn wait_until(&self, readable: bool, writable: bool, deadline: core::time::Deadline) -> core::result::Result<Ready,core::io::Error> {
-        let previous: core::option::Option<core::time::Instant> = core::option::None();
-        while (true) {
-            let read: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
-            if (read.is_err()) { return core::result::Err(clock_error(read.unwrap_err())); }
-            let now: core::time::Instant = read.unwrap();
-            if (previous.is_some() && now.compare(previous.unwrap()) < 0) { return core::result::Err(core::io::Error::InvalidCount); }
-            previous = core::option::Some(now);
-            if (deadline.is_expired(now)) { return core::result::Ok(Ready { readable: false, writable: false, hangup: false, error: false, timed_out: true }); }
-            let remaining: core::time::Duration = deadline.remaining(now);
-            let milliseconds: i32 = 2147483647;
-            if (remaining.seconds <= 2147483 as u64) {
-                let amount: u64 = remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000;
-                if (amount < 2147483647 as u64) { milliseconds = amount as i32; }
-            }
-            let result: core::result::Result<Ready,core::io::Error> = self.wait_ms(readable,writable,milliseconds);
-            if (result.is_err()) { let error: core::io::Error = result.unwrap_err(); let retry: bool = match (error) { core::io::Error::Interrupted -> true, _ -> false }; if (retry) { continue; } return core::result::Err(error); }
-            let ready: Ready = result.unwrap(); if (!ready.timed_out) { return core::result::Ok(ready); }
-        }
-        return core::result::Err(core::io::Error::InvalidCount);
+        return descriptor_wait_until(self.handle,readable,writable,deadline);
     }
     // Requires a nonblocking socket. Readiness alone is not connection success;
     // finish with SO_ERROR. On timeout close this owner to cancel pending connect.
@@ -246,60 +342,26 @@ pub impl Socket {
 
 pub impl Socket {
     fn send_bytes(&self, input: core::slice::View<u8>, nonblocking: bool) -> core::result::Result<i32,core::io::Error> {
-        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
-        if (self.datagram || !valid(input)) { return core::result::Err(core::io::Error::InvalidInput); }
-        if (input.length == 0) { return core::result::Ok(0); }
-        let count: i32 = input.length; if (count > 1024) { count = 1024; }
-        let storage: [i32;256] = [0;256]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer,1024);
-        let index: i32 = 0; while (index < count) { packed[index] = input.values[input.start+index]; index += 1; }
-        let flags: i64 = 16384; if (nonblocking) { flags = flags | 64; }
-        let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),word(count as i64),word(flags),address(null()),word(0)];
-        let result: core::result::Result<i64,core::io::Error> = invoke(44,args);
-        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
-        let sent: i64 = result.unwrap(); if (sent < 0 || sent > count as i64) { return core::result::Err(core::io::Error::InvalidCount); }
-        return core::result::Ok(sent as i32);
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        if(self.datagram) { return core::result::Err(core::io::Error::InvalidInput); }
+        return stream_send(self.handle,input,nonblocking);
     }
     fn receive_bytes(&self, output: core::slice::View<u8>, nonblocking: bool) -> core::result::Result<i32,core::io::Error> {
-        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
-        if (self.datagram || !valid(output)) { return core::result::Err(core::io::Error::InvalidInput); }
-        if (output.length == 0) { return core::result::Ok(0); }
-        let count: i32 = output.length; if (count > 1024) { count = 1024; }
-        let storage: [i32;256] = [0;256]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer,1024);
-        let flags: i64 = 0; if (nonblocking) { flags = 64; }
-        let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),word(count as i64),word(flags),address(null()),address(null())];
-        let result: core::result::Result<i64,core::io::Error> = invoke(45,args);
-        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
-        let received: i64 = result.unwrap(); if (received < 0 || received > count as i64) { return core::result::Err(core::io::Error::InvalidCount); }
-        let index: i32 = 0; while (index < received as i32) { output.values[output.start+index] = packed[index]; index += 1; }
-        return core::result::Ok(received as i32);
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        if(self.datagram) { return core::result::Err(core::io::Error::InvalidInput); }
+        return stream_receive(self.handle,output,nonblocking);
     }
     pub fn send(&self, input: core::slice::View<u8>) -> core::result::Result<i32,core::io::Error> { return self.send_bytes(input,false); }
     pub fn receive(&self, output: core::slice::View<u8>) -> core::result::Result<i32,core::io::Error> { return self.receive_bytes(output,false); }
     pub fn send_until(&self, input: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
-        while (true) {
-            let result: core::result::Result<i32,core::io::Error> = self.send_bytes(input,true);
-            if (result.is_ok()) { return result; }
-            let error: core::io::Error = result.unwrap_err();
-            let retry: bool = match (error) { core::io::Error::WouldBlock -> true, core::io::Error::Interrupted -> true, _ -> false };
-            if (!retry) { return core::result::Err(error); }
-            let ready: core::result::Result<Ready,core::io::Error> = self.wait_until(false,true,deadline);
-            if (ready.is_err()) { return core::result::Err(ready.unwrap_err()); }
-            if (ready.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
-        }
-        return core::result::Err(core::io::Error::InvalidCount);
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        if(self.datagram) { return core::result::Err(core::io::Error::InvalidInput); }
+        return stream_send_until(self.handle,input,deadline);
     }
     pub fn receive_until(&self, output: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
-        while (true) {
-            let result: core::result::Result<i32,core::io::Error> = self.receive_bytes(output,true);
-            if (result.is_ok()) { return result; }
-            let error: core::io::Error = result.unwrap_err();
-            let retry: bool = match (error) { core::io::Error::WouldBlock -> true, core::io::Error::Interrupted -> true, _ -> false };
-            if (!retry) { return core::result::Err(error); }
-            let ready: core::result::Result<Ready,core::io::Error> = self.wait_until(true,false,deadline);
-            if (ready.is_err()) { return core::result::Err(ready.unwrap_err()); }
-            if (ready.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
-        }
-        return core::result::Err(core::io::Error::InvalidCount);
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        if(self.datagram) { return core::result::Err(core::io::Error::InvalidInput); }
+        return stream_receive_until(self.handle,output,deadline);
     }
     // UDP calls stage one whole datagram; errors never publish a partial buffer.
     pub fn send_to(&self, input: core::slice::View<u8>, endpoint: core::net::SocketAddr) -> core::result::Result<i32,core::io::Error> {
@@ -434,8 +496,190 @@ pub impl Socket {
     pub fn local_addr(&self) -> core::result::Result<core::net::SocketAddr,core::io::Error> { return self.endpoint(false); }
     pub fn peer_addr(&self) -> core::result::Result<core::net::SocketAddr,core::io::Error> { return self.endpoint(true); }
     pub fn shutdown(&self, direction: Shutdown) -> core::result::Result<i32,core::io::Error> {
-        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
-        let how: i64 = match (direction) { Shutdown::Read -> 0, Shutdown::Write -> 1, Shutdown::Both -> 2 };
-        let args: [std::linux::Argument;6] = [word(self.handle as i64),word(how),word(0),word(0),word(0),word(0)]; return status(invoke(48,args));
+        return descriptor_shutdown(self.handle,direction);
+    }
+}
+
+// AF_UNIX/SOCK_STREAM owners are separate from Internet Socket addresses and
+// kinds. Copies alias one cleanup authority; no automatic drop or path unlink.
+pub enum UnixAddress { Pathname(core::path::Path), Abstract(core::slice::View<u8>) }
+pub struct UnixStream { handle:i32 }
+pub struct UnixPair { first:UnixStream, second:UnixStream }
+
+fn unix_flags(nonblocking:bool) -> i64 {
+    let flags:i64=524288;
+    if(nonblocking) { flags=flags|2048; }
+    return flags;
+}
+fn unix_result(result:core::result::Result<i64,core::io::Error>) -> core::result::Result<UnixStream,core::io::Error> {
+    if(result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    let handle:i64=result.unwrap();
+    if(handle<0 || handle>2147483647) { return core::result::Err(core::io::Error::InvalidCount); }
+    return core::result::Ok(UnixStream { handle:handle as i32 });
+}
+pub fn unix_stream(nonblocking:bool) -> core::result::Result<UnixStream,core::io::Error> {
+    let flags:i64=unix_flags(nonblocking)|1;
+    let args:[std::linux::Argument;6]=[word(1),word(flags),word(0),word(0),word(0),word(0)];
+    return unix_result(invoke(41,args));
+}
+pub fn unix_pair(nonblocking:bool) -> core::result::Result<UnixPair,core::io::Error> {
+    let storage:[i32;2]=[0;2]; let pointer:ptr=core::mem::i32_array_data_ptr(storage);
+    let pair:[i32]=core::mem::typed_slice_from_raw_parts<i32>(pointer,2);
+    pair[0]= -1; pair[1]= -1;
+    let flags:i64=unix_flags(nonblocking)|1;
+    let args:[std::linux::Argument;6]=[word(1),word(flags),word(0),address(pointer),word(0),word(0)];
+    let completed:core::result::Result<i32,core::io::Error> =status(invoke(53,args));
+    if(completed.is_err()) { return core::result::Err(completed.unwrap_err()); }
+    // Invented malformed replies grant no authority to close their integers.
+    // Real Linux leaves this pair unchanged on failure and returns two FDs.
+    if(pair[0]<0 || pair[1]<0 || pair[0]==pair[1]) { return core::result::Err(core::io::Error::InvalidCount); }
+    let first:UnixStream=UnixStream { handle:pair[0] };
+    let second:UnixStream=UnixStream { handle:pair[1] };
+    let owners:UnixPair=UnixPair { first:first,second:second };
+    return core::result::Ok(owners);
+}
+// Caller exclusively owns a live Unix stream descriptor. Only the number is
+// checked; this does not validate its family, connected/listener state or flags.
+pub fn unix_from_owned_handle(handle:i32) -> core::result::Result<UnixStream,core::io::Error> {
+    if(handle<0) { return core::result::Err(core::io::Error::InvalidInput); }
+    return core::result::Ok(UnixStream { handle:handle });
+}
+
+fn encode_unix_path(path:core::path::Path,bytes:[u8]) -> core::result::Result<i32,core::io::Error> {
+    let name:core::slice::View<u8> =path.as_bytes();
+    if(!valid(name) || name.length<1 || name.length>107) { return core::result::Err(core::io::Error::InvalidInput); }
+    bytes[0]=1; bytes[1]=0;
+    let index:i32=0;
+    while(index<name.length) {
+        let value:u8=name.values[name.start+index];
+        // Recheck borrowed pathname bytes at the actual host-call boundary.
+        if(value==0) { return core::result::Err(core::io::Error::InvalidInput); }
+        bytes[2+index]=value; index+=1;
+    }
+    bytes[2+name.length]=0;
+    return core::result::Ok(3+name.length);
+}
+fn encode_unix_abstract(name:core::slice::View<u8>,bytes:[u8]) -> core::result::Result<i32,core::io::Error> {
+    if(!valid(name) || name.length>107) { return core::result::Err(core::io::Error::InvalidInput); }
+    bytes[0]=1; bytes[1]=0; bytes[2]=0;
+    let index:i32=0;
+    while(index<name.length) { bytes[3+index]=name.values[name.start+index]; index+=1; }
+    // Exact name bytes follow the namespace marker: NULs remain significant.
+    // Length zero still sends the marker, rather than requesting autobind.
+    return core::result::Ok(3+name.length);
+}
+fn encode_unix(endpoint:UnixAddress,bytes:[u8]) -> core::result::Result<i32,core::io::Error> {
+    return match(endpoint) {
+        UnixAddress::Pathname(path)->encode_unix_path(path,bytes),
+        UnixAddress::Abstract(name)->encode_unix_abstract(name,bytes),
+    };
+}
+
+pub impl UnixStream {
+    pub fn borrow(&self) -> &UnixStream { return self; }
+    pub fn is_open(&self) -> bool { return self.handle>=0; }
+    pub fn raw_handle(&self) -> core::option::Option<i32> {
+        if(self.handle<0) { return core::option::None(); }
+        return core::option::Some(self.handle);
+    }
+    pub fn take_handle(&self) -> core::option::Option<i32> {
+        let result:core::option::Option<i32> =self.raw_handle();
+        self.handle= -1;
+        return result;
+    }
+    pub fn close(&self) -> core::result::Result<i32,core::io::Error> {
+        if(self.handle<0) { return core::result::Ok(0); }
+        let handle:i32=self.handle; self.handle= -1;
+        let args:[std::linux::Argument;6]=[word(handle as i64),word(0),word(0),word(0),word(0),word(0)];
+        return status(invoke(3,args));
+    }
+    pub fn try_clone(&self) -> core::result::Result<UnixStream,core::io::Error> {
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        let args:[std::linux::Argument;6]=[word(self.handle as i64),word(1030),word(0),word(0),word(0),word(0)];
+        return unix_result(invoke(72,args));
+    }
+    pub fn is_nonblocking(&self) -> core::result::Result<bool,core::io::Error> {
+        return descriptor_is_nonblocking(self.handle);
+    }
+    pub fn set_nonblocking(&self,enabled:bool) -> core::result::Result<i32,core::io::Error> {
+        return descriptor_set_nonblocking(self.handle,enabled);
+    }
+    // Closed-owner Host(9) precedes address/backlog checks. Every malformed
+    // address/name is InvalidInput before a syscall; paths are never unlinked.
+    pub fn bind(&self,endpoint:UnixAddress) -> core::result::Result<i32,core::io::Error> {
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        let storage:[i32;28]=[0;28]; let pointer:ptr=core::mem::i32_array_data_ptr(storage);
+        let bytes:[u8]=core::mem::typed_slice_from_raw_parts(pointer,112);
+        let encoded:core::result::Result<i32,core::io::Error> =encode_unix(endpoint,bytes);
+        if(encoded.is_err()) { return encoded; }
+        let args:[std::linux::Argument;6]=[word(self.handle as i64),address(pointer),word(encoded.unwrap() as i64),word(0),word(0),word(0)];
+        return status(invoke(49,args));
+    }
+    pub fn listen(&self,backlog:i32) -> core::result::Result<i32,core::io::Error> {
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        if(backlog<0) { return core::result::Err(core::io::Error::InvalidInput); }
+        let args:[std::linux::Argument;6]=[word(self.handle as i64),word(backlog as i64),word(0),word(0),word(0),word(0)];
+        return status(invoke(50,args));
+    }
+    // Exactly one attempt. AF_UNIX EAGAIN is WouldBlock, never IP progress.
+    // After a failed host connect, close before a fresh connection attempt.
+    pub fn connect(&self,endpoint:UnixAddress) -> core::result::Result<i32,core::io::Error> {
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        let storage:[i32;28]=[0;28]; let pointer:ptr=core::mem::i32_array_data_ptr(storage);
+        let bytes:[u8]=core::mem::typed_slice_from_raw_parts(pointer,112);
+        let encoded:core::result::Result<i32,core::io::Error> =encode_unix(endpoint,bytes);
+        if(encoded.is_err()) { return encoded; }
+        let args:[std::linux::Argument;6]=[word(self.handle as i64),address(pointer),word(encoded.unwrap() as i64),word(0),word(0),word(0)];
+        return status(invoke(42,args));
+    }
+    pub fn accept(&self,nonblocking:bool) -> core::result::Result<UnixStream,core::io::Error> {
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        let flags:i64=unix_flags(nonblocking);
+        let args:[std::linux::Argument;6]=[word(self.handle as i64),address(null()),address(null()),word(flags),word(0),word(0)];
+        return unix_result(invoke(288,args));
+    }
+    pub fn shutdown(&self,direction:Shutdown) -> core::result::Result<i32,core::io::Error> {
+        return descriptor_shutdown(self.handle,direction);
+    }
+    pub fn send(&self,input:core::slice::View<u8>) -> core::result::Result<i32,core::io::Error> {
+        return stream_send(self.handle,input,false);
+    }
+    pub fn receive(&self,output:core::slice::View<u8>) -> core::result::Result<i32,core::io::Error> {
+        return stream_receive(self.handle,output,false);
+    }
+    pub fn wait_ms(&self,readable:bool,writable:bool,milliseconds:i32) -> core::result::Result<Ready,core::io::Error> {
+        return descriptor_wait_ms(self.handle,readable,writable,milliseconds);
+    }
+    pub fn wait_until(&self,readable:bool,writable:bool,deadline:core::time::Deadline) -> core::result::Result<Ready,core::io::Error> {
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        return descriptor_wait_until(self.handle,readable,writable,deadline);
+    }
+    pub fn send_until(&self,input:core::slice::View<u8>,deadline:core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+        return stream_send_until(self.handle,input,deadline);
+    }
+    pub fn receive_until(&self,output:core::slice::View<u8>,deadline:core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+        return stream_receive_until(self.handle,output,deadline);
+    }
+}
+// Unlike the retained IP trait adapters, Unix operations report a closed owner
+// before malformed array metadata, consistently with the public View methods.
+pub impl core::io::Read for UnixStream {
+    pub fn read(&self,output:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        if(!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        let selected:core::slice::View<u8> =core::slice::View { values:output,start:offset,length:count };
+        return stream_receive(self.handle,selected,false);
+    }
+}
+pub impl core::io::Write for UnixStream {
+    pub fn write(&self,input:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        if(!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        let selected:core::slice::View<u8> =core::slice::View { values:input,start:offset,length:count };
+        return stream_send(self.handle,selected,false);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        if(self.handle<0) { return core::result::Err(core::io::Error::Host(9)); }
+        return core::result::Ok(0);
     }
 }

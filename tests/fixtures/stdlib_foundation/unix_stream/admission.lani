@@ -1,0 +1,18 @@
+// Tiny real AF_UNIX socketpair admission; pair copies are not reused.
+module app::main;
+import core::slice;
+import std::socket;
+fn main() -> i32 {
+    let pair:std::socket::UnixPair=std::socket::unix_pair(false).unwrap();
+    let first:std::socket::UnixStream=pair.first; let second:std::socket::UnixStream=pair.second;
+    assert(first.is_open() && second.is_open() && first.raw_handle().unwrap()!=second.raw_handle().unwrap());
+    let source:[u8;6]=[99,0,128,255,42,98]; let destination:[u8;8]=[171;8];
+    assert(first.send(core::slice::view_range<u8>(source,1,4).unwrap()).unwrap()==4);
+    assert(second.receive(core::slice::view_range<u8>(destination,2,4).unwrap()).unwrap()==4);
+    assert(destination[0]==171 && destination[1]==171 && destination[2]==0 && destination[3]==128 && destination[4]==255 && destination[5]==42 && destination[6]==171 && destination[7]==171);
+    let reply:[u8;2]=[255,0]; assert(second.send(core::slice::view<u8>(reply,2).unwrap()).unwrap()==2);
+    assert(first.receive(core::slice::view_range<u8>(destination,1,2).unwrap()).unwrap()==2 && destination[1]==255 && destination[2]==0);
+    assert(first.close().unwrap()==0 && first.close().unwrap()==0 && !first.is_open() && first.raw_handle().is_none());
+    assert(second.close().unwrap()==0 && second.close().unwrap()==0 && !second.is_open());
+    return 0;
+}
