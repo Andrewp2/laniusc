@@ -543,3 +543,15 @@ condition on the relation itself (constants' values are read with the
 expression relation). Where both readings apply (`n` below 2^31 of an
 unsigned type or `isize`) they denote the same value. The builder is not
 changed: its self-compiled code carries the faithfulness certificates.
+
+## The reading states searches' positive part (decided 10-29)
+
+Where the builder decides by a search that failed under fuel (a method
+call's method: the first impl of that spelling whose type matches, and no
+second one), the relation (`Reading.MethodFor`, V8d) states only that the
+method's impl matches. A failed search under fuel does not show that no
+derivation exists, so "first" and "only" are not provable for the builder
+without a fuel-adequacy argument. The relation is sound for the builder;
+for an ambiguous call it admits each matching method, where the builder
+rejects the call. Lookups that need no fuel (names, fields, locals,
+parameters, primitive types) are stated exactly, first match included.
