@@ -1,0 +1,136 @@
+// Honest guarded success ranges; a separately labelled no-access OOM tripwire.
+module app::main;
+import alloc::allocator;
+import alloc::slice;
+import alloc::vec;
+import core::mem;
+import core::ordering;
+import core::result;
+import core::slice;
+import std::io;
+import std::linux;
+
+struct Count { calls:i32 }
+struct IntOrder { count:&Count }
+struct ByteOrder { count:&Count }
+struct WideOrder { count:&Count }
+struct Node { id:i32,key:i32,wide:u64 }
+struct NodeOrder { count:&Count }
+impl Count { fn borrow(&self) -> &Count { return self; } }
+impl IntOrder { fn borrow(&self) -> &IntOrder { return self; } }
+impl ByteOrder { fn borrow(&self) -> &ByteOrder { return self; } }
+impl WideOrder { fn borrow(&self) -> &WideOrder { return self; } }
+impl NodeOrder { fn borrow(&self) -> &NodeOrder { return self; } }
+pub impl core::ordering::Comparator<i32,i32> for IntOrder {
+    pub fn compare(&self,left:i32,right:i32) -> core::ordering::Ordering { self.count.calls+=1; return core::ordering::compare_i32(left/32,right/32); }
+}
+pub impl core::ordering::Comparator<u8,u8> for ByteOrder {
+    pub fn compare(&self,left:u8,right:u8) -> core::ordering::Ordering { self.count.calls+=1; return core::ordering::compare_i32((left as i32)/32,(right as i32)/32); }
+}
+pub impl core::ordering::Comparator<[u64;4],[u64;4]> for WideOrder {
+    pub fn compare(&self,left:[u64;4],right:[u64;4]) -> core::ordering::Ordering { self.count.calls+=1; return core::ordering::Ordering::Equal; }
+}
+pub impl core::ordering::Comparator<Node,Node> for NodeOrder {
+    pub fn compare(&self,left:Node,right:Node) -> core::ordering::Ordering { self.count.calls+=1; assert(left.wide==9223372036854775808+(left.id as u64)); assert(right.wide==9223372036854775808+(right.id as u64)); return core::ordering::compare_i32(left.key,right.key); }
+}
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn report(size:i32,count:i32,layout:i32,mode:i32) { let words:[i32;4]=[size,count,layout,mode]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(words),16)==16); }
+fn storage_code(error:alloc::vec::Error) -> i32 {
+    return match(error) { alloc::vec::Error::Bounds->1,alloc::vec::Error::InvalidCapacity->2,alloc::vec::Error::CapacityOverflow->3,alloc::vec::Error::AllocationFailed->4 };
+}
+fn error(value:core::result::Result<i32,alloc::slice::Error>,expected:i32) {
+    let cause:alloc::slice::Error=value.unwrap_err();
+    let actual:i32=match(cause) { alloc::slice::Error::Bounds->0,alloc::slice::Error::Storage(cause)->storage_code(cause) }; assert(actual==expected);
+}
+fn metadata(count:&Count,int_order:&IntOrder,wide_order:&WideOrder) {
+    let nowhere:ptr=0; let empty:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    let starts:[i32;4]=[-1,0,2147483647,1]; let lengths:[i32;4]=[0,-1,1,2147483647];
+    mark(80); let index:i32=0;
+    while(index<4) {
+        let bad:core::slice::View<i32> =core::slice::View { values:empty,start:starts[index],length:lengths[index] };
+        error(alloc::slice::sort_by<i32,IntOrder>(bad,int_order),0); error(alloc::slice::sort<i32>(bad),0); index+=1;
+    }
+    let zero:core::slice::View<i32> =core::slice::View { values:empty,start:2147483647,length:0 };
+    let one:core::slice::View<i32> =core::slice::View { values:empty,start:2147483646,length:1 };
+    assert(alloc::slice::sort_by<i32,IntOrder>(zero,int_order).unwrap()==0 && alloc::slice::sort<i32>(zero).unwrap()==0);
+    assert(alloc::slice::sort_by<i32,IntOrder>(one,int_order).unwrap()==1 && alloc::slice::sort<i32>(one).unwrap()==1);
+    let raw:[[u64;4]]=core::mem::typed_slice_from_raw_parts<[u64;4]>(nowhere,0);
+    let capacity:i32=(2147483647/core::mem::size_of<[u64;4]>()) as i32;
+    let over:core::slice::View<[u64;4]> =core::slice::View { values:raw,start:0,length:capacity+1 };
+    error(alloc::slice::sort_by<[u64;4],WideOrder>(over,wide_order),3); assert(count.calls==0); mark(112);
+}
+fn encoded(index:i32) -> i32 { return (((index*5)%4)*32)+index; }
+fn check_ints(values:[i32],length:i32) {
+    assert(values[0]==901 && values[1]==902); let seen:[i32;17]=[0;17]; let index:i32=0;
+    while(index<length) {
+        let value:i32=values[index+2]; let id:i32=value%32; assert(id>=0 && id<length && value==encoded(id)); assert(seen[id]==0); seen[id]=1;
+        if(index>0) { let previous:i32=values[index+1]; assert(previous/32<=value/32); if(previous/32==value/32) { assert(previous%32<id); } }
+        index+=1;
+    }
+    index=0; while(index<length) { assert(seen[index]==1); index+=1; }
+}
+fn ints(values:[i32],length:i32,layout:i32,order:&IntOrder) {
+    values[0]=901; values[1]=902; let index:i32=0; while(index<length) { values[index+2]=encoded(index); index+=1; }
+    let selected:core::slice::View<i32> =core::slice::view_range<i32>(values,2,length).unwrap(); report(core::mem::size_of<i32>() as i32,length,layout,0);
+    mark(67); let sorted:core::result::Result<i32,alloc::slice::Error> =alloc::slice::sort_by<i32,IntOrder>(selected,order); mark(70); assert(sorted.unwrap()==length);
+    mark(80); check_ints(values,length); mark(112);
+}
+fn bytes(mapping:ptr,length:i32,order:&ByteOrder) {
+    // Offset one within an aligned region deliberately exercises byte alignment.
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(mapping+8192-((length+3) as usize),length+3);
+    assert(core::mem::slice_stride(raw)==1); raw[0]=211; raw[1]=212; raw[2]=213;
+    let index:i32=0; while(index<length) { raw[index+3]=encoded(index) as u8; index+=1; }
+    let selected:core::slice::View<u8> =core::slice::view_range<u8>(raw,3,length).unwrap(); report(1,length,2,0);
+    mark(67); let sorted:core::result::Result<i32,alloc::slice::Error> =alloc::slice::sort_by<u8,ByteOrder>(selected,order); mark(70); assert(sorted.unwrap()==length);
+    mark(80); assert(raw[0]==211 && raw[1]==212 && raw[2]==213); let seen:[i32;17]=[0;17]; index=0;
+    while(index<length) {
+        let value:i32=raw[index+3] as i32; let id:i32=value%32; assert(id>=0 && id<length && value==encoded(id) && seen[id]==0); seen[id]=1;
+        if(index>0) { let previous:i32=raw[index+2] as i32; assert(previous/32<=value/32); if(previous/32==value/32) { assert(previous%32<id); } } index+=1;
+    }
+    index=0; while(index<length) { assert(seen[index]==1); index+=1; } mark(112);
+}
+fn nodes(mapping:ptr,length:i32,order:&NodeOrder) {
+    let raw:[Node]=core::mem::typed_slice_from_storage<Node>(mapping+4096,length+2); assert(core::mem::slice_stride(raw)<0);
+    raw[0]=Node { id:901,key:901,wide:901 }; raw[1]=Node { id:902,key:902,wide:902 }; let index:i32=0;
+    while(index<length) { raw[index+2]=Node { id:index,key:(index*5)%4,wide:9223372036854775808+(index as u64) }; index+=1; }
+    let selected:core::slice::View<Node> =core::slice::view_range<Node>(raw,2,length).unwrap(); report(core::mem::size_of<Node>() as i32,length,3,0);
+    mark(67); let sorted:core::result::Result<i32,alloc::slice::Error> =alloc::slice::sort_by<Node,NodeOrder>(selected,order); mark(70); assert(sorted.unwrap()==length);
+    mark(80); assert(raw[0].id==901 && raw[0].key==901 && raw[0].wide==901); assert(raw[1].id==902 && raw[1].key==902 && raw[1].wide==902);
+    let seen:[i32;17]=[0;17]; index=0;
+    while(index<length) {
+        let value:Node=raw[index+2]; assert(value.id>=0 && value.id<length && seen[value.id]==0); seen[value.id]=1;
+        assert(value.key==(value.id*5)%4 && value.wide==9223372036854775808+(value.id as u64));
+        if(index>0) { let previous:Node=raw[index+1]; assert(previous.key<=value.key); if(previous.key==value.key) { assert(previous.id<value.id); } } index+=1;
+    }
+    index=0; while(index<length) { assert(seen[index]==1); index+=1; } mark(112);
+}
+fn protect(mapping:ptr,offset:usize) {
+    let arguments:[std::linux::Argument;3]=[std::linux::Argument::Address(mapping+offset),std::linux::Argument::Word(4096),std::linux::Argument::Word(0)];
+    assert(std::linux::call(10,core::slice::view<std::linux::Argument>(arguments,3).unwrap()).unwrap()==0);
+}
+fn main() -> i32 {
+    let configuration:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(configuration),1)==1); let mode:i32=configuration[0]; assert(mode==0 || mode==1);
+    let count:Count=Count { calls:0 }; let int_order:IntOrder=IntOrder { count:count.borrow() }; let byte_order:ByteOrder=ByteOrder { count:count.borrow() };
+    let wide_order:WideOrder=WideOrder { count:count.borrow() }; let node_order:NodeOrder=NodeOrder { count:count.borrow() };
+    let mapping:ptr=alloc::allocator::alloc(12288,8); assert(mapping!=0); protect(mapping,0); protect(mapping,8192);
+    metadata(count.borrow(),int_order.borrow(),wide_order.borrow());
+    if(mode==1) {
+        // This deliberately inaccessible backing is used only on the reached
+        // allocation-error path; it is never claimed as a valid success input.
+        let inaccessible:[i32]=core::mem::typed_slice_from_raw_parts<i32>(mapping,2);
+        let values:core::slice::View<i32> =core::slice::view_range<i32>(inaccessible,0,2).unwrap(); report(4,2,4,1);
+        mark(67); let failed:core::result::Result<i32,alloc::slice::Error> =alloc::slice::sort_by<i32,IntOrder>(values,int_order.borrow()); mark(70);
+        mark(80); error(failed,4); assert(count.calls==0); mark(112);
+        let honest:[i32;4]=[901,902,33,0]; ints(honest,2,5,int_order.borrow());
+    }
+    if(mode==0) {
+        let lengths:[i32;6]=[2,3,7,8,9,17]; let slot:i32=0;
+        while(slot<6) {
+            let length:i32=lengths[slot]; let native:[i32;20]=[777;20]; assert(core::mem::slice_stride(native)==4); ints(native,length,0,int_order.borrow());
+            let index:i32=length+2; while(index<20) { assert(native[index]==777); index+=1; }
+            let raw:[i32]=core::mem::typed_slice_from_raw_parts<i32>(mapping+8192-(((length+2)*4) as usize),length+2); assert(core::mem::slice_stride(raw)==4); ints(raw,length,1,int_order.borrow());
+            bytes(mapping,length,byte_order.borrow()); nodes(mapping,length,node_order.borrow()); slot+=1;
+        }
+    }
+    alloc::allocator::dealloc(mapping,12288,8); mark(68); return 0;
+}

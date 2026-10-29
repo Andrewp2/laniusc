@@ -1,4 +1,4 @@
-//! CSV ordering and stable application ties over comparator-driven slice sort.
+//! CSV ordering and stable library ties over allocation-backed slice sort.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 use std::{
@@ -28,6 +28,10 @@ fn executable() -> &'static common::TempArtifact {
                 )
             })
             .unwrap_or_else(|error| panic!("sort rows: {error}"));
+        assert!(
+            common::x86_jumps::is_x86_64_executable(&bytes),
+            "sort rows must compile to an actual x86_64 ELF executable"
+        );
         let artifact = common::TempArtifact::new("sort_rows", "executable", None);
         artifact.write_bytes(bytes);
         std::fs::set_permissions(artifact.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -67,5 +71,5 @@ fn sort_rows_cli_and_help_execute() {
 }
 #[test]
 fn sort_rows_native_io_reached_allocation_denials_and_observed_releases_execute() {
-    oracle("io", 13);
+    oracle("io", 14);
 }

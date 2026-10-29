@@ -9,6 +9,14 @@ Linux x86_64 profile below. This selected increment is accepted.
 Earlier slice, iterator and fold receipts retain their own source/API scope;
 the full standard and extended library goal remains open.
 
+The separate [alloc::slice stable-sort family](stdlib-stable-sort.md) reuses
+this Comparator/Natural policy and counted View admission with one typed
+workspace. All eight stable-sort library tests and the migrated sort_rows
+program's four groups/123 cases pass on the finite native Linux x86_64 profile.
+The core heapsort below stays allocation-free and unstable; neither
+its historical receipts nor the older ordinal-based application establishes
+the new stable APIs.
+
 The separate [nth-element selection increment](stdlib-slice-selection.md)
 reuses the same Comparator/Natural policy for a checked rank and one-element
 borrowed result. Admission and direct contract/bound gates pass, with one

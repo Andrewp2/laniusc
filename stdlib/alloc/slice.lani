@@ -1,0 +1,121 @@
+// Stable whole-value sorting with one private typed workspace. Input owners
+// retain all nested cleanup authority; temporary copies are shallow aliases.
+module alloc::slice;
+import alloc::vec;
+import core::cmp;
+import core::ordering;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, Storage(alloc::vec::Error) }
+
+// Both complete buffers contain n initialized items. Only their actual typed
+// descriptors determine layout/stride; the views are disjoint while merging.
+fn merge_pass<T,C>(source: core::slice::View<T>, destination: core::slice::View<T>,
+    width: i32, comparator: &C) where C: core::ordering::Comparator<T,T> {
+    let n: i32 = source.length;
+    let low: i32 = 0;
+    while (low < n) {
+        let left_length: i32 = n-low;
+        if (left_length > width) { left_length = width; }
+        let middle: i32 = low+left_length;
+        let right_length: i32 = n-middle;
+        if (right_length > width) { right_length = width; }
+        let high: i32 = middle+right_length;
+        let left: i32 = low;
+        let right: i32 = middle;
+        let output: i32 = low;
+        while (left < middle && right < high) {
+            let first: T = source.values[source.start+left];
+            let second: T = source.values[source.start+right];
+            let ordering: core::ordering::Ordering = comparator.compare(first,second);
+            // Equal takes the earlier left run. Every pass therefore retains
+            // the source order of equivalent values, including whole owners.
+            if (core::ordering::is_greater(ordering)) {
+                destination.values[destination.start+output] = second;
+                right += 1;
+            } else {
+                destination.values[destination.start+output] = first;
+                left += 1;
+            }
+            output += 1;
+        }
+        while (left < middle) {
+            let left_tail: T = source.values[source.start+left];
+            destination.values[destination.start+output] = left_tail;
+            left += 1;
+            output += 1;
+        }
+        while (right < high) {
+            let right_tail: T = source.values[source.start+right];
+            destination.values[destination.start+output] = right_tail;
+            right += 1;
+            output += 1;
+        }
+        // high<=n and high>low. Never form low+2*width.
+        low = high;
+    }
+}
+
+pub fn sort<T>(values: core::slice::View<T>) -> core::result::Result<i32,Error>
+    where T: core::cmp::Ord<T> {
+    let comparator: core::ordering::Natural<T> = core::ordering::Natural {};
+    return sort_by<T,core::ordering::Natural<T>>(values,comparator.borrow());
+}
+
+// A consistent total policy preserves operands/backing and never reenters.
+// Every returned Error precedes input reads, comparisons and mutation. Traps
+// and invalid physical backing have no rollback or automatic cleanup promise.
+pub fn sort_by<T,C>(values: core::slice::View<T>, comparator: &C)
+    -> core::result::Result<i32,Error> where C: core::ordering::Comparator<T,T> {
+    if (values.start < 0 || values.length < 0 || values.start > 2147483647-values.length) {
+        return core::result::Err(Error::Bounds);
+    }
+    let n: i32 = values.length;
+    if (n < 2) { return core::result::Ok(n); }
+    // Vec preflights the actual element capacity and reserves exactly n slots
+    // before any input value is observed. ZST capacity needs no host memory.
+    let reserved: core::result::Result<alloc::vec::Vec<T>,alloc::vec::Error> = alloc::vec::with_capacity<T>(n);
+    if (reserved.is_err()) {
+        let error: alloc::vec::Error = reserved.unwrap_err();
+        return core::result::Err(Error::Storage(error));
+    }
+    let workspace: alloc::vec::Vec<T> = reserved.unwrap();
+    let index: i32 = 0;
+    while (index < n) {
+        let value: T = values.values[values.start+index];
+        let pushed: core::result::Result<i32,alloc::vec::Error> = workspace.try_push(value);
+        // The full reservation makes failure an internal invariant violation.
+        pushed.unwrap();
+        index += 1;
+    }
+    // Expose only initialized entries. These copies grant no nested cleanup
+    // authority; the caller's selected input remains the sole final owner.
+    let source: core::slice::View<T> = workspace.as_view();
+    let destination: core::slice::View<T> = values;
+    let in_workspace: bool = true;
+    let width: i32 = 1;
+    while (true) {
+        merge_pass<T,C>(source,destination,width,comparator);
+        let previous: core::slice::View<T> = source;
+        source = destination;
+        destination = previous;
+        in_workspace = !in_workspace;
+        // This pass covers the complete interval. Only double when 2*width
+        // is strictly below n, so all signed widths remain representable.
+        if (width >= n-width) { break; }
+        width += width;
+    }
+    if (in_workspace) {
+        index = 0;
+        while (index < n) {
+            let value: T = source.values[source.start+index];
+            values.values[values.start+index] = value;
+            index += 1;
+        }
+    }
+    // End every workspace view use before releasing its backing. Vec::destroy
+    // does not visit nested resources; their original identities remain input.
+    workspace.destroy();
+    return core::result::Ok(n);
+}

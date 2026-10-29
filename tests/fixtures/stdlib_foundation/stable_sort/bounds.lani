@@ -1,0 +1,67 @@
+module app::main;
+import alloc::slice;
+import alloc::vec;
+import core::cmp;
+import core::mem;
+import core::ordering;
+import core::result;
+import core::slice;
+
+struct Compare { calls:i32 }
+impl Compare { fn borrow(&self) -> &Compare { return self; } }
+pub impl core::ordering::Comparator<i32,i32> for Compare {
+    pub fn compare(&self,left:i32,right:i32) -> core::ordering::Ordering { self.calls+=1; return core::ordering::compare_i32(left,right); }
+}
+fn code(result:core::result::Result<i32,alloc::slice::Error>) -> i32 {
+    assert(result.is_err()); let error:alloc::slice::Error=result.unwrap_err();
+    let inner:alloc::vec::Error=alloc::vec::Error::Bounds;
+    if(match(error) { alloc::slice::Error::Bounds -> true,_ -> false }) { return 1; }
+    inner=match(error) { alloc::slice::Error::Storage(value) -> value,_ -> alloc::vec::Error::Bounds };
+    return match(inner) { alloc::vec::Error::CapacityOverflow -> 2,_ -> 99 };
+}
+fn reject(view:core::slice::View<i32>,order:&Compare,expected:i32) {
+    let a:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort<i32>(view);
+    let b:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort_by<i32,Compare>(view,order);
+    assert(code(a)==expected && code(b)==expected && order.calls==0);
+}
+struct Unit {}
+pub impl core::cmp::Ord<Unit> for Unit {
+    pub fn lt(left:Unit,right:Unit) -> bool { return false; }
+    pub fn le(left:Unit,right:Unit) -> bool { return true; }
+    pub fn gt(left:Unit,right:Unit) -> bool { return false; }
+    pub fn ge(left:Unit,right:Unit) -> bool { return true; }
+}
+struct Equal { calls:i32 }
+impl Equal { fn borrow(&self) -> &Equal { return self; } }
+pub impl core::ordering::Comparator<Unit,Unit> for Equal {
+    pub fn compare(&self,left:Unit,right:Unit) -> core::ordering::Ordering { self.calls+=1; return core::ordering::Ordering::Equal; }
+}
+fn main() -> i32 {
+    let nowhere:ptr=0; let absent:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0); let order:Compare=Compare { calls:0 };
+    reject(core::slice::View { values:absent,start:-1,length:0 },order.borrow(),1);
+    reject(core::slice::View { values:absent,start:0,length:-1 },order.borrow(),1);
+    reject(core::slice::View { values:absent,start:2147483647,length:1 },order.borrow(),1);
+    reject(core::slice::View { values:absent,start:1,length:2147483647 },order.borrow(),1);
+    // Invalid metadata wins even when its count also exceeds workspace capacity.
+    let guarded:[i32;3]=[11,22,33];
+    reject(core::slice::View { values:guarded,start:-1,length:536870912 },order.borrow(),1);
+    reject(core::slice::View { values:guarded,start:2147483647,length:2 },order.borrow(),1);
+    assert(guarded[0]==11 && guarded[1]==22 && guarded[2]==33);
+    assert(core::mem::size_of<i32>()==4 && core::mem::size_of<u64>()==8);
+    reject(core::slice::View { values:absent,start:0,length:536870912 },order.borrow(),2);
+    let words:[u64]=core::mem::typed_slice_from_raw_parts<u64>(nowhere,0);
+    let over:core::slice::View<u64> = core::slice::View { values:words,start:0,length:268435456 };
+    let capacity:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort<u64>(over); assert(code(capacity)==2);
+    let empty:core::slice::View<i32> = core::slice::View { values:absent,start:2147483647,length:0 };
+    let single:core::slice::View<i32> = core::slice::View { values:absent,start:2147483646,length:1 };
+    let a:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort<i32>(empty); assert(a.unwrap()==0);
+    let b:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort_by<i32,Compare>(empty,order.borrow()); assert(b.unwrap()==0);
+    let c:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort<i32>(single); assert(c.unwrap()==1);
+    let d:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort_by<i32,Compare>(single,order.borrow()); assert(d.unwrap()==1 && order.calls==0);
+    let units:[Unit;9]=[Unit {};9]; assert(core::mem::size_of<Unit>()==0 && core::mem::slice_stride(units)==0);
+    let selected:core::slice::View<Unit> = core::slice::view_range<Unit>(units,1,7).unwrap(); let equal:Equal=Equal { calls:0 };
+    let zst:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort_by<Unit,Equal>(selected,equal.borrow());
+    assert(zst.unwrap()==7 && equal.calls>0 && equal.calls<=21);
+    let natural:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort<Unit>(selected); assert(natural.unwrap()==7);
+    return 0;
+}

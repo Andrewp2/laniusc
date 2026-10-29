@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **273 modules**, **13627 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **274 modules**, **13632 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -117,6 +117,7 @@ Inventory: **273 modules**, **13627 declaration/member entries**. Counts include
 | [alloc::hash_set](alloc/hash_set.md) | [source](../../stdlib/alloc/hash_set.lani#L3) | 53 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-hash](../stdlib-owning-hash.md), [stdlib-replacement-sinks](../stdlib-replacement-sinks.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md) |
 | [alloc::io](alloc/io.md) | [source](../../stdlib/alloc/io.lani#L3) | 69 | Source inventory | [stdlib-streams](../stdlib-streams.md), [stdlib-owned-input](../stdlib-owned-input.md), [stdlib-input-stats](../stdlib-input-stats.md), [stdlib-owned-delimited](../stdlib-owned-delimited.md), [stdlib-line-report](../stdlib-line-report.md) |
 | [alloc::path](alloc/path.md) | [source](../../stdlib/alloc/path.lani#L4) | 48 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
+| [alloc::slice](alloc/slice.md) | [source](../../stdlib/alloc/slice.lani#L3) | 5 | Source inventory | [stdlib-stable-sort](../stdlib-stable-sort.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md) |
 | [alloc::string](alloc/string.md) | [source](../../stdlib/alloc/string.lani#L5) | 75 | Source inventory | [stdlib-string](../stdlib-string.md), [stdlib-clone](../stdlib-clone.md), [stdlib-owned-input](../stdlib-owned-input.md) |
 | [alloc::tree_map](alloc/tree_map.md) | [source](../../stdlib/alloc/tree_map.lani#L3) | 116 | Source inventory | [stdlib-tree-map](../stdlib-tree-map.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-tree](../stdlib-owning-tree.md), [stdlib-replacement-sinks](../stdlib-replacement-sinks.md), [stdlib-latest-values](../stdlib-latest-values.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md) |
 | [alloc::tree_set](alloc/tree_set.md) | [source](../../stdlib/alloc/tree_set.lani#L3) | 65 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-tree](../stdlib-owning-tree.md), [stdlib-replacement-sinks](../stdlib-replacement-sinks.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md) |

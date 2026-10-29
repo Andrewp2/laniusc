@@ -1,0 +1,53 @@
+module app::main;
+import alloc::slice;
+import core::cmp;
+import core::ordering;
+import core::result;
+import core::slice;
+
+// The natural order deliberately ignores representative identity.
+struct NaturalRow { key:i32, id:i32, stamp:u64 }
+pub impl core::cmp::Ord<NaturalRow> for NaturalRow {
+    pub fn lt(left:NaturalRow,right:NaturalRow) -> bool { return left.key<right.key; }
+    pub fn le(left:NaturalRow,right:NaturalRow) -> bool { return left.key<=right.key; }
+    pub fn gt(left:NaturalRow,right:NaturalRow) -> bool { return left.key>right.key; }
+    pub fn ge(left:NaturalRow,right:NaturalRow) -> bool { return left.key>=right.key; }
+}
+// The custom-order item has no global comparison/clone/destruction traits.
+struct CustomRow { key:i32, id:i32, stamp:u64 }
+struct Reverse { calls:i32 }
+impl Reverse { fn borrow(&self) -> &Reverse { return self; } }
+pub impl core::ordering::Comparator<CustomRow,CustomRow> for Reverse {
+    pub fn compare(&self,left:CustomRow,right:CustomRow) -> core::ordering::Ordering {
+        self.calls+=1;
+        assert(left.stamp==18446744073709551615-(left.id as u64));
+        assert(right.stamp==18446744073709551615-(right.id as u64));
+        return core::ordering::compare_i32(right.key,left.key);
+    }
+}
+fn natural(id:i32) -> NaturalRow { return NaturalRow { key:id%4,id:id,stamp:18446744073709551615-(id as u64) }; }
+fn custom(id:i32) -> CustomRow { return CustomRow { key:id%4,id:id,stamp:18446744073709551615-(id as u64) }; }
+fn main() -> i32 {
+    let a:[NaturalRow;19]=[NaturalRow { key:0,id:0,stamp:0 };19];
+    let b:[CustomRow;19]=[CustomRow { key:0,id:0,stamp:0 };19];
+    a[0]=natural(99); a[18]=natural(98); b[0]=custom(99); b[18]=custom(98);
+    let i:i32=0; while(i<17) { a[i+1]=natural(i); b[i+1]=custom(i); i+=1; }
+    let av:core::slice::View<NaturalRow> = core::slice::view_range<NaturalRow>(a,1,17).unwrap();
+    let bv:core::slice::View<CustomRow> = core::slice::view_range<CustomRow>(b,1,17).unwrap();
+    let first:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort<NaturalRow>(av);
+    assert(first.unwrap()==17);
+    let order:Reverse=Reverse { calls:0 };
+    let second:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort_by<CustomRow,Reverse>(bv,order.borrow());
+    assert(second.unwrap()==17 && order.calls>0 && order.calls<=85);
+    let ascending:[i32;17]=[0,4,8,12,16,1,5,9,13,2,6,10,14,3,7,11,15];
+    let descending:[i32;17]=[3,7,11,15,2,6,10,14,1,5,9,13,0,4,8,12,16];
+    i=0; while(i<17) {
+        assert(a[i+1].id==ascending[i] && a[i+1].key==ascending[i]%4);
+        assert(b[i+1].id==descending[i] && b[i+1].key==descending[i]%4);
+        assert(a[i+1].stamp==18446744073709551615-(ascending[i] as u64));
+        assert(b[i+1].stamp==18446744073709551615-(descending[i] as u64)); i+=1;
+    }
+    assert(a[0].id==99 && a[18].id==98 && b[0].id==99 && b[18].id==98);
+    assert(a[0].stamp==18446744073709551516 && b[18].stamp==18446744073709551517);
+    return 0;
+}

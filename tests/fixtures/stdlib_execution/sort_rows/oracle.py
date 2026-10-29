@@ -18,7 +18,7 @@ HELP = (b"Usage: sort-rows [--column N] [--numeric] [--descending] [--header] [-
         b"Short options: -c N, -n, -r, -H, -h. Empty input is allowed.\n"
         b"Limits: 4 MiB input, 16384 data rows, 64 fields, 8 MiB staged output.\n")
 ERROR = b"sort-rows: operation failed\n"
-COUNTS = {"model": 37, "rejection": 33, "cli": 39, "io": 13}
+COUNTS = {"model": 37, "rejection": 33, "cli": 39, "io": 14}
 INTEGER = re.compile(r"[+-]?[0-9]+\Z", re.ASCII)
 
 
@@ -44,7 +44,7 @@ def model_rows(rows, column=1, numeric=False, descending=False, header=False):
     begin = 1 if header else 0
     key = (lambda row: integer(row[column - 1])) if numeric else (lambda row: row[column - 1].encode("utf-8"))
     # Python's stable sorting reverses only key order: equivalent rows retain
-    # input order even in descending mode. This is independent of heapsort.
+    # input order even in descending mode. This does not reproduce merge passes.
     return rows[:begin] + sorted(rows[begin:], key=key, reverse=descending)
 
 
@@ -72,6 +72,61 @@ def events(text):
             raise AssertionError(("unexpected allocation service", line))
     assert not live, ("observed unreleased mappings", live)
     return found
+
+
+def same_release(item, allocation):
+    return (item["name"] == "munmap" and item["answer"] == "0"
+            and item["args"] == f'{allocation["answer"].split()[0]}, {allocation["size"]}')
+
+
+def release_position(found, position):
+    allocation = found[position]
+    return next(index for index in range(position + 1, len(found))
+                if same_release(found[index], allocation))
+
+
+def stable_workspace(found, count):
+    # Source-bound identification, without assuming the private Row ABI width:
+    # five pushes grow Row Vec capacity 4 -> 8. Stable sort alone reserves five
+    # rows and makes no host calls between that mmap and its exact munmap.
+    # Its unit must match both real Vec generations, the capacity-eight owner
+    # must stay live, and output staging must follow the scratch release.
+    assert count == 5
+    candidates = []
+    for index, item in enumerate(found[:-1]):
+        if item["name"] != "mmap" or not item["answer"].startswith("0x"):
+            continue
+        if item["size"] == 0 or item["size"] % count or not same_release(found[index + 1], item):
+            continue
+        unit = item["size"] // count
+        for source_index, source in enumerate(found[:index]):
+            if (source["name"] != "mmap" or not source["answer"].startswith("0x")
+                    or source["size"] != 8 * unit):
+                continue
+            source_end = release_position(found, source_index)
+            if source_end <= index + 1:
+                continue
+            for prior_index, prior in enumerate(found[:source_index]):
+                if (prior["name"] != "mmap" or not prior["answer"].startswith("0x")
+                        or prior["size"] != 4 * unit
+                        or not same_release(found[source_index + 1], prior)):
+                    continue
+                # Whole-input EOF precedes parsing; sorting is after all reads.
+                if not any(event["name"] == "read" and event["answer"] == "0"
+                           for event in found[:prior_index]):
+                    continue
+                if any(event["name"] == "read" for event in found[index:]):
+                    continue
+                later_maps = [position for position in range(index + 2, source_end)
+                              if found[position]["name"] == "mmap"]
+                publications = [position for position, event in enumerate(found)
+                                if event["name"] == "write" and event["args"].startswith("1,")]
+                if not later_maps or not publications or min(publications) <= source_end:
+                    continue
+                candidates.append((index, source_index, prior_index))
+    assert len(candidates) == 1, ("ambiguous or missing stable-sort workspace", candidates)
+    scratch_index, source_index, prior_index = candidates[0]
+    return found[scratch_index], found[source_index], found[prior_index]
 
 
 class Runner:
@@ -259,6 +314,7 @@ def io(r):
     r.run("closed-stdout", args, data, status=5, closed_reader=True)
     r.run("closed-help-output", ["--help"], status=5, closed_reader=True)
     baseline = r.run("native-baseline", args, data, output=wanted, trace=True)
+    scratch, source, prior = stable_workspace(baseline, len(rows) - 1)
     maps = [item for item in baseline if item["name"] == "mmap"]
     first_read = next(index for index, item in enumerate(baseline) if item["name"] == "read")
     input_map = next(item for item in baseline[first_read + 1:] if item["name"] == "mmap")
@@ -270,6 +326,15 @@ def io(r):
                        injection=("mmap", ordinal, "ENOMEM"))
         fault = next(item for item in actual if item["name"] == "mmap" and item["ordinal"] == ordinal)
         assert old["args"] == fault["args"], (old, fault)
+    ordinal = scratch["ordinal"]
+    assert ordinal not in {item["ordinal"] for item in selected}, ("workspace must add a distinct fault process", scratch, selected)
+    actual = r.run("stable-sort-workspace-oom", args, data, status=4, trace=True,
+                   injection=("mmap", ordinal, "ENOMEM"))
+    actual_maps = [item for item in actual if item["name"] == "mmap"]
+    assert [item["args"] for item in actual_maps] == [item["args"] for item in maps[:ordinal]]
+    assert actual_maps[-1]["args"] == scratch["args"]
+    assert actual_maps[-1]["answer"].startswith("-1 ENOMEM ")
+    assert source["size"] * 5 == scratch["size"] * 8 and prior["size"] * 5 == scratch["size"] * 4
     for call in ("read", "write"):
         r.run(f"retry-{call}-eintr", args, data, output=wanted, trace=True, injection=(call, 1, "EINTR"))
     long_input = encode([["id", "key"], ["x" * 5000, "2"], ["y", "1"]])
@@ -328,7 +393,37 @@ def controls():
         pass
     else:
         raise AssertionError("cleanup control accepted an observed unreleased mapping")
-    print(f"sort-rows CPU controls=10; native cases={sum(COUNTS.values())}")
+    workspace_trace = (
+        "mmap(NULL, 40, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x3000\n"
+        'read(0, "x", 1024) = 1\nread(0, "", 1024) = 0\n'
+        "mmap(NULL, 64, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x1000\n"
+        "mmap(NULL, 128, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x2000\n"
+        "munmap(0x1000, 64) = 0\n"
+        "mmap(NULL, 80, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x1000\n"
+        "munmap(0x1000, 80) = 0\n"
+        "mmap(NULL, 100, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x1000\n"
+        "munmap(0x2000, 128) = 0\n"
+        'write(1, "report", 6) = 6\n'
+        "munmap(0x1000, 100) = 0\nmunmap(0x3000, 40) = 0\n")
+    assert stable_workspace(events(workspace_trace), 5)[0]["size"] == 80
+    corruptions = [
+        workspace_trace.replace("mmap(NULL, 80,", "mmap(NULL, 85,").replace("munmap(0x1000, 80)", "munmap(0x1000, 85)"),
+        workspace_trace.replace("mmap(NULL, 128,", "mmap(NULL, 120,").replace("munmap(0x2000, 128)", "munmap(0x2000, 120)"),
+        workspace_trace.replace("munmap(0x1000, 80) = 0\n", ""),
+        workspace_trace.replace('write(1, "report", 6) = 6\n', ""),
+        workspace_trace.replace(
+            "munmap(0x1000, 80) = 0\n", "munmap(0x1000, 80) = 0\n"
+            "mmap(NULL, 80, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x1000\n"
+            "munmap(0x1000, 80) = 0\n"),
+    ]
+    for corrupted in corruptions:
+        try:
+            stable_workspace(events(corrupted), 5)
+        except (AssertionError, StopIteration):
+            pass
+        else:
+            raise AssertionError("workspace control accepted corrupted size/lifetime/identity")
+    print(f"sort-rows CPU controls=16; native cases={sum(COUNTS.values())}")
 
 
 if __name__ == "__main__":

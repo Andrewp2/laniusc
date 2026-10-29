@@ -1,0 +1,113 @@
+// Complete stable ID outputs and finite n log n work observations.
+module app::main;
+import alloc::slice;
+import alloc::vec;
+import core::cmp;
+import core::mem;
+import core::ordering;
+import core::result;
+import core::slice;
+import std::io;
+
+struct Count { calls:u64 }
+struct Payload { first:u64, second:u64, words:[u64;2] }
+struct Record<T> { id:i32, key:i32, payload:T, count:&Count }
+struct Order { count:&Count }
+impl Count { fn borrow(&self) -> &Count { return self; } }
+impl Order { fn borrow(&self) -> &Order { return self; } }
+pub impl core::ordering::Comparator<Record<Payload>,Record<Payload>> for Order {
+    pub fn compare(&self,left:Record<Payload>,right:Record<Payload>) -> core::ordering::Ordering {
+        self.count.calls+=1; return core::ordering::compare_i32(left.key,right.key);
+    }
+}
+pub impl core::cmp::Ord<Record<Payload>> for Record<Payload> {
+    pub fn lt(left:Record<Payload>,right:Record<Payload>) -> bool { left.count.calls+=1; return left.key<right.key; }
+    pub fn le(left:Record<Payload>,right:Record<Payload>) -> bool { return left.key<=right.key; }
+    pub fn gt(left:Record<Payload>,right:Record<Payload>) -> bool { return left.key>right.key; }
+    pub fn ge(left:Record<Payload>,right:Record<Payload>) -> bool { return left.key>=right.key; }
+}
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn key(index:i32,size:i32,family:i32) -> i32 {
+    if(family==0) { return index; }
+    if(family==1) { return size-1-index; }
+    if(family==2) { return index%8; }
+    if(family==3) { if(index<size/2) { return index; } return size-1-index; }
+    if(family==4) { return (index*37)%97; }
+    // Seed17 and odd multiplier40503 permute all selected size domains.
+    return (((index as u64)*40503+17)%(size as u64)) as i32;
+}
+fn record(id:i32,value:i32,count:&Count) -> Record<Payload> {
+    return Record { id:id,key:value,payload:Payload { first:9223372036854775808+(id as u64),second:18446744073709551615-(id as u64),words:[4294967311*(id as u64),81985529216486895] },count:count };
+}
+fn check(value:Record<Payload>,size:i32,family:i32) {
+    assert(value.id>=0 && value.id<size+2);
+    let expected:i32=0;
+    if(value.id==0) { expected=-100; }
+    if(value.id==size+1) { expected=2147483647; }
+    if(value.id>0 && value.id<=size) { expected=key(value.id-1,size,family); }
+    assert(value.key==expected && value.payload.first==9223372036854775808+(value.id as u64));
+    assert(value.payload.second==18446744073709551615-(value.id as u64));
+    assert(value.payload.words[0]==4294967311*(value.id as u64) && value.payload.words[1]==81985529216486895);
+}
+fn validate(values:&alloc::vec::Vec<Record<Payload>>,ids:&alloc::vec::Vec<i32>,size:i32,family:i32) {
+    let bytes:[Record<Payload>]=values.as_slice(); let output:[i32]=ids.as_slice(); let index:i32=0;
+    while(index<size+2) {
+        let value:Record<Payload> =bytes[index]; check(value,size,family);
+        if(index==0) { assert(value.id==0); }
+        if(index==size+1) { assert(value.id==size+1); }
+        if(index>0 && index<=size) {
+            output[index-1]=value.id;
+            if(index>1) {
+                let previous:Record<Payload> =bytes[index-1]; assert(previous.key<=value.key);
+                if(previous.key==value.key) { assert(previous.id<value.id); }
+            }
+        }
+        index+=1;
+    }
+}
+fn levels(size:i32) -> i32 { let width:i32=1; let count:i32=0; while(width<size) { width*=2; count+=1; } return count; }
+fn write_ids(ids:[i32],count:i32) {
+    let length:i32=count*4; let offset:i32=0;
+    while(offset<length) {
+        let amount:i32=length-offset; if(amount>4096) { amount=4096; }
+        let used:i32=std::io::write_stdout(core::mem::i32_slice_data_ptr(ids)+(offset as usize),amount as usize);
+        assert(used>0 && used<=amount); offset+=used;
+    }
+}
+fn main() -> i32 {
+    let count:Count=Count { calls:0 }; let order:Order=Order { count:count.borrow() };
+    let values:alloc::vec::Vec<Record<Payload>> =alloc::vec::with_capacity<Record<Payload>>(65538).unwrap();
+    let ids:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(65538).unwrap();
+    values.try_resize(65538,record(0,-100,count.borrow())).unwrap(); ids.try_resize(65538,0).unwrap();
+    assert(core::mem::slice_stride(values.as_slice())<0);
+    let sizes:[i32;3]=[257,4096,65536]; let size_index:i32=0;
+    while(size_index<3) {
+        let size:i32=sizes[size_index]; let family:i32=0;
+        while(family<6) {
+            let mode:i32=0;
+            while(mode<2) {
+                let bytes:[Record<Payload>]=values.as_slice(); let index:i32=0;
+                bytes[0]=record(0,-100,count.borrow()); bytes[size+1]=record(size+1,2147483647,count.borrow());
+                while(index<size) { bytes[index+1]=record(index+1,key(index,size,family),count.borrow()); index+=1; }
+                let view:core::slice::View<Record<Payload>> =values.as_view().subview(1,size+1).unwrap(); count.calls=0;
+                let request:[i32;4]=[core::mem::size_of<Record<Payload>>() as i32,size,family,mode];
+                assert(std::io::write_stdout(core::mem::i32_array_data_ptr(request),16)==16);
+                let sorted:core::result::Result<i32,alloc::slice::Error> =core::result::Err(alloc::slice::Error::Bounds);
+                mark(67);
+                if(mode==0) { sorted=alloc::slice::sort_by<Record<Payload>,Order>(view,order.borrow()); }
+                if(mode==1) { sorted=alloc::slice::sort<Record<Payload>>(view); }
+                mark(70); assert(sorted.unwrap()==size);
+                let ceiling:u64=(size as u64)*(levels(size) as u64); if(mode==1) { ceiling*=2; }
+                assert(count.calls>0 && count.calls<=ceiling);
+                mark(80); validate(values.borrow(),ids.borrow(),size,family); mark(112);
+                let report:[i32;4]=[size,family,mode,count.calls as i32];
+                assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),16)==16);
+                write_ids(ids.as_slice(),size);
+                mode+=1;
+            }
+            family+=1;
+        }
+        size_index+=1;
+    }
+    values.destroy(); ids.destroy(); mark(68); return 0;
+}

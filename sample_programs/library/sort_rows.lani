@@ -1,6 +1,7 @@
 // Bounded CSV ordering through a borrowed per-call comparator and checked view.
 module app::main;
 import alloc::io;
+import alloc::slice;
 import alloc::vec;
 import alloc::vec::Vec;
 import core::decimal;
@@ -21,7 +22,7 @@ import std::args;
 import std::signal;
 import std::stream;
 
-struct Row { record:ext::csv::Record, key:core::text::Text, number:i64, ordinal:i32 }
+struct Row { record:ext::csv::Record, key:core::text::Text, number:i64 }
 struct Rows { values:Vec<Row>, header:Option<ext::csv::Record>, longest:i32 }
 impl Rows {
     fn borrow(&self) -> &Rows { return self; }
@@ -94,8 +95,8 @@ pub impl core::ordering::Comparator<Row,Row> for Compare {
                 _ -> core::ordering::Ordering::Equal
             };
         }
-        // Direction affects only the primary key; source order always breaks ties.
-        return match(answer) { core::ordering::Ordering::Equal -> core::ordering::compare_i32(left.ordinal,right.ordinal), _ -> answer };
+        // Equal keys remain equivalent; the stable sort preserves their order.
+        return answer;
     }
 }
 fn append(rows:&Rows, record:ext::csv::Record, ordinal:i32, options:&Options) -> i32 {
@@ -107,7 +108,7 @@ fn append(rows:&Rows, record:ext::csv::Record, ordinal:i32, options:&Options) ->
         let parsed = core::decimal::parse_i64_range(key.bytes,key.start,key.length);
         if (parsed.is_err()) { record.destroy(); return 2; } number = parsed.unwrap();
     }
-    let row = Row { record:record,key:key,number:number,ordinal:ordinal };
+    let row = Row { record:record,key:key,number:number };
     if (rows.values.try_push(row).is_err()) { record.destroy(); return 4; }
     if (key.length > rows.longest) { rows.longest = key.length; } return 0;
 }
@@ -146,8 +147,19 @@ fn order(rows:&Rows, options:&Options) -> i32 {
         if (cost > 100000000/comparisons) { return 2; }
     }
     let comparator = Compare { numeric:options.numeric,descending:options.descending };
-    let sorted:Result<i32,core::slice::ViewError> = core::slice::sort_unstable_by<Row,Compare>(rows.values.as_view(),comparator.borrow());
-    if (sorted.is_err()) { return 6; } return 0;
+    let sorted:Result<i32,alloc::slice::Error> = alloc::slice::sort_by<Row,Compare>(rows.values.as_view(),comparator.borrow());
+    if (sorted.is_err()) {
+        return match(sorted.unwrap_err()) {
+            alloc::slice::Error::Bounds -> 6,
+            alloc::slice::Error::Storage(detail) -> match(detail) {
+                alloc::vec::Error::AllocationFailed -> 4,
+                alloc::vec::Error::CapacityOverflow -> 2,
+                _ -> 6
+            }
+        };
+    }
+    if (sorted.unwrap() != rows.values.len()) { return 6; }
+    return 0;
 }
 fn emit(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Writes) -> i32 {
     let bounds = ext::csv_write::Limits { max_output:8388608-state.bytes,max_write_calls:65536-state.calls };

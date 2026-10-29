@@ -1,0 +1,166 @@
+// Stable whole-value permutations retain sole cleanup authority in input slots.
+module app::main;
+import alloc::slice;
+import alloc::string;
+import alloc::vec;
+import core::cmp;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::result;
+import core::slice;
+import std::io;
+
+struct Context { calls:u64, descending:bool, equal:bool, pointers:[ptr], capacities:[i32], mutations:[i32] }
+struct Leaf { text:alloc::string::String, numbers:alloc::vec::Vec<u64>, serial:u64 }
+struct Bundle<T> { first:T, second:T, flags:[u64;4] }
+struct Record<T> { id:i32, key:i32, payload:T, seal:u64, edits:i32, context:&Context }
+struct Order { context:&Context }
+struct Unit {}
+struct UnitOrder { calls:u64 }
+impl Context { fn borrow(&self) -> &Context { return self; } }
+impl Order { fn borrow(&self) -> &Order { return self; } }
+impl UnitOrder { fn borrow(&self) -> &UnitOrder { return self; } }
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn key(id:i32) -> i32 {
+    if(id==0) { return -100; } if(id==13) { return 100; }
+    return (((id-1)*5)%12)/3;
+}
+fn leaf(id:i32,side:i32,context:&Context) -> Leaf {
+    let bytes:[u8;6]=[78,(65+id) as u8,0,194,162,(48+side) as u8];
+    let text:alloc::string::String=alloc::string::from_utf8(bytes,6).unwrap();
+    let numbers:alloc::vec::Vec<u64> =alloc::vec::with_capacity<u64>(3).unwrap();
+    numbers.try_push(9223372036854775808+(id as u64)).unwrap();
+    numbers.try_push(18446744073709551615-(side as u64)).unwrap();
+    numbers.try_push(281479271743489*(id as u64)+(side as u64)).unwrap();
+    let at:i32=4*id+2*side;
+    context.pointers[at]=text.bytes.storage; context.pointers[at+1]=numbers.storage;
+    context.capacities[at]=text.bytes.capacity(); context.capacities[at+1]=numbers.capacity();
+    return Leaf { text:text,numbers:numbers,serial:(1000+2*id+side) as u64 };
+}
+fn check_leaf(value:Leaf,id:i32,side:i32,context:&Context) {
+    let at:i32=4*id+2*side;
+    assert(value.serial==(1000+2*id+side) as u64 && value.text.byte_len()==6);
+    assert(value.text.bytes.storage==context.pointers[at] && value.text.bytes.capacity()==context.capacities[at]);
+    assert(value.text.byte_at(0).unwrap()==78 && value.text.byte_at(1).unwrap()==(65+id) as u8);
+    assert(value.text.byte_at(2).unwrap()==0 && value.text.byte_at(3).unwrap()==194 && value.text.byte_at(4).unwrap()==162 && value.text.byte_at(5).unwrap()==(48+side) as u8);
+    assert(value.numbers.storage==context.pointers[at+1] && value.numbers.capacity()==context.capacities[at+1] && value.numbers.len()==3);
+    assert(value.numbers.at(0)==9223372036854775808+(id as u64));
+    assert(value.numbers.at(1)==18446744073709551615-(side as u64));
+    assert(value.numbers.at(2)==281479271743489*(id as u64)+(side as u64));
+}
+fn check(value:Record<Bundle<Leaf>>) {
+    assert(value.id>=0 && value.id<14 && value.key==key(value.id));
+    assert(value.seal==987654321+104729*(value.id as u64) && value.edits==value.context.mutations[value.id]);
+    assert(value.payload.flags[0]==9223372036854775808+(value.id as u64));
+    assert(value.payload.flags[1]==18446744073709551615-(value.id as u64));
+    assert(value.payload.flags[2]==0 && value.payload.flags[3]==281479271743489);
+    check_leaf(value.payload.first,value.id,0,value.context); check_leaf(value.payload.second,value.id,1,value.context);
+}
+pub impl core::ordering::Comparator<Record<Bundle<Leaf>>,Record<Bundle<Leaf>>> for Order {
+    pub fn compare(&self,left:Record<Bundle<Leaf>>,right:Record<Bundle<Leaf>>) -> core::ordering::Ordering {
+        self.context.calls+=1; check(left); check(right);
+        if(self.context.equal) { return core::ordering::Ordering::Equal; }
+        if(self.context.descending) { return core::ordering::compare_i32(right.key,left.key); }
+        return core::ordering::compare_i32(left.key,right.key);
+    }
+}
+pub impl core::cmp::Ord<Record<Bundle<Leaf>>> for Record<Bundle<Leaf>> {
+    pub fn lt(left:Record<Bundle<Leaf>>,right:Record<Bundle<Leaf>>) -> bool { left.context.calls+=1; check(left); check(right); return left.key<right.key; }
+    pub fn le(left:Record<Bundle<Leaf>>,right:Record<Bundle<Leaf>>) -> bool { return left.key<=right.key; }
+    pub fn gt(left:Record<Bundle<Leaf>>,right:Record<Bundle<Leaf>>) -> bool { return left.key>right.key; }
+    pub fn ge(left:Record<Bundle<Leaf>>,right:Record<Bundle<Leaf>>) -> bool { return left.key>=right.key; }
+}
+pub impl core::ordering::Comparator<Unit,Unit> for UnitOrder {
+    pub fn compare(&self,left:Unit,right:Unit) -> core::ordering::Ordering { self.calls+=1; return core::ordering::Ordering::Equal; }
+}
+pub impl core::cmp::Ord<Unit> for Unit {
+    pub fn lt(left:Unit,right:Unit) -> bool { return false; }
+    pub fn le(left:Unit,right:Unit) -> bool { return true; }
+    pub fn gt(left:Unit,right:Unit) -> bool { return false; }
+    pub fn ge(left:Unit,right:Unit) -> bool { return true; }
+}
+fn units() {
+    let values:[Unit;9]=[Unit {};9]; assert(core::mem::slice_stride(values)==0);
+    let view:core::slice::View<Unit> =core::slice::view_range<Unit>(values,1,7).unwrap();
+    let comparator:UnitOrder=UnitOrder { calls:0 };
+    mark(80);
+    assert(alloc::slice::sort_by<Unit,UnitOrder>(view,comparator.borrow()).unwrap()==7);
+    assert(alloc::slice::sort<Unit>(view).unwrap()==7);
+    mark(112); assert(comparator.calls>0 && comparator.calls<=21);
+}
+fn permutation(values:&alloc::vec::Vec<Record<Bundle<Leaf>>>) {
+    assert(values.len()==14 && values.at(0).id==0 && values.at(13).id==13);
+    let seen:[i32;14]=[0;14]; let index:i32=0;
+    while(index<14) { let value:Record<Bundle<Leaf>> =values.at(index); check(value); assert(seen[value.id]==0); seen[value.id]=1; index+=1; }
+    index=0; while(index<14) { assert(seen[index]==1); index+=1; }
+}
+fn snapshot(view:core::slice::View<Record<Bundle<Leaf>>>,ranks:[i32]) {
+    let index:i32=0; while(index<12) { ranks[view.get(index).unwrap().id]=index; index+=1; }
+}
+fn stable(values:&alloc::vec::Vec<Record<Bundle<Leaf>>>,ranks:[i32],descending:bool,equal:bool) {
+    permutation(values); let bytes:[Record<Bundle<Leaf>>]=values.as_slice(); let index:i32=2;
+    while(index<=12) {
+        let left:Record<Bundle<Leaf>> =bytes[index-1]; let right:Record<Bundle<Leaf>> =bytes[index];
+        if(equal) { assert(ranks[left.id]<ranks[right.id]); }
+        if(!equal) {
+            if(descending) { assert(left.key>=right.key); } else { assert(left.key<=right.key); }
+            if(left.key==right.key) { assert(ranks[left.id]<ranks[right.id]); }
+        }
+        index+=1;
+    }
+}
+fn report(size:i32,count:i32,kind:i32,mode:i32) {
+    let words:[i32;4]=[size,count,kind,mode]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(words),16)==16);
+}
+fn allocation_failure(value:core::result::Result<i32,alloc::slice::Error>) {
+    let cause:alloc::slice::Error=value.unwrap_err();
+    let code:i32=match(cause) { alloc::slice::Error::Bounds->1,alloc::slice::Error::Storage(error)->storage_code(error) };
+    assert(code==4);
+}
+fn storage_code(error:alloc::vec::Error) -> i32 {
+    return match(error) { alloc::vec::Error::Bounds->1,alloc::vec::Error::InvalidCapacity->2,alloc::vec::Error::CapacityOverflow->3,alloc::vec::Error::AllocationFailed->4 };
+}
+fn retire(value:Leaf) { value.text.destroy(); value.numbers.destroy(); }
+fn main() -> i32 {
+    let configuration:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(configuration),1)==1);
+    let mode:i32=configuration[0]; assert(mode==0 || mode==1); units();
+    let nowhere:ptr=0; let pointers:[ptr;56]=[nowhere;56]; let capacities:[i32;56]=[0;56]; let mutations:[i32;14]=[0;14];
+    let context:Context=Context { calls:0,descending:false,equal:false,pointers:pointers,capacities:capacities,mutations:mutations };
+    let order:Order=Order { context:context.borrow() };
+    let values:alloc::vec::Vec<Record<Bundle<Leaf>>> =alloc::vec::with_capacity<Record<Bundle<Leaf>>>(14).unwrap();
+    let index:i32=0;
+    while(index<14) {
+        let payload:Bundle<Leaf> =Bundle { first:leaf(index,0,context.borrow()),second:leaf(index,1,context.borrow()),flags:[9223372036854775808+(index as u64),18446744073709551615-(index as u64),0,281479271743489] };
+        values.try_push(Record { id:index,key:key(index),payload:payload,seal:987654321+104729*(index as u64),edits:0,context:context.borrow() }).unwrap(); index+=1;
+    }
+    assert(core::mem::slice_stride(values.as_slice())<0);
+    index=0; while(index<56) { let other:i32=index+1; while(other<56) { assert(pointers[index]!=pointers[other]); other+=1; } index+=1; }
+    let view:core::slice::View<Record<Bundle<Leaf>>> =values.as_view().subview(1,13).unwrap(); permutation(values.borrow());
+    let ranks:[i32;14]=[0;14]; let stage:i32=0;
+    while(stage<4) {
+        context.descending=stage==1; context.equal=stage==2; context.calls=0; snapshot(view,ranks);
+        report(core::mem::size_of<Record<Bundle<Leaf>>>() as i32,12,stage,mode);
+        mark(67);
+        let sorted:core::result::Result<i32,alloc::slice::Error> =core::result::Err(alloc::slice::Error::Bounds);
+        if(stage<3) { sorted=alloc::slice::sort_by<Record<Bundle<Leaf>>,Order>(view,order.borrow()); }
+        if(stage==3) { sorted=alloc::slice::sort<Record<Bundle<Leaf>>>(view); }
+        mark(70);
+        if(mode==1 && stage==0) {
+            mark(80); allocation_failure(sorted); assert(context.calls==0); permutation(values.borrow());
+            index=0; while(index<14) { assert(values.at(index).id==index); index+=1; } mark(112);
+            report(core::mem::size_of<Record<Bundle<Leaf>>>() as i32,12,4,mode);
+            mark(67); sorted=alloc::slice::sort_by<Record<Bundle<Leaf>>,Order>(view,order.borrow()); mark(70);
+        }
+        assert(sorted.unwrap()==12); assert(context.calls>0 && context.calls<=96);
+        mark(80); stable(values.borrow(),ranks,context.descending,context.equal);
+        if(stage==0) {
+            let expected:[i32;12]=[1,6,11,2,4,9,5,7,12,3,8,10]; index=0;
+            while(index<12) { assert(view.get(index).unwrap().id==expected[index]); index+=1; }
+        }
+        mark(112);
+        stage+=1;
+    }
+    while(true) { let next:core::option::Option<Record<Bundle<Leaf>>> =values.pop(); if(next.is_none()) { break; } let value:Record<Bundle<Leaf>> =next.unwrap(); check(value); retire(value.payload.first); retire(value.payload.second); }
+    values.destroy(); mark(68); return 0;
+}

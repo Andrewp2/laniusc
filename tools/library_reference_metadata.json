@@ -149,6 +149,18 @@
         "docs/stdlib-paths.md"
       ]
     },
+    "alloc::slice": {
+      "guides": [
+        "docs/stdlib-stable-sort.md",
+        "docs/stdlib-slice-ordering.md",
+        "docs/stdlib-sort-rows.md"
+      ],
+      "note": "Checked stable View sorting is accepted on finite native Linux x86_64 CPU output from the GPU compiler: eight registered library tests (seven native plus one capability group/four marked rejections), all 123 migrated sort_rows cases and standalone build/examples. Complete metadata admission precedes source reads, callbacks, allocation and mutation. Valid length0/1 returns before capacity checks; nonzero-sized length>=2 reserves one exact typed Vec workspace and releases it before return. Zero-sized T reserves logical capacity without host memory and still follows the comparator engine. Vec capacity/allocation errors are preserved as Storage(error), leaving the entire input unchanged. Alternating complete merge passes preserve equivalent-key logical order, whole shallow values and outside guards. Scratch copies carry no nested cleanup authority; only scratch backing is released. There is no raw byte copying, recursion, nested Clone/Destroy, adaptive-input promise or comparator-trap rollback guarantee. Core sorts keep allocation-free/unstable contracts, and older ordinal-based application receipts retain their source scope. A corrected guarded-fixture stride expectation changed no production/compiler code and introduced no new compiler dependency.",
+      "declarations": {
+        "sort": "Checked View<T> stable sort under Ord<T>; delegates to sort_by through canonical Natural<T>, with no implicit Eq/PartialOrd/Clone/Destroy bound. Returns selected length; native floats need a total key/policy. Same metadata, workspace, error and owner rules as the custom engine.",
+        "sort_by": "Checked View<T> with Comparator<T,T>, requiring no Ord implementation. Bounds precedes no-op/capacity admission; reserve typed workspace before any input read or callback. Stable iterative complete-pass merges choose left on Equal/Less and right on Greater. O(n log n) comparisons/copies, one workspace for nonzero-sized n>=2, with returned Storage failures preserving input and no nested cleanup."
+      }
+    },
     "alloc::string": {
       "guides": [
         "docs/stdlib-string.md",

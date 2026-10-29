@@ -11,6 +11,11 @@ metadata. Its [comparator-driven ordering APIs](stdlib-slice-ordering.md)
 share sort/search engines with the raw Ord functions documented here; raw
 signatures, fallbacks and nonpositive-length behavior remain unchanged.
 
+The separate [alloc::slice stable-sort family](stdlib-stable-sort.md) adds
+checked View sorting with one typed workspace and explicit reservation errors.
+Its selected native Linux x86_64 gates and migrated application pass. It does not change the
+allocation-free, unstable core sorts documented here.
+
 ```lanius
 import core::cmp;
 import core::slice;

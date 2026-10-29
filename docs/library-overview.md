@@ -1,6 +1,12 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[stable-sort increment](stdlib-stable-sort.md) adds checked alloc::slice
+sorting with one typed workspace, stable equivalent-key order and explicit
+reservation errors before input reads or mutation. Core sorts retain their
+allocation-free/unstable contracts. All eight library tests and migrated
+sort_rows's four groups/123 cases pass, alongside standalone build/examples.
+This finite native Linux x86_64 increment is accepted. The preceding
 [iterator sequence increment](stdlib-iterator-sequences.md) adds equality,
 total/partial lexicographic comparison and sortedness through canonical
 Iterator/Mapper/Comparator protocols. Exact pull order, prefix witnesses,
@@ -709,16 +715,30 @@ has two passing checks (2.92s): an import-free reproduction reports LNC0027
 for distinct comparison-trait applications, and separate receiver types
 compile and execute. Current fixtures share one policy across those role
 receivers; the generic library signatures remain unchanged. The real
-[sort-rows CSV program](stdlib-sort-rows.md) passes all four registered tests
+[sort-rows CSV program](stdlib-sort-rows.md) passed all four registered tests
 and 122 process cases: model37/12.78s, then CLI39/rejection33/I/O13 in 9.65s.
-It preserves visible source-row ties through an explicit secondary key while
-the library sort remains unstable. Three selected current iterator tests pass
+At that freeze it preserved visible source-row ties through an explicit
+secondary key while the library sort remained unstable. The separate
+[stable-sort migration](stdlib-stable-sort.md) has its own current receipts.
+Three selected current iterator tests pass
 in 16.23s: 1,280 four-action schedules, 320 extrema and 180 position cases,
 owner cleanup and exact capability rejections. Two unrelated tests were
 filtered; the historical lookahead application and trap were not rerun.
 This selected finite increment is accepted. Historical slice/iterator/fold
 evidence retains its original source scope; no device execution, formal proof
 or automatic ownership follows.
+
+**Allocation-backed stable sorting.**
+
+The new [alloc::slice family](stdlib-stable-sort.md) uses existing View and
+Comparator/Natural contracts with one pre-reserved typed workspace. Bounds and
+storage errors precede input reads, callbacks and mutation; scratch has no
+nested cleanup authority. Completed stable merges preserve equivalent-key
+source order and whole shallow values. Core unstable sorts are unchanged.
+All eight library tests pass, including the independent 5,946-case model,
+owner/guard/scale gates and four marked capability rejections. Migrated
+sort_rows passes four groups/123 cases; standalone build/examples also pass
+without adding cases. This finite native Linux x86_64 increment is accepted.
 
 **Iterator sequence comparisons.**
 

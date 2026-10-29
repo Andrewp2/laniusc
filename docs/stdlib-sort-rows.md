@@ -1,17 +1,53 @@
-# CSV row ordering with a borrowed comparator
+# Stable CSV row ordering with a borrowed comparator
 
 `sample_programs/library/sort_rows.lani` orders bounded CSV input by one column,
-preserving every decoded field:
+preserving every decoded field. The current implementation uses the public
+allocation-backed stable sort and has passed 123 native cases. Earlier
+unstable-sort receipts are recorded separately below. The standalone build
+and both exact examples have also passed.
+
+## Build and use
+
+With the compiler binary built, run from the repository root:
 
 ```sh
-sort-rows [--column N] [--numeric] [--descending] [--header] [--help]
-printf 'name,score\nold,2\nfirst,10\nsecond,10\n' | sort-rows -H -c 2 -n -r
+mkdir -p target/stdlib-work
+timeout --kill-after=2s 100s flock -w 95 target/stdlib-work/library-gpu.lock \
+  target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root extended \
+  --emit x86_64 sample_programs/library/sort_rows.lani \
+  -o target/stdlib-work/sort-rows
+printf 'name,score\nold,2\nfirst,10\nsecond,10\n' | \
+  target/stdlib-work/sort-rows -H -c 2 -n -r
 ```
 
-The example keeps the header, then emits first/10, second/10 and old/2. Equal
-keys retain their original input order even when the primary key is descending.
-Output is fully quoted CRLF CSV, so the output spelling of quotes and record
-endings can differ from input while field values remain unchanged.
+Expected output, with CRLF after every row:
+
+```csv
+"name","score"
+"first","10"
+"second","10"
+"old","2"
+```
+
+Text ordering also retains interleaved equal keys:
+
+```sh
+printf 'b,first\na,second\nb,third\na,fourth\n' | \
+  target/stdlib-work/sort-rows
+```
+
+Expected output:
+
+```csv
+"a","second"
+"a","fourth"
+"b","first"
+"b","third"
+```
+
+The standalone build and both exact example commands passed on the migrated
+producer. Output is fully quoted CRLF CSV, so quote spelling and record endings
+can differ from input while field values remain unchanged.
 
 ## CLI and ordering
 
@@ -37,11 +73,10 @@ and overflow are rejected. Only the selected cell is numeric. Original field
 spellings are preserved, so +02 and 2 compare equal while retaining their
 separate input text and relative order.
 
-`--descending` reverses the primary text/numeric order. An original source-row
-index always breaks ties in ascending order. The underlying heapsort remains
-unstable; the explicit unique secondary key provides stable visible ties.
-The comparator never reverses the source index, destroys a row or changes its
-policy during sorting.
+`--descending` reverses the primary text/numeric order. Equivalent keys remain
+Equal in both directions; the stable library preserves their original input
+order. There is no source-index secondary key. The comparator never destroys
+a row, mutates its backing or changes its policy during sorting.
 
 ## Header and input policy
 
@@ -66,28 +101,39 @@ The actual application path is:
 
 ```text
 native stdin -> owned bytes -> CSV Decoder.take_record
-    -> owned Row vector -> sort_unstable_by(counted view, borrowed comparator)
+    -> owned Row vector -> alloc::slice::sort_by(counted view, borrowed comparator)
     -> complete staged CSV -> stdout
 ```
 
-Each Row owns one CSV Record plus a borrowed selected-field view, a parsed i64
-when requested and the original row index. `take_record` transfers the record
-out of the decoder and leaves empty decoder buffers. The header has its own
-owner outside the sorted vector.
+Each Row owns one CSV Record plus a borrowed selected-field view and a parsed
+i64 when requested. A separate parsing ordinal recognizes the first/header
+record; it is not stored in Row or used for ordering. `take_record` transfers
+the record out of the decoder and leaves empty decoder buffers. The header
+has its own owner outside the sorted vector.
 
-`sort_unstable_by<Row,Compare>` receives the vector's checked counted view.
-Its allocation-free heapsort moves whole shallow Row handles. Record buffers
-remain stable, so selected-field views remain valid when their handles move.
-The comparator receives temporary shallow values and never retires, mutates
-or retains their cleanup authority. A final cleanup loop destroys each record
-in its current slot exactly once, destroys the header separately and releases
-the vector. Append failures destroy the rejected record. The decoder's current
-partial record is destroyed on parsing failure.
+`alloc::slice::sort_by<Row,Compare>` receives the vector's checked counted view.
+For two or more rows it reserves exactly N typed workspace entries before
+reading rows or invoking the comparator. Iterative stable merging copies whole
+shallow Row handles and chooses the left run on Equal. Record buffers remain
+stable, so selected-field views remain valid when their handles move. Workspace
+aliases grant no nested cleanup authority; the library releases only temporary
+Vec backing before returning. Zero or one row needs no workspace allocation.
+
+The comparator never retires, mutates or retains row cleanup authority. A
+returned reservation failure leaves the input unchanged; AllocationFailed maps
+to status 4, CapacityOverflow to 2, and impossible Bounds/internal storage
+errors to 6. The application also checks the returned sorted count. A final
+cleanup loop destroys each record in its current slot exactly once, destroys
+the header separately and releases the vector. Append failures destroy the
+rejected record. The decoder's partial record is destroyed on parsing failure.
 
 Raw input, argument storage and independent output storage also have explicit
-cleanup on returned paths. All records are released after output staging and
-before publication; the staged bytes remain live through stdout. These are
-manual ownership contracts, not a lifetime or leak-freedom proof.
+cleanup on returned paths. Scratch is released before CSV staging. All records
+are released after output staging and before publication; the staged bytes
+remain live through stdout. Existing argv storage stays live through the
+run/help/diagnostic call and is released afterward. No new empty-heap-at-write
+invariant is claimed. These are manual ownership contracts, not a lifetime or
+leak-freedom proof.
 
 ## Work admission and bounds
 
@@ -103,20 +149,20 @@ require comparison allowance * key_cost <= 100000000
 ```
 
 A work unit counts an inspected key byte, or one scalar ordering operation.
-Text cost covers bytes from both operands plus length and source-index
-ordering; numeric cost covers numeric-key and source-index ordering. Byte
-inspection includes its comparison; these are dominant logical units rather
-than hardware instructions.
+Text cost covers bytes from both operands plus length/constant ordering
+headroom; numeric cost bounds its scalar ordering checks. Byte inspection
+includes its comparison. These are dominant logical units, not hardware
+instructions, and no deleted ordinal comparison is implied.
 
-Each heapsort sift traverses at most L levels with at most two comparator
-calls per level. Bounding heap construction and extraction by N sifts each
-already gives at most 4*N*L comparisons; `4*N*(1+L)` conservatively includes
-boundary cases. Exact callback schedules are not a public promise. The input
-caps make the allowance arithmetic representable, and key cost is compared
-with the remaining cap by division before multiplying. Rejection occurs
-before any sort mutation or comparator call. There is no mid-sort budget that
-changes comparison answers. CSV parsing and formatting have their own byte,
-record and I/O bounds rather than this comparison estimate.
+Bottom-up merge sorting needs at most N*L comparator calls. The existing
+`4*N*(1+L)` admission is deliberately retained as a conservative policy with
+spare headroom, preserving the application's previous accepted/rejected work
+boundaries. Exact callback schedules are not a public promise. Input caps make
+the arithmetic representable, and key cost is compared with the remaining cap
+by division before multiplying. Rejection occurs before workspace allocation,
+sort mutation or comparator calls. There is no mid-sort budget that changes
+comparison answers. Typed copy work is separately bounded by O(N log N) merge
+passes; CSV parsing and formatting have their own byte, record and I/O bounds.
 
 | Resource | Bound |
 | --- | ---: |
@@ -125,6 +171,7 @@ record and I/O bounds rather than this comparison estimate.
 | Fields per record / decoded bytes per field | 64 / 8192 |
 | Decoded bytes per record | 65536 |
 | Pre-sort comparator-work allowance | 100000000 |
+| Stable workspace for N >= 2 | Exactly N typed Row entries; checked Vec capacity |
 | Independent staged output | 8388608 bytes (8 MiB) |
 | stdin / CSV staging / stdout attempts | 16384 / 65536 / 16384 |
 | Help / diagnostic attempts | 64 / 8 |
@@ -143,9 +190,9 @@ stdout reader.
 | Exit | Meaning |
 | ---: | --- |
 | 0 | Sorted CSV, empty output or help completed |
-| 2 | Invalid CLI/CSV/key/range, input/record/field/work/staging limit |
+| 2 | Invalid CLI/CSV/key/range, input/record/field/work/staging or workspace-capacity limit |
 | 3 | stdin or argument-capture I/O error, or invalid input transfer count |
-| 4 | Reported allocation failure |
+| 4 | Reported allocation failure, including stable workspace reservation |
 | 5 | stdout error/call limit or SIGPIPE setup failure |
 | 6 | Internal decoder-progress or slice-sort failure |
 
@@ -155,14 +202,66 @@ diagnostic preserves the primary status.
 
 ## Target and verification
 
-The verified target is native Linux x86_64 CPU code emitted by the GPU
-compiler, with native stdin/stdout. Device-side GPU execution is outside this
-profile. Production is entirely Lanius using existing CSV, decimal, CLI,
-stream and comparator/slice modules. No new parser, protocol, host service or
-Rust/Python library implementation is added.
+The verified current target is native Linux x86_64 CPU code emitted by the GPU
+compiler, with native stdin/stdout. All four migrated application groups passed
+on their first attempt: **123 distinct cases**, four registered tests in
+12.95 seconds after a separate 1.71-second Rust build. Receipt:
+`target/stdlib-work/stable-sort-sort-rows-first.log`.
 
-All four registered application groups are accepted on 2026-10-28, totaling
-122 unique native cases across two focused runs:
+| Group | Cases | Retained evidence |
+| --- | ---: | --- |
+| Model | 37 | `/tmp/sort-rows-model-19qiycu3` |
+| Rejection | 33 | `/tmp/sort-rows-rejection-ec8qh_9d` |
+| CLI | 39 | `/tmp/sort-rows-cli-l_oukou0` |
+| I/O | 14 | `/tmp/sort-rows-io-0e6dks_x` |
+
+The corpus preserves the earlier 122 cases and adds one specifically reached
+workspace ENOMEM process; no separate calibration process was needed. Existing
+model cases check stable text/numeric ties in both directions, equivalent
+numeric spellings, headers, full-width values, quoted fields, exact input/row
+limits and the unchanged work-boundary pair.
+
+The new failure binds the actual five-row workspace request to its source-Vec
+generations and lifetime. The oracle requires a unique immediately paired
+workspace mmap/munmap, whose five-entry requested size agrees with the earlier
+four-entry and live eight-entry Row-vector generations. That scratch retires
+before output-staging allocation. This does not assume a private Row byte
+width or choose a generic middle allocation. The injected failure must match
+the actual baseline request arguments, return 4, publish nothing, make no
+later allocation and release every observed successful mapping. Comparator
+call absence and input rollback require separate direct library evidence.
+
+The four existing selected ENOMEM cases also remain accepted. Full selected
+traces pair successful mappings and releases by address/requested length,
+including record/header/value-vector cleanup. Existing argv lifetime is
+preserved through publication; an empty heap at stdout is not asserted. These
+are finite cleanup observations, not exhaustive lifetime or leak proofs.
+
+Current accepted identities (SHA-256):
+
+- Application: `9fd332e423755156c69b4cc77da2fc765a7690c4f99309cde14365fe602cb806`.
+- Oracle: `3d9e550373381d52367764b28c148d9a336dba6663d4b138290e8d1480ab304b`.
+- `alloc::slice`: `e56129df41d435c226a11612d67b52cd9364e25d35d295e90f592376009aa667`.
+
+Static checks confirm unchanged help (442 bytes), diagnostic (28 bytes),
+literal lengths and final newline. The exact documented standalone build
+exited 0 with a silent compiler
+(`target/stdlib-work/stable-sort-sort-rows-standalone.log`). Both example
+commands exited 0 with empty stderr and literal quoted CRLF output: 56 bytes
+for the header/numeric/descending case in
+`target/stdlib-work/stable-sort-sort-rows-example-header.csv`, and 54 bytes
+for text ties in `target/stdlib-work/stable-sort-sort-rows-example-ties.csv`.
+Their corresponding `.stderr` files are empty. The examples overlap the
+functional corpus and add no distinct cases. Production is entirely Lanius
+using CSV, decimal, CLI, stream and the public stable sort. No new parser,
+protocol, host service or Rust/Python library implementation is added.
+
+### Historical unstable-sort producer
+
+The earlier producer used allocation-free heapsort with a unique source-index
+secondary key. Its four registered groups were accepted on 2026-10-28,
+totaling 122 unique native cases across two focused runs. These receipts
+retain that earlier producer's scope and do not verify the stable migration:
 
 | Accepted group | Cases | Receipt under `target/stdlib-work/` |
 | --- | ---: | --- |
@@ -216,10 +315,11 @@ timeout --kill-after=2s 100s flock -w 95 target/stdlib-work/library-gpu.lock \
   cargo test --test stdlib_sort_rows_execution -- --nocapture --test-threads=1
 ```
 
-The [slice ordering guide](stdlib-slice-ordering.md) records separate shared
-API contracts and library evidence. This application's stable visible ties
-come from its unique source-index secondary key; they do not add stability
-to the underlying sort API. The source imports `core::slice` and qualifies
+The [slice ordering guide](stdlib-slice-ordering.md) records the separate core
+unstable APIs and their evidence. The current stable migration follows the
+[allocation-backed stable-sort plan](library-stable-sort-plan.md); its equal
+keys rely on the stable library rather than the historical secondary key.
+The source imports `core::slice` and qualifies
 slice-view calls, following the
 [existing import limitation reduction](../tests/fixtures/stdlib_compiler_state/item_import_priority/README.md).
 Compiler repair remains separate; this increment changes no compiler, ABI or
