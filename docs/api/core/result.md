@@ -8,11 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
+Result and<T,E,U> changes the success type while retaining E; or<T,E,F> changes the error type while retaining T. Both select eager shallow inputs. The new flatten removes one Result layer with one shared error type and also has a specialized method. Both transpose directions and their receiver extensions are defined in core::option; importing core::option includes Result<Option<T>,E>.transpose without a Result-to-Option module cycle. Selection and shape changes introduce no allocation, callback, host service, clone, cleanup or ordinary error; selected/discarded owners retain manual cleanup. Native Linux x86_64 admission, full contracts and the independent 2180-case model pass separately in 4.87s, 6.81s and 6.94s. One selected old Result-method test passes nine payload combinations in 9.64s. One owner/memory test passes in 7.28s with six records/twelve actual backings, seven zero-host-call pure phases and twelve exact releases. The real optional-sum application passes four groups/98 native cases (model 33/7.26s; CLI 17, rejection 30 and I/O 18/8.02s), including five reached OOM sites and a genuine ten-byte write prefix before EFBIG. One selected Option regression passes three existing fixtures in 6.86s. Six focused new typed-call rejections pass one test in 7.71s, and eight old Result type rejections pass a separate test in 6.72s. CPU surface inventory passes one test in 0.01s with runtime tests filtered; this is bookkeeping. All five new library tests and four application groups pass; this finite native Linux x86_64 increment is accepted. Historical receipts keep their source/API scope; no broad generic, automatic ownership, device or proof claim follows.
+
 ## Contract and evidence guides
 
 - [stdlib-result](../../stdlib-result.md)
+- [stdlib-outcome-composition](../../stdlib-outcome-composition.md)
+- [stdlib-optional-sum](../../stdlib-optional-sum.md)
 
-Declaration counts: enum: 1; function: 10; impl: 1; method: 10; variant: 2.
+Declaration counts: enum: 1; function: 11; impl: 2; method: 11; variant: 2.
 
 ## Declared imports
 
@@ -120,22 +124,36 @@ pub fn unwrap_err_or<T, E>(value: Result<T, E>, fallback: E) -> E
 [Source line 50](../../../stdlib/core/result.lani#L50)
 
 ```lanius
-pub fn or<T, E>(value: Result<T, E>, fallback: Result<T, E>) -> Result<T, E>
+pub fn or<T,E,F>(value: Result<T,E>, fallback: Result<T,F>) -> Result<T,F>
 ```
+
+Eager fallback with a changed error type: left Ok(T) wins, otherwise selects fallback: Result<T,F>. Inputs share T; output errors come from F. No evaluation-order or lazy-operand promise.
 
 ### function: and
 
-[Source line 56](../../../stdlib/core/result.lani#L56)
+[Source line 55](../../../stdlib/core/result.lani#L55)
 
 ```lanius
-pub fn and<T, E>(value: Result<T, E>, next: Result<T, E>) -> Result<T, E>
+pub fn and<T,E,U>(value: Result<T,E>, next: Result<U,E>) -> Result<U,E>
 ```
+
+Eager next selection with a changed success type: left Ok(T) selects next: Result<U,E>, otherwise preserves the left error E. Inputs share E. Discarded resource owners remain caller responsibilities.
+
+### function: flatten
+
+[Source line 103](../../../stdlib/core/result.lani#L103)
+
+```lanius
+pub fn flatten<T,E>(value:Result<Result<T,E>,E>) -> Result<T,E>
+```
+
+Removes one Result layer: outer Ok(inner) returns inner and outer Err(e) preserves e. Both error layers use E; no conversion, panic, allocation or cleanup is introduced. Also available as a specialized nested method.
 
 ## Implementation blocks and public methods
 
-### impl at line 61
+### impl at line 59
 
-[Source line 61](../../../stdlib/core/result.lani#L61)
+[Source line 59](../../../stdlib/core/result.lani#L59)
 
 ```lanius
 pub impl<T, E> Result<T, E>
@@ -143,7 +161,7 @@ pub impl<T, E> Result<T, E>
 
 #### method: is_ok
 
-[Source line 62](../../../stdlib/core/result.lani#L62)
+[Source line 60](../../../stdlib/core/result.lani#L60)
 
 ```lanius
 pub fn is_ok(self) -> bool
@@ -151,7 +169,7 @@ pub fn is_ok(self) -> bool
 
 #### method: is_err
 
-[Source line 66](../../../stdlib/core/result.lani#L66)
+[Source line 64](../../../stdlib/core/result.lani#L64)
 
 ```lanius
 pub fn is_err(self) -> bool
@@ -159,7 +177,7 @@ pub fn is_err(self) -> bool
 
 #### method: contains
 
-[Source line 70](../../../stdlib/core/result.lani#L70)
+[Source line 68](../../../stdlib/core/result.lani#L68)
 
 ```lanius
 pub fn contains(self, expected: T) -> bool where T: core::cmp::PartialEq<T>
@@ -167,7 +185,7 @@ pub fn contains(self, expected: T) -> bool where T: core::cmp::PartialEq<T>
 
 #### method: contains_err
 
-[Source line 74](../../../stdlib/core/result.lani#L74)
+[Source line 72](../../../stdlib/core/result.lani#L72)
 
 ```lanius
 pub fn contains_err(self, expected: E) -> bool where E: core::cmp::PartialEq<E>
@@ -175,7 +193,7 @@ pub fn contains_err(self, expected: E) -> bool where E: core::cmp::PartialEq<E>
 
 #### method: unwrap
 
-[Source line 78](../../../stdlib/core/result.lani#L78)
+[Source line 76](../../../stdlib/core/result.lani#L76)
 
 ```lanius
 pub fn unwrap(self) -> T
@@ -183,7 +201,7 @@ pub fn unwrap(self) -> T
 
 #### method: unwrap_err
 
-[Source line 82](../../../stdlib/core/result.lani#L82)
+[Source line 80](../../../stdlib/core/result.lani#L80)
 
 ```lanius
 pub fn unwrap_err(self) -> E
@@ -191,7 +209,7 @@ pub fn unwrap_err(self) -> E
 
 #### method: unwrap_or
 
-[Source line 86](../../../stdlib/core/result.lani#L86)
+[Source line 84](../../../stdlib/core/result.lani#L84)
 
 ```lanius
 pub fn unwrap_or(self, fallback: T) -> T
@@ -199,7 +217,7 @@ pub fn unwrap_or(self, fallback: T) -> T
 
 #### method: unwrap_err_or
 
-[Source line 90](../../../stdlib/core/result.lani#L90)
+[Source line 88](../../../stdlib/core/result.lani#L88)
 
 ```lanius
 pub fn unwrap_err_or(self, fallback: E) -> E
@@ -207,16 +225,32 @@ pub fn unwrap_err_or(self, fallback: E) -> E
 
 #### method: or
 
-[Source line 94](../../../stdlib/core/result.lani#L94)
+[Source line 92](../../../stdlib/core/result.lani#L92)
 
 ```lanius
-pub fn or(self, fallback: Result<T, E>) -> Result<T, E>
+pub fn or<F>(self, fallback: Result<T,F>) -> Result<T,F>
 ```
 
 #### method: and
 
-[Source line 100](../../../stdlib/core/result.lani#L100)
+[Source line 96](../../../stdlib/core/result.lani#L96)
 
 ```lanius
-pub fn and(self, next: Result<T, E>) -> Result<T, E>
+pub fn and<U>(self, next: Result<U,E>) -> Result<U,E>
+```
+
+### impl at line 106
+
+[Source line 106](../../../stdlib/core/result.lani#L106)
+
+```lanius
+pub impl<T,E> Result<Result<T,E>,E>
+```
+
+#### method: flatten
+
+[Source line 107](../../../stdlib/core/result.lani#L107)
+
+```lanius
+pub fn flatten(self) -> Result<T,E>
 ```

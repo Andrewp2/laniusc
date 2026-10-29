@@ -718,6 +718,11 @@ fn executable_core_function_surface_has_runtime_cases() {
         include_str!("fixtures/stdlib_foundation/bitset_view_contracts.lani"),
         include_str!("fixtures/stdlib_foundation/bitset_owned_smoke.lani"),
     );
+    let endian_fixtures = format!(
+        "{}\n{}",
+        include_str!("fixtures/stdlib_foundation/core_endian.lani"),
+        include_str!("fixtures/stdlib_foundation/native_endian/contracts.lani"),
+    );
     let modules = [
         (
             "array_i32_4",
@@ -747,7 +752,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "endian",
             include_str!("../stdlib/core/endian.lani"),
-            include_str!("fixtures/stdlib_foundation/core_endian.lani"),
+            endian_fixtures.as_str(),
         ),
         (
             "bool",
@@ -891,19 +896,19 @@ fn executable_core_function_surface_has_runtime_cases() {
     }
     assert_eq!(hash_count, 12);
 
-    // Every function in core::option and core::result runs in
-    // core_option_result, free and as a method; the generic option fixtures
-    // run them again on bool payloads.
+    // Call-name inventory across the old and current executing producers.
+    // This bookkeeping check does not itself establish runtime behavior.
     let option_result_fixture = format!(
-        "{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}",
         include_str!("fixtures/stdlib_foundation/core_option_result.lani"),
         include_str!("fixtures/stdlib_foundation/option_bool.lani"),
         include_str!("fixtures/stdlib_foundation/option_generic_scalar_predicates.lani"),
         include_str!("fixtures/stdlib_foundation/option_generic_scalar_payload_functions.lani"),
+        include_str!("fixtures/stdlib_foundation/outcome_composition/contracts.lani"),
     );
     for (module, source, expected_functions, expected_methods) in [
-        ("option", include_str!("../stdlib/core/option.lani"), 12, 9),
-        ("result", include_str!("../stdlib/core/result.lani"), 10, 10),
+        ("option", include_str!("../stdlib/core/option.lani"), 14, 12),
+        ("result", include_str!("../stdlib/core/result.lani"), 11, 11),
     ] {
         let mut functions = 0;
         let mut methods = 0;
@@ -921,9 +926,11 @@ fn executable_core_function_surface_has_runtime_cases() {
                 .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
                 .next()
                 .expect("public function has a name");
+            let generic_call = format!("{call}{name}<");
             let call = format!("{call}{name}(");
             assert!(
-                option_result_fixture.contains(&call),
+                option_result_fixture.contains(&call)
+                    || option_result_fixture.contains(&generic_call),
                 "core::{module} {call} lacks a runtime case"
             );
         }

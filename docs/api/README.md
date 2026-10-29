@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **273 modules**, **13377 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **273 modules**, **13388 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -57,7 +57,7 @@ Inventory: **273 modules**, **13377 declaration/member entries**. Counts include
 | [core::mem](core/mem.md) | [source](../../stdlib/core/mem.lani#L5) | 14 | Source inventory | [stdlib-memory](../stdlib-memory.md) |
 | [core::net](core/net.md) | [source](../../stdlib/core/net.lani#L2) | 334 | Source inventory | [stdlib-net](../stdlib-net.md) |
 | [core::ops](core/ops.md) | [source](../../stdlib/core/ops.lani#L5) | 24 | Source inventory | **Unregistered** |
-| [core::option](core/option.md) | [source](../../stdlib/core/option.lani#L6) | 25 | Source inventory | [stdlib-option](../stdlib-option.md) |
+| [core::option](core/option.md) | [source](../../stdlib/core/option.lani#L6) | 33 | Source inventory | [stdlib-option](../stdlib-option.md), [stdlib-outcome-composition](../stdlib-outcome-composition.md), [stdlib-optional-sum](../stdlib-optional-sum.md) |
 | [core::ordering](core/ordering.md) | [source](../../stdlib/core/ordering.lani#L3) | 31 | Source inventory | [stdlib-comparison](../stdlib-comparison.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md) |
 | [core::pair](core/pair.md) | [source](../../stdlib/core/pair.lani#L3) | 8 | Source inventory | **Unregistered** |
 | [core::panic](core/panic.md) | [source](../../stdlib/core/panic.lani#L3) | 29 | Source inventory | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
@@ -65,7 +65,7 @@ Inventory: **273 modules**, **13377 declaration/member entries**. Counts include
 | [core::path_rules](core/path_rules.md) | [source](../../stdlib/core/path_rules.lani#L3) | 59 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [core::random](core/random.md) | [source](../../stdlib/core/random.lani#L5) | 40 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [core::range](core/range.md) | [source](../../stdlib/core/range.lani#L9) | 51 | Source inventory | [stdlib-ranges](../stdlib-ranges.md) |
-| [core::result](core/result.md) | [source](../../stdlib/core/result.lani#L7) | 24 | Source inventory | [stdlib-result](../stdlib-result.md) |
+| [core::result](core/result.md) | [source](../../stdlib/core/result.lani#L7) | 27 | Source inventory | [stdlib-result](../stdlib-result.md), [stdlib-outcome-composition](../stdlib-outcome-composition.md), [stdlib-optional-sum](../stdlib-optional-sum.md) |
 | [core::runtime](core/runtime.md) | [source](../../stdlib/core/runtime.lani#L15) | 113 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::set](core/set.md) | [source](../../stdlib/core/set.lani#L4) | 24 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
 | [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L11) | 93 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md) |

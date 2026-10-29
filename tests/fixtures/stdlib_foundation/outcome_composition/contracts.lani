@@ -1,0 +1,276 @@
+// Full variant tables, exact payload transport, caller copies and eagerness.
+module app::main;
+import core::f32;
+import core::f64;
+import core::mem;
+import core::option;
+import core::result;
+
+enum Leaf { Stop(i64,core::option::Option<bool>) }
+type Detail=core::option::Option<core::result::Result<[u64;2],Leaf>>;
+struct Packet<T> { id:i32, wide:u64, cells:[i64;2], detail:T, signal:f64, bytes:[u8] }
+type Item=Packet<Detail>;
+struct Fault { code:i64, words:[u64;2], flag:core::option::Option<bool>, signal:f32, bytes:[u8] }
+type OtherError=core::option::Option<[i64;2]>;
+
+fn item(id:i32,bytes:[u8]) -> Item {
+    let detail:Detail=core::option::None();
+    if (id%3==0) {
+        let words:[u64;2]=[18446744073709551615,8589934593+(id as u64)];
+        let result:core::result::Result<[u64;2],Leaf> =core::result::Ok(words); detail=core::option::Some(result);
+    }
+    if (id%3==1) {
+        let result:core::result::Result<[u64;2],Leaf> =core::result::Err(Leaf::Stop(-4294967297-(id as i64),core::option::Some(false))); detail=core::option::Some(result);
+    }
+    return Packet { id:id,wide:18446744073709551615-(id as u64),cells:[-9223372036854775808,4294967297+(id as i64)],detail:detail,signal:core::f64::from_bits(18442260490080524988),bytes:bytes };
+}
+fn fault(code:i32,bytes:[u8]) -> Fault {
+    return Fault { code:-4294967297+(code as i64),words:[18446744073709551615,8589934593],flag:core::option::Some(false),signal:core::f32::from_bits(4286578979),bytes:bytes };
+}
+fn check_bytes(value:[u8],expected:[u8]) {
+    assert(core::mem::slice_stride(value)==core::mem::slice_stride(expected));
+    let index:i32=0; while (index<4) { assert(value[index]==expected[index]); index+=1; }
+}
+fn check_item(value:Item,id:i32,bytes:[u8]) {
+    assert(value.id==id && value.wide==18446744073709551615-(id as u64));
+    assert(value.cells[0]==-9223372036854775808 && value.cells[1]==4294967297+(id as i64));
+    assert(core::f64::to_bits(value.signal)==18442260490080524988); check_bytes(value.bytes,bytes);
+    if (id%3==2) { assert(value.detail.is_none()); }
+    else {
+        let result:core::result::Result<[u64;2],Leaf> =value.detail.unwrap();
+        if (id%3==0) { let words:[u64;2]=result.unwrap(); assert(words[0]==18446744073709551615 && words[1]==8589934593+(id as u64)); }
+        else { assert(match(result.unwrap_err()) { Leaf::Stop(code,flag) -> code==-4294967297-(id as i64) && flag.is_some() && !flag.unwrap() }); }
+    }
+}
+fn check_fault(value:Fault,code:i32,bytes:[u8]) {
+    assert(value.code==-4294967297+(code as i64) && value.words[0]==18446744073709551615 && value.words[1]==8589934593);
+    assert(value.flag.is_some() && !value.flag.unwrap() && core::f32::to_bits(value.signal)==4286578979); check_bytes(value.bytes,bytes);
+}
+fn other_error() -> OtherError { let words:[i64;2]=[-9223372036854775808,4294967297]; return core::option::Some(words); }
+fn check_other(value:OtherError) { let words:[i64;2]=value.unwrap(); assert(words[0]==-9223372036854775808 && words[1]==4294967297); }
+fn check_optional(value:core::option::Option<Item>,present:bool,id:i32,bytes:[u8]) {
+    if (present) { check_item(value.unwrap(),id,bytes); } else { assert(value.is_none()); }
+}
+fn check_array_result(value:core::result::Result<[u64;2],Fault>,expected:i32,bytes:[u8]) {
+    if (expected==1) { let words:[u64;2]=value.unwrap(); assert(words[0]==18446744073709551615 && words[1]==4294967297); }
+    else { check_fault(value.unwrap_err(),expected,bytes); }
+}
+fn check_other_result(value:core::result::Result<Item,OtherError>,expected:i32,bytes:[u8]) {
+    if (expected<0) { check_other(value.unwrap_err()); } else { check_item(value.unwrap(),expected-1,bytes); }
+}
+fn option_and_table(bytes:[u8]) {
+    let expected:[i32;4]=[0,0,0,1]; let left_tag:i32=0;
+    while (left_tag<2) {
+        let right_tag:i32=0;
+        while (right_tag<2) {
+            let left:core::option::Option<i64> =core::option::None(); if (left_tag==1) { left=core::option::Some(-4294967297); }
+            let right:core::option::Option<Item> =core::option::None(); if (right_tag==1) { right=core::option::Some(item(0,bytes)); }
+            let selected:bool=expected[left_tag*2+right_tag]==1;
+            check_optional(core::option::and<i64,Item>(left,right),selected,0,bytes);
+            check_optional(left.and(right),selected,0,bytes);
+            if (left_tag==0) { assert(left.is_none()); } else { assert(left.unwrap()==-4294967297); }
+            check_optional(right,right_tag==1,0,bytes); right_tag+=1;
+        }
+        left_tag+=1;
+    }
+}
+fn result_and_table(bytes:[u8]) {
+    let expected:[i32;4]=[-11,-11,-22,1]; let left_tag:i32=0;
+    while (left_tag<2) {
+        let right_tag:i32=0;
+        while (right_tag<2) {
+            let left:core::result::Result<Item,Fault> =core::result::Err(fault(-11,bytes)); if (left_tag==1) { left=core::result::Ok(item(1,bytes)); }
+            let right:core::result::Result<[u64;2],Fault> =core::result::Err(fault(-22,bytes));
+            if (right_tag==1) { let words:[u64;2]=[18446744073709551615,4294967297]; right=core::result::Ok(words); }
+            check_array_result(core::result::and<Item,Fault,[u64;2]>(left,right),expected[left_tag*2+right_tag],bytes);
+            check_array_result(left.and(right),expected[left_tag*2+right_tag],bytes);
+            if (left_tag==0) { check_fault(left.unwrap_err(),-11,bytes); } else { check_item(left.unwrap(),1,bytes); }
+            check_array_result(right,expected[2+right_tag],bytes); right_tag+=1;
+        }
+        left_tag+=1;
+    }
+}
+fn result_or_table(bytes:[u8]) {
+    let expected:[i32;4]=[-33,2,1,1]; let left_tag:i32=0;
+    while (left_tag<2) {
+        let right_tag:i32=0;
+        while (right_tag<2) {
+            let left:core::result::Result<Item,Fault> =core::result::Err(fault(-11,bytes)); if (left_tag==1) { left=core::result::Ok(item(0,bytes)); }
+            let right:core::result::Result<Item,OtherError> =core::result::Err(other_error()); if (right_tag==1) { right=core::result::Ok(item(1,bytes)); }
+            check_other_result(core::result::or<Item,Fault,OtherError>(left,right),expected[left_tag*2+right_tag],bytes);
+            check_other_result(left.or(right),expected[left_tag*2+right_tag],bytes);
+            if (left_tag==0) { check_fault(left.unwrap_err(),-11,bytes); } else { check_item(left.unwrap(),0,bytes); }
+            check_other_result(right,expected[right_tag],bytes); right_tag+=1;
+        }
+        left_tag+=1;
+    }
+}
+fn check_wide_error(value:[u64;4]) {
+    assert(value[0]==0 && value[1]==4294967297 && value[2]==18446744073709551615 && value[3]==9223372036854775808);
+}
+fn check_wide_or(value:core::result::Result<u64,[u64;4]>,expected:i32) {
+    if (expected<0) { check_wide_error(value.unwrap_err()); }
+    else { let number:u64=18446744073709551615; if (expected==2) { number=8589934593; } assert(value.unwrap()==number); }
+}
+fn check_narrow_or(value:core::result::Result<u64,bool>,expected:i32) {
+    if (expected<0) { assert(!value.unwrap_err()); }
+    else { let number:u64=18446744073709551615; if (expected==2) { number=8589934593; } assert(value.unwrap()==number); }
+}
+fn result_or_layout_tables() {
+    let expected:[i32;4]=[-1,2,1,1]; let left_tag:i32=0;
+    while (left_tag<2) {
+        let right_tag:i32=0;
+        while (right_tag<2) {
+            let words:[u64;4]=[0,4294967297,18446744073709551615,9223372036854775808];
+            let narrow_left:core::result::Result<u64,bool> =core::result::Err(false);
+            let wide_left:core::result::Result<u64,[u64;4]> =core::result::Err(words);
+            if (left_tag==1) { narrow_left=core::result::Ok(18446744073709551615); wide_left=core::result::Ok(18446744073709551615); }
+            let narrow_right:core::result::Result<u64,bool> =core::result::Err(false);
+            let wide_right:core::result::Result<u64,[u64;4]> =core::result::Err(words);
+            if (right_tag==1) { narrow_right=core::result::Ok(8589934593); wide_right=core::result::Ok(8589934593); }
+            check_wide_or(core::result::or<u64,bool,[u64;4]>(narrow_left,wide_right),expected[left_tag*2+right_tag]);
+            check_wide_or(narrow_left.or(wide_right),expected[left_tag*2+right_tag]);
+            check_narrow_or(core::result::or<u64,[u64;4],bool>(wide_left,narrow_right),expected[left_tag*2+right_tag]);
+            check_narrow_or(wide_left.or(narrow_right),expected[left_tag*2+right_tag]);
+            let original_left:i32=-1; if (left_tag==1) { original_left=1; }
+            let original_right:i32=-1; if (right_tag==1) { original_right=2; }
+            check_narrow_or(narrow_left,original_left); check_wide_or(wide_left,original_left);
+            check_narrow_or(narrow_right,original_right); check_wide_or(wide_right,original_right);
+            right_tag+=1;
+        }
+        left_tag+=1;
+    }
+}
+fn check_nested_option(value:core::option::Option<core::option::Option<Item>>,state:i32,bytes:[u8]) {
+    if (state==0) { assert(value.is_none()); }
+    else { check_optional(value.unwrap(),state==2,2,bytes); }
+}
+fn check_item_result(value:core::result::Result<Item,Fault>,state:i32,bytes:[u8]) {
+    if (state==2) { check_item(value.unwrap(),2,bytes); }
+    else { let code:i32=-44; if (state==1) { code=-55; } check_fault(value.unwrap_err(),code,bytes); }
+}
+fn flatten_tables(bytes:[u8]) {
+    let state:i32=0;
+    while (state<3) {
+        let nested_option:core::option::Option<core::option::Option<Item>> =core::option::None();
+        if (state>0) { let inner:core::option::Option<Item> =core::option::None(); if (state==2) { inner=core::option::Some(item(2,bytes)); } nested_option=core::option::Some(inner); }
+        check_optional(core::option::flatten<Item>(nested_option),state==2,2,bytes);
+        check_optional(nested_option.flatten(),state==2,2,bytes); check_nested_option(nested_option,state,bytes);
+        let nested_result:core::result::Result<core::result::Result<Item,Fault>,Fault> =core::result::Err(fault(-44,bytes));
+        if (state>0) { let inner:core::result::Result<Item,Fault> =core::result::Err(fault(-55,bytes)); if (state==2) { inner=core::result::Ok(item(2,bytes)); } nested_result=core::result::Ok(inner); }
+        check_item_result(core::result::flatten<Item,Fault>(nested_result),state,bytes);
+        check_item_result(nested_result.flatten(),state,bytes);
+        if (state==0) { check_fault(nested_result.unwrap_err(),-44,bytes); } else { check_item_result(nested_result.unwrap(),state,bytes); }
+        state+=1;
+    }
+}
+fn check_option_result(value:core::option::Option<core::result::Result<Item,Fault>>,state:i32,bytes:[u8]) {
+    if (state==0) { assert(value.is_none()); }
+    else { let inner:core::result::Result<Item,Fault> =value.unwrap(); if (state==1) { check_item(inner.unwrap(),1,bytes); } else { check_fault(inner.unwrap_err(),-66,bytes); } }
+}
+fn check_result_option(value:core::result::Result<core::option::Option<Item>,Fault>,state:i32,bytes:[u8]) {
+    if (state==2) { check_fault(value.unwrap_err(),-66,bytes); }
+    else { check_optional(value.unwrap(),state==1,1,bytes); }
+}
+fn transpose_tables(bytes:[u8]) {
+    let state:i32=0;
+    while (state<3) {
+        let optional_result:core::option::Option<core::result::Result<Item,Fault>> =core::option::None();
+        let absent:core::option::Option<Item> =core::option::None();
+        let result_option:core::result::Result<core::option::Option<Item>,Fault> =core::result::Ok(absent);
+        if (state==1) { let result:core::result::Result<Item,Fault> =core::result::Ok(item(1,bytes)); optional_result=core::option::Some(result); let present:core::option::Option<Item> =core::option::Some(item(1,bytes)); result_option=core::result::Ok(present); }
+        if (state==2) { let result:core::result::Result<Item,Fault> =core::result::Err(fault(-66,bytes)); optional_result=core::option::Some(result); result_option=core::result::Err(fault(-66,bytes)); }
+        let forward:core::result::Result<core::option::Option<Item>,Fault> =core::option::transpose_to_result<Item,Fault>(optional_result);
+        let forward_method:core::result::Result<core::option::Option<Item>,Fault> =optional_result.transpose();
+        check_result_option(forward,state,bytes); check_result_option(forward_method,state,bytes);
+        let backward:core::option::Option<core::result::Result<Item,Fault>> =core::option::transpose_to_option<Item,Fault>(result_option);
+        let backward_method:core::option::Option<core::result::Result<Item,Fault>> =result_option.transpose();
+        check_option_result(backward,state,bytes); check_option_result(backward_method,state,bytes);
+        check_option_result(core::option::transpose_to_option<Item,Fault>(forward),state,bytes);
+        check_result_option(core::option::transpose_to_result<Item,Fault>(backward),state,bytes);
+        let method_inverse:core::option::Option<core::result::Result<Item,Fault>> =forward_method.transpose();
+        let other_inverse:core::result::Result<core::option::Option<Item>,Fault> =backward_method.transpose();
+        check_option_result(method_inverse,state,bytes); check_result_option(other_inverse,state,bytes);
+        check_option_result(optional_result,state,bytes); check_result_option(result_option,state,bytes); state+=1;
+    }
+}
+struct Effects { left:i32, right:i32 }
+impl Effects { fn borrow(&self) -> &Effects { return self; } fn reset(&self) { self.left=0; self.right=0; } fn check(&self) { assert(self.left==1 && self.right==1); } }
+fn absent(effects:&Effects) -> core::option::Option<i64> { effects.left+=1; return core::option::None(); }
+fn optional(effects:&Effects,bytes:[u8]) -> core::option::Option<Item> { effects.right+=1; return core::option::Some(item(0,bytes)); }
+fn failed(effects:&Effects,bytes:[u8]) -> core::result::Result<Item,Fault> { effects.left+=1; return core::result::Err(fault(-11,bytes)); }
+fn array(effects:&Effects) -> core::result::Result<[u64;2],Fault> { effects.right+=1; let words:[u64;2]=[18446744073709551615,4294967297]; return core::result::Ok(words); }
+fn successful(effects:&Effects,bytes:[u8]) -> core::result::Result<Item,Fault> { effects.left+=1; return core::result::Ok(item(0,bytes)); }
+fn fallback(effects:&Effects) -> core::result::Result<Item,OtherError> { effects.right+=1; return core::result::Err(other_error()); }
+fn eager_operands(bytes:[u8]) {
+    let effects:Effects=Effects { left:0,right:0 };
+    let option:core::option::Option<Item> =core::option::and<i64,Item>(absent(effects.borrow()),optional(effects.borrow(),bytes));
+    assert(option.is_none()); effects.check(); effects.reset();
+    let option_method:core::option::Option<Item> =absent(effects.borrow()).and(optional(effects.borrow(),bytes));
+    assert(option_method.is_none()); effects.check(); effects.reset();
+    let result:core::result::Result<[u64;2],Fault> =core::result::and<Item,Fault,[u64;2]>(failed(effects.borrow(),bytes),array(effects.borrow()));
+    check_array_result(result,-11,bytes); effects.check(); effects.reset();
+    let result_method:core::result::Result<[u64;2],Fault> =failed(effects.borrow(),bytes).and(array(effects.borrow()));
+    check_array_result(result_method,-11,bytes); effects.check(); effects.reset();
+    let other:core::result::Result<Item,OtherError> =core::result::or<Item,Fault,OtherError>(successful(effects.borrow(),bytes),fallback(effects.borrow()));
+    check_other_result(other,1,bytes); effects.check(); effects.reset();
+    let other_method:core::result::Result<Item,OtherError> =successful(effects.borrow(),bytes).or(fallback(effects.borrow()));
+    check_other_result(other_method,1,bytes); effects.check();
+}
+fn same_types_and_live_aliases(bytes:[u8]) {
+    let left:core::option::Option<i32> =core::option::Some(1); let right:core::option::Option<i32> =core::option::Some(2);
+    assert(core::option::and<i32,i32>(left,right).unwrap()==2 && left.and(right).unwrap()==2 && left.unwrap()==1 && right.unwrap()==2);
+    let first:core::result::Result<i32,u64> =core::result::Ok(1); let next:core::result::Result<i32,u64> =core::result::Ok(2);
+    assert(core::result::and<i32,u64,i32>(first,next).unwrap()==2 && first.and(next).unwrap()==2 && first.unwrap()==1 && next.unwrap()==2);
+    let failed_first:core::result::Result<i32,u64> =core::result::Err(18446744073709551615); let failed_next:core::result::Result<i32,u64> =core::result::Err(4294967297);
+    assert(core::result::or<i32,u64,u64>(failed_first,failed_next).unwrap_err()==4294967297 && failed_first.or(failed_next).unwrap_err()==4294967297);
+    assert(failed_first.unwrap_err()==18446744073709551615 && failed_next.unwrap_err()==4294967297);
+    let some_false:core::option::Option<bool> =core::option::Some(false);
+    let bool_output:core::option::Option<bool> =left.and(some_false); assert(bool_output.is_some() && !bool_output.unwrap());
+    let empty_inner:core::option::Option<bool> =core::option::None(); let present_empty:core::option::Option<core::option::Option<bool>> =core::option::Some(empty_inner);
+    let nested_output:core::option::Option<core::option::Option<bool>> =left.and(present_empty); assert(nested_output.is_some() && nested_output.unwrap().is_none());
+    let original:Item=item(0,bytes); let input:core::result::Result<Item,Fault> =core::result::Ok(original);
+    let wrapped:core::option::Option<core::result::Result<Item,Fault>> =core::option::Some(input);
+    let transposed:core::result::Result<core::option::Option<Item>,Fault> =wrapped.transpose();
+    let selected:Item=transposed.unwrap().unwrap();
+    bytes[2]=73; assert(selected.bytes[2]==73 && original.bytes[2]==73);
+    selected.bytes[1]=91; assert(bytes[1]==91 && original.bytes[1]==91 && input.unwrap().bytes[1]==91);
+    assert(core::mem::slice_stride(selected.bytes)==core::mem::slice_stride(bytes)); bytes[1]=128; bytes[2]=255;
+    check_item(original,0,bytes); check_item(selected,0,bytes); check_item(wrapped.unwrap().unwrap(),0,bytes);
+}
+struct Unit {}
+fn zero_sized_payloads_and_errors() {
+    let present:core::option::Option<Unit> =core::option::Some(Unit {});
+    let absent:core::option::Option<Unit> =core::option::None();
+    assert(core::option::and<Unit,Unit>(present,present).is_some() && present.and(absent).is_none());
+    let nested:core::option::Option<core::option::Option<Unit>> =core::option::Some(present);
+    assert(core::option::flatten<Unit>(nested).is_some() && nested.flatten().is_some());
+    let ok:core::result::Result<Unit,Unit> =core::result::Ok(Unit {});
+    let error:core::result::Result<Unit,Unit> =core::result::Err(Unit {});
+    assert(core::result::and<Unit,Unit,Unit>(ok,error).is_err() && ok.and(error).is_err());
+    assert(core::result::or<Unit,Unit,Unit>(ok,error).is_ok() && error.or(ok).is_ok());
+    let nested_result:core::result::Result<core::result::Result<Unit,Unit>,Unit> =core::result::Ok(error);
+    assert(core::result::flatten<Unit,Unit>(nested_result).is_err() && nested_result.flatten().is_err());
+    let option_result:core::option::Option<core::result::Result<Unit,Unit>> =core::option::Some(error);
+    assert(core::option::transpose_to_result<Unit,Unit>(option_result).is_err() && option_result.transpose().is_err());
+    let result_option:core::result::Result<core::option::Option<Unit>,Unit> =core::result::Err(Unit {});
+    let free:core::option::Option<core::result::Result<Unit,Unit>> =core::option::transpose_to_option<Unit,Unit>(result_option);
+    let method:core::option::Option<core::result::Result<Unit,Unit>> =result_option.transpose();
+    assert(free.is_some() && free.unwrap().is_err() && method.is_some() && method.unwrap().is_err());
+    assert(present.is_some() && absent.is_none() && ok.is_ok() && error.is_err());
+}
+fn main() -> i32 {
+    let native:[u8;4]=[0,128,255,42]; let words:[i32;1]=[0];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),4);
+    assert(core::mem::slice_stride(native)<0 && core::mem::slice_stride(packed)==1);
+    let layout:i32=0;
+    while (layout<2) {
+        let bytes:[u8]=native; if (layout==1) { bytes=packed; }
+        bytes[0]=0; bytes[1]=128; bytes[2]=255; bytes[3]=42;
+        option_and_table(bytes); result_and_table(bytes); result_or_table(bytes); result_or_layout_tables();
+        flatten_tables(bytes); transpose_tables(bytes); eager_operands(bytes); same_types_and_live_aliases(bytes);
+        assert(bytes[0]==0 && bytes[1]==128 && bytes[2]==255 && bytes[3]==42); layout+=1;
+    }
+    zero_sized_payloads_and_errors();
+    return 0;
+}

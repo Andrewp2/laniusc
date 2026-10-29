@@ -47,15 +47,13 @@ pub fn unwrap_err_or<T, E>(value: Result<T, E>, fallback: E) -> E {
 }
 
 // A successful left value wins; two failures give the fallback's error.
-pub fn or<T, E>(value: Result<T, E>, fallback: Result<T, E>) -> Result<T, E> {
-    if (is_ok(value)) { return value; }
-    return fallback;
+pub fn or<T,E,F>(value: Result<T,E>, fallback: Result<T,F>) -> Result<T,F> {
+    return match(value) { Ok(inner)->Ok(inner), Err(_)->fallback };
 }
 
 // Success gives `next`; a failed left value keeps its error.
-pub fn and<T, E>(value: Result<T, E>, next: Result<T, E>) -> Result<T, E> {
-    if (is_ok(value)) { return next; }
-    return value;
+pub fn and<T,E,U>(value: Result<T,E>, next: Result<U,E>) -> Result<U,E> {
+    return match(value) { Ok(_)->next, Err(error)->Err(error) };
 }
 
 pub impl<T, E> Result<T, E> {
@@ -91,15 +89,20 @@ pub impl<T, E> Result<T, E> {
         return match (self) { Ok(_) -> fallback, Err(error) -> error };
     }
 
-    pub fn or(self, fallback: Result<T, E>) -> Result<T, E> {
-        let successful: bool = match (self) { Ok(_) -> true, Err(_) -> false };
-        if (successful) { return self; }
-        return fallback;
+    pub fn or<F>(self, fallback: Result<T,F>) -> Result<T,F> {
+        return match(self) { Ok(inner)->Ok(inner), Err(_)->fallback };
     }
 
-    pub fn and(self, next: Result<T, E>) -> Result<T, E> {
-        let successful: bool = match (self) { Ok(_) -> true, Err(_) -> false };
-        if (successful) { return next; }
-        return self;
+    pub fn and<U>(self, next: Result<U,E>) -> Result<U,E> {
+        return match(self) { Ok(_)->next, Err(error)->Err(error) };
     }
+}
+
+// Outer success selects the inner result; outer failure preserves its error.
+// Payloads remain shallow copies: no allocation, clone or cleanup is implied.
+pub fn flatten<T,E>(value:Result<Result<T,E>,E>) -> Result<T,E> {
+    return match(value) { Ok(inner)->inner, Err(error)->Err(error) };
+}
+pub impl<T,E> Result<Result<T,E>,E> {
+    pub fn flatten(self) -> Result<T,E> { return core::result::flatten<T,E>(self); }
 }

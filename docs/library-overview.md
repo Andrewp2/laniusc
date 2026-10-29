@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[eager outcome-composition increment](stdlib-outcome-composition.md) widens
+Option/Result selection across payload or error types and adds Result
+flattening and both transpose directions. All four specialized methods pass
+native admission; broader contracts and the 2,180-case independent model
+also pass. One selected existing Result-method regression passes separately.
+Shallow copying, eager operands, original error identity and manual cleanup
+remain explicit. All five new library tests and four optional-sum application
+groups/98 cases pass, with three selected old regressions and CPU inventory
+separate. This finite native Linux x86_64 increment is accepted. The preceding
 [native numeric byte-order increment](stdlib-native-endian.md) adds 24
 concrete u64/signed/IEEE-float functions to `core::endian`, bringing its public
 surface to 36 functions. Complete logical-field admission, exact fallback
@@ -202,6 +211,38 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Eager outcome composition.**
+
+The [composition guide](stdlib-outcome-composition.md) specifies type-changing
+Option `and`, Result `and`/`or`, nested flattening and both optional/fallible
+transpose directions. Result `and` retains one error type; Result `or` retains
+one success type. Both transpose functions and receiver extensions live in
+Option's existing conversion home, avoiding a reverse Result import. All
+operands are evaluated before selection; shallow copying creates no cleanup
+authority for selected or discarded resource owners.
+
+Specialized-method admission passes one native test in 4.87s. The full
+contract tables pass one test in 6.81s, and the independent model passes one
+test in 6.94s with 2,180 cases across nine operations, free/method flavors,
+exact payload bits and preserved caller inputs. One existing Result-method
+test passes nine payload combinations in 9.64s, separately from the new
+surface. One owner/memory test passes in 7.28s with six records/twelve actual
+backings, seven zero-host-call pure phases and twelve exact releases.
+The real [optional-sum application](stdlib-optional-sum.md) passes four groups
+with 98 process cases across model 33/7.26s and CLI 17, rejection 30, I/O
+18/8.02s. Five selected OOM sites, a real ten-byte output prefix followed by
+EFBIG, required-EOF failure before publication and bounded interruption
+controls retain their finite scopes. The selected Option regression passes
+one test/three old fixtures in 6.86s. Six focused new typed-call rejections
+pass one test in 7.71s; eight old Result type rejections pass a separate test
+in 6.72s. CPU surface inventory passes one test in 0.01s with runtime tests
+filtered; it establishes coverage bookkeeping. All five new library tests
+and four application groups pass. This selected increment is accepted.
+Evidence
+is selected native Linux x86_64 CPU output from the GPU compiler, without a
+device-runtime, automatic-ownership or general generic-completeness claim.
+Earlier Option/Result receipts retain their historical source/API scope.
 
 **Native numeric byte order.**
 

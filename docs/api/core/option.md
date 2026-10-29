@@ -8,11 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
+Option and<T,U> selects an eagerly supplied Option<U>; the existing Option flatten also has a specialized nested method. Both public transpose functions and both transpose receiver extensions live in core::option, including Result<Option<T>,E>.transpose, so Result does not import Option. None, success and error remain distinct. These operations copy shallow payloads without allocation, callbacks, host services, numeric conversion or cleanup; owners in selected and discarded inputs retain their existing manual cleanup authority. Native Linux x86_64 specialized-method admission passes one test in 4.87s, broader contracts one in 6.81s and the independent model one in 6.94s (2180 cases/nine operations/free and method flavors). One selected old Result-method regression passes nine payload combinations in 9.64s separately. One owner/memory test passes in 7.28s with six records/twelve actual backings, seven zero-host-call pure phases and twelve exact releases. The real optional-sum application passes four groups/98 native cases (model 33/7.26s; CLI 17, rejection 30 and I/O 18/8.02s), including five reached OOM sites and a genuine ten-byte write prefix before EFBIG. One selected Option regression passes three existing fixtures in 6.86s. Six focused new typed-call rejections pass one test in 7.71s, and eight old Result type rejections pass a separate test in 6.72s. CPU surface inventory passes one test in 0.01s with runtime tests filtered; this is bookkeeping. All five new library tests and four application groups pass; this finite native Linux x86_64 increment is accepted. Earlier receipts do not establish these added signatures or freshly revalidate old compiler reductions; no automatic ownership, arbitrary generic completeness, GPU-device or proof claim follows.
+
 ## Contract and evidence guides
 
 - [stdlib-option](../../stdlib-option.md)
+- [stdlib-outcome-composition](../../stdlib-outcome-composition.md)
+- [stdlib-optional-sum](../../stdlib-optional-sum.md)
 
-Declaration counts: enum: 1; function: 12; impl: 1; method: 9; variant: 2.
+Declaration counts: enum: 1; function: 14; impl: 4; method: 12; variant: 2.
 
 ## Declared imports
 
@@ -105,12 +109,14 @@ pub fn or<T>(value: Option<T>, fallback: Option<T>) -> Option<T>
 [Source line 42](../../../stdlib/core/option.lani#L42)
 
 ```lanius
-pub fn and<T>(value: Option<T>, next: Option<T>) -> Option<T>
+pub fn and<T,U>(value: Option<T>, next: Option<U>) -> Option<U>
 ```
+
+Eager cross-type selection: Some(_) selects next: Option<U>; None returns None<U>. Both arguments are evaluated before the call, with no promised evaluation order. No allocation or discarded-owner cleanup is implied.
 
 ### function: xor
 
-[Source line 48](../../../stdlib/core/option.lani#L48)
+[Source line 49](../../../stdlib/core/option.lani#L49)
 
 ```lanius
 pub fn xor<T>(value: Option<T>, right: Option<T>) -> Option<T>
@@ -118,15 +124,17 @@ pub fn xor<T>(value: Option<T>, right: Option<T>) -> Option<T>
 
 ### function: flatten
 
-[Source line 60](../../../stdlib/core/option.lani#L60)
+[Source line 61](../../../stdlib/core/option.lani#L61)
 
 ```lanius
 pub fn flatten<T>(value: Option<Option<T>>) -> Option<T>
 ```
 
+Removes one Option layer: Some(inner) returns inner, and outer None returns None. Also available as a specialized Option<Option<T>> method; payload copies remain shallow.
+
 ### function: ok_or
 
-[Source line 65](../../../stdlib/core/option.lani#L65)
+[Source line 66](../../../stdlib/core/option.lani#L66)
 
 ```lanius
 pub fn ok_or<T, E>(value: Option<T>, error: E) -> core::result::Result<T, E>
@@ -134,7 +142,7 @@ pub fn ok_or<T, E>(value: Option<T>, error: E) -> core::result::Result<T, E>
 
 ### function: ok
 
-[Source line 73](../../../stdlib/core/option.lani#L73)
+[Source line 74](../../../stdlib/core/option.lani#L74)
 
 ```lanius
 pub fn ok<T, E>(value: core::result::Result<T, E>) -> Option<T>
@@ -142,17 +150,39 @@ pub fn ok<T, E>(value: core::result::Result<T, E>) -> Option<T>
 
 ### function: err
 
-[Source line 79](../../../stdlib/core/option.lani#L79)
+[Source line 80](../../../stdlib/core/option.lani#L80)
 
 ```lanius
 pub fn err<T, E>(value: core::result::Result<T, E>) -> Option<E>
 ```
 
+### function: transpose_to_result
+
+[Source line 139](../../../stdlib/core/option.lani#L139)
+
+```lanius
+pub fn transpose_to_result<T,E>(value:Option<core::result::Result<T,E>>)
+    -> core::result::Result<Option<T>,E>
+```
+
+Maps None to Ok(None), Some(Ok(v)) to Ok(Some(v)), and Some(Err(e)) to Err(e), preserving payload/error bits. The matching specialized method lives in core::option.
+
+### function: transpose_to_option
+
+[Source line 159](../../../stdlib/core/option.lani#L159)
+
+```lanius
+pub fn transpose_to_option<T,E>(value:core::result::Result<Option<T>,E>)
+    -> Option<core::result::Result<T,E>>
+```
+
+Maps Ok(None) to None, Ok(Some(v)) to Some(Ok(v)), and Err(e) to Some(Err(e)). Import core::option for the Result<Option<T>,E>.transpose extension; no reverse Result import or extra cleanup authority is introduced.
+
 ## Implementation blocks and public methods
 
-### impl at line 84
+### impl at line 85
 
-[Source line 84](../../../stdlib/core/option.lani#L84)
+[Source line 85](../../../stdlib/core/option.lani#L85)
 
 ```lanius
 pub impl<T> Option<T>
@@ -160,7 +190,7 @@ pub impl<T> Option<T>
 
 #### method: is_some
 
-[Source line 85](../../../stdlib/core/option.lani#L85)
+[Source line 86](../../../stdlib/core/option.lani#L86)
 
 ```lanius
 pub fn is_some(self) -> bool
@@ -168,7 +198,7 @@ pub fn is_some(self) -> bool
 
 #### method: is_none
 
-[Source line 89](../../../stdlib/core/option.lani#L89)
+[Source line 90](../../../stdlib/core/option.lani#L90)
 
 ```lanius
 pub fn is_none(self) -> bool
@@ -176,7 +206,7 @@ pub fn is_none(self) -> bool
 
 #### method: contains
 
-[Source line 93](../../../stdlib/core/option.lani#L93)
+[Source line 94](../../../stdlib/core/option.lani#L94)
 
 ```lanius
 pub fn contains(self, expected: T) -> bool where T: core::cmp::PartialEq<T>
@@ -184,7 +214,7 @@ pub fn contains(self, expected: T) -> bool where T: core::cmp::PartialEq<T>
 
 #### method: unwrap
 
-[Source line 97](../../../stdlib/core/option.lani#L97)
+[Source line 98](../../../stdlib/core/option.lani#L98)
 
 ```lanius
 pub fn unwrap(self) -> T
@@ -192,7 +222,7 @@ pub fn unwrap(self) -> T
 
 #### method: unwrap_or
 
-[Source line 101](../../../stdlib/core/option.lani#L101)
+[Source line 102](../../../stdlib/core/option.lani#L102)
 
 ```lanius
 pub fn unwrap_or(self, fallback: T) -> T
@@ -200,7 +230,7 @@ pub fn unwrap_or(self, fallback: T) -> T
 
 #### method: or
 
-[Source line 105](../../../stdlib/core/option.lani#L105)
+[Source line 106](../../../stdlib/core/option.lani#L106)
 
 ```lanius
 pub fn or(self, fallback: Option<T>) -> Option<T>
@@ -208,15 +238,15 @@ pub fn or(self, fallback: Option<T>) -> Option<T>
 
 #### method: and
 
-[Source line 111](../../../stdlib/core/option.lani#L111)
+[Source line 112](../../../stdlib/core/option.lani#L112)
 
 ```lanius
-pub fn and(self, next: Option<T>) -> Option<T>
+pub fn and<U>(self, next: Option<U>) -> Option<U>
 ```
 
 #### method: xor
 
-[Source line 116](../../../stdlib/core/option.lani#L116)
+[Source line 117](../../../stdlib/core/option.lani#L117)
 
 ```lanius
 pub fn xor(self, right: Option<T>) -> Option<T>
@@ -224,8 +254,56 @@ pub fn xor(self, right: Option<T>) -> Option<T>
 
 #### method: ok_or
 
-[Source line 127](../../../stdlib/core/option.lani#L127)
+[Source line 128](../../../stdlib/core/option.lani#L128)
 
 ```lanius
 pub fn ok_or<E>(self, error: E) -> core::result::Result<T, E>
+```
+
+### impl at line 179
+
+[Source line 179](../../../stdlib/core/option.lani#L179)
+
+```lanius
+pub impl<T> Option<Option<T>>
+```
+
+#### method: flatten
+
+[Source line 180](../../../stdlib/core/option.lani#L180)
+
+```lanius
+pub fn flatten(self) -> Option<T>
+```
+
+### impl at line 182
+
+[Source line 182](../../../stdlib/core/option.lani#L182)
+
+```lanius
+pub impl<T,E> Option<core::result::Result<T,E>>
+```
+
+#### method: transpose
+
+[Source line 183](../../../stdlib/core/option.lani#L183)
+
+```lanius
+pub fn transpose(self) -> core::result::Result<Option<T>,E>
+```
+
+### impl at line 189
+
+[Source line 189](../../../stdlib/core/option.lani#L189)
+
+```lanius
+pub impl<T,E> core::result::Result<Option<T>,E>
+```
+
+#### method: transpose
+
+[Source line 190](../../../stdlib/core/option.lani#L190)
+
+```lanius
+pub fn transpose(self) -> Option<core::result::Result<T,E>>
 ```

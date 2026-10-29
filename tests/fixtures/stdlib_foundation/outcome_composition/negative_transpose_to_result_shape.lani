@@ -1,0 +1,8 @@
+module app::main;
+import core::option;
+import core::result;
+fn main() -> i32 {
+    let value:core::option::Option<i32> =core::option::Some(17);
+    let rejected:core::result::Result<core::option::Option<i32>,u64> =core::option::transpose_to_result<i32,u64>(value); // rejected_outcome_shape
+    return 0;
+}

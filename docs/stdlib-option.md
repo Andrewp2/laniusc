@@ -20,8 +20,9 @@ fn pair_or(value: core::option::Option<Pair>, fallback: Pair) -> Pair {
 
 Every operation takes the option by value, so the caller's copy is never
 changed. Each exists as a free function, `core::option::is_some(value)`, and
-as a method, `value.is_some()`, except `flatten`, `ok` and `err`, which are
-free functions only.
+as a method, `value.is_some()`, except `ok` and `err`, which remain free
+functions. Nested options also have specialized `flatten` and `transpose`
+methods; both transpose receiver extensions live in `core::option`.
 
 ## Operations
 
@@ -33,18 +34,42 @@ free functions only.
 | `unwrap(value)` | The payload; panics (SIGILL) on `None`. |
 | `unwrap_or(value, fallback)` | The payload, or `fallback` on `None`. Never panics. |
 | `or(value, fallback)` | `value` when present, otherwise `fallback`. |
-| `and(value, next)` | `next` when `value` is present, otherwise `None`. |
+| `and<T,U>(value, next)` | Eagerly selects `next: Option<U>` when `value: Option<T>` is present, otherwise `None` of the output type. |
 | `xor(value, right)` | The only present input; `None` when both or neither are present. |
 | `flatten(value)` | `Some(Some(v))` gives `Some(v)`; `Some(None)` and `None` give `None`. |
 | `ok_or(value, error)` | `Ok(payload)`, or `Err(error)` on `None`, as a `core::result::Result<T, E>`. |
 | `ok(result)`, `err(result)` | The success value or the error of a `Result<T, E>` as an option. |
+| `transpose_to_result(value)` | `None` becomes `Ok(None)`; `Some(Ok(v))` becomes `Ok(Some(v))`; `Some(Err(e))` becomes `Err(e)`. |
+| `transpose_to_option(value)` | The inverse: `Ok(None)` becomes `None`, `Ok(Some(v))` becomes `Some(Ok(v))`, and `Err(e)` becomes `Some(Err(e))`. |
 
 `core::cmp` implements `PartialEq` for every integer width, `bool`, `char`, `f32`, `f64`,
 `ptr`, and the wide integers in `core::wide_i64` and `core::wide_u64`. A user
 type gets `contains` by implementing `core::cmp::PartialEq` for itself. `f32`
 equality is IEEE: `Some(NaN)` contains nothing, and `0.0` matches `-0.0`.
 
+## Eager composition and nested methods
+
+The [outcome-composition guide](stdlib-outcome-composition.md) specifies
+type-changing `and`, nested `.flatten()` and both `.transpose()` directions.
+All operands are evaluated before selection, with no promised evaluation
+order. These operations copy shallow values, introduce no allocation or
+cleanup authority and leave owners in selected and discarded inputs under
+the caller's existing cleanup policy. Import `core::option` for the
+`Result<Option<T>,E>.transpose()` extension as well.
+
+The four specialized methods pass small native admission; broader composition
+contracts, the independent model and owner/memory observations also pass.
+All four real optional-sum application groups also pass 98 cases, and six
+focused type rejections pass separately. This selected composition increment
+is accepted on native Linux x86_64; the new guide records the selected
+regressions and CPU inventory separately. Earlier receipts below do not cover
+the added signatures.
+
 ## Targets and limits
+
+The scope and reported boundaries below predate the composition increment;
+they are not fresh reproductions or evidence for its added signatures. The
+new guide records current selected checks separately.
 
 - x86_64 Linux runs every operation for every payload type above, user
   records, and nested options.

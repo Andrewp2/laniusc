@@ -1,6 +1,6 @@
 // Optional values. A stored false is Some(false), not None. Every operation
-// takes the option by value and leaves the caller's copy unchanged. Each one
-// exists as a free function and as a method. contains needs PartialEq on the
+// takes the option by value and leaves the caller's copy unchanged. Free
+// functions and methods select shallow values. contains needs PartialEq on the
 // payload. unwrap panics on None; unwrap_or takes an explicit fallback and
 // never panics. See docs/stdlib-option.md.
 module core::option;
@@ -39,9 +39,10 @@ pub fn or<T>(value: Option<T>, fallback: Option<T>) -> Option<T> {
     return fallback;
 }
 
-pub fn and<T>(value: Option<T>, next: Option<T>) -> Option<T> {
+pub fn and<T,U>(value: Option<T>, next: Option<U>) -> Option<U> {
     if (is_some(value)) { return next; }
-    return value;
+    let absent:Option<U> =None();
+    return absent;
 }
 
 // Exactly one present value survives; two or none give None.
@@ -108,8 +109,8 @@ pub impl<T> Option<T> {
         return fallback;
     }
 
-    pub fn and(self, next: Option<T>) -> Option<T> {
-        let absent: Option<T> = None();
+    pub fn and<U>(self, next: Option<U>) -> Option<U> {
+        let absent: Option<U> = None();
         return match (self) { Some(_) -> next, None -> absent };
     }
 
@@ -129,5 +130,64 @@ pub impl<T> Option<T> {
             Some(inner) -> core::result::Ok(inner),
             None -> core::result::Err(error),
         };
+    }
+}
+
+// Eager shape conversions select shallow payloads without allocation, clone,
+// destruction or a second cleanup authority. Callers manage the lifetime and
+// cleanup of owners in selected and discarded input copies.
+pub fn transpose_to_result<T,E>(value:Option<core::result::Result<T,E>>)
+    -> core::result::Result<Option<T>,E> {
+    let absent:Option<T> =None();
+    return match(value) {
+        Some(inner)->transpose_result_inner<T,E>(inner),
+        None->core::result::Ok(absent),
+    };
+}
+fn transpose_result_inner<T,E>(value:core::result::Result<T,E>)
+    -> core::result::Result<Option<T>,E> {
+    return match(value) {
+        core::result::Ok(inner)->transpose_result_present<T,E>(inner),
+        core::result::Err(error)->core::result::Err(error),
+    };
+}
+fn transpose_result_present<T,E>(value:T) -> core::result::Result<Option<T>,E> {
+    let present:Option<T> =Some(value);
+    return core::result::Ok(present);
+}
+
+pub fn transpose_to_option<T,E>(value:core::result::Result<Option<T>,E>)
+    -> Option<core::result::Result<T,E>> {
+    return match(value) {
+        core::result::Ok(inner)->transpose_option_inner<T,E>(inner),
+        core::result::Err(error)->transpose_option_error<T,E>(error),
+    };
+}
+fn transpose_option_inner<T,E>(value:Option<T>) -> Option<core::result::Result<T,E>> {
+    let absent:Option<core::result::Result<T,E>> =None();
+    return match(value) { Some(inner)->transpose_option_present<T,E>(inner), None->absent };
+}
+fn transpose_option_present<T,E>(value:T) -> Option<core::result::Result<T,E>> {
+    let successful:core::result::Result<T,E> =core::result::Ok(value);
+    return Some(successful);
+}
+fn transpose_option_error<T,E>(error:E) -> Option<core::result::Result<T,E>> {
+    let failed:core::result::Result<T,E> =core::result::Err(error);
+    return Some(failed);
+}
+
+pub impl<T> Option<Option<T>> {
+    pub fn flatten(self) -> Option<T> { return core::option::flatten<T>(self); }
+}
+pub impl<T,E> Option<core::result::Result<T,E>> {
+    pub fn transpose(self) -> core::result::Result<Option<T>,E> {
+        return core::option::transpose_to_result<T,E>(self);
+    }
+}
+// Keep both conversion receivers here so Result need not import Option and
+// create a two-module cycle. Import core::option to include this extension.
+pub impl<T,E> core::result::Result<Option<T>,E> {
+    pub fn transpose(self) -> Option<core::result::Result<T,E>> {
+        return core::option::transpose_to_option<T,E>(self);
     }
 }

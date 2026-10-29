@@ -1,0 +1,161 @@
+// Each original Owned record below retains one explicit cleanup authority.
+// Outcome inputs/results are shallow aliases, never independent new owners.
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::f32;
+import core::f64;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::io;
+
+struct Owned<T> { id:i32, text:alloc::string::String, items:alloc::vec::Vec<T>, bytes:core::slice::View<u8>, exact:f64, flag:core::option::Option<bool> }
+struct Fault<T> { payload:T, code:u64 }
+type A = Owned<i32>;
+type B = Owned<u64>;
+type E = Fault<Owned<u8>>;
+type F = Fault<Owned<f32>>;
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn make<T>(id:i32,items:[T],view:core::slice::View<u8>) -> Owned<T> {
+    let bytes:[u8;6]=[79,(48+id) as u8,0,194,162,(65+id) as u8];
+    let text:alloc::string::String=alloc::string::from_utf8(bytes,6).unwrap();
+    let values:alloc::vec::Vec<T> =alloc::vec::from_view<T>(core::slice::view<T>(items,3).unwrap()).unwrap();
+    return Owned { id:id,text:text,items:values,bytes:view,exact:core::f64::from_bits(18442240474082181121+(id as u64)),flag:core::option::Some(id%2==0) };
+}
+fn base<T>(value:Owned<T>,original:Owned<T>) {
+    assert(value.id==original.id && value.text.bytes.storage==original.text.bytes.storage && value.items.storage==original.items.storage);
+    assert(value.text.byte_len()==6 && value.items.len()==3);
+    assert(value.items.capacity()==original.items.capacity() && value.items.capacity()>=value.items.len());
+    assert(value.text.byte_at(0).unwrap()==79 && value.text.byte_at(1).unwrap()==(48+value.id) as u8);
+    assert(value.text.byte_at(2).unwrap()==0 && value.text.byte_at(3).unwrap()==194 && value.text.byte_at(4).unwrap()==162 && value.text.byte_at(5).unwrap()==(65+value.id) as u8);
+    assert(core::f64::to_bits(value.exact)==18442240474082181121+(value.id as u64));
+    assert(value.flag.is_some() && value.flag.unwrap()==(value.id%2==0));
+    assert(value.bytes.start==original.bytes.start && value.bytes.length==original.bytes.length && value.bytes.start==1 && value.bytes.len()==3);
+    assert(core::mem::slice_stride(value.bytes.values)==core::mem::slice_stride(original.bytes.values));
+    assert(value.bytes.get(0).unwrap()==128 && value.bytes.get(1).unwrap()==255 && value.bytes.get(2).unwrap()==7);
+    assert(value.bytes.values[0]==99 && value.bytes.values[4]==90);
+}
+fn a(value:A,original:A) { base<i32>(value,original); assert(value.items.at(0)==-2147483648 && value.items.at(1)==0 && value.items.at(2)==2147483647); }
+fn b(value:B,original:B) { base<u64>(value,original); assert(value.items.at(0)==18446744073709551615 && value.items.at(1)==4294967297 && value.items.at(2)==9223372036854775808); }
+fn e(value:E,original:E) { base<u8>(value.payload,original.payload); assert(value.code==original.code && value.code==4294967296+(value.payload.id as u64)); assert(value.payload.items.at(0)==0 && value.payload.items.at(1)==128 && value.payload.items.at(2)==255); }
+fn f(value:F,original:F) {
+    base<f32>(value.payload,original.payload); assert(value.code==original.code && value.code==18446744073709551615);
+    assert(core::f32::to_bits(value.payload.items.at(0))==2139095331 && core::f32::to_bits(value.payload.items.at(1))==2147483648 && core::f32::to_bits(value.payload.items.at(2))==1);
+}
+fn destroy<T>(value:Owned<T>) { value.text.destroy(); value.items.destroy(); }
+fn option_and(left:core::option::Option<A>,right:core::option::Option<B>,method:bool) -> core::option::Option<B> {
+    if(method) { return left.and(right); } return core::option::and<A,B>(left,right);
+}
+fn result_and(left:core::result::Result<A,E>,right:core::result::Result<B,E>,method:bool) -> core::result::Result<B,E> {
+    if(method) { return left.and(right); } return core::result::and<A,E,B>(left,right);
+}
+fn result_or(left:core::result::Result<A,E>,right:core::result::Result<A,F>,method:bool) -> core::result::Result<A,F> {
+    if(method) { return left.or(right); } return core::result::or<A,E,F>(left,right);
+}
+fn optional_flat(value:core::option::Option<core::option::Option<A>>,method:bool) -> core::option::Option<A> {
+    if(method) { return value.flatten(); } return core::option::flatten<A>(value);
+}
+fn result_flat(value:core::result::Result<core::result::Result<A,E>,E>,method:bool) -> core::result::Result<A,E> {
+    if(method) { return value.flatten(); } return core::result::flatten<A,E>(value);
+}
+fn to_result(value:core::option::Option<core::result::Result<A,E>>,method:bool) -> core::result::Result<core::option::Option<A>,E> {
+    if(method) { return value.transpose(); } return core::option::transpose_to_result<A,E>(value);
+}
+fn to_option(value:core::result::Result<core::option::Option<B>,F>,method:bool) -> core::option::Option<core::result::Result<B,F>> {
+    if(method) { return value.transpose(); } return core::option::transpose_to_option<B,F>(value);
+}
+fn main() -> i32 {
+    let native:[u8;5]=[99,128,255,7,90]; assert(core::mem::slice_stride(native)<0);
+    let words:[i32;2]=[0;2]; let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),8);
+    packed[0]=99; packed[1]=128; packed[2]=255; packed[3]=7; packed[4]=90; assert(core::mem::slice_stride(packed)==1);
+    let native_view:core::slice::View<u8> =core::slice::view_range<u8>(native,1,3).unwrap();
+    let packed_view:core::slice::View<u8> =core::slice::view_range<u8>(packed,1,3).unwrap();
+    let signed:[i32;3]=[-2147483648,0,2147483647]; let wide:[u64;3]=[18446744073709551615,4294967297,9223372036854775808]; let bytes:[u8;3]=[0,128,255];
+    let floats:[f32;3]=[core::f32::from_bits(2139095331),core::f32::from_bits(2147483648),core::f32::from_bits(1)];
+    let first:A=make<i32>(1,signed,native_view); let second:B=make<u64>(2,wide,packed_view);
+    let early:E=Fault { payload:make<u8>(3,bytes,native_view),code:4294967299 };
+    let late:E=Fault { payload:make<u8>(4,bytes,packed_view),code:4294967300 };
+    let changed:F=Fault { payload:make<f32>(5,floats,native_view),code:18446744073709551615 };
+    let fallback:A=make<i32>(6,signed,packed_view);
+    assert(first.items.storage!=fallback.items.storage && first.text.bytes.storage!=fallback.text.bytes.storage);
+    assert(early.payload.items.storage!=late.payload.items.storage && early.payload.text.bytes.storage!=late.payload.text.bytes.storage);
+    let method:i32=0;
+    mark(80);
+    let left_option:core::option::Option<A> =core::option::Some(first); let no_left:core::option::Option<A> =core::option::None();
+    let right_option:core::option::Option<B> =core::option::Some(second); let no_right:core::option::Option<B> =core::option::None();
+    while(method<2) {
+        b(option_and(left_option,right_option,method==1).unwrap(),second);
+        assert(option_and(no_left,right_option,method==1).is_none() && option_and(left_option,no_right,method==1).is_none());
+        a(left_option.unwrap(),first); b(right_option.unwrap(),second); assert(no_left.is_none() && no_right.is_none()); method+=1;
+    }
+    mark(112); mark(80); method=0;
+    let success:core::result::Result<A,E> =core::result::Ok(first); let failure:core::result::Result<A,E> =core::result::Err(early);
+    let next:core::result::Result<B,E> =core::result::Ok(second); let next_error:core::result::Result<B,E> =core::result::Err(late);
+    while(method<2) {
+        b(result_and(success,next,method==1).unwrap(),second); e(result_and(success,next_error,method==1).unwrap_err(),late);
+        e(result_and(failure,next,method==1).unwrap_err(),early); e(result_and(failure,next_error,method==1).unwrap_err(),early);
+        a(success.unwrap(),first); e(failure.unwrap_err(),early); b(next.unwrap(),second); e(next_error.unwrap_err(),late); method+=1;
+    }
+    mark(112); mark(80); method=0;
+    let alternative:core::result::Result<A,F> =core::result::Ok(fallback); let alternative_error:core::result::Result<A,F> =core::result::Err(changed);
+    while(method<2) {
+        a(result_or(success,alternative,method==1).unwrap(),first); a(result_or(success,alternative_error,method==1).unwrap(),first);
+        a(result_or(failure,alternative,method==1).unwrap(),fallback); f(result_or(failure,alternative_error,method==1).unwrap_err(),changed);
+        a(success.unwrap(),first); e(failure.unwrap_err(),early); a(alternative.unwrap(),fallback); f(alternative_error.unwrap_err(),changed); method+=1;
+    }
+    mark(112); mark(80); method=0;
+    let nested_option:core::option::Option<core::option::Option<A>> =core::option::Some(left_option);
+    let hollow_option:core::option::Option<core::option::Option<A>> =core::option::Some(no_left);
+    let absent_option:core::option::Option<core::option::Option<A>> =core::option::None();
+    while(method<2) {
+        a(optional_flat(nested_option,method==1).unwrap(),first);
+        assert(optional_flat(hollow_option,method==1).is_none() && optional_flat(absent_option,method==1).is_none());
+        a(nested_option.unwrap().unwrap(),first); assert(hollow_option.unwrap().is_none() && absent_option.is_none()); method+=1;
+    }
+    mark(112); mark(80); method=0;
+    let nested_success:core::result::Result<core::result::Result<A,E>,E> =core::result::Ok(success);
+    let inner_failure:core::result::Result<core::result::Result<A,E>,E> =core::result::Ok(failure);
+    let outer_failure:core::result::Result<core::result::Result<A,E>,E> =core::result::Err(late);
+    while(method<2) {
+        a(result_flat(nested_success,method==1).unwrap(),first); e(result_flat(inner_failure,method==1).unwrap_err(),early); e(result_flat(outer_failure,method==1).unwrap_err(),late);
+        a(nested_success.unwrap().unwrap(),first); e(inner_failure.unwrap().unwrap_err(),early); e(outer_failure.unwrap_err(),late); method+=1;
+    }
+    mark(112); mark(80); method=0;
+    let optional_success:core::option::Option<core::result::Result<A,E>> =core::option::Some(success);
+    let optional_failure:core::option::Option<core::result::Result<A,E>> =core::option::Some(failure);
+    let optional_absent:core::option::Option<core::result::Result<A,E>> =core::option::None();
+    while(method<2) {
+        let converted:core::result::Result<core::option::Option<A>,E> =to_result(optional_success,method==1);
+        a(converted.unwrap().unwrap(),first);
+        a(core::option::transpose_to_option<A,E>(converted).unwrap().unwrap(),first); a(converted.transpose().unwrap().unwrap(),first);
+        let rejected:core::result::Result<core::option::Option<A>,E> =to_result(optional_failure,method==1);
+        e(rejected.unwrap_err(),early); e(core::option::transpose_to_option<A,E>(rejected).unwrap().unwrap_err(),early); e(rejected.transpose().unwrap().unwrap_err(),early);
+        let empty:core::result::Result<core::option::Option<A>,E> =to_result(optional_absent,method==1);
+        assert(empty.unwrap().is_none() && core::option::transpose_to_option<A,E>(empty).is_none() && empty.transpose().is_none());
+        a(optional_success.unwrap().unwrap(),first); e(optional_failure.unwrap().unwrap_err(),early); assert(optional_absent.is_none()); method+=1;
+    }
+    mark(112); mark(80); method=0;
+    let result_success:core::result::Result<core::option::Option<B>,F> =core::result::Ok(right_option);
+    let result_absent:core::result::Result<core::option::Option<B>,F> =core::result::Ok(no_right);
+    let result_failure:core::result::Result<core::option::Option<B>,F> =core::result::Err(changed);
+    while(method<2) {
+        let converted:core::option::Option<core::result::Result<B,F>> =to_option(result_success,method==1);
+        b(converted.unwrap().unwrap(),second);
+        b(core::option::transpose_to_result<B,F>(converted).unwrap().unwrap(),second); b(converted.transpose().unwrap().unwrap(),second);
+        let rejected:core::option::Option<core::result::Result<B,F>> =to_option(result_failure,method==1);
+        f(rejected.unwrap().unwrap_err(),changed); f(core::option::transpose_to_result<B,F>(rejected).unwrap_err(),changed); f(rejected.transpose().unwrap_err(),changed);
+        let empty:core::option::Option<core::result::Result<B,F>> =to_option(result_absent,method==1);
+        assert(empty.is_none() && core::option::transpose_to_result<B,F>(empty).unwrap().is_none() && empty.transpose().unwrap().is_none());
+        b(result_success.unwrap().unwrap(),second); f(result_failure.unwrap_err(),changed); assert(result_absent.unwrap().is_none()); method+=1;
+    }
+    a(first,first); a(fallback,fallback); b(second,second); e(early,early); e(late,late); f(changed,changed);
+    assert(native[0]==99 && native[1]==128 && native[2]==255 && native[3]==7 && native[4]==90);
+    assert(packed[0]==99 && packed[1]==128 && packed[2]==255 && packed[3]==7 && packed[4]==90);
+    mark(112);
+    // End every borrowed alias's use; retire each original actual owner once.
+    destroy<i32>(first); destroy<i32>(fallback); destroy<u64>(second);
+    destroy<u8>(early.payload); destroy<u8>(late.payload); destroy<f32>(changed.payload);
+    mark(68); return 0;
+}

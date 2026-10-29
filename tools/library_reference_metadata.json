@@ -417,8 +417,17 @@
     },
     "core::option": {
       "guides": [
-        "docs/stdlib-option.md"
-      ]
+        "docs/stdlib-option.md",
+        "docs/stdlib-outcome-composition.md",
+        "docs/stdlib-optional-sum.md"
+      ],
+      "note": "Option and<T,U> selects an eagerly supplied Option<U>; the existing Option flatten also has a specialized nested method. Both public transpose functions and both transpose receiver extensions live in core::option, including Result<Option<T>,E>.transpose, so Result does not import Option. None, success and error remain distinct. These operations copy shallow payloads without allocation, callbacks, host services, numeric conversion or cleanup; owners in selected and discarded inputs retain their existing manual cleanup authority. Native Linux x86_64 specialized-method admission passes one test in 4.87s, broader contracts one in 6.81s and the independent model one in 6.94s (2180 cases/nine operations/free and method flavors). One selected old Result-method regression passes nine payload combinations in 9.64s separately. One owner/memory test passes in 7.28s with six records/twelve actual backings, seven zero-host-call pure phases and twelve exact releases. The real optional-sum application passes four groups/98 native cases (model 33/7.26s; CLI 17, rejection 30 and I/O 18/8.02s), including five reached OOM sites and a genuine ten-byte write prefix before EFBIG. One selected Option regression passes three existing fixtures in 6.86s. Six focused new typed-call rejections pass one test in 7.71s, and eight old Result type rejections pass a separate test in 6.72s. CPU surface inventory passes one test in 0.01s with runtime tests filtered; this is bookkeeping. All five new library tests and four application groups pass; this finite native Linux x86_64 increment is accepted. Earlier receipts do not establish these added signatures or freshly revalidate old compiler reductions; no automatic ownership, arbitrary generic completeness, GPU-device or proof claim follows.",
+      "declarations": {
+        "and": "Eager cross-type selection: Some(_) selects next: Option<U>; None returns None<U>. Both arguments are evaluated before the call, with no promised evaluation order. No allocation or discarded-owner cleanup is implied.",
+        "flatten": "Removes one Option layer: Some(inner) returns inner, and outer None returns None. Also available as a specialized Option<Option<T>> method; payload copies remain shallow.",
+        "transpose_to_result": "Maps None to Ok(None), Some(Ok(v)) to Ok(Some(v)), and Some(Err(e)) to Err(e), preserving payload/error bits. The matching specialized method lives in core::option.",
+        "transpose_to_option": "Maps Ok(None) to None, Ok(Some(v)) to Some(Ok(v)), and Err(e) to Some(Err(e)). Import core::option for the Result<Option<T>,E>.transpose extension; no reverse Result import or extra cleanup authority is introduced."
+      }
     },
     "core::ordering": {
       "guides": [
@@ -457,8 +466,16 @@
     },
     "core::result": {
       "guides": [
-        "docs/stdlib-result.md"
-      ]
+        "docs/stdlib-result.md",
+        "docs/stdlib-outcome-composition.md",
+        "docs/stdlib-optional-sum.md"
+      ],
+      "note": "Result and<T,E,U> changes the success type while retaining E; or<T,E,F> changes the error type while retaining T. Both select eager shallow inputs. The new flatten removes one Result layer with one shared error type and also has a specialized method. Both transpose directions and their receiver extensions are defined in core::option; importing core::option includes Result<Option<T>,E>.transpose without a Result-to-Option module cycle. Selection and shape changes introduce no allocation, callback, host service, clone, cleanup or ordinary error; selected/discarded owners retain manual cleanup. Native Linux x86_64 admission, full contracts and the independent 2180-case model pass separately in 4.87s, 6.81s and 6.94s. One selected old Result-method test passes nine payload combinations in 9.64s. One owner/memory test passes in 7.28s with six records/twelve actual backings, seven zero-host-call pure phases and twelve exact releases. The real optional-sum application passes four groups/98 native cases (model 33/7.26s; CLI 17, rejection 30 and I/O 18/8.02s), including five reached OOM sites and a genuine ten-byte write prefix before EFBIG. One selected Option regression passes three existing fixtures in 6.86s. Six focused new typed-call rejections pass one test in 7.71s, and eight old Result type rejections pass a separate test in 6.72s. CPU surface inventory passes one test in 0.01s with runtime tests filtered; this is bookkeeping. All five new library tests and four application groups pass; this finite native Linux x86_64 increment is accepted. Historical receipts keep their source/API scope; no broad generic, automatic ownership, device or proof claim follows.",
+      "declarations": {
+        "or": "Eager fallback with a changed error type: left Ok(T) wins, otherwise selects fallback: Result<T,F>. Inputs share T; output errors come from F. No evaluation-order or lazy-operand promise.",
+        "and": "Eager next selection with a changed success type: left Ok(T) selects next: Result<U,E>, otherwise preserves the left error E. Inputs share E. Discarded resource owners remain caller responsibilities.",
+        "flatten": "Removes one Result layer: outer Ok(inner) returns inner and outer Err(e) preserves e. Both error layers use E; no conversion, panic, allocation or cleanup is introduced. Also available as a specialized nested method."
+      }
     },
     "core::runtime": {
       "guides": [

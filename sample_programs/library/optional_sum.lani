@@ -1,0 +1,159 @@
+// Optional integer records composed through public eager outcomes and transpose.
+module app::main;
+import alloc::io;
+import core::decimal;
+import core::i64;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Summary { present:u64, missing:u64, sum:i64 }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+// Publish one fully staged byte view with a shared attempt budget.
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let wanted:i32 = bytes.length-completed;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,wanted);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > wanted)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("optional_sum: operation failed\n",31),2,8); return status; }
+fn read(input:&alloc::io::Buffer) -> i32 {
+    let source = std::stream::stdin(); let scratch:[u8;4096] = [0;4096]; let calls:i32 = 0;
+    while(true) {
+        if (calls == 8192) { return 2; } calls += 1;
+        let remaining:i32 = 1048576-input.len(); let wanted:i32 = remaining;
+        if (wanted > 4096) { wanted = 4096; }
+        if (wanted == 0) { wanted = 1; }
+        let received:Result<i32,core::io::Error> = source.read(scratch,0,wanted);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let count:i32 = received.unwrap();
+        if ((count < 0) || (count > wanted)) { return 3; }
+        if (count == 0) { return 0; }
+        if (count > remaining) { return 2; }
+        let saved:Result<i32,core::io::Error> = input.write(scratch,0,count);
+        if (saved.is_err()) { return match(saved.unwrap_err()) { core::io::Error::AllocationFailed -> 4, _ -> 6 }; }
+        if (saved.unwrap() != count) { return 6; }
+    }
+    return 3;
+}
+fn field(bytes:[u8], offset:i32, count:i32) -> Option<Result<i64,i32>> {
+    let parsed:Option<Result<i64,core::decimal::ParseError>> = core::option::None();
+    if ((count != 1) || (bytes[offset] != 45)) {
+        let number:Result<i64,core::decimal::ParseError> = core::decimal::parse_i64_range(bytes,offset,count);
+        parsed = core::option::Some(number);
+    }
+    // Preserve missing/success/error while selecting the application's error
+    // category. Eager fallback carries no owner and has no side effect.
+    let shaped:Result<Option<i64>,core::decimal::ParseError> = core::option::transpose_to_result<i64,core::decimal::ParseError>(parsed);
+    let fallback:Result<Option<i64>,i32> = core::result::Err(2);
+    let categorized:Result<Option<i64>,i32> = core::result::or<Option<i64>,core::decimal::ParseError,i32>(shaped,fallback);
+    return core::option::transpose_to_option<i64,i32>(categorized);
+}
+fn record(bytes:[u8], offset:i32, count:i32, total:Summary) -> Result<Summary,i32> {
+    if ((count == 0) || (count > 64) || (total.present+total.missing == 65536)) { return core::result::Err(2); }
+    let optional:Option<Result<i64,i32>> = field(bytes,offset,count);
+    if (optional.is_none()) {
+        return core::result::Ok(Summary { present:total.present,missing:total.missing+1,sum:total.sum });
+    }
+    let parsed:Result<i64,i32> = optional.unwrap();
+    // Eagerly prepare a candidate with the safe fallback zero. A parse error
+    // cannot commit that candidate: public and preserves the left error.
+    let added:Option<i64> = core::i64::checked_add(total.sum,parsed.unwrap_or(0));
+    let candidate:Result<Summary,i32> = core::result::Err(2);
+    if (added.is_some()) {
+        candidate = core::result::Ok(Summary { present:total.present+1,missing:total.missing,sum:added.unwrap() });
+    }
+    return core::result::and<i64,i32,Summary>(parsed,candidate);
+}
+fn summarize(input:&alloc::io::Buffer) -> Result<Summary,i32> {
+    let bytes:[u8] = input.as_bytes(); let length:i32 = input.len();
+    let total = Summary { present:0,missing:0,sum:0 }; let start:i32 = 0; let index:i32 = 0;
+    while(index < length) {
+        if (bytes[index] == 10) {
+            let next:Result<Summary,i32> = record(bytes,start,index-start,total);
+            if (next.is_err()) { return core::result::Err(next.unwrap_err()); }
+            total = next.unwrap(); start = index+1;
+        } else { if (index-start == 64) { return core::result::Err(2); } }
+        index += 1;
+    }
+    if (start < length) {
+        let next:Result<Summary,i32> = record(bytes,start,length-start,total);
+        if (next.is_err()) { return core::result::Err(next.unwrap_err()); }
+        total = next.unwrap();
+    }
+    return core::result::Ok(total);
+}
+fn render(total:Summary, destination:[u8]) -> Result<i32,i32> {
+    let made:Result<core::io::SliceWriter,core::io::Error> = core::io::slice_writer(destination,128);
+    if (made.is_err()) { return core::result::Err(6); } let writer = made.unwrap();
+    let header:View<u8> = literal("present,missing,sum\n",20);
+    let copied:Result<i32,core::io::Error> = writer.write(header.values,header.start,header.length);
+    if (copied.is_err() || (copied.unwrap() != header.length)) { return core::result::Err(6); }
+    let values:[i64;3] = [total.present as i64,total.missing as i64,total.sum]; let index:i32 = 0;
+    while(index < 3) {
+        let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_i64(destination,writer.position(),writer.remaining(),values[index]);
+        if (formatted.is_err()) { return core::result::Err(6); }
+        if (writer.seek(writer.position()+formatted.unwrap()).is_err()) { return core::result::Err(6); }
+        let separator:[u8;1] = [44]; if (index == 2) { separator[0] = 10; }
+        let separated:Result<i32,core::io::Error> = writer.write(separator,0,1);
+        if (separated.is_err() || (separated.unwrap() != 1)) { return core::result::Err(6); }
+        index += 1;
+    }
+    return core::result::Ok(writer.position());
+}
+fn run() -> i32 {
+    let made:Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(1048576);
+    if (made.is_err()) { return 6; } let input = made.unwrap(); let status:i32 = read(input.borrow());
+    if (status != 0) { input.destroy(); return status; }
+    let calculated:Result<Summary,i32> = summarize(input.borrow()); input.destroy();
+    if (calculated.is_err()) { return calculated.unwrap_err(); }
+    let output:[u8;128] = [0;128]; let formatted:Result<i32,i32> = render(calculated.unwrap(),output);
+    if (formatted.is_err()) { return formatted.unwrap_err(); }
+    if (!write(core::slice::view(output,formatted.unwrap()).unwrap(),1,8192)) { return 5; }
+    return 0;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    if (values.length == 1) {
+        let first:View<u8> = values.values[values.start];
+        if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) {
+            let help = literal("Usage: optional_sum [--help]\nRead LF-delimited stdin: - means missing; other records are signed decimal i64.\nWrite CSV present,missing,sum after complete EOF, validation and checked input-order summation.\nNo whitespace trimming or CR removal; final nonempty records may omit LF.\nLimits: 64 bytes per record, 65536 records, 1048576 input bytes, 8192 input/output calls.\nOnly a sole --help or -h is accepted; help bypasses input.\n",428);
+            if (!write(help,1,64)) { return report(5); } return 0;
+        }
+        return report(2);
+    }
+    if (values.length != 0) { return report(2); }
+    let status:i32 = run(); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,1,64);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status:i32 = arguments(values.as_view()); values.destroy(); return status;
+}

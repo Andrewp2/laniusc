@@ -913,6 +913,26 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [eager outcome composition](stdlib-outcome-composition.md)
+  widens Option `and` and Result `and`/`or`, adds Result flattening and both
+  transpose directions, and supplies four specialized nested methods. Both
+  transposes live in Option's existing conversion home. Eager operands,
+  shared Result error/success requirements and shallow/manual ownership are
+  explicit. Native admission (one test/4.87s), contract tables (one/6.81s)
+  and the independent model (one/6.94s; 2,180 cases/nine operations) pass.
+  One selected old Result-method test passes nine payload combinations in
+  9.64s. One owner/memory test passes in 7.28s with six records/twelve actual
+  backings, seven zero-host-call pure phases and twelve exact releases.
+  The real [optional-sum program](stdlib-optional-sum.md) passes four groups/98
+  process cases: model 33/7.26s, CLI 17, rejection 30 and I/O 18/8.02s,
+  including five selected reached OOM sites and a genuine ten-byte output
+  prefix before EFBIG. One selected Option regression passes three existing
+  fixtures in 6.86s. Six new typed-call rejections pass one test in 7.71s;
+  eight selected old Result rejections pass one in 6.72s. CPU surface
+  inventory passes one test in 0.01s with runtime tests filtered. All five
+  new library tests and four application groups pass on native Linux x86_64.
+  Earlier receipts and generic compiler reductions retain their separate
+  scopes. This introduces no compiler, ABI, proof or host service.
 - Accepted [native numeric byte order](stdlib-native-endian.md) implements 24 concrete
   u64/i16/i32/i64/f32/f64 functions, bringing `core::endian` to 36. The raw
   caller-length/fallback/boolean contract remains explicit: full field bounds
