@@ -1,0 +1,33 @@
+module app::main;
+import alloc::string;
+import core::io;
+import core::mem;
+import core::slice;
+import core::text;
+import ext::toml;
+import std::io;
+
+fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn literal(value:str,length:i32) -> [u8] { return core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length); }
+fn main() -> i32 {
+    mark(65);
+    let source:str = "a=\"\\u0000é\"\nb=[1,{x=true}]\n";
+    let input = alloc::string::from_utf8(literal(source,28),28).unwrap();
+    let document = ext::toml::parse(input,ext::toml::default_options()).unwrap(); input.destroy();
+    let expected:[u8] = literal("\"a\"=\"\\u0000é\"\n\"b\"=[1,{\"x\"=true}]\n",34);
+    let bytes:[u8;48] = [193;48]; mark(83); mark(80);
+    assert(document.encoded_len().unwrap()==34);
+    let cursor = document.encoding().unwrap(); assert(cursor.remaining()==34);
+    assert(cursor.read(bytes,5,1).unwrap()==1 && bytes[5]==34);
+    assert(cursor.read(bytes,6,40).unwrap()==33 && cursor.remaining()==0);
+    assert(cursor.read(bytes,5,1).unwrap()==0);
+    let index:i32 = 0; while(index<34) { assert(bytes[5+index]==expected[index]); index+=1; }
+    index=0; while(index<48) { bytes[index]=193; index+=1; }
+    assert(ext::toml::encode_into(document,core::slice::view_range(bytes,5,34).unwrap()).unwrap()==34);
+    index=0; while(index<48) { if(index>=5 && index<39) { assert(bytes[index]==expected[index-5]); } else { assert(bytes[index]==193); } index+=1; }
+    assert(document.node_count()==6 && document.string_view(1).unwrap().byte_len()==3); mark(112);
+    mark(67); let output = ext::toml::encode(document).unwrap(); mark(70);
+    mark(82); document.destroy(); mark(80);
+    assert(output.byte_len()==34); index=0; while(index<34) { assert(output.byte_at(index).unwrap()==expected[index]); index+=1; } mark(112);
+    assert(std::io::write_stdout(output.bytes.storage,34)==34); output.destroy(); mark(69); mark(68); return 0;
+}

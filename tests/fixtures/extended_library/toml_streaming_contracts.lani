@@ -1,0 +1,96 @@
+module app::main;
+import alloc::string;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::toml;
+import std::io;
+fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn literal(value:str,length:i32) -> [u8] { return core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length); }
+fn error(value:ext::toml::Error,kind:i32) {
+    assert(value.offset == -1); let actual:i32 = match(value.kind) { ext::toml::ErrorKind::Bounds -> 1, ext::toml::ErrorKind::WorkLimit -> 2, ext::toml::ErrorKind::OutputLimit -> 3, _ -> 0 }; assert(actual==kind);
+}
+fn fill(bytes:[u8],count:i32) { let i:i32 = 0; while(i<count) { bytes[i]=193; i+=1; } }
+fn guards(bytes:[u8],count:i32,expected:[u8],length:i32) {
+    let i:i32 = 0; while(i<count) { if(i>=5 && i<length+5) { assert(bytes[i]==expected[i-5]); } else { assert(bytes[i]==193); } i+=1; }
+}
+fn invalid(cursor:&ext::toml::Encoding,bytes:[u8]) {
+    let before:u64 = cursor.remaining();
+    assert(match(cursor.read(bytes,-1,0).unwrap_err()) { core::io::Error::InvalidInput -> true, _ -> false });
+    assert(match(cursor.read(bytes,0,-1).unwrap_err()) { core::io::Error::InvalidInput -> true, _ -> false });
+    assert(match(cursor.read(bytes,2147483647,1).unwrap_err()) { core::io::Error::InvalidInput -> true, _ -> false });
+    assert(cursor.read(bytes,0,0).unwrap()==0 && cursor.remaining()==before);
+}
+fn pull<R>(reader:&R,bytes:[u8],start:i32,count:i32) -> i32 where R:core::io::Read { let result:core::result::Result<i32,core::io::Error> = reader.read(bytes,start,count); return core::result::unwrap(result); }
+fn readers() {
+    mark(65);
+    let source:[u8] = literal("a=\"\\u0000é🙂\"\nt=07:32:00.120000\nx=[{v=true},[]]\n",51);
+    let document = ext::toml::parse_text(core::text::from_utf8(source,51).unwrap(),ext::toml::default_options()).unwrap();
+    let expected:[u8] = literal("\"a\"=\"\\u0000é🙂\"\n\"t\"=07:32:00.12\n\"x\"=[{\"v\"=true},[]]\n",55);
+    let native:[u8;128] = [193;128]; let words:[i32;32] = [0;32];
+    let packed:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),128);
+    assert(core::mem::slice_stride(native)<0 && core::mem::slice_stride(packed)==1); fill(packed,128); mark(83); mark(80);
+    let cuts:[i32;4] = [6,12,15,33]; let at:i32 = 0;
+    while(at<4) {
+        fill(native,128); fill(packed,128); let cursor = document.encoding().unwrap(); invalid(cursor.borrow(),native); guards(native,128,expected,0);
+        assert(cursor.remaining()==55); let cut:i32 = cuts[at]; assert(pull<ext::toml::Encoding>(cursor.borrow(),native,5,cut)==cut);
+        let fork = cursor; let position:i32 = cut;
+        while(position<55) { assert(cursor.read(native,5+position,1).unwrap()==1); position+=1; }
+        assert(fork.remaining()==((55-cut) as u64));
+        assert(fork.read(packed,5,55).unwrap()==55-cut && fork.remaining()==0);
+        let i:i32 = 0; while(i<128) { if(i>=5 && i<5+55-cut) { assert(packed[i]==expected[cut+i-5]); } else { assert(packed[i]==193); } i+=1; }
+        guards(native,128,expected,55); invalid(cursor.borrow(),native); guards(native,128,expected,55);
+        assert(cursor.read(native,5,1).unwrap()==0 && cursor.read(native,5,20).unwrap()==0); at+=1;
+    }
+    fill(native,128); assert(ext::toml::encode_into(document,core::slice::view_range(native,5,55).unwrap()).unwrap()==55); guards(native,128,expected,55);
+    fill(packed,128); assert(ext::toml::encode_into(document,core::slice::view_range(packed,5,55).unwrap()).unwrap()==55); guards(packed,128,expected,55);
+    assert(document.string_view(1).unwrap().byte_len()==7 && document.temporal_view(2).unwrap().byte_len()==15);
+    mark(112); mark(82); document.destroy(); mark(80);
+    error(document.encoded_len().unwrap_err(),1); error(document.encoding().unwrap_err(),1);
+    fill(native,128); error(ext::toml::encode_into(document,core::slice::view_range(native,5,100).unwrap()).unwrap_err(),1); guards(native,128,expected,0);
+    mark(112); mark(69);
+}
+fn limits(budget:u64,maximum:i32) {
+    mark(65); let source:[u8;21] = [9;21]; source[0]=97; source[1]=61; source[2]=39; source[19]=39; source[20]=10;
+    let options = ext::toml::default_options(); options.max_work=budget; options.max_output_bytes=maximum;
+    let document = ext::toml::parse_text(core::text::from_utf8(source,21).unwrap(),options).unwrap();
+    let bytes:[u8;116] = [193;116]; let none:[u8;1] = [0]; let absent:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(""),0);
+    mark(83); mark(80);
+    let bad:core::slice::View<u8> = core::slice::View { values:absent,start:-1,length:0 }; error(ext::toml::encode_into(document,bad).unwrap_err(),1);
+    bad.start=0; bad.length = -1; error(ext::toml::encode_into(document,bad).unwrap_err(),1);
+    bad.start=2147483647; bad.length=1; error(ext::toml::encode_into(document,bad).unwrap_err(),1);
+    let preflight:i32 = 0; if(budget<104) { preflight=2; } if(maximum<103 && budget>=103) { preflight=3; }
+    if(preflight!=0) {
+        error(document.encoded_len().unwrap_err(),preflight); error(document.encoding().unwrap_err(),preflight); error(ext::toml::encode(document).unwrap_err(),preflight);
+        error(ext::toml::encode_into(document,core::slice::view_range(bytes,5,102).unwrap()).unwrap_err(),preflight);
+    } else {
+        assert(document.encoded_len().unwrap()==103);
+        error(ext::toml::encode_into(document,core::slice::view_range(bytes,5,102).unwrap()).unwrap_err(),3);
+        if(budget<208) {
+            error(document.encoding().unwrap_err(),2); error(ext::toml::encode(document).unwrap_err(),2);
+            error(ext::toml::encode_into(document,core::slice::view_range(bytes,5,103).unwrap()).unwrap_err(),2);
+        } else {
+            let cursor = document.encoding().unwrap(); assert(cursor.remaining()==103);
+            assert(cursor.read(bytes,5,103).unwrap()==103 && cursor.remaining()==0); fill(bytes,116);
+            assert(ext::toml::encode_into(document,core::slice::view_range(bytes,5,103).unwrap()).unwrap()==103);
+            assert(bytes[5]==34 && bytes[6]==97 && bytes[7]==34 && bytes[8]==61 && bytes[9]==34 && bytes[106]==34 && bytes[107]==10);
+            let i:i32 = 0; let escape:[u8;6] = [92,117,48,48,48,57]; while(i<96) { assert(bytes[10+i]==escape[i%6]); i+=1; }
+            i=0; while(i<116) { if(i<5 || i>=108) { assert(bytes[i]==193); } i+=1; } fill(bytes,116);
+        }
+    }
+    guards(bytes,116,none,0); let text = document.string_view(1).unwrap(); assert(text.byte_len()==16);
+    let i:i32 = 0; while(i<16) { assert(text.byte_at(i).unwrap()==9); i+=1; }
+    mark(112); mark(82); document.destroy(); mark(69);
+}
+fn empty() {
+    mark(65); let options = ext::toml::default_options(); options.max_output_bytes=0; options.max_work=1;
+    let bytes:[u8;1] = [193]; let document = ext::toml::parse_text(core::text::from_utf8(bytes,0).unwrap(),options).unwrap(); mark(83); mark(80);
+    assert(document.encoded_len().unwrap()==0); let cursor = document.encoding().unwrap(); invalid(cursor.borrow(),bytes);
+    assert(cursor.read(bytes,0,1).unwrap()==0 && cursor.read(bytes,0,1).unwrap()==0 && bytes[0]==193);
+    assert(ext::toml::encode_into(document,core::slice::view_range(bytes,0,0).unwrap()).unwrap()==0);
+    let result = ext::toml::encode(document).unwrap(); assert(result.byte_len()==0); result.destroy(); mark(112);
+    mark(82); document.destroy(); mark(69);
+}
+fn main() -> i32 { readers(); limits(103,103); limits(104,103); limits(207,103); limits(208,103); limits(208,102); limits(102,102); limits(103,102); empty(); mark(68); return 0; }

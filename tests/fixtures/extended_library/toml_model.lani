@@ -152,7 +152,7 @@ fn main() -> i32 {
         assert(document.node_count() == count);
         if (core::result::is_err(encoded)) { failed(2, core::result::unwrap_err(encoded)); document.destroy(); continue; }
         let output: alloc::string::String = core::result::unwrap(encoded);
-        assert(core::result::unwrap(ext::toml::measure(document)) == output.byte_len());
+        assert(core::result::unwrap(document.encoded_len()) == output.byte_len() as u64);
         word(0);
         node(document, core::option::unwrap(document.root()));
         text(output.as_text());

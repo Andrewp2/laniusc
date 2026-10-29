@@ -8,27 +8,33 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+One constant-storage byte machine serves Document.encoded_len, Document.encoding, owned encode and direct encode_into. The free measure function is replaced by the encoded_len method. W counts emitted bytes, nonroot node visits and fraction scan/trim digits; sizing admits W and the other paths admit 2W for preflight/replay. This changes old owned encode W and encode_into 2W+output-bytes policy. Preflight reports the first exhausted bound in generator order: per-byte output cap precedes byte work, with node/fraction charges where encountered; there is no whole-pass output-over-work precedence. Cursor copies fork replay allowance. Borrowed Encoding implements Read only, with exact fills, inert valid zero requests, metadata rejection before EOF, independent cursor copies and immutable/disjoint backing obligations. Borrowed serialization and direct encode_into allocate no output storage; every returned encode_into error preserves the complete destination. Owned output uses the existing collector, skips allocation for empty output, and cleans partial owners on failure. The linked guides record current runtime acceptance; older parser/corpus/normalizer receipts retain their original source scope. Initial target Linux x86_64 CPU output, with other hosts/device execution/lifetime enforcement/proofs separate.
+
 ## Contract and evidence guides
 
 - [extended-toml](../../extended-toml.md)
+- [extended-toml-streaming](../../extended-toml-streaming.md)
+- [extended-toml-normalize](../../extended-toml-normalize.md)
 
-Declaration counts: enum: 2; field: 15; function: 7; impl: 1; method: 23; struct: 4; type alias: 1; variant: 30.
+Declaration counts: enum: 2; field: 17; function: 6; impl: 4; method: 28; struct: 5; type alias: 1; variant: 30.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::string](../alloc/string.md) · [source](../../../extended/ext/toml.lani#L3)
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/toml.lani#L4)
-- [core::result](../core/result.md) · [source](../../../extended/ext/toml.lani#L5)
-- [core::option](../core/option.md) · [source](../../../extended/ext/toml.lani#L6)
-- [core::text](../core/text.md) · [source](../../../extended/ext/toml.lani#L7)
-- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/toml.lani#L8)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/toml.lani#L9)
-- [core::f64](../core/f64.md) · [source](../../../extended/ext/toml.lani#L10)
-- [core::float_decimal](../core/float_decimal.md) · [source](../../../extended/ext/toml.lani#L11)
-- [core::calendar](../core/calendar.md) · [source](../../../extended/ext/toml.lani#L12)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/toml.lani#L13)
+- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/toml.lani#L3)
+- [alloc::string](../alloc/string.md) · [source](../../../extended/ext/toml.lani#L4)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/toml.lani#L5)
+- [core::result](../core/result.md) · [source](../../../extended/ext/toml.lani#L6)
+- [core::option](../core/option.md) · [source](../../../extended/ext/toml.lani#L7)
+- [core::text](../core/text.md) · [source](../../../extended/ext/toml.lani#L8)
+- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/toml.lani#L9)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/toml.lani#L10)
+- [core::f64](../core/f64.md) · [source](../../../extended/ext/toml.lani#L11)
+- [core::float_decimal](../core/float_decimal.md) · [source](../../../extended/ext/toml.lani#L12)
+- [core::calendar](../core/calendar.md) · [source](../../../extended/ext/toml.lani#L13)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/toml.lani#L14)
+- [core::io](../core/io.md) · [source](../../../extended/ext/toml.lani#L15)
 
 ## Types, fields and variants
 
@@ -36,7 +42,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### type alias: NodeId
 
-[Source line 15](../../../extended/ext/toml.lani#L15)
+[Source line 17](../../../extended/ext/toml.lani#L17)
 
 ```lanius
 pub type NodeId = i32;
@@ -44,7 +50,7 @@ pub type NodeId = i32;
 
 ### enum: Kind
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 pub enum Kind
@@ -52,7 +58,7 @@ pub enum Kind
 
 #### variant: Table
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 Table
@@ -60,7 +66,7 @@ Table
 
 #### variant: Array
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 Array
@@ -68,7 +74,7 @@ Array
 
 #### variant: String
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 String
@@ -76,7 +82,7 @@ String
 
 #### variant: Integer
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 Integer
@@ -84,7 +90,7 @@ Integer
 
 #### variant: Float
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 Float
@@ -92,7 +98,7 @@ Float
 
 #### variant: Boolean
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 Boolean
@@ -100,7 +106,7 @@ Boolean
 
 #### variant: OffsetDateTime
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 OffsetDateTime
@@ -108,7 +114,7 @@ OffsetDateTime
 
 #### variant: LocalDateTime
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 LocalDateTime
@@ -116,7 +122,7 @@ LocalDateTime
 
 #### variant: LocalDate
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 LocalDate
@@ -124,7 +130,7 @@ LocalDate
 
 #### variant: LocalTime
 
-[Source line 16](../../../extended/ext/toml.lani#L16)
+[Source line 18](../../../extended/ext/toml.lani#L18)
 
 ```lanius
 LocalTime
@@ -132,7 +138,7 @@ LocalTime
 
 ### enum: ErrorKind
 
-[Source line 17](../../../extended/ext/toml.lani#L17)
+[Source line 19](../../../extended/ext/toml.lani#L19)
 
 ```lanius
 pub enum ErrorKind
@@ -140,7 +146,7 @@ pub enum ErrorKind
 
 #### variant: UnexpectedEnd
 
-[Source line 18](../../../extended/ext/toml.lani#L18)
+[Source line 20](../../../extended/ext/toml.lani#L20)
 
 ```lanius
 UnexpectedEnd
@@ -148,7 +154,7 @@ UnexpectedEnd
 
 #### variant: UnexpectedByte
 
-[Source line 18](../../../extended/ext/toml.lani#L18)
+[Source line 20](../../../extended/ext/toml.lani#L20)
 
 ```lanius
 UnexpectedByte
@@ -156,7 +162,7 @@ UnexpectedByte
 
 #### variant: InvalidUtf8
 
-[Source line 18](../../../extended/ext/toml.lani#L18)
+[Source line 20](../../../extended/ext/toml.lani#L20)
 
 ```lanius
 InvalidUtf8
@@ -164,7 +170,7 @@ InvalidUtf8
 
 #### variant: InvalidEscape
 
-[Source line 18](../../../extended/ext/toml.lani#L18)
+[Source line 20](../../../extended/ext/toml.lani#L20)
 
 ```lanius
 InvalidEscape
@@ -172,7 +178,7 @@ InvalidEscape
 
 #### variant: InvalidNumber
 
-[Source line 18](../../../extended/ext/toml.lani#L18)
+[Source line 20](../../../extended/ext/toml.lani#L20)
 
 ```lanius
 InvalidNumber
@@ -180,7 +186,7 @@ InvalidNumber
 
 #### variant: InvalidDateTime
 
-[Source line 19](../../../extended/ext/toml.lani#L19)
+[Source line 21](../../../extended/ext/toml.lani#L21)
 
 ```lanius
 InvalidDateTime
@@ -188,7 +194,7 @@ InvalidDateTime
 
 #### variant: NumberOutOfRange
 
-[Source line 19](../../../extended/ext/toml.lani#L19)
+[Source line 21](../../../extended/ext/toml.lani#L21)
 
 ```lanius
 NumberOutOfRange
@@ -196,7 +202,7 @@ NumberOutOfRange
 
 #### variant: DuplicateKey
 
-[Source line 19](../../../extended/ext/toml.lani#L19)
+[Source line 21](../../../extended/ext/toml.lani#L21)
 
 ```lanius
 DuplicateKey
@@ -204,7 +210,7 @@ DuplicateKey
 
 #### variant: TableRedefinition
 
-[Source line 19](../../../extended/ext/toml.lani#L19)
+[Source line 21](../../../extended/ext/toml.lani#L21)
 
 ```lanius
 TableRedefinition
@@ -212,7 +218,7 @@ TableRedefinition
 
 #### variant: InputLimit
 
-[Source line 20](../../../extended/ext/toml.lani#L20)
+[Source line 22](../../../extended/ext/toml.lani#L22)
 
 ```lanius
 InputLimit
@@ -220,7 +226,7 @@ InputLimit
 
 #### variant: NodeLimit
 
-[Source line 20](../../../extended/ext/toml.lani#L20)
+[Source line 22](../../../extended/ext/toml.lani#L22)
 
 ```lanius
 NodeLimit
@@ -228,7 +234,7 @@ NodeLimit
 
 #### variant: DepthLimit
 
-[Source line 20](../../../extended/ext/toml.lani#L20)
+[Source line 22](../../../extended/ext/toml.lani#L22)
 
 ```lanius
 DepthLimit
@@ -236,7 +242,7 @@ DepthLimit
 
 #### variant: StringLimit
 
-[Source line 20](../../../extended/ext/toml.lani#L20)
+[Source line 22](../../../extended/ext/toml.lani#L22)
 
 ```lanius
 StringLimit
@@ -244,7 +250,7 @@ StringLimit
 
 #### variant: NumberLimit
 
-[Source line 20](../../../extended/ext/toml.lani#L20)
+[Source line 22](../../../extended/ext/toml.lani#L22)
 
 ```lanius
 NumberLimit
@@ -252,7 +258,7 @@ NumberLimit
 
 #### variant: OutputLimit
 
-[Source line 20](../../../extended/ext/toml.lani#L20)
+[Source line 22](../../../extended/ext/toml.lani#L22)
 
 ```lanius
 OutputLimit
@@ -260,7 +266,7 @@ OutputLimit
 
 #### variant: WorkLimit
 
-[Source line 21](../../../extended/ext/toml.lani#L21)
+[Source line 23](../../../extended/ext/toml.lani#L23)
 
 ```lanius
 WorkLimit
@@ -268,7 +274,7 @@ WorkLimit
 
 #### variant: AllocationFailed
 
-[Source line 21](../../../extended/ext/toml.lani#L21)
+[Source line 23](../../../extended/ext/toml.lani#L23)
 
 ```lanius
 AllocationFailed
@@ -276,7 +282,7 @@ AllocationFailed
 
 #### variant: InvalidOptions
 
-[Source line 21](../../../extended/ext/toml.lani#L21)
+[Source line 23](../../../extended/ext/toml.lani#L23)
 
 ```lanius
 InvalidOptions
@@ -284,7 +290,7 @@ InvalidOptions
 
 #### variant: Bounds
 
-[Source line 21](../../../extended/ext/toml.lani#L21)
+[Source line 23](../../../extended/ext/toml.lani#L23)
 
 ```lanius
 Bounds
@@ -292,7 +298,7 @@ Bounds
 
 #### variant: WrongKind
 
-[Source line 21](../../../extended/ext/toml.lani#L21)
+[Source line 23](../../../extended/ext/toml.lani#L23)
 
 ```lanius
 WrongKind
@@ -300,7 +306,7 @@ WrongKind
 
 ### struct: Error
 
-[Source line 23](../../../extended/ext/toml.lani#L23)
+[Source line 25](../../../extended/ext/toml.lani#L25)
 
 ```lanius
 pub struct Error
@@ -308,7 +314,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 23](../../../extended/ext/toml.lani#L23)
+[Source line 25](../../../extended/ext/toml.lani#L25)
 
 ```lanius
 kind: ErrorKind
@@ -316,7 +322,7 @@ kind: ErrorKind
 
 #### field: offset
 
-[Source line 23](../../../extended/ext/toml.lani#L23)
+[Source line 25](../../../extended/ext/toml.lani#L25)
 
 ```lanius
 offset: i32
@@ -324,7 +330,7 @@ offset: i32
 
 ### struct: Options
 
-[Source line 24](../../../extended/ext/toml.lani#L24)
+[Source line 26](../../../extended/ext/toml.lani#L26)
 
 ```lanius
 pub struct Options
@@ -332,7 +338,7 @@ pub struct Options
 
 #### field: max_input_bytes
 
-[Source line 25](../../../extended/ext/toml.lani#L25)
+[Source line 27](../../../extended/ext/toml.lani#L27)
 
 ```lanius
 max_input_bytes: i32
@@ -340,7 +346,7 @@ max_input_bytes: i32
 
 #### field: max_nodes
 
-[Source line 25](../../../extended/ext/toml.lani#L25)
+[Source line 27](../../../extended/ext/toml.lani#L27)
 
 ```lanius
 max_nodes: i32
@@ -348,7 +354,7 @@ max_nodes: i32
 
 #### field: max_depth
 
-[Source line 25](../../../extended/ext/toml.lani#L25)
+[Source line 27](../../../extended/ext/toml.lani#L27)
 
 ```lanius
 max_depth: i32
@@ -356,7 +362,7 @@ max_depth: i32
 
 #### field: max_string_bytes
 
-[Source line 25](../../../extended/ext/toml.lani#L25)
+[Source line 27](../../../extended/ext/toml.lani#L27)
 
 ```lanius
 max_string_bytes: i32
@@ -364,7 +370,7 @@ max_string_bytes: i32
 
 #### field: max_number_bytes
 
-[Source line 26](../../../extended/ext/toml.lani#L26)
+[Source line 28](../../../extended/ext/toml.lani#L28)
 
 ```lanius
 max_number_bytes: i32
@@ -372,7 +378,7 @@ max_number_bytes: i32
 
 #### field: max_output_bytes
 
-[Source line 26](../../../extended/ext/toml.lani#L26)
+[Source line 28](../../../extended/ext/toml.lani#L28)
 
 ```lanius
 max_output_bytes: i32
@@ -380,7 +386,7 @@ max_output_bytes: i32
 
 #### field: max_work
 
-[Source line 26](../../../extended/ext/toml.lani#L26)
+[Source line 28](../../../extended/ext/toml.lani#L28)
 
 ```lanius
 max_work: u64
@@ -388,7 +394,7 @@ max_work: u64
 
 ### struct: Temporal
 
-[Source line 63](../../../extended/ext/toml.lani#L63)
+[Source line 65](../../../extended/ext/toml.lani#L65)
 
 ```lanius
 pub struct Temporal
@@ -396,7 +402,7 @@ pub struct Temporal
 
 #### field: date
 
-[Source line 64](../../../extended/ext/toml.lani#L64)
+[Source line 66](../../../extended/ext/toml.lani#L66)
 
 ```lanius
 date: core::option::Option<core::calendar::Date>
@@ -404,7 +410,7 @@ date: core::option::Option<core::calendar::Date>
 
 #### field: time
 
-[Source line 65](../../../extended/ext/toml.lani#L65)
+[Source line 67](../../../extended/ext/toml.lani#L67)
 
 ```lanius
 time: core::option::Option<core::calendar::TimeOfDay>
@@ -412,7 +418,7 @@ time: core::option::Option<core::calendar::TimeOfDay>
 
 #### field: offset
 
-[Source line 66](../../../extended/ext/toml.lani#L66)
+[Source line 68](../../../extended/ext/toml.lani#L68)
 
 ```lanius
 offset: core::option::Option<core::calendar::UtcOffset>
@@ -420,7 +426,7 @@ offset: core::option::Option<core::calendar::UtcOffset>
 
 #### field: fraction
 
-[Source line 67](../../../extended/ext/toml.lani#L67)
+[Source line 69](../../../extended/ext/toml.lani#L69)
 
 ```lanius
 fraction: core::text::Text
@@ -428,7 +434,7 @@ fraction: core::text::Text
 
 ### struct: Document
 
-[Source line 69](../../../extended/ext/toml.lani#L69)
+[Source line 71](../../../extended/ext/toml.lani#L71)
 
 ```lanius
 pub struct Document
@@ -436,7 +442,7 @@ pub struct Document
 
 #### field: nodes
 
-[Source line 69](../../../extended/ext/toml.lani#L69)
+[Source line 71](../../../extended/ext/toml.lani#L71)
 
 ```lanius
 nodes: alloc::vec::Vec<Node>
@@ -444,17 +450,41 @@ nodes: alloc::vec::Vec<Node>
 
 #### field: options
 
-[Source line 69](../../../extended/ext/toml.lani#L69)
+[Source line 71](../../../extended/ext/toml.lani#L71)
 
 ```lanius
 options: Options
+```
+
+### struct: Encoding
+
+[Source line 661](../../../extended/ext/toml.lani#L661)
+
+```lanius
+pub struct Encoding
+```
+
+#### field: machine
+
+[Source line 661](../../../extended/ext/toml.lani#L661)
+
+```lanius
+machine: EncodingMachine
+```
+
+#### field: remaining_bytes
+
+[Source line 661](../../../extended/ext/toml.lani#L661)
+
+```lanius
+remaining_bytes: u64
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_options
 
-[Source line 28](../../../extended/ext/toml.lani#L28)
+[Source line 30](../../../extended/ext/toml.lani#L30)
 
 ```lanius
 pub fn default_options() -> Options
@@ -462,7 +492,7 @@ pub fn default_options() -> Options
 
 ### function: error_kind_text
 
-[Source line 34](../../../extended/ext/toml.lani#L34)
+[Source line 36](../../../extended/ext/toml.lani#L36)
 
 ```lanius
 pub fn error_kind_text(value: ErrorKind) -> core::text::Text
@@ -470,7 +500,7 @@ pub fn error_kind_text(value: ErrorKind) -> core::text::Text
 
 ### function: parse_text
 
-[Source line 395](../../../extended/ext/toml.lani#L395)
+[Source line 397](../../../extended/ext/toml.lani#L397)
 
 ```lanius
 pub fn parse_text(input: core::text::Text, options: Options) -> core::result::Result<Document,Error>
@@ -478,41 +508,37 @@ pub fn parse_text(input: core::text::Text, options: Options) -> core::result::Re
 
 ### function: parse
 
-[Source line 408](../../../extended/ext/toml.lani#L408)
+[Source line 410](../../../extended/ext/toml.lani#L410)
 
 ```lanius
 pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Document,Error>
 ```
 
-### function: measure
-
-[Source line 463](../../../extended/ext/toml.lani#L463)
-
-```lanius
-pub fn measure(document: Document) -> core::result::Result<i32,Error>
-```
-
 ### function: encode
 
-[Source line 467](../../../extended/ext/toml.lani#L467)
+[Source line 726](../../../extended/ext/toml.lani#L726)
 
 ```lanius
 pub fn encode(document: Document) -> core::result::Result<alloc::string::String,Error>
 ```
 
+Admit the shared borrowed reader under a 2W serializer budget, then collect independent String output. Empty output allocates nothing; partial output is destroyed on error and document owners are preserved. See the linked streaming guide for execution evidence.
+
 ### function: encode_into
 
-[Source line 472](../../../extended/ext/toml.lani#L472)
+[Source line 748](../../../extended/ext/toml.lani#L748)
 
 ```lanius
 pub fn encode_into(document: Document, output: core::slice::View<u8>) -> core::result::Result<i32,Error>
 ```
 
+Validate destination metadata, preflight semantic/output limits, check capacity, reserve replay work and fill directly without output allocation. Every returned error preserves the entire destination; source/cursor/destination disjointness is a manual precondition. See the linked streaming guide for execution evidence.
+
 ## Implementation blocks and public methods
 
-### impl at line 70
+### impl at line 72
 
-[Source line 70](../../../extended/ext/toml.lani#L70)
+[Source line 72](../../../extended/ext/toml.lani#L72)
 
 ```lanius
 pub impl Document
@@ -520,7 +546,7 @@ pub impl Document
 
 #### method: borrow
 
-[Source line 71](../../../extended/ext/toml.lani#L71)
+[Source line 73](../../../extended/ext/toml.lani#L73)
 
 ```lanius
 pub fn borrow(&self) -> &Document
@@ -528,7 +554,7 @@ pub fn borrow(&self) -> &Document
 
 #### method: node_count
 
-[Source line 75](../../../extended/ext/toml.lani#L75)
+[Source line 77](../../../extended/ext/toml.lani#L77)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -536,7 +562,7 @@ pub fn node_count(&self) -> i32
 
 #### method: root
 
-[Source line 76](../../../extended/ext/toml.lani#L76)
+[Source line 78](../../../extended/ext/toml.lani#L78)
 
 ```lanius
 pub fn root(&self) -> core::option::Option<NodeId>
@@ -544,7 +570,7 @@ pub fn root(&self) -> core::option::Option<NodeId>
 
 #### method: kind
 
-[Source line 77](../../../extended/ext/toml.lani#L77)
+[Source line 79](../../../extended/ext/toml.lani#L79)
 
 ```lanius
 pub fn kind(&self, id: NodeId) -> core::result::Result<Kind,Error>
@@ -552,7 +578,7 @@ pub fn kind(&self, id: NodeId) -> core::result::Result<Kind,Error>
 
 #### method: child_count
 
-[Source line 78](../../../extended/ext/toml.lani#L78)
+[Source line 80](../../../extended/ext/toml.lani#L80)
 
 ```lanius
 pub fn child_count(&self, id: NodeId) -> core::result::Result<i32,Error>
@@ -560,7 +586,7 @@ pub fn child_count(&self, id: NodeId) -> core::result::Result<i32,Error>
 
 #### method: first_child
 
-[Source line 79](../../../extended/ext/toml.lani#L79)
+[Source line 81](../../../extended/ext/toml.lani#L81)
 
 ```lanius
 pub fn first_child(&self, id: NodeId) -> core::result::Result<core::option::Option<NodeId>,Error>
@@ -568,7 +594,7 @@ pub fn first_child(&self, id: NodeId) -> core::result::Result<core::option::Opti
 
 #### method: next_sibling
 
-[Source line 83](../../../extended/ext/toml.lani#L83)
+[Source line 85](../../../extended/ext/toml.lani#L85)
 
 ```lanius
 pub fn next_sibling(&self, id: NodeId) -> core::result::Result<core::option::Option<NodeId>,Error>
@@ -576,7 +602,7 @@ pub fn next_sibling(&self, id: NodeId) -> core::result::Result<core::option::Opt
 
 #### method: element
 
-[Source line 84](../../../extended/ext/toml.lani#L84)
+[Source line 86](../../../extended/ext/toml.lani#L86)
 
 ```lanius
 pub fn element(&self, id: NodeId, index: i32) -> core::result::Result<core::option::Option<NodeId>,Error>
@@ -584,7 +610,7 @@ pub fn element(&self, id: NodeId, index: i32) -> core::result::Result<core::opti
 
 #### method: member
 
-[Source line 88](../../../extended/ext/toml.lani#L88)
+[Source line 90](../../../extended/ext/toml.lani#L90)
 
 ```lanius
 pub fn member(&self, id: NodeId, key: alloc::string::String) -> core::result::Result<core::option::Option<NodeId>,Error>
@@ -592,7 +618,7 @@ pub fn member(&self, id: NodeId, key: alloc::string::String) -> core::result::Re
 
 #### method: member_text
 
-[Source line 89](../../../extended/ext/toml.lani#L89)
+[Source line 91](../../../extended/ext/toml.lani#L91)
 
 ```lanius
 pub fn member_text(&self, id: NodeId, key: core::text::Text) -> core::result::Result<core::option::Option<NodeId>,Error>
@@ -600,7 +626,7 @@ pub fn member_text(&self, id: NodeId, key: core::text::Text) -> core::result::Re
 
 #### method: key_view
 
-[Source line 94](../../../extended/ext/toml.lani#L94)
+[Source line 96](../../../extended/ext/toml.lani#L96)
 
 ```lanius
 pub fn key_view(&self, id: NodeId) -> core::result::Result<core::text::Text,Error>
@@ -608,7 +634,7 @@ pub fn key_view(&self, id: NodeId) -> core::result::Result<core::text::Text,Erro
 
 #### method: string_view
 
-[Source line 101](../../../extended/ext/toml.lani#L101)
+[Source line 103](../../../extended/ext/toml.lani#L103)
 
 ```lanius
 pub fn string_view(&self, id: NodeId) -> core::result::Result<core::text::Text,Error>
@@ -616,7 +642,7 @@ pub fn string_view(&self, id: NodeId) -> core::result::Result<core::text::Text,E
 
 #### method: number_view
 
-[Source line 102](../../../extended/ext/toml.lani#L102)
+[Source line 104](../../../extended/ext/toml.lani#L104)
 
 ```lanius
 pub fn number_view(&self, id: NodeId) -> core::result::Result<core::text::Text,Error>
@@ -624,7 +650,7 @@ pub fn number_view(&self, id: NodeId) -> core::result::Result<core::text::Text,E
 
 #### method: temporal_view
 
-[Source line 103](../../../extended/ext/toml.lani#L103)
+[Source line 105](../../../extended/ext/toml.lani#L105)
 
 ```lanius
 pub fn temporal_view(&self, id: NodeId) -> core::result::Result<core::text::Text,Error>
@@ -632,7 +658,7 @@ pub fn temporal_view(&self, id: NodeId) -> core::result::Result<core::text::Text
 
 #### method: temporal
 
-[Source line 105](../../../extended/ext/toml.lani#L105)
+[Source line 107](../../../extended/ext/toml.lani#L107)
 
 ```lanius
 pub fn temporal(&self, id: NodeId) -> core::result::Result<Temporal,Error>
@@ -640,7 +666,7 @@ pub fn temporal(&self, id: NodeId) -> core::result::Result<Temporal,Error>
 
 #### method: integer_i64
 
-[Source line 109](../../../extended/ext/toml.lani#L109)
+[Source line 111](../../../extended/ext/toml.lani#L111)
 
 ```lanius
 pub fn integer_i64(&self, id: NodeId) -> core::result::Result<i64,Error>
@@ -648,7 +674,7 @@ pub fn integer_i64(&self, id: NodeId) -> core::result::Result<i64,Error>
 
 #### method: float64
 
-[Source line 110](../../../extended/ext/toml.lani#L110)
+[Source line 112](../../../extended/ext/toml.lani#L112)
 
 ```lanius
 pub fn float64(&self, id: NodeId) -> core::result::Result<f64,Error>
@@ -656,7 +682,7 @@ pub fn float64(&self, id: NodeId) -> core::result::Result<f64,Error>
 
 #### method: boolean
 
-[Source line 111](../../../extended/ext/toml.lani#L111)
+[Source line 113](../../../extended/ext/toml.lani#L113)
 
 ```lanius
 pub fn boolean(&self, id: NodeId) -> core::result::Result<bool,Error>
@@ -664,7 +690,7 @@ pub fn boolean(&self, id: NodeId) -> core::result::Result<bool,Error>
 
 #### method: copy_string
 
-[Source line 116](../../../extended/ext/toml.lani#L116)
+[Source line 118](../../../extended/ext/toml.lani#L118)
 
 ```lanius
 pub fn copy_string(&self, id: NodeId) -> core::result::Result<alloc::string::String,Error>
@@ -672,7 +698,7 @@ pub fn copy_string(&self, id: NodeId) -> core::result::Result<alloc::string::Str
 
 #### method: copy_number
 
-[Source line 117](../../../extended/ext/toml.lani#L117)
+[Source line 119](../../../extended/ext/toml.lani#L119)
 
 ```lanius
 pub fn copy_number(&self, id: NodeId) -> core::result::Result<alloc::string::String,Error>
@@ -680,7 +706,7 @@ pub fn copy_number(&self, id: NodeId) -> core::result::Result<alloc::string::Str
 
 #### method: copy_temporal
 
-[Source line 118](../../../extended/ext/toml.lani#L118)
+[Source line 120](../../../extended/ext/toml.lani#L120)
 
 ```lanius
 pub fn copy_temporal(&self, id: NodeId) -> core::result::Result<alloc::string::String,Error>
@@ -688,7 +714,7 @@ pub fn copy_temporal(&self, id: NodeId) -> core::result::Result<alloc::string::S
 
 #### method: copy_key
 
-[Source line 119](../../../extended/ext/toml.lani#L119)
+[Source line 121](../../../extended/ext/toml.lani#L121)
 
 ```lanius
 pub fn copy_key(&self, id: NodeId) -> core::result::Result<alloc::string::String,Error>
@@ -696,8 +722,72 @@ pub fn copy_key(&self, id: NodeId) -> core::result::Result<alloc::string::String
 
 #### method: destroy
 
-[Source line 123](../../../extended/ext/toml.lani#L123)
+[Source line 125](../../../extended/ext/toml.lani#L125)
 
 ```lanius
 pub fn destroy(&self)
+```
+
+### impl at line 662
+
+[Source line 662](../../../extended/ext/toml.lani#L662)
+
+```lanius
+pub impl Document
+```
+
+#### method: encoded_len
+
+[Source line 663](../../../extended/ext/toml.lani#L663)
+
+```lanius
+pub fn encoded_len(&self) -> core::result::Result<u64,Error>
+```
+
+#### method: encoding
+
+[Source line 668](../../../extended/ext/toml.lani#L668)
+
+```lanius
+pub fn encoding(&self) -> core::result::Result<Encoding,Error>
+```
+
+### impl at line 674
+
+[Source line 674](../../../extended/ext/toml.lani#L674)
+
+```lanius
+pub impl Encoding
+```
+
+#### method: borrow
+
+[Source line 675](../../../extended/ext/toml.lani#L675)
+
+```lanius
+pub fn borrow(&self) -> &Encoding
+```
+
+#### method: remaining
+
+[Source line 676](../../../extended/ext/toml.lani#L676)
+
+```lanius
+pub fn remaining(&self) -> u64
+```
+
+### impl at line 678
+
+[Source line 678](../../../extended/ext/toml.lani#L678)
+
+```lanius
+pub impl core::io::Read for Encoding
+```
+
+#### method: read
+
+[Source line 681](../../../extended/ext/toml.lani#L681)
+
+```lanius
+pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error>
 ```

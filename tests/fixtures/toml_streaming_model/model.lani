@@ -1,0 +1,207 @@
+// Test-only TOML values and borrowed stream observations, transported as raw bytes.
+module app::main;
+import alloc::string;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import std::io;
+import ext::toml;
+import core::f64;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn byte(&self,value:u8) {
+        if(self.used==4096) { self.flush(); }
+        self.bytes[self.used]=value; self.used+=1;
+    }
+    fn word(&self,value:u64) {
+        let index:i32=0;
+        while(index<8) { self.byte(((value>>(index*8))&255) as u8); index+=1; }
+    }
+}
+fn get32(bytes:[u8],offset:i32) -> i32 {
+    let value:u32=0; let index:i32=0;
+    while(index<4) { value|=(bytes[offset+index] as u32)<<(index*8); index+=1; }
+    return value as i32;
+}
+fn error_code(error:ext::toml::Error) -> i32 {
+    return match(error.kind) { ext::toml::ErrorKind::OutputLimit -> 1, ext::toml::ErrorKind::WorkLimit -> 2, _ -> 99 };
+}
+fn error_header(error:ext::toml::Error,output:&Output) {
+    output.word(error_code(error) as u64); output.word(0); output.word(error.offset as i64 as u64);
+}
+fn success_header(amount:u64,output:&Output) { output.word(0); output.word(amount); output.word(0); }
+fn text_bytes(value:core::text::Text,output:&Output) {
+    output.word(value.length as u64); let index:i32=0;
+    while(index<value.length) { output.byte(value.bytes[value.start+index]); index+=1; }
+}
+fn owned_bytes(doc:ext::toml::Document,output:&Output) {
+    let result:core::result::Result<alloc::string::String,ext::toml::Error> = ext::toml::encode(doc);
+    if(result.is_err()) { error_header(result.unwrap_err(),output); return; }
+    let value:alloc::string::String=result.unwrap(); success_header(value.byte_len() as u64,output);
+    let index:i32=0; while(index<value.byte_len()) { output.byte(value.byte_at(index).unwrap()); index+=1; } value.destroy();
+}
+fn finish_owned(doc:ext::toml::Document,output:&Output) {
+    let result:core::result::Result<alloc::string::String,ext::toml::Error> = ext::toml::encode(doc);
+    // All borrowed readers are now inactive. The final owned result must stay
+    // complete after the real Document releases every key/value/node owner.
+    doc.destroy();
+    if(result.is_err()) { error_header(result.unwrap_err(),output); return; }
+    let value:alloc::string::String=result.unwrap(); success_header(value.byte_len() as u64,output);
+    let index:i32=0; while(index<value.byte_len()) { output.byte(value.byte_at(index).unwrap()); index+=1; } value.destroy();
+}
+fn kind_code(kind:ext::toml::Kind) -> i32 {
+    return match(kind) { ext::toml::Kind::Table -> 0, ext::toml::Kind::Array -> 1,
+        ext::toml::Kind::String -> 2, ext::toml::Kind::Integer -> 3, ext::toml::Kind::Float -> 4,
+        ext::toml::Kind::Boolean -> 5, ext::toml::Kind::OffsetDateTime -> 6,
+        ext::toml::Kind::LocalDateTime -> 7, ext::toml::Kind::LocalDate -> 8, ext::toml::Kind::LocalTime -> 9 };
+}
+fn snapshot_node(doc:ext::toml::Document,id:i32,output:&Output) {
+    let kind:i32=kind_code(doc.kind(id).unwrap()); output.word(kind as u64);
+    if(kind<=1) {
+        let count:i32=doc.child_count(id).unwrap(); output.word(count as u64);
+        let child:core::option::Option<i32> = doc.first_child(id).unwrap(); let index:i32=0;
+        while(child.is_some()) {
+            let current:i32=child.unwrap();
+            if(kind==0) {
+                let key:core::text::Text=doc.key_view(current).unwrap();
+                assert(doc.member_text(id,key).unwrap().unwrap()==current); text_bytes(key,output);
+            } else { assert(doc.element(id,index).unwrap().unwrap()==current); }
+            snapshot_node(doc,current,output); child=doc.next_sibling(current).unwrap(); index+=1;
+        }
+        assert(index==count); return;
+    }
+    if(kind==2) { text_bytes(doc.string_view(id).unwrap(),output); return; }
+    if(kind==3) { output.word(doc.integer_i64(id).unwrap() as u64); text_bytes(doc.number_view(id).unwrap(),output); return; }
+    if(kind==4) {
+        let number:f64=doc.float64(id).unwrap(); let nan:bool=core::f64::is_nan(number);
+        if(nan) { output.word(1); } else { output.word(0); }
+        if(core::f64::is_sign_negative(number)) { output.word(1); } else { output.word(0); }
+        if(nan) { output.word(0); } else { output.word(core::f64::to_bits(number)); }
+        text_bytes(doc.number_view(id).unwrap(),output); return;
+    }
+    if(kind==5) { if(doc.boolean(id).unwrap()) { output.word(1); } else { output.word(0); } return; }
+    text_bytes(doc.temporal_view(id).unwrap(),output);
+    let parts:ext::toml::Temporal=doc.temporal(id).unwrap(); text_bytes(parts.fraction,output);
+}
+fn snapshot(doc:ext::toml::Document,output:&Output) {
+    output.word(doc.node_count() as u64); snapshot_node(doc,doc.root().unwrap(),output);
+}
+struct Readers { original:ext::toml::Encoding,first:ext::toml::Encoding,second:ext::toml::Encoding,ordinal:i32 }
+fn generic_read<R>(reader:&R,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error>
+    where R:core::io::Read { return reader.read(destination,offset,count); }
+impl Readers {
+    fn borrow(&self) -> &Readers { return self; }
+    fn perform(&self,op:i32,offset:i32,count:i32,destination:[u8],output:&Output) -> i32 {
+        let index:i32=0; while(index<64) { destination[index]=((157+index*13+self.ordinal*7)&255) as u8; index+=1; }
+        output.byte(op as u8); let amount:i32=0;
+        if(op>=2) {
+            assert(op<=5);
+            if(op==2) { self.second=self.first; }
+            if(op==3) { self.first=self.second; }
+            if(op==4) { self.first=self.original; }
+            if(op==5) { self.second=self.original; }
+            output.byte(2); output.word(0);
+        } else {
+            let result:core::result::Result<i32,core::io::Error> = core::result::Ok(0);
+            if(op==0) { result=self.first.read(destination,offset,count); }
+            else { result=generic_read<ext::toml::Encoding>(self.second.borrow(),destination,offset,count); }
+            if(result.is_err()) {
+                let cause:core::io::Error=result.unwrap_err(); let code:i32=match(cause) { core::io::Error::InvalidInput -> 1, _ -> 99 };
+                output.byte(1); output.word(code as u64); amount=-1;
+            } else { amount=result.unwrap(); output.byte(0); output.word(amount as i64 as u64); }
+        }
+        output.word(self.first.remaining()); output.word(self.second.remaining());
+        index=0; while(index<64) { output.byte(destination[index]); index+=1; }
+        self.ordinal+=1; return amount;
+    }
+}
+fn exercise(seed:ext::toml::Encoding,actions:[u8],count:i32,layout:i32,output:&Output) {
+    let readers:Readers=Readers { original:seed,first:seed,second:seed,ordinal:0 };
+    let native:[u8;64]=[0;64]; let packed:[i32;16]=[0;16]; let destination:[u8]=native;
+    if(layout==1) { destination=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed),64); }
+    output.word(core::mem::slice_stride(destination) as i64 as u64);
+    let index:i32=0;
+    while(index<count) { readers.perform(get32(actions,index*12),get32(actions,index*12+4),get32(actions,index*12+8),destination,output); index+=1; }
+    let sizes:[i32;4]=[1,7,13,31]; let cursor:i32=0;
+    while(cursor<2) {
+        let turn:i32=0; let ended:bool=false;
+        while(!ended) {
+            assert(turn<=4096); let got:i32=readers.perform(cursor,3,sizes[turn%4],destination,output);
+            assert(got>=0); ended=got==0; turn+=1;
+        }
+        readers.perform(cursor,2147483647,0,destination,output); readers.perform(cursor,-1,0,destination,output);
+        readers.perform(cursor,2,3,destination,output); cursor+=1;
+    }
+    readers.perform(2,0,0,destination,output); readers.perform(1,0,1,destination,output);
+}
+fn run(header:[u8],body:[u8],actions:[u8],output:&Output) {
+    let options:ext::toml::Options=ext::toml::default_options(); options.max_depth=128; options.max_nodes=128;
+    options.max_input_bytes=8192; options.max_string_bytes=8192; options.max_number_bytes=1024;
+    options.max_output_bytes=get64(header,8) as i32; options.max_work=get64(header,16);
+    let length:i32=get64(header,0) as i32;
+    let source:core::text::Text=core::text::from_utf8_range(body,0,length).unwrap();
+    let doc:ext::toml::Document=ext::toml::parse_text(source,options).unwrap();
+    // parse_text owns its copy. Recycle the complete input before any serializer.
+    let index:i32=0; while(index<length) { body[index]=((73+index*29)&255) as u8; index+=1; }
+    snapshot(doc,output);
+    let measured:core::result::Result<u64,ext::toml::Error> = doc.encoded_len();
+    if(measured.is_err()) { error_header(measured.unwrap_err(),output); } else { success_header(measured.unwrap(),output); }
+    let prepared:core::result::Result<ext::toml::Encoding,ext::toml::Error> = doc.encoding();
+    if(prepared.is_err()) { error_header(prepared.unwrap_err(),output); }
+    else { let reader:ext::toml::Encoding=prepared.unwrap(); success_header(reader.remaining(),output); }
+    owned_bytes(doc,output);
+    if(prepared.is_ok()) { exercise(prepared.unwrap(),actions,get64(header,32) as i32,get64(header,24) as i32,output); }
+    snapshot(doc,output); finish_owned(doc,output);
+}
+fn main() -> i32 {
+    let header_words:[i32;10]=[0;10]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,40);
+    let body_words:[i32;2048]=[0;2048]; let body_pointer:ptr=core::mem::i32_array_data_ptr(body_words);
+    let body:[u8]=core::mem::typed_slice_from_raw_parts<u8>(body_pointer,8192);
+    let action_words:[i32;96]=[0;96]; let action_pointer:ptr=core::mem::i32_array_data_ptr(action_words);
+    let actions:[u8]=core::mem::typed_slice_from_raw_parts<u8>(action_pointer,384);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    while(read_exact(header_pointer,40,true)) {
+        assert(get64(header,0)<=8192 && get64(header,8)<=2048 && get64(header,24)<=1 && get64(header,32)<=32);
+        assert(read_exact(body_pointer,get64(header,0) as i32,false));
+        assert(read_exact(action_pointer,12*(get64(header,32) as i32),false));
+        run(header,body,actions,output.borrow());
+    }
+    output.flush(); return 0;
+}

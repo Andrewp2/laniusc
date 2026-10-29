@@ -67,36 +67,48 @@ fn temporal_fields() {
     document.destroy();
 }
 fn work_atomicity() {
-    let literal: str = "a=1\n";
-    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(literal), 4);
-    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(raw, 4));
-    let words: [i32; 8] = [0; 8];
-    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words), 32);
-    let target: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes, 4, 24));
-    let budget: u64 = 0; let failed: bool = false; let succeeded: bool = false;
-    while (budget <= 128) {
+    // Sixteen literal TABs parse below the serialization threshold. Their
+    // canonical output has 103 bytes; one value node gives W = 104. Two
+    // passes require exactly 208, independently of the parser's budget.
+    let raw: [u8; 21] = [97,61,39,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,39,10];
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(raw, 21));
+    let words: [i32; 32] = [0; 32];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words), 128);
+    let target: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes, 4, 120));
+    let prefix: [u8; 5] = [34,97,34,61,34];
+    let escape: [u8; 6] = [92,117,48,48,48,57];
+    let budget: u64 = 207;
+    while (budget <= 208) {
         let options: ext::toml::Options = ext::toml::default_options(); options.max_work = budget;
-        let parsed: core::result::Result<ext::toml::Document, ext::toml::Error> = ext::toml::parse_text(text, options);
-        if (core::result::is_err(parsed)) {
-            let issue: ext::toml::Error = core::result::unwrap_err(parsed);
-            assert(match (issue.kind) { ext::toml::ErrorKind::WorkLimit -> true, _ -> false });
-            budget += 1; continue;
-        }
-        let document: ext::toml::Document = core::result::unwrap(parsed);
-        let index: i32 = 0; while (index < 32) { bytes[index] = 77; index += 1; }
+        let document: ext::toml::Document = core::result::unwrap(ext::toml::parse_text(text, options));
+        assert(core::result::unwrap(document.encoded_len()) == 103);
+        let index: i32 = 0; while (index < 128) { bytes[index] = 77; index += 1; }
         let encoded: core::result::Result<i32, ext::toml::Error> = ext::toml::encode_into(document, target);
-        if (core::result::is_err(encoded)) {
+        if (budget == 207) {
             let issue: ext::toml::Error = core::result::unwrap_err(encoded);
             assert(match (issue.kind) { ext::toml::ErrorKind::WorkLimit -> true, _ -> false });
-            index = 0; while (index < 32) { assert(bytes[index] == 77); index += 1; }
-            failed = true;
+            assert(issue.offset == -1);
+            index = 0; while (index < 128) { assert(bytes[index] == 77); index += 1; }
         } else {
-            assert(core::result::unwrap(encoded) == 6 && bytes[3] == 77 && bytes[10] == 77);
-            succeeded = true;
+            assert(core::result::unwrap(encoded) == 103);
+            index = 0;
+            while (index < 128) {
+                if (index < 4 || index >= 107) { assert(bytes[index] == 77); }
+                else {
+                    if (index < 9) { assert(bytes[index] == prefix[index - 4]); }
+                    else {
+                        if (index < 105) { assert(bytes[index] == escape[(index - 9) % 6]); }
+                        else {
+                            if (index == 105) { assert(bytes[index] == 34); }
+                            else { assert(bytes[index] == 10); }
+                        }
+                    }
+                }
+                index += 1;
+            }
         }
         document.destroy(); budget += 1;
     }
-    assert(failed && succeeded);
 }
 fn main() -> i32 {
     diagnostics(); temporal_fields(); work_atomicity();
@@ -136,7 +148,9 @@ fn main() -> i32 {
     let number: alloc::string::String = core::result::unwrap(document.copy_number(2));
     let temporal: alloc::string::String = core::result::unwrap(document.copy_temporal(4));
     let encoded: alloc::string::String = core::result::unwrap(ext::toml::encode(document));
-    let needed: i32 = core::result::unwrap(ext::toml::measure(document));
+    let measured: u64 = core::result::unwrap(document.encoded_len());
+    assert(measured <= 2147483647);
+    let needed: i32 = measured as i32;
     assert(needed == encoded.byte_len() && needed > 0 && needed < 1024);
     let words: [i32; 258] = [0; 258];
     let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words), 1032);

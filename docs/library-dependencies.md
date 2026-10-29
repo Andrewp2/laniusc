@@ -3,6 +3,21 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [TOML streaming serializer](extended-toml-streaming.md) uses existing
+Document links, byte/scalar operations, Read and the owned collector. Its
+[normalizer](extended-toml-normalize.md) uses the existing Copier with fixed
+scratch. Borrowed sizing/emission and direct caller-buffer output need no
+output allocation. Stable immutable Document backing, cursor/destination
+separation and explicit cleanup remain manual obligations. All five library
+groups and four normalizer groups/64 native cases pass on Linux x86_64 CPU
+output from the GPU compiler; no other-host, device, automatic-lifetime or
+proof claim follows. The 2W serializer budget is distinct from parser budgets,
+allocator work and transport-call quotas. A fixture's chained generic Read
+result rejected with LNC0027; adding a Result import and an explicitly typed
+intermediate admits its assertions. Because both changed, the
+[inference/import cause remains unresolved](../tests/fixtures/extended_library/toml_streaming/README.md#initial-contract-compile-failure).
+There was no production or compiler repair for that fixture failure.
+
 The [literal text replacement increment](stdlib-text-replacement.md) uses
 existing Text search, UTF-8 boundaries, Iterator, Pair and Vec allocation. The
 borrowed cursor adds no allocator or host dependency; owned results use one

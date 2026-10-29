@@ -1,0 +1,97 @@
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::slice;
+import core::text;
+import ext::toml;
+import std::io;
+struct Owned { document:ext::toml::Document,scratch:alloc::vec::Vec<u8>,target:alloc::vec::Vec<u8>,count:i32 }
+impl Owned { fn borrow(&self) -> &Owned { return self; } }
+fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn literal(value:str,length:i32) -> [u8] { return core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length); }
+fn pattern(index:i32) -> u8 { let bytes:[u8;16] = [97,34,92,9,195,169,240,159,153,130,47,98,99,100,101,102]; return bytes[index%16]; }
+fn escaped(index:i32) -> u8 { let bytes:[u8;23] = [97,92,34,92,92,92,117,48,48,48,57,195,169,240,159,153,130,47,98,99,100,101,102]; return bytes[index%23]; }
+fn length(count:i32) -> i32 { return (count/16)*23+51; }
+fn expected(count:i32,index:i32) -> u8 {
+    if(index<11) { let prefix:[u8] = literal("\"payload\"=\"",11); return prefix[index]; }
+    if(index<11+(count/16)*23) { return escaped(index-11); }
+    let suffix:[u8] = literal("\"\n\"rows\"=[true,1,{\"x\"=\"v\"},07:32:00.12]\n",40); return suffix[index-11-(count/16)*23];
+}
+fn equal(text:core::text::Text,value:str,count:i32) { assert(text.byte_len()==count); let bytes:[u8] = literal(value,count); let i:i32 = 0; while(i<count) { assert(text.byte_at(i).unwrap()==bytes[i]); i+=1; } }
+fn setup(count:i32,borrowed:bool) -> Owned {
+    let source:alloc::vec::Vec<u8> = alloc::vec::new(); source.try_resize(count+49,0).unwrap();
+    let prefix:[u8] = literal("payload='",9); let suffix:[u8] = literal("'\nrows=[true,1,{x='v'},07:32:00.120000]\n",40);
+    let values:[u8] = source.as_slice(); let i:i32 = 0; while(i<9) { values[i]=prefix[i]; i+=1; }
+    i=0; while(i<count) { values[i+9]=pattern(i); i+=1; }
+    i=0; while(i<40) { values[i+9+count]=suffix[i]; i+=1; }
+    let document = ext::toml::parse_text(core::text::from_utf8(source.as_slice(),source.len()).unwrap(),ext::toml::default_options()).unwrap(); source.destroy();
+    let scratch:alloc::vec::Vec<u8> = alloc::vec::new(); let target:alloc::vec::Vec<u8> = alloc::vec::new();
+    if(borrowed) { scratch.try_resize(4105,193).unwrap(); target.try_resize(length(count)+13,193).unwrap(); }
+    return Owned { document:document,scratch:scratch,target:target,count:count };
+}
+fn kind(value:ext::toml::Kind) -> i32 { return match(value) { ext::toml::Kind::Table -> 0,ext::toml::Kind::Array -> 1,ext::toml::Kind::String -> 2,ext::toml::Kind::Integer -> 3,ext::toml::Kind::Boolean -> 5,ext::toml::Kind::LocalTime -> 9,_ -> -1 }; }
+fn preserved(owner:&Owned) {
+    let doc = owner.document; assert(doc.node_count()==8 && doc.root().unwrap()==0);
+    let kinds:[i32;8] = [0,2,1,5,3,0,2,9]; let i:i32 = 0; while(i<8) { assert(kind(doc.kind(i).unwrap())==kinds[i]); i+=1; }
+    assert(doc.child_count(0).unwrap()==2 && doc.first_child(0).unwrap().unwrap()==1);
+    assert(doc.next_sibling(1).unwrap().unwrap()==2 && doc.next_sibling(2).unwrap().is_none());
+    assert(doc.child_count(2).unwrap()==4 && doc.first_child(2).unwrap().unwrap()==3);
+    let children:[i32;4] = [3,4,5,7]; i=0; while(i<4) { let id:i32 = children[i]; assert(doc.element(2,i).unwrap().unwrap()==id);
+        if(i<3) { assert(doc.next_sibling(id).unwrap().unwrap()==children[i+1]); } else { assert(doc.next_sibling(id).unwrap().is_none()); } i+=1; }
+    assert(doc.element(2,4).unwrap().is_none()); assert(doc.boolean(3).unwrap() && doc.integer_i64(4).unwrap()==1);
+    assert(doc.child_count(5).unwrap()==1 && doc.first_child(5).unwrap().unwrap()==6 && doc.next_sibling(6).unwrap().is_none());
+    equal(doc.key_view(1).unwrap(),"payload",7); equal(doc.key_view(2).unwrap(),"rows",4); equal(doc.key_view(6).unwrap(),"x",1);
+    equal(doc.number_view(4).unwrap(),"1",1); equal(doc.string_view(6).unwrap(),"v",1); equal(doc.temporal_view(7).unwrap(),"07:32:00.120000",15);
+    let temporal = doc.temporal(7).unwrap(); assert(temporal.date.is_none() && temporal.offset.is_none());
+    let clock = temporal.time.unwrap(); assert(clock.hour==7 && clock.minute==32 && clock.second==0 && clock.nanos==120000000); equal(temporal.fraction,"120000",6);
+    let payload = doc.string_view(1).unwrap(); assert(payload.byte_len()==owner.count && payload.start==0 && core::mem::slice_stride(payload.bytes)==1);
+    i=0; while(i<owner.count) { assert(payload.byte_at(i).unwrap()==pattern(i)); i+=1; }
+    if(owner.scratch.len()>0) { assert(owner.scratch.len()==4105 && owner.scratch.capacity()==4105);
+        i=0; while(i<4105) { if(i<5 || i>=4098) { assert(owner.scratch.at(i)==193); } i+=1; }
+        assert(owner.target.len()==length(owner.count)+13 && owner.target.capacity()==length(owner.count)+13);
+        i=0; while(i<owner.target.len()) { if(i<5 || i>=length(owner.count)+5) { assert(owner.target.at(i)==193); } i+=1; }
+    }
+}
+fn publish(pointer:ptr,count:i32) { let at:i32 = 0; while(at<count) { let used:i32 = std::io::write_stdout(pointer+(at as usize),(count-at) as usize); assert(used>0 && used<=count-at); at+=used; } }
+fn borrowed(count:i32) {
+    mark(65); let owner = setup(count,true); mark(83); mark(80);
+    preserved(owner.borrow()); assert(owner.document.encoded_len().unwrap()==(length(count) as u64));
+    let early = owner.document.encoding().unwrap(); assert(early.read(owner.scratch.as_slice(),5,13).unwrap()==13); let fork = early;
+    assert(early.read(owner.scratch.as_slice(),5,1).unwrap()==1 && owner.scratch.at(5)==expected(count,13));
+    assert(fork.read(owner.scratch.as_slice(),5,1).unwrap()==1 && owner.scratch.at(5)==expected(count,13));
+    assert(early.remaining()==fork.remaining()); preserved(owner.borrow()); let cursor = owner.document.encoding().unwrap(); mark(112);
+    // Early copies retire here; the immutable owner remains usable by fresh cursors.
+    let position:i32 = 0; let calls:i32 = 0;
+    while(position<length(count)) {
+        mark(80); assert(calls<256); calls+=1; let used:i32 = cursor.read(owner.scratch.as_slice(),5,4093).unwrap();
+        let wanted:i32 = length(count)-position; if(wanted>4093) { wanted=4093; } assert(used==wanted);
+        let i:i32 = 0; while(i<used) { assert(owner.scratch.at(5+i)==expected(count,position+i)); i+=1; }
+        assert(cursor.remaining()==((length(count)-position-used) as u64)); mark(112); publish(owner.scratch.storage+5,used); position+=used;
+    }
+    mark(80); assert(cursor.read(owner.scratch.as_slice(),5,1).unwrap()==0 && cursor.remaining()==0);
+    assert(ext::toml::encode_into(owner.document,owner.target.as_view().subview(5,length(count)+5).unwrap()).unwrap()==length(count));
+    let i:i32 = 0; while(i<length(count)) { assert(owner.target.at(i+5)==expected(count,i)); i+=1; }
+    preserved(owner.borrow()); mark(112); publish(owner.target.storage+5,length(count));
+    mark(82); owner.document.destroy(); owner.scratch.destroy(); owner.target.destroy(); mark(69);
+}
+fn owned(mode:i32) {
+    mark(65); let owner = setup(262144,false); mark(83); mark(80); preserved(owner.borrow());
+    assert(owner.document.encoded_len().unwrap()==(length(owner.count) as u64)); mark(112);
+    mark(67); let result = ext::toml::encode(owner.document); mark(70);
+    if(mode==2) {
+        assert(result.is_err()); let issue = result.unwrap_err(); assert(issue.offset == -1 && match(issue.kind) { ext::toml::ErrorKind::AllocationFailed -> true,_ -> false });
+        mark(80); preserved(owner.borrow()); let fresh = owner.document.encoding().unwrap(); assert(fresh.remaining()==(length(owner.count) as u64)); mark(112);
+        mark(67); result=ext::toml::encode(owner.document); mark(70);
+    }
+    let output = result.unwrap(); mark(80); preserved(owner.borrow()); assert(output.byte_len()==length(owner.count));
+    let i:i32 = 0; while(i<output.byte_len()) { assert(output.byte_at(i).unwrap()==expected(owner.count,i)); i+=1; } mark(112);
+    mark(82); owner.document.destroy(); owner.scratch.destroy(); owner.target.destroy(); mark(80);
+    i=0; while(i<output.byte_len()) { assert(output.byte_at(i).unwrap()==expected(262144,i)); i+=1; } mark(112);
+    publish(output.bytes.storage,output.byte_len()); output.destroy(); mark(69);
+}
+fn main() -> i32 {
+    let header:[i32;1] = [0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(header),1)==1); let mode:i32 = header[0]&255; assert(mode>=0 && mode<=2);
+    if(mode==0) { borrowed(4096); borrowed(262144); } else { owned(mode); } mark(68); return 0;
+}

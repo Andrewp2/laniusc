@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **276 modules**, **14041 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **276 modules**, **14051 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -277,7 +277,7 @@ Inventory: **276 modules**, **14041 declaration/member entries**. Counts include
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
 | [ext::tls_stream](ext/tls_stream.md) | [source](../../extended/ext/tls_stream.lani#L3) | 66 | Source inventory | [extended-https-fetch](../extended-https-fetch.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-https-server](../extended-https-server.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md) |
-| [ext::toml](ext/toml.md) | [source](../../extended/ext/toml.lani#L2) | 83 | Source inventory | [extended-toml](../extended-toml.md) |
+| [ext::toml](ext/toml.md) | [source](../../extended/ext/toml.lani#L2) | 93 | Source inventory | [extended-toml](../extended-toml.md), [extended-toml-streaming](../extended-toml-streaming.md), [extended-toml-normalize](../extended-toml-normalize.md) |
 | [ext::unicode_case](ext/unicode_case.md) | [source](../../extended/ext/unicode_case.lani#L4) | 21 | Source inventory | [extended-unicode-case](../extended-unicode-case.md) |
 | [ext::unicode_graphemes](ext/unicode_graphemes.md) | [source](../../extended/ext/unicode_graphemes.lani#L3) | 18 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
 | [ext::unicode_lines](ext/unicode_lines.md) | [source](../../extended/ext/unicode_lines.lani#L3) | 37 | Source inventory | [extended-unicode-lines](../extended-unicode-lines.md) |

@@ -1452,8 +1452,15 @@
     },
     "ext::toml": {
       "guides": [
-        "docs/extended-toml.md"
-      ]
+        "docs/extended-toml.md",
+        "docs/extended-toml-streaming.md",
+        "docs/extended-toml-normalize.md"
+      ],
+      "note": "One constant-storage byte machine serves Document.encoded_len, Document.encoding, owned encode and direct encode_into. The free measure function is replaced by the encoded_len method. W counts emitted bytes, nonroot node visits and fraction scan/trim digits; sizing admits W and the other paths admit 2W for preflight/replay. This changes old owned encode W and encode_into 2W+output-bytes policy. Preflight reports the first exhausted bound in generator order: per-byte output cap precedes byte work, with node/fraction charges where encountered; there is no whole-pass output-over-work precedence. Cursor copies fork replay allowance. Borrowed Encoding implements Read only, with exact fills, inert valid zero requests, metadata rejection before EOF, independent cursor copies and immutable/disjoint backing obligations. Borrowed serialization and direct encode_into allocate no output storage; every returned encode_into error preserves the complete destination. Owned output uses the existing collector, skips allocation for empty output, and cleans partial owners on failure. The linked guides record current runtime acceptance; older parser/corpus/normalizer receipts retain their original source scope. Initial target Linux x86_64 CPU output, with other hosts/device execution/lifetime enforcement/proofs separate.",
+      "declarations": {
+        "encode": "Admit the shared borrowed reader under a 2W serializer budget, then collect independent String output. Empty output allocates nothing; partial output is destroyed on error and document owners are preserved. See the linked streaming guide for execution evidence.",
+        "encode_into": "Validate destination metadata, preflight semantic/output limits, check capacity, reserve replay work and fill directly without output allocation. Every returned error preserves the entire destination; source/cursor/destination disjointness is a manual precondition. See the linked streaming guide for execution evidence."
+      }
     },
     "ext::unicode_case": {
       "guides": [

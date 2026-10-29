@@ -1,6 +1,18 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[resumable TOML serializer](extended-toml-streaming.md) shares one byte machine
+across sizing, borrowed Read, owned encoding and direct caller-buffer output.
+Reader construction admits preflight and replay under the explicit 2W policy;
+caller-buffer errors preserve the complete destination without a temporary
+output allocation. The [existing normalizer](extended-toml-normalize.md) now
+uses fixed scratch and bounded publication. All five library groups pass,
+including the 280-case state model and two reached collector-allocation denials
+with same-document recovery. All four normalizer groups/64 native cases pass,
+including 25 reached allocation denials and exact call-budget observations.
+Three selected existing groups pass separately. This finite Linux x86_64 CPU
+increment is accepted; earlier TOML receipts retain their scope.
+The preceding
 [literal text matching and replacement increment](stdlib-text-replacement.md)
 adds a borrowed match cursor and bounded independent String results over the
 existing search engine. Its [stdin/stdout consumer](stdlib-literal-rewrite.md)
