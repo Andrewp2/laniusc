@@ -1,0 +1,55 @@
+module app::main;
+import core::io;
+import core::result;
+import core::slice;
+import alloc::buffered;
+
+// Deliberately implements only BufRead: neither generic helper may require Read.
+struct OnlyBuffered { data:[u8], cursor:i32, fills:i32, consumes:i32 }
+impl OnlyBuffered { fn borrow(&self) -> &OnlyBuffered { return self; } }
+pub impl core::io::BufRead for OnlyBuffered {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> {
+        self.fills+=1;
+        return core::result::Ok(core::slice::View { values:self.data,start:self.cursor,length:4-self.cursor });
+    }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> {
+        self.consumes+=1;
+        assert(count>=0 && count<=4-self.cursor); self.cursor+=count;
+        return core::result::Ok(count);
+    }
+}
+fn copy<B>(reader:&B,out:[u8]) -> core::result::Result<core::io::Delimited,core::io::DelimiterFailure> where B:core::io::BufRead {
+    return core::io::read_until<B>(reader,0,out,1,4,2);
+}
+fn skip<B>(reader:&B) -> core::result::Result<core::io::Delimited,core::io::DelimiterFailure> where B:core::io::BufRead {
+    return core::io::skip_until<B>(reader,255,4,2);
+}
+fn delimiter(done:core::io::Delimited,count:u64) {
+    assert(done.completed==count);
+    assert(match(done.ending) { core::io::DelimiterEnd::Delimiter -> true, _ -> false });
+}
+fn main() -> i32 {
+    let bytes:[u8;4]=[128,0,255,10]; let out:[u8;6]=[99;6];
+    let only:OnlyBuffered=OnlyBuffered { data:bytes,cursor:0,fills:0,consumes:0 };
+    let copied:core::result::Result<core::io::Delimited,core::io::DelimiterFailure> =copy<OnlyBuffered>(only.borrow(),out);
+    delimiter(copied.unwrap(),2);
+    assert(out[0]==99 && out[1]==128 && out[2]==0 && out[3]==99 && out[5]==99);
+    let skipped:core::result::Result<core::io::Delimited,core::io::DelimiterFailure> =skip<OnlyBuffered>(only.borrow());
+    delimiter(skipped.unwrap(),1); assert(only.cursor==3 && only.fills==2 && only.consumes==2);
+
+    let slice:core::io::SliceReader=core::io::slice_reader(bytes,4).unwrap();
+    delimiter(core::io::skip_until<core::io::SliceReader>(slice.borrow(),0,4,2).unwrap(),2);
+    delimiter(core::io::read_until<core::io::SliceReader>(slice.borrow(),10,out,1,4,2).unwrap(),2);
+    assert(slice.position()==4 && out[1]==255 && out[2]==10 && out[0]==99 && out[3]==99);
+
+    let inner:core::io::SliceReader=core::io::slice_reader(bytes,4).unwrap();
+    let buffered:alloc::buffered::Reader<core::io::SliceReader> =alloc::buffered::reader<core::io::SliceReader>(inner.borrow(),3).unwrap();
+    delimiter(core::io::read_until<alloc::buffered::Reader<core::io::SliceReader>>(buffered.borrow(),0,out,1,4,2).unwrap(),2);
+    assert(inner.position()==3 && buffered.buffered().length==1);
+    delimiter(core::io::skip_until<alloc::buffered::Reader<core::io::SliceReader>>(buffered.borrow(),10,4,4).unwrap(),2);
+    assert(inner.position()==4 && buffered.buffered().length==0);
+    assert(buffered.discard()==0 && !buffered.is_active());
+    assert(buffered.discard()==0 && inner.position()==4);
+    assert(bytes[0]==128 && bytes[1]==0 && bytes[2]==255 && bytes[3]==10);
+    return 0;
+}

@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[bounded delimiter-I/O increment](stdlib-delimited-io.md) adds a standalone
+BufRead protocol and read/skip helpers with byte/call caps and separate
+copied/consumed failure progress. SliceReader and the allocating buffered
+reader share the canonical protocol; fill/consume have no duplicate aliases.
+Native admission/direct contracts, the 18,000-case model and four real record-
+selection groups/91 cases pass. This finite native Linux x86_64 increment is accepted.
+Four selected buffered regressions (including the copy sample) and one
+selected stream regression pass separately.
+The preceding
 [checked storage-layout increment](stdlib-layout.md) defines eight arithmetic
 APIs for sizes, alignment, padded arrays and explicit record composition.
 Public-field revalidation, deterministic error precedence and the 64-bit
@@ -232,6 +241,29 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Bounded delimiter I/O.**
+
+The [delimiter guide](stdlib-delimited-io.md) specifies BufRead-only helper
+bounds, arbitrary byte delimiters, explicit Delimiter/Eof/Limit endings and
+fill-plus-consume call budgets. Provider metadata is checked before EOF or
+consume-budget decisions. Copy-before-consume can expose more destination
+bytes than acknowledged logical progress; errors and limits imply no rollback
+or automatic retry. SliceReader and buffered Reader implement the same
+protocol with explicit borrowed-view lifetimes and manual ownership. One
+small admission test passes in 7.24s. Four buffered regressions pass in 9.81s,
+including the real copy sample and four reached constructor OOM sites; one
+writer-only test was filtered. One stream regression passes two native
+fixtures in 11.59s with three tests filtered. Direct contracts pass two tests
+in 7.56s: six pure scenarios and two missing-BufRead rejections, with admission
+filtered. Its trace is empty for selected memory/read/write/close services,
+without an all-syscall claim. The independent model passes 18,000 cases,
+four stride combinations and two invocations/case in 5.64s after a fixture-only
+syntax correction. The real [record selector](stdlib-select-records.md) passes
+four groups/91 cases in 8.51s, including five reached allocation denials and
+real output-prefix/EOF failures. This finite increment is accepted on native
+Linux x86_64 CPU output from the GPU compiler. Earlier receipts retain their
+scope; provider effects, lifetimes and the broader library goal stay open.
 
 **Checked storage layouts.**
 

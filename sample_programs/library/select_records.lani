@@ -1,0 +1,154 @@
+// Select binary records through the public buffered delimiter protocol.
+module app::main;
+import alloc::buffered;
+import alloc::io;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::args;
+import std::signal;
+import std::stream;
+
+// This borrower bounds actual Descriptor read attempts and physical read-ahead.
+// A delimiter helper's provider-call quota is a separate interface-level bound.
+struct Input { inner:&std::stream::Descriptor, calls:i32, bytes:i32 }
+impl Input { fn borrow(&self) -> &Input { return self; } }
+pub impl core::io::Read for Input {
+    pub fn read(&self, destination:[u8], offset:i32, count:i32) -> Result<i32,core::io::Error> {
+        if (!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        if ((self.calls == 8192) || (self.bytes == 1048577)) { return core::result::Err(core::io::Error::LimitExceeded); }
+        let wanted:i32 = count;
+        if (wanted > 1048577-self.bytes) { wanted = 1048577-self.bytes; }
+        self.calls += 1;
+        let received:Result<i32,core::io::Error> = self.inner.read(destination,offset,wanted);
+        if (received.is_err()) { return received; }
+        let actual:i32 = received.unwrap();
+        if ((actual < 0) || (actual > wanted)) { return core::result::Err(core::io::Error::InvalidCount); }
+        self.bytes += actual; return core::result::Ok(actual);
+    }
+}
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > bytes.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("select_records: operation failed\n",33),2,8); return status; }
+fn input_status(error:core::io::Error) -> i32 {
+    return match(error) {
+        core::io::Error::AllocationFailed -> 4,
+        core::io::Error::LimitExceeded -> 2,
+        core::io::Error::InvalidInput -> 6,
+        core::io::Error::InvalidCount -> 6,
+        _ -> 3
+    };
+}
+fn eof(reader:&alloc::buffered::Reader<Input>, delimiter:u8) -> i32 {
+    let scratch:[u8;1] = [0;1];
+    let read:Result<core::io::Delimited,core::io::DelimiterFailure> = core::io::read_until<alloc::buffered::Reader<Input>>(reader,delimiter,scratch,0,1,16384);
+    if (read.is_err()) { return input_status(read.unwrap_err().cause); }
+    let progress:core::io::Delimited = read.unwrap();
+    if (progress.completed != 0) { return 2; }
+    return match(progress.ending) { core::io::DelimiterEnd::Eof -> 0, _ -> 6 };
+}
+fn select(reader:&alloc::buffered::Reader<Input>, delimiter:u8, every:u64, output:&alloc::io::Buffer) -> i32 {
+    let records:u64 = 0; let total:u64 = 0; let current:u64 = 0;
+    let scratch:[u8;1024] = [0;1024];
+    while(true) {
+        // Exact unterminated boundaries need an EOF observation. Any further
+        // byte exceeds at least one admitted record/input/count bound.
+        if ((total == 1048576) || (current == 65536) || (records == 65536)) { return eof(reader,delimiter); }
+        let selected:bool = (records%every) == 0;
+        let remaining:u64 = 65536-current;
+        if (remaining > 1048576-total) { remaining = 1048576-total; }
+        let maximum:u64 = remaining;
+        if (selected && (maximum > 1024)) { maximum = 1024; }
+        let read:Result<core::io::Delimited,core::io::DelimiterFailure> = core::result::Err(core::io::DelimiterFailure { cause:core::io::Error::InvalidInput,copied:0,consumed:0 });
+        if (selected) {
+            read = core::io::read_until<alloc::buffered::Reader<Input>>(reader,delimiter,scratch,0,maximum as i32,16384);
+        } else {
+            read = core::io::skip_until<alloc::buffered::Reader<Input>>(reader,delimiter,maximum,16384);
+        }
+        // A failure may have copied more than it consumed. Never append its
+        // scratch prefix or retry it; the complete staged output is discarded.
+        if (read.is_err()) { return input_status(read.unwrap_err().cause); }
+        let progress:core::io::Delimited = read.unwrap();
+        if (progress.completed > maximum) { return 6; }
+        if (selected && (progress.completed != 0)) {
+            let saved:Result<i32,core::io::Error> = output.write(scratch,0,progress.completed as i32);
+            if (saved.is_err()) { return input_status(saved.unwrap_err()); }
+            if (saved.unwrap() != (progress.completed as i32)) { return 6; }
+        }
+        total += progress.completed; current += progress.completed;
+        let ending:i32 = match(progress.ending) {
+            core::io::DelimiterEnd::Delimiter -> 1,
+            core::io::DelimiterEnd::Eof -> 2,
+            core::io::DelimiterEnd::Limit -> 3
+        };
+        if (ending == 2) { return 0; }
+        if (progress.completed == 0) { return 6; }
+        if (ending == 1) { records += 1; current = 0; }
+        // Limit after a 1024-byte selected chunk resumes this same record.
+        // Its full record/input limit is checked before the next helper.
+    }
+    return 6;
+}
+fn run(delimiter:u8, every:u64) -> i32 {
+    let source = std::stream::stdin();
+    let input = Input { inner:source.borrow(),calls:0,bytes:0 };
+    let made:Result<alloc::buffered::Reader<Input>,core::io::Error> = alloc::buffered::reader<Input>(input.borrow(),4096);
+    if (made.is_err()) { return input_status(made.unwrap_err()); } let reader = made.unwrap();
+    let created:Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(1048576);
+    if (created.is_err()) { reader.discard(); return 6; } let output = created.unwrap();
+    let status:i32 = select(reader.borrow(),delimiter,every,output.borrow());
+    reader.discard();
+    if ((status == 0) && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,8192)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    if (values.length == 1) {
+        let first:View<u8> = values.values[values.start];
+        if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) {
+            let help = literal("Usage: select_records DELIMITER EVERY\nSelect zero-based records 0, EVERY, 2*EVERY, ... from binary stdin.\nDELIMITER is ASCII decimal 0..255; EVERY is 1..65536. Leading zeros are allowed.\nKeep delimiters and a final unterminated record; trailing delimiters add no record.\nLimits: 1048576 input/output bytes, 65536 records, 65536 bytes per record including delimiter.\nUse a 4096-byte buffered reader and 1024-byte scratch; stage all output through EOF.\n8192 input/output attempts, 16384 provider calls per helper. Sole --help or -h bypasses input.\n",546);
+            if (!write(help,1,64)) { return report(5); } return 0;
+        }
+    }
+    if (values.length != 2) { return report(2); }
+    let delimiter:View<u8> = values.values[values.start]; let every:View<u8> = values.values[values.start+1];
+    if ((delimiter.length > 64) || (every.length > 64)) { return report(2); }
+    let parsed:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(delimiter.values,delimiter.start,delimiter.length);
+    let cadence:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(every.values,every.start,every.length);
+    if (parsed.is_err() || cadence.is_err()) { return report(2); }
+    if ((parsed.unwrap() > 255) || (cadence.unwrap() < 1) || (cadence.unwrap() > 65536)) { return report(2); }
+    let status:i32 = run(parsed.unwrap() as u8,cadence.unwrap()); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,2,128);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status:i32 = arguments(values.as_view()); values.destroy(); return status;
+}

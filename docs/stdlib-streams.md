@@ -28,6 +28,13 @@ allocation failures and a binary-copy application. The historical implementation
 routing failure remains preserved; current generic transport and these adapters
 have separate executable evidence.
 
+The [bounded delimiter increment](stdlib-delimited-io.md) adds standalone
+BufRead, caller-buffer `read_until` and allocation-free `skip_until`. Small
+native admission/direct contracts, the 18,000-case model and 91-case record
+selection program pass, with selected regressions separate. This finite native
+Linux x86_64 increment is accepted. Earlier stream/buffered receipts do not
+establish these additions.
+
 [Runtime formatting to writers](stdlib-format-write.md) validates the complete
 format before publication, emits through caller-sized scratch and reports the
 confirmed prefix on failure. It bounds direct writer attempts separately from
@@ -58,7 +65,7 @@ Pass borrowed stream owners to the generic helpers, for example
 `core::io::write_all(buffer.borrow(), bytes, 0, count)`. Supplied stream types
 provide `borrow()`. Custom implementations can expose an equivalent borrow.
 
-Helpers retry `Interrupted`. They return `WouldBlock` immediately; they do not
+`read_exact`, `write_all` and `copy` retry `Interrupted`. They return `WouldBlock` immediately; they do not
 poll, wait for readiness, or impose timeouts. Repeated interruptions can prevent
 completion. Exact reads convert early EOF to `UnexpectedEof`; complete writes
 convert zero progress to `WriteZero`. Counts outside the requested range produce
@@ -90,6 +97,15 @@ Byte indexing preserves the view's native stride. Fixed arrays and packed heap
 buffers both work. Stream copies share their underlying bytes but have separate
 cursor values; use borrowed receivers when one cursor should advance across
 calls. Views must remain valid for the lifetime of the stream.
+
+SliceReader also implements the canonical BufRead trait. `fill_buf` borrows
+its remaining original bytes; `consume(n)` validates and advances that cursor
+without copying or allocation. Delimiter helpers need only `B: BufRead`,
+include the delimiter and distinguish Delimiter/Eof/Limit. Their call budget
+counts fills and consumes; only Interrupted fills retry. Copy-before-consume
+can leave `DelimiterFailure.copied > consumed`. See the
+[delimiter guide](stdlib-delimited-io.md) for limits, exact acknowledgement
+and borrowed-view rules.
 
 ## Owned byte buffers
 
@@ -152,6 +168,12 @@ adapters must actually drain their pending output before reporting success.
 
 ## Execution evidence and limits
 
+The receipts below predate BufRead and its delimiter helpers. Their current
+selected regressions and new acceptance are tracked separately in the
+[delimiter guide](stdlib-delimited-io.md).
+One selected old stream test currently passes in 11.59s with the two native
+core_io/alloc_io fixtures; three other stream tests were filtered.
+
 `tests/stdlib_stream_execution.rs` executes Lanius programs on x86_64 Linux:
 
 On 2026-10-22, all four test groups passed in 10.99 seconds. Follow-up copy
@@ -186,9 +208,10 @@ timeout --kill-after=2s 100s env \
 
 The allocation-free core contains no host calls. Executable target evidence is
 currently x86_64 Linux only. The compiler runs on the GPU; these are native CPU
-programs. Wasm and user-program GPU support are unverified. Buffered stream
-adapters, owned file handles, asynchronous I/O and cancellation remain on the
-[full library roadmap](library-roadmap.md).
+programs. Wasm and user-program GPU support are unverified.
+[Buffered adapters](stdlib-buffered.md) and [owned files](stdlib-files.md)
+have their own executable profiles; asynchronous I/O and cancellation remain
+on the [full library roadmap](library-roadmap.md).
 
 An imported nested-helper composition exposed a compiler layout limitation.
 The source and reproduction command are retained in

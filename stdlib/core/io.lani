@@ -2,6 +2,7 @@
 // See docs/stdlib-streams.md and docs/stdlib-positional-io.md.
 module core::io;
 import core::result;
+import core::slice;
 
 pub enum Error {
     InvalidInput,
@@ -25,6 +26,16 @@ pub trait Read {
     // Ok(0) means EOF for nonempty requests. Err means no bytes transferred
     // by this call. Short successful reads are normal.
     pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>;
+}
+
+// Filling exposes unread bytes without logically consuming them. Empty means
+// EOF for that observation, not a permanent EOF cache. The view is read-only
+// and its borrow ends before another mutating operation on the same reader.
+pub trait BufRead {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, Error>;
+    // Success acknowledges exactly count bytes; Err acknowledges none. This
+    // never refills. Negative or excessive counts leave unread bytes intact.
+    pub fn consume(&self, count:i32) -> core::result::Result<i32, Error>;
 }
 
 pub trait Write {
@@ -210,6 +221,28 @@ pub impl Write for SliceWriter {
     }
 }
 
+pub impl BufRead for SliceReader {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, Error> {
+        if (self.cursor < 0 || self.length < self.cursor) {
+            return core::result::Err(Error::InvalidInput);
+        }
+        let bytes:core::slice::View<u8> = core::slice::View {
+            values:self.data, start:self.cursor, length:self.length-self.cursor
+        };
+        return core::result::Ok(bytes);
+    }
+    pub fn consume(&self, count:i32) -> core::result::Result<i32, Error> {
+        if (self.cursor < 0 || self.length < self.cursor) {
+            return core::result::Err(Error::InvalidInput);
+        }
+        if (count < 0 || count > self.length-self.cursor) {
+            return core::result::Err(Error::InvalidInput);
+        }
+        self.cursor += count;
+        return core::result::Ok(count);
+    }
+}
+
 // Explicit-offset operations leave the source/writer's shared cursor alone.
 // As with Read/Write, successful counts are in 0..=count and errors confirm no
 // bytes for that call. A nonempty read returning zero reports EOF to callers.
@@ -295,4 +328,115 @@ pub fn write_all_at<W>(writer:&W,source:[u8],offset:i32,count:i32,
         completed+=sent;
     }
     return core::result::Ok(completed);
+}
+
+// Binary delimiter operations include the delimiter in confirmed progress.
+// See docs/stdlib-delimited-io.md for byte/call limits and provider obligations.
+pub enum DelimiterEnd { Delimiter, Eof, Limit }
+pub struct Delimited { completed:u64, ending:DelimiterEnd }
+pub struct DelimiterFailure { cause:Error, copied:i32, consumed:u64 }
+
+// The same state machine serves copying and discarding. Destination backing
+// is used only when copying=true; source/output must then be disjoint. Native
+// indexing retains both byte strides. View lifetimes end before consume.
+fn delimiter_engine<B>(reader:&B, delimiter:u8, destination:[u8], offset:i32,
+    byte_limit:u64, max_calls:i32, copying:bool)
+    -> core::result::Result<Delimited,DelimiterFailure> where B:BufRead {
+    if (max_calls < 0) {
+        let failure:DelimiterFailure = DelimiterFailure { cause:Error::InvalidInput, copied:0, consumed:0 };
+        return core::result::Err(failure);
+    }
+    let consumed:u64 = 0;
+    let copied:i32 = 0;
+    let calls:i32 = 0;
+    while (consumed < byte_limit) {
+        if (calls >= max_calls) {
+            let failure:DelimiterFailure = DelimiterFailure { cause:Error::LimitExceeded, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        calls += 1;
+        let filled:core::result::Result<core::slice::View<u8>,Error> = reader.fill_buf();
+        if (filled.is_err()) {
+            let error:Error = filled.unwrap_err();
+            if (is_interrupted(error)) { continue; }
+            let failure:DelimiterFailure = DelimiterFailure { cause:error, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        let available:core::slice::View<u8> = filled.unwrap();
+        // Admit all successful metadata even for empty views or an exhausted
+        // consume budget. No backing access precedes these logical checks.
+        if (!valid_range(available.start, available.length)) {
+            let failure:DelimiterFailure = DelimiterFailure { cause:Error::InvalidCount, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        if (available.length == 0) {
+            let done:Delimited = Delimited { completed:consumed, ending:DelimiterEnd::Eof };
+            return core::result::Ok(done);
+        }
+        // Reserve the consume attempt before any scanning or destination copy.
+        // A successful fill may have read ahead while consuming nothing here.
+        if (calls >= max_calls) {
+            let failure:DelimiterFailure = DelimiterFailure { cause:Error::LimitExceeded, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        let remaining:u64 = byte_limit-consumed;
+        let amount:i32 = available.length;
+        let amount_wide:u64 = amount as u64;
+        if (amount_wide > remaining) { amount = remaining as i32; }
+        let selected:i32 = 0;
+        let found:bool = false;
+        while (selected < amount && !found) {
+            let byte:u8 = available.values[available.start+selected];
+            selected += 1;
+            if (copying) {
+                destination[offset+copied] = byte;
+                copied += 1;
+            }
+            if (byte == delimiter) { found = true; }
+        }
+        calls += 1;
+        let acknowledged:core::result::Result<i32,Error> = reader.consume(selected);
+        if (acknowledged.is_err()) {
+            // Copied bytes remain visible, but Err acknowledges no consumption.
+            // In particular, Interrupted from consume is never retried.
+            let error:Error = acknowledged.unwrap_err();
+            let failure:DelimiterFailure = DelimiterFailure { cause:error, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        let accepted:i32 = acknowledged.unwrap();
+        if (accepted != selected) {
+            // A nonconforming provider's actual state is unspecified. Record
+            // only earlier exact acknowledgements, without implying rollback.
+            let failure:DelimiterFailure = DelimiterFailure { cause:Error::InvalidCount, copied:copied, consumed:consumed };
+            return core::result::Err(failure);
+        }
+        // selected<=remaining, so even a u64::MAX byte limit cannot overflow.
+        consumed += selected as u64;
+        if (found) {
+            let done:Delimited = Delimited { completed:consumed, ending:DelimiterEnd::Delimiter };
+            return core::result::Ok(done);
+        }
+    }
+    // Reaching the bound performs no extra EOF/delimiter observation.
+    let done:Delimited = Delimited { completed:consumed, ending:DelimiterEnd::Limit };
+    return core::result::Ok(done);
+}
+
+pub fn read_until<B>(reader:&B, delimiter:u8, destination:[u8], offset:i32,
+    count:i32, max_calls:i32) -> core::result::Result<Delimited,DelimiterFailure>
+    where B:BufRead {
+    if (!valid_range(offset,count)) {
+        let failure:DelimiterFailure = DelimiterFailure { cause:Error::InvalidInput, copied:0, consumed:0 };
+        return core::result::Err(failure);
+    }
+    let byte_limit:u64 = count as u64;
+    return delimiter_engine(reader,delimiter,destination,offset,byte_limit,max_calls,true);
+}
+
+pub fn skip_until<B>(reader:&B, delimiter:u8, byte_limit:u64, max_calls:i32)
+    -> core::result::Result<Delimited,DelimiterFailure> where B:BufRead {
+    // A private stack placeholder avoids requiring any destination from the
+    // caller. The engine's copying=false path never reads or writes it.
+    let unused:[u8;1] = [0];
+    return delimiter_engine(reader,delimiter,unused,0,byte_limit,max_calls,false);
 }

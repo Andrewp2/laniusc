@@ -85,7 +85,21 @@ pub impl<R> Reader<R> {
     pub fn buffered(&self) -> core::slice::View<u8> {
         return core::slice::View { values: self.buffer.as_slice(), start: self.start, length: self.end - self.start };
     }
-    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, core::io::Error> where R: core::io::Read {
+    pub fn take_parts(&self) -> core::result::Result<Parts<R>, core::io::Error> {
+        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
+        let parts: Parts<R> = Parts { inner: self.inner, buffer: self.buffer, start: self.start, length: self.end - self.start, faulted: self.faulted };
+        self.buffer = alloc::vec::new(); self.start = 0; self.end = 0; self.active = false; self.faulted = false;
+        return core::result::Ok(parts);
+    }
+    pub fn discard(&self) -> i32 {
+        let discarded: i32 = self.end - self.start;
+        self.buffer.destroy(); self.start = 0; self.end = 0; self.active = false; self.faulted = false;
+        return discarded;
+    }
+}
+
+pub impl<R> core::io::BufRead for Reader<R> where R: core::io::Read {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, core::io::Error> {
         if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
         if (self.faulted) { return core::result::Err(core::io::Error::InvalidCount); }
         if (self.start != self.end) { return core::result::Ok(self.buffered()); }
@@ -109,17 +123,6 @@ pub impl<R> Reader<R> {
         self.start += count;
         if (self.start == self.end) { self.start = 0; self.end = 0; }
         return core::result::Ok(count);
-    }
-    pub fn take_parts(&self) -> core::result::Result<Parts<R>, core::io::Error> {
-        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
-        let parts: Parts<R> = Parts { inner: self.inner, buffer: self.buffer, start: self.start, length: self.end - self.start, faulted: self.faulted };
-        self.buffer = alloc::vec::new(); self.start = 0; self.end = 0; self.active = false; self.faulted = false;
-        return core::result::Ok(parts);
-    }
-    pub fn discard(&self) -> i32 {
-        let discarded: i32 = self.end - self.start;
-        self.buffer.destroy(); self.start = 0; self.end = 0; self.active = false; self.faulted = false;
-        return discarded;
     }
 }
 

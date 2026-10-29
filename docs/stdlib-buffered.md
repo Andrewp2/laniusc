@@ -8,6 +8,16 @@ Five focused groups passed compilation, strict ELF/jump checking, native
 execution, and their stated byte/ownership/fault assertions. Their elapsed
 test times are not throughput benchmarks.
 
+Those receipts predate the [canonical BufRead/delimiter increment](stdlib-delimited-io.md).
+Reader fill/consume now belong to one BufRead implementation; small native
+admission and four selected buffered regressions pass. The latter run takes
+9.81s and includes the actual binary-copy sample, reader/handoff/faults,
+nested copy and four reached constructor OOM failures; one writer-only test
+was filtered. New direct contracts, the 18,000-case model and the 91-case
+record-selection program also pass. This finite native Linux x86_64 increment
+is accepted; the separate guide scopes its runtime receipts.
+The earlier API/source receipts below retain their scope.
+
 The module is `alloc::buffered`, containing a fixed-capacity reader and
 writer over a borrowed `core::io::Read` / `core::io::Write`. The stream contracts
 in `stdlib/core/io.lani` and the manual ownership/storage rules in
@@ -29,7 +39,8 @@ reader<R>(inner: &R, capacity: i32) -> Result<Reader<R>, core::io::Error>
 writer<W>(inner: &W, capacity: i32) -> Result<Writer<W>, core::io::Error>
     where W: core::io::Write;
 
-// Reader<R> implements Read; Writer<W> implements Write.
+// Reader<R> implements Read and BufRead under R: Read;
+// Writer<W> implements Write under W: Write.
 // Both expose borrow(), is_active(), is_faulted(), capacity(),
 // take_parts() -> Result<Parts<I>, core::io::Error>, discard() -> i32.
 
@@ -54,6 +65,10 @@ Parts<I>::discard() -> i32;
 The sketches omit `&self` and fully qualified result/view types for readability;
 the module source contains the exact declarations. This API uses the existing
 core I/O errors and manual cleanup; it does not add automatic drop.
+The `fill_buf`/`consume` sketches are canonical `core::io::BufRead` trait
+members, defined once; there are no duplicate inherent aliases. Import
+`core::io` for the protocol and generic bounds. The delimiter helpers themselves
+require only BufRead, allowing providers that do not implement Read.
 
 ## Allocation and manual owners
 
