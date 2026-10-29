@@ -211,8 +211,10 @@ def backed(path, size):
 class Native:
     """The self-built image in executable memory. Each run forks; the child
     maps a fresh heap and a fresh stack, both backed by files under `scratch`
-    (see backed), and the stub switches to that stack for the call. The input
-    and output slices sit at the top of the heap, above the limit."""
+    (see backed), and the stub switches to that stack for the call. The heap
+    is laid out as `selfCompiler_outcome` (Lanius/Faithful/SelfCompiler.lean)
+    takes it: the input words from offset 4 (`selfInput`), the output view
+    after them (`selfOutput`), and the cursor 4 bytes past it (`selfNext`)."""
 
     def __init__(self, entries, image, heap_size, stack_size, scratch):
         private = mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS
@@ -223,15 +225,15 @@ class Native:
         self.entries, self.at = entries, len(image)
         self.heap_size, self.stack_size, self.scratch = heap_size, stack_size, scratch
 
-    def stub(self, heap_base, stack_top, limit, stack_limit):
+    def stub(self, heap_base, stack_top, cursor, limit, stack_limit):
         # push rbx, r12, r13, r14, r15; mov rbx, rsp; mov rsp, stack_top; r12 =
-        # the heap, r13 = the cursor (1), r14 = the limit, r15 = the stack
+        # the heap, r13 = the cursor, r14 = the limit, r15 = the stack
         # limit; the four arguments just below rsp; call w; mov rsp, rbx;
         # pop r15, r14, r13, r12, rbx; ret
         stub = bytes([0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x89, 0xE3])
         stub += bytes([0x48, 0xBC]) + stack_top.to_bytes(8, 'little')
         stub += bytes([0x49, 0xBC]) + heap_base.to_bytes(8, 'little')
-        stub += bytes([0x49, 0xBD]) + (1).to_bytes(8, 'little')
+        stub += bytes([0x49, 0xBD]) + cursor.to_bytes(8, 'little')
         stub += bytes([0x49, 0xBE]) + limit.to_bytes(8, 'little')
         stub += bytes([0x49, 0xBF]) + stack_limit.to_bytes(8, 'little')
         for k in range(4):
@@ -253,10 +255,11 @@ class Native:
             signal.alarm(timeout)
             heap, heap_base = backed(os.path.join(self.scratch, f'heap.{os.getpid()}'), self.heap_size)
             stack, stack_base = backed(os.path.join(self.scratch, f'stack.{os.getpid()}'), self.stack_size)
-            in_at = self.heap_size - 4 * (len(words) + room) - 4096
-            out_at = in_at + 4 * len(words) + 64
+            in_at = 4
+            out_at = in_at + 4 * len(words)
             heap[in_at:in_at + 4 * len(words)] = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in words)
-            fn = self.stub(heap_base, stack_base + self.stack_size - 64, in_at - 4096, stack_base + 4096)
+            fn = self.stub(heap_base, stack_base + self.stack_size - 64, out_at + 4 * room + 4, self.heap_size - 4096,
+                           stack_base + 4096)
             n = fn(in_at, len(words), out_at, room) & 0xffffffff
             n = n - 2 ** 32 if n >= 2 ** 31 else n
             payload = n.to_bytes(4, 'little', signed=True)

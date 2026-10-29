@@ -21,6 +21,14 @@ on but do not prove:
   is too small and every stopped run is at a fault; and every run that stops
   other than at a fault is at that `exit`, or Core's call reaches an
   undefined trap. Section 8 lists what is trusted about Linux.
+- `Lanius.Faithful.SelfCompiler.selfCompiler_outcome`
+  (`Lanius/Faithful/SelfCompiler.lean`, V7a). For `B` with
+  `compileSource prog = some B` (the verified compiler built by itself),
+  `B`'s code for the driver `w`, given the words of source files, faults,
+  or returns `compileText`'s answer for them in x86 memory, or Core's run of
+  `w` reaches an undefined trap (V7b is to rule that out). That the native
+  self-built compiler's bytes are `compileSource prog` is computed by
+  `lake exe runAll` (section 5, the Lean build), not by the kernel.
 - `Lanius.Mini.compileProgram_correct` (`Lanius/Mini/Correct.lean`). The same
   for a mini IR program against the mini big-step semantics.
 - `Lanius.Mini.compileProgram_stops` (`Lanius/Mini/StopsCorrect.lean`, V2c).
