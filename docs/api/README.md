@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **276 modules**, **13967 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **276 modules**, **13971 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -121,7 +121,7 @@ Inventory: **276 modules**, **13967 declaration/member entries**. Counts include
 | [alloc::string](alloc/string.md) | [source](../../stdlib/alloc/string.lani#L5) | 75 | Source inventory | [stdlib-string](../stdlib-string.md), [stdlib-clone](../stdlib-clone.md), [stdlib-owned-input](../stdlib-owned-input.md) |
 | [alloc::tree_map](alloc/tree_map.md) | [source](../../stdlib/alloc/tree_map.lani#L3) | 117 | Source inventory | [stdlib-tree-map](../stdlib-tree-map.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-tree](../stdlib-owning-tree.md), [stdlib-replacement-sinks](../stdlib-replacement-sinks.md), [stdlib-latest-values](../stdlib-latest-values.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-map-updates](../stdlib-map-updates.md) |
 | [alloc::tree_set](alloc/tree_set.md) | [source](../../stdlib/alloc/tree_set.lani#L3) | 65 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-tree](../stdlib-owning-tree.md), [stdlib-replacement-sinks](../stdlib-replacement-sinks.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md) |
-| [alloc::vec](alloc/vec.md) | [source](../../stdlib/alloc/vec.lani#L4) | 72 | Source inventory | [stdlib-vec](../stdlib-vec.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md) |
+| [alloc::vec](alloc/vec.md) | [source](../../stdlib/alloc/vec.lani#L4) | 76 | Source inventory | [stdlib-vec](../stdlib-vec.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-vec-transfer](../stdlib-vec-transfer.md), [stdlib-move-rows](../stdlib-move-rows.md) |
 
 ### `std`
 

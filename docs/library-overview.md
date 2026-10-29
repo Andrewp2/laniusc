@@ -1,6 +1,18 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[vector-transfer increment](stdlib-vec-transfer.md) adds whole-owner `take`,
+consuming append, suffix split and owned range extraction to `alloc::vec`.
+Ordered shallow transfer, unchanged owners on error, retained source capacity
+and manual exclusive authority are explicit. All eight library groups pass on
+Linux x86_64 CPU output from the GPU compiler, including a 56-case/3,584-action
+independent model, three reached reservation failures with same-owner recovery,
+and complete large typed outputs. The
+[CSV row-moving consumer](stdlib-move-rows.md) passes all four groups/133 native
+cases, including 40 reached allocation denials; the standalone build and both
+exact examples and five selected existing groups pass separately. This finite
+increment is accepted; protected-vector migration remains separate.
+The preceding
 [image-resize increment](extended-image-resize.md) adds Nearest, Bilinear and
 exact Area sampling to the existing RGBA8 module and
 [PNG transformation program](extended-image-tool.md). Source preservation,
@@ -12,7 +24,7 @@ scale shapes with at most 16 KiB scratch. The application passes four groups/
 image groups, three old consumer groups/346 cases, standalone compilation and
 both documented examples pass separately. This finite native Linux x86_64
 increment is accepted; historical receipts retain their original scopes.
-Vector owner transfer, streaming compression encoders and the other roadmap
+Streaming compression encoders and the other roadmap
 gaps remain separate work. The preceding
 [ordered form-byte increment](extended-form.md) adds borrowed form parsing,
 forgiving percent decoding, canonical streaming serialization and an optional

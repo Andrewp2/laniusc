@@ -1,0 +1,241 @@
+// Test-only binary observations; all container operations execute in Lanius.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32,allow_eof:bool) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(allow_eof && done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0); done+=got;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let i:i32=0;
+    while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn word(&self,value:u64) {
+        if(self.used==4096) { self.flush(); }
+        let i:i32=0;
+        while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; }
+        self.used+=8;
+    }
+    fn address(&self,value:ptr) {
+        if(self.used==4096) { self.flush(); }
+        assert(self.used>=0 && self.used<=4088 && self.used%8==0);
+        // Match std::linux::store_address: the native-profile i32 backing and
+        // eight-byte offsets supply one aligned slot. Preserve all pointer bits
+        // in the little-endian x86_64 output without a pointer/integer cast.
+        let slot:[ptr]=core::mem::typed_slice_from_raw_parts<ptr>(self.pointer+(self.used as usize),1);
+        slot[0]=value; self.used+=8;
+    }
+}
+trait Model<T> {
+    fn model_make(id:i32) -> T;
+    fn model_emit(value:T,output:&Output);
+    fn model_destroy(value:T);
+}
+impl Model<u8> for u8 {
+    fn model_make(id:i32) -> u8 { return id as u8; }
+    fn model_emit(value:u8,output:&Output) { output.word(value as u64); }
+    fn model_destroy(value:u8) {}
+}
+impl Model<i32> for i32 {
+    fn model_make(id:i32) -> i32 { return id*1000003-100000000; }
+    fn model_emit(value:i32,output:&Output) { output.word(value as i64 as u64); }
+    fn model_destroy(value:i32) {}
+}
+struct Payload { id:i32,wide:u64,flag:core::option::Option<bool>,words:[i32;3],branch:core::result::Result<u64,i32> }
+impl Model<Payload> for Payload {
+    fn model_make(id:i32) -> Payload {
+        let flag:core::option::Option<bool> = core::option::None();
+        if(id%3!=0) { flag=core::option::Some(id%2==0); }
+        let words:[i32;3]=[id,-id,id*1000003-100000000];
+        let branch:core::result::Result<u64,i32> = core::result::Ok(4294967296+(id as u64));
+        if(id%2!=0) { branch=core::result::Err(-id); }
+        return Payload { id:id,wide:18446744073709551615-(id as u64)*4294967297,flag:flag,words:words,branch:branch };
+    }
+    fn model_emit(value:Payload,output:&Output) {
+        output.word(value.id as u64); output.word(value.wide);
+        if(value.flag.is_none()) { output.word(0); }
+        else { if(value.flag.unwrap()) { output.word(2); } else { output.word(1); } }
+        let i:i32=0; while(i<3) { output.word(value.words[i] as i64 as u64); i+=1; }
+        if(value.branch.is_ok()) { output.word(0); output.word(value.branch.unwrap()); }
+        else { output.word(1); output.word(value.branch.unwrap_err() as i64 as u64); }
+    }
+    fn model_destroy(value:Payload) {}
+}
+struct Owned { id:i32,bytes:alloc::vec::Vec<u8> }
+impl Model<Owned> for Owned {
+    fn model_make(id:i32) -> Owned {
+        let bytes:alloc::vec::Vec<u8> = alloc::vec::new(); let count:i32=id%7+1;
+        bytes.try_reserve(count).unwrap(); let i:i32=0;
+        while(i<count) { bytes.try_push(((id*17+i*31)&255) as u8).unwrap(); i+=1; }
+        return Owned { id:id,bytes:bytes };
+    }
+    fn model_emit(value:Owned,output:&Output) {
+        output.word(value.id as u64); output.word(value.bytes.len() as u64);
+        output.word(value.bytes.capacity() as u64); output.address(value.bytes.storage);
+        let i:i32=0; while(i<value.bytes.len()) { output.word(value.bytes.at(i) as u64); i+=1; }
+    }
+    fn model_destroy(value:Owned) { value.bytes.destroy(); }
+}
+struct Unit {}
+impl Model<Unit> for Unit {
+    fn model_make(id:i32) -> Unit { return Unit {}; }
+    fn model_emit(value:Unit,output:&Output) { output.word(0); }
+    fn model_destroy(value:Unit) {}
+}
+struct Owners<T> { a:alloc::vec::Vec<T>,b:alloc::vec::Vec<T>,c:alloc::vec::Vec<T>,d:alloc::vec::Vec<T> }
+impl<T> Owners<T> {
+    fn borrow(&self) -> &Owners<T> { return self; }
+    fn slot(&self,index:i32) -> &alloc::vec::Vec<T> {
+        assert(index>=0 && index<4);
+        if(index==0) { return self.a.borrow(); }
+        if(index==1) { return self.b.borrow(); }
+        if(index==2) { return self.c.borrow(); }
+        return self.d.borrow();
+    }
+}
+fn install<T>(target:&alloc::vec::Vec<T>,value:alloc::vec::Vec<T>) {
+    assert(target.storage==0 && target.len()==0 && target.capacity()==0);
+    // Exactly one cleanup authority moves to the empty slot. The local value
+    // is thereafter inactive, as required by Lanius's manual owner protocol.
+    target.storage=value.storage; target.length=value.length; target.reserved=value.reserved;
+}
+fn items<T>(view:core::slice::View<T>,output:&Output) where T: Model<T> {
+    assert(view.length>=0 && view.length<=48); let i:i32=0;
+    while(i<view.length) { T::model_emit(view.values[view.start+i],output); i+=1; }
+}
+fn snapshot<T>(owners:&Owners<T>,output:&Output) where T: Model<T> {
+    let i:i32=0;
+    while(i<4) {
+        let owner:&alloc::vec::Vec<T> = owners.slot(i);
+        let view:core::slice::View<T> = owner.as_view();
+        assert(view.start==0 && view.length==owner.len());
+        assert(owner.get(-1).is_none() && owner.get(owner.len()).is_none());
+        output.word(owner.len() as u64); output.word(owner.capacity() as u64);
+        output.address(owner.storage);
+        output.word(core::mem::slice_stride(view.values) as i64 as u64);
+        if(owner.is_empty()) { output.word(1); } else { output.word(0); }
+        items<T>(view,output); i+=1;
+    }
+}
+fn emit_view<T>(view:core::slice::View<T>,output:&Output) where T: Model<T> {
+    output.word(view.start as u64); output.word(view.length as u64);
+    output.word(core::mem::slice_stride(view.values) as i64 as u64); items<T>(view,output);
+}
+fn code(result:core::result::Result<i32,alloc::vec::Error>) -> i32 {
+    if(result.is_ok()) { return 0; }
+    return match(result.unwrap_err()) {
+        alloc::vec::Error::Bounds -> 1,
+        alloc::vec::Error::InvalidCapacity -> 2,
+        alloc::vec::Error::CapacityOverflow -> 3,
+        alloc::vec::Error::AllocationFailed -> 4
+    };
+}
+fn retire<T>(owner:&alloc::vec::Vec<T>,count:i32,output:&Output) where T: Model<T> {
+    output.word(count as u64); let i:i32=0;
+    while(i<count) {
+        let value:T=owner.pop().unwrap(); T::model_emit(value,output); T::model_destroy(value); i+=1;
+    }
+}
+fn run<T>(actions:[u8],count:i32,output:&Output) where T: Model<T> {
+    let owners:Owners<T> = Owners { a:alloc::vec::new<T>(),b:alloc::vec::new<T>(),c:alloc::vec::new<T>(),d:alloc::vec::new<T>() };
+    output.word(core::mem::size_of<T>() as u64); snapshot<T>(owners.borrow(),output);
+    let step:i32=0;
+    while(step<count) {
+        let offset:i32=step*40; let op:i32=get64(actions,offset) as i32;
+        let src:i32=get64(actions,offset+8) as i32; let dst:i32=get64(actions,offset+16) as i32;
+        let a:i32=get64(actions,offset+24) as i64 as i32; let b:i32=get64(actions,offset+32) as i64 as i32;
+        assert(op>=0 && op<=10 && src>=0 && src<4 && dst>=0 && dst<4);
+        let from:&alloc::vec::Vec<T> = owners.slot(src); let to:&alloc::vec::Vec<T> = owners.slot(dst);
+        let old_from:core::slice::View<T> = from.as_view(); let old_to:core::slice::View<T> = to.as_view();
+        let old_count:i32=from.len(); let status:core::result::Result<i32,alloc::vec::Error> = core::result::Ok(0);
+        let retired:i32=0; let view_flags:i32=0;
+        if(op==0) {
+            assert(a>0 && a<=200); let value:T=T::model_make(a); status=from.try_push(value);
+            assert(status.is_ok());
+        } else { if(op==1) {
+            status=from.try_reserve(a); if(status.is_err()) { view_flags=1; }
+        } else { if(op==2) {
+            assert(src!=dst); let value:alloc::vec::Vec<T> = from.take();
+            status=core::result::Ok(value.len()); install<T>(to,value);
+        } else { if(op==3) {
+            assert(src!=dst); status=to.try_append(from);
+            if(status.is_err() || old_count==0) { view_flags=3; }
+        } else { if(op==4 || op==5) {
+            assert(src!=dst); let extracted:core::result::Result<alloc::vec::Vec<T>,alloc::vec::Error> = core::result::Err(alloc::vec::Error::Bounds);
+            if(op==4) { extracted=from.try_split_off(a); } else { extracted=from.try_extract_range(a,b); }
+            if(extracted.is_err()) { status=core::result::Err(extracted.unwrap_err()); view_flags=3; }
+            else {
+                let value:alloc::vec::Vec<T> = extracted.unwrap(); let n:i32=value.len();
+                status=core::result::Ok(n); install<T>(to,value); if(n==0) { view_flags=1; }
+            }
+        } else { if(op==6) {
+            if(old_count>0) { retired=1; } status=core::result::Ok(retired);
+        } else { if(op==7 || op==8) {
+            retired=old_count; status=core::result::Ok(retired);
+        } else { if(op==9) {
+            from.reverse(); status=core::result::Ok(from.len());
+        } else {
+            status=from.try_shrink_to_fit(); if(status.is_err()) { view_flags=1; }
+        } } } } } } } }
+        output.word(step as u64); output.word(op as u64); output.word(code(status) as u64);
+        if(status.is_ok()) { output.word(status.unwrap() as u64); } else { output.word(0); }
+        retire<T>(from,retired,output); if(op==8) { from.destroy(); }
+        output.word(view_flags as u64);
+        if((view_flags&1)!=0) { emit_view<T>(old_from,output); }
+        if((view_flags&2)!=0) { emit_view<T>(old_to,output); }
+        snapshot<T>(owners.borrow(),output); step+=1;
+    }
+    let i:i32=0;
+    while(i<4) {
+        let owner:&alloc::vec::Vec<T> = owners.slot(i);
+        retire<T>(owner,owner.len(),output); owner.destroy(); i+=1;
+    }
+    snapshot<T>(owners.borrow(),output);
+}
+fn main() -> i32 {
+    assert(core::mem::size_of<ptr>()==8);
+    let header_words:[i32;4]=[0;4]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,16);
+    assert(read_exact(header_pointer,16,false)); assert(get64(header,0)==8531334420909616755);
+    let cases:i32=get64(header,8) as i32; assert(cases>0 && cases<=80);
+    let action_words:[i32;640]=[0;640]; let action_pointer:ptr=core::mem::i32_array_data_ptr(action_words);
+    let actions:[u8]=core::mem::typed_slice_from_raw_parts<u8>(action_pointer,2560);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    output.word(8531334420909616755); output.word(cases as u64); let index:i32=0;
+    while(index<cases) {
+        assert(read_exact(header_pointer,16,false)); let shape:i32=get64(header,0) as i32; let count:i32=get64(header,8) as i32;
+        assert(shape>=0 && shape<5 && count>0 && count<=64); assert(read_exact(action_pointer,count*40,false));
+        output.word(index as u64); output.word(shape as u64); output.word(count as u64);
+        if(shape==0) { run<u8>(actions,count,output.borrow()); }
+        if(shape==1) { run<i32>(actions,count,output.borrow()); }
+        if(shape==2) { run<Payload>(actions,count,output.borrow()); }
+        if(shape==3) { run<Owned>(actions,count,output.borrow()); }
+        if(shape==4) { run<Unit>(actions,count,output.borrow()); }
+        index+=1;
+    }
+    assert(!read_exact(header_pointer,1,true)); output.word(7308889696566865523); output.flush(); return 0;
+}

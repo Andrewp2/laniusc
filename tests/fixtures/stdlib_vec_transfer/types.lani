@@ -1,0 +1,58 @@
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+fn rearranged<T>(a:T,b:T,c:T) -> alloc::vec::Vec<T> {
+    let source:alloc::vec::Vec<T> =alloc::vec::with_capacity<T>(7).unwrap(); source.try_push(a).unwrap(); source.try_push(b).unwrap(); source.try_push(c).unwrap();
+    let moved:alloc::vec::Vec<T> =source.take(); let middle_result:core::result::Result<alloc::vec::Vec<T>,alloc::vec::Error> =moved.try_extract_range(1,2); let middle:alloc::vec::Vec<T> =middle_result.unwrap();
+    let tail_result:core::result::Result<alloc::vec::Vec<T>,alloc::vec::Error> =moved.try_split_off(1); let tail:alloc::vec::Vec<T> =tail_result.unwrap();
+    assert(moved.capacity()==7 && middle.capacity()==1 && tail.capacity()==1 && middle.storage!=tail.storage && moved.storage!=middle.storage);
+    moved.try_append(middle.borrow()).unwrap(); moved.try_append(tail.borrow()).unwrap(); assert(moved.len()==3 && middle.len()==0 && tail.len()==0);
+    source.destroy(); middle.destroy(); tail.destroy(); return moved;
+}
+enum Fault { Code(i64,core::option::Option<bool>) }
+type Nested = core::option::Option<core::result::Result<[u64;2],Fault>>;
+fn scalar_shapes() {
+    let bytes:alloc::vec::Vec<u8> =rearranged<u8>(0,128,255); assert(core::mem::slice_stride(bytes.as_slice())==1 && bytes.at(0)==0 && bytes.at(1)==128 && bytes.at(2)==255); bytes.destroy();
+    let flags:alloc::vec::Vec<bool> =rearranged<bool>(true,false,true); assert(core::mem::slice_stride(flags.as_slice())<0 && flags.at(0) && !flags.at(1) && flags.at(2)); flags.destroy();
+    let a:[u64;3]=[0,18446744073709551615,4294967297]; let b:[u64;3]=[9223372036854775808,17,23]; let c:[u64;3]=[1,2,3];
+    let arrays:alloc::vec::Vec<[u64;3]> =rearranged<[u64;3]>(a,b,c); assert(core::mem::slice_stride(arrays.as_slice())<0);
+    let first:[u64;3]=arrays.at(0); let second:[u64;3]=arrays.at(1); let third:[u64;3]=arrays.at(2); let i:i32=0; while(i<3) { assert(first[i]==a[i] && second[i]==b[i] && third[i]==c[i]); i+=1; } arrays.destroy();
+    let absent:Nested=core::option::None(); let pair:[u64;2]=[18446744073709551615,9223372036854775808];
+    let ok:core::result::Result<[u64;2],Fault> =core::result::Ok(pair); let present:Nested=core::option::Some(ok);
+    let error:core::result::Result<[u64;2],Fault> =core::result::Err(Fault::Code(-9223372036854775808,core::option::Some(false))); let failed:Nested=core::option::Some(error);
+    let nested:alloc::vec::Vec<Nested> =rearranged<Nested>(absent,present,failed); let n0:Nested=nested.at(0); let n1:Nested=nested.at(1); let n2:Nested=nested.at(2); assert(n0.is_none());
+    let r1:core::result::Result<[u64;2],Fault> =n1.unwrap(); let actual:[u64;2]=r1.unwrap(); assert(actual[0]==pair[0] && actual[1]==pair[1]);
+    let r2:core::result::Result<[u64;2],Fault> =n2.unwrap(); let fault:Fault=r2.unwrap_err(); assert(match(fault) { Fault::Code(code,flag) -> code == -9223372036854775808 && !flag.unwrap() }); nested.destroy();
+}
+struct Owned { id:i32,text:alloc::string::String,words:alloc::vec::Vec<u64> }
+fn make(id:i32) -> Owned {
+    let bytes:[u8;4]=[(65+id) as u8,0,195,169]; let text:alloc::string::String=alloc::string::from_utf8(bytes,4).unwrap();
+    let words:alloc::vec::Vec<u64> =alloc::vec::with_capacity<u64>(2).unwrap(); words.try_push(18446744073709551615-(id as u64)).unwrap(); words.try_push(4294967297+(id as u64)).unwrap(); return Owned { id:id,text:text,words:words };
+}
+fn owned_value(item:Owned,id:i32,text_pointer:ptr,word_pointer:ptr) {
+    assert(item.id==id && item.text.bytes.storage==text_pointer && item.words.storage==word_pointer && item.text.byte_len()==4 && item.words.len()==2);
+    assert(item.text.byte_at(0).unwrap()==(65+id) as u8 && item.text.byte_at(1).unwrap()==0 && item.text.byte_at(2).unwrap()==195 && item.text.byte_at(3).unwrap()==169);
+    assert(item.words.at(0)==18446744073709551615-(id as u64) && item.words.at(1)==4294967297+(id as u64));
+}
+fn retire(item:Owned,counts:[i32]) { assert(item.id>=0 && item.id<4 && counts[item.id]==0); counts[item.id]+=1; item.text.destroy(); item.words.destroy(); }
+fn nested_owners() {
+    let source:alloc::vec::Vec<Owned> =alloc::vec::with_capacity<Owned>(5).unwrap(); let null:ptr=0; let text_pointers:[ptr;4]=[null;4]; let word_pointers:[ptr;4]=[null;4]; let counts:[i32;4]=[0;4]; let i:i32=0;
+    while(i<3) { let item:Owned=make(i); text_pointers[i]=item.text.bytes.storage; word_pointers[i]=item.words.storage; source.try_push(item).unwrap(); i+=1; }
+    let moved:alloc::vec::Vec<Owned> =source.take(); let middle:alloc::vec::Vec<Owned> =moved.try_extract_range(1,2).unwrap(); let tail:alloc::vec::Vec<Owned> =moved.try_split_off(1).unwrap();
+    owned_value(moved.at(0),0,text_pointers[0],word_pointers[0]); owned_value(middle.at(0),1,text_pointers[1],word_pointers[1]); owned_value(tail.at(0),2,text_pointers[2],word_pointers[2]);
+    moved.try_append(middle.borrow()).unwrap(); moved.try_append(tail.borrow()).unwrap(); assert(middle.len()==0 && tail.len()==0); middle.destroy(); tail.destroy();
+    let added:Owned=make(3); text_pointers[3]=added.text.bytes.storage; word_pointers[3]=added.words.storage; source.try_push(added).unwrap(); assert(source.storage!=moved.storage);
+    i=0; while(i<3) { owned_value(moved.at(i),i,text_pointers[i],word_pointers[i]); assert(counts[i]==0); i+=1; }
+    // Pop transfers the nested owner before growth changes its descriptors.
+    let changed:Owned=moved.pop().unwrap(); owned_value(changed,2,text_pointers[2],word_pointers[2]);
+    changed.text.try_push_scalar(33).unwrap(); changed.words.try_push(9223372036854775808).unwrap();
+    assert(changed.text.byte_len()==5 && changed.text.byte_at(4).unwrap()==33 && changed.words.len()==3 && changed.words.at(2)==9223372036854775808);
+    retire(changed,counts); let second:Owned=moved.pop().unwrap(); owned_value(second,1,text_pointers[1],word_pointers[1]); retire(second,counts);
+    let first:Owned=moved.pop().unwrap(); owned_value(first,0,text_pointers[0],word_pointers[0]); retire(first,counts); assert(moved.len()==0); moved.destroy();
+    let reused:Owned=source.pop().unwrap(); owned_value(reused,3,text_pointers[3],word_pointers[3]); retire(reused,counts); source.destroy();
+    i=0; while(i<4) { assert(counts[i]==1); i+=1; }
+}
+fn main() -> i32 { scalar_shapes(); nested_owners(); return 0; }

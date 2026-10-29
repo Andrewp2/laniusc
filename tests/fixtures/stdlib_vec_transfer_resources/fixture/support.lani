@@ -1,0 +1,49 @@
+module fixture::support;
+import alloc::string;
+import alloc::vec;
+import core::mem;
+import core::slice;
+import std::io;
+pub struct Entry { data:alloc::vec::Vec<u8>,label:alloc::string::String }
+pub fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+pub fn mode() -> i32 { let byte:[i32;1] = [0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(byte),1)==1); return byte[0]&255; }
+pub fn data(id:i32,index:i32) -> u8 { return ((id*29+index*17+3)%256) as u8; }
+pub fn label(id:i32,index:i32) -> u8 { return (65+(id*7+index*3)%26) as u8; }
+pub fn entry(id:i32) -> Entry {
+    let bytes:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(8).unwrap();
+    let text:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(12).unwrap();
+    let i:i32 = 0; while(i<8) { bytes.try_push(data(id,i)).unwrap(); i+=1; }
+    i=0; while(i<12) { text.try_push(label(id,i)).unwrap(); i+=1; }
+    let string=alloc::string::from_utf8_vec(text.borrow()).unwrap(); assert(text.len()==0 && text.capacity()==0);
+    return Entry { data:bytes,label:string };
+}
+pub fn owner(base:i32,count:i32,capacity:i32,pointers:[ptr]) -> alloc::vec::Vec<Entry> {
+    let values:alloc::vec::Vec<Entry> = alloc::vec::with_capacity<Entry>(capacity).unwrap(); let i:i32 = 0;
+    while(i<count) { let value=entry(base+i); pointers[(base+i)*2]=value.data.storage; pointers[(base+i)*2+1]=value.label.bytes.storage;
+        values.try_push(value).unwrap(); i+=1; } return values;
+}
+pub fn check_entry(value:Entry,id:i32,pointers:[ptr]) {
+    assert(value.data.len()==8 && value.data.capacity()==8 && value.label.byte_len()==12 && value.label.capacity()==12);
+    assert(value.data.storage==pointers[id*2] && value.label.bytes.storage==pointers[id*2+1]);
+    let i:i32 = 0; while(i<8) { assert(value.data.at(i)==data(id,i)); i+=1; }
+    i=0; while(i<12) { assert(value.label.byte_at(i).unwrap()==label(id,i)); i+=1; }
+}
+pub fn check_view(values:core::slice::View<Entry>,base:i32,skip_at:i32,skip:i32,pointers:[ptr]) {
+    let i:i32 = 0; while(i<values.length) { let id:i32 = base+i; if(i>=skip_at) { id+=skip; }
+        check_entry(values.get(i).unwrap(),id,pointers); i+=1; }
+}
+pub fn check(values:&alloc::vec::Vec<Entry>,base:i32,skip_at:i32,skip:i32,pointers:[ptr]) { check_view(values.as_view(),base,skip_at,skip,pointers); }
+pub fn publish(pointer:ptr,count:i32) {
+    let used:i32 = 0; let calls:i32 = 0; while(used<count) { assert(calls<4096); calls+=1;
+        let n:i32 = std::io::write_stdout(pointer+(used as usize),(count-used) as usize); assert(n>0 && n<=count-used); used+=n; }
+}
+pub fn header(a:i32,b:i32,c:i32,d:i32) { let words:[i32;4] = [a,b,c,d]; publish(core::mem::i32_array_data_ptr(words),16); }
+pub fn publish_entries(values:&alloc::vec::Vec<Entry>) {
+    let i:i32 = 0; while(i<values.len()) { let value=values.at(i); publish(value.data.storage,8); publish(value.label.bytes.storage,12); i+=1; }
+}
+pub fn destroy_entries(values:&alloc::vec::Vec<Entry>) {
+    let i:i32 = 0; while(i<values.len()) { let value=values.at(i); value.data.destroy(); value.label.destroy(); i+=1; } values.destroy();
+}
+pub fn number(bytes:[u8],offset:i32,value:u64,width:i32) {
+    let rest:u64 = value; let i:i32 = 0; while(i<width) { bytes[offset+i]=(rest%256) as u8; rest=rest/256; i+=1; }
+}

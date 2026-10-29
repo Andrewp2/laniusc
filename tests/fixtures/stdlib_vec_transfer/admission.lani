@@ -1,0 +1,24 @@
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+struct Item { id:i32, wide:u64, flag:core::option::Option<bool>, bytes:[u8;3] }
+fn item(id:i32) -> Item { let bytes:[u8;3]=[id as u8,128,255]; return Item { id:id,wide:18446744073709551615-(id as u64),flag:core::option::Some(id%2==0),bytes:bytes }; }
+fn check(value:Item,id:i32) { assert(value.id==id && value.wide==18446744073709551615-(id as u64) && value.flag.unwrap()==(id%2==0) && value.bytes[0]==id as u8 && value.bytes[1]==128 && value.bytes[2]==255); }
+fn move_items<T>(source:&alloc::vec::Vec<T>) -> alloc::vec::Vec<T> {
+    let pointer:ptr=source.storage; let capacity:i32=source.capacity(); let moved:alloc::vec::Vec<T> =source.take();
+    assert(source.storage==0 && source.len()==0 && source.capacity()==0 && moved.storage==pointer && moved.capacity()==capacity && moved.len()==4);
+    let split:core::result::Result<alloc::vec::Vec<T>,alloc::vec::Error> =moved.try_split_off(2); let tail:alloc::vec::Vec<T> =split.unwrap();
+    let selected:core::result::Result<alloc::vec::Vec<T>,alloc::vec::Error> =moved.try_extract_range(0,1); let first:alloc::vec::Vec<T> =selected.unwrap();
+    assert(moved.len()==1 && tail.len()==2 && first.len()==1 && moved.storage==pointer && moved.capacity()==capacity);
+    let appended:core::result::Result<i32,alloc::vec::Error> =moved.try_append(tail.borrow()); assert(appended.unwrap()==3);
+    let final:core::result::Result<i32,alloc::vec::Error> =moved.try_append(first.borrow()); assert(final.unwrap()==4);
+    assert(tail.len()==0 && tail.capacity()==2 && first.len()==0 && first.capacity()==1 && moved.storage==pointer && moved.capacity()==capacity);
+    tail.destroy(); first.destroy(); return moved;
+}
+fn main() -> i32 {
+    let source:alloc::vec::Vec<Item> =alloc::vec::with_capacity<Item>(7).unwrap(); let i:i32=0; while(i<4) { source.try_push(item(i)).unwrap(); i+=1; }
+    let moved:alloc::vec::Vec<Item> =move_items<Item>(source.borrow()); let ids:[i32;4]=[1,2,3,0]; i=0; while(i<4) { check(moved.at(i),ids[i]); i+=1; }
+    assert(source.try_push(item(9)).unwrap()==1 && source.storage!=moved.storage); check(source.at(0),9);
+    i=0; while(i<4) { check(moved.at(i),ids[i]); i+=1; } source.destroy(); moved.destroy(); return 0;
+}

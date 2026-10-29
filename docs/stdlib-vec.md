@@ -44,6 +44,10 @@ values.destroy();
 | `borrow()` | Reference to the owner |
 | `len()`, `capacity()`, `is_empty()` | Initialized count and storage capacity |
 | `as_slice()`, `as_view()` | Borrow initialized storage; the View retains its logical count |
+| `take()` | Transfer the whole owner and reset this descriptor; no allocation or element copying |
+| `try_append(other)` | Atomically transfer every donor entry in order; empty the donor while retaining its capacity |
+| `try_split_off(at)` | Return an independent suffix owner; retain source backing and capacity |
+| `try_extract_range(start,end)` | Return an independent owner for `[start,end)` and compact the retained suffix |
 | `take_iter()` | Transfer storage and initialized entries into an owning `IntoIter<T>`; reset this owner |
 | `get(index)`, `get_or(index, fallback)` | Optional shallow copy or explicit fallback |
 | `at(index)` | Shallow copy; invalid indices invoke `core::panic` |
@@ -74,6 +78,13 @@ or constructor capacity is InvalidCapacity. Negative truncate/resize lengths
 and invalid edit indices are Bounds. Truncate at or beyond the current length
 succeeds and returns the unchanged length. Empty extension succeeds without
 allocation. These successful no-ops are part of the contract.
+
+The [direct owner-transfer guide](stdlib-vec-transfer.md) defines the four new
+methods' exclusive-owner and descriptor-location preconditions, unchanged
+state on errors, empty-operation view preservation and zero-sized paths. The
+eight library groups pass, as do four application groups/133 cases, on the
+finite native Linux x86_64 profile.
+Earlier edit, clone and iterator receipts below retain their original scope.
 
 Length and capacity are i32. Storage is limited to `i32::MAX` bytes, so the
 maximum entry count depends on `size_of<T>()`. Overflow is checked before
@@ -153,9 +164,10 @@ bounds and reserved capacity make them infallible.
 
 `std::vec` remains for two recorded boundaries and compiler regression fixtures:
 
-- The verified compiler and its extractor explicitly identify
-  `std::vec::Vec`. Removing it requires changing that separate proof/extraction
-  contract, which this stdlib work does not modify.
+- Active formal vector specifications and program/template contracts identify
+  `std::vec::Vec`. The mini compiler and extractor use `List`; retiring the
+  protected vector still requires coordinating those remaining formal
+  contracts, which this stdlib work does not modify.
 - The attempted binary-heap migration still reaches a GPU compiler replay
   layout error on compiler `59612b34`. The unchanged minimal candidate fails
   with LNC0047; the same entry using the production heap passes the strict x86

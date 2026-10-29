@@ -58,6 +58,13 @@ pub impl<T> Vec<T> {
         let view: core::slice::View<T> = self.as_view();
         return view.iter();
     }
+    // Transfer the allocation and initialized item cleanup authority. End old
+    // borrows first; copied owner aliases must remain inactive.
+    pub fn take(&self) -> Vec<T> {
+        let value: Vec<T> = Vec { storage: self.storage, length: self.length, reserved: self.reserved };
+        let empty: ptr = 0; self.storage = empty; self.length = 0; self.reserved = 0;
+        return value;
+    }
     // Transfer storage and item cleanup authority, leaving this owner reusable.
     // End source views/cursors first; by-value owner aliases must stay inactive.
     pub fn take_iter(&self) -> IntoIter<T> {
@@ -151,6 +158,50 @@ pub impl<T> Vec<T> {
         if (grows && self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
         self.storage = storage; self.reserved = capacity; self.length = needed;
         return core::result::Ok(needed);
+    }
+
+    // Transfer entries between distinct active owners with independent backing.
+    // Neither descriptor may live in storage this operation can invalidate.
+    // The emptied donor retains its allocation; errors leave both owners intact.
+    pub fn try_append(&self, other: &Vec<T>) -> core::result::Result<i32, Error> {
+        let count: i32 = other.length;
+        if (count > capacity_limit<T>() - self.length) { return core::result::Err(Error::CapacityOverflow); }
+        if (count == 0) { return core::result::Ok(self.length); }
+        if (core::mem::size_of<T>() == 0) {
+            let reserved: core::result::Result<i32, Error> = self.try_reserve(count);
+            if (core::result::is_err(reserved)) { return reserved; }
+            self.length += count; other.length = 0;
+            return core::result::Ok(self.length);
+        }
+        let appended: core::result::Result<i32, Error> = self.try_extend(other.as_view());
+        if (core::result::is_err(appended)) { return appended; }
+        other.length = 0;
+        return appended;
+    }
+
+    // Move a suffix into independent storage while retaining this allocation.
+    pub fn try_split_off(&self, at: i32) -> core::result::Result<Vec<T>, Error> {
+        return self.try_extract_range(at, self.length);
+    }
+
+    // Eagerly transfer an ordered range, retaining source capacity. Reserve
+    // before reading or moving entries so every error preserves old borrows.
+    pub fn try_extract_range(&self, start: i32, end: i32) -> core::result::Result<Vec<T>, Error> {
+        if (start < 0 || end < start || end > self.length) { return core::result::Err(Error::Bounds); }
+        let count: i32 = end - start;
+        let extracted: Vec<T> = new();
+        if (count == 0) { return core::result::Ok(extracted); }
+        let reserved: core::result::Result<i32, Error> = extracted.try_reserve(count);
+        if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
+        if (core::mem::size_of<T>() > 0) {
+            let source: [T] = self.slots(); let target: [T] = extracted.slots();
+            let index: i32 = 0;
+            while (index < count) { target[index] = source[start + index]; index += 1; }
+            index = end;
+            while (index < self.length) { source[index - count] = source[index]; index += 1; }
+        }
+        extracted.length = count; self.length -= count;
+        return core::result::Ok(extracted);
     }
 
     // Replaced/removed values transfer to the caller; no nested destruction.

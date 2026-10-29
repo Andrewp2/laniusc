@@ -3,6 +3,20 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [vector-transfer increment](stdlib-vec-transfer.md) uses the existing
+`alloc::vec` allocator and capacity-dependent typed storage. Four direct
+methods add no trait or host-service dependency. Exclusive owner descriptors,
+independent append backing, stable borrowed resources and exactly-once nested
+cleanup remain manual obligations. All eight library groups pass on Linux
+x86_64 CPU output from the GPU compiler, as do all four row-moving application
+groups/133 cases. Five selected existing groups and standalone examples pass
+separately. No compiler repair was needed: initial fixture/CLI syntax or typing
+errors and an unsupported test-observer pointer cast were corrected locally.
+This increment does not migrate protected `std::vec`, alter layouts or supply
+enforced ownership, other-host/device support or formal proofs. The mini compiler and extractor
+use `List`; protected heap backing and active formal vector contracts remain
+separate migration boundaries.
+
 The [image-resize increment](extended-image-resize.md) uses existing image
 views, integer arithmetic and alloc storage. Nearest, Bilinear and Area have
 explicit sampling and alpha contracts; tiled exact Area workspace is bounded

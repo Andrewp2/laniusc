@@ -1,0 +1,236 @@
+// Move a block of owned CSV records; stage everything before publication.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option::Option;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice;
+import core::slice::View;
+import ext::csv;
+import ext::csv_write;
+import std::args;
+import std::signal;
+import std::stream;
+
+const MAX_INPUT:i32 = 4194304;
+const MAX_OUTPUT:i32 = 8388608;
+const MAX_ROWS:i32 = 16384;
+enum Failure { Arguments, ArgumentIo, InputLimit, ReadLimit, InputIo, InvalidCsv, DataLimit, Bounds, Allocation, OutputLimit, OutputCalls, OutputIo, Invariant }
+struct Selection { start:i32, end:i32, before:i32 }
+enum Command { Help, Move(Selection) }
+
+fn literal(value:str,count:i32) -> View<u8> {
+    return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),start:0,length:count };
+}
+fn same(left:View<u8>,right:View<u8>) -> bool {
+    if(left.length!=right.length) { return false; }
+    let index:i32=0; while(index<left.length) {
+        if(left.values[left.start+index]!=right.values[right.start+index]) { return false; } index+=1;
+    } return true;
+}
+fn status(error:Failure) -> i32 {
+    return match(error) {
+        Failure::Allocation->4, Failure::ArgumentIo->3, Failure::InputIo->3, Failure::OutputIo->3,
+        Failure::Invariant->6, _ ->2
+    };
+}
+fn vec_failure(error:alloc::vec::Error) -> Failure {
+    return match(error) { alloc::vec::Error::AllocationFailed->Failure::Allocation,
+        alloc::vec::Error::CapacityOverflow->Failure::DataLimit, _ ->Failure::Invariant };
+}
+fn csv_failure(error:ext::csv::Error) -> Failure {
+    return match(error) {
+        ext::csv::Error::AllocationFailed->Failure::Allocation,
+        ext::csv::Error::CapacityOverflow->Failure::DataLimit,
+        ext::csv::Error::OffsetOverflow->Failure::DataLimit,
+        ext::csv::Error::LimitExceeded(at)->Failure::DataLimit,
+        _ ->Failure::InvalidCsv
+    };
+}
+fn read_failure(error:alloc::io::ReadError) -> Failure {
+    return match(error) {
+        alloc::io::ReadError::CallLimit->Failure::ReadLimit,
+        alloc::io::ReadError::ByteLimit->Failure::InputLimit,
+        alloc::io::ReadError::Storage(cause)->vec_failure(cause),
+        alloc::io::ReadError::Io(cause)->Failure::InputIo,
+        _ ->Failure::Invariant
+    };
+}
+fn number(bytes:View<u8>) -> Result<i32,Failure> {
+    if(bytes.length==0 || bytes.length>64) { return Err(Failure::Arguments); }
+    let index:i32=0; while(index<bytes.length) {
+        let byte:u8=bytes.values[bytes.start+index];
+        if(byte<48 || byte>57) { return Err(Failure::Arguments); } index+=1;
+    }
+    let parsed=core::decimal::parse_u32_range(bytes.values,bytes.start,bytes.length);
+    if(parsed.is_err()) { return Err(Failure::Arguments); }
+    if(parsed.unwrap()>(MAX_ROWS as u32)) { return Err(Failure::Arguments); }
+    return Ok(parsed.unwrap() as i32);
+}
+fn arguments(values:std::args::Arguments) -> Result<Command,Failure> {
+    if(values.len()==1) {
+        let only:View<u8> = values.get(0).unwrap();
+        if(same(only,literal("--help",6)) || same(only,literal("-h",2))) { return Ok(Command::Help); }
+    }
+    if(values.len()!=3) { return Err(Failure::Arguments); }
+    let start=number(values.get(0).unwrap()); if(start.is_err()) { return Err(start.unwrap_err()); }
+    let end=number(values.get(1).unwrap()); if(end.is_err()) { return Err(end.unwrap_err()); }
+    let before=number(values.get(2).unwrap()); if(before.is_err()) { return Err(before.unwrap_err()); }
+    if(start.unwrap()>end.unwrap()) { return Err(Failure::Arguments); }
+    return Ok(Command::Move(Selection { start:start.unwrap(),end:end.unwrap(),before:before.unwrap() }));
+}
+fn write(bytes:View<u8>,handle:i32,maximum:i32) -> Result<bool,Failure> {
+    let sink=std::stream::from_handle(handle); let offset:i32=0; let calls:i32=0;
+    while(offset<bytes.length) {
+        if(calls==maximum) { return Err(Failure::OutputCalls); } calls+=1;
+        let wanted:i32=bytes.length-offset; if(wanted>1024) { wanted=1024; }
+        let sent=sink.write(bytes.values,bytes.start+offset,wanted);
+        if(sent.is_err()) {
+            if(core::io::is_interrupted(sent.unwrap_err())) { continue; } return Err(Failure::OutputIo);
+        }
+        let count:i32=sent.unwrap();
+        if(count<=0 || count>wanted) { return Err(Failure::OutputIo); } offset+=count;
+    } return Ok(true);
+}
+fn report(error:Failure) -> i32 {
+    let message:View<u8> = match(error) {
+        Failure::Arguments->literal("move_rows: invalid arguments\n",29),
+        Failure::ArgumentIo->literal("move_rows: argument I/O failure\n",32),
+        Failure::InputLimit->literal("move_rows: input byte limit\n",28),
+        Failure::ReadLimit->literal("move_rows: input read-call limit\n",33),
+        Failure::InputIo->literal("move_rows: input I/O failure\n",29),
+        Failure::InvalidCsv->literal("move_rows: invalid CSV\n",23),
+        Failure::DataLimit->literal("move_rows: CSV resource limit\n",30),
+        Failure::Bounds->literal("move_rows: row boundary out of range\n",37),
+        Failure::Allocation->literal("move_rows: allocation failed\n",29),
+        Failure::OutputLimit->literal("move_rows: output byte limit\n",29),
+        Failure::OutputCalls->literal("move_rows: output write-call limit\n",35),
+        Failure::OutputIo->literal("move_rows: output I/O failure\n",30),
+        Failure::Invariant->literal("move_rows: ownership or provider invariant failure\n",51)
+    };
+    if(write(message,2,64).is_err()) { return 3; } return status(error);
+}
+// Only logical entries own records. Spare descriptor slots are inactive aliases.
+fn destroy_rows(rows:Vec<ext::csv::Record>) {
+    while(true) {
+        let next:Option<ext::csv::Record> = rows.pop(); if(next.is_none()) { break; }
+        let row:ext::csv::Record=next.unwrap(); row.destroy();
+    } rows.destroy();
+}
+// Consumes rows and returns the only resulting cleanup owner on success.
+fn relocate(rows:Vec<ext::csv::Record>,selection:Selection) -> Result<Vec<ext::csv::Record>,Failure> {
+    let count:i32=rows.len();
+    if(selection.end>count || selection.before>count) { destroy_rows(rows); return Err(Failure::Bounds); }
+    if(selection.start==selection.end || (selection.before>=selection.start && selection.before<=selection.end)) { return Ok(rows); }
+    let moved=rows.try_extract_range(selection.start,selection.end);
+    if(moved.is_err()) { let error=vec_failure(moved.unwrap_err()); destroy_rows(rows); return Err(error); }
+    let block:Vec<ext::csv::Record> = moved.unwrap();
+    let destination:i32=selection.before;
+    if(destination>selection.end) { destination-=selection.end-selection.start; }
+    let split=rows.try_split_off(destination);
+    if(split.is_err()) { let error=vec_failure(split.unwrap_err()); destroy_rows(block); destroy_rows(rows); return Err(error); }
+    let suffix:Vec<ext::csv::Record> = split.unwrap();
+    let first=rows.try_append(block.borrow());
+    if(first.is_err()) {
+        let error=vec_failure(first.unwrap_err()); destroy_rows(block); destroy_rows(suffix); destroy_rows(rows); return Err(error);
+    }
+    // Success emptied the donor's logical entries, retaining only its backing.
+    block.destroy();
+    let last=rows.try_append(suffix.borrow());
+    if(last.is_err()) { let error=vec_failure(last.unwrap_err()); destroy_rows(suffix); destroy_rows(rows); return Err(error); }
+    suffix.destroy();
+    if(rows.len()!=count || last.unwrap()!=count) { destroy_rows(rows); return Err(Failure::Invariant); }
+    return Ok(rows);
+}
+fn stage(rows:&Vec<ext::csv::Record>) -> Result<alloc::io::Buffer,Failure> {
+    // Measure every record before allocating any staged output.
+    let length:u64=0; let index:i32=0;
+    while(index<rows.len()) {
+        let row:ext::csv::Record=rows.at(index); let size=row.encoded_len();
+        if(size.is_err()) { return Err(csv_failure(size.unwrap_err())); }
+        if(size.unwrap()>(MAX_OUTPUT as u64)-length) { return Err(Failure::OutputLimit); }
+        length+=size.unwrap(); index+=1;
+    }
+    let made=alloc::io::with_limit(MAX_OUTPUT);
+    if(made.is_err()) { return Err(Failure::Invariant); }
+    let output:alloc::io::Buffer=made.unwrap();
+    let reserved=output.try_reserve(length as i32);
+    if(reserved.is_err()) {
+        output.destroy(); return Err(match(reserved.unwrap_err()) {
+            core::io::Error::AllocationFailed->Failure::Allocation, _ ->Failure::Invariant
+        });
+    }
+    let calls:u64=0; let written:u64=0; index=0;
+    while(index<rows.len()) {
+        let row:ext::csv::Record=rows.at(index);
+        let sent=ext::csv_write::write_record<alloc::io::Buffer>(output.borrow(),row.borrow(),
+            ext::csv_write::Limits { max_output:length-written,max_write_calls:65536-calls });
+        if(sent.is_err()) {
+            let failure:ext::csv_write::Failure=sent.unwrap_err(); output.destroy();
+            return Err(match(failure.cause) {
+                ext::csv_write::Cause::Csv(cause)->csv_failure(cause),
+                ext::csv_write::Cause::OutputLimit->Failure::OutputLimit,
+                ext::csv_write::Cause::CallLimit->Failure::Invariant,
+                ext::csv_write::Cause::Io(cause)->match(cause) {
+                    core::io::Error::AllocationFailed->Failure::Allocation, _ ->Failure::Invariant
+                }
+            });
+        }
+        let progress:ext::csv_write::Progress=sent.unwrap(); calls+=progress.write_calls; written+=progress.written; index+=1;
+    }
+    if(written!=length || (output.len() as u64)!=length) { output.destroy(); return Err(Failure::Invariant); }
+    return Ok(output);
+}
+fn prepare(selection:Selection) -> Result<alloc::io::Buffer,Failure> {
+    let source=std::stream::stdin();
+    let collected=alloc::io::read_to_end<std::stream::Descriptor>(source.borrow(),
+        alloc::io::ReadLimits { max_bytes:MAX_INPUT,max_calls:16384 });
+    if(collected.is_err()) {
+        let failure:alloc::io::ReadFailure=collected.unwrap_err(); let error=read_failure(failure.cause);
+        failure.destroy(); return Err(error);
+    }
+    let input:Vec<u8> = collected.unwrap();
+    let dialect=ext::csv::default_options();
+    dialect.max_records=MAX_ROWS; dialect.max_fields=64; dialect.max_field_bytes=8192; dialect.max_record_bytes=65536;
+    let parsed=ext::csv::parse_bytes(input.as_slice(),0,input.len(),dialect); input.destroy();
+    if(parsed.is_err()) { return Err(csv_failure(parsed.unwrap_err())); }
+    let table:ext::csv::Table=parsed.unwrap();
+    // Reset the actual table row descriptor before its now-empty destruction.
+    let rows:Vec<ext::csv::Record> = table.rows.take(); table.destroy();
+    let moved=relocate(rows,selection);
+    if(moved.is_err()) { return Err(moved.unwrap_err()); }
+    let ordered:Vec<ext::csv::Record> = moved.unwrap(); let output=stage(ordered.borrow());
+    destroy_rows(ordered); return output;
+}
+fn run(command:Command) -> Result<bool,Failure> {
+    return match(command) {
+        Command::Help->write(literal("Usage: move_rows START END BEFORE\nMove CSV rows [START,END) before an original-table boundary.\nIndices are zero-based ASCII decimals 0..16384; leading zeros are allowed.\nRequire START <= END <= rows and BEFORE <= rows; row 0 is ordinary data.\nAn empty selection or BEFORE within [START,END] keeps the row order.\nRead uniform-width UTF-8 CSV through EOF; accept LF and CRLF.\nEmit canonical quoted fields and CRLF, including unchanged order.\nLimits: 4 MiB input, 8 MiB output, 16384 rows, 64 fields per row,\n8192 bytes per field, 65536 bytes per record; 16384 read/write attempts.\n65536 staging calls; 64 help/diagnostic attempts; numeric tokens <=64 bytes.\nStage all output and retire input/records before stdout.\nSole --help or -h shows help.\n",743),1,64),
+        Command::Move(selection)->publish(selection)
+    };
+}
+fn publish(selection:Selection) -> Result<bool,Failure> {
+    let prepared=prepare(selection); if(prepared.is_err()) { return Err(prepared.unwrap_err()); }
+    let output:alloc::io::Buffer=prepared.unwrap();
+    // Every argv, input, record and row-vector owner has already retired.
+    let delivered=write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,16384);
+    output.destroy(); return delivered;
+}
+fn main() -> i32 {
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured=std::args::snapshot(1,3,192);
+    if(captured.is_err()) {
+        return report(match(captured.unwrap_err()) {
+            std::args::Error::AllocationFailed->Failure::Allocation,
+            std::args::Error::HostRead(index)->Failure::ArgumentIo, _ ->Failure::Arguments
+        });
+    }
+    let values:std::args::Arguments=captured.unwrap(); let command=arguments(values); values.destroy();
+    if(command.is_err()) { return report(command.unwrap_err()); }
+    let completed=run(command.unwrap()); if(completed.is_err()) { return report(completed.unwrap_err()); } return 0;
+}

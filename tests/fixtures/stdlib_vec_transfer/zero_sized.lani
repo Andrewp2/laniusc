@@ -1,0 +1,41 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+struct Unit {}
+fn overflow(error:alloc::vec::Error) { assert(match(error) { alloc::vec::Error::CapacityOverflow -> true, _ -> false }); }
+fn bounds(error:alloc::vec::Error) { assert(match(error) { alloc::vec::Error::Bounds -> true, _ -> false }); }
+fn counts(owner:&alloc::vec::Vec<Unit>,length:i32,capacity:i32) { assert(owner.storage==0 && owner.len()==length && owner.capacity()==capacity); }
+fn small_public_owners() {
+    let source:alloc::vec::Vec<Unit> =alloc::vec::new(); let donor:alloc::vec::Vec<Unit> =alloc::vec::new(); source.try_resize(3,Unit {}).unwrap(); donor.try_resize(2,Unit {}).unwrap();
+    assert(core::mem::size_of<Unit>()==0 && core::mem::slice_stride(source.as_slice())==0); assert(source.try_append(donor.borrow()).unwrap()==5); counts(source.borrow(),5,2147483647); counts(donor.borrow(),0,2147483647);
+    let middle:alloc::vec::Vec<Unit> =source.try_extract_range(1,4).unwrap(); counts(middle.borrow(),3,2147483647); counts(source.borrow(),2,2147483647);
+    let tail:alloc::vec::Vec<Unit> =source.try_split_off(1).unwrap(); counts(tail.borrow(),1,2147483647); counts(source.borrow(),1,2147483647);
+    let taken:alloc::vec::Vec<Unit> =source.take(); counts(source.borrow(),0,0); counts(taken.borrow(),1,2147483647); assert(taken.pop().is_some() && taken.pop().is_none());
+    source.destroy(); donor.destroy(); middle.destroy(); tail.destroy(); taken.destroy();
+}
+fn maximum_descriptors() {
+    // This is an explicitly constructed VALID zero-byte owner, not a claim
+    // that billions of pushes ran. Unit is inhabited and has no resources;
+    // every initialized element needs zero bytes of physical backing.
+    let null:ptr=0; let all:alloc::vec::Vec<Unit> =alloc::vec::Vec { storage:null,length:2147483647,reserved:2147483647 };
+    let one:alloc::vec::Vec<Unit> =alloc::vec::new(); one.try_push(Unit {}).unwrap();
+    let before:core::slice::View<Unit> =all.as_view(); let donor_before:core::slice::View<Unit> =one.as_view();
+    overflow(all.try_append(one.borrow()).unwrap_err()); counts(all.borrow(),2147483647,2147483647); counts(one.borrow(),1,2147483647);
+    assert(before.start==0 && before.length==2147483647 && donor_before.length==1 && core::mem::slice_stride(before.values)==0);
+    bounds(all.try_extract_range(-1,0).unwrap_err()); bounds(all.try_extract_range(2147483647,2147483646).unwrap_err()); bounds(all.try_split_off(-1).unwrap_err()); counts(all.borrow(),2147483647,2147483647);
+    let empty:alloc::vec::Vec<Unit> =all.try_extract_range(2147483647,2147483647).unwrap(); let empty_tail:alloc::vec::Vec<Unit> =all.try_split_off(2147483647).unwrap(); counts(empty.borrow(),0,0); counts(empty_tail.borrow(),0,0); assert(before.length==all.len());
+    let middle:alloc::vec::Vec<Unit> =all.try_extract_range(1,2147483646).unwrap(); counts(all.borrow(),2,2147483647); counts(middle.borrow(),2147483645,2147483647);
+    assert(all.try_append(middle.borrow()).unwrap()==2147483647); counts(middle.borrow(),0,2147483647); counts(all.borrow(),2147483647,2147483647);
+    let whole:alloc::vec::Vec<Unit> =all.try_split_off(0).unwrap(); counts(all.borrow(),0,2147483647); counts(whole.borrow(),2147483647,2147483647);
+    let taken:alloc::vec::Vec<Unit> =whole.take(); counts(whole.borrow(),0,0); counts(taken.borrow(),2147483647,2147483647);
+    let fresh:alloc::vec::Vec<Unit> =alloc::vec::new(); assert(fresh.try_append(taken.borrow()).unwrap()==2147483647); counts(fresh.borrow(),2147483647,2147483647); counts(taken.borrow(),0,2147483647);
+    overflow(one.try_append(fresh.borrow()).unwrap_err()); counts(one.borrow(),1,2147483647); counts(fresh.borrow(),2147483647,2147483647);
+    // Distinct empty/ZST owners share null storage legitimately; appending an
+    // empty donor remains a true no-op even when the destination is full.
+    assert(fresh.try_append(empty.borrow()).unwrap()==2147483647); counts(empty.borrow(),0,0); counts(fresh.borrow(),2147483647,2147483647);
+    all.destroy(); one.destroy(); empty.destroy(); empty_tail.destroy(); middle.destroy(); whole.destroy(); taken.destroy(); fresh.destroy();
+}
+fn main() -> i32 { small_public_owners(); maximum_descriptors(); return 0; }

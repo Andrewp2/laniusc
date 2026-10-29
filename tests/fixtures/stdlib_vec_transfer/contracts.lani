@@ -1,0 +1,66 @@
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+fn values(count:i32,capacity:i32,base:i32) -> alloc::vec::Vec<i32> { let owner:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(capacity).unwrap(); let i:i32=0; while(i<count) { owner.try_push(base+i).unwrap(); i+=1; } return owner; }
+fn sequence(owner:&alloc::vec::Vec<i32>,count:i32,base:i32) { assert(owner.len()==count); let i:i32=0; while(i<count) { assert(owner.at(i)==base+i); i+=1; } }
+fn bounds(error:alloc::vec::Error) { assert(match(error) { alloc::vec::Error::Bounds -> true, _ -> false }); }
+fn reserved_take() {
+    let empty:alloc::vec::Vec<i32> =alloc::vec::new(); let vacant:alloc::vec::Vec<i32> =empty.take(); assert(empty.storage==0 && vacant.storage==0 && empty.capacity()==0 && vacant.capacity()==0); empty.destroy(); vacant.destroy();
+    let original:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(5).unwrap(); let pointer:ptr=original.storage;
+    let moved:alloc::vec::Vec<i32> =original.take(); assert(moved.storage==pointer && moved.len()==0 && moved.capacity()==5 && original.storage==0 && original.len()==0 && original.capacity()==0);
+    original.try_push(9).unwrap(); moved.try_push(40).unwrap(); assert(original.storage!=moved.storage && original.at(0)==9 && moved.at(0)==40 && moved.capacity()==5); original.destroy(); moved.destroy();
+}
+fn ranges() {
+    let starts:[i32;7]=[0,3,7,0,2,5,0]; let ends:[i32;7]=[0,3,7,2,5,7,7]; let c:i32=0;
+    while(c<7) {
+        let source:alloc::vec::Vec<i32> =values(7,11,0); let pointer:ptr=source.storage; let before:core::slice::View<i32> =source.as_view();
+        let extracted:alloc::vec::Vec<i32> =source.try_extract_range(starts[c],ends[c]).unwrap(); let removed:i32=ends[c]-starts[c];
+        assert(source.storage==pointer && source.capacity()==11 && source.len()==7-removed); sequence(extracted.borrow(),removed,starts[c]);
+        let i:i32=0; while(i<source.len()) { let expected:i32=i; if(i>=starts[c]) { expected+=removed; } assert(source.at(i)==expected); i+=1; }
+        if(removed==0) { assert(extracted.storage==0 && extracted.capacity()==0); i=0; while(i<7) { assert(before.values[before.start+i]==i); i+=1; } }
+        else {
+            assert(extracted.storage!=source.storage && extracted.capacity()>=removed);
+            assert(extracted.set(0,-100).unwrap()==starts[c]); i=0; while(i<source.len()) { let expected:i32=i; if(i>=starts[c]) { expected+=removed; } assert(source.at(i)==expected); i+=1; }
+            if(source.len()>0) { source.set(0,-200).unwrap(); assert(extracted.at(0)==-100); }
+        }
+        source.destroy(); extracted.destroy(); c+=1;
+    }
+    let cuts:[i32;3]=[0,3,7]; c=0; while(c<3) {
+        let source:alloc::vec::Vec<i32> =values(7,11,0); let pointer:ptr=source.storage; let before:core::slice::View<i32> =source.as_view();
+        let tail:alloc::vec::Vec<i32> =source.try_split_off(cuts[c]).unwrap(); assert(source.storage==pointer && source.capacity()==11); sequence(source.borrow(),cuts[c],0); sequence(tail.borrow(),7-cuts[c],cuts[c]);
+        if(cuts[c]==7) { assert(tail.storage==0 && tail.capacity()==0); let i:i32=0; while(i<7) { assert(before.values[i]==i); i+=1; } }
+        else { assert(tail.storage!=source.storage); } source.destroy(); tail.destroy(); c+=1;
+    }
+}
+fn failures() {
+    let source:alloc::vec::Vec<i32> =values(7,11,0); let pointer:ptr=source.storage; let before:core::slice::View<i32> =source.as_view();
+    let starts:[i32;6]=[-1,0,5,0,8,2147483647]; let ends:[i32;6]=[0,-1,4,8,8,2147483647]; let i:i32=0;
+    while(i<6) { bounds(source.try_extract_range(starts[i],ends[i]).unwrap_err()); assert(source.storage==pointer && source.capacity()==11); sequence(source.borrow(),7,0); let j:i32=0; while(j<7) { assert(before.values[j]==j); j+=1; } i+=1; }
+    bounds(source.try_split_off(-1).unwrap_err()); bounds(source.try_split_off(8).unwrap_err()); bounds(source.try_split_off(2147483647).unwrap_err());
+    assert(source.storage==pointer && source.capacity()==11); sequence(source.borrow(),7,0); i=0; while(i<7) { assert(before.values[i]==i); i+=1; } source.destroy();
+}
+fn append_cases() {
+    let capacities:[i32;4]=[9,3,0,9]; let lengths:[i32;4]=[3,3,0,0]; let c:i32=0;
+    while(c<4) {
+        let target:alloc::vec::Vec<i32> =values(lengths[c],capacities[c],0); let donor:alloc::vec::Vec<i32> =values(2,5,10);
+        let target_pointer:ptr=target.storage; let donor_pointer:ptr=donor.storage;
+        assert(target.try_append(donor.borrow()).unwrap()==lengths[c]+2); assert(donor.len()==0 && donor.capacity()==5 && donor.storage==donor_pointer && target.storage!=donor.storage);
+        if(capacities[c]>=lengths[c]+2) { assert(target.storage==target_pointer && target.capacity()==capacities[c]); }
+        else { assert(target.storage!=target_pointer && target.capacity()>=lengths[c]+2); }
+        let i:i32=0; while(i<lengths[c]) { assert(target.at(i)==i); i+=1; } assert(target.at(lengths[c])==10 && target.at(lengths[c]+1)==11);
+        let prior:core::slice::View<i32> =target.as_view(); let empty_prior:core::slice::View<i32> =donor.as_view(); let settled_pointer:ptr=target.storage; let settled_capacity:i32=target.capacity();
+        assert(target.try_append(donor.borrow()).unwrap()==lengths[c]+2 && target.storage==settled_pointer && target.capacity()==settled_capacity && donor.storage==donor_pointer && donor.capacity()==5 && donor.len()==0 && empty_prior.length==0);
+        i=0; while(i<prior.length) { let expected:i32=i; if(i>=lengths[c]) { expected=10+i-lengths[c]; } assert(prior.values[i]==expected && target.at(i)==expected); i+=1; }
+        // Donor retains its allocation and can be independently reused.
+        donor.try_push(99).unwrap(); assert(donor.storage==donor_pointer && target.at(lengths[c])==10 && target.at(lengths[c]+1)==11);
+        target.destroy(); donor.destroy(); c+=1;
+    }
+}
+fn reconstruction() {
+    let source:alloc::vec::Vec<i32> =values(7,11,0); let selected:alloc::vec::Vec<i32> =source.try_extract_range(2,5).unwrap(); let suffix:alloc::vec::Vec<i32> =source.try_split_off(2).unwrap();
+    assert(source.try_append(selected.borrow()).unwrap()==5 && source.try_append(suffix.borrow()).unwrap()==7); sequence(source.borrow(),7,0);
+    assert(selected.len()==0 && suffix.len()==0); selected.destroy(); suffix.destroy(); source.destroy();
+}
+fn main() -> i32 { reserved_take(); ranges(); failures(); append_cases(); reconstruction(); return 0; }

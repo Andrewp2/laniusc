@@ -204,8 +204,11 @@
         "docs/stdlib-cursor-integration.md",
         "docs/stdlib-iterator-transfer.md",
         "docs/stdlib-owning-iterators.md",
-        "docs/stdlib-exact-size-iterators.md"
-      ]
+        "docs/stdlib-exact-size-iterators.md",
+        "docs/stdlib-vec-transfer.md",
+        "docs/stdlib-move-rows.md"
+      ],
+      "note": "Inherent Vec<T> methods take, try_append, try_split_off and try_extract_range transfer shallow ownership without Clone/Destroy callbacks. take resets the actual source; append empties a distinct independent donor while retaining its capacity; split/extract retain source backing and capacity. Errors preserve all participating owners and views. Empty donor/range operations preserve views; zero-sized paths perform checked descriptor-only work. Exclusive descriptor/backing and nested-resource cleanup rules remain manual. All eight library groups pass on Linux x86_64 CPU output, including the 56-case/3584-action model and three reached reservation failures with same-owner recovery. The four-group/133-case CSV consumer also passes, with 40 reached allocation failures. Five selected existing groups and standalone examples retain separate receipts. This finite increment is accepted; other targets, enforced ownership and proofs remain separate. These methods belong to Vec<T>, not the module free-function surface."
     },
     "core::adler32": {
       "guides": [

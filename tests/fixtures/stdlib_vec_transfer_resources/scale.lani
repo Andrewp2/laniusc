@@ -1,0 +1,61 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import fixture::support;
+struct Item { id:i32,checksum:i64 }
+fn item(index:i32) -> Item { return Item { id:index,checksum:(index as i64)*1000003+17 }; }
+fn check_scalar(owner:&alloc::vec::Vec<i32>,base:i32,skip_at:i32,skip:i32) {
+    let i:i32 = 0; while(i<owner.len()) { let id:i32 = base+i; if(i>=skip_at) { id+=skip; } let value=owner.at(i); assert(value==id); i+=1; }
+}
+fn cycle_scalar(count:i32) {
+    fixture::support::mark(65); let source:alloc::vec::Vec<i32> = alloc::vec::with_capacity<i32>(count+17).unwrap();
+    let i:i32 = 0; while(i<count) { source.try_push(i).unwrap(); i+=1; } fixture::support::mark(83);
+    let original=source.storage; let quarter:i32 = count/4;
+    fixture::support::mark(80); check_scalar(source.borrow(),0,count,0); fixture::support::mark(112);
+    fixture::support::mark(67); let middle=source.try_extract_range(quarter,3*quarter).unwrap(); fixture::support::mark(70);
+    fixture::support::mark(80); assert(source.len()==2*quarter && source.storage==original && source.capacity()==count+17 && middle.len()==2*quarter);
+    check_scalar(source.borrow(),0,quarter,2*quarter); check_scalar(middle.borrow(),quarter,2*quarter,0); fixture::support::mark(112);
+    fixture::support::mark(67); let tail=source.try_split_off(quarter).unwrap(); fixture::support::mark(70);
+    fixture::support::mark(80); assert(source.len()==quarter && tail.len()==quarter && source.storage==original && source.capacity()==count+17);
+    check_scalar(source.borrow(),0,quarter,0); check_scalar(tail.borrow(),3*quarter,quarter,0);
+    let middle_ptr=middle.storage; let middle_cap=middle.capacity(); let tail_ptr=tail.storage; let tail_cap=tail.capacity();
+    assert(source.try_append(middle.borrow()).unwrap()==3*quarter); assert(source.try_append(tail.borrow()).unwrap()==count);
+    assert(source.storage==original && source.capacity()==count+17 && middle.len()==0 && tail.len()==0);
+    assert(middle.storage==middle_ptr && middle.capacity()==middle_cap && tail.storage==tail_ptr && tail.capacity()==tail_cap);
+    check_scalar(source.borrow(),0,count,0); let result=source.take();
+    assert(source.storage==0 && source.len()==0 && source.capacity()==0 && result.storage==original && result.capacity()==count+17); fixture::support::mark(112);
+    fixture::support::mark(82); source.destroy(); middle.destroy(); tail.destroy();
+    fixture::support::mark(80); check_scalar(result.borrow(),0,count,0); fixture::support::mark(112);
+    fixture::support::header(count,4,middle_cap,tail_cap);
+    let words:[i32;256] = [0;256]; let pointer=core::mem::i32_array_data_ptr(words); let bytes=core::mem::typed_slice_from_raw_parts<u8>(pointer,1024);
+    i=0; while(i<count) { let used:i32 = 0; while(i<count && used<=1020) { let value=result.at(i); fixture::support::number(bytes,used,value as u64,4); used+=4; i+=1; } fixture::support::publish(pointer,used); }
+    result.destroy(); fixture::support::mark(69);
+}
+fn check_record(owner:&alloc::vec::Vec<Item>,base:i32,skip_at:i32,skip:i32) {
+    let i:i32 = 0; while(i<owner.len()) { let id:i32 = base+i; if(i>=skip_at) { id+=skip; } let value=owner.at(i); assert(value.id==id && value.checksum==(id as i64)*1000003+17); i+=1; }
+}
+fn cycle_record(count:i32) {
+    fixture::support::mark(65); let source:alloc::vec::Vec<Item> = alloc::vec::with_capacity<Item>(count+17).unwrap();
+    let i:i32 = 0; while(i<count) { source.try_push(item(i)).unwrap(); i+=1; } fixture::support::mark(83);
+    let original=source.storage; let quarter:i32 = count/4;
+    fixture::support::mark(80); check_record(source.borrow(),0,count,0); fixture::support::mark(112);
+    fixture::support::mark(67); let middle=source.try_extract_range(quarter,3*quarter).unwrap(); fixture::support::mark(70);
+    fixture::support::mark(80); assert(source.len()==2*quarter && source.storage==original && source.capacity()==count+17 && middle.len()==2*quarter);
+    check_record(source.borrow(),0,quarter,2*quarter); check_record(middle.borrow(),quarter,2*quarter,0); fixture::support::mark(112);
+    fixture::support::mark(67); let tail=source.try_split_off(quarter).unwrap(); fixture::support::mark(70);
+    fixture::support::mark(80); assert(source.len()==quarter && tail.len()==quarter && source.storage==original && source.capacity()==count+17);
+    check_record(source.borrow(),0,quarter,0); check_record(tail.borrow(),3*quarter,quarter,0);
+    let middle_ptr=middle.storage; let middle_cap=middle.capacity(); let tail_ptr=tail.storage; let tail_cap=tail.capacity();
+    assert(source.try_append(middle.borrow()).unwrap()==3*quarter); assert(source.try_append(tail.borrow()).unwrap()==count);
+    assert(source.storage==original && source.capacity()==count+17 && middle.len()==0 && tail.len()==0);
+    assert(middle.storage==middle_ptr && middle.capacity()==middle_cap && tail.storage==tail_ptr && tail.capacity()==tail_cap);
+    check_record(source.borrow(),0,count,0); let result=source.take();
+    assert(source.storage==0 && source.len()==0 && source.capacity()==0 && result.storage==original && result.capacity()==count+17); fixture::support::mark(112);
+    fixture::support::mark(82); source.destroy(); middle.destroy(); tail.destroy();
+    fixture::support::mark(80); check_record(result.borrow(),0,count,0); fixture::support::mark(112);
+    fixture::support::header(count,16,middle_cap,tail_cap);
+    let words:[i32;256] = [0;256]; let pointer=core::mem::i32_array_data_ptr(words); let bytes=core::mem::typed_slice_from_raw_parts<u8>(pointer,1024);
+    i=0; while(i<count) { let used:i32 = 0; while(i<count && used<=1012) { let value=result.at(i); fixture::support::number(bytes,used,value.id as u64,4); fixture::support::number(bytes,used+4,value.checksum as u64,8); used+=12; i+=1; } fixture::support::publish(pointer,used); }
+    result.destroy(); fixture::support::mark(69);
+}
+fn main() -> i32 { cycle_scalar(4096); cycle_record(4096); cycle_scalar(262144); cycle_record(262144); fixture::support::mark(68); return 0; }
