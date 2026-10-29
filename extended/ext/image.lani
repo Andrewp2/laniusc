@@ -1,6 +1,7 @@
 // Packed straight-alpha RGBA8 images. Copies alias ownership; destroy one owner.
 module ext::image;
 import alloc::vec;
+import core::i32;
 import core::option;
 import core::result;
 import core::slice;
@@ -9,6 +10,7 @@ pub struct Rgba { r: u8, g: u8, b: u8, a: u8 }
 pub struct Image { w: i32, h: i32, storage: alloc::vec::Vec<u8> }
 pub struct View { bytes: core::slice::View<u8>, width: i32, height: i32, stride: i32 }
 pub enum Error { Dimensions, SizeOverflow, Bounds, AllocationFailed }
+pub enum Filter { Nearest, Bilinear, Area }
 
 pub fn byte_len(width: i32, height: i32) -> core::result::Result<i32,Error> {
     if (width <= 0 || height <= 0) { return core::result::Err(Error::Dimensions); }
@@ -134,3 +136,175 @@ fn copy(target: View, x: i32, y: i32, source: View, composite: bool) -> core::re
 }
 pub fn blit(target: View, x: i32, y: i32, source: View) -> core::result::Result<i32,Error> { return copy(target,x,y,source,false); }
 pub fn source_over(target: View, x: i32, y: i32, source: View) -> core::result::Result<i32,Error> { return copy(target,x,y,source,true); }
+
+// Unrounded alpha and color-times-alpha sums, never stored RGBA8 samples.
+struct ResizeSum { r: u64, g: u64, b: u64, a: u64 }
+struct LinearAxis { low: i32, high: i32, low_weight: u64, high_weight: u64 }
+struct AreaShape { source_inner: i32, source_outer: i32, target_inner: i32, target_outer: i32, vertical: bool }
+
+fn resize_zero() -> ResizeSum { return ResizeSum { r: 0, g: 0, b: 0, a: 0 }; }
+fn resize_sample(pixel: Rgba) -> ResizeSum {
+    let alpha: u64 = pixel.a as u64;
+    return ResizeSum { r: (pixel.r as u64)*alpha, g: (pixel.g as u64)*alpha, b: (pixel.b as u64)*alpha, a: alpha };
+}
+fn resize_add(total: ResizeSum, value: ResizeSum, weight: u64) -> ResizeSum {
+    return ResizeSum { r: total.r+value.r*weight, g: total.g+value.g*weight, b: total.b+value.b*weight, a: total.a+value.a*weight };
+}
+fn resize_pixel(total: ResizeSum, weight: u64) -> Rgba {
+    if (total.a == 0) { return Rgba { r: 0, g: 0, b: 0, a: 0 }; }
+    // Divide color by exact alpha, including when the emitted alpha rounds to 0.
+    let half: u64 = total.a/2;
+    return Rgba { r: ((total.r+half)/total.a) as u8, g: ((total.g+half)/total.a) as u8,
+        b: ((total.b+half)/total.a) as u8, a: ((total.a+weight/2)/weight) as u8 };
+}
+fn resize_nearest(source: View, target: View) {
+    let y: i32 = 0;
+    while (y < target.height) {
+        let sy: i32 = (((2*(y as u64)+1)*(source.height as u64))/(2*(target.height as u64))) as i32;
+        let x: i32 = 0;
+        while (x < target.width) {
+            let sx: i32 = (((2*(x as u64)+1)*(source.width as u64))/(2*(target.width as u64))) as i32;
+            write(target,x,y,read(source,sx,sy)); x += 1;
+        }
+        y += 1;
+    }
+}
+fn resize_linear_axis(position: i32, source: i32, target: i32) -> LinearAxis {
+    let denominator: u64 = 2*(target as u64);
+    let center: u64 = (2*(position as u64)+1)*(source as u64);
+    // Clamp before subtraction/division, so negative half-pixel coordinates
+    // never rely on truncation toward zero. Every product fits below 2^59.
+    if (center <= (target as u64)) { return LinearAxis { low: 0, high: 0, low_weight: denominator, high_weight: 0 }; }
+    let shifted: u64 = center-(target as u64);
+    let last: i32 = source-1;
+    if (shifted >= (last as u64)*denominator) { return LinearAxis { low: last, high: last, low_weight: denominator, high_weight: 0 }; }
+    let low: i32 = (shifted/denominator) as i32;
+    let remainder: u64 = shifted%denominator;
+    return LinearAxis { low: low, high: low+1, low_weight: denominator-remainder, high_weight: remainder };
+}
+fn resize_bilinear(source: View, target: View) {
+    // The image byte bound makes this total weight less than 2^31; even
+    // color*alpha*weight sums therefore fit well inside u64.
+    let weight: u64 = 4*(target.width as u64)*(target.height as u64);
+    let y: i32 = 0;
+    while (y < target.height) {
+        let rows: LinearAxis = resize_linear_axis(y,source.height,target.height);
+        let x: i32 = 0;
+        while (x < target.width) {
+            let columns: LinearAxis = resize_linear_axis(x,source.width,target.width);
+            let total: ResizeSum = resize_zero();
+            total = resize_add(total,resize_sample(read(source,columns.low,rows.low)),columns.low_weight*rows.low_weight);
+            total = resize_add(total,resize_sample(read(source,columns.high,rows.low)),columns.high_weight*rows.low_weight);
+            total = resize_add(total,resize_sample(read(source,columns.low,rows.high)),columns.low_weight*rows.high_weight);
+            total = resize_add(total,resize_sample(read(source,columns.high,rows.high)),columns.high_weight*rows.high_weight);
+            write(target,x,y,resize_pixel(total,weight)); x += 1;
+        }
+        y += 1;
+    }
+}
+fn resize_area_shape(source: View, width: i32, height: i32) -> AreaShape {
+    let ix: u64 = (source.width as u64)+(width as u64)-(core::i32::gcd(source.width,width) as u64);
+    let iy: u64 = (source.height as u64)+(height as u64)-(core::i32::gcd(source.height,height) as u64);
+    let horizontal: u64 = (source.height as u64)*ix+(width as u64)*iy;
+    let vertical: u64 = (source.width as u64)*iy+(height as u64)*ix;
+    if (vertical < horizontal || (vertical == horizontal && height < width)) {
+        return AreaShape { source_inner: source.height, source_outer: source.width, target_inner: height, target_outer: width, vertical: true };
+    }
+    return AreaShape { source_inner: source.width, source_outer: source.height, target_inner: width, target_outer: height, vertical: false };
+}
+fn resize_oriented_read(source: View, inner: i32, outer: i32, vertical: bool) -> Rgba {
+    if (vertical) { return read(source,outer,inner); }
+    return read(source,inner,outer);
+}
+fn resize_oriented_write(target: View, inner: i32, outer: i32, vertical: bool, pixel: Rgba) {
+    if (vertical) { write(target,outer,inner,pixel); }
+    else { write(target,inner,outer,pixel); }
+}
+fn resize_overlap(left: u64, right: u64, pixel: i32, scale: i32) -> u64 {
+    let begin: u64 = (pixel as u64)*(scale as u64);
+    let end: u64 = ((pixel as u64)+1)*(scale as u64);
+    if (begin < left) { begin = left; }
+    if (end > right) { end = right; }
+    return end-begin;
+}
+fn resize_area_project(source: View, shape: AreaShape, outer: i32, begin: i32, count: i32, rows: [ResizeSum]) {
+    let local: i32 = 0;
+    while (local < count) {
+        let position: i32 = begin+local;
+        let left: u64 = (position as u64)*(shape.source_inner as u64);
+        let right: u64 = ((position as u64)+1)*(shape.source_inner as u64);
+        let first: i32 = (left/(shape.target_inner as u64)) as i32;
+        let past: i32 = ((right-1)/(shape.target_inner as u64)+1) as i32;
+        let total: ResizeSum = resize_zero(); let pixel: i32 = first;
+        // Visit only this output interval's positive-overlap source pixels,
+        // not the entire source row for every tile.
+        while (pixel < past) {
+            let weight: u64 = resize_overlap(left,right,pixel,shape.target_inner);
+            total = resize_add(total,resize_sample(resize_oriented_read(source,pixel,outer,shape.vertical)),weight);
+            pixel += 1;
+        }
+        rows[local] = total; local += 1;
+    }
+}
+fn resize_area(source: View, target: View, shape: AreaShape, rows: [ResizeSum], tile: i32) {
+    let weight: u64 = (source.width as u64)*(source.height as u64);
+    let begin: i32 = 0;
+    while (begin < shape.target_inner) {
+        let count: i32 = shape.target_inner-begin; if (count > tile) { count = tile; }
+        let cached: i32 = -1; let outer: i32 = 0;
+        while (outer < shape.target_outer) {
+            let local: i32 = 0;
+            while (local < count) { rows[tile+local] = resize_zero(); local += 1; }
+            let left: u64 = (outer as u64)*(shape.source_outer as u64);
+            let right: u64 = ((outer as u64)+1)*(shape.source_outer as u64);
+            let first: i32 = (left/(shape.target_outer as u64)) as i32;
+            let past: i32 = ((right-1)/(shape.target_outer as u64)+1) as i32;
+            let pixel: i32 = first;
+            while (pixel < past) {
+                // Adjacent output footprints share at most their boundary
+                // source row. Cache it; each row is projected once per tile.
+                if (pixel != cached) {
+                    resize_area_project(source,shape,pixel,begin,count,rows);
+                    cached = pixel;
+                }
+                let overlap: u64 = resize_overlap(left,right,pixel,shape.target_outer);
+                local = 0;
+                while (local < count) {
+                    rows[tile+local] = resize_add(rows[tile+local],rows[local],overlap); local += 1;
+                }
+                pixel += 1;
+            }
+            local = 0;
+            while (local < count) {
+                resize_oriented_write(target,begin+local,outer,shape.vertical,resize_pixel(rows[tile+local],weight)); local += 1;
+            }
+            outer += 1;
+        }
+        begin += count;
+    }
+}
+// Independent owner; all allocations finish before source pixels are sampled.
+pub fn resize(source: View, width: i32, height: i32, filter: Filter) -> core::result::Result<Image,Error> {
+    if (!valid(source)) { return core::result::Err(Error::Bounds); }
+    let size: core::result::Result<i32,Error> = byte_len(width,height);
+    if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); }
+    // Identity is byte-preserving even for hidden RGB beneath zero alpha.
+    if (width == source.width && height == source.height) { return crop(source,0,0,width,height); }
+    let kind: i32 = match (filter) { Filter::Nearest -> 0, Filter::Bilinear -> 1, Filter::Area -> 2 };
+    let shape: AreaShape = resize_area_shape(source,width,height);
+    let tile: i32 = shape.target_inner; if (tile > 256) { tile = 256; }
+    let made: core::result::Result<Image,Error> = new(width,height,Rgba { r: 0, g: 0, b: 0, a: 0 });
+    if (core::result::is_err(made)) { return made; }
+    let result: Image = core::result::unwrap(made);
+    if (kind == 0) { resize_nearest(source,result.view()); }
+    else {
+        if (kind == 1) { resize_bilinear(source,result.view()); }
+        else {
+            let scratch: alloc::vec::Vec<ResizeSum> = alloc::vec::new();
+            let reserved: core::result::Result<i32,alloc::vec::Error> = scratch.try_resize(2*tile,resize_zero());
+            if (core::result::is_err(reserved)) { scratch.destroy(); result.destroy(); return core::result::Err(Error::AllocationFailed); }
+            resize_area(source,result.view(),shape,scratch.as_slice(),tile); scratch.destroy();
+        }
+    }
+    return core::result::Ok(result);
+}

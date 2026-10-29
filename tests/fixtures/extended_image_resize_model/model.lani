@@ -1,0 +1,134 @@
+// Test-only binary producer: real image owners, guarded borrowed sources.
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::image;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32,allow_eof:bool) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(allow_eof && done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0); done+=got;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let i:i32=0;
+    while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn byte(&self,value:u8) {
+        if(self.used==4096) { self.flush(); }
+        self.bytes[self.used]=value; self.used+=1;
+    }
+    fn word(&self,value:u64) {
+        let i:i32=0; while(i<8) { self.byte(((value>>(i*8))&255) as u8); i+=1; }
+    }
+}
+fn metadata(source:ext::image::View,output:&Output) {
+    output.word(source.width as i64 as u64); output.word(source.height as i64 as u64);
+    output.word(source.stride as i64 as u64); output.word(source.bytes.start as i64 as u64);
+    output.word(source.bytes.length as i64 as u64);
+    output.word(core::mem::slice_stride(source.bytes.values) as i64 as u64);
+}
+fn emit_backing(bytes:[u8],output:&Output) {
+    let i:i32=0; while(i<8192) { output.byte(bytes[i]); i+=1; }
+}
+fn emit_pixels(source:core::slice::View<u8>,output:&Output) {
+    assert(source.length>=0 && source.length<=280000);
+    let i:i32=0; while(i<source.length) { output.byte(source.values[source.start+i]); i+=1; }
+}
+fn error_code(error:ext::image::Error) -> i32 {
+    return match(error) {
+        ext::image::Error::Bounds -> 1,
+        ext::image::Error::Dimensions -> 2,
+        ext::image::Error::SizeOverflow -> 3,
+        ext::image::Error::AllocationFailed -> 4
+    };
+}
+fn run(header:[u8],body:[u8],output:&Output) {
+    let sw:i32=get64(header,0) as i32; let sh:i32=get64(header,8) as i32;
+    let dw:i32=get64(header,16) as i64 as i32; let dh:i32=get64(header,24) as i64 as i32;
+    let filter_number:i32=get64(header,32) as i32; let layout:i32=get64(header,40) as i32;
+    let padding:i32=get64(header,48) as i32; let cropped:i32=get64(header,56) as i32;
+    let invalid:i32=get64(header,64) as i32; let length:i32=get64(header,72) as i32;
+    assert(sw>0 && sw<=13 && sh>0 && sh<=13 && length==sw*sh*4);
+    assert(filter_number>=0 && filter_number<3 && layout>=0 && layout<2);
+    assert(padding>=0 && padding<8 && cropped>=0 && cropped<2 && invalid>=0 && invalid<=8);
+    let native:[u8;8192]=[0;8192]; let words:[i32;2048]=[0;2048]; let bytes:[u8]=native;
+    if(layout==1) { bytes=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),8192); }
+    let i:i32=0; while(i<8192) { bytes[i]=((193+i*19)&255) as u8; i+=1; }
+    let pw:i32=sw+cropped*2; let ph:i32=sh+cropped*2; let stride:i32=pw*4+padding;
+    let extent:i32=(ph-1)*stride+pw*4; assert(extent+3<=8192);
+    let span:core::slice::View<u8> = core::slice::View { values:bytes,start:3,length:extent };
+    let source:ext::image::View=ext::image::view(span,pw,ph,stride).unwrap();
+    if(cropped==1) { source=ext::image::subview(source,1,1,sw,sh).unwrap(); }
+    let y:i32=0;
+    while(y<sh) {
+        let x:i32=0; while(x<sw*4) { bytes[source.bytes.start+y*stride+x]=body[y*sw*4+x]; x+=1; }
+        y+=1;
+    }
+    if(invalid==1) { source.bytes.start=-1; }
+    if(invalid==2) { source.bytes.length=-1; }
+    if(invalid==3) { source.bytes.start=2147483647; }
+    if(invalid==4) { source.stride=sw*4-1; }
+    if(invalid==5) { source.height=0; }
+    if(invalid==6) { source.width=2147483647; }
+    if(invalid==7) { source.bytes.length=sw*4-1; }
+    if(invalid==8) { source.height+=100000; }
+    let filter:ext::image::Filter=ext::image::Filter::Nearest;
+    if(filter_number==1) { filter=ext::image::Filter::Bilinear; }
+    if(filter_number==2) { filter=ext::image::Filter::Area; }
+    metadata(source,output);
+    let attempt:core::result::Result<ext::image::Image,ext::image::Error> = ext::image::resize(source,dw,dh,filter);
+    if(attempt.is_err()) {
+        output.word(error_code(attempt.unwrap_err()) as u64); emit_backing(bytes,output);
+    } else {
+        assert(dw>0 && dw<=70000 && dh>0 && dh<=70000/dw);
+        output.word(0); let result:ext::image::Image=attempt.unwrap();
+        let view:ext::image::View=result.view(); let rgba:core::slice::View<u8> = result.rgba();
+        assert(result.width()==view.width && result.height()==view.height && ext::image::valid(view));
+        assert(rgba.start==view.bytes.start && rgba.length==view.bytes.length);
+        metadata(view,output); emit_pixels(rgba,output); emit_backing(bytes,output);
+        // The source borrow ended at resize. Overwrite its entire real backing,
+        // then observe the complete output again to establish independent data.
+        i=0; while(i<8192) { bytes[i]^=165; i+=1; }
+        emit_pixels(rgba,output);
+        // Mutating the new owner must likewise leave the source backing alone.
+        i=0; while(i<rgba.length) { rgba.values[rgba.start+i]^=90; i+=1; }
+        emit_backing(bytes,output); emit_pixels(rgba,output); result.destroy();
+    }
+    metadata(source,output);
+}
+fn main() -> i32 {
+    let header_words:[i32;20]=[0;20]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,80);
+    assert(read_exact(header_pointer,16,false)); assert(get64(header,0)==7596841887469889914);
+    let count:i32=get64(header,8) as i32; assert(count>0 && count<=700);
+    let body_words:[i32;256]=[0;256]; let body_pointer:ptr=core::mem::i32_array_data_ptr(body_words);
+    let body:[u8]=core::mem::typed_slice_from_raw_parts<u8>(body_pointer,1024);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    output.word(7596841887469889914); output.word(count as u64); let i:i32=0;
+    while(i<count) {
+        assert(read_exact(header_pointer,80,false)); let length:i32=get64(header,72) as i32;
+        assert(length>=0 && length<=1024); assert(read_exact(body_pointer,length,false));
+        output.word(i as u64); run(header,body,output.borrow()); i+=1;
+    }
+    assert(!read_exact(header_pointer,1,true)); output.word(7308889687760005498); output.flush(); return 0;
+}

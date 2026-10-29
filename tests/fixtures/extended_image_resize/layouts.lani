@@ -1,0 +1,49 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::image;
+fn equal(actual:core::slice::View<u8>,expected:[u8],length:i32) { assert(actual.length==length); let i:i32=0; while(i<length) { assert(actual.values[actual.start+i]==expected[i]); i+=1; } }
+fn preserved(bytes:[u8],saved:[u8]) { let i:i32=0; while(i<96) { assert(bytes[i]==saved[i]); i+=1; } }
+fn pixel(actual:ext::image::Rgba,r:u8,g:u8,b:u8,a:u8) { assert(actual.r==r && actual.g==g && actual.b==b && actual.a==a); }
+fn main() -> i32 {
+    let native:[u8;96]=[0;96]; let words:[i32;24]=[0;24]; let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),96);
+    assert(core::mem::slice_stride(native)<0 && core::mem::slice_stride(packed)==1);
+    let expected:[u8;16]=[50,205,4,0,90,165,5,255,60,195,7,1,100,155,8,255];
+    let filters:[ext::image::Filter;3]=[ext::image::Filter::Nearest,ext::image::Filter::Bilinear,ext::image::Filter::Area];
+    let mode:i32=0; while(mode<2) {
+        let bytes:[u8]=native; if(mode==1) { bytes=packed; } let i:i32=0; while(i<96) { bytes[i]=203; i+=1; }
+        let y:i32=0; while(y<3) { let x:i32=0; while(x<4) {
+            let at:i32=5+y*20+x*4; bytes[at]=(x*40+y*10) as u8; bytes[at+1]=(255-x*40-y*10) as u8; bytes[at+2]=(x+y*3) as u8; bytes[at+3]=255;
+            if(x==1 && y==1) { bytes[at+3]=0; } if(x==1 && y==2) { bytes[at+3]=1; } x+=1;
+        } y+=1; }
+        let saved:[u8;96]=[0;96]; i=0; while(i<96) { saved[i]=bytes[i]; i+=1; }
+        let parent:ext::image::View=ext::image::view(core::slice::View { values:bytes,start:5,length:56 },4,3,20).unwrap();
+        let source:ext::image::View=ext::image::subview(parent,1,1,2,2).unwrap(); assert(source.bytes.start==29 && source.bytes.length==28 && source.stride==20);
+        let f:i32=0; while(f<3) {
+            let identity:ext::image::Image=ext::image::resize(source,2,2,filters[f]).unwrap();
+            assert(identity.width()==2 && identity.height()==2 && identity.view().stride==8 && core::mem::slice_stride(identity.rgba().values)==1);
+            equal(identity.rgba(),expected,16); preserved(bytes,saved);
+            let reduced:ext::image::Image=ext::image::resize(source,1,1,filters[f]).unwrap();
+            assert(reduced.width()==1 && reduced.height()==1 && reduced.rgba().length==4 && reduced.view().stride==4 && core::mem::slice_stride(reduced.rgba().values)==1);
+            if(f==0) { pixel(ext::image::get(reduced.view(),0,0).unwrap(),100,155,8,255); }
+            else { pixel(ext::image::get(reduced.view(),0,0).unwrap(),95,160,7,128); }
+            preserved(bytes,saved);
+            // Both result owners are independent. Changing either result or
+            // the source after resize must not change any other live owner.
+            assert(ext::image::set(identity.view(),0,0,ext::image::Rgba { r:1,g:2,b:3,a:4 })); preserved(bytes,saved);
+            bytes[29]=111; bytes[30]=112; bytes[31]=113; bytes[32]=114;
+            pixel(ext::image::get(identity.view(),0,0).unwrap(),1,2,3,4);
+            let id_bytes:core::slice::View<u8> =identity.rgba(); i=4; while(i<16) { assert(id_bytes.values[id_bytes.start+i]==expected[i]); i+=1; }
+            if(f==0) { pixel(ext::image::get(reduced.view(),0,0).unwrap(),100,155,8,255); }
+            else { pixel(ext::image::get(reduced.view(),0,0).unwrap(),95,160,7,128); }
+            i=29; while(i<33) { bytes[i]=saved[i]; i+=1; } preserved(bytes,saved);
+            identity.destroy(); reduced.destroy(); preserved(bytes,saved); f+=1;
+        }
+        // Include every parent pixel, every row-padding byte, and all bytes
+        // outside the parent descriptor in the preservation witness.
+        preserved(bytes,saved); mode+=1;
+    }
+    return 0;
+}

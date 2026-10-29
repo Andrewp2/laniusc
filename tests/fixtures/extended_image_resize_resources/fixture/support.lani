@@ -1,0 +1,96 @@
+module fixture::support;
+import alloc::vec;
+import core::mem;
+import ext::image;
+import std::io;
+
+pub struct Shape { sw:i32,sh:i32,dw:i32,dh:i32,pattern:i32 }
+pub fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+pub fn mode() -> i32 { let byte:[i32;1] = [0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(byte),1)==1); return byte[0]&255; }
+pub fn resource_shape(identity:bool) -> Shape {
+    if(identity) { return Shape { sw:7,sh:5,dw:7,dh:5,pattern:0 }; }
+    return Shape { sw:7,sh:5,dw:11,dh:9,pattern:0 };
+}
+pub fn scale_shape(index:i32) -> Shape {
+    if(index==0) { return Shape { sw:1024,sh:768,dw:512,dh:384,pattern:1 }; }
+    if(index==1) { return Shape { sw:517,sh:3,dw:257,dh:5,pattern:2 }; }
+    if(index==2) { return Shape { sw:3,sh:517,dw:5,dh:257,pattern:3 }; }
+    if(index==3) { return Shape { sw:65536,sh:1,dw:1,dh:65536,pattern:4 }; }
+    assert(index==4); return Shape { sw:1,sh:65536,dw:65536,dh:1,pattern:5 };
+}
+pub fn source_pixel(shape:Shape,x:i32,y:i32) -> ext::image::Rgba {
+    if(shape.pattern==0) {
+        let alphas:[u8;5] = [0,1,64,128,255];
+        return ext::image::Rgba { r:((x*37+y*19+17)%256) as u8,g:((x*11+y*53+29)%256) as u8,b:((x*67+y*7+3)%256) as u8,a:alphas[(x+2*y)%5] };
+    }
+    if(shape.pattern==1) {
+        let bx:i32 = x/2; let by:i32 = y/2; let alphas:[u8;4] = [0,1,128,255];
+        return ext::image::Rgba { r:((bx*17+by*23+11)%256) as u8,g:((bx*31+by*7+19)%256) as u8,b:((bx*5+by*47+29)%256) as u8,a:alphas[(bx+by)%4] };
+    }
+    if(shape.pattern==2 || shape.pattern==3) {
+        let rx:i32 = 258; let gy:i32 = 1; if(shape.pattern==3) { rx=1; gy=258; }
+        let red:u8 = 0; let green:u8 = 0; if(x<rx) { red=255; } if(y<gy) { green=255; }
+        return ext::image::Rgba { r:red,g:green,b:17,a:255 };
+    }
+    let index:i32 = x; if(shape.pattern==5) { index=y; } let alpha:u8 = 0; if(index%2==1) { alpha=255; }
+    return ext::image::Rgba { r:(index%256) as u8,g:(255-index%256) as u8,b:((index%4)*64) as u8,a:alpha };
+}
+pub fn source_bytes(shape:Shape) -> i32 { return (shape.sw*4+5)*shape.sh+7; }
+pub fn source(shape:Shape) -> alloc::vec::Vec<u8> {
+    let owner:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(source_bytes(shape)).unwrap();
+    owner.try_resize(source_bytes(shape),199 as u8).unwrap(); let bytes=owner.as_slice();
+    let y:i32 = 0; while(y<shape.sh) { let x:i32 = 0; while(x<shape.sw) {
+        let pixel=source_pixel(shape,x,y); let offset:i32 = 3+y*(shape.sw*4+5)+x*4;
+        bytes[offset]=pixel.r; bytes[offset+1]=pixel.g; bytes[offset+2]=pixel.b; bytes[offset+3]=pixel.a; x+=1;
+    } y+=1; } return owner;
+}
+pub fn view(owner:&alloc::vec::Vec<u8>,shape:Shape) -> ext::image::View {
+    let row:i32 = shape.sw*4+5; let end:i32 = 3+(shape.sh-1)*row+shape.sw*4;
+    return ext::image::view(owner.as_view().subview(3,end).unwrap(),shape.sw,shape.sh,row).unwrap();
+}
+pub fn check_source(owner:&alloc::vec::Vec<u8>,shape:Shape) {
+    assert(owner.len()==source_bytes(shape) && owner.capacity()==source_bytes(shape)); let bytes=owner.as_slice();
+    assert(bytes[0]==199 && bytes[1]==199 && bytes[2]==199);
+    let y:i32 = 0; while(y<shape.sh) { let x:i32 = 0; while(x<shape.sw) {
+        let pixel=source_pixel(shape,x,y); let offset:i32 = 3+y*(shape.sw*4+5)+x*4;
+        assert(bytes[offset]==pixel.r && bytes[offset+1]==pixel.g && bytes[offset+2]==pixel.b && bytes[offset+3]==pixel.a); x+=1;
+    } let guard:i32 = 0; while(guard<5) { assert(bytes[3+y*(shape.sw*4+5)+shape.sw*4+guard]==199); guard+=1; } y+=1; }
+    let index:i32 = owner.len()-4; while(index<owner.len()) { assert(bytes[index]==199); index+=1; }
+}
+pub fn check_result(owner:&ext::image::Image,shape:Shape) {
+    assert(owner.width()==shape.dw && owner.height()==shape.dh);
+    assert(owner.storage.len()==shape.dw*shape.dh*4 && owner.storage.capacity()==shape.dw*shape.dh*4);
+    assert(ext::image::valid(owner.view()));
+}
+fn covered(start:i32,total:i32,boundary:i32,target:i32) -> i32 {
+    let length:i32 = boundary*target-start*total; if(length<0) { length=0; } if(length>total) { length=total; } return length;
+}
+// Closed-form expectations, independent of the production tiling/traversal.
+pub fn scale_expected(shape:Shape,x:i32,y:i32) -> ext::image::Rgba {
+    if(shape.pattern==1) {
+        let pixel=source_pixel(shape,x*2,y*2); if(pixel.a==0) { return ext::image::Rgba { r:0,g:0,b:0,a:0 }; } return pixel;
+    }
+    if(shape.pattern==2 || shape.pattern==3) {
+        let boundary_x:i32 = 258; let boundary_y:i32 = 1; if(shape.pattern==3) { boundary_x=1; boundary_y=258; }
+        let red:i32 = (255*covered(x,shape.sw,boundary_x,shape.dw)+shape.sw/2)/shape.sw;
+        let green:i32 = (255*covered(y,shape.sh,boundary_y,shape.dh)+shape.sh/2)/shape.sh;
+        return ext::image::Rgba { r:red as u8,g:green as u8,b:17,a:255 };
+    }
+    // Every 256-sample period has 128 opaque odd indices: mean RGB is
+    // (128,127,128), while mean alpha is 127.5 and rounds upward to 128.
+    return ext::image::Rgba { r:128,g:127,b:128,a:128 };
+}
+pub fn check_scale(owner:&ext::image::Image,shape:Shape) {
+    check_result(owner,shape); let bytes=owner.storage.as_slice(); let y:i32 = 0;
+    while(y<shape.dh) { let x:i32 = 0; while(x<shape.dw) {
+        let pixel=scale_expected(shape,x,y); let offset:i32 = (y*shape.dw+x)*4;
+        assert(bytes[offset]==pixel.r && bytes[offset+1]==pixel.g && bytes[offset+2]==pixel.b && bytes[offset+3]==pixel.a); x+=1;
+    } y+=1; }
+}
+pub fn publish(owner:&ext::image::Image) {
+    let offset:i32 = 0; let count:i32 = owner.storage.len(); let calls:i32 = 0;
+    while(offset<count) { assert(calls<4096); calls+=1;
+        let used:i32 = std::io::write_stdout(owner.storage.storage+(offset as usize),(count-offset) as usize);
+        assert(used>0 && used<=count-offset); offset+=used;
+    }
+}

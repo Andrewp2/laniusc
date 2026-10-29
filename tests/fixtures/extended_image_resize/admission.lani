@@ -1,0 +1,22 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::image;
+fn check(image:&ext::image::Image,alpha:u8) {
+    assert(image.width()==1 && image.height()==1 && image.rgba().length==4 && image.view().stride==4);
+    let pixel:ext::image::Rgba=ext::image::get(image.view(),0,0).unwrap();
+    assert(pixel.r==10 && pixel.g==30 && pixel.b==50 && pixel.a==alpha);
+    assert(core::mem::slice_stride(image.rgba().values)==1);
+}
+fn main() -> i32 {
+    let bytes:[u8;12]=[203,203,255,0,70,0,10,30,50,255,203,203];
+    let source:ext::image::View=ext::image::view(core::slice::View { values:bytes,start:2,length:8 },2,1,8).unwrap();
+    let nearest:ext::image::Image=ext::image::resize(source,1,1,ext::image::Filter::Nearest).unwrap(); check(nearest.borrow(),255);
+    let bilinear:ext::image::Image=ext::image::resize(source,1,1,ext::image::Filter::Bilinear).unwrap(); check(bilinear.borrow(),128);
+    let area:ext::image::Image=ext::image::resize(source,1,1,ext::image::Filter::Area).unwrap(); check(area.borrow(),128);
+    let expected:[u8;12]=[203,203,255,0,70,0,10,30,50,255,203,203]; let i:i32=0;
+    while(i<12) { assert(bytes[i]==expected[i]); i+=1; }
+    nearest.destroy(); bilinear.destroy(); area.destroy(); return 0;
+}

@@ -1,0 +1,16 @@
+module app::main;
+import ext::image;
+import fixture::support;
+
+fn cycle(index:i32) {
+    let shape=fixture::support::scale_shape(index); fixture::support::mark(65);
+    let source=fixture::support::source(shape); fixture::support::mark(83);
+    fixture::support::mark(80); fixture::support::check_source(source.borrow(),shape); fixture::support::mark(112);
+    fixture::support::mark(67); let output=ext::image::resize(fixture::support::view(source.borrow(),shape),shape.dw,shape.dh,ext::image::Filter::Area).unwrap(); fixture::support::mark(70);
+    fixture::support::mark(80); fixture::support::check_source(source.borrow(),shape); fixture::support::check_scale(output.borrow(),shape);
+    assert(output.storage.storage!=source.storage); fixture::support::mark(112);
+    fixture::support::mark(82); source.destroy();
+    fixture::support::mark(80); fixture::support::check_scale(output.borrow(),shape); fixture::support::mark(112);
+    fixture::support::publish(output.borrow()); output.destroy(); fixture::support::mark(69);
+}
+fn main() -> i32 { let index:i32 = 0; while(index<5) { cycle(index); index+=1; } fixture::support::mark(68); return 0; }

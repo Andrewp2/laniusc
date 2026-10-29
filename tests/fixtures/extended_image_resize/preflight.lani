@@ -1,0 +1,36 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::image;
+fn rejected(source:ext::image::View,width:i32,height:i32,filter:ext::image::Filter,expected:i32) {
+    let result:core::result::Result<ext::image::Image,ext::image::Error> =ext::image::resize(source,width,height,filter);
+    assert(result.is_err()); let code:i32=match(result.unwrap_err()) { ext::image::Error::Bounds -> 1, ext::image::Error::Dimensions -> 2, ext::image::Error::SizeOverflow -> 3, _ -> 0 }; assert(code==expected);
+}
+fn main() -> i32 {
+    let null:ptr=0; let absent:[u8]=core::mem::typed_slice_from_raw_parts<u8>(null,0);
+    let good:ext::image::View=ext::image::View { bytes:core::slice::View { values:absent,start:0,length:4 },width:1,height:1,stride:4 };
+    let filters:[ext::image::Filter;3]=[ext::image::Filter::Nearest,ext::image::Filter::Bilinear,ext::image::Filter::Area];
+    let f:i32=0; while(f<3) {
+        let filter:ext::image::Filter=filters[f]; let bad:ext::image::View=good; bad.width=0;
+        rejected(bad,0,0,filter,1); bad=good; bad.height=-1; rejected(bad,2147483647,2147483647,filter,1);
+        bad=good; bad.width=536870912; bad.stride=2147483647; rejected(bad,1,1,filter,1);
+        bad=good; bad.bytes.start=-1; rejected(bad,0,1,filter,1);
+        bad=good; bad.bytes.length=-1; rejected(bad,1,0,filter,1);
+        bad=good; bad.bytes.start=2147483647; rejected(bad,1,1,filter,1);
+        bad=good; bad.bytes.length=3; rejected(bad,1,1,filter,1);
+        bad=good; bad.stride=3; rejected(bad,1,1,filter,1);
+        bad=good; bad.stride=-4; rejected(bad,1,1,filter,1);
+        bad=good; bad.height=2; bad.stride=8; bad.bytes.length=11; rejected(bad,0,0,filter,1);
+        bad=good; bad.height=2147483647; bad.stride=2147483647; bad.bytes.length=2147483647; rejected(bad,1,1,filter,1);
+        rejected(good,0,1,filter,2); rejected(good,1,-1,filter,2); rejected(good,-1,2147483647,filter,2);
+        rejected(good,536870912,1,filter,3); rejected(good,1,536870912,filter,3); rejected(good,32768,16384,filter,3);
+        // Exact logical maximum can be admitted as a source descriptor, but
+        // invalid output must fail before sampling this deliberately absent backing.
+        let huge:ext::image::View=ext::image::View { bytes:core::slice::View { values:absent,start:3,length:2147483644 },width:536870911,height:1,stride:2147483644 };
+        assert(ext::image::valid(huge)); rejected(huge,0,1,filter,2); rejected(huge,536870912,1,filter,3); f+=1;
+    }
+    let guarded:[u8;16]=[203;16]; let backed:ext::image::View=ext::image::View { bytes:core::slice::View { values:guarded,start:2,length:8 },width:1,height:2,stride:4 };
+    rejected(backed,0,1,ext::image::Filter::Area,2); rejected(backed,2147483647,2,ext::image::Filter::Bilinear,3);
+    let i:i32=0; while(i<16) { assert(guarded[i]==203); i+=1; } return 0;
+}

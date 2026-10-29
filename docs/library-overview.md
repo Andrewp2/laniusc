@@ -1,6 +1,19 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[image-resize increment](extended-image-resize.md) adds Nearest, Bilinear and
+exact Area sampling to the existing RGBA8 module and
+[PNG transformation program](extended-image-tool.md). Source preservation,
+alpha-weighted rounding, byte-preserving identity and bounded tiled Area work
+are explicit. All seven library groups pass, including the 626-case independent
+model, two reached allocation failures with same-process recovery and five
+scale shapes with at most 16 KiB scratch. The application passes four groups/
+102 native cases, including 22 reached allocation denials. Two selected old
+image groups, three old consumer groups/346 cases, standalone compilation and
+both documented examples pass separately. This finite native Linux x86_64
+increment is accepted; historical receipts retain their original scopes.
+Vector owner transfer, streaming compression encoders and the other roadmap
+gaps remain separate work. The preceding
 [ordered form-byte increment](extended-form.md) adds borrowed form parsing,
 forgiving percent decoding, canonical streaming serialization and an optional
 packed Form owner. Ordered duplicates and arbitrary decoded bytes survive;

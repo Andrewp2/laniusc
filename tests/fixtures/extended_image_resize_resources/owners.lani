@@ -1,0 +1,32 @@
+module app::main;
+import ext::image;
+import fixture::support;
+
+fn filter(index:i32) -> ext::image::Filter {
+    if(index==0 || index==5) { return ext::image::Filter::Area; }
+    if(index==1 || index==3) { return ext::image::Filter::Nearest; }
+    return ext::image::Filter::Bilinear;
+}
+fn cycle(index:i32,fail:bool) {
+    let shape=fixture::support::resource_shape(index>=3); fixture::support::mark(65);
+    let source=fixture::support::source(shape); fixture::support::mark(83);
+    fixture::support::mark(80); fixture::support::check_source(source.borrow(),shape);
+    assert(ext::image::resize(fixture::support::view(source.borrow(),shape),0,shape.dh,filter(index)).is_err()); fixture::support::mark(112);
+    fixture::support::mark(67); let result=ext::image::resize(fixture::support::view(source.borrow(),shape),shape.dw,shape.dh,filter(index)); fixture::support::mark(70);
+    if(fail) {
+        assert(result.is_err() && match(result.unwrap_err()) { ext::image::Error::AllocationFailed->true,_ ->false });
+        fixture::support::mark(80); fixture::support::check_source(source.borrow(),shape); fixture::support::mark(112);
+        fixture::support::mark(67); result=ext::image::resize(fixture::support::view(source.borrow(),shape),shape.dw,shape.dh,filter(index)); fixture::support::mark(70);
+    }
+    let output=result.unwrap(); fixture::support::mark(80); fixture::support::check_source(source.borrow(),shape);
+    fixture::support::check_result(output.borrow(),shape); assert(output.storage.storage!=source.storage); fixture::support::mark(112);
+    fixture::support::mark(82); source.destroy();
+    fixture::support::mark(80); fixture::support::check_result(output.borrow(),shape); fixture::support::mark(112);
+    fixture::support::publish(output.borrow()); output.destroy(); fixture::support::mark(69);
+}
+fn main() -> i32 {
+    let mode=fixture::support::mode(); assert(mode==0 || mode==1);
+    if(mode==1) { cycle(0,true); }
+    else { let index:i32 = 0; while(index<6) { cycle(index,false); index+=1; } }
+    fixture::support::mark(68); return 0;
+}

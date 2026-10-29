@@ -3,6 +3,21 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [image-resize increment](extended-image-resize.md) uses existing image
+views, integer arithmetic and alloc storage. Nearest, Bilinear and Area have
+explicit sampling and alpha contracts; tiled exact Area workspace is bounded
+independently of full raster dimensions. Source backing remains immutable and
+alive through the call, and one active result owner retains manual cleanup
+authority. All seven library groups and four PNG-tool groups/102 cases pass,
+including reached output/scratch failures, bounded scale shapes and exact
+models. Selected existing regressions and standalone build/examples pass
+separately. No new compiler dependency was encountered, and the increment
+requires no compiler/ABI repair, new host service or native image library.
+Evidence is Linux x86_64 CPU output from the GPU compiler. Other hosts,
+user-device execution, automatic lifetime enforcement and formal proofs remain
+separate. Existing PNG compiler reductions below keep their original scope
+and do not establish a resize blocker.
+
 The [ordered form-byte increment](extended-form.md) belongs in the extended
 format layer. Borrowed parsing, component conversion and serialization use only
 existing core View/Iterator/Read contracts; owned forms and output use existing

@@ -1153,8 +1153,13 @@
     },
     "ext::image": {
       "guides": [
-        "docs/extended-image.md"
-      ]
+        "docs/extended-image.md",
+        "docs/extended-image-resize.md"
+      ],
+      "note": "Existing RGBA8 image/view operations retain their historical receipts. Nearest, Bilinear and exact Area resizing use source-first metadata admission, positive checked destination dimensions, independent packed output and cleanup on allocation failure. Source backing remains alive and immutable; Image copies do not fork cleanup authority. Nearest copies selected RGBA bytes. Filtered modes use exact alpha-weighted sums in stored sample space and round nonnegative ties upward. Exact zero weighted alpha produces transparent black; positive exact alpha determines colors even if rounded alpha is zero. Every filter preserves all bytes for unchanged dimensions. Tiled Area chooses the cheaper separable orientation for O(source plus destination pixels) work with at most 512 private four-u64 sums (16 KiB). All seven new library groups pass: four direct groups, a 626-case rational model and two resource/scale groups. The model checks 403513 output pixels and 84 relations across two layouts. Reached result/scratch allocation denials preserve source and recover in-process; five scale shapes compare all 1321000 bytes with exact cleanup and at most 16 KiB scratch, including both 65536-pixel thin directions using 64 bytes. The amended resource ledger enforces source retirement before result publication; its prior run is separate history of the same two groups. The PNG tool passes four new groups/102 cases including 22 reached application allocation denials. Two old image groups and three selected old consumer groups/346 cases pass separately, as do standalone compilation and both documented examples. Earlier 400-case consumer evidence retains its scope. Acceptance is finite Linux x86_64 CPU output from the GPU compiler; other hosts, GPU-device execution, enforced lifetimes and formal proofs remain separate. No new compiler dependency was encountered.",
+      "declarations": {
+        "resize": "Checked Nearest/Bilinear/Area resize into an independent packed Image. Complete source Bounds precedes destination Dimensions/SizeOverflow, then result allocation and optional bounded Area scratch before source pixel reads. Failure releases partial allocations and preserves source; identity is a byte-preserving independent copy. Exact coordinates, alpha/rounding, manual immutable-source lifetime and O(S+D) Area contracts are in the resize guide. All seven library and four PNG-tool groups pass on the documented finite native profile."
+      }
     },
     "ext::inflate": {
       "guides": [

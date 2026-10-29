@@ -298,7 +298,12 @@ policy rather than a universal terminal measurement.
 checked RGBA operations, all standard input color/depth combinations, Adam7,
 filters, CRC/order validation and RGBA8 encoding. A
 [PNG transformation program](extended-image-tool.md) exercises crop, rotation
-and flips. [Finite audio](extended-audio.md) and [WAVE codecs](extended-wave.md)
+and flips. The [resize increment](extended-image-resize.md) adds Nearest,
+Bilinear and exact Area sampling, explicit alpha/identity rules and bounded
+O(source + destination pixels) tiled work. All seven library groups and four
+application groups/102 native cases pass, as do selected existing regressions
+and standalone examples. Earlier image/program receipts retain their scope.
+[Finite audio](extended-audio.md) and [WAVE codecs](extended-wave.md)
 provide PCM/IEEE/extensible conversion, exact mean/DC/mono behavior, scaled RMS
 and checked signal operations through a [WAVE program](extended-wave-tool.md).
 [Signal processing](extended-signal.md) adds checked complex values, radix-2
@@ -609,7 +614,7 @@ than a request to replace implementation work with more tests.
 | Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Fixed Workspace and canonical Search serve span/full-capture probes; all 23 selected workspace/base-regex/lexer/regex-text/lex-scan tests pass across separate receipts. The new 4,096-token observation records 32 verified source requests and exact owner cleanup. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. The prior 36,887-allocation observation retains its historical implementation/accounting scope; no compiler-speed or universal throughput ratio follows. No second matcher is introduced. |
 | Mathematics | Big integers, finite decimals, ordinary/weighted second-order and unweighted higher statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. The canonical CSR foundation passes six library gates including a 3,886-case model, 33 reached operation-allocation denials and the 65,536-row analytic scale case; the real graph application passes four more gates/113 process cases. The separate sparse product passes all six new library gates, including a 2,194-case model and 16 reached allocation denials; its weighted-path application passes four groups/122 unique process cases across separate original/amended-model receipts. The CG solver passes six library and four graph-diffusion gates/154 application process cases, including a 1,918-case independent model and 27 reached workspace allocation denials. The weighted/higher increment passes eleven registered gates and both ordinary-statistics regressions, including independent Fraction/Decimal models and the 66-case CSV application. | Additional number theory, decimal exceptional/transcendental behavior, weighted higher-order and multivariate higher statistics, other iterative/direct solvers, sparse/advanced decompositions and further distributions remain. Preserve finite-domain and accuracy limits. |
 | Graphs | Canonical integer directed adjacency, shortest-hop FIFO BFS and Min-heap dependency ordering pass eight library tests and four application groups/183 cases on native Linux x86_64, including independent models, owner/fault and 65,536-node workloads. The separate [strong-component and condensation increment](extended-graph-components.md) passes all six new library tests, including 3,218 model cases, 17 reached allocation denials and three 65,536-node shapes; all four dependency-order groups/312 cases and standalone build/examples also pass. | The accepted profile is directed simple integer graphs. Other graph algorithms, targets, automatic ownership and formal guarantees require separate scope/evidence. |
-| Application and media utilities | CLI parsing, command hierarchy and generated help execute. Response tokenization/owned expansion pass portable semantics and public composition; native provider/resource groups pass 70 overlapping cases and current KV responses pass 55. Earlier hierarchy/roundtrip/publication groups retain source `f07fd52f...` scope. Portable completion, literal Bash words and reply frames pass finite semantics/pure contracts; the Bash adapter passes function/PTY/watchdog gates, and native queries pass owner/OOM/output groups. Settings, logging, terminal tables/progress, PNG, WAVE and FFT retain their profiles. | Other shell adapters, richer application/configuration validation, color management, additional media formats/playback and signal algorithms remain. |
+| Application and media utilities | CLI parsing, command hierarchy and generated help execute. Response tokenization/owned expansion pass portable semantics and public composition; native provider/resource groups pass 70 overlapping cases and current KV responses pass 55. Earlier hierarchy/roundtrip/publication groups retain source `f07fd52f...` scope. Portable completion, literal Bash words and reply frames pass finite semantics/pure contracts; the Bash adapter passes function/PTY/watchdog gates, and native queries pass owner/OOM/output groups. Settings, logging, terminal tables/progress, PNG, WAVE and FFT retain their profiles. The [three-filter image-resize increment](extended-image-resize.md) passes seven library groups and four PNG-tool groups/102 native cases, including exact models, bounded scale shapes and reached allocation failures. | Other shell adapters, richer application/configuration validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
 | Targets | Current receipts establish native Linux x86_64 profiles; GPU compilation does not establish user-program GPU execution, and `std::gpu` is explicitly unbound. | Keep per-module target/dependency evidence accurate; broader host targets and user GPU services require real runtime support and execution before claims expand. |
 
@@ -932,6 +937,19 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [image resizing](extended-image-resize.md) adds Nearest, Bilinear and
+  Area to the RGBA8 module and PNG transformation program. Exact coordinates,
+  alpha-weighted rounding, identity byte copies, source-first admission and
+  cleanup are explicit. Tiled Area uses O(source + destination pixels) work
+  and at most 16 KiB private scratch. All seven library groups pass, including
+  626 independent model cases, two reached allocation failures with recovery
+  and five scale shapes. All four PNG-tool groups/102 native cases pass,
+  including 22 reached allocation denials. Two old image and three old consumer
+  groups/346 cases pass separately, as do standalone compilation and both
+  documented examples. This finite Linux x86_64 increment is accepted; no new
+  compiler dependency was encountered. Vector owner transfer and streaming
+  compression encoding remain substantive later increments alongside the
+  broader remaining-work table.
 - Accepted [ordered form-byte increment](extended-form.md) adds core-only
   borrowed parsing/component conversion and one canonical Read serializer,
   plus an optional packed owner using existing alloc modules. Duplicate order,
