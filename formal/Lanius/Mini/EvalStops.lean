@@ -1530,4 +1530,57 @@ theorem effStops_all {sp : SrcProgram} {mp : Program} {n : Nat}
   | .eStride _ => eff_stride
 termination_by e => sizeOf e
 
+/-- Every lowered statement whose Core run fails stops within `n + 1` ticks
+when every one stops within `n`: by structural recursion on the statement,
+with a loop's next iteration and a callee's body at `n`. -/
+theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
+    (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) : StmtStops sp mp (n + 1)
+  | .nop => stops_nop
+  | .let _ _ _ body => stops_let (stmtStops_succ lowered returns prev body)
+  | .letStruct _ _ _ body => stops_letStruct (stmtStops_succ lowered returns prev body)
+  | .letCall _ _ _ _ body => stops_letCall lowered returns prev (stmtStops_succ lowered returns prev body)
+  | .letEnum _ _ _ _ body => stops_letEnum (stmtStops_succ lowered returns prev body)
+  | .letMatch _ _ _ _ _ body => stops_letMatch (stmtStops_succ lowered returns prev body)
+  | .set _ _ => stops_set
+  | .setField _ _ _ => stops_setField
+  | .setCall _ _ _ => stops_setCall lowered returns prev
+  | .then first second =>
+      stops_then lowered (stmtStops_succ lowered returns prev first) (stmtStops_succ lowered returns prev second)
+  | .if _ thenBranch elseBranch =>
+      stops_if lowered (stmtStops_succ lowered returns prev thenBranch)
+        (stmtStops_succ lowered returns prev elseBranch)
+  | .while _ body => stops_while lowered prev (stmtStops_succ lowered returns prev body)
+  | .return _ => stops_return
+  | .letAlloc _ _ _ body => stops_letAlloc (stmtStops_succ lowered returns prev body)
+  | .letLoad _ _ _ body => stops_letLoad (stmtStops_succ lowered returns prev body)
+  | .setByte _ _ _ => stops_setByte
+  | .free _ _ _ => stops_free
+  | .letSlice _ _ _ _ body => stops_letSlice (stmtStops_succ lowered returns prev body)
+  | .letIndex _ _ _ _ body => stops_letIndex (stmtStops_succ lowered returns prev body)
+  | .setIndex _ _ _ => stops_setIndex
+  | .letEval _ _ value body =>
+      stops_letEval lowered (effStops_all lowered returns prev value) (stmtStops_succ lowered returns prev body)
+  | .setEval _ value => stops_setEval lowered (effStops_all lowered returns prev value)
+  | .ifEval condition thenBranch elseBranch =>
+      stops_ifEval lowered (effStops_all lowered returns prev condition)
+        (stmtStops_succ lowered returns prev thenBranch) (stmtStops_succ lowered returns prev elseBranch)
+  | .whileEval condition body =>
+      stops_whileEval lowered (effStops_all lowered returns prev condition) (stmtStops_succ lowered returns prev body)
+  | .returnEval value => stops_returnEval lowered (effStops_all lowered returns prev value)
+  | .discard value => stops_discard (effStops_all lowered returns prev value)
+  | .setIndexEval _ index value =>
+      stops_setIndexEval lowered (effStops_all lowered returns prev index) (effStops_all lowered returns prev value)
+  | .setFieldEval _ _ value => stops_setFieldEval lowered (effStops_all lowered returns prev value)
+  | .returnUnit => stops_returnUnit
+  | .assert condition => stops_assert lowered (effStops_all lowered returns prev condition)
+
+/-- Every lowered statement whose Core run fails stops for every number of
+ticks. -/
+theorem stmtStops_all {sp : SrcProgram} {mp : Program}
+    (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    (returns : funcsReturn sp.funcs = true) : ∀ n, StmtStops sp mp n
+  | 0 => fun _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ => ⟨0, .zero⟩
+  | n + 1 => stmtStops_succ lowered returns (stmtStops_all lowered returns n)
+
 end Lanius.Mini
