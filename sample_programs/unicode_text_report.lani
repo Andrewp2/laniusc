@@ -5,9 +5,12 @@ import alloc::string;
 import alloc::vec;
 import core::decimal;
 import core::io;
+import core::iter;
 import core::mem;
 import core::option;
 import core::result;
+import core::text;
+import core::utf8;
 import std::io_byte;
 import std::signal;
 import std::stream;
@@ -30,19 +33,23 @@ fn write_error(message: str, length: i32) -> bool {
 
 fn report(text: alloc::string::String) -> i32 {
     if (!write_counts(text.byte_len(),text.scalar_count())) { return 3; }
-    let reversed: alloc::string::String = alloc::string::new();
-    while (!text.is_empty()) {
-        let scalar: u32 = core::option::unwrap(text.pop_scalar());
-        if (core::result::is_err(reversed.try_push_scalar(scalar))) {
-            reversed.destroy();
-            return 4;
-        }
-    }
-    let bytes: [u8] = reversed.as_bytes();
+    let scalars: core::text::Scalars = text.as_text().scalars();
+    let bytes: [u8;4096] = [0;4096];
+    let used: i32 = 0;
     let sink = std::stream::stdout();
-    let written = core::io::write_all(sink.borrow(),bytes,0,reversed.byte_len());
-    reversed.destroy();
-    if (written.is_err()) { return 3; }
+    let next: core::option::Option<core::text::Scalar> = scalars.next_back();
+    while (next.is_some()) {
+        let scalar: u32 = next.unwrap().value;
+        let width: i32 = core::utf8::encoded_len_or(scalar,0) as i32;
+        if (used > 4096-width) {
+            if (core::io::write_all(sink.borrow(),bytes,0,used).is_err()) { return 3; }
+            used = 0;
+        }
+        let index: i32 = 0;
+        while (index < width) { bytes[used+index] = core::utf8::encoded_byte_or(scalar,index as u32,0); index += 1; }
+        used += width; next = scalars.next_back();
+    }
+    if (core::io::write_all(sink.borrow(),bytes,0,used).is_err()) { return 3; }
     return 0;
 }
 

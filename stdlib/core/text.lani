@@ -16,9 +16,10 @@ import core::utf8;
 pub enum Error { Bounds, NotCharBoundary, InvalidUtf8(i32) }
 pub struct Text { bytes: [u8], start: i32, length: i32 }
 pub struct Scalar { byte_index: i32, value: u32 }
-pub struct Scalars { text: Text, position: i32 }
+pub struct Scalars { text: Text, position: i32, back: i32 }
 pub struct Split { text: Text, separator: Text, position: i32, empty_head: bool, done: bool }
-pub struct SplitAsciiWhitespace { text: Text, position: i32 }
+pub struct SplitAsciiWhitespace { text: Text, position: i32, back: i32 }
+pub struct Lines { text: Text, front: i32, back: i32 }
 
 // Validate only this range. InvalidUtf8 identifies the malformed sequence's
 // start relative to the requested range, including truncated sequences.
@@ -170,7 +171,12 @@ pub impl Text {
         let view: core::slice::View<u8> = core::slice::View { values: self.bytes, start: self.start, length: self.length };
         return view.iter();
     }
-    pub fn scalars(&self) -> Scalars { return Scalars { text: self.part(0, self.length), position: 0 }; }
+    pub fn scalars(&self) -> Scalars { return Scalars { text: self.part(0, self.length), position: 0, back: self.length }; }
+    // LF and CRLF terminate lines and are excluded. Lone CR remains content.
+    // Empty input has no lines; a terminal LF adds no phantom empty line.
+    pub fn lines(&self) -> Lines {
+        return Lines { text: self.part(0, self.length), front: 0, back: self.length };
+    }
     // Nonoverlapping separators; retain leading, interior and trailing empty
     // fields. Empty separator yields empty, each scalar, then empty.
     pub fn split(&self, separator: Text) -> Split {
@@ -179,7 +185,7 @@ pub impl Text {
     // Separate maximal nonempty words at HT, LF, VT, FF, CR and space.
     // Non-ASCII whitespace and NUL remain ordinary text. The cursor is fused.
     pub fn split_ascii_whitespace(&self) -> SplitAsciiWhitespace {
-        return SplitAsciiWhitespace { text: self.part(0, self.length), position: 0 };
+        return SplitAsciiWhitespace { text: self.part(0, self.length), position: 0, back: self.length };
     }
     pub fn parse_u8(&self) -> core::result::Result<u8, core::decimal::ParseError> {
         return core::decimal::parse_u8_range(self.bytes, self.start, self.length);
@@ -219,15 +225,29 @@ pub impl SplitAsciiWhitespace {
 
 pub impl core::iter::Iterator<Text> for SplitAsciiWhitespace {
     pub fn next(&self) -> core::option::Option<Text> {
-        while (self.position < self.text.length && core::u8::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
+        while (self.position < self.back && core::u8::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
             self.position += 1;
         }
         let start: i32 = self.position;
-        while (self.position < self.text.length && !core::u8::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
+        while (self.position < self.back && !core::u8::is_ascii_whitespace(self.text.bytes[self.text.start + self.position])) {
             self.position += 1;
         }
         if (start == self.position) { return core::option::None(); }
         return core::option::Some(self.text.part(start, self.position));
+    }
+}
+
+pub impl core::iter::DoubleEndedIterator<Text> for SplitAsciiWhitespace {
+    pub fn next_back(&self) -> core::option::Option<Text> {
+        while (self.back > self.position && core::u8::is_ascii_whitespace(self.text.bytes[self.text.start + self.back - 1])) {
+            self.back -= 1;
+        }
+        let end: i32 = self.back;
+        while (self.back > self.position && !core::u8::is_ascii_whitespace(self.text.bytes[self.text.start + self.back - 1])) {
+            self.back -= 1;
+        }
+        if (self.back == end) { return core::option::None(); }
+        return core::option::Some(self.text.part(self.back, end));
     }
 }
 
@@ -237,11 +257,61 @@ pub impl Scalars {
 
 pub impl core::iter::Iterator<Scalar> for Scalars {
     pub fn next(&self) -> core::option::Option<Scalar> {
-        if (self.position == self.text.byte_len()) { return core::option::None(); }
+        if (self.position == self.back) { return core::option::None(); }
         let index: i32 = self.position;
         let value: u32 = core::option::unwrap(self.text.scalar_at_byte(index));
         self.position += core::utf8::encoded_len_or(value, 0) as i32;
         return core::option::Some(Scalar { byte_index: index, value: value });
+    }
+}
+
+pub impl core::iter::DoubleEndedIterator<Scalar> for Scalars {
+    pub fn next_back(&self) -> core::option::Option<Scalar> {
+        if (self.position == self.back) { return core::option::None(); }
+        // Both bounds are scalar boundaries in valid UTF-8. Walk back at
+        // most three continuation bytes to the last scalar's leading byte.
+        let index: i32 = self.back - 1;
+        while (index > self.position && core::utf8::is_continuation_byte(self.text.bytes[self.text.start + index])) {
+            index -= 1;
+        }
+        let value: u32 = core::option::unwrap(self.text.scalar_at_byte(index));
+        self.back = index;
+        return core::option::Some(Scalar { byte_index: index, value: value });
+    }
+}
+
+pub impl Lines {
+    pub fn borrow(&self) -> &Lines { return self; }
+}
+
+pub impl core::iter::Iterator<Text> for Lines {
+    pub fn next(&self) -> core::option::Option<Text> {
+        if (self.front == self.back) { return core::option::None(); }
+        let start: i32 = self.front;
+        let end: i32 = start;
+        while (end < self.back && self.text.bytes[self.text.start + end] != 10) { end += 1; }
+        if (end < self.back) {
+            self.front = end + 1;
+            if (end > start && self.text.bytes[self.text.start + end - 1] == 13) { end -= 1; }
+        } else { self.front = self.back; }
+        return core::option::Some(self.text.part(start, end));
+    }
+}
+
+pub impl core::iter::DoubleEndedIterator<Text> for Lines {
+    pub fn next_back(&self) -> core::option::Option<Text> {
+        if (self.front == self.back) { return core::option::None(); }
+        let end: i32 = self.back;
+        // Remove at most the last line's own terminator. A preceding LF
+        // still belongs to the remainder and can represent an empty line.
+        if (self.text.bytes[self.text.start + end - 1] == 10) {
+            end -= 1;
+            if (end > self.front && self.text.bytes[self.text.start + end - 1] == 13) { end -= 1; }
+        }
+        let start: i32 = end;
+        while (start > self.front && self.text.bytes[self.text.start + start - 1] != 10) { start -= 1; }
+        self.back = start;
+        return core::option::Some(self.text.part(start, end));
     }
 }
 

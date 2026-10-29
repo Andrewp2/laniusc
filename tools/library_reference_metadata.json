@@ -618,8 +618,10 @@
         "docs/stdlib-text-composition.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-cursor-integration.md",
-        "docs/stdlib-text-split-iterators.md"
-      ]
+        "docs/stdlib-text-split-iterators.md",
+        "docs/stdlib-bidirectional-text.md"
+      ],
+      "note": "Text scalars and split cursors already use canonical Iterator and borrowed adapters. The new bidirectional increment adds Text.lines and DoubleEndedIterator for Lines, Scalars and SplitAsciiWhitespace. All seven new library gates pass: six native tests and one group of three ExactSize rejections. The independent model checks 4878 cases, 276732 pulls, 129686 items and 77262 cursor copies across three families/two actual layouts. Live owner tests verify exact setup/releases and no traversal allocations; the canonical report function preserves input, uses fixed staging and recovers a reached write failure. The canonical Unicode-report stdin regression also passes. Line-summary passes all four groups/102 native cases, including 11 reached allocation failures, plus standalone build/examples. Continuous output-budget faults establish 131072 payload attempts and the exact limit-message requests, then exhaust all 64 diagnostic attempts with final status 3; successful status-2 output-limit reporting is not directly exercised. A reduced chained generic Option method call still rejects LNC0027 while its typed-match control executes; no compiler repair is claimed. Front/back pulls share one remainder and None from either end fuses both. Lines consume LF/CRLF, omit terminators and a phantom final item, retain leading/repeated empty lines and keep lone CR as content. Scalar byte_index remains relative to the original selected Text. Words keep exactly HT/LF/VT/FF/CR/space; NUL and non-ASCII whitespace remain content. Cursor constructors are inert and traversal is allocation-free with constant cursor storage and linear complete traversal, preserving actual stride and offsets. No ExactSize capability, owner transfer, backing validation or automatic lifetime enforcement is added. Copies fork leaf positions over the same immutable backing; borrowed adapter copies share their source. The initial target is native Linux x86_64 CPU output, with other hosts/device execution/proofs separate. Earlier forward receipts retain their original source/API scope."
     },
     "core::time": {
       "guides": [

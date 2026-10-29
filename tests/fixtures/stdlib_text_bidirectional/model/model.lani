@@ -1,0 +1,190 @@
+// Test-only mixed-end pulls and value-copy cursors over immutable UTF-8.
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import std::io;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn byte(&self,value:u8) {
+        if(self.used==4096) { self.flush(); }
+        self.bytes[self.used]=value; self.used+=1;
+    }
+    fn word(&self,value:u64) {
+        let index:i32=0;
+        while(index<8) { self.byte(((value>>(index*8))&255) as u8); index+=1; }
+    }
+}
+fn text_item(op:i32,item:core::option::Option<core::text::Text>,origin:i32,output:&Output) {
+    output.byte(op as u8);
+    if(item.is_none()) { output.byte(0); return; }
+    let value:core::text::Text=item.unwrap();
+    output.byte(1); output.word((value.start-origin) as i64 as u64); output.word(value.length as u64);
+    output.word(core::mem::slice_stride(value.bytes) as i64 as u64);
+    let index:i32=0; while(index<value.length) { output.byte(value.byte_at(index).unwrap()); index+=1; }
+}
+fn scalar_item(op:i32,item:core::option::Option<core::text::Scalar>,origin:i32,output:&Output) {
+    output.byte(op as u8);
+    if(item.is_none()) { output.byte(0); return; }
+    let value:core::text::Scalar=item.unwrap();
+    output.byte(1); output.word(value.byte_index as i64 as u64); output.word(value.value as u64);
+}
+fn drain_op(cursor:i32,turn:i32,mode:i32) -> i32 {
+    let direction:i32=(turn+cursor)%2;
+    if(mode==1) { direction=cursor; }
+    if(mode==2) { direction=1-cursor; }
+    return 2*cursor+direction;
+}
+fn text_exercise<I>(seed:I,actions:[u8],length:i32,mode:i32,origin:i32,output:&Output)
+    where I:core::iter::Iterator<core::text::Text>,I:core::iter::DoubleEndedIterator<core::text::Text> {
+    let primary:I=seed; let fork:I=seed; let index:i32=0;
+    while(index<length) {
+        let op:i32=actions[index] as i32;
+        if(op>=4) {
+            if(op==4) { fork=primary; }
+            if(op==5) { primary=fork; }
+            if(op==6) { primary=seed; }
+            if(op==7) { fork=seed; }
+            output.byte(op as u8); output.byte(2);
+        } else {
+            let item:core::option::Option<core::text::Text> = core::option::None();
+            if(op<2) { if(op%2==1) { item=primary.next_back(); } else { item=primary.next(); } }
+            else { if(op%2==1) { item=fork.next_back(); } else { item=fork.next(); } }
+            text_item(op,item,origin,output);
+        }
+        index+=1;
+    }
+    let cursor:i32=0;
+    while(cursor<2) {
+        let turn:i32=0; let ended:bool=false;
+        while(!ended) {
+            assert(turn<=2048); let op:i32=drain_op(cursor,turn,mode);
+            let item:core::option::Option<core::text::Text> = core::option::None();
+            if(cursor==0) { if(op%2==1) { item=primary.next_back(); } else { item=primary.next(); } }
+            else { if(op%2==1) { item=fork.next_back(); } else { item=fork.next(); } }
+            text_item(op,item,origin,output); ended=item.is_none(); turn+=1;
+        }
+        cursor+=1;
+    }
+    let probes:[i32;8]=[0,1,2,3,1,0,3,2]; index=0;
+    while(index<8) {
+        let op:i32=probes[index];
+        let item:core::option::Option<core::text::Text> = core::option::None();
+        if(op<2) { if(op%2==1) { item=primary.next_back(); } else { item=primary.next(); } }
+        else { if(op%2==1) { item=fork.next_back(); } else { item=fork.next(); } }
+        text_item(op,item,origin,output); index+=1;
+    }
+}
+fn scalar_exercise<I>(seed:I,actions:[u8],length:i32,mode:i32,origin:i32,output:&Output)
+    where I:core::iter::Iterator<core::text::Scalar>,I:core::iter::DoubleEndedIterator<core::text::Scalar> {
+    let primary:I=seed; let fork:I=seed; let index:i32=0;
+    while(index<length) {
+        let op:i32=actions[index] as i32;
+        if(op>=4) {
+            if(op==4) { fork=primary; }
+            if(op==5) { primary=fork; }
+            if(op==6) { primary=seed; }
+            if(op==7) { fork=seed; }
+            output.byte(op as u8); output.byte(2);
+        } else {
+            let item:core::option::Option<core::text::Scalar> = core::option::None();
+            if(op<2) { if(op%2==1) { item=primary.next_back(); } else { item=primary.next(); } }
+            else { if(op%2==1) { item=fork.next_back(); } else { item=fork.next(); } }
+            scalar_item(op,item,origin,output);
+        }
+        index+=1;
+    }
+    let cursor:i32=0;
+    while(cursor<2) {
+        let turn:i32=0; let ended:bool=false;
+        while(!ended) {
+            assert(turn<=2048); let op:i32=drain_op(cursor,turn,mode);
+            let item:core::option::Option<core::text::Scalar> = core::option::None();
+            if(cursor==0) { if(op%2==1) { item=primary.next_back(); } else { item=primary.next(); } }
+            else { if(op%2==1) { item=fork.next_back(); } else { item=fork.next(); } }
+            scalar_item(op,item,origin,output); ended=item.is_none(); turn+=1;
+        }
+        cursor+=1;
+    }
+    let probes:[i32;8]=[0,1,2,3,1,0,3,2]; index=0;
+    while(index<8) {
+        let op:i32=probes[index];
+        let item:core::option::Option<core::text::Scalar> = core::option::None();
+        if(op<2) { if(op%2==1) { item=primary.next_back(); } else { item=primary.next(); } }
+        else { if(op%2==1) { item=fork.next_back(); } else { item=fork.next(); } }
+        scalar_item(op,item,origin,output); index+=1;
+    }
+}
+fn descriptor(value:core::text::Text,output:&Output) {
+    output.word(value.start as u64); output.word(value.length as u64);
+    output.word(core::mem::slice_stride(value.bytes) as i64 as u64);
+}
+fn run(header:[u8],payload:[u8],actions:[u8],output:&Output) {
+    let native:[u8;2056]=[0;2056]; let words:[i32;514]=[0;514]; let bytes:[u8]=native;
+    if(get64(header,8)==1) { bytes=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),2056); }
+    let index:i32=0;
+    while(index<2056) { bytes[index]=((211+index*17)&255) as u8; index+=1; }
+    let origin:i32=get64(header,16) as i32; let length:i32=get64(header,24) as i32;
+    index=0; while(index<length) { bytes[origin+index]=payload[index]; index+=1; }
+    let admitted:core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(bytes,origin,length);
+    let value:core::text::Text=admitted.unwrap(); descriptor(value,output);
+    let count:i32=get64(header,32) as i32; let mode:i32=get64(header,40) as i32;
+    if(get64(header,0)==0) { text_exercise<core::text::Lines>(value.lines(),actions,count,mode,origin,output); }
+    if(get64(header,0)==1) { scalar_exercise<core::text::Scalars>(value.scalars(),actions,count,mode,origin,output); }
+    if(get64(header,0)==2) { text_exercise<core::text::SplitAsciiWhitespace>(value.split_ascii_whitespace(),actions,count,mode,origin,output); }
+    descriptor(value,output);
+    index=0; while(index<2056) { output.byte(bytes[index]); index+=1; }
+}
+fn main() -> i32 {
+    let header_words:[i32;12]=[0;12]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,48);
+    let payload_words:[i32;512]=[0;512]; let payload_pointer:ptr=core::mem::i32_array_data_ptr(payload_words);
+    let payload:[u8]=core::mem::typed_slice_from_raw_parts<u8>(payload_pointer,2048);
+    let action_words:[i32;24]=[0;24]; let action_pointer:ptr=core::mem::i32_array_data_ptr(action_words);
+    let actions:[u8]=core::mem::typed_slice_from_raw_parts<u8>(action_pointer,96);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    while(read_exact(header_pointer,48,true)) {
+        assert(get64(header,0)<=2 && get64(header,8)<=1 && get64(header,16)<=7 && get64(header,24)<=2048 && get64(header,32)<=96 && get64(header,40)<=2);
+        assert(read_exact(payload_pointer,get64(header,24) as i32,false));
+        assert(read_exact(action_pointer,get64(header,32) as i32,false));
+        let index:i32=0; while(index<get64(header,32) as i32) { assert(actions[index]<=7); index+=1; }
+        run(header,payload,actions,output.borrow());
+    }
+    output.flush(); return 0;
+}

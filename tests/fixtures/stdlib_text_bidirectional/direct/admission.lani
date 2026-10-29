@@ -1,0 +1,23 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+import core::text;
+fn main() -> i32 {
+    let bytes:[u8;13]=[255,65,13,10,195,169,32,240,159,153,130,10,255];
+    let text:core::text::Text=core::text::from_utf8_range(bytes,1,11).unwrap();
+    let lines:core::text::Lines=text.lines();
+    let line:core::text::Text=lines.next_back().unwrap(); assert(line.start==4 && line.length==7);
+    line=lines.next().unwrap(); assert(line.start==1 && line.length==1 && line.byte_at(0).unwrap()==65);
+    assert(lines.next_back().is_none() && lines.next().is_none());
+    let words:core::text::SplitAsciiWhitespace=text.split_ascii_whitespace();
+    let word:core::text::Text=words.next_back().unwrap(); assert(word.start==7 && word.length==4);
+    word=words.next().unwrap(); assert(word.start==1 && word.length==1);
+    word=words.next_back().unwrap(); assert(word.start==4 && word.length==2);
+    assert(words.next().is_none() && words.next_back().is_none());
+    let scalars:core::text::Scalars=text.scalars(); let scalar:core::text::Scalar=scalars.next_back().unwrap(); assert(scalar.byte_index==10 && scalar.value==10);
+    scalar=scalars.next_back().unwrap(); assert(scalar.byte_index==6 && scalar.value==128578);
+    scalar=scalars.next().unwrap(); assert(scalar.byte_index==0 && scalar.value==65);
+    assert(bytes[0]==255 && bytes[12]==255);
+    return 0;
+}

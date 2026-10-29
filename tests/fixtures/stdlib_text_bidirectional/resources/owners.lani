@@ -1,0 +1,91 @@
+module app::main;
+import alloc::string;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import core::text;
+import std::stream;
+
+fn mark(value:u8) { let bytes:[u8;1]=[value]; let sink=std::stream::stderr(); assert(core::io::write_all(sink.borrow(),bytes,0,1).is_ok()); }
+fn pattern_byte(index:i32) -> u8 {
+    let bytes:[u8;32]=[65,195,169,226,130,172,240,159,153,130,0,32,9,66,13,10,67,10,10,68,13,69,11,70,12,71,32,244,143,191,191,10];
+    return bytes[index%32];
+}
+fn source(blocks:i32) -> alloc::string::String {
+    let owner:alloc::string::String=alloc::string::new(); owner.try_reserve(blocks*32).unwrap();
+    let bytes:[u8;32]=[0;32]; let index:i32=0;
+    while(index<32) { bytes[index]=pattern_byte(index); index+=1; }
+    index=0; while(index<blocks) { owner.try_append_utf8(bytes,32).unwrap(); index+=1; }
+    assert(owner.byte_len()==blocks*32 && owner.capacity()==blocks*32); return owner;
+}
+fn preserved(owner:alloc::string::String,blocks:i32) {
+    assert(owner.byte_len()==blocks*32 && owner.capacity()==blocks*32 && owner.scalar_count()==blocks*23);
+    let bytes:[u8]=owner.as_bytes(); let index:i32=0;
+    while(index<blocks*32) { assert(bytes[index]==pattern_byte(index)); index+=1; }
+}
+fn scalar(actual:core::text::Scalar,ordinal:i32) {
+    let offsets:[i32;23]=[0,1,3,6,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,31];
+    let values:[u32;23]=[65,233,8364,128578,0,32,9,66,13,10,67,10,10,68,13,69,11,70,12,71,32,1114111,10];
+    assert(actual.byte_index==(ordinal/23)*32+offsets[ordinal%23] && actual.value==values[ordinal%23]);
+}
+fn span(actual:core::text::Text,start:i32,length:i32) {
+    assert(actual.start==start && actual.length==length);
+    let index:i32=0; while(index<length) { assert(actual.byte_at(index).unwrap()==pattern_byte(start+index)); index+=1; }
+}
+fn word(actual:core::text::Text,ordinal:i32) {
+    let offsets:[i32;8]=[0,13,16,19,21,23,25,27]; let lengths:[i32;8]=[11,1,1,1,1,1,1,4];
+    span(actual,(ordinal/8)*32+offsets[ordinal%8],lengths[ordinal%8]);
+}
+fn line(actual:core::text::Text,ordinal:i32) {
+    let offsets:[i32;4]=[0,16,18,19]; let lengths:[i32;4]=[14,1,0,12];
+    span(actual,(ordinal/4)*32+offsets[ordinal%4],lengths[ordinal%4]);
+}
+fn early(text:core::text::Text,blocks:i32) {
+    let scalars:core::text::Scalars=text.scalars();
+    let words:core::text::SplitAsciiWhitespace=text.split_ascii_whitespace();
+    let lines:core::text::Lines=text.lines();
+    scalar(scalars.next_back().unwrap(),blocks*23-1); scalar(scalars.next().unwrap(),0);
+    word(words.next_back().unwrap(),blocks*8-1); word(words.next().unwrap(),0);
+    line(lines.next_back().unwrap(),blocks*4-1); line(lines.next().unwrap(),0);
+    // Copies fork position while sharing the same live, immutable owner.
+    let scalar_copy:core::text::Scalars=scalars;
+    let word_copy:core::text::SplitAsciiWhitespace=words;
+    let line_copy:core::text::Lines=lines;
+    scalar(scalar_copy.next_back().unwrap(),blocks*23-2); scalar(scalars.next_back().unwrap(),blocks*23-2);
+    word(word_copy.next().unwrap(),1); word(words.next().unwrap(),1);
+    line(line_copy.next_back().unwrap(),blocks*4-2); line(lines.next_back().unwrap(),blocks*4-2);
+    // Most input remains unread when all six borrowed cursors retire.
+}
+fn all_scalars(text:core::text::Text,blocks:i32) {
+    let values:core::text::Scalars=text.scalars(); let front:i32=0; let back:i32=blocks*23;
+    while(front<back) {
+        scalar(values.next().unwrap(),front); front+=1;
+        if(front<back) { back-=1; scalar(values.next_back().unwrap(),back); }
+    }
+    assert(values.next().is_none() && values.next_back().is_none() && values.next().is_none());
+}
+fn all_words_and_lines(text:core::text::Text,blocks:i32) {
+    let words:core::text::SplitAsciiWhitespace=text.split_ascii_whitespace(); let front:i32=0; let back:i32=blocks*8;
+    while(front<back) {
+        back-=1; word(words.next_back().unwrap(),back);
+        if(front<back) { word(words.next().unwrap(),front); front+=1; }
+    }
+    assert(words.next_back().is_none() && words.next().is_none() && words.next_back().is_none());
+    let lines:core::text::Lines=text.lines(); front=0; back=blocks*4;
+    while(front<back) {
+        line(lines.next().unwrap(),front); front+=1;
+        if(front<back) { back-=1; line(lines.next_back().unwrap(),back); }
+    }
+    assert(lines.next().is_none() && lines.next_back().is_none() && lines.next().is_none());
+}
+fn exercise(blocks:i32) {
+    mark(65); let owner:alloc::string::String=source(blocks);
+    mark(80); early(owner.as_text(),blocks); mark(112);
+    mark(80); all_scalars(owner.as_text(),blocks); mark(112);
+    mark(80); all_words_and_lines(owner.as_text(),blocks); mark(112);
+    mark(80); preserved(owner,blocks); early(owner.as_text(),blocks); mark(112);
+    let sink=std::stream::stdout(); assert(core::io::write_all(sink.borrow(),owner.as_bytes(),0,owner.byte_len()).is_ok());
+    mark(67); owner.destroy(); mark(69);
+}
+fn main() -> i32 { exercise(128); exercise(8192); mark(68); return 0; }

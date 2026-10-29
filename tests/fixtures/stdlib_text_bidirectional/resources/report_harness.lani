@@ -1,0 +1,34 @@
+// Appended to the canonical unicode_text_report source after renaming only
+// its main entry. This calls the actual report function, never a copied one.
+fn resource_mark(value:u8) { let bytes:[u8;1]=[value]; let sink=std::stream::stderr(); assert(core::io::write_all(sink.borrow(),bytes,0,1).is_ok()); }
+fn resource_pattern(index:i32) -> u8 {
+    let bytes:[u8;32]=[65,195,169,226,130,172,240,159,153,130,0,32,9,66,13,10,67,10,10,68,13,69,11,70,12,71,32,244,143,191,191,10];
+    return bytes[index%32];
+}
+fn resource_source(blocks:i32) -> alloc::string::String {
+    let owner:alloc::string::String=alloc::string::new(); owner.try_reserve(blocks*32).unwrap();
+    let bytes:[u8;32]=[0;32]; let index:i32=0;
+    while(index<32) { bytes[index]=resource_pattern(index); index+=1; }
+    index=0; while(index<blocks) { owner.try_append_utf8(bytes,32).unwrap(); index+=1; }
+    assert(owner.byte_len()==blocks*32 && owner.capacity()==blocks*32); return owner;
+}
+fn resource_preserved(owner:alloc::string::String,blocks:i32) {
+    assert(owner.byte_len()==blocks*32 && owner.capacity()==blocks*32 && owner.scalar_count()==blocks*23);
+    let bytes:[u8]=owner.as_bytes(); let index:i32=0;
+    while(index<blocks*32) { assert(bytes[index]==resource_pattern(index)); index+=1; }
+    let scalars:core::text::Scalars=owner.as_text().scalars();
+    assert(scalars.next().unwrap().value==65);
+    let last:core::text::Scalar=scalars.next_back().unwrap(); assert(last.value==10 && last.byte_index==blocks*32-1);
+}
+fn resource_report(blocks:i32,expected:i32) {
+    resource_mark(65); let owner:alloc::string::String=resource_source(blocks);
+    resource_mark(80); resource_preserved(owner,blocks); resource_mark(112);
+    resource_mark(82); let status:i32=report(owner); resource_mark(114); assert(status==expected);
+    resource_mark(80); resource_preserved(owner,blocks); resource_mark(112);
+    resource_mark(67); owner.destroy(); resource_mark(69);
+}
+fn main() -> i32 {
+    let mode:i32=std::io_byte::read_stdin_byte_or(-1,-2); assert(mode==0 || mode==1);
+    let first:i32=0; if(mode==1) { first=3; }
+    resource_report(128,first); resource_report(8192,0); resource_mark(68); return 0;
+}

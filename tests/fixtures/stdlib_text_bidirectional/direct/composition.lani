@@ -1,0 +1,76 @@
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+fn back<I,T>(source:&I) -> core::option::Option<T> where I:core::iter::Iterator<T>,I:core::iter::DoubleEndedIterator<T> { return source.next_back(); }
+fn ended<I,T>(source:&I) where I:core::iter::Iterator<T>,I:core::iter::DoubleEndedIterator<T> {
+    let back:core::option::Option<T> =source.next_back(); assert(match(back) { core::option::None -> true,_ -> false });
+    let front:core::option::Option<T> =source.next(); assert(match(front) { core::option::None -> true,_ -> false });
+    let again:core::option::Option<T> =source.next_back(); assert(match(again) { core::option::None -> true,_ -> false });
+}
+fn forward_ended<I,T>(source:&I) where I:core::iter::Iterator<T> {
+    let first:core::option::Option<T> =source.next(); assert(match(first) { core::option::None -> true,_ -> false });
+    let second:core::option::Option<T> =source.next(); assert(match(second) { core::option::None -> true,_ -> false });
+}
+fn text_at(item:core::option::Option<core::text::Text>,original:core::text::Text,start:i32,length:i32) {
+    assert(item.is_some()); let value:core::text::Text=item.unwrap(); assert(value.start==original.start+start && value.length==length); assert(core::mem::slice_stride(value.bytes)==core::mem::slice_stride(original.bytes));
+    let i:i32=0; while(i<length) { assert(value.byte_at(i).unwrap()==original.byte_at(start+i).unwrap()); i+=1; }
+}
+fn scalar_at(item:core::option::Option<core::text::Scalar>,index:i32,value:u32) { assert(item.is_some()); let scalar:core::text::Scalar=item.unwrap(); assert(scalar.byte_index==index && scalar.value==value); }
+struct Bytes { calls:i32 }
+impl Bytes { fn borrow(&self) -> &Bytes { return self; } }
+pub impl core::iter::Folder<i32,core::text::Text> for Bytes { pub fn apply(&self,accumulator:i32,value:core::text::Text) -> i32 { self.calls+=1; return accumulator+value.length; } }
+fn lines(text:core::text::Text) {
+    // Original partition: empty, A, é x, 🙂. Copies fork positions.
+    let descriptor:core::text::Text=text; let source:core::text::Lines=descriptor.lines(); let fork:core::text::Lines=source;
+    descriptor=core::text::from_utf8_unchecked(text.bytes,text.start,0); assert(descriptor.length==0);
+    let reverse:core::iter::Rev<core::text::Lines,core::text::Text> =core::iter::rev<core::text::Lines,core::text::Text>(source.borrow());
+    let zero:core::iter::Take<core::iter::Rev<core::text::Lines,core::text::Text>,core::text::Text> =core::iter::take<core::iter::Rev<core::text::Lines,core::text::Text>,core::text::Text>(reverse.borrow(),0);
+    forward_ended<core::iter::Take<core::iter::Rev<core::text::Lines,core::text::Text>,core::text::Text>,core::text::Text>(zero.borrow());
+    let prefix:core::iter::Take<core::iter::Rev<core::text::Lines,core::text::Text>,core::text::Text> =core::iter::take<core::iter::Rev<core::text::Lines,core::text::Text>,core::text::Text>(reverse.borrow(),2);
+    text_at(prefix.next(),text,9,4); text_at(prefix.next(),text,4,4); forward_ended<core::iter::Take<core::iter::Rev<core::text::Lines,core::text::Text>,core::text::Text>,core::text::Text>(prefix.borrow());
+    text_at(back<core::iter::Rev<core::text::Lines,core::text::Text>,core::text::Text>(reverse.borrow()),text,0,0); text_at(source.next_back(),text,1,1); ended<core::text::Lines,core::text::Text>(source.borrow()); ended<core::iter::Rev<core::text::Lines,core::text::Text>,core::text::Text>(reverse.borrow());
+    text_at(fork.next(),text,0,0); text_at(fork.next_back(),text,9,4); let partial:core::text::Lines=fork;
+    text_at(fork.next(),text,1,1); text_at(fork.next_back(),text,4,4); ended<core::text::Lines,core::text::Text>(fork.borrow());
+    text_at(partial.next_back(),text,4,4); text_at(partial.next(),text,1,1); ended<core::text::Lines,core::text::Text>(partial.borrow());
+    // Adapter copies borrow the same source; neither copies nor eagerly pulls it.
+    let shared:core::text::Lines=text.lines(); let left:core::iter::Rev<core::text::Lines,core::text::Text> =core::iter::rev<core::text::Lines,core::text::Text>(shared.borrow()); let right:core::iter::Rev<core::text::Lines,core::text::Text> =left;
+    text_at(left.next(),text,9,4); text_at(right.next(),text,4,4); text_at(left.next(),text,1,1); text_at(right.next(),text,0,0); ended<core::text::Lines,core::text::Text>(shared.borrow());
+    let bounded:core::text::Lines=text.lines(); let folder:Bytes=Bytes { calls:0 };
+    let progress:core::iter::FoldProgress<i32> =core::iter::rfold_up_to<core::text::Lines,Bytes,core::text::Text,i32>(bounded.borrow(),10,folder.borrow(),0); assert(progress.accumulator==10 && progress.folded==0 && !progress.exhausted && folder.calls==0);
+    progress=core::iter::rfold_up_to<core::text::Lines,Bytes,core::text::Text,i32>(bounded.borrow(),10,folder.borrow(),2); assert(progress.accumulator==18 && progress.folded==2 && !progress.exhausted && folder.calls==2);
+    text_at(bounded.next(),text,0,0); text_at(bounded.next_back(),text,1,1); ended<core::text::Lines,core::text::Text>(bounded.borrow());
+}
+fn words(text:core::text::Text) {
+    // Reverse maximal words, preserving the same selected Text origin.
+    let source:core::text::SplitAsciiWhitespace=text.split_ascii_whitespace(); let fork:core::text::SplitAsciiWhitespace=source;
+    let reverse:core::iter::Rev<core::text::SplitAsciiWhitespace,core::text::Text> =core::iter::rev<core::text::SplitAsciiWhitespace,core::text::Text>(source.borrow());
+    let prefix:core::iter::Take<core::iter::Rev<core::text::SplitAsciiWhitespace,core::text::Text>,core::text::Text> =core::iter::take<core::iter::Rev<core::text::SplitAsciiWhitespace,core::text::Text>,core::text::Text>(reverse.borrow(),2);
+    text_at(prefix.next(),text,9,4); text_at(prefix.next(),text,7,1); forward_ended<core::iter::Take<core::iter::Rev<core::text::SplitAsciiWhitespace,core::text::Text>,core::text::Text>,core::text::Text>(prefix.borrow());
+    text_at(source.next(),text,1,1); text_at(back<core::text::SplitAsciiWhitespace,core::text::Text>(source.borrow()),text,4,2); ended<core::text::SplitAsciiWhitespace,core::text::Text>(source.borrow());
+    text_at(fork.next_back(),text,9,4); let partial:core::text::SplitAsciiWhitespace=fork; text_at(fork.next(),text,1,1); text_at(partial.next_back(),text,7,1); text_at(partial.next(),text,1,1); text_at(partial.next(),text,4,2); ended<core::text::SplitAsciiWhitespace,core::text::Text>(partial.borrow());
+    let bounded:core::text::SplitAsciiWhitespace=text.split_ascii_whitespace(); let folder:Bytes=Bytes { calls:0 }; let progress:core::iter::FoldProgress<i32> =core::iter::rfold_up_to<core::text::SplitAsciiWhitespace,Bytes,core::text::Text,i32>(bounded.borrow(),0,folder.borrow(),1); assert(progress.accumulator==4 && progress.folded==1 && !progress.exhausted && folder.calls==1); text_at(bounded.next(),text,1,1); text_at(bounded.next_back(),text,7,1); text_at(bounded.next_back(),text,4,2); ended<core::text::SplitAsciiWhitespace,core::text::Text>(bounded.borrow());
+}
+fn scalars(text:core::text::Text) {
+    let source:core::text::Scalars=text.scalars(); let fork:core::text::Scalars=source;
+    let reverse:core::iter::Rev<core::text::Scalars,core::text::Scalar> =core::iter::rev<core::text::Scalars,core::text::Scalar>(source.borrow());
+    let zero:core::iter::Take<core::iter::Rev<core::text::Scalars,core::text::Scalar>,core::text::Scalar> =core::iter::take<core::iter::Rev<core::text::Scalars,core::text::Scalar>,core::text::Scalar>(reverse.borrow(),0); forward_ended<core::iter::Take<core::iter::Rev<core::text::Scalars,core::text::Scalar>,core::text::Scalar>,core::text::Scalar>(zero.borrow());
+    let prefix:core::iter::Take<core::iter::Rev<core::text::Scalars,core::text::Scalar>,core::text::Scalar> =core::iter::take<core::iter::Rev<core::text::Scalars,core::text::Scalar>,core::text::Scalar>(reverse.borrow(),2);
+    scalar_at(prefix.next(),6,128578); scalar_at(prefix.next(),3,8364); forward_ended<core::iter::Take<core::iter::Rev<core::text::Scalars,core::text::Scalar>,core::text::Scalar>,core::text::Scalar>(prefix.borrow());
+    scalar_at(source.next(),0,65); scalar_at(back<core::text::Scalars,core::text::Scalar>(source.borrow()),1,233); ended<core::text::Scalars,core::text::Scalar>(source.borrow());
+    scalar_at(fork.next_back(),6,128578); let partial:core::text::Scalars=fork; scalar_at(fork.next(),0,65); scalar_at(fork.next_back(),3,8364); scalar_at(fork.next(),1,233); ended<core::text::Scalars,core::text::Scalar>(fork.borrow());
+    scalar_at(partial.next_back(),3,8364); scalar_at(partial.next(),0,65); scalar_at(partial.next_back(),1,233); ended<core::text::Scalars,core::text::Scalar>(partial.borrow());
+}
+fn main() -> i32 {
+    let bytes:[u8;19]=[255,255,10,65,13,10,195,169,32,120,10,240,159,153,130,13,10,255,255]; let original:[u8;19]=[255,255,10,65,13,10,195,169,32,120,10,240,159,153,130,13,10,255,255];
+    let text:core::text::Text=core::text::from_utf8_range(bytes,2,15).unwrap(); lines(text); words(text);
+    let scalar_bytes:[u8;14]=[255,255,65,195,169,226,130,172,240,159,153,130,255,255]; let scalar_original:[u8;14]=[255,255,65,195,169,226,130,172,240,159,153,130,255,255]; scalars(core::text::from_utf8_range(scalar_bytes,2,10).unwrap());
+    let i:i32=0; while(i<19) { assert(bytes[i]==original[i]); i+=1; } i=0; while(i<14) { assert(scalar_bytes[i]==scalar_original[i]); i+=1; }
+    // An executable positive control for the exact-size helper used negatively.
+    let byte_cursor:core::slice::Iter<u8> =text.iter_bytes(); assert(exact<core::slice::Iter<u8>,u8>(byte_cursor.borrow())==15);
+    return 0;
+}
+fn exact<I,T>(source:&I) -> u64 where I:core::iter::Iterator<T>,I:core::iter::ExactSizeIterator<T> { return source.remaining_count(); }

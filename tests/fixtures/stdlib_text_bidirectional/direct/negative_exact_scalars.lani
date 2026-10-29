@@ -1,0 +1,10 @@
+module app::main;
+import core::iter;
+import core::result;
+import core::text;
+fn exact<I,T>(source:&I) -> u64 where I:core::iter::Iterator<T>,I:core::iter::ExactSizeIterator<T> { return source.remaining_count(); }
+fn main() -> i32 {
+    let bytes:[u8;1]=[65]; let text:core::text::Text=core::text::from_utf8(bytes,1).unwrap(); let source:core::text::Scalars=text.scalars();
+    let rejected:u64=exact<core::text::Scalars,core::text::Scalar>(source.borrow()); // rejected_exact_text_bound
+    return 0;
+}

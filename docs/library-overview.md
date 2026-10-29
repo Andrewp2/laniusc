@@ -1,6 +1,19 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[borrowed bidirectional text increment](stdlib-bidirectional-text.md) adds
+LF/CRLF lines and backward scalar/ASCII-word pulls through the canonical iterator
+traits. Mixed directions share one remainder; original scalar indices, six-byte
+ASCII whitespace and manual immutable backing remain explicit. These cursors
+make no exact-size promise. A line-summary program and a borrowed reverse-scalar
+Unicode report exercise the APIs. All seven new library gates pass, including
+4,878 independent model cases, 276,732 pulls, exact live-owner cleanup and
+allocation-free reporting with reached write-failure recovery. The canonical
+Unicode-report stdin regression also passes. Line-summary passes all four
+groups/102 native cases, including 11 reached allocation failures; standalone
+build/examples also pass. This finite native Linux x86_64 increment is accepted.
+Generic predicate-based slice segmentation remains separate main-library work.
+The preceding
 [resumable decompression increment](extended-streaming-inflate.md) preserves
 DEFLATE bits, tables, history and pending output across chunks; zlib/gzip framing
 and owned decoding use the same engine. An atomic file decompressor validates
@@ -1764,7 +1777,11 @@ full scope and delivery requirements. New APIs follow the
 [owned UTF-8 String](stdlib-string.md) has executable native examples and
 allocation-failure tests.
 [Borrowed UTF-8 text](stdlib-text.md) provides subviews, splitting, scalar
-iteration and hashing without copying.
+iteration and hashing without copying. Its cursors already use the shared
+iterator protocol. The [bidirectional extension](stdlib-bidirectional-text.md)
+adds line traversal and backward scalar/word pulls; its runtime acceptance is
+established by seven new library gates. The line-summary application separately
+passes four groups/102 native cases.
 The [byte stream APIs](stdlib-streams.md) provide shared reader/writer
 contracts, owned byte buffers and native descriptor adapters.
 The [generic hash map](stdlib-hash-collections.md) provides hashed lookup,
