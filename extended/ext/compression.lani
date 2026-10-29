@@ -1,5 +1,5 @@
-// Owned raw DEFLATE, zlib and gzip containers. All errors destroy partial
-// output; a successful result owns one Vec that the caller must destroy.
+// Resumable raw DEFLATE, zlib and gzip framing with borrowed fixed workspace.
+// Owned decode destroys all private storage on error; success owns one Vec.
 module ext::compression;
 import alloc::vec;
 import core::adler32;
@@ -31,9 +31,6 @@ fn crc(view: core::slice::View<u8>) -> u32 {
     let state: u32 = core::crc32::INITIAL; let index: i32 = 0;
     while (index < view.length) { state = core::crc32::update_byte(state,byte(view,index)); index += 1; } return core::crc32::finish(state);
 }
-fn little16(view: core::slice::View<u8>, start: i32) -> i32 { return (byte(view,start) as i32) | ((byte(view,start+1) as i32) << 8); }
-fn little32(view: core::slice::View<u8>, start: i32) -> u32 { return (byte(view,start) as u32) | ((byte(view,start+1) as u32) << 8) | ((byte(view,start+2) as u32) << 16) | ((byte(view,start+3) as u32) << 24); }
-fn big32(view: core::slice::View<u8>, start: i32) -> u32 { return ((byte(view,start) as u32) << 24) | ((byte(view,start+1) as u32) << 16) | ((byte(view,start+2) as u32) << 8) | (byte(view,start+3) as u32); }
 fn put_little32(view: core::slice::View<u8>, start: i32, value: u32) {
     view.values[view.start+start] = (value & 255) as u8; view.values[view.start+start+1] = ((value >> 8) & 255) as u8;
     view.values[view.start+start+2] = ((value >> 16) & 255) as u8; view.values[view.start+start+3] = ((value >> 24) & 255) as u8;
@@ -76,108 +73,315 @@ pub fn encode(input: core::slice::View<u8>, format: Format, max_output: i32) -> 
     return core::result::Ok(output);
 }
 
-// Retry a member with geometric storage growth. Views are rebuilt after every
-// resize and each retry starts at the member output boundary (fresh history).
-fn inflate_member(input: core::slice::View<u8>, output: &alloc::vec::Vec<u8>, max_output: i32, window: i32) -> core::result::Result<ext::inflate::Progress,Error> {
-    let start: i32 = output.len(); let capacity: i32 = max_output-start;
-    if (capacity > 256) { capacity = 256; }
-    while (true) {
-        let grown: core::result::Result<i32,Error> = resize(output,start+capacity);
-        if (core::result::is_err(grown)) { return core::result::Err(core::result::unwrap_err(grown)); }
-        let decoded: core::result::Result<ext::inflate::Progress,ext::inflate::Failure> = ext::inflate::decode_into_window(input,part(output.as_view(),start,start+capacity),window);
-        if (core::result::is_ok(decoded)) {
-            let progress: ext::inflate::Progress = core::result::unwrap(decoded);
-            output.truncate(start+progress.written); return core::result::Ok(progress);
-        }
-        let failure: ext::inflate::Failure = core::result::unwrap_err(decoded);
-        let full: bool = match (failure.error) { ext::inflate::Error::OutputTooSmall -> true, _ -> false };
-        if (!full) {
-            let truncated: bool = match (failure.error) { ext::inflate::Error::UnexpectedEof -> true, _ -> false };
-            if (truncated) { return core::result::Err(Error::Truncated); }
-            return core::result::Err(Error::Deflate(failure.error));
-        }
-        if (capacity == max_output-start) { return core::result::Err(Error::OutputLimit); }
-        if (capacity > (max_output-start)/2) { capacity = max_output-start; }
-        else { capacity *= 2; if (capacity == 0) { capacity = 1; } }
+// Framing retains only scalar progress and the raw decoder's caller borrows.
+// Input/output views belong to one call and may be recycled after it returns.
+pub struct DecodeFailure { error: Error, read: i32, written: i32 }
+const RAW_START: i32 = 0;
+const ZLIB_HEADER: i32 = 1;
+const ZLIB_DICTIONARY: i32 = 2;
+const GZIP_START: i32 = 3;
+const GZIP_PREFIX: i32 = 4;
+const GZIP_HEADER: i32 = 5;
+const GZIP_EXTRA_LENGTH: i32 = 6;
+const GZIP_EXTRA: i32 = 7;
+const GZIP_NAME: i32 = 8;
+const GZIP_COMMENT: i32 = 9;
+const GZIP_HEADER_CRC: i32 = 10;
+const BODY: i32 = 11;
+const ZLIB_TRAILER: i32 = 12;
+const GZIP_TRAILER: i32 = 13;
+const AWAIT_END: i32 = 14;
+const BETWEEN_MEMBERS: i32 = 15;
+const FINISHED: i32 = 16;
+const FAILED: i32 = 17;
+
+pub struct Decoder {
+    raw: ext::inflate::Decoder, kind: i32, limits: Limits, phase: i32, failure: Error,
+    read_total: u64, written_total: u64, completed_members: i32,
+    checksum: u32, member_size: u32, header_crc: u32,
+    field: u64, field_count: i32, flags: i32, remaining: i32
+}
+struct Call { input: core::slice::View<u8>, output: core::slice::View<u8>, read: i32, written: i32 }
+impl Call { fn borrow(&self) -> &Call { return self; } }
+fn valid_limits(limits: Limits) -> bool { return limits.max_input >= 0 && limits.max_output >= 0 && limits.max_members >= 0; }
+fn format_kind(format: Format) -> i32 { return match (format) { Format::RawDeflate -> 0, Format::Zlib -> 1, Format::Gzip -> 2 }; }
+fn initial_phase(kind: i32) -> i32 { if (kind == 0) { return RAW_START; } if (kind == 1) { return ZLIB_HEADER; } return GZIP_START; }
+
+// Construction is inert: no backing is read or initialized. The caller keeps
+// history/workspace live, disjoint and exclusively writable until retirement.
+pub fn decoder(history: core::slice::View<u8>, workspace: core::slice::View<i32>, format: Format, limits: Limits) -> core::result::Result<Decoder,Error> {
+    if (!valid_limits(limits)) { return core::result::Err(Error::Bounds); }
+    let made: core::result::Result<ext::inflate::Decoder,ext::inflate::Error> = ext::inflate::decoder(history,workspace,32768);
+    if (core::result::is_err(made)) { return core::result::Err(Error::Bounds); }
+    let kind: i32 = format_kind(format);
+    return core::result::Ok(Decoder {
+        raw: core::result::unwrap(made), kind: kind, limits: limits, phase: initial_phase(kind), failure: Error::Bounds,
+        read_total: 0, written_total: 0, completed_members: 0,
+        checksum: 0, member_size: 0, header_crc: core::crc32::INITIAL,
+        field: 0, field_count: 0, flags: 0, remaining: 0
+    });
+}
+fn progress(call: &Call, status: ext::inflate::Status) -> core::result::Result<ext::inflate::Step,DecodeFailure> {
+    return core::result::Ok(ext::inflate::Step { read: call.read, written: call.written, status: status });
+}
+fn fail(state: &Decoder, call: &Call, error: Error) -> core::result::Result<ext::inflate::Step,DecodeFailure> {
+    state.phase = FAILED; state.failure = error;
+    return core::result::Err(DecodeFailure { error: error, read: call.read, written: call.written });
+}
+fn missing_input(state: &Decoder, call: &Call, final_input: bool) -> core::result::Result<ext::inflate::Step,DecodeFailure> {
+    if (final_input) { return fail(state,call,Error::Truncated); }
+    return progress(call,ext::inflate::Status::NeedInput);
+}
+fn take_byte(state: &Decoder, call: &Call) -> u8 {
+    let value: u8 = byte(call.input,call.read); call.read += 1; state.read_total += 1; return value;
+}
+fn clear_field(state: &Decoder, phase: i32) { state.field = 0; state.field_count = 0; state.phase = phase; }
+fn begin_body(state: &Decoder, window: i32) {
+    // Admitted immutable descriptors and windows make this reset infallible.
+    core::result::unwrap(state.raw.reset(window));
+    state.checksum = core::crc32::INITIAL;
+    if (state.kind == 1) { state.checksum = core::adler32::INITIAL; }
+    state.member_size = 0; state.phase = BODY;
+}
+fn after_comment(state: &Decoder) {
+    if ((state.flags & 2) != 0) { clear_field(state,GZIP_HEADER_CRC); }
+    else { begin_body(state,32768); }
+}
+fn after_name(state: &Decoder) {
+    if ((state.flags & 16) != 0) { state.phase = GZIP_COMMENT; }
+    else { after_comment(state); }
+}
+fn after_extra(state: &Decoder) {
+    if ((state.flags & 8) != 0) { state.phase = GZIP_NAME; }
+    else { after_name(state); }
+}
+fn account_body(state: &Decoder, call: &Call, read: i32, written: i32) {
+    call.read += read; state.read_total += read as u64;
+    if (state.kind == 1) {
+        state.checksum = core::result::unwrap(core::adler32::update(state.checksum,part(call.output,call.written,call.written+written)));
     }
-    return core::result::Err(Error::OutputLimit);
+    if (state.kind == 2) {
+        let index: i32 = 0;
+        while (index < written) { state.checksum = core::crc32::update_byte(state.checksum,byte(call.output,call.written+index)); index += 1; }
+    }
+    call.written += written; state.written_total += written as u64;
+    state.member_size = (((state.member_size as u64)+(written as u64)) & 4294967295) as u32;
 }
 
-fn zlib_decode(input: core::slice::View<u8>, output: &alloc::vec::Vec<u8>, limits: Limits) -> core::result::Result<bool,Error> {
-    if (input.length < 2) { return core::result::Err(Error::Truncated); }
-    let cmf: i32 = byte(input,0) as i32; let flags: i32 = byte(input,1) as i32;
-    if ((cmf & 15) != 8) { return core::result::Err(Error::UnsupportedMethod); }
-    if ((cmf >> 4) > 7) { return core::result::Err(Error::UnsupportedWindow); }
-    if (((cmf << 8) | flags) % 31 != 0) { return core::result::Err(Error::Header); }
-    if ((flags & 32) != 0) { if (input.length < 6) { return core::result::Err(Error::Truncated); } return core::result::Err(Error::UnsupportedDictionary); }
-    if (limits.max_members == 0) { return core::result::Err(Error::MemberLimit); }
-    let window: i32 = 1 << ((cmf >> 4)+8);
-    let decoded: core::result::Result<ext::inflate::Progress,Error> = inflate_member(part(input,2,input.length),output,limits.max_output,window);
-    if (core::result::is_err(decoded)) { return core::result::Err(core::result::unwrap_err(decoded)); }
-    let end: i32 = 2+core::result::unwrap(decoded).read;
-    if (input.length-end < 4) { return core::result::Err(Error::Truncated); }
-    if (big32(input,end) != core::result::unwrap(core::adler32::checksum(output.as_view()))) { return core::result::Err(Error::Checksum); }
-    if (end+4 != input.length) { return core::result::Err(Error::TrailingData); } return core::result::Ok(true);
-}
-fn gzip_header(input: core::slice::View<u8>, start: i32) -> core::result::Result<i32,Error> {
-    if (input.length-start < 10) { return core::result::Err(Error::Truncated); }
-    if (byte(input,start) != 31 || byte(input,start+1) != 139) { return core::result::Err(Error::Header); }
-    if (byte(input,start+2) != 8) { return core::result::Err(Error::UnsupportedMethod); }
-    let flags: i32 = byte(input,start+3) as i32;
-    if ((flags & 224) != 0) { return core::result::Err(Error::Header); }
-    let position: i32 = start+10;
-    if ((flags & 4) != 0) {
-        if (input.length-position < 2) { return core::result::Err(Error::Truncated); }
-        let length: i32 = little16(input,position); position += 2;
-        if (length > input.length-position) { return core::result::Err(Error::Truncated); } position += length;
-    }
-    let bit: i32 = 8;
-    while (bit <= 16) {
-        if ((flags & bit) != 0) {
-            while (position < input.length && byte(input,position) != 0) { position += 1; }
-            if (position == input.length) { return core::result::Err(Error::Truncated); } position += 1;
+fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<ext::inflate::Step,DecodeFailure> {
+    // Bounds is recoverable and wins even over a previous terminal state.
+    if (!valid(input) || !valid(output)) { return core::result::Err(DecodeFailure { error: Error::Bounds, read: 0, written: 0 }); }
+    let call: Call = Call { input: input, output: output, read: 0, written: 0 };
+    if (state.phase == FINISHED) { return progress(call.borrow(),ext::inflate::Status::Done); }
+    if (state.phase == FAILED) { return core::result::Err(DecodeFailure { error: state.failure, read: 0, written: 0 }); }
+    if ((input.length as u64) > (state.limits.max_input as u64)-state.read_total) { return fail(state,call.borrow(),Error::InputLimit); }
+    while (true) {
+        if (state.phase == RAW_START) {
+            if (state.limits.max_members == 0) { return fail(state,call.borrow(),Error::MemberLimit); }
+            begin_body(state,32768);
         }
-        bit *= 2;
+        if (state.phase == ZLIB_HEADER) {
+            while (state.field_count < 2) {
+                if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+                state.field = state.field | ((take_byte(state,call.borrow()) as u64) << (state.field_count*8)); state.field_count += 1;
+            }
+            let cmf: i32 = (state.field & 255) as i32; let flags: i32 = ((state.field >> 8) & 255) as i32;
+            if ((cmf & 15) != 8) { return fail(state,call.borrow(),Error::UnsupportedMethod); }
+            if ((cmf >> 4) > 7) { return fail(state,call.borrow(),Error::UnsupportedWindow); }
+            if (((cmf << 8) | flags) % 31 != 0) { return fail(state,call.borrow(),Error::Header); }
+            if ((flags & 32) != 0) { clear_field(state,ZLIB_DICTIONARY); }
+            else {
+                if (state.limits.max_members == 0) { return fail(state,call.borrow(),Error::MemberLimit); }
+                begin_body(state,1 << ((cmf >> 4)+8));
+            }
+        }
+        if (state.phase == ZLIB_DICTIONARY) {
+            while (state.field_count < 4) {
+                if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+                take_byte(state,call.borrow()); state.field_count += 1;
+            }
+            return fail(state,call.borrow(),Error::UnsupportedDictionary);
+        }
+        if (state.phase == GZIP_START) {
+            if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+            if (state.limits.max_members == 0) { return fail(state,call.borrow(),Error::MemberLimit); }
+            state.header_crc = core::crc32::INITIAL; clear_field(state,GZIP_HEADER);
+        }
+        if (state.phase == GZIP_PREFIX) {
+            if (call.read == input.length) {
+                if (final_input && state.completed_members == state.limits.max_members) { return fail(state,call.borrow(),Error::MemberLimit); }
+                return missing_input(state,call.borrow(),final_input);
+            }
+            // Classify trailing bytes before the next-member allowance, even
+            // when the two magic bytes arrive in separate calls.
+            if (byte(input,call.read) != 139) { return fail(state,call.borrow(),Error::TrailingData); }
+            let value: u8 = take_byte(state,call.borrow());
+            state.header_crc = core::crc32::update_byte(state.header_crc,value);
+            state.field = state.field | ((value as u64) << 8); state.field_count = 2;
+            if (state.completed_members == state.limits.max_members) { return fail(state,call.borrow(),Error::MemberLimit); }
+            state.phase = GZIP_HEADER;
+        }
+        if (state.phase == GZIP_HEADER) {
+            while (state.field_count < 10) {
+                if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+                let value: u8 = take_byte(state,call.borrow());
+                state.header_crc = core::crc32::update_byte(state.header_crc,value);
+                if (state.field_count < 4) { state.field = state.field | ((value as u64) << (state.field_count*8)); }
+                state.field_count += 1;
+            }
+            if ((state.field & 65535) != 35615) { return fail(state,call.borrow(),Error::Header); }
+            if (((state.field >> 16) & 255) != 8) { return fail(state,call.borrow(),Error::UnsupportedMethod); }
+            state.flags = ((state.field >> 24) & 255) as i32;
+            if ((state.flags & 224) != 0) { return fail(state,call.borrow(),Error::Header); }
+            if ((state.flags & 4) != 0) { clear_field(state,GZIP_EXTRA_LENGTH); }
+            else { after_extra(state); }
+        }
+        if (state.phase == GZIP_EXTRA_LENGTH) {
+            while (state.field_count < 2) {
+                if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+                let value: u8 = take_byte(state,call.borrow()); state.header_crc = core::crc32::update_byte(state.header_crc,value);
+                state.field = state.field | ((value as u64) << (state.field_count*8)); state.field_count += 1;
+            }
+            state.remaining = state.field as i32; state.phase = GZIP_EXTRA;
+        }
+        if (state.phase == GZIP_EXTRA) {
+            while (state.remaining > 0) {
+                if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+                state.header_crc = core::crc32::update_byte(state.header_crc,take_byte(state,call.borrow())); state.remaining -= 1;
+            }
+            after_extra(state);
+        }
+        if (state.phase == GZIP_NAME || state.phase == GZIP_COMMENT) {
+            let finished: bool = false;
+            while (!finished) {
+                if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+                let value: u8 = take_byte(state,call.borrow()); state.header_crc = core::crc32::update_byte(state.header_crc,value);
+                finished = value == 0;
+            }
+            if (state.phase == GZIP_NAME) { after_name(state); } else { after_comment(state); }
+        }
+        if (state.phase == GZIP_HEADER_CRC) {
+            while (state.field_count < 2) {
+                if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+                state.field = state.field | ((take_byte(state,call.borrow()) as u64) << (state.field_count*8)); state.field_count += 1;
+            }
+            if (state.field != (core::crc32::finish(state.header_crc) & 65535) as u64) { return fail(state,call.borrow(),Error::Checksum); }
+            begin_body(state,32768);
+        }
+        if (state.phase == BODY) {
+            let space: i32 = output.length-call.written;
+            let allowance: u64 = (state.limits.max_output as u64)-state.written_total;
+            if ((space as u64) > allowance) { space = allowance as i32; }
+            let decoded: core::result::Result<ext::inflate::Step,ext::inflate::Failure> = state.raw.step(part(input,call.read,input.length),part(output,call.written,call.written+space),final_input);
+            if (core::result::is_err(decoded)) {
+                let failure: ext::inflate::Failure = core::result::unwrap_err(decoded);
+                account_body(state,call.borrow(),failure.read,failure.written);
+                let truncated: bool = match (failure.error) { ext::inflate::Error::UnexpectedEof -> true, _ -> false };
+                if (truncated) { return fail(state,call.borrow(),Error::Truncated); }
+                return fail(state,call.borrow(),Error::Deflate(failure.error));
+            }
+            let step: ext::inflate::Step = core::result::unwrap(decoded);
+            account_body(state,call.borrow(),step.read,step.written);
+            let need_input: bool = match (step.status) { ext::inflate::Status::NeedInput -> true, _ -> false };
+            if (need_input) { return progress(call.borrow(),ext::inflate::Status::NeedInput); }
+            let need_output: bool = match (step.status) { ext::inflate::Status::NeedOutput -> true, _ -> false };
+            if (need_output) {
+                if (state.written_total == state.limits.max_output as u64) { return fail(state,call.borrow(),Error::OutputLimit); }
+                return progress(call.borrow(),ext::inflate::Status::NeedOutput);
+            }
+            if (state.kind == 0) { state.completed_members += 1; state.phase = AWAIT_END; }
+            if (state.kind == 1) { clear_field(state,ZLIB_TRAILER); }
+            if (state.kind == 2) { clear_field(state,GZIP_TRAILER); }
+        }
+        if (state.phase == ZLIB_TRAILER) {
+            while (state.field_count < 4) {
+                if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+                state.field = (state.field << 8) | (take_byte(state,call.borrow()) as u64); state.field_count += 1;
+            }
+            if (state.field != state.checksum as u64) { return fail(state,call.borrow(),Error::Checksum); }
+            state.completed_members += 1; state.phase = AWAIT_END;
+        }
+        if (state.phase == GZIP_TRAILER) {
+            while (state.field_count < 8) {
+                if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+                state.field = state.field | ((take_byte(state,call.borrow()) as u64) << (state.field_count*8)); state.field_count += 1;
+            }
+            if ((state.field & 4294967295) != core::crc32::finish(state.checksum) as u64) { return fail(state,call.borrow(),Error::Checksum); }
+            if ((state.field >> 32) != state.member_size as u64) { return fail(state,call.borrow(),Error::SizeMismatch); }
+            state.completed_members += 1; state.phase = BETWEEN_MEMBERS;
+        }
+        if (state.phase == AWAIT_END) {
+            if (call.read < input.length) { return fail(state,call.borrow(),Error::TrailingData); }
+            if (final_input) { state.phase = FINISHED; return progress(call.borrow(),ext::inflate::Status::Done); }
+            return progress(call.borrow(),ext::inflate::Status::NeedInput);
+        }
+        if (state.phase == BETWEEN_MEMBERS) {
+            if (call.read == input.length) {
+                if (final_input) { state.phase = FINISHED; return progress(call.borrow(),ext::inflate::Status::Done); }
+                return progress(call.borrow(),ext::inflate::Status::NeedInput);
+            }
+            if (byte(input,call.read) != 31) { return fail(state,call.borrow(),Error::TrailingData); }
+            let value: u8 = take_byte(state,call.borrow());
+            state.header_crc = core::crc32::update_byte(core::crc32::INITIAL,value);
+            state.field = value as u64; state.field_count = 1; state.phase = GZIP_PREFIX;
+        }
     }
-    if ((flags & 2) != 0) {
-        if (input.length-position < 2) { return core::result::Err(Error::Truncated); }
-        if (little16(input,position) != (crc(part(input,start,position)) & 65535) as i32) { return core::result::Err(Error::Checksum); } position += 2;
-    }
-    return core::result::Ok(position);
+    return progress(call.borrow(),ext::inflate::Status::Done);
 }
-fn gzip_decode(input: core::slice::View<u8>, output: &alloc::vec::Vec<u8>, limits: Limits) -> core::result::Result<bool,Error> {
-    if (input.length == 0) { return core::result::Err(Error::Truncated); }
-    let position: i32 = 0; let members: i32 = 0;
-    while (position < input.length) {
-        if (members > 0) { if (byte(input,position) != 31 || (input.length-position >= 2 && byte(input,position+1) != 139)) { return core::result::Err(Error::TrailingData); } }
-        if (members == limits.max_members) { return core::result::Err(Error::MemberLimit); }
-        let header: core::result::Result<i32,Error> = gzip_header(input,position);
-        if (core::result::is_err(header)) { return core::result::Err(core::result::unwrap_err(header)); } position = core::result::unwrap(header);
-        let output_start: i32 = output.len();
-        let decoded: core::result::Result<ext::inflate::Progress,Error> = inflate_member(part(input,position,input.length),output,limits.max_output,32768);
-        if (core::result::is_err(decoded)) { return core::result::Err(core::result::unwrap_err(decoded)); }
-        let progress: ext::inflate::Progress = core::result::unwrap(decoded); position += progress.read;
-        if (input.length-position < 8) { return core::result::Err(Error::Truncated); }
-        if (little32(input,position) != crc(part(output.as_view(),output_start,output.len()))) { return core::result::Err(Error::Checksum); }
-        if (little32(input,position+4) != progress.written as u32) { return core::result::Err(Error::SizeMismatch); }
-        position += 8; members += 1;
+
+pub impl Decoder {
+    pub fn borrow(&self) -> &Decoder { return self; }
+    pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<ext::inflate::Step,DecodeFailure> { return run(self,input,output,final_input); }
+    pub fn total_read(&self) -> u64 { return self.read_total; }
+    pub fn total_written(&self) -> u64 { return self.written_total; }
+    pub fn members(&self) -> i32 { return self.completed_members; }
+    pub fn is_done(&self) -> bool { return self.phase == FINISHED; }
+    pub fn is_failed(&self) -> bool { return self.phase == FAILED; }
+    pub fn reset(&self, format: Format, limits: Limits) -> core::result::Result<bool,Error> {
+        if (!valid_limits(limits)) { return core::result::Err(Error::Bounds); }
+        let reset: core::result::Result<bool,ext::inflate::Error> = self.raw.reset(32768);
+        if (core::result::is_err(reset)) { return core::result::Err(Error::Bounds); }
+        self.kind = format_kind(format); self.limits = limits; self.phase = initial_phase(self.kind); self.failure = Error::Bounds;
+        self.read_total = 0; self.written_total = 0; self.completed_members = 0;
+        self.checksum = 0; self.member_size = 0; self.header_crc = core::crc32::INITIAL;
+        self.field = 0; self.field_count = 0; self.flags = 0; self.remaining = 0;
+        return core::result::Ok(true);
     }
-    return core::result::Ok(true);
 }
+
+// Private owners are fixed history, fixed tables and geometric output. The
+// decoder survives output growth and no transient output view crosses resize.
+// Metadata/input admission precedes allocation; workspace allocation can fail
+// before later format validation. Every exit releases both private workspaces.
 pub fn decode(input: core::slice::View<u8>, format: Format, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
-    if (!valid(input) || limits.max_input < 0 || limits.max_output < 0 || limits.max_members < 0) { return core::result::Err(Error::Bounds); }
+    if (!valid(input) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); }
     if (input.length > limits.max_input) { return core::result::Err(Error::InputLimit); }
-    let output: alloc::vec::Vec<u8> = alloc::vec::new(); let decoded: core::result::Result<bool,Error> = core::result::Ok(true);
-    let kind: i32 = match (format) { Format::RawDeflate -> 0, Format::Zlib -> 1, Format::Gzip -> 2 };
-    if (kind == 0) {
-        if (limits.max_members == 0) { decoded = core::result::Err(Error::MemberLimit); }
-        else {
-            let result: core::result::Result<ext::inflate::Progress,Error> = inflate_member(input,output.borrow(),limits.max_output,32768);
-            if (core::result::is_err(result)) { decoded = core::result::Err(core::result::unwrap_err(result)); }
-            else { if (core::result::unwrap(result).read != input.length) { decoded = core::result::Err(Error::TrailingData); } }
+    let history: alloc::vec::Vec<u8> = alloc::vec::new();
+    let history_ready: core::result::Result<i32,Error> = resize(history.borrow(),32768);
+    if (core::result::is_err(history_ready)) { history.destroy(); return core::result::Err(core::result::unwrap_err(history_ready)); }
+    let workspace: alloc::vec::Vec<i32> = alloc::vec::new();
+    let workspace_ready: core::result::Result<i32,alloc::vec::Error> = workspace.try_resize(ext::inflate::workspace_len(),0);
+    if (core::result::is_err(workspace_ready)) { workspace.destroy(); history.destroy(); return core::result::Err(vector_error(core::result::unwrap_err(workspace_ready))); }
+    let state: Decoder = core::result::unwrap(decoder(history.as_view(),workspace.as_view(),format,limits));
+    let output: alloc::vec::Vec<u8> = alloc::vec::new();
+    let read: i32 = 0; let written: i32 = 0;
+    while (true) {
+        let decoded: core::result::Result<ext::inflate::Step,DecodeFailure> = state.step(part(input,read,input.length),part(output.as_view(),written,output.len()),true);
+        if (core::result::is_err(decoded)) {
+            let error: Error = core::result::unwrap_err(decoded).error;
+            output.destroy(); workspace.destroy(); history.destroy(); return core::result::Err(error);
         }
+        let step: ext::inflate::Step = core::result::unwrap(decoded); read += step.read; written += step.written;
+        let done: bool = match (step.status) { ext::inflate::Status::Done -> true, _ -> false };
+        if (done) { output.truncate(written); workspace.destroy(); history.destroy(); return core::result::Ok(output); }
+        let need_input: bool = match (step.status) { ext::inflate::Status::NeedInput -> true, _ -> false };
+        if (need_input) { output.destroy(); workspace.destroy(); history.destroy(); return core::result::Err(Error::Truncated); }
+        let capacity: i32 = output.len();
+        if (capacity == 0) { capacity = 256; if (capacity > limits.max_output) { capacity = limits.max_output; } }
+        else { if (capacity > limits.max_output/2) { capacity = limits.max_output; } else { capacity *= 2; } }
+        if (capacity <= output.len()) { output.destroy(); workspace.destroy(); history.destroy(); return core::result::Err(Error::OutputLimit); }
+        let grown: core::result::Result<i32,Error> = resize(output.borrow(),capacity);
+        if (core::result::is_err(grown)) { output.destroy(); workspace.destroy(); history.destroy(); return core::result::Err(core::result::unwrap_err(grown)); }
     }
-    if (kind == 1) { decoded = zlib_decode(input,output.borrow(),limits); }
-    if (kind == 2) { decoded = gzip_decode(input,output.borrow(),limits); }
-    if (core::result::is_err(decoded)) { output.destroy(); return core::result::Err(core::result::unwrap_err(decoded)); } return core::result::Ok(output);
+    return core::result::Err(Error::Truncated);
 }

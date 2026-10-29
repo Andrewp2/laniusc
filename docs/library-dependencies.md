@@ -3,6 +3,17 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [resumable decompression increment](extended-streaming-inflate.md) uses
+existing View, allocation and Linux file/AtomicFile contracts. Borrowed decoding
+adds no host service or native codec dependency; owned decoding adds explicit
+fixed workspace allocation before later format validation. System zlib is a
+test oracle only. All seven new library gates pass on native Linux x86_64 CPU
+output from the GPU compiler, as do all seven atomic-file application groups
+with 98 native cases.
+Other targets, user-program GPU execution, language-enforced backing lifetimes
+and formal verification remain separate. No compiler or ABI repair is part of
+this increment.
+
 The native Linux boundary now includes an explicit six-word
 [syscall binding](stdlib-linux.md), added in `3fa72ac2`. Lanius implementations
 of [socket ownership and TCP/UDP](stdlib-sockets.md),
@@ -102,8 +113,13 @@ through a nongeneric owner-state boundary. This removes the library blocker;
 it does not repair the earlier nested generic receiver shape. The
 [foundation admission probes](../tests/fixtures/stdlib_compiler_state/foundation_admission/README.md)
 preserve exact base/compiler hashes, the successful state-factoring control and
-current failures for static iterator and stream forwarding. Selective source
-distribution uses the compiler's existing package resolver.
+historical static-iterator/stream-forwarding failures. The selected imported
+and nested Read/Write contract is now
+[accepted](compiler-implementation-applications.md), with separate buffered
+and [Take/Chain](stdlib-io-adapters.md) runtime receipts. Those results do not
+revalidate the original static-iterator witness or unrelated chained-result
+expressions below. Selective source distribution uses the compiler's existing
+package resolver.
 
 | Dependency | Evidence | Affected APIs | Status |
 | --- | --- | --- | --- |

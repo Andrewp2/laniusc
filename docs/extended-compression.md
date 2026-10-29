@@ -6,6 +6,14 @@ packed `alloc::vec::Vec<u8>` results. It uses the Lanius raw
 [`ext::inflate`](extended-inflate.md) decoder. Production code does not call
 Rust, Python, a host compression library or an external process.
 
+The [resumable decoder](extended-streaming-inflate.md) adds borrowed fixed
+workspace and chunked progress to this module and replaces owned member replay
+with shared persistent state. All seven new raw/container library tests pass;
+the atomic-file application also passes seven groups/98 native cases. The
+streaming guide records selected current regressions separately.
+Historical container receipts below retain their
+original source/API scope.
+
 Executable evidence covers **x86_64 Linux using the GPU compiler**. Other
 hosts and GPU-kernel execution have not been established.
 
@@ -80,24 +88,30 @@ and storage remain live. The input is borrowed, never modified or destroyed.
 Every error releases all internal owners. No decoded prefix is returned before
 container checksums, trailers, member limits and end-of-input checks pass.
 Callers can therefore validate a whole bounded input before publishing any
-output. The lower-level raw decoder has a different API that deliberately
-reports partial progress; see its documentation when that behavior is needed.
+output. The lower-level raw and container streaming decoders deliberately report
+partial progress. Their output is provisional until complete format validation;
+see the [streaming contract](extended-streaming-inflate.md) before publishing it.
 
 Encoding allocates a 32,768-entry `i32` scratch vector and one exact-size
 result. It measures the raw encoding before allocating output. Consequently
 an allocation error can precede discovery that an encoded result exceeds its
 limit. The scratch vector is destroyed before returning the result.
 
-Decoding starts each member with at most 256 bytes of available result space.
-If that space fills, it grows geometrically up to the remaining output limit
-and replays that member. It reconstructs views after every possible move and
-never uses previous members as DEFLATE history. A large configured limit does
-not make a tiny decoded result allocate or initialize the full limit. Each
-growth temporarily retains the old allocation while copying into its
-replacement. Result capacity may exceed its final length but never the
-configured output limit. The implementation can replay compressed prefixes
-logarithmically many times; these are whole-buffer, bounded APIs rather than
-resumable streaming codecs.
+Owned decoding allocates a 32,768-byte history ring and a 707-element i32
+workspace once, then grows its result geometrically through the shared container
+state. It rebuilds transient views after each possible move and resumes the
+existing bit/tree/framing state instead of replaying a member. Each gzip member
+resets logical history, so previous members never supply a backreference. A large
+configured output limit does not preallocate that whole result; growth can
+temporarily retain both old and replacement storage.
+
+Complete input/limit metadata admission precedes allocation. Fixed workspace
+allocation can now fail before later header/trailer validation, so
+AllocationFailed can precede discovery of malformed compressed data. This
+allocation-order change has its own runtime acceptance in the
+[streaming guide](extended-streaming-inflate.md). All private workspace/output
+owners retire on failure; success transfers only the independent result Vec.
+Encoding keeps its earlier implementation and allocation order.
 
 Logical metadata checks reject negative starts and lengths and overflowing
 `start + length`. The caller must provide sufficient physical backing storage
@@ -132,7 +146,10 @@ returning successful partial output.
 
 ## Executable evidence
 
-`tests/extended_compression_execution.rs` runs seven focused native groups:
+`tests/extended_compression_execution.rs` historically passed seven focused
+native groups for the earlier whole-buffer implementation. Current regression
+receipts after decoder migration belong to the
+[streaming guide](extended-streaming-inflate.md). The historical scope includes:
 
 - Independent Python zlib streams using stored, fixed and dynamic blocks,
   multiple compression strategies, empty inputs and binary data through

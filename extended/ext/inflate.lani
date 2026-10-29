@@ -1,6 +1,6 @@
-// Raw RFC 1951 DEFLATE, with caller-owned output and no heap allocation.
-// Input and output must be backed, live, and disjoint. Completed output is
-// retained on error. Logical metadata is checked before reading or writing.
+// Raw RFC 1951 DEFLATE with caller-owned storage and no heap allocation.
+// A streaming decoder borrows its history and Huffman workspace; step does
+// not retain input/output views. All backing must remain live and disjoint.
 module ext::inflate;
 import core::result;
 import core::slice;
@@ -8,52 +8,144 @@ import core::slice;
 pub enum Error { Bounds, UnexpectedEof, InvalidBlockType, InvalidStoredLength, InvalidCodeLengths, InvalidSymbol, InvalidDistance, OutputTooSmall }
 pub struct Progress { read: i32, written: i32 }
 pub struct Failure { error: Error, read: i32, written: i32 }
-struct State { input: core::slice::View<u8>, output: core::slice::View<u8>, position: i32, written: i32, buffer: i32, available: i32 }
-impl State { fn borrow(&self) -> &State { return self; } }
-struct Tree { counts: [i32], symbols: [i32], maximum: i32 }
+pub enum Status { NeedInput, NeedOutput, Done }
+pub struct Step { read: i32, written: i32, status: Status }
 
-fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
-fn fail(state: State, error: Error) -> core::result::Result<Progress,Failure> {
-    return core::result::Err(Failure { error: error, read: state.position, written: state.written });
+// Workspace layout: lengths[320], literal counts[16]/symbols[288],
+// distance counts[16]/symbols[32], code-length counts[16]/symbols[19].
+pub fn workspace_len() -> i32 { return 707; }
+const LITERAL_COUNTS: i32 = 320;
+const LITERAL_SYMBOLS: i32 = 336;
+const DISTANCE_COUNTS: i32 = 624;
+const DISTANCE_SYMBOLS: i32 = 640;
+const CODE_COUNTS: i32 = 672;
+const CODE_SYMBOLS: i32 = 688;
+
+const HEADER_FINAL: i32 = 0;
+const HEADER_KIND: i32 = 1;
+const STORED_LENGTH: i32 = 2;
+const STORED_INVERTED: i32 = 3;
+const STORED_COPY: i32 = 4;
+const DYNAMIC_LITERAL_COUNT: i32 = 5;
+const DYNAMIC_DISTANCE_COUNT: i32 = 6;
+const DYNAMIC_CODE_COUNT: i32 = 7;
+const DYNAMIC_CODE_LENGTHS: i32 = 8;
+const DYNAMIC_LENGTHS: i32 = 9;
+const DYNAMIC_REPEAT: i32 = 10;
+const BUILD_TREES: i32 = 11;
+const LITERAL_SYMBOL: i32 = 12;
+const EMIT_LITERAL: i32 = 13;
+const LENGTH_EXTRA: i32 = 14;
+const DISTANCE_SYMBOL: i32 = 15;
+const DISTANCE_EXTRA: i32 = 16;
+const MATCH_COPY: i32 = 17;
+const FINISHED: i32 = 18;
+const FAILED: i32 = 19;
+
+pub struct Decoder {
+    history: core::slice::View<u8>, workspace: core::slice::View<i32>,
+    max_distance: i32, ring: bool, history_head: i32, history_filled: i32,
+    phase: i32, failure: Error, buffer: i32, available: i32,
+    final_block: i32, kind: i32, remaining: i32, distance: i32,
+    literal_count: i32, distance_count: i32, code_count: i32, index: i32,
+    literal_maximum: i32, distance_maximum: i32, code_maximum: i32,
+    symbol: i32, code: i32, first: i32, offset: i32, size: i32
 }
-// Only load bytes actually needed; at most seven unconsumed bits remain.
-fn bits(state: &State, need: i32) -> i32 {
+// Per-call descriptors and progress never escape the engine invocation.
+struct Call { input: core::slice::View<u8>, output: core::slice::View<u8>, read: i32, written: i32 }
+impl Call { fn borrow(&self) -> &Call { return self; } }
+
+fn valid_bytes(view: core::slice::View<u8>) -> bool {
+    return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length;
+}
+fn valid_workspace(view: core::slice::View<i32>) -> bool {
+    return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length;
+}
+fn valid_window(window: i32) -> bool { return window >= 256 && window <= 32768 && (window & (window-1)) == 0; }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
+fn entry(view: core::slice::View<i32>, index: i32) -> i32 { return view.values[view.start+index]; }
+fn put_entry(view: core::slice::View<i32>, index: i32, value: i32) { view.values[view.start+index] = value; }
+
+fn initial(history: core::slice::View<u8>, workspace: core::slice::View<i32>, max_distance: i32, ring: bool) -> Decoder {
+    return Decoder {
+        history: history, workspace: workspace, max_distance: max_distance, ring: ring,
+        history_head: 0, history_filled: 0, phase: HEADER_FINAL, failure: Error::Bounds,
+        buffer: 0, available: 0, final_block: 0, kind: 0, remaining: 0, distance: 0,
+        literal_count: 0, distance_count: 0, code_count: 0, index: 0,
+        literal_maximum: 0, distance_maximum: 0, code_maximum: 0,
+        symbol: 0, code: 0, first: 0, offset: 0, size: 1
+    };
+}
+
+// Construction only stores descriptors and scalars. It neither inspects nor
+// initializes backing. Extra history/workspace entries are never touched.
+pub fn decoder(history: core::slice::View<u8>, workspace: core::slice::View<i32>, max_distance: i32) -> core::result::Result<Decoder,Error> {
+    if (!valid_bytes(history) || !valid_workspace(workspace) || !valid_window(max_distance) || history.length < max_distance || workspace.length < workspace_len()) {
+        return core::result::Err(Error::Bounds);
+    }
+    return core::result::Ok(initial(history,workspace,max_distance,true));
+}
+
+fn progress(call: &Call, status: Status) -> core::result::Result<Step,Failure> {
+    return core::result::Ok(Step { read: call.read, written: call.written, status: status });
+}
+fn fail(state: &Decoder, call: &Call, error: Error) -> core::result::Result<Step,Failure> {
+    state.phase = FAILED; state.failure = error;
+    return core::result::Err(Failure { error: error, read: call.read, written: call.written });
+}
+fn missing_input(state: &Decoder, call: &Call, final_input: bool) -> core::result::Result<Step,Failure> {
+    if (final_input) { return fail(state,call,Error::UnexpectedEof); }
+    return progress(call,Status::NeedInput);
+}
+
+// Fields are committed only when complete. Partial bytes remain in the bit
+// reservoir across calls; load no byte until the current field needs it.
+fn bits(state: &Decoder, call: &Call, need: i32) -> i32 {
     while (state.available < need) {
-        if (state.position == state.input.length) { return -1; }
-        state.buffer = state.buffer | ((byte(state.input,state.position) as i32) << state.available);
-        state.position += 1; state.available += 8;
+        if (call.read == call.input.length) { return -1; }
+        state.buffer = state.buffer | ((byte(call.input,call.read) as i32) << state.available);
+        call.read += 1; state.available += 8;
     }
     let value: i32 = state.buffer & ((1 << need)-1);
     state.buffer = state.buffer >> need; state.available -= need; return value;
 }
-// Canonical length counts and symbols sorted by (length,symbol). Return
-// unused leaves at depth 15, or -1 for over-subscribed lengths.
-fn construct(lengths: [i32], start: i32, count: i32, counts: [i32], symbols: [i32]) -> i32 {
-    let index: i32 = 0; while (index < 16) { counts[index] = 0; index += 1; }
-    index = 0; while (index < count) { let size: i32 = lengths[start+index]; counts[size] += 1; index += 1; }
-    let left: i32 = 1; index = 1;
-    while (index <= 15) { left = left*2-counts[index]; if (left < 0) { return -1; } index += 1; }
-    let offsets: [i32;16] = [0;16]; index = 1;
-    while (index < 15) { offsets[index+1] = offsets[index]+counts[index]; index += 1; }
+
+// Canonical counts and symbols sorted by (length,symbol). All lengths are
+// admitted by fixed-code construction or the dynamic code-length alphabet.
+fn construct(workspace: core::slice::View<i32>, start: i32, count: i32, counts: i32, symbols: i32) -> i32 {
+    let index: i32 = 0; while (index < 16) { put_entry(workspace,counts+index,0); index += 1; }
     index = 0;
     while (index < count) {
-        let size: i32 = lengths[start+index];
-        if (size != 0) { symbols[offsets[size]] = index; offsets[size] += 1; }
+        let size: i32 = entry(workspace,start+index);
+        put_entry(workspace,counts+size,entry(workspace,counts+size)+1); index += 1;
+    }
+    let left: i32 = 1; index = 1;
+    while (index <= 15) { left = left*2-entry(workspace,counts+index); if (left < 0) { return -1; } index += 1; }
+    let offsets: [i32;16] = [0;16]; index = 1;
+    while (index < 15) { offsets[index+1] = offsets[index]+entry(workspace,counts+index); index += 1; }
+    index = 0;
+    while (index < count) {
+        let size: i32 = entry(workspace,start+index);
+        if (size != 0) { put_entry(workspace,symbols+offsets[size],index); offsets[size] += 1; }
         index += 1;
     }
     return left;
 }
-fn maximum(counts: [i32]) -> i32 {
-    let size: i32 = 15; while (size > 0 && counts[size] == 0) { size -= 1; } return size;
+fn maximum(workspace: core::slice::View<i32>, counts: i32) -> i32 {
+    let size: i32 = 15; while (size > 0 && entry(workspace,counts+size) == 0) { size -= 1; } return size;
 }
-// -1 means input exhausted; -2 means an unused/invalid code.
-fn decode(state: &State, tree: Tree) -> i32 {
-    let code: i32 = 0; let first: i32 = 0; let offset: i32 = 0; let size: i32 = 1;
-    while (size <= tree.maximum) {
-        let bit: i32 = bits(state,1); if (bit < 0) { return -1; }
-        code = code*2+bit; let count: i32 = tree.counts[size];
-        if (code >= first && code-first < count) { return tree.symbols[offset+code-first]; }
-        offset += count; first = (first+count)*2; size += 1;
+fn reset_code(state: &Decoder) { state.code = 0; state.first = 0; state.offset = 0; state.size = 1; }
+// -1 means input exhausted, -2 an unused/invalid code. Incomplete traversal
+// persists; a completed symbol resets traversal before its next phase.
+fn decode_symbol(state: &Decoder, call: &Call, counts: i32, symbols: i32, maximum: i32) -> i32 {
+    while (state.size <= maximum) {
+        let bit: i32 = bits(state,call,1); if (bit < 0) { return -1; }
+        state.code = state.code*2+bit; let count: i32 = entry(state.workspace,counts+state.size);
+        if (state.code >= state.first && state.code-state.first < count) {
+            let symbol: i32 = entry(state.workspace,symbols+state.offset+state.code-state.first);
+            reset_code(state); return symbol;
+        }
+        state.offset += count; state.first = (state.first+count)*2; state.size += 1;
     }
     return -2;
 }
@@ -64,113 +156,214 @@ fn length_base(symbol: i32) -> i32 {
 fn length_extra(symbol: i32) -> i32 { if (symbol <= 264 || symbol == 285) { return 0; } return (symbol-261)/4; }
 fn distance_extra(symbol: i32) -> i32 { if (symbol < 4) { return 0; } return symbol/2-1; }
 fn distance_base(symbol: i32) -> i32 { if (symbol < 4) { return symbol+1; } let extra: i32 = distance_extra(symbol); return ((2+(symbol & 1)) << extra)+1; }
+fn code_order(index: i32) -> i32 {
+    let order: [i32;19] = [16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15]; return order[index];
+}
+fn end_block(state: &Decoder) { if (state.final_block != 0) { state.phase = FINISHED; } else { state.phase = HEADER_FINAL; } }
 
-pub fn decode_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<Progress,Failure> { return decode_into_window(input,output,32768); }
-// Container formats may advertise a smaller history window. The raw default
-// accepts the full 32768 bytes. Only powers of two from 256 through 32768.
-pub fn decode_into_window(input: core::slice::View<u8>, output: core::slice::View<u8>, max_distance: i32) -> core::result::Result<Progress,Failure> {
-    if (input.start < 0 || input.length < 0 || input.start > 2147483647-input.length || output.start < 0 || output.length < 0 || output.start > 2147483647-output.length || max_distance < 256 || max_distance > 32768 || (max_distance & (max_distance-1)) != 0) {
-        return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 });
+// Append before the next distance lookup, so overlapping copies work even
+// across output chunks and ring wrap. Logical history never exceeds window.
+fn emit(state: &Decoder, call: &Call, value: u8) {
+    call.output.values[call.output.start+call.written] = value; call.written += 1;
+    if (state.ring) {
+        state.history.values[state.history.start+state.history_head] = value;
+        state.history_head += 1; if (state.history_head == state.max_distance) { state.history_head = 0; }
     }
-    let state: State = State { input: input, output: output, position: 0, written: 0, buffer: 0, available: 0 };
-    let lengths: [i32;320] = [0;320];
-    let literal_counts: [i32;16] = [0;16]; let literal_symbols: [i32;288] = [0;288];
-    let distance_counts: [i32;16] = [0;16]; let distance_symbols: [i32;32] = [0;32];
-    let code_counts: [i32;16] = [0;16]; let code_symbols: [i32;19] = [0;19];
-    let order: [i32;19] = [16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];
-    let final_block: i32 = 0;
-    while (final_block == 0) {
-        final_block = bits(state.borrow(),1); let kind: i32 = bits(state.borrow(),2);
-        if (final_block < 0 || kind < 0) { return fail(state,Error::UnexpectedEof); }
-        if (kind == 3) { return fail(state,Error::InvalidBlockType); }
-        if (kind == 0) {
-            state.buffer = 0; state.available = 0;
-            let length: i32 = bits(state.borrow(),16); let inverted: i32 = bits(state.borrow(),16);
-            if (length < 0 || inverted < 0) { return fail(state,Error::UnexpectedEof); }
-            if ((length ^ inverted) != 65535) { return fail(state,Error::InvalidStoredLength); }
-            let copied: i32 = 0;
-            while (copied < length) {
-                if (state.position == input.length) { return fail(state,Error::UnexpectedEof); }
-                if (state.written == output.length) { return fail(state,Error::OutputTooSmall); }
-                output.values[output.start+state.written] = byte(input,state.position);
-                state.position += 1; state.written += 1; copied += 1;
-            }
-        } else {
-            let literal_count: i32 = 288; let distance_count: i32 = 32; let index: i32 = 0;
-            if (kind == 1) {
-                while (index < 144) { lengths[index] = 8; index += 1; }
-                while (index < 256) { lengths[index] = 9; index += 1; }
-                while (index < 280) { lengths[index] = 7; index += 1; }
-                while (index < 288) { lengths[index] = 8; index += 1; }
-                while (index < 320) { lengths[index] = 5; index += 1; }
-            } else {
-                let lit_bits: i32 = bits(state.borrow(),5); let dist_bits: i32 = bits(state.borrow(),5); let code_bits: i32 = bits(state.borrow(),4);
-                if (lit_bits < 0 || dist_bits < 0 || code_bits < 0) { return fail(state,Error::UnexpectedEof); }
-                literal_count = lit_bits+257; distance_count = dist_bits+1;
-                if (literal_count > 286) { return fail(state,Error::InvalidCodeLengths); }
-                index = 0; while (index < 19) { lengths[index] = 0; index += 1; }
-                index = 0;
-                while (index < code_bits+4) {
-                    let value: i32 = bits(state.borrow(),3); if (value < 0) { return fail(state,Error::UnexpectedEof); }
-                    lengths[order[index]] = value; index += 1;
-                }
-                if (construct(lengths,0,19,code_counts,code_symbols) != 0) { return fail(state,Error::InvalidCodeLengths); }
-                let codes: Tree = Tree { counts: code_counts, symbols: code_symbols, maximum: maximum(code_counts) };
-                index = 0;
-                while (index < literal_count+distance_count) {
-                    let symbol: i32 = decode(state.borrow(),codes);
-                    if (symbol == -1) { return fail(state,Error::UnexpectedEof); }
-                    if (symbol < 0) { return fail(state,Error::InvalidCodeLengths); }
-                    if (symbol < 16) { lengths[index] = symbol; index += 1; }
-                    else {
-                        let value: i32 = 0; let repeat: i32 = 0;
-                        if (symbol == 16) {
-                            if (index == 0) { return fail(state,Error::InvalidCodeLengths); }
-                            value = lengths[index-1]; repeat = bits(state.borrow(),2); if (repeat < 0) { return fail(state,Error::UnexpectedEof); } repeat += 3;
-                        } else {
-                            if (symbol == 17) { repeat = bits(state.borrow(),3); if (repeat < 0) { return fail(state,Error::UnexpectedEof); } repeat += 3; }
-                            else { repeat = bits(state.borrow(),7); if (repeat < 0) { return fail(state,Error::UnexpectedEof); } repeat += 11; }
-                        }
-                        if (repeat > literal_count+distance_count-index) { return fail(state,Error::InvalidCodeLengths); }
-                        let end: i32 = index+repeat; while (index < end) { lengths[index] = value; index += 1; }
-                    }
-                }
-                if (lengths[256] == 0) { return fail(state,Error::InvalidCodeLengths); }
-            }
-            let literal_left: i32 = construct(lengths,0,literal_count,literal_counts,literal_symbols);
-            if (literal_left < 0 || (kind == 2 && literal_left != 0 && literal_count-literal_counts[0] != literal_counts[1])) { return fail(state,Error::InvalidCodeLengths); }
-            let distance_left: i32 = construct(lengths,literal_count,distance_count,distance_counts,distance_symbols);
-            if (distance_left < 0 || (kind == 2 && distance_left != 0 && distance_count-distance_counts[0] != distance_counts[1])) { return fail(state,Error::InvalidCodeLengths); }
-            let literals: Tree = Tree { counts: literal_counts, symbols: literal_symbols, maximum: maximum(literal_counts) };
-            let distances: Tree = Tree { counts: distance_counts, symbols: distance_symbols, maximum: maximum(distance_counts) };
-            let ended: bool = false;
-            while (!ended) {
-                let symbol: i32 = decode(state.borrow(),literals);
-                if (symbol == -1) { return fail(state,Error::UnexpectedEof); }
-                if (symbol < 0 || symbol > 285) { return fail(state,Error::InvalidSymbol); }
-                if (symbol < 256) {
-                    if (state.written == output.length) { return fail(state,Error::OutputTooSmall); }
-                    output.values[output.start+state.written] = symbol as u8; state.written += 1;
-                } else {
-                    if (symbol == 256) { ended = true; }
-                    else {
-                        let extra: i32 = bits(state.borrow(),length_extra(symbol)); if (extra < 0) { return fail(state,Error::UnexpectedEof); }
-                        let length: i32 = length_base(symbol)+extra; let distance_symbol: i32 = decode(state.borrow(),distances);
-                        if (distance_symbol == -1) { return fail(state,Error::UnexpectedEof); }
-                        if (distance_symbol < 0 || distance_symbol >= 30) { return fail(state,Error::InvalidSymbol); }
-                        let distance_bits: i32 = bits(state.borrow(),distance_extra(distance_symbol)); if (distance_bits < 0) { return fail(state,Error::UnexpectedEof); }
-                        let distance: i32 = distance_base(distance_symbol)+distance_bits;
-                        if (distance > state.written || distance > max_distance) { return fail(state,Error::InvalidDistance); }
-                        let copied: i32 = 0;
-                        while (copied < length) {
-                            if (state.written == output.length) { return fail(state,Error::OutputTooSmall); }
-                            output.values[output.start+state.written] = byte(output,state.written-distance);
-                            state.written += 1; copied += 1;
-                        }
-                    }
-                }
+    if (state.history_filled < state.max_distance) { state.history_filled += 1; }
+}
+fn previous(state: &Decoder, call: &Call) -> u8 {
+    if (!state.ring) { return byte(call.output,call.written-state.distance); }
+    let at: i32 = state.history_head-state.distance; if (at < 0) { at += state.max_distance; }
+    return byte(state.history,at);
+}
+
+// This is the only DEFLATE parser. The private complete-output mode is used
+// for one-shot calls only; public streaming construction always uses a ring.
+fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure> {
+    if (!valid_bytes(input) || !valid_bytes(output)) { return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 }); }
+    let call: Call = Call { input: input, output: output, read: 0, written: 0 };
+    if (state.phase == FAILED) { return core::result::Err(Failure { error: state.failure, read: 0, written: 0 }); }
+    while (true) {
+        if (state.phase == FINISHED) { return progress(call.borrow(),Status::Done); }
+        if (state.phase == HEADER_FINAL) {
+            let last: i32 = bits(state,call.borrow(),1); if (last < 0) { return missing_input(state,call.borrow(),final_input); }
+            state.final_block = last; state.phase = HEADER_KIND;
+        }
+        if (state.phase == HEADER_KIND) {
+            let kind: i32 = bits(state,call.borrow(),2); if (kind < 0) { return missing_input(state,call.borrow(),final_input); }
+            if (kind == 3) { return fail(state,call.borrow(),Error::InvalidBlockType); }
+            state.kind = kind;
+            if (kind == 0) { state.buffer = 0; state.available = 0; state.phase = STORED_LENGTH; }
+            else {
+                if (kind == 1) {
+                    let index: i32 = 0;
+                    while (index < 144) { put_entry(state.workspace,index,8); index += 1; }
+                    while (index < 256) { put_entry(state.workspace,index,9); index += 1; }
+                    while (index < 280) { put_entry(state.workspace,index,7); index += 1; }
+                    while (index < 288) { put_entry(state.workspace,index,8); index += 1; }
+                    while (index < 320) { put_entry(state.workspace,index,5); index += 1; }
+                    state.literal_count = 288; state.distance_count = 32; state.phase = BUILD_TREES;
+                } else { state.phase = DYNAMIC_LITERAL_COUNT; }
             }
         }
+        if (state.phase == STORED_LENGTH) {
+            let length: i32 = bits(state,call.borrow(),16); if (length < 0) { return missing_input(state,call.borrow(),final_input); }
+            state.remaining = length; state.phase = STORED_INVERTED;
+        }
+        if (state.phase == STORED_INVERTED) {
+            let inverted: i32 = bits(state,call.borrow(),16); if (inverted < 0) { return missing_input(state,call.borrow(),final_input); }
+            if ((state.remaining ^ inverted) != 65535) { return fail(state,call.borrow(),Error::InvalidStoredLength); }
+            state.phase = STORED_COPY;
+        }
+        if (state.phase == STORED_COPY) {
+            while (state.remaining > 0) {
+                // Preserve stored-input truncation before output exhaustion.
+                if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
+                if (call.written == output.length) { return progress(call.borrow(),Status::NeedOutput); }
+                emit(state,call.borrow(),byte(input,call.read)); call.read += 1; state.remaining -= 1;
+            }
+            end_block(state);
+        }
+        if (state.phase == DYNAMIC_LITERAL_COUNT) {
+            let value: i32 = bits(state,call.borrow(),5); if (value < 0) { return missing_input(state,call.borrow(),final_input); }
+            state.literal_count = value+257; state.phase = DYNAMIC_DISTANCE_COUNT;
+        }
+        if (state.phase == DYNAMIC_DISTANCE_COUNT) {
+            let value: i32 = bits(state,call.borrow(),5); if (value < 0) { return missing_input(state,call.borrow(),final_input); }
+            state.distance_count = value+1; state.phase = DYNAMIC_CODE_COUNT;
+        }
+        if (state.phase == DYNAMIC_CODE_COUNT) {
+            let value: i32 = bits(state,call.borrow(),4); if (value < 0) { return missing_input(state,call.borrow(),final_input); }
+            // All three fields arrive before HLIT validation, as in one-shot.
+            if (state.literal_count > 286) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
+            state.code_count = value+4; state.index = 0;
+            while (state.index < 19) { put_entry(state.workspace,state.index,0); state.index += 1; }
+            state.index = 0; state.phase = DYNAMIC_CODE_LENGTHS;
+        }
+        if (state.phase == DYNAMIC_CODE_LENGTHS) {
+            while (state.index < state.code_count) {
+                let value: i32 = bits(state,call.borrow(),3); if (value < 0) { return missing_input(state,call.borrow(),final_input); }
+                put_entry(state.workspace,code_order(state.index),value); state.index += 1;
+            }
+            if (construct(state.workspace,0,19,CODE_COUNTS,CODE_SYMBOLS) != 0) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
+            state.code_maximum = maximum(state.workspace,CODE_COUNTS); state.index = 0;
+            reset_code(state); state.phase = DYNAMIC_LENGTHS;
+        }
+        if (state.phase == DYNAMIC_LENGTHS) {
+            while (state.index < state.literal_count+state.distance_count && state.phase == DYNAMIC_LENGTHS) {
+                let symbol: i32 = decode_symbol(state,call.borrow(),CODE_COUNTS,CODE_SYMBOLS,state.code_maximum);
+                if (symbol == -1) { return missing_input(state,call.borrow(),final_input); }
+                if (symbol < 0) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
+                if (symbol < 16) { put_entry(state.workspace,state.index,symbol); state.index += 1; }
+                else {
+                    if (symbol == 16 && state.index == 0) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
+                    state.symbol = symbol; state.phase = DYNAMIC_REPEAT;
+                }
+            }
+            if (state.index == state.literal_count+state.distance_count) {
+                if (entry(state.workspace,256) == 0) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
+                state.phase = BUILD_TREES;
+            }
+        }
+        if (state.phase == DYNAMIC_REPEAT) {
+            let width: i32 = 7; let base: i32 = 11; let value: i32 = 0;
+            if (state.symbol == 16) { width = 2; base = 3; value = entry(state.workspace,state.index-1); }
+            if (state.symbol == 17) { width = 3; base = 3; }
+            let extra: i32 = bits(state,call.borrow(),width); if (extra < 0) { return missing_input(state,call.borrow(),final_input); }
+            let repeat: i32 = base+extra;
+            if (repeat > state.literal_count+state.distance_count-state.index) { return fail(state,call.borrow(),Error::InvalidCodeLengths); }
+            let end: i32 = state.index+repeat;
+            while (state.index < end) { put_entry(state.workspace,state.index,value); state.index += 1; }
+            state.phase = DYNAMIC_LENGTHS;
+        }
+        if (state.phase == BUILD_TREES) {
+            let literal_left: i32 = construct(state.workspace,0,state.literal_count,LITERAL_COUNTS,LITERAL_SYMBOLS);
+            if (literal_left < 0 || (state.kind == 2 && literal_left != 0 && state.literal_count-entry(state.workspace,LITERAL_COUNTS) != entry(state.workspace,LITERAL_COUNTS+1))) {
+                return fail(state,call.borrow(),Error::InvalidCodeLengths);
+            }
+            let distance_left: i32 = construct(state.workspace,state.literal_count,state.distance_count,DISTANCE_COUNTS,DISTANCE_SYMBOLS);
+            if (distance_left < 0 || (state.kind == 2 && distance_left != 0 && state.distance_count-entry(state.workspace,DISTANCE_COUNTS) != entry(state.workspace,DISTANCE_COUNTS+1))) {
+                return fail(state,call.borrow(),Error::InvalidCodeLengths);
+            }
+            state.literal_maximum = maximum(state.workspace,LITERAL_COUNTS);
+            state.distance_maximum = maximum(state.workspace,DISTANCE_COUNTS);
+            reset_code(state); state.phase = LITERAL_SYMBOL;
+        }
+        if (state.phase == LITERAL_SYMBOL) {
+            let symbol: i32 = decode_symbol(state,call.borrow(),LITERAL_COUNTS,LITERAL_SYMBOLS,state.literal_maximum);
+            if (symbol == -1) { return missing_input(state,call.borrow(),final_input); }
+            if (symbol < 0 || symbol > 285) { return fail(state,call.borrow(),Error::InvalidSymbol); }
+            state.symbol = symbol;
+            if (symbol < 256) { state.phase = EMIT_LITERAL; }
+            else { if (symbol == 256) { end_block(state); } else { state.phase = LENGTH_EXTRA; } }
+        }
+        if (state.phase == EMIT_LITERAL) {
+            if (call.written == output.length) { return progress(call.borrow(),Status::NeedOutput); }
+            emit(state,call.borrow(),state.symbol as u8); state.phase = LITERAL_SYMBOL;
+        }
+        if (state.phase == LENGTH_EXTRA) {
+            let extra: i32 = bits(state,call.borrow(),length_extra(state.symbol)); if (extra < 0) { return missing_input(state,call.borrow(),final_input); }
+            state.remaining = length_base(state.symbol)+extra; state.phase = DISTANCE_SYMBOL;
+        }
+        if (state.phase == DISTANCE_SYMBOL) {
+            let symbol: i32 = decode_symbol(state,call.borrow(),DISTANCE_COUNTS,DISTANCE_SYMBOLS,state.distance_maximum);
+            if (symbol == -1) { return missing_input(state,call.borrow(),final_input); }
+            if (symbol < 0 || symbol >= 30) { return fail(state,call.borrow(),Error::InvalidSymbol); }
+            state.symbol = symbol; state.phase = DISTANCE_EXTRA;
+        }
+        if (state.phase == DISTANCE_EXTRA) {
+            let extra: i32 = bits(state,call.borrow(),distance_extra(state.symbol)); if (extra < 0) { return missing_input(state,call.borrow(),final_input); }
+            state.distance = distance_base(state.symbol)+extra;
+            if (state.distance > state.history_filled || state.distance > state.max_distance) { return fail(state,call.borrow(),Error::InvalidDistance); }
+            state.phase = MATCH_COPY;
+        }
+        if (state.phase == MATCH_COPY) {
+            while (state.remaining > 0) {
+                if (call.written == output.length) { return progress(call.borrow(),Status::NeedOutput); }
+                emit(state,call.borrow(),previous(state,call.borrow())); state.remaining -= 1;
+            }
+            state.phase = LITERAL_SYMBOL;
+        }
     }
-    return core::result::Ok(Progress { read: state.position, written: state.written });
+    return progress(call.borrow(),Status::Done);
+}
+
+pub impl Decoder {
+    pub fn borrow(&self) -> &Decoder { return self; }
+    pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure> {
+        return run(self,input,output,final_input);
+    }
+    pub fn is_done(&self) -> bool { return self.phase == FINISHED; }
+    pub fn is_failed(&self) -> bool { return self.phase == FAILED; }
+    // A valid reset changes only scalar state; stale table/history bytes are
+    // initialized before use. Invalid reset preserves even terminal state.
+    pub fn reset(&self, max_distance: i32) -> core::result::Result<bool,Error> {
+        if (!valid_bytes(self.history) || !valid_workspace(self.workspace) || !valid_window(max_distance) || self.history.length < max_distance || self.workspace.length < workspace_len()) {
+            return core::result::Err(Error::Bounds);
+        }
+        self.max_distance = max_distance; self.history_head = 0; self.history_filled = 0;
+        self.phase = HEADER_FINAL; self.failure = Error::Bounds; self.buffer = 0; self.available = 0;
+        self.final_block = 0; self.kind = 0; self.remaining = 0; self.distance = 0;
+        self.literal_count = 0; self.distance_count = 0; self.code_count = 0; self.index = 0;
+        self.literal_maximum = 0; self.distance_maximum = 0; self.code_maximum = 0; self.symbol = 0;
+        reset_code(self); return core::result::Ok(true);
+    }
+}
+
+pub fn decode_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<Progress,Failure> { return decode_into_window(input,output,32768); }
+// Complete caller output serves as history here. No 32 KiB ring is required,
+// and the parser/error precedence is identical to the streaming engine.
+pub fn decode_into_window(input: core::slice::View<u8>, output: core::slice::View<u8>, max_distance: i32) -> core::result::Result<Progress,Failure> {
+    if (!valid_bytes(input) || !valid_bytes(output) || !valid_window(max_distance)) {
+        return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 });
+    }
+    let tables: [i32;707] = [0;707];
+    let workspace: core::slice::View<i32> = core::slice::View { values: tables, start: 0, length: 707 };
+    let state: Decoder = initial(output,workspace,max_distance,false);
+    let result: core::result::Result<Step,Failure> = run(state.borrow(),input,output,true);
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let step: Step = core::result::unwrap(result);
+    let done: bool = match (step.status) { Status::Done -> true, _ -> false };
+    if (done) { return core::result::Ok(Progress { read: step.read, written: step.written }); }
+    return core::result::Err(Failure { error: Error::OutputTooSmall, read: step.read, written: step.written });
 }

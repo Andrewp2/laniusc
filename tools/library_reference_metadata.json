@@ -865,8 +865,15 @@
     },
     "ext::compression": {
       "guides": [
-        "docs/extended-compression.md"
-      ]
+        "docs/extended-compression.md",
+        "docs/extended-streaming-inflate.md",
+        "docs/extended-decompress-file.md"
+      ],
+      "note": "Resumable RawDeflate/Zlib/Gzip framing borrows 32768 history bytes and the raw 707 i32 workspace, with no allocation during step/reset. Metadata-first and sticky-error rules compose with whole-offered-span input admission, actual consumed-byte accounting and pending-byte output-limit detection. Streaming output remains provisional until validated final EOF; gzip members reset logical history/checksums. Owned decode now allocates ring/workspace once and grows output without member replay, releasing all private owners on error and publishing only after complete validation. Fixed workspace AllocationFailed may precede later malformed-format discovery after full input/limit metadata admission. Encoding is unchanged. All seven new library tests pass on native Linux x86_64 CPU output: four direct groups, a 1925-case independent model with 311 reset passes and two resource groups. Fixed caller backing remains 35601 requested allocation bytes including guards at 2 MiB and 4 MiB output; 28 reached owned allocation failures preserve exact cleanup. The atomic file decompressor passes seven groups/98 native cases, including eight reached allocation failures and actual publication outcomes. All 14 new registered library/application tests are accepted on the finite native Linux x86_64 profile. Other targets, device execution, enforced lifetimes and proofs remain separate. Old whole-buffer and performance receipts retain historical source scopes.",
+      "declarations": {
+        "decoder": "Constructs borrowed raw/zlib/gzip framing state with 32768 history bytes and 707 i32 table entries after limits/backing admission. Step limits entire input offers before reading, charges only consumed bytes, shares raw statuses and retains no offered views. No owner transfer.",
+        "decode": "Owned complete-input decoding through the same persistent state with one ring/workspace allocation and geometric result growth. Workspace failures may precede later format validation. Success transfers only the result Vec; every error releases private owners and returns no partial owner."
+      }
     },
     "ext::config": {
       "guides": [
@@ -1113,8 +1120,16 @@
     },
     "ext::inflate": {
       "guides": [
-        "docs/extended-inflate.md"
-      ]
+        "docs/extended-inflate.md",
+        "docs/extended-streaming-inflate.md"
+      ],
+      "note": "The resumable raw decoder preserves bit/block/tree/match state across input/output chunks using borrowed ring history and 707 i32 workspace entries. Construction/reset and per-call metadata admission precede backing effects; metadata Bounds is recoverable, codec/final-input errors are sticky, and Done/error replays return 0/0 with valid views. final_input is a call-local promise: after NeedOutput reoffer the exact unread suffix with the same true promise. Output and consumed-input counts are per call; no input/output view is retained. Whole-buffer facades use the same engine with complete output as history and local tables, retaining allocation-free OutputTooSmall behavior. Manual disjoint backing/lifetimes and extra-tail preservation are explicit. All seven new raw/container library tests pass on native Linux x86_64 CPU output: four direct tests with no intervening host effects, one independent model covering 1925 cases plus 311 reset passes across four forms/eight layouts, and two resource tests. All five existing raw tests also pass individually on the current shared engine. The earlier tiny admission overlaps the final direct run; historical raw receipts retain their source scope. Other targets, device execution, enforced lifetimes and proofs remain separate.",
+      "declarations": {
+        "workspace_len": "Returns 707 i32 entries for persistent raw code-length/count/symbol tables. No backing effects or allocation.",
+        "decoder": "Validates full history/workspace metadata, power-of-two 256..32768 window and capacities before storing borrows. No allocation or initialization of unused backing. Streaming step/reset retain no input/output views and never acquire cleanup authority.",
+        "decode_into": "Allocation-free whole-buffer facade over the same raw engine with 32768 maximum distance, complete output as history and 707 local i32 table entries. Returns diagnostic prefix counts; NeedOutput maps to OutputTooSmall.",
+        "decode_into_window": "Same whole-buffer shared engine with admitted power-of-two 256..32768 history window. Metadata/window Bounds precedes reads; final input exhaustion maps to UnexpectedEof. No separate 32 KiB ring allocation or retained resumable owner."
+      }
     },
     "ext::json": {
       "guides": [

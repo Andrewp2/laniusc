@@ -1,0 +1,31 @@
+module app::main;
+import core::result;
+import core::slice;
+import ext::inflate;
+fn view(values:[u8],start:i32,length:i32) -> core::slice::View<u8> { return core::slice::View { values:values,start:start,length:length }; }
+fn status(value:ext::inflate::Status) -> i32 { return match(value) { ext::inflate::Status::NeedInput -> 1,ext::inflate::Status::NeedOutput -> 2,ext::inflate::Status::Done -> 3 }; }
+fn expect(result:core::result::Result<ext::inflate::Step,ext::inflate::Failure>,read:i32,written:i32,state:i32) {
+    assert(result.is_ok()); let step:ext::inflate::Step=result.unwrap(); assert(step.read==read && step.written==written && status(step.status)==state);
+}
+fn main() -> i32 {
+    let history:[u8;260]=[77;260]; let scratch:[i32;711]=[12345;711]; let output:[u8;8]=[199;8];
+    let workspace:core::slice::View<i32> =core::slice::View { values:scratch,start:2,length:707 };
+    assert(ext::inflate::workspace_len()==707);
+    let decoder:ext::inflate::Decoder=ext::inflate::decoder(view(history,2,256),workspace,256).unwrap();
+    let i:i32=0; while(i<260) { assert(history[i]==77); i+=1; } i=0; while(i<711) { assert(scratch[i]==12345); i+=1; }
+    let compressed:[u8;10]=[91,1,3,0,252,255,0,255,65,92];
+    expect(decoder.step(view(compressed,1,2),view(output,2,2),false),2,0,1);
+    expect(decoder.step(view(compressed,3,3),view(output,2,2),false),3,0,1);
+    expect(decoder.step(view(compressed,6,4),view(output,2,2),true),2,2,2);
+    assert(output[2]==0 && output[3]==255 && !decoder.is_done() && !decoder.is_failed());
+    expect(decoder.step(view(compressed,8,2),view(output,4,1),true),1,1,3);
+    assert(decoder.is_done() && !decoder.is_failed() && output[4]==65);
+    expect(decoder.step(view(compressed,9,1),view(output,5,1),true),0,0,3);
+    assert(output[0]==199 && output[1]==199 && output[5]==199 && output[6]==199 && output[7]==199);
+    assert(history[0]==77 && history[1]==77 && history[258]==77 && history[259]==77);
+    assert(scratch[0]==12345 && scratch[1]==12345 && scratch[709]==12345 && scratch[710]==12345);
+    let expected:[u8;10]=[91,1,3,0,252,255,0,255,65,92]; i=0; while(i<10) { assert(compressed[i]==expected[i]); i+=1; }
+    assert(decoder.reset(256).unwrap() && !decoder.is_done() && !decoder.is_failed());
+    let empty:[u8;2]=[3,0]; expect(decoder.step(view(empty,0,2),view(output,0,0),true),2,0,3);
+    return 0;
+}

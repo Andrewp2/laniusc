@@ -1,0 +1,27 @@
+// Actual owned decoder allocations: workspace, output growth and error cleanup.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::compression;
+import std::io;
+import std::stream;
+fn mark(value:i32) { let cell:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(cell),1)==1); }
+fn get32(bytes:[u8],offset:i32) -> i32 { return ((bytes[offset] as u32)|((bytes[offset+1] as u32)<<8)|((bytes[offset+2] as u32)<<16)|((bytes[offset+3] as u32)<<24)) as i32; }
+fn put32(bytes:[u8],offset:i32,value:i32) { let word:u32=value as u32; bytes[offset]=(word&255) as u8; bytes[offset+1]=((word>>8)&255) as u8; bytes[offset+2]=((word>>16)&255) as u8; bytes[offset+3]=((word>>24)&255) as u8; }
+fn receive(bytes:[u8],count:i32) { let source=std::stream::stdin(); let offset:i32=0; while(offset<count) { let got=source.read(bytes,offset,count-offset).unwrap(); assert(got>0 && got<=count-offset); offset+=got; } }
+fn send(bytes:[u8],count:i32) { let sink=std::stream::stdout(); let offset:i32=0; while(offset<count) { let got=sink.write(bytes,offset,count-offset).unwrap(); assert(got>0 && got<=count-offset); offset+=got; } }
+fn code(error:ext::compression::Error) -> i32 { return match(error) { ext::compression::Error::AllocationFailed -> 5, ext::compression::Error::Checksum -> 12, ext::compression::Error::Header -> 8, _ -> 99 }; }
+fn main() -> i32 {
+    let header:[u8;12]=[0;12]; receive(header,12); let format_id:i32=get32(header,0); let length:i32=get32(header,4); let capacity:i32=get32(header,8);
+    assert(format_id>=0 && format_id<=2 && length>0 && length<=65536 && capacity>=0 && capacity<=1048576);
+    let input:[u8;65536]=[0;65536]; receive(input,length);
+    let format:ext::compression::Format=ext::compression::Format::RawDeflate;
+    if(format_id==1) { format=ext::compression::Format::Zlib; } if(format_id==2) { format=ext::compression::Format::Gzip; }
+    let limits:ext::compression::Limits=ext::compression::Limits { max_input:length,max_output:capacity,max_members:16 };
+    mark(67); let result=ext::compression::decode(core::slice::view(input,length).unwrap(),format,limits); mark(99);
+    if(result.is_err()) { put32(header,0,code(result.unwrap_err())); put32(header,4,0); send(header,8); }
+    else { let bytes=result.unwrap(); put32(header,0,0); put32(header,4,bytes.len()); send(header,8); send(bytes.as_slice(),bytes.len()); mark(68); bytes.destroy(); mark(100); }
+    return 0;
+}

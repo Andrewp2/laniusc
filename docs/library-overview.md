@@ -1,6 +1,18 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[resumable decompression increment](extended-streaming-inflate.md) preserves
+DEFLATE bits, tables, history and pending output across chunks; zlib/gzip framing
+and owned decoding use the same engine. An atomic file decompressor validates
+complete input before publication. Fixed workspace, provisional output and
+per-call final-input promises are explicit. All seven new library tests pass,
+including 1,925 model cases plus 311 reset passes, fixed backing at 2 MiB and
+4 MiB output, and 28 reached owned-decoder allocation failures. All seven
+decompress_file groups/98 native cases also pass, including eight reached
+application allocation failures and actual publication outcomes. This finite
+native Linux x86_64 increment is accepted. Existing codec regressions and the
+six-workload native comparison have separate receipts in its guide.
+The preceding
 [borrowed reader-adapter increment](stdlib-io-adapters.md) adds Take quotas and
 Chain concatenation through independent Read/BufRead implementations. Provider
 errors, permanent first-source handoff, full-width quota and manual borrowing

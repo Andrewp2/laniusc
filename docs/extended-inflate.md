@@ -2,8 +2,12 @@
 
 `ext::inflate` implements raw RFC 1951 DEFLATE in Lanius. Stored, fixed
 Huffman and dynamic Huffman blocks execute on x86_64 Linux, including
-cross-block history and overlapping copies. It imports `core` only, performs
-no heap allocation and uses fixed-size stack tables.
+cross-block history and overlapping copies. Its whole-buffer functions remain
+allocation-free and use fixed-size local tables. The separate
+[resumable-decoder guide](extended-streaming-inflate.md) specifies caller-owned
+history/workspace, chunk progress and the shared raw engine. All seven new
+raw/container library tests and all five existing raw tests pass on the native
+Linux x86_64 profile; earlier receipts below retain their original source scope.
 
 ```lanius
 import core::result;
@@ -41,10 +45,13 @@ output element remains unchanged. A stored block or overlapping copy may be
 partly written before `OutputTooSmall`. Input is loaded only as needed, so
 `read` includes any byte loaded for the failing field or symbol. Failure
 progress is diagnostic: the operation cannot resume from those byte counts
-because the partial bit and block state is internal.
+because these whole-buffer facades do not return the retained bit/block state.
 
-This is a caller-buffer operation over a complete input, without incremental
-stream state or preset dictionaries. Raw DEFLATE supplies no checksum or
+These two caller-buffer functions decode complete input without returning
+incremental state. Their shared engine also serves the separate borrowed
+`Decoder`; use that API when calls must resume. The whole-buffer history is
+the caller's output and its tables use 707 local i32 entries, with no separate
+32 KiB ring allocation. Preset dictionaries remain unsupported. Raw DEFLATE supplies no checksum or
 uncompressed length; container code must validate its own metadata and
 checksums. An invalid source can leave a correctly bounded output prefix.
 
@@ -78,8 +85,10 @@ input and produced output; output expansion cannot exceed the caller's view.
 ## Executable evidence
 
 `tests/extended_inflate_execution.rs` drives native Lanius executables rather
-than type-checking library declarations. All five groups passed together in
-5.87 seconds. The tests cover:
+than type-checking library declarations. The historical implementation passed
+all five groups together in 5.87 seconds. All five groups also pass individually
+against the current shared engine, with separate receipts in the
+[streaming guide](extended-streaming-inflate.md). The tests cover:
 
 - 330 Python-zlib reference streams spanning stored/fixed/dynamic blocks,
   six compression configurations, arbitrary bytes, empty input, runs,

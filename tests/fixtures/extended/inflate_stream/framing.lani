@@ -1,0 +1,112 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::inflate;
+import ext::compression;
+fn view(values:[u8],start:i32,length:i32) -> core::slice::View<u8> { return core::slice::View { values:values,start:start,length:length }; }
+fn limits(input:i32,output:i32,members:i32) -> ext::compression::Limits { return ext::compression::Limits { max_input:input,max_output:output,max_members:members }; }
+fn status(value:ext::inflate::Status) -> i32 { return match(value) { ext::inflate::Status::NeedInput -> 1,ext::inflate::Status::NeedOutput -> 2,ext::inflate::Status::Done -> 3 }; }
+fn code(value:ext::compression::Error) -> i32 { return match(value) { ext::compression::Error::Bounds -> 1,ext::compression::Error::InputLimit -> 2,ext::compression::Error::OutputLimit -> 3,ext::compression::Error::MemberLimit -> 4,ext::compression::Error::AllocationFailed -> 5,ext::compression::Error::CapacityOverflow -> 6,ext::compression::Error::Truncated -> 7,ext::compression::Error::Header -> 8,ext::compression::Error::UnsupportedMethod -> 9,ext::compression::Error::UnsupportedWindow -> 10,ext::compression::Error::UnsupportedDictionary -> 11,ext::compression::Error::Checksum -> 12,ext::compression::Error::SizeMismatch -> 13,ext::compression::Error::TrailingData -> 14,ext::compression::Error::Deflate(error) -> match(error) { ext::inflate::Error::InvalidDistance -> 107,_ -> 100 },ext::compression::Error::Encode(_) -> 16 }; }
+fn exact(result:core::result::Result<ext::inflate::Step,ext::compression::DecodeFailure>,read:i32,written:i32,kind:i32) { assert(result.is_ok()); let step:ext::inflate::Step=result.unwrap(); assert(step.read==read && step.written==written && status(step.status)==kind); }
+fn failed(result:core::result::Result<ext::inflate::Step,ext::compression::DecodeFailure>,error:i32,read:i32,written:i32) { assert(result.is_err()); let failure:ext::compression::DecodeFailure=result.unwrap_err(); assert(code(failure.error)==error && failure.read==read && failure.written==written); }
+fn counts(decoder:&ext::compression::Decoder,read:i32,written:i32,members:i32) { assert(decoder.total_read()==read as u64 && decoder.total_written()==written as u64 && decoder.members()==members); }
+fn reset(decoder:&ext::compression::Decoder,format:ext::compression::Format,input:i32,output:i32,members:i32) { assert(decoder.reset(format,limits(input,output,members)).unwrap()); counts(decoder,0,0,0); assert(!decoder.is_done() && !decoder.is_failed()); }
+fn clear(output:[u8]) { let i:i32=0; while(i<12) { output[i]=199; i+=1; } }
+fn guarded(output:[u8],expected:[u8],written:i32) { let i:i32=0; while(i<12) { if(i>=2 && i<2+written) { assert(output[i]==expected[i-2]); } else { assert(output[i]==199); } i+=1; } }
+// Exact-size output budgets must still admit trailers and final EOF. Every
+// transient chunk is overwritten on return; no decoder may retain its views.
+fn walk(encoded:[u8],length:i32,expected:[u8],count:i32,format:ext::compression::Format,members:i32) {
+    let native_input:[u8;8]=[166;8]; let native_output:[u8;8]=[199;8]; let native_history:[u8;32772]=[77;32772];
+    let input_words:[i32;2]=[0;2]; let output_words:[i32;2]=[0;2]; let history_words:[i32;8193]=[0;8193];
+    let packed_input:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(input_words),8); let packed_output:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),8); let packed_history:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(history_words),32772);
+    assert(core::mem::slice_stride(native_input)<0 && core::mem::slice_stride(native_output)<0 && core::mem::slice_stride(native_history)<0); assert(core::mem::slice_stride(packed_input)==1 && core::mem::slice_stride(packed_output)==1 && core::mem::slice_stride(packed_history)==1);
+    let mode:i32=0; while(mode<2) {
+        let input:[u8]=native_input; let output:[u8]=packed_output; let history:[u8]=native_history; if(mode==1) { input=packed_input; output=native_output; history=packed_history; }
+        let i:i32=0; while(i<32772) { history[i]=77; i+=1; }
+        let scratch:[i32;711]=[12345;711]; let workspace:core::slice::View<i32> =core::slice::View { values:scratch,start:2,length:707 };
+        let decoder:ext::compression::Decoder=ext::compression::decoder(view(history,2,32768),workspace,format,limits(length,count,members)).unwrap();
+        i=0; while(i<32772) { assert(history[i]==77); i+=1; } i=0; while(i<711) { assert(scratch[i]==12345); i+=1; }
+        let position:i32=0; let produced:i32=0; let calls:i32=0; let done:bool=false;
+        while(!done) {
+            assert(calls<10000); i=0; while(i<8) { input[i]=166; output[i]=199; i+=1; }
+            let offered:i32=0; if(position<length && (calls%5!=0 || position==length-1)) { offered=1; input[2]=encoded[position]; } let capacity:i32=calls%4; let last:bool=position+offered==length;
+            let result:core::result::Result<ext::inflate::Step,ext::compression::DecodeFailure> =decoder.step(view(input,2,offered),view(output,2,capacity),last); assert(result.is_ok()); let step:ext::inflate::Step=result.unwrap(); assert(step.read>=0 && step.read<=offered && step.written>=0 && step.written<=capacity);
+            i=0; while(i<8) { let wanted:u8=166; if(i==2 && offered==1) { wanted=encoded[position]; } assert(input[i]==wanted); if(i>=2 && i<2+step.written) { assert(produced+i-2<count && output[i]==expected[produced+i-2]); } else { assert(output[i]==199); } i+=1; }
+            position+=step.read; produced+=step.written; assert(decoder.total_read()==position as u64 && decoder.total_written()==produced as u64);
+            let kind:i32=status(step.status); if(kind==1) { assert(!last && step.read==offered); } if(kind==2) { assert(step.written==capacity); } if(kind==3) { assert(last && position==length && produced==count && decoder.is_done()); done=true; counts(decoder.borrow(),length,count,members); }
+            assert(!decoder.is_failed()); assert(history[0]==77 && history[1]==77 && history[32770]==77 && history[32771]==77); assert(scratch[0]==12345 && scratch[1]==12345 && scratch[709]==12345 && scratch[710]==12345);
+            i=0; while(i<8) { input[i]=239; output[i]=238; i+=1; } calls+=1;
+        }
+        exact(decoder.step(view(input,0,8),view(output,1,3),false),0,0,3); counts(decoder.borrow(),length,count,members); i=0; while(i<8) { assert(input[i]==239 && output[i]==238); i+=1; } mode+=1;
+    }
+}
+
+fn main() -> i32 {
+    let raw:[u8;8]=[1,3,0,252,255,65,0,255];
+    let zlib:[u8;14]=[120,1,1,3,0,252,255,65,0,255,1,197,1,65];
+    let gzip:[u8;26]=[31,139,8,0,0,0,0,0,0,255,1,3,0,252,255,65,0,255,104,209,27,163,3,0,0,0];
+    let optional:[u8;40]=[31,139,8,30,0,0,0,0,0,255,3,0,0,255,17,110,97,109,101,0,99,0,191,10,1,3,0,252,255,65,0,255,104,209,27,163,3,0,0,0];
+    let concat:[u8;66]=[31,139,8,0,0,0,0,0,0,255,1,3,0,252,255,65,0,255,104,209,27,163,3,0,0,0,31,139,8,30,0,0,0,0,0,255,3,0,0,255,17,110,97,109,101,0,99,0,191,10,1,3,0,252,255,65,0,255,104,209,27,163,3,0,0,0];
+    let plain:[u8;3]=[65,0,255]; let twice:[u8;6]=[65,0,255,65,0,255];
+    walk(raw,8,plain,3,ext::compression::Format::RawDeflate,1); walk(zlib,14,plain,3,ext::compression::Format::Zlib,1); walk(gzip,26,plain,3,ext::compression::Format::Gzip,1);
+    walk(optional,40,plain,3,ext::compression::Format::Gzip,1); walk(concat,66,twice,6,ext::compression::Format::Gzip,2);
+    let history:[u8;32772]=[77;32772]; let scratch:[i32;711]=[12345;711]; let output:[u8;12]=[199;12];
+    let workspace:core::slice::View<i32> =core::slice::View { values:scratch,start:2,length:707 }; let h:core::slice::View<u8> =view(history,2,32768);
+    let decoder:ext::compression::Decoder=ext::compression::decoder(h,workspace,ext::compression::Format::RawDeflate,limits(100,3,1)).unwrap();
+    exact(decoder.step(view(raw,0,8),view(output,2,3),false),8,3,1); counts(decoder.borrow(),8,3,1); guarded(output,plain,3);
+    exact(decoder.step(view(raw,0,0),view(output,0,0),true),0,0,3); assert(decoder.is_done()); counts(decoder.borrow(),8,3,1);
+    reset(decoder.borrow(),ext::compression::Format::Zlib,100,3,1); clear(output); exact(decoder.step(view(zlib,0,14),view(output,2,3),false),14,3,1); counts(decoder.borrow(),14,3,1); guarded(output,plain,3);
+    let garbage:[u8;2]=[31,0]; failed(decoder.step(view(garbage,1,1),view(output,0,0),true),14,0,0); counts(decoder.borrow(),14,3,1);
+    // Complete fixed headers/trailers before semantic validation.
+    let bad_zlib:[u8;2]=[0,0]; reset(decoder.borrow(),ext::compression::Format::Zlib,100,3,1); failed(decoder.step(view(bad_zlib,0,1),view(output,0,0),true),7,1,0);
+    reset(decoder.borrow(),ext::compression::Format::Zlib,100,3,1); failed(decoder.step(view(bad_zlib,0,2),view(output,0,0),true),9,2,0);
+    let dictionary:[u8;6]=[120,32,1,2,3,4]; reset(decoder.borrow(),ext::compression::Format::Zlib,100,3,0); exact(decoder.step(view(dictionary,0,5),view(output,0,0),false),5,0,1); failed(decoder.step(view(dictionary,5,1),view(output,0,0),true),11,1,0); counts(decoder.borrow(),6,0,0);
+    let bad_gzip:[u8;10]=[0,0,0,0,0,0,0,0,0,0]; reset(decoder.borrow(),ext::compression::Format::Gzip,100,3,1); failed(decoder.step(view(bad_gzip,0,9),view(output,0,0),true),7,9,0);
+    reset(decoder.borrow(),ext::compression::Format::Gzip,100,3,1); failed(decoder.step(view(bad_gzip,0,10),view(output,0,0),true),8,10,0);
+    // The checksum is checked only after the whole trailer, after output is provisional.
+    zlib[10]=0; reset(decoder.borrow(),ext::compression::Format::Zlib,100,3,1); clear(output); failed(decoder.step(view(zlib,0,13),view(output,2,3),true),7,13,3); counts(decoder.borrow(),13,3,0); guarded(output,plain,3);
+    reset(decoder.borrow(),ext::compression::Format::Zlib,100,3,1); clear(output); failed(decoder.step(view(zlib,0,14),view(output,2,3),true),12,14,3); counts(decoder.borrow(),14,3,0); guarded(output,plain,3); zlib[10]=1;
+    gzip[18]=0; reset(decoder.borrow(),ext::compression::Format::Gzip,100,3,1); clear(output); failed(decoder.step(view(gzip,0,25),view(output,2,3),true),7,25,3); counts(decoder.borrow(),25,3,0);
+    reset(decoder.borrow(),ext::compression::Format::Gzip,100,3,1); clear(output); failed(decoder.step(view(gzip,0,26),view(output,2,3),true),12,26,3); counts(decoder.borrow(),26,3,0); guarded(output,plain,3); gzip[18]=104;
+    gzip[22]=4; reset(decoder.borrow(),ext::compression::Format::Gzip,100,3,1); clear(output); failed(decoder.step(view(gzip,0,26),view(output,2,3),true),13,26,3); counts(decoder.borrow(),26,3,0); guarded(output,plain,3); gzip[22]=3;
+    optional[22]=0; reset(decoder.borrow(),ext::compression::Format::Gzip,100,3,1); clear(output); failed(decoder.step(view(optional,0,40),view(output,2,3),true),12,24,0); counts(decoder.borrow(),24,0,0); guarded(output,plain,0); optional[22]=191;
+    // Offered-span input admission happens before parsing and charges only consumed bytes.
+    reset(decoder.borrow(),ext::compression::Format::RawDeflate,7,3,1); clear(output); failed(decoder.step(view(raw,0,8),view(output,2,3),true),2,0,0); counts(decoder.borrow(),0,0,0); guarded(output,plain,0);
+    failed(decoder.step(view(raw,0,1),view(output,2,3),false),2,0,0); assert(decoder.is_failed());
+    reset(decoder.borrow(),ext::compression::Format::RawDeflate,8,3,1); exact(decoder.step(view(raw,0,8),view(output,2,1),true),6,1,2); counts(decoder.borrow(),6,1,0); assert(output[2]==65);
+    exact(decoder.step(view(raw,6,2),view(output,3,2),true),2,2,3); counts(decoder.borrow(),8,3,1); guarded(output,plain,3);
+    // Exhausted output alone is not failure; an actual next byte is required.
+    reset(decoder.borrow(),ext::compression::Format::RawDeflate,8,2,1); clear(output); failed(decoder.step(view(raw,0,8),view(output,2,8),true),3,7,2); counts(decoder.borrow(),7,2,0); guarded(output,plain,2);
+    let empty:[u8;2]=[3,0]; reset(decoder.borrow(),ext::compression::Format::RawDeflate,2,0,1); clear(output); exact(decoder.step(view(empty,0,2),view(output,0,0),true),2,0,3); counts(decoder.borrow(),2,0,1); guarded(output,plain,0);
+    reset(decoder.borrow(),ext::compression::Format::Gzip,100,3,0); failed(decoder.step(view(gzip,0,0),view(output,0,0),true),7,0,0);
+    reset(decoder.borrow(),ext::compression::Format::Gzip,100,3,0); failed(decoder.step(view(gzip,0,1),view(output,0,0),true),4,0,0);
+    reset(decoder.borrow(),ext::compression::Format::Zlib,100,3,0); failed(decoder.step(view(zlib,0,2),view(output,0,0),true),4,2,0);
+    // Post-member prefix classification is independent of chunk boundaries.
+    let allowance:i32=1; while(allowance<3) {
+        reset(decoder.borrow(),ext::compression::Format::Gzip,100,6,allowance); clear(output); exact(decoder.step(view(gzip,0,26),view(output,2,3),false),26,3,1); counts(decoder.borrow(),26,3,1);
+        exact(decoder.step(view(garbage,0,1),view(output,0,0),false),1,0,1); counts(decoder.borrow(),27,3,1);
+        failed(decoder.step(view(garbage,1,1),view(output,0,0),true),14,0,0); counts(decoder.borrow(),27,3,1);
+        reset(decoder.borrow(),ext::compression::Format::Gzip,100,6,allowance); clear(output); exact(decoder.step(view(gzip,0,26),view(output,2,3),false),26,3,1);
+        let expected_error:i32=7; if(allowance==1) { expected_error=4; }
+        failed(decoder.step(view(garbage,0,1),view(output,0,0),true),expected_error,1,0); counts(decoder.borrow(),27,3,1);
+        reset(decoder.borrow(),ext::compression::Format::Gzip,100,6,allowance); clear(output); exact(decoder.step(view(gzip,0,26),view(output,2,3),false),26,3,1);
+        failed(decoder.step(view(garbage,0,2),view(output,0,0),true),14,1,0); counts(decoder.borrow(),27,3,1); allowance+=1;
+    }
+    reset(decoder.borrow(),ext::compression::Format::Gzip,100,6,1); clear(output); exact(decoder.step(view(gzip,0,26),view(output,2,3),false),26,3,1); failed(decoder.step(view(gzip,0,2),view(output,0,0),true),4,2,0); counts(decoder.borrow(),28,3,1);
+    // A new member cannot refer to the previous member's history.
+    let distance_header:[u8;12]=[31,139,8,0,0,0,0,0,0,255,3,2]; reset(decoder.borrow(),ext::compression::Format::Gzip,100,6,2); clear(output); exact(decoder.step(view(gzip,0,26),view(output,2,3),false),26,3,1);
+    failed(decoder.step(view(distance_header,0,12),view(output,0,0),true),107,12,0); counts(decoder.borrow(),38,3,1);
+    // Metadata errors are recoverable even after failure/completion; invalid reset is inert.
+    let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0); failed(decoder.step(view(unread,-1,1),view(output,0,0),true),1,0,0); counts(decoder.borrow(),38,3,1); assert(decoder.is_failed());
+    failed(decoder.step(view(empty,0,2),view(unread,2147483647,1),true),1,0,0); counts(decoder.borrow(),38,3,1);
+    assert(code(decoder.reset(ext::compression::Format::RawDeflate,limits(-1,3,1)).unwrap_err())==1); assert(code(decoder.reset(ext::compression::Format::RawDeflate,limits(3,-1,1)).unwrap_err())==1); assert(code(decoder.reset(ext::compression::Format::RawDeflate,limits(3,3,-1)).unwrap_err())==1); counts(decoder.borrow(),38,3,1); assert(decoder.is_failed());
+    failed(decoder.step(view(empty,0,2),view(output,0,0),true),107,0,0);
+    reset(decoder.borrow(),ext::compression::Format::RawDeflate,2,0,1); failed(decoder.step(view(unread,0,-1),view(output,0,0),true),1,0,0); counts(decoder.borrow(),0,0,0); assert(!decoder.is_failed());
+    exact(decoder.step(view(empty,0,2),view(output,0,0),true),2,0,3); failed(decoder.step(view(unread,2147483647,1),view(output,0,0),true),1,0,0); failed(decoder.step(view(empty,0,0),view(unread,0,-1),true),1,0,0); counts(decoder.borrow(),2,0,1); assert(decoder.is_done());
+    exact(decoder.step(view(gzip,0,26),view(output,0,0),false),0,0,3); counts(decoder.borrow(),2,0,1);
+    assert(code(ext::compression::decoder(view(history,0,32767),workspace,ext::compression::Format::Gzip,limits(100,3,1)).unwrap_err())==1);
+    assert(code(ext::compression::decoder(h,workspace,ext::compression::Format::Gzip,limits(-1,3,1)).unwrap_err())==1);
+    assert(history[0]==77 && history[1]==77 && history[32770]==77 && history[32771]==77); assert(scratch[0]==12345 && scratch[1]==12345 && scratch[709]==12345 && scratch[710]==12345);
+    return 0;
+}

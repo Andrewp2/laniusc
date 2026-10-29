@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **274 modules**, **13689 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **274 modules**, **13762 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -213,7 +213,7 @@ Inventory: **274 modules**, **13689 declaration/member entries**. Counts include
 | [ext::cli_help](ext/cli_help.md) | [source](../../extended/ext/cli_help.lani#L5) | 2 | Source inventory | [extended-cli-commands](../extended-cli-commands.md) |
 | [ext::cli_response](ext/cli_response.md) | [source](../../extended/ext/cli_response.lani#L4) | 73 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
 | [ext::cli_response_files](ext/cli_response_files.md) | [source](../../extended/ext/cli_response_files.lani#L3) | 28 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
-| [ext::compression](ext/compression.md) | [source](../../extended/ext/compression.lani#L3) | 31 | Source inventory | [extended-compression](../extended-compression.md) |
+| [ext::compression](ext/compression.md) | [source](../../extended/ext/compression.lani#L3) | 61 | Source inventory | [extended-compression](../extended-compression.md), [extended-streaming-inflate](../extended-streaming-inflate.md), [extended-decompress-file](../extended-decompress-file.md) |
 | [ext::config](ext/config.md) | [source](../../extended/ext/config.lani#L4) | 47 | Source inventory | [extended-config](../extended-config.md) |
 | [ext::csv](ext/csv.md) | [source](../../extended/ext/csv.lani#L4) | 102 | Source inventory | [extended-csv](../extended-csv.md), [extended-csv-write](../extended-csv-write.md), [extended-csv-rewrite](../extended-csv-rewrite.md) |
 | [ext::csv_write](ext/csv_write.md) | [source](../../extended/ext/csv_write.lani#L2) | 17 | Source inventory | [extended-csv-write](../extended-csv-write.md), [extended-csv-rewrite](../extended-csv-rewrite.md) |
@@ -242,7 +242,7 @@ Inventory: **274 modules**, **13689 declaration/member entries**. Counts include
 | [ext::https_server](ext/https_server.md) | [source](../../extended/ext/https_server.lani#L3) | 86 | Source inventory | [extended-https-server-exchange](../extended-https-server-exchange.md), [library-server-contract](../library-server-contract.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md) |
 | [ext::https_server_poll](ext/https_server_poll.md) | [source](../../extended/ext/https_server_poll.lani#L2) | 29 | Source inventory | [extended-server-poll](../extended-server-poll.md), [extended-https-server-exchange](../extended-https-server-exchange.md), [library-server-contract](../library-server-contract.md) |
 | [ext::image](ext/image.md) | [source](../../extended/ext/image.lani#L2) | 43 | Source inventory | [extended-image](../extended-image.md) |
-| [ext::inflate](ext/inflate.md) | [source](../../extended/ext/inflate.lani#L4) | 18 | Source inventory | [extended-inflate](../extended-inflate.md) |
+| [ext::inflate](ext/inflate.md) | [source](../../extended/ext/inflate.lani#L4) | 61 | Source inventory | [extended-inflate](../extended-inflate.md), [extended-streaming-inflate](../extended-streaming-inflate.md) |
 | [ext::json](ext/json.md) | [source](../../extended/ext/json.lani#L3) | 79 | Source inventory | [extended-json](../extended-json.md) |
 | [ext::kv](ext/kv.md) | [source](../../extended/ext/kv.lani#L3) | 48 | Source inventory | [extended-kv](../extended-kv.md), [extended-cli-complete](../extended-cli-complete.md) |
 | [ext::lexer](ext/lexer.md) | [source](../../extended/ext/lexer.lani#L2) | 73 | Source inventory | [extended-lexer](../extended-lexer.md), [extended-lex-scan](../extended-lex-scan.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |

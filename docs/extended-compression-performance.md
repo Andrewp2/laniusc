@@ -2,8 +2,10 @@
 
 These samples were collected on 2026-10-23 from the Lanius
 [compress-bytes application](extended-compress-bytes.md). Native execution and
-GPU compilation are measured separately. No compiler implementation changed
-for this milestone.
+GPU compilation were measured separately. These historical rows describe the
+pre-streaming member-replay decoder and its then-current source closure. They
+do not measure the [resumable implementation](extended-streaming-inflate.md).
+No compiler implementation changed for that milestone.
 
 ## Native application execution
 
@@ -37,9 +39,12 @@ a comparison of native throughput to another library.
 
 The owned encoder measures the raw result before allocating exact output, and
 the caller-buffer encoder independently checks its atomic capacity contract.
-This repeats matching work. The decoder grows its output and replays the
-current member; it retains no resumable bit/tree state. Those choices bound
-failure behavior and ownership but leave performance work for future APIs.
+This repeats matching work. The decoder measured in these rows grew output
+by replaying the current member without retained bit/tree state. The
+[resumable increment](extended-streaming-inflate.md) replaces that decoding
+strategy. Its [focused native comparison](extended-streaming-inflate.md#focused-native-comparison)
+has separate before/after receipts for six 1 MiB decode workloads. These older
+rows retain their measured source scope and are not current throughput claims.
 
 The [raw encoder measurements](extended-deflate.md#native-measurements) separately
 cover 512 KiB random, repetitive and textual data, including incompressible
@@ -63,7 +68,7 @@ One warmup and three measured entry rebuilds produced:
 | `sample_programs/library/compress_bytes.lani` | `extended` | 298,500 | 232.515 ms | 229.616–255.416 ms | Exact empty gzip stream, 20 bytes |
 | `tests/fixtures/stdlib_foundation/adler32_contracts.lani` | None | 26,478 | 164.553 ms | 163.309–166.164 ms | Exit 0, empty stdout/stderr |
 
-The compression entry's current import closure contains 23 source files,
+At that measurement, the compression entry's import closure contained 23 source files,
 approximately 187 KB and 4,329 text lines. This is the real application with
 its codecs, argument parser, owners and native I/O. The harness checks the
 emitted executable's status and output. Fully cold imported-library rebuilds,
