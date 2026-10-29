@@ -565,3 +565,11 @@ arms are one naming arm per variant without the condition that no other
 arm names it. The tests the builder makes without fuel (the production
 checks, whether a path names a function, the enum a path names) are stated
 exactly.
+
+The effectful expressions (`Reading.EffR`, V8d) treat an expected type the
+builder finds by a search under fuel (a parameter's type at the bindings so
+far, a field's or payload's type at known arguments) as a hint: where the
+search fails the builder reads the value with no expected type, so the
+relation admits either (`MaybeTy`, `MaybeTys`). The pure reading is admitted
+for any node that reads as a pure expression, since `expr_of` failing may
+be for want of fuel.
