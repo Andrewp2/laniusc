@@ -256,32 +256,46 @@ class Checker:
                 raise Impure('field index out of range')
             return t[2][a[1][1]]
         if c == 'negate':
-            return self.expr(tenv, a[0])
+            return self.number(self.expr(tenv, a[0]), 'negation')
         if c == 'not':
-            self.expr(tenv, a[0])
-            return self.prog.intern(('bool',))
+            return self.boolean(self.expr(tenv, a[0]), '`!`')
         if c == 'apply':
             return self.op(ctor(a[0])[0], self.expr(tenv, a[1]), self.expr(tenv, a[2]))
         if c == 'cast':
-            self.expr(tenv, a[1])
-            return self.prog.type_of(a[0])
+            return self.cast(self.prog.type_of(a[0]), self.expr(tenv, a[1]))
         if c == 'null':
             raise Impure('null')
         raise ValueError(c)
 
+    def number(self, t, what):
+        if self.prog.node(t)[0] in ('i32', 'uint', 'isize'):
+            return t
+        raise Impure(f'{what} of a {self.prog.node(t)[0]}')
+
+    def boolean(self, t, what):
+        if self.prog.node(t)[0] == 'bool':
+            return t
+        raise Impure(f'{what} of a {self.prog.node(t)[0]}')
+
+    def cast(self, to, t):
+        self.number(t, 'cast')
+        return self.number(to, 'cast to')
+
     def op(self, op, left, right):
         boolean = self.prog.intern(('bool',))
-        if op in ('less', 'lessEq', 'greater', 'greaterEq'):
-            return boolean
+        if op in ('logicalAnd', 'logicalOr'):
+            self.boolean(left, f'`{op}`')
+            return self.boolean(right, f'`{op}`')
+        if left != right:
+            raise Impure(f'`{op}` of a {self.prog.node(left)[0]} and a {self.prog.node(right)[0]}')
         if op in ('equal', 'notEqual'):
             kind = self.prog.node(left)[0]
             if kind in ('i32', 'bool', 'uint', 'isize', 'unit'):
                 return boolean
             raise Impure(f'`{op}` on a {kind}')
-        if op in ('logicalAnd', 'logicalOr'):
-            if right == boolean:
-                return boolean
-            raise Impure(f'`{op}` of a non-bool')
+        self.number(left, f'`{op}`')
+        if op in ('less', 'lessEq', 'greater', 'greaterEq'):
+            return boolean
         return left
 
     def call(self, callee, ts):
@@ -314,13 +328,11 @@ class Checker:
         if c == 'eApply':
             return self.op(ctor(a[0])[0], self.eff(tenv, a[1]), self.eff(tenv, a[2]))
         if c == 'eNeg':
-            return self.eff(tenv, a[0])
+            return self.number(self.eff(tenv, a[0]), 'negation')
         if c == 'eNot':
-            self.eff(tenv, a[0])
-            return self.prog.intern(('bool',))
+            return self.boolean(self.eff(tenv, a[0]), '`!`')
         if c == 'eCast':
-            self.eff(tenv, a[1])
-            return self.prog.type_of(a[0])
+            return self.cast(self.prog.type_of(a[0]), self.eff(tenv, a[1]))
         if c == 'eIndex':
             raise Impure('slice index')
         if c == 'eStruct':
@@ -347,8 +359,9 @@ class Checker:
                     raise Impure('match arm of another type')
             return rty
         if c == 'eDivide':
-            left = self.eff(tenv, a[1])
-            self.eff(tenv, a[2])
+            left = self.number(self.eff(tenv, a[1]), 'division')
+            if self.eff(tenv, a[2]) != left:
+                raise Impure('division of another type')
             return left
         if c == 'eStride':
             raise Impure('stride')
@@ -373,7 +386,7 @@ class Checker:
             self.stmt(ret, tenv, a[0])
             return self.stmt(ret, tenv, a[1])
         if c == 'if':
-            self.expr(tenv, a[0])
+            self.boolean(self.expr(tenv, a[0]), 'condition')
             self.stmt(ret, tenv, a[1])
             return self.stmt(ret, tenv, a[2])
         if c == 'return':
@@ -383,15 +396,18 @@ class Checker:
         if c == 'letEval':
             return self.stmt(ret, [(a[0][1], self.eff(tenv, a[2]))] + tenv, a[3])
         if c == 'ifEval':
-            self.eff(tenv, a[0])
+            self.boolean(self.eff(tenv, a[0]), 'condition')
             self.stmt(ret, tenv, a[1])
             return self.stmt(ret, tenv, a[2])
         if c == 'returnEval':
             if self.eff(tenv, a[0]) != ret:
                 raise Impure('return of another type')
             return
-        if c in ('discard', 'assert'):
+        if c == 'discard':
             self.eff(tenv, a[0])
+            return
+        if c == 'assert':
+            self.boolean(self.eff(tenv, a[0]), 'assertion')
             return
         raise Impure(f'statement `{c}`')
 

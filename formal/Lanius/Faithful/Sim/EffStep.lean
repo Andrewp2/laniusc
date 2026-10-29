@@ -96,8 +96,10 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     simp only [SrcEff.toCore] at run
     obtain ⟨j, w, hj, sub, hw⟩ := unary_inv run
     obtain rfl : j = k := by omega
-    simp only [effTy] at ht
-    obtain ⟨q, hq, rq, ran⟩ := eff sub ht inv rel bound
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨to, hto, hn⟩ := ht
+    obtain ⟨rfl, -⟩ := numOf_some hn
+    obtain ⟨q, hq, rq, ran⟩ := eff sub hto inv rel bound
     obtain ⟨rfl, sw⟩ := rq.flat (unary_flat hw)
     rw [toCore_target] at hw
     refine ⟨v, ?_, .scalar (neg_sty sw hw), ran⟩
@@ -107,8 +109,9 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     simp only [SrcEff.toCore] at run
     obtain ⟨j, w, hj, sub, hw⟩ := unary_inv run
     obtain rfl : j = k := by omega
-    simp only [effTy, Option.map_eq_some_iff] at ht
-    obtain ⟨to, hto, rfl⟩ := ht
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨to, hto, hb⟩ := ht
+    obtain ⟨rfl, -⟩ := boolOf_some hb
     obtain ⟨q, hq, rq, ran⟩ := eff sub hto inv rel bound
     obtain ⟨rfl, -⟩ := rq.flat (unary_flat hw)
     rw [toCore_target] at hw
@@ -119,8 +122,9 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     simp only [SrcEff.toCore] at run
     obtain ⟨j, w, hj, sub, hw⟩ := cast_inv run
     obtain rfl : j = k := by omega
-    simp only [effTy, Option.map_eq_some_iff] at ht
-    obtain ⟨to, hto, rfl⟩ := ht
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨to, hto, hc⟩ := ht
+    obtain ⟨rfl, -⟩ := castTy_some hc
     obtain ⟨q, hq, rq, ran⟩ := eff sub hto inv rel bound
     obtain ⟨rfl, sw⟩ := rq.flat (cast_flat hw)
     rw [toCore_target] at hw
@@ -187,8 +191,9 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     have notOr : op.toCore ≠ .logicalOr := by cases op <;> simp [SrcDivOp.toCore]
     obtain ⟨j, lv, s1, rv, hj, lrun, rrun, hv⟩ := binary_inv notAnd notOr run
     obtain rfl : j = k := by omega
-    simp only [effTy, Option.bind_eq_some_iff, Option.map_eq_some_iff] at ht
-    obtain ⟨tl, htl, tr, htr, rfl⟩ := ht
+    simp only [effTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨tl, htl, tr, htr, hd⟩ := ht
+    obtain ⟨rfl, -⟩ := divTy_some hd
     have b1 := Grows.bound (effGrows lrun) (effGrows rrun) inv.views bound
     obtain ⟨ql, hql, rl, ran1⟩ := eff lrun htl inv rel b1
     obtain ⟨qr, hqr, rr, ran2⟩ := eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound

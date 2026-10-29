@@ -70,7 +70,9 @@ theorem opTy_equal {op : SrcOp} {tl tr t : SrcType} (h : opTy op tl tr = some t)
   rcases eq with rfl | rfl <;>
   · simp only [opTy] at h
     split at h
-    · assumption
+    · rename_i ok
+      simp only [Bool.and_eq_true] at ok
+      exact ok.1
     · simp at h
 
 /-- Core's binary operator on operands meaning `ql` and `qr`, of types `tl` and `tr`. -/
@@ -142,8 +144,10 @@ theorem expr_sim (target : P.target = .x86_64) (tenv : TEnv) (env : Env) (e : Sr
   | negate operand ih =>
     intro k st v st' t run ht rel
     obtain ⟨j, w, -, sub, hw⟩ := unary_inv run
-    simp only [exprTy] at ht
-    obtain ⟨q, hq, rq⟩ := ih sub ht rel
+    simp only [exprTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨to, hto, hn⟩ := ht
+    obtain ⟨rfl, -⟩ := numOf_some hn
+    obtain ⟨q, hq, rq⟩ := ih sub hto rel
     obtain ⟨rfl, sw⟩ := rq.flat (unary_flat hw)
     rw [target] at hw
     refine ⟨v, ?_, .scalar (neg_sty sw hw)⟩
@@ -152,8 +156,9 @@ theorem expr_sim (target : P.target = .x86_64) (tenv : TEnv) (env : Env) (e : Sr
   | «not» operand ih =>
     intro k st v st' t run ht rel
     obtain ⟨j, w, -, sub, hw⟩ := unary_inv run
-    simp only [exprTy, Option.map_eq_some_iff] at ht
-    obtain ⟨to, hto, rfl⟩ := ht
+    simp only [exprTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨to, hto, hb⟩ := ht
+    obtain ⟨rfl, -⟩ := boolOf_some hb
     obtain ⟨q, hq, rq⟩ := ih sub hto rel
     obtain ⟨rfl, -⟩ := rq.flat (unary_flat hw)
     rw [target] at hw
@@ -200,8 +205,9 @@ theorem expr_sim (target : P.target = .x86_64) (tenv : TEnv) (env : Env) (e : Sr
   | cast ty operand ih =>
     intro k st v st' t run ht rel
     obtain ⟨j, w, -, sub, hw⟩ := cast_inv run
-    simp only [exprTy, Option.map_eq_some_iff] at ht
-    obtain ⟨to, hto, rfl⟩ := ht
+    simp only [exprTy, Option.bind_eq_some_iff] at ht
+    obtain ⟨to, hto, hc⟩ := ht
+    obtain ⟨rfl, -⟩ := castTy_some hc
     obtain ⟨q, hq, rq⟩ := ih sub hto rel
     obtain ⟨rfl, sw⟩ := rq.flat (cast_flat hw)
     rw [target] at hw

@@ -8,8 +8,9 @@ expression from the types of the locals in scope (`exprTy`, `effTy`): it
 rules out what has no pure meaning (loops, assignment, raw memory, indexing),
 field reads of boxes, struct literals of box types, and `==` on non-scalars
 (Core compares an enum's payload words, boxes by address). Types are what
-`VRel` needs to know which Core values are boxes; Core's own checks do the
-rest, so arithmetic just keeps its left operand's type.
+`VRel` needs to know which Core values are boxes, and what rules out Core's
+`typeMismatch` (`Sim/Safe.lean`): operators take operands of one type,
+numbers for arithmetic and `bool`s for `&&`, `||`, `!` and conditions.
 
 `PrimsOk` says each prim is the prelude's `boxed<T>` or `unbox<T>` at a type
 `T` the front pass can put in a raw slice (`wordElement`). -/
@@ -23,14 +24,74 @@ def scalarTy : SrcType → Bool
   | .i32 | .bool | .uint _ | .isize | .unit => true
   | .struct _ _ | .enum _ _ | .ptr | .slice _ => false
 
-/-- The type of `left op right`: comparisons give `bool`, `&&` and `||` give
-their `bool` right side, arithmetic keeps the left side's type. -/
+/-- The number types: Core's arithmetic, comparisons and casts take them. -/
+def numTy : SrcType → Bool
+  | .i32 | .uint _ | .isize => true
+  | .bool | .struct _ _ | .enum _ _ | .ptr | .slice _ | .unit => false
+
+/-- The type of `left op right`, on operands of one type: comparisons of
+numbers and `==` of scalars give `bool`, `&&` and `||` take `bool`s, and
+arithmetic keeps its numbers' type. -/
 def opTy (op : SrcOp) (left right : SrcType) : Option SrcType :=
   match op with
-  | .less | .lessEq | .greater | .greaterEq => some .bool
-  | .equal | .notEqual => if scalarTy left then some .bool else none
-  | .logicalAnd | .logicalOr => if right.isBool then some .bool else none
-  | .plus | .minus | .times | .bitAnd | .bitOr | .bitXor | .shiftLeft | .shiftRight => some left
+  | .less | .lessEq | .greater | .greaterEq => if numTy left && left.same right then some .bool else none
+  | .equal | .notEqual => if scalarTy left && left.same right then some .bool else none
+  | .logicalAnd | .logicalOr => if left.isBool && right.isBool then some .bool else none
+  | .plus | .minus | .times | .bitAnd | .bitOr | .bitXor | .shiftLeft | .shiftRight =>
+    if numTy left && left.same right then some left else none
+
+/-- A number's type, for negation. -/
+def numOf (t : SrcType) : Option SrcType := if numTy t then some t else none
+
+/-- `!` of a `bool`. -/
+def boolOf (t : SrcType) : Option SrcType := if t.isBool then some .bool else none
+
+/-- A cast of a number of type `t` to the number type `ty`. -/
+def castTy (ty t : SrcType) : Option SrcType := if numTy t && numTy ty then some ty else none
+
+/-- A division of numbers of one type. -/
+def divTy (left right : SrcType) : Option SrcType := if numTy left && left.same right then some left else none
+
+/-- A condition's type is `bool`. -/
+def isBoolTy : Option SrcType → Bool
+  | some t => t.isBool
+  | none => false
+
+theorem numOf_some {t t' : SrcType} (h : numOf t = some t') : t' = t ∧ numTy t = true := by
+  simp only [numOf] at h
+  split at h
+  · simp only [Option.some.injEq] at h; exact ⟨h.symm, by assumption⟩
+  · simp at h
+
+theorem SrcType.isBool_eq {t : SrcType} (h : t.isBool = true) : t = .bool := by
+  cases t <;> simp_all [SrcType.isBool]
+
+theorem boolOf_some {t t' : SrcType} (h : boolOf t = some t') : t' = .bool ∧ t = .bool := by
+  simp only [boolOf] at h
+  split at h
+  · simp only [Option.some.injEq] at h; exact ⟨h.symm, SrcType.isBool_eq (by assumption)⟩
+  · simp at h
+
+theorem castTy_some {ty t t' : SrcType} (h : castTy ty t = some t') : t' = ty ∧ numTy t = true ∧ numTy ty = true := by
+  simp only [castTy] at h
+  split at h
+  · rename_i ok
+    simp only [Bool.and_eq_true] at ok
+    simp only [Option.some.injEq] at h; exact ⟨h.symm, ok⟩
+  · simp at h
+
+theorem divTy_some {l r t : SrcType} (h : divTy l r = some t) : t = l ∧ numTy l = true ∧ r = l := by
+  simp only [divTy] at h
+  split at h
+  · rename_i ok
+    simp only [Bool.and_eq_true] at ok
+    simp only [Option.some.injEq] at h; exact ⟨h.symm, ok.1, (SrcType.same_eq ok.2).symm⟩
+  · simp at h
+
+theorem isBoolTy_some {o : Option SrcType} (h : isBoolTy o = true) : o = some .bool := by
+  cases o with
+  | none => simp [isBoolTy] at h
+  | some t => simp only [isBoolTy] at h; rw [SrcType.isBool_eq h]
 
 /-- Field `index` of a struct that is not a box. -/
 def fieldTy (boxes : Boxes) : SrcType → Nat → Option SrcType
@@ -70,10 +131,10 @@ def exprTy (tenv : TEnv) : SrcExpr → Option SrcType
   | .unsigned kind value => if value.toNat < 2 ^ kind.width then some (.uint kind) else none
   | .local id => tenv.get? id
   | .field id index => (tenv.get? id).bind (fieldTy boxes · index)
-  | .negate operand => exprTy tenv operand
-  | .not operand => (exprTy tenv operand).map fun _ => .bool
+  | .negate operand => (exprTy tenv operand).bind numOf
+  | .not operand => (exprTy tenv operand).bind boolOf
   | .apply op left right => (exprTy tenv left).bind fun l => (exprTy tenv right).bind (opTy op l)
-  | .cast ty operand => (exprTy tenv operand).map fun _ => ty
+  | .cast ty operand => (exprTy tenv operand).bind (castTy ty)
   | .null => none
 
 def exprTys (tenv : TEnv) : List SrcExpr → Option (List SrcType)
@@ -85,9 +146,9 @@ def effTy (tenv : TEnv) : SrcEff → Option SrcType
   | .ePure e => exprTy boxes tenv e
   | .eCall callee args => (effTys tenv args).bind (callTy sp outside callee)
   | .eApply op left right => (effTy tenv left).bind fun l => (effTy tenv right).bind (opTy op l)
-  | .eNeg operand => effTy tenv operand
-  | .eNot operand => (effTy tenv operand).map fun _ => .bool
-  | .eCast ty operand => (effTy tenv operand).map fun _ => ty
+  | .eNeg operand => (effTy tenv operand).bind numOf
+  | .eNot operand => (effTy tenv operand).bind boolOf
+  | .eCast ty operand => (effTy tenv operand).bind (castTy ty)
   | .eIndex _ _ => none
   | .eStruct ty fields => (effTys tenv fields).bind (structTy boxes ty)
   | .eVariant ty variant payload => (effTys tenv payload).bind (variantTy ty variant)
@@ -96,7 +157,7 @@ def effTy (tenv : TEnv) : SrcEff → Option SrcType
       match ety with
       | .enum _ variants => if st.same ety && armsOk tenv rty variants binders values then some rty else none
       | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize => none
-  | .eDivide _ left right => (effTy tenv left).bind fun l => (effTy tenv right).map fun _ => l
+  | .eDivide _ left right => (effTy tenv left).bind fun l => (effTy tenv right).bind (divTy l)
   | .eStride _ => none
 
 def effTys (tenv : TEnv) : List SrcEff → Option (List SrcType)
@@ -142,7 +203,7 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setCall _ _ _ => false
   | .then first second => stmtOk ret tenv first && stmtOk ret tenv second
   | .if condition thenBranch elseBranch =>
-    (exprTy boxes tenv condition).isSome && stmtOk ret tenv thenBranch && stmtOk ret tenv elseBranch
+    isBoolTy (exprTy boxes tenv condition) && stmtOk ret tenv thenBranch && stmtOk ret tenv elseBranch
   | .while _ _ => false
   | .return value =>
     match exprTy boxes tenv value with
@@ -161,7 +222,7 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
     | none => false
   | .setEval _ _ => false
   | .ifEval condition thenBranch elseBranch =>
-    (effTy sp outside boxes tenv condition).isSome && stmtOk ret tenv thenBranch && stmtOk ret tenv elseBranch
+    isBoolTy (effTy sp outside boxes tenv condition) && stmtOk ret tenv thenBranch && stmtOk ret tenv elseBranch
   | .whileEval _ _ => false
   | .returnEval value =>
     match effTy sp outside boxes tenv value with
@@ -171,7 +232,7 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setIndexEval _ _ _ => false
   | .setFieldEval _ _ _ => false
   | .returnUnit => true
-  | .assert condition => (effTy sp outside boxes tenv condition).isSome
+  | .assert condition => isBoolTy (effTy sp outside boxes tenv condition)
 
 end
 

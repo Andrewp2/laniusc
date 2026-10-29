@@ -255,13 +255,11 @@ theorem binary_sty {op : SrcOp} {tl tr t : SrcType} {lv rv v : Value} (hl : STy 
   all_goals first
     | exact absurd rfl notAnd
     | exact absurd rfl notOr
-    | (simp only [Option.some.injEq] at ht; subst ht
-       first
-       | (obtain ⟨b, rfl⟩ := compare_bool hl h rfl; exact ⟨b, rfl⟩)
-       | exact arith_sty hl h rfl (by simp [SrcOp.toCore]) (by simp [SrcOp.toCore]))
     | (split at ht
        · simp only [Option.some.injEq] at ht; subst ht
-         obtain ⟨b, rfl⟩ := compare_bool hl h rfl; exact ⟨b, rfl⟩
+         first
+         | (obtain ⟨b, rfl⟩ := compare_bool hl h rfl; exact ⟨b, rfl⟩)
+         | exact arith_sty hl h rfl (by simp [SrcOp.toCore]) (by simp [SrcOp.toCore])
        · simp at ht)
 
 /-- Division keeps its left operand's type. -/

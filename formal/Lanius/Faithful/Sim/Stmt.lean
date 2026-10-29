@@ -158,8 +158,9 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
       | ret value => exact ⟨.ret value, by simp only [pstmt, hd1, Option.bind_some, Done.then], dr1, ran1⟩
   | «if» condition thenBranch elseBranch ih1 ih2 =>
     intro k tenv env st c st' le run ok inv rel bound
-    simp only [stmtOk, Bool.and_eq_true, Option.isSome_iff_exists] at ok
-    obtain ⟨⟨⟨tc, htc⟩, ok1⟩, ok2⟩ := ok
+    simp only [stmtOk, Bool.and_eq_true] at ok
+    obtain ⟨⟨hc, ok1⟩, ok2⟩ := ok
+    have htc := isBoolTy_some hc
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, s1, x, rfl, crun, brun⟩ := if_inv run
     have e := condition.eval_state crun
@@ -213,8 +214,9 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
   | setEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | ifEval condition thenBranch elseBranch ih1 ih2 =>
     intro k tenv env st c st' le run ok inv rel bound
-    simp only [stmtOk, Bool.and_eq_true, Option.isSome_iff_exists] at ok
-    obtain ⟨⟨⟨tc, htc⟩, ok1⟩, ok2⟩ := ok
+    simp only [stmtOk, Bool.and_eq_true] at ok
+    obtain ⟨⟨hc, ok1⟩, ok2⟩ := ok
+    have htc := isBoolTy_some hc
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, s1, x, rfl, crun, brun⟩ := if_inv run
     cases x with
@@ -262,8 +264,8 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     exact ⟨.ret none, rfl, trivial, .refl inv⟩
   | «assert» condition =>
     intro k tenv env st c st' le run ok inv rel bound
-    simp only [stmtOk, Option.isSome_iff_exists] at ok
-    obtain ⟨t, ht⟩ := ok
+    simp only [stmtOk] at ok
+    have ht := isBoolTy_some ok
     simp only [SrcStmt.toCore] at run
     obtain ⟨j, w, rfl, arun, rfl⟩ := expression_inv run
     obtain ⟨i, rfl, crun, rfl⟩ := assert_inv arun
