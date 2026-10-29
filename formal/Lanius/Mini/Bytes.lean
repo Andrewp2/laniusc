@@ -134,6 +134,15 @@ def limitCompareBytes : List UInt8 := [77, 57, 243]
 /-- `ud2` -/
 def trapBytes : List UInt8 := [15, 11]
 
+/-- r15 holds the lowest address the stack may reach. -/
+def stackRegister : Register := 15
+
+/-- `cmp r15, rsp` -/
+def stackCompareBytes : List UInt8 := [73, 57, 231]
+
+/-- After the frame prologue: fault unless r15 is at most rsp. -/
+def stackCheckBytes : List UInt8 := stackCompareBytes ++ (branchBytes 6 2 ++ trapBytes)
+
 /-- Round the cursor up into rcx, check rcx + rax against the limit, advance
 the cursor and return the old rounded cursor in rax. -/
 def bumpSpec (shift : Nat) : List UInt8 :=
@@ -234,7 +243,7 @@ theorem le64_eq (value : BitVec 64) :
 
 theorem frameSize_eq (slots : Nat) : frameSize slots = frameBytes slots := rfl
 
-theorem prologue_eq (slots : Nat) : prologue slots = framePrologueBytes slots := by
+theorem prologue_eq (slots : Nat) : prologue slots = framePrologueBytes slots ++ stackCheckBytes := by
   rw [prologue, le32_eq]
   rfl
 
@@ -303,6 +312,11 @@ theorem framePrologueBytes_length (slots : Nat) : (framePrologueBytes slots).len
   simp only [framePrologueBytes, immediateBytes, displacementBytes, List.length_append, List.length_cons,
     List.length_nil]
   decide
+
+theorem stackCheckBytes_length : stackCheckBytes.length = 11 := by decide
+
+theorem prologue_length (slots : Nat) : (prologue slots).length = 24 := by
+  rw [prologue_eq, List.length_append, framePrologueBytes_length, stackCheckBytes_length]
 
 theorem copyBytes_length (first : Nat) (args : List Nat) (k : Nat) :
     (copyBytes first args k).length = 14 * args.length := by
@@ -414,7 +428,7 @@ theorem fetch_mem {code : List Instr} {pc : Nat} {i : Instr} (fetched : fetch co
 
 theorem Code.image_length (code : Code) (start : Nat) (entries : List Nat) :
     (code.image start entries).length = code.size := by
-  simp only [Code.image, prologue_eq, List.length_append, framePrologueBytes_length, encodeFrom_length, Code.size]
+  simp only [Code.image, List.length_append, prologue_length, encodeFrom_length, Code.size]
 
 theorem linkFrom_at (entries : List Nat) (codes : List Code) (start f : Nat) (code : Code)
     (found : codes[f]? = some code) :

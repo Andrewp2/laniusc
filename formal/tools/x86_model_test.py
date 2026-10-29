@@ -145,6 +145,7 @@ def compiler_forms():
         form('cmp eax, ecx', [0x39, 0xC8]),
         form('cmp rax, rcx', [0x48, 0x39, 0xC8]),
         form('cmp r11, r14', [0x4D, 0x39, 0xF3]),
+        form('cmp r15, rsp', [0x49, 0x39, 0xE7]),
         form('test rax, rax', [0x48, 0x85, 0xC0], mask=ALL_DEFINED & ~AF),
         form('mov r11, rdx', [0x49, 0x89, 0xD3]),
         form('mov rdx, r11', [0x4C, 0x89, 0xDA]),

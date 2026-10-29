@@ -106,7 +106,7 @@ def olean_digest(text):
     """A digest of the built .olean files a Lean file's imports reach in
     formal/ (with the toolchain), or None when one is missing."""
     import re
-    seen, todo = set(), re.findall(r'^import\s+(\S+)', text, re.M)
+    seen, todo = set(), re.findall(r'^(?:public\s+|meta\s+)*import\s+(?:all\s+)?(\S+)', text, re.M)
     h = hashlib.sha256(open(os.path.join(FORMAL, 'lean-toolchain'), 'rb').read())
     while todo:
         m = todo.pop()
@@ -119,7 +119,7 @@ def olean_digest(text):
         if not os.path.exists(olean):
             return None
         h.update(m.encode() + b'\0' + file_digest(olean).encode())
-        todo += re.findall(r'^import\s+(\S+)', open(source).read(), re.M)
+        todo += re.findall(r'^(?:public\s+|meta\s+)*import\s+(?:all\s+)?(\S+)', open(source).read(), re.M)
     return h.hexdigest()
 
 

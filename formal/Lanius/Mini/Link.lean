@@ -426,7 +426,7 @@ theorem codesSize_rename (table : List Nat) (missing : Nat) (codes : List Code) 
 
 theorem objectFunc_size (own : Nat) (place : Place) (code : Code) :
     piecesSize (Piece.bytes (prologue code.slots) :: piecesFrom own place 0 code.instrs) = code.size := by
-  simp [piecesSize, Piece.size, piecesFrom_size, Code.size, prologue_eq, framePrologueBytes_length]
+  simp [piecesSize, Piece.size, piecesFrom_size, Code.size, prologue_length]
 
 theorem objectFuncs_facts (own : Nat) (entries : List Nat) :
     ∀ (codes : List Code) (start pos : Nat),
@@ -452,9 +452,9 @@ theorem objectFuncs_render {table : List Nat} {missing own : Nat} {targets entri
   | [], _ => rfl
   | code :: rest, start => by
     simp only [objectFuncs, renderFuncs, List.map_cons, linkFrom, Code.image, Code.rename, objectFunc_size]
-    simp only [render, Piece.render, Piece.size, prologue_eq, framePrologueBytes_length]
-    rw [show pos + start + 13 = pos + (start + 13) + 0 by omega,
-      piecesFrom_render ownCalls importCalls (start + 13) code.slots code.instrs 0,
+    simp only [render, Piece.render, Piece.size, prologue_length]
+    rw [show pos + start + 24 = pos + (start + 24) + 0 by omega,
+      piecesFrom_render ownCalls importCalls (start + 24) code.slots code.instrs 0,
       show pos + start + code.size = pos + (start + code.size) by omega,
       objectFuncs_render ownCalls importCalls rest (start + code.size)]
     simp [Code.size, codeSize_rename, Nat.add_assoc]

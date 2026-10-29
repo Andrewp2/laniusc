@@ -259,4 +259,35 @@ theorem storeAt_steps (s : State) (slot : Nat) (loaded : CodeAt s.memory s.rip (
   · intro register one
     simp [s3, s2, s1, State.storeByte, State.alu64, State.alu, State.load64, one]
 
+/-- The state after a passing stack check: only the flags and rip change. -/
+def stackChecked (s : State) : State := (s.compare64 stackRegister rspRegister 3).branch 6 2 6
+
+/-- `cmp r15, rsp; jbe +2; ud2` jumps over the `ud2` when r15 is at most rsp. -/
+theorem stackCheck_det (s : State)
+    (loaded : CodeAt s.memory s.rip (stackCompareBytes ++ (branchBytes 6 2 ++ trapBytes)))
+    (room : (s.registers stackRegister).toNat ≤ (s.registers rspRegister).toNat) :
+    Steps 2 s (stackChecked s) ∧ Det 2 s (stackChecked s) ∧
+      (stackChecked s).rip = s.rip + BitVec.ofNat 64 11 := by
+  let s1 := s.compare64 stackRegister rspRegister stackCompareBytes.length
+  have t1 : Lanius.X86.Machine.Step s s1 :=
+    Lanius.X86.Machine.Step.decoded stackCompareBytes loaded.prefix (.compare64 stackRegister rspRegister) 3
+      (by decide) rfl rfl
+  have c1 := loaded.next (s' := s1) rfl rfl
+  have taken : condition s1.flags 6 = true := by
+    show condition (subtractFlags s.flags (s.registers stackRegister) (s.registers rspRegister))
+      (CmpOp.code .u64 .le) = true
+    rw [CmpOp.conditionU]
+    simp only [CmpOp.holdsU, BitVec.ule, decide_eq_true_eq]
+    exact room
+  obtain ⟨t2, rip2⟩ := branch_step_rip s1 (stackChecked s) 6 2 c1.prefix taken rfl
+  refine ⟨.cons t1 (.cons t2 (.refl _)),
+    Det.pairCons t1 (Writes.of (i := .compare64 stackRegister rspRegister) (k := 3) loaded.prefix (by decide) rfl)
+      t2 (Det.refl _), ?_⟩
+  rw [rip2, show ((2 : BitVec 32).signExtend 64) = BitVec.ofNat 64 2 from by decide]
+  simp only [s1, State.compare64, stackCompareBytes, List.length_cons, List.length_nil]
+  bv_omega
+
+theorem stackChecked_registers (s : State) : (stackChecked s).registers = s.registers := rfl
+theorem stackChecked_memory (s : State) : (stackChecked s).memory = s.memory := rfl
+
 end Lanius.Mini

@@ -96,6 +96,10 @@ abbrev Stmt_slot_range (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepNat x1 v1 →
     (RepList 24 RepNat) (Lanius.Mini.slotRange x0 x1) w
 
+abbrev Stmt_stack_check (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 61 RepU8) (Lanius.Mini.stackCheck) w
+
 abbrev Stmt_store_at_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
     (RepList 61 RepU8) (Lanius.Mini.storeAtBytes x0) w

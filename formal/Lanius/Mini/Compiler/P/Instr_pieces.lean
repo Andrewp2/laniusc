@@ -43,7 +43,7 @@ def piecesFrom (own : Nat) (place : Place) (pc : Nat) (code : List Instr) : List
 def objectFuncs (own : Nat) (entries : List Nat) (start : Nat) (codes : List Code) : List ObjFunc :=
   match codes with
   | [] => []
-  | code :: rest => ({ slots := code.slots, pieces := Piece.bytes (prologue code.slots) :: piecesFrom own ({ body := start + 13, slots := code.slots, entries := entries } : Place) 0 code.instrs } : ObjFunc) :: objectFuncs own entries (start + Code.size code) rest
+  | code :: rest => ({ slots := code.slots, pieces := Piece.bytes (prologue code.slots) :: piecesFrom own ({ body := start + 24, slots := code.slots, entries := entries } : Place) 0 code.instrs } : ObjFunc) :: objectFuncs own entries (start + Code.size code) rest
 
 def importArities (imports : List Import) : List Arity :=
   match imports with

@@ -26,6 +26,7 @@ theorem not_scratch {register : Register} (other : ¬Scratch register) :
 
 theorem heapBase_not_scratch : ¬Scratch heapBaseRegister := by unfold Scratch; decide
 theorem limit_not_scratch : ¬Scratch limitRegister := by unfold Scratch; decide
+theorem stack_not_scratch : ¬Scratch stackRegister := by unfold Scratch; decide
 
 /-- The `limit` bytes from `base`. -/
 def InHeap (base : BitVec 64) (limit : Nat) (address : BitVec 64) : Prop :=
@@ -63,6 +64,8 @@ structure Frame.Fits (frame : Frame) : Prop where
   bounded : frame.window ≤ 2 ^ 62
   heapSmall : frame.heapLimit < 2 ^ 62
   heapApart : ∀ address, frame.InHeap address → ¬Below (frame.top + 8) (frame.window + 8) address
+  /-- The stack limit in r15 is the window or more below the return address. -/
+  stack : (frame.preserved stackRegister).toNat + frame.window ≤ frame.top.toNat
 
 /-- The x86 state holds the abstract machine in this activation. -/
 structure Rel (frame : Frame) (s : State) (m : Machine) : Prop where
@@ -1018,6 +1021,8 @@ structure HeapAt (window : Nat) (s : State) (heap : Heap) : Prop where
   small : heap.limit < 2 ^ 62
   bytes : ∀ a, a < heap.limit → s.memory (s.registers heapBaseRegister + BitVec.ofNat 64 a) = heap.bytes a
   apart : ∀ address, s.InHeap address → ¬Below (s.registers rspRegister + 8) (window + 8) address
+  /-- The stack limit in r15 is the window or more below the return address. -/
+  stack : (s.registers stackRegister).toNat + window ≤ (s.registers rspRegister).toNat
 
 /-- Function `callee` of `binary`, loaded at `imageBase` and entered by a near
 call with `args` just below the return address, returns `values` using at most
@@ -1041,7 +1046,9 @@ theorem Contract.mono {binary : Binary} {imageBase : BitVec 64} {window window' 
   intro s bounded loaded apart imageHeap entry params heapAt
   obtain ⟨n, s', steps, det, returned⟩ := contract s (by omega) loaded
     (fun index bound below => apart index bound (below.mono larger)) imageHeap entry params
-    { heapAt with apart := fun address inHeap below => heapAt.apart address inHeap (below.mono (by omega)) }
+    { heapAt with
+      apart := fun address inHeap below => heapAt.apart address inHeap (below.mono (by omega))
+      stack := by have := heapAt.stack; omega }
   exact ⟨n, s', steps, det, { returned with
     unchanged := fun address outside => returned.unchanged address (fun below => outside (below.mono larger)) }⟩
 
@@ -1207,7 +1214,14 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
       apart := fun address inHeap below => by
         rw [heap2] at inHeap
         rw [rsp2, shifted] at below
-        exact fits.notHeap ((below.shift (by omega)).mono (by omega)) inHeap }
+        exact fits.notHeap ((below.shift (by omega)).mono (by omega)) inHeap
+      stack := by
+        rw [registers2 _ (by decide) (by decide), rel.preserved _ stack_not_scratch, rsp2]
+        have := fits.stack
+        have := fits.window
+        have := fits.bounded
+        rw [BitVec.toNat_sub, BitVec.toNat_ofNat]
+        omega }
   -- the callee
   obtain ⟨n3, s3, steps3, det3, returned⟩ := contract s2 (by omega)
     (by

@@ -77,7 +77,13 @@ heap or of stack is a fault too.
   checks are done too: a slice is two slots, its address and its length
   (below `2 ^ 31`, so a negative `i32` index fails the unsigned test), and
   every element read or write first tests `index < length`. The stack
-  check is next.
+  check is done: the prologue ends with `cmp r15, rsp; jbe +2; ud2`, so
+  a frame that reaches below the limit in r15 faults before it writes a
+  slot. `HeapAt` and `Frame.Fits` require r15 to be the window or more
+  below the return address, which makes every returning run pass the
+  check (`stackCheck_det`, Mini/HeapSteps.lean). A call's pushes
+  (`8 * args + 16` bytes) land before the callee's check, so a runtime
+  keeps a page below r15 mapped.
 - V2b. `Stops prog depth env heap stmt n` on the mini IR: the run faults,
   or does not finish within `n` ticks (a tick is a loop iteration or a
   call).

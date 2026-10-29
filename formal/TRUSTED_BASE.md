@@ -556,9 +556,13 @@ not been composed with the theorem yet.
     bytes must be mapped and writable, and they must be apart from the image.
   - `depth` is existential in `compileSource_correct`, so nobody can compute
     the needed stack before the run.
-  - The compiled code has no stack check. Overflow has to be caught by the
-    runtime, for example with a guard page that turns it into a fault, and
-    that case is outside the theorem.
+  - r15 holds the stack limit: `HeapAt.stack` requires
+    `r15 + window ≤ rsp`, and r15 is preserved. Each prologue ends with
+    `cmp r15, rsp; jbe +2; ud2`, so a frame that would end below r15
+    faults before it writes a slot. The arguments and return address a
+    call pushes (`8 * args + 16` bytes) are written before the callee's
+    check, so the runtime keeps at least that much mapped below r15 (the
+    stubs set r15 a page or more above the mapped stack's bottom).
 - **Heap (`HeapAt`).**
   - The base is in r12, the cursor (an offset) in r13, and the limit in r14,
     with `limit < 2^62`.
@@ -571,7 +575,8 @@ not been composed with the theorem yet.
 - **Registers after the call.**
   - rsp is restored to `rsp + 8` and rbp is restored.
   - rax, rcx, r11 and r13 may change. r13 is callee-saved under SysV, so a
-    SysV caller's stub has to save it.
+    SysV caller's stub has to save it. The stubs also save r12, r14 and
+    r15, which they set.
   - RFLAGS is unspecified. DF is never changed, and the code has no string
     instructions.
 - **Memory.** Only the window and the heap change.

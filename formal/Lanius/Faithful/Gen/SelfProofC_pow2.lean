@@ -249,12 +249,13 @@ theorem step_pow2 {prog : SrcProgram} {prims : Prims} {ix_pow2 ix_minus : Nat} (
   simp only [src_pow2] at h
   faithful [Lanius.Mini.pow2]
 
-theorem proof_prologue {prog : SrcProgram} {prims : Prims} {ix_prologue ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_frame_size : Nat} (fn : prog.funcs[ix_prologue]? = some (src_prologue ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_frame_size)) (np : prims.isPrim ix_prologue = false)
+theorem proof_prologue {prog : SrcProgram} {prims : Prims} {ix_prologue ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_frame_size ix_stack_check : Nat} (fn : prog.funcs[ix_prologue]? = some (src_prologue ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_frame_size ix_stack_check)) (np : prims.isPrim ix_prologue = false)
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
     (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
     (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n))
     (ext_le32 : Certified (∀ {n : Nat}, Stmt_le32 prog prims ix_le32 n))
-    (ext_frame_size : Certified (∀ {n : Nat}, Stmt_frame_size prog prims ix_frame_size n)) {n : Nat} :
+    (ext_frame_size : Certified (∀ {n : Nat}, Stmt_frame_size prog prims ix_frame_size n))
+    (ext_stack_check : Certified (∀ {n : Nat}, Stmt_stack_check prog prims ix_stack_check n)) {n : Nat} :
     Stmt_prologue prog prims ix_prologue n := by
   intro x0 v0 w h r0
   rcases n with _ | n
@@ -283,6 +284,17 @@ theorem step_slot_range {prog : SrcProgram} {prims : Prims} {ix_slot_range ix_pl
   rw [pcall_succ np fn] at h
   simp only [src_slot_range] at h
   faithful [Lanius.Mini.slotRange]
+
+theorem proof_stack_check {prog : SrcProgram} {prims : Prims} {ix_stack_check ix_cons_of_u8 ix_single_of_u8 : Nat} (fn : prog.funcs[ix_stack_check]? = some (src_stack_check ix_cons_of_u8 ix_single_of_u8)) (np : prims.isPrim ix_stack_check = false)
+    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
+    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n)) {n : Nat} :
+    Stmt_stack_check prog prims ix_stack_check n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_stack_check] at h
+  faithful [Lanius.Mini.stackCheck]
 
 theorem proof_store_at_bytes {prog : SrcProgram} {prims : Prims} {ix_store_at_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset : Nat} (fn : prog.funcs[ix_store_at_bytes]? = some (src_store_at_bytes ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset)) (np : prims.isPrim ix_store_at_bytes = false)
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))

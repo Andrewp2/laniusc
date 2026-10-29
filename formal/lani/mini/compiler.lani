@@ -760,9 +760,14 @@ pub fn frame_size(slots: usize) -> usize {
     return times(plus(slots, 1) / 2, 16);
 }
 
-// push rbp; mov rbp, rsp; mov r11d, frame_size; sub rsp, r11
+// cmp r15, rsp; jbe +2; ud2 (past the stack limit in r15)
+pub fn stack_check() -> List<u8> {
+    return cons(73, cons(57, cons(231, cons(15, cons(134, cons(2, cons(0, cons(0, cons(0, cons(15, single(11)))))))))));
+}
+
+// push rbp; mov rbp, rsp; mov r11d, frame_size; sub rsp, r11; the stack check
 pub fn prologue(slots: usize) -> List<u8> {
-    return concat(concat(cons(85, cons(72, cons(137, cons(229, cons(65, single(187)))))), le32(frame_size(slots) as i32)), cons(76, cons(41, single(220))));
+    return concat(concat(concat(cons(85, cons(72, cons(137, cons(229, cons(65, single(187)))))), le32(frame_size(slots) as i32)), cons(76, cons(41, single(220)))), stack_check());
 }
 
 // The rel32 field of a transfer from the end of an instruction at source to target.
@@ -837,11 +842,11 @@ pub fn encode_from(place: Place, pc: usize, code: List<Instr>) -> List<u8> {
 // followed by its body.
 impl Code {
     pub fn size(self) -> usize {
-        return plus(13, code_size(self.instrs));
+        return plus(24, code_size(self.instrs));
     }
 
     pub fn image(self, start: usize, entries: List<usize>) -> List<u8> {
-        return concat(prologue(self.slots), encode_from(Place { body: plus(start, 13), slots: self.slots, entries: entries }, 0, self.instrs));
+        return concat(prologue(self.slots), encode_from(Place { body: plus(start, 24), slots: self.slots, entries: entries }, 0, self.instrs));
     }
 }
 
@@ -1078,7 +1083,7 @@ pub fn pieces_from(own: usize, place: Place, pc: usize, code: List<Instr>) -> Li
 pub fn object_funcs(own: usize, entries: List<usize>, start: usize, codes: List<Code>) -> List<ObjFunc> {
     return match (codes) {
         Nil -> empty(),
-        Cons(code, rest) -> cons(ObjFunc { slots: code.slots, pieces: cons(Piece::Bytes(prologue(code.slots)), pieces_from(own, Place { body: plus(start, 13), slots: code.slots, entries: entries }, 0, code.instrs)) }, object_funcs(own, entries, plus(start, code.size()), unbox(rest))),
+        Cons(code, rest) -> cons(ObjFunc { slots: code.slots, pieces: cons(Piece::Bytes(prologue(code.slots)), pieces_from(own, Place { body: plus(start, 24), slots: code.slots, entries: entries }, 0, code.instrs)) }, object_funcs(own, entries, plus(start, code.size()), unbox(rest))),
     };
 }
 

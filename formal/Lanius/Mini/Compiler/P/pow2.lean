@@ -52,9 +52,13 @@ def epilogue : List UInt8 :=
 def frameSize (slots : Nat) : Nat :=
   (slots + 1) / 2 * 16
 
-/-- push rbp; mov rbp, rsp; mov r11d, frame_size; sub rsp, r11 -/
+/-- cmp r15, rsp; jbe +2; ud2 (past the stack limit in r15) -/
+def stackCheck : List UInt8 :=
+  73 :: 57 :: 231 :: 15 :: 134 :: 2 :: 0 :: 0 :: 0 :: 15 :: [11]
+
+/-- push rbp; mov rbp, rsp; mov r11d, frame_size; sub rsp, r11; the stack check -/
 def prologue (slots : Nat) : List UInt8 :=
-  85 :: 72 :: 137 :: 229 :: 65 :: [187] ++ le32 (BitVec.ofNat 32 (frameSize slots)) ++ 76 :: 41 :: [220]
+  85 :: 72 :: 137 :: 229 :: 65 :: [187] ++ le32 (BitVec.ofNat 32 (frameSize slots)) ++ 76 :: 41 :: [220] ++ stackCheck
 
 /-- The rel32 field of a transfer from the end of an instruction at source to target. -/
 def relative (source : Nat) (target : Nat) : BitVec 32 :=
@@ -103,10 +107,10 @@ def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
   | i :: rest => Instr.encode i place pc ++ encodeFrom place (pc + Instr.size i) rest
 
 def Code.size (self : Code) : Nat :=
-  13 + codeSize self.instrs
+  24 + codeSize self.instrs
 
 def Code.image (self : Code) (start : Nat) (entries : List Nat) : List UInt8 :=
-  prologue self.slots ++ encodeFrom ({ body := start + 13, slots := self.slots, entries := entries } : Place) 0 self.instrs
+  prologue self.slots ++ encodeFrom ({ body := start + 24, slots := self.slots, entries := entries } : Place) 0 self.instrs
 
 /-- Entry offsets of functions laid out back to back from start. -/
 def layout (start : Nat) (codes : List Code) : List Nat :=

@@ -232,20 +232,22 @@ class Native:
         self.entries, self.at = entries, len(image)
         self.heap_size, self.stack_size, self.scratch = heap_size, stack_size, scratch
 
-    def stub(self, heap_base, stack_top, limit):
-        # push rbx, r12, r13, r14; mov rbx, rsp; mov rsp, stack_top; r12 = the
-        # heap, r13 = the cursor (1), r14 = the limit; the four arguments just
-        # below rsp; call w; mov rsp, rbx; pop r14, r13, r12, rbx; ret
-        stub = bytes([0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x48, 0x89, 0xE3])
+    def stub(self, heap_base, stack_top, limit, stack_limit):
+        # push rbx, r12, r13, r14, r15; mov rbx, rsp; mov rsp, stack_top; r12 =
+        # the heap, r13 = the cursor (1), r14 = the limit, r15 = the stack
+        # limit; the four arguments just below rsp; call w; mov rsp, rbx;
+        # pop r15, r14, r13, r12, rbx; ret
+        stub = bytes([0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x89, 0xE3])
         stub += bytes([0x48, 0xBC]) + stack_top.to_bytes(8, 'little')
         stub += bytes([0x49, 0xBC]) + heap_base.to_bytes(8, 'little')
         stub += bytes([0x49, 0xBD]) + (1).to_bytes(8, 'little')
         stub += bytes([0x49, 0xBE]) + limit.to_bytes(8, 'little')
+        stub += bytes([0x49, 0xBF]) + stack_limit.to_bytes(8, 'little')
         for k in range(4):
             stub += so.ARG_STORES[k] + bytes([(256 - (8 * k + 24)) & 0xff])
         rel = self.entries[0] - (self.at + len(stub) + 5)
         stub += b'\xe8' + (rel & 0xffffffff).to_bytes(4, 'little')
-        stub += bytes([0x48, 0x89, 0xDC, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0xC3])
+        stub += bytes([0x48, 0x89, 0xDC, 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5B, 0xC3])
         self.code[self.at:self.at + len(stub)] = stub
         return ctypes.CFUNCTYPE(ctypes.c_uint64, *([ctypes.c_uint64] * 4))(self.base + self.at)
 
@@ -263,7 +265,7 @@ class Native:
             in_at = self.heap_size - 4 * (len(words) + room) - 4096
             out_at = in_at + 4 * len(words) + 64
             heap[in_at:in_at + 4 * len(words)] = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in words)
-            fn = self.stub(heap_base, stack_base + self.stack_size - 64, in_at - 4096)
+            fn = self.stub(heap_base, stack_base + self.stack_size - 64, in_at - 4096, stack_base + 4096)
             n = fn(in_at, len(words), out_at, room) & 0xffffffff
             n = n - 2 ** 32 if n >= 2 ** 31 else n
             payload = n.to_bytes(4, 'little', signed=True)

@@ -102,9 +102,10 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
   have entryOffset : binary.entries.getD f 0 = offset := by simp [List.getD, at_]
   have imageLength : binary.image.length = pre.length + code.size + post.length := by
     rw [imageEq, split]; simp only [List.length_append, Code.image_length]
-  have codeSizeEq : code.size = 13 + codeSize code.instrs := rfl
+  have codeSizeEq : code.size = 24 + codeSize code.instrs := rfl
   have codeImage : CodeAt s.memory s.rip
-      (framePrologueBytes code.slots ++ encodeFrom ⟨offset + 13, code.slots, binary.entries⟩ 0 code.instrs) := by
+      (framePrologueBytes code.slots ++ stackCheckBytes ++
+        encodeFrom ⟨offset + 24, code.slots, binary.entries⟩ 0 code.instrs) := by
     have whole := loaded
     rw [imageEq, split] at whole
     have := CodeAt.middle whole
@@ -129,7 +130,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       depth_lane _ _ _ (by omega)]
     exact below_depth _ (by omega) (by omega) (by omega)
   have steps1 : Steps 4 s (prologueState s code.slots) ∧ Det 4 s (prologueState s code.slots) := by
-    apply framePrologue_det code.slots s codeImage.prefix
+    apply framePrologue_det code.slots s codeImage.prefix.prefix
     intro index bound lane
     have pushLength : (pushBytes rbpRegister).length = 1 := by decide
     have restLength : (moveBytes .w64 rbpRegister rspRegister ++
@@ -139,31 +140,51 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       omega
     rw [pushLength]
     simpa using ne_of_below (apartAt (1 + index) (by omega)) (pushBelow lane)
-  let entered := prologueState s code.slots
-  have memoryEntered : entered.memory =
+  let framed := prologueState s code.slots
+  have memoryFramed : framed.memory =
       write64 s.memory (s.registers rspRegister - 8) (s.registers rbpRegister) := by
-    simp [entered, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
+    simp [framed, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
       State.push64, rspRegister, rbpRegister]
-  have ripEntered : entered.rip = s.rip + BitVec.ofNat 64 13 := by
-    rw [framePrologue_rip, prologueLength]
+  have checkLoaded : CodeAt framed.memory framed.rip (stackCompareBytes ++ (branchBytes 6 2 ++ trapBytes)) := by
+    rw [memoryFramed, framePrologue_rip, prologueLength]
+    have := codeImage.prefix.suffix
+    rw [prologueLength] at this
+    apply CodeAt.write64 this
+    intro index bound lane
+    have := apartAt (13 + index) (by simp only [stackCheckBytes, stackCompareBytes, branchBytes, trapBytes,
+      displacementBytes, List.length_append, List.length_cons, List.length_nil] at bound; omega)
+    rw [BitVec.ofNat_add, ← BitVec.add_assoc] at this
+    exact ne_of_below this (pushBelow lane)
+  have checkRoom : (framed.registers stackRegister).toNat ≤ (framed.registers rspRegister).toNat := by
+    have stack := heapAt.stack
+    have := frameBytes_le code.slots
+    simp [framed, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
+      State.push64, rspRegister, rbpRegister, r11Register, stackRegister, Alu.result, frameSizeBits] at stack ⊢
+    omega
+  obtain ⟨checkSteps, checkDet, checkRip⟩ := stackCheck_det framed checkLoaded checkRoom
+  let entered := stackChecked framed
+  have memoryEntered : entered.memory =
+      write64 s.memory (s.registers rspRegister - 8) (s.registers rbpRegister) := memoryFramed
+  have ripEntered : entered.rip = s.rip + BitVec.ofNat 64 24 := by
+    rw [checkRip, framePrologue_rip, prologueLength, BitVec.add_assoc, ← BitVec.ofNat_add]
   let frame : Frame :=
     { top := s.registers rspRegister
       window := window
       slots := code.slots
-      base := s.rip + BitVec.ofNat 64 13
+      base := s.rip + BitVec.ofNat 64 24
       saved := s.registers rbpRegister
       preserved := s.registers
       entry := s.memory }
   have fits : frame.Fits :=
     ⟨limit, room, bounded, by show (s.registers limitRegister).toNat < 2 ^ 62; rw [← heapAt.limit]; exact heapAt.small,
-      heapAt.apart⟩
-  have body : Body frame binary imageBase ⟨offset + 13, code.slots, binary.entries⟩ code.instrs :=
+      heapAt.apart, heapAt.stack⟩
+  have body : Body frame binary imageBase ⟨offset + 24, code.slots, binary.entries⟩ code.instrs :=
     { loaded := by
         have := codeImage.suffix
-        rwa [prologueLength] at this
+        rwa [List.length_append, prologueLength, stackCheckBytes_length] at this
       apart := by
         intro index bound
-        have := apartAt (13 + index) (by omega)
+        have := apartAt (24 + index) (by omega)
         rwa [BitVec.ofNat_add, ← BitVec.add_assoc] at this
       slots := rfl
       entries := rfl
@@ -171,7 +192,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
         show s.rip + _ = _
         rw [entry, entryOffset, BitVec.add_assoc, ← BitVec.ofNat_add]
       small := by
-        show offset + 13 + codeSize code.instrs ≤ imageLimit
+        show offset + 24 + codeSize code.instrs ≤ imageLimit
         omega
       entrySmall := by
         intro callee
@@ -191,7 +212,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
         exact this
       codeHeap := by
         intro index bound
-        have := heapApartAt (13 + index) (by omega)
+        have := heapApartAt (24 + index) (by omega)
         rwa [BitVec.ofNat_add, ← BitVec.add_assoc] at this
       imageHeap := imageHeap }
   let start : Machine :=
@@ -202,10 +223,10 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
   have rel : Rel frame entered start :=
     { rip := by rw [ripEntered]; simp [frame, start]
       rbp := by
-        simp [entered, frame, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
+        simp [entered, framed, stackChecked, State.branch, State.compare64, frame, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
           State.push64, rspRegister, rbpRegister, r11Register]
       rsp := by
-        simp [entered, frame, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
+        simp [entered, framed, stackChecked, State.branch, State.compare64, frame, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
           State.push64, rspRegister, rbpRegister, r11Register, Alu.result, frameSizeBits]
         have := frameBytes_le code.slots
         bv_omega
@@ -215,7 +236,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       preserved := by
         intro register other
         obtain ⟨-, -, four, five, eleven, -⟩ := not_scratch other
-        simp [entered, frame, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
+        simp [entered, framed, stackChecked, State.branch, State.compare64, frame, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
           State.push64, rspRegister, rbpRegister, r11Register, four, five, eleven]
       unchanged := by
         intro address outside _
@@ -223,7 +244,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       cursor := by
         have := heapAt.cursor
         simp only [cursorRegister] at this
-        simp [entered, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
+        simp [entered, framed, stackChecked, State.branch, State.compare64, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
           State.push64, rspRegister, rbpRegister, r11Register, cursorRegister, this]
         rfl
       limit := heapAt.limit
@@ -247,7 +268,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
     compileFunc_correct compiledFunc length exec start rfl rfl startParams
   obtain ⟨n, s', steps2, det2, exit⟩ := body_simulates body fits callContract run atRet entered rel
   rw [vals, onHeap] at exit
-  refine ⟨_, s', steps1.1.trans steps2, steps1.2.trans det2, ?_⟩
+  refine ⟨_, s', (steps1.1.trans checkSteps).trans steps2, (steps1.2.trans checkDet).trans det2, ?_⟩
   exact
     { rip := exit.rip
       rsp := exit.rsp
