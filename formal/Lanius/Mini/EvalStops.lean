@@ -1,0 +1,988 @@
+import Lanius.Mini.LowerStops
+
+/-! Core to mini for effectful expressions whose Core evaluation fails: the
+lowered code stops within `n` ticks. Each sub-expression Core evaluates first
+either fails itself, and its code stops (`eff_split`), or completes within the
+limit, and the forward simulation gives its code's run (`EvalSound`). Once
+every operand is evaluated, the operation either completes, which a failing
+run cannot do, traps undefined, or traps where the mini code's own check
+(a shift amount, a bound, a division) stops. -/
+
+namespace Lanius.Mini
+
+open Lanius.Core (Value)
+open Lanius.Semantics (State Cell Completion evalExpr evalExprs execStmt restoreLocals)
+
+/-- A lowered effectful expression whose Core evaluation fails stops within
+`n` ticks. -/
+def EffStops (sp : SrcProgram) (mp : Program) (n : Nat) (e : SrcEff) : Prop :=
+  ∀ {hp : Heap} {scope : List Binding} {slot : Nat} {ev : Evaluated}
+    {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
+    e.eval (sigs sp.funcs) sp.decls scope slot = some ev →
+    Corr scope frame st env → Layout scope frame base slot → st.Fresh →
+    HeapCorr st.heap hp → st.heap.nextAddress ≤ hp.limit →
+    EFails sp hp.limit st e.toCore → ∃ d, Stops mp d env hp ev.stmt n
+
+/-! ## Core's traps pass outward -/
+
+section Traps
+
+variable {P : Core.Program} {st : State}
+
+theorem unary_trap {op : Core.UnaryOp} {e : Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
+    (h : evalExpr j P st e = .trapped r s) : evalExpr (j + 1) P st (.unary op e) = .trapped r s := by
+  rw [evalExpr.eq_def]; simp only [h]
+
+theorem unary_done {op : Core.UnaryOp} {e : Core.Expr} {k : Nat} {w r : Value} {s : State}
+    (h : evalExpr k P st e = .done w s) (ok : Semantics.evalUnaryValue P.target op w = .ok r) :
+    evalExpr (k + 1) P st (.unary op e) = .done r s := by
+  rw [evalExpr.eq_def]; simp only [h, ok]
+
+theorem cast_trap {ty : Core.ScalarTy} {e : Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
+    (h : evalExpr j P st e = .trapped r s) : evalExpr (j + 1) P st (.cast ty e) = .trapped r s := by
+  rw [evalExpr.eq_def]; simp only [h]
+
+theorem cast_done {ty : Core.ScalarTy} {e : Core.Expr} {k : Nat} {w r : Value} {s : State}
+    (h : evalExpr k P st e = .done w s) (ok : Semantics.evalScalarCast P.target ty w = .ok r) :
+    evalExpr (k + 1) P st (.cast ty e) = .done r s := by
+  rw [evalExpr.eq_def]; simp only [h, ok]
+
+theorem binary_trap_left {op : Core.BinaryOp} {l r : Core.Expr} {j : Nat} {reason : Lanius.Trap} {s : State}
+    (h : evalExpr j P st l = .trapped reason s) : evalExpr (j + 1) P st (.binary op l r) = .trapped reason s := by
+  cases op <;> (rw [evalExpr.eq_def]; simp only [h])
+
+theorem binary_trap_right {op : Core.BinaryOp} (general : op ≠ .logicalAnd ∧ op ≠ .logicalOr)
+    {l r : Core.Expr} {k j : Nat} {vl : Value} {st1 : State} {reason : Lanius.Trap} {s : State}
+    (hl : evalExpr k P st l = .done vl st1) (h : evalExpr j P st1 r = .trapped reason s) :
+    evalExpr (max k j + 1) P st (.binary op l r) = .trapped reason s := by
+  have l' := Semantics.evalExpr_of_le hl (by intro h; cases h) (Nat.le_max_left k j)
+  have r' := Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_max_right k j)
+  cases op <;> simp only [ne_eq, not_true_eq_false, false_and, and_false, reduceCtorEq, not_false_eq_true,
+    and_self] at general <;> (rw [evalExpr.eq_def]; simp only [l', r'])
+
+theorem binary_done {op : Core.BinaryOp} (general : op ≠ .logicalAnd ∧ op ≠ .logicalOr)
+    {l r : Core.Expr} {k j : Nat} {vl vr v : Value} {st1 st2 : State}
+    (hl : evalExpr k P st l = .done vl st1) (hr : evalExpr j P st1 r = .done vr st2)
+    (ok : Semantics.evalBinaryValue P.target op vl vr = .ok v) :
+    evalExpr (max k j + 1) P st (.binary op l r) = .done v st2 := by
+  have l' := Semantics.evalExpr_of_le hl (by intro h; cases h) (Nat.le_max_left k j)
+  have r' := Semantics.evalExpr_of_le hr (by intro h; cases h) (Nat.le_max_right k j)
+  cases op <;> simp only [ne_eq, not_true_eq_false, false_and, and_false, reduceCtorEq, not_false_eq_true,
+    and_self] at general <;> (rw [evalExpr.eq_def]; simp only [l', r', ok])
+
+theorem logical_trap_right {op : Core.BinaryOp} {go : Bool}
+    (which : op = .logicalAnd ∧ go = true ∨ op = .logicalOr ∧ go = false)
+    {l r : Core.Expr} {k j : Nat} {st1 : State} {reason : Lanius.Trap} {s : State}
+    (hl : evalExpr k P st l = .done (.boolean go) st1) (h : evalExpr j P st1 r = .trapped reason s) :
+    evalExpr (max k j + 1) P st (.binary op l r) = .trapped reason s := by
+  have l' := Semantics.evalExpr_of_le hl (by intro h; cases h) (Nat.le_max_left k j)
+  have r' := Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_max_right k j)
+  rcases which with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> (rw [evalExpr.eq_def]; simp only [l', r'])
+
+theorem logical_done_right {op : Core.BinaryOp} {go : Bool}
+    (which : op = .logicalAnd ∧ go = true ∨ op = .logicalOr ∧ go = false)
+    {l r : Core.Expr} {k j : Nat} {st1 : State} {v : Value} {s : State}
+    (hl : evalExpr k P st l = .done (.boolean go) st1) (h : evalExpr j P st1 r = .done v s) :
+    evalExpr (max k j + 1) P st (.binary op l r) = .done v s := by
+  have l' := Semantics.evalExpr_of_le hl (by intro h; cases h) (Nat.le_max_left k j)
+  have r' := Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_max_right k j)
+  rcases which with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> (rw [evalExpr.eq_def]; simp only [l', r'])
+
+theorem logical_done_left {op : Core.BinaryOp} {stop : Bool}
+    (which : op = .logicalAnd ∧ stop = false ∨ op = .logicalOr ∧ stop = true)
+    {l r : Core.Expr} {k : Nat} {st1 : State}
+    (hl : evalExpr k P st l = .done (.boolean stop) st1) :
+    evalExpr (k + 1) P st (.binary op l r) = .done (.boolean stop) st1 := by
+  rcases which with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> (rw [evalExpr.eq_def]; simp only [hl])
+
+theorem exprs_trap_head {e : Core.Expr} {es : List Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
+    (h : evalExpr j P st e = .trapped r s) : evalExprs (j + 1) P st (e :: es) = .trapped r s := by
+  simp only [evalExprs, h]
+
+theorem exprs_trap_tail {e : Core.Expr} {es : List Core.Expr} {k j : Nat} {v : Value} {st1 : State}
+    {r : Lanius.Trap} {s : State} (hd : evalExpr k P st e = .done v st1) (h : evalExprs j P st1 es = .trapped r s) :
+    evalExprs (max k j + 1) P st (e :: es) = .trapped r s := by
+  have hd' := Semantics.evalExpr_of_le hd (by intro h; cases h) (Nat.le_max_left k j)
+  have h' := (h ▸ Semantics.evalExprs_refines (program := P) (state := st1) (expressions := es)
+    (Nat.le_max_right k j)).completed (by intro h; cases h)
+  simp only [evalExprs, hd', h']
+
+theorem exprs_done {e : Core.Expr} {es : List Core.Expr} {k j : Nat} {v : Value} {vs : List Value}
+    {st1 s : State} (hd : evalExpr k P st e = .done v st1) (h : evalExprs j P st1 es = .done vs s) :
+    evalExprs (max k j + 1) P st (e :: es) = .done (v :: vs) s := by
+  have hd' := Semantics.evalExpr_of_le hd (by intro h; cases h) (Nat.le_max_left k j)
+  have h' := (h ▸ Semantics.evalExprs_refines (program := P) (state := st1) (expressions := es)
+    (Nat.le_max_right k j)).completed (by intro h; cases h)
+  simp only [evalExprs, hd', h']
+
+theorem call_trap {id : Nat} {args : List Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
+    (h : evalExprs j P st args = .trapped r s) : evalExpr (j + 1) P st (.call id args) = .trapped r s := by
+  rw [evalExpr.eq_def]; simp only [h]
+
+theorem struct_trap {id : Nat} {args : List Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
+    (h : evalExprs j P st args = .trapped r s) : evalExpr (j + 1) P st (.structValue id args) = .trapped r s := by
+  rw [evalExpr.eq_def]; simp only [h]
+
+theorem struct_done {id : Nat} {args : List Core.Expr} {k : Nat} {vs : List Value} {s : State}
+    (h : evalExprs k P st args = .done vs s) : evalExpr (k + 1) P st (.structValue id args) = .done (.structure id vs) s := by
+  rw [evalExpr.eq_def]; simp only [h]
+
+theorem enum_trap {id variant : Nat} {args : List Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
+    (h : evalExprs j P st args = .trapped r s) :
+    evalExpr (j + 1) P st (.enumValue id variant args) = .trapped r s := by
+  rw [evalExpr.eq_def]; simp only [h]
+
+theorem enum_done {id variant : Nat} {args : List Core.Expr} {k : Nat} {vs : List Value} {s : State}
+    (h : evalExprs k P st args = .done vs s) :
+    evalExpr (k + 1) P st (.enumValue id variant args) = .done (.enumeration id variant vs) s := by
+  rw [evalExpr.eq_def]; simp only [h]
+
+theorem match_trap {e : Core.Expr} {arms : List (Core.Pattern × Core.Expr)} {j : Nat} {r : Lanius.Trap} {s : State}
+    (h : evalExpr j P st e = .trapped r s) : evalExpr (j + 1) P st (.matchValue e arms) = .trapped r s := by
+  rw [evalExpr.eq_def]; simp only [h]
+
+theorem match_arms {e : Core.Expr} {arms : List (Core.Pattern × Core.Expr)} {k : Nat} {w : Value} {st1 : State}
+    (h : evalExpr k P st e = .done w st1) {j : Nat} (le : k ≤ j) :
+    evalExpr (j + 1) P st (.matchValue e arms) = Semantics.evalMatchArms j P st1 w arms := by
+  have h' := Semantics.evalExpr_of_le h (by intro h; cases h) le
+  rw [evalExpr.eq_def]; simp only [h']
+
+theorem index_trap {slice : Nat} {idx : Core.Expr} {element : Core.Ty} {address length j : Nat}
+    {r : Lanius.Trap} {s : State}
+    (base : evalExpr (j + 1) P st (.local slice) = .done (.rawSlice element address length) st)
+    (h : evalExpr j P st idx = .trapped r s) : evalExpr (j + 2) P st (.index (.local slice) idx) = .trapped r s := by
+  have h' := Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)
+  rw [evalExpr.eq_def]; simp only [base, h']
+
+/-- Core's read of `slice[idx]` from a raw slice local, the index evaluated
+from `st` to `st1` and in bounds: a value, or an undefined trap. -/
+theorem index_eff_outcome {k : Nat} {slice : Nat} {idx : Core.Expr} {element : Core.Ty}
+    {address length : Nat} {iv : Value} {pos : Nat} {st1 : State}
+    (base : evalExpr (k + 1) P st (.local slice) = .done (.rawSlice element address length) st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st1) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < length) :
+    (∃ v, evalExpr (k + 2) P st (.index (.local slice) idx) = .done v st1) ∨
+    ∃ r, evalExpr (k + 2) P st (.index (.local slice) idx) = .trapped r st1 ∧ undefinedTrap r = true := by
+  have eq : evalExpr (k + 2) P st (.index (.local slice) idx) =
+      match Semantics.readRawSliceIndex P st1 element address length pos with
+      | .ok value => .done value st1
+      | .error reason => .trapped reason st1 := by
+    rw [evalExpr.eq_def]
+    simp only [base, idxRun, posOk]
+    cases Semantics.readRawSliceIndex P st1 element address length pos <;> rfl
+  rw [eq]
+  cases read : Semantics.readRawSliceIndex P st1 element address length pos with
+  | ok v => exact .inl ⟨v, rfl⟩
+  | error r => exact .inr ⟨r, rfl, readRawSliceIndex_undef lt r read⟩
+
+end Traps
+
+/-! ## Operators with results on typed values -/
+
+theorem negate_defined {inner t : Typed} {w : Value} {x : BitVec 64} (lowered : lowerNegateTyped inner = some t)
+    (holds : inner.ty.Holds w x) : ∃ r, Semantics.evalUnaryValue .x86_64 .negate w = .ok r := by
+  simp only [lowerNegateTyped] at lowered
+  split at lowered
+  · rename_i isInt
+    cases hty : inner.ty <;> simp [hty, SrcType.isI32] at isInt
+    rw [hty] at holds
+    obtain ⟨rfl, _⟩ := holds
+    exact ⟨_, rfl⟩
+  split at lowered
+  · rename_i isIsize
+    cases hty : inner.ty <;> simp [hty, SrcType.isIsize] at isIsize
+    rw [hty] at holds
+    subst holds
+    exact ⟨_, rfl⟩
+  · simp at lowered
+
+theorem not_defined {inner t : Typed} {w : Value} {x : BitVec 64} (lowered : lowerNotTyped inner = some t)
+    (holds : inner.ty.Holds w x) : ∃ r, Semantics.evalUnaryValue .x86_64 .logicalNot w = .ok r := by
+  simp only [lowerNotTyped] at lowered
+  split at lowered
+  · rename_i isBool
+    cases hty : inner.ty <;> simp [hty, SrcType.isBool] at isBool
+    rw [hty] at holds
+    obtain ⟨b, rfl, _⟩ := holds
+    exact ⟨_, rfl⟩
+  · simp at lowered
+
+/-- A signed division the mini check passes has a result. -/
+theorem i32_div_ok {x y : BitVec 32} {op : DivOp} {cop : Core.BinaryOp}
+    (h : (cop = .divide ∧ op = .sDiv) ∨ (cop = .remainder ∧ op = .sRem)) (defined : op.defined x y = true) :
+    ∃ v, Semantics.evalBinaryValue .x86_64 cop (.signed .i32 x.toInt) (.signed .i32 y.toInt) = .ok v := by
+  have hy : ¬ y.toInt = 0 := fun z => by
+    have : y = 0 := BitVec.eq_of_toInt_eq (by simpa using z)
+    rcases (show (op = .sDiv ∨ op = .sRem) by rcases h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> simp) with rfl | rfl <;>
+      simp [DivOp.defined, this] at defined
+  have hm : ¬ (x.toInt = -Semantics.signedSignBit .x86_64 .i32 ∧ y.toInt = -1) := fun ⟨hx, hy1⟩ => by
+    have ex : x = BitVec.intMin 32 := BitVec.eq_of_toInt_eq (by rw [hx]; rfl)
+    have ey : y = -1 := BitVec.eq_of_toInt_eq (by rw [hy1]; rfl)
+    rcases (show (op = .sDiv ∨ op = .sRem) by rcases h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> simp) with rfl | rfl <;>
+      simp [DivOp.defined, ex, ey] at defined
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+  · simp only [Semantics.evalBinaryValue, Semantics.evalSignedBinary]
+    simp [hy, hm]
+
+/-- An unsigned division the mini check passes has a result. -/
+theorem uint_div_ok (k : UintTy) {a b : BitVec 64} {op : DivOp} {cop : Core.BinaryOp}
+    (h : (cop = .divide ∧ op = .uDiv) ∨ (cop = .remainder ∧ op = .uRem)) (defined : op.defined a b = true) :
+    ∃ v, Semantics.evalBinaryValue .x86_64 cop (.unsigned k.toCore a.toNat) (.unsigned k.toCore b.toNat) = .ok v := by
+  have hb : ¬ b.toNat = 0 := fun z => by
+    have : b = 0 := BitVec.eq_of_toNat_eq (by simpa using z)
+    rcases (show (op = .uDiv ∨ op = .uRem) by rcases h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> simp) with rfl | rfl <;>
+      simp [DivOp.defined, this] at defined
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+  · simp only [Semantics.evalBinaryValue, Semantics.evalUnsignedBinary]
+    simp [hb]
+
+/-! ## Sub-expressions -/
+
+section Split
+
+variable {sp : SrcProgram} {mp : Program} {n : Nat}
+
+/-- A sub-expression Core evaluates first: its code stops, or Core completes
+it within the limit and its code runs. -/
+theorem eff_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    {β : Type} {whole : Nat → Semantics.Outcome β} {e : SrcEff} (ih : EffStops sp mp n e)
+    {hp : Heap} {scope : List Binding} {slot : Nat} {ev : Evaluated} {frame : Nat → Nat} {base : Nat}
+    {st : State} {env : Env}
+    (ok : e.eval (sigs sp.funcs) sp.decls scope slot = some ev) (corr : Corr scope frame st env)
+    (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
+    (propagate : ∀ j reason s, evalExpr j sp.toCore st e.toCore = .trapped reason s →
+      ∃ j' s', whole j' = .trapped reason s') :
+    (∃ d, Stops mp d env hp ev.stmt n) ∨ ∃ k v st1, evalExpr k sp.toCore st e.toCore = .done v st1 ∧
+      st1.heap.nextAddress ≤ hp.limit ∧ Evaluates mp hp slot st env ev v st1 := by
+  by_cases done : Completes hp.limit fun k => evalExpr k sp.toCore st e.toCore
+  · obtain ⟨k, v, st1, run, bound⟩ := done
+    exact .inr ⟨k, v, st1, run, bound, (sound_both lowered k).2 ok corr fr fresh hc run bound⟩
+  · exact .inl (ih ok corr fr fresh hc within (failing_of_not_completes fails propagate done))
+
+/-- Arguments whose Core evaluation fails: their code stops. -/
+theorem args_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) :
+    ∀ (args : List SrcEff), (∀ e ∈ args, EffStops sp mp n e) →
+    ∀ {hp : Heap} {scope : List Binding} {slot : Nat} {ea : EvaluatedArgs} {frame : Nat → Nat} {base : Nat}
+      {st : State} {env : Env},
+    evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea → Corr scope frame st env →
+    Layout scope frame base slot → st.Fresh → HeapCorr st.heap hp → st.heap.nextAddress ≤ hp.limit →
+    (∀ j, Failing hp.limit (evalExprs j sp.toCore st (SrcEff.toCoreList args))) →
+    ∃ d, Stops mp d env hp ea.stmt n
+  | [], _, hp, scope, slot, ea, frame, base, st, env, ok, corr, fr, fresh, hc, within, fails => by
+    have := fails 1
+    simp only [SrcEff.toCoreList, evalExprs, Failing] at this
+    exact absurd within (Nat.not_le.mpr this)
+  | e :: es, each, hp, scope, slot, ea, frame, base, st, env, ok, corr, fr, fresh, hc, within, fails => by
+    simp only [evalArgs] at ok
+    split at ok
+    · simp at ok
+    rename_i first firstOk
+    simp only [consArgs] at ok
+    split at ok
+    · simp at ok
+    rename_i rest restOk
+    simp only [Option.some.injEq] at ok
+    subst ok
+    simp only [SrcEff.toCoreList] at fails
+    rcases eff_split lowered (each e List.mem_cons_self) firstOk corr fr fresh hc within fails
+        (fun j r s h => ⟨j + 1, s, exprs_trap_head h⟩) with
+      ⟨d, stops⟩ | ⟨k, v, st1, run, bound, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, _, hc1⟩
+    · exact ⟨d, .seqFirst stops⟩
+    · have limit := exec1.limit_normal
+      have restFails : ∀ j, Failing hp1.limit (evalExprs j sp.toCore st1 (SrcEff.toCoreList es)) := by
+        rw [limit]
+        refine failing_after exprs_mono (k := k) fun j le => ?_
+        have := fails (j + 1)
+        simp only [evalExprs, value_after run le] at this
+        cases h : evalExprs j sp.toCore st1 (SrcEff.toCoreList es) <;> rw [h] at this <;>
+          first | exact this | trivial
+      obtain ⟨d2, stops⟩ := args_stops lowered es (fun e' mem => each e' (List.mem_cons_of_mem _ mem)) restOk
+        (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_add_right _ _)) fresh1 hc1
+        (by rw [limit]; exact bound) restFails
+      exact ⟨_, Stops.after exec1 stops⟩
+
+/-- Arguments Core evaluates first: their code stops, or Core completes them
+within the limit and their code runs. -/
+theorem args_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    {β : Type} {whole : Nat → Semantics.Outcome β} {args : List SrcEff} (each : ∀ e ∈ args, EffStops sp mp n e)
+    {hp : Heap} {scope : List Binding} {slot : Nat} {ea : EvaluatedArgs} {frame : Nat → Nat} {base : Nat}
+    {st : State} {env : Env}
+    (ok : evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea) (corr : Corr scope frame st env)
+    (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
+    (propagate : ∀ j reason s, evalExprs j sp.toCore st (SrcEff.toCoreList args) = .trapped reason s →
+      ∃ j' s', whole j' = .trapped reason s') :
+    (∃ d, Stops mp d env hp ea.stmt n) ∨ ∃ k vs st1, evalExprs k sp.toCore st (SrcEff.toCoreList args) = .done vs st1 ∧
+      st1.heap.nextAddress ≤ hp.limit ∧ st1.Fresh ∧ Keeps st.nextCell st st1 ∧ st1.locals = st.locals ∧
+      ∃ d env' hp', Exec mp d env hp ea.stmt (.normal env' hp') ∧ (∀ j < slot, env' j = env j) ∧
+        FieldsHold ea.types vs env' slot ∧ HeapCorr st1.heap hp' := by
+  by_cases done : Completes hp.limit fun k => evalExprs k sp.toCore st (SrcEff.toCoreList args)
+  · obtain ⟨k, vs, st1, run, bound⟩ := done
+    exact .inr ⟨k, vs, st1, run, bound,
+      evalArgs_sound args (fun m _ => (sound_both lowered m).2) ok corr fr fresh hc run bound⟩
+  · exact .inl (args_stops lowered args each ok corr fr fresh hc within
+      (failing_of_not_completes fails propagate done))
+
+/-- Two operands of a strict binary operator, into `slot` and `slot + 1`: their
+code stops, or Core completes both within the limit and their code runs. -/
+theorem pair_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {l r : SrcEff}
+    (ihl : EffStops sp mp n l) (ihr : EffStops sp mp n r) {cop : Core.BinaryOp}
+    (general : cop ≠ .logicalAnd ∧ cop ≠ .logicalOr) {hp : Heap} {scope : List Binding} {slot : Nat}
+    {le re : Evaluated} {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
+    (leOk : l.eval (sigs sp.funcs) sp.decls scope slot = some le)
+    (reOk : r.eval (sigs sp.funcs) sp.decls scope (slot + 1) = some re) (corr : Corr scope frame st env)
+    (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (within : st.heap.nextAddress ≤ hp.limit) (fails : EFails sp hp.limit st (.binary cop l.toCore r.toCore))
+    (rest : Stmt) :
+    (∃ d, Stops mp d env hp (.seq le.stmt (.seq re.stmt rest)) n) ∨
+    ∃ k1 vl st1 k2 vr st2 env1 env2 hp2,
+      evalExpr k1 sp.toCore st l.toCore = .done vl st1 ∧ evalExpr k2 sp.toCore st1 r.toCore = .done vr st2 ∧
+      st2.heap.nextAddress ≤ hp.limit ∧ le.ty.HoldsAt vl env1 slot ∧ (∀ j < slot + 1, env2 j = env1 j) ∧
+      re.ty.HoldsAt vr env2 (slot + 1) ∧
+      ∀ d', Stops mp d' env2 hp2 rest n → ∃ d, Stops mp d env hp (.seq le.stmt (.seq re.stmt rest)) n := by
+  rcases eff_split lowered ihl leOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, binary_trap_left h⟩) with
+    ⟨d, stops⟩ | ⟨k1, vl, st1, run1, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
+  · exact .inl ⟨d, .seqFirst stops⟩
+  have limit := exec1.limit_normal
+  have fails1 : EFails sp hp1.limit st (.binary cop l.toCore r.toCore) := by rw [limit]; exact fails
+  rcases eff_split lowered ihr reOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _)) fresh1 hc1
+      (by rw [limit]; exact bound1) fails1 (fun j r s h => ⟨_, s, binary_trap_right general run1 h⟩) with
+    ⟨d, stops⟩ | ⟨k2, vr, st2, run2, bound2, -, -, -, _, d2, env2, hp2, exec2, same2, holds2, -⟩
+  · exact .inl ⟨_, Stops.after exec1 (.seqFirst stops)⟩
+  · exact .inr ⟨k1, vl, st1, k2, vr, st2, env1, env2, hp2, run1, run2, by rw [← limit]; exact bound2, holds1, same2,
+      holds2, fun d' stops => ⟨_, Stops.after exec1 (Stops.after exec2 stops)⟩⟩
+
+end Split
+
+/-! ## The expressions -/
+
+section Cases
+
+variable {sp : SrcProgram} {mp : Program} {n : Nat}
+
+theorem eff_pure {e : SrcExpr} : EffStops sp mp n (.ePure e) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.toCore] at fails
+  simp only [SrcEff.eval, evalPure] at ok
+  split at ok
+  · rename_i t lowered
+    simp only [evalChecked, Option.some.injEq] at ok
+    subst ok
+    refine Stops.checked fun g => ?_
+    obtain ⟨k, v, run⟩ := e.progress corr (SrcProgram.target_toCore sp) lowered g
+    exact (fails.not_done run within).elim
+  · cases e
+    case «local» id =>
+      simp only [evalCopy] at ok
+      split at ok
+      · simp at ok
+      rename_i b found
+      obtain ⟨w, run, -⟩ := corr.local found 0 sp.toCore
+      exact (fails.not_done run within).elim
+    case field id index =>
+      simp only [evalFieldCopy] at ok
+      split at ok
+      · simp at ok
+      rename_i b found
+      simp only [evalFieldOf] at ok
+      split at ok
+      case h_4 =>
+        simp only [evalFieldType] at ok
+        split at ok
+        · simp at ok
+        rename_i ty hfield
+        split at ok
+        case isFalse => simp at ok
+        simp only [evalValues] at ok
+        split at ok
+        · simp at ok
+        rename_i xs valueOk
+        obtain ⟨k, v, run⟩ := lowerValue_progress corr (SrcProgram.target_toCore sp) valueOk
+          (by simp [SrcExpr.guard, Expr.eval])
+        exact (fails.not_done run within).elim
+      all_goals simp at ok
+    all_goals simp at ok
+
+theorem eff_neg (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {operand : SrcEff}
+    (ih : EffStops sp mp n operand) : EffStops sp mp n (.eNeg operand) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalNegate] at ok
+  split at ok
+  · simp at ok
+  rename_i o operandOk
+  cases lowered' : lowerNegateTyped ({ expr := Expr.var slot, ty := o.ty } : Typed) with
+  | none => simp [lowered', evalThen] at ok
+  | some t =>
+    rw [lowered'] at ok
+    simp only [evalThen, Option.some.injEq] at ok
+    subst ok
+    simp only [SrcEff.toCore] at fails
+    rcases eff_split lowered ih operandOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, unary_trap h⟩) with
+      ⟨d, stops⟩ | ⟨k, w, st1, run, bound, -, -, -, -, d1, env1, hp1, exec1, -, holds1, -⟩
+    · exact ⟨d, .seqFirst stops⟩
+    · obtain ⟨r, okv⟩ := negate_defined lowered' (holds_var holds1 (negate_scalar lowered'))
+      exact (fails.not_done (unary_done run okv) bound).elim
+
+theorem eff_not (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {operand : SrcEff}
+    (ih : EffStops sp mp n operand) : EffStops sp mp n (.eNot operand) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalNot] at ok
+  split at ok
+  · simp at ok
+  rename_i o operandOk
+  cases lowered' : lowerNotTyped ({ expr := Expr.var slot, ty := o.ty } : Typed) with
+  | none => simp [lowered', evalThen] at ok
+  | some t =>
+    rw [lowered'] at ok
+    simp only [evalThen, Option.some.injEq] at ok
+    subst ok
+    simp only [SrcEff.toCore] at fails
+    rcases eff_split lowered ih operandOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, unary_trap h⟩) with
+      ⟨d, stops⟩ | ⟨k, w, st1, run, bound, -, -, -, -, d1, env1, hp1, exec1, -, holds1, -⟩
+    · exact ⟨d, .seqFirst stops⟩
+    · obtain ⟨r, okv⟩ := not_defined lowered' (holds_var holds1 (not_scalar lowered'))
+      exact (fails.not_done (unary_done run okv) bound).elim
+
+theorem eff_cast (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {ty : SrcType}
+    {operand : SrcEff} (ih : EffStops sp mp n operand) : EffStops sp mp n (.eCast ty operand) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalCast] at ok
+  split at ok
+  · simp at ok
+  rename_i o operandOk
+  cases lowered' : scalarCast ty ({ expr := Expr.var slot, ty := o.ty } : Typed) with
+  | none => simp [lowered', evalThen] at ok
+  | some t =>
+    rw [lowered'] at ok
+    simp only [evalThen, Option.some.injEq] at ok
+    subst ok
+    simp only [scalarCast] at lowered'
+    split at lowered'
+    case isFalse => simp at lowered'
+    rename_i scalar
+    simp only [SrcEff.toCore] at fails
+    rcases eff_split lowered ih operandOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, cast_trap h⟩) with
+      ⟨d, stops⟩ | ⟨k, w, st1, run, bound, -, -, -, -, d1, env1, hp1, exec1, -, holds1, -⟩
+    · exact ⟨d, .seqFirst stops⟩
+    · obtain ⟨r, okv⟩ := castTo_defined lowered' (holds_var holds1 scalar)
+      exact (fails.not_done (cast_done run okv) bound).elim
+
+theorem eff_stride {slice : Nat} : EffStops sp mp n (.eStride slice) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalStride] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  split at ok
+  · simp at ok
+  rename_i element elementOk
+  obtain ⟨w, localRun, holdsW⟩ := corr.local found 0 sp.toCore
+  rw [eq_of_elementOf elementOk] at holdsW
+  cases holdsW with
+  | slice =>
+  have := fails 2
+  simp only [SrcEff.toCore] at this
+  rw [evalExpr.eq_def] at this
+  simp only [localRun] at this
+  split at this
+  · exact absurd within (Nat.not_le.mpr this)
+  · simp [Failing, undefinedTrap] at this
+
+theorem eff_apply (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {op : SrcOp}
+    {l r : SrcEff} (ihl : EffStops sp mp n l) (ihr : EffStops sp mp n r) : EffStops sp mp n (.eApply op l r) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalApply] at ok
+  split at ok
+  · simp at ok
+  rename_i le leOk
+  split at ok
+  · simp at ok
+  rename_i re reOk
+  simp only [SrcEff.toCore] at fails
+  simp only [evalOperands] at ok
+  split at ok
+  · rename_i checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨⟨scalarL, scalarR⟩, strictOp⟩ := checks
+    split at ok
+    · simp at ok
+    rename_i t lowered'
+    simp only [Option.some.injEq] at ok
+    subst ok
+    have strict : op ≠ .logicalAnd ∧ op ≠ .logicalOr := by cases op <;> simp_all [shortCircuit]
+    have general : op.toCore ≠ .logicalAnd ∧ op.toCore ≠ .logicalOr := by
+      cases op <;> simp_all [SrcOp.toCore]
+    rcases pair_split lowered ihl ihr general leOk reOk corr fr fresh hc within fails _ with
+      stops | ⟨k1, vl, st1, k2, vr, st2, env1, env2, hp2, run1, run2, bound2, holds1, same2, holds2, after⟩
+    · exact stops
+    have sizeL := SrcType.size_scalar scalarL
+    have holdsl := holds_var (env := env2) (holds1.congr fun i below => same2 _ (by omega)) scalarL
+    have holdsr := holds_var holds2 scalarR
+    by_cases zero : (operandGuard op le.ty (slot + 1)).eval (env2.set slot (t.expr.eval env2)) = 0
+    · exact after 0 (Stops.thenCheck (Exec.assign (depth := 0)) zero)
+    · obtain ⟨v, okv⟩ := SrcOp.lower_defined lowered' strict holdsl holdsr fun shift => by
+        rcases shift with rfl | rfl <;>
+        · have := amountGuard_ne (by simpa [operandGuard] using zero)
+          simpa [Expr.eval, Env.set] using this
+      exact (fails.not_done (binary_done general run1 run2 okv) bound2).elim
+  · rename_i notStrict
+    split at ok
+    · rename_i checks
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+      obtain ⟨⟨boolL, boolR⟩, isAnd⟩ := checks
+      simp only [Option.some.injEq] at ok
+      subst ok
+      have opEq : op = .logicalAnd := by cases op <;> simp_all [shortCircuit]
+      subst opEq
+      simp only [SrcOp.toCore] at fails
+      cases hl : le.ty <;> simp [hl, SrcType.isBool] at boolL
+      cases hr : re.ty <;> simp [hr, SrcType.isBool] at boolR
+      rcases eff_split lowered ihl leOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, binary_trap_left h⟩) with
+        ⟨d, stops⟩ | ⟨k1, vl, st1, run1, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
+      · exact ⟨d, .seqFirst stops⟩
+      rw [hl] at holds1
+      obtain ⟨b, eq, x⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
+      cases eq
+      cases b with
+      | false => exact (fails.not_done (logical_done_left (.inl ⟨rfl, rfl⟩) run1) bound1).elim
+      | true =>
+        have limit := exec1.limit_normal
+        have fails1 : EFails sp hp1.limit st (.binary .logicalAnd l.toCore r.toCore) := by rw [limit]; exact fails
+        rcases eff_split lowered ihr reOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _)) fresh1
+            hc1 (by rw [limit]; exact bound1) fails1
+            (fun j r s h => ⟨_, s, logical_trap_right (.inl ⟨rfl, rfl⟩) run1 h⟩) with
+          ⟨d, stops⟩ | ⟨k2, vr, st2, run2, bound2, -⟩
+        · exact ⟨_, Stops.after exec1 (.ifTrue (by simp [Expr.eval, x, boolBits]) (.seqFirst stops))⟩
+        · exact (fails1.not_done (logical_done_right (.inl ⟨rfl, rfl⟩) run1 run2) bound2).elim
+    · rename_i notAnd
+      split at ok
+      · rename_i checks
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+        obtain ⟨⟨boolL, boolR⟩, isOr⟩ := checks
+        simp only [Option.some.injEq] at ok
+        subst ok
+        have opEq : op = .logicalOr := by cases op <;> simp_all [shortCircuit]
+        subst opEq
+        simp only [SrcOp.toCore] at fails
+        cases hl : le.ty <;> simp [hl, SrcType.isBool] at boolL
+        cases hr : re.ty <;> simp [hr, SrcType.isBool] at boolR
+        rcases eff_split lowered ihl leOk corr fr fresh hc within fails
+            (fun j r s h => ⟨j + 1, s, binary_trap_left h⟩) with
+          ⟨d, stops⟩ | ⟨k1, vl, st1, run1, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
+        · exact ⟨d, .seqFirst stops⟩
+        rw [hl] at holds1
+        obtain ⟨b, eq, x⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
+        cases eq
+        cases b with
+        | true => exact (fails.not_done (logical_done_left (.inr ⟨rfl, rfl⟩) run1) bound1).elim
+        | false =>
+          have limit := exec1.limit_normal
+          have fails1 : EFails sp hp1.limit st (.binary .logicalOr l.toCore r.toCore) := by rw [limit]; exact fails
+          rcases eff_split lowered ihr reOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
+              fresh1 hc1 (by rw [limit]; exact bound1) fails1
+              (fun j r s h => ⟨_, s, logical_trap_right (.inr ⟨rfl, rfl⟩) run1 h⟩) with
+            ⟨d, stops⟩ | ⟨k2, vr, st2, run2, bound2, -⟩
+          · exact ⟨_, Stops.after exec1 (.ifFalse (by simp [Expr.eval, x, boolBits]) (.seqFirst stops))⟩
+          · exact (fails1.not_done (logical_done_right (.inr ⟨rfl, rfl⟩) run1 run2) bound2).elim
+      · simp at ok
+
+theorem eff_divide (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {op : SrcDivOp}
+    {l r : SrcEff} (ihl : EffStops sp mp n l) (ihr : EffStops sp mp n r) : EffStops sp mp n (.eDivide op l r) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalDivision] at ok
+  split at ok
+  · simp at ok
+  rename_i le leOk
+  split at ok
+  · simp at ok
+  rename_i re reOk
+  simp only [SrcEff.toCore] at fails
+  have general : op.toCore ≠ .logicalAnd ∧ op.toCore ≠ .logicalOr := by cases op <;> simp [SrcDivOp.toCore]
+  simp only [evalDivide] at ok
+  split at ok
+  · rename_i both
+    simp only [Bool.and_eq_true] at both
+    simp only [Option.some.injEq] at ok
+    subst ok
+    rcases pair_split lowered ihl ihr general leOk reOk corr fr fresh hc within fails _ with
+      stops | ⟨k1, vl, st1, k2, vr, st2, env1, env2, hp2, run1, run2, bound2, holds1, same2, holds2, after⟩
+    · exact stops
+    rw [eq_of_isI32 both.1] at holds1
+    rw [eq_of_isI32 both.2] at holds2
+    have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
+    have holdsr := holds_var holds2 rfl
+    obtain ⟨rfl, -⟩ := holdsl
+    obtain ⟨rfl, -⟩ := holdsr
+    by_cases div : Word.s32.divides (signedDiv op) ((Expr.var slot).eval env2) ((Expr.var (slot + 1)).eval env2) = true
+    · obtain ⟨v, okv⟩ := i32_div_ok (divOp_signed op) div
+      exact (fails.not_done (binary_done general run1 run2 okv) bound2).elim
+    · exact after 0 (.divide (by simpa using div))
+  · split at ok
+    · simp at ok
+    rename_i kind hk
+    simp only [evalDivideUint] at ok
+    split at ok
+    · rename_i hr
+      simp only [Option.some.injEq] at ok
+      subst ok
+      rcases pair_split lowered ihl ihr general leOk reOk corr fr fresh hc within fails _ with
+        stops | ⟨k1, vl, st1, k2, vr, st2, env1, env2, hp2, run1, run2, bound2, holds1, same2, holds2, after⟩
+      · exact stops
+      have lty : le.ty = .uint kind := by cases hty : le.ty <;> simp_all [SrcType.uintKind]
+      rw [lty] at holds1
+      rw [eq_of_isUint hr] at holds2
+      have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
+      have holdsr := holds_var holds2 rfl
+      obtain ⟨rfl, -⟩ := holdsl
+      obtain ⟨rfl, -⟩ := holdsr
+      by_cases div : Word.u64.divides (unsignedDiv op) ((Expr.var slot).eval env2) ((Expr.var (slot + 1)).eval env2) = true
+      · obtain ⟨v, okv⟩ := uint_div_ok kind (divOp_unsigned op) div
+        exact (fails.not_done (binary_done general run1 run2 okv) bound2).elim
+      · exact after 0 (.divide (by simpa using div))
+    · simp at ok
+
+theorem boundsGuard_ne {b : Binding} {i : Expr} {env : Env} (g : (boundsGuard b i).eval env ≠ 0) :
+    (i.eval env).toNat < (env (b.slot + 1)).toNat := by
+  simp only [boundsGuard, Expr.eval, Word.holds, CmpOp.holdsU, BitVec.ult] at g
+  by_cases h : (i.eval env).toNat < (env (b.slot + 1)).toNat
+  · exact h
+  · simp [h] at g
+
+theorem eff_index (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {slice : Nat}
+    {index : SrcEff} (ih : EffStops sp mp n index) : EffStops sp mp n (.eIndex slice index) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalIndex] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  split at ok
+  · simp at ok
+  rename_i element elementOk
+  have bty := eq_of_elementOf elementOk
+  simp only [SrcEff.toCore] at fails
+  have shape : ∃ i rest, index.eval (sigs sp.funcs) sp.decls scope slot = some i ∧
+      (i.ty.isI32 || i.ty.isUint .usize) = true ∧
+      ev.stmt = .seq i.stmt (checkThen slot (boundsGuard b (.var slot)) rest) := by
+    simp only [evalElement] at ok
+    split at ok
+    · split at ok
+      · simp at ok
+      rename_i i indexOk
+      simp only [evalLoad] at ok
+      split at ok
+      case isFalse => simp at ok
+      rename_i kind
+      simp only [Option.some.injEq] at ok
+      subst ok
+      exact ⟨i, _, indexOk, kind, rfl⟩
+    · split at ok
+      · simp at ok
+      rename_i i indexOk
+      simp only [evalWordElement] at ok
+      split at ok
+      case isFalse => simp at ok
+      rename_i cond
+      simp only [Bool.and_eq_true] at cond
+      simp only [Option.some.injEq] at ok
+      subst ok
+      exact ⟨i, _, indexOk, cond.2, rfl⟩
+  obtain ⟨i, rest, indexOk, kind, shape⟩ := shape
+  rw [shape]
+  obtain ⟨w0, localRun0, holdsW⟩ := corr.local found 0 sp.toCore
+  rw [bty] at holdsW
+  cases holdsW with
+  | @slice _ len _ _ lenSlot lenSmall =>
+  rcases eff_split lowered ih indexOk corr fr fresh hc within fails
+      (fun j r s h => ⟨j + 2, s, index_trap (value_after localRun0 (by omega)) h⟩) with
+    ⟨d, stops⟩ | ⟨k, iv, st1, run, bound, -, -, -, _, d1, env1, hp1, exec1, same1, holds1, -⟩
+  · exact ⟨d, .seqFirst stops⟩
+  by_cases zero : (boundsGuard b (.var slot)).eval env1 = 0
+  · exact ⟨_, Stops.after exec1 (Stops.check (d := 0) fun h => absurd zero h)⟩
+  have slot2 : b.slot + 1 < slot := by
+    have := fr.slots b (lookup_mem found).1
+    rw [bty] at this
+    simp only [SrcType.size] at this
+    omega
+  have inBounds := boundsGuard_ne zero
+  rw [same1 _ slot2, lenSlot] at inBounds
+  have scalar : i.ty.isScalar = true := by
+    cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+  have posOk := index_ok (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) (by omega)
+  rcases index_eff_outcome (value_after localRun0 (by omega : 0 + 1 ≤ k + 1)) (value_after run (Nat.le_succ k))
+      posOk inBounds with ⟨v, done⟩ | ⟨r, trapRun, undefined⟩
+  · exact (fails.not_done done bound).elim
+  · have := fails (k + 2)
+    simp only [trapRun, Failing] at this
+    rw [undefined] at this
+    cases this
+
+theorem eff_struct (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {ty : SrcType}
+    {fields : List SrcEff} (each : ∀ e ∈ fields, EffStops sp mp n e) : EffStops sp mp n (.eStruct ty fields) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalStruct] at ok
+  split at ok
+  · simp at ok
+  rename_i ea argsOk
+  simp only [SrcEff.toCore] at fails
+  cases ty
+  case struct sid types =>
+    simp only [evalStructOf] at ok
+    split at ok
+    case isFalse => simp at ok
+    simp only [Option.some.injEq] at ok
+    subst ok
+    rcases args_split lowered each argsOk corr fr fresh hc within fails
+        (fun j r s h => ⟨j + 1, s, struct_trap h⟩) with stops | ⟨k, vs, st1, run, bound, -⟩
+    · exact stops
+    · exact (fails.not_done (struct_done run) bound).elim
+  all_goals simp at ok
+
+theorem eff_variant (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {ty : SrcType}
+    {variant : Nat} {payload : List SrcEff} (each : ∀ e ∈ payload, EffStops sp mp n e) :
+    EffStops sp mp n (.eVariant ty variant payload) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalVariant] at ok
+  split at ok
+  · simp at ok
+  rename_i ea argsOk
+  simp only [SrcEff.toCore] at fails
+  cases ty
+  case enum eid variants =>
+    simp only [evalTagged] at ok
+    split at ok
+    case isFalse => simp at ok
+    split at ok
+    · simp at ok
+    rename_i fs found
+    simp only [evalPayload] at ok
+    split at ok
+    case isFalse => simp at ok
+    simp only [Option.some.injEq] at ok
+    subst ok
+    rcases args_split lowered each argsOk corr (fr.mono (Nat.le_succ _)) fresh hc within fails
+        (fun j r s h => ⟨j + 1, s, enum_trap h⟩) with ⟨d, stops⟩ | ⟨k, vs, st1, run, bound, -⟩
+    · exact ⟨d, .seqFirst stops⟩
+    · exact (fails.not_done (enum_done run) bound).elim
+  all_goals simp at ok
+
+theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {callee : Nat} {args : List SrcEff}
+    (each : ∀ e ∈ args, EffStops sp mp (n + 1) e) : EffStops sp mp (n + 1) (.eCall callee args) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalCall, sigs_get] at ok
+  cases found : sp.funcs[callee]? with
+  | none => simp [found] at ok
+  | some f =>
+  simp only [found, Option.map_some] at ok
+  split at ok
+  · simp at ok
+  rename_i ea argsOk
+  simp only [evalCallSig] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i checks
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+  obtain ⟨same, sized⟩ := checks
+  have tyEq := typesSame_eq _ same
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [SrcEff.toCore] at fails
+  rcases args_split lowered each argsOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, call_trap h⟩) with
+    ⟨d, stops⟩ | ⟨k, vs, st1, argsRun, bound, fresh1, keeps1, locals1, d1, env1, hp1, exec1, same1, holdsA, hc1⟩
+  · exact ⟨d, .seqFirst stops⟩
+  rw [tyEq] at holdsA
+  have holdsEntry : FieldsHold (paramTypes f.params) vs
+      (Func.entry (Expr.evalAll env1 (slotVars slot (sizes (paramTypes f.params))))) 0 :=
+    holdsA.congr fun i below => by rw [Nat.zero_add, entry_slotVars env1 slot _ below]
+  have limit := exec1.limit_normal
+  obtain ⟨d, g, gFound, arity, stops⟩ := callee_stops lowered returns prev argsRun found fresh1 hc1
+    (by rw [limit]; exact bound) holdsEntry (by rw [evalAll_length, slotVars_length, paramsSize_eq])
+    (by rw [limit]; exact fails)
+  exact ⟨_, Stops.after exec1 (.call gFound (by rw [← arity, evalAll_length]) (Nat.lt_succ_self d) stops)⟩
+
+/-- The arm a match's tag picks: its value's code stops when Core's
+evaluation of it fails. -/
+theorem arms_stops {dst eid : Nat} {ty : SrcType} {scope : List Binding} {slot : Nat} :
+    ∀ (values : List SrcEff) {variants : List (List SrcType)} {binders : List (List Nat)} {j kv : Nat}
+      {stmt : Stmt} {fs : List SrcType} {vs : List Value} {hp : Heap} {frame : Nat → Nat} {st : State}
+      {env : Env},
+      (∀ e ∈ values, EffStops sp mp n e) → Corr scope frame st env → Layout scope frame 0 slot → st.Fresh →
+      HeapCorr st.heap hp → st.heap.nextAddress ≤ hp.limit →
+      evalArms (sigs sp.funcs) sp.decls scope slot dst ty j variants binders values = some stmt →
+      values.length = variants.length → binders.length = variants.length →
+      (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → j ≤ kv → variants[kv - j]? = some fs → kv < 2 ^ 64 →
+      env slot = BitVec.ofNat 64 kv → FieldsHold fs vs env (slot + 1) →
+      (∀ k, Failing hp.limit (Semantics.evalMatchArms k sp.toCore st (.enumeration eid kv vs)
+        (SrcEff.coreArms eid j binders values))) →
+      ∃ d, Stops mp d env hp stmt n := by
+  intro values
+  induction values with
+  | nil =>
+    intro variants binders j kv stmt fs vs hp frame st env each corr fr fresh hc within ok
+    simp [evalArms] at ok
+  | cons value rest ih =>
+    intro variants binders j kv stmt fs vs hp frame st env each corr fr fresh hc within ok vlen blen room le
+      found small tag payload fails
+    cases variants with
+    | nil => simp [evalArms] at ok
+    | cons types more =>
+    cases binders with
+    | nil => simp [evalArms] at ok
+    | cons bs others =>
+    simp only [evalArms] at ok
+    split at ok
+    · simp at ok
+    rename_i s' scopeOk
+    split at ok
+    · simp at ok
+    rename_i e valueOk
+    simp only [evalArm, evalSame] at ok
+    have same : e.ty.same ty = true := by
+      apply Classical.byContradiction
+      intro hne
+      rw [if_neg hne] at ok
+      simp at ok
+    rw [if_pos same] at ok
+    by_cases hj : j = kv
+    · subst hj
+      simp only [Nat.sub_self, List.getElem?_cons_zero, Option.some.injEq] at found
+      subst found
+      obtain ⟨frame', corr', fr', fresh', keeps', blen'⟩ :=
+        armScope_layout bs scopeOk payload (fr.mono (Nat.le_succ _)) corr fresh
+      have armFails : EFails sp hp.limit (st.bindLocals (bs.zip vs)) value.toCore := fun k => by
+        have := fails (k + 1)
+        simp only [SrcEff.coreArms, Semantics.evalMatchArms, Semantics.matchPattern, beq_self_eq_true,
+          Bool.and_self, ↓reduceIte, matchBinds _ _ blen'] at this
+        exact (failing_restore _ _).mp this
+      have hc' : HeapCorr (st.bindLocals (bs.zip vs)).heap hp := by
+        rw [(bindLocals_same _ st).1]
+        exact hc
+      have within' : (st.bindLocals (bs.zip vs)).heap.nextAddress ≤ hp.limit := by
+        rw [(bindLocals_same _ st).1]
+        exact within
+      obtain ⟨d, stops⟩ := each value List.mem_cons_self valueOk corr' (fr'.mono (room _ List.mem_cons_self))
+        fresh' hc' within' armFails
+      cases rest with
+      | nil =>
+        simp only [Option.some.injEq] at ok
+        subst ok
+        exact ⟨d, stops⟩
+      | cons next more' =>
+        cases ho : evalArms (sigs sp.funcs) sp.decls scope slot dst ty (j + 1) more others (next :: more') with
+        | none => simp [ho] at ok
+        | some o =>
+          simp only [ho, Option.some.injEq] at ok
+          subst ok
+          exact ⟨d, .ifTrue (by simp [Expr.eval, Word.holds, CmpOp.holdsU, tag]) stops⟩
+    · have hne : (j == kv) = false := by simpa using hj
+      have found' : more[kv - (j + 1)]? = some fs := by
+        rw [show kv - j = kv - (j + 1) + 1 by omega] at found
+        simpa using found
+      cases rest with
+      | nil =>
+        have := (List.getElem?_eq_some_iff.mp found').1
+        simp only [List.length_cons, List.length_nil] at vlen
+        omega
+      | cons next more' =>
+        cases ho : evalArms (sigs sp.funcs) sp.decls scope slot dst ty (j + 1) more others (next :: more') with
+        | none => simp [ho] at ok
+        | some o =>
+          simp only [ho, Option.some.injEq] at ok
+          subst ok
+          have fails' : ∀ k, Failing hp.limit (Semantics.evalMatchArms k sp.toCore st (.enumeration eid kv vs)
+              (SrcEff.coreArms eid (j + 1) others (next :: more'))) := fun k => by
+            have := fails (k + 1)
+            simp only [SrcEff.coreArms, Semantics.evalMatchArms, Semantics.matchPattern, beq_self_eq_true,
+              Bool.true_and, hne, Bool.false_eq_true, ↓reduceIte] at this
+            exact this
+          obtain ⟨d, stops⟩ := ih (fun e' mem => each e' (List.mem_cons_of_mem _ mem)) corr fr fresh hc within ho
+            (by simpa using vlen) (by simpa using blen) (fun fs mem => room fs (List.mem_cons_of_mem _ mem))
+            (by omega) found' small tag payload fails'
+          have differ : BitVec.ofNat 64 kv ≠ BitVec.ofNat 64 j := ofNat_ne small (by omega) (Ne.symm hj)
+          exact ⟨d, .ifFalse (by simp [Expr.eval, Word.holds, CmpOp.holdsU, tag, differ]) stops⟩
+
+theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {scrutinee : SrcEff}
+    {ety ty : SrcType} {binders : List (List Nat)} {values : List SrcEff} (ih : EffStops sp mp n scrutinee)
+    (each : ∀ e ∈ values, EffStops sp mp n e) : EffStops sp mp n (.eMatch scrutinee ety ty binders values) := by
+  intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
+  simp only [SrcEff.eval, evalMatch] at ok
+  split at ok
+  · simp at ok
+  rename_i s scrutOk
+  split at ok
+  · simp at ok
+  rename_i a armsOk
+  simp only [evalMatchOf] at ok
+  split at ok
+  case isFalse => simp at ok
+  rename_i cond
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at cond
+  obtain ⟨⟨⟨⟨same, sized⟩, blen⟩, vlen⟩, small⟩ := cond
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [SrcEff.toCore] at fails
+  rcases eff_split lowered ih scrutOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, match_trap h⟩) with
+    ⟨d, stops⟩ | ⟨k, w, st1, scrutRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
+  · exact ⟨d, .seqFirst stops⟩
+  rw [SrcType.same_eq same] at holds1
+  have fr0 : Layout scope frame 0 slot := ⟨fr.slots, fr.sized, fun _ _ => Nat.zero_le _, fr.inj, fr.apart⟩
+  have limit := exec1.limit_normal
+  cases ety with
+  | enum eid variants =>
+    cases holds1 with
+    | enum found tag payload =>
+      rename_i kv fs vs
+      simp only [matchVariants] at blen vlen small armsOk
+      have kvLt := (List.getElem?_eq_some_iff.mp found).1
+      have armsFails : ∀ j, Failing hp1.limit (Semantics.evalMatchArms j sp.toCore st1 (.enumeration eid kv vs)
+          (SrcEff.coreArms eid 0 binders values)) := by
+        rw [limit]
+        refine failing_after (fun le => Semantics.evalMatchArms_refines le) (k := k) fun j le => ?_
+        have := fails (j + 1)
+        rw [match_arms scrutRun le] at this
+        simpa [SrcType.typeId] using this
+      obtain ⟨d2, stops⟩ := arms_stops values each (corr.after fr fresh keeps1 locals1 same1) fr0 fresh1 hc1
+        (by rw [limit]; exact bound1) armsOk vlen blen (fun fs mem => by
+          have := sizes_le_maxSize_of_mem mem
+          have := Nat.le_max_left (SrcType.enum eid variants).size ty.size
+          simp only [matchDst, SrcType.size] at this ⊢
+          omega) (Nat.zero_le _) (by simpa using found) (by omega) tag payload armsFails
+      exact ⟨_, Stops.after exec1 (.seqFirst stops)⟩
+  | i32 => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | bool => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | uint => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | struct => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | ptr => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | slice => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | unit => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | isize => cases values <;> simp [matchVariants, evalArms] at armsOk
+
+end Cases
+
+end Lanius.Mini
+
+namespace Lanius.Mini
+
+/-- Every lowered effectful expression whose Core evaluation fails stops
+within `n + 1` ticks, given that every failing statement stops within `n`
+(for the bodies of the calls in it). -/
+theorem effStops_all {sp : SrcProgram} {mp : Program} {n : Nat}
+    (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) : ∀ e, EffStops sp mp (n + 1) e
+  | .ePure _ => eff_pure
+  | .eCall _ args => eff_call lowered returns prev fun e _ => effStops_all lowered returns prev e
+  | .eApply _ l r => eff_apply lowered (effStops_all lowered returns prev l) (effStops_all lowered returns prev r)
+  | .eNeg operand => eff_neg lowered (effStops_all lowered returns prev operand)
+  | .eNot operand => eff_not lowered (effStops_all lowered returns prev operand)
+  | .eCast _ operand => eff_cast lowered (effStops_all lowered returns prev operand)
+  | .eIndex _ index => eff_index lowered (effStops_all lowered returns prev index)
+  | .eStruct _ fields => eff_struct lowered fun e _ => effStops_all lowered returns prev e
+  | .eVariant _ _ payload => eff_variant lowered fun e _ => effStops_all lowered returns prev e
+  | .eMatch scrutinee _ _ _ values =>
+      eff_match lowered (effStops_all lowered returns prev scrutinee) fun e _ => effStops_all lowered returns prev e
+  | .eDivide _ l r => eff_divide lowered (effStops_all lowered returns prev l) (effStops_all lowered returns prev r)
+  | .eStride _ => eff_stride
+termination_by e => sizeOf e
+
+end Lanius.Mini

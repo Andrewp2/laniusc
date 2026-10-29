@@ -30,16 +30,6 @@ def SrcStops (sp : SrcProgram) (mp : Program) (n : Nat) (s : SrcStmt) : Prop :=
 
 abbrev StmtStops (sp : SrcProgram) (mp : Program) (n : Nat) : Prop := ∀ s, SrcStops sp mp n s
 
-/-- A lowered effectful expression whose Core evaluation fails stops within
-`n` ticks. -/
-def EvalStops (sp : SrcProgram) (mp : Program) (n : Nat) : Prop :=
-  ∀ {hp : Heap} {e : SrcEff} {scope : List Binding} {slot : Nat} {ev : Evaluated}
-    {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
-    e.eval (sigs sp.funcs) sp.decls scope slot = some ev →
-    Corr scope frame st env → Layout scope frame base slot → st.Fresh →
-    HeapCorr st.heap hp → st.heap.nextAddress ≤ hp.limit →
-    EFails sp hp.limit st e.toCore → ∃ d, Stops mp d env hp ev.stmt n
-
 /-! ## Mini helpers -/
 
 theorem Stops.checkThen_inv {prog : Program} {d : Nat} {env : Env} {hp : Heap} {s : Stmt} {n slot : Nat}
