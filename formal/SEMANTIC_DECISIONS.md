@@ -445,6 +445,19 @@ Lean definition or judgment.
   signed `i32`. Large clock values, byte counts, and other mathematical host
   integers therefore cannot create an out-of-range runtime value.
 
+### Traps in compiled code (decided 10-28)
+
+The verified compiler sorts Core's traps three ways. Checked traps make the
+compiled code fault (`ud2` or `#DE`): `arrayBounds`, `invalidShift`,
+`divisionByZero`, `signedDivisionOverflow` and `allocationFailure`; running
+out of heap or of stack faults too. An allocation whose end would pass 2^64
+is an allocation failure, not a wrap (`bump` tests the carry). Undefined
+traps are a premise of the compiler's theorems, as undefined behaviour is in
+CompCert: `rawMemoryBounds`, `invalidPointer`, `doubleFree` and
+`allocatorContract`. Impossible traps cannot happen in a program the
+compiler accepts: `typeMismatch`, `uninitializedLocal`, `missingReturn` and
+`nonExhaustiveMatch`.
+
 ## Decisions still required
 
 - Which NaN payload details are observable through future bit-conversion APIs.

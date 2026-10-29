@@ -103,8 +103,9 @@ OLEANS = os.path.join(FORMAL, '.lake/build/lib/lean')
 
 
 def olean_digest(text):
-    """A digest of the built .olean files a Lean file's imports reach in
-    formal/ (with the toolchain), or None when one is missing."""
+    """A digest of the built .olean files (with their .private, .server and
+    .ir parts) a Lean file's imports reach in formal/ (with the toolchain),
+    or None when one is missing."""
     import re
     seen, todo = set(), re.findall(r'^(?:public\s+|meta\s+)*import\s+(?:all\s+)?(\S+)', text, re.M)
     h = hashlib.sha256(open(os.path.join(FORMAL, 'lean-toolchain'), 'rb').read())
@@ -118,7 +119,11 @@ def olean_digest(text):
         olean = os.path.join(OLEANS, rel + '.olean')
         if not os.path.exists(olean):
             return None
-        h.update(m.encode() + b'\0' + file_digest(olean).encode())
+        # A `module`'s bodies and compiled code are in the .olean.private
+        # and .ir files beside its .olean, which holds only the interface.
+        for part in (olean, olean + '.private', olean + '.server', os.path.join(OLEANS, rel + '.ir')):
+            if os.path.exists(part):
+                h.update(m.encode() + b'\0' + os.path.basename(part).encode() + b'\0' + file_digest(part).encode())
         todo += re.findall(r'^(?:public\s+|meta\s+)*import\s+(?:all\s+)?(\S+)', open(source).read(), re.M)
     return h.hexdigest()
 

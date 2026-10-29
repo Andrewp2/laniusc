@@ -613,10 +613,10 @@ theorem store_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slo
 
 theorem jmp_simulates (rel : Rel frame s m) {target : Nat} (small : m.pc + 5 < 2 ^ 31) (targetSmall : target < 2 ^ 31)
     (loaded : CodeAt s.memory s.rip (jumpBytes (relative (m.pc + 5) target))) :
-    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' { m with pc := target } := by
+    ∃ n s', 0 < n ∧ Steps n s s' ∧ Det n s s' ∧ Rel frame s' { m with pc := target } := by
   let s' := s.jump (relative (m.pc + 5) target) (jumpBytes (relative (m.pc + 5) target)).length
   have step : Lanius.X86.Machine.Step s s' := jump_step s s' _ loaded rfl
-  refine ⟨1, s', .cons step (.refl _), Det.step step (jump_noRead loaded), rel.jump (s' := s') rfl rfl ?_⟩
+  refine ⟨1, s', by omega, .cons step (.refl _), Det.step step (jump_noRead loaded), rel.jump (s' := s') rfl rfl ?_⟩
   have length : (jumpBytes (relative (m.pc + 5) target)).length = 5 := by simp [jumpBytes, displacementBytes]
   simp only [s', State.jump, length, rel.advance 5]
   exact relative_eq _ _ _ small targetSmall
@@ -631,7 +631,7 @@ theorem test64_zero_condition (before result : BitVec 64) (auxiliary : Bool) :
 theorem jz_simulates (rel : Rel frame s m) {target : Nat} (small : m.pc + 9 < 2 ^ 31)
     (targetSmall : target < 2 ^ 31)
     (loaded : CodeAt s.memory s.rip (testBytes .w64 0 0 ++ branchBytes 4 (relative (m.pc + 9) target))) :
-    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' { m with pc := if m.acc = 0 then target else m.pc + 9 } := by
+    ∃ n s', 0 < n ∧ Steps n s s' ∧ Det n s s' ∧ Rel frame s' { m with pc := if m.acc = 0 then target else m.pc + 9 } := by
   let tested := s.test64 0 0 false (testBytes .w64 0 0).length
   have first : Lanius.X86.Machine.Step s tested := test_step .w64 s tested 0 0 loaded.prefix false rfl
   let s' := tested.branch 4 (relative (m.pc + 9) target) 6
@@ -646,14 +646,14 @@ theorem jz_simulates (rel : Rel frame s m) {target : Nat} (small : m.pc + 9 < 2 
     bv_omega
   by_cases accZero : m.acc = 0
   · obtain ⟨second, rip⟩ := branch_step_rip tested s' 4 _ bytes (by rw [zero, accZero]; rfl) rfl
-    refine ⟨2, s', .cons first (.cons second (.refl _)), Det.pair first (test_writes loaded.prefix) second, ?_⟩
+    refine ⟨2, s', by omega, .cons first (.cons second (.refl _)), Det.pair first (test_writes loaded.prefix) second, ?_⟩
     rw [if_pos accZero]
     refine rel.jump (s' := s') rfl rfl ?_
     rw [rip, testedRip]
     exact relative_eq _ _ _ small targetSmall
   · obtain ⟨second, rip⟩ := branch_step_rip_not_taken tested s' 4 _ bytes
       (by rw [zero]; simpa using accZero) rfl
-    refine ⟨2, s', .cons first (.cons second (.refl _)), Det.pair first (test_writes loaded.prefix) second, ?_⟩
+    refine ⟨2, s', by omega, .cons first (.cons second (.refl _)), Det.pair first (test_writes loaded.prefix) second, ?_⟩
     rw [if_neg accZero]
     refine rel.jump (s' := s') rfl rfl ?_
     rw [rip, testedRip]
@@ -1082,12 +1082,20 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
     (guard : frame.guard = binary.guard)
     {inner : Nat} (innerFits : frameBytes frame.slots + 16 + inner = frame.window)
     (room : 8 * args.length + 16 ≤ inner)
-    {need : Nat} {values : List (BitVec 64)} {after : Heap}
-    (contract : Contract binary imageBase need inner callee (readSlots m.slots args) m.heap values after)
+    {values : List (BitVec 64)} {after : Heap} {P : Prop} {Q : State → Prop}
+    (contract : ∀ s : State, inner ≤ 2 ^ 62 → CodeAt s.memory imageBase binary.image →
+      (∀ index, index < binary.image.length →
+        ¬Below (s.registers rspRegister) inner (imageBase + BitVec.ofNat 64 index)) →
+      (∀ index, index < binary.image.length → ¬s.InHeap (imageBase + BitVec.ofNat 64 index)) →
+      s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD callee 0) →
+      (∀ k (bound : k < (readSlots m.slots args).length),
+        read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = (readSlots m.slots args)[k]) →
+      HeapAt inner s m.heap → StackAt binary.guard inner s →
+      (P ∧ ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned inner s s' values after) ∨ Q s)
     (counted : values.length = count) :
-    (∃ n s', Steps n s s' ∧ Det n s s' ∧
+    (P ∧ ∃ n s', Steps n s s' ∧ Det n s s' ∧
       Rel frame s' { m with pc := m.pc + (Instr.call callee args target count).size, acc := values.getLastD m.acc, slots := writeSlots m.slots target values, heap := after }) ∨
-      (inner < need ∧ Faults s) := by
+      (∃ k s', 0 < k ∧ Det k s s' ∧ Q s') := by
   have limit : frame.slots ≤ 2 ^ 20 := fits.slots
   have bounded := fits.bounded
   have big := frameBytes_slots frame.slots
@@ -1257,8 +1265,8 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
       intro i lane
       rw [targetLane k bound i.val (by omega), pushLane lane.val lane.isLt]
       exact depth_ne _ (by omega) (by omega) (by omega))
-    heapAt2 stack2 with ⟨n3, s3, steps3, det3, returned⟩ | ⟨short, faults⟩
-  case inr => exact .inr ⟨short, (det1.trans (Det.step step2 (call_noRead callLoaded))).faults faults⟩
+    heapAt2 stack2 with ⟨p, n3, s3, steps3, det3, returned⟩ | q
+  case inr => exact .inr ⟨_, s2, by omega, det1.trans (Det.step step2 (call_noRead callLoaded)), q⟩
   -- the activation after the call
   have frameKept : ∀ d, d ≤ fb + 8 → 0 < d →
       s3.memory (frame.top - BitVec.ofNat 64 d) = s.memory (frame.top - BitVec.ofNat 64 d) := by
@@ -1351,7 +1359,7 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
     rw [List.getElem_map, ← results3 k bound']
     simp only [slotRange_eq, List.getElem_range', Nat.one_mul]
   rw [got, slotRange_length] at rel4
-  refine .inl ⟨_, s4, (steps1.trans (.cons step2 steps3)).trans steps4,
+  refine .inl ⟨p, _, s4, (steps1.trans (.cons step2 steps3)).trans steps4,
     (det1.trans (Det.cons step2 (call_noRead callLoaded) det3)).trans det4, rel4.congr ?_ ?_ (fun _ _ => rfl) rfl⟩
   · simp only [Machine.copied, m3, size]
     omega
@@ -1371,9 +1379,9 @@ theorem bump_simulates (rel : Rel frame s m) (fits : frame.Fits) {shift : Nat} (
   obtain ⟨s', steps, det, memory, rip, acc, cursor, kept⟩ := bump_steps s shift shiftSmall loaded rel.cursor
     rel.limitNat (by rw [rel.limit]; exact fits.heapSmall) (by rw [rel.acc]; exact room)
   rw [rel.acc] at cursor
-  refine ⟨11, s', steps, det, ?_⟩
+  refine ⟨12, s', steps, det, ?_⟩
   exact
-    { rip := rip.trans (rel.advance 52)
+    { rip := rip.trans (rel.advance 58)
       rbp := (kept _ (by decide) (by decide) (by decide) (by decide)).trans rel.rbp
       rsp := (kept _ (by decide) (by decide) (by decide) (by decide)).trans rel.rsp
       acc := acc
@@ -1592,6 +1600,20 @@ theorem Body.fetch (body : Body frame binary imageBase place instrs) (rel : Rel 
   rw [rel.unchanged _ (apart index small') (codeHeap index small'), rel.rip]
   exact inEntry index small
 
+/-- A run between two offsets of the frame takes a step. -/
+theorem Rel.positive (rel : Rel frame s m) {m' : Machine} (moved : m.pc < m'.pc) (small : m'.pc < 2 ^ 64)
+    (done : ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' m') :
+    ∃ n s', 0 < n ∧ Steps n s s' ∧ Det n s s' ∧ Rel frame s' m' := by
+  obtain ⟨n, s', steps, det, rel'⟩ := done
+  refine ⟨n, s', ?_, steps, det, rel'⟩
+  cases steps with
+  | refl =>
+    have same : frame.base + BitVec.ofNat 64 m.pc = frame.base + BitVec.ofNat 64 m'.pc := rel.rip.symm.trans rel'.rip
+    have := congrArg BitVec.toNat same
+    simp only [BitVec.toNat_add, BitVec.toNat_ofNat] at this
+    omega
+  | cons => omega
+
 /-- One abstract step, given the callees' contracts. -/
 theorem step_simulates (body : Body frame binary imageBase place instrs) (fits : frame.Fits) {calls : Calls}
     {need : Nat}
@@ -1599,20 +1621,27 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
       needC + frameBytes frame.slots + 16 ≤ need ∧ 8 * vals.length + 16 ≤ frame.window - (frameBytes frame.slots + 16) ∧
         Contract binary imageBase needC (frame.window - (frameBytes frame.slots + 16)) callee vals heap value after)
     (rel : Rel frame s m) {m' : Machine} (step : Step calls instrs m m') :
-    (∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' m') ∨ (frame.window < need ∧ Faults s) := by
+    (∃ n s', 0 < n ∧ Steps n s s' ∧ Det n s s' ∧ Rel frame s' m') ∨ (frame.window < need ∧ Faults s) := by
   have small := body.small
   have limit : imageLimit = 2 ^ 30 := rfl
+  have forward : ∀ {i : Instr} {m' : Machine}, Lanius.Mini.fetch instrs m.pc = some i → m'.pc = m.pc + i.size →
+      (∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' m') →
+      ∃ n s', 0 < n ∧ Steps n s s' ∧ Det n s s' ∧ Rel frame s' m' := by
+    intro i m' fetched pc done
+    obtain ⟨-, -, bound, -⟩ := body.fetch rel fetched
+    have positive := i.size_pos
+    exact rel.positive (by omega) (by omega) done
   cases step with
   | @straight i _ fetched isStraight =>
     obtain ⟨loaded, -, -⟩ := body.fetch rel fetched
     have fitted := body.fits i (fetch_mem fetched)
     cases i with
-    | imm value => exact .inl <| imm_simulates rel loaded
-    | load slot => exact .inl <| load_simulates rel fitted loaded
-    | store slot => exact .inl <| store_simulates rel fits fitted loaded
-    | neg => exact .inl <| neg_simulates rel loaded
-    | op word operation slot => exact .inl <| op_simulates word operation rel fitted loaded
-    | cmp word operation slot => exact .inl <| cmp_simulates word operation rel fitted loaded
+    | imm value => exact .inl <| forward fetched rfl <| imm_simulates rel loaded
+    | load slot => exact .inl <| forward fetched rfl <| load_simulates rel fitted loaded
+    | store slot => exact .inl <| forward fetched rfl <| store_simulates rel fits fitted loaded
+    | neg => exact .inl <| forward fetched rfl <| neg_simulates rel loaded
+    | op word operation slot => exact .inl <| forward fetched rfl <| op_simulates word operation rel fitted loaded
+    | cmp word operation slot => exact .inl <| forward fetched rfl <| cmp_simulates word operation rel fitted loaded
     | jmp | jz | call | ret | bump | loadAt | storeAt | loadWordAt | storeWordAt | div =>
       simp [Instr.straight] at isStraight
   | @jmp target _ fetched =>
@@ -1635,29 +1664,32 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
     obtain ⟨needC, needFits, room, contract⟩ := callContract _ _ _ _ _ returns
     rw [readSlots_length] at room
     have window := fits.window
-    rcases call_simulates rel fits loaded apart codeHeap body.slots body.entries body.base (by omega)
+    rcases call_simulates (P := True) (Q := fun s => frame.window - (frameBytes frame.slots + 16) < needC ∧ Faults s)
+      rel fits loaded apart codeHeap body.slots body.entries body.base (by omega)
       (by have := body.entrySmall callee; omega) argsFit argsCount targetFit positive body.image body.imageApart
-      body.imageHeap body.guard (by omega) room contract counted with done | ⟨short, faults⟩
-    · exact .inl done
-    · exact .inr ⟨by omega, faults⟩
+      body.imageHeap body.guard (by omega) room
+      (fun s a b c d e f g h => (contract s a b c d e f g h).imp (fun r => ⟨trivial, r⟩) id) counted with
+      ⟨-, done⟩ | ⟨k, s2, -, det, short, faults⟩
+    · exact .inl (forward fetched rfl done)
+    · exact .inr ⟨by omega, det.faults faults⟩
   | bump fetched room =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| bump_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded room
+    exact .inl <| forward fetched rfl <| bump_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded room
   | loadAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| loadAt_simulates rel loaded inside
+    exact .inl <| forward fetched rfl <| loadAt_simulates rel loaded inside
   | storeAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| storeAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
+    exact .inl <| forward fetched rfl <| storeAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
   | loadWordAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| loadWordAt_simulates rel loaded inside
+    exact .inl <| forward fetched rfl <| loadWordAt_simulates rel loaded inside
   | storeWordAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| storeWordAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
+    exact .inl <| forward fetched rfl <| storeWordAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
   | div fetched defined =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| div_simulates _ _ rel (body.fits _ (fetch_mem fetched)) loaded defined
+    exact .inl <| forward fetched rfl <| div_simulates _ _ rel (body.fits _ (fetch_mem fetched)) loaded defined
 
 /-- The bytes of a body simulate its abstract run to `ret`. -/
 theorem body_simulates (body : Body frame binary imageBase place instrs) (fits : frame.Fits) {calls : Calls}
@@ -1676,7 +1708,7 @@ theorem body_simulates (body : Body frame binary imageBase place instrs) (fits :
     exact .inl (ret_simulates rel fits loaded apart codeHeap (body.fits _ (fetch_mem atRet)))
   | step head _ ih =>
     intro s rel
-    rcases step_simulates body fits callContract rel head with ⟨n, middle, steps, det, middleRel⟩ | bad
+    rcases step_simulates body fits callContract rel head with ⟨n, middle, -, steps, det, middleRel⟩ | bad
     · rcases ih atRet middle middleRel with ⟨n', s', rest, det', exit⟩ | ⟨short, faults⟩
       · exact .inl ⟨_, s', steps.trans rest, det.trans det', exit⟩
       · exact .inr ⟨short, det.faults faults⟩

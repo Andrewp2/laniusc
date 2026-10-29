@@ -166,6 +166,7 @@ def compiler_forms():
         form('jmp rel32', [0xE9], 'rel32', 'jmp'),
         form('je rel32', [0x0F, 0x84], 'rel32', 'jcc'),
         form('jbe rel32', [0x0F, 0x86], 'rel32', 'jcc'),
+        form('jb rel32', [0x0F, 0x82], 'rel32', 'jcc'),
         form('call rel32', [0xE8], 'rel32', 'call'),
         form('push rbp', [0x55], kind='push'),
         form('pop rbp', [0x5D], kind='pop'),

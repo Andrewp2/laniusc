@@ -495,4 +495,30 @@ theorem Faults.of_live (live : ∀ n, Live n s) : Faults s := by
   obtain ⟨v, step⟩ := live (n + 1) n t u (by omega) same run
   exact (stuck v step).elim
 
+/-- Every run of fewer than `n` steps from a state that agrees with `s` but
+for its flags that stops, stops at a fault. -/
+def FaultsWithin (n : Nat) (s : State) : Prop :=
+  ∀ j t u, j < n → DataEq s t → Steps j t u → (∀ v, ¬Step u v) → Fault u
+
+theorem FaultsWithin.zero (s : State) : FaultsWithin 0 s := fun j _ _ small => absurd small (Nat.not_lt_zero j)
+
+theorem Faults.within (faults : Faults s) (n : Nat) : FaultsWithin n s :=
+  fun j t u _ same run stuck => faults j t u same run stuck
+
+theorem Faults.of_within (within : ∀ n, FaultsWithin n s) : Faults s :=
+  fun j t u same run stuck => within (j + 1) j t u (by omega) same run stuck
+
+/-- A `Det` run, then runs that stop only at faults: the `k` steps count. -/
+theorem Det.within (det : Det k s m) (rest : FaultsWithin n m) : FaultsWithin (k + n) s := by
+  intro j t u small same run stuck
+  by_cases early : j < k
+  · obtain ⟨v, step⟩ := det.2 j t u early same run
+    exact (stuck v step).elim
+  · obtain ⟨v, one, two⟩ := Steps.split (show Steps (k + (j - k)) t u by
+      rw [Nat.add_sub_cancel' (by omega)]; exact run)
+    exact rest (j - k) v u (by omega) (det.1 t v same one) two stuck
+
+theorem FaultsWithin.mono (within : FaultsWithin n s) (less : k ≤ n) : FaultsWithin k s :=
+  fun j t u small => within j t u (by omega)
+
 end Lanius.X86.Machine

@@ -21,12 +21,13 @@ def pow2 (shift : Nat) : BitVec 64 :=
     let half : BitVec 64 := pow2 (shift - 1)
     half + half
 
-/-- mov rcx, r13; mov r11, 2^shift - 1; add rcx, r11; mov r11, -2^shift; and rcx, r11 (rcx is the cursor rounded up); mov r11, rcx; add r11, rax; cmp r11, r14; jbe +2; ud2 (past the limit); mov r13, r11; mov rax, rcx -/
+/-- mov rcx, r13; mov r11, 2^shift - 1; add rcx, r11; mov r11, -2^shift; and rcx, r11 (rcx is the cursor rounded up); mov r11, rcx; add r11, rax; jb +9 (the end wrapped); cmp r11, r14; jbe +2; ud2 (past the limit); mov r13, r11; mov rax, rcx -/
 def bumpBytes (shift : Nat) : List UInt8 :=
   let round : List UInt8 := 76 :: 137 :: 233 :: 73 :: [187] ++ le64 (pow2 shift - 1) ++ 76 :: 1 :: 217 :: 73 :: [187]
   let mask : List UInt8 := le64 (0 - pow2 shift) ++ 76 :: 33 :: [217]
-  let check : List UInt8 := 73 :: 137 :: 203 :: 73 :: 1 :: 195 :: 77 :: 57 :: 243 :: 15 :: 134 :: 2 :: 0 :: 0 :: 0 :: 15 :: [11]
-  round ++ mask ++ check ++ 77 :: 137 :: 221 :: 72 :: 137 :: [200]
+  let carry : List UInt8 := 73 :: 137 :: 203 :: 73 :: 1 :: 195 :: 15 :: 130 :: 9 :: 0 :: 0 :: [0]
+  let check : List UInt8 := 77 :: 57 :: 243 :: 15 :: 134 :: 2 :: 0 :: 0 :: 0 :: 15 :: [11]
+  round ++ mask ++ (carry ++ check) ++ 77 :: 137 :: 221 :: 72 :: 137 :: [200]
 
 /-- add rax, r12; movzx eax, byte [rax + 0] -/
 def loadAtBytes : List UInt8 :=

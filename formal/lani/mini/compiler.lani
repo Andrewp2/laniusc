@@ -338,7 +338,7 @@ impl Instr {
             Jz(target) -> 9,
             Instr::Call(callee, args, target, count) -> plus(plus(times(14, length(args)), 5), times(14, count)),
             Instr::Ret(sources) -> plus(times(14, length(sources)), 5),
-            Bump(shift) -> 52,
+            Bump(shift) -> 58,
             LoadAt -> 10,
             StoreAt(slot) -> 16,
             LoadWordAt(width) -> plus(9, width.prefix()),
@@ -722,12 +722,14 @@ pub fn pow2(shift: usize) -> u64 {
 
 // mov rcx, r13; mov r11, 2^shift - 1; add rcx, r11; mov r11, -2^shift;
 // and rcx, r11 (rcx is the cursor rounded up); mov r11, rcx; add r11, rax;
-// cmp r11, r14; jbe +2; ud2 (past the limit); mov r13, r11; mov rax, rcx
+// jb +9 (the end wrapped); cmp r11, r14; jbe +2; ud2 (past the limit);
+// mov r13, r11; mov rax, rcx
 pub fn bump_bytes(shift: usize) -> List<u8> {
     let round: List<u8> = concat(concat(cons(76, cons(137, cons(233, cons(73, single(187))))), le64(pow2(shift) - 1)), cons(76, cons(1, cons(217, cons(73, single(187))))));
     let mask: List<u8> = concat(le64(0 - pow2(shift)), cons(76, cons(33, single(217))));
-    let check: List<u8> = cons(73, cons(137, cons(203, cons(73, cons(1, cons(195, cons(77, cons(57, cons(243, cons(15, cons(134, cons(2, cons(0, cons(0, cons(0, cons(15, single(11)))))))))))))))));
-    return concat(concat(concat(round, mask), check), cons(77, cons(137, cons(221, cons(72, cons(137, single(200)))))));
+    let carry: List<u8> = cons(73, cons(137, cons(203, cons(73, cons(1, cons(195, cons(15, cons(130, cons(9, cons(0, cons(0, single(0))))))))))));
+    let check: List<u8> = cons(77, cons(57, cons(243, cons(15, cons(134, cons(2, cons(0, cons(0, cons(0, cons(15, single(11)))))))))));
+    return concat(concat(concat(round, mask), concat(carry, check)), cons(77, cons(137, cons(221, cons(72, cons(137, single(200)))))));
 }
 
 // add rax, r12; movzx eax, byte [rax + 0]

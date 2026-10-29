@@ -20,6 +20,10 @@ theorem alu_noRead {width : X86.Register.Width} {operation : Alu} {destination s
     (loaded : CodeAt s.memory s.rip (aluBytes width operation destination source)) : NoRead s :=
   NoRead.of loaded (alu_decodes width operation destination source) (by cases width <;> rfl)
 
+theorem alu_writes {width : X86.Register.Width} {operation : Alu} {destination source : Register}
+    (loaded : CodeAt s.memory s.rip (aluBytes width operation destination source)) : Writes s :=
+  Writes.of loaded (alu_decodes width operation destination source) (by cases width <;> rfl)
+
 theorem test_writes {width : X86.Register.Width} {left right : Register}
     (loaded : CodeAt s.memory s.rip (testBytes width left right)) : Writes s :=
   Writes.of loaded (test_decodes width left right) (by cases width <;> rfl)

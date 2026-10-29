@@ -9,6 +9,10 @@ on but do not prove:
   slots that represent `v`.
 - `Lanius.Mini.compileProgram_correct` (`Lanius/Mini/Correct.lean`). The same
   for a mini IR program against the mini big-step semantics.
+- `Lanius.Mini.compileProgram_stops` (`Lanius/Mini/StopsCorrect.lean`, V2c).
+  If the mini program's `f(args)` is, for every `n`, still running after `n`
+  ticks or stopped at a checked fault (`Program.Stops`), then every run of
+  its code that stops, stops at a fault (`Faults`): it never returns.
 
 The list was found by reading the theorem statements, the definitions they
 mention, the extractor, and the x86 model. Each item gives what it is, where
@@ -56,6 +60,7 @@ the statement, so a reader has to agree that each one says what is intended:
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (below) |
 | `Below`, `Binary.stackNeed`, `Binary.guard` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |
 | `Det`, `Live`, `Faults`, `Fault` | `Mini/StepDet.lean`, `X86/Machine/Scalar.lean` | every run agrees but for flags and does not stop early; a run that stops, stops at an architectural fault (`ud2`, `#DE`) |
+| `Stops`, `Program.Stops` | `Mini/Stops.lean`, `Mini/StopsCorrect.lean` | for `compileProgram_stops`: a mini run that, within `n` ticks (loop iterations and calls), has not finished or has stopped at an allocation past the limit from a cursor within it, or at a division by zero or of the least value by -1 |
 | `CodeAt`, `Steps`, `Step` | `X86/Machine/State.lean`, `X86/Machine/Scalar.lean` | the image is loaded, and the machine runs (see section 6) |
 | `linkProgram`, `Stmt.rename`, `Binary.executable`, `Executable.stackNeed` | `Mini/Compiler.lean` (extracted), `Mini/Link.lean` | for the step 9 theorems `link_eq` and `linked_correct`: which mini program a list of modules *is* (their functions in link order, each callee renamed to its program index, imports checked for owner, function and arity), and what of a binary a linked executable keeps |
 
@@ -526,12 +531,13 @@ total before it); nothing else depends on them.
   - Runs (`Mini/DetSteps.lean`, `Simulation.lean`, `Correct.lean`): every
     simulation lemma, `Contract` and the function contract now return `Det`
     with their run. Each flag reader comes right after its writer in the same
-    abstract instruction (`cmp; setcc`, `test; jz`, `cmp; jbe` in `bump`), and
-    every other emitted form reads no flags.
+    abstract instruction (`cmp; setcc`, `test; jz`, `add; jb` and `cmp; jbe`
+    in `bump`, `cmp; jbe` in the prologue), and every other emitted form
+    reads no flags.
 - **Still assumed.** That the CPU's run is one of the model's runs (section
   6). The theorem covers runs of exactly `n` steps, the length of the run to
-  the return; after `n` steps the code is back in the caller. It says nothing
-  about runs of other lengths.
+  the return; after `n` steps the code is back in the caller, and no shorter
+  run stops (`Live`). It says nothing about longer runs.
 
 ## 8. What the caller and the loader must provide
 
@@ -596,11 +602,12 @@ python3 -I formal/tools/x86_model_test.py target/claude-work/step14/seed1 --per-
 python3 -I formal/tools/x86_model_test.py target/claude-work/step14/seed2 --per-form 500 --seed 2
 ```
 
-**The forms.** The tool tests every instruction form the mini compiler emits:
-57 forms. The Lean side prints `Instr.encode` for every `Instr` constructor
-(every `BinOp` and `CmpOp` at both words), plus `prologue` and `epilogue`.
-The tool splits those bytes into the form table and fails on any byte it
-cannot place, so a new emitted form cannot go untested. The 57 forms are:
+**The forms.** The tool tests every instruction form the mini compiler emits
+(on 10-29, 60 emitted encodings split into 79 forms). The Lean side prints
+`Instr.encode` for every `Instr` constructor (every `BinOp` and `CmpOp` at
+both words), plus `prologue` and `epilogue`. The tool splits those bytes into
+the form table and fails on any byte it cannot place, so a new emitted form
+cannot go untested. The forms are:
 - `mov` with an imm64 or imm32 operand;
 - the frame-slot load and store through `[rbp+disp32]`;
 - the heap byte load and store;
@@ -611,7 +618,7 @@ cannot place, so a new emitted form cannot go untested. The 57 forms are:
 - `sub rsp, r11`;
 - three `cmp`s and `test`;
 - ten `setcc`s and `movzx`;
-- `jmp`, `je`, `jbe` and `call` (rel32);
+- `jmp`, `je`, `jb`, `jbe` and `call` (rel32);
 - `push` and `pop rbp`, `ret`, and `ud2`.
 
 **Each case.** The tool draws random registers (with special values and

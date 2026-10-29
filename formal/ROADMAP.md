@@ -89,10 +89,24 @@ heap or of stack is a fault too.
   With `stackNeed depth ≤ window` the forward theorems are unchanged.
 - V2b. `Stops prog depth env heap stmt n` on the mini IR: the run faults,
   or does not finish within `n` ticks (a tick is a loop iteration or a
-  call).
+  call). Done (10-29, `Mini/Stops.lean`): `Stops` stops at an allocation
+  past the limit (from a cursor within it) or an undefined division, and
+  the compiled code of a `Stops` statement is `AStops` on the abstract
+  machine for the same `n` (`compileStmt_stops`, `compileFunc_stops`).
 - V2c. Mini to x86: `Stops` for every `n` gives an x86 run that never
   returns (determinism up to flags, `rsp` below the entry `rsp` until the
-  return).
+  return). Done (10-29, `Mini/StopsCorrect.lean`): `compileProgram_stops`,
+  with `Program.Stops` for every `n`, says `Faults`: every run that stops,
+  stops at a fault. Each abstract step takes at least one x86 step, so
+  `AStops n` gives `FaultsWithin n` (no stop before `n` steps but at a
+  fault); a failed `bump` reaches its `ud2` and an undefined division
+  raises `#DE` (`bump_fails`, `div_fails`), and a call that does not
+  return is `StopsContract`, by induction on the depth. `function_enter`
+  (Mini/Correct.lean) is the prologue both contracts share. Proving
+  `bump_fails` found a bug: `bump` added the size to the rounded cursor in
+  64 bits, so a size near 2^64 wrapped, passed the limit test and moved
+  the cursor back. `bump` now tests the carry (`add r11, rax; jb` to the
+  `ud2`), 58 bytes.
 - V2d. Core to mini: Core out of fuel at `k` gives `Stops ((k - d) / (D + 1))`
   (`D` the deepest nesting in a body); a checked trap, or a heap past the
   limit, gives `Stops` for every `n`.

@@ -143,14 +143,14 @@ def stackCompareBytes : List UInt8 := [73, 57, 231]
 /-- After the frame prologue: fault unless r15 is at most rsp. -/
 def stackCheckBytes : List UInt8 := stackCompareBytes ++ (branchBytes 6 2 ++ trapBytes)
 
-/-- Round the cursor up into rcx, check rcx + rax against the limit, advance
-the cursor and return the old rounded cursor in rax. -/
+/-- Round the cursor up into rcx, check that rcx + rax neither wraps nor
+passes the limit, advance the cursor and return the old rounded cursor in rax. -/
 def bumpSpec (shift : Nat) : List UInt8 :=
   moveBytes .w64 rcxRegister cursorRegister ++ (r11Bytes (pow2 shift - 1) ++
   (aluBytes .w64 .add rcxRegister r11Register ++ (r11Bytes (0 - pow2 shift) ++
   (aluBytes .w64 .and rcxRegister r11Register ++ (moveBytes .w64 r11Register rcxRegister ++
-  (aluBytes .w64 .add r11Register 0 ++ (limitCompareBytes ++ (branchBytes 6 2 ++ (trapBytes ++
-  (moveBytes .w64 cursorRegister r11Register ++ moveBytes .w64 0 rcxRegister))))))))))
+  (aluBytes .w64 .add r11Register 0 ++ (branchBytes 2 9 ++ (limitCompareBytes ++ (branchBytes 6 2 ++
+  (trapBytes ++ (moveBytes .w64 cursorRegister r11Register ++ moveBytes .w64 0 rcxRegister)))))))))))
 
 /-- `add rax, r12; movzx eax, byte [rax]` -/
 def loadAtSpec : List UInt8 := aluBytes .w64 .add 0 heapBaseRegister ++ loadByteBytes 0 0 0

@@ -92,20 +92,39 @@ theorem layout_getD {codes : List Code} {f offset : Nat} (at_ : (layout 0 codes)
     (layout 0 codes).getD f 0 = offset := by
   simp [List.getD, at_]
 
-/-- One compiled function meets its contract, given contracts for its calls. -/
-theorem function_contract {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary)
-    {imageBase : BitVec 64} {f : Nat} {func : Func} {code : Code} (_found : prog.funcs[f]? = some func)
+/-- The frame of a function entered from `s`. -/
+def Frame.entered (s : State) (window slots guard : Nat) : Frame :=
+  { top := s.registers rspRegister
+    window := window
+    slots := slots
+    base := s.rip + BitVec.ofNat 64 24
+    saved := s.registers rbpRegister
+    preserved := s.registers
+    entry := s.memory
+    guard := guard }
+
+/-- Entering compiled function `f`: the prologue's stack check fails and the
+run stops at a fault, or the prologue sets up the frame and the body starts
+with the parameters in its first slots. -/
+theorem function_enter {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary)
+    {imageBase : BitVec 64} {f : Nat} {func : Func} {code : Code}
     (codeFound : binary.codes[f]? = some code)
     (compiledFunc : compileFunc (arities prog.funcs) func = some code)
-    {depth : Nat} {args value : List (BitVec 64)} {heap after : Heap} (length : args.length = func.params)
-    (exec : Exec prog depth (Func.entry args) heap func.body (.returned value after))
-    {need window : Nat} (room : frameBytes code.slots + 8 + binary.guard ≤ need)
-    (callContract : ∀ callee vals calleeHeap result calleeAfter,
-      SourceCalls prog depth callee vals calleeHeap result calleeAfter → ∃ needC,
-        needC + frameBytes code.slots + 16 ≤ need ∧ 8 * vals.length + 24 ≤ binary.guard ∧
-          ∀ inner, Contract binary imageBase needC inner callee vals calleeHeap result calleeAfter) :
-    Contract binary imageBase need window f args heap value after := by
-  intro s bounded loaded apart imageHeap entry params heapAt stack
+    {args : List (BitVec 64)} {heap : Heap} (length : args.length = func.params)
+    {window : Nat} (s : State) (bounded : window ≤ 2 ^ 62) (loaded : CodeAt s.memory imageBase binary.image)
+    (apart : ∀ index, index < binary.image.length →
+      ¬Below (s.registers rspRegister) window (imageBase + BitVec.ofNat 64 index))
+    (imageHeap : ∀ index, index < binary.image.length → ¬s.InHeap (imageBase + BitVec.ofNat 64 index))
+    (entry : s.rip = imageBase + BitVec.ofNat 64 (binary.entries.getD f 0))
+    (params : ∀ k (bound : k < args.length),
+      read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = args[k])
+    (heapAt : HeapAt window s heap) (stack : StackAt binary.guard window s) :
+    (window < frameBytes code.slots + 8 + binary.guard ∧ Faults s) ∨
+      ∃ place k entered start, 0 < k ∧ Steps k s entered ∧ Det k s entered ∧
+        (Frame.entered s window code.slots binary.guard).Fits ∧
+        Body (Frame.entered s window code.slots binary.guard) binary imageBase place code.instrs ∧
+        Rel (Frame.entered s window code.slots binary.guard) entered start ∧
+        start.pc = 0 ∧ start.heap = heap ∧ ∀ index, index < func.params → start.slots index = args.getD index 0 := by
   obtain ⟨codesCompiled, entries, imageEq, imageSmall⟩ := compileProgram_spec compiled
   have guardSmall : binary.guard ≤ 8 * frameLimit + 40 := by
     have := compileFuncs_frameNeed codesCompiled; unfold Binary.guard; omega
@@ -193,7 +212,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
   by_cases pass : (framed.registers stackRegister).toNat ≤ (framed.registers rspRegister).toNat
   case neg =>
     obtain ⟨-, failDet, fault⟩ := stackCheck_fails framed checkLoaded (by omega)
-    refine .inr ⟨?_, (steps1.2.trans failDet).faults fault.faults⟩
+    refine .inl ⟨?_, (steps1.2.trans failDet).faults fault.faults⟩
     rw [framedRsp, framedLimit] at pass
     omega
   rw [framedRsp, framedLimit] at pass
@@ -303,8 +322,31 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
         depth_lane _ _ _ (by omega)]
       exact depth_ne _ (by omega) (by omega) (by omega)), slot_eq _ bound, params index (by omega)]
     simp [List.getD, List.getElem?_eq_getElem (show index < args.length by omega)]
+  exact .inr ⟨_, 6, entered, start, by omega, (steps1.1.trans checkSteps), (steps1.2.trans checkDet), fits, body,
+    rel, rfl, rfl, startParams⟩
+
+/-- One compiled function meets its contract, given contracts for its calls. -/
+theorem function_contract {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary)
+    {imageBase : BitVec 64} {f : Nat} {func : Func} {code : Code} (_found : prog.funcs[f]? = some func)
+    (codeFound : binary.codes[f]? = some code)
+    (compiledFunc : compileFunc (arities prog.funcs) func = some code)
+    {depth : Nat} {args value : List (BitVec 64)} {heap after : Heap} (length : args.length = func.params)
+    (exec : Exec prog depth (Func.entry args) heap func.body (.returned value after))
+    {need window : Nat} (room : frameBytes code.slots + 8 + binary.guard ≤ need)
+    (callContract : ∀ callee vals calleeHeap result calleeAfter,
+      SourceCalls prog depth callee vals calleeHeap result calleeAfter → ∃ needC,
+        needC + frameBytes code.slots + 16 ≤ need ∧ 8 * vals.length + 24 ≤ binary.guard ∧
+          ∀ inner, Contract binary imageBase needC inner callee vals calleeHeap result calleeAfter) :
+    Contract binary imageBase need window f args heap value after := by
+  intro s bounded loaded apart imageHeap entry params heapAt stack
+  rcases function_enter compiled codeFound compiledFunc length s bounded loaded apart imageHeap entry params
+    heapAt stack with ⟨short, faults⟩ | ⟨place, k, entered, start, -, steps1, det1, fits, body, rel, pc0, heap0,
+      startParams⟩
+  · exact .inr ⟨by omega, faults⟩
+  let frame := Frame.entered s window code.slots binary.guard
+  have checked : frameBytes code.slots + 8 + binary.guard ≤ window := fits.checked
   obtain ⟨m', sources, run, atRet, vals, onHeap⟩ :=
-    compileFunc_correct compiledFunc length exec start rfl rfl startParams
+    compileFunc_correct compiledFunc length exec start pc0 heap0 startParams
   have callContract' : ∀ callee vals calleeHeap result calleeAfter,
       SourceCalls prog depth callee vals calleeHeap result calleeAfter → ∃ needC,
         needC + frameBytes frame.slots + 16 ≤ need ∧
@@ -317,9 +359,9 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       contract _⟩
   rcases body_simulates body fits callContract' run atRet entered rel with ⟨n, s', steps2, det2, exit⟩ |
     ⟨short, faults⟩
-  case inr => exact .inr ⟨short, (steps1.2.trans checkDet).faults faults⟩
+  case inr => exact .inr ⟨short, det1.faults faults⟩
   rw [vals, onHeap] at exit
-  refine .inl ⟨_, s', (steps1.1.trans checkSteps).trans steps2, (steps1.2.trans checkDet).trans det2, ?_⟩
+  refine .inl ⟨_, s', steps1.trans steps2, det1.trans det2, ?_⟩
   exact
     { rip := exit.rip
       rsp := exit.rsp
