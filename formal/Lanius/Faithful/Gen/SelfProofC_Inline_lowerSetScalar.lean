@@ -18,10 +18,10 @@ public import Lanius.Faithful.Gen.SelfStmtC_Word_narrows
 public import Lanius.Faithful.Gen.SelfStmtC_binaryConstant
 public import Lanius.Faithful.Gen.SelfStmtC_callAgrees
 public import Lanius.Faithful.Gen.SelfStmtC_declareFuncs
+public import Lanius.Faithful.Gen.SelfStmtC_elementAddress
 public import Lanius.Faithful.Gen.SelfStmtC_elementBase
 public import Lanius.Faithful.Gen.SelfStmtC_enumVariants
 public import Lanius.Faithful.Gen.SelfStmtC_evalSame
-public import Lanius.Faithful.Gen.SelfStmtC_indexOf
 public import Lanius.Faithful.Gen.SelfStmtC_lookup
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetValues

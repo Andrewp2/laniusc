@@ -694,7 +694,7 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
   obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
   rw [bty] at holdsW
   cases holdsW with
-  | @slice _ len _ _ =>
+  | @slice _ len _ _ lenSlot _ =>
   obtain ⟨rfl, stride, strideOk, rfl⟩ := stride_inv localRun run
   suffices code : ∃ e, ev = { stmt := .assign slot e, ty := .isize } ∧
       SrcType.isize.Holds (.signed .isize stride) (e.eval env) by
@@ -764,7 +764,7 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
     obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
     rw [bty] at holdsW
     cases holdsW with
-    | @slice _ len _ _ =>
+    | @slice _ len _ _ lenSlot _ =>
     obtain ⟨iv, pos, indexRun, posOk, read⟩ := eval_index_raw localRun run
     obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
       ihe indexOk corr fr fresh hc indexRun bound
@@ -790,8 +790,16 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
       ⟨(by simp only [Expr.Below]; omega), (by simp only [Expr.Below]; omega), trivial⟩
     obtain ⟨env2, agree2, holds, load⟩ := loadElement_sound (mp := mp) hc1 tail hel posEq below read
     obtain ⟨copied, agree⟩ := copy_down holds
+    have slot2 : b.slot + 1 < slot := by
+      have := fr.slots b (lookup_mem found).1
+      rw [bty] at this
+      simp only [SrcType.size] at this
+      omega
+    have inBounds := readRawSliceIndex_lt read
+    have pass : (boundsGuard b (.var slot)).eval env1 = 1 :=
+      boundsGuard_one (by rw [same1 _ slot2, lenSlot]; omega)
     refine ⟨fresh1, keeps1, locals1, wordElement_size hel, d1, _, hp1,
-      .seq exec1 (load (assignFrom_exec _ slot .skip)), fun j lt => ?_, copied, hc1⟩
+      .seq exec1 ((load (assignFrom_exec _ slot .skip)).checkThen pass), fun j lt => ?_, copied, hc1⟩
     rw [agree j lt, agree2 j (.inl (by omega)), same1 j lt]
   rename_i isI32
   have eltEq := eq_of_isI32 isI32
@@ -808,7 +816,7 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
   obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
   rw [bty] at holdsW
   cases holdsW with
-  | @slice _ len _ _ =>
+  | @slice _ len _ _ lenSlot _ =>
   obtain ⟨iv, pos, indexRun, posOk, read⟩ := eval_index_raw localRun run
   obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
     ihe indexOk corr fr fresh hc indexRun bound
@@ -817,6 +825,14 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
   have holdsI := holds_var holds1 scalar
   have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind holdsI posOk
   have bslot : env1 b.slot = env b.slot := same1 b.slot (by have := fr.slots b (lookup_mem found).1; have := fr.sized b (lookup_mem found).1; omega)
+  have slot2 : b.slot + 1 < slot := by
+    have := fr.slots b (lookup_mem found).1
+    rw [bty] at this
+    simp only [SrcType.size] at this
+    omega
+  have inBounds := readRawSliceIndex_lt read
+  have pass : (boundsGuard b (.var slot)).eval env1 = 1 :=
+    boundsGuard_one (by rw [same1 _ slot2, lenSlot]; simp only [Expr.eval] at posEq ⊢; omega)
   simp only [Semantics.readRawSliceIndex] at read
   split at read
   · simp at read
@@ -845,7 +861,7 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
       hp1.limit := by
     rw [address]; simp only [MemWidth.bytes]; addr_omega
   have lt32 := hp1.readLE_lt ((env b.slot).toNat + pos * 4) 4
-  refine ⟨fresh1, keeps1, locals1, by simp [SrcType.size], d1, _, hp1, .seq exec1 (.loadWord room),
+  refine ⟨fresh1, keeps1, locals1, by simp [SrcType.size], d1, _, hp1, .seq exec1 ((Exec.loadWord room).checkThen pass),
     fun j lt => by rw [set_below lt, same1 j lt], .i32 ?_, hc1⟩
   simp only [Env.set, if_pos, address, MemWidth.bytes]
   exact i32_load_holds (by simpa using lt32)
@@ -1551,7 +1567,7 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       obtain ⟨wv, place, holdsW⟩ := corr.readPlace found k sp.toCore
       rw [bty] at holdsW
       cases holdsW with
-      | @slice _ len _ _ =>
+      | @slice _ len _ _ lenSlot _ =>
       obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, rfl⟩ :=
         eval_setIndex_eff fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
       have bound2 : st2.heap.nextAddress ≤ hp.limit := by
@@ -1603,8 +1619,20 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       rename_i s sOk
       simp only [Option.some.injEq] at ok
       subst ok
+      replace sOk := guarded_some sOk
+      obtain ⟨s, sOk, rfl⟩ := sOk
+      have slot2 : b.slot + 1 < next := by
+        have := fr.slots b bmem
+        rw [bty] at this
+        simp only [SrcType.size] at this
+        omega
+      have pass : (boundsGuard b (.var next)).eval env2 = 1 :=
+        boundsGuard_one (by
+          rw [same2 _ (by omega), same1 _ slot2, lenSlot]
+          simp only [Expr.eval] at posEq ⊢
+          omega)
       obtain ⟨hp', exec, hc'⟩ := storeElement_sound (mp := mp) hc2 hel posEq located stored flat sOk bound3
-      exact finish exec hc'
+      exact finish (exec.checkThen pass) hc'
     all_goals simp at run
   rename_i isI32
   have eltEq := eq_of_isI32 isI32
@@ -1644,7 +1672,7 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
     obtain ⟨wv, place, holdsW⟩ := corr.readPlace found k sp.toCore
     rw [bty] at holdsW
     cases holdsW with
-    | @slice _ len _ _ =>
+    | @slice _ len _ _ lenSlot _ =>
     obtain ⟨iv, st1, pos, at_, right, st2, heap, indexRun, posOk, inside, located, valueRun, stored, rfl⟩ :=
       eval_setIndex_eff fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) place assignRun
     have bound2 : st2.heap.nextAddress ≤ hp.limit := by
@@ -1679,6 +1707,16 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       have := fr.slots b bmem
       have := fr.sized b bmem
       rw [same2 b.slot (by omega), same1 b.slot (by omega)]
+    have slot2 : b.slot + 1 < next := by
+      have := fr.slots b bmem
+      rw [bty] at this
+      simp only [SrcType.size] at this
+      omega
+    have pass : (boundsGuard b (.var next)).eval env2 = 1 :=
+      boundsGuard_one (by
+        rw [same2 _ (by omega), same1 _ slot2, lenSlot]
+        simp only [Expr.eval] at posEq ⊢
+        omega)
     obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc2 stored
     have inside := inside (by simp [Semantics.i32Bytes])
     have small := hc2.small
@@ -1696,7 +1734,8 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
         hp2.limit := by
       rw [address]; simp only [MemWidth.bytes]; addr_omega
     refine ⟨fresh2, ((keeps1.chain keeps2).lower le).trans ⟨fun _ _ => rfl, Nat.le_refl _⟩, max d1 d2, _,
-      .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (.storeWord room)),
+      .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _))
+        ((Exec.storeWord room).checkThen pass)),
       .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
         (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun _ _ => rfl) ?_⟩
     rw [address]

@@ -38,14 +38,14 @@ namespace Lanius.Mini
 /-- slice[index] = value on a raw slice of word structs or word enums. -/
 def storeEvalWord (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (i : Evaluated) (v : Evaluated) : Option Stmt :=
   if wordElement decls element then
-    storeEvalThen i v element (storeType element (slotVars (slot + 1) (SrcType.size element)) 0 (elementBase b.slot (SrcType.size element) (Expr.var slot)) 0)
+    storeEvalThen i v element (guarded slot (boundsGuard b (Expr.var slot)) (storeType element (slotVars (slot + 1) (SrcType.size element)) 0 (elementBase b.slot (SrcType.size element) (Expr.var slot)) 0))
   else
     none
 
 /-- The index in slot, the value in slot + 1, then the 32-bit store. -/
 def storeEval (b : Binding) (slot : Nat) (i : Evaluated) (v : Evaluated) : Option Stmt :=
   if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && SrcType.isI32 v.ty then
-    some (Stmt.seq i.stmt (Stmt.seq v.stmt (Stmt.storeWord MemWidth.m32 (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))) (Expr.var (slot + 1)))))
+    some (Stmt.seq i.stmt (Stmt.seq v.stmt (checkThen slot (boundsGuard b (Expr.var slot)) (Stmt.storeWord MemWidth.m32 (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))) (Expr.var (slot + 1))))))
   else
     none
 
@@ -136,9 +136,9 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .letLoad id pointer offset body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard offset scope)) (lowerLoad next (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.uint UintTy.uint8 } : Binding) :: scope) (next + 1)))
   | .setByte pointer offset value => guarded next (guardAnd (SrcExpr.guard pointer scope) (guardAnd (SrcExpr.guard offset scope) (SrcExpr.guard value scope))) (lowerStore (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (lowerAs scope value (SrcType.uint UintTy.uint8)))
   | .free pointer size shift => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard size scope)) (lowerFree shift (lowerAs scope pointer SrcType.ptr) (lowerAs scope size (SrcType.uint UintTy.usize)))
-  | .letSlice id element pointer length body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard length scope)) (lowerLet next (lowerSlice decls element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.slice element } : Binding) :: scope) (next + 1)))
-  | .letIndex id ty slice index body => guarded next (SrcExpr.guard index scope) (lowerLetIndex decls next (lookup scope slice) ty (lowerIndex scope index) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty)))
-  | .setIndex slice index value => guarded next (guardAnd (SrcExpr.guard index scope) (SrcExpr.guard value scope)) (lowerSetIndex decls (lookup scope slice) (lowerIndex scope index) scope value)
+  | .letSlice id element pointer length body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard length scope)) (lowerLet next (lowerSlice decls element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.slice element } : Binding) :: scope) (next + 2)))
+  | .letIndex id ty slice index body => guarded next (guardAnd (SrcExpr.guard index scope) (indexGuard scope slice index)) (lowerLetIndex decls next (lookup scope slice) ty (lowerIndex scope index) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty)))
+  | .setIndex slice index value => guarded next (guardAnd (guardAnd (SrcExpr.guard index scope) (indexGuard scope slice index)) (SrcExpr.guard value scope)) (lowerSetIndex decls (lookup scope slice) (lowerIndex scope index) scope value)
   | .letEval id ty value body => lowerLetEval ty (SrcEff.eval value sigs decls scope next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
   | .setEval id value => lowerSetEval next (lookup scope id) (SrcEff.eval value sigs decls scope next)
   | .ifEval condition thenBranch elseBranch => lowerIfEval next (SrcEff.eval condition sigs decls scope next) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next)
@@ -170,7 +170,7 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .letLoad id pointer offset body => SrcStmt.depth body + 1
   | .setByte pointer offset value => 0
   | .free pointer size shift => 0
-  | .letSlice id element pointer length body => SrcStmt.depth body + 1
+  | .letSlice id element pointer length body => SrcStmt.depth body + 2
   | .letIndex id ty slice index body => SrcStmt.depth body + SrcType.size ty
   | .setIndex slice index value => 0
   | .letEval id ty value body => SrcStmt.depth body + SrcType.size ty

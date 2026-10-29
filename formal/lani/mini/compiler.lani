@@ -1684,7 +1684,7 @@ impl SrcType {
             Struct(id, fields) -> sizes(unbox(fields)),
             Enum(id, variants) -> plus(1, max_size(unbox(variants))),
             Ptr -> 1,
-            Slice(element) -> 1,
+            Slice(element) -> 2,
             Unit -> 1,
             Isize -> 1,
         };
@@ -2230,6 +2230,13 @@ pub fn then_check(slot: usize, g: Expr, s: Stmt) -> Stmt {
     return Seq(boxed(s), boxed(Ite(g, boxed(Skip), boxed(trap(slot)))));
 }
 
+// The index i below the length of the slice local b, which a slice keeps
+// in its second slot. An i32 index below 0 is a word of at least 2^31, and a
+// length is below 2^31.
+pub fn bounds_guard(b: Binding, i: Expr) -> Expr {
+    return Compare(U64, Lt, boxed(i), boxed(Var(plus(b.slot, 1))));
+}
+
 pub fn guarded(slot: usize, g: Expr, s: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (s) {
         None -> None,
@@ -2773,7 +2780,7 @@ pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
 // The index in slot, then the element it picks loaded over it.
 pub fn eval_load(b: Binding, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
     if (i.ty.is_i32() || i.ty.is_uint(Usize)) {
-        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(LoadWord(M32, slot, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4)))))))), ty: I32 });
+        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(check_then(slot, bounds_guard(b, Var(slot)), LoadWord(M32, slot, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))))))), ty: I32 });
     }
     return None;
 }
@@ -3550,7 +3557,7 @@ pub fn lower_slice(decls: SrcDecls, element: SrcType, pointer: core::option::Opt
             None -> None,
             Some(p) -> match (length) {
                 None -> None,
-                Some(l) -> Some(single(p)),
+                Some(l) -> Some(Cons(p, boxed(single(l)))),
             },
         };
     }
@@ -3569,6 +3576,17 @@ pub fn lower_index(scope: List<Binding>, index: SrcExpr) -> core::option::Option
     return match (index.lower(scope)) {
         None -> None,
         Some(t) -> index_of(t),
+    };
+}
+
+// The check of slice[index]: the index below the length.
+pub fn index_guard(scope: List<Binding>, slice: usize, index: SrcExpr) -> Expr {
+    return match (lookup(scope, slice)) {
+        None -> Lit(1),
+        Some(b) -> match (lower_index(scope, index)) {
+            None -> Lit(1),
+            Some(i) -> bounds_guard(b, i),
+        },
     };
 }
 
@@ -3698,7 +3716,7 @@ pub fn lower_set_index(decls: SrcDecls, binding: core::option::Option<Binding>, 
 // the value loaded from slot + 1 at Core's native offsets, then copied down.
 pub fn eval_word_element(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
     if (word_element(decls, element) && (i.ty.is_i32() || i.ty.is_uint(Usize))) {
-        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(load_type(element, plus(slot, 1), element_base(b.slot, element.size(), Var(slot)), 0, assign_from(slot, slot_vars(plus(slot, 1), element.size()), Skip)))), ty: element });
+        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(check_then(slot, bounds_guard(b, Var(slot)), load_type(element, plus(slot, 1), element_base(b.slot, element.size(), Var(slot)), 0, assign_from(slot, slot_vars(plus(slot, 1), element.size()), Skip))))), ty: element });
     }
     return None;
 }
@@ -3819,7 +3837,7 @@ pub fn store_eval_then(i: Evaluated, v: Evaluated, element: SrcType, store: core
 // slice[index] = value on a raw slice of word structs or word enums.
 pub fn store_eval_word(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
     if (word_element(decls, element)) {
-        return store_eval_then(i, v, element, store_type(element, slot_vars(plus(slot, 1), element.size()), 0, element_base(b.slot, element.size(), Var(slot)), 0));
+        return store_eval_then(i, v, element, guarded(slot, bounds_guard(b, Var(slot)), store_type(element, slot_vars(plus(slot, 1), element.size()), 0, element_base(b.slot, element.size(), Var(slot)), 0)));
     }
     return None;
 }
@@ -3827,7 +3845,7 @@ pub fn store_eval_word(decls: SrcDecls, b: Binding, element: SrcType, slot: usiz
 // The index in slot, the value in slot + 1, then the 32-bit store.
 pub fn store_eval(b: Binding, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
     if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.is_i32()) {
-        return Some(Seq(boxed(i.stmt), boxed(Seq(boxed(v.stmt), boxed(StoreWord(M32, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))), Var(plus(slot, 1))))))));
+        return Some(Seq(boxed(i.stmt), boxed(Seq(boxed(v.stmt), boxed(check_then(slot, bounds_guard(b, Var(slot)), StoreWord(M32, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))), Var(plus(slot, 1)))))))));
     }
     return None;
 }
@@ -3940,9 +3958,9 @@ impl SrcStmt {
             LetLoad(id, pointer, offset, body) -> guarded(next, guard_and(pointer.guard(scope), offset.guard(scope)), lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1)))),
             SetByte(pointer, offset, value) -> guarded(next, guard_and(pointer.guard(scope), guard_and(offset.guard(scope), value.guard(scope))), lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8)))),
             Free(pointer, size, shift) -> guarded(next, guard_and(pointer.guard(scope), size.guard(scope)), lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize)))),
-            LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 1)))),
-            LetIndex(id, ty, slice, index, body) -> guarded(next, index.guard(scope), lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
-            SetIndex(slice, index, value) -> guarded(next, guard_and(index.guard(scope), value.guard(scope)), lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value)),
+            LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 2)))),
+            LetIndex(id, ty, slice, index, body) -> guarded(next, guard_and(index.guard(scope), index_guard(scope, slice, index)), lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
+            SetIndex(slice, index, value) -> guarded(next, guard_and(guard_and(index.guard(scope), index_guard(scope, slice, index)), value.guard(scope)), lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value)),
             LetEval(id, ty, value, body) -> lower_let_eval(ty, value.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, decls, scope, next)),
             IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, decls, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),
@@ -3976,7 +3994,7 @@ impl SrcStmt {
             LetLoad(id, pointer, offset, body) -> plus(unbox(body).depth(), 1),
             SetByte(pointer, offset, value) -> 0,
             Free(pointer, size, shift) -> 0,
-            LetSlice(id, element, pointer, length, body) -> plus(unbox(body).depth(), 1),
+            LetSlice(id, element, pointer, length, body) -> plus(unbox(body).depth(), 2),
             LetIndex(id, ty, slice, index, body) -> plus(unbox(body).depth(), ty.size()),
             SetIndex(slice, index, value) -> 0,
             LetEval(id, ty, value, body) -> plus(unbox(body).depth(), ty.size()),

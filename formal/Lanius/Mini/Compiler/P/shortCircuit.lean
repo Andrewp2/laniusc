@@ -97,7 +97,7 @@ def elementOf (ty : SrcType) : Option SrcType :=
 /-- The index in slot, then the element it picks loaded over it. -/
 def evalLoad (b : Binding) (slot : Nat) (i : Evaluated) : Option Evaluated :=
   if SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize then
-    some ({ stmt := Stmt.seq i.stmt (Stmt.loadWord MemWidth.m32 slot (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4)))), ty := SrcType.i32 } : Evaluated)
+    some ({ stmt := Stmt.seq i.stmt (checkThen slot (boundsGuard b (Expr.var slot)) (Stmt.loadWord MemWidth.m32 slot (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))))), ty := SrcType.i32 } : Evaluated)
   else
     none
 

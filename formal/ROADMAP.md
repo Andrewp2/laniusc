@@ -74,7 +74,10 @@ heap or of stack is a fault too.
   changes no slot; a guard that is `Lit(1)` emits nothing, and the self
   compiler's shifts are all constant. `SrcExpr.guard_sound`
   (Mini/Guard.lean): a Core run that completes makes the guard 1. Index
-  checks and the stack check are next.
+  checks are done too: a slice is two slots, its address and its length
+  (below `2 ^ 31`, so a negative `i32` index fails the unsigned test), and
+  every element read or write first tests `index < length`. The stack
+  check is next.
 - V2b. `Stops prog depth env heap stmt n` on the mini IR: the run faults,
   or does not finish within `n` ticks (a tick is a loop iteration or a
   call).

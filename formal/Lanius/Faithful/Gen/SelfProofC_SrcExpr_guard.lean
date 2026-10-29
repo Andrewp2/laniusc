@@ -6,6 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt2
+public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
@@ -44,6 +45,17 @@ theorem step_SrcExpr_guard {prog : SrcProgram} {prims : Prims} {ix_SrcExpr_guard
   rw [pcall_succ np fn] at h
   simp only [src_SrcExpr_guard] at h
   faithful [Lanius.Mini.SrcExpr.guard]
+
+theorem proof_bounds_guard {prog : SrcProgram} {prims : Prims} {ix_bounds_guard ix_plus ix_boxed_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_bounds_guard]? = some (src_bounds_guard ix_plus ix_boxed_of_mini_selfhost_Expr)) (np : prims.isPrim ix_bounds_guard = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n)) {n : Nat} :
+    Stmt_bounds_guard prog prims ix_bounds_guard n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_bounds_guard] at h
+  faithful [Lanius.Mini.boundsGuard]
 
 theorem proof_check_then {prog : SrcProgram} {prims : Prims} {ix_check_then ix_boxed_of_mini_selfhost_Stmt ix_is_one ix_trap : Nat} (fn : prog.funcs[ix_check_then]? = some (src_check_then ix_boxed_of_mini_selfhost_Stmt ix_is_one ix_trap)) (np : prims.isPrim ix_check_then = false)
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))

@@ -52,6 +52,10 @@ def thenCheck (slot : Nat) (g : Expr) (s : Stmt) : Stmt :=
   else
     Stmt.seq s (Stmt.ite g Stmt.skip (trap slot))
 
+/-- The index i below the length of the slice local b, which a slice keeps in its second slot. An i32 index below 0 is a word of at least 2^31, and a length is below 2^31. -/
+def boundsGuard (b : Binding) (i : Expr) : Expr :=
+  Expr.compare Word.u64 CmpOp.lt i (Expr.var (b.slot + 1))
+
 def guarded (slot : Nat) (g : Expr) (s : Option Stmt) : Option Stmt :=
   match s with
   | none => none

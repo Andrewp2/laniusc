@@ -57,7 +57,7 @@ def lowerSlice (decls : SrcDecls) (element : SrcType) (pointer : Option Expr) (l
     | some p =>
       match length with
       | none => none
-      | some l => some [p]
+      | some l => some (p :: [l])
   else
     none
 

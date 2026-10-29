@@ -320,27 +320,27 @@ theorem pure191 : PureFunc prog prims outside src191 = true :=
 theorem pure192 : PureFunc prog prims outside src192 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::lower_let_index -/
+/-- mini::selfhost::index_guard -/
 theorem pure194 : PureFunc prog prims outside src194 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::lower_index -/
+/-- mini::selfhost::lower_let_index -/
 theorem pure195 : PureFunc prog prims outside src195 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::lower_set_index -/
+/-- mini::selfhost::lower_index -/
 theorem pure196 : PureFunc prog prims outside src196 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::lower_let_eval -/
+/-- mini::selfhost::lower_set_index -/
 theorem pure197 : PureFunc prog prims outside src197 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval -/
+/-- mini::selfhost::lower_let_eval -/
 theorem pure198 : PureFunc prog prims outside src198 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::lower_set_eval -/
+/-- mini::selfhost::eval -/
 theorem pure199 : PureFunc prog prims outside src199 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 

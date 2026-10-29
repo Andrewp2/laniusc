@@ -2545,25 +2545,26 @@ the heap as it was. -/
 theorem mapRawI32Slice_inv {st : State} {a : Nat} {n : Int} {v : Value} {st1 : State}
     (run : Semantics.mapRawI32Slice st a n = .done v st1) :
     ∃ len heap, v = .rawSlice (.scalar (.signed .i32)) a len ∧ st1 = { st with heap } ∧
-      ∀ hp, HeapCorr st.heap hp → HeapCorr heap hp := by
+      (∀ hp, HeapCorr st.heap hp → HeapCorr heap hp) ∧ len = n.toNat ∧ 0 ≤ n := by
   simp only [Semantics.mapRawI32Slice] at run
   split at run
   · simp at run
   · split at run
-    · simp only [Semantics.Outcome.done.injEq] at run
+    · rename_i zero
+      simp only [Semantics.Outcome.done.injEq] at run
       obtain ⟨rfl, rfl⟩ := run
-      exact ⟨0, st.heap, rfl, rfl, fun _ h => h⟩
+      exact ⟨0, st.heap, rfl, rfl, fun _ h => h, by omega, by omega⟩
     · split at run
       · simp at run
       · simp only [Semantics.Outcome.done.injEq] at run
         obtain ⟨rfl, rfl⟩ := run
-        exact ⟨_, st.heap, rfl, rfl, fun _ h => h⟩
+        exact ⟨_, st.heap, rfl, rfl, fun _ h => h, rfl, by omega⟩
 
 theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.Ty} {a : Nat} {n : Int}
     {v : Value} {st1 : State}
     (run : Semantics.mapRawNominalSlice P st element a n = .done v st1) :
     ∃ len heap, v = .rawSlice element a len ∧ st1 = { st with heap } ∧
-      ∀ hp, HeapCorr st.heap hp → HeapCorr heap hp := by
+      (∀ hp, HeapCorr st.heap hp → HeapCorr heap hp) ∧ len = n.toNat ∧ 0 ≤ n := by
   unfold Semantics.mapRawNominalSlice at run
   split at run
   · simp at run
@@ -2579,14 +2580,14 @@ theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.T
     split at run
     · simp only [Semantics.Outcome.done.injEq] at run
       obtain ⟨rfl, rfl⟩ := run
-      exact ⟨0, st.heap, rfl, rfl, fun _ h => h⟩
+      exact ⟨0, st.heap, rfl, rfl, fun _ h => h, by simp only [beq_iff_eq] at *; omega, by omega⟩
     split at run
     · simp at run
     split at run
     · simp at run
     simp only [Semantics.Outcome.done.injEq] at run
     obtain ⟨rfl, rfl⟩ := run
-    exact ⟨_, st.heap, rfl, rfl, fun _ h => h⟩
+    exact ⟨_, st.heap, rfl, rfl, fun _ h => h, rfl, by omega⟩
 
 /-- The element types the slice lowering accepts. -/
 theorem slice_kind {ds : SrcDecls} {element : SrcType}
@@ -2606,7 +2607,7 @@ theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcTy
     ∃ a afterPointer n afterLength len heap, evalExpr k P st p = .done (.pointer a) afterPointer ∧
       evalExpr k P afterPointer l = .done (.signed .i32 n) afterLength ∧
       v = .rawSlice element.toCore a len ∧ st1 = { afterLength with heap } ∧
-      ∀ hp, HeapCorr afterLength.heap hp → HeapCorr heap hp := by
+      (∀ hp, HeapCorr afterLength.heap hp → HeapCorr heap hp) ∧ len = n.toNat ∧ 0 ≤ n := by
   rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
   all_goals
     simp only [SrcType.sliceFrom, evalExpr] at run
@@ -2615,10 +2616,10 @@ theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcTy
       split at run
       · rename_i n afterLength lengthRun
         first
-        | obtain ⟨len, heap, rfl, rfl, hcOf⟩ := mapRawI32Slice_inv run
-          exact ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf⟩
-        | obtain ⟨len, heap, rfl, rfl, hcOf⟩ := mapRawNominalSlice_inv run
-          exact ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf⟩
+        | obtain ⟨len, heap, rfl, rfl, hcOf, lenEq, nonneg⟩ := mapRawI32Slice_inv run
+          exact ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf, lenEq, nonneg⟩
+        | obtain ⟨len, heap, rfl, rfl, hcOf, lenEq, nonneg⟩ := mapRawNominalSlice_inv run
+          exact ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf, lenEq, nonneg⟩
       all_goals simp at run
     all_goals simp at run
 
@@ -2662,27 +2663,66 @@ theorem stmt_letSlice (ih : StmtSound sp mp fuel) {id : Nat} {element : SrcType}
     cases fuel with
     | zero => simp [evalExpr] at valueRun
     | succ k =>
-      obtain ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf⟩ :=
+      obtain ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf, lenEq, nonneg⟩ :=
         sliceFrom_inv kind valueRun
       obtain ⟨rfl, holdsP⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) pOk pointerRun
       simp only [SrcType.Holds, Value.pointer.injEq] at holdsP
       refine Simulates.checked (guardAnd_one (lowerAs_guard corr (SrcProgram.target_toCore sp) pOk pointerRun)
         (lowerAs_guard corr (SrcProgram.target_toCore sp) lOk lengthRun)) ?_
-      obtain ⟨rfl, -⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) lOk lengthRun
+      obtain ⟨rfl, holdsL⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) lOk lengthRun
+      obtain ⟨hn, bitsL⟩ := holdsL
+      simp only [Value.signed.injEq, true_and] at hn
+      subst hn
       have sized : (0 : Nat) < (SrcType.slice element).size := by simp [SrcType.size]
+      have insens : Insens [xp, xl] next := Insens.below fun x mem => by
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at mem
+        rcases mem with rfl | rfl
+        · obtain ⟨t, lowered, -, rfl⟩ := lowerAs_some pOk
+          exact (ValueShape.single lowered rfl).below fr.slots _ List.mem_cons_self
+        · obtain ⟨t, lowered, -, rfl⟩ := lowerAs_some lOk
+          exact (ValueShape.single lowered rfl).below fr.slots _ List.mem_cons_self
       obtain ⟨fresh', keeps, d, out, exec, matched⟩ := let_tail ih (ty := .slice element)
           (st := { afterLength with heap }) (v := .rawSlice element.toCore a len)
-          (env' := env.setFrom next [xp]) (hp := hp) (by simpa [SrcType.size] using bodyOk)
+          (env' := env.setFrom next [xp, xl]) (hp := hp) (by simpa [SrcType.size] using bodyOk)
           (corr.cells_congr rfl fun _ _ => rfl) fr fresh le sized
-          (fr.agree fun j below => setFrom_outside [xp] next env j (.inl below))
+          (fr.agree fun j below => setFrom_outside [xp, xl] next env j (.inl below))
           (by
-            have : a = (env.setFrom next [xp] next).toNat := by
-              simp only [Env.setFrom, Env.set, if_pos]; exact holdsP
-            rw [this]
-            exact .slice)
+            have first : a = (env.setFrom next [xp, xl] next).toNat := by
+              have here := setFrom_value _ next env insens 0 xp rfl
+              simp only [Nat.add_zero] at here
+              rw [here]; exact holdsP
+            have second : env.setFrom next [xp, xl] (next + 1) = xl.eval env := by
+              simpa using setFrom_value _ next env insens 1 xl rfl
+            rw [first]
+            refine .slice ?_ ?_
+            · have bits : (xl.eval env).toNat = (low (xl.eval env)).toNat := by
+                conv => lhs; rw [bitsL]
+                exact widen_toNat _
+              rw [second, lenEq, bits, ← toNat_of_toInt _ nonneg, Int.toNat_natCast]
+            · have := BitVec.toInt_lt (x := low (xl.eval env))
+              omega)
           (hcOf hp hc) run bound
-      exact ⟨fresh', ⟨keeps.cells, keeps.next⟩, d, out, assignFrom_exec [xp] next exec, matched⟩
+      exact ⟨fresh', ⟨keeps.cells, keeps.next⟩, d, out, assignFrom_exec [xp, xl] next exec, matched⟩
   all_goals simp at run
+
+/-- A raw slice read that returns is in bounds. -/
+theorem readRawSliceIndex_lt {P : Core.Program} {st : State} {element : Core.Ty} {address length pos : Nat}
+    {v : Value} (read : Semantics.readRawSliceIndex P st element address length pos = .ok v) : pos < length := by
+  simp only [Semantics.readRawSliceIndex] at read
+  split at read
+  · simp at read
+  · omega
+
+theorem boundsGuard_one {b : Binding} {x : Expr} {env : Env}
+    (lt : (x.eval env).toNat < (env (b.slot + 1)).toNat) : (boundsGuard b x).eval env = 1 := by
+  simp [boundsGuard, Expr.eval, Word.holds, CmpOp.holdsU, BitVec.ult, lt]
+
+/-- The bounds check of `slice[index]` passes when the index is below the
+length in the slice's second slot. -/
+theorem indexGuard_one {scope : List Binding} {slice : Nat} {b : Binding} (found : lookup scope slice = some b)
+    {index : SrcExpr} {x : Expr} (ok : lowerIndex scope index = some x) {env : Env}
+    (lt : (x.eval env).toNat < (env (b.slot + 1)).toNat) : (indexGuard scope slice index).eval env = 1 := by
+  simp [indexGuard, found, ok, boundsGuard, Expr.eval, Word.holds, CmpOp.holdsU, BitVec.ult, lt]
 
 /-- An `i32` or `usize` index's slot holds the position Core indexes with. -/
 theorem index_toNat {t : Typed} {iv : Value} {x : BitVec 64} {pos : Nat}
@@ -2748,7 +2788,8 @@ theorem stmt_letIndex_i32 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} 
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letIndex id ty slice index body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
-    Simulates mp hp ret scope frame base st env (checkThen next (index.guard scope) stmt) c st' := by
+    Simulates mp hp ret scope frame base st env
+      (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) c st' := by
   simp only [lowerLoadWord] at ok
   split at ok
   · simp at ok
@@ -2798,9 +2839,13 @@ theorem stmt_letIndex_i32 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} 
         obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
         rw [bty] at holdsW
         cases holdsW with
-        | @slice _ len _ _ =>
+        | @slice _ len _ _ lenSlot _ =>
         obtain ⟨iv, pos, indexRun, posOk, read⟩ := eval_index_raw localRun valueRun
-        refine Simulates.checked (index.guard_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun) ?_
+        have lt := readRawSliceIndex_lt read
+        refine Simulates.checked (guardAnd_one (index.guard_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun)
+          (indexGuard_one found (x := t.expr) (by simp [lowerIndex, indexLowered, indexOf, kind])
+            (by rw [lenSlot, index_toNat kind (index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun).2 posOk]
+                exact lt))) ?_
         obtain ⟨rfl, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
         have posEq := index_toNat kind holdsI posOk
         simp only [Semantics.readRawSliceIndex] at read
@@ -2934,7 +2979,8 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndex slice index value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env
-      (checkThen next (guardAnd (index.guard scope) (value.guard scope)) stmt) c st' := by
+      (checkThen next (guardAnd (guardAnd (index.guard scope) (indexGuard scope slice index)) (value.guard scope)) stmt)
+      c st' := by
   split at ok
   · simp at ok
   rename_i a addrOk
@@ -2983,10 +3029,13 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
     obtain ⟨w, place, holdsW⟩ := corr.readPlace found k sp.toCore
     rw [bty] at holdsW
     cases holdsW with
-    | @slice _ len _ _ =>
-    obtain ⟨iv, pos, at_, right, heap, indexRun, posOk, -, located, valueRun, stored, rfl⟩ :=
+    | @slice _ len _ _ lenSlot _ =>
+    obtain ⟨iv, pos, at_, right, heap, indexRun, posOk, posLt, located, valueRun, stored, rfl⟩ :=
       eval_setIndex_raw fresh.2 index.eval_state value.eval_state place assignRun
-    refine Simulates.checked (guardAnd_one (index.guard_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun)
+    refine Simulates.checked (guardAnd_one (guardAnd_one (index.guard_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun)
+      (indexGuard_one found (x := t.expr) (by simp [lowerIndex, indexLowered, indexOf, kind])
+        (by rw [lenSlot, index_toNat kind (index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun).2 posOk]
+            exact posLt)))
       (lowerAs_guard corr (SrcProgram.target_toCore sp) vOk valueRun)) ?_
     obtain ⟨-, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
     have posEq := index_toNat kind holdsI posOk
@@ -3526,7 +3575,8 @@ theorem stmt_letIndex_word (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType}
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letIndex id ty slice index body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
-    Simulates mp hp ret scope frame base st env (checkThen next (index.guard scope) stmt) c st' := by
+    Simulates mp hp ret scope frame base st env
+      (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) c st' := by
   unfold lowerLoadType at ok
   split at ok
   · simp at ok
@@ -3568,9 +3618,13 @@ theorem stmt_letIndex_word (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType}
         obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
         rw [bty] at holdsW
         cases holdsW with
-        | @slice _ len _ _ =>
+        | @slice _ len _ _ lenSlot _ =>
         obtain ⟨iv, pos', indexRun, posOk, read⟩ := eval_index_raw localRun valueRun
-        refine Simulates.checked (index.guard_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun) ?_
+        have lt := readRawSliceIndex_lt read
+        refine Simulates.checked (guardAnd_one (index.guard_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun)
+          (indexGuard_one found (x := t.expr) (by simp [lowerIndex, indexLowered, indexOf, kind])
+            (by rw [lenSlot, index_toNat kind (index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun).2 posOk]
+                exact lt))) ?_
         obtain ⟨rfl, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
         have posEq := index_toNat kind holdsI posOk
         have tail := tail_bound fresh.2 run bound
@@ -3596,7 +3650,8 @@ theorem stmt_setIndex_word {slice : Nat} {index value : SrcExpr} {b : Binding} {
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndex slice index value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env
-      (checkThen next (guardAnd (index.guard scope) (value.guard scope)) stmt) c st' := by
+      (checkThen next (guardAnd (guardAnd (index.guard scope) (indexGuard scope slice index)) (value.guard scope)) stmt)
+      c st' := by
   unfold storeWordElement at ok
   split at ok
   · simp at ok
@@ -3634,10 +3689,13 @@ theorem stmt_setIndex_word {slice : Nat} {index value : SrcExpr} {b : Binding} {
     obtain ⟨w, place, holdsW⟩ := corr.readPlace found k sp.toCore
     rw [bty] at holdsW
     cases holdsW with
-    | @slice _ len _ _ =>
-    obtain ⟨iv, pos', at_, right, heap, indexRun, posOk, -, located, valueRun, stored, rfl⟩ :=
+    | @slice _ len _ _ lenSlot _ =>
+    obtain ⟨iv, pos', at_, right, heap, indexRun, posOk, posLt, located, valueRun, stored, rfl⟩ :=
       eval_setIndex_raw fresh.2 index.eval_state value.eval_state place assignRun
-    refine Simulates.checked (guardAnd_one (index.guard_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun)
+    refine Simulates.checked (guardAnd_one (guardAnd_one (index.guard_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun)
+      (indexGuard_one found (x := t.expr) (by simp [lowerIndex, indexLowered, indexOf, kind])
+        (by rw [lenSlot, index_toNat kind (index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun).2 posOk]
+            exact posLt)))
       (lowerValue_guard corr (SrcProgram.target_toCore sp) vOk valueRun)) ?_
     obtain ⟨-, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
     have posEq := index_toNat kind holdsI posOk

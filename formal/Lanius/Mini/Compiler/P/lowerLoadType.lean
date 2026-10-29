@@ -8,10 +8,10 @@ import Lanius.Mini.Compiler.P.armScope
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.consArgs
+import Lanius.Mini.Compiler.P.elementAddress
 import Lanius.Mini.Compiler.P.elementBase
 import Lanius.Mini.Compiler.P.evalNot
 import Lanius.Mini.Compiler.P.evalSame
-import Lanius.Mini.Compiler.P.indexOf
 import Lanius.Mini.Compiler.P.lookup
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.matchDst
@@ -57,7 +57,7 @@ def lowerSetIndex (decls : SrcDecls) (binding : Option Binding) (index : Option 
 /-- sigs are the program's signatures and ret the function's result type; next is the first slot no binding in scope uses. slice[index] of a raw slice of word structs or enums: the index in slot, the value loaded from slot + 1 at Core's native offsets, then copied down. -/
 def evalWordElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (i : Evaluated) : Option Evaluated :=
   if wordElement decls element && (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) then
-    some ({ stmt := Stmt.seq i.stmt (loadType element (slot + 1) (elementBase b.slot (SrcType.size element) (Expr.var slot)) 0 (assignFrom slot (slotVars (slot + 1) (SrcType.size element)) Stmt.skip)), ty := element } : Evaluated)
+    some ({ stmt := Stmt.seq i.stmt (checkThen slot (boundsGuard b (Expr.var slot)) (loadType element (slot + 1) (elementBase b.slot (SrcType.size element) (Expr.var slot)) 0 (assignFrom slot (slotVars (slot + 1) (SrcType.size element)) Stmt.skip))), ty := element } : Evaluated)
   else
     none
 

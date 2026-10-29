@@ -56,6 +56,7 @@ import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.sigs
@@ -255,8 +256,11 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
       SrcType.HoldsAt (.enum id variants) (.enumeration id k vs) env slot
   | ptr {value : Value} {env : Env} {slot : Nat} :
       SrcType.ptr.Holds value (env slot) → SrcType.HoldsAt .ptr value env slot
-  /-- A raw slice is its address; its length lives only in Core. -/
+  /-- A raw slice is its address, then its length, which is below `2 ^ 31`
+  (an `i32`'s bound), so an `i32` index below 0, a word of at least `2 ^ 31`,
+  is not below it. -/
   | slice {element : SrcType} {length : Nat} {env : Env} {slot : Nat} :
+      (env (slot + 1)).toNat = length → length < 2 ^ 31 →
       SrcType.HoldsAt (.slice element) (.rawSlice element.toCore (env slot).toNat length) env slot
   /-- The unit value's one slot holds any bits. -/
   | unit {env : Env} {slot : Nat} : SrcType.HoldsAt .unit .unit env slot
@@ -334,11 +338,12 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .ptr (by rw [this]; exact holds)
-  | .slice _, _, _, _, .slice, _, _, agree => by
+  | .slice _, _, _, _, .slice len small, _, _, agree => by
     have := agree 0 (by simp [SrcType.size])
+    have second := agree 1 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     rw [← this]
-    exact .slice
+    exact .slice (by rw [second]; exact len) small
   | .unit, _, _, _, .unit, _, _, _ => .unit
   | .isize, _, _, _, .isize holds, _, _, agree => by
     have := agree 0 (by simp [SrcType.size])

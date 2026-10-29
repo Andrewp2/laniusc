@@ -24,6 +24,10 @@ abbrev Stmt_SrcExpr_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : List Lanius.Mini.Binding} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcExpr x0 v0 → (RepList 128 RepBinding) x1 v1 →
     RepExpr (Lanius.Mini.SrcExpr.guard x0 x1) w
 
+abbrev Stmt_bounds_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBinding x0 v0 → RepExpr x1 v1 →
+    RepExpr (Lanius.Mini.boundsGuard x0 x1) w
+
 abbrev Stmt_check_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepExpr x1 v1 → RepStmt x2 v2 →
     RepStmt (Lanius.Mini.checkThen x0 x1 x2) w

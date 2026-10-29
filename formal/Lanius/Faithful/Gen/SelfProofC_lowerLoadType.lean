@@ -17,9 +17,9 @@ public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
 public import Lanius.Faithful.Gen.SelfStmtC_consArgs
+public import Lanius.Faithful.Gen.SelfStmtC_elementAddress
 public import Lanius.Faithful.Gen.SelfStmtC_elementBase
 public import Lanius.Faithful.Gen.SelfStmtC_evalNot
-public import Lanius.Faithful.Gen.SelfStmtC_indexOf
 public import Lanius.Faithful.Gen.SelfStmtC_lookup
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLoadType
@@ -152,13 +152,15 @@ theorem proof_eval_stride_of {prog : SrcProgram} {prims : Prims} {ix_eval_stride
   simp only [src_eval_stride_of] at h
   faithful [Lanius.Mini.evalStrideOf]
 
-theorem proof_eval_word_element {prog : SrcProgram} {prims : Prims} {ix_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_SrcType_is_i32 ix_word_element ix_slot_vars ix_SrcType_is_uint ix_load_type ix_element_base : Nat} (fn : prog.funcs[ix_eval_word_element]? = some (src_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_SrcType_is_i32 ix_word_element ix_slot_vars ix_SrcType_is_uint ix_load_type ix_element_base)) (np : prims.isPrim ix_eval_word_element = false)
+theorem proof_eval_word_element {prog : SrcProgram} {prims : Prims} {ix_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_assign_from ix_SrcType_is_i32 ix_word_element ix_bounds_guard ix_slot_vars ix_SrcType_is_uint ix_load_type ix_element_base : Nat} (fn : prog.funcs[ix_eval_word_element]? = some (src_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_assign_from ix_SrcType_is_i32 ix_word_element ix_bounds_guard ix_slot_vars ix_SrcType_is_uint ix_load_type ix_element_base)) (np : prims.isPrim ix_eval_word_element = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_check_then : Certified (∀ {n : Nat}, Stmt_check_then prog prims ix_check_then n))
     (ext_assign_from : Certified (∀ {n : Nat}, Stmt_assign_from prog prims ix_assign_from n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
     (ext_word_element : Certified (∀ {n : Nat}, Stmt_word_element prog prims ix_word_element n))
+    (ext_bounds_guard : Certified (∀ {n : Nat}, Stmt_bounds_guard prog prims ix_bounds_guard n))
     (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n))
     (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
     (ext_load_type : Certified (∀ {n : Nat}, Stmt_load_type prog prims ix_load_type n))
