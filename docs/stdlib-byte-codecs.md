@@ -10,8 +10,7 @@ values. They make no host calls and create no owned buffers.
 | `core::hex` | Shortest unsigned hexadecimal ASCII | ASCII byte or parsed value, with fallback |
 | `core::endian` | Fixed-width unsigned, signed and IEEE float encodings, either byte order | Value with fallback; boolean write success |
 | `core::crc32` | Reflected CRC-32/ISO-HDLC | Unfinished state or finished checksum |
-| `core::varint` | Canonical unsigned 32-bit LEB128 | Status, value and next offset |
-| `core::varint_i32` | Signed 32-bit ZigZag followed by canonical LEB128 | The unsigned reader's status/progress, with signed value access |
+| `core::varint` | Shortest u32/u64 base-128 and i32/i64 ZigZag encodings | Result with typed Decoded/View-relative next, or explicit Error |
 
 The scalar binary/hexadecimal helpers produce digits for one integer. Their
 shortest representations have no leading zero padding or emitted radix
@@ -37,13 +36,13 @@ Fallback-returning APIs have no independent success bit. A valid result may
 equal the fallback. Base64 length callers can use `-1`, since successful lengths
 are nonnegative. For full-range numeric reads/parses, comparing the returned
 value with a numeric sentinel cannot reliably identify failure. Validate the
-logical bounds first, or use the digit predicates / explicit varint status
-where those APIs apply.
+logical bounds first, or use the digit predicates where applicable. Checked
+varints instead return Result with explicit errors, without numeric sentinels.
 
 There is no work-budget parameter. Base64 and CRC work is linear in the supplied
 input length; binary/hex parsing is linear up to the first rejected code or
 overflow. Callers must impose their own input-size limits. Endian operations
-access at most eight bytes; u32 varints access at most five. Scalar digit
+access at most eight bytes; varints access at most five/ten for 32/64 bits. Scalar digit
 formatting is bounded by the integer width, with constant auxiliary storage.
 
 ## Strict Base64
@@ -183,92 +182,32 @@ checksum back as an unfinished state. Empty input has checksum zero; ASCII
 The result is a u32, not serialized bytes. A containing protocol chooses its
 wire byte order, which can be written with the endian helpers above.
 
-## Canonical u32 varints
+## Checked native varints
 
-[Source](../stdlib/core/varint.lani). `core::varint` encodes an unsigned u32 in
-one through five bytes. Each byte holds seven payload bits, least significant
-group first; bit 7 says another byte follows. The final byte has bit 7 clear.
-Zero occupies one byte. The writer always emits the shortest encoding, and
-the reader rejects nonminimal encodings. This is canonical unsigned LEB128;
-the same payload order appears in
-[Protocol Buffers' base-128 varints](https://protobuf.dev/programming-guides/encoding/#base-128-varints).
+[Source](../stdlib/core/varint.lani) and [full contract](stdlib-varint.md).
+One module covers u32/u64/i32/i64 through sixteen free functions. Reads/writes
+accept View<u8> and relative offsets; Result separates every valid integer from
+Bounds, BufferTooSmall(required), Truncated, Overflow and NonCanonical.
+Successful reads return typed Decoded { value, next }; writers return the next
+relative offset after preflighting complete capacity, with no writes on rejection.
+The inclusive offset==length boundary is admitted, producing Truncated for reads
+and BufferTooSmall for writes. Fifth/tenth-byte overflow precedes canonicality.
 
-| Value | Encoded bytes, hexadecimal |
-| --- | --- |
-| 0 | `00` |
-| 127 | `7F` |
-| 128 | `80 01` |
-| 300 | `AC 02` |
-| 4,294,967,295 | `FF FF FF FF 0F` |
-
-`len_u32(value)` returns the exact required count. `write_u32(bytes,len,offset,value)`
-returns the **absolute next offset**, not the written count. It returns `-1`
-without writing if `len` or `offset` is negative, `offset > len`, or there
-are too few declared bytes remaining. On success, the changed range is
-`[offset,next)` and its length equals `len_u32(value)`.
-
-`read_u32(bytes,len,offset)` returns a `ReadU32`. Inspect it with
-`status_u32`, `value_u32_or` and `next_u32_or`:
-
-| Constant | Code | Meaning |
-| --- | ---: | --- |
-| `OK` | 0 | A complete minimal encoding fits u32 |
-| `INVALID_BOUNDS` | 1 | Negative `len`/`offset`, or `offset > len` |
-| `TRUNCATED` | 2 | The declared input ends before a terminating byte, including `offset == len` |
-| `OVERFLOW` | 3 | The fifth payload exceeds 15, or the fifth byte still requests continuation |
-| `NON_CANONICAL` | 4 | A terminating encoding uses more than one byte and has zero final payload |
-
-The reader stops at its first terminating byte and permits following data;
-an `OK` next offset points to that following data. On every error, both value
-and next-offset accessors return the fallback supplied to that accessor.
-No partial value or resume offset is published. To retry a truncated prefix
-after extending its backing, retain the original offset. There is no hidden
-decoder state.
-
-Error precedence follows the byte scan. For example, `80` is truncated;
-`80 00` is noncanonical; `FF FF FF FF 10` overflows; and five `80` bytes
-overflow rather than reporting truncation. The reader checks fifth-byte
-overflow before checking whether that byte terminates. Bytes beyond the
-first completed value are not validated as part of that value.
-
-## Signed ZigZag varints
-
-[Source](../stdlib/core/varint_i32.lani). `core::varint_i32` maps all i32 values
-bijectively to u32 before using the unsigned codec. Nonnegative values map to
-twice their value; negative values map to twice their mathematical magnitude
-minus one. The implementation uses unsigned bit operations so i32::MIN does
-not require an overflowing signed absolute value. This is the
-[ZigZag convention used for Protobuf `sint32`](https://protobuf.dev/programming-guides/encoding/#signed-integers).
-
-| Signed value | ZigZag u32 | Encoded bytes, hexadecimal |
-| --- | ---: | --- |
-| 0 | 0 | `00` |
-| -1 | 1 | `01` |
-| 1 | 2 | `02` |
-| -65 | 129 | `81 01` |
-| -2,147,483,648 | 4,294,967,295 | `FF FF FF FF 0F` |
-| 2,147,483,647 | 4,294,967,294 | `FE FF FF FF 0F` |
-
-`zigzag_encode` and `zigzag_decode` perform the scalar mapping.
-`len_i32` returns the unsigned encoded length after that mapping.
-`write_i32` has the same atomic logical-bounds failure and absolute-next-offset
-convention as `write_u32`.
-
-`read_i32` returns the unsigned codec's **`core::varint::ReadU32`** unchanged.
-Use `core::varint::status_u32` and `next_u32_or` for status/progress, then
-`core::varint_i32::value_i32_or` for the signed value. The unsigned value
-accessor instead exposes the ZigZag wire number. Signed decoding inherits
-all unsigned bounds, truncation, overflow and canonicality checks. Select the
-ZigZag/`sint32` convention when matching a containing protocol's signed-field
-type.
+The unsigned representation uses seven low payload bits per byte; signed APIs
+use ZigZag, not signed LEB128 or Protobuf intN. Shortest encodings are mandatory.
+The retired `varint_i32`, `varint_wide_u64` and `varint_wide_i64` modules have no
+forwarding aliases; unrelated two-word arithmetic remains supported separately.
+All five native library tests, both migrated frame examples and the 150-case
+CLI pass; the dedicated guide records their separate finite receipts.
 
 ## Existing executable evidence and its limits
 
-This guide audits the source and the following existing executable fixtures
-and drivers. It does not report a fresh GPU test run. The focused drivers
-compile x86_64 ELF programs and perform their runtime checks on Unix x86_64;
-their physical-bounds cases expect the native trap exit code 101. These
-fixtures do not establish execution parity on WebAssembly or other targets.
+This section records earlier fixture coverage. The varint rows describe the
+retired status/two-word source/API freeze, not the current driver contents or
+native checked API. Current admission and migrated-consumer receipts belong to
+the [native varint guide](stdlib-varint.md). The other codec rows keep their
+existing scopes. Their physical-bounds cases expect native trap exit 101;
+none establishes user-GPU or other-target execution.
 
 | Existing driver | Behaviors checked in its fixtures |
 | --- | --- |
@@ -276,8 +215,8 @@ fixtures do not establish execution parity on WebAssembly or other targets.
 | [stdlib_endian_execution.rs](../tests/stdlib_endian_execution.rs) | Both byte orders at offsets; u16/u32 and two-word 64-bit values; rejected bounds and sentinel preservation; 256 varying high-byte patterns across several offsets; source/output backing traps; packet-header consumer |
 | [stdlib_crc32_execution.rs](../tests/stdlib_crc32_execution.rs) | Constants, empty/negative lengths, `123456789`, binary bytes, an ascending 0..255 stream, byte-wise versus prefix checksum, and a physical-bounds trap |
 | [stdlib_foundation_execution.rs](../tests/stdlib_foundation_execution.rs) | `core_binary` and `core_hex`: digit positions/case, prefixes, malformed input, width maxima/overflow and fallbacks; binary additionally round-trips every u8 |
-| [stdlib_varint_execution.rs](../tests/stdlib_varint_execution.rs) | u32 known wire bytes and maximum; 0..255 round trips; offset progress; logical failure/sentinels; truncated, overflow and noncanonical statuses; physical read/write traps; frame-sum consumer |
-| [stdlib_varint_signed_execution.rs](../tests/stdlib_varint_signed_execution.rs) | ZigZag endpoints and known wire bytes; -128..127 round trips; shared status/progress and failed writes; signed frame-sum consumer |
+| Historical `stdlib_varint_execution.rs` | u32 known wire bytes and maximum; 0..255 round trips; offset progress; logical failure/sentinels; truncated, overflow and noncanonical statuses; physical read/write traps; frame-sum consumer |
+| Historical `stdlib_varint_signed_execution.rs` (retired driver) | ZigZag endpoints and known wire bytes; -128..127 round trips; shared status/progress and failed writes; signed frame-sum consumer |
 
 Some drivers also include public-name presence checks. Those checks complement
 the runtime fixtures; finding a function name in a fixture alone does not

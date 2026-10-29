@@ -666,13 +666,30 @@
     },
     "core::varint": {
       "guides": [
-        "docs/stdlib-byte-codecs.md"
-      ]
-    },
-    "core::varint_i32": {
-      "guides": [
-        "docs/stdlib-byte-codecs.md"
-      ]
+        "docs/stdlib-varint.md",
+        "docs/stdlib-byte-codecs.md",
+        "docs/stdlib-numeric-migration.md",
+        "docs/stdlib-varint-number.md"
+      ],
+      "note": "One shortest base-128 codec covers native u32/u64 and ZigZag i32/i64 in sixteen free functions. Full View/offset admission precedes access; offsets/next are View-relative and offset==length is admitted. Writers preflight capacity and return BufferTooSmall(required encoded bytes) without stores. Readers stop at the first terminator, check fifth/tenth-byte overflow before canonicality and publish typed Decoded only on success. Signed functions implement sintN ZigZag, not signed LEB128/intN. Physical backing/stride/lifetime remain caller obligations; the engine adds no allocation, host service or cleanup transfer. Three signed/two-word codecs and status/fallback APIs retire without aliases; unrelated wide arithmetic remains. All five library tests pass, including an independent wire model and guarded/physical-boundary checks. Both migrated frame examples and four CLI groups/150 cases pass separately. Detailed corpus scope and receipts are in the guides; historical codec evidence retains its source/API scope. The finite accepted target is native Linux x86_64 CPU output from the GPU compiler, without user-device/proof/automatic-lifetime claims.",
+      "declarations": {
+        "len_u32": "Exact shortest encoding length, 1..5; zero occupies one byte.",
+        "write_u32": "Checked View and relative offset. Preflights complete encoded capacity; Bounds or BufferTooSmall(required encoded bytes) leaves all backing unchanged. Success returns relative next, changing only its encoding.",
+        "read_u32": "Return Result<Decoded<u32>,Error> with typed value and relative next; no partial value/next on error. Read at most 5 bytes, stop at first terminator and enforce strict shortest/width rules.",
+        "len_u64": "Exact shortest encoding length, 1..10; zero occupies one byte.",
+        "write_u64": "Checked View and relative offset. Preflights complete encoded capacity; Bounds or BufferTooSmall(required encoded bytes) leaves all backing unchanged. Success returns relative next, changing only its encoding.",
+        "read_u64": "Return Result<Decoded<u64>,Error> with typed value and relative next; no partial value/next on error. Read at most 10 bytes, stop at first terminator and enforce strict shortest/width rules.",
+        "len_i32": "Exact shortest encoding length, 1..5; applies same-width ZigZag first.",
+        "write_i32": "Checked View and relative offset. Preflights complete encoded capacity; Bounds or BufferTooSmall(required encoded bytes) leaves all backing unchanged. Success returns relative next, changing only its encoding. Uses same-width ZigZag.",
+        "read_i32": "Return Result<Decoded<i32>,Error> with typed value and relative next; no partial value/next on error. Read at most 5 bytes, stop at first terminator and enforce strict shortest/width rules. Decodes ZigZag after unsigned width admission.",
+        "len_i64": "Exact shortest encoding length, 1..10; applies same-width ZigZag first.",
+        "write_i64": "Checked View and relative offset. Preflights complete encoded capacity; Bounds or BufferTooSmall(required encoded bytes) leaves all backing unchanged. Success returns relative next, changing only its encoding. Uses same-width ZigZag.",
+        "read_i64": "Return Result<Decoded<i64>,Error> with typed value and relative next; no partial value/next on error. Read at most 10 bytes, stop at first terminator and enforce strict shortest/width rules. Decodes ZigZag after unsigned width admission.",
+        "zigzag_encode_i32": "Bijective i32-to-u32 sintN ZigZag mapping, including signed MIN; unsigned bit operations avoid signed negation overflow.",
+        "zigzag_decode_i32": "Inverse u32-to-i32 ZigZag mapping for every input; no allocation, byte access or fallback.",
+        "zigzag_encode_i64": "Bijective i64-to-u64 sintN ZigZag mapping, including signed MIN; unsigned bit operations avoid signed negation overflow.",
+        "zigzag_decode_i64": "Inverse u64-to-i64 ZigZag mapping for every input; no allocation, byte access or fallback."
+      }
     },
     "core::vec": {
       "guides": [

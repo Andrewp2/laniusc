@@ -1,6 +1,13 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[native checked-varint consolidation](stdlib-varint.md) supplies sixteen
+u32/u64/i32/i64 functions in core::varint with View-relative positions,
+typed Result/Decoded and explicit errors. Three signed/two-word codecs retire
+without aliases; unrelated wide arithmetic remains. Native admission/direct
+and independent wire/physical-boundary gates pass, as do both migrated frames
+and the 150-case CLI. This finite native Linux x86_64 increment is accepted.
+The preceding
 [shared random-source budget increment](stdlib-random-budget.md) adds a
 borrowed Source64 adapter that composes one draw allowance across existing
 samplers, fills and shuffles. Rejected/failed draws charge before delegation;
@@ -268,6 +275,21 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Checked native varints.**
+
+The [varint guide](stdlib-varint.md) defines one shortest base-128/ZigZag
+codec for native 32/64-bit signed/unsigned values. Metadata admission precedes
+capacity/truncation, writers preflight complete capacity, and readers preserve
+strict final-byte/canonicality precedence without partial values. Old status
+and two-word codec modules are retired, with frame consumers migrated directly.
+Native admission/direct tests, both exact frame sums and four CLI groups/150
+cases pass. All five library tests are accepted, including the 61,144-case
+independent model and guarded/physical-boundary execution. The exhaustive
+continuation-first two-byte domain is distributed across profiles, not a
+Cartesian repetition across every type/layout. Historical codec receipts keep
+their original API/source scope; the accepted profile is native Linux x86_64
+CPU output, with broader library/target/lifetime work open.
 
 **Shared random-source budgets.**
 

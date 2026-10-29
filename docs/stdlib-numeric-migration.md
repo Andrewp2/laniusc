@@ -65,14 +65,19 @@ the removed numeric modules, so its generated programs need no numeric rewrite.
 ## Represented wide APIs and protected evidence
 
 The two-word `core::wide_i64` / `wide_u64` APIs and their checked, bit, binary,
-hex, varint, host-I/O and reference fixtures remain supported separately. Their
+hex, host-I/O and reference fixtures remain supported separately. Their
 algorithms, invalid-shift policy and public signatures are preserved. Only
 `wide_u64`'s wrapping-u32 multiplication dependency and `hex_wide_u64`'s ASCII
 hex dependency move to the corresponding canonical primitive helpers.
 
-Dedicated factorial, fingerprint, radix, bit and varint examples continue to
-exercise represented arithmetic. Compiler-state historical snapshots and hash
-manifests retain their historical paths. Compiler, runtime, formal and proof
+Dedicated factorial, fingerprint, radix and bit examples continue to exercise
+represented arithmetic. The [native varint consolidation](stdlib-varint.md)
+separately retires the three signed/two-word codec modules and migrates both
+frame examples to core::varint with native u64/i64, typed Result/Decoded and
+explicit errors. The native codec and migrated consumers have separate
+executable acceptance. That change does not retire the wide arithmetic types
+or extend historical numeric-migration receipts to the new API. Compiler-state historical
+snapshots and hash manifests retain their historical paths. Compiler, runtime, formal and proof
 sources are unchanged.
 
 ## Focused execution evidence

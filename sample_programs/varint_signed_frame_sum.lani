@@ -1,42 +1,59 @@
-// Encode and decode signed telemetry, then print the full-width sum.
+// Encode signed telemetry with checked ZigZag varints and sum native i64 values.
 module app::main;
+import core::decimal;
+import core::i64;
+import core::option;
+import core::result;
+import core::slice;
 import core::varint;
-import core::varint_wide_u64;
-import core::varint_wide_i64;
-import core::wide_i64;
 import std::io_byte;
-import std::io_decimal;
 
 fn main() -> i32 {
-    let b0: u8 = 0;
-    let frame: [u8; 16] = [b0, b0, b0, b0, b0, b0, b0, b0,
-        b0, b0, b0, b0, b0, b0, b0, b0];
-    let end: i32 = core::varint::write_u32(frame, 16, 0, 3);
-    end = core::varint_wide_i64::write_wide_i64(
-        frame, 16, end, core::wide_i64::from_i32(-50));
-    end = core::varint_wide_i64::write_wide_i64(
-        frame, 16, end, core::wide_i64::from_i32(25));
-    end = core::varint_wide_i64::write_wide_i64(
-        frame, 16, end, core::wide_i64::from_words(4294967295, 0));
-    if (end != 8) { return 1; }
-
-    let header: core::varint::ReadU32 = core::varint::read_u32(frame, end, 0);
-    if (core::varint::status_u32(header) != core::varint::OK ||
-        core::varint::value_u32_or(header, 0) != 3) { return 2; }
-    let position: i32 = core::varint::next_u32_or(header, -1);
-    let total: core::wide_i64::WideI64 = core::wide_i64::zero();
-    let count: i32 = 0;
-    while (count < 3) {
-        let item: core::varint_wide_u64::ReadWideU64 =
-            core::varint_wide_i64::read_wide_i64(frame, end, position);
-        if (core::varint_wide_u64::status_wide_u64(item) != core::varint::OK) { return 3; }
-        total = core::wide_i64::wrapping_add(total,
-            core::varint_wide_i64::value_wide_i64_or(item, core::wide_i64::zero()));
-        position = core::varint_wide_u64::next_wide_u64_or(item, -1);
-        count += 1;
+    let frame:[u8;20] = [99;20];
+    let storage:core::slice::View<u8> = core::slice::View { values:frame,start:2,length:16 };
+    let payloads:[i64;3] = [-50,25,-4294967296];
+    let written:core::result::Result<i32,core::varint::Error> = core::varint::write_u32(storage,0,3);
+    if (written.is_err()) { return 1; }
+    let end:i32 = written.unwrap();
+    let expected:i32 = core::varint::len_u32(3);
+    let index:i32 = 0;
+    while (index < 3) {
+        let appended:core::result::Result<i32,core::varint::Error> = core::varint::write_i64(storage,end,payloads[index]);
+        if (appended.is_err()) { return 1; }
+        end = appended.unwrap();
+        expected += core::varint::len_i64(payloads[index]);
+        index += 1;
     }
-    if (position != end ||
-        std::io_decimal::write_wide_i64(1, total) != 11 ||
-        !std::io_byte::write_stdout_byte(10)) { return 4; }
+    if (end != expected || end != 8) { return 1; }
+    if (frame[0] != 99 || frame[1] != 99 || frame[2+end] != 99 || frame[19] != 99) { return 1; }
+    let bytes:core::slice::View<u8> = core::slice::View { values:frame,start:2,length:end };
+    let decoded:core::result::Result<core::varint::Decoded<u32>,core::varint::Error> = core::varint::read_u32(bytes,0);
+    if (decoded.is_err()) { return 2; }
+    let header:core::varint::Decoded<u32> = decoded.unwrap();
+    if (header.value != 3) { return 2; }
+    let position:i32 = header.next;
+    let total:i64 = 0;
+    let count:i32 = 0;
+    while (count < 3) {
+        let parsed:core::result::Result<core::varint::Decoded<i64>,core::varint::Error> = core::varint::read_i64(bytes,position);
+        if (parsed.is_err()) { return 3; }
+        let item:core::varint::Decoded<i64> = parsed.unwrap();
+        let added:core::option::Option<i64> = core::i64::checked_add(total,item.value);
+        if (added.is_none()) { return 3; }
+        total = added.unwrap(); position = item.next; count += 1;
+    }
+    if (position != end || total != -4294967321) { return 3; }
+    let output:[u8;21] = [0;21];
+    let formatted:core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_i64(output,0,20,total);
+    if (formatted.is_err()) { return 4; }
+    let length:i32 = formatted.unwrap();
+    if (length != 11) { return 4; }
+    output[length] = 10;
+    index = 0;
+    // One byte per checked host call; at most 21 attempts, with no retry.
+    while (index <= length) {
+        if (!std::io_byte::write_stdout_byte(output[index] as i32)) { return 4; }
+        index += 1;
+    }
     return 0;
 }

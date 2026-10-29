@@ -1,0 +1,170 @@
+// Honest byte extents end at a protected page; pure codec phases use no host.
+module app::main;
+import alloc::allocator;
+import core::mem;
+import core::result;
+import core::slice;
+import core::varint;
+import std::io;
+import std::linux;
+
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn error<T>(result:core::result::Result<T,core::varint::Error>,expected:i32,required:i32) {
+    assert(result.is_err()); let cause:core::varint::Error=result.unwrap_err();
+    let code:i32=match(cause) {
+        core::varint::Error::Bounds->1,core::varint::Error::BufferTooSmall(count)->2,
+        core::varint::Error::Truncated->3,core::varint::Error::Overflow->4,core::varint::Error::NonCanonical->5
+    };
+    assert(code==expected);
+    if(expected==2) { assert(match(cause) { core::varint::Error::BufferTooSmall(count)->count==required,_ ->false }); }
+}
+fn read_error(bytes:core::slice::View<u8>,offset:i32,expected:i32,wide:bool) {
+    if(wide) {
+        error(core::varint::read_u64(bytes,offset),expected,0);
+        error(core::varint::read_i64(bytes,offset),expected,0);
+    } else {
+        error(core::varint::read_u32(bytes,offset),expected,0);
+        error(core::varint::read_i32(bytes,offset),expected,0);
+    }
+}
+fn write_max(bytes:core::slice::View<u8>,offset:i32,kind:i32) -> core::result::Result<i32,core::varint::Error> {
+    if(kind==0) { return core::varint::write_u32(bytes,offset,4294967295); }
+    if(kind==1) { return core::varint::write_i32(bytes,offset,-2147483648); }
+    if(kind==2) { return core::varint::write_u64(bytes,offset,18446744073709551615); }
+    return core::varint::write_i64(bytes,offset,-9223372036854775808);
+}
+fn decoded_max(bytes:core::slice::View<u8>,offset:i32,wide:bool,next:i32) {
+    if(wide) {
+        let unsigned:core::varint::Decoded<u64> =core::varint::read_u64(bytes,offset).unwrap();
+        let signed:core::varint::Decoded<i64> =core::varint::read_i64(bytes,offset).unwrap();
+        assert(unsigned.value==18446744073709551615 && signed.value==-9223372036854775808 && unsigned.next==next && signed.next==next);
+    } else {
+        let unsigned:core::varint::Decoded<u32> =core::varint::read_u32(bytes,offset).unwrap();
+        let signed:core::varint::Decoded<i32> =core::varint::read_i32(bytes,offset).unwrap();
+        assert(unsigned.value==4294967295 && signed.value==-2147483648 && unsigned.next==next && signed.next==next);
+    }
+}
+fn reset(bytes:[u8],count:i32) { let index:i32=0; while(index<count) { bytes[index]=211; index+=1; } }
+fn guarded_bytes(bytes:[u8],count:i32,start:i32,length:i32,last:u8) {
+    let index:i32=0;
+    while(index<count) {
+        let expected:u8=211;
+        if(index>=start && index<start+length) { expected=255; if(index==start+length-1) { expected=last; } }
+        assert(bytes[index]==expected); index+=1;
+    }
+}
+fn layouts(bytes:[u8]) {
+    let view:core::slice::View<u8> =core::slice::view_range<u8>(bytes,2,26).unwrap(); let kind:i32=0;
+    mark(80);
+    while(kind<4) {
+        let width:i32=5; let last:u8=15; if(kind>=2) { width=10; last=1; }
+        reset(bytes,32); assert(write_max(view,3,kind).unwrap()==3+width);
+        guarded_bytes(bytes,32,5,width,last); decoded_max(view,3,kind>=2,3+width); guarded_bytes(bytes,32,5,width,last);
+        reset(bytes,32);
+        let short:core::slice::View<u8> =core::slice::View { values:bytes,start:2,length:3+width-1 };
+        error(write_max(short,3,kind),2,width); guarded_bytes(bytes,32,0,0,0);
+        kind+=1;
+    }
+    mark(112);
+}
+fn invalid() {
+    let nowhere:ptr=0; let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let starts:[i32;4]=[-1,0,2147483647,1]; let lengths:[i32;4]=[0,-1,1,2147483647];
+    mark(80); let index:i32=0;
+    while(index<4) {
+        let view:core::slice::View<u8> =core::slice::View { values:bytes,start:starts[index],length:lengths[index] };
+        read_error(view,0,1,false); read_error(view,0,1,true);
+        let kind:i32=0; while(kind<4) { error(write_max(view,0,kind),1,0); kind+=1; } index+=1;
+    }
+    let empty:core::slice::View<u8> =core::slice::View { values:bytes,start:2147483647,length:0 };
+    let offsets:[i32;3]=[-1,1,2147483647]; index=0;
+    while(index<3) {
+        read_error(empty,offsets[index],1,false); read_error(empty,offsets[index],1,true);
+        let kind:i32=0; while(kind<4) { error(write_max(empty,offsets[index],kind),1,0); kind+=1; } index+=1;
+    }
+    read_error(empty,0,3,false); read_error(empty,0,3,true);
+    let kind:i32=0; while(kind<4) { let width:i32=5; if(kind>=2) { width=10; } error(write_max(empty,0,kind),2,width); kind+=1; }
+    mark(112);
+}
+fn tail(mapping:ptr,count:i32) -> core::slice::View<u8> {
+    // The whole raw slice is honestly backed and accessible. Its two leading
+    // canaries and count payload bytes end exactly at the protected page.
+    let begin:ptr=mapping+(4094-(count as usize));
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(begin,2+count);
+    return core::slice::View { values:bytes,start:2,length:count };
+}
+fn set(view:core::slice::View<u8>,value:u8) {
+    view.values[0]=211; view.values[1]=211; let index:i32=0;
+    while(index<view.length) { view.values[2+index]=value; index+=1; }
+}
+fn unchanged(view:core::slice::View<u8>,value:u8) {
+    assert(view.values[0]==211 && view.values[1]==211); let index:i32=0;
+    while(index<view.length) { assert(view.values[2+index]==value); index+=1; }
+}
+fn unchanged_final(view:core::slice::View<u8>,prefix:u8,last:u8) {
+    assert(view.values[0]==211 && view.values[1]==211); let index:i32=0;
+    while(index<view.length) { let expected:u8=prefix; if(index==view.length-1) { expected=last; } assert(view.values[2+index]==expected); index+=1; }
+}
+fn guarded_reads(mapping:ptr,wide:bool) {
+    let width:i32=5; let maximum:u8=15; if(wide) { width=10; maximum=1; }
+    mark(80); let count:i32=0;
+    while(count<width) {
+        let bytes:core::slice::View<u8> =tail(mapping,count); set(bytes,128);
+        read_error(bytes,0,3,wide); unchanged(bytes,128); count+=1;
+    }
+    // A one-byte terminator occupies the last accessible byte. A reader
+    // cannot fetch a speculative next byte, including for signed ZigZag.
+    let one:core::slice::View<u8> =tail(mapping,1); set(one,42);
+    if(wide) {
+        let unsigned:core::varint::Decoded<u64> =core::varint::read_u64(one,0).unwrap();
+        let signed:core::varint::Decoded<i64> =core::varint::read_i64(one,0).unwrap();
+        assert(unsigned.value==42 && signed.value==21 && unsigned.next==1 && signed.next==1);
+    } else {
+        let unsigned:core::varint::Decoded<u32> =core::varint::read_u32(one,0).unwrap();
+        let signed:core::varint::Decoded<i32> =core::varint::read_i32(one,0).unwrap();
+        assert(unsigned.value==42 && signed.value==21 && unsigned.next==1 && signed.next==1);
+    }
+    unchanged(one,42);
+    let bytes:core::slice::View<u8> =tail(mapping,width); set(bytes,255); bytes.values[2+width-1]=maximum;
+    decoded_max(bytes,0,wide,width); unchanged_final(bytes,255,maximum);
+    set(bytes,128); read_error(bytes,0,4,wide); unchanged(bytes,128);
+    set(bytes,128); bytes.values[2+width-1]=maximum+1; read_error(bytes,0,4,wide);
+    unchanged_final(bytes,128,maximum+1);
+    set(bytes,128); bytes.values[2+width-1]=0; read_error(bytes,0,5,wide);
+    unchanged_final(bytes,128,0);
+    mark(112);
+}
+fn guarded_writes(mapping:ptr) {
+    mark(80); let kind:i32=0;
+    while(kind<4) {
+        let width:i32=5; let last:u8=15; if(kind>=2) { width=10; last=1; }
+        let count:i32=0;
+        while(count<width) {
+            let short:core::slice::View<u8> =tail(mapping,count); set(short,211);
+            error(write_max(short,0,kind),2,width); unchanged(short,211); count+=1;
+        }
+        let exact:core::slice::View<u8> =tail(mapping,width); set(exact,211);
+        assert(write_max(exact,0,kind).unwrap()==width); guarded_bytes(exact.values,2+width,2,width,last);
+        let one:core::slice::View<u8> =tail(mapping,1); set(one,211);
+        if(kind==0) { assert(core::varint::write_u32(one,0,0).unwrap()==1); }
+        if(kind==1) { assert(core::varint::write_i32(one,0,-1).unwrap()==1); }
+        if(kind==2) { assert(core::varint::write_u64(one,0,0).unwrap()==1); }
+        if(kind==3) { assert(core::varint::write_i64(one,0,-1).unwrap()==1); }
+        let byte:u8=0; if(kind==1 || kind==3) { byte=1; }
+        assert(one.values[0]==211 && one.values[1]==211 && one.values[2]==byte); kind+=1;
+    }
+    mark(112);
+}
+fn main() -> i32 {
+    let mapping:ptr=alloc::allocator::alloc(8192,8); assert(mapping!=0);
+    let protect:[std::linux::Argument;3]=[std::linux::Argument::Address(mapping+4096),std::linux::Argument::Word(4096),std::linux::Argument::Word(0)];
+    assert(std::linux::call(10,core::slice::view<std::linux::Argument>(protect,3).unwrap()).unwrap()==0);
+    let native:[u8;32]=[211;32]; assert(core::mem::slice_stride(native)<0); layouts(native);
+    let words:[i32;9]=[0;9]; let base:ptr=core::mem::i32_array_data_ptr(words);
+    let all:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base,36); reset(all,36);
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base,32); assert(core::mem::slice_stride(packed)==1); layouts(packed);
+    reset(all,36); let unaligned:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base+1,32); assert(core::mem::slice_stride(unaligned)==1); layouts(unaligned);
+    assert(all[0]==211 && all[33]==211 && all[34]==211 && all[35]==211);
+    invalid(); guarded_reads(mapping,false); guarded_reads(mapping,true); guarded_writes(mapping);
+    alloc::allocator::dealloc(mapping,8192,8); mark(68); return 0;
+}

@@ -1,9 +1,0 @@
-module app::main;
-import core::varint;
-
-fn main() -> i32 {
-    let continuation: u8 = 128;
-    let bytes: [u8; 1] = [continuation];
-    let result: core::varint::ReadU32 = core::varint::read_u32(bytes, 2, 0);
-    return core::varint::status_u32(result);
-}

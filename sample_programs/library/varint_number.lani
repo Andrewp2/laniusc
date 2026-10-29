@@ -1,0 +1,133 @@
+// Convert one native integer to or from a canonical public varint encoding.
+module app::main;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::u8;
+import core::varint;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Prepared { help:bool, length:i32 }
+struct Writes { calls:i32 }
+impl Writes { fn borrow(&self) -> &Writes { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32, budget:&Writes) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0;
+    while(completed < bytes.length) {
+        if (budget.calls == maximum) { return false; } budget.calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > bytes.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 {
+    let budget = Writes { calls:0 };
+    write(literal("varint_number: operation failed\n",32),2,8,budget.borrow()); return status;
+}
+fn hex_bytes(token:View<u8>, wire:[u8]) -> Result<i32,i32> {
+    if ((token.length < 2) || (token.length > 20) || ((token.length % 2) != 0)) { return core::result::Err(2); }
+    let index:i32 = 0;
+    while(index < token.length) {
+        let high:u8 = core::u8::ascii_hexdigit_value_or(token.values[token.start+index],255);
+        let low:u8 = core::u8::ascii_hexdigit_value_or(token.values[token.start+index+1],255);
+        if ((high == 255) || (low == 255)) { return core::result::Err(2); }
+        wire[index/2] = high*16+low; index += 2;
+    }
+    return core::result::Ok(token.length/2);
+}
+fn encoded_length(encoded:Result<i32,core::varint::Error>) -> Result<i32,i32> {
+    if (encoded.is_err()) { return core::result::Err(6); }
+    let length:i32 = encoded.unwrap();
+    if ((length < 1) || (length > 10)) { return core::result::Err(6); }
+    return core::result::Ok(length);
+}
+fn decimal_line(formatted:Result<i32,core::decimal::FormatError>, output:[u8]) -> Result<i32,i32> {
+    if (formatted.is_err()) { return core::result::Err(6); }
+    let length:i32 = formatted.unwrap();
+    if ((length < 1) || (length > 20)) { return core::result::Err(6); }
+    output[length] = 10; return core::result::Ok(length+1);
+}
+// All borrowed scratch belongs to main and remains live after argv is retired.
+fn prepare(values:View<View<u8>>, output:[u8], wire:[u8]) -> Result<Prepared,i32> {
+    if (values.length == 1) {
+        let first:View<u8> = values.values[values.start];
+        if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) {
+            return core::result::Ok(Prepared { help:true,length:0 });
+        }
+    }
+    if (values.length != 2) { return core::result::Err(2); }
+    let mode:View<u8> = values.values[values.start];
+    let token:View<u8> = values.values[values.start+1];
+    let length:i32 = 0;
+    if (equals(mode,literal("encode-u64",10))) {
+        if ((token.length < 1) || (token.length > 20)) { return core::result::Err(2); }
+        let parsed:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(token.values,token.start,token.length);
+        if (parsed.is_err()) { return core::result::Err(2); }
+        let encoded:Result<i32,core::varint::Error> = core::varint::write_u64(core::slice::view(output,32).unwrap(),0,parsed.unwrap());
+        length = encoded_length(encoded)?;
+    } else {
+        if (equals(mode,literal("encode-i64",10))) {
+            if ((token.length < 1) || (token.length > 20)) { return core::result::Err(2); }
+            let parsed:Result<i64,core::decimal::ParseError> = core::decimal::parse_i64_range(token.values,token.start,token.length);
+            if (parsed.is_err()) { return core::result::Err(2); }
+            let encoded:Result<i32,core::varint::Error> = core::varint::write_i64(core::slice::view(output,32).unwrap(),0,parsed.unwrap());
+            length = encoded_length(encoded)?;
+        } else {
+            if (equals(mode,literal("decode-u64",10))) {
+                let count:i32 = hex_bytes(token,wire)?;
+                let parsed:Result<core::varint::Decoded<u64>,core::varint::Error> = core::varint::read_u64(core::slice::view(wire,count).unwrap(),0);
+                if (parsed.is_err()) { return core::result::Err(2); }
+                let decoded:core::varint::Decoded<u64> = parsed.unwrap();
+                if (decoded.next != count) { return core::result::Err(2); }
+                let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_u64(output,0,31,decoded.value);
+                length = decimal_line(formatted,output)?;
+            } else {
+                if (equals(mode,literal("decode-i64",10))) {
+                    let count:i32 = hex_bytes(token,wire)?;
+                    let parsed:Result<core::varint::Decoded<i64>,core::varint::Error> = core::varint::read_i64(core::slice::view(wire,count).unwrap(),0);
+                    if (parsed.is_err()) { return core::result::Err(2); }
+                    let decoded:core::varint::Decoded<i64> = parsed.unwrap();
+                    if (decoded.next != count) { return core::result::Err(2); }
+                    let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_i64(output,0,31,decoded.value);
+                    length = decimal_line(formatted,output)?;
+                } else { return core::result::Err(2); }
+            }
+        }
+    }
+    return core::result::Ok(Prepared { help:false,length:length });
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let output:[u8;32] = [0;32]; let wire:[u8;10] = [0;10];
+    let captured = std::args::snapshot(1,2,64);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let owner = captured.unwrap(); let prepared:Result<Prepared,i32> = prepare(owner.as_view(),output,wire); owner.destroy();
+    if (prepared.is_err()) { return report(prepared.unwrap_err()); }
+    let ready:Prepared = prepared.unwrap(); let budget = Writes { calls:0 };
+    let text:View<u8> = core::slice::view(output,ready.length).unwrap();
+    if (ready.help) {
+        text = literal("Usage: varint_number MODE VALUE\nModes: encode-u64, encode-i64, decode-u64, decode-i64.\nEncode decimal integers as raw base-128 bytes without a newline; signed values use ZigZag.\nDecimal input is at most 20 bytes. Unsigned input is digits only; signed input allows + or -.\nLeading zeros are allowed. Decode accepts 2..20 ASCII hex digits in pairs, with no prefix or separators.\nDecode requires one complete shortest encoding and prints decimal plus LF. No stdin is read.\nA sole --help or -h shows help. Output permits 64 write attempts.\n",536);
+    }
+    if (!write(text,1,64,budget.borrow())) { return report(5); } return 0;
+}

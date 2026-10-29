@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **274 modules**, **13499 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **271 modules**, **13487 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -85,10 +85,7 @@ Inventory: **274 modules**, **13499 declaration/member entries**. Counts include
 | [core::utf16_bytes](core/utf16_bytes.md) | [source](../../stdlib/core/utf16_bytes.lani#L5) | 26 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
 | [core::utf8](core/utf8.md) | [source](../../stdlib/core/utf8.lani#L3) | 25 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
 | [core::utf8_view](core/utf8_view.md) | [source](../../stdlib/core/utf8_view.lani#L2) | 12 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
-| [core::varint](core/varint.md) | [source](../../stdlib/core/varint.lani#L2) | 15 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
-| [core::varint_i32](core/varint_i32.md) | [source](../../stdlib/core/varint_i32.lani#L2) | 6 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
-| [core::varint_wide_i64](core/varint_wide_i64.md) | [source](../../stdlib/core/varint_wide_i64.lani#L2) | 6 | Source inventory | **Unregistered** |
-| [core::varint_wide_u64](core/varint_wide_u64.md) | [source](../../stdlib/core/varint_wide_u64.lani#L2) | 10 | Source inventory | **Unregistered** |
+| [core::varint](core/varint.md) | [source](../../stdlib/core/varint.lani#L4) | 25 | Source inventory | [stdlib-varint](../stdlib-varint.md), [stdlib-byte-codecs](../stdlib-byte-codecs.md), [stdlib-numeric-migration](../stdlib-numeric-migration.md), [stdlib-varint-number](../stdlib-varint-number.md) |
 | [core::vec](core/vec.md) | [source](../../stdlib/core/vec.lani#L4) | 38 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md) |
 | [core::wide_i64](core/wide_i64.md) | [source](../../stdlib/core/wide_i64.lani#L3) | 51 | Source inventory | **Unregistered** |
 | [core::wide_i64_bits](core/wide_i64_bits.md) | [source](../../stdlib/core/wide_i64_bits.lani#L2) | 12 | Source inventory | **Unregistered** |
@@ -342,8 +339,6 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [core::ops](core/ops.md)
 - [core::pair](core/pair.md)
 - [core::u32_cells](core/u32_cells.md)
-- [core::varint_wide_i64](core/varint_wide_i64.md)
-- [core::varint_wide_u64](core/varint_wide_u64.md)
 - [core::wide_i64](core/wide_i64.md)
 - [core::wide_i64_bits](core/wide_i64_bits.md)
 - [core::wide_i64_checked](core/wide_i64_checked.md)

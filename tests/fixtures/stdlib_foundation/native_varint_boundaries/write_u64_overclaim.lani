@@ -1,0 +1,11 @@
+// A physical caller violation is not a no-write rejection/rollback guarantee.
+module app::main;
+import core::result;
+import core::slice;
+import core::varint;
+fn main() -> i32 {
+    let short:[u8;1]=[0];
+    let view:core::slice::View<u8> =core::slice::View { values:short,start:0,length:2 };
+    let written:core::result::Result<i32,core::varint::Error> =core::varint::write_u64(view,0,128);
+    if(written.is_err()) { return 2; } return 0;
+}

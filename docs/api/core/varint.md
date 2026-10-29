@@ -4,144 +4,264 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/core/varint.lani#L2)
+[All modules](../README.md) · [Source](../../../stdlib/core/varint.lani#L4)
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
+One shortest base-128 codec covers native u32/u64 and ZigZag i32/i64 in sixteen free functions. Full View/offset admission precedes access; offsets/next are View-relative and offset==length is admitted. Writers preflight capacity and return BufferTooSmall(required encoded bytes) without stores. Readers stop at the first terminator, check fifth/tenth-byte overflow before canonicality and publish typed Decoded only on success. Signed functions implement sintN ZigZag, not signed LEB128/intN. Physical backing/stride/lifetime remain caller obligations; the engine adds no allocation, host service or cleanup transfer. Three signed/two-word codecs and status/fallback APIs retire without aliases; unrelated wide arithmetic remains. All five library tests pass, including an independent wire model and guarded/physical-boundary checks. Both migrated frame examples and four CLI groups/150 cases pass separately. Detailed corpus scope and receipts are in the guides; historical codec evidence retains its source/API scope. The finite accepted target is native Linux x86_64 CPU output from the GPU compiler, without user-device/proof/automatic-lifetime claims.
+
 ## Contract and evidence guides
 
+- [stdlib-varint](../../stdlib-varint.md)
 - [stdlib-byte-codecs](../../stdlib-byte-codecs.md)
+- [stdlib-numeric-migration](../../stdlib-numeric-migration.md)
+- [stdlib-varint-number](../../stdlib-varint-number.md)
 
-Declaration counts: constant: 5; field: 3; function: 6; struct: 1.
+Declaration counts: enum: 1; field: 2; function: 16; struct: 1; variant: 5.
 
 ## Declared imports
 
-None.
+Direct source imports; this is not a package-resolution or transitive dependency result.
+
+- [core::result::Result](result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../stdlib/core/varint.lani#L5)
+- [core::result::Ok](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../stdlib/core/varint.lani#L6)
+- [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../stdlib/core/varint.lani#L7)
+- [core::slice::View](slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../stdlib/core/varint.lani#L8)
 
 ## Types, fields and variants
 
 Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
 
-### struct: ReadU32
+### enum: Error
 
 [Source line 10](../../../stdlib/core/varint.lani#L10)
 
 ```lanius
-pub struct ReadU32
+pub enum Error
 ```
 
-#### field: status
+#### variant: Bounds
 
-[Source line 12](../../../stdlib/core/varint.lani#L12)
+[Source line 10](../../../stdlib/core/varint.lani#L10)
 
 ```lanius
-status: i32
+Bounds
+```
+
+#### variant: BufferTooSmall
+
+[Source line 10](../../../stdlib/core/varint.lani#L10)
+
+```lanius
+BufferTooSmall(i32)
+```
+
+#### variant: Truncated
+
+[Source line 10](../../../stdlib/core/varint.lani#L10)
+
+```lanius
+Truncated
+```
+
+#### variant: Overflow
+
+[Source line 10](../../../stdlib/core/varint.lani#L10)
+
+```lanius
+Overflow
+```
+
+#### variant: NonCanonical
+
+[Source line 10](../../../stdlib/core/varint.lani#L10)
+
+```lanius
+NonCanonical
+```
+
+### struct: Decoded
+
+[Source line 11](../../../stdlib/core/varint.lani#L11)
+
+```lanius
+pub struct Decoded<T>
 ```
 
 #### field: value
 
-[Source line 13](../../../stdlib/core/varint.lani#L13)
+[Source line 11](../../../stdlib/core/varint.lani#L11)
 
 ```lanius
-value: u32
+value: T
 ```
 
 #### field: next
 
-[Source line 14](../../../stdlib/core/varint.lani#L14)
+[Source line 11](../../../stdlib/core/varint.lani#L11)
 
 ```lanius
 next: i32
 ```
 
-## Constants
-
-### constant: OK
-
-[Source line 4](../../../stdlib/core/varint.lani#L4)
-
-```lanius
-pub const OK: i32 = 0;
-```
-
-### constant: INVALID_BOUNDS
-
-[Source line 5](../../../stdlib/core/varint.lani#L5)
-
-```lanius
-pub const INVALID_BOUNDS: i32 = 1;
-```
-
-### constant: TRUNCATED
-
-[Source line 6](../../../stdlib/core/varint.lani#L6)
-
-```lanius
-pub const TRUNCATED: i32 = 2;
-```
-
-### constant: OVERFLOW
-
-[Source line 7](../../../stdlib/core/varint.lani#L7)
-
-```lanius
-pub const OVERFLOW: i32 = 3;
-```
-
-### constant: NON_CANONICAL
-
-[Source line 8](../../../stdlib/core/varint.lani#L8)
-
-```lanius
-pub const NON_CANONICAL: i32 = 4;
-```
-
 ## Free functions and extern declarations
 
-### function: status_u32
+### function: zigzag_encode_i32
 
-[Source line 21](../../../stdlib/core/varint.lani#L21)
-
-```lanius
-pub fn status_u32(result: ReadU32) -> i32
-```
-
-### function: value_u32_or
-
-[Source line 22](../../../stdlib/core/varint.lani#L22)
+[Source line 74](../../../stdlib/core/varint.lani#L74)
 
 ```lanius
-pub fn value_u32_or(result: ReadU32, fallback: u32) -> u32
+pub fn zigzag_encode_i32(value: i32) -> u32
 ```
 
-### function: next_u32_or
+Bijective i32-to-u32 sintN ZigZag mapping, including signed MIN; unsigned bit operations avoid signed negation overflow.
 
-[Source line 26](../../../stdlib/core/varint.lani#L26)
+### function: zigzag_decode_i32
+
+[Source line 80](../../../stdlib/core/varint.lani#L80)
 
 ```lanius
-pub fn next_u32_or(result: ReadU32, fallback: i32) -> i32
+pub fn zigzag_decode_i32(value: u32) -> i32
 ```
+
+Inverse u32-to-i32 ZigZag mapping for every input; no allocation, byte access or fallback.
+
+### function: zigzag_encode_i64
+
+[Source line 85](../../../stdlib/core/varint.lani#L85)
+
+```lanius
+pub fn zigzag_encode_i64(value: i64) -> u64
+```
+
+Bijective i64-to-u64 sintN ZigZag mapping, including signed MIN; unsigned bit operations avoid signed negation overflow.
+
+### function: zigzag_decode_i64
+
+[Source line 91](../../../stdlib/core/varint.lani#L91)
+
+```lanius
+pub fn zigzag_decode_i64(value: u64) -> i64
+```
+
+Inverse u64-to-i64 ZigZag mapping for every input; no allocation, byte access or fallback.
 
 ### function: len_u32
 
-[Source line 31](../../../stdlib/core/varint.lani#L31)
+[Source line 97](../../../stdlib/core/varint.lani#L97)
 
 ```lanius
 pub fn len_u32(value: u32) -> i32
 ```
 
-### function: write_u32
+Exact shortest encoding length, 1..5; zero occupies one byte.
 
-[Source line 43](../../../stdlib/core/varint.lani#L43)
+### function: len_u64
+
+[Source line 98](../../../stdlib/core/varint.lani#L98)
 
 ```lanius
-pub fn write_u32(bytes: [u8], len: i32, offset: i32, value: u32) -> i32
+pub fn len_u64(value: u64) -> i32
 ```
+
+Exact shortest encoding length, 1..10; zero occupies one byte.
+
+### function: len_i32
+
+[Source line 99](../../../stdlib/core/varint.lani#L99)
+
+```lanius
+pub fn len_i32(value: i32) -> i32
+```
+
+Exact shortest encoding length, 1..5; applies same-width ZigZag first.
+
+### function: len_i64
+
+[Source line 100](../../../stdlib/core/varint.lani#L100)
+
+```lanius
+pub fn len_i64(value: i64) -> i32
+```
+
+Exact shortest encoding length, 1..10; applies same-width ZigZag first.
+
+### function: write_u32
+
+[Source line 102](../../../stdlib/core/varint.lani#L102)
+
+```lanius
+pub fn write_u32(bytes: View<u8>, offset: i32, value: u32) -> Result<i32, Error>
+```
+
+Checked View and relative offset. Preflights complete encoded capacity; Bounds or BufferTooSmall(required encoded bytes) leaves all backing unchanged. Success returns relative next, changing only its encoding.
+
+### function: write_u64
+
+[Source line 105](../../../stdlib/core/varint.lani#L105)
+
+```lanius
+pub fn write_u64(bytes: View<u8>, offset: i32, value: u64) -> Result<i32, Error>
+```
+
+Checked View and relative offset. Preflights complete encoded capacity; Bounds or BufferTooSmall(required encoded bytes) leaves all backing unchanged. Success returns relative next, changing only its encoding.
+
+### function: write_i32
+
+[Source line 108](../../../stdlib/core/varint.lani#L108)
+
+```lanius
+pub fn write_i32(bytes: View<u8>, offset: i32, value: i32) -> Result<i32, Error>
+```
+
+Checked View and relative offset. Preflights complete encoded capacity; Bounds or BufferTooSmall(required encoded bytes) leaves all backing unchanged. Success returns relative next, changing only its encoding. Uses same-width ZigZag.
+
+### function: write_i64
+
+[Source line 111](../../../stdlib/core/varint.lani#L111)
+
+```lanius
+pub fn write_i64(bytes: View<u8>, offset: i32, value: i64) -> Result<i32, Error>
+```
+
+Checked View and relative offset. Preflights complete encoded capacity; Bounds or BufferTooSmall(required encoded bytes) leaves all backing unchanged. Success returns relative next, changing only its encoding. Uses same-width ZigZag.
 
 ### function: read_u32
 
-[Source line 63](../../../stdlib/core/varint.lani#L63)
+[Source line 115](../../../stdlib/core/varint.lani#L115)
 
 ```lanius
-pub fn read_u32(bytes: [u8], len: i32, offset: i32) -> ReadU32
+pub fn read_u32(bytes: View<u8>, offset: i32) -> Result<Decoded<u32>, Error>
 ```
+
+Return Result<Decoded<u32>,Error> with typed value and relative next; no partial value/next on error. Read at most 5 bytes, stop at first terminator and enforce strict shortest/width rules.
+
+### function: read_u64
+
+[Source line 120](../../../stdlib/core/varint.lani#L120)
+
+```lanius
+pub fn read_u64(bytes: View<u8>, offset: i32) -> Result<Decoded<u64>, Error>
+```
+
+Return Result<Decoded<u64>,Error> with typed value and relative next; no partial value/next on error. Read at most 10 bytes, stop at first terminator and enforce strict shortest/width rules.
+
+### function: read_i32
+
+[Source line 123](../../../stdlib/core/varint.lani#L123)
+
+```lanius
+pub fn read_i32(bytes: View<u8>, offset: i32) -> Result<Decoded<i32>, Error>
+```
+
+Return Result<Decoded<i32>,Error> with typed value and relative next; no partial value/next on error. Read at most 5 bytes, stop at first terminator and enforce strict shortest/width rules. Decodes ZigZag after unsigned width admission.
+
+### function: read_i64
+
+[Source line 128](../../../stdlib/core/varint.lani#L128)
+
+```lanius
+pub fn read_i64(bytes: View<u8>, offset: i32) -> Result<Decoded<i64>, Error>
+```
+
+Return Result<Decoded<i64>,Error> with typed value and relative next; no partial value/next on error. Read at most 10 bytes, stop at first terminator and enforce strict shortest/width rules. Decodes ZigZag after unsigned width admission.
