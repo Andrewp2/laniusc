@@ -16,7 +16,10 @@ namespace Lanius.Mini
 
 open Lanius.Semantics (State Completion)
 
-/-- Raw memory errors, the traps the compiled code does not check. -/
+/-- The traps the compiled code does not check: raw memory errors, and
+`typeMismatch`, which a typed program reaches only by reading an invalid bit
+pattern from raw memory or by a raw slice of an element type past Core's
+native layout limits. -/
 def undefinedTrap : Lanius.Trap → Bool
   | .arrayBounds => false
   | .invalidShift => false
@@ -36,7 +39,7 @@ def undefinedTrap : Lanius.Trap → Bool
   | .panic => false
   | .reachedUnreachable => false
   | .unmodeledExtern _ => false
-  | .typeMismatch => false
+  | .typeMismatch => true
 
 /-- A Core result that is not a completion within `limit` or an undefined
 trap. -/
