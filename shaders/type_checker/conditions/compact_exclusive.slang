@@ -13,6 +13,17 @@ import primitive_types;
 // Checked: calls of functions in this unit, with the receiver of a method
 // call as one more argument. Not checked: dependency (stdlib) callees, and
 // aliases made through by-value copies of records that hold pointers.
+//
+// Liveness (docs/state-machines-design.md, M4): a local declared with a
+// reference type and made by a method call, `let r: &T = e.view();` or
+// `&mut T`, keeps e's root borrowed while r is used. A call that passes that
+// root as a `&mut` argument while r is live is rejected (`m.step(event)` on
+// a machine `m`). r is live at a call when it is used after the call, or
+// anywhere in a loop around the call that does not declare r again, since
+// the loop runs the call before such a use. Plain assignments to the root
+// are not counted: `&T` does not yet mean read-only, and programs rely on
+// seeing such a write through a live shared reference. Copies of r into
+// other locals are not followed.
 
 import hir_records;
 import gpu_index;
@@ -25,6 +36,8 @@ StructuredBuffer<TokenIn> token_words;
 StructuredBuffer<uint> compact_hir_count;
 StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<HirPayload> compact_hir_payload;
+StructuredBuffer<HirLinks> compact_hir_links;
+StructuredBuffer<uint> compact_hir_nearest_fn;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
 StructuredBuffer<HirRange> compact_param_ranges;
@@ -42,6 +55,11 @@ static const uint TK_SELF_VALUE = 105u;
 static const uint TK_MUT = 203u;
 static const uint TK_AMPERSAND = 25u;
 static const uint HIR_TYPE = 5u;
+static const uint HIR_STMT = 7u;
+static const uint HIR_LET_STMT = 8u;
+static const uint HIR_WHILE_STMT = 11u;
+static const uint HIR_FOR_STMT = 30u;
+static const uint STMT_LET = 1u;
 static const uint HIR_EXPR = 14u;
 static const uint HIR_BINARY_EXPR = 16u;
 static const uint HIR_UNARY_EXPR = 17u;
@@ -144,12 +162,135 @@ uint root_of(uint node)
     return INVALID;
 }
 
+// Whether `node` reads the local declared at token `decl`.
+bool uses_decl(uint node, uint decl)
+{
+    HirCore core = compact_hir_core[node];
+    HirPayload payload = compact_hir_payload[node];
+    bool name = core.kind == HIR_NAME_EXPR || (core.kind == HIR_EXPR && payload.a == HIR_EXPR_NAME);
+    uint token = core.kind == HIR_PATH_EXPR ? core.token_start : payload.d;
+    return (name || core.kind == HIR_PATH_EXPR) && valid_token(token) && visible_decl[token] == decl;
+}
+
+// Whether a node of [first, end) reads the local declared at `decl`.
+bool used_in(uint first, uint end, uint decl)
+{
+    for (uint node = first; node < end; node++)
+        if (uses_decl(node, decl)) return true;
+    return false;
+}
+
+// Whether `node` passes the value rooted at `root` as a `&mut` argument of
+// a local function, the receiver included.
+bool writes_root(uint node, uint root)
+{
+    HirCore core = compact_hir_core[node];
+    HirPayload payload = compact_hir_payload[node];
+    if (core.kind != HIR_CALL_EXPR) return false;
+    uint fn = callee_fn(node);
+    if (!valid_hir(fn)) return false;
+    HirRange params = compact_param_ranges[fn];
+    uint param_total = min(compact_param_count[0u], gParams.n_hir_nodes);
+    uint arg_total = min(compact_call_arg_count[0u], gParams.n_hir_nodes);
+    // A call without arguments may leave their start unset; its receiver
+    // still counts.
+    if (params.start > param_total || params.count > param_total - params.start ||
+        (payload.c != 0u && (payload.b > arg_total || payload.c > arg_total - payload.b))) return false;
+    uint receiver = INVALID;
+    uint callee = payload.a;
+    if (valid_hir(callee) && compact_hir_core[callee].kind == HIR_MEMBER_EXPR && params.count != 0u &&
+        self_token(compact_params[params.start].name_token) != INVALID)
+        receiver = compact_hir_payload[callee].b;
+    uint skip = receiver != INVALID ? 1u : 0u;
+    uint count = min(min(payload.c, params.count - skip) + skip, ARG_LIMIT);
+    for (uint i = 0u; i < count; i++)
+    {
+        if (param_mode(compact_params[params.start + i]) == EXCLUSIVE &&
+            root_of(argument_at(node, payload.b, receiver, skip, i)) == root)
+            return true;
+    }
+    return false;
+}
+
+// The outermost loop around `node` that does not contain the declaration
+// `let_node`, or INVALID.
+uint loop_after_let(uint node, uint let_node)
+{
+    uint loop = INVALID;
+    uint current = compact_hir_core[node].parent;
+    for (uint step = 0u; step < WALK_LIMIT && valid_hir(current); step++)
+    {
+        if (current < let_node && let_node < compact_hir_links[current].subtree_end) break;
+        uint kind = compact_hir_core[current].kind;
+        if (kind == HIR_WHILE_STMT || kind == HIR_FOR_STMT) loop = current;
+        current = compact_hir_core[current].parent;
+    }
+    return loop;
+}
+
+// A reference local: reject each `&mut` use of its root while it is live.
+void check_reference_let(uint node)
+{
+    HirPayload let_stmt = compact_hir_payload[node];
+    if (let_stmt.a != STMT_LET || !valid_token(let_stmt.b)) return;
+    // `let name: &...`: the annotation starts after the name and `:`.
+    uint decl = let_stmt.b;
+    if (!valid_hir(let_stmt.d) || !token_is(decl + 2u, TK_AMPERSAND)) return;
+    // Only a reference made by a method call (`m.log.view()`, a method that
+    // returns `self`) borrows the receiver's root. Reading a reference that
+    // a field holds (`self.source`) copies it: it points elsewhere.
+    uint init = let_stmt.c;
+    for (uint step = 0u; step < WALK_LIMIT && valid_hir(init); step++)
+    {
+        HirCore core = compact_hir_core[init];
+        bool forward = (core.kind == HIR_EXPR || core.kind == HIR_UNARY_EXPR) &&
+            compact_hir_payload[init].a == HIR_EXPR_FORWARD;
+        if (!forward) break;
+        init = compact_hir_payload[init].b;
+    }
+    if (!valid_hir(init) || compact_hir_core[init].kind != HIR_CALL_EXPR) return;
+    uint callee = compact_hir_payload[init].a;
+    if (!valid_hir(callee) || compact_hir_core[callee].kind != HIR_MEMBER_EXPR) return;
+    uint root = root_of(init);
+    if (!valid_token(root)) return;
+    // Uses of the local come after it in its function; visible_decl tells
+    // them from other locals of the same name.
+    uint fn = compact_hir_nearest_fn[node];
+    if (!valid_hir(fn)) return;
+    uint first = compact_hir_links[node].subtree_end;
+    uint end = min(compact_hir_links[fn].subtree_end, hir_count());
+    uint last_use = INVALID;
+    for (uint at = first; at < end; at++)
+        if (uses_decl(at, decl)) last_use = compact_hir_core[at].token_start;
+    if (last_use == INVALID) return;
+    for (uint at = first; at < end; at++)
+    {
+        if (!writes_root(at, root)) continue;
+        bool live = last_use >= compact_hir_core[at].token_end;
+        if (!live)
+        {
+            uint loop = loop_after_let(at, node);
+            live = valid_hir(loop) && used_in(loop, min(compact_hir_links[loop].subtree_end, end), decl);
+        }
+        uint token = compact_hir_core[at].token_start;
+        if (live && valid_token(token))
+            record_min_token_error(status, token, ERR_ASSIGN_MISMATCH, LIVE_REFERENCE_WRITTEN);
+    }
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
-    if (!valid_hir(node) || compact_hir_core[node].kind != HIR_CALL_EXPR) return;
+    if (!valid_hir(node)) return;
+    uint kind = compact_hir_core[node].kind;
+    if (kind == HIR_LET_STMT || kind == HIR_STMT)
+    {
+        check_reference_let(node);
+        return;
+    }
+    if (kind != HIR_CALL_EXPR) return;
     HirPayload payload = compact_hir_payload[node];
     uint fn = callee_fn(node);
     if (!valid_hir(fn)) return;

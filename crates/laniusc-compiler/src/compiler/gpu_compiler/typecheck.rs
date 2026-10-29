@@ -4302,6 +4302,15 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     .with_note("a `&mut` argument must be the only reference to its value in the call; pass a copy, or make two calls"),
             )
         }
+        GpuTypeCheckCode::AssignMismatch if detail == crate::primitive_types::LIVE_REFERENCE_WRITTEN => {
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        path, source, start, len, "this `&mut` use changes a value that a reference still in use points into",
+                    ))
+                    .with_note("a reference local (`let r: &T = ...`) borrows its value until its last use; finish using it first, or copy what it reads"),
+            )
+        }
         GpuTypeCheckCode::AssignMismatch
             if assign_mismatch_looks_like_invalid_member_access(source, start, detail) =>
         {

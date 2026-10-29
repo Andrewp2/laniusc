@@ -1,9 +1,10 @@
 # State machines: a `machine` item in Lanius
 
-Status: design proposal, 2026-10-27. M0 to M3 are done: see
+Status: design proposal, 2026-10-27. M0 to M4 are done: see
 [M0 result](#m0-result), [M1 decisions](#m1-decisions),
 [M1 result](#m1-result), [M2 result](#m2-result),
-[M3 decisions](#m3-decisions) and [M3 result](#m3-result). The syntax below is the implemented one except
+[M3 decisions](#m3-decisions), [M3 result](#m3-result) and
+[M4 result](#m4-result). The syntax below is the implemented one except
 where M1 decisions says otherwise (no `|` patterns, the constructor).
 
 ## Summary
@@ -683,6 +684,56 @@ Done 2026-10-28.
 - **Proof.** `Machine.lowered_eq_run`, with `Machine.inner_run` (a state's
   loop runs `step` over the events it consumes and consumes at least one).
   `gate.py` builds it.
+
+## M4 result
+
+Done 2026-10-28.
+
+**What "across `goto`" means after M1.** `goto` is a store to the machine's
+state followed by `return` (or, in `run`, `continue` or `return`), so no
+statement of an arm runs after it. A reference to the old payload cannot be
+used after a `goto` inside the machine. The hazard is the caller's: a
+reference into a machine, taken before `m.step(e)` or `m.run(...)`, that is
+used after the step has changed what it points into. Payload read through
+`m.state()` is a copy and is unaffected.
+
+**The rule** (S4's liveness check, the part machines need;
+`type_checker/conditions/compact_exclusive.slang`). A local declared with a
+reference type and made by a method call, `let r: &T = e.view();` or
+`&mut T` (references are made by methods that return `self`), borrows the
+root of `e` (the local or parameter it reaches through fields, indexes and
+method receivers) while `r` is used. A reference read out of a field
+(`let source: &I = self.source;`) is a copy that points elsewhere and
+borrows nothing; the first version of the rule counted it and rejected
+`core::iter`'s `StepBy`, which writes `self.first` while `source` is live.
+A call of a function in the unit that passes that root as a `&mut`
+argument while `r` is live (`m.step(e)`: `step` takes `&mut self`) is
+`LNC0006` "this `&mut` use changes a value that a reference still in use
+points into", labeled at the call. `r` is live at a call when it is used
+after the call, or anywhere in a loop around the call that does not declare
+`r` again, since the next iteration runs the call before that use.
+
+Plain assignments to the root (`m.log = ...`) are not counted. The second
+version counted them and rejected nine programs in
+`compiler_generic_types_execution` that assign through a record while a
+`&T` to it is live and check that the reference sees the write. `&T` does
+not yet mean read-only (`memory-scoped-stacks-design.md`, S4), so those
+programs are legal; a machine's state changes only through `step` and
+`run`, which take `&mut self`, so the rule M4 needs is the `&mut` call. The kernel visits each reference `let` and scans its
+function's rows once for uses and once for writes; it stays at 4.8k
+instructions of the 40000 budget.
+
+Not yet: copies of `r` into other locals, references returned by free
+functions, disjoint fields of one root (they share it, as in the call-site
+check), and reads of the root while a `&mut` reference is live. Those need the rest of S4.
+
+**Evidence.** `tests/machines_execution.rs`: `references_before_step.lani`
+reads through a reference, then steps the machine and takes a new
+reference (accepted, exit 0). Two programs are rejected at the step: a
+`step` before the reference's last use, and a `step` in a loop whose next
+iteration reads the reference.
+Before the rule, the first of them compiled and returned the stepped value
+through the old reference.
 
 ## Open questions
 

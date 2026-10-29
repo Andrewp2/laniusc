@@ -463,8 +463,13 @@ What it does not do yet:
 
 - It compares roots, not paths: passing `p.left` and `p.right` of one `p`
   is rejected although the fields are disjoint.
-- It checks calls only. A reference held in a local and used after a `&mut`
-  call is not tracked; that needs the liveness pass of the full S4.
+- Since 2026-10-28 (state machines M4), a local declared with a reference
+  type and made by a method call (`let r: &T = x.view();`) is tracked: a
+  call that passes its root as a `&mut` argument while it is still used is
+  rejected; plain assignments to the root are not, since `&T` is not yet
+  read-only (`docs/state-machines-design.md`,
+  "M4 result"). Copies of such a local into other locals are not followed;
+  that needs the liveness pass of the full S4.
 - Calls into dependencies (the stdlib) are not checked, and neither are
   aliases made by copying a record that holds a pointer.
 - Writes through `&T` stay legal, so `&T` does not yet mean read-only.

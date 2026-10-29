@@ -114,6 +114,11 @@ public static const uint EXCLUSIVE_REFERENCE_ALIAS = 0x20000004u;
 // its end: every path through it must return (returns/03_validate.slang).
 // PRIMITIVE_CONSTANT
 public static const uint BLOCK_ARM_FALLS_THROUGH = 0x20000005u;
+// LNC0006 detail of a `&mut` argument whose value a reference local still
+// in use points into
+// (conditions/compact_exclusive.slang).
+// PRIMITIVE_CONSTANT
+public static const uint LIVE_REFERENCE_WRITTEN = 0x20000006u;
 
 // Any primitive identity, never included: canonical IDs and interface leaves.
 [ForceInline]

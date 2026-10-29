@@ -88,3 +88,16 @@ fn run_feeds_a_slice_through_the_machine() {
 fn run_computes_what_step_does_after_every_prefix() {
     assert_exit("run_matches_step.lani", 0);
 }
+
+// M4: a reference into a machine is not used after the machine changes.
+#[test]
+fn a_reference_read_before_the_machine_steps_is_accepted() {
+    assert_exit("references_before_step.lani", 0);
+}
+
+#[test]
+fn a_reference_is_not_used_after_the_machine_changes() {
+    let label = "this `&mut` use changes a value that a reference still in use points into";
+    assert_rejected("reject_reference_across_step.lani", &["LNC0006", label, "reject_reference_across_step.lani:24"]);
+    assert_rejected("reject_reference_across_loop.lani", &["LNC0006", label, "reject_reference_across_loop.lani:27"]);
+}
