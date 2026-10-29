@@ -28,8 +28,12 @@ C `f32`/`f64` calls execute through independent SSE/GPR banks. An owned
 [persistent binary key/value program](../docs/extended-sqlite-kv.md) execute
 through system SQLite on the same Linux x86_64/glibc profile, including typed
 values, transactions, persistence, locks and explicit failure recovery.
-TLS, encryption, signatures and certificate trust wrappers remain unimplemented;
-see the [remaining native prerequisites](../docs/library-native-integration-prerequisites.md).
+OpenSSL [verified client TLS](../docs/extended-openssl-tls.md),
+[server TLS](../docs/extended-openssl-tls-server.md) and
+[mutual TLS](../docs/extended-openssl-mutual-tls.md) execute on their documented
+native profiles, including the selected peer-trust policies. Standalone
+encryption/signature wrappers and broader certificate policy remain work; see
+the [remaining native prerequisites](../docs/library-native-integration-prerequisites.md).
 Raw DER/X.509 parsing supplies schema inspection independently.
 
 | Module | Working surface | Execution evidence |
@@ -78,10 +82,10 @@ Raw DER/X.509 parsing supplies schema inspection independently.
 | [`ext::progress`](ext/progress.lani) | Allocation-free atomic rendering for known, unknown, zero and exceeded totals | x86_64 Linux; [contracts and tests](../docs/extended-progress.md) |
 | [`ext::http`](ext/http.lani) | HTTP/1 heads, framing, chunk extensions/trailers, incremental boundary scanning and checked encoding | x86_64 Linux; [wire profile and tests](../docs/extended-http.md), [allocation-free cursor contracts](../docs/extended-http-cursor.md). Final canonical parsing validates framing candidates. |
 | [`ext::http_client`](ext/http_client.lani) | One bounded cleartext HTTP/1.1 exchange with an explicit numeric endpoint, owned response and checked body decoding | x86_64 Linux; [deadlines, limits, ownership, fetch program and failure tests](../docs/extended-http-client.md). TLS, automatic resolution/redirects and pooling remain separate work. |
-| [`ext::http_server`](ext/http_server.lani) | One staged cleartext HTTP/1 connection with stable request views, explicit 100 Continue, checked final response and bounded close/drain | x86_64 Linux; [deadlines, quotas, ownership, local service and peer/fault tests](../docs/extended-http-server.md). Keepalive, worker scheduling, TLS and upgrade/tunnel handoff remain separate work. |
+| [`ext::http_server`](ext/http_server.lani) | One staged cleartext HTTP/1 connection with stable request views, explicit 100 Continue, checked final response and bounded close/drain | x86_64 Linux; [deadlines, quotas, ownership, local service and peer/fault tests](../docs/extended-http-server.md). [Server TLS](../docs/extended-openssl-tls-server.md) has separate native receipts; keepalive, worker scheduling and upgrade/tunnel handoff remain separate work. |
 | [`ext::dns`](ext/dns.lani) | Binary DNS names, validated compression, complete QUERY sections, common RDATA, EDNS and checked packet writing | x86_64 Linux offline processing; [profile, limits, models and program](../docs/extended-dns.md). Host resolution remains separate. |
 | [`ext::dns_client`](ext/dns_client.lani) | Explicit numeric-server UDP queries, fixed retry windows, correlated TCP fallback and owned validated responses | x86_64 Linux; [transport profile, query application and loopback/fault tests](../docs/extended-dns-client.md). System resolver/NSS policy remains separate. |
-| [`ext::websocket`](ext/websocket.lani) | RFC 6455 request validation/encoding, Base64 keys, role masking, frames, fragmented messages, control/close state and checked encoding | x86_64 Linux offline processing; [contracts, independent oracles and program](../docs/extended-websocket.md). Server accept generation and response verification require future native security bindings; socket transport remains separate. |
+| [`ext::websocket`](ext/websocket.lani) | RFC 6455 request validation/encoding, Base64 keys, role masking, frames, fragmented messages, control/close state and checked encoding | x86_64 Linux offline processing; [contracts, independent oracles and program](../docs/extended-websocket.md). Portable response verification and [OpenSSL Accept generation](../docs/extended-openssl-websocket.md) have separate finite receipts; [borrowed upgrade](../docs/extended-websocket-upgrade.md) and [frame transport](../docs/extended-websocket-stream.md) compose through separate modules. |
 | [`ext::kv`](ext/kv.lani) | Owned arbitrary-byte key/value storage, atomic mutations and canonical checked snapshots | x86_64 Linux; [models, file program and persistence limits](../docs/extended-kv.md). Crash durability and concurrent transactions require host services. |
 | [`ext::timezone`](ext/timezone.lani) | Owned TZif v1–v4, supported POSIX footer rules, historical offsets and complete local-time candidates | x86_64 Linux; [coverage, ambiguity, limits and command-line tool](../docs/extended-timezone.md). Leap-bearing files and unsupported annual rule streams fail explicitly. |
 | [`ext::image`](ext/image.lani) | Owned straight RGBA8 pixels, strided views, crop, rotation, flips, blit and source-over | x86_64 Linux; [pixel and ownership contracts](../docs/extended-image.md) |

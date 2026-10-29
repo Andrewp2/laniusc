@@ -129,8 +129,16 @@
     },
     "alloc::io": {
       "guides": [
-        "docs/stdlib-streams.md"
-      ]
+        "docs/stdlib-streams.md",
+        "docs/stdlib-owned-input.md",
+        "docs/stdlib-input-stats.md"
+      ],
+      "note": "Buffer retains its existing owned atomic Write-sink contract. New read_to_end/read_to_string compose only core::io::Read with byte and total-call limits. Every delegated call, including Interrupted, EOF and the one-byte cap probe, spends quota before delegation; quota rejection precedes reservation. Capacity grows geometrically before ordinary reads, so allocation failure consumes no additional input. Failures retain admitted bytes, exact calls and only a confirmed over-cap byte in extra. Text validation follows actual EOF, then adopts Vec backing without copying. Reader duration/internal work and manual provider/failure ownership remain separate. All six new library tests and all four input-statistics groups/111 cases pass on native Linux x86_64, including the 17,542-case model, geometric growth and seven reached allocation failures. Historical stream receipts do not establish the additions.",
+      "declarations": {
+        "default_read_limits": "Returns the 16 MiB / 65,536-call profile without allocation or Read calls.",
+        "read_to_end": "Borrows a Read-only provider and returns exactly confirmed bytes only after actual EOF. Negative byte limits return InvalidLimits; zero calls returns CallLimit, before allocation/delegation. Retains prefix/probe/call facts in ReadFailure on error; reserves the complete next ordinary request before reading.",
+        "read_to_string": "Uses the same bounded collection engine, observes EOF before validating UTF-8, and adopts backing through alloc::string::from_utf8_vec. Text failure retains all raw bytes and actual calls."
+      }
     },
     "alloc::path": {
       "guides": [
@@ -140,8 +148,13 @@
     "alloc::string": {
       "guides": [
         "docs/stdlib-string.md",
-        "docs/stdlib-clone.md"
-      ]
+        "docs/stdlib-clone.md",
+        "docs/stdlib-owned-input.md"
+      ],
+      "note": "Existing UTF-8 copying construction, edits and explicit cleanup remain. New from_utf8_vec validates initialized bytes before transferring Vec backing/capacity without allocation or copying; invalid UTF-8 preserves its complete owner and reports the first malformed-sequence offset. into_bytes reverses the transfer and leaves an empty reusable String. End views and keep shallow aliases inactive; the destination assumes cleanup authority. The new transfer gate and one selected existing String regression (three old fixtures) pass on native Linux x86_64. The transfer memory/write filter observes no allocation/release/write inside validation/transfer phases, without an all-host-call claim. Linked guides separate collector/model/resource/application receipts and historical String scope; no automatic lifetime or proof follows.",
+      "declarations": {
+        "from_utf8_vec": "O(n) UTF-8 validation precedes an O(1) transfer of existing Vec backing/capacity. Err preserves the complete Vec; Ok empties it and returns String with sole cleanup authority. End live borrows and keep shallow aliases inactive."
+      }
     },
     "alloc::tree_map": {
       "guides": [

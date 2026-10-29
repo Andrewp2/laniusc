@@ -44,6 +44,21 @@ pub fn from_utf8(bytes: [u8], count: i32) -> core::result::Result<String, Error>
     };
 }
 
+// Validate initialized bytes before transferring their allocation and capacity.
+// Err leaves the complete Vec unchanged. End all source views and keep shallow
+// owner aliases inactive before success; the emptied Vec remains reusable.
+pub fn from_utf8_vec(bytes: &alloc::vec::Vec<u8>) -> core::result::Result<String, Error> {
+    let checked: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(bytes.as_slice(), bytes.len());
+    if (core::result::is_err(checked)) {
+        return core::result::Err(text_error(core::result::unwrap_err(checked)));
+    }
+    // Validation's borrowed Text is no longer used. A fresh cursor has front
+    // zero, so recovering its whole remainder does not copy any bytes.
+    let cursor: alloc::vec::IntoIter<u8> = bytes.take_iter();
+    let owned: alloc::vec::Vec<u8> = cursor.take_remaining();
+    return core::result::Ok(String { bytes: owned });
+}
+
 // Copy a borrowed view into independent owned storage.
 pub fn from_text(text: core::text::Text) -> core::result::Result<String, Error> {
     let value: String = new();
@@ -155,6 +170,15 @@ pub impl String {
     pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
     pub fn capacity(&self) -> i32 { return self.bytes.capacity(); }
     pub fn is_empty(&self) -> bool { return self.bytes.is_empty(); }
+
+    // Transfer backing and capacity without allocation or copying. End borrowed
+    // views and keep shallow owner aliases inactive; this String becomes empty
+    // and reusable, and the returned Vec has sole cleanup authority.
+    pub fn into_bytes(&self) -> alloc::vec::Vec<u8> {
+        let cursor: alloc::vec::IntoIter<u8> = self.bytes.take_iter();
+        let owned: alloc::vec::Vec<u8> = cursor.take_remaining();
+        return owned;
+    }
 
     // Borrow initialized bytes. Treat this view as read-only: writing it can
     // violate UTF-8 validity. Lanius does not yet enforce immutable views.

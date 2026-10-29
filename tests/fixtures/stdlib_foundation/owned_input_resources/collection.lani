@@ -1,0 +1,136 @@
+// One-shot allocation faults preserve bytes and reader progress; no host reads
+// supply the scripted payload. R/E markers expose actual Read delegation/EOF.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import std::io;
+
+struct Source { mode:i32, length:i32, position:i32, calls:i32 }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+struct Observed { bytes:alloc::vec::Vec<u8>, cause:i32, calls:u64, text_offset:i32 }
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn byte_at(mode:i32,index:i32) -> u8 {
+    if(mode==0 || mode==3) { return ((index*37+index/251)%256) as u8; }
+    if(mode==2 && index==1300) { return 255; }
+    if(index>0 && index%1024==0) { return 162; }
+    if(index%1024==1023) { return 194; }
+    if(index%17==0) { return 0; }
+    return (65+index%26) as u8;
+}
+pub impl core::io::Read for Source {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(offset==0 && count>0 && count<=1024 && self.calls<1024);
+        mark(82); self.calls+=1;
+        if(self.position==self.length) { mark(69); return core::result::Ok(0); }
+        let used:i32=self.length-self.position; if(used>count) { used=count; }
+        let index:i32=0;
+        while(index<used) { destination[index]=byte_at(self.mode,self.position+index); index+=1; }
+        self.position+=used; return core::result::Ok(used);
+    }
+}
+fn storage_cause(error:alloc::vec::Error) -> i32 {
+    assert(match(error) { alloc::vec::Error::AllocationFailed->true,_ ->false }); return 1;
+}
+fn text_error_offset(error:alloc::string::Error) -> i32 {
+    let offset:i32=match(error) { alloc::string::Error::InvalidUtf8(index)->index,_ -> -1 };
+    assert(offset==1300); return offset;
+}
+fn failure_bytes(failure:alloc::io::ReadFailure) -> Observed {
+    assert(failure.extra.is_none());
+    let cause:i32=match(failure.cause) {
+        alloc::io::ReadError::Storage(error)->storage_cause(error),
+        alloc::io::ReadError::Text(error)->2,_ ->0
+    };
+    assert(cause!=0);
+    let text_offset:i32=match(failure.cause) {
+        alloc::io::ReadError::Text(error)->text_error_offset(error),_ -> -1
+    };
+    let calls:u64=failure.calls;
+    // Transfer cleanup authority explicitly; stale result aliases stay inactive.
+    let cursor:alloc::vec::IntoIter<u8> =failure.bytes.take_iter();
+    let bytes:alloc::vec::Vec<u8> =cursor.take_remaining();
+    assert(failure.bytes.is_empty() && failure.bytes.capacity()==0 && failure.bytes.storage==0);
+    failure.destroy(); failure.destroy();
+    return Observed { bytes:bytes,cause:cause,calls:calls,text_offset:text_offset };
+}
+fn collect(source:&Source,maximum:i32,text:bool) -> Observed {
+    let before:i32=source.calls;
+    let limits:alloc::io::ReadLimits=alloc::io::ReadLimits { max_bytes:maximum,max_calls:1024 };
+    mark(67);
+    if(text) {
+        let result:core::result::Result<alloc::string::String,alloc::io::ReadFailure> =alloc::io::read_to_string<Source>(source,limits);
+        mark(70);
+        if(result.is_err()) { let failure:alloc::io::ReadFailure=result.unwrap_err(); return failure_bytes(failure); }
+        let value:alloc::string::String=result.unwrap(); let pointer:ptr=value.bytes.storage; let capacity:i32=value.capacity();
+        mark(80);
+        let bytes:alloc::vec::Vec<u8> =value.into_bytes();
+        assert(bytes.storage==pointer && bytes.capacity()==capacity && value.is_empty() && value.capacity()==0 && value.bytes.storage==0);
+        value.destroy(); mark(112);
+        return Observed { bytes:bytes,cause:0,calls:(source.calls-before) as u64,text_offset:-1 };
+    }
+    let result:core::result::Result<alloc::vec::Vec<u8>,alloc::io::ReadFailure> =alloc::io::read_to_end<Source>(source,limits);
+    mark(70);
+    if(result.is_err()) { let failure:alloc::io::ReadFailure=result.unwrap_err(); return failure_bytes(failure); }
+    let bytes:alloc::vec::Vec<u8> =result.unwrap();
+    return Observed { bytes:bytes,cause:0,calls:(source.calls-before) as u64,text_offset:-1 };
+}
+fn check(bytes:&alloc::vec::Vec<u8>,mode:i32,start:i32,repaired:bool) {
+    let index:i32=0;
+    while(index<bytes.len()) {
+        let expected:u8=byte_at(mode,start+index);
+        if(repaired && start+index==1300) { expected=65; }
+        assert(bytes.at(index)==expected); index+=1;
+    }
+}
+fn report(stage:i32,value:&Observed,source:&Source) {
+    let words:[i32;12]=[stage,value.cause,value.bytes.len(),value.calls as i32,source.position,source.calls,value.bytes.capacity(),-1,value.text_offset,source.length,source.mode,0];
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(words),48)==48);
+    let written:i32=0; let attempts:i32=0;
+    while(written<value.bytes.len()) {
+        assert(attempts<1024); attempts+=1;
+        let count:i32=value.bytes.len()-written;
+        let used:i32=std::io::write_stdout(value.bytes.storage+(written as usize),count as usize);
+        assert(used>0 && used<=count); written+=used;
+    }
+}
+impl Observed { fn borrow(&self) -> &Observed { return self; } }
+fn main() -> i32 {
+    let header:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(header),1)==1);
+    let mode:i32=header[0]&255; assert(mode>=0 && mode<=3);
+    let length:i32=262147; let maximum:i32=262147;
+    if(mode==3) { length=1; maximum=2048; }
+    let source:Source=Source { mode:mode,length:length,position:0,calls:0 };
+    let first:Observed=collect(source.borrow(),maximum,mode==1 || mode==2);
+    assert(first.calls==(source.calls as u64) && first.bytes.len()==source.position);
+    check(first.bytes.borrow(),mode,0,false); report(0,first.borrow(),source.borrow());
+    if(first.cause==1) {
+        let start:i32=source.position; let calls:i32=source.calls;
+        let recovered:Observed=collect(source.borrow(),length-start,false);
+        assert(recovered.cause==0 && recovered.calls==((source.calls-calls) as u64) && source.position==length);
+        assert(recovered.bytes.len()==length-start); check(recovered.bytes.borrow(),mode,start,false);
+        // The original error-owned prefix remains live and unchanged through
+        // successful resumption; only this caller has cleanup authority.
+        check(first.bytes.borrow(),mode,0,false); report(1,recovered.borrow(),source.borrow());
+        recovered.bytes.destroy(); recovered.bytes.destroy();
+    }
+    if(first.cause==2) {
+        assert(mode==2 && first.bytes.len()==length && first.text_offset==1300);
+        let pointer:ptr=first.bytes.storage; let capacity:i32=first.bytes.capacity();
+        mark(80); first.bytes.set(1300,65).unwrap();
+        let result:core::result::Result<alloc::string::String,alloc::string::Error> =alloc::string::from_utf8_vec(first.bytes.borrow());
+        let text:alloc::string::String=result.unwrap();
+        assert(first.bytes.is_empty() && first.bytes.capacity()==0 && first.bytes.storage==0);
+        assert(text.bytes.storage==pointer && text.capacity()==capacity && text.byte_len()==length);
+        let bytes:alloc::vec::Vec<u8> =text.into_bytes();
+        assert(text.is_empty() && text.capacity()==0 && text.bytes.storage==0 && bytes.storage==pointer && bytes.capacity()==capacity);
+        check(bytes.borrow(),mode,0,true); text.destroy(); first.bytes.destroy(); mark(112);
+        let repaired:Observed=Observed { bytes:bytes,cause:0,calls:0,text_offset:-1 };
+        report(1,repaired.borrow(),source.borrow()); repaired.bytes.destroy(); repaired.bytes.destroy();
+    }
+    first.bytes.destroy(); first.bytes.destroy(); mark(68); return 0;
+}

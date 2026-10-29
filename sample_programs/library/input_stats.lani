@@ -1,0 +1,176 @@
+// Whole-input byte and UTF-8 summaries through the public owned readers.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::args;
+import std::file;
+import std::file_ops;
+import std::signal;
+import std::stream;
+
+struct Command { text:bool, stdin:bool, help:bool, path:core::path::Path }
+struct Counts { bytes:u64, nul:u64, scalars:u64, lf:u64 }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > bytes.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("input_stats: operation failed\n",30),2,8); return status; }
+fn failure_status(cause:alloc::io::ReadError) -> i32 {
+    return match(cause) {
+        alloc::io::ReadError::InvalidLimits -> 6,
+        alloc::io::ReadError::CallLimit -> 2,
+        alloc::io::ReadError::ByteLimit -> 2,
+        alloc::io::ReadError::Io(error) -> match(error) {
+            core::io::Error::AllocationFailed -> 4,
+            core::io::Error::InvalidInput -> 6,
+            core::io::Error::InvalidCount -> 6,
+            core::io::Error::CountOverflow -> 6,
+            _ -> 3
+        },
+        alloc::io::ReadError::Storage(error) -> match(error) {
+            alloc::vec::Error::AllocationFailed -> 4,
+            _ -> 6
+        },
+        alloc::io::ReadError::Text(error) -> match(error) {
+            alloc::string::Error::InvalidUtf8(index) -> 2,
+            alloc::string::Error::AllocationFailed -> 4,
+            _ -> 6
+        }
+    };
+}
+fn retire_failure(failure:&alloc::io::ReadFailure) -> i32 {
+    let status:i32 = failure_status(failure.cause); failure.destroy(); return status;
+}
+fn collect<R>(reader:&R, text:bool) -> Result<Counts,i32> where R:core::io::Read {
+    let limits:alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes:1048576,max_calls:8192 };
+    if (text) {
+        let received:Result<alloc::string::String,alloc::io::ReadFailure> = alloc::io::read_to_string<R>(reader,limits);
+        if (received.is_err()) {
+            let failure:alloc::io::ReadFailure = received.unwrap_err();
+            return core::result::Err(retire_failure(failure.borrow()));
+        }
+        let input:alloc::string::String = received.unwrap(); let length:i32 = input.byte_len();
+        if ((length < 0) || (length > 1048576)) { input.destroy(); return core::result::Err(6); }
+        let scalars:i32 = input.scalar_count();
+        if ((scalars < 0) || (scalars > length)) { input.destroy(); return core::result::Err(6); }
+        let bytes:[u8] = input.as_bytes(); let index:i32 = 0; let lf:u64 = 0;
+        while(index < length) { if (bytes[index] == 10) { lf += 1; } index += 1; }
+        let counts:Counts = Counts { bytes:length as u64,nul:0,scalars:scalars as u64,lf:lf };
+        input.destroy(); return core::result::Ok(counts);
+    }
+    let received:Result<Vec<u8>,alloc::io::ReadFailure> = alloc::io::read_to_end<R>(reader,limits);
+    if (received.is_err()) {
+        let failure:alloc::io::ReadFailure = received.unwrap_err();
+        return core::result::Err(retire_failure(failure.borrow()));
+    }
+    let input:Vec<u8> = received.unwrap(); let length:i32 = input.len();
+    if ((length < 0) || (length > 1048576)) { input.destroy(); return core::result::Err(6); }
+    let bytes:[u8] = input.as_slice(); let index:i32 = 0; let nul:u64 = 0;
+    while(index < length) { if (bytes[index] == 0) { nul += 1; } index += 1; }
+    let counts:Counts = Counts { bytes:length as u64,nul:nul,scalars:0,lf:0 };
+    input.destroy(); return core::result::Ok(counts);
+}
+fn line(output:[u8], offset:i32, key:View<u8>, value:u64) -> Result<i32,i32> {
+    if ((offset < 0) || (offset > 63) || (key.length > 63-offset)) { return core::result::Err(6); }
+    let at:i32 = offset; let index:i32 = 0;
+    while(index < key.length) { output[at] = key.values[key.start+index]; at += 1; index += 1; }
+    let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_u64(output,at,63-at,value);
+    if (formatted.is_err()) { return core::result::Err(6); }
+    let count:i32 = formatted.unwrap();
+    if ((count < 1) || (count > 63-at)) { return core::result::Err(6); }
+    at += count; output[at] = 10; return core::result::Ok(at+1);
+}
+fn render(counts:Counts, text:bool, output:[u8]) -> Result<i32,i32> {
+    let length:i32 = line(output,0,literal("bytes=",6),counts.bytes)?;
+    if (text) {
+        length = line(output,length,literal("scalars=",8),counts.scalars)?;
+        length = line(output,length,literal("lf=",3),counts.lf)?;
+    } else { length = line(output,length,literal("nul=",4),counts.nul)?; }
+    if (length > 41) { return core::result::Err(6); } return core::result::Ok(length);
+}
+fn arguments(values:View<View<u8>>) -> Result<Command,i32> {
+    let dash:View<u8> = literal("-",1); let unused:core::path::Path = core::path::from_view(dash).unwrap();
+    if (values.length == 1) {
+        let first:View<u8> = values.values[values.start];
+        if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) {
+            return core::result::Ok(Command { text:false,stdin:true,help:true,path:unused });
+        }
+    }
+    if ((values.length < 1) || (values.length > 2)) { return core::result::Err(2); }
+    let mode:View<u8> = values.values[values.start]; let text:bool = false;
+    if (equals(mode,literal("text",4))) { text = true; }
+    else { if (!equals(mode,literal("bytes",5))) { return core::result::Err(2); } }
+    let path:core::path::Path = unused; let stdin:bool = true;
+    if (values.length == 2) {
+        let name:View<u8> = values.values[values.start+1];
+        if ((name.length < 1) || (name.length > 4095)) { return core::result::Err(2); }
+        if (!equals(name,dash)) {
+            let checked:Result<core::path::Path,core::path::Error> = core::path::from_view(name);
+            if (checked.is_err()) { return core::result::Err(2); }
+            path = checked.unwrap(); stdin = false;
+        }
+    }
+    return core::result::Ok(Command { text:text,stdin:stdin,help:false,path:path });
+}
+fn help() -> i32 {
+    let text = literal("Usage: input_stats bytes|text [PATH|-]\nRead stdin when PATH is omitted or -; otherwise read the literal byte path.\nByte mode prints bytes=N and nul=M on separate LF-terminated lines.\nText mode requires strict UTF-8 and prints bytes=N, scalars=S and lf=L on separate lines.\nLF counts byte 0x0A; CR is unchanged and no final line ending is assumed.\nLimits: 1 MiB input, 8192 read attempts, 64 output attempts; interruptions spend attempts.\nInput is fully collected and validated before output; input errors publish no data.\nA sole --help or -h shows help.\n",554);
+    if (!write(text,1,64)) { return 5; } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,2,4100);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let owner = captured.unwrap(); let parsed:Result<Command,i32> = arguments(owner.as_view());
+    if (parsed.is_err()) { owner.destroy(); return report(parsed.unwrap_err()); }
+    let command:Command = parsed.unwrap(); let text:bool = command.text;
+    if (command.help) { owner.destroy(); let status:i32 = help(); if (status != 0) { return report(status); } return 0; }
+    let counted:Result<Counts,i32> = core::result::Err(6);
+    if (command.stdin) {
+        owner.destroy(); let source:std::stream::Descriptor = std::stream::stdin();
+        counted = collect<std::stream::Descriptor>(source.borrow(),text);
+    } else {
+        let opened:Result<std::file::File,core::io::Error> = std::file_ops::open(command.path,std::file_ops::options());
+        owner.destroy(); if (opened.is_err()) { return report(3); }
+        let file:std::file::File = opened.unwrap(); counted = collect<std::file::File>(file.borrow(),text);
+        let closed:Result<i32,core::io::Error> = file.close();
+        if (counted.is_ok()) {
+            if (closed.is_err()) { counted = core::result::Err(3); }
+            else { if (closed.unwrap() != 0) { counted = core::result::Err(6); } }
+        }
+    }
+    if (counted.is_err()) { return report(counted.unwrap_err()); }
+    let output:[u8;64] = [0;64]; let formatted:Result<i32,i32> = render(counted.unwrap(),text,output);
+    if (formatted.is_err()) { return report(formatted.unwrap_err()); }
+    if (!write(core::slice::view(output,formatted.unwrap()).unwrap(),1,64)) { return report(5); } return 0;
+}

@@ -2,8 +2,142 @@
 // into this buffer. Allocation or limit errors preserve the previous bytes.
 module alloc::io;
 import core::io;
+import core::option;
 import core::result;
+import alloc::string;
 import alloc::vec;
+
+// Bounded whole-input collection borrows the reader and keeps every confirmed
+// prefix byte on failure. Copies of returned owners are shallow aliases.
+pub struct ReadLimits { max_bytes: i32, max_calls: u64 }
+pub enum ReadError {
+    InvalidLimits,
+    CallLimit,
+    ByteLimit,
+    Io(core::io::Error),
+    Storage(alloc::vec::Error),
+    Text(alloc::string::Error),
+}
+pub struct ReadFailure {
+    cause: ReadError,
+    bytes: alloc::vec::Vec<u8>,
+    calls: u64,
+    extra: core::option::Option<u8>,
+}
+
+pub fn default_read_limits() -> ReadLimits {
+    return ReadLimits { max_bytes: 16777216, max_calls: 65536 };
+}
+
+pub impl ReadFailure {
+    pub fn borrow(&self) -> &ReadFailure { return self; }
+    // Release only the retained allocation. Historical cause/call/probe facts
+    // remain inspectable; Vec::destroy leaves the byte owner empty/reusable.
+    pub fn destroy(&self) { self.bytes.destroy(); }
+}
+
+struct ReadCollected { bytes: alloc::vec::Vec<u8>, calls: u64 }
+
+fn read_failure(cause: ReadError, bytes: alloc::vec::Vec<u8>, calls: u64)
+    -> ReadFailure {
+    return ReadFailure { cause: cause, bytes: bytes, calls: calls, extra: core::option::None() };
+}
+
+// The caller establishes wanted <= maximum - len. Reserve the complete next
+// request before input can be consumed, with capped geometric growth.
+fn reserve_read(bytes: &alloc::vec::Vec<u8>, wanted: i32, maximum: i32)
+    -> core::result::Result<i32, alloc::vec::Error> {
+    let needed: i32 = bytes.len() + wanted;
+    let capacity: i32 = bytes.capacity();
+    if (needed <= capacity) { return core::result::Ok(capacity); }
+    let target: i32 = maximum;
+    if (capacity <= maximum / 2) { target = capacity * 2; }
+    if (target < needed) { target = needed; }
+    return bytes.try_reserve(target - bytes.len());
+}
+
+fn collect_input<R>(reader: &R, limits: ReadLimits)
+    -> core::result::Result<ReadCollected, ReadFailure> where R: core::io::Read {
+    let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+    let calls: u64 = 0;
+    if (limits.max_bytes < 0) {
+        return core::result::Err(read_failure(ReadError::InvalidLimits, bytes, calls));
+    }
+    let scratch: [u8; 1024] = [0; 1024];
+    let probe: [u8; 1] = [0];
+    while (true) {
+        // Quota rejection precedes reservation and the actual call is charged
+        // before delegation, including EOF, Interrupted and the cap probe.
+        if (calls >= limits.max_calls) {
+            return core::result::Err(read_failure(ReadError::CallLimit, bytes, calls));
+        }
+        let remaining: i32 = limits.max_bytes - bytes.len();
+        let probing: bool = remaining == 0;
+        let wanted: i32 = 1;
+        if (!probing) {
+            wanted = remaining;
+            if (wanted > 1024) { wanted = 1024; }
+            let reserved: core::result::Result<i32, alloc::vec::Error> = reserve_read(bytes.borrow(), wanted, limits.max_bytes);
+            if (core::result::is_err(reserved)) {
+                let error: alloc::vec::Error = core::result::unwrap_err(reserved);
+                return core::result::Err(read_failure(ReadError::Storage(error), bytes, calls));
+            }
+        }
+        calls += 1;
+        let received: core::result::Result<i32, core::io::Error> = core::result::Ok(0);
+        if (probing) { received = reader.read(probe, 0, 1); }
+        else { received = reader.read(scratch, 0, wanted); }
+        if (core::result::is_err(received)) {
+            let error: core::io::Error = core::result::unwrap_err(received);
+            if (core::io::is_interrupted(error)) { continue; }
+            return core::result::Err(read_failure(ReadError::Io(error), bytes, calls));
+        }
+        let count: i32 = core::result::unwrap(received);
+        if (count < 0 || count > wanted) {
+            return core::result::Err(read_failure(ReadError::Io(core::io::Error::InvalidCount), bytes, calls));
+        }
+        if (count == 0) {
+            return core::result::Ok(ReadCollected { bytes: bytes, calls: calls });
+        }
+        if (probing) {
+            return core::result::Err(ReadFailure {
+                cause: ReadError::ByteLimit, bytes: bytes, calls: calls,
+                extra: core::option::Some(probe[0]),
+            });
+        }
+        let index: i32 = 0;
+        while (index < count) {
+            // The complete request is already reserved, and count is checked.
+            // These pushes cannot allocate or fail at the u8 capacity bound.
+            core::result::unwrap(bytes.try_push(scratch[index]));
+            index += 1;
+        }
+    }
+    return core::result::Ok(ReadCollected { bytes: bytes, calls: calls });
+}
+
+pub fn read_to_end<R>(reader: &R, limits: ReadLimits)
+    -> core::result::Result<alloc::vec::Vec<u8>, ReadFailure> where R: core::io::Read {
+    let result: core::result::Result<ReadCollected, ReadFailure> = collect_input(reader, limits);
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let collected: ReadCollected = core::result::unwrap(result);
+    return core::result::Ok(collected.bytes);
+}
+
+pub fn read_to_string<R>(reader: &R, limits: ReadLimits)
+    -> core::result::Result<alloc::string::String, ReadFailure> where R: core::io::Read {
+    let result: core::result::Result<ReadCollected, ReadFailure> = collect_input(reader, limits);
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let collected: ReadCollected = core::result::unwrap(result);
+    // EOF was observed before UTF-8 validation. Failure leaves this Vec intact;
+    // success transfers its allocation and capacity and empties the Vec.
+    let text: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8_vec(collected.bytes.borrow());
+    if (core::result::is_err(text)) {
+        let error: alloc::string::Error = core::result::unwrap_err(text);
+        return core::result::Err(read_failure(ReadError::Text(error), collected.bytes, collected.calls));
+    }
+    return core::result::Ok(core::result::unwrap(text));
+}
 
 pub struct Buffer { bytes: alloc::vec::Vec<u8>, maximum: i32 }
 

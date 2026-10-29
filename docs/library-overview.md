@@ -1,6 +1,13 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[bounded owned-input increment](stdlib-owned-input.md) composes canonical Read
+with retained byte/probe failures, actual-call budgets and reserve-before-read
+growth. Validated Vec/String transfers preserve backing without copying; reader
+and cleanup ownership remain explicit. All six library tests, including the
+17,542-case model, and all 111 real-program cases pass. Selected old stream/
+String regressions pass separately. This finite native Linux x86_64 increment
+is accepted. The preceding
 [checked Base64 increment](stdlib-base64.md) replaces fallback/sentinel calls
 with four Result/View APIs and explicit standard/URL-safe, padded/unpadded
 profiles. Full preflight, indexed errors, same-base aliases and manual backing
@@ -283,6 +290,21 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Bounded owned input.**
+
+The [collection contract](stdlib-owned-input.md) defines Read-only byte/text
+collection with an actual EOF observation, byte-cap probe retention and one
+shared call allowance. Capacity is reserved before each ordinary read; failures
+return the admitted byte owner and precise progress. UTF-8 validation follows
+EOF, then transfers Vec backing into String without copying. The bounded
+[input-statistics program](stdlib-input-stats.md) composes these helpers and
+passes four groups/111 native cases. Public owner transfers require inactive
+aliases and manual cleanup. All six library tests
+pass, including pointer/capacity-preserving String transfer, a 17,542-case model,
+geometric growth and seven reached allocation failures. Selected existing
+stream/String regressions pass separately. Earlier alloc::io/String receipts
+retain their historical scope.
 
 **Checked Base64 profiles.**
 
