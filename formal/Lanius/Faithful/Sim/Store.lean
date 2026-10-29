@@ -246,7 +246,7 @@ theorem store_spec : ∀ n, StoreAt sp boxes n
       obtain ⟨ws, hws⟩ := enum_words words hdecl (k := k) (types := fs.map SrcType.toCore) (by simp [hk])
       exact variant_spec hdecl hk fits fieldWords (VRels.length rs).1 (mapM_option_mono up hws)
         (fields_spec ih fieldWords rs hws (by omega))
-    | box found wv pos room read rel =>
+    | box found wv pos room ranged read rel =>
       rename_i a _ _
       obtain ⟨decl, fieldWords, -⟩ := wordType_struct ok
       have hdecl := structFields_toCore (sp := sp) decl

@@ -90,7 +90,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     obtain ⟨ql, hql, rl, ran1⟩ := eff lrun htl inv rel b1
     obtain ⟨qr, hqr, rr, ran2⟩ := eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
     rw [toCore_target] at hv
-    obtain ⟨happ, sv⟩ := binary_sim isAnd isOr ht (rl.mono ran2.step.reads) rr hv
+    obtain ⟨happ, sv⟩ := binary_sim isAnd isOr ht (rl.mono ran2.step.reads ran2.step.ranges) rr hv
     exact ⟨v, by simp only [peff, hql, hqr, happ], .scalar sv, ran1.trans ran2⟩
   | eNeg o =>
     simp only [SrcEff.toCore] at run
@@ -199,7 +199,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     obtain ⟨qr, hqr, rr, ran2⟩ := eff rrun htr ran1.inv (rel.step ran1.step ran1.locals) bound
     rw [toCore_target] at hv
     have flat := binary_flat hv
-    obtain ⟨rfl, sl⟩ := (rl.mono ran2.step.reads).flat
+    obtain ⟨rfl, sl⟩ := (rl.mono ran2.step.reads ran2.step.ranges).flat
       (flat.2 (by cases op <;> simp [SrcDivOp.toCore]) (by cases op <;> simp [SrcDivOp.toCore]))
     obtain ⟨rfl, -⟩ := rr.flat (flat.1 sl)
     refine ⟨v, ?_, .scalar (divide_sty sl hv), ran1.trans ran2⟩

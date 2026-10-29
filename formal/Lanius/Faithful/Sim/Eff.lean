@@ -198,7 +198,7 @@ theorem effs_step (eff : EffOk sp prims outside N k) (effs : EffsOk sp prims out
     have b1 := Grows.bound (effGrows erun) (effsGrows esrun) inv.views bound
     obtain ⟨p, hp, r, ran1⟩ := eff erun het inv rel b1
     obtain ⟨ps, hps, rs, ran2⟩ := effs esrun hts ran1.inv (rel.step ran1.step ran1.locals) bound
-    exact ⟨p :: ps, by simp [peffs, hp, hps], .cons (r.mono ran2.step.reads) rs, ran1.trans ran2⟩
+    exact ⟨p :: ps, by simp [peffs, hp, hps], .cons (r.mono ran2.step.reads ran2.step.ranges) rs, ran1.trans ran2⟩
 
 theorem arms_step (eff : EffOk sp prims outside N k) (arms : ArmsOk sp prims outside N k) :
     ArmsOk sp prims outside N (k + 1) := by

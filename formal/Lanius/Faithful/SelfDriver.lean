@@ -833,7 +833,7 @@ theorem driver_faithful {fuel : Nat} {st st' : State} {v : Value} {inp outp room
     (local?_bindLocal_self (invR.restore _) 182 lv)))
   -- `front_end_words(grammar(), read)`
   obtain ⟨wf, hwf, rwf, invF, stepF⟩ := func_sim SelfPure.selfPure SelfPure.selfPrims j9 fn_front_end_words
-    (by decide +kernel) lenF (invG.restore _) bF (.cons rwg (.cons (VRel.mono stepG.reads relR) .nil)) bodyF resultF
+    (by decide +kernel) lenF (invG.restore _) bF (.cons rwg (.cons (VRel.mono stepG.reads stepG.ranges relR) .nil)) bodyF resultF
   -- `compile_words(..)`
   obtain ⟨wc, hwc, rwc, invC, stepC⟩ := func_sim SelfPure.selfPure SelfPure.selfPrims j8 fn_compile_words
     (by decide +kernel) lenC (invF.restore _) bC (.cons rwf .nil) bodyC resultC

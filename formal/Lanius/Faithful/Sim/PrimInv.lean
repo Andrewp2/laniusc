@@ -1,5 +1,6 @@
 import Lanius.Faithful.Sim.State
 import Lanius.Memory.Allocated
+import Lanius.Memory.BorrowRange
 
 /-! # What a completed Core run of the prims' constructs did
 
@@ -237,5 +238,70 @@ theorem allocate_exhausted' {heap heap' : Memory.Heap} {n m : Nat}
     · simp only [Memory.AllocationResult.exhausted.injEq] at h
       exact h.symm
     · simp at h
+
+/-! ## Ranges -/
+
+/-- Allocating keeps every block, so every range that checked still does. -/
+theorem HeapRanges.allocated {heap : Memory.Heap} {n m : Nat} {budget : Option Nat} :
+    HeapRanges heap (heap.allocatedBytes n m budget) := by
+  intro p s a ok
+  simp only [Memory.Heap.checkRange] at ok ⊢
+  split at ok
+  · simp at ok
+  rename_i notBad
+  simp only [notBad, if_false]
+  cases found : heap.containingBlock? p with
+  | none => simp [found] at ok
+  | some block =>
+    simp only [found] at ok
+    have after : (heap.allocatedBytes n m budget).containingBlock? p = some block := by
+      simp only [Memory.Heap.containingBlock?, Memory.Heap.allocatedBytes, List.find?_append] at found ⊢
+      simp [found]
+    simp only [after]
+    exact ok
+
+/-- Writes that keep the blocks' layout keep every range. -/
+theorem HeapRanges.layout {before after : Memory.Heap}
+    (layout : after.blocks.map (fun block => { block with bytes := [] }) =
+      before.blocks.map (fun block => { block with bytes := [] })) : HeapRanges before after := by
+  have erase : ∀ (h : Memory.Heap) (p : Nat), (h.containingBlock? p).map (fun block => { block with bytes := [] }) =
+      (h.blocks.map (fun block => { block with bytes := [] })).find? fun block =>
+        block.live && block.base ≤ p && p < block.base + block.size := by
+    intro h p
+    simp only [Memory.Heap.containingBlock?, List.find?_map]
+    rfl
+  intro p s a ok
+  have same := (erase after p).trans (layout ▸ (erase before p).symm)
+  simp only [Memory.Heap.checkRange] at ok ⊢
+  split at ok
+  · simp at ok
+  rename_i notBad
+  simp only [notBad, if_false]
+  cases found : before.containingBlock? p with
+  | none => simp [found] at ok
+  | some block =>
+    simp only [found] at ok
+    cases found' : after.containingBlock? p with
+    | none => simp [found, found'] at same
+    | some block' =>
+      simp only [found, found', Option.map_some, Option.some.injEq] at same
+      have alignment : block'.alignment = block.alignment := by
+        simpa using congrArg Memory.Block.alignment same
+      have base : block'.base = block.base := by simpa using congrArg Memory.Block.base same
+      have size : block'.size = block.size := by simpa using congrArg Memory.Block.size same
+      simp only [alignment, base, size]
+      exact ok
+
+/-- The fresh block of an allocation checks as one range. -/
+theorem allocated_checkRange {heap : Memory.Heap} {n m : Nat} {budget : Option Nat}
+    (below : Memory.HeapBlocksBelowNext heap) (pos : 0 < n) (valid : Memory.validAlignment m = true) :
+    (heap.allocatedBytes n m budget).checkRange (heap.allocationAddress m) n m = .ok () := by
+  have mpos : 0 < m := by
+    simp only [Memory.validAlignment, Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at valid
+    omega
+  have found := Memory.Heap.allocatedBytes_containing (budget := budget) (offset := 0) below mpos pos
+  rw [Nat.add_zero] at found
+  exact Memory.Heap.checkRange_of_block found pos (Memory.Heap.allocationAddress_aligned heap) valid
+    (Nat.le_refl _) (by simp [Memory.Heap.allocationBlock])
 
 end Lanius.Faithful
