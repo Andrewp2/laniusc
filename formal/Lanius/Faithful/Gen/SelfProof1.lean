@@ -37,6 +37,10 @@ theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_Fact {prog : SrcProgram}
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Fact prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Fact n :=
   fun h r => prim_cert np h r
 
+theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_FileInput {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_FileInput : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_FileInput = true) {n : Nat} :
+    Stmt_boxed_of_mini_selfhost_List_mini_selfhost_FileInput prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_FileInput n :=
+  fun h r => prim_cert np h r
+
 theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_List_usize {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize = true) {n : Nat} :
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize n :=
   fun h r => prim_cert np h r
@@ -133,6 +137,15 @@ theorem proof_empty_of_mini_selfhost_ConstDecl {prog : SrcProgram} {prims : Prim
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_empty_of_mini_selfhost_ConstDecl] at h
+  faithful []
+
+theorem proof_empty_of_mini_selfhost_FileInput {prog : SrcProgram} {prims : Prims} {ix_empty_of_mini_selfhost_FileInput : Nat} (fn : prog.funcs[ix_empty_of_mini_selfhost_FileInput]? = some (src_empty_of_mini_selfhost_FileInput)) (np : prims.isPrim ix_empty_of_mini_selfhost_FileInput = false) {n : Nat} :
+    Stmt_empty_of_mini_selfhost_FileInput prog prims ix_empty_of_mini_selfhost_FileInput n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_empty_of_mini_selfhost_FileInput] at h
   faithful []
 
 theorem proof_empty_of_mini_selfhost_ImportDecl {prog : SrcProgram} {prims : Prims} {ix_empty_of_mini_selfhost_ImportDecl : Nat} (fn : prog.funcs[ix_empty_of_mini_selfhost_ImportDecl]? = some (src_empty_of_mini_selfhost_ImportDecl)) (np : prims.isPrim ix_empty_of_mini_selfhost_ImportDecl = false) {n : Nat} :

@@ -123,6 +123,15 @@ theorem proof_p_const {prog : SrcProgram} {prims : Prims} {ix_p_const : Nat} (fn
   simp only [src_p_const] at h
   faithful [Lanius.Mini.Inline.pConst]
 
+theorem proof_p_contracts_none {prog : SrcProgram} {prims : Prims} {ix_p_contracts_none : Nat} (fn : prog.funcs[ix_p_contracts_none]? = some (src_p_contracts_none)) (np : prims.isPrim ix_p_contracts_none = false) {n : Nat} :
+    Stmt_p_contracts_none prog prims ix_p_contracts_none n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_contracts_none] at h
+  faithful [Lanius.Mini.Inline.pContractsNone]
+
 theorem proof_p_div_tail {prog : SrcProgram} {prims : Prims} {ix_p_div_tail : Nat} (fn : prog.funcs[ix_p_div_tail]? = some (src_p_div_tail)) (np : prims.isPrim ix_p_div_tail = false) {n : Nat} :
     Stmt_p_div_tail prog prims ix_p_div_tail n := by
   intro w h

@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_cons_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option (List Lanius.Mini.MEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 216 RepMEff) x0 v0 → (RepOption 233 (RepList 195 RepMEff)) x1 v1 →
-    (RepOption 233 (RepList 195 RepMEff)) (Lanius.Mini.consEff x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option (List Lanius.Mini.MEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 229 RepMEff) x0 v0 → (RepOption 246 (RepList 210 RepMEff)) x1 v1 →
+    (RepOption 246 (RepList 210 RepMEff)) (Lanius.Mini.consEff x0 x1) w
 
 abbrev Stmt_x_call_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Inst} {x1 : List Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 138 RepInst) x0 v0 → (RepList 195 RepMEff) x1 v1 →
-    (RepOption 216 RepMEff) (Lanius.Mini.xCallOf x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.Inst} {x1 : List Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 169 RepInst) x0 v0 → (RepList 210 RepMEff) x1 v1 →
+    (RepOption 229 RepMEff) (Lanius.Mini.xCallOf x0 x1) w
 
 abbrev Stmt_x_cast_into (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 149 RepSrcType) x0 v0 → (RepOption 216 RepMEff) x1 v1 →
-    (RepOption 216 RepMEff) (Lanius.Mini.xCastInto x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 153 RepSrcType) x0 v0 → (RepOption 229 RepMEff) x1 v1 →
+    (RepOption 229 RepMEff) (Lanius.Mini.xCastInto x0 x1) w
 
 abbrev Stmt_x_index_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Local} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 218 RepLocal) x0 v0 → (RepOption 216 RepMEff) x1 v1 →
-    (RepOption 216 RepMEff) (Lanius.Mini.xIndexOf x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.Local} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 231 RepLocal) x0 v0 → (RepOption 229 RepMEff) x1 v1 →
+    (RepOption 229 RepMEff) (Lanius.Mini.xIndexOf x0 x1) w
 
 end Lanius.Faithful.SelfCert

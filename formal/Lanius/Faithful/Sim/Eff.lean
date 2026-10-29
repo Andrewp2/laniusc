@@ -74,7 +74,7 @@ end
 
 /-! ## Facts the cases use -/
 
-theorem matchPatterns_binds : ∀ (bs : List Nat) (vs : List Value),
+private theorem matchPatterns_binds : ∀ (bs : List Nat) (vs : List Value),
     matchPatterns (bs.map .bind) vs = if bs.length = vs.length then some (bs.zip vs) else none
   | [], [] => by simp [matchPatterns]
   | [], _ :: _ => by simp [matchPatterns]

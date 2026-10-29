@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_e_cast_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → (RepOption 194 RepSrcEff) x1 v1 →
-    (RepOption 194 RepSrcEff) (Lanius.Mini.eCastClosed x0 x1) w
+  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → (RepOption 209 RepSrcEff) x1 v1 →
+    (RepOption 209 RepSrcEff) (Lanius.Mini.eCastClosed x0 x1) w
 
 abbrev Stmt_e_divide_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcDivOp} {x1 : Option Lanius.Mini.SrcEff} {x2 : Option Lanius.Mini.SrcEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcDivOp x0 v0 → (RepOption 194 RepSrcEff) x1 v1 → (RepOption 194 RepSrcEff) x2 v2 →
-    (RepOption 194 RepSrcEff) (Lanius.Mini.eDivideClosed x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.SrcDivOp} {x1 : Option Lanius.Mini.SrcEff} {x2 : Option Lanius.Mini.SrcEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcDivOp x0 v0 → (RepOption 209 RepSrcEff) x1 v1 → (RepOption 209 RepSrcEff) x2 v2 →
+    (RepOption 209 RepSrcEff) (Lanius.Mini.eDivideClosed x0 x1 x2) w
 
 abbrev Stmt_e_neg_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 194 RepSrcEff) x0 v0 →
-    (RepOption 194 RepSrcEff) (Lanius.Mini.eNegClosed x0) w
+  ∀ {x0 : Option Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 209 RepSrcEff) x0 v0 →
+    (RepOption 209 RepSrcEff) (Lanius.Mini.eNegClosed x0) w
 
 abbrev Stmt_e_not_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 194 RepSrcEff) x0 v0 →
-    (RepOption 194 RepSrcEff) (Lanius.Mini.eNotClosed x0) w
+  ∀ {x0 : Option Lanius.Mini.SrcEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 209 RepSrcEff) x0 v0 →
+    (RepOption 209 RepSrcEff) (Lanius.Mini.eNotClosed x0) w
 
 end Lanius.Faithful.SelfCert

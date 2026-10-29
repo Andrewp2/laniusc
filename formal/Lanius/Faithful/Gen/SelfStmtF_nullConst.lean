@@ -21,15 +21,15 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_literal_as (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Option Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 167 RepTy) x0 v0 → (RepOption 215 RepSrcExpr) x1 v1 →
-    (RepOption 215 RepSrcExpr) (Lanius.Mini.literalAs x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Option Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 192 RepTy) x0 v0 → (RepOption 228 RepSrcExpr) x1 v1 →
+    (RepOption 228 RepSrcExpr) (Lanius.Mini.literalAs x0 x1) w
 
 abbrev Stmt_null_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : BitVec 32} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepI32 x0 v0 →
-    (RepOption 215 RepSrcExpr) (Lanius.Mini.nullConst x0) w
+    (RepOption 228 RepSrcExpr) (Lanius.Mini.nullConst x0) w
 
 abbrev Stmt_typed_literal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → RepSrcExpr x1 v1 →
-    (RepOption 215 RepSrcExpr) (Lanius.Mini.typedLiteral x0 x1) w
+    (RepOption 228 RepSrcExpr) (Lanius.Mini.typedLiteral x0 x1) w
 
 end Lanius.Faithful.SelfCert

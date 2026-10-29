@@ -228,9 +228,9 @@ theorem step_length_of_mini_selfhost_List_usize {prog : SrcProgram} {prims : Pri
   simp only [src_length_of_mini_selfhost_List_usize] at h
   faithful []
 
-theorem step_length_of_u8 {prog : SrcProgram} {prims : Prims} {ix_length_of_u8 ix_unbox_of_mini_selfhost_List_u8 ix_plus : Nat} (fn : prog.funcs[ix_length_of_u8]? = some (src_length_of_u8 ix_length_of_u8 ix_unbox_of_mini_selfhost_List_u8 ix_plus)) (np : prims.isPrim ix_length_of_u8 = false)
-    (ext_unbox_of_mini_selfhost_List_u8 : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_u8 prog prims ix_unbox_of_mini_selfhost_List_u8 n))
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat}
+theorem step_length_of_u8 {prog : SrcProgram} {prims : Prims} {ix_length_of_u8 ix_plus ix_unbox_of_mini_selfhost_List_u8 : Nat} (fn : prog.funcs[ix_length_of_u8]? = some (src_length_of_u8 ix_length_of_u8 ix_plus ix_unbox_of_mini_selfhost_List_u8)) (np : prims.isPrim ix_length_of_u8 = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_unbox_of_mini_selfhost_List_u8 : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_u8 prog prims ix_unbox_of_mini_selfhost_List_u8 n)) {n : Nat}
     (ih_length_of_u8 : Certified (Stmt_length_of_u8 prog prims ix_length_of_u8 n)) :
     Stmt_length_of_u8 prog prims ix_length_of_u8 (n + 1) := by
   intro x0 v0 w h r0

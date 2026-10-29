@@ -130,9 +130,9 @@ theorem proof_compile_program {prog : SrcProgram} {prims : Prims} {ix_compile_pr
   simp only [src_compile_program] at h
   faithful [Lanius.Mini.compileProgram]
 
-theorem step_copy_bytes {prog : SrcProgram} {prims : Prims} {ix_copy_bytes ix_unbox_of_mini_selfhost_List_usize ix_plus ix_empty_of_u8 ix_concat_of_u8 ix_slot_load ix_slot_store : Nat} (fn : prog.funcs[ix_copy_bytes]? = some (src_copy_bytes ix_unbox_of_mini_selfhost_List_usize ix_plus ix_empty_of_u8 ix_concat_of_u8 ix_slot_load ix_slot_store ix_copy_bytes)) (np : prims.isPrim ix_copy_bytes = false)
-    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+theorem step_copy_bytes {prog : SrcProgram} {prims : Prims} {ix_copy_bytes ix_plus ix_unbox_of_mini_selfhost_List_usize ix_empty_of_u8 ix_concat_of_u8 ix_slot_load ix_slot_store : Nat} (fn : prog.funcs[ix_copy_bytes]? = some (src_copy_bytes ix_plus ix_unbox_of_mini_selfhost_List_usize ix_empty_of_u8 ix_concat_of_u8 ix_slot_load ix_slot_store ix_copy_bytes)) (np : prims.isPrim ix_copy_bytes = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
     (ext_empty_of_u8 : Certified (∀ {n : Nat}, Stmt_empty_of_u8 prog prims ix_empty_of_u8 n))
     (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
     (ext_slot_load : Certified (∀ {n : Nat}, Stmt_slot_load prog prims ix_slot_load n))
@@ -189,10 +189,10 @@ theorem proof_image_limit {prog : SrcProgram} {prims : Prims} {ix_image_limit : 
   simp only [src_image_limit] at h
   faithful [Lanius.Mini.imageLimit]
 
-theorem step_layout {prog : SrcProgram} {prims : Prims} {ix_layout ix_empty_of_usize ix_cons_of_usize ix_plus ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat} (fn : prog.funcs[ix_layout]? = some (src_layout ix_empty_of_usize ix_cons_of_usize ix_plus ix_layout ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code)) (np : prims.isPrim ix_layout = false)
+theorem step_layout {prog : SrcProgram} {prims : Prims} {ix_layout ix_plus ix_empty_of_usize ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code : Nat} (fn : prog.funcs[ix_layout]? = some (src_layout ix_plus ix_empty_of_usize ix_layout ix_cons_of_usize ix_Code_size ix_unbox_of_mini_selfhost_List_mini_selfhost_Code)) (np : prims.isPrim ix_layout = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_Code_size : Certified (∀ {n : Nat}, Stmt_Code_size prog prims ix_Code_size n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Code : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Code prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Code n)) {n : Nat}
     (ih_layout : Certified (Stmt_layout prog prims ix_layout n)) :
@@ -272,11 +272,11 @@ theorem proof_relative {prog : SrcProgram} {prims : Prims} {ix_relative : Nat} (
   simp only [src_relative] at h
   faithful [Lanius.Mini.relative]
 
-theorem step_slot_range {prog : SrcProgram} {prims : Prims} {ix_slot_range ix_empty_of_usize ix_cons_of_usize ix_plus ix_minus : Nat} (fn : prog.funcs[ix_slot_range]? = some (src_slot_range ix_empty_of_usize ix_cons_of_usize ix_plus ix_minus ix_slot_range)) (np : prims.isPrim ix_slot_range = false)
-    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
-    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+theorem step_slot_range {prog : SrcProgram} {prims : Prims} {ix_slot_range ix_plus ix_minus ix_empty_of_usize ix_cons_of_usize : Nat} (fn : prog.funcs[ix_slot_range]? = some (src_slot_range ix_plus ix_minus ix_empty_of_usize ix_cons_of_usize ix_slot_range)) (np : prims.isPrim ix_slot_range = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat}
     (ih_slot_range : Certified (Stmt_slot_range prog prims ix_slot_range n)) :
     Stmt_slot_range prog prims ix_slot_range (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1

@@ -70,6 +70,16 @@ theorem step_concat_of_mini_selfhost_Inst {prog : SrcProgram} {prims : Prims} {i
   simp only [src_concat_of_mini_selfhost_Inst] at h
   faithful []
 
+theorem proof_cons_of_i32 {prog : SrcProgram} {prims : Prims} {ix_cons_of_i32 ix_boxed_of_mini_selfhost_List_i32 : Nat} (fn : prog.funcs[ix_cons_of_i32]? = some (src_cons_of_i32 ix_boxed_of_mini_selfhost_List_i32)) (np : prims.isPrim ix_cons_of_i32 = false)
+    (ext_boxed_of_mini_selfhost_List_i32 : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_i32 prog prims ix_boxed_of_mini_selfhost_List_i32 n)) {n : Nat} :
+    Stmt_cons_of_i32 prog prims ix_cons_of_i32 n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_cons_of_i32] at h
+  faithful []
+
 theorem proof_cons_of_mini_selfhost_CTree {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_CTree ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_CTree]? = some (src_cons_of_mini_selfhost_CTree ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree)) (np : prims.isPrim ix_cons_of_mini_selfhost_CTree = false)
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree n)) {n : Nat} :
     Stmt_cons_of_mini_selfhost_CTree prog prims ix_cons_of_mini_selfhost_CTree n := by
@@ -88,6 +98,16 @@ theorem proof_cons_of_mini_selfhost_EffArm {prog : SrcProgram} {prims : Prims} {
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_cons_of_mini_selfhost_EffArm] at h
+  faithful []
+
+theorem proof_cons_of_mini_selfhost_FileInput {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_FileInput ix_boxed_of_mini_selfhost_List_mini_selfhost_FileInput : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_FileInput]? = some (src_cons_of_mini_selfhost_FileInput ix_boxed_of_mini_selfhost_List_mini_selfhost_FileInput)) (np : prims.isPrim ix_cons_of_mini_selfhost_FileInput = false)
+    (ext_boxed_of_mini_selfhost_List_mini_selfhost_FileInput : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_FileInput prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_FileInput n)) {n : Nat} :
+    Stmt_cons_of_mini_selfhost_FileInput prog prims ix_cons_of_mini_selfhost_FileInput n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_cons_of_mini_selfhost_FileInput] at h
   faithful []
 
 theorem proof_cons_of_mini_selfhost_FnDecl {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_FnDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_FnDecl]? = some (src_cons_of_mini_selfhost_FnDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_FnDecl)) (np : prims.isPrim ix_cons_of_mini_selfhost_FnDecl = false)

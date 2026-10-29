@@ -21,55 +21,59 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_build_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 59 RepCTree) x1 v1 →
-    (RepOption 17 RepSrcProgram) (Lanius.Mini.buildFiles x0 x1) w
+  ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 76 RepCTree) x1 v1 →
+    (RepOption 3 RepSrcProgram) (Lanius.Mini.buildFiles x0 x1) w
 
 abbrev Stmt_cons_root (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 95 RepCTree) x0 v0 → (RepOption 58 (RepList 59 RepCTree)) x1 v1 →
-    (RepOption 58 (RepList 59 RepCTree)) (Lanius.Mini.consRoot x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 121 RepCTree) x0 v0 → (RepOption 75 (RepList 76 RepCTree)) x1 v1 →
+    (RepOption 75 (RepList 76 RepCTree)) (Lanius.Mini.consRoot x0 x1) w
 
 abbrev Stmt_files_fuel (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.FileInput} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 46 RepFileInput) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.FileInput} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 42 RepFileInput) x0 v0 →
     RepNat (Lanius.Mini.filesFuel x0) w
 
 abbrev Stmt_front_end_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 52 RepRule) x0 v0 → (RepList 46 RepFileInput) x1 v1 →
-    (RepOption 17 RepSrcProgram) (Lanius.Mini.frontEndFiles x0 x1) w
+  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 34 RepRule) x0 v0 → (RepList 42 RepFileInput) x1 v1 →
+    (RepOption 3 RepSrcProgram) (Lanius.Mini.frontEndFiles x0 x1) w
 
-abbrev Stmt_grammar_part_0 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 52 RepRule) (Lanius.Mini.grammarPart0) w
+abbrev Stmt_nums_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.NumsRead} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 119 RepNumsRead) x1 v1 →
+    (RepOption 119 RepNumsRead) (Lanius.Mini.numsAfter x0 x1) w
 
-abbrev Stmt_grammar_part_1 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 52 RepRule) (Lanius.Mini.grammarPart1) w
+abbrev Stmt_read_counted_nums (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (BitVec 32)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 0 RepI32) x0 v0 →
+    (RepOption 119 RepNumsRead) (Lanius.Mini.readCountedNums x0) w
 
-abbrev Stmt_grammar_part_2 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 52 RepRule) (Lanius.Mini.grammarPart2) w
+abbrev Stmt_read_nums (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (BitVec 32)} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 0 RepI32) x0 v0 → RepNat x1 v1 →
+    (RepOption 119 RepNumsRead) (Lanius.Mini.readNums x0 x1) w
 
-abbrev Stmt_grammar_part_3 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 52 RepRule) (Lanius.Mini.grammarPart3) w
+abbrev Stmt_read_token (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (BitVec 32)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 0 RepI32) x0 v0 →
+    (RepOption 131 RepTokenRead) (Lanius.Mini.readToken x0) w
 
-abbrev Stmt_grammar_part_4 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 52 RepRule) (Lanius.Mini.grammarPart4) w
+abbrev Stmt_read_token_start (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : List (BitVec 32)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 0 RepI32) x1 v1 →
+    (RepOption 131 RepTokenRead) (Lanius.Mini.readTokenStart x0 x1) w
 
-abbrev Stmt_grammar_part_5 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 52 RepRule) (Lanius.Mini.grammarPart5) w
+abbrev Stmt_read_token_text (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Option Lanius.Mini.NumsRead} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepOption 119 RepNumsRead) x2 v2 →
+    (RepOption 131 RepTokenRead) (Lanius.Mini.readTokenText x0 x1 x2) w
 
-abbrev Stmt_grammar_part_6 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 52 RepRule) (Lanius.Mini.grammarPart6) w
+abbrev Stmt_read_tokens (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List (BitVec 32)} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 0 RepI32) x0 v0 → RepNat x1 v1 →
+    (RepOption 93 RepTokensRead) (Lanius.Mini.readTokens x0 x1) w
 
-abbrev Stmt_grammar_part_7 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 52 RepRule) (Lanius.Mini.grammarPart7) w
+abbrev Stmt_tokens_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Token} {x1 : Option Lanius.Mini.TokensRead} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepToken x0 v0 → (RepOption 93 RepTokensRead) x1 v1 →
+    (RepOption 93 RepTokensRead) (Lanius.Mini.tokensAfter x0 x1) w
 
 abbrev Stmt_validate_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 52 RepRule) x0 v0 → (RepList 46 RepFileInput) x1 v1 →
-    (RepOption 58 (RepList 59 RepCTree)) (Lanius.Mini.validateFiles x0 x1) w
+  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 34 RepRule) x0 v0 → (RepList 42 RepFileInput) x1 v1 →
+    (RepOption 75 (RepList 76 RepCTree)) (Lanius.Mini.validateFiles x0 x1) w
+
+abbrev Stmt_word_num (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : BitVec 32} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepI32 x0 v0 →
+    RepNat (Lanius.Mini.wordNum x0) w
 
 end Lanius.Faithful.SelfCert

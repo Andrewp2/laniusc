@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::is_wide -/
-def src_UintTy_is_wide : SrcFunc := { params := [{ id := 8, ty := ty18 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 8)) ty18 (SrcType.bool) [[], [], [], []] [SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean true)]) }
+def src_UintTy_is_wide : SrcFunc := { params := [{ id := 8, ty := ty4 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 8)) ty4 (SrcType.bool) [[], [], [], []] [SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean true)]) }
 
 end
 

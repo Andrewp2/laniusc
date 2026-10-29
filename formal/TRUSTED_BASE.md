@@ -387,8 +387,22 @@ compiler that someone actually runs is one of these two:
    trusted there: the representation relations (`Gen/SelfRep.lean`, one
    per type, generated) and the pure semantics `pcall`, which `call_sim`
    relates to Core. The certificates are partial: a run that does not
-   return is not covered. Not yet done: the theorem that joins the driver,
-   `call_sim` and the certificates into one statement about Core runs.
+   return is not covered. Joined (10-28, roadmap V1): `driver_faithful`
+   (`Faithful/SelfDriver.lean`, standard axioms) is about a Core run of the
+   self program's entry `w(input, words, output, room)`, the driver
+   `self_host.py` builds. If the run completes on an input view reading
+   `W`, it returns -1 when `compileWords (frontEndWords grammar W)` is
+   `none`, and otherwise the result's length, with the output view reading
+   the result. The driver's own functions (`oracle_read`, `oracle_put`,
+   `oracle_write`, which make raw `i32` slices and write through them) are
+   proved by hand at the Core level; `compile_words`, `front_end_words` and
+   `grammar` are `call_sim` joined with their certificates. The
+   representation relations and `pcall` are no longer in the statement, so
+   they are no longer trusted. The statement's premises: the Core state
+   invariant (`Inv`: no live `i32` array views, the heap's block bases
+   unique), a heap cursor in range at the end, fewer than 2^31 input words
+   and output room, and an output view whose `room * 4` bytes are readable.
+   V6 (the startup wrapper) is to discharge the last.
    The extraction's and the sources' bodies are hidden from other Lean
    modules (module system, for incremental checking); that changes only
    what the elaborator may unfold, not what the kernel checks, and a proof

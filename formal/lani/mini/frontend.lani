@@ -7693,6 +7693,176 @@ pub fn front_end_files(g: List<Rule>, files: List<FileInput>) -> core::option::O
     };
 }
 
+// ---------------------------------------------------------------- the driver's input
+
+// The front end's input as a driver reads it, one 32-bit word each: the file
+// count, then each file's tokens (their count, then each token's kind, start,
+// text length and text bytes), its productions (their count, then each) and
+// its parents (their count, then each; a root's parent is 2^32 - 1). Words
+// are read as unsigned (roadmap V1). `front_end_words` is the entry.
+
+pub struct NumsRead {
+    nums: List<usize>,
+    rest: List<i32>,
+}
+
+pub struct TokenRead {
+    token: Token,
+    rest: List<i32>,
+}
+
+pub struct TokensRead {
+    tokens: List<Token>,
+    rest: List<i32>,
+}
+
+pub struct FileRead {
+    file: FileInput,
+    rest: List<i32>,
+}
+
+pub struct FilesRead {
+    files: List<FileInput>,
+    rest: List<i32>,
+}
+
+pub fn word_num(w: i32) -> usize {
+    return (w as u32) as usize;
+}
+
+pub fn nums_after(n: usize, read: core::option::Option<NumsRead>) -> core::option::Option<NumsRead> {
+    return match (read) {
+        None -> None,
+        Some(r) -> Some(NumsRead { nums: cons(n, r.nums), rest: r.rest }),
+    };
+}
+
+// `count` numbers, then the words after them.
+pub fn read_nums(words: List<i32>, count: usize) -> core::option::Option<NumsRead> {
+    if (count == 0) {
+        return Some(NumsRead { nums: empty(), rest: words });
+    }
+    return match (words) {
+        Nil -> None,
+        Cons(w, rest) -> nums_after(word_num(w), read_nums(unbox(rest), minus(count, 1))),
+    };
+}
+
+// A count, then that many numbers.
+pub fn read_counted_nums(words: List<i32>) -> core::option::Option<NumsRead> {
+    return match (words) {
+        Nil -> None,
+        Cons(w, rest) -> read_nums(unbox(rest), word_num(w)),
+    };
+}
+
+pub fn read_token_text(kind: usize, start: usize, text: core::option::Option<NumsRead>) -> core::option::Option<TokenRead> {
+    return match (text) {
+        None -> None,
+        Some(t) -> Some(TokenRead { token: Token { kind: kind, start: start, text: t.nums }, rest: t.rest }),
+    };
+}
+
+pub fn read_token_start(kind: usize, words: List<i32>) -> core::option::Option<TokenRead> {
+    return match (words) {
+        Nil -> None,
+        Cons(start, rest) -> read_token_text(kind, word_num(start), read_counted_nums(unbox(rest))),
+    };
+}
+
+// A token: its kind, start and counted text.
+pub fn read_token(words: List<i32>) -> core::option::Option<TokenRead> {
+    return match (words) {
+        Nil -> None,
+        Cons(kind, rest) -> read_token_start(word_num(kind), unbox(rest)),
+    };
+}
+
+pub fn tokens_after(token: Token, read: core::option::Option<TokensRead>) -> core::option::Option<TokensRead> {
+    return match (read) {
+        None -> None,
+        Some(r) -> Some(TokensRead { tokens: cons(token, r.tokens), rest: r.rest }),
+    };
+}
+
+pub fn read_tokens(words: List<i32>, count: usize) -> core::option::Option<TokensRead> {
+    if (count == 0) {
+        return Some(TokensRead { tokens: empty(), rest: words });
+    }
+    return match (read_token(words)) {
+        None -> None,
+        Some(t) -> tokens_after(t.token, read_tokens(t.rest, minus(count, 1))),
+    };
+}
+
+pub fn read_counted_tokens(words: List<i32>) -> core::option::Option<TokensRead> {
+    return match (words) {
+        Nil -> None,
+        Cons(w, rest) -> read_tokens(unbox(rest), word_num(w)),
+    };
+}
+
+pub fn read_file_end(tokens: List<Token>, prods: List<usize>, parents: core::option::Option<NumsRead>) -> core::option::Option<FileRead> {
+    return match (parents) {
+        None -> None,
+        Some(q) -> Some(FileRead { file: FileInput { tokens: tokens, prods: prods, parents: q.nums }, rest: q.rest }),
+    };
+}
+
+pub fn read_file_parents(tokens: List<Token>, prods: core::option::Option<NumsRead>) -> core::option::Option<FileRead> {
+    return match (prods) {
+        None -> None,
+        Some(p) -> read_file_end(tokens, p.nums, read_counted_nums(p.rest)),
+    };
+}
+
+// A file: its counted tokens, productions and parents.
+pub fn read_file(words: List<i32>) -> core::option::Option<FileRead> {
+    return match (read_counted_tokens(words)) {
+        None -> None,
+        Some(t) -> read_file_parents(t.tokens, read_counted_nums(t.rest)),
+    };
+}
+
+pub fn files_after(file: FileInput, read: core::option::Option<FilesRead>) -> core::option::Option<FilesRead> {
+    return match (read) {
+        None -> None,
+        Some(r) -> Some(FilesRead { files: cons(file, r.files), rest: r.rest }),
+    };
+}
+
+pub fn read_files(words: List<i32>, count: usize) -> core::option::Option<FilesRead> {
+    if (count == 0) {
+        return Some(FilesRead { files: empty(), rest: words });
+    }
+    return match (read_file(words)) {
+        None -> None,
+        Some(f) -> files_after(f.file, read_files(f.rest, minus(count, 1))),
+    };
+}
+
+pub fn read_counted_files(words: List<i32>) -> core::option::Option<FilesRead> {
+    return match (words) {
+        Nil -> None,
+        Cons(w, rest) -> read_files(unbox(rest), word_num(w)),
+    };
+}
+
+// The program, when the words are exactly a counted list of files.
+pub fn front_end_read(g: List<Rule>, read: FilesRead) -> core::option::Option<SrcProgram> {
+    return match (read.rest) {
+        Nil -> front_end_files(g, read.files),
+        Cons(w, rest) -> None,
+    };
+}
+
+pub fn front_end_words(g: List<Rule>, words: List<i32>) -> core::option::Option<SrcProgram> {
+    return match (read_counted_files(words)) {
+        None -> None,
+        Some(read) -> front_end_read(g, read),
+    };
+}
+
 // grammar table begin
 // Generated by formal/tools/grammar_table.py from tables/parse_tables.meta.json
 // and the lexer token kinds; do not edit. Production k of grammar/lanius.bnf is

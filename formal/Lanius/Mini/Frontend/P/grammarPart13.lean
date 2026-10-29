@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 public import Lanius.Mini.Frontend.P.noToken
-import Lanius.Mini.Frontend.P.buildFiles
+import Lanius.Mini.Frontend.P.frontEndWords
 import Lanius.Mini.Frontend.P.grammarPart8
 
 public section

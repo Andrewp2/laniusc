@@ -46,6 +46,9 @@ def src_p_compare : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize
 /-- mini::selfhost::p_const -/
 def src_p_const : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000d0#64) }
 
+/-- mini::selfhost::p_contracts_none -/
+def src_p_contracts_none : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000141#64) }
+
 /-- mini::selfhost::p_div_tail -/
 def src_p_div_tail : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000099#64) }
 

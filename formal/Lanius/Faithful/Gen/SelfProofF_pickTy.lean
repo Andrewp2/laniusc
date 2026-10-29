@@ -122,10 +122,10 @@ theorem step_find_bind {prog : SrcProgram} {prims : Prims} {ix_find_bind ix_find
   simp only [src_find_bind] at h
   faithful [Lanius.Mini.findBind]
 
-theorem step_match_arg {prog : SrcProgram} {prims : Prims} {ix_match_arg ix_node_prod ix_kid ix_minus ix_p_generic_argument_type ix_match_ty : Nat} (fn : prog.funcs[ix_match_arg]? = some (src_match_arg ix_node_prod ix_kid ix_minus ix_p_generic_argument_type ix_match_ty)) (np : prims.isPrim ix_match_arg = false)
+theorem step_match_arg {prog : SrcProgram} {prims : Prims} {ix_match_arg ix_minus ix_node_prod ix_kid ix_p_generic_argument_type ix_match_ty : Nat} (fn : prog.funcs[ix_match_arg]? = some (src_match_arg ix_minus ix_node_prod ix_kid ix_p_generic_argument_type ix_match_ty)) (np : prims.isPrim ix_match_arg = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_p_generic_argument_type : Certified (∀ {n : Nat}, Stmt_p_generic_argument_type prog prims ix_p_generic_argument_type n)) {n : Nat}
     (ih_match_ty : Certified (Stmt_match_ty prog prims ix_match_ty n)) :
     Stmt_match_arg prog prims ix_match_arg (n + 1) := by
@@ -134,9 +134,9 @@ theorem step_match_arg {prog : SrcProgram} {prims : Prims} {ix_match_arg ix_node
   simp only [src_match_arg] at h
   faithful [Lanius.Mini.matchArg]
 
-theorem step_match_args {prog : SrcProgram} {prims : Prims} {ix_match_args ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_match_args_next ix_match_arg : Nat} (fn : prog.funcs[ix_match_args]? = some (src_match_args ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_match_args_next ix_match_arg)) (np : prims.isPrim ix_match_args = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
+theorem step_match_args {prog : SrcProgram} {prims : Prims} {ix_match_args ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_match_args_next ix_match_arg : Nat} (fn : prog.funcs[ix_match_args]? = some (src_match_args ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_match_args_next ix_match_arg)) (np : prims.isPrim ix_match_args = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n)) {n : Nat}
     (ih_match_args_next : Certified (Stmt_match_args_next prog prims ix_match_args_next n))
     (ih_match_arg : Certified (Stmt_match_arg prog prims ix_match_arg n)) :
@@ -198,11 +198,11 @@ theorem step_match_same_decl {prog : SrcProgram} {prims : Prims} {ix_match_same_
   simp only [src_match_same_decl] at h
   faithful [Lanius.Mini.matchSameDecl]
 
-theorem step_match_ty {prog : SrcProgram} {prims : Prims} {ix_match_ty ix_node_prod ix_list_items ix_kid ix_minus ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_match_path : Nat} (fn : prog.funcs[ix_match_ty]? = some (src_match_ty ix_node_prod ix_list_items ix_kid ix_minus ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_match_ty ix_match_path)) (np : prims.isPrim ix_match_ty = false)
+theorem step_match_ty {prog : SrcProgram} {prims : Prims} {ix_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_match_path : Nat} (fn : prog.funcs[ix_match_ty]? = some (src_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_match_ty ix_match_path)) (np : prims.isPrim ix_match_ty = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_p_type_array : Certified (∀ {n : Nat}, Stmt_p_type_array prog prims ix_p_type_array n))
     (ext_p_type_slice_tail : Certified (∀ {n : Nat}, Stmt_p_type_slice_tail prog prims ix_p_type_slice_tail n))
     (ext_p_type_ident : Certified (∀ {n : Nat}, Stmt_p_type_ident prog prims ix_p_type_ident n))
@@ -216,9 +216,9 @@ theorem step_match_ty {prog : SrcProgram} {prims : Prims} {ix_match_ty ix_node_p
   simp only [src_match_ty] at h
   faithful [Lanius.Mini.matchTy]
 
-theorem step_match_tys {prog : SrcProgram} {prims : Prims} {ix_match_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_match_ty ix_match_tys_next : Nat} (fn : prog.funcs[ix_match_tys]? = some (src_match_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_match_ty ix_match_tys_next)) (np : prims.isPrim ix_match_tys = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
+theorem step_match_tys {prog : SrcProgram} {prims : Prims} {ix_match_tys ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_match_ty ix_match_tys_next : Nat} (fn : prog.funcs[ix_match_tys]? = some (src_match_tys ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_match_ty ix_match_tys_next)) (np : prims.isPrim ix_match_tys = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n))
     (ext_match_ty : Certified (∀ {n : Nat}, Stmt_match_ty prog prims ix_match_ty n)) {n : Nat}
     (ih_match_tys_next : Certified (Stmt_match_tys_next prog prims ix_match_tys_next n)) :

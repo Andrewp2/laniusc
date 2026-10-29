@@ -91,10 +91,10 @@ theorem step_all_within {prog : SrcProgram} {prims : Prims} {ix_all_within ix_un
   simp only [src_all_within] at h
   faithful [Lanius.Mini.allWithin]
 
-theorem step_arg_slots {prog : SrcProgram} {prims : Prims} {ix_arg_slots ix_empty_of_usize ix_cons_of_usize ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_arg_slots]? = some (src_arg_slots ix_empty_of_usize ix_cons_of_usize ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_arg_slots)) (np : prims.isPrim ix_arg_slots = false)
+theorem step_arg_slots {prog : SrcProgram} {prims : Prims} {ix_arg_slots ix_plus ix_empty_of_usize ix_cons_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_arg_slots]? = some (src_arg_slots ix_plus ix_empty_of_usize ix_cons_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_arg_slots)) (np : prims.isPrim ix_arg_slots = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Expr prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr n)) {n : Nat}
     (ih_arg_slots : Certified (Stmt_arg_slots prog prims ix_arg_slots n)) :
     Stmt_arg_slots prog prims ix_arg_slots (n + 1) := by

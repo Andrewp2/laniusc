@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::mask -/
-def src_UintTy_mask : SrcFunc := { params := [{ id := 5, ty := ty18 }], ret := SrcType.uint (UintTy.uint64), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 5)) ty18 (SrcType.uint (UintTy.uint64)) [[], [], [], []] [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x00000000000000ff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x00000000ffffffff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0xffffffffffffffff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0xffffffffffffffff#64)]) }
+def src_UintTy_mask : SrcFunc := { params := [{ id := 5, ty := ty4 }], ret := SrcType.uint (UintTy.uint64), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 5)) ty4 (SrcType.uint (UintTy.uint64)) [[], [], [], []] [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x00000000000000ff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x00000000ffffffff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0xffffffffffffffff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0xffffffffffffffff#64)]) }
 
 end
 

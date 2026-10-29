@@ -58,105 +58,54 @@ DRIVER = f'''module app::main;
 import core::option;
 import mini::selfhost;
 
-// The input: word 0 is the file count, word 1 + f the offset of file f's
-// record (token count, token offset, prod count, prod offset, parent count,
-// parent offset); a token is 4 words (kind, start, text length, text offset).
-// The output: the entry count, the entries, the image length, the bytes;
-// the result is the number of words written, or -1 when the program is
-// rejected.
+// The input words, as front_end_words reads them (formal/lani/mini/frontend.lani):
+// the file count, then each file's counted tokens (kind, start, counted
+// text), productions and parents. The output words, as compile_words gives
+// them: the entry count, the entries, the image length, the bytes. The
+// result is the number of words written, or -1 when the program is
+// rejected. Everything but reading the input and writing the output is pure
+// selfhost code, whose Lean meaning is its extraction (roadmap V1).
 fn w(input: ptr, words: i32, output: ptr, room: i32) -> i32 {{
     let data: [i32] = slice_from_raw_parts(input, words);
     let out: [i32] = slice_from_raw_parts(output, room);
-    return oracle_emit(out, oracle_run(data));
+    let read: {S}List<i32> = oracle_read(data, 0, words as usize, {S}empty());
+    return oracle_put(out, {S}compile_words({S}front_end_words({S}grammar(), read)));
 }}
 
-fn oracle_run(data: [i32]) -> core::option::Option<{S}Binary> {{
-    return match ({S}front_end_files({S}grammar(), oracle_files(data, 0, data[0] as usize))) {{
-        None -> None,
-        Some(program) -> {S}compile_source(program),
-    }};
+// data[lo..hi] in front of tail. Each call halves the range, so the
+// recursion is as deep as log2 of the input's length.
+fn oracle_read(data: [i32], lo: usize, hi: usize, tail: {S}List<i32>) -> {S}List<i32> {{
+    if (hi - lo > 1) {{
+        let mid: usize = lo + (hi - lo) / 2;
+        let right: {S}List<i32> = oracle_read(data, mid, hi, tail);
+        return oracle_read(data, lo, mid, right);
+    }}
+    if (hi > lo) {{
+        return {S}cons(data[lo], tail);
+    }}
+    return tail;
 }}
 
-fn oracle_emit(out: [i32], result: core::option::Option<{S}Binary>) -> i32 {{
+fn oracle_put(out: [i32], result: core::option::Option<{S}List<i32>>) -> i32 {{
     return match (result) {{
         None -> 0 - 1,
-        Some(binary) -> oracle_put(out, binary),
+        Some(ws) -> oracle_write(out, 0, ws) as i32,
     }};
 }}
 
-fn oracle_put(out: [i32], binary: {S}Binary) -> i32 {{
-    let at: usize = oracle_write_usizes(out, 0, binary.entries);
-    return oracle_write_bytes(out, at, binary.image) as i32;
-}}
-
-fn oracle_write_usizes(out: [i32], at: usize, xs: {S}List<usize>) -> usize {{
-    out[at] = {S}length(xs) as i32;
-    return oracle_fill_usizes(out, at + 1, xs);
-}}
-
-fn oracle_fill_usizes(out: [i32], at: usize, xs: {S}List<usize>) -> usize {{
-    return match (xs) {{
+fn oracle_write(out: [i32], at: usize, ws: {S}List<i32>) -> usize {{
+    return match (ws) {{
         Nil -> at,
-        Cons(x, rest) -> oracle_fill_usize(out, at, x, {S}unbox(rest)),
+        Cons(x, rest) -> oracle_write_one(out, at, x, {S}unbox(rest)),
     }};
 }}
 
-fn oracle_fill_usize(out: [i32], at: usize, x: usize, rest: {S}List<usize>) -> usize {{
-    out[at] = x as i32;
-    return oracle_fill_usizes(out, at + 1, rest);
-}}
-
-fn oracle_write_bytes(out: [i32], at: usize, xs: {S}List<u8>) -> usize {{
-    out[at] = {S}length(xs) as i32;
-    return oracle_fill_bytes(out, at + 1, xs);
-}}
-
-fn oracle_fill_bytes(out: [i32], at: usize, xs: {S}List<u8>) -> usize {{
-    return match (xs) {{
-        Nil -> at,
-        Cons(x, rest) -> oracle_fill_byte(out, at, x, {S}unbox(rest)),
-    }};
-}}
-
-fn oracle_fill_byte(out: [i32], at: usize, x: u8, rest: {S}List<u8>) -> usize {{
-    out[at] = x as i32;
-    return oracle_fill_bytes(out, at + 1, rest);
-}}
-
-fn oracle_files(data: [i32], f: usize, count: usize) -> {S}List<{S}FileInput> {{
-    if (f == count) {{
-        return {S}empty();
-    }}
-    return {S}cons(oracle_file(data, data[1 + f] as usize), oracle_files(data, f + 1, count));
-}}
-
-fn oracle_file(data: [i32], o: usize) -> {S}FileInput {{
-    return {S}FileInput {{
-        tokens: oracle_tokens(data, data[o + 1] as usize, 0, data[o] as usize),
-        prods: oracle_nums(data, data[o + 3] as usize, 0, data[o + 2] as usize),
-        parents: oracle_nums(data, data[o + 5] as usize, 0, data[o + 4] as usize),
-    }};
-}}
-
-fn oracle_tokens(data: [i32], base: usize, i: usize, count: usize) -> {S}List<{S}Token> {{
-    if (i == count) {{
-        return {S}empty();
-    }}
-    let at: usize = base + 4 * i;
-    let token: {S}Token = {S}Token {{
-        kind: data[at] as usize,
-        start: data[at + 1] as usize,
-        text: oracle_nums(data, data[at + 3] as usize, 0, data[at + 2] as usize),
-    }};
-    return {S}cons(token, oracle_tokens(data, base, i + 1, count));
-}}
-
-fn oracle_nums(data: [i32], base: usize, i: usize, count: usize) -> {S}List<usize> {{
-    if (i == count) {{
-        return {S}empty();
-    }}
-    // As u32 first: a parse tree's root has parent 2^32 - 1.
-    return {S}cons((data[base + i] as u32) as usize, oracle_nums(data, base, i + 1, count));
+// The rest first, then this word: every box is read before the first
+// write, so the writes cannot change a list still to be read.
+fn oracle_write_one(out: [i32], at: usize, x: i32, rest: {S}List<i32>) -> usize {{
+    let written: usize = oracle_write(out, at + 1, rest);
+    out[at] = x;
+    return written;
 }}
 '''
 
@@ -222,21 +171,13 @@ def selfhost_text():
 
 def layout(files):
     """The driver's input words for files of (tokens, prods, parents)."""
-    words = [len(files)] + [0] * len(files)
-    for f, (tokens, prods, parents) in enumerate(files):
-        record = len(words)
-        words[1 + f] = record
-        words += [0] * 6
-        token_at = len(words)
-        words += [0] * (4 * len(tokens))
-        for i, (kind, start, text) in enumerate(tokens):
-            words[token_at + 4 * i:token_at + 4 * i + 4] = [kind, start, len(text), len(words)]
-            words += text
-        prod_at = len(words)
-        words += prods
-        parent_at = len(words)
-        words += parents
-        words[record:record + 6] = [len(tokens), token_at, len(prods), prod_at, len(parents), parent_at]
+    words = [len(files)]
+    for tokens, prods, parents in files:
+        words.append(len(tokens))
+        for kind, start, text in tokens:
+            words += [kind, start, len(text)] + list(text)
+        words += [len(prods)] + list(prods)
+        words += [len(parents)] + list(parents)
     return words
 
 

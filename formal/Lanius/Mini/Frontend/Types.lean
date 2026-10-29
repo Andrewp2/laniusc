@@ -341,4 +341,29 @@ structure FileInput where
   parents : List Nat
   deriving DecidableEq, Repr
 
+structure NumsRead where
+  nums : List Nat
+  rest : List (BitVec 32)
+  deriving DecidableEq, Repr
+
+structure TokenRead where
+  token : Token
+  rest : List (BitVec 32)
+  deriving DecidableEq, Repr
+
+structure TokensRead where
+  tokens : List Token
+  rest : List (BitVec 32)
+  deriving DecidableEq, Repr
+
+structure FileRead where
+  file : FileInput
+  rest : List (BitVec 32)
+  deriving DecidableEq, Repr
+
+structure FilesRead where
+  files : List FileInput
+  rest : List (BitVec 32)
+  deriving DecidableEq, Repr
+
 end Lanius.Mini

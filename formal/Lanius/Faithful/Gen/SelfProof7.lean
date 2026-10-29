@@ -30,6 +30,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_boxed_of_mini_selfhost_List_i32 {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_i32 : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_i32 = true) {n : Nat} :
+    Stmt_boxed_of_mini_selfhost_List_i32 prog prims ix_boxed_of_mini_selfhost_List_i32 n :=
+  fun h r => prim_cert np h r
+
 theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_Arity {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_Arity : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_Arity = true) {n : Nat} :
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Arity prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Arity n :=
   fun h r => prim_cert np h r
@@ -62,9 +66,9 @@ theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_Ty {prog : SrcProgram} {
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Ty n :=
   fun h r => prim_cert np h r
 
-theorem step_concat_of_mini_selfhost_List_usize {prog : SrcProgram} {prims : Prims} {ix_concat_of_mini_selfhost_List_usize ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_concat_of_mini_selfhost_List_usize]? = some (src_concat_of_mini_selfhost_List_usize ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize ix_concat_of_mini_selfhost_List_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize)) (np : prims.isPrim ix_concat_of_mini_selfhost_List_usize = false)
-    (ext_boxed_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize n)) {n : Nat}
+theorem step_concat_of_mini_selfhost_List_usize {prog : SrcProgram} {prims : Prims} {ix_concat_of_mini_selfhost_List_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_concat_of_mini_selfhost_List_usize]? = some (src_concat_of_mini_selfhost_List_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize ix_concat_of_mini_selfhost_List_usize)) (np : prims.isPrim ix_concat_of_mini_selfhost_List_usize = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize n))
+    (ext_boxed_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize n)) {n : Nat}
     (ih_concat_of_mini_selfhost_List_usize : Certified (Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize n)) :
     Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1
@@ -286,6 +290,10 @@ theorem proof_single_of_u8 {prog : SrcProgram} {prims : Prims} {ix_single_of_u8 
   rw [pcall_succ np fn] at h
   simp only [src_single_of_u8] at h
   faithful []
+
+theorem proof_unbox_of_mini_selfhost_List_i32 {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_i32 : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_i32 = true) {n : Nat} :
+    Stmt_unbox_of_mini_selfhost_List_i32 prog prims ix_unbox_of_mini_selfhost_List_i32 n :=
+  fun h r => prim_cert np h r
 
 theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree = true) {n : Nat} :
     Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_CTree n :=

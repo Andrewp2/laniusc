@@ -1594,6 +1594,10 @@ class Extractor:
             return term, U32
         if source == U32 and target == U64:
             return app('BitVec.setWidth', [('64', ATOM), term]), U64
+        if source == U32 and target == USIZE:
+            return (f'{paren(term, ATOM)}.toNat', ATOM), USIZE
+        if source == U8 and target == I32:
+            return app('BitVec.ofNat', [('32', ATOM), (f'{paren(term, ATOM)}.toNat', ATOM)]), I32
         if source in (I32, U32, U64) and target == U8:
             return app('UInt8.ofNat', [(f'{paren(term, ATOM)}.toNat', ATOM)]), U8
         fail(f'cast {source!r} as {target!r} is not in the extracted subset', t)

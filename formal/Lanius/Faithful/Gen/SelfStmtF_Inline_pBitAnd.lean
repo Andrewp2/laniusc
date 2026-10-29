@@ -64,6 +64,10 @@ abbrev Stmt_p_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pConst) w
 
+abbrev Stmt_p_contracts_none (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pContractsNone) w
+
 abbrev Stmt_p_div_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pDivTail) w

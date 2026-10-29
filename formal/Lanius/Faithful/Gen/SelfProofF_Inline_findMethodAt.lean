@@ -45,10 +45,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_binder_of {prog : SrcProgram} {prims : Prims} {ix_binder_of ix_node_prod ix_kid ix_minus ix_kid_token ix_member ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_cons_binder : Nat} (fn : prog.funcs[ix_binder_of]? = some (src_binder_of ix_node_prod ix_kid ix_minus ix_kid_token ix_member ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_cons_binder)) (np : prims.isPrim ix_binder_of = false)
+theorem step_binder_of {prog : SrcProgram} {prims : Prims} {ix_binder_of ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_cons_binder : Nat} (fn : prog.funcs[ix_binder_of]? = some (src_binder_of ix_minus ix_node_prod ix_kid ix_kid_token ix_member ix_cons_of_mini_selfhost_Local ix_path_name ix_p_pattern_ident ix_p_pattern_plain ix_binders_of ix_is_some_name ix_cons_binder)) (np : prims.isPrim ix_binder_of = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
     (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n))
     (ext_cons_of_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Local prog prims ix_cons_of_mini_selfhost_Local n))
@@ -99,9 +99,9 @@ theorem proof_p_add {prog : SrcProgram} {prims : Prims} {ix_p_add : Nat} (fn : p
   simp only [src_p_add] at h
   faithful [Lanius.Mini.Inline.pAdd]
 
-theorem step_param_of {prog : SrcProgram} {prims : Prims} {ix_param_of ix_node_prod ix_minus ix_kid_token ix_member ix_params_of ix_ty_of ix_p_param_named ix_p_param_self ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local : Nat} (fn : prog.funcs[ix_param_of]? = some (src_param_of ix_node_prod ix_minus ix_kid_token ix_member ix_params_of ix_ty_of ix_p_param_named ix_p_param_self ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local)) (np : prims.isPrim ix_param_of = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+theorem step_param_of {prog : SrcProgram} {prims : Prims} {ix_param_of ix_minus ix_node_prod ix_kid_token ix_member ix_params_of ix_ty_of ix_p_param_named ix_p_param_self ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local : Nat} (fn : prog.funcs[ix_param_of]? = some (src_param_of ix_minus ix_node_prod ix_kid_token ix_member ix_params_of ix_ty_of ix_p_param_named ix_p_param_self ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local)) (np : prims.isPrim ix_param_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
     (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n))
     (ext_ty_of : Certified (∀ {n : Nat}, Stmt_ty_of prog prims ix_ty_of n))

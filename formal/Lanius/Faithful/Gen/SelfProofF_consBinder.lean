@@ -65,11 +65,11 @@ theorem proof_arm_names {prog : SrcProgram} {prims : Prims} {ix_arm_names ix_nod
   simp only [src_arm_names] at h
   faithful [Lanius.Mini.armNames]
 
-theorem proof_arm_of {prog : SrcProgram} {prims : Prims} {ix_arm_of ix_empty_of_usize ix_node_prod ix_list_items ix_kid ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_arm_bound : Nat} (fn : prog.funcs[ix_arm_of]? = some (src_arm_of ix_empty_of_usize ix_node_prod ix_list_items ix_kid ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_arm_bound)) (np : prims.isPrim ix_arm_of = false)
-    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
+theorem proof_arm_of {prog : SrcProgram} {prims : Prims} {ix_arm_of ix_node_prod ix_list_items ix_kid ix_empty_of_usize ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_arm_bound : Nat} (fn : prog.funcs[ix_arm_of]? = some (src_arm_of ix_node_prod ix_list_items ix_kid ix_empty_of_usize ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_arm_bound)) (np : prims.isPrim ix_arm_of = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
     (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
     (ext_p_pattern_ident : Certified (∀ {n : Nat}, Stmt_p_pattern_ident prog prims ix_p_pattern_ident n))
     (ext_arm_named : Certified (∀ {n : Nat}, Stmt_arm_named prog prims ix_arm_named n))
@@ -107,9 +107,9 @@ theorem proof_arms_naming_at {prog : SrcProgram} {prims : Prims} {ix_arms_naming
   simp only [src_arms_naming_at] at h
   faithful [Lanius.Mini.armsNamingAt]
 
-theorem step_binders_of {prog : SrcProgram} {prims : Prims} {ix_binders_of ix_empty_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_binder_of : Nat} (fn : prog.funcs[ix_binders_of]? = some (src_binders_of ix_empty_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_binder_of)) (np : prims.isPrim ix_binders_of = false)
-    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
+theorem step_binders_of {prog : SrcProgram} {prims : Prims} {ix_binders_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_binder_of : Nat} (fn : prog.funcs[ix_binders_of]? = some (src_binders_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_usize ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_binder_of)) (np : prims.isPrim ix_binders_of = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
+    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n)) {n : Nat}
     (ih_binder_of : Certified (Stmt_binder_of prog prims ix_binder_of n)) :
     Stmt_binders_of prog prims ix_binders_of (n + 1) := by

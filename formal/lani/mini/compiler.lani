@@ -5323,3 +5323,38 @@ pub fn compile_source(prog: SrcProgram) -> core::option::Option<Binary> {
     }
     return None;
 }
+
+// ---------------------------------------------------------------- the driver's output
+
+// The words a driver writes for a program the front end read (or did not):
+// the entry count, the entries, the image length and the image's bytes, one
+// word each; none when the program is rejected (roadmap V1). `compile_words`
+// is the entry.
+
+pub fn usize_words(xs: List<usize>) -> List<i32> {
+    return match (xs) {
+        Nil -> empty(),
+        Cons(x, rest) -> cons(x as i32, usize_words(unbox(rest))),
+    };
+}
+
+pub fn byte_words(xs: List<u8>) -> List<i32> {
+    return match (xs) {
+        Nil -> empty(),
+        Cons(x, rest) -> cons(x as i32, byte_words(unbox(rest))),
+    };
+}
+
+pub fn binary_words(binary: core::option::Option<Binary>) -> core::option::Option<List<i32>> {
+    return match (binary) {
+        None -> None,
+        Some(b) -> Some(concat(cons(length(b.entries) as i32, usize_words(b.entries)), cons(length(b.image) as i32, byte_words(b.image)))),
+    };
+}
+
+pub fn compile_words(program: core::option::Option<SrcProgram>) -> core::option::Option<List<i32>> {
+    return match (program) {
+        None -> None,
+        Some(prog) -> binary_words(compile_source(prog)),
+    };
+}

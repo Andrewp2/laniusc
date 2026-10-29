@@ -34,7 +34,7 @@ abbrev Stmt_MemWidth_prefix (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
 
 abbrev Stmt_MemWidth_rex (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MemWidth} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepMemWidth x0 v0 →
-    (RepList 15 RepU8) (Lanius.Mini.MemWidth.rex x0) w
+    (RepList 61 RepU8) (Lanius.Mini.MemWidth.rex x0) w
 
 abbrev Stmt_Word_prefix (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Word} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepWord x0 v0 →

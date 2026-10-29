@@ -25,7 +25,7 @@ abbrev Stmt_Stmt_dead_before (prog : SrcProgram) (prims : Prims) (ix n : Nat) : 
     RepBool (Lanius.Mini.Stmt.deadBefore x0 x1) w
 
 abbrev Stmt_Stmt_optimize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepStmt x0 v0 → (RepList 169 RepFact) x1 v1 →
+  ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepStmt x0 v0 → (RepList 170 RepFact) x1 v1 →
     RepStmt (Lanius.Mini.Stmt.optimize x0 x1) w
 
 abbrev Stmt_loop_unless_zero (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -33,8 +33,8 @@ abbrev Stmt_loop_unless_zero (prog : SrcProgram) (prims : Prims) (ix n : Nat) : 
     RepStmt (Lanius.Mini.loopUnlessZero x0 x1 x2) w
 
 abbrev Stmt_optimize_funcs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Func} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 101 RepFunc) x0 v0 →
-    (RepList 101 RepFunc) (Lanius.Mini.optimizeFuncs x0) w
+  ∀ {x0 : List Lanius.Mini.Func} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 80 RepFunc) x0 v0 →
+    (RepList 80 RepFunc) (Lanius.Mini.optimizeFuncs x0) w
 
 abbrev Stmt_optimize_ite (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {x1 : Lanius.Mini.Stmt} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepExpr x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 →

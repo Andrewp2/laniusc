@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_compound_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {x4 : Nat} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 198 RepLocal) x2 v2 → RepCTree x3 v3 → RepNat x4 v4 → RepCTree x5 v5 →
-    (RepOption 208 RepMStmt) (Lanius.Mini.compoundEval x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {x4 : Nat} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 213 RepLocal) x2 v2 → RepCTree x3 v3 → RepNat x4 v4 → RepCTree x5 v5 →
+    (RepOption 221 RepMStmt) (Lanius.Mini.compoundEval x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfCert

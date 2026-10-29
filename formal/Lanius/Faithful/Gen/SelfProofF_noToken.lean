@@ -33,9 +33,9 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_attach {prog : SrcProgram} {prims : Prims} {ix_attach ix_empty_of_mini_selfhost_CTree ix_attach_sym ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Sym : Nat} (fn : prog.funcs[ix_attach]? = some (src_attach ix_empty_of_mini_selfhost_CTree ix_attach_sym ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Sym)) (np : prims.isPrim ix_attach = false)
-    (ext_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_CTree prog prims ix_empty_of_mini_selfhost_CTree n))
+theorem step_attach {prog : SrcProgram} {prims : Prims} {ix_attach ix_minus ix_empty_of_mini_selfhost_CTree ix_attach_sym ix_unbox_of_mini_selfhost_List_mini_selfhost_Sym : Nat} (fn : prog.funcs[ix_attach]? = some (src_attach ix_minus ix_empty_of_mini_selfhost_CTree ix_attach_sym ix_unbox_of_mini_selfhost_List_mini_selfhost_Sym)) (np : prims.isPrim ix_attach = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_CTree prog prims ix_empty_of_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Sym : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Sym prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Sym n)) {n : Nat}
     (ih_attach_sym : Certified (Stmt_attach_sym prog prims ix_attach_sym n)) :
     Stmt_attach prog prims ix_attach (n + 1) := by

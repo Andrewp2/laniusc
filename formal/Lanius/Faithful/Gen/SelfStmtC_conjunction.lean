@@ -22,18 +22,18 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_SrcOp_lower (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    (RepOption 162 RepTyped) (Lanius.Mini.SrcOp.lower x0 x1 x2) w
+    (RepOption 149 RepTyped) (Lanius.Mini.SrcOp.lower x0 x1 x2) w
 
 abbrev Stmt_conjunction (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTyped x0 v0 → RepTyped x1 v1 →
-    (RepOption 162 RepTyped) (Lanius.Mini.conjunction x0 x1) w
+    (RepOption 149 RepTyped) (Lanius.Mini.conjunction x0 x1) w
 
 abbrev Stmt_disjunction (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTyped x0 v0 → RepTyped x1 v1 →
-    (RepOption 162 RepTyped) (Lanius.Mini.disjunction x0 x1) w
+    (RepOption 149 RepTyped) (Lanius.Mini.disjunction x0 x1) w
 
 abbrev Stmt_lower_scalar_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Binding} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepBinding x0 v0 →
-    (RepOption 162 RepTyped) (Lanius.Mini.lowerScalarLocal x0) w
+    (RepOption 149 RepTyped) (Lanius.Mini.lowerScalarLocal x0) w
 
 end Lanius.Faithful.SelfCert

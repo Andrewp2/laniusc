@@ -105,9 +105,9 @@ theorem proof_explicit_checked {prog : SrcProgram} {prims : Prims} {ix_explicit_
   simp only [src_explicit_checked] at h
   faithful [Lanius.Mini.explicitChecked]
 
-theorem proof_explicit_inst {prog : SrcProgram} {prims : Prims} {ix_explicit_inst ix_no_names ix_length_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_Ty ix_args_tys ix_explicit_checked : Nat} (fn : prog.funcs[ix_explicit_inst]? = some (src_explicit_inst ix_no_names ix_length_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_Ty ix_args_tys ix_explicit_checked)) (np : prims.isPrim ix_explicit_inst = false)
-    (ext_no_names : Certified (∀ {n : Nat}, Stmt_no_names prog prims ix_no_names n))
+theorem proof_explicit_inst {prog : SrcProgram} {prims : Prims} {ix_explicit_inst ix_length_of_mini_selfhost_List_usize ix_no_names ix_length_of_mini_selfhost_Ty ix_args_tys ix_explicit_checked : Nat} (fn : prog.funcs[ix_explicit_inst]? = some (src_explicit_inst ix_length_of_mini_selfhost_List_usize ix_no_names ix_length_of_mini_selfhost_Ty ix_args_tys ix_explicit_checked)) (np : prims.isPrim ix_explicit_inst = false)
     (ext_length_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_usize prog prims ix_length_of_mini_selfhost_List_usize n))
+    (ext_no_names : Certified (∀ {n : Nat}, Stmt_no_names prog prims ix_no_names n))
     (ext_length_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_Ty prog prims ix_length_of_mini_selfhost_Ty n))
     (ext_args_tys : Certified (∀ {n : Nat}, Stmt_args_tys prog prims ix_args_tys n))
     (ext_explicit_checked : Certified (∀ {n : Nat}, Stmt_explicit_checked prog prims ix_explicit_checked n)) {n : Nat} :

@@ -21,35 +21,35 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_cons_name (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Nat)} {x1 : Option (List (List Nat))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 145 (RepList 9 RepNat)) x0 v0 → (RepOption 114 (RepList 42 (RepList 9 RepNat))) x1 v1 →
-    (RepOption 114 (RepList 42 (RepList 9 RepNat))) (Lanius.Mini.consName x0 x1) w
+  ∀ {x0 : Option (List Nat)} {x1 : Option (List (List Nat))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 179 (RepList 24 RepNat)) x0 v0 → (RepOption 133 (RepList 30 (RepList 24 RepNat))) x1 v1 →
+    (RepOption 133 (RepList 30 (RepList 24 RepNat))) (Lanius.Mini.consName x0 x1) w
 
 abbrev Stmt_cons_name_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Option (List (List Nat))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 9 RepNat) x0 v0 → (RepOption 114 (RepList 42 (RepList 9 RepNat))) x1 v1 →
-    (RepOption 114 (RepList 42 (RepList 9 RepNat))) (Lanius.Mini.consNameTail x0 x1) w
+  ∀ {x0 : List Nat} {x1 : Option (List (List Nat))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → (RepOption 133 (RepList 30 (RepList 24 RepNat))) x1 v1 →
+    (RepOption 133 (RepList 30 (RepList 24 RepNat))) (Lanius.Mini.consNameTail x0 x1) w
 
 abbrev Stmt_distinct (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 42 (RepList 9 RepNat)) x0 v0 →
+  ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 30 (RepList 24 RepNat)) x0 v0 →
     RepBool (Lanius.Mini.distinct x0) w
 
 abbrev Stmt_distinct_modules (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List (List Nat))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 83 (RepList 42 (RepList 9 RepNat))) x0 v0 →
+  ∀ {x0 : List (List (List Nat))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 116 (RepList 30 (RepList 24 RepNat))) x0 v0 →
     RepBool (Lanius.Mini.distinctModules x0) w
 
 abbrev Stmt_module_member (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List (List Nat))} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 83 (RepList 42 (RepList 9 RepNat))) x0 v0 → (RepList 42 (RepList 9 RepNat)) x1 v1 →
+  ∀ {x0 : List (List (List Nat))} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 116 (RepList 30 (RepList 24 RepNat))) x0 v0 → (RepList 30 (RepList 24 RepNat)) x1 v1 →
     RepBool (Lanius.Mini.moduleMember x0 x1) w
 
 abbrev Stmt_position (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 42 (RepList 9 RepNat)) x0 v0 → (RepList 9 RepNat) x1 v1 → RepNat x2 v2 →
-    (RepOption 193 RepNat) (Lanius.Mini.position x0 x1 x2) w
+  ∀ {x0 : List (List Nat)} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 24 RepNat) x1 v1 → RepNat x2 v2 →
+    (RepOption 208 RepNat) (Lanius.Mini.position x0 x1 x2) w
 
 abbrev Stmt_same_spellings (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 42 (RepList 9 RepNat)) x0 v0 → (RepList 42 (RepList 9 RepNat)) x1 v1 →
+  ∀ {x0 : List (List Nat)} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 30 (RepList 24 RepNat)) x1 v1 →
     RepBool (Lanius.Mini.sameSpellings x0 x1) w
 
 abbrev Stmt_single_name (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 42 (RepList 9 RepNat)) x0 v0 →
-    (RepOption 145 (RepList 9 RepNat)) (Lanius.Mini.singleName x0) w
+  ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 30 (RepList 24 RepNat)) x0 v0 →
+    (RepOption 179 (RepList 24 RepNat)) (Lanius.Mini.singleName x0) w
 
 end Lanius.Faithful.SelfCert

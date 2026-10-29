@@ -169,11 +169,11 @@ theorem proof_literal_head {prog : SrcProgram} {prims : Prims} {ix_literal_head 
   simp only [src_literal_head] at h
   faithful [Lanius.Mini.literalHead]
 
-theorem step_same_names {prog : SrcProgram} {prims : Prims} {ix_same_names ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_same_text : Nat} (fn : prog.funcs[ix_same_names]? = some (src_same_names ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_same_text ix_same_names)) (np : prims.isPrim ix_same_names = false)
+theorem step_same_names {prog : SrcProgram} {prims : Prims} {ix_same_names ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_same_text : Nat} (fn : prog.funcs[ix_same_names]? = some (src_same_names ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_same_text ix_same_names)) (np : prims.isPrim ix_same_names = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize n))
     (ext_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_text_Token_of_mini_selfhost_Token prog prims ix_field_text_Token_of_mini_selfhost_Token n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize n))
     (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n)) {n : Nat}
     (ih_same_names : Certified (Stmt_same_names prog prims ix_same_names n)) :
     Stmt_same_names prog prims ix_same_names (n + 1) := by

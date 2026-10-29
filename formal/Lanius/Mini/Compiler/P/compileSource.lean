@@ -25,6 +25,26 @@ def compileSource (prog : SrcProgram) : Option Binary :=
   else
     none
 
+def usizeWords (xs : List Nat) : List (BitVec 32) :=
+  match xs with
+  | [] => []
+  | x :: rest => BitVec.ofNat 32 x :: usizeWords rest
+
+def byteWords (xs : List UInt8) : List (BitVec 32) :=
+  match xs with
+  | [] => []
+  | x :: rest => BitVec.ofNat 32 x.toNat :: byteWords rest
+
+def binaryWords (binary : Option Binary) : Option (List (BitVec 32)) :=
+  match binary with
+  | none => none
+  | some b => some (BitVec.ofNat 32 b.entries.length :: usizeWords b.entries ++ BitVec.ofNat 32 b.image.length :: byteWords b.image)
+
+def compileWords (program : Option SrcProgram) : Option (List (BitVec 32)) :=
+  match program with
+  | none => none
+  | some prog => binaryWords (compileSource prog)
+
 @[expose] def Inline.seqCode (base : Nat) (pos : Nat) (firstCode : List Instr) (second : Stmt) : List Instr :=
   firstCode ++ compileStmt base (pos + codeSize firstCode) second
 

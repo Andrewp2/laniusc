@@ -34,10 +34,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_decimal_digit {prog : SrcProgram} {prims : Prims} {ix_decimal_digit ix_plus ix_times ix_minus ix_decimal : Nat} (fn : prog.funcs[ix_decimal_digit]? = some (src_decimal_digit ix_plus ix_times ix_minus ix_decimal)) (np : prims.isPrim ix_decimal_digit = false)
+theorem step_decimal_digit {prog : SrcProgram} {prims : Prims} {ix_decimal_digit ix_plus ix_minus ix_times ix_decimal : Nat} (fn : prog.funcs[ix_decimal_digit]? = some (src_decimal_digit ix_plus ix_minus ix_times ix_decimal)) (np : prims.isPrim ix_decimal_digit = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n)) {n : Nat}
     (ih_decimal : Certified (Stmt_decimal prog prims ix_decimal n)) :
     Stmt_decimal_digit prog prims ix_decimal_digit (n + 1) := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
@@ -103,10 +103,10 @@ theorem step_variants_named_at {prog : SrcProgram} {prims : Prims} {ix_variants_
   simp only [src_variants_named_at] at h
   faithful [Lanius.Mini.Inline.variantsNamedAt]
 
-theorem step_wide_digit {prog : SrcProgram} {prims : Prims} {ix_wide_digit ix_plus ix_times ix_minus ix_wide_decimal : Nat} (fn : prog.funcs[ix_wide_digit]? = some (src_wide_digit ix_plus ix_times ix_minus ix_wide_decimal)) (np : prims.isPrim ix_wide_digit = false)
+theorem step_wide_digit {prog : SrcProgram} {prims : Prims} {ix_wide_digit ix_plus ix_minus ix_times ix_wide_decimal : Nat} (fn : prog.funcs[ix_wide_digit]? = some (src_wide_digit ix_plus ix_minus ix_times ix_wide_decimal)) (np : prims.isPrim ix_wide_digit = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n)) {n : Nat}
     (ih_wide_decimal : Certified (Stmt_wide_decimal prog prims ix_wide_decimal n)) :
     Stmt_wide_digit prog prims ix_wide_digit (n + 1) := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2

@@ -24,3 +24,28 @@ it still trusts, proof lines against code lines, and check time.
 
 Order of work: 3, 1, 2, 4, then 5 to 14. Steps 5 to 7 are the long stretch;
 12 is where the proofs start making laniusc itself more trustworthy.
+
+## Entirely verified (from 2026-10-28)
+
+The goal: no unproved implementation code between a program's source text
+and its x86 bytes. What stays trusted is specification only, each a short
+statement a reader must accept: the Lean kernel and its three axioms; Core as
+the meaning of Lanius; the lexical rules, the grammar and the reading (what
+a parse tree means); the x86 model; and what the operating system provides
+at startup. Everything that computes is proved against those. Feature work
+(`Vec` in the front pass, modules in the front pass, more optimizer passes)
+is not part of this goal.
+
+| # | step | status |
+|---|------|--------|
+| V1 | Extraction joined: a Core run of the self program's `compile_source` and `front_end_files` returns what the extracted Lean functions return (`call_sim`, the certificates and the representation relations in one theorem) | done (10-28): `driver_faithful` (`Faithful/SelfDriver.lean`, standard axioms). A completed Core run of the self program's entry `w` on input words `W` returns -1 or the length of `compileWords (frontEndWords grammar W)`, with the output view reading those words. It covers the driver's `oracle_read`, `oracle_put` and `oracle_write` by hand and the three roots by `call_sim` and their certificates; the representation relations are internal. Premises are in `TRUSTED_BASE.md`. Gate: all 21 steps pass, including `self-host-fixpoint` |
+| V2 | Every behaviour: when Core traps or runs out of every fuel, the compiled code does not return; so every x86 return is a Core return with the same value | |
+| V3 | A lexer in the verified compiler, proved equal to the lexical rules (`lexCanonical`) | |
+| V4 | The grammar is unambiguous on the subset, so the tree laniusc's parser gives is the only one | |
+| V5 | One theorem from source text and an untrusted parse tree to x86 (`compileText_correct`) | |
+| V6 | The ELF startup and exit wrapper composed with V5: the process's exit code is `main`'s Core result | |
+| V7 | The self-built compiler: its native run on a program's text gives an image for which V5 holds (CakeML style, from V1, V5 and the fixpoint) | |
+| V8 | The reading as an inductive relation on parse trees, with `build` proved sound against it, so `build`'s code is no longer the specification | |
+
+Order: V1, V2, V3, V4, V5, V6, V7, V8. Each step updates
+`TRUSTED_BASE.md` with what it removes.

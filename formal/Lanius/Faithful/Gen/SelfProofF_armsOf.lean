@@ -137,9 +137,9 @@ theorem proof_eff_called {prog : SrcProgram} {prims : Prims} {ix_eff_called ix_e
   simp only [src_eff_called] at h
   faithful [Lanius.Mini.effCalled]
 
-theorem step_eff_casts {prog : SrcProgram} {prims : Prims} {ix_eff_casts ix_kid ix_minus ix_has_kids ix_cast_type_of ix_x_cast_into : Nat} (fn : prog.funcs[ix_eff_casts]? = some (src_eff_casts ix_kid ix_minus ix_has_kids ix_eff_casts ix_cast_type_of ix_x_cast_into)) (np : prims.isPrim ix_eff_casts = false)
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+theorem step_eff_casts {prog : SrcProgram} {prims : Prims} {ix_eff_casts ix_minus ix_kid ix_has_kids ix_cast_type_of ix_x_cast_into : Nat} (fn : prog.funcs[ix_eff_casts]? = some (src_eff_casts ix_minus ix_kid ix_has_kids ix_eff_casts ix_cast_type_of ix_x_cast_into)) (np : prims.isPrim ix_eff_casts = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_has_kids : Certified (∀ {n : Nat}, Stmt_has_kids prog prims ix_has_kids n))
     (ext_cast_type_of : Certified (∀ {n : Nat}, Stmt_cast_type_of prog prims ix_cast_type_of n))
     (ext_x_cast_into : Certified (∀ {n : Nat}, Stmt_x_cast_into prog prims ix_x_cast_into n)) {n : Nat}

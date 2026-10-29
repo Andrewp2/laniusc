@@ -126,9 +126,9 @@ theorem proof_is_link {prog : SrcProgram} {prims : Prims} {ix_is_link ix_p_items
   simp only [src_is_link] at h
   faithful [Lanius.Mini.isLink]
 
-theorem step_items_cons {prog : SrcProgram} {prims : Prims} {ix_items_cons ix_node_prod ix_list_items ix_minus ix_items_in ix_is_link ix_join_items ix_has_kids ix_single_of_mini_selfhost_CTree : Nat} (fn : prog.funcs[ix_items_cons]? = some (src_items_cons ix_node_prod ix_list_items ix_minus ix_items_in ix_is_link ix_join_items ix_has_kids ix_single_of_mini_selfhost_CTree)) (np : prims.isPrim ix_items_cons = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+theorem step_items_cons {prog : SrcProgram} {prims : Prims} {ix_items_cons ix_minus ix_node_prod ix_list_items ix_items_in ix_is_link ix_join_items ix_has_kids ix_single_of_mini_selfhost_CTree : Nat} (fn : prog.funcs[ix_items_cons]? = some (src_items_cons ix_minus ix_node_prod ix_list_items ix_items_in ix_is_link ix_join_items ix_has_kids ix_single_of_mini_selfhost_CTree)) (np : prims.isPrim ix_items_cons = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_is_link : Certified (∀ {n : Nat}, Stmt_is_link prog prims ix_is_link n))
     (ext_join_items : Certified (∀ {n : Nat}, Stmt_join_items prog prims ix_join_items n))
     (ext_has_kids : Certified (∀ {n : Nat}, Stmt_has_kids prog prims ix_has_kids n))
@@ -141,10 +141,10 @@ theorem step_items_cons {prog : SrcProgram} {prims : Prims} {ix_items_cons ix_no
   simp only [src_items_cons] at h
   faithful [Lanius.Mini.itemsCons]
 
-theorem step_items_in {prog : SrcProgram} {prims : Prims} {ix_items_in ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_minus ix_items_cons : Nat} (fn : prog.funcs[ix_items_in]? = some (src_items_in ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_minus ix_items_cons)) (np : prims.isPrim ix_items_in = false)
+theorem step_items_in {prog : SrcProgram} {prims : Prims} {ix_items_in ix_minus ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_items_cons : Nat} (fn : prog.funcs[ix_items_in]? = some (src_items_in ix_minus ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_items_cons)) (np : prims.isPrim ix_items_in = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_CTree prog prims ix_empty_of_mini_selfhost_CTree n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n)) {n : Nat}
     (ih_items_cons : Certified (Stmt_items_cons prog prims ix_items_cons n)) :
     Stmt_items_in prog prims ix_items_in (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1

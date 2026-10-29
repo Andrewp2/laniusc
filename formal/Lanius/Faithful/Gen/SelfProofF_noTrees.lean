@@ -78,10 +78,10 @@ theorem proof_path_name {prog : SrcProgram} {prims : Prims} {ix_path_name ix_nod
   simp only [src_path_name] at h
   faithful [Lanius.Mini.pathName]
 
-theorem step_path_spellings {prog : SrcProgram} {prims : Prims} {ix_path_spellings ix_node_prod ix_kid ix_minus ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_path_ident ix_p_path_end ix_single_of_mini_selfhost_List_usize ix_p_path_more ix_cons_name : Nat} (fn : prog.funcs[ix_path_spellings]? = some (src_path_spellings ix_node_prod ix_kid ix_minus ix_path_spellings ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_path_ident ix_p_path_end ix_single_of_mini_selfhost_List_usize ix_p_path_more ix_cons_name)) (np : prims.isPrim ix_path_spellings = false)
+theorem step_path_spellings {prog : SrcProgram} {prims : Prims} {ix_path_spellings ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_path_ident ix_p_path_end ix_single_of_mini_selfhost_List_usize ix_p_path_more ix_cons_name : Nat} (fn : prog.funcs[ix_path_spellings]? = some (src_path_spellings ix_minus ix_node_prod ix_kid ix_path_spellings ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_path_ident ix_p_path_end ix_single_of_mini_selfhost_List_usize ix_p_path_more ix_cons_name)) (np : prims.isPrim ix_path_spellings = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_text_Token_of_mini_selfhost_Token prog prims ix_field_text_Token_of_mini_selfhost_Token n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
     (ext_p_path_ident : Certified (∀ {n : Nat}, Stmt_p_path_ident prog prims ix_p_path_ident n))

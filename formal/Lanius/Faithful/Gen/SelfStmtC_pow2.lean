@@ -21,8 +21,8 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_Code_image (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Code} {x1 : Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepCode x0 v0 → RepNat x1 v1 → (RepList 9 RepNat) x2 v2 →
-    (RepList 15 RepU8) (Lanius.Mini.Code.image x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.Code} {x1 : Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepCode x0 v0 → RepNat x1 v1 → (RepList 24 RepNat) x2 v2 →
+    (RepList 61 RepU8) (Lanius.Mini.Code.image x0 x1 x2) w
 
 abbrev Stmt_Code_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Code} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCode x0 v0 →
@@ -30,7 +30,7 @@ abbrev Stmt_Code_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_Instr_encode (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Instr} {x1 : Lanius.Mini.Place} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepInstr x0 v0 → RepPlace x1 v1 → RepNat x2 v2 →
-    (RepList 15 RepU8) (Lanius.Mini.Instr.encode x0 x1 x2) w
+    (RepList 61 RepU8) (Lanius.Mini.Instr.encode x0 x1 x2) w
 
 abbrev Stmt_arg_base (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
@@ -38,23 +38,23 @@ abbrev Stmt_arg_base (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_bump_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepList 15 RepU8) (Lanius.Mini.bumpBytes x0) w
+    (RepList 61 RepU8) (Lanius.Mini.bumpBytes x0) w
 
 abbrev Stmt_compile_program (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Program} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepProgram x0 v0 →
-    (RepOption 0 RepBinary) (Lanius.Mini.compileProgram x0) w
+    (RepOption 48 RepBinary) (Lanius.Mini.compileProgram x0) w
 
 abbrev Stmt_copy_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 9 RepNat) x1 v1 → RepNat x2 v2 →
-    (RepList 15 RepU8) (Lanius.Mini.copyBytes x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 24 RepNat) x1 v1 → RepNat x2 v2 →
+    (RepList 61 RepU8) (Lanius.Mini.copyBytes x0 x1 x2) w
 
 abbrev Stmt_encode_from (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Place} {x1 : Nat} {x2 : List Lanius.Mini.Instr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepPlace x0 v0 → RepNat x1 v1 → (RepList 4 RepInstr) x2 v2 →
-    (RepList 15 RepU8) (Lanius.Mini.encodeFrom x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.Place} {x1 : Nat} {x2 : List Lanius.Mini.Instr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepPlace x0 v0 → RepNat x1 v1 → (RepList 52 RepInstr) x2 v2 →
+    (RepList 61 RepU8) (Lanius.Mini.encodeFrom x0 x1 x2) w
 
 abbrev Stmt_epilogue (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 15 RepU8) (Lanius.Mini.epilogue) w
+    (RepList 61 RepU8) (Lanius.Mini.epilogue) w
 
 abbrev Stmt_frame_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
@@ -65,20 +65,20 @@ abbrev Stmt_image_limit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     RepNat (Lanius.Mini.imageLimit) w
 
 abbrev Stmt_layout (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Lanius.Mini.Code} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 2 RepCode) x1 v1 →
-    (RepList 9 RepNat) (Lanius.Mini.layout x0 x1) w
+  ∀ {x0 : Nat} {x1 : List Lanius.Mini.Code} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 50 RepCode) x1 v1 →
+    (RepList 24 RepNat) (Lanius.Mini.layout x0 x1) w
 
 abbrev Stmt_link_from (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {x2 : List Lanius.Mini.Code} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 9 RepNat) x0 v0 → RepNat x1 v1 → (RepList 2 RepCode) x2 v2 →
-    (RepList 15 RepU8) (Lanius.Mini.linkFrom x0 x1 x2) w
+  ∀ {x0 : List Nat} {x1 : Nat} {x2 : List Lanius.Mini.Code} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 → (RepList 50 RepCode) x2 v2 →
+    (RepList 61 RepU8) (Lanius.Mini.linkFrom x0 x1 x2) w
 
 abbrev Stmt_load_at_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 15 RepU8) (Lanius.Mini.loadAtBytes) w
+    (RepList 61 RepU8) (Lanius.Mini.loadAtBytes) w
 
 abbrev Stmt_load_word_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MemWidth} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepMemWidth x0 v0 →
-    (RepList 15 RepU8) (Lanius.Mini.loadWordBytes x0) w
+    (RepList 61 RepU8) (Lanius.Mini.loadWordBytes x0) w
 
 abbrev Stmt_pow2 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
@@ -86,7 +86,7 @@ abbrev Stmt_pow2 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_prologue (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepList 15 RepU8) (Lanius.Mini.prologue x0) w
+    (RepList 61 RepU8) (Lanius.Mini.prologue x0) w
 
 abbrev Stmt_relative (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepNat x1 v1 →
@@ -94,14 +94,14 @@ abbrev Stmt_relative (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_slot_range (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepNat x1 v1 →
-    (RepList 9 RepNat) (Lanius.Mini.slotRange x0 x1) w
+    (RepList 24 RepNat) (Lanius.Mini.slotRange x0 x1) w
 
 abbrev Stmt_store_at_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepList 15 RepU8) (Lanius.Mini.storeAtBytes x0) w
+    (RepList 61 RepU8) (Lanius.Mini.storeAtBytes x0) w
 
 abbrev Stmt_store_word_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MemWidth} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepMemWidth x0 v0 → RepNat x1 v1 →
-    (RepList 15 RepU8) (Lanius.Mini.storeWordBytes x0 x1) w
+    (RepList 61 RepU8) (Lanius.Mini.storeWordBytes x0 x1) w
 
 end Lanius.Faithful.SelfCert

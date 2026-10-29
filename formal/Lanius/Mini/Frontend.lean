@@ -72,6 +72,9 @@ public import Lanius.Mini.Frontend.P.firstSrc
 public import Lanius.Mini.Frontend.P.negWideI32
 public import Lanius.Mini.Frontend.P.knownExpr
 public import Lanius.Mini.Frontend.P.buildFiles
+public import Lanius.Mini.Frontend.P.readCountedTokens
+public import Lanius.Mini.Frontend.P.frontEndRead
+public import Lanius.Mini.Frontend.P.frontEndWords
 public import Lanius.Mini.Frontend.P.grammarPart8
 public import Lanius.Mini.Frontend.P.grammarPart13
 public import Lanius.Mini.Frontend.P.Inline_attachNode
@@ -112,6 +115,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 101 parts, `.P0` on, in source order, whose bodies
+The definitions are in 104 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

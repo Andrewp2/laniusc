@@ -14,10 +14,10 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::ite_then -/
-def src_ite_then (ix_boxed_of_mini_selfhost_Stmt : Nat) : SrcFunc := { params := [{ id := 9, ty := ty109 }, { id := 26, ty := ty153 }, { id := 67, ty := ty153 }], ret := ty153, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 26)) ty153 ty153 [[208], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 67)) ty153 ty153 [[279], []] [SrcEff.eVariant ty153 0 [SrcEff.eVariant ty113 3 [SrcEff.ePure (SrcExpr.local 9), SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.local 208)], SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.local 279)]]], SrcEff.eVariant ty153 1 []], SrcEff.eVariant ty153 1 []]) }
+def src_ite_then (ix_boxed_of_mini_selfhost_Stmt : Nat) : SrcFunc := { params := [{ id := 9, ty := ty86 }, { id := 26, ty := ty137 }, { id := 67, ty := ty137 }], ret := ty137, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 26)) ty137 ty137 [[208], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 67)) ty137 ty137 [[279], []] [SrcEff.eVariant ty137 0 [SrcEff.eVariant ty90 3 [SrcEff.ePure (SrcExpr.local 9), SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.local 208)], SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.local 279)]]], SrcEff.eVariant ty137 1 []], SrcEff.eVariant ty137 1 []]) }
 
 /-- mini::selfhost::store_one -/
-def src_store_one : SrcFunc := { params := [{ id := 10, ty := ty6 }, { id := 23, ty := ty109 }, { id := 38, ty := ty180 }], ret := ty153, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 38)) ty180 ty153 [[167], []] [SrcEff.eVariant ty153 0 [SrcEff.eVariant ty113 11 [SrcEff.ePure (SrcExpr.local 10), SrcEff.ePure (SrcExpr.local 23), SrcEff.ePure (SrcExpr.local 167)]], SrcEff.eVariant ty153 1 []]) }
+def src_store_one : SrcFunc := { params := [{ id := 10, ty := ty53 }, { id := 23, ty := ty86 }, { id := 38, ty := ty166 }], ret := ty137, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 38)) ty166 ty137 [[167], []] [SrcEff.eVariant ty137 0 [SrcEff.eVariant ty90 11 [SrcEff.ePure (SrcExpr.local 10), SrcEff.ePure (SrcExpr.local 23), SrcEff.ePure (SrcExpr.local 167)]], SrcEff.eVariant ty137 1 []]) }
 
 end
 

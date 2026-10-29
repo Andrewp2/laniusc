@@ -211,9 +211,9 @@ theorem step_lit_expr {prog : SrcProgram} {prims : Prims} {ix_lit_expr ix_unbox_
   simp only [src_lit_expr] at h
   faithful [Lanius.Mini.litExpr]
 
-theorem step_lit_exprs {prog : SrcProgram} {prims : Prims} {ix_lit_exprs ix_lit_expr ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr ix_empty_of_mini_selfhost_SrcExpr ix_cons_of_mini_selfhost_SrcExpr ix_first_src ix_rest_src : Nat} (fn : prog.funcs[ix_lit_exprs]? = some (src_lit_exprs ix_lit_expr ix_lit_exprs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr ix_empty_of_mini_selfhost_SrcExpr ix_cons_of_mini_selfhost_SrcExpr ix_first_src ix_rest_src)) (np : prims.isPrim ix_lit_exprs = false)
-    (ext_lit_expr : Certified (∀ {n : Nat}, Stmt_lit_expr prog prims ix_lit_expr n))
+theorem step_lit_exprs {prog : SrcProgram} {prims : Prims} {ix_lit_exprs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr ix_lit_expr ix_empty_of_mini_selfhost_SrcExpr ix_cons_of_mini_selfhost_SrcExpr ix_first_src ix_rest_src : Nat} (fn : prog.funcs[ix_lit_exprs]? = some (src_lit_exprs ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr ix_lit_expr ix_lit_exprs ix_empty_of_mini_selfhost_SrcExpr ix_cons_of_mini_selfhost_SrcExpr ix_first_src ix_rest_src)) (np : prims.isPrim ix_lit_exprs = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcExpr n))
+    (ext_lit_expr : Certified (∀ {n : Nat}, Stmt_lit_expr prog prims ix_lit_expr n))
     (ext_empty_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcExpr prog prims ix_empty_of_mini_selfhost_SrcExpr n))
     (ext_cons_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcExpr prog prims ix_cons_of_mini_selfhost_SrcExpr n))
     (ext_first_src : Certified (∀ {n : Nat}, Stmt_first_src prog prims ix_first_src n))
@@ -238,14 +238,14 @@ theorem step_lit_funcs {prog : SrcProgram} {prims : Prims} {ix_lit_funcs ix_unbo
   simp only [src_lit_funcs] at h
   faithful [Lanius.Mini.litFuncs]
 
-theorem step_lit_src_arms {prog : SrcProgram} {prims : Prims} {ix_lit_src_arms ix_lit_expr ix_payload_at ix_empty_of_mini_selfhost_SrcArm ix_cons_of_mini_selfhost_SrcArm ix_bound_tys ix_rest_payloads ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm : Nat} (fn : prog.funcs[ix_lit_src_arms]? = some (src_lit_src_arms ix_lit_expr ix_payload_at ix_lit_src_arms ix_empty_of_mini_selfhost_SrcArm ix_cons_of_mini_selfhost_SrcArm ix_bound_tys ix_rest_payloads ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm)) (np : prims.isPrim ix_lit_src_arms = false)
+theorem step_lit_src_arms {prog : SrcProgram} {prims : Prims} {ix_lit_src_arms ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm ix_lit_expr ix_payload_at ix_empty_of_mini_selfhost_SrcArm ix_cons_of_mini_selfhost_SrcArm ix_bound_tys ix_rest_payloads : Nat} (fn : prog.funcs[ix_lit_src_arms]? = some (src_lit_src_arms ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm ix_lit_expr ix_payload_at ix_lit_src_arms ix_empty_of_mini_selfhost_SrcArm ix_cons_of_mini_selfhost_SrcArm ix_bound_tys ix_rest_payloads)) (np : prims.isPrim ix_lit_src_arms = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm n))
     (ext_lit_expr : Certified (∀ {n : Nat}, Stmt_lit_expr prog prims ix_lit_expr n))
     (ext_payload_at : Certified (∀ {n : Nat}, Stmt_payload_at prog prims ix_payload_at n))
     (ext_empty_of_mini_selfhost_SrcArm : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcArm prog prims ix_empty_of_mini_selfhost_SrcArm n))
     (ext_cons_of_mini_selfhost_SrcArm : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcArm prog prims ix_cons_of_mini_selfhost_SrcArm n))
     (ext_bound_tys : Certified (∀ {n : Nat}, Stmt_bound_tys prog prims ix_bound_tys n))
-    (ext_rest_payloads : Certified (∀ {n : Nat}, Stmt_rest_payloads prog prims ix_rest_payloads n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm n)) {n : Nat}
+    (ext_rest_payloads : Certified (∀ {n : Nat}, Stmt_rest_payloads prog prims ix_rest_payloads n)) {n : Nat}
     (ih_lit_src_arms : Certified (Stmt_lit_src_arms prog prims ix_lit_src_arms n)) :
     Stmt_lit_src_arms prog prims ix_lit_src_arms (n + 1) := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
@@ -318,9 +318,9 @@ theorem step_wide_left {prog : SrcProgram} {prims : Prims} {ix_wide_left ix_unbo
   simp only [src_wide_left] at h
   faithful [Lanius.Mini.wideLeft]
 
-theorem step_wide_left_arms {prog : SrcProgram} {prims : Prims} {ix_wide_left_arms ix_wide_left ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm : Nat} (fn : prog.funcs[ix_wide_left_arms]? = some (src_wide_left_arms ix_wide_left ix_wide_left_arms ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm)) (np : prims.isPrim ix_wide_left_arms = false)
-    (ext_wide_left : Certified (∀ {n : Nat}, Stmt_wide_left prog prims ix_wide_left n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm n)) {n : Nat}
+theorem step_wide_left_arms {prog : SrcProgram} {prims : Prims} {ix_wide_left_arms ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm ix_wide_left : Nat} (fn : prog.funcs[ix_wide_left_arms]? = some (src_wide_left_arms ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm ix_wide_left ix_wide_left_arms)) (np : prims.isPrim ix_wide_left_arms = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm n))
+    (ext_wide_left : Certified (∀ {n : Nat}, Stmt_wide_left prog prims ix_wide_left n)) {n : Nat}
     (ih_wide_left_arms : Certified (Stmt_wide_left_arms prog prims ix_wide_left_arms n)) :
     Stmt_wide_left_arms prog prims ix_wide_left_arms (n + 1) := by
   intro x0 v0 w h r0

@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_int_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : BitVec 32} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 149 RepSrcType) x0 v0 → RepI32 x1 v1 → RepSrcExpr x2 v2 →
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : BitVec 32} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 153 RepSrcType) x0 v0 → RepI32 x1 v1 → RepSrcExpr x2 v2 →
     RepSrcExpr (Lanius.Mini.intAt x0 x1 x2) w
 
 abbrev Stmt_int_literal_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -29,27 +29,27 @@ abbrev Stmt_int_literal_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     RepSrcExpr (Lanius.Mini.intLiteralAt x0 x1 x2) w
 
 abbrev Stmt_payload_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List (List Lanius.Mini.SrcType))} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 176 (RepList 93 (RepList 89 RepSrcType))) x0 v0 → RepNat x1 v1 →
-    (RepOption 175 (RepList 89 RepSrcType)) (Lanius.Mini.payloadAt x0 x1) w
+  ∀ {x0 : Option (List (List Lanius.Mini.SrcType))} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 177 (RepList 71 (RepList 67 RepSrcType))) x0 v0 → RepNat x1 v1 →
+    (RepOption 176 (RepList 67 RepSrcType)) (Lanius.Mini.payloadAt x0 x1) w
 
 abbrev Stmt_src_element (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 149 RepSrcType) x0 v0 →
-    (RepOption 149 RepSrcType) (Lanius.Mini.srcElement x0) w
+  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 153 RepSrcType) x0 v0 →
+    (RepOption 153 RepSrcType) (Lanius.Mini.srcElement x0) w
 
 abbrev Stmt_src_fields (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 149 RepSrcType) x0 v0 →
-    (RepOption 175 (RepList 89 RepSrcType)) (Lanius.Mini.srcFields x0) w
+  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 153 RepSrcType) x0 v0 →
+    (RepOption 176 (RepList 67 RepSrcType)) (Lanius.Mini.srcFields x0) w
 
 abbrev Stmt_src_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 149 RepSrcType) x0 v0 →
-    (RepOption 176 (RepList 93 (RepList 89 RepSrcType))) (Lanius.Mini.srcVariants x0) w
+  ∀ {x0 : Option Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 153 RepSrcType) x0 v0 →
+    (RepOption 177 (RepList 71 (RepList 67 RepSrcType))) (Lanius.Mini.srcVariants x0) w
 
 abbrev Stmt_ty_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcType)} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 175 (RepList 89 RepSrcType)) x0 v0 → RepNat x1 v1 →
-    (RepOption 149 RepSrcType) (Lanius.Mini.tyAt x0 x1) w
+  ∀ {x0 : Option (List Lanius.Mini.SrcType)} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 176 (RepList 67 RepSrcType)) x0 v0 → RepNat x1 v1 →
+    (RepOption 153 RepSrcType) (Lanius.Mini.tyAt x0 x1) w
 
 abbrev Stmt_ty_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.LocalTy} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 183 RepLocalTy) x0 v0 → RepNat x1 v1 →
-    (RepOption 149 RepSrcType) (Lanius.Mini.tyLocal x0 x1) w
+  ∀ {x0 : List Lanius.Mini.LocalTy} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 201 RepLocalTy) x0 v0 → RepNat x1 v1 →
+    (RepOption 153 RepSrcType) (Lanius.Mini.tyLocal x0 x1) w
 
 end Lanius.Faithful.SelfCert

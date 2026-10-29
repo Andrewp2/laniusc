@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_struct_fields (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcStructDecl} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 87 RepSrcStructDecl) x0 v0 → RepNat x1 v1 →
-    (RepOption 175 (RepList 89 RepSrcType)) (Lanius.Mini.structFields x0 x1) w
+  ∀ {x0 : List Lanius.Mini.SrcStructDecl} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 65 RepSrcStructDecl) x0 v0 → RepNat x1 v1 →
+    (RepOption 176 (RepList 67 RepSrcType)) (Lanius.Mini.structFields x0 x1) w
 
 end Lanius.Faithful.SelfCert
