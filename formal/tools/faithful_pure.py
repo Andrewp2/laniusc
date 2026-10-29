@@ -732,7 +732,8 @@ def main(argv):
         t, tid, so, sl, pa = boxed_args(i)
         plines.append(f'/-- {names[i]} -/\ntheorem boxed{i} : BoxedAt prog prims {i} :=\n'
                       f'  ⟨{t}, {tid}, {so}, {sl}, {pa}, rfl, rfl, rfl, rfl,\n'
-                      f'    by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩\n\n')
+                      f'    by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,\n'
+                      f'    by rw [prog_decls]; decide +kernel⟩\n\n')
         boxed_names.append(f'boxed{i}')
     for i in prims['unbox']:
         t, tid, sl = unbox_args(i)

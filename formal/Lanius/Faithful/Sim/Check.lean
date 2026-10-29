@@ -303,11 +303,34 @@ def unboxFunc (t : SrcType) (id slice : Nat) : SrcFunc where
   body := .letCall 39 (.slice t) slice [.field 9 0, .int 1]
     (.returnEval (.eIndex 39 (.ePure (.int 0))))
 
-/-- Function `i` is `boxed<t>`, of the box struct `id`. -/
+/-- The declarations of `ds` as a Core program: the native layout reads only
+these. -/
+def declsCore (ds : SrcDecls) : Core.Program where
+  structures := ds.structs.map SrcStructDecl.toCore
+  enumerations := ds.enums.map SrcEnumDecl.toCore
+
+theorem words?_toCore (sp : SrcProgram) :
+    ∀ n T, NativeLayout.words? n sp.toCore T = NativeLayout.words? n (declsCore sp.decls) T := by
+  intro n
+  induction n with
+  | zero => intro T; rfl
+  | succ n ih =>
+    have same : NativeLayout.words? n sp.toCore = NativeLayout.words? n (declsCore sp.decls) := funext ih
+    intro T
+    simp only [NativeLayout.words?, same]
+    rfl
+
+theorem valueWords_toCore (sp : SrcProgram) (T : Core.Ty) :
+    NativeLayout.valueWords? sp.toCore T = NativeLayout.valueWords? (declsCore sp.decls) T :=
+  words?_toCore sp _ T
+
+/-- Function `i` is `boxed<t>`, of the box struct `id`, and `t` has a native
+layout (Core's raw views of a type past its limits trap `typeMismatch`). -/
 def BoxedAt (sp : SrcProgram) (prims : Prims) (i : Nat) : Prop :=
   ∃ t id sizeOf slice panic, sp.funcs[i]? = some (boxedFunc t id sizeOf slice panic) ∧
     sp.funcs[sizeOf]? = some (sizeOfFunc t) ∧ sp.funcs[slice]? = some (sliceFunc t) ∧
-    sp.funcs[panic]? = some panicFunc ∧ wordElement sp.decls t = true ∧ boxElem sp prims id = some t
+    sp.funcs[panic]? = some panicFunc ∧ wordElement sp.decls t = true ∧ boxElem sp prims id = some t ∧
+    (NativeLayout.valueWords? (declsCore sp.decls) t.toCore).isSome = true
 
 /-- Function `i` is `unbox<t>`, of the box struct `id`. -/
 def UnboxAt (sp : SrcProgram) (prims : Prims) (i : Nat) : Prop :=

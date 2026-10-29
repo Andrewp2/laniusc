@@ -27,7 +27,7 @@ theorem func_sim (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims)
   | true =>
     have mem : c ∈ prims.boxed ∨ c ∈ prims.unbox := by simpa [Prims.isPrim] using hp
     rcases mem with mem | mem
-    · obtain ⟨t, id, sizeOf, slice, panic, hf, hs, hl, hpn, el, box⟩ := primsOk.1 c mem
+    · obtain ⟨t, id, sizeOf, slice, panic, hf, hs, hl, hpn, el, box, -⟩ := primsOk.1 c mem
       rw [hf, Option.some.injEq] at found
       subst found
       exact boxed_sim hs hl hpn el box hp inv bound args run result
