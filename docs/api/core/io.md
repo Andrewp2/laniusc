@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
-The new standalone BufRead protocol supports caller-buffer read_until and allocation-free skip_until under only B:BufRead. Both use one engine, explicit Delimiter/Eof/Limit endings, complete logical admission, fill-plus-consume call budgets and copied/consumed failure progress. Provider View metadata precedes EOF/consume-budget checks; only Interrupted fill retries. Copy before consume can expose more destination bytes than acknowledged progress, and malformed consume success cannot establish safe replay. SliceReader and alloc::buffered::Reader implement the protocol with read-only borrowed views and manual backing/lifetime policy. Small native admission passes one test in 7.24s. Four selected buffered regressions pass in 9.81s, including the real copy sample and four constructor OOM sites (one writer-only test filtered); one old stream test passes two native fixtures in 11.59s (three filtered). Direct contracts pass two tests in 7.56s (six pure scenarios and two missing-BufRead rejections, admission filtered). The independent model passes one test in 5.64s with 18000 cases, four stride combinations and two invocations/case after a fixture-only syntax correction. The real record-selector passes four groups/91 cases in 8.51s, including five reached allocation denials and actual output-prefix/required-EOF failures. The finite native Linux x86_64 increment is accepted. Direct no-effect trace evidence covers only mmap/mremap/munmap/brk/read/write/close, without an all-host-call claim. Earlier explicit-offset/stream receipts below keep their source/API scope. Allocation-free stream and explicit-offset contracts. The new ReadAt/WriteAt family and bounded read_exact_at/write_all_at are implemented. Two portable contract tests pass in 7.01s: one native executable without memory or host-I/O services and two source-local missing-capability rejections. One selected old stream test with two native fixtures passes in 11.34s; three unrelated tests were filtered. The independent portable model passes in 4.38s with 11012 cases, 6836 provider calls and 652 failures after confirmed progress, across both directions and descending-native/ascending-packed byte layouts (seed 0xa71020261030, budgets -1..8, maximum 8 calls). Separate native adapter gates pass; the real file-patch application passes four registered groups/82 process cases across model 24/7.18s and CLI 35 + preservation 6 + I/O 17/7.57s. One selected existing FileOps regression passes in 7.12s against final typed-local production; no full old suite was rerun. Portable models do not establish host cursor/staging behavior. Whole logical array and signed-64-bit positional spans plus nonnegative attempt budgets are admitted before callbacks. Valid empty helpers return zero without dispatch, even at zero quota; nonempty zero quota is LimitExceeded. Every trait call, including Interrupted, spends one attempt; only Interrupted retries. Short transfers advance both array and file coordinates; completion makes no extra call. Failure.completed counts only confirmed positive transfers and excludes invalid/failing calls, with no rollback. Callback work/duration, physical backing and manual owners remain caller obligations. The core layer adds no host dependency, allocation, flush or close; the selected native profile is Linux x86_64 CPU output from the GPU compiler. Earlier stream receipts retain their source/API scope. The selected positional increment is accepted on its finite native Linux x86_64 profile, with broader library/target/ownership scope open.
+The current shared Seek increment adds SeekFrom Start(u64)/Current(i64)/End(i64), a standalone Seek bound and three free helpers. offset_position checks mathematical u64+signed-i64, including MIN; stream_position dispatches Current(0) once and rewind dispatches Start(0) once with exact-zero acknowledgement. Errors do not imply position rollback or retry. Bounded memory cursors replace inherent seek(i32) with canonical Seek methods and retain i32 inspection. File and buffered providers have separate host/flush/read-ahead policies. Portable Seek admission passes one test in 6.30s; direct contracts and one marked missing-bound rejection pass two tests in 4.74s. The independent model passes one test in 5.01s with 17620 cases/four families/four backing combinations at seed 0x5eeca0261031, checking exact arithmetic, calls/effects and complete cursor/byte states. One selected existing stream test passes core_io (six migrated calls) and unchanged alloc_io in 11.00s. The File real-file/pipe gate passes in a mixed command/7.62s whose fault test fails its tool-warning harness; the final fault-only test passes in 6.19s with 18 schedules/five genuine controls/13 reached injections and full-width result checks. Test-only stderr/unsigned trace formatting was corrected; production is unchanged. One selected existing FileOps test passes in 7.65s, four filtered. Buffered import now executes after two private nongeneric enum-projection helpers replace rejected Reader-body spellings, with public generic bounds and state behavior unchanged. The initial Mapper diagnostic does not establish a general nested-bound limitation; local/simple imported controls execute and no compiler repair is claimed. The real reverse-records program passes four groups/86 cases in 8.00s (limits7/model28/I-O22/CLI29). All three scripted buffered tests pass in 9.95s: reader9/writer12 pure phases, nested handoff and all four reached constructor OOM denials, with all-host-call-free pure phases/call-order/exact-release checks. Four selected existing buffered tests pass in 10.57s (one writer-only test filtered): actual binary-copy sample, constructor denials, nested copy and reader handoff. The selected Seek increment is accepted on finite native Linux x86_64 CPU output; the full library/lifetime/target scope remains open. Earlier stream/delimiter/positional receipts below do not establish these additions. The new standalone BufRead protocol supports caller-buffer read_until and allocation-free skip_until under only B:BufRead. Both use one engine, explicit Delimiter/Eof/Limit endings, complete logical admission, fill-plus-consume call budgets and copied/consumed failure progress. Provider View metadata precedes EOF/consume-budget checks; only Interrupted fill retries. Copy before consume can expose more destination bytes than acknowledged progress, and malformed consume success cannot establish safe replay. SliceReader and alloc::buffered::Reader implement the protocol with read-only borrowed views and manual backing/lifetime policy. Small native admission passes one test in 7.24s. Four selected buffered regressions pass in 9.81s, including the real copy sample and four constructor OOM sites (one writer-only test filtered); one old stream test passes two native fixtures in 11.59s (three filtered). Direct contracts pass two tests in 7.56s (six pure scenarios and two missing-BufRead rejections, admission filtered). The independent model passes one test in 5.64s with 18000 cases, four stride combinations and two invocations/case after a fixture-only syntax correction. The real record-selector passes four groups/91 cases in 8.51s, including five reached allocation denials and actual output-prefix/required-EOF failures. The finite native Linux x86_64 increment is accepted. Direct no-effect trace evidence covers only mmap/mremap/munmap/brk/read/write/close, without an all-host-call claim. Earlier explicit-offset/stream receipts below keep their source/API scope. Allocation-free stream and explicit-offset contracts. The new ReadAt/WriteAt family and bounded read_exact_at/write_all_at are implemented. Two portable contract tests pass in 7.01s: one native executable without memory or host-I/O services and two source-local missing-capability rejections. One selected old stream test with two native fixtures passes in 11.34s; three unrelated tests were filtered. The independent portable model passes in 4.38s with 11012 cases, 6836 provider calls and 652 failures after confirmed progress, across both directions and descending-native/ascending-packed byte layouts (seed 0xa71020261030, budgets -1..8, maximum 8 calls). Separate native adapter gates pass; the real file-patch application passes four registered groups/82 process cases across model 24/7.18s and CLI 35 + preservation 6 + I/O 17/7.57s. One selected existing FileOps regression passes in 7.12s against final typed-local production; no full old suite was rerun. Portable models do not establish host cursor/staging behavior. Whole logical array and signed-64-bit positional spans plus nonnegative attempt budgets are admitted before callbacks. Valid empty helpers return zero without dispatch, even at zero quota; nonempty zero quota is LimitExceeded. Every trait call, including Interrupted, spends one attempt; only Interrupted retries. Short transfers advance both array and file coordinates; completion makes no extra call. Failure.completed counts only confirmed positive transfers and excludes invalid/failing calls, with no rollback. Callback work/duration, physical backing and manual owners remain caller obligations. The core layer adds no host dependency, allocation, flush or close; the selected native profile is Linux x86_64 CPU output from the GPU compiler. Earlier stream receipts retain their source/API scope. The selected positional increment is accepted on its finite native Linux x86_64 profile, with broader library/target/ownership scope open.
 
 ## Contract and evidence guides
 
@@ -18,8 +18,10 @@ The new standalone BufRead protocol supports caller-buffer read_until and alloca
 - [stdlib-file-patch](../../stdlib-file-patch.md)
 - [stdlib-delimited-io](../../stdlib-delimited-io.md)
 - [stdlib-select-records](../../stdlib-select-records.md)
+- [stdlib-seek](../../stdlib-seek.md)
+- [stdlib-reverse-records](../../stdlib-reverse-records.md)
 
-Declaration counts: enum: 2; field: 16; function: 12; impl: 5; method: 13; struct: 6; trait: 5; trait member: 7; variant: 13.
+Declaration counts: enum: 3; field: 16; function: 15; impl: 7; method: 13; struct: 6; trait: 6; trait member: 8; variant: 16.
 
 ## Declared imports
 
@@ -176,9 +178,41 @@ read: u64
 written: u64
 ```
 
+### enum: SeekFrom
+
+[Source line 49](../../../stdlib/core/io.lani#L49)
+
+```lanius
+pub enum SeekFrom
+```
+
+#### variant: Start
+
+[Source line 49](../../../stdlib/core/io.lani#L49)
+
+```lanius
+Start(u64)
+```
+
+#### variant: Current
+
+[Source line 49](../../../stdlib/core/io.lani#L49)
+
+```lanius
+Current(i64)
+```
+
+#### variant: End
+
+[Source line 49](../../../stdlib/core/io.lani#L49)
+
+```lanius
+End(i64)
+```
+
 ### struct: SliceReader
 
-[Source line 153](../../../stdlib/core/io.lani#L153)
+[Source line 195](../../../stdlib/core/io.lani#L195)
 
 ```lanius
 pub struct SliceReader
@@ -186,7 +220,7 @@ pub struct SliceReader
 
 #### field: data
 
-[Source line 153](../../../stdlib/core/io.lani#L153)
+[Source line 195](../../../stdlib/core/io.lani#L195)
 
 ```lanius
 data: [u8]
@@ -194,7 +228,7 @@ data: [u8]
 
 #### field: length
 
-[Source line 153](../../../stdlib/core/io.lani#L153)
+[Source line 195](../../../stdlib/core/io.lani#L195)
 
 ```lanius
 length: i32
@@ -202,7 +236,7 @@ length: i32
 
 #### field: cursor
 
-[Source line 153](../../../stdlib/core/io.lani#L153)
+[Source line 195](../../../stdlib/core/io.lani#L195)
 
 ```lanius
 cursor: i32
@@ -210,7 +244,7 @@ cursor: i32
 
 ### struct: SliceWriter
 
-[Source line 154](../../../stdlib/core/io.lani#L154)
+[Source line 196](../../../stdlib/core/io.lani#L196)
 
 ```lanius
 pub struct SliceWriter
@@ -218,7 +252,7 @@ pub struct SliceWriter
 
 #### field: data
 
-[Source line 154](../../../stdlib/core/io.lani#L154)
+[Source line 196](../../../stdlib/core/io.lani#L196)
 
 ```lanius
 data: [u8]
@@ -226,7 +260,7 @@ data: [u8]
 
 #### field: length
 
-[Source line 154](../../../stdlib/core/io.lani#L154)
+[Source line 196](../../../stdlib/core/io.lani#L196)
 
 ```lanius
 length: i32
@@ -234,7 +268,7 @@ length: i32
 
 #### field: cursor
 
-[Source line 154](../../../stdlib/core/io.lani#L154)
+[Source line 196](../../../stdlib/core/io.lani#L196)
 
 ```lanius
 cursor: i32
@@ -242,7 +276,7 @@ cursor: i32
 
 ### enum: DelimiterEnd
 
-[Source line 335](../../../stdlib/core/io.lani#L335)
+[Source line 413](../../../stdlib/core/io.lani#L413)
 
 ```lanius
 pub enum DelimiterEnd
@@ -250,7 +284,7 @@ pub enum DelimiterEnd
 
 #### variant: Delimiter
 
-[Source line 335](../../../stdlib/core/io.lani#L335)
+[Source line 413](../../../stdlib/core/io.lani#L413)
 
 ```lanius
 Delimiter
@@ -258,7 +292,7 @@ Delimiter
 
 #### variant: Eof
 
-[Source line 335](../../../stdlib/core/io.lani#L335)
+[Source line 413](../../../stdlib/core/io.lani#L413)
 
 ```lanius
 Eof
@@ -266,7 +300,7 @@ Eof
 
 #### variant: Limit
 
-[Source line 335](../../../stdlib/core/io.lani#L335)
+[Source line 413](../../../stdlib/core/io.lani#L413)
 
 ```lanius
 Limit
@@ -274,7 +308,7 @@ Limit
 
 ### struct: Delimited
 
-[Source line 336](../../../stdlib/core/io.lani#L336)
+[Source line 414](../../../stdlib/core/io.lani#L414)
 
 ```lanius
 pub struct Delimited
@@ -282,7 +316,7 @@ pub struct Delimited
 
 #### field: completed
 
-[Source line 336](../../../stdlib/core/io.lani#L336)
+[Source line 414](../../../stdlib/core/io.lani#L414)
 
 ```lanius
 completed:u64
@@ -290,7 +324,7 @@ completed:u64
 
 #### field: ending
 
-[Source line 336](../../../stdlib/core/io.lani#L336)
+[Source line 414](../../../stdlib/core/io.lani#L414)
 
 ```lanius
 ending:DelimiterEnd
@@ -298,7 +332,7 @@ ending:DelimiterEnd
 
 ### struct: DelimiterFailure
 
-[Source line 337](../../../stdlib/core/io.lani#L337)
+[Source line 415](../../../stdlib/core/io.lani#L415)
 
 ```lanius
 pub struct DelimiterFailure
@@ -306,7 +340,7 @@ pub struct DelimiterFailure
 
 #### field: cause
 
-[Source line 337](../../../stdlib/core/io.lani#L337)
+[Source line 415](../../../stdlib/core/io.lani#L415)
 
 ```lanius
 cause:Error
@@ -314,7 +348,7 @@ cause:Error
 
 #### field: copied
 
-[Source line 337](../../../stdlib/core/io.lani#L337)
+[Source line 415](../../../stdlib/core/io.lani#L415)
 
 ```lanius
 copied:i32
@@ -322,7 +356,7 @@ copied:i32
 
 #### field: consumed
 
-[Source line 337](../../../stdlib/core/io.lani#L337)
+[Source line 415](../../../stdlib/core/io.lani#L415)
 
 ```lanius
 consumed:u64
@@ -330,9 +364,39 @@ consumed:u64
 
 ## Free functions and extern declarations
 
+### function: offset_position
+
+[Source line 60](../../../stdlib/core/io.lani#L60)
+
+```lanius
+pub fn offset_position(base:u64, offset:i64) -> core::result::Result<u64,Error>
+```
+
+Checked mathematical u64 base plus full signed-i64 offset, including i64::MIN without signed negation overflow. InvalidInput below zero or above u64::MAX; no effects.
+
+### function: stream_position
+
+[Source line 76](../../../stdlib/core/io.lani#L76)
+
+```lanius
+pub fn stream_position<S>(stream:&S) -> core::result::Result<u64,Error> where S:Seek
+```
+
+S:Seek only. Exactly one Current(0) seek, preserving its result/error; a provider may reconcile read-ahead or flush. No retry, allocation, poll or close.
+
+### function: rewind
+
+[Source line 80](../../../stdlib/core/io.lani#L80)
+
+```lanius
+pub fn rewind<S>(stream:&S) -> core::result::Result<u64,Error> where S:Seek
+```
+
+S:Seek only. Exactly one Start(0) seek; propagates errors and rejects nonzero success as InvalidCount. No rollback or implicit retry.
+
 ### function: valid_range
 
-[Source line 51](../../../stdlib/core/io.lani#L51)
+[Source line 93](../../../stdlib/core/io.lani#L93)
 
 ```lanius
 pub fn valid_range(offset: i32, count: i32) -> bool
@@ -340,7 +404,7 @@ pub fn valid_range(offset: i32, count: i32) -> bool
 
 ### function: is_interrupted
 
-[Source line 55](../../../stdlib/core/io.lani#L55)
+[Source line 97](../../../stdlib/core/io.lani#L97)
 
 ```lanius
 pub fn is_interrupted(error: Error) -> bool
@@ -348,7 +412,7 @@ pub fn is_interrupted(error: Error) -> bool
 
 ### function: read_exact
 
-[Source line 60](../../../stdlib/core/io.lani#L60)
+[Source line 102](../../../stdlib/core/io.lani#L102)
 
 ```lanius
 pub fn read_exact<R>(reader: &R, destination: [u8], offset: i32, count: i32)
@@ -357,7 +421,7 @@ pub fn read_exact<R>(reader: &R, destination: [u8], offset: i32, count: i32)
 
 ### function: write_all
 
-[Source line 85](../../../stdlib/core/io.lani#L85)
+[Source line 127](../../../stdlib/core/io.lani#L127)
 
 ```lanius
 pub fn write_all<W>(writer: &W, source: [u8], offset: i32, count: i32)
@@ -366,7 +430,7 @@ pub fn write_all<W>(writer: &W, source: [u8], offset: i32, count: i32)
 
 ### function: copy
 
-[Source line 109](../../../stdlib/core/io.lani#L109)
+[Source line 151](../../../stdlib/core/io.lani#L151)
 
 ```lanius
 pub fn copy<R, W>(reader: &R, writer: &W, scratch: [u8], capacity: i32)
@@ -375,7 +439,7 @@ pub fn copy<R, W>(reader: &R, writer: &W, scratch: [u8], capacity: i32)
 
 ### function: slice_reader
 
-[Source line 156](../../../stdlib/core/io.lani#L156)
+[Source line 198](../../../stdlib/core/io.lani#L198)
 
 ```lanius
 pub fn slice_reader(data: [u8], length: i32) -> core::result::Result<SliceReader, Error>
@@ -383,7 +447,7 @@ pub fn slice_reader(data: [u8], length: i32) -> core::result::Result<SliceReader
 
 ### function: slice_writer
 
-[Source line 161](../../../stdlib/core/io.lani#L161)
+[Source line 203](../../../stdlib/core/io.lani#L203)
 
 ```lanius
 pub fn slice_writer(data: [u8], length: i32) -> core::result::Result<SliceWriter, Error>
@@ -391,7 +455,7 @@ pub fn slice_writer(data: [u8], length: i32) -> core::result::Result<SliceWriter
 
 ### function: valid_position
 
-[Source line 261](../../../stdlib/core/io.lani#L261)
+[Source line 339](../../../stdlib/core/io.lani#L339)
 
 ```lanius
 pub fn valid_position(position:u64,count:i32) -> bool
@@ -401,7 +465,7 @@ Checks count >= 0 and the complete positional span, including exclusive end, wit
 
 ### function: read_exact_at
 
-[Source line 269](../../../stdlib/core/io.lani#L269)
+[Source line 347](../../../stdlib/core/io.lani#L347)
 
 ```lanius
 pub fn read_exact_at<R>(reader:&R,destination:[u8],offset:i32,count:i32,
@@ -413,7 +477,7 @@ Portable contracts and independent schedule-model execution accepted; File adapt
 
 ### function: write_all_at
 
-[Source line 302](../../../stdlib/core/io.lani#L302)
+[Source line 380](../../../stdlib/core/io.lani#L380)
 
 ```lanius
 pub fn write_all_at<W>(writer:&W,source:[u8],offset:i32,count:i32,
@@ -425,7 +489,7 @@ Portable contracts and independent schedule-model execution accepted; File adapt
 
 ### function: read_until
 
-[Source line 425](../../../stdlib/core/io.lani#L425)
+[Source line 503](../../../stdlib/core/io.lani#L503)
 
 ```lanius
 pub fn read_until<B>(reader:&B, delimiter:u8, destination:[u8], offset:i32,
@@ -437,7 +501,7 @@ B:BufRead only. Reads a bounded caller range through and including one delimiter
 
 ### function: skip_until
 
-[Source line 436](../../../stdlib/core/io.lani#L436)
+[Source line 514](../../../stdlib/core/io.lani#L514)
 
 ```lanius
 pub fn skip_until<B>(reader:&B, delimiter:u8, byte_limit:u64, max_calls:i32)
@@ -512,9 +576,25 @@ pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Resu
 pub fn flush(&self) -> core::result::Result<i32, Error>;
 ```
 
+### trait: Seek
+
+[Source line 54](../../../stdlib/core/io.lani#L54)
+
+```lanius
+pub trait Seek
+```
+
+#### trait member: seek
+
+[Source line 55](../../../stdlib/core/io.lani#L55)
+
+```lanius
+pub fn seek(&self, from:SeekFrom) -> core::result::Result<u64,Error>;
+```
+
 ### trait: ReadAt
 
-[Source line 250](../../../stdlib/core/io.lani#L250)
+[Source line 328](../../../stdlib/core/io.lani#L328)
 
 ```lanius
 pub trait ReadAt
@@ -522,7 +602,7 @@ pub trait ReadAt
 
 #### trait member: read_at
 
-[Source line 251](../../../stdlib/core/io.lani#L251)
+[Source line 329](../../../stdlib/core/io.lani#L329)
 
 ```lanius
 pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64)
@@ -531,7 +611,7 @@ pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64)
 
 ### trait: WriteAt
 
-[Source line 254](../../../stdlib/core/io.lani#L254)
+[Source line 332](../../../stdlib/core/io.lani#L332)
 
 ```lanius
 pub trait WriteAt
@@ -539,7 +619,7 @@ pub trait WriteAt
 
 #### trait member: write_at
 
-[Source line 255](../../../stdlib/core/io.lani#L255)
+[Source line 333](../../../stdlib/core/io.lani#L333)
 
 ```lanius
 pub fn write_at(&self,source:[u8],offset:i32,count:i32,position:u64)
@@ -548,9 +628,9 @@ pub fn write_at(&self,source:[u8],offset:i32,count:i32,position:u64)
 
 ## Implementation blocks and public methods
 
-### impl at line 166
+### impl at line 208
 
-[Source line 166](../../../stdlib/core/io.lani#L166)
+[Source line 208](../../../stdlib/core/io.lani#L208)
 
 ```lanius
 pub impl SliceReader
@@ -558,7 +638,7 @@ pub impl SliceReader
 
 #### method: borrow
 
-[Source line 167](../../../stdlib/core/io.lani#L167)
+[Source line 209](../../../stdlib/core/io.lani#L209)
 
 ```lanius
 pub fn borrow(&self) -> &SliceReader
@@ -566,7 +646,7 @@ pub fn borrow(&self) -> &SliceReader
 
 #### method: position
 
-[Source line 168](../../../stdlib/core/io.lani#L168)
+[Source line 210](../../../stdlib/core/io.lani#L210)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -574,23 +654,15 @@ pub fn position(&self) -> i32
 
 #### method: remaining
 
-[Source line 169](../../../stdlib/core/io.lani#L169)
+[Source line 211](../../../stdlib/core/io.lani#L211)
 
 ```lanius
 pub fn remaining(&self) -> i32
 ```
 
-#### method: seek
+### impl at line 214
 
-[Source line 170](../../../stdlib/core/io.lani#L170)
-
-```lanius
-pub fn seek(&self, position: i32) -> core::result::Result<i32, Error>
-```
-
-### impl at line 177
-
-[Source line 177](../../../stdlib/core/io.lani#L177)
+[Source line 214](../../../stdlib/core/io.lani#L214)
 
 ```lanius
 pub impl SliceWriter
@@ -598,7 +670,7 @@ pub impl SliceWriter
 
 #### method: borrow
 
-[Source line 178](../../../stdlib/core/io.lani#L178)
+[Source line 215](../../../stdlib/core/io.lani#L215)
 
 ```lanius
 pub fn borrow(&self) -> &SliceWriter
@@ -606,7 +678,7 @@ pub fn borrow(&self) -> &SliceWriter
 
 #### method: position
 
-[Source line 179](../../../stdlib/core/io.lani#L179)
+[Source line 216](../../../stdlib/core/io.lani#L216)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -614,23 +686,47 @@ pub fn position(&self) -> i32
 
 #### method: remaining
 
-[Source line 180](../../../stdlib/core/io.lani#L180)
+[Source line 217](../../../stdlib/core/io.lani#L217)
 
 ```lanius
 pub fn remaining(&self) -> i32
 ```
 
-#### method: seek
+### impl at line 240
 
-[Source line 181](../../../stdlib/core/io.lani#L181)
+[Source line 240](../../../stdlib/core/io.lani#L240)
 
 ```lanius
-pub fn seek(&self, position: i32) -> core::result::Result<i32, Error>
+pub impl Seek for SliceReader
 ```
 
-### impl at line 190
+#### method: seek
 
-[Source line 190](../../../stdlib/core/io.lani#L190)
+[Source line 241](../../../stdlib/core/io.lani#L241)
+
+```lanius
+pub fn seek(&self, from:SeekFrom) -> core::result::Result<u64,Error>
+```
+
+### impl at line 253
+
+[Source line 253](../../../stdlib/core/io.lani#L253)
+
+```lanius
+pub impl Seek for SliceWriter
+```
+
+#### method: seek
+
+[Source line 254](../../../stdlib/core/io.lani#L254)
+
+```lanius
+pub fn seek(&self, from:SeekFrom) -> core::result::Result<u64,Error>
+```
+
+### impl at line 268
+
+[Source line 268](../../../stdlib/core/io.lani#L268)
 
 ```lanius
 pub impl Read for SliceReader
@@ -638,15 +734,15 @@ pub impl Read for SliceReader
 
 #### method: read
 
-[Source line 191](../../../stdlib/core/io.lani#L191)
+[Source line 269](../../../stdlib/core/io.lani#L269)
 
 ```lanius
 pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 205
+### impl at line 283
 
-[Source line 205](../../../stdlib/core/io.lani#L205)
+[Source line 283](../../../stdlib/core/io.lani#L283)
 
 ```lanius
 pub impl Write for SliceWriter
@@ -654,7 +750,7 @@ pub impl Write for SliceWriter
 
 #### method: write
 
-[Source line 206](../../../stdlib/core/io.lani#L206)
+[Source line 284](../../../stdlib/core/io.lani#L284)
 
 ```lanius
 pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error>
@@ -662,15 +758,15 @@ pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Resu
 
 #### method: flush
 
-[Source line 218](../../../stdlib/core/io.lani#L218)
+[Source line 296](../../../stdlib/core/io.lani#L296)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 224
+### impl at line 302
 
-[Source line 224](../../../stdlib/core/io.lani#L224)
+[Source line 302](../../../stdlib/core/io.lani#L302)
 
 ```lanius
 pub impl BufRead for SliceReader
@@ -678,7 +774,7 @@ pub impl BufRead for SliceReader
 
 #### method: fill_buf
 
-[Source line 225](../../../stdlib/core/io.lani#L225)
+[Source line 303](../../../stdlib/core/io.lani#L303)
 
 ```lanius
 pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, Error>
@@ -686,7 +782,7 @@ pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, Error>
 
 #### method: consume
 
-[Source line 234](../../../stdlib/core/io.lani#L234)
+[Source line 312](../../../stdlib/core/io.lani#L312)
 
 ```lanius
 pub fn consume(&self, count:i32) -> core::result::Result<i32, Error>

@@ -1,0 +1,4 @@
+module fixture::nested_bound;
+import core::option;
+pub trait Project<T,U> { pub fn project(&self,value:T) -> U; }
+pub fn nested<M,T,U>(mapper:&M) -> bool where M:Project<T,core::option::Option<U>> { return true; }

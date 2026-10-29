@@ -1,0 +1,86 @@
+// Baseline exercises nested Seek; each constructor mmap can be denied in turn.
+module app::main;
+import alloc::buffered;
+import alloc::vec;
+import core::io;
+import core::result;
+import fixture::peer;
+
+fn idle(input:&fixture::peer::Stream,output:&fixture::peer::Stream) {
+    assert(input.reads==0 && input.seeks==0 && output.writes==0 && output.flushes==0 && output.seeks==0);
+}
+fn main() -> i32 {
+    let source:[u8;8]=[11,22,33,44,55,66,77,88];
+    let target:[u8;16]=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let bytes:[u8;4]=[1,2,3,4]; let destination:[u8;2]=[211,211];
+    let input=fixture::peer::stream(source,8,8);
+    let output=fixture::peer::stream(target,16,2);
+    let made_reader=alloc::buffered::reader(input.borrow(),3);
+    if(made_reader.is_err()) {
+        assert(fixture::peer::error_is(made_reader.unwrap_err(),7));
+        idle(input.borrow(),output.borrow()); fixture::peer::mark(68); return 2;
+    }
+    let reader=made_reader.unwrap();
+    let made_writer=alloc::buffered::writer(output.borrow(),3);
+    if(made_writer.is_err()) {
+        assert(fixture::peer::error_is(made_writer.unwrap_err(),7)); assert(reader.discard()==0);
+        idle(input.borrow(),output.borrow()); fixture::peer::mark(68); return 2;
+    }
+    let writer=made_writer.unwrap();
+    let made_outer_reader=alloc::buffered::reader(reader.borrow(),4);
+    if(made_outer_reader.is_err()) {
+        assert(fixture::peer::error_is(made_outer_reader.unwrap_err(),7));
+        assert(writer.discard()==0 && reader.discard()==0);
+        idle(input.borrow(),output.borrow()); fixture::peer::mark(68); return 2;
+    }
+    let outer_reader=made_outer_reader.unwrap();
+    let made_outer_writer=alloc::buffered::writer(writer.borrow(),5);
+    if(made_outer_writer.is_err()) {
+        assert(fixture::peer::error_is(made_outer_writer.unwrap_err(),7));
+        assert(outer_reader.discard()==0 && writer.discard()==0 && reader.discard()==0);
+        idle(input.borrow(),output.borrow()); fixture::peer::mark(68); return 2;
+    }
+    let outer_writer=made_outer_writer.unwrap();
+    fixture::peer::mark(80);
+    assert(outer_reader.fill_buf().unwrap().len()==3 && outer_reader.consume(1).unwrap()==1);
+    assert(input.position==3 && reader.buffered().len()==0 && outer_reader.buffered().len()==2);
+    input.log=0;
+    assert(outer_reader.seek(core::io::SeekFrom::Current(1)).unwrap()==2 && input.log==544);
+    assert(input.position==2 && outer_reader.buffered().len()==0 && reader.buffered().len()==0);
+    assert(outer_reader.read(destination,1,1).unwrap()==1 && destination[1]==33 && destination[0]==211);
+    assert(outer_reader.buffered().len()==2 && input.position==5);
+    input.log=0;
+    assert(outer_reader.seek(core::io::SeekFrom::End(-1)).unwrap()==7 && input.log==6);
+    assert(outer_reader.buffered().len()==0 && reader.buffered().len()==0);
+    assert(outer_reader.read(destination,1,1).unwrap()==1 && destination[1]==88);
+    assert(outer_writer.write(bytes,0,4).unwrap()==4 && output.writes==0);
+    assert(outer_writer.seek(core::io::SeekFrom::Start(2)).unwrap()==2);
+    assert(output.log==222334 && output.writes==3 && output.flushes==2 && output.seeks==1);
+    assert(outer_writer.pending().len()==0 && writer.pending().len()==0 && output.position==2);
+    assert(target[0]==1 && target[1]==2 && target[2]==3 && target[3]==4 && target[4]==0);
+    output.log=0;
+    assert(core::io::stream_position(outer_writer.borrow()).unwrap()==2 && output.log==335 && output.writes==3);
+    // Transfer the actual outer allocation through Parts and explicitly
+    // rebuild its sole cleanup authority. Aliases are inspected, never freed.
+    assert(outer_reader.seek(core::io::SeekFrom::Start(0)).unwrap()==0);
+    assert(outer_reader.fill_buf().unwrap().len()==3 && outer_reader.consume(1).unwrap()==1);
+    let parts=outer_reader.take_parts().unwrap();
+    let owned:ptr=parts.buffer.storage;
+    assert(parts.start==1 && parts.length==2 && parts.bytes().get(0).unwrap()==22);
+    let rebuilt:alloc::buffered::Reader<alloc::buffered::Reader<fixture::peer::Stream>> =alloc::buffered::Reader {
+        inner:parts.inner,buffer:parts.buffer,start:parts.start,end:parts.start+parts.length,active:true,faulted:false
+    };
+    parts.buffer=alloc::vec::new(); parts.start=0; parts.length=0;
+    assert(rebuilt.buffer.storage==owned && outer_reader.capacity()==0 && !outer_reader.is_active());
+    assert(fixture::peer::error_is(outer_reader.seek(core::io::SeekFrom::Start(0)).unwrap_err(),4));
+    input.log=0;
+    assert(core::io::stream_position(rebuilt.borrow()).unwrap()==1 && input.log==544);
+    assert(rebuilt.buffered().len()==0 && reader.buffered().len()==0 && input.position==1);
+    assert(rebuilt.read(destination,1,1).unwrap()==1 && destination[1]==22);
+    assert(rebuilt.buffered().len()==2 && parts.buffer.len()==0);
+    fixture::peer::mark(112);
+    assert(outer_writer.discard()==0 && rebuilt.discard()==2);
+    assert(parts.discard()==0 && outer_reader.discard()==0);
+    assert(writer.discard()==0 && reader.discard()==0);
+    fixture::peer::mark(68); return 0;
+}

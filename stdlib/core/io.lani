@@ -46,6 +46,48 @@ pub trait Write {
     pub fn flush(&self) -> core::result::Result<i32, Error>;
 }
 
+pub enum SeekFrom { Start(u64), Current(i64), End(i64) }
+
+// Success gives the absolute logical position; Start must acknowledge its
+// exact target. Providers define beyond-EOF support and effects on failure.
+// Read/Write are separate bounds. No general rollback guarantee is implied.
+pub trait Seek {
+    pub fn seek(&self, from:SeekFrom) -> core::result::Result<u64,Error>;
+}
+
+// Mathematical u64+signed-i64 admission, including the full i64::MIN domain.
+// Negative magnitude is formed without ever negating i64::MIN itself.
+pub fn offset_position(base:u64, offset:i64) -> core::result::Result<u64,Error> {
+    if (offset < 0) {
+        let shifted:i64 = offset+1;
+        let positive:i64 = -shifted;
+        let magnitude:u64 = positive as u64;
+        magnitude += 1;
+        if (magnitude > base) { return core::result::Err(Error::InvalidInput); }
+        return core::result::Ok(base-magnitude);
+    }
+    let increment:u64 = offset as u64;
+    if (increment > 18446744073709551615-base) {
+        return core::result::Err(Error::InvalidInput);
+    }
+    return core::result::Ok(base+increment);
+}
+
+pub fn stream_position<S>(stream:&S) -> core::result::Result<u64,Error> where S:Seek {
+    return stream.seek(SeekFrom::Current(0));
+}
+
+pub fn rewind<S>(stream:&S) -> core::result::Result<u64,Error> where S:Seek {
+    let moved:core::result::Result<u64,Error> = stream.seek(SeekFrom::Start(0));
+    if (moved.is_err()) {
+        let error:Error = moved.unwrap_err();
+        return core::result::Err(error);
+    }
+    let position:u64 = moved.unwrap();
+    if (position != 0) { return core::result::Err(Error::InvalidCount); }
+    return core::result::Ok(position);
+}
+
 // The physical view must back the claimed range. Indexing checks actual
 // bounds; this check rejects negative or overflowing logical ranges.
 pub fn valid_range(offset: i32, count: i32) -> bool {
@@ -167,21 +209,57 @@ pub impl SliceReader {
     pub fn borrow(&self) -> &SliceReader { return self; }
     pub fn position(&self) -> i32 { return self.cursor; }
     pub fn remaining(&self) -> i32 { return self.length - self.cursor; }
-    pub fn seek(&self, position: i32) -> core::result::Result<i32, Error> {
-        if (position < 0 || position > self.length) { return core::result::Err(Error::InvalidInput); }
-        self.cursor = position;
-        return core::result::Ok(position);
-    }
 }
 
 pub impl SliceWriter {
     pub fn borrow(&self) -> &SliceWriter { return self; }
     pub fn position(&self) -> i32 { return self.cursor; }
     pub fn remaining(&self) -> i32 { return self.length - self.cursor; }
-    pub fn seek(&self, position: i32) -> core::result::Result<i32, Error> {
-        if (position < 0 || position > self.length) { return core::result::Err(Error::InvalidInput); }
-        self.cursor = position;
-        return core::result::Ok(position);
+}
+
+// Memory cursor bounds are checked without backing access or cursor mutation.
+// Public fields can be forged, so validate state before signed arithmetic.
+fn slice_seek_target(length:i32, cursor:i32, from:SeekFrom) -> core::result::Result<u64,Error> {
+    if (cursor < 0 || length < cursor) { return core::result::Err(Error::InvalidInput); }
+    let cursor_wide:u64 = cursor as u64;
+    let length_wide:u64 = length as u64;
+    let moved:core::result::Result<u64,Error> = match (from) {
+        Start(position) -> core::result::Ok(position),
+        Current(offset) -> offset_position(cursor_wide,offset),
+        End(offset) -> offset_position(length_wide,offset)
+    };
+    if (moved.is_err()) {
+        let error:Error = moved.unwrap_err();
+        return core::result::Err(error);
+    }
+    let target:u64 = moved.unwrap();
+    if (target > length_wide) { return core::result::Err(Error::InvalidInput); }
+    return core::result::Ok(target);
+}
+
+pub impl Seek for SliceReader {
+    pub fn seek(&self, from:SeekFrom) -> core::result::Result<u64,Error> {
+        let moved:core::result::Result<u64,Error> = slice_seek_target(self.length,self.cursor,from);
+        if (moved.is_err()) {
+            let error:Error = moved.unwrap_err();
+            return core::result::Err(error);
+        }
+        let target:u64 = moved.unwrap();
+        self.cursor = target as i32;
+        return core::result::Ok(target);
+    }
+}
+
+pub impl Seek for SliceWriter {
+    pub fn seek(&self, from:SeekFrom) -> core::result::Result<u64,Error> {
+        let moved:core::result::Result<u64,Error> = slice_seek_target(self.length,self.cursor,from);
+        if (moved.is_err()) {
+            let error:Error = moved.unwrap_err();
+            return core::result::Err(error);
+        }
+        let target:u64 = moved.unwrap();
+        self.cursor = target as i32;
+        return core::result::Ok(target);
     }
 }
 

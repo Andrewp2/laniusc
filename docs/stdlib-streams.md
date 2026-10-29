@@ -9,6 +9,13 @@ bindings.
 Read/Write contracts, and provides explicit close and ownership transfer.
 Descriptor adapters below continue to borrow handles.
 
+The [shared Seek increment](stdlib-seek.md) adds SeekFrom, a Seek-only bound
+and checked offset/position/rewind helpers. It replaces memory cursors' old
+inherent seek(i32) with canonical trait methods and adds opt-in File/buffered
+providers. Portable admission/direct/model, native File and real application
+gates pass, including scripted buffered behavior and selected existing
+regressions. Earlier receipts keep their scope.
+
 The separate [positional-I/O increment](stdlib-positional-io.md) adds ReadAt /
 WriteAt contracts and attempt-bounded exact/all helpers, with File adapters
 in `std::file_ops`. Each call uses an explicit byte position without changing
@@ -88,8 +95,10 @@ leave a valid prefix in a destination or external output; they are not atomic.
 constructors for `SliceReader` and `SliceWriter`. Negative lengths fail; backing
 storage and its lifetime remain caller responsibilities.
 
-Both types expose `position()`, `remaining()` and checked absolute `seek()`.
-Seeking outside `0..=length` returns `InvalidInput` and preserves the position.
+Both types expose i32 `position()`/`remaining()` and canonical
+`Seek.seek(SeekFrom)` returning u64. Start/Current/End stay within `0..=length`;
+invalid state or target returns InvalidInput and preserves the position.
+The old inherent seek(i32) is removed; import `core::io` and pass SeekFrom.
 Reads stop at the input length; writes stop at destination capacity. A full
 writer returns zero, which `write_all` converts into `WriteZero`.
 
@@ -168,10 +177,18 @@ adapters must actually drain their pending output before reporting success.
 
 ## Execution evidence and limits
 
-The receipts below predate BufRead and its delimiter helpers. Their current
-selected regressions and new acceptance are tracked separately in the
+The [shared Seek guide](stdlib-seek.md) records portable admission/direct/model
+acceptance and a selected existing stream regression (one test, two native
+fixtures in 11.00s). Native File gates pass across separate direct/fault
+receipts, and the real reverse-records program passes four groups/86 cases.
+Three scripted buffered tests pass separately in 9.95s, and four selected
+existing buffered regressions pass in 10.57s (one writer-only test filtered).
+Historical absolute-cursor receipts do not establish these additions.
+
+The receipts below predate BufRead and its delimiter helpers. Selected
+regressions and acceptance for that increment are tracked separately in the
 [delimiter guide](stdlib-delimited-io.md).
-One selected old stream test currently passes in 11.59s with the two native
+One selected old stream test passed in 11.59s with the two native
 core_io/alloc_io fixtures; three other stream tests were filtered.
 
 `tests/stdlib_stream_execution.rs` executes Lanius programs on x86_64 Linux:

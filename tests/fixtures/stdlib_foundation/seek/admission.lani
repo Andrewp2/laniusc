@@ -1,0 +1,51 @@
+module app::main;
+import core::io;
+import core::result;
+
+// Neither Read nor Write: generic seeking has its own capability bound.
+struct OnlySeek { cursor:u64, length:u64, calls:i32, origin:i32, argument:i64 }
+impl OnlySeek {
+    fn borrow(&self) -> &OnlySeek { return self; }
+    fn absolute(&self,position:u64) -> core::result::Result<u64,core::io::Error> {
+        self.origin=1; self.argument=position as i64; return core::result::Ok(position);
+    }
+    fn relative(&self,origin:i32,base:u64,offset:i64) -> core::result::Result<u64,core::io::Error> {
+        self.origin=origin; self.argument=offset; return core::io::offset_position(base,offset);
+    }
+}
+pub impl core::io::Seek for OnlySeek {
+    pub fn seek(&self,from:core::io::SeekFrom) -> core::result::Result<u64,core::io::Error> {
+        self.calls+=1;
+        let target:core::result::Result<u64,core::io::Error> =match(from) {
+            core::io::SeekFrom::Start(position) -> self.absolute(position),
+            core::io::SeekFrom::Current(offset) -> self.relative(2,self.cursor,offset),
+            core::io::SeekFrom::End(offset) -> self.relative(3,self.length,offset)
+        };
+        if(target.is_ok()) { self.cursor=target.unwrap(); } return target;
+    }
+}
+fn tail<S>(stream:&S) -> core::result::Result<u64,core::io::Error> where S:core::io::Seek {
+    return stream.seek(core::io::SeekFrom::End(-1));
+}
+fn main() -> i32 {
+    let only:OnlySeek=OnlySeek { cursor:5,length:9,calls:0,origin:0,argument:99 };
+    let position:core::result::Result<u64,core::io::Error> =core::io::stream_position<OnlySeek>(only.borrow());
+    assert(position.unwrap()==5 && only.calls==1 && only.origin==2 && only.argument==0);
+    let reset:core::result::Result<u64,core::io::Error> =core::io::rewind<OnlySeek>(only.borrow());
+    assert(reset.unwrap()==0 && only.calls==2 && only.origin==1 && only.argument==0);
+    let last:core::result::Result<u64,core::io::Error> =tail<OnlySeek>(only.borrow());
+    assert(last.unwrap()==8 && only.calls==3 && only.origin==3 && only.argument==-1);
+    assert(core::io::offset_position(8,-1).unwrap()==7);
+
+    let bytes:[u8;4]=[11,0,128,255];
+    let reader:core::io::SliceReader=core::io::slice_reader(bytes,4).unwrap();
+    assert(reader.seek(core::io::SeekFrom::Start(2)).unwrap()==2);
+    assert(core::io::stream_position<core::io::SliceReader>(reader.borrow()).unwrap()==2);
+    assert(core::io::rewind<core::io::SliceReader>(reader.borrow()).unwrap()==0 && reader.position()==0);
+    let writer:core::io::SliceWriter=core::io::slice_writer(bytes,4).unwrap();
+    assert(writer.seek(core::io::SeekFrom::End(-1)).unwrap()==3);
+    assert(writer.seek(core::io::SeekFrom::Current(-2)).unwrap()==1);
+    assert(core::io::stream_position<core::io::SliceWriter>(writer.borrow()).unwrap()==1);
+    assert(bytes[0]==11 && bytes[1]==0 && bytes[2]==128 && bytes[3]==255);
+    return 0;
+}

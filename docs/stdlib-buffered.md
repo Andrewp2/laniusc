@@ -1,6 +1,20 @@
 # Buffered byte streams
 
-The library and binary-copy sample are admitted as **x86_64 Linux ELF programs
+The [shared Seek increment](stdlib-seek.md) adds conditional Seek implementations
+under Read+Seek for Reader and Write+Seek for Writer. The current buffered
+module now compiles and executes through a small import probe; the real
+reverse-records program passes four groups/86 cases. Two private nongeneric
+enum-projection helpers replace rejected Reader-body spellings without changing
+public generic bounds or state behavior. Three scripted reader/writer/nesting
+gates pass in 9.95s: nine reader phases, twelve writer phases, nesting/handoff
+and all four reached constructor denials, with pure-phase call and allocation
+release checks. Four selected existing buffered regressions pass separately
+in 10.57s: the actual binary-copy sample, constructor denials, nested copy and
+reader handoff; one writer-only test was filtered. This finite native Linux
+x86_64 increment is accepted. Historical buffered receipts below retain their
+source/API scope.
+
+The earlier library and binary-copy sample were admitted as **x86_64 Linux ELF programs
 produced through the GPU compiler**, using compiler checkpoint
 `59612b3431d7b0cdff16a6faecf881f62a675503`. The source programs run as native
 processes; this evidence does not cover user GPU kernels or other targets.
@@ -125,8 +139,10 @@ range. When the range becomes empty its offsets reset to zero.
 
 Successful fills advance the inner stream by their complete returned count;
 the logical reader advances only by bytes returned to callers or consumed.
-There is no implied seek/rewind and no position estimate. Do not resume direct
-inner reads while unread data is held by the active adapter.
+Ordinary read/fill/consume operations do not seek, rewind or estimate an
+absolute position. [Explicit Seek](stdlib-seek.md#buffered-reader-r-read-and-r-seek)
+reconciles read-ahead under its separate contract. Do not resume direct inner
+reads while unread data is held by the active adapter.
 
 ## Writer: acceptance and partial flush
 
@@ -166,16 +182,35 @@ inner writes/flushes retain their endpoint and process signal requirements.
 writer only on success. It returns `Ok(0)`. On any error it keeps the owner,
 pending range, and fault state for inspection, retry if permitted, or handoff.
 
+## Shared Seek and logical positions
+
+The conditional Seek implementations check inactive/faulted state first.
+Reader Start/End delegate once and discard unread publication on success.
+Current queries the inner position, subtracts unread bytes, applies checked
+signed arithmetic and seeks absolutely, even for Current(0). Arithmetic
+rejection retains unread bytes; any inner seek error or malformed position
+faults the reader and clears unread publication while retaining its allocation.
+
+Writer completes its existing flush before seeking. A flush failure can follow
+confirmed partial output but makes no seek; a subsequent seek error leaves
+pending empty and the writer active. A malformed Start acknowledgement faults
+it. These operations neither roll back nor retry automatically. Seek invalidates
+published views and requires exclusive inner access; buffer/inner ownership
+stays manual. The [Seek guide](stdlib-seek.md) records exact call/error rules
+and accepted finite runtime evidence.
+
 ## Invalid counts and handoff
 
 Negative/oversized read or write results and nonzero successful flush results
 produce `InvalidCount` and make the adapter faulted. Further I/O is refused.
 Counts are checked before they can become buffer indices or offsets.
 
-The fault flag describes invalid successful counts observed at this layer.
-An `Err(InvalidCount)` returned by a lawful inner is propagated as an ordinary
-error without inventing a successful-count violation at the outer layer. A
-nested inner may have its own fault state; the outer flag is not a complete
+For ordinary Read/Write/BufRead, the fault flag describes invalid successful
+counts observed at this layer. Reader Seek also faults on inner seek errors
+or malformed positions as described above.
+For ordinary I/O, an `Err(InvalidCount)` returned by a lawful inner is
+propagated as an ordinary error without inventing a successful-count violation
+at the outer layer. A nested inner may have its own fault state; the outer flag is not a complete
 status report for the entire endpoint chain.
 
 Faulting is defensive detection of a broken inner contract, not recovery of
@@ -196,8 +231,9 @@ borrowed endpoint, and inactivates the original wrapper. For `faulted=false`:
 
 For `faulted=true`, the flag must remain attached to the recovery decision:
 
-- Reader Parts does not publish any bytes from the invalid-count read and does
-  not promise the next underlying position is the expected position.
+- Reader Parts does not publish bytes from an invalid-count read or retain
+  unread publication after a seek failure; it does not promise an expected
+  underlying position.
 - Writer Parts contains the suffix **not confirmed accepted by this inner**
   before the invalid result. Sending it again could duplicate unknown inner
   effects; exact nonacceptance is not promised under this condition.

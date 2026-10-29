@@ -1,0 +1,5 @@
+// Minimal producer for the current mandatory buffered -> Vec -> core::iter
+// import boundary. No new Seek use or effect instrumentation is involved.
+module app::main;
+import alloc::buffered;
+fn main() -> i32 { return 0; }

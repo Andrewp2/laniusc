@@ -1,0 +1,47 @@
+// Each selected seek is one call. A separate position query observes the real
+// cursor afterward; injected returns skip the kernel and imply no rollback.
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+import std::io;
+fn path() -> core::path::Path {
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("input"),5);
+    return core::path::from_view(core::slice::view<u8>(bytes,5).unwrap()).unwrap();
+}
+fn code(error:core::io::Error) -> i64 {
+    return match(error) {
+        core::io::Error::Interrupted->1,core::io::Error::WouldBlock->2,
+        core::io::Error::InvalidInput->3,core::io::Error::InvalidCount->4,
+        core::io::Error::Host(value)->1000+(value as i64),_ ->99
+    };
+}
+fn word(bytes:[u8],offset:i32,value:u64) {
+    let index:i32=0;
+    while(index<8) { bytes[offset+index]=((value>>(index*8))&255) as u8; index+=1; }
+}
+fn main() -> i32 {
+    let input:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(input),1)==1);
+    let mode:i32=input[0]; assert(mode>=0 && mode<=4);
+    let file:std::file::File=std::file_ops::open(path(),std::file_ops::options()).unwrap();
+    let from:core::io::SeekFrom=core::io::SeekFrom::Start(7);
+    if(mode==1) { from=core::io::SeekFrom::Current(4294967311); }
+    if(mode==2) { from=core::io::SeekFrom::End(-3); }
+    if(mode==3) { from=core::io::SeekFrom::Current(-9223372036854775808); }
+    if(mode==4) { from=core::io::SeekFrom::End(-9223372036854775808); }
+    let result:core::result::Result<u64,core::io::Error> =file.seek(from);
+    let status:i64=0; let reported:i64=0;
+    if(result.is_err()) { status=code(result.unwrap_err()); }
+    else { reported=result.unwrap() as i64; }
+    assert(file.is_open() && file.raw_handle().is_some());
+    let actual:u64=core::io::stream_position<std::file::File>(file.borrow()).unwrap();
+    assert(file.close().unwrap()==0 && file.close().unwrap()==0 && !file.is_open());
+    let output:[i32;6]=[0;6]; let pointer:ptr=core::mem::i32_array_data_ptr(output);
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,24);
+    word(bytes,0,status as u64); word(bytes,8,reported as u64); word(bytes,16,actual);
+    assert(std::io::write_stdout(pointer,24)==24); return 0;
+}

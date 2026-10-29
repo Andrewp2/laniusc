@@ -1,0 +1,18 @@
+--- scalar_failed.lani
++++ typed_zero_failed.lani
+@@ -150,11 +150,13 @@
+         if (self.faulted) { return core::result::Err(core::io::Error::InvalidCount); }
+         let inner: &R = self.inner;
+         let request: core::io::SeekFrom = from;
++        let zero_position: u64 = 0;
++        let zero_offset: i64 = 0;
+         let origin: i32 = match (from) { Start(_) -> 0, Current(_) -> 1, End(_) -> 2 };
+         let check_start: bool = origin == 0;
+-        let target: u64 = match (from) { Start(position) -> position, _ -> 0 };
++        let target: u64 = match (from) { Start(position) -> position, _ -> zero_position };
+         if (origin == 1) {
+-            let offset: i64 = match (from) { Current(value) -> value, _ -> 0 };
++            let offset: i64 = match (from) { Current(value) -> value, _ -> zero_offset };
+             // The inner cursor includes bytes retained as unread. Query
+             // before calculating the caller's logical absolute target.
+             let queried: core::result::Result<u64, core::io::Error> = inner.seek(core::io::SeekFrom::Current(0));

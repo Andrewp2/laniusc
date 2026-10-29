@@ -1,0 +1,13 @@
+module app::main;
+import core::io;
+import core::result;
+struct Sequential {}
+impl Sequential { fn borrow(&self) -> &Sequential { return self; } }
+pub impl core::io::Read for Sequential {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+fn main() -> i32 {
+    let reader:Sequential=Sequential {};
+    let position:core::result::Result<u64,core::io::Error> =core::io::stream_position<Sequential>(reader.borrow()); // rejected_seek_bound
+    return 0;
+}

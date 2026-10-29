@@ -1,0 +1,281 @@
+// Test-only Seek arithmetic, provider dispatch and memory-cursor adapter.
+module app::main;
+
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+
+struct Output { bytes: [u8], pointer: ptr, used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer, self.used); self.used = 0; }
+    fn word(&self, value: u64) {
+        if (self.used == 4096) { self.flush(); }
+        let index: i32 = 0;
+        while (index < 8) {
+            self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8;
+            index += 1;
+        }
+        self.used += 8;
+    }
+}
+
+fn error_code(error: core::io::Error) -> i32 {
+    return match (error) {
+        core::io::Error::InvalidInput -> 1,
+        core::io::Error::UnexpectedEof -> 2,
+        core::io::Error::WriteZero -> 3,
+        core::io::Error::InvalidCount -> 4,
+        core::io::Error::CountOverflow -> 5,
+        core::io::Error::LimitExceeded -> 6,
+        core::io::Error::Interrupted -> 7,
+        core::io::Error::WouldBlock -> 8,
+        core::io::Error::AllocationFailed -> 9,
+        core::io::Error::Host(code) -> 10,
+    };
+}
+
+fn host_code(error: core::io::Error) -> i32 {
+    return match (error) { core::io::Error::Host(code) -> code, _ -> 0 };
+}
+
+fn error_value(code: u64, payload: u64) -> core::io::Error {
+    return match (code) {
+        1 -> core::io::Error::InvalidInput,
+        2 -> core::io::Error::UnexpectedEof,
+        3 -> core::io::Error::WriteZero,
+        4 -> core::io::Error::InvalidCount,
+        5 -> core::io::Error::CountOverflow,
+        6 -> core::io::Error::LimitExceeded,
+        7 -> core::io::Error::Interrupted,
+        8 -> core::io::Error::WouldBlock,
+        9 -> core::io::Error::AllocationFailed,
+        _ -> core::io::Error::Host(payload as i32),
+    };
+}
+
+fn answer_u64(result: core::result::Result<u64, core::io::Error>, output: &Output) {
+    if (result.is_ok()) {
+        output.word(0); output.word(0); output.word(0); output.word(result.unwrap());
+    } else {
+        let error: core::io::Error = result.unwrap_err();
+        output.word(1); output.word(error_code(error) as u64);
+        output.word(host_code(error) as i64 as u64); output.word(0);
+    }
+}
+
+fn answer_i32(result: core::result::Result<i32, core::io::Error>, output: &Output) {
+    if (result.is_ok()) {
+        output.word(0); output.word(0); output.word(0); output.word(result.unwrap() as i64 as u64);
+    } else {
+        let error: core::io::Error = result.unwrap_err();
+        output.word(1); output.word(error_code(error) as u64);
+        output.word(host_code(error) as i64 as u64); output.word(0);
+    }
+}
+
+fn origin(kind: u64, value: u64) -> core::io::SeekFrom {
+    if (kind == 0) { return core::io::SeekFrom::Start(value); }
+    if (kind == 1) { return core::io::SeekFrom::Current(value as i64); }
+    assert(kind == 2);
+    return core::io::SeekFrom::End(value as i64);
+}
+
+struct Provider { input: [u8], length: i32, calls: i32, position: u64, kinds: [u64], arguments: [u64] }
+impl Provider { fn borrow(&self) -> &Provider { return self; } }
+pub impl core::io::Seek for Provider {
+    pub fn seek(&self, from: core::io::SeekFrom) -> core::result::Result<u64, core::io::Error> {
+        assert(self.calls < self.length);
+        let kind: u64 = match (from) {
+            core::io::SeekFrom::Start(value) -> 0,
+            core::io::SeekFrom::Current(value) -> 1,
+            core::io::SeekFrom::End(value) -> 2,
+        };
+        let argument: u64 = match (from) {
+            core::io::SeekFrom::Start(value) -> value,
+            core::io::SeekFrom::Current(value) -> value as u64,
+            core::io::SeekFrom::End(value) -> value as u64,
+        };
+        self.kinds[self.calls] = kind;
+        self.arguments[self.calls] = argument;
+        let at: i32 = 64 + self.calls * 32;
+        let event: u64 = get64(self.input, at + 8);
+        let reported: u64 = get64(self.input, at + 16);
+        self.position = get64(self.input, at + 24);
+        self.calls += 1;
+        // Effects precede either outcome; the helpers do not promise rollback.
+        if (event == 0) { return core::result::Ok(reported); }
+        return core::result::Err(error_value(event, reported));
+    }
+}
+
+fn provider_run(input: [u8], output: &Output) {
+    let kinds: [u64; 8] = [0; 8];
+    let arguments: [u64; 8] = [0; 8];
+    let provider: Provider = Provider {
+        input: input, length: get64(input, 32) as i32, calls: 0,
+        position: get64(input, 16), kinds: kinds, arguments: arguments
+    };
+    let index: i32 = 0;
+    while (index < provider.length) {
+        let result: core::result::Result<u64, core::io::Error> = core::result::Ok(0);
+        if (get64(input, 64 + index * 32) == 0) {
+            result = core::io::stream_position<Provider>(provider.borrow());
+        } else { result = core::io::rewind<Provider>(provider.borrow()); }
+        answer_u64(result, output);
+        output.word(provider.position); output.word(provider.calls as u64);
+        let trace: i32 = 0;
+        while (trace < provider.calls) {
+            output.word(kinds[trace]); output.word(arguments[trace]); trace += 1;
+        }
+        index += 1;
+    }
+}
+
+fn slice_run(input: [u8], output: &Output) {
+    let family: u64 = get64(input, 0);
+    let layout: u64 = get64(input, 8);
+    let identity: u64 = get64(input, 40);
+    let data_native: [u8; 32] = [0; 32];
+    let auxiliary_native: [u8; 32] = [0; 32];
+    let data_words: [i32; 8] = [0; 8];
+    let auxiliary_words: [i32; 8] = [0; 8];
+    let data: [u8] = data_native;
+    let auxiliary: [u8] = auxiliary_native;
+    if ((layout & 1) != 0) {
+        data = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(data_words), 32);
+    }
+    if ((layout & 2) != 0) {
+        auxiliary = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(auxiliary_words), 32);
+    }
+    if ((layout & 1) == 0) { assert(core::mem::slice_stride(data) < 0); }
+    else { assert(core::mem::slice_stride(data) == 1); }
+    if ((layout & 2) == 0) { assert(core::mem::slice_stride(auxiliary) < 0); }
+    else { assert(core::mem::slice_stride(auxiliary) == 1); }
+    let index: i32 = 0;
+    while (index < 32) {
+        let byte: u8 = ((identity * 13 + (index as u64) * 17) & 255) as u8;
+        data[index] = byte;
+        auxiliary[index] = (192 + index) as u8;
+        if (family == 3) { data[index] = (160 + index) as u8; auxiliary[index] = byte; }
+        index += 1;
+    }
+    let reader: core::io::SliceReader = core::io::SliceReader {
+        data: data, length: get64(input, 16) as i32, cursor: get64(input, 24) as i32
+    };
+    let writer: core::io::SliceWriter = core::io::SliceWriter {
+        data: data, length: get64(input, 16) as i32, cursor: get64(input, 24) as i32
+    };
+    index = 0;
+    while (index < get64(input, 32) as i32) {
+        let at: i32 = 64 + index * 32;
+        let action: u64 = get64(input, at);
+        let a: u64 = get64(input, at + 8);
+        let b: u64 = get64(input, at + 16);
+        if (action == 6) {
+            reader.length = a as i32; reader.cursor = b as i32;
+            writer.length = a as i32; writer.cursor = b as i32;
+            output.word(2); output.word(0); output.word(0); output.word(0);
+        } else {
+            if (action == 5) {
+                let moved: core::result::Result<i32, core::io::Error> = core::result::Ok(0);
+                if (family == 2) { moved = reader.read(auxiliary, b as i32, a as i32); }
+                else { moved = writer.write(auxiliary, b as i32, a as i32); }
+                answer_i32(moved, output);
+            } else {
+                let moved: core::result::Result<u64, core::io::Error> = core::result::Ok(0);
+                if (action <= 2) {
+                    let from: core::io::SeekFrom = origin(action, a);
+                    if (family == 2) { moved = reader.seek(from); }
+                    else { moved = writer.seek(from); }
+                }
+                if (action == 3) {
+                    if (family == 2) { moved = core::io::stream_position<core::io::SliceReader>(reader.borrow()); }
+                    else { moved = core::io::stream_position<core::io::SliceWriter>(writer.borrow()); }
+                }
+                if (action == 4) {
+                    if (family == 2) { moved = core::io::rewind<core::io::SliceReader>(reader.borrow()); }
+                    else { moved = core::io::rewind<core::io::SliceWriter>(writer.borrow()); }
+                }
+                answer_u64(moved, output);
+            }
+        }
+        let cursor: i32 = reader.cursor;
+        let length: i32 = reader.length;
+        let position: i32 = reader.position();
+        let remaining: i32 = 0;
+        if (family == 3) { cursor = writer.cursor; length = writer.length; position = writer.position(); }
+        if (cursor >= 0 && cursor <= length) {
+            if (family == 2) { remaining = reader.remaining(); }
+            else { remaining = writer.remaining(); }
+        }
+        output.word(cursor as i64 as u64); output.word(length as i64 as u64);
+        output.word(position as i64 as u64); output.word(remaining as i64 as u64);
+        let byte_index: i32 = 0;
+        while (byte_index < 32) { output.word(data[byte_index] as u64); byte_index += 1; }
+        byte_index = 0;
+        while (byte_index < 32) { output.word(auxiliary[byte_index] as u64); byte_index += 1; }
+        index += 1;
+    }
+}
+
+fn run(input: [u8], output: &Output) {
+    let family: u64 = get64(input, 0);
+    output.word(family); output.word(get64(input, 8)); output.word(get64(input, 40));
+    if (family == 0) {
+        let base: u64 = get64(input, 16);
+        let offset: i64 = get64(input, 24) as i64;
+        let result: core::result::Result<u64, core::io::Error> = core::io::offset_position(base, offset);
+        answer_u64(result, output); output.word(base); output.word(offset as u64);
+    }
+    if (family == 1) { provider_run(input, output); }
+    if (family >= 2) { slice_run(input, output); }
+}
+
+fn main() -> i32 {
+    let input_words: [i32; 80] = [0; 80];
+    let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(input_pointer, 320);
+    let output_words: [i32; 1024] = [0; 1024];
+    let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words);
+    let output_bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(output_pointer, 4096);
+    let output: Output = Output { bytes: output_bytes, pointer: output_pointer, used: 0 };
+    while (read_exact(input_pointer, 320, true)) {
+        assert(get64(input, 0) <= 3 && get64(input, 8) <= 3 && get64(input, 32) <= 8);
+        run(input, output.borrow());
+    }
+    output.flush();
+    return 0;
+}

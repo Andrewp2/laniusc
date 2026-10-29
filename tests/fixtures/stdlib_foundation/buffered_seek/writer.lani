@@ -1,0 +1,121 @@
+module app::main;
+import alloc::buffered;
+import core::io;
+import core::result;
+import fixture::peer;
+
+fn normal() {
+    let data:[u8;16]=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let bytes:[u8;4]=[1,2,3,4]; let next:[u8;2]=[9,8];
+    let peer=fixture::peer::stream(data,16,2);
+    let output=alloc::buffered::writer(peer.borrow(),4).unwrap();
+    let storage:ptr=output.buffer.storage;
+    fixture::peer::mark(80);
+    assert(output.write(bytes,0,4).unwrap()==4 && peer.writes==0);
+    assert(output.seek(core::io::SeekFrom::Current(-1)).unwrap()==3);
+    assert(peer.log==2235 && peer.writes==2 && peer.flushes==1 && peer.seeks==1 && peer.last_offset == -1);
+    assert(output.pending().len()==0 && data[0]==1 && data[1]==2 && data[2]==3 && data[3]==4);
+    assert(output.write(next,0,2).unwrap()==2); peer.log=0;
+    assert(output.seek(core::io::SeekFrom::Start(1)).unwrap()==1 && peer.log==234);
+    assert(data[3]==9 && data[4]==8 && output.pending().len()==0);
+    peer.log=0;
+    assert(output.seek(core::io::SeekFrom::End(-2)).unwrap()==14 && peer.log==36);
+    peer.log=0;
+    assert(core::io::stream_position(output.borrow()).unwrap()==14 && peer.log==35);
+    assert(output.buffer.storage==storage && output.capacity()==4 && output.is_active() && !output.is_faulted());
+    let parts=output.take_parts().unwrap();
+    assert(parts.buffer.storage==storage && parts.length==0 && !parts.faulted && !output.is_active());
+    let calls:i32=peer.seeks; let flushes:i32=peer.flushes;
+    assert(fixture::peer::error_is(output.seek(core::io::SeekFrom::Start(0)).unwrap_err(),4));
+    assert(peer.seeks==calls && peer.flushes==flushes);
+    fixture::peer::mark(112);
+    assert(parts.discard()==0 && output.discard()==0);
+}
+
+fn flush_failure(kind:i32) {
+    let data:[u8;16]=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let bytes:[u8;4]=[1,2,3,4];
+    let peer=fixture::peer::stream(data,16,2);
+    let output=alloc::buffered::writer(peer.borrow(),4).unwrap();
+    fixture::peer::mark(80);
+    assert(output.write(bytes,0,4).unwrap()==4);
+    let code:i32=5; let order:u64=22; let pending:i32=2;
+    let faulted:bool=false; let writes:i32=2; let flushes:i32=0;
+    if(kind==0) { peer.write_fail=2; peer.write_error=1; code=1; }
+    if(kind==1) { peer.write_fail=1; peer.write_error=2; code=2; order=2; pending=4; writes=1; }
+    if(kind==2) { peer.write_zero=2; code=6; }
+    if(kind==3) { peer.write_bad=2; peer.write_count = -1; faulted=true; }
+    if(kind==4) { peer.write_bad=2; peer.write_count=3; faulted=true; }
+    if(kind==5) { peer.flush_fail=1; peer.flush_error=2; code=2; order=223; pending=0; flushes=1; }
+    if(kind==6) { peer.flush_bad=1; order=223; pending=0; faulted=true; flushes=1; }
+    assert(fixture::peer::error_is(output.seek(core::io::SeekFrom::Start(7)).unwrap_err(),code));
+    assert(peer.seeks==0 && peer.log==order && peer.writes==writes && peer.flushes==flushes);
+    assert(output.pending().len()==pending && output.is_active() && output.is_faulted()==faulted);
+    assert(peer.position==(4-pending) as u64);
+    let index:i32=0; while(index<4-pending) { assert(data[index]==bytes[index]); index+=1; }
+    if(pending>0) { assert(output.pending().start==4-pending && output.pending().get(0).unwrap()==bytes[4-pending]); }
+    if(faulted) {
+        assert(fixture::peer::error_is(output.seek(core::io::SeekFrom::Start(0)).unwrap_err(),5));
+        assert(fixture::peer::error_is(output.flush().unwrap_err(),5));
+        assert(peer.writes==writes && peer.flushes==flushes && peer.seeks==0);
+    } else {
+        peer.write_fail=0; peer.write_zero=0; peer.flush_fail=0; peer.log=0;
+        assert(output.seek(core::io::SeekFrom::Start(7)).unwrap()==7);
+        if(pending==4) { assert(peer.log==2234); }
+        if(pending==2) { assert(peer.log==234); }
+        if(pending==0) { assert(peer.log==34); }
+        assert(output.pending().len()==0 && !output.is_faulted());
+        index=0; while(index<4) { assert(data[index]==bytes[index]); index+=1; }
+        index=4; while(index<16) { assert(data[index]==0); index+=1; }
+    }
+    let parts=output.take_parts().unwrap();
+    assert(parts.faulted==faulted);
+    if(faulted) { assert(parts.length==pending); } else { assert(parts.length==0); }
+    fixture::peer::mark(112);
+    if(faulted) { assert(parts.discard()==pending); } else { assert(parts.discard()==0); }
+    assert(output.discard()==0);
+}
+
+fn seek_failure(code:i32) {
+    let data:[u8;16]=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let bytes:[u8;3]=[41,42,43];
+    let peer=fixture::peer::stream(data,16,2);
+    let output=alloc::buffered::writer(peer.borrow(),3).unwrap();
+    let storage:ptr=output.buffer.storage;
+    fixture::peer::mark(80);
+    assert(output.write(bytes,0,3).unwrap()==3);
+    peer.seek_fail=1; peer.seek_error=code;
+    assert(fixture::peer::error_is(output.seek(core::io::SeekFrom::Start(7)).unwrap_err(),code));
+    assert(peer.log==2234 && peer.writes==2 && peer.flushes==1 && peer.seeks==1 && peer.position==19);
+    assert(output.pending().len()==0 && output.is_active() && !output.is_faulted());
+    assert(output.buffer.storage==storage && output.capacity()==3);
+    assert(data[0]==41 && data[1]==42 && data[2]==43 && data[3]==0);
+    peer.log=0;
+    assert(output.seek(core::io::SeekFrom::End(-1)).unwrap()==15 && peer.log==36);
+    assert(peer.writes==2 && peer.flushes==2 && peer.seeks==2);
+    fixture::peer::mark(112);
+    assert(output.discard()==0);
+}
+
+fn malformed_start() {
+    let data:[u8;4]=[0,0,0,0];
+    let peer=fixture::peer::stream(data,4,2);
+    let output=alloc::buffered::writer(peer.borrow(),2).unwrap();
+    fixture::peer::mark(80);
+    peer.seek_bad=1; peer.seek_reply=2;
+    assert(fixture::peer::error_is(output.seek(core::io::SeekFrom::Start(1)).unwrap_err(),5));
+    assert(peer.log==34 && peer.writes==0 && peer.flushes==1 && peer.seeks==1);
+    assert(output.pending().len()==0 && output.is_active() && output.is_faulted());
+    assert(fixture::peer::error_is(output.seek(core::io::SeekFrom::Current(0)).unwrap_err(),5));
+    assert(peer.log==34);
+    let parts=output.take_parts().unwrap();
+    assert(parts.faulted && parts.length==0 && parts.buffer.len()==2);
+    fixture::peer::mark(112);
+    assert(parts.discard()==0);
+}
+fn main() -> i32 {
+    normal();
+    let kind:i32=0; while(kind<7) { flush_failure(kind); kind+=1; }
+    let code:i32=1; while(code<=3) { seek_failure(code); code+=1; }
+    malformed_start(); fixture::peer::mark(68); return 0;
+}

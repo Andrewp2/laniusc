@@ -144,6 +144,60 @@ pub impl<R> core::io::Read for Reader<R> where R: core::io::Read {
     }
 }
 
+fn start_target(from: core::io::SeekFrom) -> u64 {
+    return match (from) { Start(position) -> position, Current(_) -> 0, End(_) -> 0 };
+}
+
+fn relative_offset(from: core::io::SeekFrom) -> i64 {
+    return match (from) { Start(_) -> 0, Current(offset) -> offset, End(_) -> 0 };
+}
+
+pub impl<R> core::io::Seek for Reader<R> where R: core::io::Read, R: core::io::Seek {
+    pub fn seek(&self, from: core::io::SeekFrom) -> core::result::Result<u64, core::io::Error> {
+        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (self.faulted) { return core::result::Err(core::io::Error::InvalidCount); }
+        let inner: &R = self.inner;
+        let request: core::io::SeekFrom = from;
+        let origin: i32 = match (from) { Start(_) -> 0, Current(_) -> 1, End(_) -> 2 };
+        let check_start: bool = origin == 0;
+        let target: u64 = start_target(from);
+        if (origin == 1) {
+            let offset: i64 = relative_offset(from);
+            // The inner cursor includes bytes retained as unread. Query
+            // before calculating the caller's logical absolute target.
+            let queried: core::result::Result<u64, core::io::Error> = inner.seek(core::io::SeekFrom::Current(0));
+            if (core::result::is_err(queried)) {
+                self.start = 0; self.end = 0; self.faulted = true;
+                return core::result::Err(core::result::unwrap_err(queried));
+            }
+            let position: u64 = core::result::unwrap(queried);
+            let unread: u64 = (self.end - self.start) as u64;
+            if (position < unread) {
+                self.start = 0; self.end = 0; self.faulted = true;
+                return core::result::Err(core::io::Error::InvalidCount);
+            }
+            let checked: core::result::Result<u64, core::io::Error> = core::io::offset_position(position - unread, offset);
+            // Arithmetic rejection made no repositioning request. Keep
+            // the existing unread range available to its caller.
+            if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+            target = core::result::unwrap(checked); check_start = true;
+            request = core::io::SeekFrom::Start(target);
+        }
+        let moved: core::result::Result<u64, core::io::Error> = inner.seek(request);
+        if (core::result::is_err(moved)) {
+            self.start = 0; self.end = 0; self.faulted = true;
+            return core::result::Err(core::result::unwrap_err(moved));
+        }
+        let position: u64 = core::result::unwrap(moved);
+        if (check_start && position != target) {
+            self.start = 0; self.end = 0; self.faulted = true;
+            return core::result::Err(core::io::Error::InvalidCount);
+        }
+        self.start = 0; self.end = 0;
+        return core::result::Ok(position);
+    }
+}
+
 pub impl<W> Writer<W> {
     pub fn borrow(&self) -> &Writer<W> { return self; }
     pub fn is_active(&self) -> bool { return self.active; }
@@ -223,5 +277,23 @@ pub impl<W> core::io::Write for Writer<W> where W: core::io::Write {
             return core::result::Err(core::io::Error::InvalidCount);
         }
         return core::result::Ok(0);
+    }
+}
+
+pub impl<W> core::io::Seek for Writer<W> where W: core::io::Write, W: core::io::Seek {
+    pub fn seek(&self, from: core::io::SeekFrom) -> core::result::Result<u64, core::io::Error> {
+        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (self.faulted) { return core::result::Err(core::io::Error::InvalidCount); }
+        // Preserve ordinary flush progress and failure behavior. Seeking is
+        // permitted only once all pending bytes and inner.flush succeeded.
+        let flushed: core::result::Result<i32, core::io::Error> = self.flush();
+        if (core::result::is_err(flushed)) { return core::result::Err(core::result::unwrap_err(flushed)); }
+        let inner: &W = self.inner;
+        let moved: core::result::Result<u64, core::io::Error> = inner.seek(from);
+        if (core::result::is_err(moved)) { return core::result::Err(core::result::unwrap_err(moved)); }
+        let position: u64 = core::result::unwrap(moved);
+        let valid: bool = match (from) { Start(target) -> position == target, _ -> true };
+        if (!valid) { self.faulted = true; return core::result::Err(core::io::Error::InvalidCount); }
+        return core::result::Ok(position);
     }
 }

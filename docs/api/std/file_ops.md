@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
 
-Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. Their earlier primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp; preliminary bounds evidence overlaps. The earlier allocation-free create_dir_at/remove_dir_at use mkdirat/unlinkat(AT_REMOVEDIR), validate full path/mode before one attempt and preserve caller ownership. Their three focused native groups pass namespace24/bounds19/faults12 process invocations, including two repeated baselines and reached errno/invalid-count injections. General host path resolution still applies; EEXIST is not proof of a safe directory. These primitives supply no durability, automatic rollback or hostile-directory authority. TempFile and AtomicFile apply their separate cooperative namespace/publication/recovery contracts. Nine additional link/readlink and descriptor/path permission functions plus LinkRead are accepted at source freeze 21269e34 on the documented native Linux x86_64/ext4 profile. Both paths are staged before link/symlink effects; bounded readlink uses a private packed probe and validates its returned count before caller-buffer mutation, with explicit incomplete status when the probe fills. Mode validation precedes descriptor/path admission; raw fchmodat has three arguments and follows the final symlink. These one-attempt allocation-free additions are not covered by the earlier primitive receipts. Their five groups pass links 28, readlink 19, permissions 12, bounds 45 and faults 35, totaling 139 accepted group cases across separate commands. The first 34 fault cases repeat in the successful fault-only retry, which replaced an unlaunchable large strace poke with a known 16-byte prefix/full-count control; real readlink outputs remain fully compared. Native syscall instruction provenance and zero source allocation are checked. The initial comparison/cast parser ambiguity was isolated and expressed with an equivalent widening-cast local, without compiler changes. Injected skipped closes establish logical retirement rather than physical close success. The subsequent positional-I/O increment adds read_at/write_at and portable File ReadAt/WriteAt implementations; five new driver tests pass in 13.11s: four native fixture groups plus one CPU trace-parser unit. Native coverage includes positive packed/negative native byte strides, nonzero starts, staging-boundary exact helpers, sparse offsets above 4 GiB, shared duplicate-cursor preservation, append/access/pipe/closed-owner policies, and 30 fault schedules with 24 reached injections. The actual O_DIRECT rejection branch executes. These processes show no allocation or automatic sync calls. An initial native executable exited 0 but aligned strace whitespace failed its Rust parser; the final five passes use a driver-only parser correction. The real file-patch program passes four registered groups/82 process cases across model 24/7.18s and CLI 35 + preservation 6 + I/O 17/7.57s. One selected existing FileOps regression passes in 7.12s against final typed-local production; no full old suite was rerun. Validate complete View/position metadata before live-owner/status checks. Valid empty calls on a live File return zero without host calls; closed File is Host(9). Nonempty calls use F_GETFL, reject O_DIRECT and write O_APPEND, then make at most one pread64/pwrite64 for at most 1024 bytes through contiguous stack staging. Native strided source/destination coordinates are retained; read bytes publish only after valid successful counts. Status/transfer calls do not retry, seek, allocate, flush or close. The caller prevents descriptor replacement/close and shared status-flag mutation through aliases/duplicates. Linux x86_64 CPU output is the selected native target; no transaction, lock, crash-durability, automatic ownership or device-execution claim follows. Earlier file receipts do not cover these new APIs. The original inline returned-count cast guard re-exposed the existing comparison/cast parser dependency: its imported fallback Iterator-bound label is misleading. Production uses the already documented typed-i64 amount local; no compiler repair or general generic-bound restriction is claimed. The final native adapter gates run after that production idiom change; one selected existing FileOps regression passes separately in 7.12s. The original five-test native receipt used contract fixture 6fcd487. A focused rerun of that same test passes in 7.74s with amended fixture dd12564d, adding both physically backed 1025-byte spans at MAX-1024 rejected before status/transfer. The other four native-driver test identities retain their earlier receipts; the total remains five unique tests across original/focused runs. The selected positional increment is accepted on the finite native Linux x86_64 profile; broader library/target/ownership scope remains open. The subsequent advisory-locking increment implements lock/unlock through one syscall 73 flock attempt on a borrowed live File. LockMode Shared/Exclusive and LockWait Blocking/Nonblocking encode SH=1/EX=2/NB=4; unlock always asks the host with UN=8 on a live owner, even when no lock is believed held. Closed logical File returns Host(9) without a call. Only exact-zero native success is accepted; nonzero success is InvalidCount, with existing Interrupted/WouldBlock/Host mapping. No retry, allocation, seek, flush, sync, implicit unlock or close is added. Duplicates share the open-description lock; repeated acquisition is not reference counted and failed conversion does not promise old-mode retention. Manual alias/duplicate lock/close coordination is required; one handle has no RAII ownership of shared lock state. Blocking can wait indefinitely and Nonblocking attempts once. All seven new library tests pass across separate receipts on native Linux x86_64/local filesystem: one native policy test in the mixed first command (6.86s) (the other fault test failed its tool-warning harness), one final fault test/5.45s (16 schedules/14 reached injections/two controls, including actual 64-bit result 4294967296 exact-zero admission), one model test/5.76s (1287 programs/24244 steps/four owner slots/seed 0xf10c20261030), and four process tests across one blocking test/5.97s plus three lifetime tests/5.37s. The model explicitly unlocks after 949 WouldBlock results including 138 failed conversions, avoiding any stronger atomic-retention assumption. Six native peer lifecycles contain three observed syscall 73/LOCK_EX waits before explicit controlling-host release. The cooperative file-patch mode shares existing preflight/positional/cleanup code with explicit acquisition/unlock/close errors; four new groups/49 cases pass across model 15/7.73s and bounds 15 + faults 15 + protection 4/7.62s. Host probes check exclusion during actual pread/pwrite and release before close; 15 fault processes reach 18 injected errors, which establish attempt/status policy rather than effects of skipped host cleanup. Current ordinary file-patch four groups/82 cases/7.73s and one selected amended positional contract/6.74s are separate regressions, without adding distinct ordinary cases. Accepted sources are FileOps 9ca5ca58 / app b2a6984c; no compiler/ABI/proof change or new compiler dependency is introduced. The selected increment is accepted on its finite profile. NFS/SMB, pathname replacement, noncooperating writers, blocking deadlines/cancellation, device execution, automatic ownership and proofs retain separate limits; the whole library goal remains open.
+Import std::file_ops to include File's core::io::Seek extension without a reverse module dependency. Closed Host(9) precedes Start target admission; Start above i64::MAX rejects before a syscall, Current/End use full signed-i64 offsets, and one existing lseek call has full-width/result/Start-acknowledgement checks. Duplicates share the host offset, beyond-EOF does not extend length and append policy remains. Low-level seek(offset,Origin) with Data/Hole stays distinct. The new real-file/pipe Seek gate passes in seek-file-first.log (mixed command/7.62s, one direct pass and one fault-harness failure): five descriptors, 19 lseeks, exact binary/append output, offsets above 4GiB without extension and genuine pipe/range errors. One selected existing FileOps regression passes in 7.65s with four tests filtered. The final fault-only test passes in seek-file-fault-register-retry.log, one test/6.19s (one filtered), with 18 schedules/five genuine controls/13 reached injections. Full 64-bit injected results and raw-negative guards remain required; only stderr/unsigned trace formatting changed in test infrastructure. FileOps source ba46d750 is unchanged. The two unique new native File tests are accepted across these separate receipts. Earlier FileOps receipts do not establish the new Seek extension. Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. Their earlier primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp; preliminary bounds evidence overlaps. The earlier allocation-free create_dir_at/remove_dir_at use mkdirat/unlinkat(AT_REMOVEDIR), validate full path/mode before one attempt and preserve caller ownership. Their three focused native groups pass namespace24/bounds19/faults12 process invocations, including two repeated baselines and reached errno/invalid-count injections. General host path resolution still applies; EEXIST is not proof of a safe directory. These primitives supply no durability, automatic rollback or hostile-directory authority. TempFile and AtomicFile apply their separate cooperative namespace/publication/recovery contracts. Nine additional link/readlink and descriptor/path permission functions plus LinkRead are accepted at source freeze 21269e34 on the documented native Linux x86_64/ext4 profile. Both paths are staged before link/symlink effects; bounded readlink uses a private packed probe and validates its returned count before caller-buffer mutation, with explicit incomplete status when the probe fills. Mode validation precedes descriptor/path admission; raw fchmodat has three arguments and follows the final symlink. These one-attempt allocation-free additions are not covered by the earlier primitive receipts. Their five groups pass links 28, readlink 19, permissions 12, bounds 45 and faults 35, totaling 139 accepted group cases across separate commands. The first 34 fault cases repeat in the successful fault-only retry, which replaced an unlaunchable large strace poke with a known 16-byte prefix/full-count control; real readlink outputs remain fully compared. Native syscall instruction provenance and zero source allocation are checked. The initial comparison/cast parser ambiguity was isolated and expressed with an equivalent widening-cast local, without compiler changes. Injected skipped closes establish logical retirement rather than physical close success. The subsequent positional-I/O increment adds read_at/write_at and portable File ReadAt/WriteAt implementations; five new driver tests pass in 13.11s: four native fixture groups plus one CPU trace-parser unit. Native coverage includes positive packed/negative native byte strides, nonzero starts, staging-boundary exact helpers, sparse offsets above 4 GiB, shared duplicate-cursor preservation, append/access/pipe/closed-owner policies, and 30 fault schedules with 24 reached injections. The actual O_DIRECT rejection branch executes. These processes show no allocation or automatic sync calls. An initial native executable exited 0 but aligned strace whitespace failed its Rust parser; the final five passes use a driver-only parser correction. The real file-patch program passes four registered groups/82 process cases across model 24/7.18s and CLI 35 + preservation 6 + I/O 17/7.57s. One selected existing FileOps regression passes in 7.12s against final typed-local production; no full old suite was rerun. Validate complete View/position metadata before live-owner/status checks. Valid empty calls on a live File return zero without host calls; closed File is Host(9). Nonempty calls use F_GETFL, reject O_DIRECT and write O_APPEND, then make at most one pread64/pwrite64 for at most 1024 bytes through contiguous stack staging. Native strided source/destination coordinates are retained; read bytes publish only after valid successful counts. Status/transfer calls do not retry, seek, allocate, flush or close. The caller prevents descriptor replacement/close and shared status-flag mutation through aliases/duplicates. Linux x86_64 CPU output is the selected native target; no transaction, lock, crash-durability, automatic ownership or device-execution claim follows. Earlier file receipts do not cover these new APIs. The original inline returned-count cast guard re-exposed the existing comparison/cast parser dependency: its imported fallback Iterator-bound label is misleading. Production uses the already documented typed-i64 amount local; no compiler repair or general generic-bound restriction is claimed. The final native adapter gates run after that production idiom change; one selected existing FileOps regression passes separately in 7.12s. The original five-test native receipt used contract fixture 6fcd487. A focused rerun of that same test passes in 7.74s with amended fixture dd12564d, adding both physically backed 1025-byte spans at MAX-1024 rejected before status/transfer. The other four native-driver test identities retain their earlier receipts; the total remains five unique tests across original/focused runs. The selected positional increment is accepted on the finite native Linux x86_64 profile; broader library/target/ownership scope remains open. The subsequent advisory-locking increment implements lock/unlock through one syscall 73 flock attempt on a borrowed live File. LockMode Shared/Exclusive and LockWait Blocking/Nonblocking encode SH=1/EX=2/NB=4; unlock always asks the host with UN=8 on a live owner, even when no lock is believed held. Closed logical File returns Host(9) without a call. Only exact-zero native success is accepted; nonzero success is InvalidCount, with existing Interrupted/WouldBlock/Host mapping. No retry, allocation, seek, flush, sync, implicit unlock or close is added. Duplicates share the open-description lock; repeated acquisition is not reference counted and failed conversion does not promise old-mode retention. Manual alias/duplicate lock/close coordination is required; one handle has no RAII ownership of shared lock state. Blocking can wait indefinitely and Nonblocking attempts once. All seven new library tests pass across separate receipts on native Linux x86_64/local filesystem: one native policy test in the mixed first command (6.86s) (the other fault test failed its tool-warning harness), one final fault test/5.45s (16 schedules/14 reached injections/two controls, including actual 64-bit result 4294967296 exact-zero admission), one model test/5.76s (1287 programs/24244 steps/four owner slots/seed 0xf10c20261030), and four process tests across one blocking test/5.97s plus three lifetime tests/5.37s. The model explicitly unlocks after 949 WouldBlock results including 138 failed conversions, avoiding any stronger atomic-retention assumption. Six native peer lifecycles contain three observed syscall 73/LOCK_EX waits before explicit controlling-host release. The cooperative file-patch mode shares existing preflight/positional/cleanup code with explicit acquisition/unlock/close errors; four new groups/49 cases pass across model 15/7.73s and bounds 15 + faults 15 + protection 4/7.62s. Host probes check exclusion during actual pread/pwrite and release before close; 15 fault processes reach 18 injected errors, which establish attempt/status policy rather than effects of skipped host cleanup. Current ordinary file-patch four groups/82 cases/7.73s and one selected amended positional contract/6.74s are separate regressions, without adding distinct ordinary cases. Accepted sources are FileOps 9ca5ca58 / app b2a6984c; no compiler/ABI/proof change or new compiler dependency is introduced. The selected increment is accepted on its finite profile. NFS/SMB, pathname replacement, noncooperating writers, blocking deadlines/cancellation, device execution, automatic ownership and proofs retain separate limits; the whole library goal remains open.
 
 ## Contract and evidence guides
 
@@ -20,8 +20,10 @@ Checked Linux x86_64 descriptor operations over std::linux, with owned File hand
 - [stdlib-positional-io](../../stdlib-positional-io.md)
 - [stdlib-file-patch](../../stdlib-file-patch.md)
 - [stdlib-file-locks](../../stdlib-file-locks.md)
+- [stdlib-seek](../../stdlib-seek.md)
+- [stdlib-reverse-records](../../stdlib-reverse-records.md)
 
-Declaration counts: constant: 3; enum: 7; field: 38; function: 37; impl: 3; method: 4; struct: 7; variant: 25.
+Declaration counts: constant: 3; enum: 7; field: 38; function: 37; impl: 4; method: 5; struct: 7; variant: 25.
 
 ## Declared imports
 
@@ -615,7 +617,7 @@ complete:bool
 
 ### enum: LockMode
 
-[Source line 282](../../../stdlib/std/file_ops.lani#L282)
+[Source line 310](../../../stdlib/std/file_ops.lani#L310)
 
 ```lanius
 pub enum LockMode
@@ -623,7 +625,7 @@ pub enum LockMode
 
 #### variant: Shared
 
-[Source line 282](../../../stdlib/std/file_ops.lani#L282)
+[Source line 310](../../../stdlib/std/file_ops.lani#L310)
 
 ```lanius
 Shared
@@ -631,7 +633,7 @@ Shared
 
 #### variant: Exclusive
 
-[Source line 282](../../../stdlib/std/file_ops.lani#L282)
+[Source line 310](../../../stdlib/std/file_ops.lani#L310)
 
 ```lanius
 Exclusive
@@ -639,7 +641,7 @@ Exclusive
 
 ### enum: LockWait
 
-[Source line 283](../../../stdlib/std/file_ops.lani#L283)
+[Source line 311](../../../stdlib/std/file_ops.lani#L311)
 
 ```lanius
 pub enum LockWait
@@ -647,7 +649,7 @@ pub enum LockWait
 
 #### variant: Blocking
 
-[Source line 283](../../../stdlib/std/file_ops.lani#L283)
+[Source line 311](../../../stdlib/std/file_ops.lani#L311)
 
 ```lanius
 Blocking
@@ -655,7 +657,7 @@ Blocking
 
 #### variant: Nonblocking
 
-[Source line 283](../../../stdlib/std/file_ops.lani#L283)
+[Source line 311](../../../stdlib/std/file_ops.lani#L311)
 
 ```lanius
 Nonblocking
@@ -975,7 +977,7 @@ Accepted on the finite native Linux x86_64 profile; see separate fixture/fault/m
 
 ### function: lock
 
-[Source line 289](../../../stdlib/std/file_ops.lani#L289)
+[Source line 317](../../../stdlib/std/file_ops.lani#L317)
 
 ```lanius
 pub fn lock(file:&File,mode:LockMode,wait:LockWait) -> Result<i32,Error>
@@ -985,7 +987,7 @@ Accepted on the finite native Linux x86_64/local-filesystem profile; native, ind
 
 ### function: unlock
 
-[Source line 299](../../../stdlib/std/file_ops.lani#L299)
+[Source line 327](../../../stdlib/std/file_ops.lani#L327)
 
 ```lanius
 pub fn unlock(file:&File) -> Result<i32,Error>
@@ -1049,4 +1051,20 @@ pub impl core::io::WriteAt for File
 
 ```lanius
 pub fn write_at(&self,source:[u8],offset:i32,count:i32,position:u64) -> Result<i32,Error>
+```
+
+### impl at line 285
+
+[Source line 285](../../../stdlib/std/file_ops.lani#L285)
+
+```lanius
+pub impl core::io::Seek for File
+```
+
+#### method: seek
+
+[Source line 286](../../../stdlib/std/file_ops.lani#L286)
+
+```lanius
+pub fn seek(&self,from:core::io::SeekFrom) -> Result<u64,Error>
 ```

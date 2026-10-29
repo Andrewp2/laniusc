@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[shared Seek increment](stdlib-seek.md) defines portable offset arithmetic,
+Seek-only helpers and canonical providers for bounded memory cursors,
+opt-in File and buffered streams. Read-ahead reconciliation, flush progress,
+reader faults and host offset limits are explicit. Portable admission/direct/
+model gates, native File gates, the 86-case reverse-records program and selected
+stream/FileOps/buffered regressions pass. Three scripted buffered gates also
+pass. This finite native Linux x86_64 increment is accepted.
+Earlier receipts do not establish these additions.
+The preceding
 [bounded delimiter-I/O increment](stdlib-delimited-io.md) adds a standalone
 BufRead protocol and read/skip helpers with byte/call caps and separate
 copied/consumed failure progress. SliceReader and the allocating buffered
@@ -241,6 +250,33 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Shared Seek.**
+
+The [Seek guide](stdlib-seek.md) specifies u64 positions with signed-i64
+relative arithmetic and exact Start acknowledgement. Fixed memory cursors
+reject beyond-length positions; the File extension uses Linux signed-i64
+offsets, with Data/Hole remaining a separate low-level API. Buffered reader
+Current reconciles read-ahead through query/absolute seek; inner errors clear
+unread publication and fault it, while arithmetic rejection preserves bytes.
+Buffered writers flush before seeking and preserve confirmed flush effects
+on failure. Portable admission passes one test/6.30s; direct contracts and one
+missing-bound rejection pass two tests/4.74s. The independent model passes one
+test/5.01s with 17,620 cases, four families and four backing combinations.
+One selected stream regression passes two fixtures in 11.00s. The real File/
+pipe gate passes within a mixed 7.62s command whose fault test fails its tool-
+warning harness. Its final fault-only test passes in 6.19s: 18 schedules,
+five genuine controls and 13 reached injections. A selected old FileOps
+regression passes in 7.65s. The real reverse-records program passes four
+groups/86 cases in 8.00s. Buffered import now executes after private enum-
+projection helpers replaced rejected Reader-body spellings; public generic
+bounds/state behavior are unchanged. Three buffered tests pass in 9.95s,
+covering nine reader/twelve writer phases, nesting/handoff and four reached
+constructor denials with all-host-call-free pure phases and exact releases.
+Four selected existing buffered tests pass separately in 10.57s, with one
+writer-only test filtered. This finite native Linux x86_64 increment is
+accepted; historical buffered receipts retain their API/source scope. The
+full library, lifetime and target scope remains open.
 
 **Bounded delimiter I/O.**
 

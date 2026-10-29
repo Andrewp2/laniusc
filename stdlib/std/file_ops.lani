@@ -279,6 +279,34 @@ pub impl core::io::WriteAt for File {
     }
 }
 
+// Portable positioning shares the existing full-width Linux seek engine.
+// A live owner is required before Start-domain admission. Duplicates share
+// this cursor; a failed seek has no general rollback guarantee. No retry.
+pub impl core::io::Seek for File {
+    pub fn seek(&self,from:core::io::SeekFrom) -> Result<u64,Error> {
+        descriptor(self)?;
+        let start:core::option::Option<u64> =match(from) {
+            core::io::SeekFrom::Start(target)->core::option::Some(target),
+            _->core::option::None()
+        };
+        if(start.is_some() && start.unwrap()>9223372036854775807) { return Err(Error::InvalidInput); }
+        let offset:i64=match(from) {
+            core::io::SeekFrom::Start(target)->target as i64,
+            core::io::SeekFrom::Current(delta)->delta,
+            core::io::SeekFrom::End(delta)->delta
+        };
+        let origin:Origin=match(from) {
+            core::io::SeekFrom::Start(_)->Origin::Start,
+            core::io::SeekFrom::Current(_)->Origin::Current,
+            core::io::SeekFrom::End(_)->Origin::End
+        };
+        let position:i64=std::file_ops::seek(self,offset,origin)?;
+        let actual:u64=position as u64;
+        if(start.is_some() && actual!=start.unwrap()) { return Err(Error::InvalidCount); }
+        return Ok(actual);
+    }
+}
+
 pub enum LockMode { Shared, Exclusive }
 pub enum LockWait { Blocking, Nonblocking }
 

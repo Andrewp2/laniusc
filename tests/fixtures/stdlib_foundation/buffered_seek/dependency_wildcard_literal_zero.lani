@@ -1,0 +1,13 @@
+module app::main;
+import core::io;
+fn target(from:core::io::SeekFrom) -> u64 {
+    let target:u64=match(from) { Start(position) -> position, _ -> 0 };
+    return target;
+}
+fn main() -> i32 {
+    assert(target(core::io::SeekFrom::Start(0))==0);
+    assert(target(core::io::SeekFrom::Start(18446744073709551615))==18446744073709551615);
+    assert(target(core::io::SeekFrom::Current(17))==0);
+    assert(target(core::io::SeekFrom::End(-5))==0);
+    return 0;
+}

@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-Reader<R> now implements canonical core::io::BufRead under R:Read. Existing public fill_buf/consume bodies move into that single trait implementation with no duplicate inherent aliases; inactive/faulted checks, fixed capacity, no permanent EOF cache, read-ahead and unread handoff remain explicit. The new delimiter helpers require only BufRead and do not allocate; this adapter still owns one manually released buffer and borrows its inner Read stream. Small native protocol admission passes in 7.24s. Four selected buffered regressions pass in 9.81s: reader/handoff/faults, nested copy, four constructor OOM failures and the actual binary-copy sample; one writer-only test was filtered. Direct delimiter contracts pass separately in 7.56s. The independent model passes one test in 5.64s with 18000 cases, four stride combinations and two invocations/case after a fixture-only syntax correction. The real record-selector passes four groups/91 cases in 8.51s, including five reached allocation denials and actual output-prefix/required-EOF failures. The finite native Linux x86_64 increment is accepted. Direct no-effect trace evidence covers only mmap/mremap/munmap/brk/read/write/close, without an all-host-call claim. Historical buffered receipts retain their source/API scope and do not establish the current migration.
+The shared Seek increment adds Reader<R> under R:Read+Seek and Writer<W> under W:Write+Seek. Reader Current queries/subtracts unread bytes/checks arithmetic/seeks absolute, even for zero; actual seek errors or malformed positions fault it and clear unread publication. Arithmetic rejection after query preserves unread bytes. Writer completes existing flush before seek; partial flush effects survive errors, and successful-flush/failed-seek leaves active empty pending state. Start acknowledgement mismatches fault adapters. Borrowed inner access must be exclusive; allocation/handoff/discard stay manual. Current buffered import executes in one probe/6.01s after two private nongeneric enum-projection helpers replace rejected Reader-body spellings. Public generic bounds and state behavior are unchanged; local/simple imported nested-bound controls execute, and the initial Mapper diagnostic is not a general generic limitation or compiler repair. The real reverse-records program passes four groups/86 cases in 8.00s on buffered source08212669. All three scripted Seek tests pass in 9.95s on production08212669/peer365d8062: nine reader phases, twelve writer phases, nested four-buffer ownership/handoff and four individually reached constructor allocation denials, with exact call/effect order, all-host-call-free pure phases and address/extent release checks. Four selected existing buffered tests pass separately in 10.57s (one writer-only test filtered): actual binary-copy sample, constructor denials, nested copy and reader handoff. The finite native Linux x86_64 Seek increment is accepted. Retained original-source controls document only the specific Reader-body admission boundary; no compiler repair or general generic restriction is claimed. Historical buffered receipts retain their API/source scope. Reader<R> now implements canonical core::io::BufRead under R:Read. Existing public fill_buf/consume bodies move into that single trait implementation with no duplicate inherent aliases; inactive/faulted checks, fixed capacity, no permanent EOF cache, read-ahead and unread handoff remain explicit. The new delimiter helpers require only BufRead and do not allocate; this adapter still owns one manually released buffer and borrows its inner Read stream. Small native protocol admission passes in 7.24s. Four selected buffered regressions pass in 9.81s: reader/handoff/faults, nested copy, four constructor OOM failures and the actual binary-copy sample; one writer-only test was filtered. Direct delimiter contracts pass separately in 7.56s. The independent model passes one test in 5.64s with 18000 cases, four stride combinations and two invocations/case after a fixture-only syntax correction. The real record-selector passes four groups/91 cases in 8.51s, including five reached allocation denials and actual output-prefix/required-EOF failures. The finite native Linux x86_64 increment is accepted. Direct no-effect trace evidence covers only mmap/mremap/munmap/brk/read/write/close, without an all-host-call claim. Historical buffered receipts retain their source/API scope and do not establish the current migration.
 
 ## Contract and evidence guides
 
@@ -16,8 +16,10 @@ Reader<R> now implements canonical core::io::BufRead under R:Read. Existing publ
 - [stdlib-format-write](../../stdlib-format-write.md)
 - [stdlib-delimited-io](../../stdlib-delimited-io.md)
 - [stdlib-select-records](../../stdlib-select-records.md)
+- [stdlib-seek](../../stdlib-seek.md)
+- [stdlib-reverse-records](../../stdlib-reverse-records.md)
 
-Declaration counts: field: 17; function: 2; impl: 6; method: 22; struct: 3.
+Declaration counts: field: 17; function: 2; impl: 8; method: 24; struct: 3.
 
 ## Declared imports
 
@@ -340,9 +342,25 @@ pub impl<R> core::io::Read for Reader<R> where R: core::io::Read
 pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error>
 ```
 
-### impl at line 147
+### impl at line 155
 
-[Source line 147](../../../stdlib/alloc/buffered.lani#L147)
+[Source line 155](../../../stdlib/alloc/buffered.lani#L155)
+
+```lanius
+pub impl<R> core::io::Seek for Reader<R> where R: core::io::Read, R: core::io::Seek
+```
+
+#### method: seek
+
+[Source line 156](../../../stdlib/alloc/buffered.lani#L156)
+
+```lanius
+pub fn seek(&self, from: core::io::SeekFrom) -> core::result::Result<u64, core::io::Error>
+```
+
+### impl at line 201
+
+[Source line 201](../../../stdlib/alloc/buffered.lani#L201)
 
 ```lanius
 pub impl<W> Writer<W>
@@ -350,7 +368,7 @@ pub impl<W> Writer<W>
 
 #### method: borrow
 
-[Source line 148](../../../stdlib/alloc/buffered.lani#L148)
+[Source line 202](../../../stdlib/alloc/buffered.lani#L202)
 
 ```lanius
 pub fn borrow(&self) -> &Writer<W>
@@ -358,7 +376,7 @@ pub fn borrow(&self) -> &Writer<W>
 
 #### method: is_active
 
-[Source line 149](../../../stdlib/alloc/buffered.lani#L149)
+[Source line 203](../../../stdlib/alloc/buffered.lani#L203)
 
 ```lanius
 pub fn is_active(&self) -> bool
@@ -366,7 +384,7 @@ pub fn is_active(&self) -> bool
 
 #### method: is_faulted
 
-[Source line 150](../../../stdlib/alloc/buffered.lani#L150)
+[Source line 204](../../../stdlib/alloc/buffered.lani#L204)
 
 ```lanius
 pub fn is_faulted(&self) -> bool
@@ -374,7 +392,7 @@ pub fn is_faulted(&self) -> bool
 
 #### method: capacity
 
-[Source line 151](../../../stdlib/alloc/buffered.lani#L151)
+[Source line 205](../../../stdlib/alloc/buffered.lani#L205)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -382,7 +400,7 @@ pub fn capacity(&self) -> i32
 
 #### method: pending
 
-[Source line 152](../../../stdlib/alloc/buffered.lani#L152)
+[Source line 206](../../../stdlib/alloc/buffered.lani#L206)
 
 ```lanius
 pub fn pending(&self) -> core::slice::View<u8>
@@ -390,7 +408,7 @@ pub fn pending(&self) -> core::slice::View<u8>
 
 #### method: finish
 
-[Source line 176](../../../stdlib/alloc/buffered.lani#L176)
+[Source line 230](../../../stdlib/alloc/buffered.lani#L230)
 
 ```lanius
 pub fn finish(&self) -> core::result::Result<i32, core::io::Error> where W: core::io::Write
@@ -398,7 +416,7 @@ pub fn finish(&self) -> core::result::Result<i32, core::io::Error> where W: core
 
 #### method: take_parts
 
-[Source line 182](../../../stdlib/alloc/buffered.lani#L182)
+[Source line 236](../../../stdlib/alloc/buffered.lani#L236)
 
 ```lanius
 pub fn take_parts(&self) -> core::result::Result<Parts<W>, core::io::Error>
@@ -406,15 +424,15 @@ pub fn take_parts(&self) -> core::result::Result<Parts<W>, core::io::Error>
 
 #### method: discard
 
-[Source line 188](../../../stdlib/alloc/buffered.lani#L188)
+[Source line 242](../../../stdlib/alloc/buffered.lani#L242)
 
 ```lanius
 pub fn discard(&self) -> i32
 ```
 
-### impl at line 195
+### impl at line 249
 
-[Source line 195](../../../stdlib/alloc/buffered.lani#L195)
+[Source line 249](../../../stdlib/alloc/buffered.lani#L249)
 
 ```lanius
 pub impl<W> core::io::Write for Writer<W> where W: core::io::Write
@@ -422,7 +440,7 @@ pub impl<W> core::io::Write for Writer<W> where W: core::io::Write
 
 #### method: write
 
-[Source line 196](../../../stdlib/alloc/buffered.lani#L196)
+[Source line 250](../../../stdlib/alloc/buffered.lani#L250)
 
 ```lanius
 pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error>
@@ -430,8 +448,24 @@ pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Resu
 
 #### method: flush
 
-[Source line 215](../../../stdlib/alloc/buffered.lani#L215)
+[Source line 269](../../../stdlib/alloc/buffered.lani#L269)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32, core::io::Error>
+```
+
+### impl at line 283
+
+[Source line 283](../../../stdlib/alloc/buffered.lani#L283)
+
+```lanius
+pub impl<W> core::io::Seek for Writer<W> where W: core::io::Write, W: core::io::Seek
+```
+
+#### method: seek
+
+[Source line 284](../../../stdlib/alloc/buffered.lani#L284)
+
+```lanius
+pub fn seek(&self, from: core::io::SeekFrom) -> core::result::Result<u64, core::io::Error>
 ```

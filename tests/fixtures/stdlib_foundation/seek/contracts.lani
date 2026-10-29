@@ -1,0 +1,182 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+
+fn code(error:core::io::Error) -> i32 {
+    return match(error) {
+        core::io::Error::InvalidInput -> 1, core::io::Error::InvalidCount -> 2,
+        core::io::Error::Interrupted -> 3, core::io::Error::WouldBlock -> 4,
+        core::io::Error::AllocationFailed -> 5, core::io::Error::Host(value) -> value, _ -> 99
+    };
+}
+fn rejected(result:core::result::Result<u64,core::io::Error>,expected:i32) {
+    assert(result.is_err()); assert(code(result.unwrap_err())==expected);
+}
+fn offset_ok(base:u64,offset:i64,expected:u64) {
+    assert(core::io::offset_position(base,offset).unwrap()==expected);
+}
+fn signed_offset_literal_boundaries() {
+    offset_ok(0,0,0); offset_ok(18446744073709551615,0,18446744073709551615);
+    offset_ok(0,9223372036854775807,9223372036854775807);
+    offset_ok(9223372036854775808,-9223372036854775808,0);
+    offset_ok(9223372036854775809,-9223372036854775808,1);
+    offset_ok(18446744073709551615,-9223372036854775808,9223372036854775807);
+    offset_ok(9223372036854775807,-9223372036854775807,0);
+    offset_ok(1,-1,0); offset_ok(18446744073709551615,-1,18446744073709551614);
+    offset_ok(9223372036854775807,9223372036854775807,18446744073709551614);
+    offset_ok(9223372036854775807,1,9223372036854775808);
+    offset_ok(9223372036854775808,9223372036854775807,18446744073709551615);
+    rejected(core::io::offset_position(0,-1),1);
+    rejected(core::io::offset_position(0,-9223372036854775808),1);
+    rejected(core::io::offset_position(9223372036854775807,-9223372036854775808),1);
+    rejected(core::io::offset_position(9223372036854775806,-9223372036854775807),1);
+    rejected(core::io::offset_position(18446744073709551615,1),1);
+    rejected(core::io::offset_position(18446744073709551615,9223372036854775807),1);
+    rejected(core::io::offset_position(9223372036854775809,9223372036854775807),1);
+}
+
+// Deliberately no Read/Write implementation. Every call can have an observable
+// effect even on Err; helpers must preserve the result without retry/rollback.
+struct Script { action:i32, answer:u64, position:u64, calls:i32, origin:i32, start:u64, offset:i64 }
+fn script(action:i32,answer:u64) -> Script {
+    return Script { action:action,answer:answer,position:11,calls:0,origin:0,start:99,offset:99 };
+}
+impl Script {
+    fn borrow(&self) -> &Script { return self; }
+    fn absolute(&self,position:u64) -> i32 { self.start=position; return 1; }
+    fn relative(&self,origin:i32,offset:i64) -> i32 { self.offset=offset; return origin; }
+}
+fn scripted_error(action:i32) -> core::io::Error {
+    if(action==1) { return core::io::Error::InvalidInput; }
+    if(action==2) { return core::io::Error::InvalidCount; }
+    if(action==3) { return core::io::Error::Interrupted; }
+    if(action==4) { return core::io::Error::WouldBlock; }
+    if(action==5) { return core::io::Error::AllocationFailed; }
+    assert(action==6); return core::io::Error::Host(-2147483647);
+}
+pub impl core::io::Seek for Script {
+    pub fn seek(&self,from:core::io::SeekFrom) -> core::result::Result<u64,core::io::Error> {
+        self.calls+=1; self.position=self.answer;
+        self.origin=match(from) {
+            core::io::SeekFrom::Start(position) -> self.absolute(position),
+            core::io::SeekFrom::Current(offset) -> self.relative(2,offset),
+            core::io::SeekFrom::End(offset) -> self.relative(3,offset)
+        };
+        if(self.action!=0) { return core::result::Err(scripted_error(self.action)); }
+        return core::result::Ok(self.answer);
+    }
+}
+fn helpers_call_once_preserve_results_and_effects() {
+    let action:i32=0;
+    while(action<=6) {
+        let position:Script=script(action,18446744073709551615);
+        let result:core::result::Result<u64,core::io::Error> =core::io::stream_position<Script>(position.borrow());
+        if(action==0) { assert(result.unwrap()==18446744073709551615); }
+        else { rejected(result,code(scripted_error(action))); }
+        assert(position.calls==1 && position.origin==2 && position.offset==0 && position.start==99 && position.position==18446744073709551615);
+        let reset:Script=script(action,7);
+        let rewound:core::result::Result<u64,core::io::Error> =core::io::rewind<Script>(reset.borrow());
+        if(action==0) { rejected(rewound,2); }
+        else { rejected(rewound,code(scripted_error(action))); }
+        assert(reset.calls==1 && reset.origin==1 && reset.start==0 && reset.offset==99 && reset.position==7);
+        action+=1;
+    }
+    let zero:Script=script(0,0); assert(core::io::rewind<Script>(zero.borrow()).unwrap()==0);
+    assert(zero.calls==1 && zero.origin==1 && zero.start==0 && zero.position==0);
+    let high:Script=script(0,18446744073709551615); rejected(core::io::rewind<Script>(high.borrow()),2);
+    assert(high.calls==1 && high.position==18446744073709551615);
+}
+
+fn reject_memory(reader:&core::io::SliceReader,writer:&core::io::SliceWriter,from:core::io::SeekFrom) {
+    let before_read:i32=reader.position(); let before_write:i32=writer.position();
+    rejected(reader.seek(from),1); rejected(writer.seek(from),1);
+    assert(reader.position()==before_read && writer.position()==before_write);
+}
+fn forged(length:i32,cursor:i32) {
+    let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let reader:core::io::SliceReader=core::io::SliceReader { data:unread,length:length,cursor:cursor };
+    let writer:core::io::SliceWriter=core::io::SliceWriter { data:unread,length:length,cursor:cursor };
+    reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Start(0));
+    reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Current(0));
+    reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::End(0));
+    reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Start(18446744073709551615));
+    reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::End(-9223372036854775808));
+    assert(reader.length==length && writer.length==length && reader.cursor==cursor && writer.cursor==cursor);
+}
+fn zero_and_forged_memory_admission_has_no_backing_access() {
+    let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let reader:core::io::SliceReader=core::io::slice_reader(unread,0).unwrap();
+    let writer:core::io::SliceWriter=core::io::slice_writer(unread,0).unwrap();
+    assert(reader.seek(core::io::SeekFrom::Start(0)).unwrap()==0 && writer.seek(core::io::SeekFrom::Start(0)).unwrap()==0);
+    assert(reader.seek(core::io::SeekFrom::Current(0)).unwrap()==0 && writer.seek(core::io::SeekFrom::Current(0)).unwrap()==0);
+    assert(reader.seek(core::io::SeekFrom::End(0)).unwrap()==0 && writer.seek(core::io::SeekFrom::End(0)).unwrap()==0);
+    reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Start(1));
+    reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Start(18446744073709551615));
+    reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Current(-1));
+    reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Current(-9223372036854775808));
+    reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::End(9223372036854775807));
+    forged(-1,0); forged(0,-1); forged(3,4); forged(-2147483648,-2147483648);
+    let wide_read:core::io::SliceReader=core::io::SliceReader { data:unread,length:2147483647,cursor:0 };
+    let wide_write:core::io::SliceWriter=core::io::SliceWriter { data:unread,length:2147483647,cursor:0 };
+    assert(wide_read.seek(core::io::SeekFrom::Start(2147483647)).unwrap()==2147483647);
+    assert(wide_write.seek(core::io::SeekFrom::End(0)).unwrap()==2147483647);
+    assert(wide_read.remaining()==0 && wide_write.remaining()==0);
+    reject_memory(wide_read.borrow(),wide_write.borrow(),core::io::SeekFrom::Start(2147483648));
+    reject_memory(wide_read.borrow(),wide_write.borrow(),core::io::SeekFrom::Current(-9223372036854775808));
+    reject_memory(wide_read.borrow(),wide_write.borrow(),core::io::SeekFrom::Current(9223372036854775807));
+    assert(core::io::rewind<core::io::SliceReader>(wide_read.borrow()).unwrap()==0);
+    assert(core::io::rewind<core::io::SliceWriter>(wide_write.borrow()).unwrap()==0);
+}
+
+fn seeks_preserve_strides_and_control_real_reads_writes() {
+    let stack_source:[u8;8]=[9,11,128,0,255,13,77,88]; let stack_target:[u8;8]=[199;8];
+    let source_words:[i32;2]=[0;2]; let target_words:[i32;2]=[0;2];
+    let packed_source:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(source_words),8);
+    let packed_target:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(target_words),8);
+    assert(core::mem::slice_stride(stack_source)<0 && core::mem::slice_stride(stack_target)<0);
+    assert(core::mem::slice_stride(packed_source)==1 && core::mem::slice_stride(packed_target)==1);
+    let mode:i32=0;
+    while(mode<2) {
+        let source:[u8]=stack_source; let target:[u8]=packed_target;
+        if(mode==1) { source=packed_source; target=stack_target; }
+        let i:i32=0; while(i<8) { source[i]=stack_source[i]; target[i]=199; i+=1; }
+        let reader:core::io::SliceReader=core::io::slice_reader(source,8).unwrap();
+        let writer:core::io::SliceWriter=core::io::slice_writer(target,8).unwrap();
+        let output:[u8;8]=[199;8]; let payload:[u8;2]=[0,255];
+        assert(reader.seek(core::io::SeekFrom::Start(3)).unwrap()==3 && reader.remaining()==5);
+        assert(reader.read(output,2,2).unwrap()==2 && reader.position()==5);
+        assert(reader.seek(core::io::SeekFrom::End(-2)).unwrap()==6);
+        assert(reader.read(output,4,4).unwrap()==2 && reader.position()==8);
+        assert(output[0]==199 && output[1]==199 && output[2]==0 && output[3]==255 && output[4]==77 && output[5]==88 && output[6]==199 && output[7]==199);
+        assert(reader.seek(core::io::SeekFrom::Current(-5)).unwrap()==3);
+        assert(core::io::stream_position<core::io::SliceReader>(reader.borrow()).unwrap()==3);
+        assert(reader.seek(core::io::SeekFrom::Current(1)).unwrap()==4);
+        assert(reader.seek(core::io::SeekFrom::Current(-1)).unwrap()==3);
+        assert(reader.read(output,1,1).unwrap()==1 && output[1]==0 && reader.position()==4);
+        assert(writer.seek(core::io::SeekFrom::Start(2)).unwrap()==2);
+        assert(writer.write(payload,0,2).unwrap()==2 && writer.position()==4);
+        assert(writer.seek(core::io::SeekFrom::End(-1)).unwrap()==7);
+        assert(writer.write(payload,1,1).unwrap()==1 && writer.position()==8);
+        assert(writer.seek(core::io::SeekFrom::Current(-3)).unwrap()==5);
+        assert(writer.write(payload,0,2).unwrap()==2 && writer.position()==7);
+        assert(core::io::stream_position<core::io::SliceWriter>(writer.borrow()).unwrap()==7);
+        assert(writer.seek(core::io::SeekFrom::Current(1)).unwrap()==8);
+        assert(writer.write(payload,0,1).unwrap()==0 && writer.position()==8);
+        assert(writer.seek(core::io::SeekFrom::Current(-1)).unwrap()==7);
+        reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Start(9));
+        reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Start(9223372036854775808));
+        reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::End(1));
+        reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::End(-9));
+        reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Current(-9223372036854775808));
+        reject_memory(reader.borrow(),writer.borrow(),core::io::SeekFrom::Current(9223372036854775807));
+        assert(target[0]==199 && target[1]==199 && target[2]==0 && target[3]==255 && target[4]==199 && target[5]==0 && target[6]==255 && target[7]==255);
+        assert(source[0]==9 && source[1]==11 && source[2]==128 && source[3]==0 && source[4]==255 && source[5]==13 && source[6]==77 && source[7]==88);
+        mode+=1;
+    }
+}
+
+fn main() -> i32 {
+    signed_offset_literal_boundaries(); helpers_call_once_preserve_results_and_effects();
+    zero_and_forged_memory_admission_has_no_backing_access(); seeks_preserve_strides_and_control_real_reads_writes(); return 0;
+}
