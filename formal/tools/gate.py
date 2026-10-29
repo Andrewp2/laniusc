@@ -54,6 +54,8 @@ STEPS = [
     ('stdlib-scalars', ['stdlib_oracle.py', '{w}', '--modules', 'core::cmp,core::u64,core::option', '--seed', '{s}'],
      ['run_all', 'laniusc', 'stdlib'], True),
     ('self-host', ['self_host.py', '{w}'], ['run_all', 'lani', 'laniusc', 'stdlib'], True),
+    # V6: the verified compiler's ELF executables exit with main's result.
+    ('elf', ['elf_test.py', '{w}'], ['run_all', 'laniusc', 'stdlib'], True),
     # The `&mut` extraction pilot against laniusc's build of the same source.
     ('mut-pilot', ['fn_difftest.py', '{w}', '--per-fn', '30', '--seed', '{s}', '--source',
                    'formal/lani/mini/mut_pilot.lani', '--lean-module', 'Lanius.Mini.MutPilot'],

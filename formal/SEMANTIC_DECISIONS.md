@@ -481,6 +481,19 @@ the verified compiler's subset, since they are ambiguous in the same way
 (`{ a } - b;`, `x.f < a > (b)`). With these, every token sequence has at
 most one parse tree (V4, `Mini/ParseUnique.lean`).
 
+### The process (decided 10-29)
+
+A Lanius program runs as a Linux process whose exit status is the low byte
+of `main`'s last result slot (rax): `main` takes no parameters, and its
+return value is the status. The verified compiler writes the executable
+itself (`elf_file`): one readable, writable, executable segment at 2^32
+holding the ELF headers, the startup code and the image, followed in the
+segment's zero fill by the stack and then the heap, whose sizes the caller
+chooses (`stack` at least `binary.guard`, `heap` at least 1, both below
+2^40). There is no dynamic loader, no libc and no argv; a trap is a signal
+(SIGFPE or SIGILL), so the status is never a trap code. The entry is a
+function index; the driver's convention is function 0.
+
 ## Decisions still required
 
 - Which NaN payload details are observable through future bit-conversion APIs.

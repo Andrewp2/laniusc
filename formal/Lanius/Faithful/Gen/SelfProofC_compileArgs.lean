@@ -13,7 +13,7 @@ public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
-public import Lanius.Faithful.Gen.SelfStmtC_compileSource
+public import Lanius.Faithful.Gen.SelfStmtC_larger
 import all Lanius.Faithful.Gen.SelfSrcC_compileArgs
 import all Lanius.Mini.Compiler.P.compileArgs
 

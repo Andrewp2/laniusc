@@ -47,6 +47,7 @@ public import Lanius.Faithful.Gen.SelfProofC_evalSame
 public import Lanius.Faithful.Gen.SelfProofC_guardAnd
 public import Lanius.Faithful.Gen.SelfProofC_indexOf
 public import Lanius.Faithful.Gen.SelfProofC_iteThen
+public import Lanius.Faithful.Gen.SelfProofC_larger
 public import Lanius.Faithful.Gen.SelfProofC_leftTrue
 public import Lanius.Faithful.Gen.SelfProofC_lookup
 public import Lanius.Faithful.Gen.SelfProofC_lowerAddress

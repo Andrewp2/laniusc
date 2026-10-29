@@ -5610,3 +5610,108 @@ pub fn compile_words(program: core::option::Option<SrcProgram>) -> core::option:
         Some(prog) -> binary_words(compile_source(prog)),
     };
 }
+
+// ---------------------------------------------------------------- the process
+
+// The ELF file for a binary (roadmap V6): one loadable segment at 2^32,
+// readable, writable and executable, from the file's first byte. The file is
+// the ELF header, its one program header, the startup code and the image;
+// the segment goes on, zero-filled by Linux, to a page boundary, then `stack`
+// bytes of stack and `heap` bytes of heap. The startup code sets rsp to the
+// stack's top, r15 to the stack limit (`binary.guard` above its bottom),
+// r12, r14 and r13 to the heap's base, its limit and cursor 1, calls function
+// `entry`, and exits with its rax: mov rdi, rax; mov eax, 60; syscall. None
+// when the sizes do not fit (`elf_fits`).
+
+pub fn elf_base() -> usize {
+    return 4294967296;
+}
+
+// The bytes before the image: the headers (120) and the startup code (65).
+pub fn elf_before_image() -> usize {
+    return 185;
+}
+
+pub fn larger(a: usize, b: usize) -> usize {
+    if (a > b) {
+        return a;
+    }
+    return b;
+}
+
+// `frameNeed`: stack bytes one activation uses, the most over the codes.
+pub fn frame_need_of(codes: List<Code>) -> usize {
+    return match (codes) {
+        Nil -> 0,
+        Cons(c, rest) -> larger(plus(frame_size(c.slots), 16), frame_need_of(unbox(rest))),
+    };
+}
+
+// `Binary.guard`
+pub fn stack_guard(binary: Binary) -> usize {
+    return plus(frame_need_of(binary.codes), 8);
+}
+
+// `n` rounded up to a multiple of 4096.
+pub fn page_up(n: usize) -> usize {
+    return times(plus(n, 4095) / 4096, 4096);
+}
+
+pub fn le16(value: usize) -> List<u8> {
+    let bits: u64 = value as u64;
+    return cons(bits as u8, single((bits >> 8) as u8));
+}
+
+pub fn le64n(value: usize) -> List<u8> {
+    return le64(value as u64);
+}
+
+// Where the stack starts: the first page boundary after the file.
+pub fn elf_stack_base(binary: Binary) -> usize {
+    return plus(elf_base(), page_up(plus(elf_before_image(), length(binary.image))));
+}
+
+// The ELF header: 64-bit, little-endian, an x86-64 executable entered at
+// the startup code, with its one program header right after it.
+pub fn elf_header(binary: Binary) -> List<u8> {
+    let ident: List<u8> = cons(127, cons(69, cons(76, cons(70, cons(2, cons(1, cons(1, cons(0, cons(0, cons(0, cons(0, cons(0, cons(0, cons(0, cons(0, single(0))))))))))))))));
+    let kinds: List<u8> = concat(concat(le16(2), le16(62)), le32(1));
+    let places: List<u8> = concat(concat(le64n(plus(elf_base(), 120)), le64n(64)), le64n(0));
+    let sizes: List<u8> = concat(concat(concat(concat(concat(le32(0), le16(64)), le16(56)), le16(1)), le16(64)), concat(le16(0), le16(0)));
+    return concat(concat(concat(ident, kinds), places), sizes);
+}
+
+// The program header: a loadable segment, readable, writable and
+// executable, from file offset 0 to the segment's start, the file's bytes
+// and then zeros up to the end of the heap.
+pub fn elf_program_header(binary: Binary, stack: usize, heap: usize) -> List<u8> {
+    let file: usize = plus(elf_before_image(), length(binary.image));
+    let memory: usize = plus(plus(minus(elf_stack_base(binary), elf_base()), stack), heap);
+    let kinds: List<u8> = concat(concat(le32(1), le32(7)), le64n(0));
+    let places: List<u8> = concat(le64n(elf_base()), le64n(elf_base()));
+    return concat(concat(concat(kinds, places), concat(le64n(file), le64n(memory))), le64n(4096));
+}
+
+// mov reg, imm64 for rsp, r15, r12, r14 and r13; call the entry; exit.
+pub fn elf_startup(binary: Binary, entry: usize, stack: usize, heap: usize) -> List<u8> {
+    let bottom: usize = elf_stack_base(binary);
+    let top: usize = plus(bottom, stack);
+    let sets: List<u8> = concat(concat(concat(cons(72, cons(188, le64n(top))), cons(73, cons(191, le64n(plus(bottom, stack_guard(binary)))))), concat(cons(73, cons(188, le64n(top))), cons(73, cons(190, le64n(heap))))), cons(73, cons(189, le64n(1))));
+    let call: List<u8> = cons(232, le32(plus(get_or(binary.entries, entry, 0), 10) as i32));
+    let exit: List<u8> = cons(72, cons(137, cons(199, cons(184, cons(60, cons(0, cons(0, cons(0, cons(15, single(5))))))))));
+    return concat(concat(sets, call), exit);
+}
+
+// The sizes the startup code and the proofs need: the image and the entry's
+// offset below 2^30, the stack at least the guard, the stack below 2^40, and
+// the heap at least one byte and below 2^40.
+pub fn elf_fits(binary: Binary, entry: usize, stack: usize, heap: usize) -> bool {
+    return length(binary.image) < 1073741824 && get_or(binary.entries, entry, 0) < 1073741824 && stack_guard(binary) <= stack && stack < 1099511627776 && 1 <= heap && heap < 1099511627776;
+}
+
+pub fn elf_file(binary: Binary, entry: usize, stack: usize, heap: usize) -> core::option::Option<List<u8>> {
+    if (elf_fits(binary, entry, stack, heap)) {
+        return Some(concat(concat(concat(elf_header(binary), elf_program_header(binary, stack, heap)), elf_startup(binary, entry, stack, heap)), binary.image));
+    }
+    return None;
+}

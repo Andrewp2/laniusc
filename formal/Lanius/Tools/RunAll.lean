@@ -8,14 +8,16 @@ laniusc's parse trees, as native code rather than `#eval`'s interpreter.
     lake exe runAll MANIFEST
 
 Each manifest line is `compile NAME BASE...`, `dump NAME BASE...`,
-`diag NAME BASE...`, `validate NAME BASE...` or `time NAME BASE...`, where a
+`diag NAME BASE...`, `validate NAME BASE...`, `time NAME BASE...` or
+`elf NAME OUT ENTRY STACK HEAP BASE...`, where a
 base names BASE.lani, BASE.prods and BASE.parents. `compile` prints NAME and
 nolex, tree (the grammar rejects the tree), unread (the builder rejects it),
 uncompiled (`compileSource` rejects it) or `image [entries] [bytes]`; `dump`
 prints NAME and, for each file, its tokens (kind:start:text), prods and
 parents, or nolex; `diag` says why `compileSource` rejects a program;
 `validate` prints ok or tree for each file; `time` prints how long each stage
-of the front end and `compileSource` takes; `names` prints each function
+of the front end and `compileSource` takes; `elf` writes `elfFile` of the
+compiled program to OUT and prints its length; `names` prints each function
 instance's position, module, spelling and type argument count (a native
 image's entries are in this order). -/
 
@@ -64,6 +66,26 @@ def compileLine (name : String) (bases : List String) : IO Unit := do
       match compileSource p with
       | none => IO.println s!"{name} uncompiled"
       | some b => IO.println s!"{name} image {b.entries} {b.image.map (·.toNat)}"
+
+/-- `elfFile` of the compiled program, written to `out`: NAME and elf with
+the file's length, or why there is none. -/
+def elfLine (name out : String) (entry stack heap : Nat) (bases : List String) : IO Unit := do
+  let mut files : List FileInput := []
+  for b in bases do
+    match ← loadFile b with
+    | none => IO.println s!"{name} nolex"; return
+    | some f => files := files ++ [f]
+  match frontEndFiles grammar files with
+  | none => IO.println s!"{name} unread"
+  | some p =>
+    match compileSource p with
+    | none => IO.println s!"{name} uncompiled"
+    | some b =>
+      match elfFile b entry stack heap with
+      | none => IO.println s!"{name} unfit"
+      | some bytes =>
+        IO.FS.writeBinFile out (ByteArray.mk bytes.toArray)
+        IO.println s!"{name} elf {bytes.length}"
 
 /-- Whether the grammar accepts each file's tree: NAME and ok or tree. -/
 def validateLine (name : String) (bases : List String) : IO Unit := do
@@ -186,6 +208,8 @@ def main (args : List String) : IO UInt32 := do
     | "validate" :: name :: bases => validateLine name bases
     | "time" :: name :: bases => timeLine name bases
     | "names" :: name :: bases => namesLine name bases
+    | "elf" :: name :: out :: entry :: stack :: heap :: bases =>
+      elfLine name out entry.toNat! stack.toNat! heap.toNat! bases
     | _ => IO.eprintln s!"bad manifest line: {line}"; return 2
     (← IO.getStdout).flush
   return 0

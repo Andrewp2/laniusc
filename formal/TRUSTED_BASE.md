@@ -12,6 +12,15 @@ on but do not prove:
   files' texts have exactly one reading `sp` (`TextReading`, section 4), and
   `compileSource_correct`'s conclusion holds of `sp` and `binary`.
   `compileText_behaviour` is its counterpart for runs that stop.
+- `Lanius.Mini.process_exits` and `process_behaviour`
+  (`Lanius/Mini/Process.lean`, V6), with `textProcess_exits` and
+  `textProcess_behaviour` from source text. `elfFile binary entry stack heap`
+  wraps a binary in a Linux executable. From any state Linux leaves for it
+  (`Loaded`), when Core runs `entry()` to `v` within the heap, the process
+  reaches `exit` (`Exits`) with the last of `v`'s slots in rdi, or the stack
+  is too small and every stopped run is at a fault; and every run that stops
+  other than at a fault is at that `exit`, or Core's call reaches an
+  undefined trap. Section 8 lists what is trusted about Linux.
 - `Lanius.Mini.compileProgram_correct` (`Lanius/Mini/Correct.lean`). The same
   for a mini IR program against the mini big-step semantics.
 - `Lanius.Mini.compileProgram_stops` (`Lanius/Mini/StopsCorrect.lean`, V2c).
@@ -573,10 +582,33 @@ total before it); nothing else depends on them.
 
 The premises of `compileProgram_correct` (also inside
 `compileSource_correct`) are obligations on whatever sets up the x86 state.
-Today no verified loader exists. The images run natively only from a
-hand-written ctypes stub, which checks the mini difftest's image and is kept
-outside the repository with the scratch work. The ELF startup and exit wrapper (`X86/StartupExitCheck.lean`) has
-not been composed with the theorem yet.
+The difftests run images from a ctypes stub, which is not trusted: it only
+tests. Since V6 the verified compiler also writes the executable itself
+(`elfFile`, `formal/lani/mini/compiler.lani`), and `process_exits` and
+`process_behaviour` discharge every premise below from what Linux does, so
+for a process the trusted part is only this:
+
+- **`Loaded` (`Mini/Process.lean`).** For a file with one program header, a
+  loadable segment from file offset 0, `execve` leaves the segment's
+  `p_filesz` file bytes (header offset 96) at `p_vaddr` (80), zeros after
+  them up to `p_memsz` (104), and rip at `e_entry` (24). It reads those
+  fields from the file's own bytes (`fieldAt`), so a wrong header could not
+  make the theorem easier. Registers, flags and the rest of memory are
+  arbitrary. `elfFile`'s segment is at 2^32, readable, writable and
+  executable, and its `p_memsz` covers the stack and the heap.
+- **`Exits`.** A `syscall` with rax 60 ends the process with status rdi, of
+  which the parent sees the low byte. The x86 model has no `syscall` step,
+  so the theorems' runs stop there (`Exits.stuck`).
+- The startup code sets rsp, r12 to r15 and calls `entry` (the driver's
+  convention is function 0, `main`), and `mov rdi, rax; mov eax, 60; syscall`
+  follows the call. Its 65 bytes are proved, not trusted. `entry` must take
+  no parameters.
+- `tools/elf_test.py` (gate step `elf`) runs such executables natively:
+  exit statuses, a division by zero (SIGFPE) and a stack too small for the
+  recursion (SIGILL from the prologue's check).
+
+For code entered some other way the premises are obligations on whatever
+sets up the x86 state:
 
 `compileSource_stops` (Mini/SourceStops.lean) has the same premises, without
 `stackNeed depth ≤ window`, and with a heap limit of at least 1; its

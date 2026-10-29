@@ -47,6 +47,7 @@ public import Lanius.Faithful.Gen.SelfSrcC_evalSame
 public import Lanius.Faithful.Gen.SelfSrcC_guardAnd
 public import Lanius.Faithful.Gen.SelfSrcC_indexOf
 public import Lanius.Faithful.Gen.SelfSrcC_iteThen
+public import Lanius.Faithful.Gen.SelfSrcC_larger
 public import Lanius.Faithful.Gen.SelfSrcC_leftTrue
 public import Lanius.Faithful.Gen.SelfSrcC_lookup
 public import Lanius.Faithful.Gen.SelfSrcC_lowerAddress

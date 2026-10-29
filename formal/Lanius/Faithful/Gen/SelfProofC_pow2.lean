@@ -14,7 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_DivOp_size
 public import Lanius.Faithful.Gen.SelfStmtC_Lists_empty
 public import Lanius.Faithful.Gen.SelfStmtC_arities
 public import Lanius.Faithful.Gen.SelfStmtC_codeSize
-public import Lanius.Faithful.Gen.SelfStmtC_compileSource
+public import Lanius.Faithful.Gen.SelfStmtC_larger
 public import Lanius.Faithful.Gen.SelfStmtC_pow2
 import all Lanius.Faithful.Gen.SelfSrcC_pow2
 import all Lanius.Mini.Compiler.P.pow2
