@@ -9,6 +9,15 @@ Linux x86_64 profile below. This selected increment is accepted.
 Earlier slice, iterator and fold receipts retain their own source/API scope;
 the full standard and extended library goal remains open.
 
+The separate [nth-element selection increment](stdlib-slice-selection.md)
+reuses the same Comparator/Natural policy for a checked rank and one-element
+borrowed result. Admission and direct contract/bound gates pass, with one
+selected existing ordering regression. The real select-value program passes
+four groups/101 cases. All six new library gates pass, including the
+11,976-case independent model and both owner/scale tests; the finite native
+selection increment is accepted. The seven-API receipts below do not establish
+either new selection function.
+
 ## One comparator and direct migration
 
 ```lani

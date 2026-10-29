@@ -648,6 +648,117 @@ fn sort_engine<T,C>(values:View<T>,comparator:&C) -> i32
     return values.length;
 }
 
+fn selection_swap<T>(values:View<T>,left:i32,right:i32) {
+    let previous:T = values.values[values.start+left];
+    values.values[values.start+left] = values.values[values.start+right];
+    values.values[values.start+right] = previous;
+}
+
+// Only groups of at most five are sorted. Each step exchanges whole shallow
+// values, retaining one permutation without cloning or retiring any payload.
+fn selection_sort_small<T,C>(values:View<T>,low:i32,high:i32,comparator:&C)
+    where C:core::ordering::Comparator<T,T> {
+    let index:i32 = low+1;
+    while(index<high) {
+        let position:i32 = index;
+        let moving:bool = true;
+        while(position>low && moving) {
+            if(core::ordering::is_less(comparator.compare(values.values[values.start+position],values.values[values.start+position-1]))) {
+                selection_swap<T>(values,position,position-1);
+                position-=1;
+            } else {
+                moving=false;
+            }
+        }
+        index+=1;
+    }
+}
+
+// Deterministic groups-of-five selection on an admitted nonempty View/rank.
+// Phase zero selects its median prefix; phase one partitions around the child
+// result. Only median descent pushes a frame; partition descent reuses it.
+fn selection_engine<T,C>(values:View<T>,nth:i32,comparator:&C) -> i32
+    where C:core::ordering::Comparator<T,T> {
+    let lows:[i32;16] = [0;16];
+    let highs:[i32;16] = [0;16];
+    let targets:[i32;16] = [0;16];
+    let phases:[i32;16] = [0;16];
+    let depth:i32 = 0;
+    highs[0]=values.length; targets[0]=nth;
+    let completed:i32 = 0;
+    while(depth>=0) {
+        let low:i32 = lows[depth];
+        let high:i32 = highs[depth];
+        let target:i32 = targets[depth];
+        if(phases[depth]==0) {
+            let length:i32 = high-low;
+            if(length<=5) {
+                selection_sort_small<T,C>(values,low,high,comparator);
+                completed=target;
+                depth-=1;
+            } else {
+                let group:i32 = low;
+                let prefix:i32 = low;
+                while(group<high) {
+                    let group_length:i32 = high-group;
+                    if(group_length>5) { group_length=5; }
+                    let group_end:i32 = group+group_length;
+                    selection_sort_small<T,C>(values,group,group_end,comparator);
+                    let middle:i32 = group+group_length/2;
+                    selection_swap<T>(values,prefix,middle);
+                    prefix+=1;
+                    group=group_end;
+                }
+                // prefix-low is ceil(length/5), computed without length+4.
+                // From i32::MAX, median-only descent needs at most fourteen
+                // active frames. Check the child slot before incrementing.
+                assert(depth<15);
+                phases[depth]=1;
+                depth+=1;
+                lows[depth]=low; highs[depth]=prefix;
+                targets[depth]=low+(prefix-low)/2; phases[depth]=0;
+            }
+        } else {
+            // Keep the selected pivot outside every scan/swap range until
+            // insertion into the equal band. Do not retain an owning copy.
+            let pivot:i32 = high-1;
+            selection_swap<T>(values,completed,pivot);
+            let less:i32 = low;
+            let scan:i32 = low;
+            let greater:i32 = pivot;
+            while(scan<greater) {
+                let relation:core::ordering::Ordering = comparator.compare(values.values[values.start+scan],values.values[values.start+pivot]);
+                if(core::ordering::is_less(relation)) {
+                    selection_swap<T>(values,less,scan);
+                    less+=1; scan+=1;
+                } else {
+                    if(core::ordering::is_greater(relation)) {
+                        greater-=1;
+                        selection_swap<T>(values,scan,greater);
+                    } else {
+                        scan+=1;
+                    }
+                }
+            }
+            selection_swap<T>(values,greater,pivot);
+            let equal_end:i32 = greater+1;
+            // The protected pivot makes this band nonempty even when a
+            // returning comparator is inconsistent. A tail range shrinks.
+            if(target<less) {
+                highs[depth]=less; phases[depth]=0;
+            } else {
+                if(target>=equal_end) {
+                    lows[depth]=equal_end; phases[depth]=0;
+                } else {
+                    completed=target;
+                    depth-=1;
+                }
+            }
+        }
+    }
+    return completed;
+}
+
 fn lower_bound_engine<T,K,C>(values:View<T>,needle:K,comparator:&C) -> i32
     where C:core::ordering::Comparator<T,K> {
     let low: i32 = 0;
@@ -720,6 +831,29 @@ pub fn sort_unstable_by<T,C>(values:View<T>,comparator:&C) -> core::result::Resu
     where C:core::ordering::Comparator<T,T> {
     if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
     return core::result::Ok(sort_engine<T,C>(values,comparator));
+}
+// Select one zero-based rank and partition its surroundings without sorting
+// either side. The returned one-element View aliases its exact stored slot.
+// Equivalent values have no stable representative. Physical backing, lifetime
+// and noninterference remain caller obligations; no cleanup is transferred.
+pub fn select_nth_unstable_by<T,C>(values:View<T>,nth:i32,comparator:&C) -> core::result::Result<View<T>,ViewError>
+    where C:core::ordering::Comparator<T,T> {
+    if(!ordering_view_valid<T>(values) || nth<0 || nth>=values.length) {
+        return core::result::Err(ViewError::Bounds);
+    }
+    let selected_index:i32 = selection_engine<T,C>(values,nth,comparator);
+    let selected:View<T> = View { values:values.values,start:values.start+selected_index,length:1 };
+    return core::result::Ok(selected);
+}
+pub fn select_nth_unstable<T>(values:View<T>,nth:i32) -> core::result::Result<View<T>,ViewError>
+    where T:core::cmp::Ord<T> {
+    if(!ordering_view_valid<T>(values) || nth<0 || nth>=values.length) {
+        return core::result::Err(ViewError::Bounds);
+    }
+    let comparator:core::ordering::Natural<T> = core::ordering::Natural {};
+    let selected_index:i32 = selection_engine<T,core::ordering::Natural<T>>(values,nth,comparator.borrow());
+    let selected:View<T> = View { values:values.values,start:values.start+selected_index,length:1 };
+    return core::result::Ok(selected);
 }
 pub fn is_sorted_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<bool,ViewError>
     where C:core::ordering::Comparator<T,T> {

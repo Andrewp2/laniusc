@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[checked slice-selection increment](stdlib-slice-selection.md) specifies
+comparator/natural nth-element selection, strict metadata/rank admission and
+an aliased one-element result. Whole-value permutation, outside guards,
+explicit bounded median-of-medians frames and manual owners are part of the
+contract. Native admission/direct gates and one selected ordering regression
+pass, as do the 11,976-case independent model, owner/scale gates and four
+real select-value groups/101 cases. All six new library gates are accepted on
+the finite native Linux x86_64 profile. Earlier ordering receipts do not
+establish these functions. The preceding
 [shared Seek increment](stdlib-seek.md) defines portable offset arithmetic,
 Seek-only helpers and canonical providers for bounded memory cursors,
 opt-in File and buffered streams. Read-ahead reconciliation, flush progress,
@@ -250,6 +259,30 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Checked slice selection.**
+
+The [selection guide](stdlib-slice-selection.md) specifies two View functions
+with one shared Comparator/Natural engine. Selection preserves a whole-value
+permutation and returns a one-slot alias at the admitted relative nth position;
+before/after partitions remain internally unordered. Deterministic groups of
+five use sixteen explicit frame slots, with at most fourteen active frames for
+the i32 domain. Native admission passes one test/6.93s: both functions,
+17-element ranks, actual returned aliases and untouched outside guards, with
+only process entry/exit in the full syscall trace. Direct contracts and three
+marked capability rejections pass two tests/7.25s. One selected existing
+checked-ordering test passes in 7.11s, two filtered. The real select-value
+program passes four groups/101 native cases in 8.60s, including three reached
+owner-allocation denials and actual EOF/last-read controls. Owner/scale gates
+pass two tests/14.53s: 57 exact owner releases/five pure phases, plus 180
+selections at three sizes through both APIs with all-host-call-free phases
+and two reused backing releases. The independent sorted-reference model
+passes one test/8.71s with 11,976 cases, three families, two backing forms and
+three record policies (source lengths at most 40; larger scale evidence is
+separate). An oracle-only native-byte-stride assumption was corrected without
+producer/production changes. This finite native Linux x86_64 increment is
+accepted. No new compiler dependency is introduced. No prior
+ordering receipt is extended to these APIs.
 
 **Shared Seek.**
 

@@ -1,0 +1,11 @@
+module app::main;
+import core::result;
+import core::slice;
+struct Missing {}
+impl Missing { fn borrow(&self) -> &Missing { return self; } }
+fn main() -> i32 {
+    let data:[i32;2]=[2,1]; let order:Missing=Missing {};
+    let view:core::slice::View<i32> =core::slice::view_range<i32>(data,0,2).unwrap();
+    let selected:core::result::Result<core::slice::View<i32>,core::slice::ViewError> =core::slice::select_nth_unstable_by<i32,Missing>(view,0,order.borrow()); // rejected_selection_bound
+    return 0;
+}

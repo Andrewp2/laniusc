@@ -1,0 +1,27 @@
+module app::main;
+import core::ordering;
+import core::result;
+import core::slice;
+
+struct Compare { calls:i32 }
+impl Compare { fn borrow(&self) -> &Compare { return self; } }
+pub impl core::ordering::Comparator<i32,i32> for Compare {
+    pub fn compare(&self,left:i32,right:i32) -> core::ordering::Ordering {
+        self.calls+=1; return core::ordering::compare_i32(left,right);
+    }
+}
+fn main() -> i32 {
+    let values:[i32;19]=[99,7,-2147483648,5,0,-9,7,2,2147483647,-1,5,8,0,6,2,-9,3,1,98]; let comparator:Compare=Compare { calls:0 };
+    let view:core::slice::View<i32> =core::slice::view_range<i32>(values,1,17).unwrap();
+    let selected:core::slice::View<i32> =core::slice::select_nth_unstable_by<i32,Compare>(view,8,comparator.borrow()).unwrap();
+    assert(selected.start==9 && selected.length==1 && selected.values[selected.start]==2 && values[9]==2);
+    assert(comparator.calls>0 && values[0]==99 && values[18]==98);
+    selected.values[selected.start]=77; assert(values[9]==77);
+
+    let natural:[i32;19]=[99,7,-2147483648,5,0,-9,7,2,2147483647,-1,5,8,0,6,2,-9,3,1,98];
+    let natural_view:core::slice::View<i32> =core::slice::view_range<i32>(natural,1,17).unwrap();
+    let maximum:core::slice::View<i32> =core::slice::select_nth_unstable<i32>(natural_view,16).unwrap();
+    assert(maximum.start==17 && maximum.length==1 && maximum.values[maximum.start]==2147483647 && natural[17]==2147483647);
+    maximum.values[maximum.start]=-77; assert(natural[17]==-77 && natural[0]==99 && natural[18]==98);
+    return 0;
+}

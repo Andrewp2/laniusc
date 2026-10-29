@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
-The seven checked free View ordering APIs validate negative start/length and end overflow before element reads, writes or callbacks; valid empty views are no-touch and singleton sort makes no comparison. Results use view-relative indices. Borrowed per-call Comparator<T,T> or Comparator<T,K> supports lawful total order/equivalence and heterogeneous query classes. Iterative heapsort is in-place, allocation-free and unstable; partition promises whole-value permutation and Less-prefix grouping without relative side order. Bounds/first-last searches require ordered Less/Equal/Greater classes and do not validate that precondition. Raw Ord signatures, fallback policies and nonpositive-as-empty behavior are preserved through Natural and the same engines. Logical checks establish no physical backing length, automatic ownership or unchecked memory trust. All six new registered library tests pass on native Linux x86_64 CPU output from the GPU compiler: three contracts/8.64s (all seven APIs/no memory services and five invalid-bound rejections), two owner and scale tests/12.20s, one model/6.59s (2808 cases/44928 actions/two descending-stride backing forms/six policies). Actual nested String owners have 29 full-address/size matched releases and seven no-memory-service phases; the 32768-record scale gate has five such phases and two exact releases. It observes custom sort 881019 / sortedness 32767 / partition 32768 / maximum query 17 comparisons and legacy 1134417 lt calls; these counts have different units, and whole-lifecycle 267ms is not isolated sort throughput or a compiler ratio. Distinct role callback receivers share a policy to avoid the separately reproduced same-receiver LNC0027 dependency; no public API specialization is added. Sort-rows separately passes model 37, CLI 39, rejection 33 and I/O 13: four registered tests/122 process cases across 12.78s and 9.65s. Three selected current iterator migration tests pass in 16.23s, covering the 1280-schedule/320-extrema/180-position model, owner cleanup and exact capability rejections; two unrelated tests were filtered, and historical application/trap groups were not rerun. The new scale gate exercises shared raw-Ord engines. This finite selected increment is accepted. Historical slice/iterator/fold receipts retain their source/API scope; no arbitrary generic, device or formal-proof claim follows.
+The new slice-selection contract specifies select_nth_unstable_by(View,nth,&Comparator<T,T>) and a Natural/Ord wrapper sharing one engine. Full metadata and rank admission precede access/mutation/callbacks; rejection is Bounds, empty always rejects and a valid singleton makes no comparison. Success returns a one-element alias at the stored nth slot, preserving whole shallow values and outside backing without stable equal-key identity or sorted sides. Deterministic groups-of-five selection uses four sixteen-slot i32 frame arrays (at most fourteen active frames) with protected-pivot structural progress, no native recursion or engine allocation/clone/destruction. Lawful total ordering gives O(n) comparison/swap cost; backing/lifetimes/manual cleanup and callback effects remain caller obligations. Both functions now exist at slice source d77cb28c and pass one native admission test in 6.93s: custom17 median/Natural17 maximum, actual nth-slot aliases and outside guards, with a full trace containing only process entry/exit. Direct contract/capability gates pass two tests in 7.25s (one native five-scenario process plus three marked Comparator/Ord bound rejections, admission filtered). One selected existing checked-ordering regression passes in 7.11s with two tests filtered. The real select-value program passes all four groups/101 native cases in 8.60s (model33/rejection25/CLI28/I-O15) on app b942ea04, with three reached owner-allocation denials, actual EOF/last-read failure and cleanup-before-output observations; these are application effects, not engine allocation. Both owner/scale tests pass in 14.53s: generic nested String/Vec payloads and zero-sized Unit retain actual aliases/whole-value identity, with 57 exact address/extent releases and five no-host-call phases. Scale executes 180 selections over sizes 257/4096/65536, six families, five ranks and two APIs, with 180 no-host-call phases and two reused backing releases. Observed maxima are 9.369766235351563 custom Compare calls/n and 12.4439697265625 Natural lt calls/n under separate finite 100n/200n ceilings; Natural may make two lt calls per comparison. These different counters are finite growth evidence, not a published PICK constant or wall-clock throughput claim. The independent sorted-reference model passes one test in 8.71s with 11976 cases, three families/two backing forms/three record policies and seed 0x5e1ec0261101, with source lengths at most 40 (larger scale evidence is separate). Exact rank, partitions, whole-value permutation, surroundings, returned metadata and alias mutation are checked. The first model run failed an oracle-only native-byte-stride assumption, corrected to require negative native/packed +1 and exact returned/input stride equality; producer and production are unchanged. All six new library gates and the 101-case application are accepted on finite native Linux x86_64 CPU output. No new compiler dependency, direct device execution, formal proof or automatic ownership claim follows; the historical seven-API ordering receipts below do not establish these two additions. The seven checked free View ordering APIs validate negative start/length and end overflow before element reads, writes or callbacks; valid empty views are no-touch and singleton sort makes no comparison. Results use view-relative indices. Borrowed per-call Comparator<T,T> or Comparator<T,K> supports lawful total order/equivalence and heterogeneous query classes. Iterative heapsort is in-place, allocation-free and unstable; partition promises whole-value permutation and Less-prefix grouping without relative side order. Bounds/first-last searches require ordered Less/Equal/Greater classes and do not validate that precondition. Raw Ord signatures, fallback policies and nonpositive-as-empty behavior are preserved through Natural and the same engines. Logical checks establish no physical backing length, automatic ownership or unchecked memory trust. All six new registered library tests pass on native Linux x86_64 CPU output from the GPU compiler: three contracts/8.64s (all seven APIs/no memory services and five invalid-bound rejections), two owner and scale tests/12.20s, one model/6.59s (2808 cases/44928 actions/two descending-stride backing forms/six policies). Actual nested String owners have 29 full-address/size matched releases and seven no-memory-service phases; the 32768-record scale gate has five such phases and two exact releases. It observes custom sort 881019 / sortedness 32767 / partition 32768 / maximum query 17 comparisons and legacy 1134417 lt calls; these counts have different units, and whole-lifecycle 267ms is not isolated sort throughput or a compiler ratio. Distinct role callback receivers share a policy to avoid the separately reproduced same-receiver LNC0027 dependency; no public API specialization is added. Sort-rows separately passes model 37, CLI 39, rejection 33 and I/O 13: four registered tests/122 process cases across 12.78s and 9.65s. Three selected current iterator migration tests pass in 16.23s, covering the 1280-schedule/320-extrema/180-position model, owner cleanup and exact capability rejections; two unrelated tests were filtered, and historical application/trap groups were not rerun. The new scale gate exercises shared raw-Ord engines. This finite selected increment is accepted. Historical slice/iterator/fold receipts retain their source/API scope; no arbitrary generic, device or formal-proof claim follows.
 
 ## Contract and evidence guides
 
@@ -18,8 +18,10 @@ The seven checked free View ordering APIs validate negative start/length and end
 - [stdlib-exact-size-iterators](../../stdlib-exact-size-iterators.md)
 - [stdlib-slice-ordering](../../stdlib-slice-ordering.md)
 - [stdlib-sort-rows](../../stdlib-sort-rows.md)
+- [stdlib-slice-selection](../../stdlib-slice-selection.md)
+- [stdlib-select-value](../../stdlib-select-value.md)
 
-Declaration counts: enum: 1; field: 14; function: 47; impl: 4; method: 21; struct: 4; variant: 2.
+Declaration counts: enum: 1; field: 14; function: 49; impl: 4; method: 21; struct: 4; variant: 2.
 
 ## Declared imports
 
@@ -476,7 +478,7 @@ pub fn max_or<T>(values: [T], len: i32, fallback: T) -> T where T: core::cmp::Or
 
 ### function: sort_unstable_by
 
-[Source line 719](../../../stdlib/core/slice.lani#L719)
+[Source line 830](../../../stdlib/core/slice.lani#L830)
 
 ```lanius
 pub fn sort_unstable_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<i32,ViewError>
@@ -485,9 +487,31 @@ pub fn sort_unstable_by<T,C>(values:View<T>,comparator:&C) -> core::result::Resu
 
 Checked View<T>, Comparator<T,T>. Returns selected length after in-place allocation-free iterative heapsort; O(n log n) comparisons/O(1) auxiliary storage. Whole shallow values remain a permutation; equal-key order is unspecified. Bounds errors precede reads/writes/callbacks; no allocation, clone, destruction or trap rollback.
 
+### function: select_nth_unstable_by
+
+[Source line 839](../../../stdlib/core/slice.lani#L839)
+
+```lanius
+pub fn select_nth_unstable_by<T,C>(values:View<T>,nth:i32,comparator:&C) -> core::result::Result<View<T>,ViewError>
+    where C:core::ordering::Comparator<T,T>
+```
+
+Checked View<T> and relative nth under Comparator<T,T>. Revalidates full metadata and 0<=nth<length before reads/writes/callbacks, returning Bounds without effects on rejection; empty rejects and singleton makes no comparison. In-place unstable deterministic groups-of-five selection returns a one-element alias at the stored nth slot. Lawful total order gives rank/partition guarantees and O(n) comparisons/swaps; whole shallow values and outside guards remain intact. Four sixteen-slot i32 frame arrays, no native recursion/allocation/clone/destruction or ownership transfer; callback traps have no rollback.
+
+### function: select_nth_unstable
+
+[Source line 848](../../../stdlib/core/slice.lani#L848)
+
+```lanius
+pub fn select_nth_unstable<T>(values:View<T>,nth:i32) -> core::result::Result<View<T>,ViewError>
+    where T:core::cmp::Ord<T>
+```
+
+Checked View<T> and relative nth under Ord<T>. Constructs Natural<T> and invokes the same selection engine, with the same strict Bounds admission, length-one aliased result, unstable whole-value permutation, lawful linear cost and manual backing/owner obligations. Does not sort both partitions or return an independent owner.
+
 ### function: is_sorted_by
 
-[Source line 724](../../../stdlib/core/slice.lani#L724)
+[Source line 858](../../../stdlib/core/slice.lani#L858)
 
 ```lanius
 pub fn is_sorted_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<bool,ViewError>
@@ -498,7 +522,7 @@ Checked View<T>, Comparator<T,T>. Returns whether selected elements are nondecre
 
 ### function: lower_bound_by
 
-[Source line 731](../../../stdlib/core/slice.lani#L731)
+[Source line 865](../../../stdlib/core/slice.lani#L865)
 
 ```lanius
 pub fn lower_bound_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<i32,ViewError>
@@ -509,7 +533,7 @@ Checked View<T>, Comparator<T,K>. First view-relative index not Less, or length.
 
 ### function: upper_bound_by
 
-[Source line 736](../../../stdlib/core/slice.lani#L736)
+[Source line 870](../../../stdlib/core/slice.lani#L870)
 
 ```lanius
 pub fn upper_bound_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<i32,ViewError>
@@ -520,7 +544,7 @@ Checked View<T>, Comparator<T,K>. First view-relative Greater index, or length. 
 
 ### function: binary_search_first_by
 
-[Source line 741](../../../stdlib/core/slice.lani#L741)
+[Source line 875](../../../stdlib/core/slice.lani#L875)
 
 ```lanius
 pub fn binary_search_first_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<core::option::Option<i32>,ViewError>
@@ -531,7 +555,7 @@ Checked View<T>, Comparator<T,K>. Returns the first equivalent index as Option<i
 
 ### function: binary_search_last_by
 
-[Source line 747](../../../stdlib/core/slice.lani#L747)
+[Source line 881](../../../stdlib/core/slice.lani#L881)
 
 ```lanius
 pub fn binary_search_last_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<core::option::Option<i32>,ViewError>
@@ -542,7 +566,7 @@ Checked View<T>, Comparator<T,K>. Returns the last equivalent index as Option<i3
 
 ### function: partition_lt_by
 
-[Source line 755](../../../stdlib/core/slice.lani#L755)
+[Source line 889](../../../stdlib/core/slice.lani#L889)
 
 ```lanius
 pub fn partition_lt_by<T,K,C>(values:View<T>,pivot:K,comparator:&C) -> core::result::Result<i32,ViewError>
@@ -553,7 +577,7 @@ Checked View<T>, Comparator<T,K>. In-place whole-value permutation with all Less
 
 ### function: is_sorted
 
-[Source line 763](../../../stdlib/core/slice.lani#L763)
+[Source line 897](../../../stdlib/core/slice.lani#L897)
 
 ```lanius
 pub fn is_sorted<T>(values:[T],len:i32) -> bool where T:core::cmp::Ord<T>
@@ -561,7 +585,7 @@ pub fn is_sorted<T>(values:[T],len:i32) -> bool where T:core::cmp::Ord<T>
 
 ### function: sort
 
-[Source line 769](../../../stdlib/core/slice.lani#L769)
+[Source line 903](../../../stdlib/core/slice.lani#L903)
 
 ```lanius
 pub fn sort<T>(values:[T],len:i32) -> i32 where T:core::cmp::Ord<T>
@@ -569,7 +593,7 @@ pub fn sort<T>(values:[T],len:i32) -> i32 where T:core::cmp::Ord<T>
 
 ### function: lower_bound
 
-[Source line 775](../../../stdlib/core/slice.lani#L775)
+[Source line 909](../../../stdlib/core/slice.lani#L909)
 
 ```lanius
 pub fn lower_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord<T>
@@ -577,7 +601,7 @@ pub fn lower_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord
 
 ### function: upper_bound
 
-[Source line 780](../../../stdlib/core/slice.lani#L780)
+[Source line 914](../../../stdlib/core/slice.lani#L914)
 
 ```lanius
 pub fn upper_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord<T>
@@ -585,7 +609,7 @@ pub fn upper_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord
 
 ### function: binary_search_first_or
 
-[Source line 786](../../../stdlib/core/slice.lani#L786)
+[Source line 920](../../../stdlib/core/slice.lani#L920)
 
 ```lanius
 pub fn binary_search_first_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i32
@@ -594,7 +618,7 @@ pub fn binary_search_first_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i3
 
 ### function: binary_search_last_or
 
-[Source line 793](../../../stdlib/core/slice.lani#L793)
+[Source line 927](../../../stdlib/core/slice.lani#L927)
 
 ```lanius
 pub fn binary_search_last_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i32
@@ -603,7 +627,7 @@ pub fn binary_search_last_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i32
 
 ### function: partition_lt
 
-[Source line 801](../../../stdlib/core/slice.lani#L801)
+[Source line 935](../../../stdlib/core/slice.lani#L935)
 
 ```lanius
 pub fn partition_lt<T>(values:[T],len:i32,pivot:T) -> i32 where T:core::cmp::Ord<T>
@@ -611,7 +635,7 @@ pub fn partition_lt<T>(values:[T],len:i32,pivot:T) -> i32 where T:core::cmp::Ord
 
 ### function: sum
 
-[Source line 810](../../../stdlib/core/slice.lani#L810)
+[Source line 944](../../../stdlib/core/slice.lani#L944)
 
 ```lanius
 pub fn sum<T>(values: [T], len: i32, initial: T) -> T where T: core::ops::SaturatingAdd<T>

@@ -1,0 +1,137 @@
+// Bounded signed integer order statistics through public slice selection.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::cmp;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::args;
+import std::signal;
+import std::stream;
+
+enum Command { Help, Select(u64) }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > bytes.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("select_value: operation failed\n",31),2,8); return status; }
+fn whitespace(value:u8) -> bool { return (value == 32) || (value == 9) || (value == 13) || (value == 10); }
+fn append(values:&Vec<i64>, token:[u8], length:i32) -> i32 {
+    // Admission before append keeps every try_push within the one reservation.
+    if (values.len() == 65536) { return 2; }
+    let parsed:Result<i64,core::decimal::ParseError> = core::decimal::parse_i64_range(token,0,length);
+    if (parsed.is_err()) { return 2; }
+    let saved:Result<i32,alloc::vec::Error> = values.try_push(parsed.unwrap());
+    if (saved.is_err()) { return match(saved.unwrap_err()) { alloc::vec::Error::AllocationFailed -> 4, _ -> 6 }; }
+    return 0;
+}
+fn read(values:&Vec<i64>) -> i32 {
+    let source = std::stream::stdin(); let scratch:[u8;1024] = [0;1024]; let token:[u8;64] = [0;64];
+    let used:i32 = 0; let total:i32 = 0; let calls:i32 = 0;
+    while(true) {
+        if (calls == 8192) { return 2; } calls += 1;
+        let remaining:i32 = 1048576-total; let wanted:i32 = remaining;
+        if (wanted > 1024) { wanted = 1024; }
+        if (wanted == 0) { wanted = 1; }
+        let received:Result<i32,core::io::Error> = source.read(scratch,0,wanted);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let count:i32 = received.unwrap();
+        if ((count < 0) || (count > wanted)) { return 6; }
+        if (count == 0) {
+            if (used != 0) { return append(values,token,used); }
+            return 0;
+        }
+        if (count > remaining) { return 2; }
+        total += count; let index:i32 = 0;
+        while(index < count) {
+            let byte:u8 = scratch[index];
+            if (whitespace(byte)) {
+                if (used != 0) {
+                    let status:i32 = append(values,token,used); if (status != 0) { return status; }
+                    used = 0;
+                }
+            } else {
+                if (used == 64) { return 2; }
+                token[used] = byte; used += 1;
+            }
+            index += 1;
+        }
+    }
+    return 3;
+}
+fn select_scalar(values:&Vec<i64>, index:i32) -> Result<i64,i32> {
+    let selected:Result<View<i64>,core::slice::ViewError> = core::slice::select_nth_unstable<i64>(values.as_view(),index);
+    if (selected.is_err()) { return core::result::Err(match(selected.unwrap_err()) { core::slice::ViewError::Bounds -> 2, _ -> 6 }); }
+    let one:View<i64> = selected.unwrap();
+    if ((one.length != 1) || (one.start != index)) { return core::result::Err(6); }
+    let value = one.get(0); if (value.is_none()) { return core::result::Err(6); }
+    // Only the scalar leaves this borrowed view's lifetime.
+    return core::result::Ok(value.unwrap());
+}
+fn selected_value(index:u64) -> Result<i64,i32> {
+    let created:Result<Vec<i64>,alloc::vec::Error> = alloc::vec::with_capacity<i64>(65536);
+    if (created.is_err()) { return core::result::Err(match(created.unwrap_err()) { alloc::vec::Error::AllocationFailed -> 4, _ -> 6 }); }
+    let values = created.unwrap(); let status:i32 = read(values.borrow());
+    if (status != 0) { values.destroy(); return core::result::Err(status); }
+    let selected:Result<i64,i32> = select_scalar(values.borrow(),index as i32);
+    values.destroy(); return selected;
+}
+fn run(index:u64) -> i32 {
+    let chosen:Result<i64,i32> = selected_value(index); if (chosen.is_err()) { return chosen.unwrap_err(); }
+    let output:[u8;32] = [0;32];
+    let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_i64(output,0,31,chosen.unwrap());
+    if (formatted.is_err()) { return 6; } let length:i32 = formatted.unwrap();
+    if ((length < 1) || (length > 31)) { return 6; }
+    output[length] = 10;
+    if (!write(core::slice::view(output,length+1).unwrap(),1,64)) { return 5; }
+    return 0;
+}
+fn help() -> i32 {
+    let text = literal("Usage: select_value INDEX\nRead signed decimal i64 tokens from stdin and print the zero-based ascending order statistic.\nINDEX is ASCII decimal 0..65535; leading zeros are allowed.\nInput whitespace is only ASCII space, tab, CR and LF; signs follow the decimal parser.\nLimits: 1048576 input bytes, 65536 values, 64 bytes per token, 8192 read attempts.\nInput is fully validated before output; input errors publish no data.\nA sole --help or -h shows help without reading stdin.\n",474);
+    if (!write(text,1,64)) { return 5; } return 0;
+}
+fn arguments(values:View<View<u8>>) -> Result<Command,i32> {
+    if (values.length != 1) { return core::result::Err(2); }
+    let first:View<u8> = values.values[values.start];
+    if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) { return core::result::Ok(Command::Help); }
+    let parsed:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(first.values,first.start,first.length);
+    if (parsed.is_err()) { return core::result::Err(2); } let index:u64 = parsed.unwrap();
+    if (index > 65535) { return core::result::Err(2); }
+    return core::result::Ok(Command::Select(index));
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,1,64);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let command:Result<Command,i32> = arguments(values.as_view()); values.destroy();
+    if (command.is_err()) { return report(command.unwrap_err()); }
+    let status:i32 = match(command.unwrap()) { Command::Help -> help(), Command::Select(index) -> run(index) };
+    if (status != 0) { return report(status); } return 0;
+}

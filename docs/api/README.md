@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **274 modules**, **13482 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **274 modules**, **13484 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -59,7 +59,7 @@ Inventory: **274 modules**, **13482 declaration/member entries**. Counts include
 | [core::net](core/net.md) | [source](../../stdlib/core/net.lani#L2) | 334 | Source inventory | [stdlib-net](../stdlib-net.md) |
 | [core::ops](core/ops.md) | [source](../../stdlib/core/ops.lani#L5) | 24 | Source inventory | **Unregistered** |
 | [core::option](core/option.md) | [source](../../stdlib/core/option.lani#L6) | 33 | Source inventory | [stdlib-option](../stdlib-option.md), [stdlib-outcome-composition](../stdlib-outcome-composition.md), [stdlib-optional-sum](../stdlib-optional-sum.md) |
-| [core::ordering](core/ordering.md) | [source](../../stdlib/core/ordering.lani#L3) | 31 | Source inventory | [stdlib-comparison](../stdlib-comparison.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md) |
+| [core::ordering](core/ordering.md) | [source](../../stdlib/core/ordering.lani#L3) | 31 | Source inventory | [stdlib-comparison](../stdlib-comparison.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md), [stdlib-slice-selection](../stdlib-slice-selection.md), [stdlib-select-value](../stdlib-select-value.md) |
 | [core::pair](core/pair.md) | [source](../../stdlib/core/pair.lani#L3) | 8 | Source inventory | **Unregistered** |
 | [core::panic](core/panic.md) | [source](../../stdlib/core/panic.lani#L3) | 29 | Source inventory | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
 | [core::path](core/path.md) | [source](../../stdlib/core/path.lani#L5) | 78 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
@@ -69,7 +69,7 @@ Inventory: **274 modules**, **13482 declaration/member entries**. Counts include
 | [core::result](core/result.md) | [source](../../stdlib/core/result.lani#L7) | 27 | Source inventory | [stdlib-result](../stdlib-result.md), [stdlib-outcome-composition](../stdlib-outcome-composition.md), [stdlib-optional-sum](../stdlib-optional-sum.md) |
 | [core::runtime](core/runtime.md) | [source](../../stdlib/core/runtime.lani#L15) | 113 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::set](core/set.md) | [source](../../stdlib/core/set.lani#L4) | 24 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
-| [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L11) | 93 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md) |
+| [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L11) | 95 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md), [stdlib-sort-rows](../stdlib-sort-rows.md), [stdlib-slice-selection](../stdlib-slice-selection.md), [stdlib-select-value](../stdlib-select-value.md) |
 | [core::target](core/target.md) | [source](../../stdlib/core/target.lani#L6) | 37 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::text](core/text.md) | [source](../../stdlib/core/text.lani#L4) | 86 | Source inventory | [stdlib-text](../stdlib-text.md), [stdlib-text-composition](../stdlib-text-composition.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-text-split-iterators](../stdlib-text-split-iterators.md) |
 | [core::time](core/time.md) | [source](../../stdlib/core/time.lani#L4) | 118 | Source inventory | [stdlib-time](../stdlib-time.md) |

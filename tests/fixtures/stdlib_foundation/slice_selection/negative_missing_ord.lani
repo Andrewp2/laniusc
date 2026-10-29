@@ -1,0 +1,10 @@
+module app::main;
+import core::result;
+import core::slice;
+struct Key { value:i32 }
+fn main() -> i32 {
+    let data:[Key;1]=[Key { value:7 }];
+    let view:core::slice::View<Key> =core::slice::view_range<Key>(data,0,1).unwrap();
+    let selected:core::result::Result<core::slice::View<Key>,core::slice::ViewError> =core::slice::select_nth_unstable<Key>(view,0); // rejected_selection_bound
+    return 0;
+}
