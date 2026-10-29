@@ -1,0 +1,11 @@
+// Valid logical View; deliberately invalid physical caller backing.
+module app::main;
+import core::base64;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let short:[u8;1]=[90];
+    let view:core::slice::View<u8> =core::slice::View { values:short,start:0,length:4 };
+    let decoded:core::result::Result<i32,core::base64::Error> =core::base64::decoded_len(view,core::base64::Profile::Standard);
+    if(decoded.is_err()) { return 2; } return 0;
+}

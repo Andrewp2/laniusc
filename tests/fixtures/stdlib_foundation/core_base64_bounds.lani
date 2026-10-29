@@ -1,9 +1,0 @@
-module app::main;
-import core::base64;
-
-fn main() -> i32 {
-    let z: u8 = 90;
-    let short: [u8; 1] = [z];
-    if (core::base64::decoded_len_or(short, 4, -1) >= 0) { return 1; }
-    return 0;
-}

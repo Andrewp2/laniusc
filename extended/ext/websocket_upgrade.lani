@@ -106,7 +106,12 @@ pub fn client<T>(inner: &T, request: core::slice::View<u8>,
     }
     let expected: [u8;28] = [0;28]; let index: i32 = 0;
     while (index < 28) { expected[index] = expected_accept.get(index).unwrap(); index += 1; }
-    if (core::base64::decoded_len_or(expected,28,-1) != 20) {
+    let expected_view:core::slice::View<u8> = core::slice::View { values:expected,start:0,length:28 };
+    let decoded:core::result::Result<i32,core::base64::Error> = core::base64::decoded_len(expected_view,core::base64::Profile::Standard);
+    if (decoded.is_err()) {
+        return core::result::Err(initial_failure(Cause::Wire(ext::websocket::Error::Handshake)));
+    }
+    if (decoded.unwrap() != 20) {
         return core::result::Err(initial_failure(Cause::Wire(ext::websocket::Error::Handshake)));
     }
     let made = ext::http::cursor(ext::http::CursorMode::Response,

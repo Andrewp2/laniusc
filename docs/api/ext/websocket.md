@@ -586,7 +586,7 @@ pub fn offers(request:Request, protocol:core::slice::View<u8>) -> bool
 
 ### function: key_into
 
-[Source line 213](../../../extended/ext/websocket.lani#L213)
+[Source line 221](../../../extended/ext/websocket.lani#L221)
 
 ```lanius
 pub fn key_into(nonce:core::slice::View<u8>, destination:core::slice::View<u8>) -> core::result::Result<i32,Error>
@@ -594,7 +594,7 @@ pub fn key_into(nonce:core::slice::View<u8>, destination:core::slice::View<u8>) 
 
 ### function: validate_request
 
-[Source line 217](../../../extended/ext/websocket.lani#L217)
+[Source line 234](../../../extended/ext/websocket.lani#L234)
 
 ```lanius
 pub fn validate_request(input:core::slice::View<u8>, limits:Limits) -> core::result::Result<Request,Error>
@@ -602,7 +602,7 @@ pub fn validate_request(input:core::slice::View<u8>, limits:Limits) -> core::res
 
 ### function: encode_request
 
-[Source line 234](../../../extended/ext/websocket.lani#L234)
+[Source line 251](../../../extended/ext/websocket.lani#L251)
 
 ```lanius
 pub fn encode_request(start_line:core::slice::View<u8>, fields:core::slice::View<ext::http::Field>, nonce:core::slice::View<u8>, protocols:core::slice::View<u8>, limits:Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -610,7 +610,7 @@ pub fn encode_request(start_line:core::slice::View<u8>, fields:core::slice::View
 
 ### function: validate_response
 
-[Source line 264](../../../extended/ext/websocket.lani#L264)
+[Source line 284](../../../extended/ext/websocket.lani#L284)
 
 ```lanius
 pub fn validate_response(input:core::slice::View<u8>, request:Request, expected_accept:core::slice::View<u8>, limits:Limits) -> core::result::Result<Response,Error>
@@ -620,7 +620,7 @@ Borrows a complete HTTP/1.1 101 response head against a live validated Request a
 
 ### function: encode_response
 
-[Source line 291](../../../extended/ext/websocket.lani#L291)
+[Source line 311](../../../extended/ext/websocket.lani#L311)
 
 ```lanius
 pub fn encode_response(request:Request, fields:core::slice::View<ext::http::Field>, accept:core::slice::View<u8>, protocol:core::option::Option<core::slice::View<u8>>, limits:Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>

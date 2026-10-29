@@ -1,0 +1,204 @@
+module app::main;
+import core::base64;
+import core::mem;
+import core::result;
+import core::slice;
+
+fn profile(mode:i32) -> core::base64::Profile {
+    return match(mode) { 0 -> core::base64::Profile::Standard,1 -> core::base64::Profile::StandardUnpadded,2 -> core::base64::Profile::UrlSafe,_ -> core::base64::Profile::UrlSafeUnpadded };
+}
+fn code(error:core::base64::Error) -> i32 {
+    return match(error) {
+        core::base64::Error::Bounds -> 1,core::base64::Error::LengthOverflow -> 2,core::base64::Error::InvalidLength -> 3,
+        core::base64::Error::InvalidByte(index) -> 1000+index,core::base64::Error::InvalidPadding(index) -> 2000+index,
+        core::base64::Error::NonCanonical(index) -> 3000+index,core::base64::Error::BufferTooSmall(required) -> 4000+required
+    };
+}
+fn failed(result:core::result::Result<i32,core::base64::Error>,expected:i32) { assert(result.is_err()); assert(code(result.unwrap_err())==expected); }
+fn clear(bytes:[u8]) { let i:i32=0; while(i<24) { bytes[i]=199; i+=1; } }
+fn load(bytes:[u8],start:i32,data:[u8],length:i32) {
+    clear(bytes); let i:i32=0; while(i<length) { bytes[start+i]=data[i]; i+=1; }
+}
+fn exact(bytes:[u8],start:i32,data:[u8],length:i32) {
+    let i:i32=0; while(i<24) { if(i>=start && i-start<length) { assert(bytes[i]==data[i-start]); } else { assert(bytes[i]==199); } i+=1; }
+}
+fn vector(source:[u8],destination:[u8],raw:[u8],raw_count:i32,wire:[u8],wire_count:i32,selected:core::base64::Profile) {
+    load(source,3,raw,raw_count); clear(destination);
+    let input:core::slice::View<u8> =core::slice::view_range<u8>(source,3,raw_count).unwrap();
+    let output:core::slice::View<u8> =core::slice::view_range<u8>(destination,5,14).unwrap();
+    assert(core::base64::encoded_len(raw_count,selected).unwrap()==wire_count);
+    assert(core::base64::encode_into(input,output,selected).unwrap()==wire_count);
+    exact(source,3,raw,raw_count); exact(destination,5,wire,wire_count);
+    // Decode independently supplied wire, rather than relying on the encoder.
+    load(source,3,wire,wire_count); clear(destination);
+    let encoded:core::slice::View<u8> =core::slice::view_range<u8>(source,3,wire_count).unwrap();
+    assert(core::base64::decoded_len(encoded,selected).unwrap()==raw_count);
+    assert(core::base64::decode_into(encoded,output,selected).unwrap()==raw_count);
+    exact(source,3,wire,wire_count); exact(destination,5,raw,raw_count);
+}
+
+fn checked_length_literal_boundaries() {
+    let mode:i32=0;
+    while(mode<4) {
+        let selected:core::base64::Profile=profile(mode); failed(core::base64::encoded_len(-1,selected),1); failed(core::base64::encoded_len(-2147483648,selected),1);
+        assert(core::base64::encoded_len(0,selected).unwrap()==0 && core::base64::encoded_len(3,selected).unwrap()==4 && core::base64::encoded_len(6,selected).unwrap()==8);
+        if(mode%2==0) {
+            assert(core::base64::encoded_len(1,selected).unwrap()==4 && core::base64::encoded_len(2,selected).unwrap()==4);
+            assert(core::base64::encoded_len(4,selected).unwrap()==8 && core::base64::encoded_len(5,selected).unwrap()==8);
+            assert(core::base64::encoded_len(1610612732,selected).unwrap()==2147483644 && core::base64::encoded_len(1610612733,selected).unwrap()==2147483644);
+            failed(core::base64::encoded_len(1610612734,selected),2);
+        } else {
+            assert(core::base64::encoded_len(1,selected).unwrap()==2 && core::base64::encoded_len(2,selected).unwrap()==3);
+            assert(core::base64::encoded_len(4,selected).unwrap()==6 && core::base64::encoded_len(5,selected).unwrap()==7);
+            assert(core::base64::encoded_len(1610612734,selected).unwrap()==2147483646 && core::base64::encoded_len(1610612735,selected).unwrap()==2147483647);
+            failed(core::base64::encoded_len(1610612736,selected),2);
+        }
+        failed(core::base64::encoded_len(2147483647,selected),2); mode+=1;
+    }
+}
+fn invalid_metadata(view:core::slice::View<u8>,empty:core::slice::View<u8>,selected:core::base64::Profile) {
+    failed(core::base64::decoded_len(view,selected),1);
+    failed(core::base64::encode_into(view,empty,selected),1); failed(core::base64::decode_into(view,empty,selected),1);
+    failed(core::base64::encode_into(empty,view,selected),1); failed(core::base64::decode_into(empty,view,selected),1);
+}
+fn metadata_and_structural_rejections_before_access() {
+    let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let empty:core::slice::View<u8> =core::slice::View { values:unread,start:2147483647,length:0 };
+    let bad_output:core::slice::View<u8> =core::slice::View { values:unread,start:-1,length:0 }; let mode:i32=0;
+    while(mode<4) {
+        let selected:core::base64::Profile=profile(mode);
+        invalid_metadata(core::slice::View { values:unread,start:-1,length:0 },empty,selected);
+        invalid_metadata(core::slice::View { values:unread,start:-1,length:1 },empty,selected);
+        invalid_metadata(core::slice::View { values:unread,start:0,length:-1 },empty,selected);
+        invalid_metadata(core::slice::View { values:unread,start:2147483647,length:1 },empty,selected);
+        invalid_metadata(core::slice::View { values:unread,start:1,length:2147483647 },empty,selected);
+        assert(core::base64::decoded_len(empty,selected).unwrap()==0);
+        assert(core::base64::encode_into(empty,empty,selected).unwrap()==0 && core::base64::decode_into(empty,empty,selected).unwrap()==0);
+        let length_one:core::slice::View<u8> =core::slice::View { values:unread,start:0,length:1 };
+        failed(core::base64::decoded_len(length_one,selected),3); failed(core::base64::decode_into(length_one,empty,selected),3);
+        let bad_length:i32=2147483647; if(mode%2==1) { bad_length=2147483645; }
+        let invalid_length:core::slice::View<u8> =core::slice::View { values:unread,start:0,length:bad_length };
+        failed(core::base64::decoded_len(invalid_length,selected),3); failed(core::base64::decode_into(invalid_length,empty,selected),3);
+        if(mode%2==0) {
+            let short_two:core::slice::View<u8> =core::slice::View { values:unread,start:0,length:2 };
+            let short_three:core::slice::View<u8> =core::slice::View { values:unread,start:0,length:3 };
+            failed(core::base64::decoded_len(short_two,selected),3); failed(core::base64::decode_into(short_three,empty,selected),3);
+        }
+        let required:i32=4; if(mode%2==1) { required=2; }
+        failed(core::base64::encode_into(length_one,empty,selected),4000+required);
+        let huge_length:i32=1610612734; if(mode%2==1) { huge_length=1610612736; }
+        let huge:core::slice::View<u8> =core::slice::View { values:unread,start:0,length:huge_length };
+        failed(core::base64::encode_into(huge,empty,selected),2);
+        failed(core::base64::encode_into(huge,bad_output,selected),1);
+        // Bad output metadata wins before a structurally valid poison input is scanned.
+        let four:core::slice::View<u8> =core::slice::View { values:unread,start:0,length:4 };
+        failed(core::base64::decode_into(four,bad_output,selected),1);
+        failed(core::base64::decode_into(length_one,bad_output,selected),1);
+        let data:[u8;3]=[17,29,41]; invalid_metadata(core::slice::View { values:data,start:1,length:2147483647 },empty,selected);
+        assert(data[0]==17 && data[1]==29 && data[2]==41); mode+=1;
+    }
+}
+
+fn rfc_vectors(source:[u8],destination:[u8],mode:i32) {
+    let selected:core::base64::Profile=profile(mode); let raw:[u8;6]=[102,111,111,98,97,114]; let empty:[u8;1]=[0];
+    let f:[u8;4]=[90,103,61,61]; let fo:[u8;4]=[90,109,56,61]; let foo:[u8;4]=[90,109,57,118];
+    let foob:[u8;8]=[90,109,57,118,89,103,61,61]; let fooba:[u8;8]=[90,109,57,118,89,109,69,61]; let foobar:[u8;8]=[90,109,57,118,89,109,70,121];
+    let f_count:i32=4; let fo_count:i32=4; let foob_count:i32=8; let fooba_count:i32=8;
+    if(mode%2==1) { f_count=2; fo_count=3; foob_count=6; fooba_count=7; }
+    vector(source,destination,empty,0,empty,0,selected); vector(source,destination,raw,1,f,f_count,selected);
+    vector(source,destination,raw,2,fo,fo_count,selected); vector(source,destination,raw,3,foo,4,selected);
+    vector(source,destination,raw,4,foob,foob_count,selected); vector(source,destination,raw,5,fooba,fooba_count,selected); vector(source,destination,raw,6,foobar,8,selected);
+    let binary:[u8;3]=[251,255,255]; let b1:[u8;4]=[43,119,61,61]; let b2:[u8;4]=[43,47,56,61]; let b3:[u8;4]=[43,47,47,47];
+    if(mode>=2) { b1[0]=45; b2[0]=45; b2[1]=95; b3[0]=45; b3[1]=95; b3[2]=95; b3[3]=95; }
+    vector(source,destination,binary,1,b1,f_count,selected); vector(source,destination,binary,2,b2,fo_count,selected); vector(source,destination,binary,3,b3,4,selected);
+    let mixed:[u8;3]=[0,128,255]; let mixed_wire:[u8;4]=[65,73,68,47]; if(mode>=2) { mixed_wire[3]=95; }
+    vector(source,destination,mixed,3,mixed_wire,4,selected);
+    let zeros:[u8;3]=[0;3]; let zero_wire:[u8;4]=[65;4]; vector(source,destination,zeros,3,zero_wire,4,selected);
+}
+fn rfc_and_binary_vectors_on_both_actual_byte_strides() {
+    let stack_source:[u8;24]=[199;24]; let stack_output:[u8;24]=[199;24]; let source_words:[i32;6]=[0;6]; let output_words:[i32;6]=[0;6];
+    let packed_source:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(source_words),24);
+    let packed_output:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),24);
+    assert(core::mem::slice_stride(stack_source)<0 && core::mem::slice_stride(stack_output)<0);
+    assert(core::mem::slice_stride(packed_source)==1 && core::mem::slice_stride(packed_output)==1);
+    let mode:i32=0; while(mode<4) { rfc_vectors(stack_source,packed_output,mode); rfc_vectors(packed_source,stack_output,mode); mode+=1; }
+}
+
+fn rejected_wire(source:[u8],destination:[u8],wire:[u8],length:i32,selected:core::base64::Profile,expected:i32) {
+    load(source,3,wire,length); clear(destination);
+    let input:core::slice::View<u8> =core::slice::view_range<u8>(source,3,length).unwrap();
+    let no_room:core::slice::View<u8> =core::slice::view_range<u8>(destination,5,0).unwrap();
+    failed(core::base64::decoded_len(input,selected),expected);
+    failed(core::base64::decode_into(input,no_room,selected),expected); exact(source,3,wire,length); exact(destination,0,wire,0);
+    let alias:core::slice::View<u8> =core::slice::view_range<u8>(source,3,0).unwrap();
+    failed(core::base64::decode_into(input,alias,selected),expected); exact(source,3,wire,length);
+}
+fn error_vectors(source:[u8],destination:[u8],mode:i32) {
+    let selected:core::base64::Profile=profile(mode); let one:[u8;1]=[65]; let length_five:[u8;5]=[65;5];
+    rejected_wire(source,destination,one,1,selected,3);
+    let bad_first:[u8;4]=[33,61,61,61]; let bad_second:[u8;4]=[65,61,33,33];
+    let whitespace:[u8;4]=[65,32,65,65]; let pad_first:[u8;4]=[61,65,65,65];
+    let other_first:[u8;4]=[45,65,65,65]; let other_second:[u8;4]=[65,95,65,65];
+    if(mode>=2) { other_first[0]=43; other_second[1]=47; }
+    rejected_wire(source,destination,bad_first,4,selected,1000); rejected_wire(source,destination,bad_second,4,selected,2001);
+    rejected_wire(source,destination,whitespace,4,selected,1001); rejected_wire(source,destination,pad_first,4,selected,2000);
+    rejected_wire(source,destination,other_first,4,selected,1000); rejected_wire(source,destination,other_second,4,selected,1001);
+    let f:[u8;4]=[90,103,61,61]; let noncanonical_one:[u8;4]=[90,104,61,61]; let noncanonical_two:[u8;4]=[90,109,57,61];
+    if(mode%2==0) {
+        rejected_wire(source,destination,f,2,selected,3); rejected_wire(source,destination,f,3,selected,3);
+        let mismatch:[u8;4]=[90,103,61,65]; let bad_fourth:[u8;4]=[90,104,61,33]; let bad_third:[u8;4]=[90,104,33,61];
+        rejected_wire(source,destination,mismatch,4,selected,2002); rejected_wire(source,destination,bad_fourth,4,selected,2002);
+        rejected_wire(source,destination,bad_third,4,selected,1002);
+        rejected_wire(source,destination,noncanonical_one,4,selected,3001); rejected_wire(source,destination,noncanonical_two,4,selected,3002);
+        let early_two:[u8;8]=[90,103,61,61,65,65,65,65]; let early_one:[u8;8]=[90,109,56,61,65,65,65,65];
+        rejected_wire(source,destination,early_two,8,selected,2002); rejected_wire(source,destination,early_one,8,selected,2003);
+        let late_invalid:[u8;8]=[90,109,57,118,89,33,61,61]; let late_tail:[u8;8]=[90,109,57,118,89,82,61,61];
+        let late_mismatch:[u8;8]=[90,109,57,118,89,103,61,33];
+        rejected_wire(source,destination,late_invalid,8,selected,1005); rejected_wire(source,destination,late_tail,8,selected,3005); rejected_wire(source,destination,late_mismatch,8,selected,2006);
+    } else {
+        rejected_wire(source,destination,length_five,5,selected,3);
+        rejected_wire(source,destination,f,4,selected,2002); rejected_wire(source,destination,f,3,selected,2002);
+        let padding:[u8;2]=[90,61]; rejected_wire(source,destination,padding,2,selected,2001);
+        rejected_wire(source,destination,noncanonical_one,2,selected,3001); rejected_wire(source,destination,noncanonical_two,3,selected,3002);
+        let late_invalid:[u8;7]=[90,109,57,118,89,33,69]; let late_tail:[u8;6]=[90,109,57,118,89,82];
+        rejected_wire(source,destination,late_invalid,7,selected,1005); rejected_wire(source,destination,late_tail,6,selected,3005);
+    }
+}
+fn capacity_and_successful_same_base_aliases(source:[u8],destination:[u8],mode:i32) {
+    let selected:core::base64::Profile=profile(mode); let raw:[u8;6]=[102,111,111,98,97,114]; let wire:[u8;8]=[90,109,57,118,89,109,70,121];
+    load(source,3,raw,6); clear(destination);
+    let input:core::slice::View<u8> =core::slice::view_range<u8>(source,3,6).unwrap();
+    let short:core::slice::View<u8> =core::slice::view_range<u8>(destination,5,7).unwrap();
+    failed(core::base64::encode_into(input,short,selected),4008); exact(source,3,raw,6); exact(destination,0,raw,0);
+    let alias_short:core::slice::View<u8> =core::slice::view_range<u8>(source,3,7).unwrap();
+    failed(core::base64::encode_into(input,alias_short,selected),4008); exact(source,3,raw,6);
+    load(source,3,wire,8); let encoded:core::slice::View<u8> =core::slice::view_range<u8>(source,3,8).unwrap();
+    let short_decoded:core::slice::View<u8> =core::slice::view_range<u8>(destination,5,5).unwrap();
+    failed(core::base64::decode_into(encoded,short_decoded,selected),4006); exact(source,3,wire,8); exact(destination,0,raw,0);
+    let alias_decoded:core::slice::View<u8> =core::slice::view_range<u8>(source,3,5).unwrap();
+    failed(core::base64::decode_into(encoded,alias_decoded,selected),4006); exact(source,3,wire,8);
+    let tail_wire:[u8;8]=[90,109,57,118,89,109,69,61]; let count:i32=8; if(mode%2==1) { count=7; }
+    load(source,3,raw,5); let raw_tail:core::slice::View<u8> =core::slice::view_range<u8>(source,3,5).unwrap();
+    let room:core::slice::View<u8> =core::slice::view_range<u8>(source,3,14).unwrap();
+    assert(core::base64::encode_into(raw_tail,room,selected).unwrap()==count); exact(source,3,tail_wire,count);
+    let tail:core::slice::View<u8> =core::slice::view_range<u8>(source,3,count).unwrap();
+    assert(core::base64::decode_into(tail,raw_tail,selected).unwrap()==5);
+    let i:i32=0; while(i<24) {
+        if(i>=3 && i<8) { assert(source[i]==raw[i-3]); }
+        else { if(i>=8 && i<3+count) { assert(source[i]==tail_wire[i-3]); } else { assert(source[i]==199); } } i+=1;
+    }
+}
+fn recoverable_rejections_and_aliases_preserve_full_backing() {
+    let native_source:[u8;24]=[199;24]; let native_output:[u8;24]=[199;24]; let source_words:[i32;6]=[0;6]; let output_words:[i32;6]=[0;6];
+    let packed_source:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(source_words),24);
+    let packed_output:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),24);
+    let mode:i32=0; while(mode<4) {
+        error_vectors(native_source,packed_output,mode); error_vectors(packed_source,native_output,mode);
+        capacity_and_successful_same_base_aliases(native_source,packed_output,mode); capacity_and_successful_same_base_aliases(packed_source,native_output,mode); mode+=1;
+    }
+}
+
+fn main() -> i32 {
+    checked_length_literal_boundaries(); metadata_and_structural_rejections_before_access();
+    rfc_and_binary_vectors_on_both_actual_byte_strides(); recoverable_rejections_and_aliases_preserve_full_backing(); return 0;
+}

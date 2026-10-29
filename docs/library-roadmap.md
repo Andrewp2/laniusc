@@ -920,7 +920,17 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
-- [Native checked varints](stdlib-varint.md) are the current consolidation:
+- Current [checked Base64 profiles](stdlib-base64.md) replace four fallback/
+  sentinel functions with Result/View APIs for explicit standard/URL-safe and
+  padded/unpadded policies. Indexed errors, complete preflight and same-base
+  alias rules are fixed; three WebSocket consumers retain staged commit/error
+  policy and OpenSSL digest computation. All five library tests pass, including
+  the 48,995-case model and both boundary gates. Three selected migrated
+  wire/transport/OpenSSL tests and the [binary conversion program](stdlib-base64-bytes.md)
+  pass separately; the program covers 194 cases. This finite native Linux
+  x86_64 increment is accepted. Historical
+  codec/protocol receipts keep their source/API scope; the full goal stays open.
+- Accepted [native checked varints](stdlib-varint.md) are the preceding consolidation:
   sixteen u32/u64/i32/i64 functions share core::varint with typed Result/Decoded,
   explicit errors and View-relative positions. Three signed/two-word codecs
   retire without forwarding aliases; wide arithmetic remains separate.

@@ -1,190 +1,208 @@
-// Strict padded Base64 for caller-backed byte views. The alphabet is RFC 4648
-// standard Base64 (A-Z, a-z, 0-9, +, /), without whitespace or a URL variant.
+// Strict RFC 4648 standard/URL alphabets with explicit padding profiles.
+// Checked operations validate logical Views; physical backing remains a caller
+// obligation. Disjoint or same-selected-base/same-stride storage is supported.
 module core::base64;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
 
-fn alphabet_at(value: u32) -> u8 {
-    let code: u32 = 0;
-    if (value < 26) {
-        code = 65 + value;
-    } else {
-        if (value < 52) {
-            code = 97 + value - 26;
-        } else {
-            if (value < 62) {
-                code = 48 + value - 52;
-            } else {
-                if (value == 62) {
-                    code = 43;
-                } else {
-                    code = 47;
-                }
-            }
-        }
-    }
-    return code as u8;
+pub enum Profile { Standard, StandardUnpadded, UrlSafe, UrlSafeUnpadded }
+pub enum Error {
+    Bounds, LengthOverflow, InvalidLength, InvalidByte(i32),
+    InvalidPadding(i32), NonCanonical(i32), BufferTooSmall(i32)
 }
 
-fn sextet_or(value: u8) -> i32 {
+fn valid_view(bytes: View<u8>) -> bool {
+    if (bytes.start < 0 || bytes.length < 0) { return false; }
+    return bytes.start <= 2147483647 - bytes.length;
+}
+fn profile_padded(profile: Profile) -> bool {
+    return match (profile) { Standard -> true, StandardUnpadded -> false, UrlSafe -> true, UrlSafeUnpadded -> false };
+}
+fn profile_url(profile: Profile) -> bool {
+    return match (profile) { Standard -> false, StandardUnpadded -> false, UrlSafe -> true, UrlSafeUnpadded -> true };
+}
+fn alphabet_at(value: u32, url_safe: bool) -> u8 {
+    if (value < 26) { return (65 + value) as u8; }
+    if (value < 52) { return (97 + value - 26) as u8; }
+    if (value < 62) { return (48 + value - 52) as u8; }
+    if (value == 62) {
+        if (url_safe) { return 45; }
+        return 43;
+    }
+    if (url_safe) { return 95; }
+    return 47;
+}
+fn sextet_or(value: u8, url_safe: bool) -> i32 {
     let code: i32 = value as i32;
-    if (code >= 65 && code <= 90) {
-        return code - 65;
-    }
-    if (code >= 97 && code <= 122) {
-        return code - 97 + 26;
-    }
-    if (code >= 48 && code <= 57) {
-        return code - 48 + 52;
-    }
-    if (code == 43) {
-        return 62;
-    }
-    if (code == 47) {
-        return 63;
+    if (code >= 65 && code <= 90) { return code - 65; }
+    if (code >= 97 && code <= 122) { return code - 97 + 26; }
+    if (code >= 48 && code <= 57) { return code - 48 + 52; }
+    if (url_safe) {
+        if (code == 45) { return 62; }
+        if (code == 95) { return 63; }
+    } else {
+        if (code == 43) { return 62; }
+        if (code == 47) { return 63; }
     }
     return -1;
 }
-
-// Return the exact encoded length or fallback for a negative input length or
-// an output length above i32::MAX. No storage is accessed.
-pub fn encoded_len_or(input_len: i32, fallback: i32) -> i32 {
-    if (input_len < 0 || input_len > 1610612733) {
-        return fallback;
-    }
-    let groups: i32 = input_len / 3;
-    if (input_len % 3 != 0) {
-        groups += 1;
-    }
-    return groups * 4;
+fn checked_symbol(input: View<u8>, index: i32, url_safe: bool) -> Result<i32, Error> {
+    let byte: u8 = input.values[input.start + index];
+    if (byte == 61) { return Err(Error::InvalidPadding(index)); }
+    let value: i32 = sextet_or(byte, url_safe);
+    if (value < 0) { return Err(Error::InvalidByte(index)); }
+    return Ok(value);
 }
 
-// Validate the entire encoded view and return its decoded length. Padding is
-// required for a partial final group, permitted only there, and must leave
-// zero unused bits. Empty input is valid. Invalid input returns fallback.
-pub fn decoded_len_or(input: [u8], input_len: i32, fallback: i32) -> i32 {
-    if (input_len < 0 || input_len % 4 != 0) {
-        return fallback;
+// Call only after View admission. Length shape precedes every byte access;
+// group alphabet/padding shape precedes that group's unused-bit check.
+fn validated_len(input: View<u8>, padded: bool, url_safe: bool) -> Result<i32, Error> {
+    let remainder: i32 = input.length % 4;
+    if (padded) {
+        if (remainder != 0) { return Err(Error::InvalidLength); }
+    } else {
+        if (remainder == 1) { return Err(Error::InvalidLength); }
     }
     let result: i32 = 0;
     let index: i32 = 0;
-    while (index < input_len) {
-        let first: i32 = sextet_or(input[index]);
-        let second: i32 = sextet_or(input[index + 1]);
-        let third_byte: u8 = input[index + 2];
-        let fourth_byte: u8 = input[index + 3];
-        if (first < 0 || second < 0) {
-            return fallback;
-        }
-        let final_group: bool = index + 4 == input_len;
-        if (third_byte == 61) {
-            if (!final_group || fourth_byte != 61 || second % 16 != 0) {
-                return fallback;
-            }
-            result += 1;
+    while (index < input.length) {
+        let remaining: i32 = input.length - index;
+        let group_length: i32 = remaining;
+        if (group_length > 4) { group_length = 4; }
+        let first: i32 = checked_symbol(input, index, url_safe)?;
+        let second: i32 = checked_symbol(input, index + 1, url_safe)?;
+        if (group_length == 2) {
+            if (second % 16 != 0) { return Err(Error::NonCanonical(index + 1)); }
+            result += 1; index += 2;
         } else {
-            let third: i32 = sextet_or(third_byte);
-            if (third < 0) {
-                return fallback;
-            }
-            if (fourth_byte == 61) {
-                if (!final_group || third % 4 != 0) {
-                    return fallback;
-                }
-                result += 2;
+            let third_byte: u8 = input.values[input.start + index + 2];
+            if (padded && remaining == 4 && third_byte == 61) {
+                // Once the third position is padding, a mismatched fourth
+                // reports that third position, whatever the fourth byte is.
+                let fourth_byte: u8 = input.values[input.start + index + 3];
+                if (fourth_byte != 61) { return Err(Error::InvalidPadding(index + 2)); }
+                if (second % 16 != 0) { return Err(Error::NonCanonical(index + 1)); }
+                result += 1; index += 4;
             } else {
-                if (sextet_or(fourth_byte) < 0) {
-                    return fallback;
+                let third: i32 = checked_symbol(input, index + 2, url_safe)?;
+                if (group_length == 3) {
+                    if (third % 4 != 0) { return Err(Error::NonCanonical(index + 2)); }
+                    result += 2; index += 3;
+                } else {
+                    let fourth_byte: u8 = input.values[input.start + index + 3];
+                    if (padded && remaining == 4 && fourth_byte == 61) {
+                        if (third % 4 != 0) { return Err(Error::NonCanonical(index + 2)); }
+                        result += 2;
+                    } else {
+                        let fourth: i32 = checked_symbol(input, index + 3, url_safe)?;
+                        result += 3;
+                    }
+                    index += 4;
                 }
-                result += 3;
             }
         }
-        index += 4;
     }
-    return result;
+    return Ok(result);
 }
 
-// Return written bytes, or -1 for invalid logical lengths or insufficient
-// declared output capacity. Those failures leave output unchanged. Encoding
-// runs backward so input and output may be the same caller-owned byte array.
-pub fn encode_into(input: [u8], input_len: i32, output: [u8], capacity: i32) -> i32 {
-    let encoded_len: i32 = encoded_len_or(input_len, -1);
-    if (encoded_len < 0 || capacity < encoded_len) {
-        return -1;
-    }
-    let padding: u8 = 61;
-    let group: i32 = encoded_len / 4;
+// No input access or store occurs until complete output length/capacity
+// admission. Backward groups snapshot their source before expanding in place.
+fn encode_engine(input: View<u8>, output: View<u8>, required: i32, padded: bool, url_safe: bool) -> i32 {
+    let group: i32 = input.length / 3;
+    if (input.length % 3 != 0) { group += 1; }
     while (group > 0) {
         group -= 1;
         let source: i32 = group * 3;
         let target: i32 = group * 4;
-        let first_byte: u8 = input[source];
-        let first: u32 = first_byte as u32;
+        let remaining: i32 = input.length - source;
+        let first: u32 = input.values[input.start + source] as u32;
         let second: u32 = 0;
         let third: u32 = 0;
-        let remaining: i32 = input_len - source;
+        if (remaining >= 2) { second = input.values[input.start + source + 1] as u32; }
+        if (remaining >= 3) { third = input.values[input.start + source + 2] as u32; }
+        output.values[output.start + target] = alphabet_at(first >> 2, url_safe);
+        output.values[output.start + target + 1] = alphabet_at(((first & 3) << 4) | (second >> 4), url_safe);
         if (remaining >= 2) {
-            let second_byte: u8 = input[source + 1];
-            second = second_byte as u32;
+            output.values[output.start + target + 2] = alphabet_at(((second & 15) << 2) | (third >> 6), url_safe);
+        } else {
+            if (padded) { output.values[output.start + target + 2] = 61; }
         }
         if (remaining >= 3) {
-            let third_byte: u8 = input[source + 2];
-            third = third_byte as u32;
-        }
-        output[target] = alphabet_at(first >> 2);
-        output[target + 1] = alphabet_at(((first & 3) << 4) | (second >> 4));
-        if (remaining >= 2) {
-            output[target + 2] = alphabet_at(((second & 15) << 2) | (third >> 6));
+            output.values[output.start + target + 3] = alphabet_at(third & 63, url_safe);
         } else {
-            output[target + 2] = padding;
-        }
-        if (remaining >= 3) {
-            output[target + 3] = alphabet_at(third & 63);
-        } else {
-            output[target + 3] = padding;
+            if (padded) { output.values[output.start + target + 3] = 61; }
         }
     }
-    return encoded_len;
+    return required;
 }
 
-// Validate all input before writing. Return written bytes or -1 on malformed
-// input, invalid length, or insufficient declared capacity. Same-array input
-// and output work because decoding shrinks and writes from the front.
-pub fn decode_into(input: [u8], input_len: i32, output: [u8], capacity: i32) -> i32 {
-    let decoded_len: i32 = decoded_len_or(input, input_len, -1);
-    if (decoded_len < 0 || capacity < decoded_len) {
-        return -1;
-    }
+// All symbols and capacity have already been admitted. Snapshot the complete
+// current group before shrinking stores can replace any same-base source byte.
+fn decode_engine(input: View<u8>, output: View<u8>, url_safe: bool) -> i32 {
     let source: i32 = 0;
     let target: i32 = 0;
-    while (source < input_len) {
-        let first: i32 = sextet_or(input[source]);
-        let second: i32 = sextet_or(input[source + 1]);
-        let third_byte: u8 = input[source + 2];
-        let fourth_byte: u8 = input[source + 3];
+    while (source < input.length) {
+        let group_length: i32 = input.length - source;
+        if (group_length > 4) { group_length = 4; }
+        let first: i32 = sextet_or(input.values[input.start + source], url_safe);
+        let second: i32 = sextet_or(input.values[input.start + source + 1], url_safe);
         let third: i32 = 0;
         let fourth: i32 = 0;
-        if (third_byte != 61) {
-            third = sextet_or(third_byte);
-            if (fourth_byte != 61) {
-                fourth = sextet_or(fourth_byte);
-            }
+        let amount: i32 = 1;
+        if (group_length >= 3) {
+            let third_byte: u8 = input.values[input.start + source + 2];
+            if (third_byte != 61) { third = sextet_or(third_byte, url_safe); amount = 2; }
         }
-        let first_value: i32 = first * 4 + second / 16;
-        let first_output: u8 = first_value as u8;
-        output[target] = first_output;
+        if (group_length == 4) {
+            let fourth_byte: u8 = input.values[input.start + source + 3];
+            if (fourth_byte != 61) { fourth = sextet_or(fourth_byte, url_safe); amount = 3; }
+        }
+        output.values[output.start + target] = (first * 4 + second / 16) as u8;
         target += 1;
-        if (third_byte != 61) {
-            let second_value: i32 = (second % 16) * 16 + third / 4;
-            let second_output: u8 = second_value as u8;
-            output[target] = second_output;
+        if (amount >= 2) {
+            output.values[output.start + target] = ((second % 16) * 16 + third / 4) as u8;
             target += 1;
-            if (fourth_byte != 61) {
-                let third_value: i32 = (third % 4) * 64 + fourth;
-                let third_output: u8 = third_value as u8;
-                output[target] = third_output;
-                target += 1;
-            }
         }
-        source += 4;
+        if (amount == 3) {
+            output.values[output.start + target] = ((third % 4) * 64 + fourth) as u8;
+            target += 1;
+        }
+        source += group_length;
     }
-    return decoded_len;
+    return target;
+}
+
+pub fn encoded_len(input_len: i32, profile: Profile) -> Result<i32, Error> {
+    if (input_len < 0) { return Err(Error::Bounds); }
+    let padded: bool = profile_padded(profile);
+    let maximum: i32 = 1610612735;
+    if (padded) { maximum = 1610612733; }
+    if (input_len > maximum) { return Err(Error::LengthOverflow); }
+    let result: i32 = (input_len / 3) * 4;
+    let remainder: i32 = input_len % 3;
+    if (remainder != 0) {
+        if (padded) { return Ok(result + 4); }
+        return Ok(result + remainder + 1);
+    }
+    return Ok(result);
+}
+pub fn decoded_len(input: View<u8>, profile: Profile) -> Result<i32, Error> {
+    if (!valid_view(input)) { return Err(Error::Bounds); }
+    return validated_len(input, profile_padded(profile), profile_url(profile));
+}
+pub fn encode_into(input: View<u8>, output: View<u8>, profile: Profile) -> Result<i32, Error> {
+    if (!valid_view(input) || !valid_view(output)) { return Err(Error::Bounds); }
+    let required: i32 = encoded_len(input.length, profile)?;
+    if (output.length < required) { return Err(Error::BufferTooSmall(required)); }
+    let written: i32 = encode_engine(input, output, required, profile_padded(profile), profile_url(profile));
+    return Ok(written);
+}
+pub fn decode_into(input: View<u8>, output: View<u8>, profile: Profile) -> Result<i32, Error> {
+    if (!valid_view(input) || !valid_view(output)) { return Err(Error::Bounds); }
+    let required: i32 = validated_len(input, profile_padded(profile), profile_url(profile))?;
+    if (output.length < required) { return Err(Error::BufferTooSmall(required)); }
+    let written: i32 = decode_engine(input, output, profile_url(profile));
+    return Ok(written);
 }

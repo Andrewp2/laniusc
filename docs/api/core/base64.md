@@ -4,50 +4,175 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/core/base64.lani#L3)
+[All modules](../README.md) · [Source](../../../stdlib/core/base64.lani#L4)
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
+Four checked View/Result functions with explicit standard/URL-safe and padded/unpadded profiles. Reject whitespace, cross-alphabet bytes, invalid padding and nonzero unused tail bits. Both View descriptors precede byte access; encode preflights capacity and decode validates all wire before capacity/stores. Recoverable errors preserve the entire backing; indexed errors are input-relative and BufferTooSmall carries the complete required count. Same-selected-base/same-stride aliases are supported; other partial overlap and live physical backing remain caller obligations. Shared engines are linear, allocation/host-free and add no terminator or owner. All five new library tests, three selected migrated wire/transport/OpenSSL tests and all 194 binary-CLI cases pass on native Linux x86_64 CPU output. This finite increment is accepted. OpenSSL retains handshake digest computation; historical sentinel/protocol receipts keep their scope.
+
 ## Contract and evidence guides
 
+- [stdlib-base64](../../stdlib-base64.md)
+- [stdlib-base64-bytes](../../stdlib-base64-bytes.md)
 - [stdlib-byte-codecs](../../stdlib-byte-codecs.md)
 
-Declaration counts: function: 4.
+Declaration counts: enum: 2; function: 4; variant: 11.
 
 ## Declared imports
 
-None.
+Direct source imports; this is not a package-resolution or transitive dependency result.
+
+- [core::result::Result](result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../stdlib/core/base64.lani#L5)
+- [core::result::Ok](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../stdlib/core/base64.lani#L6)
+- [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../stdlib/core/base64.lani#L7)
+- [core::slice::View](slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../stdlib/core/base64.lani#L8)
+
+## Types, fields and variants
+
+Fields and variants are retained under their declared public owner. Their representation does not establish safe construction or mutation; consult the guides.
+
+### enum: Profile
+
+[Source line 10](../../../stdlib/core/base64.lani#L10)
+
+```lanius
+pub enum Profile
+```
+
+#### variant: Standard
+
+[Source line 10](../../../stdlib/core/base64.lani#L10)
+
+```lanius
+Standard
+```
+
+#### variant: StandardUnpadded
+
+[Source line 10](../../../stdlib/core/base64.lani#L10)
+
+```lanius
+StandardUnpadded
+```
+
+#### variant: UrlSafe
+
+[Source line 10](../../../stdlib/core/base64.lani#L10)
+
+```lanius
+UrlSafe
+```
+
+#### variant: UrlSafeUnpadded
+
+[Source line 10](../../../stdlib/core/base64.lani#L10)
+
+```lanius
+UrlSafeUnpadded
+```
+
+### enum: Error
+
+[Source line 11](../../../stdlib/core/base64.lani#L11)
+
+```lanius
+pub enum Error
+```
+
+#### variant: Bounds
+
+[Source line 12](../../../stdlib/core/base64.lani#L12)
+
+```lanius
+Bounds
+```
+
+#### variant: LengthOverflow
+
+[Source line 12](../../../stdlib/core/base64.lani#L12)
+
+```lanius
+LengthOverflow
+```
+
+#### variant: InvalidLength
+
+[Source line 12](../../../stdlib/core/base64.lani#L12)
+
+```lanius
+InvalidLength
+```
+
+#### variant: InvalidByte
+
+[Source line 12](../../../stdlib/core/base64.lani#L12)
+
+```lanius
+InvalidByte(i32)
+```
+
+#### variant: InvalidPadding
+
+[Source line 13](../../../stdlib/core/base64.lani#L13)
+
+```lanius
+InvalidPadding(i32)
+```
+
+#### variant: NonCanonical
+
+[Source line 13](../../../stdlib/core/base64.lani#L13)
+
+```lanius
+NonCanonical(i32)
+```
+
+#### variant: BufferTooSmall
+
+[Source line 13](../../../stdlib/core/base64.lani#L13)
+
+```lanius
+BufferTooSmall(i32)
+```
 
 ## Free functions and extern declarations
 
-### function: encoded_len_or
+### function: encoded_len
 
-[Source line 49](../../../stdlib/core/base64.lani#L49)
-
-```lanius
-pub fn encoded_len_or(input_len: i32, fallback: i32) -> i32
-```
-
-### function: decoded_len_or
-
-[Source line 63](../../../stdlib/core/base64.lani#L63)
+[Source line 177](../../../stdlib/core/base64.lani#L177)
 
 ```lanius
-pub fn decoded_len_or(input: [u8], input_len: i32, fallback: i32) -> i32
+pub fn encoded_len(input_len: i32, profile: Profile) -> Result<i32, Error>
 ```
+
+Exact checked encoding count for the selected profile; negative input returns Bounds and a positive result above i32::MAX returns LengthOverflow. No storage access.
+
+### function: decoded_len
+
+[Source line 191](../../../stdlib/core/base64.lani#L191)
+
+```lanius
+pub fn decoded_len(input: View<u8>, profile: Profile) -> Result<i32, Error>
+```
+
+Validates View metadata and the complete canonical spelling for its explicit profile; returns exact decoded count or indexed/structural error, without mutation.
 
 ### function: encode_into
 
-[Source line 108](../../../stdlib/core/base64.lani#L108)
+[Source line 195](../../../stdlib/core/base64.lani#L195)
 
 ```lanius
-pub fn encode_into(input: [u8], input_len: i32, output: [u8], capacity: i32) -> i32
+pub fn encode_into(input: View<u8>, output: View<u8>, profile: Profile) -> Result<i32, Error>
 ```
+
+Admits both Views, exact encoded length and complete capacity before reading/storing. Returns written count; all recoverable errors preserve backing. Same-base aliases require equal selected first-byte address and stride.
 
 ### function: decode_into
 
-[Source line 151](../../../stdlib/core/base64.lani#L151)
+[Source line 202](../../../stdlib/core/base64.lani#L202)
 
 ```lanius
-pub fn decode_into(input: [u8], input_len: i32, output: [u8], capacity: i32) -> i32
+pub fn decode_into(input: View<u8>, output: View<u8>, profile: Profile) -> Result<i32, Error>
 ```
+
+Admits both Views, validates the entire strict wire, then checks capacity before any store. Returns written count; malformed wire precedes BufferTooSmall and recoverable errors preserve backing.

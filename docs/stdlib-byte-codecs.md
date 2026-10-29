@@ -5,7 +5,7 @@ values. They make no host calls and create no owned buffers.
 
 | Module | Representation | Main result convention |
 | --- | --- | --- |
-| `core::base64` | Strict padded standard Base64 | Byte count, or fallback / `-1` |
+| `core::base64` | Explicit standard/URL-safe, padded/unpadded Base64 | Result with written count or indexed/structural error |
 | `core::binary` | Shortest unsigned binary ASCII | ASCII byte or parsed value, with fallback |
 | `core::hex` | Shortest unsigned hexadecimal ASCII | ASCII byte or parsed value, with fallback |
 | `core::endian` | Fixed-width unsigned, signed and IEEE float encodings, either byte order | Value with fallback; boolean write success |
@@ -30,14 +30,15 @@ output capacity leave the destination unchanged in Base64, endian and varint
 writes. Base64 decoding also validates the entire encoded input before writing.
 Successful writes change only their documented output range. Pure read and
 validation functions do not mutate input. Base64 explicitly supports using the
-same array at the same base for input and output, as described below.
+same selected first-byte address and stride for input and output; other partial
+overlap is a caller precondition, as described below.
 
 Fallback-returning APIs have no independent success bit. A valid result may
-equal the fallback. Base64 length callers can use `-1`, since successful lengths
-are nonnegative. For full-range numeric reads/parses, comparing the returned
+equal the fallback. For full-range numeric reads/parses, comparing the returned
 value with a numeric sentinel cannot reliably identify failure. Validate the
 logical bounds first, or use the digit predicates where applicable. Checked
-varints instead return Result with explicit errors, without numeric sentinels.
+Base64 and varints instead return Result with explicit errors, without numeric
+sentinels.
 
 There is no work-budget parameter. Base64 and CRC work is linear in the supplied
 input length; binary/hex parsing is linear up to the first rejected code or
@@ -47,35 +48,34 @@ formatting is bounded by the integer width, with constant auxiliary storage.
 
 ## Strict Base64
 
-[Source](../stdlib/core/base64.lani): `core::base64` uses the standard alphabet
-`A-Z a-z 0-9 + /`, with `=` padding. Its format follows
-[RFC 4648 sections 3–4](https://www.rfc-editor.org/rfc/rfc4648.html#section-3).
-The decoder rejects whitespace, URL-safe alphabet substitutions, misplaced
-padding and nonzero unused pad bits. It accepts empty input. A partial final
-group requires padding; every encoded input length must be divisible by four.
+[Source](../stdlib/core/base64.lani) and [complete checked contract](stdlib-base64.md).
+Four APIs accept explicit Profile values: Standard, StandardUnpadded, UrlSafe
+and UrlSafeUnpadded. encoded_len and decoded_len return checked exact sizes;
+encode_into and decode_into accept View<u8> input/output and return written
+counts. No fallback, -1 sentinel, automatic alphabet/padding selection or
+permissive whitespace mode remains. The [binary conversion program](stdlib-base64-bytes.md)
+uses these same APIs.
 
-| Function | Contract |
-| --- | --- |
-| `encoded_len_or(input_len,fallback)` | Exact `4*ceil(input_len/3)`, without accessing storage; fallback for negative lengths or lengths above 1,610,612,733 |
-| `decoded_len_or(input,input_len,fallback)` | Validate all selected encoded bytes and return the exact decoded count; fallback on malformed data or invalid logical length |
-| `encode_into(input,input_len,output,capacity)` | Encode the input prefix into the output prefix; return bytes written, or `-1` for invalid input length / insufficient capacity |
-| `decode_into(input,input_len,output,capacity)` | Validate, then decode into the output prefix; return bytes written, or `-1` for malformed data, invalid length / insufficient capacity |
+Both View descriptors are admitted before storage access. Encoding checks exact
+capacity before reading; decoding validates the complete strict wire spelling
+before capacity or stores. Errors distinguish Bounds, LengthOverflow,
+InvalidLength, InvalidByte(index), InvalidPadding(index), NonCanonical(index)
+and BufferTooSmall(required). Indices are zero-based within the selected input;
+required is the complete output count. Every recoverable error leaves the
+entire backing unchanged. Successful output has no terminator or newline.
 
-The maximum accepted encoding input length produces 2,147,483,644 bytes, the
-largest possible multiple-of-four result within i32. No such storage is
-allocated by the length helper. Negative output capacity fails even for empty
-input; empty input and zero capacity succeed with count zero.
+Backward expanding encoding and forward shrinking decoding preserve same-base
+aliases when selected physical first-byte addresses and strides match. Disjoint
+Views may have different supported strides and nonzero starts. Other partial
+overlap, live backing and physical lengths remain caller obligations; a native
+physical trap has no rollback guarantee. Work is linear with constant auxiliary
+storage, no allocation or host calls.
 
-For a final `xx==` group, the second sextet's low four bits must be zero.
-For `xxx=`, the third sextet's low two bits must be zero. Thus `Zg==` decodes
-to `f`, while `Zh==` fails despite sharing its significant bits. `Zg` fails
-because padding is absent. No terminator or newline is appended on encoding.
-
-Encoding works backward and reads each source group before storing its four
-output bytes. Decoding works forward after validation. Both support exactly
-the same input/output array and base, with enough physical space for the
-declared output. This contract does not establish arbitrary overlap between
-different base addresses. Bytes after the returned output count are unchanged.
+All five new library tests pass: admission/direct, the 48,995-case independent
+model and both guarded/physical-boundary gates. Three selected migrated
+WebSocket wire/transport/OpenSSL tests and all 194 binary-CLI cases pass
+separately. This increment is accepted on native Linux x86_64 CPU output from
+the GPU compiler. Earlier sentinel/protocol receipts retain their source scope.
 
 ## Binary and hexadecimal scalar ASCII
 
@@ -202,16 +202,17 @@ CLI pass; the dedicated guide records their separate finite receipts.
 
 ## Existing executable evidence and its limits
 
-This section records earlier fixture coverage. The varint rows describe the
-retired status/two-word source/API freeze, not the current driver contents or
-native checked API. Current admission and migrated-consumer receipts belong to
-the [native varint guide](stdlib-varint.md). The other codec rows keep their
+This section records earlier fixture coverage. The Base64 row describes the
+retired standard-padded sentinel API; the varint rows describe retired
+status/two-word APIs, not the current driver contents. Current receipts belong
+to the [checked Base64 guide](stdlib-base64.md) and
+[native varint guide](stdlib-varint.md). The other codec rows keep their
 existing scopes. Their physical-bounds cases expect native trap exit 101;
 none establishes user-GPU or other-target execution.
 
 | Existing driver | Behaviors checked in its fixtures |
 | --- | --- |
-| [stdlib_base64_execution.rs](../tests/stdlib_base64_execution.rs) | Known padded vectors; empty input; size overflow; strict padding/pad-bit/whitespace rejection; unchanged logical-failure outputs; same-base aliasing; all 256 one-byte values and selected two-/three-byte families; source/output backing traps |
+| Historical `stdlib_base64_execution.rs` | Known padded vectors; empty input; size overflow; strict padding/pad-bit/whitespace rejection; unchanged logical-failure outputs; same-base aliasing; all 256 one-byte values and selected two-/three-byte families; source/output backing traps |
 | [stdlib_endian_execution.rs](../tests/stdlib_endian_execution.rs) | Both byte orders at offsets; u16/u32 and two-word 64-bit values; rejected bounds and sentinel preservation; 256 varying high-byte patterns across several offsets; source/output backing traps; packet-header consumer |
 | [stdlib_crc32_execution.rs](../tests/stdlib_crc32_execution.rs) | Constants, empty/negative lengths, `123456789`, binary bytes, an ascending 0..255 stream, byte-wise versus prefix checksum, and a physical-bounds trap |
 | [stdlib_foundation_execution.rs](../tests/stdlib_foundation_execution.rs) | `core_binary` and `core_hex`: digit positions/case, prefixes, malformed input, width maxima/overflow and fallbacks; binary additionally round-trips every u8 |

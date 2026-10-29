@@ -1,6 +1,14 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[checked Base64 increment](stdlib-base64.md) replaces fallback/sentinel calls
+with four Result/View APIs and explicit standard/URL-safe, padded/unpadded
+profiles. Full preflight, indexed errors, same-base aliases and manual backing
+are explicit. All five library tests pass, including the 48,995-case model
+and guarded/physical boundaries; three selected migrated WebSocket tests and
+all 194 binary-CLI cases pass separately. This finite native Linux x86_64
+increment is accepted.
+The preceding
 [native checked-varint consolidation](stdlib-varint.md) supplies sixteen
 u32/u64/i32/i64 functions in core::varint with View-relative positions,
 typed Result/Decoded and explicit errors. Three signed/two-word codecs retire
@@ -275,6 +283,20 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Checked Base64 profiles.**
+
+The [checked codec](stdlib-base64.md) fixes alphabet/padding policy per Profile,
+reports input-relative errors and preflights complete writes. Disjoint and
+same-selected-base/same-stride Views share one engine; other overlap and live
+physical backing remain caller obligations. Three WebSocket consumers select
+Standard and inspect Results before staged copies; OpenSSL retains the digest.
+The [binary conversion program](stdlib-base64-bytes.md) composes bounded input,
+exact output reservation and explicit publication/cleanup. All five library
+tests pass, including the 48,995-case model and both boundary gates. Three
+selected wire/transport/OpenSSL tests and all 194 CLI cases pass separately
+on native Linux x86_64. Older
+standard-padded sentinel and broad WebSocket receipts retain their source scope.
 
 **Checked native varints.**
 

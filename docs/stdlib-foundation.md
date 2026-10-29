@@ -724,7 +724,8 @@ require further compiler work.
 | `core::wide_u64_bits` all 12 public two-word bit functions | Executable on x86_64 | The imported runtime fixture calls every function and checks zero, one, high bit, maximum, and mixed byte patterns; zero and one counts; rotations at word and width boundaries and for all counts 0 through 127; bit reversal and byte swap; all eight byte positions in both orders; and caller fallbacks for invalid positions. It uses `WideU64` rather than native `u64`. |
 | `core::wide_i64_bits` all 12 public signed two-word bit functions | Executable on x86_64 | The imported runtime fixture calls every function on zero, one, negative one, the signed minimum, and a mixed negative pattern. It checks counts, sign-bit rotations and reversal, byte swapping, bit and byte fallbacks, and rotation round trips for all counts 0 through 127. The signed-bit-report program reads full-width decimal input and prints the population count and unsigned reversal for ordinary, extreme, malformed, and overflowing inputs. The functions operate on `WideI64` bit patterns and do not use native `i64` operations. |
 | `core::bitset` all 14 public caller-backed bitset functions | Executable on x86_64 for `[u32]` backing | Runtime fixtures check word counts, bit access and mutation, fill, counts, any/all, first/last set bit, equality, union, and intersection. They cover logical lengths 0 through 65, word boundaries, aliases, invalid lengths and indices, preserved padding and unused words, and a physical backing overclaim that traps. A source scan requires a runtime call for every public function. |
-| `core::base64` all 4 public caller-backed encoding functions | Executable on x86_64 for `[u8]` backing | Runtime fixtures check exact size calculation, standard padded Base64 encoding and strict decoding, empty input, all 256 values as the final byte of one-, two-, and three-byte round trips, one- and two-byte padding, same-buffer encode/decode, rejected malformed input and insufficient capacity without output changes, and overstated physical views that trap. A source scan requires a runtime call for every public function. |
+| `core::base64` four checked View/Profile functions | Accepted on the finite native Linux x86_64 profile | Explicit standard/URL-safe and padded/unpadded profiles return Result counts or structural/indexed errors. Full metadata and capacity/wire preflight preserve backing on recoverable error. Five new library tests, including the 48,995-case model and guarded/physical boundaries, pass; three selected migrated WebSocket tests and 194 CLI cases pass separately. The [current guide](stdlib-base64.md) separates these receipts from the historical sentinel scope below. |
+| Historical `core::base64` four sentinel/fallback functions | Earlier x86_64 source/API freeze | Runtime fixtures check exact size calculation, standard padded Base64 encoding and strict decoding, empty input, all 256 values as the final byte of one-, two-, and three-byte round trips, one- and two-byte padding, same-buffer encode/decode, rejected malformed input and insufficient capacity without output changes, and overstated physical views that trap. A source scan requires a runtime call for every public function. |
 | `core::endian` 36 public functions: historical twelve plus 24 native numeric additions | All 36 execute on x86_64; historical/current receipts have separate scopes | Historical twelve-function fixtures check big- and little-endian 16-, 32-, and two-word 64-bit reads and writes, high-bit values, zero, maximum values, invalid logical bounds without writes, and physical backing overclaims that trap. The 16- and 32-bit matrix covers all 256 high-byte values across offsets 0 through 4. The packet-header sample combines byte-order reads with unsigned arithmetic and checks its printed result. The historical call inventory covers those twelve functions. The new u64/signed/IEEE-float family passes two direct native tests in 8.33s (58 literal vectors plus four physical-overclaim traps); selected old-family and UTF-16 regressions have separate current receipts. The independent 16,032-case model and two memory/scale tests also pass (672 rejected accesses and 32,768 records); the record application passes four groups/96 cases. The current 36-function call inventory is static bookkeeping, separate from native receipts. See [native numeric byte order](stdlib-native-endian.md). |
 | `core::varint`, sixteen native u32/u64/i32/i64 free functions | Accepted on the finite native Linux x86_64 profile | View-relative Result/Decoded reads, atomic-capacity writes, concrete ZigZag transforms and explicit Bounds/BufferTooSmall/Truncated/Overflow/NonCanonical errors replace status/fallback accessors. Five library tests cover direct contracts, a 61,144-case independent model and guarded/physical boundaries; both migrated frame sums and the 150-case CLI pass separately. Current receipts are separate from the historical rows below; see [checked native varints](stdlib-varint.md). |
 | Historical unsigned codecs: old `core::varint` and retired `core::varint_wide_u64`, all 12 public functions and five status constants | Retired status/two-word API; historical x86_64 evidence | Runtime fixtures call every function, check canonical unsigned LEB128 at 32 and two-word 64 bits, round-trip all 256 first-byte values and wide boundary values, distinguish invalid bounds, truncation, overflow, and nonminimal encodings, reject short write capacity without changing storage, and confirm native traps on physical backing overclaims. At that source freeze, the frame-sum program used both codecs and full-width decimal output. No native `u64` behavior is claimed. |
@@ -1021,15 +1022,15 @@ have been [removed after consumer migration](stdlib-legacy-collections.md).
   `sample_programs/bitset_prime_sieve.lani` uses this storage and
   `core::number_i32` to count and sum primes through 100; its executable test
   checks the printed results, 25 and 1060.
-- `core::base64` uses the standard `A-Z`, `a-z`, `0-9`, `+`, `/` alphabet with
-  required `=` padding. It rejects whitespace, misplaced padding, and nonzero
-  unused bits. `encoded_len_or` returns the caller's fallback if the input
-  length is negative or the encoded size exceeds `i32::MAX`; `decoded_len_or`
-  validates the complete view before returning its size. `encode_into` and
-  `decode_into` return `-1` for invalid logical lengths, malformed input, or
-  insufficient declared output capacity, leaving output untouched in those
-  cases. Both allow input and output to be the same byte array. A length or
-  capacity that overstates physical backing can trap on native indexing.
+- `core::base64` now uses checked View operations and explicit standard/URL-safe,
+  padded/unpadded profiles. Result distinguishes invalid metadata, length overflow,
+  wire shape, indexed byte/padding/unused-bit errors and required output capacity.
+  Decode validates the complete wire before capacity/stores; all recoverable
+  errors preserve the backing. Same-selected-base/same-stride aliases remain
+  supported, with physical backing and other overlap left to the caller.
+  The [current guide](stdlib-base64.md) records five accepted library gates,
+  three selected consumer tests and the 194-case real program. The older table
+  row above retains sentinel-API scope.
 - `core::endian` reads and writes two-, four-, and eight-byte numeric fields at a
   caller-supplied offset in a logical byte view. Big-endian order places the
   most significant byte first; little-endian order places it last. A negative
@@ -2046,8 +2047,9 @@ Run `cargo test --test stdlib_signed_radix_report_program` for a bounded
 signed binary input program that reports three representations.
 Run `cargo test --test stdlib_bitset_execution` for the caller-backed bitset,
 including the word-boundary matrix and native bounds trap.
-Run `cargo test --test stdlib_base64_execution` for strict caller-backed
-Base64 encoding and decoding, all byte values, and native bounds trapping.
+The [checked Base64 guide](stdlib-base64.md) separates current direct, model,
+physical-boundary, migrated-consumer and binary-CLI evidence. Historical
+standard-padded sentinel receipts do not establish the new checked profiles.
 Run `cargo test --test stdlib_crc32_execution` for streaming and caller-backed
 CRC-32/ISO-HDLC, known vectors, all byte values, and native bounds trapping.
 Run `cargo test --test stdlib_wide_u64_execution` for all two-word 64-bit

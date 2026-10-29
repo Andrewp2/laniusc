@@ -31,7 +31,12 @@ pub fn accept_into(key: core::slice::View<u8>, destination: core::slice::View<u8
     let input: [u8] = core::mem::typed_slice_from_raw_parts(input_pointer, 60);
     let index: i32 = 0;
     while (index < 24) { input[index] = key.values[key.start + index]; index += 1; }
-    if (core::base64::decoded_len_or(input, 24, -1) != 16) {
+    let key_view:core::slice::View<u8> = core::slice::View { values:input,start:0,length:24 };
+    let decoded:core::result::Result<i32,core::base64::Error> = core::base64::decoded_len(key_view,core::base64::Profile::Standard);
+    if (decoded.is_err()) {
+        return core::result::Err(Error::Key);
+    }
+    if (decoded.unwrap() != 16) {
         return core::result::Err(Error::Key);
     }
     let guid: str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -60,11 +65,16 @@ pub fn accept_into(key: core::slice::View<u8>, destination: core::slice::View<u8
     }
     if (count[0] != 20) { return core::result::Err(Error::UnexpectedSize(count[0])); }
 
-    // Fixed lengths guarantee 28 bytes. Only this final copy commits output.
+    // Fixed lengths guarantee 28 bytes. Assert the conversion before the only
+    // copy that commits caller output; a contradiction cannot publish bytes.
     let encoded_storage: [i32; 7] = [0; 7];
     let encoded_pointer: ptr = core::mem::i32_array_data_ptr(encoded_storage);
     let encoded: [u8] = core::mem::typed_slice_from_raw_parts(encoded_pointer, 28);
-    core::base64::encode_into(digest, 20, encoded, 28);
+    let digest_view:core::slice::View<u8> = core::slice::View { values:digest,start:0,length:20 };
+    let encoded_view:core::slice::View<u8> = core::slice::View { values:encoded,start:0,length:28 };
+    let converted:core::result::Result<i32,core::base64::Error> = core::base64::encode_into(digest_view,encoded_view,core::base64::Profile::Standard);
+    assert(converted.is_ok());
+    assert(converted.unwrap() == 28);
     index = 0;
     while (index < 28) { destination.values[destination.start + index] = encoded[index]; index += 1; }
     return core::result::Ok(28);

@@ -183,8 +183,17 @@
     },
     "core::base64": {
       "guides": [
+        "docs/stdlib-base64.md",
+        "docs/stdlib-base64-bytes.md",
         "docs/stdlib-byte-codecs.md"
-      ]
+      ],
+      "note": "Four checked View/Result functions with explicit standard/URL-safe and padded/unpadded profiles. Reject whitespace, cross-alphabet bytes, invalid padding and nonzero unused tail bits. Both View descriptors precede byte access; encode preflights capacity and decode validates all wire before capacity/stores. Recoverable errors preserve the entire backing; indexed errors are input-relative and BufferTooSmall carries the complete required count. Same-selected-base/same-stride aliases are supported; other partial overlap and live physical backing remain caller obligations. Shared engines are linear, allocation/host-free and add no terminator or owner. All five new library tests, three selected migrated wire/transport/OpenSSL tests and all 194 binary-CLI cases pass on native Linux x86_64 CPU output. This finite increment is accepted. OpenSSL retains handshake digest computation; historical sentinel/protocol receipts keep their scope.",
+      "declarations": {
+        "encoded_len": "Exact checked encoding count for the selected profile; negative input returns Bounds and a positive result above i32::MAX returns LengthOverflow. No storage access.",
+        "decoded_len": "Validates View metadata and the complete canonical spelling for its explicit profile; returns exact decoded count or indexed/structural error, without mutation.",
+        "encode_into": "Admits both Views, exact encoded length and complete capacity before reading/storing. Returns written count; all recoverable errors preserve backing. Same-base aliases require equal selected first-byte address and stride.",
+        "decode_into": "Admits both Views, validates the entire strict wire, then checks capacity before any store. Returns written count; malformed wire precedes BufferTooSmall and recoverable errors preserve backing."
+      }
     },
     "core::binary": {
       "guides": [

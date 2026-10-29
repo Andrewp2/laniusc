@@ -1,0 +1,152 @@
+// Bounded binary stdin conversion through the checked public Base64 profiles.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::base64;
+import core::io;
+import core::mem;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Options { encode:bool, profile:core::base64::Profile, help:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Writes { calls:i32 }
+impl Writes { fn borrow(&self) -> &Writes { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32, budget:&Writes) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0;
+    while(completed < bytes.length) {
+        if (budget.calls == maximum) { return false; } budget.calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > bytes.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 {
+    let budget = Writes { calls:0 };
+    write(literal("base64_bytes: operation failed\n",31),2,8,budget.borrow()); return status;
+}
+fn allocation_status(error:alloc::vec::Error) -> i32 {
+    return match(error) { alloc::vec::Error::AllocationFailed -> 4, _ -> 6 };
+}
+fn data_status(error:core::base64::Error) -> i32 {
+    return match(error) {
+        core::base64::Error::InvalidLength -> 2,
+        core::base64::Error::InvalidByte(index) -> 2,
+        core::base64::Error::InvalidPadding(index) -> 2,
+        core::base64::Error::NonCanonical(index) -> 2,
+        _ -> 6
+    };
+}
+fn read(input:&Vec<u8>) -> Result<i32,i32> {
+    if (input.len() != 1048576) { return core::result::Err(6); }
+    let source = std::stream::stdin(); let probe:[u8;1] = [0;1];
+    let used:i32 = 0; let calls:i32 = 0;
+    while(true) {
+        if (calls == 8192) { return core::result::Err(2); } calls += 1;
+        let remaining:i32 = 1048576-used; let wanted:i32 = remaining;
+        let received:Result<i32,core::io::Error> = core::result::Ok(0);
+        if (remaining == 0) { wanted = 1; received = source.read(probe,0,1); }
+        else { received = source.read(input.as_slice(),used,wanted); }
+        if (received.is_err()) {
+            if (core::io::is_interrupted(received.unwrap_err())) { continue; }
+            return core::result::Err(3);
+        }
+        let count:i32 = received.unwrap();
+        if ((count < 0) || (count > wanted)) { return core::result::Err(6); }
+        if (count == 0) { return core::result::Ok(used); }
+        if (count > remaining) { return core::result::Err(2); }
+        used += count;
+    }
+    return core::result::Err(6);
+}
+fn run(options:&Options) -> i32 {
+    let reserved:Result<Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(1048576);
+    if (reserved.is_err()) { return allocation_status(reserved.unwrap_err()); }
+    let input:Vec<u8> = reserved.unwrap();
+    let initialized:Result<i32,alloc::vec::Error> = input.try_resize(1048576,0);
+    if (initialized.is_err()) { input.destroy(); return allocation_status(initialized.unwrap_err()); }
+    let received:Result<i32,i32> = read(input.borrow());
+    if (received.is_err()) { input.destroy(); return received.unwrap_err(); }
+    let source:View<u8> = core::slice::view(input.as_slice(),received.unwrap()).unwrap();
+    let counted:Result<i32,core::base64::Error> = core::result::Ok(0);
+    if (options.encode) { counted = core::base64::encoded_len(source.length,options.profile); }
+    else { counted = core::base64::decoded_len(source,options.profile); }
+    if (counted.is_err()) { input.destroy(); return data_status(counted.unwrap_err()); }
+    let required:i32 = counted.unwrap();
+    if ((required < 0) || (required > 1398104)) { input.destroy(); return 6; }
+    let created:Result<Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(required);
+    if (created.is_err()) { input.destroy(); return allocation_status(created.unwrap_err()); }
+    let output:Vec<u8> = created.unwrap();
+    let prepared:Result<i32,alloc::vec::Error> = output.try_resize(required,0);
+    if (prepared.is_err()) { output.destroy(); input.destroy(); return allocation_status(prepared.unwrap_err()); }
+    let converted:Result<i32,core::base64::Error> = core::result::Ok(0);
+    if (options.encode) { converted = core::base64::encode_into(source,output.as_view(),options.profile); }
+    else { converted = core::base64::decode_into(source,output.as_view(),options.profile); }
+    input.destroy();
+    if (converted.is_err()) { output.destroy(); return data_status(converted.unwrap_err()); }
+    if (converted.unwrap() != required) { output.destroy(); return 6; }
+    let budget = Writes { calls:0 }; let status:i32 = 0;
+    if (!write(output.as_view(),1,2048,budget.borrow())) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> Result<Options,i32> {
+    if (values.length == 1) {
+        let first:View<u8> = values.values[values.start];
+        if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) {
+            return core::result::Ok(Options { encode:false,profile:core::base64::Profile::Standard,help:true });
+        }
+    }
+    if (values.length != 2) { return core::result::Err(2); }
+    let mode:View<u8> = values.values[values.start]; let encode:bool = false;
+    if (equals(mode,literal("encode",6))) { encode = true; }
+    else { if (!equals(mode,literal("decode",6))) { return core::result::Err(2); } }
+    let name:View<u8> = values.values[values.start+1];
+    let profile:core::base64::Profile = core::base64::Profile::Standard;
+    if (equals(name,literal("standard",8))) { profile = core::base64::Profile::Standard; }
+    else {
+        if (equals(name,literal("standard-unpadded",17))) { profile = core::base64::Profile::StandardUnpadded; }
+        else {
+            if (equals(name,literal("url",3))) { profile = core::base64::Profile::UrlSafe; }
+            else {
+                if (equals(name,literal("url-unpadded",12))) { profile = core::base64::Profile::UrlSafeUnpadded; }
+                else { return core::result::Err(2); }
+            }
+        }
+    }
+    return core::result::Ok(Options { encode:encode,profile:profile,help:false });
+}
+fn help() -> i32 {
+    let text = literal("Usage: base64_bytes encode|decode PROFILE\nProfiles: standard, standard-unpadded, url, url-unpadded.\nRead binary stdin through EOF and write the converted bytes without a newline.\nStandard uses +/; URL uses -_. Padded profiles require canonical = padding when needed.\nUnpadded profiles forbid =. Decode rejects whitespace, other alphabets and nonzero unused bits.\nLimits: 1 MiB input; 8192 read attempts and 2048 output attempts, including interruptions.\nInput is fully validated and converted before output; input errors publish no data.\nA sole --help or -h shows help.\n",570);
+    let budget = Writes { calls:0 }; if (!write(text,1,2048,budget.borrow())) { return 5; } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,2,64);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let owner = captured.unwrap(); let parsed:Result<Options,i32> = arguments(owner.as_view()); owner.destroy();
+    if (parsed.is_err()) { return report(parsed.unwrap_err()); }
+    let options:Options = parsed.unwrap(); let status:i32 = 0;
+    if (options.help) { status = help(); } else { status = run(options.borrow()); }
+    if (status != 0) { return report(status); } return 0;
+}

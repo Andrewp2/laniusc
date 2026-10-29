@@ -1,0 +1,12 @@
+// Declared capacity is sufficient; a native output store must trap.
+module app::main;
+import core::base64;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let input:[u8;1]=[102]; let short:[u8;1]=[0];
+    let source:core::slice::View<u8> =core::slice::View { values:input,start:0,length:1 };
+    let target:core::slice::View<u8> =core::slice::View { values:short,start:0,length:4 };
+    let written:core::result::Result<i32,core::base64::Error> =core::base64::encode_into(source,target,core::base64::Profile::Standard);
+    if(written.is_err()) { return 2; } return 0;
+}

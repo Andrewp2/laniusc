@@ -94,7 +94,7 @@ Returns Ok(28) and changes only the first 28 logical destination bytes. Requires
 
 ### extern function: EVP_Q_digest
 
-[Source line 76](../../../extended/ext/openssl_websocket.lani#L76)
+[Source line 86](../../../extended/ext/openssl_websocket.lani#L86)
 
 ```lanius
 pub extern "C" fn EVP_Q_digest(context: ptr, algorithm: ptr, properties: ptr, input: ptr, count: u64, output: ptr, output_length: ptr) -> i32;
@@ -104,7 +104,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: ERR_clear_error
 
-[Source line 77](../../../extended/ext/openssl_websocket.lani#L77)
+[Source line 87](../../../extended/ext/openssl_websocket.lani#L87)
 
 ```lanius
 pub extern "C" fn ERR_clear_error();
@@ -114,7 +114,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: ERR_get_error
 
-[Source line 78](../../../extended/ext/openssl_websocket.lani#L78)
+[Source line 88](../../../extended/ext/openssl_websocket.lani#L88)
 
 ```lanius
 pub extern "C" fn ERR_get_error() -> u64;

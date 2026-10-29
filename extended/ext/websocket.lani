@@ -208,11 +208,28 @@ fn protocol_count(head:ext::http::Head, maximum:i32) -> core::result::Result<i32
     return core::result::Ok(total);
 }
 fn http_error(error:ext::http::Error) -> Error { return match(error) { ext::http::Error::Bounds->Error::Bounds, ext::http::Error::Incomplete(at)->Error::Incomplete(at), ext::http::Error::Malformed(at)->Error::Protocol(at), ext::http::Error::Limit(at)->Error::Limit(at), ext::http::Error::AllocationFailed->Error::AllocationFailed, _->Error::Handshake }; }
-fn valid_key(key:core::slice::View<u8>) -> bool { if(!valid(key) || key.len()!=24) { return false; } let copied:[u8;24]=[0;24]; let i:i32=0; while(i<24) { copied[i]=byte(key,i); i+=1; } return core::base64::decoded_len_or(copied,24,-1)==16; }
+fn valid_key(key:core::slice::View<u8>) -> bool {
+    if(!valid(key) || key.len()!=24) { return false; }
+    let copied:[u8;24]=[0;24]; let i:i32=0;
+    while(i<24) { copied[i]=byte(key,i); i+=1; }
+    let bytes:core::slice::View<u8> =core::slice::View { values:copied,start:0,length:24 };
+    let decoded:core::result::Result<i32,core::base64::Error> =core::base64::decoded_len(bytes,core::base64::Profile::Standard);
+    if(decoded.is_err()) { return false; }
+    return decoded.unwrap()==16;
+}
 // Canonical padded Base64, with source copied before writing (overlap allowed).
 pub fn key_into(nonce:core::slice::View<u8>, destination:core::slice::View<u8>) -> core::result::Result<i32,Error> {
     if(!valid(nonce) || !valid(destination) || nonce.len()!=16) { return core::result::Err(Error::Bounds); } if(destination.len()<24) { return core::result::Err(Error::Capacity); }
-    let raw:[u8;16]=[0;16]; let encoded:[u8;24]=[0;24]; let i:i32=0; while(i<16) { raw[i]=byte(nonce,i); i+=1; } assert(core::base64::encode_into(raw,16,encoded,24)==24); i=0; while(i<24) { core::result::unwrap(destination.try_set(i,encoded[i])); i+=1; } return core::result::Ok(24);
+    let raw:[u8;16]=[0;16]; let encoded:[u8;24]=[0;24]; let i:i32=0;
+    while(i<16) { raw[i]=byte(nonce,i); i+=1; }
+    let source:core::slice::View<u8> =core::slice::View { values:raw,start:0,length:16 };
+    let output:core::slice::View<u8> =core::slice::View { values:encoded,start:0,length:24 };
+    let converted:core::result::Result<i32,core::base64::Error> =core::base64::encode_into(source,output,core::base64::Profile::Standard);
+    // The private fixed-size views make failure an internal contradiction.
+    assert(converted.is_ok());
+    assert(converted.unwrap()==24);
+    i=0; while(i<24) { core::result::unwrap(destination.try_set(i,encoded[i])); i+=1; }
+    return core::result::Ok(24);
 }
 pub fn validate_request(input:core::slice::View<u8>, limits:Limits) -> core::result::Result<Request,Error> {
     if(!valid_limits(limits)) { return core::result::Err(Error::Bounds); } let parsed=ext::http::parse_request_head(input,limits.http); if(core::result::is_err(parsed)) { return core::result::Err(http_error(core::result::unwrap_err(parsed))); } let head:ext::http::Head=core::result::unwrap(parsed);
@@ -249,7 +266,10 @@ fn valid_accept(value:core::slice::View<u8>) -> bool {
     if (!valid(value) || value.len()!=28) { return false; }
     let copied:[u8;28]=[0;28]; let i:i32=0;
     while (i<28) { copied[i]=byte(value,i); i+=1; }
-    return core::base64::decoded_len_or(copied,28,-1)==20;
+    let bytes:core::slice::View<u8> =core::slice::View { values:copied,start:0,length:28 };
+    let decoded:core::result::Result<i32,core::base64::Error> =core::base64::decoded_len(bytes,core::base64::Profile::Standard);
+    if(decoded.is_err()) { return false; }
+    return decoded.unwrap()==20;
 }
 fn single_protocol(value:core::slice::View<u8>) -> bool {
     if (!valid(value) || value.is_empty()) { return false; }

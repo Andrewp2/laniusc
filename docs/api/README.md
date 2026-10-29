@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **271 modules**, **13487 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **271 modules**, **13500 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -20,7 +20,7 @@ Inventory: **271 modules**, **13487 declaration/member entries**. Counts include
 | [core::array_i32](core/array_i32.md) | [source](../../stdlib/core/array_i32.lani#L4) | 2 | Source inventory | **Unregistered** |
 | [core::array_i32_4](core/array_i32_4.md) | [source](../../stdlib/core/array_i32_4.lani#L2) | 14 | Source inventory | **Unregistered** |
 | [core::array_u8_4](core/array_u8_4.md) | [source](../../stdlib/core/array_u8_4.lani#L4) | 17 | Source inventory | **Unregistered** |
-| [core::base64](core/base64.md) | [source](../../stdlib/core/base64.lani#L3) | 4 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
+| [core::base64](core/base64.md) | [source](../../stdlib/core/base64.lani#L4) | 17 | Source inventory | [stdlib-base64](../stdlib-base64.md), [stdlib-base64-bytes](../stdlib-base64-bytes.md), [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::binary](core/binary.md) | [source](../../stdlib/core/binary.lani#L2) | 11 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::binary_wide_i64](core/binary_wide_i64.md) | [source](../../stdlib/core/binary_wide_i64.lani#L2) | 4 | Source inventory | **Unregistered** |
 | [core::binary_wide_u64](core/binary_wide_u64.md) | [source](../../stdlib/core/binary_wide_u64.lani#L2) | 6 | Source inventory | **Unregistered** |
