@@ -573,3 +573,23 @@ search fails the builder reads the value with no expected type, so the
 relation admits either (`MaybeTy`, `MaybeTys`). The pure reading is admitted
 for any node that reads as a pure expression, since `expr_of` failing may
 be for want of fuel.
+
+## The reading of a closed program, and which reading the theorems mean (decided 10-29)
+
+The closing pass and the literal pass (`Reading.EffClosed`, `StmtClosed`,
+`LitExpr`, `LitEff`, `LitStmt`, V8e) are total rules over the monomorphized
+program: a type lowers as `LowerR` says (the builder's table of lowerings
+is proved to hold them, `LoweredOk`), a call names its instance's first
+position, and each literal takes the type its position expects. The
+expected-type helpers (`intAt`, `wideAt`, `negWideAt`, `operandWant`,
+`knownExpr`, `knownEff`, `tyLocal`, `srcFields`, `boundTys`,
+`calleeParams`) and the check that no wide literal is left untyped
+(`wideLeftFuncs`) are small total functions with no fuel or search, so the
+relation uses them as vocabulary rather than restating them.
+
+Because the relation states searches' positive part, a text may have more
+than one reading. `compileText_correct` and the process theorems therefore
+say that the program is a reading (`TextReading`, on `Reading.Reading`) and
+that it is the one the front end builds, which depends on the text alone
+(`TextBuilt`, unique by V4). Proving the relation deterministic, and that
+`build` finds a reading whenever there is one, is a later step.

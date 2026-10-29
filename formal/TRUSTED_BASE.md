@@ -9,8 +9,10 @@ on but do not prove:
   slots that represent `v`.
 - `Lanius.Mini.compileText_correct` (`Lanius/Mini/TextCorrect.lean`, V5).
   The same from source text: if `compileText files = some binary`, the
-  files' texts have exactly one reading `sp` (`TextReading`, section 4), and
-  `compileSource_correct`'s conclusion holds of `sp` and `binary`.
+  files' texts have a reading `sp` (`TextReading`, the inductive relation of
+  section 4), the one program the front end builds from the text alone
+  (`TextBuilt`), and `compileSource_correct`'s conclusion holds of `sp` and
+  `binary`.
   `compileText_behaviour` is its counterpart for runs that stop.
 - `Lanius.Mini.process_exits` and `process_behaviour`
   (`Lanius/Mini/Process.lean`, V6), with `textProcess_exits` and
@@ -235,8 +237,18 @@ still a parse tree of the same tokens. Trusted:
   `sourceProgramFiles_determined`: the front end's program depends on the
   source text alone, not on the tree laniusc gives. What stays trusted is
   that `picks` says what the syntax means where it decides.
-- **The reading.** `build` (in `Frontend.lean`) is the meaning of the subset's
-  concrete syntax, as `toCore` is the meaning of `SrcProgram` (section 2). It
+- **The reading.** `Reading roots sp` (`Mini/Reading/`, V8) is the meaning of
+  the subset's concrete syntax, as `toCore` is the meaning of `SrcProgram`
+  (section 2): an inductive relation on the files' parse trees, with lookups
+  and choices said declaratively, and small total helpers of the builder
+  (expected-type and literal-typing helpers such as `intAt`, `operandWant`,
+  `knownExpr`, and the wide-literal check `wideLeftFuncs`) as its
+  vocabulary. `buildFiles_sound` (standard axioms) proves that what `build`
+  returns is a reading, so `build`'s code is no longer the specification.
+  The relation states the positive part of the builder's searches
+  (SEMANTIC_DECISIONS.md), so a text may have more than one reading; the
+  program the theorems are about is the one the front end builds, which
+  depends on the text alone (`TextBuilt`, `textBuilt_unique`). The reading
   makes these choices:
   - each file is a module, named by its `module` item (the empty path
     without one); `m::x` names `x` of the module `m`, a bare `x` names `x`
@@ -363,10 +375,11 @@ still a parse tree of the same tokens. Trusted:
     current module's enums, else among its imported modules' enums;
     `E::V` and `m::E::V` name enum E's variant V, `m::V` module m's one V.
 
-  It rejects anything outside the subset. `build` has no relational spec yet;
-  the difftest checks it against the generator's programs. To shrink it:
-  state the reading as an inductive relation on `CTree` and prove `build`
-  against it.
+  It rejects anything outside the subset (`build` returns nothing, and the
+  theorems say nothing). The difftest checks `build` against the
+  generator's programs. Not yet proved: that a text has at most one reading
+  (determinism of the relation) and that `build` finds one whenever there
+  is one (fuel adequacy).
 - **Extraction.** `Frontend.lean` is extracted, so section 5 applies to it.
   `extract.py`'s external sections (`// extract: external begin MODULE from
   PATH`) copy the source types and list operations from `compiler.lani`. The

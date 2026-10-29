@@ -625,13 +625,13 @@ theorem process_behaviour {sp : SrcProgram} {binary : Binary} {entry stack heap 
 
 /-! ## From source text -/
 
-/-- `process_exits` from source text: the files mean one program `sp`, and
+/-- `process_exits` from source text: the files mean `sp`, the program the front end builds, and
 when Core runs its `entry()` to `v` within the heap, the process exits with
 the last of `v`'s slots, or the stack is too small and it faults. -/
 theorem textProcess_exits {files : List SourceFile} {binary : Binary} {entry stack heap : Nat} {file : List UInt8}
     (compiled : compileText files = some binary) (h : elfFile binary entry stack heap = some file) :
-    ∃ sp, TextReading (files.map SourceFile.source) sp ∧
-      (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
+    ∃ sp, TextReading (files.map SourceFile.source) sp ∧ TextBuilt (files.map SourceFile.source) sp ∧
+      (∀ sp', TextBuilt (files.map SourceFile.source) sp' → sp' = sp) ∧
       ∀ {func : SrcFunc}, sp.funcs[entry]? = some func → func.params = [] →
       ∀ {fuel : Nat} {v : Value} {final : Semantics.State},
         Semantics.evalExpr fuel sp.toCore {} (.call entry []) = .done v final → final.heap.nextAddress ≤ heap →
@@ -639,18 +639,18 @@ theorem textProcess_exits {files : List SourceFile} {binary : Binary} {entry sta
           ∀ s, Loaded file s →
             (∃ n e, Steps n s e ∧ Det n s e ∧ ∃ code, Exits e code ∧ ∀ w, results.getLast? = some w → code = w) ∨
             (stack - 8 < binary.stackNeed depth ∧ Faults s) := by
-  obtain ⟨sp, reading, unique, compiledSource⟩ := compileText_reading compiled
-  refine ⟨sp, reading, unique, ?_⟩
+  obtain ⟨sp, reading, built, unique, compiledSource⟩ := compileText_reading compiled
+  refine ⟨sp, reading, built, unique, ?_⟩
   intro func found noParams fuel v final runs fits
   exact process_exits compiledSource h found noParams runs fits
 
 /-- `process_behaviour` from source text: every run of the process that
 stops other than at a fault exits with the last slot of a completed Core run
-of the one reading's `entry()`, or that run reaches an undefined trap. -/
+of the front end's reading's `entry()`, or that run reaches an undefined trap. -/
 theorem textProcess_behaviour {files : List SourceFile} {binary : Binary} {entry stack heap : Nat}
     {file : List UInt8} (compiled : compileText files = some binary) (h : elfFile binary entry stack heap = some file) :
-    ∃ sp, TextReading (files.map SourceFile.source) sp ∧
-      (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
+    ∃ sp, TextReading (files.map SourceFile.source) sp ∧ TextBuilt (files.map SourceFile.source) sp ∧
+      (∀ sp', TextBuilt (files.map SourceFile.source) sp' → sp' = sp) ∧
       ∀ {func : SrcFunc}, sp.funcs[entry]? = some func → func.params = [] →
       ∀ {s : State}, Loaded file s → ∀ {m : Nat} {u : State}, Steps m s u →
         (∀ v, ¬Lanius.X86.Machine.Step u v) → ¬Lanius.X86.Machine.Fault u →
@@ -659,8 +659,8 @@ theorem textProcess_behaviour {files : List SourceFile} {binary : Binary} {entry
             results.length = func.ret.size ∧ ∃ code, Exits u code ∧ ∀ w, results.getLast? = some w → code = w) ∨
         ∃ fuel r st, Semantics.evalExpr fuel sp.toCore {} (.call entry []) = .trapped r st ∧
           undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap := by
-  obtain ⟨sp, reading, unique, compiledSource⟩ := compileText_reading compiled
-  refine ⟨sp, reading, unique, ?_⟩
+  obtain ⟨sp, reading, built, unique, compiledSource⟩ := compileText_reading compiled
+  refine ⟨sp, reading, built, unique, ?_⟩
   intro func found noParams s loaded m u run stuck clean
   exact process_behaviour compiledSource h found noParams loaded run stuck clean
 

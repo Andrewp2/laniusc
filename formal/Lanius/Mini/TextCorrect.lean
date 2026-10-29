@@ -1,22 +1,27 @@
 import Lanius.Mini.ParseUnique
+import Lanius.Mini.Reading.Program
 import Lanius.Mini.SourceStops
 
-/-! # From source text to machine code (roadmap step V5)
+/-! # From source text to machine code (roadmap steps V5, V8f)
 
 `compileText` is the verified compiler on source files: the front end on
 each file's bytes and laniusc's parse tree for it, then `compileSource`. Its
 theorems mention no parse tree. `TextReading sources sp` says that `sp` is
 what the texts mean: each lexes (`lexTokens`) to tokens that have a parse
-tree for `file` that is `Picked`, and `buildFiles` reads the program off
-those trees. A text has at most one reading (`textReading_unique`, from V4).
+tree for `file` that is `Picked`, and `sp` is a reading of those trees
+(`Reading`, the inductive relation of `Mini/Reading/`). `TextBuilt sources
+sp`: `buildFiles` reads `sp` off those trees; it is a reading
+(`textBuilt_reading`), and a text has at most one (`textBuilt_unique`, from
+V4), so the program depends on the text alone.
 
 `compileText_correct`: when `compileText` returns a binary, the files have a
-reading `sp`, the only one, and for every source function whose Core call
-completes, the binary's code for it returns that call's value, as in
-`compileSource_correct`. `compileText_behaviour`: any run of that code that
-stops at a state other than a fault comes from a Core call that completes or
-reaches an undefined trap, as in `compileSource_behaviour`. laniusc's parser
-is not trusted: a wrong tree is rejected, and a right one changes nothing. -/
+reading `sp`, the one the front end builds from the text, and for every
+source function whose Core call completes, the binary's code for it returns
+that call's value, as in `compileSource_correct`. `compileText_behaviour`:
+any run of that code that stops at a state other than a fault comes from a
+Core call that completes or reaches an undefined trap, as in
+`compileSource_behaviour`. laniusc's parser is not trusted: a wrong tree is
+rejected, and a right one changes nothing. -/
 
 namespace Lanius.Mini
 
@@ -36,15 +41,15 @@ def textFuel : List (List Token) → List CTree → Nat
   | _ :: _, [] => 16
   | tokens :: more, root :: roots => 4 * (root.preorder.length + tokens.length) + textFuel more roots
 
-/-- `sp` is what the source texts mean: each lexes to tokens with a `Picked`
-parse tree for `file`, and `buildFiles` reads `sp` off the trees. -/
-def TextReading (sources : List (List Lanius.Compiler.Lexer.Byte)) (sp : SrcProgram) : Prop :=
+/-- The front end's program: each source text lexes to tokens with a
+`Picked` parse tree for `file`, and `buildFiles` reads `sp` off the trees. -/
+def TextBuilt (sources : List (List Lanius.Compiler.Lexer.Byte)) (sp : SrcProgram) : Prop :=
   ∃ (tokens : List (List Token)) (roots : List CTree),
     ListRel (fun source toks => lexTokens source = some toks) sources tokens ∧
     ListRel (fun toks root => Shape grammar 0 root ∧ Picked root toks []) tokens roots ∧
     buildFiles (textFuel tokens roots) roots = some sp
 
-theorem textReading_roots : ∀ {sources : List (List Lanius.Compiler.Lexer.Byte)} {tokens₁ tokens₂ : List (List Token)}
+theorem textBuilt_roots : ∀ {sources : List (List Lanius.Compiler.Lexer.Byte)} {tokens₁ tokens₂ : List (List Token)}
     {roots₁ roots₂ : List CTree},
     ListRel (fun source toks => lexTokens source = some toks) sources tokens₁ →
     ListRel (fun source toks => lexTokens source = some toks) sources tokens₂ →
@@ -56,17 +61,31 @@ theorem textReading_roots : ∀ {sources : List (List Lanius.Compiler.Lexer.Byte
     rw [l₁, Option.some.injEq] at l₂
     subst l₂
     obtain rfl := grammar_unique s₁ p₁ s₂ p₂
-    obtain ⟨rfl, rfl⟩ := textReading_roots ls₁ ls₂ rs₁ rs₂
+    obtain ⟨rfl, rfl⟩ := textBuilt_roots ls₁ ls₂ rs₁ rs₂
     exact ⟨rfl, rfl⟩
 
-/-- A text has at most one reading. -/
-theorem textReading_unique {sources : List (List Lanius.Compiler.Lexer.Byte)} {sp₁ sp₂ : SrcProgram}
-    (h₁ : TextReading sources sp₁) (h₂ : TextReading sources sp₂) : sp₁ = sp₂ := by
+/-- A text has at most one program the front end builds. -/
+theorem textBuilt_unique {sources : List (List Lanius.Compiler.Lexer.Byte)} {sp₁ sp₂ : SrcProgram}
+    (h₁ : TextBuilt sources sp₁) (h₂ : TextBuilt sources sp₂) : sp₁ = sp₂ := by
   obtain ⟨tokens₁, roots₁, l₁, r₁, b₁⟩ := h₁
   obtain ⟨tokens₂, roots₂, l₂, r₂, b₂⟩ := h₂
-  obtain ⟨rfl, rfl⟩ := textReading_roots l₁ l₂ r₁ r₂
+  obtain ⟨rfl, rfl⟩ := textBuilt_roots l₁ l₂ r₁ r₂
   rw [b₁, Option.some.injEq] at b₂
   exact b₂
+
+/-- `sp` is what the source texts mean: each lexes to tokens with a `Picked`
+parse tree for `file`, and `sp` is a reading of the trees. -/
+def TextReading (sources : List (List Lanius.Compiler.Lexer.Byte)) (sp : SrcProgram) : Prop :=
+  ∃ (tokens : List (List Token)) (roots : List CTree),
+    ListRel (fun source toks => lexTokens source = some toks) sources tokens ∧
+    ListRel (fun toks root => Shape grammar 0 root ∧ Picked root toks []) tokens roots ∧
+    Reading.Reading roots sp
+
+/-- What the front end builds is a reading. -/
+theorem textBuilt_reading {sources : List (List Lanius.Compiler.Lexer.Byte)} {sp : SrcProgram}
+    (h : TextBuilt sources sp) : TextReading sources sp := by
+  obtain ⟨tokens, roots, l, r, b⟩ := h
+  exact ⟨tokens, roots, l, r, Reading.buildFiles_sound b⟩
 
 theorem filesFuel_text : ∀ {files : List SourceFile} {inputs : List FileInput} {roots : List CTree},
     LexRel files inputs → TreeRel inputs roots → filesFuel inputs = textFuel (inputs.map FileInput.tokens) roots
@@ -74,10 +93,10 @@ theorem filesFuel_text : ∀ {files : List SourceFile} {inputs : List FileInput}
   | _ :: _, _ :: _, _ :: _, .cons _ ls, .cons ⟨_, _, pre⟩ rs => by
     simp only [filesFuel, List.map_cons, textFuel, pre, filesFuel_text ls rs]
 
-/-- The several-file front end's program is the reading of the files'
-sources. -/
-theorem sourceProgramFiles_reading {files : List SourceFile} {sp : SrcProgram}
-    (h : sourceProgramFiles files = some sp) : TextReading (files.map SourceFile.source) sp := by
+/-- The several-file front end's program is the one it builds from the
+files' sources. -/
+theorem sourceProgramFiles_built {files : List SourceFile} {sp : SrcProgram}
+    (h : sourceProgramFiles files = some sp) : TextBuilt (files.map SourceFile.source) sp := by
   obtain ⟨inputs, roots, lex, val, b⟩ := sourceProgramFiles_sound h
   have lexed : ∀ {fs : List SourceFile} {is : List FileInput}, LexRel fs is →
       ListRel (fun source toks => lexTokens source = some toks) (fs.map SourceFile.source) (is.map FileInput.tokens) := by
@@ -93,26 +112,27 @@ theorem sourceProgramFiles_reading {files : List SourceFile} {sp : SrcProgram}
     | cons h _ ih => exact .cons ⟨h.1, h.2.1⟩ ih
   exact ⟨_, roots, lexed lex, trees val, by rw [← filesFuel_text lex val]; exact b⟩
 
-/-- `compileText`'s program: the one reading of the files' sources. -/
+/-- `compileText`'s program: a reading of the files' sources, the one the
+front end builds from them. -/
 theorem compileText_reading {files : List SourceFile} {binary : Binary} (h : compileText files = some binary) :
-    ∃ sp, TextReading (files.map SourceFile.source) sp ∧
-      (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧ compileSource sp = some binary := by
+    ∃ sp, TextReading (files.map SourceFile.source) sp ∧ TextBuilt (files.map SourceFile.source) sp ∧
+      (∀ sp', TextBuilt (files.map SourceFile.source) sp' → sp' = sp) ∧ compileSource sp = some binary := by
   unfold compileText at h
   cases hs : sourceProgramFiles files with
   | none => simp [hs] at h
   | some sp =>
     rw [hs] at h
-    have reading := sourceProgramFiles_reading hs
-    exact ⟨sp, reading, fun _ r => textReading_unique r reading, h⟩
+    have built := sourceProgramFiles_built hs
+    exact ⟨sp, textBuilt_reading built, built, fun _ r => textBuilt_unique r built, h⟩
 
-/-- The verified compiler from source text: the files mean one program `sp`
-(`TextReading`), and when Core runs a call `f(args)` of it from the empty
+/-- The verified compiler from source text: the files mean `sp`
+(`TextReading`), the program the front end builds from the text alone, and when Core runs a call `f(args)` of it from the empty
 state to `v`, the binary's code for `f`, entered by a near call with the
 arguments laid out by type and a fresh heap, returns `v`'s slots (premises
 and conclusion as in `compileSource_correct`). -/
 theorem compileText_correct {files : List SourceFile} {binary : Binary} (h : compileText files = some binary) :
-    ∃ sp, TextReading (files.map SourceFile.source) sp ∧
-      (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
+    ∃ sp, TextReading (files.map SourceFile.source) sp ∧ TextBuilt (files.map SourceFile.source) sp ∧
+      (∀ sp', TextBuilt (files.map SourceFile.source) sp' → sp' = sp) ∧
       ∀ {f : Nat} {func : SrcFunc}, sp.funcs[f]? = some func →
       ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold (paramTypes func.params) args (Func.entry bits) 0 →
       bits.length = paramsSize func.params →
@@ -133,19 +153,19 @@ theorem compileText_correct {files : List SourceFile} {binary : Binary} (h : com
             read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
           HeapAt window s heap → StackAt binary.guard window s →
           ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after := by
-  obtain ⟨sp, reading, unique, compiled⟩ := compileText_reading h
-  refine ⟨sp, reading, unique, ?_⟩
+  obtain ⟨sp, reading, built, unique, compiled⟩ := compileText_reading h
+  refine ⟨sp, reading, built, unique, ?_⟩
   intro f func found args bits typed bitsLen fuel v final heap start zero small runs fits
   exact compileSource_correct compiled found typed bitsLen start zero small runs fits
 
 /-- Every behaviour of the verified compiler's code from source text: a run of
 the binary's code for `f` (premises as in `compileSource_behaviour`) that
 stops at a state other than a fault comes from a Core call of the files'
-one reading that completes within the heap's limit, or that reaches an
+reading the front end builds that completes within the heap's limit, or that reaches an
 undefined trap. -/
 theorem compileText_behaviour {files : List SourceFile} {binary : Binary} (h : compileText files = some binary) :
-    ∃ sp, TextReading (files.map SourceFile.source) sp ∧
-      (∀ sp', TextReading (files.map SourceFile.source) sp' → sp' = sp) ∧
+    ∃ sp, TextReading (files.map SourceFile.source) sp ∧ TextBuilt (files.map SourceFile.source) sp ∧
+      (∀ sp', TextBuilt (files.map SourceFile.source) sp' → sp' = sp) ∧
       ∀ {f : Nat} {func : SrcFunc}, sp.funcs[f]? = some func →
       ∀ {args : List Value} {bits : List (BitVec 64)}, FieldsHold (paramTypes func.params) args (Func.entry bits) 0 →
       bits.length = paramsSize func.params →
@@ -165,8 +185,8 @@ theorem compileText_behaviour {files : List SourceFile} {binary : Binary} (h : c
           final.heap.nextAddress ≤ heap.limit) ∨
         ∃ fuel r st, Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .trapped r st ∧
           undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap.limit := by
-  obtain ⟨sp, reading, unique, compiled⟩ := compileText_reading h
-  refine ⟨sp, reading, unique, ?_⟩
+  obtain ⟨sp, reading, built, unique, compiled⟩ := compileText_reading h
+  refine ⟨sp, reading, built, unique, ?_⟩
   intro f func found args bits typed bitsLen heap start zero small room s imageBase window bounded loaded apart
     imageHeap entry params heapAt stack m u run stuck clean
   exact compileSource_behaviour compiled found typed bitsLen start zero small room s imageBase window bounded loaded
