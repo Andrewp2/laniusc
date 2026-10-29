@@ -1,6 +1,13 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[directed-graph increment](extended-graph.md) defines canonical integer-only
+adjacency, shortest-hop FIFO BFS and lexicographically smallest ready-ID
+ordering. Edge deduplication is independent of numeric sparse coefficient
+policies. Work admission, error precedence and manual owners are explicit.
+All eight library tests and four application groups/183 cases pass, including
+a 4,570-case independent model and separate 65,536-node workloads. This finite
+native Linux x86_64 increment is accepted. The preceding
 [bounded owned-input increment](stdlib-owned-input.md) composes canonical Read
 with retained byte/probe failures, actual-call budgets and reserve-before-read
 growth. Validated Vec/String transfers preserve backing without copying; reader
@@ -290,6 +297,20 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Directed adjacency and dependency ordering.**
+
+The [graph contract](extended-graph.md) separates simple directed edges from
+numeric CSR: duplicate edges collapse, isolated nodes remain and self-loops
+remain real edges. One canonical validation boundary admits exact size-based
+work estimates before allocation/traversal. FIFO discovery with sorted neighbors
+fixes BFS parents; a Min heap gives the lexicographically smallest topological
+order or explicit Cycle. Query absence, Bounds and Closed stay distinct.
+All eight library tests pass, including the 4,570-case independent model,
+seven reached allocation failures and separate 65,536-node workloads. The
+[dependency-order program](extended-dependency-order.md) passes all four
+groups/183 cases. The finite native Linux x86_64 increment is accepted.
+Existing sparse and collection receipts retain their original scope.
 
 **Bounded owned input.**
 

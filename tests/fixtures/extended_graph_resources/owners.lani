@@ -1,0 +1,77 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::graph;
+import ext::graph_algorithms;
+import std::io;
+
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn error(cause:ext::graph::Error) -> i32 {
+    assert(cause.node==-1 && cause.edge==-1);
+    let kind:i32=match(cause.kind) { ext::graph::ErrorKind::AllocationFailed->1,ext::graph::ErrorKind::Cycle->2,_ ->0 };
+    assert(kind!=0); return kind;
+}
+fn check_graph(value:ext::graph::View) {
+    let offsets:[i32;7]=[0,2,3,4,5,5,5]; let targets:[i32;5]=[1,2,3,3,4]; let index:i32=0;
+    assert(value.nodes==6 && value.offsets.length==7 && value.targets.length==5);
+    while(index<7) { assert(value.offsets.get(index).unwrap()==offsets[index]); index+=1; }
+    index=0; while(index<5) { assert(value.targets.get(index).unwrap()==targets[index]); index+=1; }
+}
+fn graph_result(result:core::result::Result<ext::graph::Graph,ext::graph::Error>) -> i32 {
+    mark(70); if(result.is_err()) { return error(result.unwrap_err()); }
+    let owner:ext::graph::Graph=result.unwrap(); mark(80);
+    assert(owner.is_open() && owner.node_count()==6 && owner.edge_count()==5);
+    check_graph(owner.view().unwrap()); mark(112);
+    assert(owner.destroy() && !owner.destroy() && !owner.is_open() && owner.view().is_none()); return 0;
+}
+fn bfs_result(result:core::result::Result<ext::graph_algorithms::BfsPaths,ext::graph::Error>) -> i32 {
+    mark(70); if(result.is_err()) { return error(result.unwrap_err()); }
+    let owner:ext::graph_algorithms::BfsPaths=result.unwrap();
+    let distances:[i32;6]=[0,1,1,2,3,-1]; let parents:[i32;6]=[-1,0,0,1,3,-1]; let node:i32=0;
+    mark(80); assert(owner.is_open() && owner.node_count()==6 && owner.source().unwrap()==0);
+    while(node<6) {
+        let distance:core::option::Option<i32> =owner.distance(node).unwrap();
+        let parent:core::option::Option<i32> =owner.predecessor(node).unwrap();
+        assert(distance.unwrap_or(-1)==distances[node] && parent.unwrap_or(-1)==parents[node]); node+=1;
+    }
+    mark(112); assert(owner.destroy() && !owner.destroy() && !owner.is_open() && owner.source().is_none()); return 0;
+}
+fn order_result(result:core::result::Result<alloc::vec::Vec<i32>,ext::graph::Error>,cycle:bool) -> i32 {
+    mark(70); if(result.is_err()) { let status:i32=error(result.unwrap_err()); assert(status==1 || cycle); return status; }
+    assert(!cycle); let owner:alloc::vec::Vec<i32> =result.unwrap(); mark(80); assert(owner.len()==6); let node:i32=0;
+    while(node<6) { assert(owner.at(node)==node); node+=1; }
+    mark(112); owner.destroy(); owner.destroy(); return 0;
+}
+fn main() -> i32 {
+    let header:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(header),1)==1);
+    let operation:i32=header[0]&255; assert(operation>=0 && operation<=4);
+    let edges:[ext::graph::Edge;8]=[
+        ext::graph::Edge { source:-77,target:-88 },ext::graph::Edge { source:2,target:3 },
+        ext::graph::Edge { source:0,target:2 },ext::graph::Edge { source:0,target:1 },
+        ext::graph::Edge { source:1,target:3 },ext::graph::Edge { source:0,target:2 },
+        ext::graph::Edge { source:3,target:4 },ext::graph::Edge { source:-99,target:-111 }
+    ];
+    let offsets:[i32;9]=[211,0,2,3,4,5,5,5,211]; let targets:[i32;7]=[211,1,2,3,3,4,211];
+    let cycle_offsets:[i32;7]=[0,1,2,3,4,4,4]; let cycle_targets:[i32;4]=[1,2,0,4];
+    let input:ext::graph::View=ext::graph::View { nodes:6,offsets:core::slice::view_range(offsets,1,7).unwrap(),targets:core::slice::view_range(targets,1,5).unwrap() };
+    let cyclic:ext::graph::View=ext::graph::View { nodes:6,offsets:core::slice::view(cycle_offsets,7).unwrap(),targets:core::slice::view(cycle_targets,4).unwrap() };
+    let limits:ext::graph::Limits=ext::graph::default_limits(); let status:i32=-1; mark(67);
+    if(operation==0) { status=graph_result(ext::graph::from_edges(6,core::slice::view_range(edges,1,6).unwrap(),limits)); }
+    if(operation==1) { status=graph_result(ext::graph::from_view(input,limits)); }
+    if(operation==2) { status=bfs_result(ext::graph_algorithms::bfs(input,0,limits)); }
+    if(operation==3) { status=order_result(ext::graph_algorithms::topological_order(input,limits),false); }
+    if(operation==4) { status=order_result(ext::graph_algorithms::topological_order(cyclic,limits),true); }
+    mark(80); let sources:[i32;8]=[-77,2,0,0,1,0,3,-99]; let destinations:[i32;8]=[-88,3,2,1,3,2,4,-111]; let index:i32=0;
+    while(index<8) { assert(edges[index].source==sources[index] && edges[index].target==destinations[index]); index+=1; }
+    let expected_offsets:[i32;9]=[211,0,2,3,4,5,5,5,211]; let expected_targets:[i32;7]=[211,1,2,3,3,4,211]; index=0;
+    while(index<9) { assert(offsets[index]==expected_offsets[index]); index+=1; }
+    index=0; while(index<7) { assert(targets[index]==expected_targets[index]); index+=1; }
+    assert(cycle_offsets[0]==0 && cycle_offsets[1]==1 && cycle_offsets[2]==2 && cycle_offsets[3]==3 && cycle_offsets[4]==4 && cycle_offsets[5]==4 && cycle_offsets[6]==4);
+    assert(cycle_targets[0]==1 && cycle_targets[1]==2 && cycle_targets[2]==0 && cycle_targets[3]==4); mark(112);
+    let edge_count:i32=5; if(operation==4) { edge_count=4; }
+    let report:[i32;4]=[operation,status,6,edge_count]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),16)==16);
+    mark(68); return 0;
+}

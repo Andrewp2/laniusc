@@ -1,0 +1,202 @@
+// Unweighted shortest hops and lexicographically smallest dependency ordering.
+// Validate once before operation admission/allocation; never mutate input.
+// Result owners copy shallowly: keep one cleanup authority and end borrows
+// before destroy. Work estimates bound local phases, not elapsed time.
+module ext::graph_algorithms;
+import alloc::binary_heap;
+import alloc::deque;
+import alloc::vec;
+import core::i32;
+import core::option;
+import core::result;
+import core::slice;
+import ext::graph;
+
+pub struct BfsPaths {
+    distances: alloc::vec::Vec<i32>,
+    parents: alloc::vec::Vec<i32>,
+    selected_source: i32,
+    active: bool,
+}
+
+fn error(kind: ext::graph::ErrorKind, node: i32) -> ext::graph::Error {
+    return ext::graph::Error { kind: kind, node: node, edge: -1 };
+}
+
+fn integer(values: core::slice::View<i32>, index: i32) -> i32 {
+    return values.values[values.start + index];
+}
+
+fn absent_or(value: i32) -> core::option::Option<i32> {
+    if (value < 0) { return core::option::None(); }
+    return core::option::Some(value);
+}
+
+pub impl BfsPaths {
+    pub fn borrow(&self) -> &BfsPaths { return self; }
+    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn node_count(&self) -> i32 {
+        if (!self.active) { return 0; }
+        return self.distances.len();
+    }
+    pub fn source(&self) -> core::option::Option<i32> {
+        if (!self.active) { return core::option::None(); }
+        return core::option::Some(self.selected_source);
+    }
+    pub fn distance(&self, node: i32) -> core::result::Result<core::option::Option<i32>, ext::graph::Error> {
+        if (!self.active) { return core::result::Err(error(ext::graph::ErrorKind::Closed, -1)); }
+        if (node < 0 || node >= self.distances.len()) {
+            return core::result::Err(error(ext::graph::ErrorKind::Bounds, node));
+        }
+        let value: core::option::Option<i32> = absent_or(self.distances.at(node));
+        return core::result::Ok(value);
+    }
+    pub fn predecessor(&self, node: i32) -> core::result::Result<core::option::Option<i32>, ext::graph::Error> {
+        if (!self.active) { return core::result::Err(error(ext::graph::ErrorKind::Closed, -1)); }
+        if (node < 0 || node >= self.distances.len()) {
+            return core::result::Err(error(ext::graph::ErrorKind::Bounds, node));
+        }
+        let value: core::option::Option<i32> = absent_or(self.parents.at(node));
+        return core::result::Ok(value);
+    }
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; }
+        self.distances.destroy(); self.parents.destroy();
+        self.selected_source = -1; self.active = false;
+        return true;
+    }
+}
+
+// FIFO first discovery is permanent. Ascending canonical neighbors fix ties;
+// they do not promise the numerically smallest predecessor at every depth.
+pub fn bfs(graph: ext::graph::View, source: i32, limits: ext::graph::Limits)
+    -> core::result::Result<BfsPaths, ext::graph::Error> {
+    ext::graph::validate(graph, limits)?;
+    if (source < 0 || source >= graph.nodes) {
+        return core::result::Err(error(ext::graph::ErrorKind::Bounds, source));
+    }
+    let n: u64 = graph.nodes as u64;
+    let m: u64 = graph.targets.length as u64;
+    let required: u64 = (n + 1 + m) + 4 * n + 2 * m + 1;
+    if (required > limits.max_work) {
+        return core::result::Err(error(ext::graph::ErrorKind::WorkLimit, -1));
+    }
+
+    let out: BfsPaths = BfsPaths {
+        distances: alloc::vec::new(), parents: alloc::vec::new(),
+        selected_source: source, active: true,
+    };
+    let distances: core::result::Result<alloc::vec::Vec<i32>, alloc::vec::Error> = alloc::vec::with_capacity<i32>(graph.nodes);
+    if (distances.is_err()) {
+        out.destroy();
+        return core::result::Err(error(ext::graph::ErrorKind::AllocationFailed, -1));
+    }
+    out.distances = distances.unwrap();
+    let parents: core::result::Result<alloc::vec::Vec<i32>, alloc::vec::Error> = alloc::vec::with_capacity<i32>(graph.nodes);
+    if (parents.is_err()) {
+        out.destroy();
+        return core::result::Err(error(ext::graph::ErrorKind::AllocationFailed, -1));
+    }
+    out.parents = parents.unwrap();
+    let allocated_queue: core::result::Result<alloc::deque::Deque<i32>, alloc::deque::Error> = alloc::deque::with_capacity<i32>(graph.nodes);
+    if (allocated_queue.is_err()) {
+        out.destroy();
+        return core::result::Err(error(ext::graph::ErrorKind::AllocationFailed, -1));
+    }
+    let queue: alloc::deque::Deque<i32> = allocated_queue.unwrap();
+
+    // Shared validation admits the native i32 capacity ceiling. These resizes
+    // and every later push fit the reservations and cannot allocate or fail.
+    out.distances.try_resize(graph.nodes, -1).unwrap();
+    out.parents.try_resize(graph.nodes, -1).unwrap();
+    let hops: [i32] = out.distances.as_slice();
+    let previous: [i32] = out.parents.as_slice();
+    hops[source] = 0;
+    queue.try_push_back(source).unwrap();
+    while (!queue.is_empty()) {
+        let node: i32 = queue.pop_front().unwrap();
+        let edge: i32 = integer(graph.offsets, node);
+        let end: i32 = integer(graph.offsets, node + 1);
+        while (edge < end) {
+            let target: i32 = integer(graph.targets, edge);
+            if (hops[target] < 0) {
+                hops[target] = hops[node] + 1;
+                previous[target] = node;
+                queue.try_push_back(target).unwrap();
+            }
+            edge += 1;
+        }
+    }
+    queue.destroy();
+    return core::result::Ok(out);
+}
+
+// Kahn's incoming-count traversal uses the existing Min heap as its ready
+// bag. Taking the smallest ready ID fixes the lexicographically smallest DAG
+// order. Cycle failure releases the incomplete output and every workspace.
+pub fn topological_order(graph: ext::graph::View, limits: ext::graph::Limits)
+    -> core::result::Result<alloc::vec::Vec<i32>, ext::graph::Error> {
+    ext::graph::validate(graph, limits)?;
+    let n: u64 = graph.nodes as u64;
+    let m: u64 = graph.targets.length as u64;
+    let height: u64 = 0;
+    let span: u64 = 1;
+    while (span < n) { span *= 2; height += 1; }
+    // Profile ceilings keep every widened product and sum inside u64.
+    let required: u64 = (n + 1 + m) + 4 * n + 2 * m + 4 * n * (1 + height);
+    if (required > limits.max_work) {
+        return core::result::Err(error(ext::graph::ErrorKind::WorkLimit, -1));
+    }
+
+    let allocated_output: core::result::Result<alloc::vec::Vec<i32>, alloc::vec::Error> = alloc::vec::with_capacity<i32>(graph.nodes);
+    if (allocated_output.is_err()) {
+        return core::result::Err(error(ext::graph::ErrorKind::AllocationFailed, -1));
+    }
+    let out: alloc::vec::Vec<i32> = allocated_output.unwrap();
+    let allocated_counts: core::result::Result<alloc::vec::Vec<i32>, alloc::vec::Error> = alloc::vec::with_capacity<i32>(graph.nodes);
+    if (allocated_counts.is_err()) {
+        out.destroy();
+        return core::result::Err(error(ext::graph::ErrorKind::AllocationFailed, -1));
+    }
+    let counts: alloc::vec::Vec<i32> = allocated_counts.unwrap();
+    let allocated_ready: core::result::Result<alloc::binary_heap::BinaryHeap<i32>, alloc::binary_heap::Error> = alloc::binary_heap::with_capacity<i32>(graph.nodes, alloc::binary_heap::Order::Min);
+    if (allocated_ready.is_err()) {
+        counts.destroy(); out.destroy();
+        return core::result::Err(error(ext::graph::ErrorKind::AllocationFailed, -1));
+    }
+    let ready: alloc::binary_heap::BinaryHeap<i32> = allocated_ready.unwrap();
+
+    // Each vertex enters ready and output at most once. Counts never exceed
+    // the admitted edge count; all reserved pushes/resizes are infallible.
+    counts.try_resize(graph.nodes, 0).unwrap();
+    let incoming: [i32] = counts.as_slice();
+    let edge: i32 = 0;
+    while (edge < graph.targets.length) {
+        let target: i32 = integer(graph.targets, edge);
+        incoming[target] += 1;
+        edge += 1;
+    }
+    let node: i32 = 0;
+    while (node < graph.nodes) {
+        if (incoming[node] == 0) { ready.try_push(node).unwrap(); }
+        node += 1;
+    }
+    while (!ready.is_empty()) {
+        node = ready.pop().unwrap();
+        out.try_push(node).unwrap();
+        edge = integer(graph.offsets, node);
+        let end: i32 = integer(graph.offsets, node + 1);
+        while (edge < end) {
+            let target: i32 = integer(graph.targets, edge);
+            incoming[target] -= 1;
+            if (incoming[target] == 0) { ready.try_push(target).unwrap(); }
+            edge += 1;
+        }
+    }
+    ready.destroy(); counts.destroy();
+    if (out.len() != graph.nodes) {
+        out.destroy();
+        return core::result::Err(error(ext::graph::ErrorKind::Cycle, -1));
+    }
+    return core::result::Ok(out);
+}

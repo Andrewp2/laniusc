@@ -1,0 +1,12 @@
+// Logical metadata is valid; actual native offset backing is too short.
+module app::main;
+import core::slice;
+import ext::graph;
+fn main() -> i32 {
+    let offsets:[i32;1]=[0]; let targets:[i32;0]=[];
+    let value:ext::graph::View=ext::graph::View { nodes:1,
+        offsets:core::slice::View { values:offsets,start:0,length:2 },
+        targets:core::slice::View { values:targets,start:0,length:0 } };
+    let result=ext::graph::validate(value,ext::graph::default_limits());
+    if(result.is_err()) { return 2; } return 0;
+}

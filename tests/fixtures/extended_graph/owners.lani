@@ -1,0 +1,146 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::graph;
+import ext::graph_algorithms;
+
+fn bounded(nodes:i32,edges:i32,work:u64) -> ext::graph::Limits { return ext::graph::Limits { max_nodes:nodes,max_edges:edges,max_work:work }; }
+fn edge(source:i32,target:i32) -> ext::graph::Edge { return ext::graph::Edge { source:source,target:target }; }
+fn ints(data:[i32],start:i32,length:i32) -> core::slice::View<i32> { return core::slice::View { values:data,start:start,length:length }; }
+fn error<T>(result:core::result::Result<T,ext::graph::Error>,closed:bool,node:i32) {
+    assert(result.is_err()); let failure:ext::graph::Error=result.unwrap_err();
+    let selected:bool=match(failure.kind) { ext::graph::ErrorKind::Closed -> closed,ext::graph::ErrorKind::Bounds -> !closed,_ -> false };
+    assert(selected && failure.node==node && failure.edge==-1);
+}
+fn cycle(result:core::result::Result<alloc::vec::Vec<i32>,ext::graph::Error>) {
+    assert(result.is_err()); let failure:ext::graph::Error=result.unwrap_err();
+    assert(match(failure.kind) { ext::graph::ErrorKind::Cycle -> true,_ -> false }); assert(failure.node==-1 && failure.edge==-1);
+}
+fn adjacency(graph:&ext::graph::Graph,nodes:i32,count:i32,offsets:[i32],targets:[i32]) {
+    assert(graph.is_open() && graph.node_count()==nodes && graph.edge_count()==count);
+    let value:ext::graph::View=graph.view().unwrap(); assert(value.nodes==nodes && value.offsets.length==nodes+1 && value.targets.length==count);
+    let i:i32=0; while(i<=nodes) { assert(value.offsets.values[value.offsets.start+i]==offsets[i]); i+=1; }
+    i=0; while(i<count) { assert(value.targets.values[value.targets.start+i]==targets[i]); i+=1; }
+}
+fn sequence(order:alloc::vec::Vec<i32>,expected:[i32],count:i32) {
+    assert(order.len()==count); let values:[i32]=order.as_slice(); let i:i32=0; while(i<count) { assert(values[i]==expected[i]); i+=1; }
+}
+fn paths(value:&ext::graph_algorithms::BfsPaths,source:i32,distances:[i32],parents:[i32],nodes:i32) {
+    assert(value.is_open() && value.node_count()==nodes && value.source().unwrap()==source); let i:i32=0;
+    while(i<nodes) {
+        let distance:core::option::Option<i32> =value.distance(i).unwrap(); let parent:core::option::Option<i32> =value.predecessor(i).unwrap();
+        if(distances[i]<0) { assert(distance.is_none()); } else { assert(distance.unwrap()==distances[i]); }
+        if(parents[i]<0) { assert(parent.is_none()); } else { assert(parent.unwrap()==parents[i]); } i+=1;
+    }
+}
+fn close_graph(value:&ext::graph::Graph) {
+    assert(value.destroy() && !value.destroy() && !value.is_open() && value.node_count()==0 && value.edge_count()==0 && value.view().is_none());
+}
+fn close_paths(value:&ext::graph_algorithms::BfsPaths) {
+    assert(value.destroy() && !value.destroy() && !value.is_open() && value.node_count()==0 && value.source().is_none());
+    error(value.distance(0),true,-1); error(value.predecessor(0),true,-1);
+    error(value.distance(-2147483648),true,-1); error(value.predecessor(2147483647),true,-1);
+}
+
+fn exact_work_boundaries_and_independent_view_copies() {
+    let edges:[ext::graph::Edge;3]=[edge(1,2),edge(0,2),edge(0,1)];
+    let selected:core::slice::View<ext::graph::Edge> =core::slice::view_range<ext::graph::Edge>(edges,0,3).unwrap();
+    let graph:ext::graph::Graph=ext::graph::from_edges(3,selected,bounded(3,3,58)).unwrap();
+    let expected_offsets:[i32;4]=[0,2,3,3]; let expected_targets:[i32;3]=[1,2,2]; adjacency(graph.borrow(),3,3,expected_offsets,expected_targets);
+    let value:ext::graph::View=graph.view().unwrap(); assert(ext::graph::validate(value,bounded(3,3,7)).unwrap()==3);
+    let copy:ext::graph::Graph=ext::graph::from_view(value,bounded(3,3,14)).unwrap();
+    let found:ext::graph_algorithms::BfsPaths=ext::graph_algorithms::bfs(value,0,bounded(3,3,26)).unwrap();
+    let order:alloc::vec::Vec<i32> =ext::graph_algorithms::topological_order(value,bounded(3,3,61)).unwrap();
+    let expected_order:[i32;3]=[0,1,2]; let distances:[i32;3]=[0,1,1]; let parents:[i32;3]=[-1,0,0];
+    adjacency(graph.borrow(),3,3,expected_offsets,expected_targets); adjacency(copy.borrow(),3,3,expected_offsets,expected_targets);
+    assert(edges[0].source==1 && edges[0].target==2 && edges[1].source==0 && edges[1].target==2 && edges[2].source==0 && edges[2].target==1);
+    close_graph(graph.borrow()); adjacency(copy.borrow(),3,3,expected_offsets,expected_targets); close_graph(copy.borrow());
+    paths(found.borrow(),0,distances,parents,3); sequence(order,expected_order,3);
+    error(found.distance(3),false,3); error(found.predecessor(-2147483648),false,-2147483648);
+    close_paths(found.borrow()); order.destroy(); order.destroy();
+
+    let raw_offsets:[i32;6]=[99,0,2,3,3,98]; let raw_targets:[i32;6]=[77,88,1,2,2,99];
+    let borrowed:ext::graph::View=ext::graph::View { nodes:3,offsets:ints(raw_offsets,1,4),targets:ints(raw_targets,2,3) };
+    let detached:ext::graph::Graph=ext::graph::from_view(borrowed,bounded(3,3,14)).unwrap();
+    assert(raw_offsets[0]==99 && raw_offsets[1]==0 && raw_offsets[2]==2 && raw_offsets[3]==3 && raw_offsets[4]==3 && raw_offsets[5]==98);
+    assert(raw_targets[0]==77 && raw_targets[1]==88 && raw_targets[2]==1 && raw_targets[3]==2 && raw_targets[4]==2 && raw_targets[5]==99);
+    raw_offsets[1]=7; raw_targets[2]=99; adjacency(detached.borrow(),3,3,expected_offsets,expected_targets);
+    raw_offsets[1]=0; raw_targets[2]=1; close_graph(detached.borrow());
+    assert(raw_offsets[1]==0 && raw_targets[2]==1 && raw_offsets[0]==99 && raw_targets[5]==99);
+}
+
+fn fifo_parent_is_not_numerically_smallest_and_outputs_outlive_graph() {
+    let input:[ext::graph::Edge;10]=[edge(99,98),edge(3,6),edge(0,2),edge(1,5),edge(5,6),edge(0,1),edge(2,3),edge(0,1),edge(3,6),edge(97,96)];
+    assert(core::mem::slice_stride(input)<0);
+    let selected:core::slice::View<ext::graph::Edge> =core::slice::view_range<ext::graph::Edge>(input,1,8).unwrap(); let limits:ext::graph::Limits=ext::graph::default_limits();
+    let graph:ext::graph::Graph=ext::graph::from_edges(8,selected,limits).unwrap();
+    let offsets:[i32;9]=[0,2,3,4,5,5,6,6,6]; let targets:[i32;6]=[1,2,5,3,6,6]; adjacency(graph.borrow(),8,6,offsets,targets);
+    let expected_sources:[i32;8]=[3,0,1,5,0,2,0,3]; let expected_targets:[i32;8]=[6,2,5,6,1,3,1,6]; let i:i32=0;
+    while(i<8) { assert(input[i+1].source==expected_sources[i] && input[i+1].target==expected_targets[i]); i+=1; }
+    assert(input[0].source==99 && input[0].target==98 && input[9].source==97 && input[9].target==96);
+    input[1].target=-9; adjacency(graph.borrow(),8,6,offsets,targets); input[1].target=6;
+    let value:ext::graph::View=graph.view().unwrap();
+    let result:ext::graph_algorithms::BfsPaths=ext::graph_algorithms::bfs(value,0,limits).unwrap();
+    let expected_distances:[i32;8]=[0,1,1,2,-1,2,3,-1]; let expected_parents:[i32;8]=[-1,0,0,2,-1,1,5,-1];
+    paths(result.borrow(),0,expected_distances,expected_parents,8);
+    // Node 5 is visited before node 3 at depth two. Its first discovery of
+    // node 6 is permanent, even though 3 is a smaller valid predecessor.
+    assert(result.predecessor(6).unwrap().unwrap()==5 && result.distance(6).unwrap().unwrap()==3);
+    let order:alloc::vec::Vec<i32> =ext::graph_algorithms::topological_order(value,limits).unwrap();
+    let expected_order:[i32;8]=[0,1,2,3,4,5,6,7]; sequence(order,expected_order,8); adjacency(graph.borrow(),8,6,offsets,targets);
+    close_graph(graph.borrow()); paths(result.borrow(),0,expected_distances,expected_parents,8); sequence(order,expected_order,8);
+    close_paths(result.borrow()); order.destroy(); order.destroy();
+    i=0; while(i<8) { assert(input[i+1].source==expected_sources[i] && input[i+1].target==expected_targets[i]); i+=1; }
+}
+
+fn minimum_ready_topology_and_repeated_algorithm_queries() {
+    let input:[ext::graph::Edge;4]=[edge(4,1),edge(3,1),edge(4,0),edge(2,1)]; let limits:ext::graph::Limits=ext::graph::default_limits();
+    let graph:ext::graph::Graph=ext::graph::from_edges(6,core::slice::view_range<ext::graph::Edge>(input,0,4).unwrap(),limits).unwrap();
+    let expected:[i32;6]=[2,3,4,0,1,5]; let first:alloc::vec::Vec<i32> =ext::graph_algorithms::topological_order(graph.view().unwrap(),limits).unwrap();
+    let second:alloc::vec::Vec<i32> =ext::graph_algorithms::topological_order(graph.view().unwrap(),limits).unwrap();
+    sequence(first,expected,6); sequence(second,expected,6);
+    let found:ext::graph_algorithms::BfsPaths=ext::graph_algorithms::bfs(graph.view().unwrap(),4,limits).unwrap();
+    let distances:[i32;6]=[1,1,-1,-1,0,-1]; let parents:[i32;6]=[4,4,-1,-1,-1,-1]; paths(found.borrow(),4,distances,parents,6);
+    let offsets:[i32;7]=[0,0,0,1,2,4,4]; let targets:[i32;4]=[1,1,0,1]; adjacency(graph.borrow(),6,4,offsets,targets);
+    close_graph(graph.borrow()); sequence(first,expected,6); sequence(second,expected,6); paths(found.borrow(),4,distances,parents,6);
+    first.destroy(); second.destroy(); close_paths(found.borrow());
+    assert(input[0].source==4 && input[0].target==1 && input[1].source==3 && input[1].target==1 && input[2].source==4 && input[2].target==0 && input[3].source==2 && input[3].target==1);
+}
+
+fn empty_isolated_self_loop_and_partial_cycle() {
+    let nowhere:ptr=0; let no_edges:[ext::graph::Edge]=core::mem::typed_slice_from_raw_parts<ext::graph::Edge>(nowhere,0);
+    let empty_input:core::slice::View<ext::graph::Edge> =core::slice::View { values:no_edges,start:2147483647,length:0 };
+    let empty:ext::graph::Graph=ext::graph::from_edges(0,empty_input,bounded(0,0,1)).unwrap(); let zero:[i32;1]=[0];
+    adjacency(empty.borrow(),0,0,zero,zero);
+    let empty_order:alloc::vec::Vec<i32> =ext::graph_algorithms::topological_order(empty.view().unwrap(),bounded(0,0,1)).unwrap(); assert(empty_order.len()==0); empty_order.destroy();
+    error(ext::graph_algorithms::bfs(empty.view().unwrap(),0,bounded(0,0,1)),false,0); error(ext::graph::neighbors(empty.view().unwrap(),0,bounded(0,0,1)),false,0); close_graph(empty.borrow());
+    let one:ext::graph::Graph=ext::graph::from_edges(1,empty_input,bounded(1,0,2)).unwrap(); let one_offsets:[i32;2]=[0,0]; adjacency(one.borrow(),1,0,one_offsets,zero);
+    let one_paths:ext::graph_algorithms::BfsPaths=ext::graph_algorithms::bfs(one.view().unwrap(),0,bounded(1,0,7)).unwrap();
+    let no_parent:[i32;1]=[-1]; paths(one_paths.borrow(),0,zero,no_parent,1);
+    let one_order:alloc::vec::Vec<i32> =ext::graph_algorithms::topological_order(one.view().unwrap(),bounded(1,0,10)).unwrap(); sequence(one_order,zero,1);
+    close_graph(one.borrow()); paths(one_paths.borrow(),0,zero,no_parent,1); close_paths(one_paths.borrow()); one_order.destroy();
+
+    let loop_edges:[ext::graph::Edge;2]=[edge(0,0),edge(0,0)]; let limits:ext::graph::Limits=ext::graph::default_limits();
+    let loop_graph:ext::graph::Graph=ext::graph::from_edges(2,core::slice::view_range<ext::graph::Edge>(loop_edges,0,2).unwrap(),limits).unwrap();
+    let loop_offsets:[i32;3]=[0,1,1]; adjacency(loop_graph.borrow(),2,1,loop_offsets,zero);
+    let loop_paths:ext::graph_algorithms::BfsPaths=ext::graph_algorithms::bfs(loop_graph.view().unwrap(),0,limits).unwrap();
+    let loop_distances:[i32;2]=[0,-1]; let loop_parents:[i32;2]=[-1,-1]; paths(loop_paths.borrow(),0,loop_distances,loop_parents,2);
+    cycle(ext::graph_algorithms::topological_order(loop_graph.view().unwrap(),limits)); adjacency(loop_graph.borrow(),2,1,loop_offsets,zero);
+    close_graph(loop_graph.borrow()); close_paths(loop_paths.borrow()); assert(loop_edges[0].source==0 && loop_edges[0].target==0 && loop_edges[1].source==0 && loop_edges[1].target==0);
+
+    let partial_edges:[ext::graph::Edge;3]=[edge(0,1),edge(2,3),edge(3,2)];
+    let partial:ext::graph::Graph=ext::graph::from_edges(4,core::slice::view_range<ext::graph::Edge>(partial_edges,0,3).unwrap(),limits).unwrap();
+    cycle(ext::graph_algorithms::topological_order(partial.view().unwrap(),limits));
+    let partial_paths:ext::graph_algorithms::BfsPaths=ext::graph_algorithms::bfs(partial.view().unwrap(),0,limits).unwrap();
+    let distances:[i32;4]=[0,1,-1,-1]; let parents:[i32;4]=[-1,0,-1,-1]; paths(partial_paths.borrow(),0,distances,parents,4);
+    let offsets:[i32;5]=[0,1,1,2,3]; let targets:[i32;3]=[1,3,2]; adjacency(partial.borrow(),4,3,offsets,targets);
+    close_graph(partial.borrow()); close_paths(partial_paths.borrow()); assert(partial_edges[1].source==2 && partial_edges[1].target==3 && partial_edges[2].source==3 && partial_edges[2].target==2);
+}
+
+fn main() -> i32 {
+    exact_work_boundaries_and_independent_view_copies(); fifo_parent_is_not_numerically_smallest_and_outputs_outlive_graph();
+    minimum_ready_topology_and_repeated_algorithm_queries(); empty_isolated_self_loop_and_partial_cycle(); return 0;
+}

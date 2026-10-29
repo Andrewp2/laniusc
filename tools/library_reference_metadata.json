@@ -915,6 +915,32 @@
         "docs/extended-glob.md"
       ]
     },
+    "ext::graph": {
+      "guides": [
+        "docs/extended-graph.md",
+        "docs/extended-dependency-order.md"
+      ],
+      "note": "Integer-only immutable directed simple adjacency, separate from numeric CSR coefficients. Dense node IDs retain isolated nodes; input duplicates collapse and self-loops remain. Canonical offsets/targets have one validation boundary and exact size-based work admission. Validation errors preserve input and carry documented row/relative-edge payloads; construction copies into independent owned vectors. Raw edges are limited before deduplication. Graph/neighbor Views require live backing, inactive aliases and explicit single-owner cleanup; first destroy closes, later calls return false. All eight library tests and four dependency-order groups/183 cases pass on native Linux x86_64 CPU output, including independent models, seven reached allocation failures and separate 65,536-node workloads. Existing sparse/collection receipts keep their scope.",
+      "declarations": {
+        "default_limits": "Returns 1,048,576 nodes, 1,048,576 raw/stored edges and 100,000,000 weighted work units; no backing allocation.",
+        "validate": "Admits limits, all View metadata, node/edge sizes, exact offsets length and V=n+1+m before reads. Scans all offsets before targets, then each row/edge; returns stored edge count.",
+        "view": "Constructs a borrowed graph View only after complete canonical validation. Does not copy or gain cleanup authority over physical backing.",
+        "from_edges": "Admits raw-edge count and native Edge staging capacity before work, then full work before endpoint reads; checks source then target in original order. Copies/sorts/deduplicates without mutating input and returns an independent Graph.",
+        "from_view": "Admits metadata and 2V work before adjacency payload reads, validates, then copies canonical storage into an independent Graph; private partial owners are released on error.",
+        "neighbors": "Validates the complete graph before requested-node Bounds. Returns a read-only logical subview of the selected target row; keep backing alive and unchanged."
+      }
+    },
+    "ext::graph_algorithms": {
+      "guides": [
+        "docs/extended-graph.md",
+        "docs/extended-dependency-order.md"
+      ],
+      "note": "Uses the canonical ext::graph validation boundary once. BFS retains FIFO first-discovery parents while scanning sorted neighbors; distance is shortest edge count, and ties do not imply the smallest numeric predecessor. Source distance is zero with absent parent; unreachable paths are absent. Query errors distinguish Closed before node Bounds from Ok(None). Kahn ordering uses the existing Min heap to choose the smallest ready ID, producing lexicographically smallest order or Cycle without a partial result. Full weighted work estimates precede allocation/traversal; reserved Deque/heap/workspace loops do not grow. Inputs remain unchanged and partial/result owners have explicit cleanup. All eight library tests and four application groups/183 cases pass on native Linux x86_64 CPU output. The 4,570-case model uses tiny graphs; 65,536-node reservation/scale and physical/fault gates are separate. No device/proof/automatic-lifetime claim.",
+      "declarations": {
+        "bfs": "Validate once, then check the requested source, admit V+4n+2m+1 and allocate reserved results/FIFO storage. Returns independent BfsPaths with shortest-hop distances and permanent first-discovery parents.",
+        "topological_order": "Validate once and admit V+4n+2m+4n(1+h(n)); choose minimum ready ID via the existing Min heap. Returns an independent Vec or a Cycle error with node=edge=-1, releasing incomplete output/workspace on failure."
+      }
+    },
     "ext::higher_statistics": {
       "guides": [
         "docs/extended-higher-statistics.md",

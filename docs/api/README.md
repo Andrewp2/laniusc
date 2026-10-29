@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **271 modules**, **13523 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **273 modules**, **13589 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -226,6 +226,8 @@ Inventory: **271 modules**, **13523 declaration/member entries**. Counts include
 | [ext::dns_client](ext/dns_client.md) | [source](../../extended/ext/dns_client.lani#L2) | 77 | Source inventory | [extended-dns-client](../extended-dns-client.md) |
 | [ext::geometry](ext/geometry.md) | [source](../../extended/ext/geometry.lani#L3) | 81 | Source inventory | [extended-geometry](../extended-geometry.md) |
 | [ext::glob](ext/glob.md) | [source](../../extended/ext/glob.lani#L3) | 42 | Source inventory | [extended-glob](../extended-glob.md) |
+| [ext::graph](ext/graph.md) | [source](../../extended/ext/graph.lani#L3) | 51 | Source inventory | [extended-graph](../extended-graph.md), [extended-dependency-order](../extended-dependency-order.md) |
+| [ext::graph_algorithms](ext/graph_algorithms.md) | [source](../../extended/ext/graph_algorithms.lani#L5) | 15 | Source inventory | [extended-graph](../extended-graph.md), [extended-dependency-order](../extended-dependency-order.md) |
 | [ext::higher_statistics](ext/higher_statistics.md) | [source](../../extended/ext/higher_statistics.lani#L5) | 29 | Source inventory | [extended-higher-statistics](../extended-higher-statistics.md), [extended-statistics](../extended-statistics.md), [extended-sample-moments](../extended-sample-moments.md) |
 | [ext::host_name](ext/host_name.md) | [source](../../extended/ext/host_name.lani#L3) | 7 | Source inventory | [extended-http-url](../extended-http-url.md), [extended-url-client](../extended-url-client.md) |
 | [ext::http](ext/http.md) | [source](../../extended/ext/http.lani#L2) | 108 | Source inventory | [extended-http](../extended-http.md), [extended-http-cursor](../extended-http-cursor.md) |

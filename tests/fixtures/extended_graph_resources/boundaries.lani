@@ -1,0 +1,92 @@
+module app::main;
+import alloc::allocator;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::graph;
+import ext::graph_algorithms;
+import std::io;
+import std::linux;
+
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn view(values:[i32],start:i32,length:i32) -> core::slice::View<i32> { return core::slice::View { values:values,start:start,length:length }; }
+fn rejected<T>(result:core::result::Result<T,ext::graph::Error>,expected:i32,node:i32) {
+    assert(result.is_err()); let error:ext::graph::Error=result.unwrap_err();
+    let kind:i32=match(error.kind) {
+        ext::graph::ErrorKind::Bounds->1,ext::graph::ErrorKind::NodeLimit->2,
+        ext::graph::ErrorKind::WorkLimit->3,ext::graph::ErrorKind::Offset->4,_ ->0
+    }; assert(kind==expected && error.node==node && error.edge==-1);
+}
+fn reject_all(value:ext::graph::View,limits:ext::graph::Limits,expected:i32,node:i32) {
+    rejected(ext::graph::validate(value,limits),expected,node);
+    rejected(ext::graph::view(value.nodes,value.offsets,value.targets,limits),expected,node);
+    rejected(ext::graph::neighbors(value,0,limits),expected,node);
+    rejected(ext::graph::from_view(value,limits),expected,node);
+    rejected(ext::graph_algorithms::bfs(value,0,limits),expected,node);
+    rejected(ext::graph_algorithms::topological_order(value,limits),expected,node);
+}
+fn metadata() {
+    let nowhere:ptr=0; let absent:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    let raw_edges:[ext::graph::Edge]=core::mem::typed_slice_from_raw_parts<ext::graph::Edge>(nowhere,0);
+    let limits:ext::graph::Limits=ext::graph::default_limits();
+    let starts:[i32;4]=[-1,0,2147483647,1]; let lengths:[i32;4]=[0,-1,1,2147483647];
+    mark(80); let index:i32=0;
+    while(index<4) {
+        let malformed:core::slice::View<i32> =view(absent,starts[index],lengths[index]);
+        reject_all(ext::graph::View { nodes:2,offsets:malformed,targets:view(absent,0,0) },limits,1,-1);
+        reject_all(ext::graph::View { nodes:2,offsets:view(absent,0,3),targets:malformed },limits,1,-1); index+=1;
+    }
+    reject_all(ext::graph::View { nodes:2,offsets:view(absent,0,2),targets:view(absent,0,0) },limits,1,-1);
+    let claimed:ext::graph::View=ext::graph::View { nodes:2,offsets:view(absent,0,3),targets:view(absent,0,1) };
+    let bounded:ext::graph::Limits=limits; bounded.max_nodes=1; reject_all(claimed,bounded,2,-1);
+    bounded=limits; bounded.max_work=0; reject_all(claimed,bounded,3,-1);
+    let edge_view:core::slice::View<ext::graph::Edge> =core::slice::View { values:raw_edges,start:0,length:1 };
+    rejected(ext::graph::from_edges(2,edge_view,bounded),3,-1);
+    bounded=limits; bounded.max_nodes=1; rejected(ext::graph::from_edges(2,edge_view,bounded),2,-1);
+    let bad_edges:core::slice::View<ext::graph::Edge> =edge_view; bad_edges.start=-1;
+    rejected(ext::graph::from_edges(2,bad_edges,limits),1,-1);
+    // Every offset is validated before any target. The target's selected
+    // length is nonzero over null backing, but the first offset already fails.
+    let offsets:[i32;2]=[9,0];
+    reject_all(ext::graph::View { nodes:1,offsets:view(offsets,0,2),targets:view(absent,0,1) },limits,4,0);
+    mark(112);
+}
+fn tail(mapping:ptr,count:i32) -> core::slice::View<i32> {
+    let begin:ptr=mapping+(4092-4*(count as usize));
+    let values:[i32]=core::mem::typed_slice_from_raw_parts<i32>(begin,count+1);
+    return view(values,1,count);
+}
+fn guarded_offsets(mapping:ptr) {
+    let offsets:core::slice::View<i32> =tail(mapping,3); let targets:[i32;4]=[211,1,0,211];
+    mark(80); offsets.values[0]=211; offsets.values[1]=0; offsets.values[2]=1; offsets.values[3]=2;
+    let input:ext::graph::View=ext::graph::View { nodes:2,offsets:offsets,targets:view(targets,1,2) };
+    assert(ext::graph::validate(input,ext::graph::default_limits()).unwrap()==2);
+    let first:core::slice::View<i32> =ext::graph::neighbors(input,0,ext::graph::default_limits()).unwrap();
+    let second:core::slice::View<i32> =ext::graph::neighbors(input,1,ext::graph::default_limits()).unwrap();
+    assert(first.length==1 && first.get(0).unwrap()==1 && second.length==1 && second.get(0).unwrap()==0);
+    assert(offsets.values[0]==211 && offsets.values[1]==0 && offsets.values[2]==1 && offsets.values[3]==2);
+    assert(targets[0]==211 && targets[1]==1 && targets[2]==0 && targets[3]==211); mark(112);
+}
+fn guarded_targets(mapping:ptr) {
+    let targets:core::slice::View<i32> =tail(mapping,2); let offsets:[i32;5]=[211,0,1,2,211];
+    mark(80); targets.values[0]=211; targets.values[1]=1; targets.values[2]=0;
+    let input:ext::graph::View=ext::graph::View { nodes:2,offsets:view(offsets,1,3),targets:targets };
+    assert(ext::graph::validate(input,ext::graph::default_limits()).unwrap()==2);
+    let first:core::slice::View<i32> =ext::graph::neighbors(input,0,ext::graph::default_limits()).unwrap();
+    let second:core::slice::View<i32> =ext::graph::neighbors(input,1,ext::graph::default_limits()).unwrap();
+    assert(first.length==1 && first.get(0).unwrap()==1 && second.length==1 && second.get(0).unwrap()==0);
+    assert(targets.values[0]==211 && targets.values[1]==1 && targets.values[2]==0);
+    assert(offsets[0]==211 && offsets[1]==0 && offsets[2]==1 && offsets[3]==2 && offsets[4]==211);
+    let empty_targets:core::slice::View<i32> =tail(mapping,0); empty_targets.values[0]=211;
+    let no_edges:[i32;2]=[0,0]; let empty:ext::graph::View=ext::graph::View { nodes:1,offsets:view(no_edges,0,2),targets:empty_targets };
+    assert(ext::graph::validate(empty,ext::graph::default_limits()).unwrap()==0);
+    let neighbors:core::slice::View<i32> =ext::graph::neighbors(empty,0,ext::graph::default_limits()).unwrap();
+    assert(neighbors.length==0 && neighbors.get(0).is_none() && empty_targets.values[0]==211); mark(112);
+}
+fn main() -> i32 {
+    let mapping:ptr=alloc::allocator::alloc(8192,8); assert(mapping!=0);
+    let protection:[std::linux::Argument;3]=[std::linux::Argument::Address(mapping+4096),std::linux::Argument::Word(4096),std::linux::Argument::Word(0)];
+    assert(std::linux::call(10,core::slice::view(protection,3).unwrap()).unwrap()==0);
+    metadata(); guarded_offsets(mapping); guarded_targets(mapping);
+    alloc::allocator::dealloc(mapping,8192,8); mark(68); return 0;
+}

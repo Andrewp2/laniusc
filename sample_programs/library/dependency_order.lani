@@ -1,0 +1,292 @@
+// Bounded CSV dependency ordering and optional shortest-hop annotations.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::csv_write;
+import ext::graph;
+import ext::graph_algorithms;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Options { nodes:i32, source:i32, help:bool, nodes_set:bool, source_set:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Staged { bytes:u64, calls:u64 }
+impl Staged { fn borrow(&self) -> &Staged { return self; } }
+fn literal(value:str, count:i32) -> core::slice::View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn bytes(value:core::text::Text) -> core::slice::View<u8> {
+    return core::slice::View { values:value.bytes,start:value.start,length:value.length };
+}
+fn text(value:core::slice::View<u8>) -> core::text::Text {
+    return core::text::from_utf8_unchecked(value.values,value.start,value.length);
+}
+fn equal(left:core::slice::View<u8>, right:core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; } let index:i32 = 0;
+    while(index < left.length) {
+        if (left.values[left.start+index] != right.values[right.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn write(value:core::slice::View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < value.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(value.values,value.start+completed,value.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > value.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("dependency_order: operation failed\n",35),2,8); return status; }
+fn csv_status(error:ext::csv::Error) -> i32 {
+    return match(error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 };
+}
+fn graph_status(error:ext::graph::Error) -> i32 {
+    return match(error.kind) {
+        ext::graph::ErrorKind::AllocationFailed -> 4,
+        ext::graph::ErrorKind::Cycle -> 2,
+        ext::graph::ErrorKind::NodeLimit -> 2,
+        ext::graph::ErrorKind::EdgeLimit -> 2,
+        ext::graph::ErrorKind::WorkLimit -> 2,
+        ext::graph::ErrorKind::Source -> 2,
+        ext::graph::ErrorKind::Target -> 2,
+        ext::graph::ErrorKind::Bounds -> 2,
+        _ -> 6
+    };
+}
+fn input_status(error:alloc::io::ReadError) -> i32 {
+    return match(error) {
+        alloc::io::ReadError::InvalidLimits -> 6,
+        alloc::io::ReadError::CallLimit -> 2,
+        alloc::io::ReadError::ByteLimit -> 2,
+        alloc::io::ReadError::Io(detail) -> match(detail) {
+            core::io::Error::AllocationFailed -> 4,
+            core::io::Error::InvalidInput -> 6,
+            core::io::Error::InvalidCount -> 6,
+            core::io::Error::CountOverflow -> 6,
+            _ -> 3
+        },
+        alloc::io::ReadError::Storage(detail) -> match(detail) { alloc::vec::Error::AllocationFailed -> 4, _ -> 6 },
+        alloc::io::ReadError::Text(detail) -> match(detail) { alloc::string::Error::AllocationFailed -> 4, _ -> 6 }
+    };
+}
+fn limits() -> ext::graph::Limits {
+    return ext::graph::Limits { max_nodes:4096,max_edges:65536,max_work:100000000 };
+}
+fn accept_record(parser:&ext::csv::Decoder, edges:&Vec<ext::graph::Edge>, options:&Options) -> i32 {
+    let width:Option<i32> = parser.field_count(); if (width.is_none()) { return 6; }
+    if (width.unwrap() != 2) { return 2; }
+    let first:Result<core::text::Text,ext::csv::Error> = parser.field(0);
+    let second:Result<core::text::Text,ext::csv::Error> = parser.field(1);
+    if (first.is_err()) { return csv_status(first.unwrap_err()); }
+    if (second.is_err()) { return csv_status(second.unwrap_err()); }
+    let before:core::slice::View<u8> = bytes(first.unwrap());
+    let after:core::slice::View<u8> = bytes(second.unwrap());
+    if (parser.records_read() == 1) {
+        if (!equal(before,literal("before",6)) || !equal(after,literal("after",5))) { return 2; }
+        return 0;
+    }
+    if (edges.len() == 65536) { return 2; }
+    let source:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(before.values,before.start,before.length);
+    let target:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(after.values,after.start,after.length);
+    if (source.is_err() || target.is_err()) { return 2; }
+    if ((source.unwrap() >= (options.nodes as u64)) || (target.unwrap() >= (options.nodes as u64))) { return 2; }
+    let saved:Result<i32,alloc::vec::Error> = edges.try_push(ext::graph::Edge { source:source.unwrap() as i32,target:target.unwrap() as i32 });
+    if (saved.is_err()) { return match(saved.unwrap_err()) { alloc::vec::Error::AllocationFailed -> 4, _ -> 6 }; }
+    return 0;
+}
+fn parse(input:&Vec<u8>, edges:&Vec<ext::graph::Edge>, options:&Options) -> i32 {
+    let dialect:ext::csv::Options = ext::csv::default_options();
+    dialect.max_records = 65537; dialect.max_fields = 2;
+    dialect.max_field_bytes = 128; dialect.max_record_bytes = 256;
+    let made:Result<ext::csv::Decoder,ext::csv::Error> = ext::csv::decoder(dialect);
+    if (made.is_err()) { return csv_status(made.unwrap_err()); }
+    let parser:ext::csv::Decoder = made.unwrap(); let offset:i32 = 0; let status:i32 = 0;
+    while((status == 0) && (offset < input.len())) {
+        let left:i32 = input.len()-offset;
+        let fed:Result<ext::csv::Progress,ext::csv::Error> = parser.feed(input.as_slice(),offset,left);
+        if (fed.is_err()) { status = csv_status(fed.unwrap_err()); break; }
+        let progress:ext::csv::Progress = fed.unwrap();
+        if ((progress.consumed <= 0) || (progress.consumed > left)) { status = 6; break; }
+        offset += progress.consumed;
+        if (progress.record) { status = accept_record(parser.borrow(),edges,options); }
+    }
+    if (status == 0) {
+        let ended:Result<bool,ext::csv::Error> = parser.finish();
+        if (ended.is_err()) { status = csv_status(ended.unwrap_err()); }
+        else { if (ended.unwrap()) { status = accept_record(parser.borrow(),edges,options); } }
+    }
+    if ((status == 0) && (parser.records_read() < 1)) { status = 2; }
+    parser.destroy(); return status;
+}
+fn emit(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Staged, fields:core::slice::View<core::slice::View<u8>>) -> i32 {
+    if ((state.bytes > 1048576) || (state.calls > 8192)) { return 6; }
+    record.clear(); let index:i32 = 0;
+    while(index < fields.length) {
+        let saved:Result<i32,ext::csv::Error> = record.try_push_field(text(fields.values[fields.start+index]));
+        if (saved.is_err()) { return csv_status(saved.unwrap_err()); } index += 1;
+    }
+    let remaining:u64 = 1048576-state.bytes; let calls:u64 = 8192-state.calls;
+    let bounds:ext::csv_write::Limits = ext::csv_write::Limits { max_output:remaining,max_write_calls:calls };
+    let sent:Result<ext::csv_write::Progress,ext::csv_write::Failure> = ext::csv_write::write_record<alloc::io::Buffer>(output,record,bounds);
+    if (sent.is_err()) {
+        let failure:ext::csv_write::Failure = sent.unwrap_err();
+        if ((failure.written > remaining) || (failure.write_calls > calls)) { return 6; }
+        state.bytes += failure.written; state.calls += failure.write_calls;
+        return match(failure.cause) {
+            ext::csv_write::Cause::Csv(detail) -> csv_status(detail),
+            ext::csv_write::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 2, _ -> 6 },
+            _ -> 2
+        };
+    }
+    let progress:ext::csv_write::Progress = sent.unwrap();
+    if ((progress.written > remaining) || (progress.write_calls > calls)) { return 6; }
+    state.bytes += progress.written; state.calls += progress.write_calls; return 0;
+}
+fn render(order:&Vec<i32>, paths:Option<&ext::graph_algorithms::BfsPaths>, output:&alloc::io::Buffer) -> i32 {
+    let record:ext::csv::Record = ext::csv::new(); let state:Staged = Staged { bytes:0,calls:0 };
+    let header:[core::slice::View<u8>;4] = [literal("position",8),literal("node",4),literal("hops",4),literal("predecessor",11)];
+    let status:i32 = emit(output,record.borrow(),state.borrow(),core::slice::view(header,4).unwrap());
+    let row:i32 = 0;
+    while((status == 0) && (row < order.len())) {
+        let node:i32 = order.at(row);
+        if ((node < 0) || (node >= order.len())) { status = 6; break; }
+        let distance:Option<i32> = core::option::None(); let predecessor:Option<i32> = core::option::None();
+        if (paths.is_some()) {
+            let queried:&ext::graph_algorithms::BfsPaths = paths.unwrap();
+            let reached:Result<Option<i32>,ext::graph::Error> = queried.distance(node);
+            let parent:Result<Option<i32>,ext::graph::Error> = queried.predecessor(node);
+            if (reached.is_err()) { status = graph_status(reached.unwrap_err()); break; }
+            if (parent.is_err()) { status = graph_status(parent.unwrap_err()); break; }
+            distance = reached.unwrap(); predecessor = parent.unwrap();
+            if (distance.is_none() && predecessor.is_some()) { status = 6; break; }
+        }
+        let position_bytes:[u8;10] = [0;10]; let node_bytes:[u8;10] = [0;10];
+        let hop_bytes:[u8;10] = [0;10]; let parent_bytes:[u8;10] = [0;10];
+        let position_count:Result<i32,core::decimal::FormatError> = core::decimal::format_u32(position_bytes,0,10,row as u32);
+        let node_count:Result<i32,core::decimal::FormatError> = core::decimal::format_u32(node_bytes,0,10,node as u32);
+        if (position_count.is_err() || node_count.is_err()) { status = 6; break; }
+        let hop_count:i32 = 0; let parent_count:i32 = 0;
+        if (distance.is_some()) {
+            let hops:i32 = distance.unwrap();
+            if ((hops < 0) || (hops >= order.len())) { status = 6; break; }
+            let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_u32(hop_bytes,0,10,hops as u32);
+            if (formatted.is_err()) { status = 6; break; } hop_count = formatted.unwrap();
+        }
+        if (predecessor.is_some()) {
+            let previous:i32 = predecessor.unwrap();
+            if ((previous < 0) || (previous >= order.len())) { status = 6; break; }
+            let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_u32(parent_bytes,0,10,previous as u32);
+            if (formatted.is_err()) { status = 6; break; } parent_count = formatted.unwrap();
+        }
+        let fields:[core::slice::View<u8>;4] = [core::slice::view(position_bytes,position_count.unwrap()).unwrap(),core::slice::view(node_bytes,node_count.unwrap()).unwrap(),core::slice::view(hop_bytes,hop_count).unwrap(),core::slice::view(parent_bytes,parent_count).unwrap()];
+        status = emit(output,record.borrow(),state.borrow(),core::slice::view(fields,4).unwrap()); row += 1;
+    }
+    record.destroy(); return status;
+}
+fn calculate(edges:&Vec<ext::graph::Edge>, options:&Options, output:&alloc::io::Buffer) -> i32 {
+    let made:Result<ext::graph::Graph,ext::graph::Error> = ext::graph::from_edges(options.nodes,edges.as_view(),limits());
+    if (made.is_err()) { return graph_status(made.unwrap_err()); }
+    let graph:ext::graph::Graph = made.unwrap(); let selected:Option<ext::graph::View> = graph.view();
+    if (selected.is_none()) { graph.destroy(); return 6; } let view:ext::graph::View = selected.unwrap();
+    let sorted:Result<Vec<i32>,ext::graph::Error> = ext::graph_algorithms::topological_order(view,limits());
+    if (sorted.is_err()) { graph.destroy(); return graph_status(sorted.unwrap_err()); }
+    let order:Vec<i32> = sorted.unwrap();
+    if (order.len() != options.nodes) { order.destroy(); graph.destroy(); return 6; }
+    let status:i32 = 0;
+    if (options.source_set) {
+        let traversed:Result<ext::graph_algorithms::BfsPaths,ext::graph::Error> = ext::graph_algorithms::bfs(view,options.source,limits());
+        if (traversed.is_err()) { order.destroy(); graph.destroy(); return graph_status(traversed.unwrap_err()); }
+        let paths:ext::graph_algorithms::BfsPaths = traversed.unwrap();
+        let borrowed:Option<&ext::graph_algorithms::BfsPaths> = core::option::Some(paths.borrow());
+        status = render(order.borrow(),borrowed,output); paths.destroy();
+    } else {
+        let absent:Option<&ext::graph_algorithms::BfsPaths> = core::option::None();
+        status = render(order.borrow(),absent,output);
+    }
+    order.destroy(); graph.destroy(); return status;
+}
+fn run(options:&Options) -> i32 {
+    let source:std::stream::Descriptor = std::stream::stdin();
+    let read_limits:alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes:4194304,max_calls:16384 };
+    let received:Result<Vec<u8>,alloc::io::ReadFailure> = alloc::io::read_to_end<std::stream::Descriptor>(source.borrow(),read_limits);
+    if (received.is_err()) {
+        let failure:alloc::io::ReadFailure = received.unwrap_err(); let status:i32 = input_status(failure.cause);
+        failure.destroy(); return status;
+    }
+    let input:Vec<u8> = received.unwrap(); let edges:Vec<ext::graph::Edge> = alloc::vec::new();
+    let status:i32 = parse(input.borrow(),edges.borrow(),options); input.destroy();
+    if (status != 0) { edges.destroy(); return status; }
+    let created:Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(1048576);
+    if (created.is_err()) { edges.destroy(); return 6; }
+    let output:alloc::io::Buffer = created.unwrap(); status = calculate(edges.borrow(),options,output.borrow()); edges.destroy();
+    if ((status == 0) && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,2048)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:core::slice::View<core::slice::View<u8>>) -> Result<Options,i32> {
+    let specs:[ext::cli::Spec;3] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("nodes",5),short:110,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:3,long:literal("source",6),short:115,arity:ext::cli::Arity::Required }
+    ];
+    let made:Result<ext::cli::Parser,ext::cli::Error> = ext::cli::parser(values,core::slice::view(specs,3).unwrap(),ext::cli::Ordering::Intermixed);
+    if (made.is_err()) { return core::result::Err(2); }
+    let parser:ext::cli::Parser = made.unwrap();
+    let options:Options = Options { nodes:0,source:0,help:false,nodes_set:false,source_set:false };
+    while(true) {
+        let event:Result<Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (event.is_err()) { return core::result::Err(2); }
+        let next:Option<ext::cli::Event> = event.unwrap(); if (next.is_none()) { break; }
+        let occurrence:Option<ext::cli::Occurrence> = match(next.unwrap()) { ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (occurrence.is_none()) { return core::result::Err(2); } let found:ext::cli::Occurrence = occurrence.unwrap();
+        if (found.id == 1) { if (options.help) { return core::result::Err(2); } options.help = true; }
+        else {
+            let token:core::slice::View<u8> = found.value.unwrap().bytes;
+            if ((token.length < 1) || (token.length > 64)) { return core::result::Err(2); }
+            let parsed:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(token.values,token.start,token.length);
+            if (parsed.is_err()) { return core::result::Err(2); } let number:u64 = parsed.unwrap();
+            if (found.id == 2) {
+                if (options.nodes_set || (number > 4096)) { return core::result::Err(2); }
+                options.nodes = number as i32; options.nodes_set = true;
+            } else {
+                if ((found.id != 3) || options.source_set || (number > 4095)) { return core::result::Err(2); }
+                options.source = number as i32; options.source_set = true;
+            }
+        }
+    }
+    if (options.nodes_set && options.source_set && (options.source >= options.nodes)) { return core::result::Err(2); }
+    if (!options.help && !options.nodes_set) { return core::result::Err(2); }
+    return core::result::Ok(options);
+}
+fn help() -> i32 {
+    let value = literal("Usage: dependency_order --nodes N [--source S] [--help]\nRead CSV before,after and print the lexicographically smallest dependency order.\nN is 0..4096; source and edge IDs are in [0,N). Leading zeros are allowed.\nOutput CSV: position,node,hops,predecessor; positions are zero-based.\n--source adds shortest-hop distances and first-discovery predecessors; absent values are empty.\nCycles, including self-loops, fail without data output. Empty graphs print only the header.\nShort options: -n N, -s S, -h. Duplicate options and operands are errors.\nLimits: 4 MiB input, 65536 raw edges, 128 bytes per field, 1 MiB staged output.\nInput permits 16384 read attempts and output 2048 attempts; interruptions spend attempts.\nHelp accepts otherwise valid options and does not read stdin.\n",776);
+    if (!write(value,1,64)) { return 5; } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,24,1024);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let owner = captured.unwrap(); let parsed:Result<Options,i32> = arguments(owner.as_view()); owner.destroy();
+    if (parsed.is_err()) { return report(parsed.unwrap_err()); } let options:Options = parsed.unwrap();
+    let status:i32 = 0; if (options.help) { status = help(); } else { status = run(options.borrow()); }
+    if (status != 0) { return report(status); } return 0;
+}
