@@ -599,7 +599,8 @@ theorem process_behaviour {sp : SrcProgram} {binary : Binary} {entry stack heap 
     (∃ fuel v final, Semantics.evalExpr fuel sp.toCore {} (.call entry []) = .done v final ∧
       final.heap.nextAddress ≤ heap ∧ ∃ results, func.ret.HoldsAt v (Func.entry results) 0 ∧
         results.length = func.ret.size ∧ ∃ code, Exits u code ∧ ∀ w, results.getLast? = some w → code = w) ∨
-    ∃ fuel r st, Semantics.evalExpr fuel sp.toCore {} (.call entry []) = .trapped r st ∧ undefinedTrap r = true := by
+    ∃ fuel r st, Semantics.evalExpr fuel sp.toCore {} (.call entry []) = .trapped r st ∧ undefinedTrap r = true ∧
+      st.heap.nextAddress ≤ heap := by
   have sz := elfSizes h
   have typed : FieldsHold (paramTypes func.params) [] (Func.entry []) 0 := by rw [noParams]; exact .nil
   have bitsLen : ([] : List (BitVec 64)).length = paramsSize func.params := by rw [noParams]; rfl
@@ -657,7 +658,7 @@ theorem textProcess_behaviour {files : List SourceFile} {binary : Binary} {entry
           final.heap.nextAddress ≤ heap ∧ ∃ results, func.ret.HoldsAt v (Func.entry results) 0 ∧
             results.length = func.ret.size ∧ ∃ code, Exits u code ∧ ∀ w, results.getLast? = some w → code = w) ∨
         ∃ fuel r st, Semantics.evalExpr fuel sp.toCore {} (.call entry []) = .trapped r st ∧
-          undefinedTrap r = true := by
+          undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap := by
   obtain ⟨sp, reading, unique, compiledSource⟩ := compileText_reading compiled
   refine ⟨sp, reading, unique, ?_⟩
   intro func found noParams s loaded m u run stuck clean

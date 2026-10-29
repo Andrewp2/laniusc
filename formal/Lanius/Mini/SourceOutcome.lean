@@ -47,7 +47,7 @@ theorem compileSource_contract_from {sp : SrcProgram} {binary : Binary}
 represents the Core state `st` (premises as in `compileSource_stops_from`):
 it faults, or Core's call completes within the heap's limit and the compiled
 code returns its results with a heap that represents Core's final heap, or
-Core's call reaches an undefined trap. -/
+Core's call reaches an undefined trap within the heap's limit. -/
 theorem compileSource_outcome_from {sp : SrcProgram} {binary : Binary}
     (compiled : compileSource sp = some binary) {f : Nat} {func : SrcFunc}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
@@ -69,18 +69,18 @@ theorem compileSource_outcome_from {sp : SrcProgram} {binary : Binary}
       ∃ results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
         HeapCorr final.heap after ∧ ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after) ∨
     ∃ fuel r st', Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .trapped r st' ∧
-      undefinedTrap r = true := by
+      undefinedTrap r = true ∧ st'.heap.nextAddress ≤ heap.limit := by
   by_cases fails : ∀ fuel, Failing heap.limit (Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)))
   · exact .inl (compileSource_stops_from compiled found typed bitsLen fresh hc within fails s imageBase window bounded
       loaded apart imageHeap entry params heapAt stack)
   · obtain ⟨fuel, notFailing⟩ := Classical.not_forall.mp fails
-    rcases not_failing notFailing with ⟨v, final, done, fits⟩ | ⟨r, st', trapped, undefined⟩
+    rcases not_failing notFailing with ⟨v, final, done, fits⟩ | ⟨r, st', trapped, undefined, bound⟩
     · obtain ⟨depth, results, after, holds, len, hc', contract⟩ :=
         compileSource_contract_from compiled found typed bitsLen fresh hc done fits
       rcases contract imageBase window s bounded loaded apart imageHeap entry params heapAt stack with
         ⟨n, s', run, det, ret⟩ | ⟨-, faults⟩
       · exact .inr (.inl ⟨fuel, v, final, done, fits, results, after, holds, len, hc', n, s', run, det, ret⟩)
       · exact .inl faults
-    · exact .inr (.inr ⟨fuel, r, st', trapped, undefined⟩)
+    · exact .inr (.inr ⟨fuel, r, st', trapped, undefined, bound⟩)
 
 end Lanius.Mini

@@ -77,17 +77,18 @@ theorem compileSource_stops {sp : SrcProgram} {binary : Binary}
     heapAt stack
 
 /-- A Core result that is not `Failing`: a completion within the limit or an
-undefined trap. -/
+undefined trap within it. -/
 theorem not_failing {α : Type} {limit : Nat} {out : Semantics.Outcome α} (h : ¬Failing limit out) :
     (∃ v st, out = .done v st ∧ st.heap.nextAddress ≤ limit) ∨
-    ∃ r st, out = .trapped r st ∧ undefinedTrap r = true := by
+    ∃ r st, out = .trapped r st ∧ undefinedTrap r = true ∧ st.heap.nextAddress ≤ limit := by
   cases out with
   | done v st => exact .inl ⟨v, st, rfl, Nat.le_of_not_lt h⟩
   | trapped r st =>
-    refine .inr ⟨r, st, rfl, ?_⟩
-    cases u : undefinedTrap r with
-    | true => rfl
-    | false => exact absurd u h
+    refine .inr ⟨r, st, rfl, ?_, ?_⟩
+    · cases u : undefinedTrap r with
+      | true => rfl
+      | false => exact absurd (.inl u) h
+    · exact Nat.le_of_not_lt fun lt => h (.inr lt)
   | exited _ _ => exact absurd trivial h
   | outOfFuel => exact absurd trivial h
 
@@ -116,14 +117,14 @@ theorem compileSource_behaviour {sp : SrcProgram} {binary : Binary}
     (∃ fuel v final, Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final ∧
       final.heap.nextAddress ≤ heap.limit) ∨
     ∃ fuel r st, Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .trapped r st ∧
-      undefinedTrap r = true := by
+      undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap.limit := by
   by_cases fails : ∀ fuel, Failing heap.limit
       (Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)))
   · exact (clean (compileSource_stops compiled found typed bitsLen start zero small room fails s imageBase window
       bounded loaded apart imageHeap entry params heapAt stack m s u (DataEq.refl s) run stuck)).elim
   · obtain ⟨fuel, notFailing⟩ := Classical.not_forall.mp fails
-    rcases not_failing notFailing with ⟨v, final, done, fits⟩ | ⟨r, st, trapped, undefined⟩
+    rcases not_failing notFailing with ⟨v, final, done, fits⟩ | ⟨r, st, trapped, undefined, within⟩
     · exact .inl ⟨fuel, v, final, done, fits⟩
-    · exact .inr ⟨fuel, r, st, trapped, undefined⟩
+    · exact .inr ⟨fuel, r, st, trapped, undefined, within⟩
 
 end Lanius.Mini

@@ -260,7 +260,7 @@ theorem eff_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
     (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
     (propagate : ∀ j reason s, evalExpr j sp.toCore st e.toCore = .trapped reason s →
-      ∃ j' s', whole j' = .trapped reason s') :
+      ∃ j' s', whole j' = .trapped reason s' ∧ s'.heap.nextAddress = s.heap.nextAddress) :
     (∃ d, Stops mp d env hp ev.stmt n) ∨ ∃ k v st1, evalExpr k sp.toCore st e.toCore = .done v st1 ∧
       st1.heap.nextAddress ≤ hp.limit ∧ Evaluates mp hp slot st env ev v st1 := by
   by_cases done : Completes hp.limit fun k => evalExpr k sp.toCore st e.toCore
@@ -294,7 +294,7 @@ theorem args_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     subst ok
     simp only [SrcEff.toCoreList] at fails
     rcases eff_split lowered (each e List.mem_cons_self) firstOk corr fr fresh hc within fails
-        (fun j r s h => ⟨j + 1, s, exprs_trap_head h⟩) with
+        (fun j r s h => ⟨j + 1, s, exprs_trap_head h, rfl⟩) with
       ⟨d, stops⟩ | ⟨k, v, st1, run, bound, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, _, hc1⟩
     · exact ⟨d, .seqFirst stops⟩
     · have limit := exec1.limit_normal
@@ -320,7 +320,7 @@ theorem args_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
     (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
     (propagate : ∀ j reason s, evalExprs j sp.toCore st (SrcEff.toCoreList args) = .trapped reason s →
-      ∃ j' s', whole j' = .trapped reason s') :
+      ∃ j' s', whole j' = .trapped reason s' ∧ s'.heap.nextAddress = s.heap.nextAddress) :
     (∃ d, Stops mp d env hp ea.stmt n) ∨ ∃ k vs st1, evalExprs k sp.toCore st (SrcEff.toCoreList args) = .done vs st1 ∧
       st1.heap.nextAddress ≤ hp.limit ∧ st1.Fresh ∧ Keeps st.nextCell st st1 ∧ st1.locals = st.locals ∧
       ∃ d env' hp', Exec mp d env hp ea.stmt (.normal env' hp') ∧ (∀ j < slot, env' j = env j) ∧
@@ -349,13 +349,13 @@ theorem pair_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
       st2.heap.nextAddress ≤ hp.limit ∧ le.ty.HoldsAt vl env1 slot ∧ (∀ j < slot + 1, env2 j = env1 j) ∧
       re.ty.HoldsAt vr env2 (slot + 1) ∧
       ∀ d', Stops mp d' env2 hp2 rest n → ∃ d, Stops mp d env hp (.seq le.stmt (.seq re.stmt rest)) n := by
-  rcases eff_split lowered ihl leOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, binary_trap_left h⟩) with
+  rcases eff_split lowered ihl leOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, binary_trap_left h, rfl⟩) with
     ⟨d, stops⟩ | ⟨k1, vl, st1, run1, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
   · exact .inl ⟨d, .seqFirst stops⟩
   have limit := exec1.limit_normal
   have fails1 : EFails sp hp1.limit st (.binary cop l.toCore r.toCore) := by rw [limit]; exact fails
   rcases eff_split lowered ihr reOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _)) fresh1 hc1
-      (by rw [limit]; exact bound1) fails1 (fun j r s h => ⟨_, s, binary_trap_right general run1 h⟩) with
+      (by rw [limit]; exact bound1) fails1 (fun j r s h => ⟨_, s, binary_trap_right general run1 h, rfl⟩) with
     ⟨d, stops⟩ | ⟨k2, vr, st2, run2, bound2, -, -, -, _, d2, env2, hp2, exec2, same2, holds2, -⟩
   · exact .inl ⟨_, Stops.after exec1 (.seqFirst stops)⟩
   · exact .inr ⟨k1, vl, st1, k2, vr, st2, env1, env2, hp2, run1, run2, by rw [← limit]; exact bound2, holds1, same2,
@@ -426,7 +426,7 @@ theorem eff_neg (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some m
     simp only [evalThen, Option.some.injEq] at ok
     subst ok
     simp only [SrcEff.toCore] at fails
-    rcases eff_split lowered ih operandOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, unary_trap h⟩) with
+    rcases eff_split lowered ih operandOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, unary_trap h, rfl⟩) with
       ⟨d, stops⟩ | ⟨k, w, st1, run, bound, -, -, -, -, d1, env1, hp1, exec1, -, holds1, -⟩
     · exact ⟨d, .seqFirst stops⟩
     · obtain ⟨r, okv⟩ := negate_defined lowered' (holds_var holds1 (negate_scalar lowered'))
@@ -446,7 +446,7 @@ theorem eff_not (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some m
     simp only [evalThen, Option.some.injEq] at ok
     subst ok
     simp only [SrcEff.toCore] at fails
-    rcases eff_split lowered ih operandOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, unary_trap h⟩) with
+    rcases eff_split lowered ih operandOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, unary_trap h, rfl⟩) with
       ⟨d, stops⟩ | ⟨k, w, st1, run, bound, -, -, -, -, d1, env1, hp1, exec1, -, holds1, -⟩
     · exact ⟨d, .seqFirst stops⟩
     · obtain ⟨r, okv⟩ := not_defined lowered' (holds_var holds1 (not_scalar lowered'))
@@ -470,7 +470,7 @@ theorem eff_cast (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some 
     case isFalse => simp at lowered'
     rename_i scalar
     simp only [SrcEff.toCore] at fails
-    rcases eff_split lowered ih operandOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, cast_trap h⟩) with
+    rcases eff_split lowered ih operandOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, cast_trap h, rfl⟩) with
       ⟨d, stops⟩ | ⟨k, w, st1, run, bound, -, -, -, -, d1, env1, hp1, exec1, -, holds1, -⟩
     · exact ⟨d, .seqFirst stops⟩
     · obtain ⟨r, okv⟩ := castTo_defined lowered' (holds_var holds1 scalar)
@@ -495,7 +495,10 @@ theorem eff_stride {slice : Nat} : EffStops sp mp n (.eStride slice) := by
   simp only [localRun] at this
   split at this
   · exact absurd within (Nat.not_le.mpr this)
-  · simp [Failing, undefinedTrap] at this
+  · simp only [Failing, undefinedTrap] at this
+    rcases this with h | h
+    · cases h
+    · exact absurd within (Nat.not_le.mpr h)
 
 theorem eff_apply (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {op : SrcOp}
     {l r : SrcEff} (ihl : EffStops sp mp n l) (ihr : EffStops sp mp n r) : EffStops sp mp n (.eApply op l r) := by
@@ -546,7 +549,7 @@ theorem eff_apply (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
       simp only [SrcOp.toCore] at fails
       cases hl : le.ty <;> simp [hl, SrcType.isBool] at boolL
       cases hr : re.ty <;> simp [hr, SrcType.isBool] at boolR
-      rcases eff_split lowered ihl leOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, binary_trap_left h⟩) with
+      rcases eff_split lowered ihl leOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, binary_trap_left h, rfl⟩) with
         ⟨d, stops⟩ | ⟨k1, vl, st1, run1, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
       · exact ⟨d, .seqFirst stops⟩
       rw [hl] at holds1
@@ -559,7 +562,7 @@ theorem eff_apply (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
         have fails1 : EFails sp hp1.limit st (.binary .logicalAnd l.toCore r.toCore) := by rw [limit]; exact fails
         rcases eff_split lowered ihr reOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _)) fresh1
             hc1 (by rw [limit]; exact bound1) fails1
-            (fun j r s h => ⟨_, s, logical_trap_right (.inl ⟨rfl, rfl⟩) run1 h⟩) with
+            (fun j r s h => ⟨_, s, logical_trap_right (.inl ⟨rfl, rfl⟩) run1 h, rfl⟩) with
           ⟨d, stops⟩ | ⟨k2, vr, st2, run2, bound2, -⟩
         · exact ⟨_, Stops.after exec1 (.ifTrue (by simp [Expr.eval, x, boolBits]) (.seqFirst stops))⟩
         · exact (fails1.not_done (logical_done_right (.inl ⟨rfl, rfl⟩) run1 run2) bound2).elim
@@ -576,7 +579,7 @@ theorem eff_apply (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
         cases hl : le.ty <;> simp [hl, SrcType.isBool] at boolL
         cases hr : re.ty <;> simp [hr, SrcType.isBool] at boolR
         rcases eff_split lowered ihl leOk corr fr fresh hc within fails
-            (fun j r s h => ⟨j + 1, s, binary_trap_left h⟩) with
+            (fun j r s h => ⟨j + 1, s, binary_trap_left h, rfl⟩) with
           ⟨d, stops⟩ | ⟨k1, vl, st1, run1, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
         · exact ⟨d, .seqFirst stops⟩
         rw [hl] at holds1
@@ -589,7 +592,7 @@ theorem eff_apply (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
           have fails1 : EFails sp hp1.limit st (.binary .logicalOr l.toCore r.toCore) := by rw [limit]; exact fails
           rcases eff_split lowered ihr reOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
               fresh1 hc1 (by rw [limit]; exact bound1) fails1
-              (fun j r s h => ⟨_, s, logical_trap_right (.inr ⟨rfl, rfl⟩) run1 h⟩) with
+              (fun j r s h => ⟨_, s, logical_trap_right (.inr ⟨rfl, rfl⟩) run1 h, rfl⟩) with
             ⟨d, stops⟩ | ⟨k2, vr, st2, run2, bound2, -⟩
           · exact ⟨_, Stops.after exec1 (.ifFalse (by simp [Expr.eval, x, boolBits]) (.seqFirst stops))⟩
           · exact (fails1.not_done (logical_done_right (.inr ⟨rfl, rfl⟩) run1 run2) bound2).elim
@@ -702,7 +705,7 @@ theorem eff_index (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
   cases holdsW with
   | @slice _ len _ _ lenSlot lenSmall =>
   rcases eff_split lowered ih indexOk corr fr fresh hc within fails
-      (fun j r s h => ⟨j + 2, s, index_trap (value_after localRun0 (by omega)) h⟩) with
+      (fun j r s h => ⟨j + 2, s, index_trap (value_after localRun0 (by omega)) h, rfl⟩) with
     ⟨d, stops⟩ | ⟨k, iv, st1, run, bound, -, -, -, _, d1, env1, hp1, exec1, same1, holds1, -⟩
   · exact ⟨d, .seqFirst stops⟩
   by_cases zero : (boundsGuard b (.var slot)).eval env1 = 0
@@ -722,8 +725,7 @@ theorem eff_index (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
   · exact (fails.not_done done bound).elim
   · have := fails (k + 2)
     simp only [trapRun, Failing] at this
-    rw [undefined] at this
-    cases this
+    exact (trap_within this undefined bound).elim
 
 theorem eff_struct (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {ty : SrcType}
     {fields : List SrcEff} (each : ∀ e ∈ fields, EffStops sp mp n e) : EffStops sp mp n (.eStruct ty fields) := by
@@ -741,7 +743,7 @@ theorem eff_struct (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     simp only [Option.some.injEq] at ok
     subst ok
     rcases args_split lowered each argsOk corr fr fresh hc within fails
-        (fun j r s h => ⟨j + 1, s, struct_trap h⟩) with stops | ⟨k, vs, st1, run, bound, -⟩
+        (fun j r s h => ⟨j + 1, s, struct_trap h, rfl⟩) with stops | ⟨k, vs, st1, run, bound, -⟩
     · exact stops
     · exact (fails.not_done (struct_done run) bound).elim
   all_goals simp at ok
@@ -769,7 +771,7 @@ theorem eff_variant (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
     simp only [Option.some.injEq] at ok
     subst ok
     rcases args_split lowered each argsOk corr (fr.mono (Nat.le_succ _)) fresh hc within fails
-        (fun j r s h => ⟨j + 1, s, enum_trap h⟩) with ⟨d, stops⟩ | ⟨k, vs, st1, run, bound, -⟩
+        (fun j r s h => ⟨j + 1, s, enum_trap h, rfl⟩) with ⟨d, stops⟩ | ⟨k, vs, st1, run, bound, -⟩
     · exact ⟨d, .seqFirst stops⟩
     · exact (fails.not_done (enum_done run) bound).elim
   all_goals simp at ok
@@ -796,7 +798,7 @@ theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some 
   simp only [Option.some.injEq] at ok
   subst ok
   simp only [SrcEff.toCore] at fails
-  rcases args_split lowered each argsOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, call_trap h⟩) with
+  rcases args_split lowered each argsOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, call_trap h, rfl⟩) with
     ⟨d, stops⟩ | ⟨k, vs, st1, argsRun, bound, fresh1, keeps1, locals1, d1, env1, hp1, exec1, same1, holdsA, hc1⟩
   · exact ⟨d, .seqFirst stops⟩
   rw [tyEq] at holdsA
@@ -930,7 +932,7 @@ theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
   simp only [Option.some.injEq] at ok
   subst ok
   simp only [SrcEff.toCore] at fails
-  rcases eff_split lowered ih scrutOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, match_trap h⟩) with
+  rcases eff_split lowered ih scrutOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, match_trap h, rfl⟩) with
     ⟨d, stops⟩ | ⟨k, w, st1, scrutRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
   · exact ⟨d, .seqFirst stops⟩
   rw [SrcType.same_eq same] at holds1
@@ -1040,7 +1042,7 @@ theorem stops_letEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = 
   subst ok
   simp only [SrcStmt.toCore] at fails
   rcases eff_split lowered ihe valueOk corr fr fresh hc within fails
-      (fun j r s h => ⟨j + 1, s, by simp only [execStmt, h]⟩) with
+      (fun j r s h => ⟨j + 1, s, by simp only [execStmt, h], rfl⟩) with
     ⟨d, stops⟩ | ⟨k, v, st1, valueRun, bound1, fresh1, keeps1, locals1, sized, d1, env1, hp1, exec1, same1, holds1, hc1⟩
   · exact ⟨d, .seqFirst stops⟩
   rw [tyEq] at sized holds1
@@ -1066,7 +1068,7 @@ theorem stops_setEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = 
   subst ok
   simp only [SrcStmt.toCore] at fails
   rcases eff_split lowered ihe valueOk corr fr fresh hc within fails.expression
-      (fun j r s h => ⟨j + 2, s, local_assign_trap corr found h⟩) with
+      (fun j r s h => ⟨j + 2, s, local_assign_trap corr found h, rfl⟩) with
     ⟨d, stops⟩ | ⟨k, rv, st2, valueRun, bound, fresh2, keeps2, locals2, -⟩
   · exact ⟨d, .seqFirst stops⟩
   obtain ⟨v2, entry2, _⟩ := (corr.keeps fresh keeps2 locals2).values b (lookup_mem found).1
@@ -1113,7 +1115,7 @@ theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
   obtain ⟨old, got, _⟩ := fieldsHold.get fieldFound
   simp only [SrcStmt.toCore] at fails
   rcases eff_split lowered ihe valueOk corr fr fresh hc within fails.expression
-      (fun j r s h => ⟨j + 3, s, field_assign_trap corr found entry got h⟩) with
+      (fun j r s h => ⟨j + 3, s, field_assign_trap corr found entry got h, rfl⟩) with
     ⟨d, stops⟩ | ⟨k, rv, st2, valueRun, bound, fresh2, keeps2, locals2, -⟩
   · exact ⟨d, .seqFirst stops⟩
   have entry2 : st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.structure sid vs)⟩ := by
@@ -1146,7 +1148,7 @@ theorem stops_ifEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
   subst ok
   simp only [SrcStmt.toCore] at fails
   rcases eff_split lowered ihe condOk corr fr fresh hc within fails
-      (fun j r s h => ⟨j + 1, s, by simp only [execStmt, h]⟩) with
+      (fun j r s h => ⟨j + 1, s, by simp only [execStmt, h], rfl⟩) with
     ⟨d, stops⟩ | ⟨k, v, st1, condRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
   · exact ⟨d, .seqFirst stops⟩
   rw [tyEq] at holds1
@@ -1200,7 +1202,7 @@ theorem loop_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
           have limit := exec1.limit_normal
           have fails2 := fails.whileNext condRun run1
           rcases eff_split lowered ihc condOk corr2 fr fresh2 hc2 (by rw [limit]; exact bound1)
-              (by rw [limit]; exact fails2) (fun i r s h => ⟨i + 1, s, by simp only [execStmt, h]⟩) with
+              (by rw [limit]; exact fails2) (fun i r s h => ⟨i + 1, s, by simp only [execStmt, h], rfl⟩) with
             ⟨d, stops⟩ | ⟨k2, w, st3, condRun2, bound3, fresh3, keeps3, locals3, _, d3, env3, hp3, exec3, same3,
               holds3, hc3⟩
           · exact ⟨_, .loopBody condTrue (Stops.after exec1 (stops.mono le))⟩
@@ -1241,7 +1243,7 @@ theorem stops_whileEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs 
   subst ok
   simp only [SrcStmt.toCore] at fails
   rcases eff_split lowered ihe condOk corr fr fresh hc within fails
-      (fun j r s h => ⟨j + 1, s, by simp only [execStmt, h]⟩) with
+      (fun j r s h => ⟨j + 1, s, by simp only [execStmt, h], rfl⟩) with
     ⟨d, stops⟩ | ⟨k, w, st1, condRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
   · exact ⟨d, .seqFirst stops⟩
   rw [tyEq] at holds1
@@ -1267,7 +1269,7 @@ theorem stops_returnEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs
   subst ok
   simp only [SrcStmt.toCore] at fails
   rcases eff_split lowered ihe valueOk corr fr fresh hc within fails
-      (fun j r s h => ⟨j + 1, s, by simp only [execStmt, h]⟩) with ⟨d, stops⟩ | ⟨k, v, st1, valueRun, bound, -⟩
+      (fun j r s h => ⟨j + 1, s, by simp only [execStmt, h], rfl⟩) with ⟨d, stops⟩ | ⟨k, v, st1, valueRun, bound, -⟩
   · exact ⟨d, .seqFirst stops⟩
   · have := fails (k + 1)
     simp only [execStmt, valueRun, Failing] at this
@@ -1300,7 +1302,7 @@ theorem stops_assert (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
   subst ok
   simp only [SrcStmt.toCore] at fails
   rcases eff_split lowered ihe condOk corr fr fresh hc within fails.expression
-      (fun j r s h => ⟨j + 1, s, intrinsic_trap h⟩) with
+      (fun j r s h => ⟨j + 1, s, intrinsic_trap h, rfl⟩) with
     ⟨d, stops⟩ | ⟨k, v, st1, condRun, bound, -, -, -, -, d1, env1, hp1, exec1, -, holds1, -⟩
   · exact ⟨d, .seqFirst stops⟩
   rw [tyEq] at holds1
@@ -1373,7 +1375,7 @@ theorem setIndex_value_done {iv : Value} {st1 : State} {pos at_ : Nat} {right : 
     (eRun : evalExpr (k + 2) P st1 e = .done right st2) :
     (∃ st', evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .done .unit st' ∧
       st'.heap.nextAddress = st2.heap.nextAddress) ∨
-    ∃ r s, evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r s ∧
+    ∃ r, evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r st2 ∧
       undefinedTrap r = true := by
   generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
   rw [evalExpr] at hout
@@ -1384,7 +1386,7 @@ theorem setIndex_value_done {iv : Value} {st1 : State} {pos at_ : Nat} {right : 
   cases stored : Semantics.writeNativeValue NativeLayout.maxDepth P st2 st2.heap element at_ right with
   | error r =>
     simp only [stored, bind, Except.bind] at hout
-    exact .inr ⟨r, _, hout.symm, writeNativeValue_undef _ _ _ _ _ _ _ views r stored⟩
+    exact .inr ⟨r, hout.symm, writeNativeValue_undef _ _ _ _ _ _ _ views r stored⟩
   | ok heap =>
     simp only [stored, bind, Except.bind, pure, Except.pure, Semantics.syncI32ViewsFromHeap, views,
       Semantics.syncI32ViewsFromHeapFrom, ite_self] at hout
@@ -1458,7 +1460,7 @@ theorem stops_setIndexEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
   have efails := fails.expression
   rcases eff_split lowered ihi indexOk corr fr fresh hc within efails
       (fun j r s h => ⟨j + 3, s, setIndex_idx_trap (placeAt j)
-        (Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j))⟩) with
+        (Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)), rfl⟩) with
     ⟨d, stops⟩ | ⟨k, iv, st1, indexRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
   · exact ⟨d, .seqFirst stops⟩
   by_cases zero : (boundsGuard b (.var next)).eval env1 = 0
@@ -1482,8 +1484,7 @@ theorem stops_setIndexEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
     have := efails (k + 3)
     rw [run] at this
     simp only [Failing] at this
-    rw [undefined] at this
-    cases this
+    exact (trap_within this undefined bound1).elim
   | ok at_ =>
     have efails1 : EFails sp hp1.limit st (.assign .set (.index (.local slice) index.toCore) value.toCore) := by
       rw [limit]; exact efails
@@ -1491,17 +1492,16 @@ theorem stops_setIndexEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
         fresh1 hc1 (by rw [limit]; exact bound1) efails1
         (fun j r s h => ⟨k + j + 3, s, setIndex_value_trap (placeAt (k + j))
           (value_after indexRun (by omega)) posOk inBounds located
-          (Semantics.evalExpr_of_le h (by intro h; cases h) (by omega))⟩) with
+          (Semantics.evalExpr_of_le h (by intro h; cases h) (by omega)), rfl⟩) with
       ⟨d, stops⟩ | ⟨j, right, st2, valueRun, bound2, fresh2, -⟩
     · exact ⟨_, Stops.after exec1 (Stops.check fun _ => .seqFirst stops)⟩
     · rcases setIndex_value_done fresh2.2 (placeAt (k + j)) (value_after indexRun (by omega)) posOk inBounds
-          located (value_after valueRun (by omega)) with ⟨st', run, keepsNext⟩ | ⟨r, s, run, undefined⟩
+          located (value_after valueRun (by omega)) with ⟨st', run, keepsNext⟩ | ⟨r, run, undefined⟩
       · exact (efails1.not_done run (by rw [keepsNext]; exact bound2)).elim
       · have := efails (k + j + 3)
         rw [run] at this
         simp only [Failing] at this
-        rw [undefined] at this
-        cases this
+        exact (trap_within this undefined (by rw [← limit]; exact bound2)).elim
 
 end Statements
 

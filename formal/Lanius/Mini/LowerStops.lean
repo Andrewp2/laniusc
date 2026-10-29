@@ -387,7 +387,7 @@ theorem EFails.assignValue {scope frame st env} (corr : Corr scope frame st env)
         .done { root := frame b.slot, projections := [], value := some v0 } st := by
       simp [Semantics.evalPlace, corr.cellId, found, entry]
     rw [evalExpr.eq_def]
-    simp only [place, Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)]⟩) none
+    simp only [place, Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)], rfl⟩) none
 
 /-- Core's `id.index = e` on a struct local of the scope completes once `e` does. -/
 theorem field_assign_progress {P : Core.Program} {scope frame st env} (corr : Corr scope frame st env)
@@ -562,27 +562,27 @@ theorem checkRange_undefined {h : Memory.Heap} {p size a : Nat} {r : Lanius.Trap
 /-- Core's raw slice constructors complete or trap undefined. -/
 theorem mapRawI32Slice_cases {st : State} {a : Nat} {n : Int} {out : Semantics.Outcome Value}
     (run : Semantics.mapRawI32Slice st a n = out) :
-    (∃ v st1, out = .done v st1) ∨ ∃ r s, out = .trapped r s ∧ undefinedTrap r = true := by
+    (∃ v st1, out = .done v st1) ∨ ∃ r, out = .trapped r st ∧ undefinedTrap r = true := by
   unfold Semantics.mapRawI32Slice at run
   split at run
-  · exact .inr ⟨_, _, run.symm, rfl⟩
+  · exact .inr ⟨_, run.symm, rfl⟩
   split at run
   · exact .inl ⟨_, _, run.symm⟩
   dsimp only at run
   split at run
   · rename_i reason bad
-    exact .inr ⟨_, _, run.symm, checkRange_undefined bad⟩
+    exact .inr ⟨_, run.symm, checkRange_undefined bad⟩
   · exact .inl ⟨_, _, run.symm⟩
 
 theorem mapRawNominalSlice_cases {P : Core.Program} {st : State} {element : Core.Ty} {a : Nat} {n : Int}
     {out : Semantics.Outcome Value} (run : Semantics.mapRawNominalSlice P st element a n = out) :
-    (∃ v st1, out = .done v st1) ∨ ∃ r s, out = .trapped r s ∧ undefinedTrap r = true := by
+    (∃ v st1, out = .done v st1) ∨ ∃ r, out = .trapped r st ∧ undefinedTrap r = true := by
   unfold Semantics.mapRawNominalSlice at run
   repeat' (first | split at run | (dsimp only at run; split at run))
   all_goals first
     | exact .inl ⟨_, _, run.symm⟩
-    | exact .inr ⟨_, _, run.symm, rfl⟩
-    | (rename_i bad; exact .inr ⟨_, _, run.symm, checkRange_undefined bad⟩)
+    | exact .inr ⟨_, run.symm, rfl⟩
+    | (rename_i bad; exact .inr ⟨_, run.symm, checkRange_undefined bad⟩)
 
 /-- Core's `slice_from_raw_parts` of evaluated operands completes or traps undefined. -/
 theorem sliceFrom_cases {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
@@ -590,7 +590,7 @@ theorem sliceFrom_cases {P : Core.Program} {k : Nat} {st : State} {element : Src
       ∃ eid variants, element = .enum eid variants) {p l : Core.Expr} {a : Nat} {n : Int}
     (pRun : evalExpr k P st p = .done (.pointer a) st) (lRun : evalExpr k P st l = .done (.signed .i32 n) st) :
     (∃ v st1, evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) ∨
-      ∃ r s, evalExpr (k + 1) P st (element.sliceFrom p l) = .trapped r s ∧ undefinedTrap r = true := by
+      ∃ r, evalExpr (k + 1) P st (element.sliceFrom p l) = .trapped r st ∧ undefinedTrap r = true := by
   rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
   · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
     exact mapRawI32Slice_cases rfl
@@ -729,7 +729,7 @@ theorem setIndex_outcome {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
     (lt : pos < length) (eRun : evalExpr (k + 2) P st e = .done right st) :
     (∃ st', evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .done .unit st' ∧
       st'.heap.nextAddress = st.heap.nextAddress) ∨
-    ∃ r s, evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r s ∧
+    ∃ r, evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r st ∧
       undefinedTrap r = true := by
   generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
   rw [evalExpr] at hout
@@ -739,14 +739,14 @@ theorem setIndex_outcome {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
   cases located : Semantics.rawSliceElementAddress? P element address pos with
   | error r =>
     simp only [located] at hout
-    exact .inr ⟨r, st, hout.symm, rawSliceElementAddress_undef P element address pos r located⟩
+    exact .inr ⟨r, hout.symm, rawSliceElementAddress_undef P element address pos r located⟩
   | ok at_ =>
     simp only [located, eRun, Semantics.evalAssignValue, Semantics.assignOpBinary?,
       Semantics.writeResolvedPlaceNative] at hout
     cases stored : Semantics.writeNativeValue NativeLayout.maxDepth P st st.heap element at_ right with
     | error r =>
       simp only [stored, bind, Except.bind] at hout
-      exact .inr ⟨r, _, hout.symm, writeNativeValue_undef _ _ _ _ _ _ _ views r stored⟩
+      exact .inr ⟨r, hout.symm, writeNativeValue_undef _ _ _ _ _ _ _ views r stored⟩
     | ok heap =>
       simp only [stored, bind, Except.bind, pure, Except.pure, Semantics.syncI32ViewsFromHeap, views,
         Semantics.syncI32ViewsFromHeapFrom, ite_self] at hout
@@ -1354,8 +1354,7 @@ theorem stops_letLoad {id : Nat} {pointer offset : SrcExpr} {body : SrcStmt} (ih
     simp only [execStmt] at this
     rw [evalExpr.eq_def] at this
     simp only [argsRun, sync_ok fresh.2, loaded, Failing] at this
-    rw [loadByte_undefined loaded] at this
-    cases this
+    exact (trap_within this (loadByte_undefined loaded) within).elim
   | ok b =>
     have valueRun : evalExpr (max fp (max fo 1 + 1) + 1 + 1) sp.toCore st (.loadByte pointer.toCore offset.toCore) =
         .done (.unsigned .u8 b.toNat) st := by
@@ -1416,8 +1415,7 @@ theorem stops_setByte {pointer offset value : SrcExpr} : SrcStops sp mp n (.setB
   cases stored : st.heap.storeByte (xp.eval env).toNat (xo.eval env).toNat (UInt8.ofNat (xv.eval env).toNat) with
   | error r =>
     simp only [stored, Failing] at this
-    rw [storeByte_undefined stored] at this
-    cases this
+    exact (trap_within this (storeByte_undefined stored) within).elim
   | ok heap' =>
     simp only [stored, syncFrom_ok (st := { st with heap := heap' }) fresh.2, Failing] at this
     rw [storeByte_next stored] at this
@@ -1457,8 +1455,7 @@ theorem stops_free {pointer size : SrcExpr} {shift : Nat} : SrcStops sp mp n (.f
   cases freed : st.heap.deallocate (xp.eval env).toNat (xs.eval env).toNat (2 ^ shift) with
   | error r =>
     simp only [freed, Failing] at this
-    rw [deallocate_undefined freed] at this
-    cases this
+    exact (trap_within this (deallocate_undefined freed) within).elim
   | ok heap' =>
     simp only [freed, Failing] at this
     rw [deallocate_next freed] at this
@@ -1505,7 +1502,7 @@ theorem stops_letSlice {id : Nat} {element : SrcType} {pointer length : SrcExpr}
   have pRun' := value_after pRun (Nat.le_max_left fp fl)
   have lRun' := value_after lRun (Nat.le_max_right fp fl)
   simp only [SrcStmt.toCore] at fails
-  rcases sliceFrom_cases kind pRun' lRun' with ⟨v, st1, valueRun⟩ | ⟨r, s, trapRun, undefined⟩
+  rcases sliceFrom_cases kind pRun' lRun' with ⟨v, st1, valueRun⟩ | ⟨r, trapRun, undefined⟩
   · obtain ⟨a, afterPointer, n, afterLength, len, heap, pointerRun, lengthRun, rfl, rfl, hcOf, lenEq, nonneg⟩ :=
       sliceFrom_inv kind valueRun
     rw [pRun'] at pointerRun
@@ -1547,8 +1544,7 @@ theorem stops_letSlice {id : Nat} {element : SrcType} {pointer length : SrcExpr}
     exact ⟨d, Stops.assignFrom [xp, xl] next stops⟩
   · have := fails (max fp fl + 1 + 1)
     simp only [execStmt, trapRun, Failing] at this
-    rw [undefined] at this
-    cases this
+    exact (trap_within this undefined within).elim
 
 
 theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr} {body : SrcStmt}
@@ -1656,8 +1652,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
     exact ⟨_, Stops.after (.loadWord (depth := 0) room) stops⟩
   · have := fails (fi + 2 + 1)
     simp only [execStmt, trapRun, Failing] at this
-    rw [undefined] at this
-    cases this
+    exact (trap_within this undefined within).elim
 
 theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
@@ -1733,8 +1728,7 @@ theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : Src
     exact ⟨d, Stops.chain ps pre stops⟩
   · have := fails (fi + 2 + 1)
     simp only [execStmt, trapRun, Failing] at this
-    rw [undefined] at this
-    cases this
+    exact (trap_within this undefined within).elim
 
 theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr} {body : SrcStmt}
     (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letIndex id ty slice index body) := by
@@ -1780,13 +1774,12 @@ theorem setIndex_fails {scope : List Binding} {frame : Nat → Nat} {st : State}
   have indexRun' := value_after indexRun (show fi ≤ max fi fv + 1 by omega)
   have valueRun' := value_after valueRun (show fv ≤ max fi fv + 2 by omega)
   simp only [SrcStmt.toCore] at fails
-  rcases setIndex_outcome fresh.2 place indexRun' posOk inBounds valueRun' with ⟨st', run, keeps⟩ | ⟨r, s, run, undefined⟩
+  rcases setIndex_outcome fresh.2 place indexRun' posOk inBounds valueRun' with ⟨st', run, keeps⟩ | ⟨r, run, undefined⟩
   · exact fails.not_done (k := max fi fv + 3 + 1) (c := .next) (st' := st') (by simp only [execStmt, run])
       (by rw [keeps]; exact within)
   · have := fails (max fi fv + 3 + 1)
     simp only [execStmt, run, Failing] at this
-    rw [undefined] at this
-    cases this
+    exact (trap_within this undefined within).elim
 
 theorem stops_setIndex {slice : Nat} {index value : SrcExpr} : SrcStops sp mp n (.setIndex slice index value) := by
   intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails

@@ -283,7 +283,8 @@ theorem selfCompiler_outcome {B : Binary} (compiled : compileSource prog = some 
     (∃ n s' results after, Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after ∧
       SelfOutput (compileText files) (filesWords files) s s') ∨
     ∃ fuel r st', Semantics.evalExpr fuel prog.toCore (selfStart (filesWords files) room)
-      (.call 0 ((selfArgs (filesWords files) room).map Core.Expr.value)) = .trapped r st' ∧ undefinedTrap r = true := by
+      (.call 0 ((selfArgs (filesWords files) room).map Core.Expr.value)) = .trapped r st' ∧ undefinedTrap r = true ∧
+      st'.heap.nextAddress ≤ limit := by
   have nonempty := filesWords_pos files
   rcases compileSource_outcome_from compiled fn_w (args_hold wordsLt roomLt) rfl start_fresh
       (start_corr nonempty small) enough s imageBase window bounded loaded apart imageHeap entry params heapAt stack with

@@ -164,7 +164,7 @@ theorem compileText_behaviour {files : List SourceFile} {binary : Binary} (h : c
         (∃ fuel v final, Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final ∧
           final.heap.nextAddress ≤ heap.limit) ∨
         ∃ fuel r st, Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .trapped r st ∧
-          undefinedTrap r = true := by
+          undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap.limit := by
   obtain ⟨sp, reading, unique, compiled⟩ := compileText_reading h
   refine ⟨sp, reading, unique, ?_⟩
   intro f func found args bits typed bitsLen heap start zero small room s imageBase window bounded loaded apart

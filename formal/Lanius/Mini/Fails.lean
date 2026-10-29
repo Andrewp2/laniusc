@@ -42,12 +42,19 @@ def undefinedTrap : Lanius.Trap → Bool
   | .typeMismatch => true
 
 /-- A Core result that is not a completion within `limit` or an undefined
-trap. -/
+trap within `limit`. -/
 def Failing {α : Type} (limit : Nat) : Semantics.Outcome α → Prop
   | .done _ st => limit < st.heap.nextAddress
-  | .trapped reason _ => undefinedTrap reason = false
+  | .trapped reason st => undefinedTrap reason = false ∨ limit < st.heap.nextAddress
   | .exited _ _ => True
   | .outOfFuel => True
+
+/-- A failing trap within the limit is not an undefined one. -/
+theorem trap_within {r : Lanius.Trap} {a limit : Nat} (h : undefinedTrap r = false ∨ limit < a)
+    (u : undefinedTrap r = true) (w : a ≤ limit) : False := by
+  rcases h with h | h
+  · rw [u] at h; cases h
+  · omega
 
 /-- Some fuel completes the run with the heap within `limit`. -/
 def Completes {α : Type} (limit : Nat) (run : Nat → Semantics.Outcome α) : Prop :=
@@ -67,7 +74,8 @@ theorem failing_outOfFuel {α : Type} {limit : Nat} : Failing limit (Semantics.O
 its traps are the whole run's. -/
 theorem failing_of_not_completes {α β : Type} {limit : Nat} {sub : Nat → Semantics.Outcome α} {whole : Nat → Semantics.Outcome β}
     (fails : ∀ j, Failing limit (whole j))
-    (propagate : ∀ j reason st, sub j = .trapped reason st → ∃ j' st', whole j' = .trapped reason st')
+    (propagate : ∀ j reason st, sub j = .trapped reason st →
+      ∃ j' st', whole j' = .trapped reason st' ∧ st'.heap.nextAddress = st.heap.nextAddress)
     (none : ¬Completes limit sub) : ∀ j, Failing limit (sub j) := by
   intro j
   cases h : sub j with
@@ -75,9 +83,11 @@ theorem failing_of_not_completes {α β : Type} {limit : Nat} {sub : Nat → Sem
     show limit < s.heap.nextAddress
     exact Nat.lt_of_not_le fun le => none ⟨j, v, s, h, le⟩
   | trapped reason s =>
-    obtain ⟨j', s', w⟩ := propagate j reason s h
+    obtain ⟨j', s', w, same⟩ := propagate j reason s h
     have := fails j'
     rw [w] at this
+    show undefinedTrap reason = false ∨ limit < s.heap.nextAddress
+    rw [← same]
     exact this
   | exited => trivial
   | outOfFuel => trivial
@@ -189,7 +199,7 @@ theorem Fails.expression {e : Core.Expr} (fails : Fails sp L st (.expression e))
 
 theorem Fails.seqFirst {a b : Core.Stmt} (fails : Fails sp L st (.sequence a b))
     (none : ¬Completes L fun k => execStmt k sp.toCore st a) : Fails sp L st a :=
-  failing_of_not_completes fails (fun j reason s h => ⟨j + 1, s, by simp only [execStmt, h]⟩) none
+  failing_of_not_completes fails (fun j reason s h => ⟨j + 1, s, by simp only [execStmt, h], rfl⟩) none
 
 theorem Fails.seqSecond {a b : Core.Stmt} (fails : Fails sp L st (.sequence a b)) {k : Nat} {st1 : State}
     (run : execStmt k sp.toCore st a = .done .next st1) : Fails sp L st1 b :=
@@ -201,7 +211,7 @@ theorem Fails.seqSecond {a b : Core.Stmt} (fails : Fails sp L st (.sequence a b)
 theorem Fails.letInit {id : Nat} {ty : Core.Ty} {init : Core.Expr} {body : Core.Stmt}
     (fails : Fails sp L st (.letLocal id ty init body))
     (none : ¬Completes L fun k => evalExpr k sp.toCore st init) : EFails sp L st init :=
-  failing_of_not_completes fails (fun j reason s h => ⟨j + 1, s, by simp only [execStmt, h]⟩) none
+  failing_of_not_completes fails (fun j reason s h => ⟨j + 1, s, by simp only [execStmt, h], rfl⟩) none
 
 theorem Fails.letBody {id : Nat} {ty : Core.Ty} {init : Core.Expr} {body : Core.Stmt}
     (fails : Fails sp L st (.letLocal id ty init body)) {k : Nat} {v : Core.Value} {st1 : State}
@@ -213,7 +223,7 @@ theorem Fails.letBody {id : Nat} {ty : Core.Ty} {init : Core.Expr} {body : Core.
 
 theorem Fails.ifCond {c : Core.Expr} {a b : Core.Stmt} (fails : Fails sp L st (.ifThenElse c a b))
     (none : ¬Completes L fun k => evalExpr k sp.toCore st c) : EFails sp L st c :=
-  failing_of_not_completes fails (fun j reason s h => ⟨j + 1, s, by simp only [execStmt, h]⟩) none
+  failing_of_not_completes fails (fun j reason s h => ⟨j + 1, s, by simp only [execStmt, h], rfl⟩) none
 
 theorem Fails.ifBranch {c : Core.Expr} {a b : Core.Stmt} (fails : Fails sp L st (.ifThenElse c a b))
     {k : Nat} {x : Bool} {st1 : State} (run : evalExpr k sp.toCore st c = .done (.boolean x) st1) :
@@ -224,14 +234,14 @@ theorem Fails.ifBranch {c : Core.Expr} {a b : Core.Stmt} (fails : Fails sp L st 
 
 theorem Fails.whileCond {c : Core.Expr} {body : Core.Stmt} (fails : Fails sp L st (.whileLoop c body))
     (none : ¬Completes L fun k => evalExpr k sp.toCore st c) : EFails sp L st c :=
-  failing_of_not_completes fails (fun j reason s h => ⟨j + 1, s, by simp only [execStmt, h]⟩) none
+  failing_of_not_completes fails (fun j reason s h => ⟨j + 1, s, by simp only [execStmt, h], rfl⟩) none
 
 theorem Fails.whileBody {c : Core.Expr} {body : Core.Stmt} (fails : Fails sp L st (.whileLoop c body))
     {k : Nat} {st1 : State} (run : evalExpr k sp.toCore st c = .done (.boolean true) st1)
     (none : ¬Completes L fun k => execStmt k sp.toCore st1 body) : Fails sp L st1 body :=
   failing_of_not_completes fails (fun j reason s h => ⟨max k j + 1, s, by
     simp only [execStmt, value_after run (Nat.le_max_left k j),
-      Semantics.execStmt_of_le h (by intro h; cases h) (Nat.le_max_right k j)]⟩) none
+      Semantics.execStmt_of_le h (by intro h; cases h) (Nat.le_max_right k j)], rfl⟩) none
 
 theorem Fails.whileNext {c : Core.Expr} {body : Core.Stmt} (fails : Fails sp L st (.whileLoop c body))
     {k : Nat} {st1 : State} (run : evalExpr k sp.toCore st c = .done (.boolean true) st1)
