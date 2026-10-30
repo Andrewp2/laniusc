@@ -9,10 +9,9 @@ on but do not prove:
   slots that represent `v`.
 - `Lanius.Mini.compileText_correct` (`Lanius/Mini/TextCorrect.lean`, V5).
   The same from source text: if `compileText files = some binary`, the
-  files' texts have a reading `sp` (`TextReading`, the inductive relation of
-  section 4), the one program the front end builds from the text alone
-  (`TextBuilt`), and `compileSource_correct`'s conclusion holds of `sp` and
-  `binary`.
+  files' texts have exactly one reading `sp` (`TextReading`, the inductive
+  relation of section 4; unique by `textReading_unique`), and
+  `compileSource_correct`'s conclusion holds of `sp` and `binary`.
   `compileText_behaviour` is its counterpart for runs that stop.
 - `Lanius.Mini.process_exits` and `process_behaviour`
   (`Lanius/Mini/Process.lean`, V6), with `textProcess_exits` and
@@ -246,10 +245,9 @@ still a parse tree of the same tokens. Trusted:
   vocabulary. `buildFiles_sound` (standard axioms) proves that what `build`
   returns is a reading, so `build`'s code is no longer the specification.
   The builder's choices are ones the relation states exactly
-  (SEMANTIC_DECISIONS.md, "The reading is one reading"); until F1 proves
-  the relation deterministic, the program the theorems are about is the
-  one the front end builds, which depends on the text alone (`TextBuilt`,
-  `textBuilt_unique`). The reading
+  (SEMANTIC_DECISIONS.md, "The reading is one reading"), and the relation
+  is deterministic (`reading_unique`, F1, `Mini/Reading/Det/`), so a text
+  has at most one reading and the theorems are about it alone. The reading
   makes these choices:
   - each file is a module, named by its `module` item (the empty path
     without one); `m::x` names `x` of the module `m`, a bare `x` names `x`

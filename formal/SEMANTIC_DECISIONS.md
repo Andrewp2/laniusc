@@ -569,6 +569,15 @@ one the relation can state exactly:
 - The pure and effectful expression readings agree: a node read as the
   pure expression `e` reads effectfully only as `XPure e` (`pure_agree`,
   `Reading/Det/Agree`).
+- The relation's rules exclude each other where the builder tests in order:
+  an assignment is a call statement only when its tail is empty, as the
+  builder tries a compound assignment first; `InstBound.relit` only when no
+  argument binds the type parameters.
+
+With these, `reading_unique` (`Reading/Det/Program`) proves that a list of
+parse trees has at most one reading. It needs each enum's variant names to
+be distinct, which `WellNamed` states per module, and every type to be
+declared in one of the files' modules (`collected_home`).
 
 ## The reading of a closed program, and which reading the theorems mean (decided 10-29)
 
@@ -583,8 +592,7 @@ expected-type helpers (`intAt`, `wideAt`, `negWideAt`, `operandWant`,
 (`wideLeftFuncs`) are small total functions with no fuel or search, so the
 relation uses them as vocabulary rather than restating them.
 
-Until F1 proves the relation deterministic, `compileText_correct` and the
-process theorems say that the program is a reading (`TextReading`, on
-`Reading.Reading`) and that it is the one the front end builds, which
-depends on the text alone (`TextBuilt`, unique by V4). That `build` finds a
-reading whenever there is one is a later step.
+The relation is deterministic (`reading_unique`, F1): `compileText_correct`
+and the process theorems say that the program is the texts' one reading
+(`TextReading`, on `Reading.Reading`, unique by `textReading_unique`). That
+`build` finds a reading whenever there is one is a later step.
