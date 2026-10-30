@@ -17,6 +17,10 @@ lean_lib LaniusMini where
 lean_exe runAll where
   root := `Lanius.Tools.RunAll
 
+/-- The extractor in Lanius, run on a file and laniusc's tree of it. -/
+lean_exe extract where
+  root := `Lanius.Tools.Extract
+
 /-- The front end's program of some files, for the extraction certificates. -/
 lean_exe srcDump where
   root := `Lanius.Tools.SrcDump

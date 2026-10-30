@@ -53,16 +53,19 @@ as that function. A function marked
 `// extract: inline` is not emitted: each call becomes `let` bindings of its
 arguments followed by its body (calls to it must not be recursive).
 Functions and impl blocks between `// extract: mutual begin` and `end` are one
-Lean `mutual` block, for recursion through a type nested in a List. A type
+Lean `mutual` block, for recursion through a type nested in a List. After
+`// extract: mutual begin fuel` every member gets `termination_by fuel`: each
+takes fuel and every call in the block passes less. A type
 nested in itself that way, and every type containing one, derives only Repr,
 since Lean cannot derive DecidableEq for it.
 
 A second program can use the types of the first: items between
 `// extract: external begin MODULE from PATH` and `// extract: external end`
-are copies of types and list operations of the Lanius file PATH (relative to
-the repository root), whose extraction is the Lean module MODULE. Each must be
-the item of the same name in PATH, with the same fields, constructors or
-signature. They are not emitted, and the output imports MODULE.
+are copies of types and functions of the Lanius file PATH (relative to the
+repository root), whose extraction is the Lean module MODULE. Each must be the
+item of the same name in PATH, with the same fields, constructors or
+signature. They are not emitted, and the output imports MODULE (the parts
+defining the functions it calls).
 """
 
 import os
@@ -109,8 +112,10 @@ SPEC_FNS = {
                'by induction items generalizing index <;> cases index <;> simp_all [Lists.getOr]'),
 }
 
-LEAN_KEYWORDS = set('''at by do else end fun from have if import in instance let match namespace open
-show then theorem universe variable where with deriving structure inductive def section'''.split())
+LEAN_KEYWORDS = set('''at by do else end fun from have if import in instance let match namespace open show then theorem
+universe variable where with deriving structure inductive def section matches public private
+protected mutual partial unsafe noncomputable abbrev example axiom opaque macro syntax notation calc
+suffices obtain nomatch nofun infix infixl infixr postfix'''.split())
 
 
 class ExtractError(Exception):
@@ -330,10 +335,11 @@ class Parser:
                     prelude = None
                 elif t.text == 'inline':
                     inline = True
-                elif t.text in ('mutual begin', 'mutual end'):
+                elif t.text in ('mutual begin', 'mutual begin fuel', 'mutual end'):
                     if prelude is not None:
                         fail('mutual blocks are not allowed in the prelude', t)
-                    items.append(('item', {'kind': 'mutual', 'begin': t.text == 'mutual begin', 'doc': []}))
+                    items.append(('item', {'kind': 'mutual', 'begin': t.text != 'mutual end',
+                                           'fuel': t.text == 'mutual begin fuel', 'doc': []}))
                 else:
                     fail(f'unknown marker {t.text!r}', t)
                 continue
@@ -980,8 +986,8 @@ class Extractor:
                 fail(f'external source {source["path"]}: {error}')
             source['items'] = {i['name']: i for k, i in Parser(lex(text)).items()
                                if k == 'item' and i['kind'] in ('struct', 'enum', 'fn')}
-        if item['kind'] == 'fn' and item['name'] not in SPEC_FNS:
-            fail(f'{item["name"]}: only types and list operations can be external')
+        if item['kind'] == 'fn' and item['inline']:
+            fail(f'{item["name"]}: inline functions cannot be external')
         if item['kind'] == 'impl':
             fail(f'{item["name"]}: impl blocks cannot be external')
         theirs = source['items'].get(item['name'])
@@ -1013,8 +1019,13 @@ class Extractor:
         for item in self.order:
             if item['kind'] == 'mutual':
                 if item['begin']:
-                    current = {'texts': ['mutual\n'], 'names': []}
+                    current = {'texts': ['mutual\n'], 'names': [], 'fuel': item['fuel']}
                 else:
+                    if current['fuel']:
+                        # Every member takes fuel and every call spends it:
+                        # say so, sparing Lean the search for a measure.
+                        current['texts'] = [current['texts'][0]] + \
+                            [t + 'termination_by fuel\n' for t in current['texts'][1:]]
                     current['texts'].append('end\n')
                     units.append(current)
                     current = None

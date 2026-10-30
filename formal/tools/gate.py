@@ -68,6 +68,8 @@ STEPS = [
     ('machine-tls', ['fn_difftest.py', '{w}', '--per-fn', '30', '--seed', '{s}', '--source',
                      'extended/ext/openssl_tls_lifecycle.lani', '--lean-module', 'Lanius.Machines.TlsLifecycle'],
      ['lean', 'extended', 'laniusc', 'stdlib'], True),
+    # F2: the extractor in Lanius, run on laniusc's trees, writes the checked-in extraction.
+    ('extract', ['extract_check.py', '{w}'], ['extract', 'lani', 'laniusc', 'stdlib'], True),
     # The full tier: larger counts and the rest.
     ('mini-200', ['mini_difftest.py', '{w}', '--count', '200', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], False),
     ('oracle-300', ['oracle_difftest.py', '{w}', '--count', '300', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'],
@@ -99,6 +101,8 @@ def inputs():
     return {
         'lean': lean,
         'run_all': run_cache.file_digest(run_all),
+        'extract': run_cache.file_digest(os.path.join(run_cache.FORMAL, '.lake/build/bin/extract'))
+        + run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius')),
         'lani': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'lani')),
         'tools': run_cache.tree_digest(os.path.join(ROOT, T)),
         'laniusc': run_cache.file_digest(LANIUSC),
@@ -112,7 +116,7 @@ def build():
     """Build what the tests run (a no-op when it is current)."""
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                          'lake', 'build', 'runAll', 'Lanius.Mini.FrontLex',
+                          'lake', 'build', 'runAll', 'extract', 'Lanius.Mini.FrontLex',
                           'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                           'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'], cwd=run_cache.FORMAL, env=env,
                          capture_output=True, text=True)
