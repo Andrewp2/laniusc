@@ -11,7 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
-public import Lanius.Faithful.Gen.SelfStmtF_buildFiles
+public import Lanius.Faithful.Gen.SelfStmtF_buildMono
 public import Lanius.Faithful.Gen.SelfStmtF_compoundOf
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
@@ -68,10 +68,10 @@ theorem step_binder_of {prog : SrcProgram} {prims : Prims} {ix_binder_of ix_minu
   simp only [src_binder_of] at h
   faithful [Lanius.Mini.Inline.binderOf]
 
-theorem step_find_method_at {prog : SrcProgram} {prims : Prims} {ix_find_method_at ix_plus ix_same_text ix_find_method ix_impl_binds ix_unique_found ix_no_method : Nat} (fn : prog.funcs[ix_find_method_at]? = some (src_find_method_at ix_plus ix_same_text ix_find_method ix_impl_binds ix_unique_found ix_no_method)) (np : prims.isPrim ix_find_method_at = false)
+theorem step_find_method_at {prog : SrcProgram} {prims : Prims} {ix_find_method_at ix_plus ix_same_text ix_find_method ix_impl_fit ix_unique_found ix_no_method : Nat} (fn : prog.funcs[ix_find_method_at]? = some (src_find_method_at ix_plus ix_same_text ix_find_method ix_impl_fit ix_unique_found ix_no_method)) (np : prims.isPrim ix_find_method_at = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
-    (ext_impl_binds : Certified (∀ {n : Nat}, Stmt_impl_binds prog prims ix_impl_binds n))
+    (ext_impl_fit : Certified (∀ {n : Nat}, Stmt_impl_fit prog prims ix_impl_fit n))
     (ext_unique_found : Certified (∀ {n : Nat}, Stmt_unique_found prog prims ix_unique_found n))
     (ext_no_method : Certified (∀ {n : Nat}, Stmt_no_method prog prims ix_no_method n)) {n : Nat}
     (ih_find_method : Certified (Stmt_find_method prog prims ix_find_method n)) :

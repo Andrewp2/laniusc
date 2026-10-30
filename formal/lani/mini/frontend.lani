@@ -2987,9 +2987,73 @@ pub fn const_ref(fuel: usize, env: FrontEnv, segments: core::option::Option<List
     };
 }
 
+pub fn wide_inner(t: SrcType, x: SrcExpr) -> core::option::Option<u64> {
+    if (unit_ty(t)) {
+        return match (x) {
+            Int(k) -> None,
+            Boolean(b) -> None,
+            Unsigned(u, k) -> Some(k),
+            Local(id) -> None,
+            Field(id, j) -> None,
+            Negate(y) -> None,
+            Not(y) -> None,
+            Apply(op, a, b) -> None,
+            Cast(s, y) -> None,
+            Null -> None,
+        };
+    }
+    return None;
+}
+
+// The literal a wide marker holds, if e is one.
+pub fn wide_value(e: SrcExpr) -> core::option::Option<u64> {
+    return match (e) {
+        Int(k) -> None,
+        Boolean(b) -> None,
+        Unsigned(u, k) -> None,
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(x) -> None,
+        Not(x) -> None,
+        Apply(op, a, b) -> None,
+        Cast(t, x) -> wide_inner(t, unbox(x)),
+        Null -> None,
+    };
+}
+
+pub fn has_wide(v: core::option::Option<u64>) -> bool {
+    return match (v) {
+        None -> false,
+        Some(n) -> true,
+    };
+}
+
+// Whether e is a wide literal (wide_value) or the negation of one.
+pub fn wide_read(e: SrcExpr) -> bool {
+    return match (e) {
+        Int(k) -> false,
+        Boolean(b) -> false,
+        Unsigned(u, k) -> false,
+        Local(id) -> false,
+        Field(id, j) -> false,
+        Negate(x) -> has_wide(wide_value(unbox(x))),
+        Not(x) -> false,
+        Apply(op, a, b) -> false,
+        Cast(t, x) -> has_wide(wide_inner(t, unbox(x))),
+        Null -> false,
+    };
+}
+
+pub fn wide_read_of(v: core::option::Option<SrcExpr>) -> bool {
+    return match (v) {
+        None -> false,
+        Some(x) -> wide_read(x),
+    };
+}
+
 // A constant's value, read in its own module: a literal of its type. A
-// value whose tokens are an integer literal n, or `-` and n, with n of 2^31
-// or more is the declared type's literal of that value: Int for i32 (only
+// value that reads as a wide literal n, or `-` and n (n of 2^31 or more),
+// is the declared type's literal of its tokens' value: Int for i32 (only
 // -2^31), Unsigned up to the type's largest value, and for isize the cast of
 // the u64 literal holding its two's complement bits.
 pub fn const_value(fuel: usize, decls: Decls, k: ConstDecl) -> core::option::Option<SrcExpr> {
@@ -2997,10 +3061,11 @@ pub fn const_value(fuel: usize, decls: Decls, k: ConstDecl) -> core::option::Opt
         return None;
     }
     let cenv: FrontEnv = decl_env(decls, k.home, empty(), empty());
-    return match (literal_as(ty_of(minus(fuel, 1), cenv, k.ty), expr_of(minus(fuel, 1), cenv, empty(), k.value))) {
-        Some(x) -> Some(x),
-        None -> wide_const(ty_of(minus(fuel, 1), cenv, k.ty), tree_tokens(k.value)),
-    };
+    let v: core::option::Option<SrcExpr> = expr_of(minus(fuel, 1), cenv, empty(), k.value);
+    if (wide_read_of(v)) {
+        return wide_const(ty_of(minus(fuel, 1), cenv, k.ty), tree_tokens(k.value));
+    }
+    return literal_as(ty_of(minus(fuel, 1), cenv, k.ty), v);
 }
 
 // assign -> orexpr assign_end, as a value.
@@ -3539,6 +3604,135 @@ pub fn explicit_inst(fuel: usize, env: FrontEnv, d: usize, fd: FnDecl, targs: Li
     };
 }
 
+// Whether a type expression matches an actual type, as match_ty decides
+// it, with a mismatch told apart from running out of fuel: a method's impl
+// is passed over only when its type does not match.
+pub enum Fit {
+    Fits(List<Bind>),
+    Misfit,
+    Spent,
+}
+
+pub fn fit_of(b: core::option::Option<List<Bind>>) -> Fit {
+    return match (b) {
+        None -> Misfit,
+        Some(x) -> Fits(x),
+    };
+}
+
+pub fn fit_if(ok: bool, binds: List<Bind>) -> Fit {
+    if (ok) {
+        return Fits(binds);
+    }
+    return Misfit;
+}
+
+// extract: mutual begin
+pub fn fit_ty(fuel: usize, env: FrontEnv, names: List<List<usize>>, pattern: CTree, actual: Ty, binds: List<Bind>) -> Fit {
+    if (fuel == 0) {
+        return Spent;
+    }
+    let f: usize = minus(fuel, 1);
+    let path: CTree = kid(pattern, 0);
+    if (node_prod(pattern) == p_type_array() && node_prod(kid(pattern, 2)) == p_type_slice_tail()) {
+        return match (slice_elem(actual)) {
+            None -> Misfit,
+            Some(a) -> fit_ty(f, env, names, kid(pattern, 1), a, binds),
+        };
+    }
+    if (node_prod(pattern) == p_type_ident()) {
+        return fit_path(f, env, names, type_path_spellings(f, kid(path, 0), kid(path, 1)), list_items(f, kid(pattern, 1)), actual, binds);
+    }
+    return Misfit;
+}
+
+pub fn fit_path(fuel: usize, env: FrontEnv, names: List<List<usize>>, segments: core::option::Option<List<List<usize>>>, items: core::option::Option<List<CTree>>, actual: Ty, binds: List<Bind>) -> Fit {
+    if (fuel == 0) {
+        return Spent;
+    }
+    return match (segments) {
+        None -> Spent,
+        Some(ss) -> match (items) {
+            None -> Spent,
+            Some(gs) -> fit_named(minus(fuel, 1), env, names, ss, gs, actual, binds),
+        },
+    };
+}
+
+pub fn fit_named(fuel: usize, env: FrontEnv, names: List<List<usize>>, segments: List<List<usize>>, items: List<CTree>, actual: Ty, binds: List<Bind>) -> Fit {
+    if (fuel == 0) {
+        return Spent;
+    }
+    return match (param_spelling(names, segments, items)) {
+        Some(n) -> fit_of(bind_ty(binds, n, actual)),
+        None -> match (bare_prim(segments, items)) {
+            Some(t) -> fit_if(same_ty(t, actual), binds),
+            None -> fit_decl(minus(fuel, 1), env, names, type_decl_at(env, segments), items, named_parts(actual), binds),
+        },
+    };
+}
+
+pub fn fit_decl(fuel: usize, env: FrontEnv, names: List<List<usize>>, d: core::option::Option<usize>, items: List<CTree>, actual: core::option::Option<Inst>, binds: List<Bind>) -> Fit {
+    if (fuel == 0) {
+        return Spent;
+    }
+    return match (d) {
+        None -> Misfit,
+        Some(x) -> match (actual) {
+            None -> Misfit,
+            Some(a) -> fit_same_decl(minus(fuel, 1), env, names, x == a.decl, items, a.args, binds),
+        },
+    };
+}
+
+pub fn fit_same_decl(fuel: usize, env: FrontEnv, names: List<List<usize>>, same: bool, items: List<CTree>, args: List<Ty>, binds: List<Bind>) -> Fit {
+    if (fuel == 0) {
+        return Spent;
+    }
+    if (same) {
+        return fit_args(minus(fuel, 1), env, names, items, args, binds);
+    }
+    return Misfit;
+}
+
+pub fn fit_args(fuel: usize, env: FrontEnv, names: List<List<usize>>, items: List<CTree>, actuals: List<Ty>, binds: List<Bind>) -> Fit {
+    if (fuel == 0) {
+        return Spent;
+    }
+    return match (items) {
+        Nil -> match (actuals) {
+            Nil -> Fits(binds),
+            Cons(a, more) -> Misfit,
+        },
+        Cons(g, rest) -> match (actuals) {
+            Nil -> Misfit,
+            Cons(a, more) -> fit_args_next(minus(fuel, 1), env, names, unbox(rest), unbox(more), fit_arg(minus(fuel, 1), env, names, g, a, binds)),
+        },
+    };
+}
+
+pub fn fit_arg(fuel: usize, env: FrontEnv, names: List<List<usize>>, g: CTree, actual: Ty, binds: List<Bind>) -> Fit {
+    if (fuel == 0) {
+        return Spent;
+    }
+    if (node_prod(g) == p_generic_argument_type()) {
+        return fit_ty(minus(fuel, 1), env, names, kid(g, 0), actual, binds);
+    }
+    return Misfit;
+}
+
+pub fn fit_args_next(fuel: usize, env: FrontEnv, names: List<List<usize>>, items: List<CTree>, actuals: List<Ty>, got: Fit) -> Fit {
+    if (fuel == 0) {
+        return Spent;
+    }
+    return match (got) {
+        Fits(b) -> fit_args(minus(fuel, 1), env, names, items, actuals, b),
+        Misfit -> Misfit,
+        Spent -> Spent,
+    };
+}
+// extract: mutual end
+
 // A method found for a type: its function and the impl's inferred
 // parameters.
 pub struct Found {
@@ -3546,25 +3740,27 @@ pub struct Found {
     binds: List<Bind>,
 }
 
-pub fn impl_binds(fuel: usize, decls: Decls, fd: FnDecl, s: Ty) -> core::option::Option<List<Bind>> {
+pub fn impl_fit(fuel: usize, decls: Decls, fd: FnDecl, s: Ty) -> Fit {
     if (fd.in_impl) {
-        return match_ty(fuel, callee_env(decls, fd), fd.impl_params, fd.self_type, s, empty());
+        return fit_ty(fuel, callee_env(decls, fd), fd.impl_params, fd.self_type, s, empty());
     }
-    return None;
+    return Misfit;
 }
 
-pub fn is_some_binds(b: core::option::Option<List<Bind>>) -> bool {
-    return match (b) {
-        None -> false,
-        Some(x) -> true,
+pub fn is_misfit(f: Fit) -> bool {
+    return match (f) {
+        Fits(b) -> false,
+        Misfit -> true,
+        Spent -> false,
     };
 }
 
-// No method spelled name has an impl whose type matches s.
+// No method spelled name has an impl whose type matches s, and no match
+// ran out of fuel.
 pub fn no_method(fuel: usize, decls: Decls, fns: List<FnDecl>, name: List<usize>, s: Ty) -> bool {
     return match (fns) {
         Nil -> true,
-        Cons(fd, rest) -> !(same_text(fd.name, name) && is_some_binds(impl_binds(fuel, decls, fd, s))) && no_method(fuel, decls, unbox(rest), name, s),
+        Cons(fd, rest) -> (!same_text(fd.name, name) || is_misfit(impl_fit(fuel, decls, fd, s))) && no_method(fuel, decls, unbox(rest), name, s),
     };
 }
 
@@ -3586,9 +3782,10 @@ pub fn find_method(fuel: usize, decls: Decls, fns: List<FnDecl>, k: usize, name:
 // extract: inline
 fn find_method_at(mfuel: usize, mdecls: Decls, mfd: FnDecl, mrest: List<FnDecl>, mk: usize, mname: List<usize>, ms: Ty) -> core::option::Option<Found> {
     if (same_text(mfd.name, mname)) {
-        return match (impl_binds(mfuel, mdecls, mfd, ms)) {
-            None -> find_method(mfuel, mdecls, mrest, plus(mk, 1), mname, ms),
-            Some(b) -> unique_found(no_method(mfuel, mdecls, mrest, mname, ms), mk, b),
+        return match (impl_fit(mfuel, mdecls, mfd, ms)) {
+            Fits(b) -> unique_found(no_method(mfuel, mdecls, mrest, mname, ms), mk, b),
+            Misfit -> find_method(mfuel, mdecls, mrest, plus(mk, 1), mname, ms),
+            Spent -> None,
         };
     }
     return find_method(mfuel, mdecls, mrest, plus(mk, 1), mname, ms);
@@ -4694,6 +4891,64 @@ pub fn same_decl_args(ok: bool, args: List<Ty>) -> core::option::Option<List<Ty>
     return None;
 }
 
+// A hint the builder needs is never silently dropped: where a search that
+// must succeed does not (ok is false), the reading fails.
+pub fn has_tys(x: core::option::Option<List<Ty>>) -> bool {
+    return match (x) {
+        None -> false,
+        Some(v) -> true,
+    };
+}
+
+pub fn has_ty(x: core::option::Option<Ty>) -> bool {
+    return match (x) {
+        None -> false,
+        Some(v) -> true,
+    };
+}
+
+pub fn checked_eff(ok: bool, x: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    if (ok) {
+        return x;
+    }
+    return None;
+}
+
+pub fn checked_effs(ok: bool, x: core::option::Option<List<MEff>>) -> core::option::Option<List<MEff>> {
+    if (ok) {
+        return x;
+    }
+    return None;
+}
+
+pub fn checked_bound(ok: bool, x: core::option::Option<ArgsBound>) -> core::option::Option<ArgsBound> {
+    if (ok) {
+        return x;
+    }
+    return None;
+}
+
+pub fn checked_stmt(ok: bool, x: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    if (ok) {
+        return x;
+    }
+    return None;
+}
+
+pub fn has_local(x: core::option::Option<Local>) -> bool {
+    return match (x) {
+        None -> false,
+        Some(v) -> true,
+    };
+}
+
+pub fn has_const(x: core::option::Option<ConstDecl>) -> bool {
+    return match (x) {
+        None -> false,
+        Some(v) -> true,
+    };
+}
+
 // A struct's or enum's type arguments when they are known before its
 // fields or payload are read: none, or the expected type's.
 pub fn known_args(t: TypeDecl, d: usize, expected: core::option::Option<Ty>) -> core::option::Option<List<Ty>> {
@@ -5216,7 +5471,7 @@ pub fn eff_ident(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core:
             None -> None,
             Some(ss) -> match (split_last(ss)) {
                 None -> None,
-                Some(s) -> eff_variant(minus(fuel, 1), env, scope, expected, variant_by_path(env, s), empty()),
+                Some(s) -> checked_eff(!has_local(local_of(env, scope, c)) && !has_const(find_const(env.decls.consts, module_or(env.home, s.home), s.name)), eff_variant(minus(fuel, 1), env, scope, expected, variant_by_path(env, s), empty())),
             },
         };
     }
@@ -5243,7 +5498,9 @@ pub fn eff_literal(fuel: usize, env: FrontEnv, scope: List<Local>, expected: cor
         return None;
     }
     if (!t.is_enum && same_names(t.fields, fs)) {
-        return x_struct_of(fuel, env, scope, d, t, known_args(t, d, expected), eff_list(minus(fuel, 1), env, scope, field_expects(fuel, env.decls, d, known_args(t, d, expected)), field_values(fs)));
+        let known: core::option::Option<List<Ty>> = known_args(t, d, expected);
+        let expects: core::option::Option<List<Ty>> = field_expects(fuel, env.decls, d, known);
+        return checked_eff(!has_tys(known) || has_tys(expects), x_struct_of(fuel, env, scope, d, t, known, eff_list(minus(fuel, 1), env, scope, expects, field_values(fs))));
     }
     return None;
 }
@@ -5257,7 +5514,7 @@ pub fn eff_variant(fuel: usize, env: FrontEnv, scope: List<Local>, expected: cor
         None -> None,
         Some(x) -> match (get(env.decls.types, x.owner)) {
             None -> None,
-            Some(t) -> x_variant_of(fuel, env, scope, x.owner, t, x.index, known_args(t, x.owner, expected), eff_list(minus(fuel, 1), env, scope, variant_expects(fuel, env.decls, x.owner, x.index, known_args(t, x.owner, expected)), items)),
+            Some(t) -> checked_eff(!has_tys(known_args(t, x.owner, expected)) || has_tys(variant_expects(fuel, env.decls, x.owner, x.index, known_args(t, x.owner, expected))), x_variant_of(fuel, env, scope, x.owner, t, x.index, known_args(t, x.owner, expected), eff_list(minus(fuel, 1), env, scope, variant_expects(fuel, env.decls, x.owner, x.index, known_args(t, x.owner, expected)), items))),
         },
     };
 }
@@ -5374,7 +5631,7 @@ pub fn eff_free(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::
     }
     return match (explicit_inst(fuel, env, d, fd, targs)) {
         None -> None,
-        Some(i) -> match (eff_list(minus(fuel, 1), env, scope, param_expects(fuel, env.decls, fd, Some(i.args)), items)) {
+        Some(i) -> match (checked_effs(has_tys(param_expects(fuel, env.decls, fd, Some(i.args))), eff_list(minus(fuel, 1), env, scope, param_expects(fuel, env.decls, fd, Some(i.args)), items))) {
             None -> None,
             Some(xs) -> Some(XCall(i, boxed(xs))),
         },
@@ -5389,7 +5646,8 @@ pub fn eff_infer(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core:
     }
     let names: List<List<usize>> = concat(fd.impl_params, fd.params);
     if (no_names(names)) {
-        return eff_called(fuel, env, scope, expected, d, fd, start, pre, eff_list(minus(fuel, 1), env, scope, skip_expects(param_expects(fuel, env.decls, fd, Some(empty())), pre), items));
+        let expects: core::option::Option<List<Ty>> = param_expects(fuel, env.decls, fd, Some(empty()));
+        return checked_eff(has_tys(expects), eff_called(fuel, env, scope, expected, d, fd, start, pre, eff_list(minus(fuel, 1), env, scope, skip_expects(expects, pre), items)));
     }
     return match (param_patterns(fuel, fd)) {
         None -> None,
@@ -5418,7 +5676,7 @@ pub fn eff_args_bound(fuel: usize, env: FrontEnv, scope: List<Local>, fd: FnDecl
                 Cons(x, more) -> cons_bound(x, eff_args_bound(f, env, scope, fd, names, unbox(rest), unbox(more), items, bind_arg(f, env, scope, fd, names, p, x, b))),
                 Nil -> match (items) {
                     Nil -> None,
-                    Cons(c, more) -> eff_arg_next(f, env, scope, fd, names, p, unbox(rest), unbox(more), b, eff_of(f, env, scope, arg_expected(f, env.decls, fd, names, p, b), c)),
+                    Cons(c, more) -> checked_bound(!has_tys(bound_args(names, b)) || has_ty(arg_expected(f, env.decls, fd, names, p, b)), eff_arg_next(f, env, scope, fd, names, p, unbox(rest), unbox(more), b, eff_of(f, env, scope, arg_expected(f, env.decls, fd, names, p, b), c))),
                 },
             },
         },
@@ -5870,7 +6128,7 @@ pub fn set_field_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Loca
         None -> None,
         Some(j) -> match (expr_of(fuel, env, scope, value)) {
             Some(v) -> Some(MSetField(l.id, j, v)),
-            None -> field_eval_stmt(l.id, j, eff_of(fuel, env, scope, field_ty_at(fuel, env.decls, l.ty, j), value)),
+            None -> checked_stmt(has_ty(field_ty_at(fuel, env.decls, l.ty, j)), field_eval_stmt(l.id, j, eff_of(fuel, env, scope, field_ty_at(fuel, env.decls, l.ty, j), value))),
         },
     };
 }
@@ -6056,7 +6314,7 @@ pub fn compound_eff(p: usize, left: MEff, right: core::option::Option<MEff>) -> 
 pub fn compound_field_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, index: core::option::Option<usize>, p: usize, value: CTree) -> core::option::Option<MStmt> {
     return match (index) {
         None -> None,
-        Some(j) -> field_eval_stmt(l.id, j, compound_eff(p, XPure(Field(l.id, j)), eff_of(fuel, env, scope, field_ty_at(fuel, env.decls, l.ty, j), value))),
+        Some(j) -> checked_stmt(has_ty(field_ty_at(fuel, env.decls, l.ty, j)), field_eval_stmt(l.id, j, compound_eff(p, XPure(Field(l.id, j)), eff_of(fuel, env, scope, field_ty_at(fuel, env.decls, l.ty, j), value)))),
     };
 }
 
@@ -7378,40 +7636,6 @@ pub fn neg_wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> S
             Unit -> e,
             Isize -> neg_wide_isize(n, e),
         },
-    };
-}
-
-pub fn wide_inner(t: SrcType, x: SrcExpr) -> core::option::Option<u64> {
-    if (unit_ty(t)) {
-        return match (x) {
-            Int(k) -> None,
-            Boolean(b) -> None,
-            Unsigned(u, k) -> Some(k),
-            Local(id) -> None,
-            Field(id, j) -> None,
-            Negate(y) -> None,
-            Not(y) -> None,
-            Apply(op, a, b) -> None,
-            Cast(s, y) -> None,
-            Null -> None,
-        };
-    }
-    return None;
-}
-
-// The literal a wide marker holds, if e is one.
-pub fn wide_value(e: SrcExpr) -> core::option::Option<u64> {
-    return match (e) {
-        Int(k) -> None,
-        Boolean(b) -> None,
-        Unsigned(u, k) -> None,
-        Local(id) -> None,
-        Field(id, j) -> None,
-        Negate(x) -> None,
-        Not(x) -> None,
-        Apply(op, a, b) -> None,
-        Cast(t, x) -> wide_inner(t, unbox(x)),
-        Null -> None,
     };
 }
 

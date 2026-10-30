@@ -7,6 +7,7 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArgsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
+public import Lanius.Faithful.Gen.SelfStmtF_armsOf
 public import Lanius.Faithful.Gen.SelfStmtF_compoundTarget
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_fieldTyAt
@@ -19,6 +20,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_setIndexOrEval
 public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
+public import Lanius.Faithful.Gen.SelfStmtF_xDivideOf
 import all Lanius.Faithful.Gen.SelfSrcF_compoundTarget
 import all Lanius.Mini.Frontend.P.compoundTarget
 
@@ -53,10 +55,12 @@ theorem proof_compound_eff {prog : SrcProgram} {prims : Prims} {ix_compound_eff 
   simp only [src_compound_eff] at h
   faithful [Lanius.Mini.compoundEff]
 
-theorem proof_compound_field_eval {prog : SrcProgram} {prims : Prims} {ix_compound_field_eval ix_eff_of ix_field_eval_stmt ix_field_ty_at ix_compound_eff : Nat} (fn : prog.funcs[ix_compound_field_eval]? = some (src_compound_field_eval ix_eff_of ix_field_eval_stmt ix_field_ty_at ix_compound_eff)) (np : prims.isPrim ix_compound_field_eval = false)
+theorem proof_compound_field_eval {prog : SrcProgram} {prims : Prims} {ix_compound_field_eval ix_eff_of ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt ix_compound_eff : Nat} (fn : prog.funcs[ix_compound_field_eval]? = some (src_compound_field_eval ix_eff_of ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt ix_compound_eff)) (np : prims.isPrim ix_compound_field_eval = false)
     (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n))
-    (ext_field_eval_stmt : Certified (∀ {n : Nat}, Stmt_field_eval_stmt prog prims ix_field_eval_stmt n))
+    (ext_checked_stmt : Certified (∀ {n : Nat}, Stmt_checked_stmt prog prims ix_checked_stmt n))
+    (ext_has_ty : Certified (∀ {n : Nat}, Stmt_has_ty prog prims ix_has_ty n))
     (ext_field_ty_at : Certified (∀ {n : Nat}, Stmt_field_ty_at prog prims ix_field_ty_at n))
+    (ext_field_eval_stmt : Certified (∀ {n : Nat}, Stmt_field_eval_stmt prog prims ix_field_eval_stmt n))
     (ext_compound_eff : Certified (∀ {n : Nat}, Stmt_compound_eff prog prims ix_compound_eff n)) {n : Nat} :
     Stmt_compound_field_eval prog prims ix_compound_field_eval n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6

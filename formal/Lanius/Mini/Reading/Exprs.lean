@@ -585,12 +585,15 @@ inductive Fold : FrontEnv → List Local → SrcExpr → CTree → SrcExpr → P
       Fold env scope (.apply o acc r) (kid tail 2) e → Fold env scope acc tail e
 
 /-- A constant's value: its value expression, read in its module with no
-locals, as a literal of its declared type, or its tokens as a wide literal. -/
+locals, as a literal of its declared type; or, when that expression is a
+wide literal or its negation (`wideRead`), its tokens as a wide literal of
+the type. -/
 inductive ConstValue : Decls → ConstDecl → SrcExpr → Prop
   | literal {decls : Decls} {k : ConstDecl} {t : Ty} {v e : SrcExpr} : TyR (constScope decls k) k.ty t →
-      ExprR (constScope decls k) [] k.value v → TypedLiteral t v e → ConstValue decls k e
-  | wide {decls : Decls} {k : ConstDecl} {t : Ty} {e : SrcExpr} : TyR (constScope decls k) k.ty t →
-      WideConst t k.value.leaves e → ConstValue decls k e
+      ExprR (constScope decls k) [] k.value v → wideRead v = false → TypedLiteral t v e → ConstValue decls k e
+  | wide {decls : Decls} {k : ConstDecl} {t : Ty} {v e : SrcExpr} : TyR (constScope decls k) k.ty t →
+      ExprR (constScope decls k) [] k.value v → wideRead v = true → WideConst t k.value.leaves e →
+      ConstValue decls k e
 end
 
 /-! ## Soundness -/
@@ -764,29 +767,21 @@ theorem exprSound : ∀ fuel, ExprSound fuel
       | none =>
         rw [ht] at h
         simp only [literalAs, wideConst] at h
-        cases h
+        split at h <;> cases h
       | some t =>
         rw [ht] at h
-        simp only [literalAs] at h
         cases hv : exprOf f (declEnv decls k.home [] []) [] k.value with
-        | some v =>
-          rw [hv] at h
-          simp only at h
-          cases hl : typedLiteral t v with
-          | some x =>
-            rw [hl, Option.some.injEq] at h
-            subst h
-            exact .literal (tyOf_sound ht) (expr_ih hv) (typedLiteral_sound hl)
-          | none =>
-            rw [hl] at h
-            simp only at h
-            rw [treeTokens_eq] at h
-            exact .wide (tyOf_sound ht) (wideConst_sound h)
         | none =>
           rw [hv] at h
-          simp only at h
-          rw [treeTokens_eq] at h
-          exact .wide (tyOf_sound ht) (wideConst_sound h)
+          simp [wideReadOf, literalAs] at h
+        | some v =>
+          rw [hv] at h
+          by_cases w : wideRead v = true
+          · rw [if_pos (by simpa [wideReadOf] using w), treeTokens_eq] at h
+            exact .wide (tyOf_sound ht) (expr_ih hv) w (wideConst_sound h)
+          · rw [if_neg (by simpa [wideReadOf] using w)] at h
+            simp only [literalAs] at h
+            exact .literal (tyOf_sound ht) (expr_ih hv) (by simpa using w) (typedLiteral_sound h)
     · intro env scope c e h
       rw [assignValue.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h

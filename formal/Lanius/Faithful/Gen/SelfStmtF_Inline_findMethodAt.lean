@@ -22,7 +22,7 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_binder_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.Local} {x2 : Lanius.Mini.CTree} {x3 : Lanius.Mini.Ty} {x4 : List Lanius.Mini.CTree} {x5 : List Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepFrontEnv x0 v0 → (RepList 220 RepLocal) x1 v1 → RepCTree x2 v2 → RepTy x3 v3 → (RepList 76 RepCTree) x4 v4 → (RepList 132 RepTy) x5 v5 →
-    (RepOption 267 RepBound) (Lanius.Mini.Inline.binderOf x0 x1 x2 x3 x4 x5) w
+    (RepOption 268 RepBound) (Lanius.Mini.Inline.binderOf x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_find_method_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.FnDecl} {x4 : Nat} {x5 : List Nat} {x6 : Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 103 RepFnDecl) x3 v3 → RepNat x4 v4 → (RepList 24 RepNat) x5 v5 → RepTy x6 v6 →

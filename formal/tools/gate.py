@@ -77,8 +77,8 @@ STEPS = [
      ['lean', 'laniusc', 'stdlib'], False),
     ('frontend-generic', ['frontend_difftest.py', '{w}', '--generic', '--count', '100', '--seed', '{s}'],
      ['lean', 'laniusc', 'stdlib'], False),
-] + [(f'fn-20-{k}', ['fn_difftest.py', '{w}', '--per-fn', '20', '--seed', '{s}', '--shard', f'{k}/4'],
-      ['lean', 'lani', 'laniusc', 'stdlib'], False) for k in range(4)] + [
+] + [(f'fn-20-{k}', ['fn_difftest.py', '{w}', '--per-fn', '20', '--seed', '{s}', '--shard', f'{k}/6'],
+      ['lean', 'lani', 'laniusc', 'stdlib'], False) for k in range(6)] + [
     ('self-compile-encode-100', ['self_compile.py', '{w}', '--count', '100', '--seed', '{s}'],
      ['lean', 'run_all', 'lani', 'laniusc', 'stdlib'], False),
     ('self-compile-program-100', ['self_compile.py', '{w}', '--stage', 'program', '--count', '100', '--seed', '{s}'],

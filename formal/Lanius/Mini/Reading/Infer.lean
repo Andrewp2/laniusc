@@ -11,12 +11,8 @@ the left is a bare integer literal, whose type comes from its context).
 inferred matches the type `actual`, extending the bindings. A call's
 instance is its function at the type arguments so inferred (`InferInst`),
 or at those written (`ExplicitInst`); a method call's function is a method
-of that spelling whose impl's type matches the receiver's (`MethodFor`).
-
-Where the builder decides by a failed search under fuel, the relation
-states only the positive part: `MethodFor` says the method's impl matches,
-not that it is the first or only one that does (the builder rejects a
-call when it finds a second). -/
+of that spelling whose impl's type matches the receiver's (`MethodFor`, in
+`Reading/Method.lean`). -/
 
 namespace Lanius.Mini.Reading
 
@@ -628,48 +624,5 @@ theorem explicitInst_sound {fuel : Nat} {env : FrontEnv} {d : Nat} {fd : FnDecl}
       simp only [Bool.and_eq_true, noNames_iff, decide_eq_true_eq] at ok
       exact ⟨ts, (tySound fuel).2.2.2.2.2.1 ha, ok.1, ok.2, h.symm⟩
     · rw [if_neg ok] at h; cases h
-
-/-- The impl of method `fd` is for a type that matches `s`, binding its
-parameters. -/
-def ImplBinds (decls : Decls) (fd : FnDecl) (s : Ty) (b : List Bind) : Prop :=
-  fd.inImpl = true ∧ MatchTy (calleeScope decls fd) fd.implParams fd.selfType s [] b
-
-theorem implBinds_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {s : Ty} {b : List Bind}
-    (h : implBinds fuel decls fd s = some b) : ImplBinds decls fd s b := by
-  unfold implBinds at h
-  by_cases ii : fd.inImpl = true
-  · rw [if_pos ii] at h
-    exact ⟨ii, matchTy_sound h⟩
-  · rw [if_neg ii] at h; cases h
-
-/-- A method spelled `name` (function `found.decl`, counted from `k` in
-`fns`) whose impl's type matches `s`. -/
-def MethodFor (decls : Decls) (fns : List FnDecl) (k : Nat) (name : Name) (s : Ty) (found : Found) : Prop :=
-  ∃ i fd, fns[i]? = some fd ∧ fd.name = name ∧ ImplBinds decls fd s found.binds ∧ found.decl = k + i
-
-theorem findMethod_sound {fuel : Nat} {decls : Decls} {name : Name} {s : Ty} :
-    ∀ {fns : List FnDecl} {k : Nat} {found : Found}, findMethod fuel decls fns k name s = some found →
-      MethodFor decls fns k name s found
-  | [], _, _, h => by simp [findMethod] at h
-  | fd :: rest, k, found, h => by
-    simp only [findMethod] at h
-    have later : findMethod fuel decls rest (k + 1) name s = some found → MethodFor decls (fd :: rest) k name s found := by
-      intro hr
-      obtain ⟨i, g, gi, gn, gb, gd⟩ := findMethod_sound hr
-      exact ⟨i + 1, g, by simpa using gi, gn, gb, by omega⟩
-    by_cases e : sameText fd.name name = true
-    · rw [if_pos e] at h
-      cases hb : implBinds fuel decls fd s with
-      | none => rw [hb] at h; exact later h
-      | some b =>
-        rw [hb] at h
-        simp only [uniqueFound] at h
-        by_cases u : noMethod fuel decls rest name s = true
-        · rw [if_pos u, Option.some.injEq] at h
-          subst h
-          exact ⟨0, fd, rfl, (sameText_iff _ _).1 e, implBinds_sound hb, rfl⟩
-        · rw [if_neg u] at h; cases h
-    · rw [if_neg e] at h
-      exact later h
 
 end Lanius.Mini.Reading

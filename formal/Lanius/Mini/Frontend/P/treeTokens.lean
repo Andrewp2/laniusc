@@ -170,15 +170,66 @@ def constRef (fuel : Nat) (env : FrontEnv) (segments : Option (List (List Nat)))
         match findConst env.decls.consts (moduleOr env.home s.home) s.name with
         | none => none
         | some k => constValue (fuel - 1) env.decls k
-/-- A constant's value, read in its own module: a literal of its type. A value whose tokens are an integer literal n, or `-` and n, with n of 2^31 or more is the declared type's literal of that value: Int for i32 (only -2^31), Unsigned up to the type's largest value, and for isize the cast of the u64 literal holding its two's complement bits. -/
+def wideInner (t : SrcType) (x : SrcExpr) : Option (BitVec 64) :=
+  if unitTy t then
+    match x with
+    | .int k => none
+    | .boolean b => none
+    | .unsigned u k => some k
+    | .local id => none
+    | .field id j => none
+    | .negate y => none
+    | .not y => none
+    | .apply op a b => none
+    | .cast s y => none
+    | .null => none
+  else
+    none
+/-- The literal a wide marker holds, if e is one. -/
+def wideValue (e : SrcExpr) : Option (BitVec 64) :=
+  match e with
+  | .int k => none
+  | .boolean b => none
+  | .unsigned u k => none
+  | .local id => none
+  | .field id j => none
+  | .negate x => none
+  | .not x => none
+  | .apply op a b => none
+  | .cast t x => wideInner t x
+  | .null => none
+def hasWide (v : Option (BitVec 64)) : Bool :=
+  match v with
+  | none => false
+  | some n => true
+/-- Whether e is a wide literal (wide_value) or the negation of one. -/
+def wideRead (e : SrcExpr) : Bool :=
+  match e with
+  | .int k => false
+  | .boolean b => false
+  | .unsigned u k => false
+  | .local id => false
+  | .field id j => false
+  | .negate x => hasWide (wideValue x)
+  | .not x => false
+  | .apply op a b => false
+  | .cast t x => hasWide (wideInner t x)
+  | .null => false
+def wideReadOf (v : Option SrcExpr) : Bool :=
+  match v with
+  | none => false
+  | some x => wideRead x
+/-- A constant's value, read in its own module: a literal of its type. A value that reads as a wide literal n, or `-` and n (n of 2^31 or more), is the declared type's literal of its tokens' value: Int for i32 (only -2^31), Unsigned up to the type's largest value, and for isize the cast of the u64 literal holding its two's complement bits. -/
 def constValue (fuel : Nat) (decls : Decls) (k : ConstDecl) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
     let cenv : FrontEnv := declEnv decls k.home [] []
-    match literalAs (tyOf (fuel - 1) cenv k.ty) (exprOf (fuel - 1) cenv [] k.value) with
-    | some x => some x
-    | none => wideConst (tyOf (fuel - 1) cenv k.ty) (treeTokens k.value)
+    let v : Option SrcExpr := exprOf (fuel - 1) cenv [] k.value
+    if wideReadOf v then
+      wideConst (tyOf (fuel - 1) cenv k.ty) (treeTokens k.value)
+    else
+      literalAs (tyOf (fuel - 1) cenv k.ty) v
 /-- assign -> orexpr assign_end, as a value. -/
 def assignValue (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) : Option SrcExpr :=
   if fuel = 0 then

@@ -305,10 +305,10 @@ inductive AssignTargetR (env : FrontEnv) (scope : List Local) (target value : CT
       nodeProd (kid (kid target 1) 2) = pMemberTypeArgsNone → nodeProd (kid (kid target 1) 3) = pPostfixEnd →
       LocalOf scope (kid target 0) l → FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j →
       ExprR env scope value v → AssignTargetR env scope target value (.mSetField l.id j v)
-  | fieldEval {l : Local} {j : Nat} {E : Option Ty} {x : MEff} : nodeProd (kid target 1) = pPostfixMember →
+  | fieldEval {l : Local} {j : Nat} {t : Ty} {x : MEff} : nodeProd (kid target 1) = pPostfixMember →
       nodeProd (kid (kid target 1) 2) = pMemberTypeArgsNone → nodeProd (kid (kid target 1) 3) = pPostfixEnd →
       LocalOf scope (kid target 0) l → FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j →
-      MaybeTy (FieldTyAt env.decls l.ty j) E → EffR env scope E value x →
+      FieldTyAt env.decls l.ty j t → EffR env scope (some t) value x →
       AssignTargetR env scope target value (.mSetFieldEval l.id j x)
   | indexPure {l : Local} {i v : SrcExpr} : nodeProd (kid target 1) = pPostfixIndex →
       nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l →
@@ -352,13 +352,18 @@ theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {t
         | none =>
           rw [hv] at h
           simp only at h
-          cases he : effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value with
-          | none => rw [he] at h; cases h
-          | some x =>
-            rw [he] at h
-            simp only [fieldEvalStmt, Option.some.injEq] at h
-            subst h
-            exact .fieldEval c.1 c.2.1 c.2.2 (localOf_sound hl) (fieldIndex_sound hj) fieldTyAt_sound (effOf_sound he)
+          cases ht : fieldTyAt fuel env.decls l.ty j with
+          | none => simp [ht, checkedStmt, hasTy] at h
+          | some t =>
+            simp only [ht, checkedStmt, hasTy, ↓reduceIte] at h
+            cases he : effOf fuel env scope (some t) value with
+            | none => rw [he] at h; cases h
+            | some x =>
+              rw [he] at h
+              simp only [fieldEvalStmt, Option.some.injEq] at h
+              subst h
+              exact .fieldEval c.1 c.2.1 c.2.2 (localOf_sound hl) (fieldIndex_sound hj) (fieldTyAt_sound t ht)
+                (effOf_sound he)
   split at h
   · rename_i _ _ c
     simp only [Bool.and_eq_true, decide_eq_true_eq] at c
@@ -415,10 +420,10 @@ inductive CompoundR (env : FrontEnv) (scope : List Local) (target : CTree) (p : 
       LocalOf scope (kid target 0) l → EffR env scope (some l.ty) value x →
       compoundEff p (.xPure (.local l.id)) (some x) = some y → setEvalOf l.id (some y) = some m →
       CompoundR env scope target p value m
-  | fieldEval {l : Local} {j : Nat} {E : Option Ty} {x y : MEff} : nodeProd (kid target 1) = pPostfixMember →
+  | fieldEval {l : Local} {j : Nat} {t : Ty} {x y : MEff} : nodeProd (kid target 1) = pPostfixMember →
       nodeProd (kid (kid target 1) 2) = pMemberTypeArgsNone → nodeProd (kid (kid target 1) 3) = pPostfixEnd →
       LocalOf scope (kid target 0) l → FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j →
-      MaybeTy (FieldTyAt env.decls l.ty j) E → EffR env scope E value x →
+      FieldTyAt env.decls l.ty j t → EffR env scope (some t) value x →
       compoundEff p (.xPure (.field l.id j)) (some x) = some y →
       CompoundR env scope target p value (.mSetFieldEval l.id j y)
 
@@ -509,14 +514,19 @@ theorem compoundOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {tar
         | some j =>
           rw [hj] at h
           simp only at h
-          cases hy : compoundEff p (.xPure (.field l.id j)) (effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value) with
-          | none => rw [hy] at h; simp [fieldEvalStmt] at h
-          | some y =>
-            rw [hy] at h
-            simp only [fieldEvalStmt, Option.some.injEq] at h
-            subst h
-            obtain ⟨x, hx, hy'⟩ := compoundEff_some hy
-            exact .fieldEval c.1 c.2.1 c.2.2 (localOf_sound hl) (fieldIndex_sound hj) fieldTyAt_sound (effOf_sound hx) hy'
+          cases ht : fieldTyAt fuel env.decls l.ty j with
+          | none => simp [ht, checkedStmt, hasTy] at h
+          | some t =>
+            simp only [ht, checkedStmt, hasTy, ↓reduceIte] at h
+            cases hy : compoundEff p (.xPure (.field l.id j)) (effOf fuel env scope (some t) value) with
+            | none => rw [hy] at h; simp [fieldEvalStmt] at h
+            | some y =>
+              rw [hy] at h
+              simp only [fieldEvalStmt, Option.some.injEq] at h
+              subst h
+              obtain ⟨x, hx, hy'⟩ := compoundEff_some hy
+              exact .fieldEval c.1 c.2.1 c.2.2 (localOf_sound hl) (fieldIndex_sound hj) (fieldTyAt_sound t ht)
+                (effOf_sound hx) hy'
     cases h
 
 /-- A call statement: `dealloc(pointer, size, align)`, `assert(c)`, or a

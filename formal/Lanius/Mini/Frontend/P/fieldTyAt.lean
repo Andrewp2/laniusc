@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.armsOf
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral
@@ -37,7 +38,7 @@ def setFieldOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local
   | some j =>
     match exprOf fuel env scope value with
     | some v => some (MStmt.mSetField l.id j v)
-    | none => fieldEvalStmt l.id j (effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value)
+    | none => checkedStmt (hasTy (fieldTyAt fuel env.decls l.ty j)) (fieldEvalStmt l.id j (effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value))
 
 def assignTarget (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (value : CTree) : Option MStmt :=
   let tail : CTree := kid target 1

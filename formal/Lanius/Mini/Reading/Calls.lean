@@ -1,4 +1,4 @@
-import Lanius.Mini.Reading.Infer
+import Lanius.Mini.Reading.Method
 
 /-! # The reading, V8d: effectful expression types and calls
 

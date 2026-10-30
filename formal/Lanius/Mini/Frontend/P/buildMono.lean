@@ -2,8 +2,12 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.arithShiftRight
+import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.knownExpr
+import Lanius.Mini.Frontend.P.monoLoop
+import Lanius.Mini.Frontend.P.negWideI32
+import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.typeDecls
 
 public section
@@ -12,6 +16,23 @@ public section
 set_option linter.unusedVariables false
 
 namespace Lanius.Mini
+
+def buildMono (fuel : Nat) (decls : Decls) (seeds : List Inst) (m : Option Mono) : Option SrcProgram :=
+  match m with
+  | none => none
+  | some x => buildClosed fuel decls x.table (typeTableMore fuel decls (typeTable fuel decls seeds (seedTys seeds)) (funcsTys x.funcs)) x.funcs
+
+/-- The roots are the first file's functions without type parameters, in order; they keep their positions as ids. Every other function instance is numbered when it is first called. -/
+def buildChecked (fuel : Nat) (c : Collected) (roots : List Inst) (seeds : List Inst) : Option SrcProgram :=
+  if wellNamed c then
+    buildMono fuel c.decls seeds (monoLoop fuel fuel c.decls roots [] 0)
+  else
+    none
+
+def buildCollected (fuel : Nat) (first : FileDecls) (c : Option Collected) : Option SrcProgram :=
+  match c with
+  | none => none
+  | some x => buildChecked fuel x (rootInsts first.decls.fns 0) (seedInsts first.decls.types 0)
 
 /-- The source program of the concrete trees of several files, each a module; the first is the program's own. -/
 def buildFiles (fuel : Nat) (roots : List CTree) : Option SrcProgram :=

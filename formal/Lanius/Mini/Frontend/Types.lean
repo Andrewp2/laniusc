@@ -184,6 +184,13 @@ structure Bind where
   ty : Ty
   deriving Repr
 
+/-- Whether a type expression matches an actual type, as match_ty decides it, with a mismatch told apart from running out of fuel: a method's impl is passed over only when its type does not match. -/
+inductive Fit where
+  | fits : (List Bind) → Fit
+  | misfit : Fit
+  | spent : Fit
+  deriving Repr
+
 /-- A method found for a type: its function and the impl's inferred parameters. -/
 structure Found where
   decl : Nat

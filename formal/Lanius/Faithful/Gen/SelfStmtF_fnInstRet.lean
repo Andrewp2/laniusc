@@ -41,7 +41,7 @@ abbrev Stmt_called (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 238 RepCalled) (Lanius.Mini.called x0 x1) w
 
 abbrev Stmt_cons_eff_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.EffArm} {x1 : Option (List Lanius.Mini.EffArm)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 266 RepEffArm) x0 v0 → (RepOption 256 (RepList 257 RepEffArm)) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.EffArm} {x1 : Option (List Lanius.Mini.EffArm)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 267 RepEffArm) x0 v0 → (RepOption 256 (RepList 257 RepEffArm)) x1 v1 →
     (RepOption 256 (RepList 257 RepEffArm)) (Lanius.Mini.consEffArm x0 x1) w
 
 abbrev Stmt_cons_expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

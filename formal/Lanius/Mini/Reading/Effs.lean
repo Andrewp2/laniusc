@@ -11,9 +11,11 @@ struct literal, a match, a slice element or stride, a division, or an
 operator, cast or negation of these.
 
 An expected type the builder computes by a search under fuel (a parameter's
-type, a field's or payload's type) is a hint: where the search fails, the
-builder reads the value with no expected type, so the relation admits
-either (`MaybeTy`). As with the let heads, the pure reading is admitted for
+type, a field's or payload's type) is exact: none only where nothing is
+known to search from (`KnownTys`, `ArgHint`), and where the search fails
+otherwise the builder fails. An arm's own type is kept only when found
+(`MaybeTy`); just the first arm's is read, and only when it is found. As
+with the let heads, the pure reading is admitted for
 any node that reads as a pure expression, and a call's path is not excluded
 from the named reading by the allocation and raw-slice spellings
 (SEMANTIC_DECISIONS, "The reading states searches' positive part"). -/
@@ -29,6 +31,11 @@ def MaybeTy (P : Ty → Prop) (t : Option Ty) : Prop := ∀ x, t = some x → P 
 
 def MaybeTys (P : List Ty → Prop) (ts : Option (List Ty)) : Prop := ∀ xs, ts = some xs → P xs
 
+/-- Types a search finds from what is known: none when nothing is, else
+those `P` gives. -/
+def KnownTys (P : List Ty → List Ty → Prop) (known E : Option (List Ty)) : Prop :=
+  (known = none ∧ E = none) ∨ ∃ args ts, known = some args ∧ P args ts ∧ E = some ts
+
 /-- A function's parameter types at type arguments `args`. -/
 def ParamExpects (decls : Decls) (fd : FnDecl) (args : List Ty) (ts : List Ty) : Prop :=
   ∃ ps, ParamPatterns fd ps ∧ ListRel (TyR (declScope decls fd.home (fd.implParams ++ fd.params) args)) ps ts
@@ -36,6 +43,11 @@ def ParamExpects (decls : Decls) (fd : FnDecl) (args : List Ty) (ts : List Ty) :
 /-- A parameter's type once every type parameter is bound. -/
 def ArgExpected (decls : Decls) (fd : FnDecl) (names : List Name) (p : CTree) (b : List Bind) (t : Ty) : Prop :=
   ∃ args, BoundArgs b names args ∧ TyR (declScope decls fd.home names args) p t
+
+/-- A parameter's expected type: none while a type parameter is unbound,
+else its type at the bound arguments. -/
+def ArgHint (decls : Decls) (fd : FnDecl) (names : List Name) (p : CTree) (b : List Bind) (E : Option Ty) : Prop :=
+  ((∀ args, ¬BoundArgs b names args) ∧ E = none) ∨ ∃ t, ArgExpected decls fd names p b t ∧ E = some t
 
 /-- The bindings from the result type matched with the expected type. -/
 def RetBinds (decls : Decls) (fd : FnDecl) (names : List Name) (start : List Bind) (expected : Option Ty)
@@ -122,14 +134,15 @@ inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff �
       EffR env scope none (kid c 0) a → EffChain env scope expected a (kid c 1) x → EffR env scope expected c x
   | unitVariant {scope : List Local} {expected : Option Ty} {c : CTree} {ss : List Name} {front : ModPath} {name : Name}
       {v : VariantAt} {x : MEff} : nodeProd c = pIdent → nodeProd (kid c 1) = pIdentPlain →
-      PathSpellings (kid (kid c 0) 0) (kid (kid c 0) 1) ss → ss = front ++ [name] → VariantByPath env front name v →
+      PathSpellings (kid (kid c 0) 0) (kid (kid c 0) 1) ss → ss = front ++ [name] → (∀ l, ¬LocalOf scope c l) →
+      (∀ m n k, Resolves env.home ss m n → ¬ConstNamed env.decls m n k) → VariantByPath env front name v →
       EffVariant env scope expected v [] x → EffR env scope expected c x
   | literal {scope : List Local} {expected : Option Ty} {c : CTree} {ss : List Name} {fs : List CTree} {d : Nat}
       {t : TypeDecl} {E : Option (List Ty)} {vs : List MEff} {ty : Ty} : nodeProd c = pIdent →
       nodeProd (kid c 1) = pStructLit → PathSpellings (kid (kid c 0) 0) (kid (kid c 0) 1) ss →
       Items (kid (kid c 1) 1) fs → DeclAt env ss d → env.decls.types[d]? = some t → t.isEnum = false →
       t.fields = fs.map (fun f => (kidToken f 0).text) →
-      MaybeTys (fun ts => ∃ args, knownArgs t d expected = some args ∧ FieldTys env.decls d args ts) E →
+      KnownTys (fun args ts => FieldTys env.decls d args ts) (knownArgs t d expected) E →
       EffList env scope E (fs.map (kid · 2)) vs → DeclInst env.decls scope d t (knownArgs t d expected) (some t.fieldTypes) vs ty →
       EffR env scope expected c (.xStruct ty vs)
   | «match» {scope : List Local} {expected : Option Ty} {c : CTree} {s : MEff} {ety : Ty} {d : Nat} {args : List Ty}
@@ -199,10 +212,10 @@ inductive EffNamed (env : FrontEnv) : List Local → Option Ty → ModPath → N
       FnNamed env.decls (if front = [] then env.home else front) name d → env.decls.fns[d]? = some fd → targs = [] →
       EffInfer env scope expected d fd [] [] items x → EffNamed env scope expected front name targs items x
   | explicit {scope : List Local} {expected : Option Ty} {front : ModPath} {name : Name} {targs items : List CTree}
-      {d : Nat} {fd : FnDecl} {i : Inst} {E : Option (List Ty)} {xs : List MEff} :
+      {d : Nat} {fd : FnDecl} {i : Inst} {ts : List Ty} {xs : List MEff} :
       ¬(∃ n, TypeOwner env front n ∧ targs = []) → FnNamed env.decls (if front = [] then env.home else front) name d →
       env.decls.fns[d]? = some fd → targs ≠ [] → ExplicitInst env d fd targs i →
-      MaybeTys (ParamExpects env.decls fd i.args) E → EffList env scope E items xs →
+      ParamExpects env.decls fd i.args ts → EffList env scope (some ts) items xs →
       EffNamed env scope expected front name targs items (.xCall i xs)
   | variant {scope : List Local} {expected : Option Ty} {front : ModPath} {name : Name} {targs items : List CTree}
       {v : VariantAt} {x : MEff} : ¬IsFnPath env front name → targs = [] → VariantByPath env front name v →
@@ -212,8 +225,8 @@ inductive EffNamed (env : FrontEnv) : List Local → Option Ty → ModPath → N
 bindings `start`: the arguments after `pre` (the receiver, if any). -/
 inductive EffInfer (env : FrontEnv) : List Local → Option Ty → Nat → FnDecl → List Bind → List MEff → List CTree → MEff → Prop
   | plain {scope : List Local} {expected : Option Ty} {d : Nat} {fd : FnDecl} {start : List Bind} {pre : List MEff}
-      {items : List CTree} {E : Option (List Ty)} {xs : List MEff} : fd.implParams ++ fd.params = [] →
-      MaybeTys (ParamExpects env.decls fd []) E → EffList env scope (skipExpects E pre) items xs →
+      {items : List CTree} {ts : List Ty} {xs : List MEff} : fd.implParams ++ fd.params = [] →
+      ParamExpects env.decls fd [] ts → EffList env scope (skipExpects (some ts) pre) items xs →
       EffInfer env scope expected d fd start pre items (.xCall ⟨d, []⟩ (pre ++ xs))
   | infer {scope : List Local} {expected : Option Ty} {d : Nat} {fd : FnDecl} {start : List Bind} {pre : List MEff}
       {items : List CTree} {ps : List CTree} {b : List Bind} {a : ArgsBound} {inst : Inst} :
@@ -235,7 +248,7 @@ inductive EffArgs (env : FrontEnv) : List Local → FnDecl → List Name → Lis
       EffArgs env scope fd names (p :: ps) (x :: pre) items b ⟨x :: a.args, a.binds⟩
   | arg {scope : List Local} {fd : FnDecl} {names : List Name} {p : CTree} {ps : List CTree} {c : CTree}
       {items : List CTree} {b : List Bind} {E : Option Ty} {x : MEff} {b' : List Bind} {a : ArgsBound} :
-      MaybeTy (ArgExpected env.decls fd names p b) E → EffR env scope E c x →
+      ArgHint env.decls fd names p b E → EffR env scope E c x →
       BindArg env.decls scope fd names p x b b' → EffArgs env scope fd names ps [] items b' a →
       EffArgs env scope fd names (p :: ps) [] (c :: items) b ⟨x :: a.args, a.binds⟩
 
@@ -243,8 +256,8 @@ inductive EffArgs (env : FrontEnv) : List Local → FnDecl → List Name → Lis
 inductive EffVariant (env : FrontEnv) : List Local → Option Ty → VariantAt → List CTree → MEff → Prop
   | mk {scope : List Local} {expected : Option Ty} {v : VariantAt} {items : List CTree} {t : TypeDecl}
       {E : Option (List Ty)} {ps : List MEff} {ty : Ty} : env.decls.types[v.owner]? = some t →
-      MaybeTys (fun ts => ∃ args vss, knownArgs t v.owner expected = some args ∧
-        PayloadTys env.decls v.owner args vss ∧ vss[v.index]? = some ts) E →
+      KnownTys (fun args ts => ∃ vss, PayloadTys env.decls v.owner args vss ∧ vss[v.index]? = some ts)
+        (knownArgs t v.owner expected) E →
       EffList env scope E items ps →
       DeclInst env.decls scope v.owner t (knownArgs t v.owner expected) t.payloads[v.index]? ps ty →
       EffVariant env scope expected v items (.xVariant ty v.index ps)
@@ -292,6 +305,19 @@ theorem paramExpects_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : Li
     rw [hp] at h
     exact ⟨ps, paramPatterns_sound hp, tyList_sound h⟩
 
+theorem findBind_complete {binds : List Bind} {n : Name} {t : Ty} (h : BindOf binds n t) :
+    findBind binds n = some t := by
+  cases hf : findBind binds n with
+  | none => exact (bindOf_unbound h (findBind_none hf)).elim
+  | some t' => rw [bindOf_unique (findBind_sound hf) h]
+
+theorem boundArgs_complete {binds : List Bind} :
+    ∀ {names : List Name} {args : List Ty}, BoundArgs binds names args → boundArgs names binds = some args
+  | [], _, h => by cases h; rfl
+  | _ :: _, _, h => by
+    cases h with
+    | cons o r => simp only [boundArgs, consTy, findBind_complete o, consTyTail, boundArgs_complete r]
+
 theorem argExpected_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {names : List Name} {p : CTree} {b : List Bind} :
     MaybeTy (ArgExpected decls fd names p b) (argExpected fuel decls fd names p b) := by
   intro t h
@@ -301,6 +327,20 @@ theorem argExpected_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {names : Li
   | some a =>
     rw [hb] at h
     exact ⟨a, boundArgs_sound hb, tyOf_sound h⟩
+
+theorem argHint_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {names : List Name} {p : CTree} {b : List Bind}
+    (ok : (!hasTys (boundArgs names b) || hasTy (argExpected fuel decls fd names p b)) = true) :
+    ArgHint decls fd names p b (argExpected fuel decls fd names p b) := by
+  cases hb : boundArgs names b with
+  | none =>
+    refine .inl ⟨fun args ba => ?_, by simp [argExpected, hb]⟩
+    rw [boundArgs_complete ba] at hb
+    cases hb
+  | some a =>
+    rw [hb] at ok
+    cases ha : argExpected fuel decls fd names p b with
+    | none => rw [ha] at ok; simp [hasTys, hasTy] at ok
+    | some t => exact .inr ⟨t, argExpected_sound t ha, rfl⟩
 
 theorem retBinds_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {names : List Name} {start : List Bind}
     {expected : Option Ty} {b : List Bind} (h : retBinds fuel decls fd names start expected = some b) :
@@ -406,6 +446,16 @@ theorem fieldExpects_sound {fuel : Nat} {decls : Decls} {d : Nat} {known : Optio
   | none => cases h
   | some args => exact ⟨args, rfl, fieldTys_sound h⟩
 
+theorem fieldExpects_known {fuel : Nat} {decls : Decls} {d : Nat} {known : Option (List Ty)}
+    (ok : (!hasTys known || hasTys (fieldExpects fuel decls d known)) = true) :
+    KnownTys (fun args ts => FieldTys decls d args ts) known (fieldExpects fuel decls d known) := by
+  cases known with
+  | none => exact .inl ⟨rfl, rfl⟩
+  | some args =>
+    cases h : fieldExpects fuel decls d (some args) with
+    | none => rw [h] at ok; simp [hasTys] at ok
+    | some ts => exact .inr ⟨args, ts, rfl, fieldTys_sound h, rfl⟩
+
 theorem variantExpects_sound {fuel : Nat} {decls : Decls} {d k : Nat} {known : Option (List Ty)} :
     MaybeTys (fun ts => ∃ args vss, known = some args ∧ PayloadTys decls d args vss ∧ vss[k]? = some ts)
       (variantExpects fuel decls d k known) := by
@@ -419,6 +469,20 @@ theorem variantExpects_sound {fuel : Nat} {decls : Decls} {d k : Nat} {known : O
     | some vss =>
       rw [hp] at h
       exact ⟨args, vss, rfl, payloadTys_sound hp, h⟩
+
+theorem variantExpects_known {fuel : Nat} {decls : Decls} {d k : Nat} {known : Option (List Ty)}
+    (ok : (!hasTys known || hasTys (variantExpects fuel decls d k known)) = true) :
+    KnownTys (fun args ts => ∃ vss, PayloadTys decls d args vss ∧ vss[k]? = some ts) known
+      (variantExpects fuel decls d k known) := by
+  cases known with
+  | none => exact .inl ⟨rfl, rfl⟩
+  | some args =>
+    cases h : variantExpects fuel decls d k (some args) with
+    | none => rw [h] at ok; simp [hasTys] at ok
+    | some ts =>
+      obtain ⟨_, vss, e, pt, g⟩ := variantExpects_sound ts h
+      cases e
+      exact .inr ⟨args, ts, rfl, ⟨vss, pt, g⟩, rfl⟩
 
 theorem fieldIndex_sound {env : FrontEnv} {t : Ty} {name : Name} {j : Nat} (h : fieldIndex env t name = some j) :
     FieldIndex env.decls t name j := by
@@ -542,7 +606,7 @@ theorem effBinary_some {p : Nat} {acc r : Option MEff} {b : MEff} (h : effBinary
 def LiteralEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d : Nat) (t : TypeDecl) (fs : List CTree)
     (x : MEff) : Prop :=
   t.isEnum = false ∧ t.fields = fs.map (fun f => (kidToken f 0).text) ∧
-    ∃ E vs ty, MaybeTys (fun ts => ∃ args, knownArgs t d expected = some args ∧ FieldTys env.decls d args ts) E ∧
+    ∃ E vs ty, KnownTys (fun args ts => FieldTys env.decls d args ts) (knownArgs t d expected) E ∧
       EffList env scope E (fs.map (kid · 2)) vs ∧
       DeclInst env.decls scope d t (knownArgs t d expected) (some t.fieldTypes) vs ty ∧ x = .xStruct ty vs
 
@@ -572,8 +636,8 @@ def MatchOnEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s :
 def FreeEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d : Nat) (fd : FnDecl) (targs items : List CTree)
     (x : MEff) : Prop :=
   (targs = [] ∧ EffInfer env scope expected d fd [] [] items x) ∨
-  (targs ≠ [] ∧ ∃ i E xs, ExplicitInst env d fd targs i ∧ MaybeTys (ParamExpects env.decls fd i.args) E ∧
-    EffList env scope E items xs ∧ x = .xCall i xs)
+  (targs ≠ [] ∧ ∃ i ts xs, ExplicitInst env d fd targs i ∧ ParamExpects env.decls fd i.args ts ∧
+    EffList env scope (some ts) items xs ∧ x = .xCall i xs)
 
 def EffSound (fuel : Nat) : Prop :=
   (∀ {env scope expected c x}, effOf fuel env scope expected c = some x → EffR env scope expected c x) ∧
@@ -865,9 +929,25 @@ theorem effSound : ∀ fuel, EffSound fuel
           | none => rw [hl] at h; cases h
           | some s =>
             rw [hl] at h
-            simp only at h
+            simp only [checkedEff] at h
+            split at h
+            rotate_left
+            · cases h
+            rename_i ok
+            simp only [Bool.and_eq_true, Bool.not_eq_true'] at ok
+            obtain ⟨nl, nk⟩ := ok
+            have nl' : ∀ l, ¬LocalOf scope c l := by
+              cases hc : localOf env scope c with
+              | none => exact localOf_none hc
+              | some _ => rw [hc] at nl; cases nl
+            have nk' : ∀ m n k, Resolves env.home ss m n → ¬ConstNamed env.decls m n k := by
+              intro m n k r ⟨_, kn⟩
+              obtain ⟨rfl, rfl⟩ := resolves_unique r (resolves_split hl)
+              cases hk : findConst env.decls.consts (moduleOr env.home s.home) s.name with
+              | none => exact findConst_none hk k (firstWith_mem kn).1 (firstWith_mem kn).2
+              | some _ => rw [hk] at nk; cases nk
             obtain ⟨u, hu, ev⟩ := ihVariant h
-            exact .unitVariant pi pl (pathSpellings_sound hs) (splitLast_sound hl) (variantByPath_sound hu) ev
+            exact .unitVariant pi pl (pathSpellings_sound hs) (splitLast_sound hl) nl' nk' (variantByPath_sound hu) ev
       split at h
       · rename_i _ pl
         cases hs : pathSpellings (f + 1) (kid (kid c 0) 0) (kid (kid c 0) 1) with
@@ -901,6 +981,11 @@ theorem effSound : ∀ fuel, EffSound fuel
       split at h
       · rename_i c
         simp only [Bool.and_eq_true, Bool.not_eq_true', sameNames_iff] at c
+        simp only [checkedEff] at h
+        split at h
+        rotate_left
+        · cases h
+        rename_i ok
         simp only [xStructOf] at h
         cases hv : effList f env scope (fieldExpects (f + 1) env.decls d (knownArgs t d expected)) (fieldValues fs) with
         | none => rw [hv] at h; cases h
@@ -913,8 +998,8 @@ theorem effSound : ∀ fuel, EffSound fuel
             rw [hd] at h
             simp only [Option.some.injEq] at h
             subst h
-            refine ⟨c.1, c.2, fieldExpects (f + 1) env.decls d (knownArgs t d expected), vs, ty, fieldExpects_sound, ?_,
-              declInst_sound hd, rfl⟩
+            refine ⟨c.1, c.2, fieldExpects (f + 1) env.decls d (knownArgs t d expected), vs, ty, fieldExpects_known ok,
+              ?_, declInst_sound hd, rfl⟩
             rw [← fieldValues_eq]
             exact ihList hv
       · cases h
@@ -930,6 +1015,11 @@ theorem effSound : ∀ fuel, EffSound fuel
         | none => rw [ht] at h; cases h
         | some t =>
           rw [ht] at h
+          simp only [checkedEff] at h
+          split at h
+          rotate_left
+          · cases h
+          rename_i ok
           simp only [xVariantOf] at h
           cases hp : effList f env scope (variantExpects (f + 1) env.decls u.owner u.index (knownArgs t u.owner expected))
               items with
@@ -943,7 +1033,7 @@ theorem effSound : ∀ fuel, EffSound fuel
               rw [hd] at h
               simp only [Option.some.injEq] at h
               subst h
-              exact ⟨u, rfl, .mk ht variantExpects_sound (ihList hp) (declInst_sound hd)⟩
+              exact ⟨u, rfl, .mk ht (variantExpects_known ok) (ihList hp) (declInst_sound hd)⟩
     -- effList
     · intro env scope E items xs h
       rw [effList.eq_def] at h
@@ -1059,14 +1149,18 @@ theorem effSound : ∀ fuel, EffSound fuel
         | some i =>
           rw [hi] at h
           simp only at h
-          cases hl : effList f env scope (paramExpects (f + 1) env.decls fd (some i.args)) items with
-          | none => rw [hl] at h; cases h
-          | some xs =>
-            rw [hl] at h
-            simp only [Option.some.injEq] at h
-            subst h
-            exact .inr ⟨fun e => nt ((noTrees_iff _).2 e), i, _, xs, explicitInst_sound hi, paramExpects_sound,
-              ihList hl, rfl⟩
+          cases hp : paramExpects (f + 1) env.decls fd (some i.args) with
+          | none => simp [hp, checkedEffs, hasTys] at h
+          | some ts =>
+            simp only [hp, checkedEffs, hasTys, ↓reduceIte] at h
+            cases hl : effList f env scope (some ts) items with
+            | none => rw [hl] at h; cases h
+            | some xs =>
+              rw [hl] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              exact .inr ⟨fun e => nt ((noTrees_iff _).2 e), i, ts, xs, explicitInst_sound hi, paramExpects_sound ts hp,
+                ihList hl, rfl⟩
     -- effInfer
     · intro env scope expected d fd start pre items x h
       rw [effInfer.eq_def] at h
@@ -1074,8 +1168,11 @@ theorem effSound : ∀ fuel, EffSound fuel
       split at h
       · rename_i nn
         have e : fd.implParams ++ fd.params = [] := (noNames_iff _).1 nn
-        simp only [effCalled] at h
-        cases hl : effList f env scope (skipExpects (paramExpects (f + 1) env.decls fd (some [])) pre) items with
+        cases hp : paramExpects (f + 1) env.decls fd (some []) with
+        | none => simp [hp, checkedEff, hasTys] at h
+        | some ts =>
+        simp only [hp, checkedEff, hasTys, ↓reduceIte, effCalled] at h
+        cases hl : effList f env scope (skipExpects (some ts) pre) items with
         | none => rw [hl] at h; cases h
         | some xs =>
           rw [hl] at h
@@ -1086,7 +1183,7 @@ theorem effSound : ∀ fuel, EffSound fuel
           rw [ie] at h
           simp only [xCallOf, Option.some.injEq] at h
           subst h
-          exact .plain e paramExpects_sound (ihList hl)
+          exact .plain e (paramExpects_sound ts hp) (ihList hl)
       · rename_i nn
         cases hp : paramPatterns (f + 1) fd with
         | none => rw [hp] at h; cases h
@@ -1144,9 +1241,13 @@ theorem effSound : ∀ fuel, EffSound fuel
             cases items with
             | nil => simp at h
             | cons c more =>
-              simp only at h
+              simp only [checkedBound] at h
+              split at h
+              rotate_left
+              · cases h
+              rename_i ok
               obtain ⟨x, b', a', hx, hb', args, rfl⟩ := ihArgNext h
-              exact .arg argExpected_sound (ihOf hx) hb' args
+              exact .arg (argHint_sound ok) (ihOf hx) hb' args
     -- effArgNext
     · intro env scope fd names p ps items b xo a h
       rw [effArgNext.eq_def] at h

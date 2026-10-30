@@ -698,6 +698,14 @@ inductive RepFound : Lanius.Mini.Found → Value → Prop where
   | c0 {x0 : Nat} {x1 : List Lanius.Mini.Bind} {v0 v1 : Value} :
       RepNat x0 v0 → (RepList 249 RepBind) x1 v1 → RepFound (Lanius.Mini.Found.mk x0 x1) (.structure 248 [v0, v1])
 
+inductive RepFit : Lanius.Mini.Fit → Value → Prop where
+  | c0 {x0 : List Lanius.Mini.Bind} {v0 : Value} :
+      (RepList 249 RepBind) x0 v0 → RepFit (Lanius.Mini.Fit.fits x0) (.enumeration 255 0 [v0])
+  | c1 :
+      RepFit (Lanius.Mini.Fit.misfit) (.enumeration 255 1 [])
+  | c2 :
+      RepFit (Lanius.Mini.Fit.spent) (.enumeration 255 2 [])
+
 inductive RepEffArm : Lanius.Mini.EffArm → Value → Prop where
   | c0 {x0 : List Nat} {x1 : Lanius.Mini.MEff} {x2 : Option Lanius.Mini.Ty} {v0 v1 v2 : Value} :
       (RepList 24 RepNat) x0 v0 → RepMEff x1 v1 → (RepOption 198 RepTy) x2 v2 → RepEffArm (Lanius.Mini.EffArm.mk x0 x1 x2) (.structure 258 [v0, v1, v2])
@@ -712,7 +720,7 @@ inductive RepArgsBound : Lanius.Mini.ArgsBound → Value → Prop where
 
 inductive RepBound : Lanius.Mini.Bound → Value → Prop where
   | c0 {x0 : List Nat} {x1 : List Lanius.Mini.Local} {v0 v1 : Value} :
-      (RepList 24 RepNat) x0 v0 → (RepList 220 RepLocal) x1 v1 → RepBound (Lanius.Mini.Bound.mk x0 x1) (.structure 268 [v0, v1])
+      (RepList 24 RepNat) x0 v0 → (RepList 220 RepLocal) x1 v1 → RepBound (Lanius.Mini.Bound.mk x0 x1) (.structure 269 [v0, v1])
 
 attribute [rep_rule] RepUintTy.c0 RepUintTy.c1 RepUintTy.c2 RepUintTy.c3 RepSrcType.c0 RepSrcType.c1 RepSrcType.c2 RepSrcType.c3
 attribute [rep_rule] RepSrcType.c4 RepSrcType.c5 RepSrcType.c6 RepSrcType.c7 RepSrcType.c8 RepSrcParam.c0 RepSrcOp.c0 RepSrcOp.c1
@@ -746,8 +754,8 @@ attribute [rep_rule] RepMStmt.c24 RepMStmt.c25 RepMStmt.c26 RepMStmt.c27 RepMFun
 attribute [rep_rule] RepSymRule.c0 RepOneTok.c0 RepOneTok.c1 RepTables.c0 RepPlace.c0 RepVariants.c0 RepLocalTy.c0 RepFrontEnv.c0
 attribute [rep_rule] RepNumScan.c0 RepNumScan.c1 RepScan.c0 RepScan.c1 RepFields.c0 RepLocal.c0 RepMParams.c0 RepSplit.c0
 attribute [rep_rule] RepCalled.c0 RepLetHead.c0 RepLetHead.c1 RepLetHead.c2 RepLetHead.c3 RepLetHead.c4 RepLetHead.c5 RepLetHead.c6
-attribute [rep_rule] RepLetHead.c7 RepLetHead.c8 RepPathRef.c0 RepVariantAt.c0 RepBind.c0 RepFound.c0 RepEffArm.c0 RepVariantTy.c0
-attribute [rep_rule] RepArgsBound.c0 RepBound.c0
+attribute [rep_rule] RepLetHead.c7 RepLetHead.c8 RepPathRef.c0 RepVariantAt.c0 RepBind.c0 RepFound.c0 RepFit.c0 RepFit.c1
+attribute [rep_rule] RepFit.c2 RepEffArm.c0 RepVariantTy.c0 RepArgsBound.c0 RepBound.c0
 
 @[pure_rule] theorem ty0_typeId : ty0.typeId = 1 := rfl
 @[pure_rule] theorem ty1_typeId : ty1.typeId = 0 := rfl
@@ -1015,9 +1023,10 @@ attribute [rep_rule] RepArgsBound.c0 RepBound.c0
 @[pure_rule] theorem ty318_typeId : ty318.typeId = 264 := rfl
 @[pure_rule] theorem ty319_typeId : ty319.typeId = 263 := rfl
 @[pure_rule] theorem ty320_typeId : ty320.typeId = 265 := rfl
-@[pure_rule] theorem ty322_typeId : ty322.typeId = 266 := rfl
-@[pure_rule] theorem ty323_typeId : ty323.typeId = 268 := rfl
-@[pure_rule] theorem ty324_typeId : ty324.typeId = 267 := rfl
-@[pure_rule] theorem ty326_typeId : ty326.typeId = 269 := rfl
+@[pure_rule] theorem ty321_typeId : ty321.typeId = 266 := rfl
+@[pure_rule] theorem ty323_typeId : ty323.typeId = 267 := rfl
+@[pure_rule] theorem ty324_typeId : ty324.typeId = 269 := rfl
+@[pure_rule] theorem ty325_typeId : ty325.typeId = 268 := rfl
+@[pure_rule] theorem ty327_typeId : ty327.typeId = 270 := rfl
 
 end Lanius.Faithful.SelfRep

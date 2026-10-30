@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.buildFiles
+import Lanius.Mini.Frontend.P.buildMono
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.lxExponent
 import Lanius.Mini.Frontend.P.lxFixed

@@ -29,6 +29,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_freeCall
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
+public import Lanius.Faithful.Gen.SelfStmtF_inferArgs
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_isSomeIndex
@@ -50,15 +51,15 @@ public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
-public import Lanius.Faithful.Gen.SelfStmtF_xCastInto
+public import Lanius.Faithful.Gen.SelfStmtF_xDivideOf
 import all Lanius.Faithful.Gen.SelfSrcF_matchTysOrNone
-import all Lanius.Mini.Frontend.P.armsOf
-import all Lanius.Mini.Frontend.P.consTreeTail
 import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.inferArgs
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.joinInsts
 import all Lanius.Mini.Frontend.P.matchTysOrNone
 import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.xDivideOf
 
 public section
 
@@ -145,11 +146,15 @@ theorem step_eff_arg_next {prog : SrcProgram} {prims : Prims} {ix_eff_arg_next i
   simp only [src_eff_arg_next] at h
   faithful [Lanius.Mini.effArgNext]
 
-theorem step_eff_args_bound {prog : SrcProgram} {prims : Prims} {ix_eff_args_bound ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_MEff ix_eff_of ix_eff_arg_next ix_arg_expected ix_cons_bound ix_bind_arg : Nat} (fn : prog.funcs[ix_eff_args_bound]? = some (src_eff_args_bound ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_MEff ix_eff_of ix_eff_args_bound ix_eff_arg_next ix_arg_expected ix_cons_bound ix_bind_arg)) (np : prims.isPrim ix_eff_args_bound = false)
+theorem step_eff_args_bound {prog : SrcProgram} {prims : Prims} {ix_eff_args_bound ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_MEff ix_eff_of ix_has_ty ix_has_tys ix_checked_bound ix_bound_args ix_arg_expected ix_eff_arg_next ix_cons_bound ix_bind_arg : Nat} (fn : prog.funcs[ix_eff_args_bound]? = some (src_eff_args_bound ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_MEff ix_eff_of ix_has_ty ix_has_tys ix_eff_args_bound ix_checked_bound ix_bound_args ix_arg_expected ix_eff_arg_next ix_cons_bound ix_bind_arg)) (np : prims.isPrim ix_eff_args_bound = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff n))
     (ext_empty_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_MEff prog prims ix_empty_of_mini_selfhost_MEff n))
+    (ext_has_ty : Certified (∀ {n : Nat}, Stmt_has_ty prog prims ix_has_ty n))
+    (ext_has_tys : Certified (∀ {n : Nat}, Stmt_has_tys prog prims ix_has_tys n))
+    (ext_checked_bound : Certified (∀ {n : Nat}, Stmt_checked_bound prog prims ix_checked_bound n))
+    (ext_bound_args : Certified (∀ {n : Nat}, Stmt_bound_args prog prims ix_bound_args n))
     (ext_arg_expected : Certified (∀ {n : Nat}, Stmt_arg_expected prog prims ix_arg_expected n))
     (ext_cons_bound : Certified (∀ {n : Nat}, Stmt_cons_bound prog prims ix_cons_bound n))
     (ext_bind_arg : Certified (∀ {n : Nat}, Stmt_bind_arg prog prims ix_bind_arg n)) {n : Nat}
@@ -271,14 +276,16 @@ theorem step_eff_found {prog : SrcProgram} {prims : Prims} {ix_eff_found ix_minu
   simp only [src_eff_found] at h
   faithful [Lanius.Mini.effFound]
 
-theorem step_eff_free {prog : SrcProgram} {prims : Prims} {ix_eff_free ix_minus ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_MEff ix_no_trees ix_eff_list ix_eff_infer ix_param_expects ix_empty_of_mini_selfhost_Bind ix_explicit_inst : Nat} (fn : prog.funcs[ix_eff_free]? = some (src_eff_free ix_minus ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_MEff ix_no_trees ix_eff_list ix_eff_infer ix_param_expects ix_empty_of_mini_selfhost_Bind ix_explicit_inst)) (np : prims.isPrim ix_eff_free = false)
+theorem step_eff_free {prog : SrcProgram} {prims : Prims} {ix_eff_free ix_minus ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_MEff ix_no_trees ix_has_tys ix_eff_list ix_eff_infer ix_param_expects ix_empty_of_mini_selfhost_Bind ix_explicit_inst ix_checked_effs : Nat} (fn : prog.funcs[ix_eff_free]? = some (src_eff_free ix_minus ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_MEff ix_no_trees ix_has_tys ix_eff_list ix_eff_infer ix_param_expects ix_empty_of_mini_selfhost_Bind ix_explicit_inst ix_checked_effs)) (np : prims.isPrim ix_eff_free = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff n))
     (ext_empty_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_MEff prog prims ix_empty_of_mini_selfhost_MEff n))
     (ext_no_trees : Certified (∀ {n : Nat}, Stmt_no_trees prog prims ix_no_trees n))
+    (ext_has_tys : Certified (∀ {n : Nat}, Stmt_has_tys prog prims ix_has_tys n))
     (ext_param_expects : Certified (∀ {n : Nat}, Stmt_param_expects prog prims ix_param_expects n))
     (ext_empty_of_mini_selfhost_Bind : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Bind prog prims ix_empty_of_mini_selfhost_Bind n))
-    (ext_explicit_inst : Certified (∀ {n : Nat}, Stmt_explicit_inst prog prims ix_explicit_inst n)) {n : Nat}
+    (ext_explicit_inst : Certified (∀ {n : Nat}, Stmt_explicit_inst prog prims ix_explicit_inst n))
+    (ext_checked_effs : Certified (∀ {n : Nat}, Stmt_checked_effs prog prims ix_checked_effs n)) {n : Nat}
     (ih_eff_list : Certified (Stmt_eff_list prog prims ix_eff_list n))
     (ih_eff_infer : Certified (Stmt_eff_infer prog prims ix_eff_infer n)) :
     Stmt_eff_free prog prims ix_eff_free (n + 1) := by
@@ -309,14 +316,16 @@ theorem step_eff_ident {prog : SrcProgram} {prims : Prims} {ix_eff_ident ix_minu
   simp only [src_eff_ident] at h
   faithful [Lanius.Mini.effIdent]
 
-theorem step_eff_infer {prog : SrcProgram} {prims : Prims} {ix_eff_infer ix_minus ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_eff_list ix_eff_called ix_skip_expects ix_param_expects ix_param_patterns ix_eff_inferred ix_eff_args_bound ix_ret_binds : Nat} (fn : prog.funcs[ix_eff_infer]? = some (src_eff_infer ix_minus ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_eff_list ix_eff_called ix_skip_expects ix_param_expects ix_param_patterns ix_eff_inferred ix_eff_args_bound ix_ret_binds)) (np : prims.isPrim ix_eff_infer = false)
+theorem step_eff_infer {prog : SrcProgram} {prims : Prims} {ix_eff_infer ix_minus ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_checked_eff ix_has_tys ix_eff_list ix_param_expects ix_eff_called ix_skip_expects ix_param_patterns ix_eff_inferred ix_eff_args_bound ix_ret_binds : Nat} (fn : prog.funcs[ix_eff_infer]? = some (src_eff_infer ix_minus ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_checked_eff ix_has_tys ix_eff_list ix_param_expects ix_eff_called ix_skip_expects ix_param_patterns ix_eff_inferred ix_eff_args_bound ix_ret_binds)) (np : prims.isPrim ix_eff_infer = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_no_names : Certified (∀ {n : Nat}, Stmt_no_names prog prims ix_no_names n))
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize n))
+    (ext_checked_eff : Certified (∀ {n : Nat}, Stmt_checked_eff prog prims ix_checked_eff n))
+    (ext_has_tys : Certified (∀ {n : Nat}, Stmt_has_tys prog prims ix_has_tys n))
+    (ext_param_expects : Certified (∀ {n : Nat}, Stmt_param_expects prog prims ix_param_expects n))
     (ext_eff_called : Certified (∀ {n : Nat}, Stmt_eff_called prog prims ix_eff_called n))
     (ext_skip_expects : Certified (∀ {n : Nat}, Stmt_skip_expects prog prims ix_skip_expects n))
-    (ext_param_expects : Certified (∀ {n : Nat}, Stmt_param_expects prog prims ix_param_expects n))
     (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n))
     (ext_eff_inferred : Certified (∀ {n : Nat}, Stmt_eff_inferred prog prims ix_eff_inferred n))
     (ext_ret_binds : Certified (∀ {n : Nat}, Stmt_ret_binds prog prims ix_ret_binds n)) {n : Nat}
@@ -354,12 +363,14 @@ theorem step_eff_list {prog : SrcProgram} {prims : Prims} {ix_eff_list ix_minus 
   simp only [src_eff_list] at h
   faithful [Lanius.Mini.effList]
 
-theorem step_eff_literal {prog : SrcProgram} {prims : Prims} {ix_eff_literal ix_minus ix_known_args ix_eff_list ix_same_names ix_x_struct_of ix_field_expects ix_field_values : Nat} (fn : prog.funcs[ix_eff_literal]? = some (src_eff_literal ix_minus ix_known_args ix_eff_list ix_same_names ix_x_struct_of ix_field_expects ix_field_values)) (np : prims.isPrim ix_eff_literal = false)
+theorem step_eff_literal {prog : SrcProgram} {prims : Prims} {ix_eff_literal ix_minus ix_checked_eff ix_has_tys ix_known_args ix_eff_list ix_same_names ix_field_expects ix_x_struct_of ix_field_values : Nat} (fn : prog.funcs[ix_eff_literal]? = some (src_eff_literal ix_minus ix_checked_eff ix_has_tys ix_known_args ix_eff_list ix_same_names ix_field_expects ix_x_struct_of ix_field_values)) (np : prims.isPrim ix_eff_literal = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_checked_eff : Certified (∀ {n : Nat}, Stmt_checked_eff prog prims ix_checked_eff n))
+    (ext_has_tys : Certified (∀ {n : Nat}, Stmt_has_tys prog prims ix_has_tys n))
     (ext_known_args : Certified (∀ {n : Nat}, Stmt_known_args prog prims ix_known_args n))
     (ext_same_names : Certified (∀ {n : Nat}, Stmt_same_names prog prims ix_same_names n))
-    (ext_x_struct_of : Certified (∀ {n : Nat}, Stmt_x_struct_of prog prims ix_x_struct_of n))
     (ext_field_expects : Certified (∀ {n : Nat}, Stmt_field_expects prog prims ix_field_expects n))
+    (ext_x_struct_of : Certified (∀ {n : Nat}, Stmt_x_struct_of prog prims ix_x_struct_of n))
     (ext_field_values : Certified (∀ {n : Nat}, Stmt_field_values prog prims ix_field_values n)) {n : Nat}
     (ih_eff_list : Certified (Stmt_eff_list prog prims ix_eff_list n)) :
     Stmt_eff_literal prog prims ix_eff_literal (n + 1) := by
@@ -558,13 +569,15 @@ theorem step_eff_step {prog : SrcProgram} {prims : Prims} {ix_eff_step ix_minus 
   simp only [src_eff_step] at h
   faithful [Lanius.Mini.effStep]
 
-theorem step_eff_variant {prog : SrcProgram} {prims : Prims} {ix_eff_variant ix_minus ix_field_types_Decls_of_mini_selfhost_Decls ix_get_of_mini_selfhost_TypeDecl ix_x_variant_of ix_known_args ix_eff_list ix_variant_expects : Nat} (fn : prog.funcs[ix_eff_variant]? = some (src_eff_variant ix_minus ix_field_types_Decls_of_mini_selfhost_Decls ix_get_of_mini_selfhost_TypeDecl ix_x_variant_of ix_known_args ix_eff_list ix_variant_expects)) (np : prims.isPrim ix_eff_variant = false)
+theorem step_eff_variant {prog : SrcProgram} {prims : Prims} {ix_eff_variant ix_minus ix_field_types_Decls_of_mini_selfhost_Decls ix_get_of_mini_selfhost_TypeDecl ix_checked_eff ix_has_tys ix_known_args ix_variant_expects ix_x_variant_of ix_eff_list : Nat} (fn : prog.funcs[ix_eff_variant]? = some (src_eff_variant ix_minus ix_field_types_Decls_of_mini_selfhost_Decls ix_get_of_mini_selfhost_TypeDecl ix_checked_eff ix_has_tys ix_known_args ix_variant_expects ix_x_variant_of ix_eff_list)) (np : prims.isPrim ix_eff_variant = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
     (ext_get_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_TypeDecl prog prims ix_get_of_mini_selfhost_TypeDecl n))
-    (ext_x_variant_of : Certified (∀ {n : Nat}, Stmt_x_variant_of prog prims ix_x_variant_of n))
+    (ext_checked_eff : Certified (∀ {n : Nat}, Stmt_checked_eff prog prims ix_checked_eff n))
+    (ext_has_tys : Certified (∀ {n : Nat}, Stmt_has_tys prog prims ix_has_tys n))
     (ext_known_args : Certified (∀ {n : Nat}, Stmt_known_args prog prims ix_known_args n))
-    (ext_variant_expects : Certified (∀ {n : Nat}, Stmt_variant_expects prog prims ix_variant_expects n)) {n : Nat}
+    (ext_variant_expects : Certified (∀ {n : Nat}, Stmt_variant_expects prog prims ix_variant_expects n))
+    (ext_x_variant_of : Certified (∀ {n : Nat}, Stmt_x_variant_of prog prims ix_x_variant_of n)) {n : Nat}
     (ih_eff_list : Certified (Stmt_eff_list prog prims ix_eff_list n)) :
     Stmt_eff_variant prog prims ix_eff_variant (n + 1) := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
@@ -602,11 +615,11 @@ theorem proof_if_else {prog : SrcProgram} {prims : Prims} {ix_if_else ix_boxed_o
   simp only [src_if_else] at h
   faithful [Lanius.Mini.ifElse]
 
-theorem proof_inst_bound {prog : SrcProgram} {prims : Prims} {ix_inst_bound ix_effs_tys ix_bound_or_none ix_callee_env ix_bound_args ix_inst_from ix_match_tys_or_none : Nat} (fn : prog.funcs[ix_inst_bound]? = some (src_inst_bound ix_effs_tys ix_bound_or_none ix_callee_env ix_bound_args ix_inst_from ix_match_tys_or_none)) (np : prims.isPrim ix_inst_bound = false)
+theorem proof_inst_bound {prog : SrcProgram} {prims : Prims} {ix_inst_bound ix_effs_tys ix_bound_or_none ix_bound_args ix_callee_env ix_inst_from ix_match_tys_or_none : Nat} (fn : prog.funcs[ix_inst_bound]? = some (src_inst_bound ix_effs_tys ix_bound_or_none ix_bound_args ix_callee_env ix_inst_from ix_match_tys_or_none)) (np : prims.isPrim ix_inst_bound = false)
     (ext_effs_tys : Certified (∀ {n : Nat}, Stmt_effs_tys prog prims ix_effs_tys n))
     (ext_bound_or_none : Certified (∀ {n : Nat}, Stmt_bound_or_none prog prims ix_bound_or_none n))
-    (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
     (ext_bound_args : Certified (∀ {n : Nat}, Stmt_bound_args prog prims ix_bound_args n))
+    (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
     (ext_inst_from : Certified (∀ {n : Nat}, Stmt_inst_from prog prims ix_inst_from n))
     (ext_match_tys_or_none : Certified (∀ {n : Nat}, Stmt_match_tys_or_none prog prims ix_match_tys_or_none n)) {n : Nat} :
     Stmt_inst_bound prog prims ix_inst_bound n := by

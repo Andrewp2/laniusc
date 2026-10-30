@@ -68,6 +68,10 @@ abbrev Stmt_gives_bool (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Lanius.Mini.SrcOp} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcOp x0 v0 →
     RepBool (Lanius.Mini.givesBool x0) w
 
+abbrev Stmt_has_wide (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option (BitVec 64)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 192 RepU64) x0 v0 →
+    RepBool (Lanius.Mini.hasWide x0) w
+
 abbrev Stmt_ident_expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 220 RepLocal) x2 v2 → RepCTree x3 v3 →
     (RepOption 236 RepSrcExpr) (Lanius.Mini.identExpr x0 x1 x2 x3) w
@@ -108,6 +112,10 @@ abbrev Stmt_wide_i32 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepNat x1 v1 →
     (RepOption 236 RepSrcExpr) (Lanius.Mini.wideI32 x0 x1) w
 
+abbrev Stmt_wide_inner (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → RepSrcExpr x1 v1 →
+    (RepOption 192 RepU64) (Lanius.Mini.wideInner x0 x1) w
+
 abbrev Stmt_wide_isize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepNat x1 v1 →
     (RepOption 236 RepSrcExpr) (Lanius.Mini.wideIsize x0 x1) w
@@ -116,6 +124,14 @@ abbrev Stmt_wide_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Bool} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTy x0 v0 → RepBool x1 v1 → RepNat x2 v2 →
     (RepOption 236 RepSrcExpr) (Lanius.Mini.wideOf x0 x1 x2) w
 
+abbrev Stmt_wide_read (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcExpr x0 v0 →
+    RepBool (Lanius.Mini.wideRead x0) w
+
+abbrev Stmt_wide_read_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 236 RepSrcExpr) x0 v0 →
+    RepBool (Lanius.Mini.wideReadOf x0) w
+
 abbrev Stmt_wide_signed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Bool} {x2 : Option Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTy x0 v0 → RepBool x1 v1 → (RepOption 196 RepNat) x2 v2 →
     (RepOption 236 RepSrcExpr) (Lanius.Mini.wideSigned x0 x1 x2) w
@@ -123,5 +139,9 @@ abbrev Stmt_wide_signed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 abbrev Stmt_wide_uint (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Bool} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepUintTy x0 v0 → RepBool x1 v1 → RepNat x2 v2 →
     (RepOption 236 RepSrcExpr) (Lanius.Mini.wideUint x0 x1 x2) w
+
+abbrev Stmt_wide_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcExpr x0 v0 →
+    (RepOption 192 RepU64) (Lanius.Mini.wideValue x0) w
 
 end Lanius.Faithful.SelfCert

@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArgsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
+public import Lanius.Faithful.Gen.SelfStmtF_armsOf
 public import Lanius.Faithful.Gen.SelfStmtF_fieldTyAt
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
@@ -191,12 +192,14 @@ theorem proof_free_shifted {prog : SrcProgram} {prims : Prims} {ix_free_shifted 
   simp only [src_free_shifted] at h
   faithful [Lanius.Mini.freeShifted]
 
-theorem proof_set_field_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_field_or_eval ix_eff_of ix_expr_of ix_field_index ix_field_eval_stmt ix_field_ty_at : Nat} (fn : prog.funcs[ix_set_field_or_eval]? = some (src_set_field_or_eval ix_eff_of ix_expr_of ix_field_index ix_field_eval_stmt ix_field_ty_at)) (np : prims.isPrim ix_set_field_or_eval = false)
+theorem proof_set_field_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_field_or_eval ix_eff_of ix_expr_of ix_field_index ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt : Nat} (fn : prog.funcs[ix_set_field_or_eval]? = some (src_set_field_or_eval ix_eff_of ix_expr_of ix_field_index ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt)) (np : prims.isPrim ix_set_field_or_eval = false)
     (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n))
     (ext_expr_of : Certified (∀ {n : Nat}, Stmt_expr_of prog prims ix_expr_of n))
     (ext_field_index : Certified (∀ {n : Nat}, Stmt_field_index prog prims ix_field_index n))
-    (ext_field_eval_stmt : Certified (∀ {n : Nat}, Stmt_field_eval_stmt prog prims ix_field_eval_stmt n))
-    (ext_field_ty_at : Certified (∀ {n : Nat}, Stmt_field_ty_at prog prims ix_field_ty_at n)) {n : Nat} :
+    (ext_checked_stmt : Certified (∀ {n : Nat}, Stmt_checked_stmt prog prims ix_checked_stmt n))
+    (ext_has_ty : Certified (∀ {n : Nat}, Stmt_has_ty prog prims ix_has_ty n))
+    (ext_field_ty_at : Certified (∀ {n : Nat}, Stmt_field_ty_at prog prims ix_field_ty_at n))
+    (ext_field_eval_stmt : Certified (∀ {n : Nat}, Stmt_field_eval_stmt prog prims ix_field_eval_stmt n)) {n : Nat} :
     Stmt_set_field_or_eval prog prims ix_set_field_or_eval n := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
   rcases n with _ | n

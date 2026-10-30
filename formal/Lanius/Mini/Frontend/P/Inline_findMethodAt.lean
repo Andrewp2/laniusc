@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-public import Lanius.Mini.Frontend.P.buildFiles
+public import Lanius.Mini.Frontend.P.buildMono
 public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail
@@ -29,9 +29,10 @@ namespace Lanius.Mini
 
 @[expose] def Inline.findMethodAt (mfuel : Nat) (mdecls : Decls) (mfd : FnDecl) (mrest : List FnDecl) (mk : Nat) (mname : List Nat) (ms : Ty) : Option Found :=
   if sameText mfd.name mname then
-    match implBinds mfuel mdecls mfd ms with
-    | none => findMethod mfuel mdecls mrest (mk + 1) mname ms
-    | some b => uniqueFound (noMethod mfuel mdecls mrest mname ms) mk b
+    match implFit mfuel mdecls mfd ms with
+    | .fits b => uniqueFound (noMethod mfuel mdecls mrest mname ms) mk b
+    | .misfit => findMethod mfuel mdecls mrest (mk + 1) mname ms
+    | .spent => none
   else
     findMethod mfuel mdecls mrest (mk + 1) mname ms
 

@@ -10,6 +10,30 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+def xDivideOf (op : SrcDivOp) (l : Option MEff) (r : Option MEff) : Option MEff :=
+  match l with
+  | none => none
+  | some a =>
+    match r with
+    | none => none
+    | some b => some (MEff.xDivide op a b)
+
+def xNegOf (x : Option MEff) : Option MEff :=
+  match x with
+  | none => none
+  | some a =>
+    match purePart a with
+    | none => some (MEff.xNeg a)
+    | some e => some (MEff.xPure (SrcExpr.negate e))
+
+def xNotOf (x : Option MEff) : Option MEff :=
+  match x with
+  | none => none
+  | some a =>
+    match purePart a with
+    | none => some (MEff.xNot a)
+    | some e => some (MEff.xPure (SrcExpr.not e))
+
 def xCastInto (t : Option SrcType) (x : Option MEff) : Option MEff :=
   match t with
   | none => none
