@@ -54,6 +54,7 @@ import all Lanius.Mini.Compiler.P.widthOf
 import all Lanius.Mini.Compiler.P.elementBase
 import all Lanius.Mini.Compiler.P.iteThen
 import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType

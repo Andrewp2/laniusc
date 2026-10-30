@@ -3555,11 +3555,47 @@ pub fn store_cases(tag: Expr, values: List<Expr>, first: usize, base: Expr, offs
 }
 // extract: mutual end
 
+// extract: mutual begin
+// A word type within Core's native layout limits (NativeLayout.words? at
+// maxDepth), its top at depth: nested less than 64 deep, each struct at most
+// 4096 words and each enum payload under 4096.
+pub fn within_layout(depth: usize, ty: SrcType) -> bool {
+    if (depth > 63) {
+        return false;
+    }
+    return match (ty) {
+        I32 -> true,
+        Bool -> true,
+        Uint(kind) -> true,
+        Struct(id, fields) -> 4097 > sizes(unbox(fields)) && within_layouts(plus(depth, 1), unbox(fields)),
+        Enum(id, variants) -> within_payloads(plus(depth, 1), unbox(variants)),
+        Ptr -> true,
+        Slice(element) -> false,
+        Unit -> false,
+        Isize -> true,
+    };
+}
+
+pub fn within_layouts(depth: usize, types: List<SrcType>) -> bool {
+    return match (types) {
+        Nil -> true,
+        Cons(ty, rest) -> within_layout(depth, ty) && within_layouts(depth, unbox(rest)),
+    };
+}
+
+pub fn within_payloads(depth: usize, variants: List<List<SrcType>>) -> bool {
+    return match (variants) {
+        Nil -> true,
+        Cons(types, rest) -> 4096 > sizes(types) && within_layouts(depth, types) && within_payloads(depth, unbox(rest)),
+    };
+}
+// extract: mutual end
+
 // A raw slice's one slot: its address. Elements are i32, word structs or
-// word enums; Core checks the length when the slice is made and each index
-// against it.
+// word enums within Core's layout limits; Core checks the length when the
+// slice is made and each index against it.
 pub fn lower_slice(decls: SrcDecls, element: SrcType, pointer: core::option::Option<Expr>, length: core::option::Option<Expr>) -> core::option::Option<List<Expr>> {
-    if (element.is_i32() || word_element(decls, element)) {
+    if ((element.is_i32() || word_element(decls, element)) && within_layout(0, element)) {
         return match (pointer) {
             None -> None,
             Some(p) -> match (length) {

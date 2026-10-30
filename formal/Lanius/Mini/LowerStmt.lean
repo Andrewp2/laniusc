@@ -2648,7 +2648,7 @@ theorem stmt_letSlice (ih : StmtSound sp mp fuel) {id : Nat} {element : SrcType}
   split at sliceOk
   case isFalse => simp at sliceOk
   rename_i cond
-  have kind := slice_kind cond
+  have kind := slice_kind (by simp only [Bool.and_eq_true] at cond; exact cond.1)
   cases pOk : lowerAs scope pointer .ptr with
   | none => simp [pOk] at sliceOk
   | some xp =>

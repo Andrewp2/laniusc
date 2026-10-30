@@ -21,6 +21,7 @@ import Lanius.Mini.Compiler.P.lowerMatchArms
 import Lanius.Mini.Compiler.P.lowerReturn
 import Lanius.Mini.Compiler.P.lowerSetCallArgs
 import Lanius.Mini.Compiler.P.lowerSetValues
+import Lanius.Mini.Compiler.P.lowerSlice
 import Lanius.Mini.Compiler.P.lowerTagged
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.pow2

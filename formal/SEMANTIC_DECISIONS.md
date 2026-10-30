@@ -503,8 +503,13 @@ operands of a binary operator to have one type, numbers for arithmetic and
 must have a native layout within Core's limits (`BoxedAt`), since Core's raw
 view of a type past them traps `typeMismatch`. A boxed value's meaning
 (`VRel.box`) includes that its storage passes `checkRange`, so reading it
-back through a raw view cannot trap. Still open: the extracted `lowerSlice`
-should reject element types past Core's layout limits as well.
+back through a raw view cannot trap. The front pass's `lower_slice` rejects
+a raw slice whose element type is past those limits too (F1, decided
+10-29): `within_layout` checks Core's nesting depth (64), struct size (at
+most 4096 words) and payload size (under 4096 words), and
+`lowerSlice_layout` (`Mini/ElementLayout.lean`) proves that an element it
+accepts has Core words, its mini size. A typed program now reaches
+`typeMismatch` only by reading an invalid bit pattern from raw memory.
 
 ## Decisions still required
 

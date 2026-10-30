@@ -1481,7 +1481,7 @@ theorem stops_letSlice {id : Nat} {element : SrcType} {pointer length : SrcExpr}
   split at sliceOk
   case isFalse => simp at sliceOk
   rename_i cond
-  have kind := slice_kind cond
+  have kind := slice_kind (by simp only [Bool.and_eq_true] at cond; exact cond.1)
   cases pOk : lowerAs scope pointer .ptr with
   | none => simp [pOk] at sliceOk
   | some xp =>

@@ -76,7 +76,7 @@ reading.
 
 | # | step | status |
 |---|------|--------|
-| F1 | The reading is deterministic: two readings of the same trees are equal, so the theorems no longer need `TextBuilt`; `lowerSlice` rejects element types past Core's layout limits | in progress (10-29): determinism done. `reading_unique` (`Mini/Reading/Det/`, standard axioms) proves two readings of the same trees equal; `compileText_correct`, `compileText_behaviour` and the process theorems now say the texts have exactly one reading (`textReading_unique`) and no longer mention `TextBuilt`. Open: `lowerSlice` layout limits |
+| F1 | The reading is deterministic: two readings of the same trees are equal, so the theorems no longer need `TextBuilt`; `lowerSlice` rejects element types past Core's layout limits | done (10-29). `reading_unique` (`Mini/Reading/Det/`, standard axioms) proves two readings of the same trees equal; `compileText_correct`, `compileText_behaviour` and the process theorems now say the texts have exactly one reading (`textReading_unique`) and no longer mention `TextBuilt`. The builder changed so the relation states each choice exactly (SEMANTIC_DECISIONS.md, "The reading is one reading"). `lower_slice` checks Core's layout limits (`within_layout`), and `lowerSlice_layout` proves an accepted element has Core words |
 | F2 | The extractor in the verified compiler: `extract` (Lanius) takes the program the front end reads and writes the Lean definitions and their certificates; the self program's `Compiler.lean` and `Frontend.lean` come from it, and the Python extractor is retired. It extracts the whole language as the features below land (loops as recursion on Core's fuel, `&mut` as in the pilot), for any program, not only the self program | |
 | F3 | Every scalar type: `i8`, `i16`, `u16`, `i64`, `char`; `T::m` and constants on builtin types; shifts on each | |
 | F4 | Control: `loop`, `for` over ranges, `break`, `continue`, `?`, block statements, `=>`, block and `if` match arms | |
@@ -162,9 +162,9 @@ heap or of stack is a fault too.
   the compiled code `Faults`. Standard axioms. `typeMismatch` became an
   undefined trap (SEMANTIC_DECISIONS.md), and the proof found that
   `slice[i] = v` evaluated `v` before the bounds check; it now checks
-  first, as Core does. Follow-up: `lowerSlice` should reject element types
-  past Core's native layout limits, so `typeMismatch` can return to the
-  impossible traps.
+  first, as Core does. F1 made `lowerSlice` reject element types past
+  Core's native layout limits (`lowerSlice_layout`), so `typeMismatch` is
+  left only for invalid bit patterns read from raw memory.
 - V2e. `compileSource_behaviour`: an x86 run that returns is a Core run
   that returns, with the same results, unless Core hits an undefined trap.
   Done (10-29, Mini/SourceStops.lean): a run of the compiled `f` from its

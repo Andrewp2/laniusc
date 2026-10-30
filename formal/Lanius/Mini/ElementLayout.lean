@@ -624,4 +624,106 @@ theorem rawSliceElementAddress_word {sp : SrcProgram} {element : SrcType} (hel :
       omega
     exact ⟨hcbase.symm, fits, by simpa [NativeLayout.maxWords] using wLe⟩
 
+/-! ## The front pass's layout check -/
+
+theorem foldl_sizes : ∀ (fs : List SrcType), (fs.map SrcType.size).foldl (· + ·) 0 = sizes fs
+  | [] => rfl
+  | f :: rest => by
+    rw [List.map_cons, List.foldl_cons, foldl_add, foldl_sizes rest, sizes]
+    omega
+
+theorem withinLayout_depth {d : Nat} {t : SrcType} (h : withinLayout d t = true) : d ≤ 63 := by
+  unfold withinLayout at h
+  split at h
+  · cases h
+  · omega
+
+mutual
+/-- A word type within the layout limits from depth `d` has its mini size
+in Core's words at fuel `64 - d`. -/
+theorem wordType_layout {sp : SrcProgram} : ∀ (t : SrcType) {d k : Nat}, wordType sp.decls t = true →
+    withinLayout d t = true → d + k = 64 → NativeLayout.words? k sp.toCore t.toCore = some t.size
+  | t, d, k, ok, wl, e => by
+    have dl := withinLayout_depth wl
+    obtain ⟨k, rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+    rw [withinLayout.eq_def, if_neg (by omega)] at wl
+    match t, ok, wl with
+    | .i32, _, _ => exact words_word (w := .m32) rfl k
+    | .bool, _, _ => exact words_word (w := .m32) rfl k
+    | .uint kind, _, _ => cases kind <;> exact words_word (by rfl) k
+    | .ptr, _, _ => exact words_word (w := .m64) rfl k
+    | .isize, _, _ => exact words_word (w := .m64) rfl k
+    | .slice _, ok, _ => simp [wordType] at ok
+    | .unit, ok, _ => simp [wordType] at ok
+    | .struct sid fields, ok, wl =>
+      obtain ⟨decl, words, pos⟩ := wordType_struct ok
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at wl
+      have hm := wordTypes_layout fields words wl.2 (by omega : d + 1 + k = 64)
+      simp only [SrcType.toCore, SrcType.size]
+      rw [NativeLayout.words?]
+      dsimp only
+      rw [structFields_toCore decl]
+      simp only [bind, Option.bind, hm, foldl_sizes]
+      rw [if_pos (by simp only [NativeLayout.maxWords]; omega)]
+      congr 1
+      omega
+    | .enum eid variants, ok, wl =>
+      obtain ⟨decl, words, -, -⟩ := wordType_enum ok
+      have hp := wordVariants_layout variants words wl (by omega : d + 1 + k = 64)
+      simp only [SrcType.toCore, SrcType.size]
+      rw [NativeLayout.words?]
+      dsimp only
+      rw [enumVariants_toCore decl]
+      simp only [bind, Option.bind]
+      split
+      · rename_i hn
+        exact absurd (hp.symm.trans hn) (by simp)
+      · rename_i ps hs
+        cases Option.some.inj (hs.symm.trans hp)
+        dsimp only
+        rw [foldl_max_map, maxMap_sizes]
+        simp
+termination_by structural t => t
+
+theorem wordTypes_layout {sp : SrcProgram} : ∀ (fs : List SrcType) {d k : Nat}, wordTypes sp.decls fs = true →
+    withinLayouts d fs = true → d + k = 64 →
+    (fs.map SrcType.toCore).mapM (NativeLayout.words? k sp.toCore) = some (fs.map SrcType.size)
+  | [], _, _, _, _, _ => rfl
+  | f :: rest, d, k, ok, wl, e => by
+    simp only [wordTypes, Bool.and_eq_true] at ok
+    simp only [withinLayouts, Bool.and_eq_true] at wl
+    simp only [List.map_cons, List.mapM_cons, wordType_layout f ok.1 wl.1 e, wordTypes_layout rest ok.2 wl.2 e,
+      bind, Option.bind, pure]
+termination_by structural fs => fs
+
+theorem wordVariants_layout {sp : SrcProgram} : ∀ (vs : List (List SrcType)) {d k : Nat},
+    wordVariants sp.decls vs = true → withinPayloads d vs = true → d + k = 64 →
+    (vs.map (List.map SrcType.toCore)).mapM (payloadWords k sp.toCore) = some (vs.map sizes)
+  | [], _, _, _, _, _ => rfl
+  | fs :: rest, d, k, ok, wl, e => by
+    simp only [wordVariants, Bool.and_eq_true] at ok
+    simp only [withinPayloads, Bool.and_eq_true, decide_eq_true_eq] at wl
+    have hfs := wordTypes_layout fs ok.1 wl.1.2 e
+    have hrest := wordVariants_layout rest ok.2 wl.2 e
+    simp only [List.map_cons, List.mapM_cons, hrest, bind, Option.bind, pure, payloadWords, hfs, foldl_sizes]
+    rw [if_pos (by simp only [NativeLayout.maxWords]; omega)]
+termination_by structural vs => vs
+end
+
+/-- A raw slice the front pass lowers has an element type Core lays out, at
+its mini size. -/
+theorem lowerSlice_layout {sp : SrcProgram} {element : SrcType} {p l : Option Expr} {xs : List Expr}
+    (h : lowerSlice sp.decls element p l = some xs) :
+    NativeLayout.valueWords? sp.toCore element.toCore = some element.size := by
+  unfold lowerSlice at h
+  split at h
+  · rename_i cond
+    simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
+    have ok : wordType sp.decls element = true := by
+      rcases cond.1 with c | c
+      · cases element <;> simp_all [SrcType.isI32, wordType]
+      · exact wordElement_wordType c
+    exact wordType_layout element ok cond.2 rfl
+  · cases h
+
 end Lanius.Mini

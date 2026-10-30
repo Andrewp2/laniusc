@@ -24,6 +24,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_lowerMatchArms
 public import Lanius.Faithful.Gen.SelfStmtC_lowerReturn
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetCallArgs
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetValues
+public import Lanius.Faithful.Gen.SelfStmtC_lowerSlice
 public import Lanius.Faithful.Gen.SelfStmtC_lowerTagged
 public import Lanius.Faithful.Gen.SelfStmtC_matchVariants
 public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit

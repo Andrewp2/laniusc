@@ -919,8 +919,8 @@ theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} 
   · rename_i cond
     have kind : element = .i32 ∨ (∃ id fields, element = .struct id fields) ∨
         ∃ id variants, element = .enum id variants := by
-      simp only [Bool.or_eq_true] at cond
-      rcases cond with c | c
+      simp only [Bool.and_eq_true, Bool.or_eq_true] at cond
+      rcases cond.1 with c | c
       · exact .inl (eq_i32 c)
       · exact .inr (wordElement_kind c)
     split at h
