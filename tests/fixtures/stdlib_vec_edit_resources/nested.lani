@@ -1,0 +1,83 @@
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::pair;
+import fixture::support;
+struct Trace { words:[i32],used:i32,pointers:[ptr] }
+impl Trace {
+    fn borrow(&self) -> &Trace { return self; }
+    fn record(&self,value:i32) { assert(self.used<256); self.words[self.used]=value; self.used+=1; }
+}
+struct Entry { id:i32,key:i32,wide:i64,data:alloc::vec::Vec<u8>,text:alloc::string::String,trace:&Trace }
+fn data(id:i32,index:i32) -> u8 { return ((id*29+index*17+3)%256) as u8; }
+fn letter(id:i32,index:i32) -> u8 { return (65+(id*7+index*3)%26) as u8; }
+fn check(value:Entry) {
+    assert(value.key==value.id/4 && value.wide==(value.id as i64)*1000003+17);
+    assert(value.data.len()==8 && value.data.capacity()==8 && value.text.byte_len()==12 && value.text.capacity()==12);
+    assert(value.data.storage==value.trace.pointers[value.id*2] && value.text.bytes.storage==value.trace.pointers[value.id*2+1]);
+    let i:i32 = 0; while(i<8) { assert(value.data.at(i)==data(value.id,i)); i+=1; }
+    i=0; while(i<12) { assert(value.text.byte_at(i).unwrap()==letter(value.id,i)); i+=1; }
+}
+fn make(id:i32,trace:&Trace) -> Entry {
+    let bytes:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(8).unwrap();
+    let text:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(12).unwrap();
+    let i:i32 = 0; while(i<8) { bytes.try_push(data(id,i)).unwrap(); i+=1; }
+    i=0; while(i<12) { text.try_push(letter(id,i)).unwrap(); i+=1; }
+    let label=alloc::string::from_utf8_vec(text.borrow()).unwrap();
+    trace.pointers[id*2]=bytes.storage; trace.pointers[id*2+1]=label.bytes.storage;
+    return Entry { id:id,key:id/4,wide:(id as i64)*1000003+17,data:bytes,text:label,trace:trace };
+}
+pub impl core::clone::Destroy<Entry> for Entry {
+    pub fn destroy_value(value:Entry) { check(value); value.trace.record(0-1-value.id); value.data.destroy(); value.text.destroy(); }
+}
+pub impl core::cmp::PartialEq<Entry> for Entry {
+    pub fn partial_eq(a:Entry,b:Entry) -> bool { check(a); check(b); a.trace.record(10000+a.id*100+b.id); return a.key==b.key; }
+    pub fn partial_ne(a:Entry,b:Entry) -> bool { return !Entry::partial_eq(a,b); }
+}
+struct Keep {}
+impl Keep { fn borrow(&self) -> &Keep { return self; } }
+pub impl core::iter::Mapper<Entry,bool> for Keep {
+    pub fn apply(&self,value:Entry) -> bool { check(value); value.trace.record(1000+value.id); return value.id%3!=0; }
+}
+struct Same {}
+impl Same { fn borrow(&self) -> &Same { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Entry,Entry>,bool> for Same {
+    pub fn apply(&self,pair:core::pair::Pair<Entry,Entry>) -> bool { return Entry::partial_eq(pair.first,pair.second); }
+}
+fn state(values:&alloc::vec::Vec<Entry>,pointer:ptr,stage:i32) {
+    assert(values.storage==pointer && values.capacity()==257);
+    fixture::support::word(stage); fixture::support::word(values.len());
+    let i:i32 = 0; while(i<values.len()) {
+        let value=values.at(i); check(value); fixture::support::word(value.id);
+        let words:[i32;2] = [0;2]; let raw=core::mem::i32_array_data_ptr(words); let bytes=core::mem::typed_slice_from_raw_parts<u8>(raw,8);
+        fixture::support::number(bytes,0,value.wide as u64,8); fixture::support::publish(raw,8);
+        fixture::support::publish(value.data.storage,8); fixture::support::publish(value.text.bytes.storage,12); i+=1;
+    }
+}
+fn main() -> i32 {
+    let words:[i32;256] = [0;256]; let null:ptr = 0; let pointers:[ptr;60] = [null;60];
+    let trace:Trace = Trace { words:words,used:0,pointers:pointers };
+    fixture::support::mark(65);
+    let values:alloc::vec::Vec<Entry> = alloc::vec::with_capacity<Entry>(257).unwrap();
+    let spare:alloc::vec::Vec<Entry> = alloc::vec::with_capacity<Entry>(9).unwrap();
+    let i:i32 = 0; while(i<24) { values.try_push(make(i,trace.borrow())).unwrap(); i+=1; }
+    while(i<30) { spare.try_push(make(i,trace.borrow())).unwrap(); i+=1; }
+    let pointer=values.storage; let spare_pointer=spare.storage; let keep:Keep = Keep {}; let same:Same = Same {};
+    fixture::support::mark(83); state(values.borrow(),pointer,0);
+    fixture::support::mark(80); assert(values.retain_destroy(keep.borrow())==8); fixture::support::mark(112); state(values.borrow(),pointer,1);
+    fixture::support::mark(80); assert(values.dedup_by_destroy(same.borrow())==10); fixture::support::mark(112); state(values.borrow(),pointer,2);
+    fixture::support::mark(80); assert(values.truncate_destroy(3).unwrap()==3); fixture::support::mark(112); state(values.borrow(),pointer,3);
+    fixture::support::mark(80); values.clear_destroy(); fixture::support::mark(112); state(values.borrow(),pointer,4);
+    // Existing backing is reused. No newly allocated owners enter after seal.
+    fixture::support::mark(80); assert(values.try_append(spare.borrow()).unwrap()==6); assert(spare.len()==0 && spare.storage==spare_pointer && spare.capacity()==9); fixture::support::mark(112); state(values.borrow(),pointer,5);
+    fixture::support::mark(80); assert(values.dedup_destroy()==4); fixture::support::mark(112); state(values.borrow(),pointer,6);
+    fixture::support::mark(80); values.clear_destroy(); values.clear_destroy(); assert(values.truncate_destroy(2147483647).unwrap()==0); fixture::support::mark(112); state(values.borrow(),pointer,7);
+    assert(spare.storage==spare_pointer && spare.capacity()==9 && spare.len()==0);
+    fixture::support::mark(67); values.destroy(); spare.destroy();
+    fixture::support::word(trace.used); i=0; while(i<trace.used) { fixture::support::word(words[i]); i+=1; }
+    fixture::support::mark(69); fixture::support::mark(68); return 0;
+}

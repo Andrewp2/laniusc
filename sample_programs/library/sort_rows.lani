@@ -4,12 +4,15 @@ import alloc::io;
 import alloc::slice;
 import alloc::vec;
 import alloc::vec::Vec;
+import core::clone;
 import core::decimal;
 import core::io;
+import core::iter;
 import core::mem;
 import core::option;
 import core::option::Option;
 import core::ordering;
+import core::pair;
 import core::result;
 import core::result::Result;
 import core::slice;
@@ -23,20 +26,36 @@ import std::signal;
 import std::stream;
 
 struct Row { record:ext::csv::Record, key:core::text::Text, number:i64 }
+pub impl core::clone::Destroy<Row> for Row {
+    pub fn destroy_value(owned:Row) { owned.record.destroy(); }
+}
 struct Rows { values:Vec<Row>, header:Option<ext::csv::Record>, longest:i32 }
 impl Rows {
     fn borrow(&self) -> &Rows { return self; }
     fn destroy(&self) {
-        let index:i32 = 0; while(index < self.values.len()) { let row = self.values.at(index); row.record.destroy(); index += 1; }
+        self.values.clear_destroy();
         self.values.destroy();
         if (self.header.is_some()) { let first = self.header.unwrap(); first.destroy(); }
         self.header = core::option::None(); self.longest = 0;
     }
 }
-struct Options { column:i32, numeric:bool, descending:bool, header:bool, help:bool, column_set:bool }
+struct Options { column:i32, numeric:bool, descending:bool, header:bool, help:bool, column_set:bool, drop_empty:bool, unique:bool, limit:i32, limit_set:bool }
 impl Options { fn borrow(&self) -> &Options { return self; } }
 struct Compare { numeric:bool, descending:bool }
 impl Compare { fn borrow(&self) -> &Compare { return self; } }
+struct NonEmpty {}
+impl NonEmpty { fn borrow(&self) -> &NonEmpty { return self; } }
+pub impl core::iter::Mapper<Row,bool> for NonEmpty {
+    pub fn apply(&self, row:Row) -> bool { return row.key.length != 0; }
+}
+pub impl core::iter::Mapper<core::pair::Pair<Row,Row>,bool> for Compare {
+    pub fn apply(&self, pair:core::pair::Pair<Row,Row>) -> bool {
+        return match(self.compare(pair.first,pair.second)) {
+            core::ordering::Ordering::Equal -> true,
+            _ -> false
+        };
+    }
+}
 struct Writes { bytes:u64, calls:u64 }
 impl Writes { fn borrow(&self) -> &Writes { return self; } }
 fn literal(value:str, count:i32) -> View<u8> {
@@ -142,7 +161,9 @@ fn order(rows:&Rows, options:&Options) -> i32 {
     if (count > 1) {
         let span:u64 = 1; let levels:u64 = 0; while(span < count) { span *= 2; levels += 1; }
         // Bounds above make this factor representable; admit cost before sorting.
-        let comparisons:u64 = 4*count*(levels+1); let cost:u64 = 2;
+        let comparisons:u64 = 4*count*(levels+1);
+        if (options.unique) { comparisons += count-1; }
+        let cost:u64 = 2;
         if (!options.numeric) { cost = 2*(rows.longest as u64)+2; }
         if (cost > 100000000/comparisons) { return 2; }
     }
@@ -159,6 +180,9 @@ fn order(rows:&Rows, options:&Options) -> i32 {
         };
     }
     if (sorted.unwrap() != rows.values.len()) { return 6; }
+    if (options.unique) { rows.values.dedup_by_destroy(comparator.borrow()); }
+    let truncated:Result<i32,alloc::vec::Error> = rows.values.truncate_destroy(options.limit);
+    if (truncated.is_err()) { return 6; }
     return 0;
 }
 fn emit(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Writes) -> i32 {
@@ -177,6 +201,11 @@ fn emit(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Writes) -> i
 fn process(input:&Vec<u8>, options:&Options, output:&alloc::io::Buffer) -> i32 {
     let rows = Rows { values:alloc::vec::new(),header:core::option::None(),longest:0 };
     let status:i32 = collect(input,rows.borrow(),options);
+    // Complete CSV/key validation precedes all ownership-changing edits.
+    if (status == 0 && options.drop_empty) {
+        let predicate:NonEmpty = NonEmpty {};
+        rows.values.retain_destroy(predicate.borrow());
+    }
     if (status == 0) { status = order(rows.borrow(),options); }
     let state = Writes { bytes:0,calls:0 };
     if (status == 0 && rows.header.is_some()) { let first = rows.header.unwrap(); status = emit(output,first.borrow(),state.borrow()); }
@@ -195,15 +224,18 @@ fn run(options:&Options) -> i32 {
     output.destroy(); return status;
 }
 fn arguments(values:View<View<u8>>) -> i32 {
-    let specs:[ext::cli::Spec;5] = [
+    let specs:[ext::cli::Spec;8] = [
         ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
         ext::cli::Spec { id:2,long:literal("column",6),short:99,arity:ext::cli::Arity::Required },
         ext::cli::Spec { id:3,long:literal("numeric",7),short:110,arity:ext::cli::Arity::Flag },
         ext::cli::Spec { id:4,long:literal("descending",10),short:114,arity:ext::cli::Arity::Flag },
-        ext::cli::Spec { id:5,long:literal("header",6),short:72,arity:ext::cli::Arity::Flag }
+        ext::cli::Spec { id:5,long:literal("header",6),short:72,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:6,long:literal("drop-empty",10),short:0,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:7,long:literal("unique",6),short:0,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:8,long:literal("limit",5),short:0,arity:ext::cli::Arity::Required }
     ];
-    let made = ext::cli::parser(values,core::slice::view(specs,5).unwrap(),ext::cli::Ordering::Intermixed); if (made.is_err()) { return report(2); }
-    let parser = made.unwrap(); let options = Options { column:0,numeric:false,descending:false,header:false,help:false,column_set:false };
+    let made = ext::cli::parser(values,core::slice::view(specs,8).unwrap(),ext::cli::Ordering::Intermixed); if (made.is_err()) { return report(2); }
+    let parser = made.unwrap(); let options = Options { column:0,numeric:false,descending:false,header:false,help:false,column_set:false,drop_empty:false,unique:false,limit:16384,limit_set:false };
     while(true) {
         let event = parser.next(); if (event.is_err()) { return report(2); } let next = event.unwrap(); if (next.is_none()) { break; }
         let item:Option<ext::cli::Occurrence> = match(next.unwrap()) { ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None() };
@@ -212,14 +244,21 @@ fn arguments(values:View<View<u8>>) -> i32 {
         if (found.id == 3) { if (options.numeric) { return report(2); } options.numeric = true; }
         if (found.id == 4) { if (options.descending) { return report(2); } options.descending = true; }
         if (found.id == 5) { if (options.header) { return report(2); } options.header = true; }
+        if (found.id == 6) { if (options.drop_empty) { return report(2); } options.drop_empty = true; }
+        if (found.id == 7) { if (options.unique) { return report(2); } options.unique = true; }
         if (found.id == 2) {
             let value = found.value.unwrap().bytes; let parsed = core::decimal::parse_u64_range(value.values,value.start,value.length);
             if (parsed.is_err() || (parsed.unwrap() < 1) || (parsed.unwrap() > 64) || options.column_set) { return report(2); }
             options.column_set = true; options.column = (parsed.unwrap()-1) as i32;
         }
+        if (found.id == 8) {
+            let value = found.value.unwrap().bytes; let parsed = core::decimal::parse_u64_range(value.values,value.start,value.length);
+            if (parsed.is_err() || (parsed.unwrap() > 16384) || options.limit_set) { return report(2); }
+            options.limit_set = true; options.limit = parsed.unwrap() as i32;
+        }
     }
     if (options.help) {
-        let help = literal("Usage: sort-rows [--column N] [--numeric] [--descending] [--header] [--help]\nRead UTF-8 CSV through EOF; sort by a 1-based column (default 1).\nText order compares UTF-8 bytes; numeric order requires strict signed i64 cells.\nEqual keys retain input order, including descending. --header preserves the first row.\nShort options: -c N, -n, -r, -H, -h. Empty input is allowed.\nLimits: 4 MiB input, 16384 data rows, 64 fields, 8 MiB staged output.\n",442);
+        let help = literal("Usage: sort-rows [--column N] [--numeric] [--descending] [--header] [--drop-empty] [--unique] [--limit N] [--help]\nRead UTF-8 CSV through EOF; sort by a 1-based column (default 1).\nText order compares UTF-8 bytes; numeric order requires strict signed i64 cells.\nAll rows are validated before filtering, including when --limit is zero.\n--drop-empty removes rows with an empty selected cell.\n--unique keeps the earliest input row for each equal sort key.\n--limit N keeps 0..16384 data rows after filtering, sorting and deduplication.\nEqual keys retain input order, including descending. --header preserves the first row.\nShort options: -c N, -n, -r, -H, -h. Empty input is allowed.\nDuplicate options are errors; the three editing options have no short forms.\nLimits: 4 MiB input, 16384 data rows, 64 fields, 8 MiB staged output.\n",827);
         if (!write(help,1,64)) { return report(5); } return 0;
     }
     let status = run(options.borrow()); if (status != 0) { return report(status); } return 0;

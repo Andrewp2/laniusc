@@ -1,0 +1,16 @@
+module app::main;
+import alloc::vec;
+import core::clone;
+import core::cmp;
+import core::iter;
+import core::pair;
+import core::result;
+import core::clone_values;
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for Policy { pub fn apply(&self,value:core::pair::Pair<u8,u8>) -> bool { return true; } }
+fn main() -> i32 {
+    let rejected_edit_bound:alloc::vec::Vec<i32> =alloc::vec::new<i32>(); let policy:Policy=Policy {};
+    rejected_edit_bound.dedup_by_destroy(policy.borrow());
+    return 0;
+}

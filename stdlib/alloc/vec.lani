@@ -3,10 +3,12 @@
 // Nested resources copy shallowly and require explicit application ownership.
 module alloc::vec;
 import alloc::allocator;
+import core::clone;
 import core::cmp;
 import core::iter;
 import core::mem;
 import core::option;
+import core::pair;
 import core::panic;
 import core::result;
 import core::slice;
@@ -40,6 +42,18 @@ fn capacity_limit<T>() -> i32 {
     let size: usize = core::mem::size_of<T>();
     if (size == 0) { return MAX_CAPACITY; }
     return (2147483647 / size) as i32;
+}
+
+// Natural equality shares the ordered, ownership-aware deduplication engine.
+struct NaturalEquality<T> {}
+impl<T> NaturalEquality<T> {
+    fn borrow(&self) -> &NaturalEquality<T> { return self; }
+}
+pub impl<T> core::iter::Mapper<core::pair::Pair<T,T>,bool> for NaturalEquality<T>
+    where T: core::cmp::PartialEq<T> {
+    pub fn apply(&self, values: core::pair::Pair<T,T>) -> bool {
+        return T::partial_eq(values.first,values.second);
+    }
 }
 
 pub impl<T> Vec<T> {
@@ -241,6 +255,74 @@ pub impl<T> Vec<T> {
         return core::result::Ok(self.length);
     }
     pub fn clear(&self) { self.length = 0; }
+
+    // End old views/cursors first. Each item is one cleanup authority; callback
+    // descriptors only observe it. Callbacks/Destroy must not access this owner
+    // or its backing through aliases, reenter, mutate inputs, or retain owners.
+    // The call owns the unvisited suffix while self.length names the survivors.
+    pub fn retain_destroy<P>(&self, predicate: &P) -> i32
+        where T: core::clone::Destroy<T>, P: core::iter::Mapper<T,bool> {
+        let original: i32 = self.length;
+        let slots: [T] = self.slots();
+        let read: i32 = 0; self.length = 0;
+        while (read < original) {
+            let item: T = slots[read];
+            if (predicate.apply(item)) {
+                if (self.length != read) { slots[self.length] = item; }
+                self.length += 1;
+            } else { T::destroy_value(item); }
+            read += 1;
+        }
+        return original - self.length;
+    }
+
+    // True consumes current; false retains it as the next representative.
+    // Even zero-sized items receive every comparison and required destruction.
+    pub fn dedup_by_destroy<P>(&self, same: &P) -> i32
+        where T: core::clone::Destroy<T>, P: core::iter::Mapper<core::pair::Pair<T,T>,bool> {
+        let original: i32 = self.length;
+        if (original < 2) { return 0; }
+        let slots: [T] = self.slots();
+        let read: i32 = 1; self.length = 1;
+        while (read < original) {
+            let item: T = slots[read];
+            let previous: T = slots[self.length - 1];
+            let values: core::pair::Pair<T,T> = core::pair::Pair { first: previous, second: item };
+            if (same.apply(values)) { T::destroy_value(item); }
+            else {
+                if (self.length != read) { slots[self.length] = item; }
+                self.length += 1;
+            }
+            read += 1;
+        }
+        return original - self.length;
+    }
+
+    pub fn dedup_destroy(&self) -> i32
+        where T: core::clone::Destroy<T>, T: core::cmp::PartialEq<T> {
+        let same: NaturalEquality<T> = NaturalEquality {};
+        return self.dedup_by_destroy<NaturalEquality<T>>(same.borrow());
+    }
+
+    // Remove cleanup authority before invoking Destroy, as pop/destroy_vec do.
+    // The caller supplies a nonnegative target no greater than current length.
+    fn destroy_tail(&self, length: i32) where T: core::clone::Destroy<T> {
+        let slots: [T] = self.slots();
+        while (self.length > length) {
+            self.length -= 1;
+            T::destroy_value(slots[self.length]);
+        }
+    }
+
+    pub fn truncate_destroy(&self, length: i32) -> core::result::Result<i32, Error>
+        where T: core::clone::Destroy<T> {
+        if (length < 0) { return core::result::Err(Error::Bounds); }
+        if (length < self.length) { self.destroy_tail(length); }
+        return core::result::Ok(self.length);
+    }
+
+    pub fn clear_destroy(&self) where T: core::clone::Destroy<T> { self.destroy_tail(0); }
+
     pub fn try_resize(&self, length: i32, fill: T) -> core::result::Result<i32, Error> {
         if (length < 0) { return core::result::Err(Error::Bounds); }
         if (length <= self.length) { self.length = length; return core::result::Ok(length); }

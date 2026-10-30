@@ -22,7 +22,7 @@ Declaration counts: enum: 2; field: 7; function: 1; impl: 2; method: 3; struct: 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/cli_response_files.lani#L4)
-- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L16) · [source](../../../extended/ext/cli_response_files.lani#L5)
+- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L18) · [source](../../../extended/ext/cli_response_files.lani#L5)
 - [core::io](../core/io.md) · [source](../../../extended/ext/cli_response_files.lani#L6)
 - [core::io::Read](../core/io.md) (items in separate namespaces: variant, trait; no use-site resolution) · [variant declaration](../../../stdlib/core/io.lani#L26) · [trait declaration](../../../stdlib/core/io.lani#L41) · [source](../../../extended/ext/cli_response_files.lani#L7)
 - [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L12) · [source](../../../extended/ext/cli_response_files.lani#L8)

@@ -1,0 +1,132 @@
+module app::main;
+import alloc::vec;
+import core::clone;
+import core::cmp;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+
+// Event codes distinguish observation from destruction, so timing as well as
+// count is asserted. Instrumentation never accesses the vector or owns memory.
+struct Log { words:[i32], used:i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn put(&self,event:i32) { self.words[self.used]=event; self.used+=1; }
+    fn reset(&self) { self.used=0; let i:i32=0; while(i<128) { self.words[i]=777; i+=1; } }
+}
+struct Item { id:i32, key:i32, payload:u64, log:&Log }
+fn item(id:i32,key:i32,log:&Log) -> Item { return Item { id:id,key:key,payload:18446744073709551615-id as u64,log:log }; }
+pub impl core::clone::Destroy<Item> for Item {
+    pub fn destroy_value(value:Item) { value.log.put(200+value.id); }
+}
+pub impl core::cmp::PartialEq<Item> for Item {
+    pub fn partial_eq(left:Item,right:Item) -> bool {
+        left.log.put(2000+left.id*10+right.id); return left.key==right.key;
+    }
+    pub fn partial_ne(left:Item,right:Item) -> bool { return !Item::partial_eq(left,right); }
+}
+struct Keep { mode:i32, log:&Log }
+impl Keep { fn borrow(&self) -> &Keep { return self; } }
+pub impl core::iter::Mapper<Item,bool> for Keep {
+    pub fn apply(&self,value:Item) -> bool {
+        self.log.put(100+value.id);
+        if(self.mode==0) { return true; }
+        if(self.mode==1) { return false; }
+        return value.id%2==0;
+    }
+}
+struct Same { mode:i32, calls:i32, log:&Log }
+impl Same { fn borrow(&self) -> &Same { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Item,Item>,bool> for Same {
+    pub fn apply(&self,values:core::pair::Pair<Item,Item>) -> bool {
+        self.calls+=1; self.log.put(1000+values.first.id*10+values.second.id);
+        if(self.mode==1) { return values.second.key-values.first.key<=1; }
+        if(self.mode==2) { return self.calls%3!=0; }
+        return values.first.key==values.second.key;
+    }
+}
+fn trace(log:&Log,expected:[i32],length:i32) {
+    assert(log.used==length); let i:i32=0;
+    while(i<length) { assert(log.words[i]==expected[i]); i+=1; }
+    while(i<128) { assert(log.words[i]==777); i+=1; }
+}
+fn shape(values:&alloc::vec::Vec<Item>,storage:ptr,capacity:i32,ids:[i32],length:i32) {
+    assert(values.storage==storage && values.capacity()==capacity && values.len()==length);
+    let i:i32=0; while(i<length) { let value:Item=values.at(i); assert(value.id==ids[i] && value.payload==18446744073709551615-ids[i] as u64); i+=1; }
+}
+fn fill(values:&alloc::vec::Vec<Item>,keys:[i32],length:i32,log:&Log) {
+    let i:i32=0; while(i<length) { values.try_push(item(i,keys[i],log)).unwrap(); i+=1; }
+}
+fn retain_cases() {
+    let words:[i32;128]=[777;128]; let log:Log=Log { words:words,used:0 };
+    let values:alloc::vec::Vec<Item> =alloc::vec::with_capacity<Item>(12).unwrap();
+    let storage:ptr=values.storage; let capacity:i32=values.capacity();
+    let ids:[i32;6]=[0,1,2,3,4,5]; let none:[i32;1]=[0];
+    let keep:Keep=Keep { mode:0,log:log.borrow() };
+    assert(values.retain_destroy(keep.borrow())==0); trace(log.borrow(),none,0); shape(values.borrow(),storage,capacity,none,0);
+    fill(values.borrow(),ids,6,log.borrow());
+    assert(values.retain_destroy(keep.borrow())==0); shape(values.borrow(),storage,capacity,ids,6);
+    let kept:[i32;6]=[100,101,102,103,104,105]; trace(log.borrow(),kept,6);
+    values.clear_destroy(); let kept_clear:[i32;12]=[100,101,102,103,104,105,205,204,203,202,201,200]; trace(log.borrow(),kept_clear,12);
+    log.reset(); fill(values.borrow(),ids,6,log.borrow()); keep.mode=1;
+    assert(values.retain_destroy(keep.borrow())==6); shape(values.borrow(),storage,capacity,none,0);
+    let rejected:[i32;12]=[100,200,101,201,102,202,103,203,104,204,105,205]; trace(log.borrow(),rejected,12);
+    values.clear_destroy(); trace(log.borrow(),rejected,12);
+    log.reset(); fill(values.borrow(),ids,6,log.borrow()); keep.mode=2;
+    assert(values.retain_destroy(keep.borrow())==3); let evens:[i32;3]=[0,2,4]; shape(values.borrow(),storage,capacity,evens,3);
+    let alternating:[i32;9]=[100,101,201,102,103,203,104,105,205]; trace(log.borrow(),alternating,9);
+    values.clear_destroy(); let alternating_clear:[i32;12]=[100,101,201,102,103,203,104,105,205,204,202,200]; trace(log.borrow(),alternating_clear,12);
+    assert(values.storage==storage && values.capacity()==capacity && values.len()==0); values.destroy();
+}
+fn dedup_cases() {
+    let words:[i32;128]=[777;128]; let log:Log=Log { words:words,used:0 };
+    let values:alloc::vec::Vec<Item> =alloc::vec::with_capacity<Item>(12).unwrap();
+    let storage:ptr=values.storage; let capacity:i32=values.capacity(); let ids:[i32;5]=[0,1,2,3,4];
+    let same:Same=Same { mode:0,calls:0,log:log.borrow() };
+    assert(values.dedup_by_destroy(same.borrow())==0 && values.dedup_destroy()==0 && same.calls==0); trace(log.borrow(),ids,0);
+    values.try_push(item(0,7,log.borrow())).unwrap();
+    assert(values.dedup_by_destroy(same.borrow())==0 && values.dedup_destroy()==0 && same.calls==0); shape(values.borrow(),storage,capacity,ids,1); trace(log.borrow(),ids,0);
+    values.clear_destroy(); let singleton:[i32;1]=[200]; trace(log.borrow(),singleton,1);
+    log.reset(); let equal:[i32;5]=[7,7,7,7,7]; fill(values.borrow(),equal,5,log.borrow());
+    assert(values.dedup_by_destroy(same.borrow())==4 && same.calls==4); shape(values.borrow(),storage,capacity,ids,1);
+    let all_equal:[i32;8]=[1001,201,1002,202,1003,203,1004,204]; trace(log.borrow(),all_equal,8);
+    values.clear_destroy(); let all_equal_clear:[i32;9]=[1001,201,1002,202,1003,203,1004,204,200]; trace(log.borrow(),all_equal_clear,9);
+    log.reset(); same.calls=0; fill(values.borrow(),ids,5,log.borrow());
+    assert(values.dedup_by_destroy(same.borrow())==0 && same.calls==4); shape(values.borrow(),storage,capacity,ids,5);
+    let distinct:[i32;4]=[1001,1012,1023,1034]; trace(log.borrow(),distinct,4);
+    values.clear_destroy(); let distinct_clear:[i32;9]=[1001,1012,1023,1034,204,203,202,201,200]; trace(log.borrow(),distinct_clear,9);
+    log.reset(); same.mode=1; same.calls=0; let ascending:[i32;5]=[1,2,3,4,5]; fill(values.borrow(),ascending,5,log.borrow());
+    assert(values.dedup_by_destroy(same.borrow())==2 && same.calls==4); let evens:[i32;3]=[0,2,4]; shape(values.borrow(),storage,capacity,evens,3);
+    let nontransitive:[i32;6]=[1001,201,1002,1023,203,1024]; trace(log.borrow(),nontransitive,6);
+    values.clear_destroy(); let nontransitive_clear:[i32;9]=[1001,201,1002,1023,203,1024,204,202,200]; trace(log.borrow(),nontransitive_clear,9);
+    log.reset(); same.mode=2; same.calls=0; fill(values.borrow(),equal,5,log.borrow());
+    assert(values.dedup_by_destroy(same.borrow())==3 && same.calls==4); let thirds:[i32;2]=[0,3]; shape(values.borrow(),storage,capacity,thirds,2);
+    let stateful:[i32;7]=[1001,201,1002,202,1003,1034,204]; trace(log.borrow(),stateful,7);
+    values.clear_destroy(); let stateful_clear:[i32;9]=[1001,201,1002,202,1003,1034,204,203,200]; trace(log.borrow(),stateful_clear,9);
+    log.reset(); let keys:[i32;5]=[7,7,9,9,7]; fill(values.borrow(),keys,5,log.borrow());
+    assert(values.dedup_destroy()==2); shape(values.borrow(),storage,capacity,evens,3);
+    let natural:[i32;6]=[2001,201,2002,2023,203,2024]; trace(log.borrow(),natural,6);
+    values.clear_destroy(); let natural_clear:[i32;9]=[2001,201,2002,2023,203,2024,204,202,200]; trace(log.borrow(),natural_clear,9);
+    assert(values.storage==storage && values.capacity()==capacity && values.len()==0); values.destroy();
+}
+fn truncate_cases() {
+    let words:[i32;128]=[777;128]; let log:Log=Log { words:words,used:0 };
+    let values:alloc::vec::Vec<Item> =alloc::vec::with_capacity<Item>(12).unwrap();
+    let storage:ptr=values.storage; let capacity:i32=values.capacity(); let ids:[i32;5]=[0,1,2,3,4];
+    fill(values.borrow(),ids,5,log.borrow());
+    let rejected:core::result::Result<i32,alloc::vec::Error> =values.truncate_destroy(-2147483648);
+    assert(match(rejected) { core::result::Err(alloc::vec::Error::Bounds) -> true, _ -> false });
+    assert(values.truncate_destroy(2147483647).unwrap()==5 && values.truncate_destroy(5).unwrap()==5); shape(values.borrow(),storage,capacity,ids,5); trace(log.borrow(),ids,0);
+    assert(values.truncate_destroy(2).unwrap()==2); shape(values.borrow(),storage,capacity,ids,2);
+    let tail:[i32;3]=[204,203,202]; trace(log.borrow(),tail,3);
+    values.clear_destroy(); let all:[i32;5]=[204,203,202,201,200]; trace(log.borrow(),all,5); shape(values.borrow(),storage,capacity,ids,0);
+    values.clear_destroy(); assert(values.truncate_destroy(0).unwrap()==0); assert(values.truncate_destroy(9).unwrap()==0); trace(log.borrow(),all,5);
+    let empty_rejected:core::result::Result<i32,alloc::vec::Error> =values.truncate_destroy(-1);
+    assert(match(empty_rejected) { core::result::Err(alloc::vec::Error::Bounds) -> true, _ -> false }); trace(log.borrow(),all,5);
+    log.reset(); fill(values.borrow(),ids,3,log.borrow()); shape(values.borrow(),storage,capacity,ids,3);
+    assert(values.truncate_destroy(0).unwrap()==0); let zero:[i32;3]=[202,201,200]; trace(log.borrow(),zero,3); shape(values.borrow(),storage,capacity,ids,0); values.destroy();
+    let fresh:alloc::vec::Vec<Item> =alloc::vec::new<Item>(); let null:ptr=0;
+    fresh.clear_destroy(); assert(fresh.truncate_destroy(7).unwrap()==0 && fresh.storage==null && fresh.capacity()==0 && fresh.len()==0); fresh.destroy();
+}
+fn main() -> i32 { retain_cases(); dedup_cases(); truncate_cases(); return 0; }

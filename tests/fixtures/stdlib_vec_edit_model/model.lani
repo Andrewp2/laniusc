@@ -1,0 +1,243 @@
+// Test-only raw observations of real Vec editing operations.
+module app::main;
+import alloc::vec;
+import core::clone;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::result;
+import core::slice;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32,allow_eof:bool) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(allow_eof && done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0); done+=got;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let i:i32=0;
+    while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn word(&self,value:u64) {
+        if(self.used==4096) { self.flush(); }
+        let i:i32=0;
+        while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; }
+        self.used+=8;
+    }
+    fn address(&self,value:ptr) {
+        if(self.used==4096) { self.flush(); }
+        assert(self.used>=0 && self.used<=4088 && self.used%8==0);
+        // Established native x86_64 store_address pattern; preserve all bits.
+        let slot:[ptr]=core::mem::typed_slice_from_raw_parts<ptr>(self.pointer+(self.used as usize),1);
+        slot[0]=value; self.used+=8;
+    }
+}
+
+// Separate fixed storage records effects without allocating or doing I/O from
+// callbacks or Destroy. No callback can reach the edited Vec through Context.
+struct Context { events:[u64],used:i32,calls:u64,destroyed:u64,salt:i32 }
+impl Context {
+    fn borrow(&self) -> &Context { return self; }
+    fn event(&self,kind:u64,left_id:i32,left_key:i32,right_id:i32,right_key:i32,answer:bool) {
+        assert(self.used>=0 && self.used<=504);
+        self.events[self.used]=kind; self.events[self.used+1]=self.calls;
+        self.events[self.used+2]=self.destroyed;
+        self.events[self.used+3]=left_id as u64; self.events[self.used+4]=left_key as u64;
+        self.events[self.used+5]=right_id as u64; self.events[self.used+6]=right_key as u64;
+        if(answer) { self.events[self.used+7]=1; } else { self.events[self.used+7]=0; }
+        self.used+=8;
+    }
+    fn retain(&self,id:i32,key:i32,mode:i32) -> bool {
+        self.calls+=1; let answer:bool=false;
+        if(mode==0) { answer=true; }
+        if(mode==2) { answer=(key+self.salt)%2==0; }
+        if(mode==3) { answer=((key as u64)+self.calls+self.destroyed+(self.salt as u64))%3!=0; }
+        self.event(1,id,key,0,0,answer); return answer;
+    }
+    fn compare(&self,kind:u64,left_id:i32,left_key:i32,right_id:i32,right_key:i32,mode:i32) -> bool {
+        self.calls+=1; let answer:bool=false;
+        if(kind==3) { answer=left_key==right_key; }
+        else {
+            if(mode==0) { answer=left_key==right_key; }
+            if(mode==1) { answer=left_key-right_key<=1 && right_key-left_key<=1; }
+            if(mode==2) { answer=((left_key as u64)+3*(right_key as u64)+self.calls+self.destroyed+(self.salt as u64))%4<=1; }
+            if(mode==3) { answer=left_key<=right_key; }
+        }
+        self.event(kind,left_id,left_key,right_id,right_key,answer); return answer;
+    }
+    fn retire(&self,id:i32,key:i32) {
+        self.event(4,id,key,0,0,false); self.destroyed+=1;
+    }
+    fn emit_events(&self,output:&Output) {
+        assert(self.used%8==0); output.word((self.used/8) as u64);
+        let i:i32=0; while(i<self.used) { output.word(self.events[i]); i+=1; }
+    }
+}
+trait Model<T> {
+    fn make(id:i32,key:i32,state:&Context) -> T;
+    fn identity(value:T) -> i32;
+    fn key(value:T) -> i32;
+    fn emit(value:T,output:&Output);
+}
+struct Small { id:i32,key:i32,state:&Context }
+impl Model<Small> for Small {
+    fn make(id:i32,key:i32,state:&Context) -> Small { return Small { id:id,key:key,state:state }; }
+    fn identity(value:Small) -> i32 { return value.id; }
+    fn key(value:Small) -> i32 { return value.key; }
+    fn emit(value:Small,output:&Output) { output.word(value.id as u64); output.word(value.key as u64); }
+}
+pub impl core::clone::Destroy<Small> for Small {
+    pub fn destroy_value(value:Small) { let state:&Context=value.state; state.retire(value.id,value.key); }
+}
+pub impl core::cmp::PartialEq<Small> for Small {
+    pub fn partial_eq(left:Small,right:Small) -> bool {
+        let state:&Context=left.state; return state.compare(3,left.id,left.key,right.id,right.key,0);
+    }
+    pub fn partial_ne(left:Small,right:Small) -> bool { return !Small::partial_eq(left,right); }
+}
+struct Owned { id:i32,key:i32,wide:u64,tag:core::option::Option<bool>,words:[i32;3],bytes:alloc::vec::Vec<u8>,state:&Context }
+impl Model<Owned> for Owned {
+    fn make(id:i32,key:i32,state:&Context) -> Owned {
+        let bytes:alloc::vec::Vec<u8> = alloc::vec::new(); let count:i32=id%7+1;
+        bytes.try_reserve(count).unwrap(); let i:i32=0;
+        while(i<count) { bytes.try_push(((id*17+key*19+i*31)&255) as u8).unwrap(); i+=1; }
+        let tag:core::option::Option<bool> = core::option::None();
+        if(id%3!=0) { tag=core::option::Some(id%2==0); }
+        let words:[i32;3]=[id,-key,id*1000003-100000000];
+        return Owned { id:id,key:key,wide:18446744073709551615-(id as u64)*4294967297,tag:tag,words:words,bytes:bytes,state:state };
+    }
+    fn identity(value:Owned) -> i32 { return value.id; }
+    fn key(value:Owned) -> i32 { return value.key; }
+    fn emit(value:Owned,output:&Output) {
+        output.word(value.id as u64); output.word(value.key as u64); output.word(value.wide);
+        if(value.tag.is_none()) { output.word(0); }
+        else { if(value.tag.unwrap()) { output.word(2); } else { output.word(1); } }
+        let i:i32=0; while(i<3) { output.word(value.words[i] as i64 as u64); i+=1; }
+        output.word(value.bytes.len() as u64); output.word(value.bytes.capacity() as u64); output.address(value.bytes.storage);
+        i=0; while(i<value.bytes.len()) { output.word(value.bytes.at(i) as u64); i+=1; }
+    }
+}
+pub impl core::clone::Destroy<Owned> for Owned {
+    pub fn destroy_value(value:Owned) {
+        let state:&Context=value.state; state.retire(value.id,value.key); value.bytes.destroy();
+    }
+}
+pub impl core::cmp::PartialEq<Owned> for Owned {
+    pub fn partial_eq(left:Owned,right:Owned) -> bool {
+        let state:&Context=left.state; return state.compare(3,left.id,left.key,right.id,right.key,0);
+    }
+    pub fn partial_ne(left:Owned,right:Owned) -> bool { return !Owned::partial_eq(left,right); }
+}
+struct Unary<T> { state:&Context,mode:i32 }
+impl<T> Unary<T> { fn borrow(&self) -> &Unary<T> { return self; } }
+pub impl<T> core::iter::Mapper<T,bool> for Unary<T> where T:Model<T> {
+    pub fn apply(&self,value:T) -> bool {
+        let state:&Context=self.state; return state.retain(T::identity(value),T::key(value),self.mode);
+    }
+}
+struct Adjacent<T> { state:&Context,mode:i32 }
+impl<T> Adjacent<T> { fn borrow(&self) -> &Adjacent<T> { return self; } }
+pub impl<T> core::iter::Mapper<core::pair::Pair<T,T>,bool> for Adjacent<T> where T:Model<T> {
+    pub fn apply(&self,values:core::pair::Pair<T,T>) -> bool {
+        let state:&Context=self.state;
+        return state.compare(2,T::identity(values.first),T::key(values.first),T::identity(values.second),T::key(values.second),self.mode);
+    }
+}
+fn snapshot<T>(value:&alloc::vec::Vec<T>,state:&Context,output:&Output) where T:Model<T> {
+    output.word(state.calls); output.word(state.destroyed); output.word(state.salt as u64);
+    output.word(value.len() as u64); output.word(value.capacity() as u64); output.address(value.storage);
+    let view:core::slice::View<T> = value.as_view();
+    assert(value.len()>=0 && value.len()<=24);
+    assert(value.get(-1).is_none() && value.get(value.len()).is_none());
+    output.word(core::mem::slice_stride(view.values) as i64 as u64);
+    output.word(view.start as u64); output.word(view.length as u64);
+    if(value.is_empty()) { output.word(1); } else { output.word(0); }
+    let i:i32=0; while(i<view.length) { T::emit(view.values[view.start+i],output); i+=1; }
+}
+fn error_code(value:core::result::Result<i32,alloc::vec::Error>) -> i32 {
+    if(value.is_ok()) { return 0; }
+    return match(value.unwrap_err()) {
+        alloc::vec::Error::Bounds -> 1,
+        alloc::vec::Error::InvalidCapacity -> 2,
+        alloc::vec::Error::CapacityOverflow -> 3,
+        alloc::vec::Error::AllocationFailed -> 4
+    };
+}
+fn run<T>(reserve:i32,actions:[u8],count:i32,output:&Output)
+    where T:Model<T>, T:core::clone::Destroy<T>, T:core::cmp::PartialEq<T> {
+    let events:[u64;512]=[0;512];
+    let state:Context=Context { events:events,used:0,calls:0,destroyed:0,salt:0 };
+    let value:alloc::vec::Vec<T> = alloc::vec::new(); value.try_reserve(reserve).unwrap();
+    output.word(core::mem::size_of<T>() as u64); snapshot<T>(value.borrow(),state.borrow(),output);
+    let step:i32=0;
+    while(step<count) {
+        let offset:i32=step*24;
+        let op:i32=get64(actions,offset) as i32;
+        let a:i32=get64(actions,offset+8) as i64 as i32;
+        let b:i32=get64(actions,offset+16) as i64 as i32;
+        assert(op>=0 && op<=5); state.used=0; state.salt=b;
+        let status:core::result::Result<i32,alloc::vec::Error> = core::result::Ok(0);
+        if(op==0) {
+            assert(a>=0 && a<=9 && b>0 && b<=80 && value.len()<24);
+            status=value.try_push(T::make(b,a,state.borrow())); assert(status.is_ok());
+        } else { if(op==1) {
+            assert(a>=0 && a<4); let predicate:Unary<T> = Unary { state:state.borrow(),mode:a };
+            status=core::result::Ok(value.retain_destroy(predicate.borrow()));
+        } else { if(op==2) {
+            assert(a>=0 && a<4); let predicate:Adjacent<T> = Adjacent { state:state.borrow(),mode:a };
+            status=core::result::Ok(value.dedup_by_destroy(predicate.borrow()));
+        } else { if(op==3) {
+            status=core::result::Ok(value.dedup_destroy());
+        } else { if(op==4) {
+            status=value.truncate_destroy(a);
+        } else { value.clear_destroy(); } } } } }
+        output.word(step as u64); output.word(op as u64); output.word(error_code(status) as u64);
+        if(status.is_ok()) { output.word(status.unwrap() as u64); } else { output.word(0); }
+        state.emit_events(output); snapshot<T>(value.borrow(),state.borrow(),output); step+=1;
+    }
+    state.used=0; state.salt=0; value.clear_destroy();
+    output.word(99); state.emit_events(output); snapshot<T>(value.borrow(),state.borrow(),output);
+    value.destroy(); snapshot<T>(value.borrow(),state.borrow(),output);
+}
+fn main() -> i32 {
+    assert(core::mem::size_of<ptr>()==8);
+    let header_words:[i32;6]=[0;6]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,24);
+    assert(read_exact(header_pointer,16,false)); assert(get64(header,0)==8531334356250752115);
+    let cases:i32=get64(header,8) as i32; assert(cases>0 && cases<=32);
+    let action_words:[i32;480]=[0;480]; let action_pointer:ptr=core::mem::i32_array_data_ptr(action_words);
+    let actions:[u8]=core::mem::typed_slice_from_raw_parts<u8>(action_pointer,1920);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    output.word(8531334356250752115); output.word(cases as u64); let index:i32=0;
+    while(index<cases) {
+        assert(read_exact(header_pointer,24,false));
+        let shape:i32=get64(header,0) as i32; let reserve:i32=get64(header,8) as i32; let count:i32=get64(header,16) as i32;
+        assert(shape>=0 && shape<2 && reserve>=0 && reserve<=31 && count>0 && count<=80);
+        assert(read_exact(action_pointer,count*24,false));
+        output.word(index as u64); output.word(shape as u64); output.word(reserve as u64); output.word(count as u64);
+        if(shape==0) { run<Small>(reserve,actions,count,output.borrow()); }
+        else { run<Owned>(reserve,actions,count,output.borrow()); }
+        index+=1;
+    }
+    assert(!read_exact(header_pointer,1,true)); output.word(7308889631908000883); output.flush(); return 0;
+}

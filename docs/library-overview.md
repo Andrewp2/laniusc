@@ -1,6 +1,16 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[owned Vec editing](stdlib-vec-edit.md) adds explicit stable filtering,
+adjacent deduplication and reverse tail cleanup while retaining capacity.
+Temporary predicate borrows, exact cleanup order and zero-sized effects stay
+manual and explicit. The [sort-rows consumer](stdlib-sort-rows.md) gains
+filter/unique/limit policies. All nine library groups pass, including the
+24-case state model and complete large-owner observations. All four new
+application groups/132 cases pass with 57 reached allocation denials; three
+selected older groups/109 cases remain separate. This finite native Linux
+x86_64 increment is accepted; enforced ownership and broader work remain open.
+The preceding
 [relocatable development SDK](library-sdk.md) packages a supplied Linux x86_64
 compiler and shaders with library sources, offline contract guides, three
 examples and existing suite/vendor tools. Compiler identity, source snapshot

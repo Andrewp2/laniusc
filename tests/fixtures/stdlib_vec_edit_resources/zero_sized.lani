@@ -1,0 +1,44 @@
+module app::main;
+import alloc::vec;
+import core::clone;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::pair;
+import fixture::support;
+struct Unit {}
+pub impl core::clone::Destroy<Unit> for Unit { pub fn destroy_value(value:Unit) { fixture::support::mark(100); } }
+pub impl core::cmp::PartialEq<Unit> for Unit {
+    pub fn partial_eq(a:Unit,b:Unit) -> bool { fixture::support::mark(113); return true; }
+    pub fn partial_ne(a:Unit,b:Unit) -> bool { return false; }
+}
+struct Keep { calls:i32 }
+impl Keep { fn borrow(&self) -> &Keep { return self; } }
+pub impl core::iter::Mapper<Unit,bool> for Keep {
+    pub fn apply(&self,value:Unit) -> bool { self.calls+=1; fixture::support::mark(114); return self.calls%3!=0; }
+}
+struct Same { calls:i32 }
+impl Same { fn borrow(&self) -> &Same { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Unit,Unit>,bool> for Same {
+    pub fn apply(&self,value:core::pair::Pair<Unit,Unit>) -> bool { self.calls+=1; fixture::support::mark(115); return self.calls%2!=0; }
+}
+struct Quiet {}
+pub impl core::clone::Destroy<Quiet> for Quiet { pub fn destroy_value(value:Quiet) {} }
+fn main() -> i32 {
+    fixture::support::mark(65); let values:alloc::vec::Vec<Unit> = alloc::vec::new();
+    values.try_resize(17,Unit {}).unwrap(); let keep:Keep = Keep { calls:0 }; let same:Same = Same { calls:0 };
+    fixture::support::mark(83); assert(core::mem::size_of<Unit>()==0 && values.storage==0 && values.capacity()==2147483647);
+    fixture::support::mark(80); assert(values.retain_destroy(keep.borrow())==5 && keep.calls==17 && values.len()==12); fixture::support::mark(112);
+    fixture::support::mark(80); assert(values.dedup_by_destroy(same.borrow())==6 && same.calls==11 && values.len()==6); fixture::support::mark(112);
+    fixture::support::mark(80); assert(values.truncate_destroy(2).unwrap()==2); fixture::support::mark(112);
+    fixture::support::mark(80); values.clear_destroy(); values.clear_destroy(); fixture::support::mark(112);
+    fixture::support::mark(80); values.try_resize(9,Unit {}).unwrap(); assert(values.dedup_destroy()==8 && values.len()==1); values.clear_destroy(); fixture::support::mark(112);
+    // An inhabited zero-byte type has valid maximum-count metadata without
+    // allocating or claiming billions of pushes. Its destructor has no effects.
+    let null:ptr = 0; let huge:alloc::vec::Vec<Quiet> = alloc::vec::Vec { storage:null,length:2147483647,reserved:2147483647 };
+    fixture::support::mark(80); assert(huge.truncate_destroy(2147483647).unwrap()==2147483647);
+    assert(huge.truncate_destroy(-1).is_err() && huge.len()==2147483647 && huge.storage==0 && huge.capacity()==2147483647);
+    assert(values.len()==0 && values.storage==0 && values.capacity()==2147483647); fixture::support::mark(112);
+    fixture::support::word(keep.calls); fixture::support::word(same.calls); fixture::support::word(huge.len());
+    fixture::support::mark(67); huge.destroy(); values.destroy(); fixture::support::mark(69); fixture::support::mark(68); return 0;
+}

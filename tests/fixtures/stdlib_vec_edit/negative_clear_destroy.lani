@@ -1,0 +1,19 @@
+module app::main;
+import alloc::vec;
+import core::clone;
+import core::cmp;
+import core::iter;
+import core::pair;
+import core::result;
+struct Plain { value:i32 }
+pub impl core::cmp::PartialEq<Plain> for Plain {
+    pub fn partial_eq(left:Plain,right:Plain) -> bool { return left.value==right.value; }
+    pub fn partial_ne(left:Plain,right:Plain) -> bool { return !Plain::partial_eq(left,right); }
+}
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+fn main() -> i32 {
+    let rejected_edit_bound:alloc::vec::Vec<Plain> =alloc::vec::new<Plain>(); let policy:Policy=Policy {};
+    rejected_edit_bound.clear_destroy();
+    return 0;
+}

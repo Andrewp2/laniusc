@@ -1,0 +1,50 @@
+module app::main;
+import alloc::vec;
+import core::clone;
+import core::iter;
+import core::mem;
+import core::pair;
+import fixture::support;
+struct Stats { predicates:i32,comparisons:i32,destroyed:i32,sum:i64 }
+impl Stats { fn borrow(&self) -> &Stats { return self; } }
+struct Item { id:i32,key:i32,checksum:i64,stats:&Stats }
+fn make(id:i32,stats:&Stats) -> Item { return Item { id:id,key:id/8,checksum:(id as i64)*1000003+17,stats:stats }; }
+fn check(item:Item) { assert(item.key==item.id/8 && item.checksum==(item.id as i64)*1000003+17); }
+pub impl core::clone::Destroy<Item> for Item {
+    pub fn destroy_value(item:Item) { check(item); item.stats.destroyed+=1; item.stats.sum+=item.id as i64; }
+}
+struct Keep {}
+impl Keep { fn borrow(&self) -> &Keep { return self; } }
+pub impl core::iter::Mapper<Item,bool> for Keep {
+    pub fn apply(&self,item:Item) -> bool { check(item); item.stats.predicates+=1; return item.id%3!=0; }
+}
+struct Same {}
+impl Same { fn borrow(&self) -> &Same { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Item,Item>,bool> for Same {
+    pub fn apply(&self,pair:core::pair::Pair<Item,Item>) -> bool { check(pair.first); check(pair.second); pair.first.stats.comparisons+=1; return pair.first.key==pair.second.key; }
+}
+fn publish(values:&alloc::vec::Vec<Item>,count:i32,stage:i32,pointer:ptr) {
+    assert(values.storage==pointer && values.capacity()==count*4+17);
+    fixture::support::word(count); fixture::support::word(stage); fixture::support::word(values.len());
+    let words:[i32;256] = [0;256]; let raw=core::mem::i32_array_data_ptr(words); let bytes=core::mem::typed_slice_from_raw_parts<u8>(raw,1024);
+    let i:i32 = 0; while(i<values.len()) {
+        let used:i32 = 0; while(i<values.len() && used<=1008) { let item=values.at(i); check(item);
+            fixture::support::number(bytes,used,item.id as u64,4); fixture::support::number(bytes,used+4,item.key as u64,4); fixture::support::number(bytes,used+8,item.checksum as u64,8); used+=16; i+=1; }
+        fixture::support::publish(raw,used);
+    }
+}
+fn cycle(count:i32) {
+    fixture::support::mark(65); let stats:Stats = Stats { predicates:0,comparisons:0,destroyed:0,sum:0 };
+    let values:alloc::vec::Vec<Item> = alloc::vec::with_capacity<Item>(count*4+17).unwrap(); let i:i32 = 0;
+    while(i<count) { values.try_push(make(i,stats.borrow())).unwrap(); i+=1; }
+    let pointer=values.storage; let keep:Keep = Keep {}; let same:Same = Same {}; fixture::support::mark(83);
+    fixture::support::mark(80); let removed=values.retain_destroy(keep.borrow()); assert(removed==(count+2)/3 && stats.predicates==count); fixture::support::mark(112); publish(values.borrow(),count,1,pointer);
+    let retained=values.len(); fixture::support::mark(80); assert(values.dedup_by_destroy(same.borrow())==retained-count/8 && stats.comparisons==retained-1); fixture::support::mark(112); publish(values.borrow(),count,2,pointer);
+    fixture::support::mark(80); assert(values.truncate_destroy(count/16).unwrap()==count/16); fixture::support::mark(112); publish(values.borrow(),count,3,pointer);
+    fixture::support::mark(80); values.clear_destroy(); assert(values.len()==0 && stats.destroyed==count && stats.sum==(count as i64)*((count-1) as i64)/2); fixture::support::mark(112); publish(values.borrow(),count,4,pointer);
+    fixture::support::mark(80); i=0; while(i<3) { values.try_push(make(count+i,stats.borrow())).unwrap(); i+=1; } fixture::support::mark(112); publish(values.borrow(),count,5,pointer);
+    fixture::support::mark(80); values.clear_destroy(); assert(stats.destroyed==count+3 && stats.sum==(count as i64)*((count-1) as i64)/2+(count as i64)*3+3); fixture::support::mark(112); publish(values.borrow(),count,6,pointer);
+    fixture::support::word(stats.predicates); fixture::support::word(stats.comparisons); fixture::support::word(stats.destroyed);
+    fixture::support::mark(67); values.destroy(); fixture::support::mark(69);
+}
+fn main() -> i32 { cycle(4096); cycle(65536); fixture::support::mark(68); return 0; }

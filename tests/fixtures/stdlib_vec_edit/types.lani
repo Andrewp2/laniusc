@@ -1,0 +1,111 @@
+module app::main;
+import alloc::vec;
+import core::clone;
+import core::clone_values;
+import core::cmp;
+import core::f32;
+import core::f64;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::result;
+import core::slice;
+
+fn filter<T,P>(values:&alloc::vec::Vec<T>,policy:&P) -> i32 where T:core::clone::Destroy<T>,P:core::iter::Mapper<T,bool> { return values.retain_destroy<P>(policy); }
+fn adjacent<T,P>(values:&alloc::vec::Vec<T>,policy:&P) -> i32 where T:core::clone::Destroy<T>,P:core::iter::Mapper<core::pair::Pair<T,T>,bool> { return values.dedup_by_destroy<P>(policy); }
+fn natural<T>(values:&alloc::vec::Vec<T>) -> i32 where T:core::clone::Destroy<T>,T:core::cmp::PartialEq<T> { return values.dedup_destroy(); }
+fn shorten<T>(values:&alloc::vec::Vec<T>,length:i32) -> i32 where T:core::clone::Destroy<T> { let result:core::result::Result<i32,alloc::vec::Error> =values.truncate_destroy(length); return result.unwrap(); }
+fn clear<T>(values:&alloc::vec::Vec<T>) where T:core::clone::Destroy<T> { values.clear_destroy(); }
+
+enum Flag { Absent, Number(u64,core::option::Option<bool>) }
+struct Wide { id:i32, words:[u64;3], selected:core::slice::View<i32>, flag:Flag, counts:[i32], saved:[u64] }
+fn make(id:i32,backing:[i32],counts:[i32],saved:[u64]) -> Wide {
+    let flag:Flag=Flag::Absent(); if(id%2==1) { flag=Flag::Number(18446744073709551615-id as u64,core::option::Some(false)); }
+    let words:[u64;3]=[18446744073709551615-id as u64,9223372036854775808+id as u64,4294967297+id as u64];
+    return Wide { id:id,words:words,selected:core::slice::view_range(backing,id,2).unwrap(),flag:flag,counts:counts,saved:saved };
+}
+fn check(value:Wide,id:i32,backing:[i32]) {
+    assert(value.id==id && value.words[0]==18446744073709551615-id as u64 && value.words[1]==9223372036854775808+id as u64 && value.words[2]==4294967297+id as u64);
+    assert(value.selected.start==id && value.selected.length==2 && core::mem::slice_stride(value.selected.values)==core::mem::slice_stride(backing));
+    assert(value.selected.get(0).unwrap()==100+id && value.selected.get(1).unwrap()==101+id);
+    if(id%2==0) { assert(match(value.flag) { Flag::Absent -> true, _ -> false }); }
+    else { assert(match(value.flag) { Flag::Number(word,bit) -> word==18446744073709551615-id as u64 && !bit.unwrap(), _ -> false }); }
+}
+pub impl core::clone::Destroy<Wide> for Wide {
+    pub fn destroy_value(value:Wide) { value.counts[value.id]+=1; value.saved[value.id]=value.words[1]; }
+}
+pub impl core::cmp::PartialEq<Wide> for Wide {
+    pub fn partial_eq(left:Wide,right:Wide) -> bool { return left.id/2==right.id/2; }
+    pub fn partial_ne(left:Wide,right:Wide) -> bool { return !Wide::partial_eq(left,right); }
+}
+struct Keep { calls:i32 }
+impl Keep { fn borrow(&self) -> &Keep { return self; } }
+pub impl core::iter::Mapper<Wide,bool> for Keep {
+    pub fn apply(&self,value:Wide) -> bool { self.calls+=1; return value.id!=1; }
+}
+struct Same { calls:i32 }
+impl Same { fn borrow(&self) -> &Same { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Wide,Wide>,bool> for Same {
+    pub fn apply(&self,values:core::pair::Pair<Wide,Wide>) -> bool { self.calls+=1; return values.first.id/2==values.second.id/2; }
+}
+fn wide_values() {
+    let backing:[i32;8]=[100,101,102,103,104,105,106,107]; let counts:[i32;8]=[0;8]; let saved:[u64;8]=[0;8];
+    let values:alloc::vec::Vec<Wide> =alloc::vec::with_capacity<Wide>(11).unwrap(); let storage:ptr=values.storage;
+    let i:i32=0; while(i<6) { values.try_push(make(i,backing,counts,saved)).unwrap(); i+=1; }
+    assert(core::mem::slice_stride(values.as_slice())<0); let keep:Keep=Keep { calls:0 }; let same:Same=Same { calls:0 };
+    assert(filter<Wide,Keep>(values.borrow(),keep.borrow())==1 && keep.calls==6 && counts[1]==1);
+    let retained:[i32;5]=[0,2,3,4,5]; i=0; while(i<5) { check(values.at(i),retained[i],backing); i+=1; }
+    assert(adjacent<Wide,Same>(values.borrow(),same.borrow())==2 && same.calls==4 && counts[3]==1 && counts[5]==1);
+    assert(natural<Wide>(values.borrow())==0 && values.len()==3); check(values.at(0),0,backing); check(values.at(1),2,backing); check(values.at(2),4,backing);
+    assert(shorten<Wide>(values.borrow(),2)==2 && counts[4]==1); clear<Wide>(values.borrow());
+    i=0; while(i<6) { assert(counts[i]==1 && saved[i]==9223372036854775808+i as u64); i+=1; }
+    while(i<8) { assert(counts[i]==0 && saved[i]==0); i+=1; }
+    i=0; while(i<8) { assert(backing[i]==100+i); i+=1; }
+    assert(values.storage==storage && values.capacity()==11 && values.len()==0); values.destroy();
+}
+enum Token { First(Wide), Second(Wide) }
+fn value(token:Token) -> Wide { return match(token) { Token::First(inner) -> inner, Token::Second(inner) -> inner }; }
+pub impl core::clone::Destroy<Token> for Token { pub fn destroy_value(token:Token) { Wide::destroy_value(value(token)); } }
+pub impl core::cmp::PartialEq<Token> for Token {
+    pub fn partial_eq(left:Token,right:Token) -> bool { return value(left).id/2==value(right).id/2; }
+    pub fn partial_ne(left:Token,right:Token) -> bool { return !Token::partial_eq(left,right); }
+}
+struct TokenKeep { calls:i32 }
+impl TokenKeep { fn borrow(&self) -> &TokenKeep { return self; } }
+pub impl core::iter::Mapper<Token,bool> for TokenKeep { pub fn apply(&self,token:Token) -> bool { self.calls+=1; return value(token).id!=1; } }
+struct TokenSame { calls:i32 }
+impl TokenSame { fn borrow(&self) -> &TokenSame { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Token,Token>,bool> for TokenSame { pub fn apply(&self,tokens:core::pair::Pair<Token,Token>) -> bool { self.calls+=1; return value(tokens.first).id/2==value(tokens.second).id/2; } }
+fn enums() {
+    let backing:[i32;8]=[100,101,102,103,104,105,106,107]; let counts:[i32;8]=[0;8]; let saved:[u64;8]=[0;8];
+    let values:alloc::vec::Vec<Token> =alloc::vec::with_capacity<Token>(11).unwrap(); let storage:ptr=values.storage;
+    let i:i32=0; while(i<6) { let token:Token=Token::First(make(i,backing,counts,saved)); if(i%2==1) { token=Token::Second(make(i,backing,counts,saved)); } values.try_push(token).unwrap(); i+=1; }
+    let keep:TokenKeep=TokenKeep { calls:0 }; let same:TokenSame=TokenSame { calls:0 };
+    assert(filter<Token,TokenKeep>(values.borrow(),keep.borrow())==1 && keep.calls==6);
+    let retained:[i32;5]=[0,2,3,4,5]; i=0; while(i<5) {
+        let token:Token=values.at(i); let id:i32=retained[i];
+        assert(match(token) { Token::First(inner) -> id%2==0, Token::Second(inner) -> id%2==1 }); check(value(token),id,backing); i+=1;
+    }
+    assert(natural<Token>(values.borrow())==2 && values.len()==3); assert(adjacent<Token,TokenSame>(values.borrow(),same.borrow())==0 && same.calls==2);
+    i=0; while(i<3) { let token:Token=values.at(i); assert(match(token) { Token::First(inner) -> true, _ -> false }); check(value(token),i*2,backing); i+=1; }
+    assert(shorten<Token>(values.borrow(),1)==1); clear<Token>(values.borrow());
+    i=0; while(i<6) { assert(counts[i]==1 && saved[i]==9223372036854775808+i as u64); i+=1; }
+    while(i<8) { assert(counts[i]==0 && saved[i]==0); i+=1; }
+    i=0; while(i<8) { assert(backing[i]==100+i); i+=1; }
+    assert(values.storage==storage && values.capacity()==11 && values.len()==0); values.destroy();
+}
+fn float_equality() {
+    let bits:[u64;8]=[0,9223372036854775808,9221120237041090561,9221120237041090561,4607182418800017408,4607182418800017408,9223372036854775808,0];
+    let expected:[u64;5]=[0,9221120237041090561,9221120237041090561,4607182418800017408,9223372036854775808];
+    let values:alloc::vec::Vec<f64> =alloc::vec::with_capacity<f64>(12).unwrap(); let storage:ptr=values.storage; let i:i32=0;
+    while(i<8) { values.try_push(core::f64::from_bits(bits[i])).unwrap(); i+=1; }
+    assert(natural<f64>(values.borrow())==3 && values.len()==5); i=0; while(i<5) { assert(core::f64::to_bits(values.at(i))==expected[i]); i+=1; }
+    assert(natural<f64>(values.borrow())==0); clear<f64>(values.borrow()); assert(values.storage==storage && values.capacity()==12 && values.len()==0); values.destroy();
+    let single_bits:[u32;8]=[0,2147483648,2143289345,2143289345,1065353216,1065353216,2147483648,0]; let single_expected:[u32;5]=[0,2143289345,2143289345,1065353216,2147483648];
+    let single:alloc::vec::Vec<f32> =alloc::vec::with_capacity<f32>(12).unwrap(); let single_storage:ptr=single.storage; i=0;
+    while(i<8) { single.try_push(core::f32::from_bits(single_bits[i])).unwrap(); i+=1; }
+    assert(natural<f32>(single.borrow())==3 && single.len()==5); i=0; while(i<5) { assert(core::f32::to_bits(single.at(i))==single_expected[i]); i+=1; }
+    assert(natural<f32>(single.borrow())==0); clear<f32>(single.borrow()); assert(single.storage==single_storage && single.capacity()==12 && single.len()==0); single.destroy();
+}
+fn main() -> i32 { wide_values(); enums(); float_equality(); return 0; }

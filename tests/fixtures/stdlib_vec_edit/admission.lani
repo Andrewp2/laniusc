@@ -1,0 +1,83 @@
+module app::main;
+import alloc::vec;
+import core::clone;
+import core::clone_values;
+import core::cmp;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+
+struct Item { id:i32, key:i32, wide:u64, flag:core::option::Option<bool>, removed:[i32], compared:[i32] }
+fn check(item:Item) {
+    assert(item.wide==18446744073709551615-(item.id as u64));
+    assert(item.flag.unwrap()==(item.id%2==0));
+}
+fn item(id:i32,key:i32,removed:[i32],compared:[i32]) -> Item {
+    return Item { id:id,key:key,wide:18446744073709551615-(id as u64),flag:core::option::Some(id%2==0),removed:removed,compared:compared };
+}
+pub impl core::clone::Destroy<Item> for Item {
+    pub fn destroy_value(owned:Item) {
+        let log:[i32]=owned.removed; log[log[0]+1]=owned.id; log[0]+=1;
+    }
+}
+pub impl core::cmp::PartialEq<Item> for Item {
+    pub fn partial_eq(left:Item,right:Item) -> bool {
+        check(left); check(right);
+        let log:[i32]=left.compared; log[log[0]+1]=left.id*10+right.id; log[0]+=1;
+        return left.key/2==right.key/2;
+    }
+    pub fn partial_ne(left:Item,right:Item) -> bool { return !Item::partial_eq(left,right); }
+}
+struct Keep { visits:[i32] }
+impl Keep { fn borrow(&self) -> &Keep { return self; } }
+pub impl core::iter::Mapper<Item,bool> for Keep {
+    pub fn apply(&self,value:Item) -> bool {
+        check(value); let log:[i32]=self.visits; log[log[0]+1]=value.id; log[0]+=1;
+        return value.id!=2;
+    }
+}
+struct Same { pairs:[i32] }
+impl Same { fn borrow(&self) -> &Same { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Item,Item>,bool> for Same {
+    pub fn apply(&self,values:core::pair::Pair<Item,Item>) -> bool {
+        check(values.first); check(values.second);
+        let log:[i32]=self.pairs; log[log[0]+1]=values.first.id*10+values.second.id; log[0]+=1;
+        return values.first.key==values.second.key;
+    }
+}
+
+fn main() -> i32 {
+    let removed:[i32;9]=[0;9]; let visits:[i32;9]=[0;9];
+    let compared:[i32;4]=[0;4]; let pairs:[i32;7]=[0;7];
+    let keys:[i32;8]=[1,1,9,2,2,3,4,4];
+    let values:alloc::vec::Vec<Item> =alloc::vec::with_capacity<Item>(11).unwrap();
+    let i:i32=0;
+    while(i<8) { values.try_push(item(i,keys[i],removed,compared)).unwrap(); i+=1; }
+    let storage:ptr=values.storage; let capacity:i32=values.capacity();
+    let keep:Keep=Keep { visits:visits }; let same:Same=Same { pairs:pairs };
+    assert(values.retain_destroy<Keep>(keep.borrow())==1 && values.len()==7);
+    assert(visits[0]==8 && removed[0]==1 && removed[1]==2);
+    i=0; while(i<8) { assert(visits[i+1]==i); i+=1; }
+    assert(values.dedup_by_destroy<Same>(same.borrow())==3 && values.len()==4);
+    let expected_pairs:[i32;6]=[1,3,34,35,56,67];
+    assert(pairs[0]==6); i=0; while(i<6) { assert(pairs[i+1]==expected_pairs[i]); i+=1; }
+    assert(values.dedup_destroy()==1 && values.len()==3);
+    assert(compared[0]==3 && compared[1]==3 && compared[2]==35 && compared[3]==36);
+    assert(values.at(0).id==0 && values.at(1).id==3 && values.at(2).id==6);
+    let invalid:core::result::Result<i32,alloc::vec::Error> =values.truncate_destroy(-1);
+    assert(match(invalid) { core::result::Err(alloc::vec::Error::Bounds) -> true, _ -> false });
+    assert(values.len()==3 && removed[0]==5);
+    assert(values.truncate_destroy(99).unwrap()==3 && removed[0]==5);
+    assert(values.truncate_destroy(2).unwrap()==2 && removed[0]==6);
+    values.clear_destroy(); assert(values.len()==0 && removed[0]==8);
+    let expected_removed:[i32;8]=[2,1,4,7,5,6,3,0];
+    i=0; while(i<8) { assert(removed[i+1]==expected_removed[i]); i+=1; }
+    assert(values.storage==storage && values.capacity()==capacity);
+    values.clear_destroy(); assert(removed[0]==8); values.destroy();
+
+    let numbers:alloc::vec::Vec<i32> =alloc::vec::new<i32>();
+    numbers.try_push(4).unwrap(); numbers.try_push(4).unwrap(); numbers.try_push(5).unwrap();
+    assert(numbers.dedup_destroy()==1 && numbers.len()==2 && numbers.at(0)==4 && numbers.at(1)==5);
+    numbers.clear_destroy(); numbers.destroy(); return 0;
+}

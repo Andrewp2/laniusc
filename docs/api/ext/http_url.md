@@ -23,7 +23,7 @@ Declaration counts: enum: 3; field: 16; function: 2; impl: 1; method: 10; struct
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_url.lani#L4)
-- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L16) · [source](../../../extended/ext/http_url.lani#L5)
+- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L18) · [source](../../../extended/ext/http_url.lani#L5)
 - [core::net](../core/net.md) · [source](../../../extended/ext/http_url.lani#L6)
 - [core::net::IpAddr](../core/net.md) (item: enum) · [declaration](../../../stdlib/core/net.lani#L12) · [source](../../../extended/ext/http_url.lani#L7)
 - [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L12) · [source](../../../extended/ext/http_url.lani#L8)

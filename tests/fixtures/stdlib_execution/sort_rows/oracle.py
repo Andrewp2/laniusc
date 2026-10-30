@@ -11,11 +11,16 @@ import sys
 import tempfile
 
 CAP = 4 << 20
-HELP = (b"Usage: sort-rows [--column N] [--numeric] [--descending] [--header] [--help]\n"
+HELP = (b"Usage: sort-rows [--column N] [--numeric] [--descending] [--header] [--drop-empty] [--unique] [--limit N] [--help]\n"
         b"Read UTF-8 CSV through EOF; sort by a 1-based column (default 1).\n"
         b"Text order compares UTF-8 bytes; numeric order requires strict signed i64 cells.\n"
+        b"All rows are validated before filtering, including when --limit is zero.\n"
+        b"--drop-empty removes rows with an empty selected cell.\n"
+        b"--unique keeps the earliest input row for each equal sort key.\n"
+        b"--limit N keeps 0..16384 data rows after filtering, sorting and deduplication.\n"
         b"Equal keys retain input order, including descending. --header preserves the first row.\n"
         b"Short options: -c N, -n, -r, -H, -h. Empty input is allowed.\n"
+        b"Duplicate options are errors; the three editing options have no short forms.\n"
         b"Limits: 4 MiB input, 16384 data rows, 64 fields, 8 MiB staged output.\n")
 ERROR = b"sort-rows: operation failed\n"
 COUNTS = {"model": 37, "rejection": 33, "cli": 39, "io": 14}
@@ -346,7 +351,7 @@ def io(r):
 
 
 def controls():
-    assert len(HELP) == 442 and len(ERROR) == 28
+    assert len(HELP) == 827 and len(ERROR) == 28
     ties = [["b", "first"], ["a", "second"], ["b", "third"], ["a", "fourth"]]
     assert model_rows(ties, descending=True) == [ties[0], ties[2], ties[1], ties[3]]
     nums = [["first", "01"], ["second", "+1"], ["third", "-2"]]
