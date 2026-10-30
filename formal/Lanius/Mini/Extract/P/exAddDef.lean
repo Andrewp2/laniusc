@@ -10,6 +10,7 @@ import Lanius.Mini.Extract.P.exShapesOf
 import Lanius.Mini.Extract.P.exSpecStatement
 import Lanius.Mini.Extract.P.exStrip
 import Lanius.Mini.Extract.P.exWithErrs
+import Lanius.Mini.Extract.P.txErrInlineExternal1
 import Lanius.Mini.Extract.P.txHeaderC10
 import Lanius.Mini.Extract.P.txLeanKeywords15
 import Lanius.Mini.Extract.P.txLeanThen

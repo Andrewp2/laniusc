@@ -18,24 +18,8 @@ def txTerminationFuel : List Nat :=
   let t : List Nat := txTerminationFuel0 ++ txTerminationFuel1
   t
 
-def exSame (a : List Nat) (b : List Nat) : Bool :=
-  match a with
-  | [] =>
-    (match b with
-     | [] => true
-     | y :: more => false)
-  | x :: rest =>
-    match b with
-    | [] => false
-    | y :: more => decide (x = y) && exSame rest more
-
-/-- Whether text begins with prefix. -/
-def exStarts (pre : List Nat) (text : List Nat) : Bool :=
-  match pre with
-  | [] => true
-  | p :: prest =>
-    match text with
-    | [] => false
-    | t :: trest => decide (p = t) && exStarts prest trest
+def txErrInlineExternal0 : List Nat :=
+  let t : List Nat := 105 :: 110 :: 108 :: 105 :: 110 :: 101 :: 32 :: 102 :: 117 :: 110 :: 99 :: 116 :: 105 :: 111 :: 110 :: [115]
+  t
 
 end Lanius.Mini

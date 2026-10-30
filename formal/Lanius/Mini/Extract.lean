@@ -57,6 +57,7 @@ public import Lanius.Mini.Extract.P.txHeaderB27
 public import Lanius.Mini.Extract.P.txHeaderC3
 public import Lanius.Mini.Extract.P.txHeaderC10
 public import Lanius.Mini.Extract.P.txTerminationFuel1
+public import Lanius.Mini.Extract.P.txErrInlineExternal1
 public import Lanius.Mini.Extract.P.exDrop
 public import Lanius.Mini.Extract.P.exStrip
 public import Lanius.Mini.Extract.P.exLowerFirst
@@ -93,7 +94,8 @@ public import Lanius.Mini.Extract.P.exFlushRun
 public import Lanius.Mini.Extract.P.exByLastOne
 public import Lanius.Mini.Extract.P.exCxFn
 public import Lanius.Mini.Extract.P.exCxMethods
-public import Lanius.Mini.Extract.P.Inline_exIndexOr
+public import Lanius.Mini.Extract.P.exNamedIf
+public import Lanius.Mini.Extract.P.exItemErr
 public import Lanius.Mini.Extract.P.Inline_exSplitAt
 public import Lanius.Mini.Extract.P.Inline_exIdentPrefixAt
 public import Lanius.Mini.Extract.P.Inline_xpCast
@@ -115,6 +117,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 104 parts, `.P0` on, in source order, whose bodies
+The definitions are in 106 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

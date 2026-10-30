@@ -8,13 +8,13 @@ import Lanius.Mini.Extract.P.exStrip
 import Lanius.Mini.Extract.P.exTailOp
 import Lanius.Mini.Extract.P.exTyEq
 import Lanius.Mini.Extract.P.txErrFn0
+import Lanius.Mini.Extract.P.txErrInlineExternal1
 import Lanius.Mini.Extract.P.txErrMutualPrelude
 import Lanius.Mini.Extract.P.txErrNest
 import Lanius.Mini.Extract.P.txExtract
 import Lanius.Mini.Extract.P.txHeaderC10
 import Lanius.Mini.Extract.P.txPartTail4
 import Lanius.Mini.Extract.P.txPrelude
-import Lanius.Mini.Extract.P.txTerminationFuel1
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noToken

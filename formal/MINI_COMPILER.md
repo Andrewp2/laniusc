@@ -839,7 +839,7 @@ tools regenerate it:
 
 ```bash
 python3 formal/tools/grammar_table.py formal/lani/mini/frontend.lani
-python3 formal/tools/extract.py formal/lani/mini/frontend.lani formal/Lanius/Mini/Frontend.lean
+python3 -I formal/tools/lani_extract.py frontend
 ```
 
 After a grammar change, `formal/tools/grammar_cert.py` rewrites the one-reading
@@ -1304,7 +1304,9 @@ list lemmas. A wrong list operation fails its theorem when Lean checks the
 generated file. This replaced an earlier prelude on `std::vec::Vec<T>` whose
 operations were loops that copied, so their Lean meaning was trusted.
 
-`formal/tools/extract.py` turns everything after the prelude into
+The extractor in Lanius (`formal/lani/mini/extract.lani`, run on laniusc's
+parse tree by `lake exe extract`; `formal/tools/extract.py` until 10-30)
+turns everything after the prelude into
 `Lanius/Mini/Compiler.lean`, a Lean module importing the types
 (`Compiler/Types.lean`) and the parts `Lanius/Mini/Compiler/P/<first
 definition>.lean` (about 8 definitions each, the boundaries chosen by a hash
@@ -1316,8 +1318,8 @@ import all`, and one that names them in its statements lists the names after
 `-- import parts: Lanius.Mini.Compiler`; the extractor rewrites both blocks:
 
 ```bash
-python3 formal/tools/extract.py formal/lani/mini/compiler.lani formal/Lanius/Mini/Compiler.lean
-python3 formal/tools/extract.py --check formal/lani/mini/compiler.lani formal/Lanius/Mini/Compiler.lean
+python3 -I formal/tools/lani_extract.py compiler
+python3 -I formal/tools/lani_extract.py --check
 ```
 
 The extractor rejects anything outside the subset (loops, mutation, `usize`

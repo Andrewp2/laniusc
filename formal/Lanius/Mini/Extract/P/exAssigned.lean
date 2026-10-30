@@ -21,6 +21,7 @@ import Lanius.Mini.Extract.P.exWordOp
 import Lanius.Mini.Extract.P.txBool
 import Lanius.Mini.Extract.P.txBox
 import Lanius.Mini.Extract.P.txErrAssign
+import Lanius.Mini.Extract.P.txErrInlineExternal1
 import Lanius.Mini.Extract.P.txErrListOp
 import Lanius.Mini.Extract.P.txErrLiteral1
 import Lanius.Mini.Extract.P.txErrMatch1
@@ -38,7 +39,6 @@ import Lanius.Mini.Extract.P.txNameSingle
 import Lanius.Mini.Extract.P.txOpEq
 import Lanius.Mini.Extract.P.txOpPlus
 import Lanius.Mini.Extract.P.txOption
-import Lanius.Mini.Extract.P.txTerminationFuel1
 import Lanius.Mini.Extract.P.txUsize
 import Lanius.Mini.Frontend.P.isEmptyUsize
 

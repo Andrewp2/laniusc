@@ -5,8 +5,8 @@ import Lanius.Mini.Extract.P.exDrop
 import Lanius.Mini.Extract.P.exFirstOr
 import Lanius.Mini.Extract.P.exLowerFirst
 import Lanius.Mini.Extract.P.exStrip
+import Lanius.Mini.Extract.P.txErrInlineExternal1
 import Lanius.Mini.Extract.P.txExtract
-import Lanius.Mini.Extract.P.txTerminationFuel1
 import Lanius.Mini.Frontend.P.hasKids
 
 public section

@@ -275,4 +275,11 @@ structure XOut where
   errs : List (List Nat)
   deriving DecidableEq, Repr
 
+/-- The source of an external section, as the driver reads it: the path the marker names, the file's bytes and laniusc's tree of them. -/
+structure XExtSrc where
+  path : List Nat
+  source : List Nat
+  root : CTree
+  deriving Repr
+
 end Lanius.Mini

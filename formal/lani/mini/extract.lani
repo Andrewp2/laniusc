@@ -2261,6 +2261,56 @@ pub fn tx_termination_fuel() -> List<usize> {
     return t;
 }
 
+pub fn tx_err_inline_external_0() -> List<usize> {
+    let t: List<usize> = cons(105, cons(110, cons(108, cons(105, cons(110, cons(101, cons(32, cons(102, cons(117, cons(110, cons(99, cons(116, cons(105, cons(111, cons(110, single(115))))))))))))))));
+    return t;
+}
+
+pub fn tx_err_inline_external_1() -> List<usize> {
+    let t: List<usize> = cons(32, cons(99, cons(97, cons(110, cons(110, cons(111, cons(116, cons(32, cons(98, cons(101, cons(32, cons(101, cons(120, cons(116, cons(101, single(114))))))))))))))));
+    return t;
+}
+
+pub fn tx_err_inline_external_2() -> List<usize> {
+    let t: List<usize> = cons(110, cons(97, single(108)));
+    return t;
+}
+
+pub fn tx_err_inline_external() -> List<usize> {
+    let t: List<usize> = concat(tx_err_inline_external_0(), concat(tx_err_inline_external_1(), tx_err_inline_external_2()));
+    return t;
+}
+
+pub fn tx_err_differs_0() -> List<usize> {
+    let t: List<usize> = cons(32, cons(100, cons(105, cons(102, cons(102, cons(101, cons(114, cons(115, cons(32, cons(102, cons(114, cons(111, cons(109, cons(32, cons(105, single(116))))))))))))))));
+    return t;
+}
+
+pub fn tx_err_differs_1() -> List<usize> {
+    let t: List<usize> = cons(115, cons(32, cons(100, cons(101, cons(102, cons(105, cons(110, cons(105, cons(116, cons(105, cons(111, cons(110, cons(32, cons(105, cons(110, single(32))))))))))))))));
+    return t;
+}
+
+pub fn tx_err_differs() -> List<usize> {
+    let t: List<usize> = concat(tx_err_differs_0(), tx_err_differs_1());
+    return t;
+}
+
+pub fn tx_err_impl_external_0() -> List<usize> {
+    let t: List<usize> = cons(105, cons(109, cons(112, cons(108, cons(32, cons(98, cons(108, cons(111, cons(99, cons(107, cons(115, cons(32, cons(99, cons(97, cons(110, single(110))))))))))))))));
+    return t;
+}
+
+pub fn tx_err_impl_external_1() -> List<usize> {
+    let t: List<usize> = cons(111, cons(116, cons(32, cons(98, cons(101, cons(32, cons(101, cons(120, cons(116, cons(101, cons(114, cons(110, cons(97, single(108))))))))))))));
+    return t;
+}
+
+pub fn tx_err_impl_external() -> List<usize> {
+    let t: List<usize> = concat(tx_err_impl_external_0(), tx_err_impl_external_1());
+    return t;
+}
+
 // text constants end
 
 pub fn ex_same(a: List<usize>, b: List<usize>) -> bool {
@@ -6770,6 +6820,239 @@ pub struct XOut {
 // The modules of a file's external sections: the driver reads their parts.
 pub fn ex_external_modules(fuel: usize, source: List<usize>, root: CTree) -> List<List<usize>> {
     return ex_externals(ex_file_items(fuel, source, root));
+}
+
+// The source of an external section, as the driver reads it: the path the
+// marker names, the file's bytes and laniusc's tree of them.
+pub struct XExtSrc {
+    path: List<usize>,
+    source: List<usize>,
+    root: CTree,
+}
+
+pub fn ex_external_path_of(item: XItem) -> List<List<usize>> {
+    return match (item) {
+        IStruct(name, tparams, fields) -> empty(),
+        IEnum(name, tparams, ctors) -> empty(),
+        IFn(f) -> empty(),
+        IImpl(name, fns) -> empty(),
+        IMutual(b, f) -> empty(),
+        IExternal(m, p) -> single(p),
+        IPreludeEnd -> empty(),
+        IBad(why) -> empty(),
+    };
+}
+
+pub fn ex_external_path_list(ats: List<XAt>) -> List<List<usize>> {
+    return match (ats) {
+        Nil -> empty(),
+        Cons(a, rest) -> concat(ex_external_path_of(a.item), ex_external_path_list(unbox(rest))),
+    };
+}
+
+// The paths of a file's external sections, in order: the driver reads them.
+pub fn ex_external_paths(fuel: usize, source: List<usize>, root: CTree) -> List<List<usize>> {
+    return ex_external_path_list(ex_file_items(fuel, source, root));
+}
+
+pub fn ex_path_or(here: bool, p: List<usize>, later: List<usize>) -> List<usize> {
+    if (here) {
+        return p;
+    }
+    return later;
+}
+
+// The path of the external section of module m.
+pub fn ex_path_of_module(ats: List<XAt>, m: List<usize>) -> List<usize> {
+    return match (ats) {
+        Nil -> empty(),
+        Cons(a, rest) -> match (a.item) {
+            IStruct(name, tparams, fields) -> ex_path_of_module(unbox(rest), m),
+            IEnum(name, tparams, ctors) -> ex_path_of_module(unbox(rest), m),
+            IFn(f) -> ex_path_of_module(unbox(rest), m),
+            IImpl(name, fns) -> ex_path_of_module(unbox(rest), m),
+            IMutual(b, f) -> ex_path_of_module(unbox(rest), m),
+            IExternal(em, ep) -> ex_path_or(ex_same(em, m), ep, ex_path_of_module(unbox(rest), m)),
+            IPreludeEnd -> ex_path_of_module(unbox(rest), m),
+            IBad(why) -> ex_path_of_module(unbox(rest), m),
+        },
+    };
+}
+
+pub fn ex_items_if(fuel: usize, here: bool, x: XExtSrc, later: List<XAt>) -> List<XAt> {
+    if (here) {
+        return ex_file_items(fuel, x.source, x.root);
+    }
+    return later;
+}
+
+// The items of the source at path (none if the driver read no such file).
+pub fn ex_items_at(fuel: usize, srcs: List<XExtSrc>, path: List<usize>) -> List<XAt> {
+    return match (srcs) {
+        Nil -> empty(),
+        Cons(x, rest) -> ex_items_if(fuel, ex_same(x.path, path), x, ex_items_at(fuel, unbox(rest), path)),
+    };
+}
+
+// The name of a struct, enum or function item, else nothing.
+pub fn ex_item_name(item: XItem) -> List<List<usize>> {
+    return match (item) {
+        IStruct(name, tparams, fields) -> single(name),
+        IEnum(name, tparams, ctors) -> single(name),
+        IFn(f) -> single(f.name),
+        IImpl(name, fns) -> empty(),
+        IMutual(b, f) -> empty(),
+        IExternal(m, p) -> empty(),
+        IPreludeEnd -> empty(),
+        IBad(why) -> empty(),
+    };
+}
+
+pub fn ex_named_if(here: bool, item: XItem, found: List<XItem>) -> List<XItem> {
+    if (here) {
+        return single(item);
+    }
+    return found;
+}
+
+// The last item named name outside the prelude (extract.py's items by name).
+pub fn ex_last_named(ats: List<XAt>, name: List<usize>, found: List<XItem>) -> List<XItem> {
+    return match (ats) {
+        Nil -> found,
+        Cons(a, rest) -> ex_last_named(unbox(rest), name, ex_named_if(!a.prelude && ex_has_text(ex_item_name(a.item), name), a.item, found)),
+    };
+}
+
+pub fn ex_fields_same(fuel: usize, a: List<XField>, b: List<XField>) -> bool {
+    return match (a) {
+        Nil -> length(b) == 0,
+        Cons(x, rest) -> match (b) {
+            Nil -> false,
+            Cons(y, more) -> ex_same(x.name, y.name) && ex_ty_eq(fuel, x.ty, y.ty) && ex_fields_same(fuel, unbox(rest), unbox(more)),
+        },
+    };
+}
+
+pub fn ex_ctors_same(fuel: usize, a: List<XCtor>, b: List<XCtor>) -> bool {
+    return match (a) {
+        Nil -> length(b) == 0,
+        Cons(x, rest) -> match (b) {
+            Nil -> false,
+            Cons(y, more) -> ex_same(x.name, y.name) && ex_tys_eq(fuel, x.payload, y.payload) && ex_ctors_same(fuel, unbox(rest), unbox(more)),
+        },
+    };
+}
+
+pub fn ex_params_same(fuel: usize, a: List<XParam>, b: List<XParam>) -> bool {
+    return match (a) {
+        Nil -> length(b) == 0,
+        Cons(x, rest) -> match (b) {
+            Nil -> false,
+            Cons(y, more) -> ex_same(x.name, y.name) && ex_ty_eq(fuel, x.ty, y.ty) && ex_params_same(fuel, unbox(rest), unbox(more)),
+        },
+    };
+}
+
+// extract.py's shape: a struct's fields, an enum's constructors, a function's signature.
+pub fn ex_fn_same(fuel: usize, f: XFn, theirs: XItem) -> bool {
+    return match (theirs) {
+        IStruct(name, tparams, fields) -> false,
+        IEnum(name, tparams, ctors) -> false,
+        IFn(g) -> ex_same(f.name, g.name) && ex_texts_same(f.tparams, g.tparams) && ex_params_same(fuel, f.params, g.params) && ex_tys_eq(fuel, f.ret, g.ret),
+        IImpl(name, fns) -> false,
+        IMutual(b, m) -> false,
+        IExternal(m, p) -> false,
+        IPreludeEnd -> false,
+        IBad(why) -> false,
+    };
+}
+
+pub fn ex_same_shape(fuel: usize, mine: XItem, theirs: XItem) -> bool {
+    return match (mine) {
+        IStruct(name, tparams, fields) -> match (theirs) {
+            IStruct(n2, t2, f2) -> ex_fields_same(fuel, fields, f2),
+            IEnum(n2, t2, c2) -> false,
+            IFn(g) -> false,
+            IImpl(n2, fns) -> false,
+            IMutual(b, m) -> false,
+            IExternal(m, p) -> false,
+            IPreludeEnd -> false,
+            IBad(why) -> false,
+        },
+        IEnum(name, tparams, ctors) -> match (theirs) {
+            IStruct(n2, t2, f2) -> false,
+            IEnum(n2, t2, c2) -> ex_ctors_same(fuel, ctors, c2),
+            IFn(g) -> false,
+            IImpl(n2, fns) -> false,
+            IMutual(b, m) -> false,
+            IExternal(m, p) -> false,
+            IPreludeEnd -> false,
+            IBad(why) -> false,
+        },
+        IFn(f) -> ex_fn_same(fuel, f, theirs),
+        IImpl(name, fns) -> false,
+        IMutual(b, m) -> false,
+        IExternal(m, p) -> false,
+        IPreludeEnd -> false,
+        IBad(why) -> false,
+    };
+}
+
+pub fn ex_first_same(fuel: usize, mine: XItem, theirs: List<XItem>) -> bool {
+    return match (theirs) {
+        Nil -> false,
+        Cons(t, rest) -> ex_same_shape(fuel, mine, t),
+    };
+}
+
+pub fn ex_inline_external(inline: bool, errs: List<List<usize>>) -> List<List<usize>> {
+    if (inline) {
+        return single(tx_err_inline_external());
+    }
+    return errs;
+}
+
+// text err_inline_external "inline functions cannot be external"
+// text err_differs " differs from its definition in "
+// text err_impl_external "impl blocks cannot be external"
+// The error of an external item that is not its source's item of that name.
+pub fn ex_external_err(fuel: usize, mine: XItem, name: List<usize>, path: List<usize>, theirs: List<XItem>) -> List<List<usize>> {
+    if (ex_first_same(fuel, mine, theirs)) {
+        return empty();
+    }
+    return single(concat(name, concat(tx_err_differs(), path)));
+}
+
+pub fn ex_external_at_errs(fuel: usize, ats: List<XAt>, srcs: List<XExtSrc>, a: XAt) -> List<List<usize>> {
+    if (length(a.external) == 0 || a.prelude) {
+        return empty();
+    }
+    let path: List<usize> = ex_path_of_module(ats, a.external);
+    return match (a.item) {
+        IStruct(name, tparams, fields) -> ex_external_err(fuel, a.item, name, path, ex_last_named(ex_items_at(fuel, srcs, path), name, empty())),
+        IEnum(name, tparams, ctors) -> ex_external_err(fuel, a.item, name, path, ex_last_named(ex_items_at(fuel, srcs, path), name, empty())),
+        IFn(f) -> ex_inline_external(f.inline, ex_external_err(fuel, a.item, f.name, path, ex_last_named(ex_items_at(fuel, srcs, path), f.name, empty()))),
+        IImpl(name, fns) -> single(tx_err_impl_external()),
+        IMutual(b, m) -> empty(),
+        IExternal(m, p) -> empty(),
+        IPreludeEnd -> empty(),
+        IBad(why) -> empty(),
+    };
+}
+
+pub fn ex_external_errs_in(fuel: usize, all: List<XAt>, ats: List<XAt>, srcs: List<XExtSrc>) -> List<List<usize>> {
+    return match (ats) {
+        Nil -> empty(),
+        Cons(a, rest) -> concat(ex_external_at_errs(fuel, all, srcs, a), ex_external_errs_in(fuel, all, unbox(rest), srcs)),
+    };
+}
+
+// The errors of the external items that differ from their sources' items of
+// the same name (extract.py's check_external): srcs are the files of
+// ex_external_paths, as the driver read them.
+pub fn ex_external_errs(fuel: usize, source: List<usize>, root: CTree, srcs: List<XExtSrc>) -> List<List<usize>> {
+    let ats: List<XAt> = ex_file_items(fuel, source, root);
+    return ex_external_errs_in(fuel, ats, ats, srcs);
 }
 
 pub fn ex_item_err(item: XItem) -> List<List<usize>> {

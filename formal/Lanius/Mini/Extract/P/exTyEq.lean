@@ -6,12 +6,12 @@ import Lanius.Mini.Extract.P.exStart
 import Lanius.Mini.Extract.P.exStrip
 import Lanius.Mini.Extract.P.txBool
 import Lanius.Mini.Extract.P.txBox
+import Lanius.Mini.Extract.P.txErrInlineExternal1
 import Lanius.Mini.Extract.P.txErrMutualPrelude
 import Lanius.Mini.Extract.P.txLeanOption
 import Lanius.Mini.Extract.P.txNameSingle
 import Lanius.Mini.Extract.P.txOption
 import Lanius.Mini.Extract.P.txOptionPath
-import Lanius.Mini.Extract.P.txTerminationFuel1
 import Lanius.Mini.Extract.P.txUsize
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize

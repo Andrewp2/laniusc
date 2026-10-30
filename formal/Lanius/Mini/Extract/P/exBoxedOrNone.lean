@@ -12,6 +12,7 @@ import Lanius.Mini.Extract.P.exStrip
 import Lanius.Mini.Extract.P.exTyEq
 import Lanius.Mini.Extract.P.exWithErrs
 import Lanius.Mini.Extract.P.txBox
+import Lanius.Mini.Extract.P.txErrInlineExternal1
 import Lanius.Mini.Extract.P.txErrLiteral1
 import Lanius.Mini.Extract.P.txErrMatch1
 import Lanius.Mini.Extract.P.txKwUniverse
@@ -20,7 +21,6 @@ import Lanius.Mini.Extract.P.txLeanSetWidth
 import Lanius.Mini.Extract.P.txLeanThen
 import Lanius.Mini.Extract.P.txOpPlus
 import Lanius.Mini.Extract.P.txOption
-import Lanius.Mini.Extract.P.txTerminationFuel1
 import Lanius.Mini.Extract.P.txUsize
 
 public section

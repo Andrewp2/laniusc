@@ -3,13 +3,16 @@ import Lanius.Mini.Extract
 
 /-! The extractor in Lanius (`formal/lani/mini/extract.lani`), run on a file:
 
-    lake exe extract [--check] SOURCE TREE NAME MODULE FORMAL OUTDIR
+    lake exe extract [--check] [--tree PATH=TREE].. SOURCE TREE NAME MODULE FORMAL OUTDIR
 
 SOURCE is the `.lani` file, `TREE.prods` and `TREE.parents` laniusc's parse
 tree of it, NAME its path from the repository root and MODULE the Lean module
 of its extraction. The parts of the modules its external sections name are
 read from FORMAL (as extract.py's external_names does), and each module
-extracted is written as `OUTDIR/<module path>.lean`.
+extracted is written as `OUTDIR/<module path>.lean`. Each external
+section's file PATH (from the repository root) needs a `--tree PATH=TREE`:
+its items must be the file's items of the same names, read from TREE as
+the source is.
 The front end's lexer and validator read the tree, so the extractor works on
 the same parse as the front end.
 
@@ -98,19 +101,50 @@ def importBlocks (path text module : String) (parts : List String)
           "-- end import parts\n" ++ tail
   return new
 
+/-- A file's bytes and its tree, as the front end's lexer and validator check it. -/
+def readTree (source tree : String) : IO (Except String (List Nat × CTree × Nat)) := do
+  let bytes ← IO.FS.readBinFile source
+  let prods ← readNats (tree ++ ".prods")
+  let parents ← readNats (tree ++ ".parents")
+  let some tokens := lexTokens (bytes.toList.map fun b => Fin.ofNat 256 b.toNat)
+    | return .error s!"{source}: does not lex"
+  let some root := validateTree grammar tokens prods parents
+    | return .error s!"{source}: the tree does not validate"
+  return .ok (bytes.toList.map (·.toNat), root, 4 * (prods.length + tokens.length) + 16)
+
+/-- The `--tree PATH=TREE` arguments and the rest. -/
+def treeArgs : List String → List (String × String) × List String
+  | "--tree" :: pair :: rest =>
+    let (trees, others) := treeArgs rest
+    match pair.splitOn "=" with
+    | [path, tree] => ((path, tree) :: trees, others)
+    | _ => (trees, pair :: others)
+  | a :: rest => let (trees, others) := treeArgs rest; (trees, a :: others)
+  | [] => ([], [])
+
 def main (args : List String) : IO UInt32 := do
   let check := args.contains "--check"
-  match args.filter (· ≠ "--check") with
+  let (trees, args) := treeArgs (args.filter (· ≠ "--check"))
+  match args with
   | [source, tree, name, module, formal, outdir] =>
-    let bytes ← IO.FS.readBinFile source
-    let prods ← readNats (tree ++ ".prods")
-    let parents ← readNats (tree ++ ".parents")
-    let src := bytes.toList.map (·.toNat)
-    let some tokens := lexTokens (bytes.toList.map fun b => Fin.ofNat 256 b.toNat)
-      | IO.eprintln s!"{source}: does not lex"; return 1
-    let some root := validateTree grammar tokens prods parents
-      | IO.eprintln s!"{source}: the tree does not validate"; return 1
-    let fuel := 4 * (prods.length + tokens.length) + 16
+    let (src, root, fuel) ← match ← readTree source tree with
+      | .ok r => pure r
+      | .error e => IO.eprintln e; return 1
+    let mut srcs := []
+    let mut extFuel := fuel
+    for p in exExternalPaths fuel src root do
+      let path := stringOf p
+      let some t := List.lookup path trees
+        | IO.eprintln s!"{source}: no --tree for its external source {path}"; return 1
+      match ← readTree path t with
+      | .ok (bytes, r, f) =>
+        srcs := srcs ++ [({ path := p, source := bytes, root := r } : XExtSrc)]
+        extFuel := max extFuel f
+      | .error e => IO.eprintln e; return 1
+    let extErrs := exExternalErrs extFuel src root srcs
+    if !extErrs.isEmpty then
+      for e in extErrs do IO.eprintln s!"{source}: {stringOf e}"
+      return 1
     let mut known := []
     for m in exExternalModules fuel src root do
       known := known ++ (← knownOf formal (stringOf m))
@@ -153,7 +187,7 @@ def main (args : List String) : IO UInt32 := do
         IO.FS.writeFile path t
     return 0
   | _ =>
-    IO.eprintln "usage: lake exe extract [--check] SOURCE TREE NAME MODULE FORMAL OUTDIR"
+    IO.eprintln "usage: lake exe extract [--check] [--tree PATH=TREE].. SOURCE TREE NAME MODULE FORMAL OUTDIR"
     return 2
 
 end Lanius.Tools.Extract

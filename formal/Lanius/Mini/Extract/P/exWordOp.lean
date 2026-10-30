@@ -9,6 +9,7 @@ import Lanius.Mini.Extract.P.exSpecRule
 import Lanius.Mini.Extract.P.exWithErrs
 import Lanius.Mini.Extract.P.txBool
 import Lanius.Mini.Extract.P.txErrCast1
+import Lanius.Mini.Extract.P.txErrInlineExternal1
 import Lanius.Mini.Extract.P.txErrMatch1
 import Lanius.Mini.Extract.P.txErrPattern
 import Lanius.Mini.Extract.P.txKwUniverse
@@ -17,7 +18,6 @@ import Lanius.Mini.Extract.P.txLeanSetWidth
 import Lanius.Mini.Extract.P.txOpEq
 import Lanius.Mini.Extract.P.txOpPlus
 import Lanius.Mini.Extract.P.txOpXor
-import Lanius.Mini.Extract.P.txTerminationFuel1
 import Lanius.Mini.Extract.P.txUsize
 
 public section

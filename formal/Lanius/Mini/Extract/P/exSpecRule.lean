@@ -5,11 +5,11 @@ import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Extract.P.exAtom
 import Lanius.Mini.Extract.P.exKeepGap
 import Lanius.Mini.Extract.P.exLowerFirst
+import Lanius.Mini.Extract.P.txErrInlineExternal1
 import Lanius.Mini.Extract.P.txErrLiteral1
 import Lanius.Mini.Extract.P.txNameMinus
 import Lanius.Mini.Extract.P.txNameSingle
 import Lanius.Mini.Extract.P.txOpEq
-import Lanius.Mini.Extract.P.txTerminationFuel1
 import Lanius.Mini.Extract.P.txUsize
 
 public section

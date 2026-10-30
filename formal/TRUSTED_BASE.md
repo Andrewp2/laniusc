@@ -406,7 +406,14 @@ compiler that someone actually runs is one of these two:
 
 1. **The Lanius build.** laniusc compiles `formal/lani/mini/compiler.lani`.
    Two things are trusted here:
-   - **The extractor.** `formal/tools/extract.py` (1,683 lines of Python) is
+   - **The extractor.** Since 10-30 (roadmap F2) it is the extractor in
+     Lanius, `formal/lani/mini/extract.lani`, run by `lake exe extract`
+     (`Lanius/Tools/Extract.lean`) on laniusc's parse tree of the source once
+     the front end's validator accepts the tree, so it reads the source as
+     the front end does; `formal/tools/lani_extract.py` runs it. It writes
+     what `formal/tools/extract.py` wrote, byte for byte, and extract.py
+     still extracts the two programs the front end does not read yet (the
+     `&mut` pilot and the TLS machine). Either is
      trusted to give each construct it accepts the Lean meaning that Lanius
      gives it. It maps types one to one (`i32` and `u32` to `BitVec 32`,
      `u64` to `BitVec 64`, `usize` to `Nat`, `u8` to `UInt8`, `List<T>` to
@@ -414,7 +421,7 @@ compiler that someone actually runs is one of these two:
      `compiler.lani` and `frontend.lani` have no `&mut`; the translation of
      `&mut` parameters is used only by the pilot (see "`&mut` pilot" below).
    - **The prelude table.** `PRELUDE_FNS` and `PRELUDE_TYPES` in
-     `extract.py` are trusted. `boxed` and `unbox` are the identity,
+     `extract.py`, and the same table in `extract.lani`, are trusted. `boxed` and `unbox` are the identity,
      `plus`/`times`/`minus` are `Nat` `+`/`*`/`-` on every run that returns
      (they panic instead of wrapping, and `minus` panics when `b > a`), and
      `max_of` is `max`. The prelude bodies are the only code that touches
@@ -425,8 +432,10 @@ compiler that someone actually runs is one of these two:
    the Lanius runtime (allocation, panics, stack depth) on this one program.
 
    Checked by:
-   - `extract.py --check`, which confirms that `Compiler.lean` is not stale
-     (it passes at this commit; CI does not run it);
+   - `lani_extract.py --check` (the gate's `extract` step), which confirms
+     that `Compiler.lean`, `Frontend.lean`, `Extract.lean` and
+     `SqliteStatement.lean` are what the extractor in Lanius writes from
+     laniusc's trees (it passes at this commit; CI does not run it);
    - `mini_difftest.py`, which compares images from `#eval compileProgram`
      and from the Lanius build byte for byte (3,006 programs, 757,000 bytes,
      no differences);
