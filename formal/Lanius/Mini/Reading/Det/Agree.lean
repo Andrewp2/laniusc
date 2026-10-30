@@ -144,7 +144,7 @@ theorem pure_agree : ∀ {env : FrontEnv} {scope : List Local} {c : CTree} {e : 
       cases fo with
       | done _ => rfl
       | step ne _ _ _ => exact absurd kids ne
-    | level _ k₂ ef =>
+    | level _ _ k₂ ef =>
       have e := pure_agree k nd k₂
       subst e
       exact fold_agree fo nd ef
@@ -158,7 +158,7 @@ theorem pure_agree : ∀ {env : FrontEnv} {scope : List Local} {c : CTree} {e : 
       cases cs with
       | done _ => rfl
       | step ne _ _ => exact absurd kids ne
-    | cast _ k₂ ec =>
+    | cast _ _ k₂ ec =>
       have e := pure_agree k nd k₂
       subst e
       exact casts_agree cs ec
@@ -188,8 +188,8 @@ theorem pure_agree : ∀ {env : FrontEnv} {scope : List Local} {c : CTree} {e : 
     | method _ mf _ _ _ _ _ =>
       obtain ⟨_, m1, _⟩ := mf
       expr_clash
-    | chainLocal _ lo ch => rw [chain_end pe ch, ← exprR_local k lo]
-    | chain _ k₂ ch => rw [chain_end pe ch]; exact pure_agree k nd k₂
+    | chainLocal _ cf _ _ => exact absurd pe cf.1
+    | chain _ cf _ _ => exact absurd pe cf.1
     | _ => expr_clash
   | _, _, _, _, h₁@(.member pp pm mb), nd, _, _, h₂ => by
     cases h₂ with
@@ -198,8 +198,8 @@ theorem pure_agree : ∀ {env : FrontEnv} {scope : List Local} {c : CTree} {e : 
       obtain ⟨_, _, _, m3, _⟩ := mf
       obtain ⟨_, te, _⟩ := mb
       expr_clash
-    | chainLocal _ lo ch => exact chain_member mb pm nd lo ch
-    | chain _ k₂ ch =>
+    | chainLocal _ _ lo ch => exact chain_member mb pm nd lo ch
+    | chain _ _ k₂ ch =>
       obtain ⟨_, _, l, _, lo, _, _⟩ := id mb
       have e := eff_local lo k₂
       subst e

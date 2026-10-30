@@ -88,6 +88,14 @@ inductive EffCasts (env : FrontEnv) : MEff → CTree → MEff → Prop
 
 /-! ## The relation -/
 
+/-- A postfix read as its primary then a chain: not a primary alone, a
+method call on a name, an element of a slice local, or a call of a path. -/
+def ChainForm (c : CTree) : Prop :=
+  nodeProd (kid c 1) ≠ pPostfixEnd ∧ ¬MethodForm c ∧
+    ¬(nodeProd (kid c 0) = pIdent ∧ nodeProd (kid (kid c 0) 1) = pIdentPlain ∧ nodeProd (kid c 1) = pPostfixIndex ∧
+      nodeProd (kid (kid c 1) 3) = pPostfixEnd) ∧
+    ¬(nodeProd (kid c 0) = pIdent ∧ nodeProd (kid (kid c 0) 1) = pIdentPlain ∧ nodeProd (kid c 1) = pPostfixCall)
+
 /-- The paths the language reserves: the allocator's `alloc` and `dealloc`,
 `slice_from_raw_parts`, `slice_stride` and `assert`. No function or variant
 is read at them. -/
@@ -115,9 +123,9 @@ inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff �
       (nodeProd c = pAssign ∨ nodeProd c ∈ levelProds ∨ nodeProd c = pCast) → kidsOf (kid c 1) = [] →
       EffR env scope expected (kid c 0) x → EffR env scope expected c x
   | level {scope : List Local} {expected : Option Ty} {c : CTree} {a x : MEff} : nodeProd c ∈ levelProds →
-      EffR env scope none (kid c 0) a → EffFold env scope a (kid c 1) x → EffR env scope expected c x
+      kidsOf (kid c 1) ≠ [] → EffR env scope none (kid c 0) a → EffFold env scope a (kid c 1) x → EffR env scope expected c x
   | cast {scope : List Local} {expected : Option Ty} {c : CTree} {a x : MEff} : nodeProd c = pCast →
-      EffR env scope none (kid c 0) a → EffCasts env a (kid c 1) x → EffR env scope expected c x
+      kidsOf (kid c 1) ≠ [] → EffR env scope none (kid c 0) a → EffCasts env a (kid c 1) x → EffR env scope expected c x
   | neg {scope : List Local} {expected : Option Ty} {c : CTree} {a x : MEff} : nodeProd c = pNeg →
       EffR env scope expected (kid c 1) a → xNegOf (some a) = some x → EffR env scope expected c x
   | not {scope : List Local} {expected : Option Ty} {c : CTree} {a x : MEff} : nodeProd c = pNot →
@@ -141,12 +149,12 @@ inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff �
       EffR env scope expected c (.xIndex l.id i)
   | callChain {scope : List Local} {expected : Option Ty} {c : CTree} {a x : MEff} : nodeProd c = pPostfix →
       nodeProd (kid c 0) = pIdent → nodeProd (kid (kid c 0) 1) = pIdentPlain → nodeProd (kid c 1) = pPostfixCall →
-      EffPathCall env scope none (kid (kid c 0) 0) (kid (kid c 1) 1) a → EffChain env scope expected a (kid (kid c 1) 3) x →
+      nodeProd (kid (kid c 1) 3) ≠ pPostfixEnd → EffPathCall env scope none (kid (kid c 0) 0) (kid (kid c 1) 1) a → EffChain env scope expected a (kid (kid c 1) 3) x →
       EffR env scope expected c x
   | chainLocal {scope : List Local} {expected : Option Ty} {c : CTree} {l : Local} {x : MEff} : nodeProd c = pPostfix →
-      LocalOf scope (kid c 0) l → EffChain env scope expected (.xPure (.local l.id)) (kid c 1) x → EffR env scope expected c x
+      ChainForm c → LocalOf scope (kid c 0) l → EffChain env scope expected (.xPure (.local l.id)) (kid c 1) x → EffR env scope expected c x
   | chain {scope : List Local} {expected : Option Ty} {c : CTree} {a x : MEff} : nodeProd c = pPostfix →
-      EffR env scope none (kid c 0) a → EffChain env scope expected a (kid c 1) x → EffR env scope expected c x
+      ChainForm c → EffR env scope none (kid c 0) a → EffChain env scope expected a (kid c 1) x → EffR env scope expected c x
   | unitVariant {scope : List Local} {expected : Option Ty} {c : CTree} {ss : List Name} {front : ModPath} {name : Name}
       {v : VariantAt} {x : MEff} : nodeProd c = pIdent → nodeProd (kid c 1) = pIdentPlain →
       PathSpellings (kid (kid c 0) 0) (kid (kid c 0) 1) ss → ss = front ++ [name] → (∀ l, ¬LocalOf scope c l) →
@@ -762,13 +770,19 @@ theorem effSound : ∀ fuel, EffSound fuel
           or_assoc] at w
         exact .bare w.1 (hasKids_false w.2) (ihOf h)
       split at h
-      · rename_i _ _ lv
+      · rename_i _ nb lv
+        have kn : kidsOf (kid c 1) ≠ [] := by
+          rw [← hasKids_iff]
+          simp_all
         obtain ⟨a, ha, fold⟩ := ihFold h
-        exact .level ((isLevel_iff _).1 lv) (ihOf ha) fold
+        exact .level ((isLevel_iff _).1 lv) kn (ihOf ha) fold
       split at h
-      · rename_i _ _ _ pc
+      · rename_i _ nb _ pc
+        have kn : kidsOf (kid c 1) ≠ [] := by
+          rw [← hasKids_iff]
+          simp_all
         obtain ⟨a, ha, cs⟩ := effCasts_sound h
-        exact .cast pc (ihOf ha) cs
+        exact .cast pc kn (ihOf ha) cs
       split at h
       · rename_i _ _ _ _ pn
         cases ha : effOf f env scope expected (kid c 1) with
@@ -848,14 +862,20 @@ theorem effSound : ∀ fuel, EffSound fuel
             subst h
             exact .index pp c.1 c.2.1 c.2.2.1 c.2.2.2 (localOf_sound hl) (ihOf hi)
       split at h
-      · rename_i _ _ _ _ c
+      · rename_i _ npc _ _ c
         simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
+        simp only [isPathCall, Bool.and_eq_true, decide_eq_true_eq, and_assoc, c, true_and] at npc
         obtain ⟨a, ha, ch⟩ := ihChain h
-        exact .callChain pp c.1 c.2.1 c.2.2 (ihPathCall ha) ch
+        exact .callChain pp c.1 c.2.1 c.2.2 npc (ihPathCall ha) ch
+      rename_i ne npc nm ni nc
+      have cf : ChainForm pf := by
+        refine ⟨ne, fun m => nm (by simpa [isMethodForm, MethodForm, and_assoc] using m), ?_, ?_⟩
+        · simpa [Bool.and_eq_true, decide_eq_true_eq, and_assoc] using ni
+        · simpa [Bool.and_eq_true, decide_eq_true_eq, and_assoc] using nc
       obtain ⟨a, ha, ch⟩ := ihChain h
       rcases ihPrimary ha with ⟨l, hl, rfl⟩ | hr
-      · exact .chainLocal pp hl ch
-      · exact .chain pp hr ch
+      · exact .chainLocal pp cf hl ch
+      · exact .chain pp cf hr ch
     -- effPrimary
     · intro env scope primary x h
       unfold effPrimary at h
