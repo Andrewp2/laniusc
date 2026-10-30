@@ -76,7 +76,8 @@ still unbound, with the integer literal arguments taken as i32. -/
 inductive InstBound (decls : Decls) (scope : List Local) (d : Nat) (fd : FnDecl) (names : List Name) (ps : List CTree)
     (a : ArgsBound) : Inst → Prop
   | bound {ts : List Ty} : BoundArgs a.binds names ts → InstBound decls scope d fd names ps a ⟨d, ts⟩
-  | relit {ts : List Ty} {b : List Bind} {args : List Ty} : ListRel (EffTy decls scope) a.args ts →
+  | relit {ts : List Ty} {b : List Bind} {args : List Ty} : (∀ us, ¬BoundArgs a.binds names us) →
+      ListRel (EffTy decls scope) a.args ts →
       MatchTys (calleeScope decls fd) names ps ts a.binds b → BoundArgs b names args →
       InstBound decls scope d fd names ps a ⟨d, args⟩
 
@@ -426,7 +427,8 @@ theorem instBound_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {d : 
           rw [hb2] at h
           simp only [Option.some.injEq] at h
           subst h
-          exact .relit (effsTys_sound ht) (matchTys_sound hm) (boundArgs_sound hb2)
+          exact .relit (fun us bu => by rw [boundArgs_complete bu] at hb; cases hb) (effsTys_sound ht)
+            (matchTys_sound hm) (boundArgs_sound hb2)
 
 theorem declInst_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {d : Nat} {t : TypeDecl}
     {known : Option (List Ty)} {patterns : Option (List CTree)} {values : List MEff} {ty : Ty}
