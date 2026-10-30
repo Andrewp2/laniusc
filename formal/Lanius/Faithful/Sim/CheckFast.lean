@@ -32,7 +32,7 @@ def effTyC (tenv : TEnv) : SrcEff → Option SrcType
     (effTyC tenv scrutinee).bind fun st =>
       match ety with
       | .enum _ variants => if st.same ety && armsOkC tenv rty variants binders values then some rty else none
-      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize => none
+      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .sint _ => none
   | .eDivide _ left right => (effTyC tenv left).bind fun l => (effTyC tenv right).bind (divTy l)
   | .eStride _ => none
 
@@ -136,6 +136,7 @@ theorem effTyC_eq (tenv : TEnv) : ∀ e : SrcEff, effTyC (callTy sp outside) box
     | slice _ => rfl
     | unit => rfl
     | isize => rfl
+    | sint _ => rfl
   | .eDivide _ left right => by rw [effTyC, effTy, effTyC_eq tenv left, effTyC_eq tenv right]
   | .eStride _ => by rw [effTyC, effTy]
 

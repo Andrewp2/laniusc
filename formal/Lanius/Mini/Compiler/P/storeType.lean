@@ -3,10 +3,10 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.elementBase
 import Lanius.Mini.Compiler.P.iteThen
-import Lanius.Mini.Compiler.P.lookup
 import Lanius.Mini.Compiler.P.lowerSetCallArgs
 import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.widthOf
@@ -34,6 +34,7 @@ def storeType (ty : SrcType) (values : List Expr) (first : Nat) (base : Expr) (o
   | .slice element => storeOne (widthOf ty) (addressBelow base offset) values[first]?
   | .unit => storeOne (widthOf ty) (addressBelow base offset) values[first]?
   | .isize => storeOne (widthOf ty) (addressBelow base offset) values[first]?
+  | .sint kind => storeOne (widthOf ty) (addressBelow base offset) values[first]?
 def storeTypes (types : List SrcType) (values : List Expr) (first : Nat) (base : Expr) (offset : Nat) : Option Stmt :=
   match types with
   | [] => some Stmt.skip
@@ -64,6 +65,7 @@ def withinLayout (depth : Nat) (ty : SrcType) : Bool :=
     | .slice element => false
     | .unit => false
     | .isize => true
+    | .sint kind => true
 def withinLayouts (depth : Nat) (types : List SrcType) : Bool :=
   match types with
   | [] => true

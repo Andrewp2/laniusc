@@ -136,8 +136,9 @@ theorem wordType_enum {ds : SrcDecls} {eid : Nat} {variants : List (List SrcType
 theorem wordType_scalar {ds : SrcDecls} {t : SrcType} (h : wordType ds t = true) (scalar : t.isScalar = true) :
     wordWidth t = some (widthOf t) := by
   cases t <;> simp_all [wordType, wordWidth, widthOf, SrcType.isScalar]
-  rename_i kind
-  cases kind <;> rfl
+  all_goals
+    rename_i kind
+    cases kind <;> rfl
 
 /-! ## Core's words -/
 
@@ -184,6 +185,9 @@ theorem wordType_words {sp : SrcProgram} : ∀ (t : SrcType), wordType sp.decls 
     all_goals exact word_words (by rfl) h
   | .ptr, _, fuel, n, h => word_words (w := .m64) rfl h
   | .isize, _, fuel, n, h => word_words (w := .m64) rfl h
+  | .sint kind, _, fuel, n, h => by
+    cases kind
+    all_goals exact word_words (by rfl) h
   | .slice _, ok, _, _, _ => by simp [wordType] at ok
   | .unit, ok, _, _, _ => by simp [wordType] at ok
   | .struct sid fields, ok, fuel, n, h => by
@@ -653,6 +657,7 @@ theorem wordType_layout {sp : SrcProgram} : ∀ (t : SrcType) {d k : Nat}, wordT
     | .uint kind, _, _ => cases kind <;> exact words_word (by rfl) k
     | .ptr, _, _ => exact words_word (w := .m64) rfl k
     | .isize, _, _ => exact words_word (w := .m64) rfl k
+    | .sint kind, _, _ => cases kind <;> exact words_word (by rfl) k
     | .slice _, ok, _ => simp [wordType] at ok
     | .unit, ok, _ => simp [wordType] at ok
     | .struct sid fields, ok, wl =>

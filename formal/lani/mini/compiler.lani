@@ -1294,6 +1294,48 @@ impl UintTy {
             Uint16 -> false,
         };
     }
+
+    // 2^(width - 1), the sign bit of the signed type as wide.
+    pub fn half(self) -> u64 {
+        return match (self) {
+            Uint8 -> 128,
+            Uint32 -> 2147483648,
+            Uint64 -> 9223372036854775808,
+            Usize -> 9223372036854775808,
+            Uint16 -> 32768,
+        };
+    }
+
+    // 32 less the width of a narrow type (none for a wide one).
+    pub fn spare(self) -> u64 {
+        return match (self) {
+            Uint8 -> 24,
+            Uint32 -> 0,
+            Uint64 -> 0,
+            Usize -> 0,
+            Uint16 -> 16,
+        };
+    }
+
+    // The least value of the signed type as wide, as 32-bit two's
+    // complement (narrow types only).
+    pub fn least_bits(self) -> u64 {
+        return match (self) {
+            Uint8 -> 4294967168,
+            Uint32 -> 2147483648,
+            Uint64 -> 0,
+            Usize -> 0,
+            Uint16 -> 4294934528,
+        };
+    }
+
+    // How the signed type as wide computes: on 32 bits when narrow.
+    pub fn signed_word(self) -> Word {
+        if (self.is_wide()) {
+            return U64;
+        }
+        return S32;
+    }
 }
 
 pub enum SrcType {
@@ -1310,6 +1352,10 @@ pub enum SrcType {
     Unit,
     // a signed 64-bit integer, its two's complement bits in one slot
     Isize,
+    // the signed integer type as wide as kind (i8, i16, i32, i64, isize). A
+    // narrow one sits in its slot as an i32 does, its value's 32-bit two's
+    // complement zero-extended; a 64-bit one as an isize does.
+    Sint(UintTy),
 }
 
 pub enum SrcOp {
@@ -1490,6 +1536,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> false,
+            Sint(sk) -> false,
         };
     }
 
@@ -1504,6 +1551,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> false,
+            Sint(sk) -> false,
         };
     }
 
@@ -1518,6 +1566,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> true,
+            Sint(kind) -> true,
         };
     }
 
@@ -1532,6 +1581,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> false,
+            Sint(sk) -> false,
         };
     }
 
@@ -1546,6 +1596,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> false,
+            Sint(sk) -> false,
         };
     }
 
@@ -1560,6 +1611,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> true,
             Isize -> false,
+            Sint(sk) -> false,
         };
     }
 
@@ -1574,6 +1626,53 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> true,
+            Sint(kind) -> false,
+        };
+    }
+
+    pub fn is_sint_any(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            Unit -> false,
+            Isize -> false,
+            Sint(kind) -> true,
+        };
+    }
+
+    pub fn is_sint(self, kind: UintTy) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(other) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            Unit -> false,
+            Isize -> false,
+            Sint(other) -> other.code() == kind.code(),
+        };
+    }
+
+    // The width of the signed type this is, if it is one of Sint.
+    pub fn sint_kind(self) -> core::option::Option<UintTy> {
+        return match (self) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, fields) -> None,
+            Enum(id, variants) -> None,
+            Ptr -> None,
+            Slice(element) -> None,
+            Unit -> None,
+            Isize -> None,
+            Sint(kind) -> Some(kind),
         };
     }
 
@@ -1589,6 +1688,7 @@ impl SrcType {
             Slice(element) -> None,
             Unit -> None,
             Isize -> None,
+            Sint(sk) -> None,
         };
     }
 
@@ -1604,6 +1704,7 @@ impl SrcType {
             Slice(element) -> U64,
             Unit -> S32,
             Isize -> U64,
+            Sint(kind) -> kind.signed_word(),
         };
     }
 }
@@ -1625,6 +1726,7 @@ impl SrcType {
                 Slice(other_element) -> false,
                 Unit -> false,
                 Isize -> false,
+                Sint(other_sk) -> false,
             },
             Enum(id, variants) -> match (other) {
                 I32 -> false,
@@ -1636,6 +1738,7 @@ impl SrcType {
                 Slice(other_element) -> false,
                 Unit -> false,
                 Isize -> false,
+                Sint(other_sk) -> false,
             },
             Ptr -> other.is_ptr(),
             Slice(element) -> match (other) {
@@ -1648,9 +1751,11 @@ impl SrcType {
                 Slice(other_element) -> unbox(element).same(unbox(other_element)),
                 Unit -> false,
                 Isize -> false,
+                Sint(other_sk) -> false,
             },
             Unit -> other.is_unit(),
             Isize -> other.is_isize(),
+            Sint(kind) -> other.is_sint(kind),
         };
     }
 }
@@ -1697,6 +1802,7 @@ impl SrcType {
             Slice(element) -> 2,
             Unit -> 1,
             Isize -> 1,
+            Sint(kind) -> 1,
         };
     }
 }
@@ -1747,6 +1853,14 @@ pub fn wrap(kind: UintTy, e: Expr) -> Expr {
     return Binary(U64, And, boxed(e), boxed(Lit(kind.mask())));
 }
 
+// The low bits of e as wide as kind, sign-extended to 32 bits: a narrow
+// signed value's slot from any bits with the same low bits. The shift left
+// drops the bits above the width and the arithmetic shift back copies the
+// sign bit down.
+pub fn norm(kind: UintTy, e: Expr) -> Expr {
+    return Binary(S32, Sar, boxed(Binary(S32, Shl, boxed(e), boxed(Lit(kind.spare())))), boxed(Lit(kind.spare())));
+}
+
 pub fn arith_uint(operation: BinOp, left: Typed, right: Typed, kind: core::option::Option<UintTy>) -> core::option::Option<Typed> {
     return match (kind) {
         None -> None,
@@ -1762,6 +1876,26 @@ fn arith_of(operation: BinOp, left: Typed, right: Typed, k: UintTy) -> core::opt
     return None;
 }
 
+pub fn arith_sint(operation: BinOp, left: Typed, right: Typed, kind: core::option::Option<UintTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(k) -> arith_signed_of(operation, left, right, k),
+    };
+}
+
+// A narrow signed type computes on 32 bits and keeps the low bits of the
+// result, sign-extended; a 64-bit one computes on the bits as isize does.
+// extract: inline
+fn arith_signed_of(operation: BinOp, left: Typed, right: Typed, k: UintTy) -> core::option::Option<Typed> {
+    if (right.ty.is_sint(k) && k.is_wide()) {
+        return Some(Typed { expr: Binary(U64, operation, boxed(left.expr), boxed(right.expr)), ty: Sint(k) });
+    }
+    if (right.ty.is_sint(k)) {
+        return Some(Typed { expr: norm(k, Binary(S32, operation, boxed(left.expr), boxed(right.expr))), ty: Sint(k) });
+    }
+    return None;
+}
+
 // isize arithmetic is 64-bit arithmetic on the bits, which wraps as Core's
 // two's complement does.
 pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
@@ -1771,14 +1905,17 @@ pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Optio
     if (left.ty.is_isize() && right.ty.is_isize()) {
         return Some(Typed { expr: Binary(U64, operation, boxed(left.expr), boxed(right.expr)), ty: Isize });
     }
+    if (left.ty.is_sint_any()) {
+        return arith_sint(operation, left, right, left.ty.sint_kind());
+    }
     return arith_uint(operation, left, right, left.ty.uint_kind());
 }
 
-// >> is arithmetic on i32 and isize, logical on the unsigned types. Core
+// >> is arithmetic on the signed types, logical on the unsigned ones. Core
 // traps on an amount outside the type's bits, so the low bits x86 keeps are
 // the whole amount.
 pub fn arith_shift_right(left: Typed, right: Typed) -> core::option::Option<Typed> {
-    if (left.ty.is_i32() || left.ty.is_isize()) {
+    if (left.ty.is_i32() || left.ty.is_isize() || left.ty.is_sint_any()) {
         return arith(Sar, left, right);
     }
     return arith(Shr, left, right);
@@ -1814,12 +1951,34 @@ pub fn sign_key(e: Expr) -> Expr {
     return Binary(U64, Add, boxed(e), boxed(Lit(9223372036854775808)));
 }
 
+pub fn order_sint(operation: CmpOp, left: Typed, right: Typed, kind: core::option::Option<UintTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(k) -> order_signed_of(operation, left, right, k),
+    };
+}
+
+// A narrow signed type compares as i32, a 64-bit one as isize.
+// extract: inline
+fn order_signed_of(operation: CmpOp, left: Typed, right: Typed, k: UintTy) -> core::option::Option<Typed> {
+    if (right.ty.is_sint(k) && k.is_wide()) {
+        return Some(Typed { expr: Compare(U64, operation, boxed(sign_key(left.expr)), boxed(sign_key(right.expr))), ty: Bool });
+    }
+    if (right.ty.is_sint(k)) {
+        return Some(Typed { expr: Compare(S32, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
+    }
+    return None;
+}
+
 pub fn order(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.is_i32() && right.ty.is_i32()) {
         return Some(Typed { expr: Compare(S32, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
     if (left.ty.is_isize() && right.ty.is_isize()) {
         return Some(Typed { expr: Compare(U64, operation, boxed(sign_key(left.expr)), boxed(sign_key(right.expr))), ty: Bool });
+    }
+    if (left.ty.is_sint_any()) {
+        return order_sint(operation, left, right, left.ty.sint_kind());
     }
     return order_uint(operation, left, right, left.ty.uint_kind());
 }
@@ -1910,6 +2069,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -1920,6 +2080,14 @@ pub fn lower_field(binding: core::option::Option<Binding>, field: usize) -> core
     };
 }
 
+// -e for the signed type as wide as kind.
+pub fn negate_signed(kind: UintTy, e: Expr) -> Expr {
+    if (kind.is_wide()) {
+        return Binary(U64, Sub, boxed(Lit(0)), boxed(e));
+    }
+    return norm(kind, Expr::Neg(boxed(e)));
+}
+
 pub fn lower_negate_typed(operand: Typed) -> core::option::Option<Typed> {
     if (operand.ty.is_i32()) {
         return Some(Typed { expr: Expr::Neg(boxed(operand.expr)), ty: I32 });
@@ -1927,7 +2095,10 @@ pub fn lower_negate_typed(operand: Typed) -> core::option::Option<Typed> {
     if (operand.ty.is_isize()) {
         return Some(Typed { expr: Binary(U64, Sub, boxed(Lit(0)), boxed(operand.expr)), ty: Isize });
     }
-    return None;
+    return match (operand.ty.sint_kind()) {
+        None -> None,
+        Some(k) -> Some(Typed { expr: negate_signed(k, operand.expr), ty: Sint(k) }),
+    };
 }
 
 pub fn lower_negate(operand: core::option::Option<Typed>) -> core::option::Option<Typed> {
@@ -1968,6 +2139,31 @@ pub fn from_i32(kind: UintTy, e: Expr) -> Expr {
     return wrap(kind, e);
 }
 
+// The signed type's value from the bits e, as an i32's bits: the low 32
+// bits, or e itself when narrow.
+pub fn sint_to_i32(kind: UintTy, e: Expr) -> Expr {
+    if (kind.is_wide()) {
+        return wrap(Uint32, e);
+    }
+    return e;
+}
+
+// The signed type's value from the bits e, as an unsigned value of kind.
+pub fn sint_to_uint(source: UintTy, kind: UintTy, e: Expr) -> Expr {
+    if (source.is_wide()) {
+        return wrap(kind, e);
+    }
+    return from_i32(kind, e);
+}
+
+// The signed type's value from the bits e, as 64-bit two's complement.
+pub fn sint_to_wide(kind: UintTy, e: Expr) -> Expr {
+    if (kind.is_wide()) {
+        return e;
+    }
+    return from_i32(Uint64, e);
+}
+
 pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
     return match (e.ty) {
         I32 -> Some(e),
@@ -1979,6 +2175,7 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
+        Sint(kind) -> Some(Typed { expr: sint_to_i32(kind, e.expr), ty: I32 }),
     };
 }
 
@@ -1993,6 +2190,7 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
+        Sint(source) -> Some(Typed { expr: sint_to_uint(source, kind, e.expr), ty: Uint(kind) }),
     };
 }
 
@@ -2009,7 +2207,23 @@ pub fn cast_to_isize(e: Typed) -> core::option::Option<Typed> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> Some(e),
+        Sint(source) -> Some(Typed { expr: sint_to_wide(source, e.expr), ty: Isize }),
     };
+}
+
+// To a signed type: a narrow one keeps the low bits, sign-extended; a 64-bit
+// one sign-extends a narrower signed value and keeps an unsigned value's bits.
+pub fn cast_to_sint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
+    if (kind.is_wide()) {
+        return match (cast_to_isize(e)) {
+            None -> None,
+            Some(t) -> Some(Typed { expr: t.expr, ty: Sint(kind) }),
+        };
+    }
+    if (e.ty.is_scalar() && !e.ty.is_bool() && !e.ty.is_ptr()) {
+        return Some(Typed { expr: norm(kind, e.expr), ty: Sint(kind) });
+    }
+    return None;
 }
 
 pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
@@ -2023,6 +2237,7 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> cast_to_isize(e),
+        Sint(kind) -> cast_to_sint(kind, e),
     };
 }
 
@@ -2108,6 +2323,7 @@ impl UintTy {
     }
 }
 
+
 // The bits of a shift's operand type.
 pub fn shift_width(ty: SrcType) -> u64 {
     return match (ty) {
@@ -2120,6 +2336,7 @@ pub fn shift_width(ty: SrcType) -> u64 {
         Slice(element) -> 64,
         Unit -> 64,
         Isize -> 64,
+        Sint(kind) -> kind.bits(),
     };
 }
 
@@ -2329,6 +2546,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2405,6 +2623,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2443,6 +2662,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2538,6 +2758,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2641,6 +2862,7 @@ pub fn eval_field_of(scope: List<Binding>, e: SrcExpr, slot: usize, b: Binding, 
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2785,6 +3007,7 @@ pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
         Slice(element) -> Some(unbox(element)),
         Unit -> None,
         Isize -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -2819,6 +3042,7 @@ pub fn eval_struct(ty: SrcType, args: core::option::Option<EvaluatedArgs>) -> co
             Slice(element) -> None,
             Unit -> None,
             Isize -> None,
+            Sint(sk) -> None,
         },
     };
 }
@@ -2855,6 +3079,7 @@ pub fn eval_variant(ty: SrcType, variant: usize, slot: usize, args: core::option
             Slice(element) -> None,
             Unit -> None,
             Isize -> None,
+            Sint(sk) -> None,
         },
     };
 }
@@ -2880,6 +3105,28 @@ pub fn eval_divide_uint(op: SrcDivOp, slot: usize, l: Evaluated, r: Evaluated, k
     return None;
 }
 
+// Not the least value of the narrow signed type kind over -1: left in slot,
+// right in slot + 1, as i32 bits.
+pub fn overflow_guard(kind: UintTy, slot: usize) -> Expr {
+    let least: Expr = Compare(S32, Eq, boxed(Var(slot)), boxed(Lit(kind.least_bits())));
+    let by_minus_one: Expr = Compare(S32, Eq, boxed(Var(plus(slot, 1))), boxed(Lit(4294967295)));
+    return Compare(U64, Eq, boxed(Binary(U64, And, boxed(least), boxed(by_minus_one))), boxed(Lit(0)));
+}
+
+// A narrow signed division divides on 32 bits, where the least value over
+// -1 does not overflow, so it checks for that first, as Core traps on it; a
+// 64-bit one divides the whole word, whose least value over -1 has no result.
+pub fn eval_divide_sint(op: SrcDivOp, slot: usize, l: Evaluated, r: Evaluated, k: UintTy) -> core::option::Option<Evaluated> {
+    if (r.ty.is_sint(k) && k.is_wide()) {
+        return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Stmt::Divide(U64, signed_div(op), slot, Var(slot), Var(plus(slot, 1))))))), ty: Sint(k) });
+    }
+    if (r.ty.is_sint(k)) {
+        let divide: Stmt = Stmt::Divide(S32, signed_div(op), slot, Var(slot), Var(plus(slot, 1)));
+        return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(check_then(plus(slot, 1), overflow_guard(k, slot), divide))))), ty: Sint(k) });
+    }
+    return None;
+}
+
 // left in slot, right in slot + 1, then the division into slot: on the
 // low 32 bits for i32, on the whole word for the unsigned types, whose
 // values are below their width.
@@ -2887,9 +3134,12 @@ pub fn eval_divide(op: SrcDivOp, slot: usize, l: Evaluated, r: Evaluated) -> cor
     if (l.ty.is_i32() && r.ty.is_i32()) {
         return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Stmt::Divide(S32, signed_div(op), slot, Var(slot), Var(plus(slot, 1))))))), ty: I32 });
     }
-    return match (l.ty.uint_kind()) {
-        None -> None,
-        Some(k) -> eval_divide_uint(op, slot, l, r, k),
+    return match (l.ty.sint_kind()) {
+        None -> match (l.ty.uint_kind()) {
+            None -> None,
+            Some(k) -> eval_divide_uint(op, slot, l, r, k),
+        },
+        Some(k) -> eval_divide_sint(op, slot, l, r, k),
     };
 }
 
@@ -2991,6 +3241,7 @@ pub fn match_variants(ty: SrcType) -> List<List<SrcType>> {
         Slice(element) -> empty(),
         Unit -> empty(),
         Isize -> empty(),
+        Sint(sk) -> empty(),
     };
 }
 
@@ -3172,6 +3423,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -3373,6 +3625,7 @@ pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> Some(M64),
+        Sint(kind) -> usize_width(kind),
     };
 }
 
@@ -3410,6 +3663,7 @@ pub fn word_type(decls: SrcDecls, ty: SrcType) -> bool {
         Slice(element) -> false,
         Unit -> false,
         Isize -> true,
+        Sint(kind) -> true,
     };
 }
 
@@ -3440,6 +3694,7 @@ pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
         Slice(inner) -> false,
         Unit -> false,
         Isize -> false,
+        Sint(sk) -> false,
     };
 }
 
@@ -3478,6 +3733,7 @@ pub fn load_type(ty: SrcType, target: usize, base: Expr, offset: usize, body: St
         Slice(element) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Unit -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Isize -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        Sint(kind) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
     };
 }
 
@@ -3537,6 +3793,7 @@ pub fn store_type(ty: SrcType, values: List<Expr>, first: usize, base: Expr, off
         Slice(element) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Unit -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Isize -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        Sint(kind) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
     };
 }
 
@@ -3578,6 +3835,7 @@ pub fn within_layout(depth: usize, ty: SrcType) -> bool {
         Slice(element) -> false,
         Unit -> false,
         Isize -> true,
+        Sint(kind) -> true,
     };
 }
 
@@ -3947,6 +4205,7 @@ pub fn set_field_eval_of(b: Binding, field: usize, slot: usize, v: Evaluated) ->
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        Sint(sk) -> None,
     };
 }
 
@@ -4269,6 +4528,7 @@ impl SrcType {
             Slice(element) -> unbox(element).declare(decls),
             Unit -> Some(decls),
             Isize -> Some(decls),
+            Sint(kind) -> Some(decls),
         };
     }
 }

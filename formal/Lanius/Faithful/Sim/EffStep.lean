@@ -124,11 +124,11 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     obtain rfl : j = k := by omega
     simp only [effTy, Option.bind_eq_some_iff] at ht
     obtain ⟨to, hto, hc⟩ := ht
-    obtain ⟨rfl, -⟩ := castTy_some hc
+    obtain ⟨rfl, -, numTo⟩ := castTy_some hc
     obtain ⟨q, hq, rq, ran⟩ := eff sub hto inv rel bound
     obtain ⟨rfl, sw⟩ := rq.flat (cast_flat hw)
     rw [toCore_target] at hw
-    refine ⟨v, ?_, .scalar (cast_sty sw hw), ran⟩
+    refine ⟨v, ?_, .scalar (cast_sty sw numTo hw), ran⟩
     simp only [peff, hq, Option.bind_some, cast, Lanius.Faithful.target, hw]
     rfl
   | eIndex => simp [effTy] at ht
@@ -185,6 +185,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     | slice => simp at hm
     | unit => simp at hm
     | isize => simp at hm
+    | sint => simp at hm
   | eDivide op l r =>
     simp only [SrcEff.toCore] at run
     have notAnd : op.toCore ≠ .logicalAnd := by cases op <;> simp [SrcDivOp.toCore]

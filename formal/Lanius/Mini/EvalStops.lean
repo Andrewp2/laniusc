@@ -202,7 +202,12 @@ theorem negate_defined {inner t : Typed} {w : Value} {x : BitVec 64} (lowered : 
     rw [hty] at holds
     subst holds
     exact ⟨_, rfl⟩
+  split at lowered
   · simp at lowered
+  · rename_i k hk
+    rw [SrcType.eq_of_sintKind hk] at holds
+    obtain ⟨n, rfl⟩ := sint_value holds
+    exact ⟨_, rfl⟩
 
 theorem not_defined {inner t : Typed} {w : Value} {x : BitVec 64} (lowered : lowerNotTyped inner = some t)
     (holds : inner.ty.Holds w x) : ∃ r, Semantics.evalUnaryValue .x86_64 .logicalNot w = .ok r := by
@@ -243,6 +248,72 @@ theorem uint_div_ok (k : UintTy) {a b : BitVec 64} {op : DivOp} {cop : Core.Bina
   rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
   · simp only [Semantics.evalBinaryValue, Semantics.evalUnsignedBinary]
     simp [hb]
+
+/-- A failed overflow check: the least value over -1. -/
+theorem overflowGuard_ne {k : UintTy} {slot : Nat} {env : Env} (g : (overflowGuard k slot).eval env ≠ 0) :
+    ¬(low (env slot) = low k.leastBits ∧ low (env (slot + 1)) = -1) := by
+  rintro ⟨a, b⟩
+  apply g
+  have b' : low (env (slot + 1)) = 4294967295#32 := b.trans (by decide)
+  simp only [low] at a b'
+  simp [overflowGuard, Expr.eval, Word.holds, Word.apply, BinOp.apply, CmpOp.holds, CmpOp.holdsU, low, a, b']
+
+/-- A narrow signed division the overflow check and the mini check pass has a result. -/
+theorem narrow_div_ok {k : UintTy} (narrow : k.isWide = false) {op : DivOp} {cop : Core.BinaryOp}
+    (h : (cop = .divide ∧ op = .sDiv) ∨ (cop = .remainder ∧ op = .sRem)) {a b : BitVec 64} {vl vr : Value}
+    (hl : k.SintHolds vl a) (hr : k.SintHolds vr b) (guard : ¬(low a = low k.leastBits ∧ low b = -1))
+    (defined : op.defined (low a) (low b) = true) :
+    ∃ v, Semantics.evalBinaryValue .x86_64 cop vl vr = .ok v := by
+  rw [sintHolds_narrow narrow] at hl hr
+  obtain ⟨rfl, -, -, -⟩ := hl
+  obtain ⟨rfl, -, -, -⟩ := hr
+  have least : (low k.leastBits).toInt = -2 ^ (k.width - 1) := by
+    cases k <;> simp only [UintTy.isWide, Bool.true_eq_false] at narrow <;> decide
+  have sign : Semantics.signedSignBit .x86_64 k.toSigned = 2 ^ (k.width - 1) := by
+    simp only [Semantics.signedSignBit, UintTy.bits_toSigned]
+  generalize low a = x at *
+  generalize low b = y at *
+  have hy : ¬ y.toInt = 0 := fun z => by
+    have : y = 0 := BitVec.eq_of_toInt_eq (by simpa using z)
+    rcases (show (op = .sDiv ∨ op = .sRem) by rcases h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> simp) with rfl | rfl <;>
+      simp [DivOp.defined, this] at defined
+  have hm : ¬ (x.toInt = -Semantics.signedSignBit .x86_64 k.toSigned ∧ y.toInt = -1) := fun ⟨hx, hy1⟩ => by
+    have ex : x = low k.leastBits := BitVec.eq_of_toInt_eq (by rw [hx, sign, least])
+    have ey : y = -1 := BitVec.eq_of_toInt_eq (by rw [hy1]; rfl)
+    exact guard ⟨ex, ey⟩
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+  · simp only [Semantics.evalBinaryValue, Semantics.evalSignedBinary]
+    simp [hy, hm]
+
+theorem isize_div_ok {x y : BitVec 64} {op : DivOp} {cop : Core.BinaryOp}
+    (h : (cop = .divide ∧ op = .sDiv) ∨ (cop = .remainder ∧ op = .sRem)) (defined : op.defined x y = true) :
+    ∃ v, Semantics.evalBinaryValue .x86_64 cop (.signed .isize x.toInt) (.signed .isize y.toInt) = .ok v := by
+  have hy : ¬ y.toInt = 0 := fun z => by
+    have : y = 0 := BitVec.eq_of_toInt_eq (by simpa using z)
+    rcases (show (op = .sDiv ∨ op = .sRem) by rcases h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> simp) with rfl | rfl <;>
+      simp [DivOp.defined, this] at defined
+  have hm : ¬ (x.toInt = -Semantics.signedSignBit .x86_64 .isize ∧ y.toInt = -1) := fun ⟨hx, hy1⟩ => by
+    have ex : x = BitVec.intMin 64 := BitVec.eq_of_toInt_eq (by rw [hx]; rfl)
+    have ey : y = -1 := BitVec.eq_of_toInt_eq (by rw [hy1]; rfl)
+    rcases (show (op = .sDiv ∨ op = .sRem) by rcases h with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> simp) with rfl | rfl <;>
+      simp [DivOp.defined, ex, ey] at defined
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+  · simp only [Semantics.evalBinaryValue, Semantics.evalSignedBinary]
+    simp [hy, hm]
+
+/-- A 64-bit signed division the mini check passes has a result. -/
+theorem wide_div_ok {k : UintTy} (wide : k.isWide = true) {op : DivOp} {cop : Core.BinaryOp}
+    (h : (cop = .divide ∧ op = .sDiv) ∨ (cop = .remainder ∧ op = .sRem)) {a b : BitVec 64} {vl vr : Value}
+    (hl : k.SintHolds vl a) (hr : k.SintHolds vr b) (defined : op.defined a b = true) :
+    ∃ v, Semantics.evalBinaryValue .x86_64 cop vl vr = .ok v := by
+  rw [sintHolds_wide wide] at hl hr
+  subst hl hr
+  obtain ⟨v, ok⟩ := isize_div_ok h defined
+  rcases UintTy.wide_cases wide with rfl | rfl
+  · simp only [UintTy.toSigned]
+    rw [evalBinaryValue_i64, ok]
+    exact ⟨_, rfl⟩
+  · exact ⟨v, ok⟩
 
 /-! ## Sub-expressions -/
 
@@ -630,28 +701,65 @@ theorem eff_divide (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
       exact (fails.not_done (binary_done general run1 run2 okv) bound2).elim
     · exact after 0 (.divide (by simpa using div))
   · split at ok
-    · simp at ok
-    rename_i kind hk
-    simp only [evalDivideUint] at ok
-    split at ok
-    · rename_i hr
-      simp only [Option.some.injEq] at ok
-      subst ok
-      rcases pair_split lowered ihl ihr general leOk reOk corr fr fresh hc within fails _ with
-        stops | ⟨k1, vl, st1, k2, vr, st2, env1, env2, hp2, run1, run2, bound2, holds1, same2, holds2, after⟩
-      · exact stops
-      have lty : le.ty = .uint kind := by cases hty : le.ty <;> simp_all [SrcType.uintKind]
-      rw [lty] at holds1
-      rw [eq_of_isUint hr] at holds2
-      have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
-      have holdsr := holds_var holds2 rfl
-      obtain ⟨rfl, -⟩ := holdsl
-      obtain ⟨rfl, -⟩ := holdsr
-      by_cases div : Word.u64.divides (unsignedDiv op) ((Expr.var slot).eval env2) ((Expr.var (slot + 1)).eval env2) = true
-      · obtain ⟨v, okv⟩ := uint_div_ok kind (divOp_unsigned op) div
-        exact (fails.not_done (binary_done general run1 run2 okv) bound2).elim
-      · exact after 0 (.divide (by simpa using div))
-    · simp at ok
+    · split at ok
+      · simp at ok
+      rename_i kind hk
+      simp only [evalDivideUint] at ok
+      split at ok
+      · rename_i hr
+        simp only [Option.some.injEq] at ok
+        subst ok
+        rcases pair_split lowered ihl ihr general leOk reOk corr fr fresh hc within fails _ with
+          stops | ⟨k1, vl, st1, k2, vr, st2, env1, env2, hp2, run1, run2, bound2, holds1, same2, holds2, after⟩
+        · exact stops
+        have lty : le.ty = .uint kind := by cases hty : le.ty <;> simp_all [SrcType.uintKind]
+        rw [lty] at holds1
+        rw [eq_of_isUint hr] at holds2
+        have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
+        have holdsr := holds_var holds2 rfl
+        obtain ⟨rfl, -⟩ := holdsl
+        obtain ⟨rfl, -⟩ := holdsr
+        by_cases div : Word.u64.divides (unsignedDiv op) ((Expr.var slot).eval env2) ((Expr.var (slot + 1)).eval env2) = true
+        · obtain ⟨v, okv⟩ := uint_div_ok kind (divOp_unsigned op) div
+          exact (fails.not_done (binary_done general run1 run2 okv) bound2).elim
+        · exact after 0 (.divide (by simpa using div))
+      · simp at ok
+    · rename_i kind hk
+      simp only [evalDivideSint] at ok
+      split at ok
+      · rename_i hr
+        simp only [Bool.and_eq_true] at hr
+        simp only [Option.some.injEq] at ok
+        subst ok
+        rcases pair_split lowered ihl ihr general leOk reOk corr fr fresh hc within fails _ with
+          stops | ⟨k1, vl, st1, k2, vr, st2, env1, env2, hp2, run1, run2, bound2, holds1, same2, holds2, after⟩
+        · exact stops
+        rw [SrcType.eq_of_sintKind hk] at holds1
+        rw [SrcType.eq_of_isSint hr.1] at holds2
+        have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
+        have holdsr := holds_var holds2 rfl
+        by_cases div : Word.u64.divides (signedDiv op) ((Expr.var slot).eval env2) ((Expr.var (slot + 1)).eval env2) = true
+        · obtain ⟨v, okv⟩ := wide_div_ok hr.2 (divOp_signed op) holdsl holdsr div
+          exact (fails.not_done (binary_done general run1 run2 okv) bound2).elim
+        · exact after 0 (.divide (by simpa using div))
+      split at ok
+      · rename_i notWide hr
+        have narrow : kind.isWide = false := by simp_all
+        simp only [Option.some.injEq] at ok
+        subst ok
+        rcases pair_split lowered ihl ihr general leOk reOk corr fr fresh hc within fails _ with
+          stops | ⟨k1, vl, st1, k2, vr, st2, env1, env2, hp2, run1, run2, bound2, holds1, same2, holds2, after⟩
+        · exact stops
+        rw [SrcType.eq_of_sintKind hk] at holds1
+        rw [SrcType.eq_of_isSint hr] at holds2
+        have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
+        have holdsr := holds_var holds2 rfl
+        refine after 0 (Stops.check fun pass => ?_)
+        by_cases div : Word.s32.divides (signedDiv op) ((Expr.var slot).eval env2) ((Expr.var (slot + 1)).eval env2) = true
+        · obtain ⟨v, okv⟩ := narrow_div_ok narrow (divOp_signed op) holdsl holdsr (overflowGuard_ne pass) div
+          exact (fails.not_done (binary_done general run1 run2 okv) bound2).elim
+        · exact .divide (by simpa using div)
+      · simp at ok
 
 theorem boundsGuard_ne {b : Binding} {i : Expr} {env : Env} (g : (boundsGuard b i).eval env ≠ 0) :
     (i.eval env).toNat < (env (b.slot + 1)).toNat := by
@@ -967,6 +1075,7 @@ theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
   | slice => cases values <;> simp [matchVariants, evalArms] at armsOk
   | unit => cases values <;> simp [matchVariants, evalArms] at armsOk
   | isize => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | sint => cases values <;> simp [matchVariants, evalArms] at armsOk
 
 end Cases
 
@@ -1095,6 +1204,7 @@ theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
   case h_7 => simp at ok
   case h_8 => simp at ok
   case h_9 => simp at ok
+  case h_10 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok

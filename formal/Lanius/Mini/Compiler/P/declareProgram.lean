@@ -1,9 +1,9 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.declareFuncs
-import Lanius.Mini.Compiler.P.lookup
 import Lanius.Mini.Compiler.P.lowerBody
 
 public section

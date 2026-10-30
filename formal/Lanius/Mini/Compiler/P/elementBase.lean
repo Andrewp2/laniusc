@@ -3,8 +3,8 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.compileModules
-import Lanius.Mini.Compiler.P.lookup
 import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.widthOf
 
@@ -36,6 +36,7 @@ def loadType (ty : SrcType) (target : Nat) (base : Expr) (offset : Nat) (body : 
   | .slice element => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
   | .unit => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
   | .isize => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
+  | .sint kind => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
 /-- Values of these types one after another, the first at target and base - offset. -/
 def loadTypes (types : List SrcType) (target : Nat) (base : Expr) (offset : Nat) (body : Stmt) : Stmt :=
   match types with

@@ -28,6 +28,7 @@ def STy : SrcType → Value → Prop
   | .enum _ _, _ => False
   | .ptr, _ => False
   | .slice _, _ => False
+  | .sint _, _ => False
 
 /-- Every range Core's raw views check in `h` still checks in `h'`: blocks
 stay live with their bases, sizes and alignments. -/
@@ -117,6 +118,7 @@ theorem STy.flat : ∀ {t : SrcType} {v : Value}, STy t v → Flat v
   | .enum _ _, _, s => s.elim
   | .ptr, _, s => s.elim
   | .slice _, _, s => s.elim
+  | .sint _, _, s => s.elim
 
 theorem VRels.length {heap : Memory.Heap} :
     ∀ {ts : List SrcType} {vs ps : List Value}, VRels P boxes heap ts vs ps →

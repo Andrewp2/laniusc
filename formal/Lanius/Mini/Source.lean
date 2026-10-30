@@ -21,11 +21,13 @@ import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.lookup
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
@@ -38,6 +40,8 @@ import all Lanius.Mini.Compiler.P.lowerMatchArms
 import all Lanius.Mini.Compiler.P.lowerCallSig
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.evalDivide
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.matchDst
@@ -87,13 +91,14 @@ import all Lanius.Mini.Compiler.P.Inline_branchAgrees
 -- import parts: Lanius.Mini.Compiler BinOp.size Code.size DivOp.size Instr.size Piece.size SrcType.isI32 SrcType.isScalar SrcType.isUint SrcType.same SrcType.size arith boolBits compileOptimized compileSource declareProgram enumVariants fieldOffset funcsReturn lowerFuncs maxSize offsetOrArith sigs sizes storeEvalThen storeEvalWord structFields
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.compileOr
 public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.declareProgram
 public import Lanius.Mini.Compiler.P.enumVariants
-public import Lanius.Mini.Compiler.P.lookup
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerLoadType
 public import Lanius.Mini.Compiler.P.pow2
@@ -224,6 +229,22 @@ theorem enumVariants_toCore {sp : SrcProgram} {id : Nat} {vs : List (List SrcTyp
     sp.toCore.enumeration? id = some ⟨id, vs.map (List.map SrcType.toCore)⟩ := by
   simp only [Core.Program.enumeration?, SrcProgram.toCore, find_enums, found, Option.map_some]
 
+/-- A narrow signed value of Core type `t`, `w` bits wide, in a slot as an
+`i32`: its 32-bit two's complement zero-extended, its value in range. -/
+def NarrowHolds (t : Core.SignedIntTy) (w : Nat) (value : Value) (bits : BitVec 64) : Prop :=
+  value = .signed t (low bits).toInt ∧ bits = widen (low bits) ∧
+    -2 ^ (w - 1) ≤ (low bits).toInt ∧ (low bits).toInt < 2 ^ (w - 1)
+
+/-- A value of the signed type as wide as `kind` (`SrcType.sint kind`): a
+64-bit one as an `isize`, its two's complement bits; a narrow one as an
+`i32`. -/
+def UintTy.SintHolds : UintTy → Value → BitVec 64 → Prop
+  | .uint8, value, bits => NarrowHolds .i8 8 value bits
+  | .uint32, value, bits => NarrowHolds .i32 32 value bits
+  | .uint64, value, bits => value = .signed .i64 bits.toInt
+  | .usize, value, bits => value = .signed .isize bits.toInt
+  | .uint16, value, bits => NarrowHolds .i16 16 value bits
+
 /-- `ty.Holds value bits`: one slot holding `bits` represents the Core `value`
 of scalar type `ty`. An `i32` is its bits zero-extended; booleans are 1 and 0;
 an unsigned value is the slot's number, below its type's bound; a pointer is
@@ -238,6 +259,7 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .slice _, _, _ => False
   | .unit, _, _ => False
   | .isize, value, bits => value = .signed .isize bits.toInt
+  | .sint kind, value, bits => kind.SintHolds value bits
 
 mutual
 /-- `ty.HoldsAt value env slot`: the `ty.size` slots of `env` from `slot`
@@ -268,6 +290,8 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
   | unit {env : Env} {slot : Nat} : SrcType.HoldsAt .unit .unit env slot
   | isize {value : Value} {env : Env} {slot : Nat} :
       SrcType.isize.Holds value (env slot) → SrcType.HoldsAt .isize value env slot
+  | sint {kind : UintTy} {value : Value} {env : Env} {slot : Nat} :
+      (SrcType.sint kind).Holds value (env slot) → SrcType.HoldsAt (.sint kind) value env slot
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
 a payload, or arguments. -/
@@ -289,6 +313,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | slice => simp [SrcType.isScalar] at scalar
   | unit => simp [SrcType.isScalar] at scalar
   | isize => exact ⟨fun | .isize h => h, .isize⟩
+  | sint => exact ⟨fun | .sint h => h, .sint⟩
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold fs vs env slot → vs.length = fs.length
   | [], _, _, _, .nil => rfl
@@ -351,6 +376,10 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .isize (by rw [this]; exact holds)
+  | .sint _, _, _, _, .sint holds, _, _, agree => by
+    have := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at this
+    exact .sint (by rw [this]; exact holds)
 
 theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
     FieldsHold fs vs env slot → ∀ {env' : Env} {slot' : Nat},

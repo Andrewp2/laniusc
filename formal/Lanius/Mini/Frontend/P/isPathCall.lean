@@ -44,6 +44,7 @@ def isUsize (t : SrcType) : Bool :=
   | .slice e => false
   | .unit => false
   | .isize => false
+  | .sint sk => false
 
 /-- An integer literal 2^shift with shift below 31. -/
 def literalShift (e : SrcExpr) : Option Nat :=

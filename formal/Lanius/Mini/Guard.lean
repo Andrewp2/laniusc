@@ -20,11 +20,13 @@ import all Lanius.Mini.Compiler.P.compileModules
 import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
-import all Lanius.Mini.Compiler.P.lookup
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.sintToUint
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
@@ -37,6 +39,8 @@ import all Lanius.Mini.Compiler.P.lowerMatchArms
 import all Lanius.Mini.Compiler.P.lowerCallSig
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.evalDivide
 import all Lanius.Mini.Compiler.P.evalNot
 import all Lanius.Mini.Compiler.P.evalSame
 import all Lanius.Mini.Compiler.P.matchDst
@@ -224,6 +228,13 @@ theorem shift_amount {op : SrcOp} (shift : op = .shiftLeft ∨ op = .shiftRight)
       subst holdsl
       subst holdsr
       exact amount_isize cshift _ _ evaluated
+    split at ar
+    · obtain ⟨k, htl, htr, -⟩ := arithSint_types ar
+      rw [htl] at holdsl ⊢
+      rw [htr] at holdsr
+      have width : (UintTy.bits k).toNat = k.width := by cases k <;> rfl
+      simp only [shiftWidth, width]
+      exact amount_sint cshift holdsl holdsr evaluated
     · obtain ⟨k, hk, htr, -⟩ := arithUint_some ar
       rw [SrcType.eq_of_uintKind hk] at holdsl ⊢
       rw [htr] at holdsr

@@ -1013,6 +1013,7 @@ partial def serType : SrcType → String
   | .slice t => s!"(.slice {serType t})"
   | .unit => ".unit"
   | .isize => ".isize"
+  | .sint u => s!"(.sint {serTy u})"
 
 partial def serExpr : SrcExpr → String
   | .int k => s!"(.int {k.toNat})"

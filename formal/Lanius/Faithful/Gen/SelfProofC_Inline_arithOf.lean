@@ -8,9 +8,11 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
+public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
+public import Lanius.Faithful.Gen.SelfStmtC_UintTy_isWide
+public import Lanius.Faithful.Gen.SelfStmtC_arithShiftRight
 public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_evalSame
-public import Lanius.Faithful.Gen.SelfStmtC_lookup
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLoadType
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_arithOf
@@ -44,6 +46,19 @@ theorem proof_arith_of {prog : SrcProgram} {prims : Prims} {ix_arith_of ix_boxed
   rw [pcall_succ np fn] at h
   simp only [src_arith_of] at h
   faithful [Lanius.Mini.Inline.arithOf]
+
+theorem proof_arith_signed_of {prog : SrcProgram} {prims : Prims} {ix_arith_signed_of ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_sint ix_UintTy_is_wide ix_norm : Nat} (fn : prog.funcs[ix_arith_signed_of]? = some (src_arith_signed_of ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_sint ix_UintTy_is_wide ix_norm)) (np : prims.isPrim ix_arith_signed_of = false)
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
+    (ext_SrcType_is_sint : Certified (∀ {n : Nat}, Stmt_SrcType_is_sint prog prims ix_SrcType_is_sint n))
+    (ext_UintTy_is_wide : Certified (∀ {n : Nat}, Stmt_UintTy_is_wide prog prims ix_UintTy_is_wide n))
+    (ext_norm : Certified (∀ {n : Nat}, Stmt_norm prog prims ix_norm n)) {n : Nat} :
+    Stmt_arith_signed_of prog prims ix_arith_signed_of n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_arith_signed_of] at h
+  faithful [Lanius.Mini.Inline.arithSignedOf]
 
 theorem step_arm_bind {prog : SrcProgram} {prims : Prims} {ix_arm_bind ix_plus ix_SrcType_size ix_cons_of_mini_selfhost_Binding ix_arm_scope : Nat} (fn : prog.funcs[ix_arm_bind]? = some (src_arm_bind ix_plus ix_SrcType_size ix_cons_of_mini_selfhost_Binding ix_arm_scope)) (np : prims.isPrim ix_arm_bind = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
@@ -121,5 +136,18 @@ theorem proof_order_of {prog : SrcProgram} {prims : Prims} {ix_order_of ix_boxed
   rw [pcall_succ np fn] at h
   simp only [src_order_of] at h
   faithful [Lanius.Mini.Inline.orderOf]
+
+theorem proof_order_signed_of {prog : SrcProgram} {prims : Prims} {ix_order_signed_of ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_sint ix_UintTy_is_wide ix_sign_key : Nat} (fn : prog.funcs[ix_order_signed_of]? = some (src_order_signed_of ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_sint ix_UintTy_is_wide ix_sign_key)) (np : prims.isPrim ix_order_signed_of = false)
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
+    (ext_SrcType_is_sint : Certified (∀ {n : Nat}, Stmt_SrcType_is_sint prog prims ix_SrcType_is_sint n))
+    (ext_UintTy_is_wide : Certified (∀ {n : Nat}, Stmt_UintTy_is_wide prog prims ix_UintTy_is_wide n))
+    (ext_sign_key : Certified (∀ {n : Nat}, Stmt_sign_key prog prims ix_sign_key n)) {n : Nat} :
+    Stmt_order_signed_of prog prims ix_order_signed_of n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_order_signed_of] at h
+  faithful [Lanius.Mini.Inline.orderSignedOf]
 
 end Lanius.Faithful.SelfCert

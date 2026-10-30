@@ -16,6 +16,40 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+/-- 2^(width - 1), the sign bit of the signed type as wide. -/
+def UintTy.half (self : UintTy) : BitVec 64 :=
+  match self with
+  | .uint8 => 128
+  | .uint32 => 2147483648
+  | .uint64 => 9223372036854775808
+  | .usize => 9223372036854775808
+  | .uint16 => 32768
+
+/-- 32 less the width of a narrow type (none for a wide one). -/
+def UintTy.spare (self : UintTy) : BitVec 64 :=
+  match self with
+  | .uint8 => 24
+  | .uint32 => 0
+  | .uint64 => 0
+  | .usize => 0
+  | .uint16 => 16
+
+/-- The least value of the signed type as wide, as 32-bit two's complement (narrow types only). -/
+def UintTy.leastBits (self : UintTy) : BitVec 64 :=
+  match self with
+  | .uint8 => 4294967168
+  | .uint32 => 2147483648
+  | .uint64 => 0
+  | .usize => 0
+  | .uint16 => 4294934528
+
+/-- How the signed type as wide computes: on 32 bits when narrow. -/
+def UintTy.signedWord (self : UintTy) : Word :=
+  if UintTy.isWide self then
+    Word.u64
+  else
+    Word.s32
+
 /-- The innermost binding of id. -/
 def lookup (scope : List Binding) (id : Nat) : Option Binding :=
   match scope with
@@ -43,6 +77,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => false
+  | .sint sk => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
   match self with
@@ -55,6 +90,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => false
+  | .sint sk => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
   match self with
@@ -67,6 +103,7 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => true
+  | .sint kind => true
 
 def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   match self with
@@ -79,6 +116,7 @@ def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => false
+  | .sint sk => false
 
 def SrcType.isPtr (self : SrcType) : Bool :=
   match self with
@@ -91,6 +129,7 @@ def SrcType.isPtr (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => false
+  | .sint sk => false
 
 def SrcType.isUnit (self : SrcType) : Bool :=
   match self with
@@ -103,6 +142,7 @@ def SrcType.isUnit (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => true
   | .isize => false
+  | .sint sk => false
 
 def SrcType.isIsize (self : SrcType) : Bool :=
   match self with
@@ -115,6 +155,47 @@ def SrcType.isIsize (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => true
+  | .sint kind => false
+
+def SrcType.isSintAny (self : SrcType) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .uint kind => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice element => false
+  | .unit => false
+  | .isize => false
+  | .sint kind => true
+
+def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .uint other => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice element => false
+  | .unit => false
+  | .isize => false
+  | .sint other => decide (UintTy.code other = UintTy.code kind)
+
+/-- The width of the signed type this is, if it is one of Sint. -/
+def SrcType.sintKind (self : SrcType) : Option UintTy :=
+  match self with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => none
+  | .struct id fields => none
+  | .enum id variants => none
+  | .ptr => none
+  | .slice element => none
+  | .unit => none
+  | .isize => none
+  | .sint kind => some kind
 
 /-- The unsigned type this is, if it is one. -/
 def SrcType.uintKind (self : SrcType) : Option UintTy :=
@@ -128,6 +209,7 @@ def SrcType.uintKind (self : SrcType) : Option UintTy :=
   | .slice element => none
   | .unit => none
   | .isize => none
+  | .sint sk => none
 
 /-- How a comparison of two values of this type reads their slots. -/
 def SrcType.word (self : SrcType) : Word :=
@@ -141,6 +223,7 @@ def SrcType.word (self : SrcType) : Word :=
   | .slice element => Word.u64
   | .unit => Word.s32
   | .isize => Word.u64
+  | .sint kind => UintTy.signedWord kind
 
 mutual
 def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
@@ -158,7 +241,8 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .ptr => false
      | .slice otherElement => false
      | .unit => false
-     | .isize => false)
+     | .isize => false
+     | .sint otherSk => false)
   | .enum id variants =>
     (match other with
      | .i32 => false
@@ -169,7 +253,8 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .ptr => false
      | .slice otherElement => false
      | .unit => false
-     | .isize => false)
+     | .isize => false
+     | .sint otherSk => false)
   | .ptr => SrcType.isPtr other
   | .slice element =>
     (match other with
@@ -181,9 +266,11 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .ptr => false
      | .slice otherElement => SrcType.same element otherElement
      | .unit => false
-     | .isize => false)
+     | .isize => false
+     | .sint otherSk => false)
   | .unit => SrcType.isUnit other
   | .isize => SrcType.isIsize other
+  | .sint kind => SrcType.isSint other kind
 def typesSame (types : List SrcType) (others : List SrcType) : Bool :=
   match types with
   | [] =>
@@ -219,6 +306,7 @@ def SrcType.size (self : SrcType) : Nat :=
   | .slice element => 2
   | .unit => 1
   | .isize => 1
+  | .sint kind => 1
 def sizes (types : List SrcType) : Nat :=
   match types with
   | [] => 0
@@ -247,23 +335,8 @@ def wrap (kind : UintTy) (e : Expr) : Expr :=
   else
     Expr.binary Word.u64 BinOp.and e (Expr.lit (UintTy.mask kind))
 
-def arithUint (operation : BinOp) (left : Typed) (right : Typed) (kind : Option UintTy) : Option Typed :=
-  match kind with
-  | none => none
-  | some k =>
-    if SrcType.isUint right.ty k then
-      some ({ expr := wrap k (Expr.binary Word.u64 operation left.expr right.expr), ty := SrcType.uint k } : Typed)
-    else
-      none
-
-/-- isize arithmetic is 64-bit arithmetic on the bits, which wraps as Core's two's complement does. -/
-def arith (operation : BinOp) (left : Typed) (right : Typed) : Option Typed :=
-  if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
-    some ({ expr := Expr.binary Word.s32 operation left.expr right.expr, ty := SrcType.i32 } : Typed)
-  else
-    if SrcType.isIsize left.ty && SrcType.isIsize right.ty then
-      some ({ expr := Expr.binary Word.u64 operation left.expr right.expr, ty := SrcType.isize } : Typed)
-    else
-      arithUint operation left right (SrcType.uintKind left.ty)
+/-- The low bits of e as wide as kind, sign-extended to 32 bits: a narrow signed value's slot from any bits with the same low bits. The shift left drops the bits above the width and the arithmetic shift back copies the sign bit down. -/
+def norm (kind : UintTy) (e : Expr) : Expr :=
+  Expr.binary Word.s32 BinOp.sar (Expr.binary Word.s32 BinOp.shl e (Expr.lit (UintTy.spare kind))) (Expr.lit (UintTy.spare kind))
 
 end Lanius.Mini

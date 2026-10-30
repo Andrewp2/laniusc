@@ -114,6 +114,7 @@ theorem sliceFrom_word {ds : SrcDecls} {t : SrcType} (el : wordElement ds t = tr
   | slice => simp [wordElement] at el
   | unit => simp [wordElement] at el
   | isize => simp [wordElement] at el
+  | sint => simp [wordElement] at el
 
 theorem stride_word {P : Core.Program} {T : Core.Ty} {a len w : Nat}
     (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (words : NativeLayout.valueWords? P T = some w) :

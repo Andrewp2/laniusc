@@ -30,5 +30,6 @@ def lowerEnumValue (scope : List Binding) (ty : SrcType) (variant : Nat) (payloa
   | .slice element => none
   | .unit => none
   | .isize => none
+  | .sint sk => none
 
 end Lanius.Mini

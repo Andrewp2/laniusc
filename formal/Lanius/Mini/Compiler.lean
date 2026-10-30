@@ -17,11 +17,13 @@ public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.render
 public import Lanius.Mini.Compiler.P.UintTy_mask
 public import Lanius.Mini.Compiler.P.UintTy_isWide
-public import Lanius.Mini.Compiler.P.lookup
+public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.equality
 public import Lanius.Mini.Compiler.P.conjunction
 public import Lanius.Mini.Compiler.P.lowerLocal
+public import Lanius.Mini.Compiler.P.sintToUint
 public import Lanius.Mini.Compiler.P.guardAnd
 public import Lanius.Mini.Compiler.P.leftTrue
 public import Lanius.Mini.Compiler.P.applyGuard
@@ -34,6 +36,8 @@ public import Lanius.Mini.Compiler.P.lowerMatchArms
 public import Lanius.Mini.Compiler.P.lowerCallSig
 public import Lanius.Mini.Compiler.P.consArgs
 public import Lanius.Mini.Compiler.P.shortCircuit
+public import Lanius.Mini.Compiler.P.evalDivideSint
+public import Lanius.Mini.Compiler.P.evalDivide
 public import Lanius.Mini.Compiler.P.evalNot
 public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.matchDst
@@ -89,6 +93,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 78 parts, `.P0` on, in source order, whose bodies
+The definitions are in 82 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

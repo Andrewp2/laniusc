@@ -2,11 +2,11 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.BinOp_folds
+import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.Word_compute
 import Lanius.Mini.Compiler.P.Word_narrows
 import Lanius.Mini.Compiler.P.binaryConstant
 import Lanius.Mini.Compiler.P.declareProgram
-import Lanius.Mini.Compiler.P.lookup
 import Lanius.Mini.Compiler.P.optKill
 import Lanius.Mini.Compiler.P.optimizeNeg
 import Lanius.Mini.Compiler.P.substAll

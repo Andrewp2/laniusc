@@ -159,5 +159,6 @@ def srcEnumId (t : Option SrcType) : Option Nat :=
     | .slice e => none
     | .unit => none
     | .isize => none
+    | .sint sk => none
 
 end Lanius.Mini

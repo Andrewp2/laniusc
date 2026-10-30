@@ -5,8 +5,9 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_arithShiftRight
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
+public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_arithShiftRight
-public import Lanius.Faithful.Gen.SelfStmtC_lookup
+public import Lanius.Faithful.Gen.SelfStmtC_arithUint
 import all Lanius.Faithful.Gen.SelfSrcC_arithShiftRight
 import all Lanius.Mini.Compiler.P.arithShiftRight
 
@@ -27,10 +28,11 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_arith_shift_right {prog : SrcProgram} {prims : Prims} {ix_arith_shift_right ix_SrcType_is_i32 ix_SrcType_is_isize ix_arith : Nat} (fn : prog.funcs[ix_arith_shift_right]? = some (src_arith_shift_right ix_SrcType_is_i32 ix_SrcType_is_isize ix_arith)) (np : prims.isPrim ix_arith_shift_right = false)
+theorem proof_arith_shift_right {prog : SrcProgram} {prims : Prims} {ix_arith_shift_right ix_SrcType_is_i32 ix_SrcType_is_isize ix_arith ix_SrcType_is_sint_any : Nat} (fn : prog.funcs[ix_arith_shift_right]? = some (src_arith_shift_right ix_SrcType_is_i32 ix_SrcType_is_isize ix_arith ix_SrcType_is_sint_any)) (np : prims.isPrim ix_arith_shift_right = false)
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
     (ext_SrcType_is_isize : Certified (∀ {n : Nat}, Stmt_SrcType_is_isize prog prims ix_SrcType_is_isize n))
-    (ext_arith : Certified (∀ {n : Nat}, Stmt_arith prog prims ix_arith n)) {n : Nat} :
+    (ext_arith : Certified (∀ {n : Nat}, Stmt_arith prog prims ix_arith n))
+    (ext_SrcType_is_sint_any : Certified (∀ {n : Nat}, Stmt_SrcType_is_sint_any prog prims ix_SrcType_is_sint_any n)) {n : Nat} :
     Stmt_arith_shift_right prog prims ix_arith_shift_right n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
@@ -52,12 +54,15 @@ theorem proof_offset_or_arith {prog : SrcProgram} {prims : Prims} {ix_offset_or_
   simp only [src_offset_or_arith] at h
   faithful [Lanius.Mini.offsetOrArith]
 
-theorem proof_order {prog : SrcProgram} {prims : Prims} {ix_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_uint_kind ix_sign_key ix_order_uint : Nat} (fn : prog.funcs[ix_order]? = some (src_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_uint_kind ix_sign_key ix_order_uint)) (np : prims.isPrim ix_order = false)
+theorem proof_order {prog : SrcProgram} {prims : Prims} {ix_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_sign_key ix_order_sint ix_order_uint : Nat} (fn : prog.funcs[ix_order]? = some (src_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_sign_key ix_order_sint ix_order_uint)) (np : prims.isPrim ix_order = false)
     (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
     (ext_SrcType_is_isize : Certified (∀ {n : Nat}, Stmt_SrcType_is_isize prog prims ix_SrcType_is_isize n))
+    (ext_SrcType_sint_kind : Certified (∀ {n : Nat}, Stmt_SrcType_sint_kind prog prims ix_SrcType_sint_kind n))
     (ext_SrcType_uint_kind : Certified (∀ {n : Nat}, Stmt_SrcType_uint_kind prog prims ix_SrcType_uint_kind n))
+    (ext_SrcType_is_sint_any : Certified (∀ {n : Nat}, Stmt_SrcType_is_sint_any prog prims ix_SrcType_is_sint_any n))
     (ext_sign_key : Certified (∀ {n : Nat}, Stmt_sign_key prog prims ix_sign_key n))
+    (ext_order_sint : Certified (∀ {n : Nat}, Stmt_order_sint prog prims ix_order_sint n))
     (ext_order_uint : Certified (∀ {n : Nat}, Stmt_order_uint prog prims ix_order_uint n)) {n : Nat} :
     Stmt_order prog prims ix_order n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
@@ -66,6 +71,16 @@ theorem proof_order {prog : SrcProgram} {prims : Prims} {ix_order ix_boxed_of_mi
   rw [pcall_succ np fn] at h
   simp only [src_order] at h
   faithful [Lanius.Mini.order]
+
+theorem proof_order_sint {prog : SrcProgram} {prims : Prims} {ix_order_sint ix_order_signed_of : Nat} (fn : prog.funcs[ix_order_sint]? = some (src_order_sint ix_order_signed_of)) (np : prims.isPrim ix_order_sint = false)
+    (ext_order_signed_of : Certified (∀ {n : Nat}, Stmt_order_signed_of prog prims ix_order_signed_of n)) {n : Nat} :
+    Stmt_order_sint prog prims ix_order_sint n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_order_sint] at h
+  faithful [Lanius.Mini.orderSint]
 
 theorem proof_order_uint {prog : SrcProgram} {prims : Prims} {ix_order_uint ix_order_of : Nat} (fn : prog.funcs[ix_order_uint]? = some (src_order_uint ix_order_of)) (np : prims.isPrim ix_order_uint = false)
     (ext_order_of : Certified (∀ {n : Nat}, Stmt_order_of prog prims ix_order_of n)) {n : Nat} :

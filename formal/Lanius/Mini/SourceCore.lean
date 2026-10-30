@@ -23,6 +23,14 @@ def UintTy.toCore : UintTy → Core.UnsignedIntTy
   | .usize => .usize
   | .uint16 => .u16
 
+/-- The signed type as wide. -/
+def UintTy.toSigned : UintTy → Core.SignedIntTy
+  | .uint8 => .i8
+  | .uint32 => .i32
+  | .uint64 => .i64
+  | .usize => .isize
+  | .uint16 => .i16
+
 def UintTy.width : UintTy → Nat
   | .uint8 => 8
   | .uint32 => 32
@@ -40,6 +48,7 @@ def SrcType.toCore : SrcType → Core.Ty
   | .slice element => .slice element.toCore
   | .unit => .unit
   | .isize => .scalar (.signed .isize)
+  | .sint kind => .scalar (.signed kind.toSigned)
 
 /-- The Core type id of a struct or enum type. -/
 def SrcType.typeId : SrcType → Nat
@@ -52,6 +61,7 @@ def SrcType.typeId : SrcType → Nat
   | .slice _ => 0
   | .unit => 0
   | .isize => 0
+  | .sint _ => 0
 
 /-- The Core type a cast to this type names. Lowering only casts to `i32`
 and the unsigned types. -/
@@ -65,6 +75,7 @@ def SrcType.toScalar : SrcType → Core.ScalarTy
   | .slice _ => .bool
   | .unit => .bool
   | .isize => .signed .isize
+  | .sint kind => .signed kind.toSigned
 
 /-- Core's raw slice of this element type from a pointer and a length:
 `slice_from_raw_parts` for `i32`, the typed form for the rest. -/
@@ -78,6 +89,7 @@ def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
   | .slice element, pointer, length => .typedSliceFromRawParts (.slice element.toCore) pointer length
   | .unit, pointer, length => .typedSliceFromRawParts .unit pointer length
   | .isize, pointer, length => .typedSliceFromRawParts (.scalar (.signed .isize)) pointer length
+  | .sint kind, pointer, length => .typedSliceFromRawParts (.scalar (.signed kind.toSigned)) pointer length
 
 def SrcDivOp.toCore : SrcDivOp → Core.BinaryOp
   | .quotient => .divide

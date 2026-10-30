@@ -4,10 +4,12 @@ public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
+public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.UintTy_isWide
+public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.armScope
 public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.evalSame
-public import Lanius.Mini.Compiler.P.lookup
 public import Lanius.Mini.Compiler.P.lowerCallSig
 public import Lanius.Mini.Compiler.P.lowerLoadType
 public import Lanius.Mini.Compiler.P.pow2
@@ -26,11 +28,31 @@ namespace Lanius.Mini
   else
     none
 
+/-- A narrow signed type computes on 32 bits and keeps the low bits of the result, sign-extended; a 64-bit one computes on the bits as isize does. -/
+@[expose] def Inline.arithSignedOf (operation : BinOp) (left : Typed) (right : Typed) (k : UintTy) : Option Typed :=
+  if SrcType.isSint right.ty k && UintTy.isWide k then
+    some ({ expr := Expr.binary Word.u64 operation left.expr right.expr, ty := SrcType.sint k } : Typed)
+  else
+    if SrcType.isSint right.ty k then
+      some ({ expr := norm k (Expr.binary Word.s32 operation left.expr right.expr), ty := SrcType.sint k } : Typed)
+    else
+      none
+
 @[expose] def Inline.orderOf (operation : CmpOp) (left : Typed) (right : Typed) (k : UintTy) : Option Typed :=
   if SrcType.isUint right.ty k then
     some ({ expr := Expr.compare Word.u64 operation left.expr right.expr, ty := SrcType.bool } : Typed)
   else
     none
+
+/-- A narrow signed type compares as i32, a 64-bit one as isize. -/
+@[expose] def Inline.orderSignedOf (operation : CmpOp) (left : Typed) (right : Typed) (k : UintTy) : Option Typed :=
+  if SrcType.isSint right.ty k && UintTy.isWide k then
+    some ({ expr := Expr.compare Word.u64 operation (signKey left.expr) (signKey right.expr), ty := SrcType.bool } : Typed)
+  else
+    if SrcType.isSint right.ty k then
+      some ({ expr := Expr.compare Word.s32 operation left.expr right.expr, ty := SrcType.bool } : Typed)
+    else
+      none
 
 @[expose] def Inline.lowerScalarSlot (slot : Nat) (ty : SrcType) : Option Typed :=
   if SrcType.isScalar ty then

@@ -106,6 +106,44 @@ theorem shift_uint_ok (k : UintTy) (x y : BitVec 64) (small : y.toNat < k.width)
 
 end Values
 
+/-- A signed value is Core's of the signed type as wide. -/
+theorem sint_value {k : UintTy} {v : Value} {a : BitVec 64} (h : k.SintHolds v a) :
+    ∃ n, v = .signed k.toSigned n := by
+  cases k <;> simp only [UintTy.SintHolds, NarrowHolds] at h <;> first | exact ⟨_, h.1⟩ | exact ⟨_, h⟩
+
+/-- Core's arithmetic, comparisons and equality on two values of one signed type have results. -/
+theorem sint_defined {k : UintTy} {cop : Core.BinaryOp}
+    (h : cop = .add ∨ cop = .subtract ∨ cop = .multiply ∨ cop = .bitAnd ∨ cop = .bitOr ∨ cop = .bitXor ∨
+      cop = .less ∨ cop = .lessEqual ∨ cop = .greater ∨ cop = .greaterEqual ∨ cop = .equal ∨ cop = .notEqual)
+    {vl vr : Value} {a b : BitVec 64} (hl : k.SintHolds vl a) (hr : k.SintHolds vr b) :
+    ∃ v, evalBinaryValue .x86_64 cop vl vr = .ok v := by
+  obtain ⟨x, rfl⟩ := sint_value hl
+  obtain ⟨y, rfl⟩ := sint_value hr
+  rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp [evalBinaryValue, Semantics.evalSignedBinary, Semantics.scalarEqual]
+
+/-- A signed shift whose amount is below the width has a result. -/
+theorem sint_shift_defined {k : UintTy} {cop : Core.BinaryOp} (shift : cop = .shiftLeft ∨ cop = .shiftRight)
+    {vl vr : Value} {a b : BitVec 64} (hl : k.SintHolds vl a) (hr : k.SintHolds vr b) (amount : b.toNat < k.width) :
+    ∃ v, evalBinaryValue .x86_64 cop vl vr = .ok v := by
+  obtain ⟨x, rfl⟩ := sint_value hl
+  have val : vr = .signed k.toSigned (b.toNat : Int) := by
+    have le : k.width ≤ 64 := by cases k <;> decide
+    by_cases wide : k.isWide = true
+    · rw [sintHolds_wide wide] at hr
+      rw [hr, BitVec.toInt_eq_toNat_cond, if_pos (by omega)]
+    · rw [sintHolds_narrow (by simpa using wide)] at hr
+      obtain ⟨rfl, hb, -, -⟩ := hr
+      have w32 := UintTy.width_le (k := k) (by simpa using wide)
+      have eq : b.toNat = (low b).toNat := by
+        have := congrArg BitVec.toNat hb
+        rwa [widen_toNat] at this
+      rw [BitVec.toInt_eq_toNat_cond, if_pos (by omega), eq]
+  subst val
+  rcases shift with rfl | rfl <;>
+    simp only [evalBinaryValue, beq_self_eq_true, ↓reduceIte, Semantics.evalSignedBinary, UintTy.bits_toSigned] <;>
+    rw [if_neg (by simp; omega)] <;> exact ⟨_, rfl⟩
+
 /-- Arithmetic other than shifts has a result on the values it lowers for. -/
 theorem arith_defined {op : BinOp} {cop : Core.BinaryOp}
     (h : (cop = .add ∧ op = .add) ∨ (cop = .subtract ∧ op = .sub) ∨ (cop = .multiply ∧ op = .mul) ∨
@@ -136,6 +174,12 @@ theorem arith_defined {op : BinOp} {cop : Core.BinaryOp}
     subst holdsl
     subst holdsr
     exact ⟨_, eval_isize_binop _ _ h⟩
+  split at lowered
+  · obtain ⟨k, htl, htr, -⟩ := arithSint_types lowered
+    rw [htl] at holdsl
+    rw [htr] at holdsr
+    exact sint_defined (by rcases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> simp)
+      holdsl holdsr
   · obtain ⟨k, hk, htr, rfl⟩ := arithUint_some lowered
     rw [SrcType.eq_of_uintKind hk] at holdsl
     rw [htr] at holdsr
@@ -167,6 +211,13 @@ theorem shift_defined {op : BinOp} {cop : Core.BinaryOp} (shift : cop = .shiftLe
     subst holdsl
     subst holdsr
     exact shift_isize_ok _ _ (by simpa [shiftWidth] using amount) shift
+  split at lowered
+  · obtain ⟨k, htl, htr, -⟩ := arithSint_types lowered
+    rw [htl] at holdsl amount
+    rw [htr] at holdsr
+    have width : (UintTy.bits k).toNat = k.width := by cases k <;> rfl
+    simp only [shiftWidth, width] at amount
+    exact sint_shift_defined shift holdsl holdsr amount
   · obtain ⟨k, hk, htr, rfl⟩ := arithUint_some lowered
     rw [SrcType.eq_of_uintKind hk] at holdsl amount
     rw [htr] at holdsr
@@ -197,6 +248,11 @@ theorem order_defined {op : CmpOp} {cop : Core.BinaryOp}
     subst holdsl
     subst holdsr
     exact ⟨_, eval_isize_order _ _ h⟩
+  split at lowered
+  · obtain ⟨k, htl, htr, -⟩ := orderSint_types lowered
+    rw [htl] at holdsl
+    rw [htr] at holdsr
+    exact sint_defined (by rcases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> simp) holdsl holdsr
   · obtain ⟨k, hk, htr, rfl⟩ := orderUint_some lowered
     rw [SrcType.eq_of_uintKind hk] at holdsl
     rw [htr] at holdsr
@@ -239,6 +295,9 @@ theorem equality_defined {op : CmpOp} {cop : Core.BinaryOp}
       rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
       · exact ⟨_, eval_isize_eq _ _⟩
       · exact ⟨_, eval_isize_ne _ _⟩
+    · rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+      · exact sint_defined (by simp) holdsl holdsr
+      · exact sint_defined (by simp) holdsl holdsr
   · simp at lowered
 
 /-- An operator other than `&&` and `||` has a result on the values its
@@ -288,21 +347,42 @@ theorem castTo_defined {ty : SrcType} {inner t : Typed} (lowered : castTo ty inn
   case i32 =>
     simp only [castToI32] at lowered
     cases hty : inner.ty <;> simp [hty] at lowered <;> rw [hty] at holds <;> simp only [SrcType.Holds] at holds
-    · obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩
-    · obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩
-    · subst holds; exact ⟨_, rfl⟩
+    all_goals first
+      | (obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩)
+      | (subst holds; exact ⟨_, rfl⟩)
+      | (obtain ⟨n, rfl⟩ := sint_value holds; exact ⟨_, rfl⟩)
   case uint k =>
     simp only [castToUint] at lowered
     cases hty : inner.ty <;> simp [hty] at lowered <;> rw [hty] at holds <;> simp only [SrcType.Holds] at holds
-    · obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩
-    · obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩
-    · subst holds; exact ⟨_, rfl⟩
+    all_goals first
+      | (obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩)
+      | (subst holds; exact ⟨_, rfl⟩)
+      | (obtain ⟨n, rfl⟩ := sint_value holds; exact ⟨_, rfl⟩)
   case isize =>
     simp only [castToIsize] at lowered
     cases hty : inner.ty <;> simp [hty] at lowered <;> rw [hty] at holds <;> simp only [SrcType.Holds] at holds
-    · obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩
-    · obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩
-    · subst holds; exact ⟨_, rfl⟩
+    all_goals first
+      | (obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩)
+      | (subst holds; exact ⟨_, rfl⟩)
+      | (obtain ⟨n, rfl⟩ := sint_value holds; exact ⟨_, rfl⟩)
+  case sint k =>
+    simp only [castToSint] at lowered
+    split at lowered
+    · cases hty : inner.ty <;> simp [hty, castToIsize] at lowered <;> rw [hty] at holds <;>
+        simp only [SrcType.Holds] at holds
+      all_goals first
+        | (obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩)
+        | (subst holds; exact ⟨_, rfl⟩)
+        | (obtain ⟨n, rfl⟩ := sint_value holds; exact ⟨_, rfl⟩)
+    · split at lowered
+      · rename_i scalar
+        cases hty : inner.ty <;> simp [hty, SrcType.isScalar, SrcType.isBool, SrcType.isPtr] at scalar <;>
+          rw [hty] at holds <;> simp only [SrcType.Holds] at holds
+        all_goals first
+          | (obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩)
+          | (subst holds; exact ⟨_, rfl⟩)
+          | (obtain ⟨n, rfl⟩ := sint_value holds; exact ⟨_, rfl⟩)
+      · simp at lowered
 
 /-! ## Evaluation steps -/
 
@@ -398,7 +478,12 @@ theorem SrcExpr.progress (e : SrcExpr) {scope : List Binding} {frame : Nat → N
       rw [hty] at holds
       subst holds
       exact ⟨f + 1, _, unary_progress run (by rw [target]; rfl)⟩
+    split at lowered
     · simp at lowered
+    · rename_i k hk
+      rw [SrcType.eq_of_sintKind hk] at holds
+      obtain ⟨n, rfl⟩ := sint_value holds
+      exact ⟨f + 1, _, unary_progress run (by rw [target]; rfl)⟩
   | not operand ih =>
     intro t lowered g
     simp only [SrcExpr.lower, lowerNot] at lowered

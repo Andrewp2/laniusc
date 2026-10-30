@@ -55,6 +55,7 @@ def srcTy (t : SrcType) : Option Ty :=
   | .slice e => none
   | .unit => none
   | .isize => some Ty.tyIsize
+  | .sint sk => none
 
 def scalarSrc (t : Ty) : Option SrcType :=
   match t with

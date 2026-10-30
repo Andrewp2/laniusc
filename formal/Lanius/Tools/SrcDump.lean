@@ -35,6 +35,14 @@ def uintName : UintTy → String
   | .usize => "usize"
   | .uint16 => "u16"
 
+/-- The signed type as wide as an unsigned one. -/
+def sintName : UintTy → String
+  | .uint8 => "i8"
+  | .uint32 => "i32"
+  | .uint64 => "i64"
+  | .usize => "isize"
+  | .uint16 => "i16"
+
 /-- A type as Lanius writes it, each named type with its module. -/
 partial def tyName (decls : Decls) : Ty → String
   | .tyI32 => "i32"
@@ -64,6 +72,7 @@ def srcTyName : SrcType → String
   | .slice _ => "slice"
   | .struct id _ => s!"#{id}"
   | .enum id _ => s!"#{id}"
+  | .sint k => sintName k
 
 mutual
 partial def effCalls : SrcEff → List Nat
@@ -174,6 +183,7 @@ partial def typeText : SrcType → StateM Table String
   | .ptr => pure ".ptr"
   | .unit => pure ".unit"
   | .isize => pure ".isize"
+  | .sint k => pure s!"(.sint {uintText k})"
   | .slice e => do named s!".slice {← typeText e}"
   | .struct id fs => do
     let ts ← fs.mapM typeText

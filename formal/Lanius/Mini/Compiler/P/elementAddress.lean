@@ -4,10 +4,10 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
+import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.copyBinding
 import Lanius.Mini.Compiler.P.elementBase
-import Lanius.Mini.Compiler.P.lookup
 import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.shortCircuit
 import Lanius.Mini.Compiler.P.storeType

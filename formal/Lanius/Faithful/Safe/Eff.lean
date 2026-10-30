@@ -383,6 +383,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     | slice => simp at hm
     | unit => simp at hm
     | isize => simp at hm
+    | sint => simp at hm
 
 theorem effs_safe_step (calls : ∀ m, FuncSim sp prims outside m) (eff : EffSafe sp prims outside k)
     (effs : EffsSafe sp prims outside k) : EffsSafe sp prims outside (k + 1) := by

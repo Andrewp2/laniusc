@@ -65,6 +65,7 @@ theorem sty_signed {t : SrcType} {ty : Core.SignedIntTy} {a : Int} (h : STy t (.
   | enum => exact h.elim
   | ptr => exact h.elim
   | slice => exact h.elim
+  | sint => exact h.elim
 
 theorem sty_unsigned {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy t (.unsigned ty a)) :
     ∃ k, t = .uint k ∧ ty = k.toCore := by
@@ -81,6 +82,7 @@ theorem sty_unsigned {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy 
   | enum => exact h.elim
   | ptr => exact h.elim
   | slice => exact h.elim
+  | sint => exact h.elim
 
 theorem sty_wrapU {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy t (.unsigned ty a)) (x : Nat) :
     STy t (.unsigned ty (wrapUnsigned .x86_64 ty x)) := by
@@ -105,6 +107,7 @@ theorem sty_cases {t : SrcType} {v : Value} (h : STy t v) :
   | enum => exact h.elim
   | ptr => exact h.elim
   | slice => exact h.elim
+  | sint => exact h.elim
 
 /-! ## Binary operators -/
 
@@ -291,7 +294,7 @@ theorem cast_flat {tgt : Core.Target} {d : Core.ScalarTy} {l v : Value} (h : eva
   unfold evalScalarCast at h
   split at h <;> first | trivial | simp at h
 
-theorem cast_sty {ty t : SrcType} {lv v : Value} (hl : STy t lv)
+theorem cast_sty {ty t : SrcType} {lv v : Value} (hl : STy t lv) (num : numTy ty = true)
     (h : evalScalarCast .x86_64 ty.toScalar lv = .ok v) : STy ty v := by
   rcases sty_cases hl with ⟨b, rfl⟩ | ⟨sty, a, rfl⟩ | ⟨uty, a, rfl⟩ | rfl <;>
     cases ty <;> simp only [SrcType.toScalar, evalScalarCast, Except.ok.injEq, reduceCtorEq] at h
@@ -301,5 +304,6 @@ theorem cast_sty {ty t : SrcType} {lv v : Value} (hl : STy t lv)
     | exact ⟨_, rfl, wrap_isize _⟩
     | exact ⟨_, rfl, wrapU_lt _ _⟩
     | exact ⟨_, rfl, wrapUInt_lt _ _⟩
+    | simp [numTy] at num
 
 end Lanius.Faithful

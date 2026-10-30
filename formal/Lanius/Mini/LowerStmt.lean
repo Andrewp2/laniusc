@@ -1098,6 +1098,27 @@ theorem Expr.Below.wrap {n : Nat} {e : Expr} (below : e.Below n) (k : UintTy) : 
   · exact below
   · exact ⟨below, trivial⟩
 
+theorem Expr.Below.norm {n : Nat} {e : Expr} (below : e.Below n) (k : UintTy) : (norm k e).Below n :=
+  ⟨⟨below, trivial⟩, trivial⟩
+
+theorem Expr.Below.fromI32 {n : Nat} {e : Expr} (below : e.Below n) (k : UintTy) : (fromI32 k e).Below n := by
+  unfold Lanius.Mini.fromI32
+  split
+  · exact ⟨below, ⟨below, trivial⟩, trivial⟩
+  · exact below.wrap k
+
+theorem castToIsize_below {n : Nat} {inner t : Typed} (h : castToIsize inner = some t)
+    (below : inner.expr.Below n) : t.expr.Below n := by
+  simp only [castToIsize] at h
+  split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h
+  · exact below.fromI32 .uint64
+  · exact below
+  · exact below
+  · simp only [sintToWide]
+    split
+    · exact below
+    · exact below.fromI32 .uint64
+
 theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty inner = some t)
     (below : inner.expr.Below n) : t.expr.Below n := by
   cases ty with
@@ -1107,6 +1128,10 @@ theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty i
     · exact below
     · exact below.wrap .uint32
     · exact below.wrap .uint32
+    · simp only [sintToI32]
+      split
+      · exact below.wrap .uint32
+      · exact below
   | uint kind =>
     simp only [castTo, castToUint] at h
     split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h
@@ -1116,15 +1141,25 @@ theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty i
       · exact below.wrap kind
     · exact below.wrap kind
     · exact below.wrap kind
-  | isize =>
-    simp only [castTo, castToIsize] at h
-    split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h
-    · simp only [fromI32]
+    · simp only [sintToUint]
       split
-      · exact ⟨below, ⟨below, trivial⟩, trivial⟩
-      · exact below.wrap .uint64
-    · exact below
-    · exact below
+      · exact below.wrap kind
+      · exact below.fromI32 kind
+  | isize => exact castToIsize_below h below
+  | sint kind =>
+    simp only [castTo, castToSint] at h
+    split at h
+    · cases hc : castToIsize inner with
+      | none => simp [hc] at h
+      | some t' =>
+        simp only [hc, Option.some.injEq] at h
+        subst h
+        exact (castToIsize_below hc below : t'.expr.Below n)
+    split at h
+    · simp only [Option.some.injEq] at h
+      subst h
+      exact below.norm kind
+    · simp at h
   | bool => simp [castTo] at h
   | struct => simp [castTo] at h
   | enum => simp [castTo] at h
@@ -1178,6 +1213,7 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     case h_7 => simp at lowered
     case h_8 => simp at lowered
     case h_9 => simp at lowered
+    case h_10 => simp at lowered
     rename_i sid fields hty
     simp only [lowerFieldAt] at lowered
     split at lowered
@@ -1210,7 +1246,15 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     · simp only [Option.some.injEq] at lowered
       subst lowered
       exact ⟨trivial, ih (t := inner) innerLowered⟩
+    split at lowered
     · simp at lowered
+    · simp only [Option.some.injEq] at lowered
+      subst lowered
+      rename_i k _
+      simp only [negateSigned]
+      split
+      · exact ⟨trivial, ih (t := inner) innerLowered⟩
+      · exact Expr.Below.norm (e := .neg _) (ih (t := inner) innerLowered) k
   | not operand ih =>
     intro t lowered
     simp only [SrcExpr.lower, lowerNot] at lowered
@@ -1251,6 +1295,17 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
         · simp only [Option.some.injEq] at lowered
           subst lowered
           exact ⟨bl, br⟩
+        split at lowered
+        · cases hk : tl.ty.sintKind <;> rw [hk] at lowered <;> simp only [arithSint, reduceCtorEq] at lowered
+          split at lowered
+          · simp only [Option.some.injEq] at lowered
+            subst lowered
+            exact ⟨bl, br⟩
+          split at lowered
+          · simp only [Option.some.injEq] at lowered
+            subst lowered
+            exact Expr.Below.norm (e := .binary .s32 _ _ _) ⟨bl, br⟩ _
+          · simp at lowered
         · obtain ⟨k, -, -, rfl⟩ := arithUint_some lowered
           exact Expr.Below.wrap (e := .binary .u64 _ _ _) ⟨bl, br⟩ k
     case less | lessEq | greater | greaterEq =>
@@ -1263,6 +1318,17 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
       · simp only [Option.some.injEq] at lowered
         subst lowered
         exact ⟨⟨bl, trivial⟩, ⟨br, trivial⟩⟩
+      split at lowered
+      · cases hk : tl.ty.sintKind <;> rw [hk] at lowered <;> simp only [orderSint, reduceCtorEq] at lowered
+        split at lowered
+        · simp only [Option.some.injEq] at lowered
+          subst lowered
+          exact ⟨⟨bl, trivial⟩, ⟨br, trivial⟩⟩
+        split at lowered
+        · simp only [Option.some.injEq] at lowered
+          subst lowered
+          exact ⟨bl, br⟩
+        · simp at lowered
       · obtain ⟨k, -, -, rfl⟩ := orderUint_some lowered
         exact ⟨bl, br⟩
     all_goals
@@ -1693,6 +1759,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
   | slice => simp [lowerLiteral] at literalOk
   | unit => simp [lowerLiteral] at literalOk
   | isize => simp [lowerLiteral] at literalOk
+  | sint => simp [lowerLiteral] at literalOk
   | ptr => simp [lowerLiteral] at literalOk
   | struct sid types =>
     simp only [lowerLiteral, lowerStructFields] at literalOk
@@ -1796,6 +1863,7 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
   | slice => simp [lowerEnumValue] at valueOk
   | unit => simp [lowerEnumValue] at valueOk
   | isize => simp [lowerEnumValue] at valueOk
+  | sint => simp [lowerEnumValue] at valueOk
   | enum eid variants =>
     simp only [lowerEnumValue, lowerTagged] at valueOk
     split at valueOk
@@ -1878,6 +1946,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
   case h_7 => simp at matchOk
   case h_8 => simp at matchOk
   case h_9 => simp at matchOk
+  case h_10 => simp at matchOk
   rename_i eid variants hty
   simp only [lowerMatchArms] at matchOk
   split at matchOk
@@ -1998,6 +2067,7 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   case h_7 => simp at ok
   case h_8 => simp at ok
   case h_9 => simp at ok
+  case h_10 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -2597,7 +2667,7 @@ theorem slice_kind {ds : SrcDecls} {element : SrcType}
   | i32 => exact .inl rfl
   | struct sid fields => exact .inr (.inl ⟨sid, fields, rfl⟩)
   | enum eid variants => exact .inr (.inr ⟨eid, variants, rfl⟩)
-  | bool | uint | ptr | slice | unit | isize => simp [SrcType.isI32, wordElement] at cond
+  | bool | uint | ptr | slice | unit | isize | sint => simp [SrcType.isI32, wordElement] at cond
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
@@ -2755,7 +2825,7 @@ theorem index_toNat {t : Typed} {iv : Value} {x : BitVec 64} {pos : Nat}
     obtain ⟨rfl, -⟩ := holds
     simp only [Semantics.integerIndex, Except.ok.injEq] at ok
     exact ok
-  | bool | struct | enum | ptr | slice | unit | isize => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
+  | bool | struct | enum | ptr | slice | unit | isize | sint => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
 
 /-- Core's read of `slice[idx]` from a raw slice local. -/
 theorem eval_index_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx : Core.Expr}
@@ -3136,6 +3206,7 @@ theorem exec_loadType {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Memor
   | .uint _, ok, _, _, _, _, _, fits, read => exec_loadScalar hc tail (wordType_scalar ok rfl) fits read
   | .ptr, ok, _, _, _, _, _, fits, read => exec_loadScalar hc tail (wordType_scalar ok rfl) fits read
   | .isize, ok, _, _, _, _, _, fits, read => exec_loadScalar hc tail (wordType_scalar ok rfl) fits read
+  | .sint _, ok, _, _, _, _, _, fits, read => exec_loadScalar hc tail (wordType_scalar ok rfl) fits read
   | .slice _, ok, _, _, _, _, _, _, _ => by simp [wordType] at ok
   | .unit, ok, _, _, _, _, _, _, _ => by simp [wordType] at ok
   | .struct sid fields, ok, target, offset, env, v, below, fits, ⟨k, read⟩ => by
@@ -3288,7 +3359,7 @@ theorem writeWord_corr {P : Core.Program} {st : State} {heap heap' : Memory.Heap
     (h : Semantics.writeNativeValue (k + 1) P st heap f.toCore a x = .ok heap') :
     HeapCorr heap' (hp.writeLE a bits.toNat w.bytes) ∧ a + w.bytes ≤ heap.nextAddress ∧
       heap'.nextAddress = heap.nextAddress := by
-  rcases wordWidth_cases hw with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨kind, rfl, hk⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  rcases wordWidth_cases hw with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨kind, rfl, hk⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨kind, rfl, hk⟩
   · obtain ⟨rfl, bitsV⟩ := holds
     simp only [SrcType.toCore, Semantics.writeNativeValue] at h
     obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc h
@@ -3337,6 +3408,29 @@ theorem writeWord_corr {P : Core.Program} {st : State} {heap heap' : Memory.Heap
       simpa using hc'
     · have := inside (by simp [Semantics.encodeNatLE])
       simpa [Semantics.encodeNatLE, MemWidth.bytes] using this
+  · cases kind <;> simp only [usizeWidth, Option.some.injEq] at hk <;> subst hk
+    case uint64 | usize =>
+      simp only [SrcType.Holds, UintTy.SintHolds] at holds
+      subst holds
+      simp only [SrcType.toCore, UintTy.toSigned, Semantics.writeNativeValue] at h
+      rw [isize_word_bits] at h
+      obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc h
+      refine ⟨?_, ?_, storeBytes_next h⟩
+      · simp only [MemWidth.bytes]
+        rw [writeLE_eq_writeBytes]
+        simpa using hc'
+      · have := inside (by simp [Semantics.encodeNatLE])
+        simpa [Semantics.encodeNatLE, MemWidth.bytes] using this
+    all_goals
+      obtain ⟨rfl, bitsV, -⟩ := holds
+      simp only [SrcType.toCore, UintTy.toSigned, Semantics.writeNativeValue] at h
+      obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc h
+      refine ⟨?_, ?_, storeBytes_next h⟩
+      · simp only [MemWidth.bytes]
+        rw [writeLE_eq_writeBytes, i32_store_bytes bitsV]
+        simpa using hc'
+      · have := inside (by simp [Semantics.i32Bytes])
+        simpa [Semantics.i32Bytes, MemWidth.bytes] using this
 
 theorem holdsAt_enum_inv {id : Nat} {variants : List (List SrcType)} {v : Value} {env : Env} {slot : Nat}
     (h : SrcType.HoldsAt (.enum id variants) v env slot) :
@@ -3398,6 +3492,8 @@ theorem exec_storeType {sp : SrcProgram} {mp : Program} {st : State} {env : Env}
   | .ptr, ok, _, _, _, _, _, _, _, sOk, holds, fits, wrote, hc, bound =>
     exec_storeScalar (wordType_scalar ok rfl) sOk holds fits wrote hc bound
   | .isize, ok, _, _, _, _, _, _, _, sOk, holds, fits, wrote, hc, bound =>
+    exec_storeScalar (wordType_scalar ok rfl) sOk holds fits wrote hc bound
+  | .sint _, ok, _, _, _, _, _, _, _, sOk, holds, fits, wrote, hc, bound =>
     exec_storeScalar (wordType_scalar ok rfl) sOk holds fits wrote hc bound
   | .slice _, ok, _, _, _, _, _, _, _, _, _, _, _, _, _ => by simp [wordType] at ok
   | .unit, ok, _, _, _, _, _, _, _, _, _, _, _, _, _ => by simp [wordType] at ok

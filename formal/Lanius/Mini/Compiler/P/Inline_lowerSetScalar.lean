@@ -7,6 +7,7 @@ public import Lanius.Mini.Compiler.P.Expr_agrees
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.Stmt_kills
+public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.Word_narrows
 public import Lanius.Mini.Compiler.P.binaryConstant
 public import Lanius.Mini.Compiler.P.callAgrees
@@ -16,7 +17,6 @@ public import Lanius.Mini.Compiler.P.elementAddress
 public import Lanius.Mini.Compiler.P.elementBase
 public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.evalSame
-public import Lanius.Mini.Compiler.P.lookup
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerSetValues
 public import Lanius.Mini.Compiler.P.pow2

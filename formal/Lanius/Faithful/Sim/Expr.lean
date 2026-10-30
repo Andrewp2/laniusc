@@ -207,11 +207,11 @@ theorem expr_sim (target : P.target = .x86_64) (tenv : TEnv) (env : Env) (e : Sr
     obtain ⟨j, w, -, sub, hw⟩ := cast_inv run
     simp only [exprTy, Option.bind_eq_some_iff] at ht
     obtain ⟨to, hto, hc⟩ := ht
-    obtain ⟨rfl, -⟩ := castTy_some hc
+    obtain ⟨rfl, -, numTo⟩ := castTy_some hc
     obtain ⟨q, hq, rq⟩ := ih sub hto rel
     obtain ⟨rfl, sw⟩ := rq.flat (cast_flat hw)
     rw [target] at hw
-    refine ⟨v, ?_, .scalar (cast_sty sw hw)⟩
+    refine ⟨v, ?_, .scalar (cast_sty sw numTo hw)⟩
     simp only [pexpr, hq, Option.bind_some, cast, Lanius.Faithful.target, hw]
     rfl
   | null =>

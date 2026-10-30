@@ -109,7 +109,18 @@ theorem negate_holds {inner t : Typed} {env : Env} {w r : Value} (lowered : lowe
     rw [eval_isize_neg, Except.ok.injEq] at run
     subst run
     rfl
-  · simp at lowered
+  · split at lowered
+    · simp at lowered
+    · rename_i k hk
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      rw [SrcType.eq_of_sintKind hk] at holds
+      show k.SintHolds _ _
+      by_cases wide : k.isWide = true
+      · simp only [negateSigned, wide, ↓reduceIte, Expr.eval, Word.apply, BinOp.apply]
+        exact wide_neg wide holds run
+      · simp only [negateSigned, wide, Bool.false_eq_true, ↓reduceIte]
+        exact narrow_neg (by simpa using wide) holds run
 
 theorem not_holds {inner t : Typed} {env : Env} {w r : Value} (lowered : lowerNotTyped inner = some t)
     (holds : inner.ty.Holds w (inner.expr.eval env))
@@ -248,6 +259,155 @@ theorem eval_uint_div (k : UintTy) {a b : BitVec 64} (ha : a.toNat < 2 ^ k.width
     refine ⟨by simp [DivOp.defined]; exact b0, ?_, by simp only [DivOp.apply, BitVec.toNat_umod]; omega⟩
     simp only [DivOp.apply, BitVec.toNat_umod, Semantics.wrapUnsigned, Semantics.unsignedModulus, UintTy.bits_toCore]
     rw [Nat.mod_eq_of_lt (by omega)]
+
+section
+open Semantics
+
+theorem tdiv_range {x y B : Int} (pos : 0 < B) (lo : -B ≤ x) (hi : x < B) (y0 : y ≠ 0)
+    (notMin : ¬(x = -B ∧ y = -1)) : -B ≤ x.tdiv y ∧ x.tdiv y < B := by
+  have abs := Int.natAbs_tdiv x y
+  have qe := Int.natAbs_eq (x.tdiv y)
+  rcases Int.natAbs_eq x with hx | hx <;> rcases Int.natAbs_eq y with hy | hy
+  all_goals
+    by_cases one : y.natAbs = 1
+    · rcases Int.natAbs_eq y with hy' | hy' <;> rw [one] at hy' <;> simp only [Int.natCast_one] at hy' <;>
+        subst hy' <;> simp only [Int.tdiv_one, Int.tdiv_neg] <;> omega
+    · have two : 2 ≤ y.natAbs := by omega
+      have half : x.natAbs / y.natAbs ≤ x.natAbs / 2 := Nat.div_le_div_left two (by decide)
+      have : (x.tdiv y).natAbs ≤ x.natAbs / 2 := by rw [abs]; exact half
+      omega
+
+theorem tmod_range {x y B : Int} (lo : -B ≤ x) (hi : x < B) : -B ≤ x.tmod y ∧ x.tmod y < B := by
+  have abs := Int.natAbs_tmod x y
+  have le : x.natAbs % y.natAbs ≤ x.natAbs := Nat.mod_le _ _
+  have qe := Int.natAbs_eq (x.tmod y)
+  by_cases nonneg : 0 ≤ x
+  · have := Int.tmod_nonneg y nonneg
+    rcases Int.natAbs_eq x with hx | hx <;> omega
+  · have neg : x.tmod y = -((-x).tmod y) := by rw [Int.neg_tmod, Int.neg_neg]
+    have := Int.tmod_nonneg y (show 0 ≤ -x by omega)
+    rcases Int.natAbs_eq x with hx | hx <;> omega
+
+theorem wrapSigned_id {k : UintTy} (narrow : k.isWide = false) {n : Int}
+    (lo : -2 ^ (k.width - 1) ≤ n) (hi : n < 2 ^ (k.width - 1)) : wrapSigned .x86_64 k.toSigned n = n := by
+  rw [wrapSigned_narrow]
+  by_cases h : n % 2 ^ k.width ≥ 2 ^ (k.width - 1)
+  · rw [if_pos h]
+    cases k <;> simp only [UintTy.isWide, Bool.true_eq_false] at narrow <;> simp only [UintTy.width] at lo hi h ⊢ <;> omega
+  · rw [if_neg h]
+    cases k <;> simp only [UintTy.isWide, Bool.true_eq_false] at narrow <;> simp only [UintTy.width] at lo hi h ⊢ <;> omega
+
+theorem bmod32_id {n : Int} (lo : -2 ^ 31 ≤ n) (hi : n < 2 ^ 31) : n.bmod (2 ^ 32) = n := by
+  rw [← BitVec.toInt_ofInt]
+  exact BitVec.toInt_ofInt_eq_self (by decide) lo hi
+
+theorem eval_narrow_div {k : UintTy} (narrow : k.isWide = false) {op : DivOp} {cop : Core.BinaryOp}
+    (h : (cop = .divide ∧ op = .sDiv) ∨ (cop = .remainder ∧ op = .sRem)) {a b : BitVec 64} {vl vr v : Value}
+    (hl : k.SintHolds vl a) (hr : k.SintHolds vr b)
+    (run : evalBinaryValue .x86_64 cop vl vr = .ok v) :
+    ¬(low a = low k.leastBits ∧ low b = -1) ∧ op.defined (low a) (low b) = true ∧
+      k.SintHolds v (widen (op.apply (low a) (low b))) := by
+  rw [sintHolds_narrow narrow] at hl hr ⊢
+  obtain ⟨rfl, -, lo, hi⟩ := hl
+  obtain ⟨rfl, -, -, -⟩ := hr
+  have least : (low k.leastBits).toInt = -2 ^ (k.width - 1) := by
+    cases k <;> simp only [UintTy.isWide, Bool.true_eq_false] at narrow <;> decide
+  have bound : (2 : Int) ^ (k.width - 1) ≤ 2 ^ 31 := by
+    have := Nat.pow_le_pow_right (show 0 < 2 by decide) (show k.width - 1 ≤ 31 by have := UintTy.width_le narrow; omega)
+    exact_mod_cast this
+  have pos : (0 : Int) < 2 ^ (k.width - 1) := Int.pow_pos (by decide)
+  have sign : signedSignBit .x86_64 k.toSigned = 2 ^ (k.width - 1) := by
+    simp only [signedSignBit, UintTy.bits_toSigned]
+  generalize low a = x at *
+  generalize low b = y at *
+  have hmin : (BitVec.intMin 32).toInt = -2 ^ 31 := by decide
+  have hneg : (-1 : BitVec 32).toInt = -1 := by decide
+  have range : ∀ r : BitVec 32, -2 ^ (k.width - 1) ≤ r.toInt → r.toInt < 2 ^ (k.width - 1) →
+      -2 ^ (k.width - 1) ≤ (low (widen r)).toInt ∧ (low (widen r)).toInt < 2 ^ (k.width - 1) := by
+    intro r lo hi; rw [low_widen]; exact ⟨lo, hi⟩
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals
+    simp [evalBinaryValue, evalSignedBinary, sign] at run
+    split at run
+    · simp at run
+    rename_i nonzero
+    split at run
+    · simp at run
+    rename_i notMin
+    simp only [Except.ok.injEq] at run
+    subst run
+    have y0 : y ≠ 0 := fun h => nonzero (by simp [h])
+    have yt : y.toInt ≠ 0 := fun h => y0 (BitVec.eq_of_toInt_eq (by rw [h]; rfl))
+    have notMin' : ¬(x.toInt = -2 ^ (k.width - 1) ∧ y.toInt = -1) := fun ⟨hx, hy⟩ => notMin ⟨by simp [hx], by simp [hy]⟩
+    refine ⟨fun ⟨hx, hy⟩ => notMin' ⟨by rw [hx, least], by rw [hy, hneg]⟩, ?_, ?_⟩
+    · simp only [DivOp.defined]
+      have : ¬(x = BitVec.intMin 32 ∧ y = -1) := fun ⟨hx, hy⟩ => by
+        subst hx hy
+        exact notMin' ⟨by rw [hmin] at lo ⊢; omega, hneg⟩
+      by_cases hx : x = BitVec.intMin 32 <;> simp_all
+  · obtain ⟨qlo, qhi⟩ := tdiv_range pos lo hi yt notMin'
+    have key : (x.sdiv y).toInt = x.toInt.tdiv y.toInt := by
+      rw [BitVec.toInt_sdiv, bmod32_id (by omega) (by omega)]
+    simp only [DivOp.apply, NarrowHolds, low_widen, key, truncDiv_eq_tdiv, wrapSigned_id narrow qlo qhi]
+    refine ⟨?_, ?_, qlo, qhi⟩ <;> trivial
+  · obtain ⟨qlo, qhi⟩ := tmod_range (y := y.toInt) lo hi
+    rw [truncDiv_eq_tdiv, show x.toInt - x.toInt.tdiv y.toInt * y.toInt = x.toInt.tmod y.toInt by rw [Int.tmod_def, Int.mul_comm]]
+    simp only [DivOp.apply, NarrowHolds, low_widen, BitVec.toInt_srem, wrapSigned_id narrow qlo qhi]
+    refine ⟨?_, ?_, qlo, qhi⟩ <;> trivial
+
+theorem overflowGuard_eval {k : UintTy} {slot : Nat} {env : Env}
+    (h : ¬(low (env slot) = low k.leastBits ∧ low (env (slot + 1)) = -1)) : (overflowGuard k slot).eval env = 1 := by
+  simp only [overflowGuard, Expr.eval]
+  by_cases a : low (env slot) = low k.leastBits
+  · have b : low (env (slot + 1)) ≠ 4294967295#32 := fun b => h ⟨a, b.trans (by decide)⟩
+    simp only [low] at a b
+    simp [Word.holds, Word.apply, BinOp.apply, CmpOp.holds, CmpOp.holdsU, low, a, b]
+  · simp only [low] at a
+    simp [Word.holds, Word.apply, BinOp.apply, CmpOp.holds, CmpOp.holdsU, low, a]
+
+theorem eval_isize_div {x y : BitVec 64} {op : DivOp} {cop : Core.BinaryOp}
+    (h : (cop = .divide ∧ op = .sDiv) ∨ (cop = .remainder ∧ op = .sRem)) {v : Core.Value}
+    (run : Semantics.evalBinaryValue .x86_64 cop (.signed .isize x.toInt) (.signed .isize y.toInt) = .ok v) :
+    op.defined x y = true ∧ v = .signed .isize (op.apply x y).toInt := by
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  all_goals
+    simp [Semantics.evalBinaryValue, Semantics.evalSignedBinary] at run
+    split at run
+    · simp at run
+    rename_i nonzero
+    split at run
+    · simp at run
+    rename_i notMin
+    simp only [Except.ok.injEq] at run
+    subst run
+    have y0 : y ≠ 0 := fun h => nonzero (by simp [h])
+    have notBoth : ¬(x = BitVec.intMin 64 ∧ y = -1) := fun ⟨hx, hy⟩ =>
+      notMin ⟨by subst hx; decide, by subst hy; decide⟩
+    refine ⟨by simp only [DivOp.defined]; simp; by_cases hx : x = BitVec.intMin 64 <;> simp_all, ?_⟩
+  · rw [truncDiv_eq_tdiv, wrapSigned_isize, BitVec.toInt_ofInt, DivOp.apply, BitVec.toInt_sdiv]
+  · rw [truncDiv_eq_tdiv, show x.toInt - x.toInt.tdiv y.toInt * y.toInt = x.toInt.tmod y.toInt by rw [Int.tmod_def, Int.mul_comm],
+      DivOp.apply, ← BitVec.toInt_srem, wrapSigned_isize, BitVec.ofInt_toInt]
+
+theorem eval_wide_div {k : UintTy} (wide : k.isWide = true) {op : DivOp} {cop : Core.BinaryOp}
+    (h : (cop = .divide ∧ op = .sDiv) ∨ (cop = .remainder ∧ op = .sRem)) {a b : BitVec 64} {vl vr v : Value}
+    (hl : k.SintHolds vl a) (hr : k.SintHolds vr b)
+    (run : evalBinaryValue .x86_64 cop vl vr = .ok v) :
+    op.defined a b = true ∧ k.SintHolds v (op.apply a b) := by
+  rw [sintHolds_wide wide] at hl hr ⊢
+  subst hl hr
+  rcases UintTy.wide_cases wide with rfl | rfl
+  · simp only [UintTy.toSigned] at run ⊢
+    rw [evalBinaryValue_i64] at run
+    cases e : evalBinaryValue .x86_64 cop (.signed .isize a.toInt) (.signed .isize b.toInt) with
+    | error => rw [e] at run; simp [Except.map] at run
+    | ok w =>
+      rw [e] at run
+      simp only [Except.map, Except.ok.injEq] at run
+      obtain ⟨defined, rfl⟩ := eval_isize_div h e
+      exact ⟨defined, by rw [← run]; rfl⟩
+  · exact eval_isize_div h run
+
+end
 
 theorem divOp_signed (op : SrcDivOp) :
     (op.toCore = .divide ∧ signedDiv op = .sDiv) ∨ (op.toCore = .remainder ∧ signedDiv op = .sRem) := by
@@ -638,25 +798,54 @@ theorem eval_divide {k : Nat} (ihe : EvalSound sp mp k) {op : SrcDivOp} {l r : S
       .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (.divide defined)),
       below _, holdsAt_set (holds_i32 _) env2 slot, hc2⟩
   · split at ok
-    · simp at ok
-    rename_i kind hk
-    simp only [evalDivideUint] at ok
-    split at ok
-    · rename_i hr
-      simp only [Option.some.injEq] at ok
-      subst ok
-      have lty : le.ty = .uint kind := by cases hty : le.ty <;> simp_all [SrcType.uintKind]
-      rw [lty] at holds1
-      rw [eq_of_isUint hr] at holds2
+    · split at ok
+      · simp at ok
+      rename_i kind hk
+      simp only [evalDivideUint] at ok
+      split at ok
+      · rename_i hr
+        simp only [Option.some.injEq] at ok
+        subst ok
+        have lty : le.ty = .uint kind := by cases hty : le.ty <;> simp_all [SrcType.uintKind]
+        rw [lty] at holds1
+        rw [eq_of_isUint hr] at holds2
+        have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
+        have holdsr := holds_var holds2 rfl
+        obtain ⟨rfl, small⟩ := holdsl
+        obtain ⟨rfl, -⟩ := holdsr
+        obtain ⟨defined, rfl, fits⟩ := eval_uint_div kind small (divOp_unsigned op) evaluated
+        refine ⟨fresh2, keeps1.chain keeps2, locals2.trans locals1, by simp [SrcType.size], max d1 d2, _, hp2,
+          .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (.divide defined)),
+          below _, holdsAt_set (ty := .uint kind) ⟨rfl, fits⟩ env2 slot, hc2⟩
+      · simp at ok
+    · rename_i kind hk
+      simp only [evalDivideSint] at ok
+      rw [SrcType.eq_of_sintKind hk] at holds1
       have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
-      have holdsr := holds_var holds2 rfl
-      obtain ⟨rfl, small⟩ := holdsl
-      obtain ⟨rfl, -⟩ := holdsr
-      obtain ⟨defined, rfl, fits⟩ := eval_uint_div kind small (divOp_unsigned op) evaluated
-      refine ⟨fresh2, keeps1.chain keeps2, locals2.trans locals1, by simp [SrcType.size], max d1 d2, _, hp2,
-        .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (.divide defined)),
-        below _, holdsAt_set (ty := .uint kind) ⟨rfl, fits⟩ env2 slot, hc2⟩
-    · simp at ok
+      split at ok
+      · rename_i hr
+        simp only [Bool.and_eq_true] at hr
+        simp only [Option.some.injEq] at ok
+        subst ok
+        rw [SrcType.eq_of_isSint hr.1] at holds2
+        have holdsr := holds_var holds2 rfl
+        obtain ⟨defined, fits⟩ := eval_wide_div hr.2 (divOp_signed op) holdsl holdsr evaluated
+        refine ⟨fresh2, keeps1.chain keeps2, locals2.trans locals1, by simp [SrcType.size], max d1 d2, _, hp2,
+          .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (.divide defined)),
+          below _, holdsAt_set (ty := .sint kind) fits env2 slot, hc2⟩
+      split at ok
+      · rename_i notWide hr
+        have narrow : kind.isWide = false := by simp_all
+        simp only [Option.some.injEq] at ok
+        subst ok
+        rw [SrcType.eq_of_isSint hr] at holds2
+        have holdsr := holds_var holds2 rfl
+        obtain ⟨guard, defined, fits⟩ := eval_narrow_div narrow (divOp_signed op) holdsl holdsr evaluated
+        refine ⟨fresh2, keeps1.chain keeps2, locals2.trans locals1, by simp [SrcType.size], max d1 d2, _, hp2,
+          .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _))
+            (Exec.checkThen (overflowGuard_eval (env := env2) guard) (.divide defined))),
+          below _, holdsAt_set (ty := .sint kind) fits env2 slot, hc2⟩
+      · simp at ok
 
 theorem eq_of_elementOf {ty e : SrcType} (h : elementOf ty = some e) : ty = .slice e := by
   cases ty <;> simp_all [elementOf]
@@ -906,6 +1095,7 @@ theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType
   | slice => simp at ok
   | unit => simp at ok
   | isize => simp at ok
+  | sint => simp at ok
 
 /-- An enum literal: its payload from `slot + 1`, then its tag in `slot`. -/
 theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType} {variant : Nat}
@@ -954,6 +1144,7 @@ theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcTyp
   | slice => simp at ok
   | unit => simp at ok
   | isize => simp at ok
+  | sint => simp at ok
 
 /-- Binding an arm's payload above the scope keeps the layout. -/
 theorem armScope_layout :
@@ -1171,6 +1362,7 @@ theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee :
       | slice => cases values <;> simp [matchVariants, evalArms] at armsOk
       | unit => cases values <;> simp [matchVariants, evalArms] at armsOk
       | isize => cases values <;> simp [matchVariants, evalArms] at armsOk
+      | sint => cases values <;> simp [matchVariants, evalArms] at armsOk
     all_goals simp at run
   · simp at ok
 
@@ -1208,7 +1400,11 @@ theorem negate_scalar {inner t : Typed} (lowered : lowerNegateTyped inner = some
   split at lowered
   · rename_i isIsize
     cases hty : inner.ty <;> simp_all [SrcType.isIsize, SrcType.isScalar]
-  · simp at lowered
+  · split at lowered
+    · simp at lowered
+    · rename_i k hk
+      rw [SrcType.eq_of_sintKind hk]
+      rfl
 
 theorem not_scalar {inner t : Typed} (lowered : lowerNotTyped inner = some t) : inner.ty.isScalar = true := by
   simp only [lowerNotTyped] at lowered
@@ -1402,6 +1598,7 @@ theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : 
   case h_7 => simp at ok
   case h_8 => simp at ok
   case h_9 => simp at ok
+  case h_10 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok

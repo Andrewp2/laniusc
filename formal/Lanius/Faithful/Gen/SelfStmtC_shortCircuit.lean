@@ -28,25 +28,13 @@ abbrev Stmt_eval_apply (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Nat} {x2 : Option Lanius.Mini.Evaluated} {x3 : Option Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcOp x0 v0 → RepNat x1 v1 → (RepOption 147 RepEvaluated) x2 v2 → (RepOption 147 RepEvaluated) x3 v3 →
     (RepOption 147 RepEvaluated) (Lanius.Mini.evalApply x0 x1 x2 x3) w
 
-abbrev Stmt_eval_divide (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcDivOp} {x1 : Nat} {x2 : Lanius.Mini.Evaluated} {x3 : Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcDivOp x0 v0 → RepNat x1 v1 → RepEvaluated x2 v2 → RepEvaluated x3 v3 →
-    (RepOption 147 RepEvaluated) (Lanius.Mini.evalDivide x0 x1 x2 x3) w
-
 abbrev Stmt_eval_divide_uint (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcDivOp} {x1 : Nat} {x2 : Lanius.Mini.Evaluated} {x3 : Lanius.Mini.Evaluated} {x4 : Lanius.Mini.UintTy} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepSrcDivOp x0 v0 → RepNat x1 v1 → RepEvaluated x2 v2 → RepEvaluated x3 v3 → RepUintTy x4 v4 →
     (RepOption 147 RepEvaluated) (Lanius.Mini.evalDivideUint x0 x1 x2 x3 x4) w
 
-abbrev Stmt_eval_division (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcDivOp} {x1 : Nat} {x2 : Option Lanius.Mini.Evaluated} {x3 : Option Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcDivOp x0 v0 → RepNat x1 v1 → (RepOption 147 RepEvaluated) x2 v2 → (RepOption 147 RepEvaluated) x3 v3 →
-    (RepOption 147 RepEvaluated) (Lanius.Mini.evalDivision x0 x1 x2 x3) w
-
 abbrev Stmt_eval_load (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Binding} {x1 : Nat} {x2 : Lanius.Mini.Evaluated} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinding x0 v0 → RepNat x1 v1 → RepEvaluated x2 v2 →
     (RepOption 147 RepEvaluated) (Lanius.Mini.evalLoad x0 x1 x2) w
-
-abbrev Stmt_eval_negate (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Evaluated} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 147 RepEvaluated) x1 v1 →
-    (RepOption 147 RepEvaluated) (Lanius.Mini.evalNegate x0 x1) w
 
 abbrev Stmt_eval_operands (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Nat} {x2 : Lanius.Mini.Evaluated} {x3 : Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcOp x0 v0 → RepNat x1 v1 → RepEvaluated x2 v2 → RepEvaluated x3 v3 →
@@ -72,10 +60,6 @@ abbrev Stmt_eval_tagged (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : List (List Lanius.Mini.SrcType)} {x2 : Nat} {x3 : Nat} {x4 : Lanius.Mini.EvaluatedArgs} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepSrcType x0 v0 → (RepList 71 (RepList 67 RepSrcType)) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepEvaluatedArgs x4 v4 →
     (RepOption 147 RepEvaluated) (Lanius.Mini.evalTagged x0 x1 x2 x3 x4) w
 
-abbrev Stmt_eval_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Evaluated} {x2 : Option Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepEvaluated x1 v1 → (RepOption 145 RepTyped) x2 v2 →
-    (RepOption 147 RepEvaluated) (Lanius.Mini.evalThen x0 x1 x2) w
-
 abbrev Stmt_eval_variant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : Nat} {x2 : Nat} {x3 : Option Lanius.Mini.EvaluatedArgs} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcType x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 174 RepEvaluatedArgs) x3 v3 →
     (RepOption 147 RepEvaluated) (Lanius.Mini.evalVariant x0 x1 x2 x3) w
@@ -84,9 +68,9 @@ abbrev Stmt_operand_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Lanius.Mini.SrcType} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → RepSrcType x1 v1 → RepNat x2 v2 →
     RepExpr (Lanius.Mini.operandGuard x0 x1 x2) w
 
-abbrev Stmt_scalar_cast (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → RepTyped x1 v1 →
-    (RepOption 145 RepTyped) (Lanius.Mini.scalarCast x0 x1) w
+abbrev Stmt_overflow_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.UintTy} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepUintTy x0 v0 → RepNat x1 v1 →
+    RepExpr (Lanius.Mini.overflowGuard x0 x1) w
 
 abbrev Stmt_short_circuit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcOp} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcOp x0 v0 →

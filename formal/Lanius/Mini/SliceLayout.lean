@@ -1,4 +1,5 @@
 import Lanius.Mini.HeapCorr
+import Lanius.Mini.Signed
 
 /-!
 # Slice elements in Core's native layout: the word fields
@@ -33,6 +34,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | slice => simp [SrcType.same] at same
     | unit => simp [SrcType.same] at same
     | isize => simp [SrcType.same] at same
+    | sint => simp [SrcType.same] at same
   | .enum id vs, b, same => by
     cases b with
     | enum id' ws =>
@@ -46,6 +48,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | slice => simp [SrcType.same] at same
     | unit => simp [SrcType.same] at same
     | isize => simp [SrcType.same] at same
+    | sint => simp [SrcType.same] at same
   | .slice e, b, same => by
     cases b with
     | slice e' =>
@@ -59,8 +62,10 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | ptr => simp [SrcType.same] at same
     | unit => simp [SrcType.same] at same
     | isize => simp [SrcType.same] at same
+    | sint => simp [SrcType.same] at same
   | .unit, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isUnit]
   | .isize, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isIsize]
+  | .sint k, b, same => (SrcType.eq_of_isSint (by simpa [SrcType.same] using same)).symm
 
 theorem typesSame_eq : ∀ (fs : List SrcType) {gs : List SrcType}, typesSame fs gs = true → fs = gs
   | [], gs, same => by cases gs <;> simp_all [typesSame]
@@ -86,20 +91,21 @@ theorem SrcType.same_eq {a b : SrcType} (same : a.same b = true) : a = b := SrcT
 
 theorem wordWidth_cases {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) :
     (f = .i32 ∧ w = .m32) ∨ (f = .bool ∧ w = .m32) ∨ (∃ k, f = .uint k ∧ usizeWidth k = some w) ∨
-      (f = .ptr ∧ w = .m64) ∨ (f = .isize ∧ w = .m64) := by
+      (f = .ptr ∧ w = .m64) ∨ (f = .isize ∧ w = .m64) ∨ (∃ k, f = .sint k ∧ usizeWidth k = some w) := by
   cases f with
   | i32 => simp only [wordWidth, Option.some.injEq] at h; exact .inl ⟨rfl, h.symm⟩
   | bool => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inl ⟨rfl, h.symm⟩)
   | uint k => exact .inr (.inr (.inl ⟨k, rfl, h⟩))
   | ptr => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inl ⟨rfl, h.symm⟩)))
-  | isize => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inr ⟨rfl, h.symm⟩)))
+  | isize => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inr (.inl ⟨rfl, h.symm⟩))))
+  | sint k => exact .inr (.inr (.inr (.inr (.inr ⟨k, rfl, h⟩))))
   | struct | enum | slice | unit => simp [wordWidth] at h
 
 theorem wordWidth_size {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) : f.size = 1 := by
-  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
+  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ <;> rfl
 
 theorem wordWidth_scalar {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) : f.isScalar = true := by
-  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
+  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ <;> rfl
 
 theorem i32_load_holds {bits : Nat} (lt : bits < 2 ^ 32) :
     SrcType.i32.Holds (.signed .i32 (if bits ≥ 2 ^ 31 then Int.ofNat bits - 2 ^ 32 else Int.ofNat bits))
@@ -115,13 +121,33 @@ theorem i32_load_holds {bits : Nat} (lt : bits < 2 ^ 32) :
   rw [w, i]
   exact holds_i32 _
 
+theorem signed32_range {bits : Nat} (lt : bits < 2 ^ 32) :
+    -2 ^ 31 ≤ Semantics.signed32 bits ∧ Semantics.signed32 bits < 2 ^ 31 := by
+  simp only [Semantics.signed32, Int.ofNat_eq_natCast]
+  split <;> omega
+
+/-- Core's read of a narrow signed value, 4 bytes `bits` in its range. -/
+theorem narrow_load_holds {k : UintTy} {t : Core.SignedIntTy} (ht : k.toSigned = t) {bits : Nat}
+    (lt : bits < 2 ^ 32)
+    (range : -2 ^ (k.width - 1) ≤ Semantics.signed32 bits ∧ Semantics.signed32 bits < 2 ^ (k.width - 1))
+    (narrow : k.isWide = false := by rfl) :
+    (SrcType.sint k).Holds (.signed t (Semantics.signed32 bits)) (BitVec.ofNat 64 bits) := by
+  subst ht
+  obtain ⟨hv, hb⟩ := i32_load_holds lt
+  simp only [Value.signed.injEq, true_and] at hv
+  show k.SintHolds _ _
+  rw [sintHolds_narrow narrow]
+  refine ⟨?_, hb, ?_⟩
+  · simp only [Semantics.signed32, hv]
+  · simp only [Semantics.signed32, ← hv]; exact range
+
 /-! ## Core's words, one field at a time -/
 
 theorem words_word {P : Core.Program} {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) (k : Nat) :
     NativeLayout.words? (k + 1) P f.toCore = some 1 := by
-  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩
+  rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩
   all_goals try cases k
-  all_goals simp [NativeLayout.words?, SrcType.toCore, UintTy.toCore]
+  all_goals simp [NativeLayout.words?, SrcType.toCore, UintTy.toCore, UintTy.toSigned]
 
 theorem mapM_except_ok {α β ε : Type} {g : α → Except ε β} : ∀ {l : List α} {vs : List β},
     l.mapM g = .ok vs →
@@ -178,7 +204,7 @@ theorem readWord_holds {P : Core.Program} {heap : Memory.Heap} {hp : Heap} (hc :
     {f : SrcType} {w : MemWidth} (hw : wordWidth f = some w) {k a : Nat} {x : Value}
     (h : Semantics.readNativeValue (k + 1) P heap f.toCore a = .ok x) :
     f.Holds x (BitVec.ofNat 64 (hp.readLE a w.bytes)) ∧ a + w.bytes ≤ heap.nextAddress := by
-  rcases wordWidth_cases hw with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨kind, rfl, hk⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  rcases wordWidth_cases hw with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨kind, rfl, hk⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨kind, rfl, hk⟩
   · simp only [SrcType.toCore, Semantics.readNativeValue] at h
     obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok h
     simp only [pure, Except.pure, Except.ok.injEq] at wrapped
@@ -239,6 +265,41 @@ theorem readWord_holds {P : Core.Program} {heap : Memory.Heap} {hp : Heap} (hc :
     obtain ⟨rfl, inside⟩ := hc.loadNatLE loaded
     have lt := hp.readLE_lt a 8
     exact ⟨isize_load_holds (by simpa using lt), inside (by decide)⟩
+  · cases kind <;> simp only [usizeWidth, Option.some.injEq] at hk <;> subst hk
+    all_goals
+      simp only [SrcType.toCore, UintTy.toSigned, Semantics.readNativeValue] at h
+    all_goals
+      obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok h
+    case uint8 | uint16 =>
+      obtain ⟨rfl, inside⟩ := hc.loadNatLE loaded
+      split at wrapped
+      · rename_i range
+        simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+        subst wrapped
+        have lt := hp.readLE_lt a 4
+        exact ⟨narrow_load_holds rfl (by simpa using lt) (by simpa [UintTy.width] using range), inside (by decide)⟩
+      · simp at wrapped
+    all_goals
+      simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+      subst wrapped
+    all_goals
+      clear h hw
+      obtain ⟨hbits, inside⟩ := hc.loadNatLE loaded
+      simp only [MemWidth.bytes] at inside ⊢
+      refine ⟨?_, inside (by decide)⟩
+      rw [← hbits]
+    · have lt : bits < 2 ^ 32 := by have := hp.readLE_lt a 4; simp only [hbits]; simpa using this
+      obtain ⟨hv, hb⟩ := i32_load_holds lt
+      simp only [Value.signed.injEq, true_and] at hv
+      show UintTy.SintHolds .uint32 _ _
+      exact ⟨by simp only [hv], hb, BitVec.le_toInt _, BitVec.toInt_lt⟩
+    · have lt : bits < 2 ^ 64 := by have := hp.readLE_lt a 8; simp only [hbits]; simpa using this
+      have := isize_load_holds lt
+      simp only [SrcType.Holds, Value.signed.injEq, true_and] at this
+      show UintTy.SintHolds .uint64 _ _
+      simp only [UintTy.SintHolds, this]
+    · have lt : bits < 2 ^ 64 := by have := hp.readLE_lt a 8; simp only [hbits]; simpa using this
+      exact isize_load_holds lt
 
 /-! ## The mini side -/
 
