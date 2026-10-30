@@ -2623,6 +2623,15 @@ pub fn local_of(env: FrontEnv, scope: List<Local>, c: CTree) -> core::option::Op
     return None;
 }
 
+// No local in scope has the id: each binding's id is its own, so a local
+// found by name and one found by its id are the same.
+pub fn fresh_id(scope: List<Local>, id: usize) -> bool {
+    return match (scope) {
+        Nil -> true,
+        Cons(l, rest) -> l.id != id && fresh_id(unbox(rest), id),
+    };
+}
+
 pub fn local_expr(l: core::option::Option<Local>) -> core::option::Option<SrcExpr> {
     return match (l) {
         None -> None,
@@ -4688,7 +4697,7 @@ pub fn binders_of(env: FrontEnv, scope: List<Local>, pats: List<CTree>, payload:
 fn binder_of(env: FrontEnv, scope: List<Local>, p: CTree, t: Ty, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     let path: CTree = kid(p, 0);
     let tok: Token = kid_token(kid(path, 0), 0);
-    if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text)) {
+    if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base))) {
         return cons_binder(minus(tok.start, env.base), binders_of(env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), pats, payload));
     }
     return None;
@@ -6411,7 +6420,7 @@ pub fn let_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest:
         return None;
     }
     let tok: Token = kid_token(s, 1);
-    if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text)) {
+    if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base))) {
         return match (ty_of(fuel, env, kid(kid(s, 2), 1))) {
             None -> None,
             Some(t) -> let_of(minus(tok.start, env.base), t, let_head_or_eval(minus(fuel, 1), env, scope, t, kid(kid(s, 3), 1)), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), rest)),
@@ -6492,7 +6501,7 @@ pub fn params_of(fuel: usize, env: FrontEnv, fd: FnDecl, scope: List<Local>, ite
 // extract: inline
 fn param_of(pfuel: usize, penv: FrontEnv, pfd: FnDecl, pscope: List<Local>, pp: CTree, prest: List<CTree>) -> core::option::Option<MParams> {
     let tok: Token = kid_token(pp, 0);
-    if ((node_prod(pp) == p_param_named() || node_prod(pp) == p_param_self()) && !member(penv.globals, tok.text)) {
+    if ((node_prod(pp) == p_param_named() || node_prod(pp) == p_param_self()) && !member(penv.globals, tok.text) && fresh_id(pscope, minus(tok.start, penv.base))) {
         return match (pattern_of(pfd, pp)) {
             None -> None,
             Some(t) -> match (ty_of(pfuel, penv, t)) {

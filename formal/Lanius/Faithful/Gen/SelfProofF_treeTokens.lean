@@ -22,11 +22,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pSelfValue
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
 public import Lanius.Faithful.Gen.SelfStmtF_consTys
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
+public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
-public import Lanius.Faithful.Gen.SelfStmtF_localExpr
 public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
@@ -37,11 +37,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 public import Lanius.Faithful.Gen.SelfStmtF_unitTy
 import all Lanius.Faithful.Gen.SelfSrcF_treeTokens
+import all Lanius.Mini.Frontend.P.freshId
 import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.intLiteral
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.joinInsts
-import all Lanius.Mini.Frontend.P.localExpr
 import all Lanius.Mini.Frontend.P.noToken
 import all Lanius.Mini.Frontend.P.scalarOf
 import all Lanius.Mini.Frontend.P.treeTokens

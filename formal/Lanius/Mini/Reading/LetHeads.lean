@@ -485,7 +485,7 @@ inductive BindersR (env : FrontEnv) : List Local → List CTree → List Ty → 
   | nil {scope : List Local} : BindersR env scope [] [] { ids := [], scope := scope }
   | cons {scope : List Local} {p : CTree} {more : List CTree} {t : Ty} {rest : List Ty} {b : Bound} {n : Name} :
       nodeProd p = pPatternIdent → nodeProd (kid p 1) = pPatternPlain → PathName (kid p 0) n → n ∉ env.globals →
-      BindersR env ({ name := n, id := (kidToken (kid (kid p 0) 0) 0).start - env.base, ty := t } :: scope) more rest b →
+      FreshId scope ((kidToken (kid (kid p 0) 0) 0).start - env.base) → BindersR env ({ name := n, id := (kidToken (kid (kid p 0) 0) 0).start - env.base, ty := t } :: scope) more rest b →
       BindersR env scope (p :: more) (t :: rest)
         { ids := ((kidToken (kid (kid p 0) 0) 0).start - env.base) :: b.ids, scope := b.scope }
 
@@ -502,7 +502,7 @@ theorem bindersOf_sound {env : FrontEnv} : ∀ {scope : List Local} {pats : List
     split at h
     · rename_i c
       simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
-      obtain ⟨⟨⟨pi, pl⟩, sn⟩, ng⟩ := c
+      obtain ⟨⟨⟨⟨pi, pl⟩, sn⟩, ng⟩, fr⟩ := c
       cases hn : pathName (kid p 0) with
       | none => rw [hn] at sn; simp [isSomeName] at sn
       | some n =>
@@ -515,7 +515,7 @@ theorem bindersOf_sound {env : FrontEnv} : ∀ {scope : List Local} {pats : List
           rw [hr] at h
           simp only [consBinder, Option.some.injEq] at h
           subst h
-          refine .cons pi pl pn (fun mem => ?_) (bindersOf_sound hr)
+          refine .cons pi pl pn (fun mem => ?_) ((freshId_iff _ _).1 fr) (bindersOf_sound hr)
           rw [(member_iff _ _).2 mem] at ng
           cases ng
     · cases h

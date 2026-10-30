@@ -665,7 +665,8 @@ inductive StmtsR (env : FrontEnv) : List Local → List CTree → MStmt → Prop
   | nil {scope : List Local} : StmtsR env scope [] .mNop
   | «let» {scope : List Local} {s : CTree} {rest : List CTree} {t : Ty} {hd : LetHead} {body m : MStmt} :
       nodeProd s = pLetStmt → nodeProd (kid s 2) = pLetType → nodeProd (kid s 3) = pLetInit →
-      (kidToken s 1).text ∉ env.globals → TyR env (kid (kid s 2) 1) t →
+      (kidToken s 1).text ∉ env.globals → FreshId scope ((kidToken s 1).start - env.base) →
+      TyR env (kid (kid s 2) 1) t →
       LetInitR env scope t (kid (kid s 3) 1) hd →
       StmtsR env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } :: scope) rest body →
       letStmt ((kidToken s 1).start - env.base) t hd body = some m → StmtsR env scope (s :: rest) m
@@ -759,7 +760,7 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
       split at h
       · rename_i c
         simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
-        obtain ⟨⟨lt, li⟩, ng⟩ := c
+        obtain ⟨⟨⟨lt, li⟩, ng⟩, fr⟩ := c
         cases ht : tyOf (f + 1) env (kid (kid s 2) 1) with
         | none => rw [ht] at h; cases h
         | some t =>
@@ -775,7 +776,8 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
             | none => rw [hb] at h; cases h
             | some body =>
               rw [hb] at h
-              refine .let pl lt li (fun mem => ?_) (tyOf_sound ht) (letHeadOrEval_sound hh) (ihStmts hb) h
+              refine .let pl lt li (fun mem => ?_) ((freshId_iff _ _).1 fr) (tyOf_sound ht) (letHeadOrEval_sound hh)
+                (ihStmts hb) h
               rw [(member_iff _ _).2 mem] at ng
               cases ng
       · cases h

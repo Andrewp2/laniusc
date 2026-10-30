@@ -370,6 +370,13 @@ theorem localOf_none {env : FrontEnv} {scope : List Local} {c : CTree} (h : loca
     obtain ⟨i, fi⟩ := ln
     exact findLocal_none h l (firstWith_mem fi).1 (firstWith_mem fi).2
 
+/-- No local in scope has the id: each binding's id is its own. -/
+def FreshId (scope : List Local) (id : Nat) : Prop := ∀ l ∈ scope, l.id ≠ id
+
+theorem freshId_iff : ∀ (scope : List Local) (id : Nat), freshId scope id = true ↔ FreshId scope id
+  | [], _ => by simp [freshId, FreshId]
+  | l :: rest, id => by simp [freshId, FreshId, freshId_iff rest id]
+
 /-- Field `j` of the struct type `t` is the first spelled `name`. -/
 def FieldIndex (decls : Decls) (t : Ty) (name : Name) (j : Nat) : Prop :=
   ∃ d args td, t = .tyNamed d args ∧ decls.types[d]? = some td ∧ FirstWith td.fields (· = name) j name

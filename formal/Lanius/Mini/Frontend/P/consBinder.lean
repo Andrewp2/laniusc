@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.distinct
+import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.matchArms
@@ -36,7 +37,7 @@ def bindersOf (env : FrontEnv) (scope : List Local) (pats : List CTree) (payload
     | p :: more =>
       let path : CTree := kid p 0
       let tok : Token := kidToken (kid path 0) 0
-      if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) then
+      if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
         consBinder (tok.start - env.base) (bindersOf env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) more rest)
       else
         none

@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::find_local -/
-def src_find_local (ix_find_local_at : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_Local : Nat) : SrcFunc := { params := [{ id := 11, ty := ty270 }, { id := 31, ty := ty19 }], ret := ty293, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty270 ty293 [[], [144, 147]] [SrcEff.eVariant ty293 1 [], SrcEff.eCall ix_find_local_at [SrcEff.ePure (SrcExpr.local 144), SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Local [SrcEff.ePure (SrcExpr.local 147)], SrcEff.ePure (SrcExpr.local 31)]]) }
+def src_find_local (ix_unbox_of_mini_selfhost_List_mini_selfhost_Local : Nat) (ix_find_local_at : Nat) : SrcFunc := { params := [{ id := 11, ty := ty270 }, { id := 31, ty := ty19 }], ret := ty293, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty270 ty293 [[], [144, 147]] [SrcEff.eVariant ty293 1 [], SrcEff.eCall ix_find_local_at [SrcEff.ePure (SrcExpr.local 144), SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Local [SrcEff.ePure (SrcExpr.local 147)], SrcEff.ePure (SrcExpr.local 31)]]) }
 
 /-- mini::selfhost::find_local_id -/
 def src_find_local_id (ix_unbox_of_mini_selfhost_List_mini_selfhost_Local : Nat) (ix_find_local_id_at : Nat) : SrcFunc := { params := [{ id := 14, ty := ty270 }, { id := 34, ty := SrcType.uint (UintTy.usize) }], ret := ty293, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 14)) ty270 ty293 [[], [139, 142]] [SrcEff.eVariant ty293 1 [], SrcEff.eCall ix_find_local_id_at [SrcEff.ePure (SrcExpr.local 139), SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Local [SrcEff.ePure (SrcExpr.local 142)], SrcEff.ePure (SrcExpr.local 34)]]) }

@@ -5,6 +5,7 @@ import Lanius.Mini.Frontend.P.compoundEval
 import Lanius.Mini.Frontend.P.compoundTarget
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.fieldTyAt
+import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.matchTysOrNone
@@ -81,7 +82,7 @@ def letFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (res
     none
   else
     let tok : Token := kidToken s 1
-    if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) then
+    if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
       match tyOf fuel env (kid (kid s 2) 1) with
       | none => none
       | some t => letOf (tok.start - env.base) t (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
@@ -126,7 +127,7 @@ def paramsOf (fuel : Nat) (env : FrontEnv) (fd : FnDecl) (scope : List Local) (i
   | [] => some ({ params := [], scope := scope } : MParams)
   | p :: rest =>
     let tok : Token := kidToken p 0
-    if (decide (nodeProd p = (62)) || decide (nodeProd p = (63))) && !(member env.globals tok.text) then
+    if (decide (nodeProd p = (62)) || decide (nodeProd p = (63))) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
       match patternOf fd p with
       | none => none
       | some t =>

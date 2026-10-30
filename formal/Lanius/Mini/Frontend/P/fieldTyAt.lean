@@ -3,11 +3,11 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.armsOf
 import Lanius.Mini.Frontend.P.fnInstRet
+import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isSomeIndex
-import Lanius.Mini.Frontend.P.localExpr
 import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.methodCallOf
 import Lanius.Mini.Frontend.P.noToken

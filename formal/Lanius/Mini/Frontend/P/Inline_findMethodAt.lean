@@ -7,6 +7,7 @@ public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail
 public import Lanius.Mini.Frontend.P.effNamedTys
 public import Lanius.Mini.Frontend.P.findConst
+public import Lanius.Mini.Frontend.P.freshId
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.intLiteralAt
 public import Lanius.Mini.Frontend.P.isEmptyUsize
@@ -39,14 +40,14 @@ namespace Lanius.Mini
 @[expose] def Inline.binderOf (env : FrontEnv) (scope : List Local) (p : CTree) (t : Ty) (pats : List CTree) (payload : List Ty) : Option Bound :=
   let path : CTree := kid p 0
   let tok : Token := kidToken (kid path 0) 0
-  if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) then
+  if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
     consBinder (tok.start - env.base) (bindersOf env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) pats payload)
   else
     none
 
 @[expose] def Inline.paramOf (pfuel : Nat) (penv : FrontEnv) (pfd : FnDecl) (pscope : List Local) (pp : CTree) (prest : List CTree) : Option MParams :=
   let tok : Token := kidToken pp 0
-  if (decide (nodeProd pp = (62)) || decide (nodeProd pp = (63))) && !(member penv.globals tok.text) then
+  if (decide (nodeProd pp = (62)) || decide (nodeProd pp = (63))) && !(member penv.globals tok.text) && freshId pscope (tok.start - penv.base) then
     match patternOf pfd pp with
     | none => none
     | some t =>

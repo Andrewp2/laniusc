@@ -35,7 +35,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_find_local {prog : SrcProgram} {prims : Prims} {ix_find_local ix_find_local_at ix_unbox_of_mini_selfhost_List_mini_selfhost_Local : Nat} (fn : prog.funcs[ix_find_local]? = some (src_find_local ix_find_local_at ix_unbox_of_mini_selfhost_List_mini_selfhost_Local)) (np : prims.isPrim ix_find_local = false)
+theorem step_find_local {prog : SrcProgram} {prims : Prims} {ix_find_local ix_unbox_of_mini_selfhost_List_mini_selfhost_Local ix_find_local_at : Nat} (fn : prog.funcs[ix_find_local]? = some (src_find_local ix_unbox_of_mini_selfhost_List_mini_selfhost_Local ix_find_local_at)) (np : prims.isPrim ix_find_local = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Local prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Local n)) {n : Nat}
     (ih_find_local_at : Certified (Stmt_find_local_at prog prims ix_find_local_at n)) :
     Stmt_find_local prog prims ix_find_local (n + 1) := by

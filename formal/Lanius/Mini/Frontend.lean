@@ -27,7 +27,7 @@ public import Lanius.Mini.Frontend.P.joinInsts
 public import Lanius.Mini.Frontend.P.unitTy
 public import Lanius.Mini.Frontend.P.wideMarker
 public import Lanius.Mini.Frontend.P.intLiteral
-public import Lanius.Mini.Frontend.P.localExpr
+public import Lanius.Mini.Frontend.P.freshId
 public import Lanius.Mini.Frontend.P.scalarOf
 public import Lanius.Mini.Frontend.P.nullConst
 public import Lanius.Mini.Frontend.P.treeTokens

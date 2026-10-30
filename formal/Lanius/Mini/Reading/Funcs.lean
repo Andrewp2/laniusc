@@ -32,7 +32,7 @@ inductive ParamsR (env : FrontEnv) (fd : FnDecl) : List Local → List CTree →
   | nil {scope : List Local} : ParamsR env fd scope [] { params := [], scope := scope }
   | cons {scope : List Local} {p : CTree} {rest : List CTree} {t : CTree} {x : Ty} {r : MParams} :
       (nodeProd p = pParamNamed ∨ nodeProd p = pParamSelf) → (kidToken p 0).text ∉ env.globals →
-      PatternOf fd p t → TyR env t x →
+      FreshId scope ((kidToken p 0).start - env.base) → PatternOf fd p t → TyR env t x →
       ParamsR env fd ({ name := (kidToken p 0).text, id := (kidToken p 0).start - env.base, ty := x } :: scope) rest r →
       ParamsR env fd scope (p :: rest)
         { params := { id := (kidToken p 0).start - env.base, ty := x } :: r.params, scope := r.scope }
@@ -49,6 +49,7 @@ theorem paramsOf_sound {fuel : Nat} {env : FrontEnv} {fd : FnDecl} :
     split at h
     · rename_i c
       simp only [Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
+      obtain ⟨c, fr⟩ := c
       cases hp : patternOf fd p with
       | none => rw [hp] at h; cases h
       | some t =>
@@ -65,7 +66,8 @@ theorem paramsOf_sound {fuel : Nat} {env : FrontEnv} {fd : FnDecl} :
             rw [hr] at h
             simp only [Option.some.injEq] at h
             subst h
-            refine .cons c.1 (fun mem => ?_) (patternOf_sound hp) (tyOf_sound ht) (paramsOf_sound hr)
+            refine .cons c.1 (fun mem => ?_) ((freshId_iff _ _).1 fr) (patternOf_sound hp) (tyOf_sound ht)
+              (paramsOf_sound hr)
             have := c.2
             rw [(member_iff _ _).2 mem] at this
             cases this
