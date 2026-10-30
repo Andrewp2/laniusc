@@ -50,6 +50,51 @@ is not part of this goal.
 Order: V1, V2, V3, V4, V5, V6, V7, V8. Each step updates
 `TRUSTED_BASE.md` with what it removes.
 
+## The full verified compiler (from 2026-10-29)
+
+V1-V8 verify the compiler for its subset of Lanius. The goal now: the same
+theorems for the whole language, and the extractor inside the verified
+compiler with what it emits checked by Lean. Measured by the stdlib oracle
+(`stdlib_oracle.py`): on 10-29 it compiles 1,315 of the stdlib's 3,949
+targets (pub functions and scalar trait-impl methods); 2,399 have
+parameter or result types it does not take, 171 use constructs it does not
+read (`i64` 117, `T::m` on a builtin type 67, shifts 49, externs 37, string
+literals 23, arrays 23, loops 7), and 64 it reads but does not compile.
+Core (`Lanius/Core.lean`) already has most of the language's values:
+every integer width, `char`, `f32`/`f64` bits, strings, arrays, slices
+over cells, and references with projections.
+
+Decided (10-29): the extractor is proof-producing, as CakeML's translator
+is. What it emits is a Lean definition per function and a certificate per
+function that a Core run of the source returns what the definition returns,
+which the kernel checks; so the program that writes them is not trusted,
+and needs no proof of its own. V1 does this for the self program with
+`extract.py`, `faithful_dump.py` and `faithful_certs.py`, which parse the
+source a second time. F2 moves the extractor into the verified compiler,
+over the reading the front end proves, so there is one parser and one
+reading.
+
+| # | step | status |
+|---|------|--------|
+| F1 | The reading is deterministic: two readings of the same trees are equal, so the theorems no longer need `TextBuilt`; `lowerSlice` rejects element types past Core's layout limits | |
+| F2 | The extractor in the verified compiler: `extract` (Lanius) takes the program the front end reads and writes the Lean definitions and their certificates; the self program's `Compiler.lean` and `Frontend.lean` come from it, and the Python extractor is retired. It extracts the whole language as the features below land (loops as recursion on Core's fuel, `&mut` as in the pilot), for any program, not only the self program | |
+| F3 | Every scalar type: `i8`, `i16`, `u16`, `i64`, `char`; `T::m` and constants on builtin types; shifts on each | |
+| F4 | Control: `loop`, `for` over ranges, `break`, `continue`, `?`, block statements, `=>`, block and `if` match arms | |
+| F5 | References: `&T`, `&mut T`, `&self`, references into fields and elements (Core's cells and projections), lowered to addresses; the memory model on the mini IR's side | |
+| F6 | Arrays `[T; N]`, safe slices of any element type as parameters and results, `str` and string literals, `Result` and aggregate results at the stdlib's types | |
+| F7 | Traits: declarations, `impl Trait for T`, bounds and `where` clauses checked, static dispatch after monomorphization; `distinct` types | |
+| F8 | Externs and the runtime: the stdlib's extern functions (I/O, `syscall6`, allocation, process arguments, time, randomness) with Core host specifications and a model of `syscall` on x86; the process theorem with an I/O trace | |
+| F9 | Floats: `f32`, `f64`, Core's IEEE operations on bits, SSE in the x86 model, tested against the CPU | |
+| F10 | Contracts: `requires` and `ensures` as Core's contract traps, lowered to checks | |
+| F11 | Coverage: the verified compiler reads and compiles every stdlib and `extended/` module and laniusc's test programs; the stdlib oracle at every target, no disagreements | |
+| F12 | The full compiler self-hosts: V7's `selfCompiler_outcome` and the fixpoint for it; it moves to `verified_compiler/`, replacing the earlier attempt | |
+| F13 | The trusted base again: every unproved assumption listed, specification only | |
+
+Order: F1, F2, then F3-F10 by how many stdlib targets each unlocks, F11
+as each lands, F12, F13. Each feature extends the front end (the reading
+and `build`), the front pass (`compileSource_correct`) and, where needed,
+the mini IR and the x86 model, with the gate's difftests for each.
+
 ### V2 plan (decided 10-28)
 
 Core's traps split three ways. Checked traps must make the compiled code
