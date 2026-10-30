@@ -39,7 +39,7 @@ def NoParam (env : FrontEnv) (n : Name) : Prop :=
 
 /-- The primitive types' spellings. -/
 def primTys : List (Name × Ty) :=
-  [([105, 51, 50], .tyI32), ([98, 111, 111, 108], .tyBool), ([117, 56], .tyUint .uint8),
+  [([105, 51, 50], .tyI32), ([98, 111, 111, 108], .tyBool), ([117, 56], .tyUint .uint8), ([117, 49, 54], .tyUint .uint16),
    ([117, 51, 50], .tyUint .uint32), ([117, 54, 52], .tyUint .uint64), ([117, 115, 105, 122, 101], .tyUint .usize),
    ([112, 116, 114], .tyPtr), ([105, 115, 105, 122, 101], .tyIsize)]
 

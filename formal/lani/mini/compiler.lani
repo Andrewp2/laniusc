@@ -1259,7 +1259,7 @@ pub fn link_objects(objs: List<Object>) -> core::option::Option<Executable> {
 // any of these types.
 
 // An unsigned integer type. A value sits zero-extended in its slot.
-pub enum UintTy { Uint8, Uint32, Uint64, Usize, }
+pub enum UintTy { Uint8, Uint32, Uint64, Usize, Uint16, }
 
 impl UintTy {
     // Its index, for comparing types.
@@ -1269,6 +1269,7 @@ impl UintTy {
             Uint32 -> 1,
             Uint64 -> 2,
             Usize -> 3,
+            Uint16 -> 4,
         };
     }
 
@@ -1279,6 +1280,7 @@ impl UintTy {
             Uint32 -> 4294967295,
             Uint64 -> 18446744073709551615,
             Usize -> 18446744073709551615,
+            Uint16 -> 65535,
         };
     }
 
@@ -1289,6 +1291,7 @@ impl UintTy {
             Uint32 -> false,
             Uint64 -> true,
             Usize -> true,
+            Uint16 -> false,
         };
     }
 }
@@ -2100,6 +2103,7 @@ impl UintTy {
             Uint32 -> 32,
             Uint64 -> 64,
             Usize -> 64,
+            Uint16 -> 16,
         };
     }
 }
@@ -3351,12 +3355,13 @@ pub fn usize_width(kind: UintTy) -> core::option::Option<MemWidth> {
         Uint32 -> Some(M32),
         Uint64 -> Some(M64),
         Usize -> Some(M64),
+        Uint16 -> Some(M32),
     };
 }
 
 // The width a scalar of a slice element is loaded and stored with. Each
-// takes one native word: 4 bytes are read and written for i32, bool, u8 and
-// u32, 8 for u64, usize, isize and ptr.
+// takes one native word: 4 bytes are read and written for i32, bool, u8, u16
+// and u32, 8 for u64, usize, isize and ptr.
 pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
     return match (ty) {
         I32 -> Some(M32),

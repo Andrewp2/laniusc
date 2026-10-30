@@ -136,6 +136,7 @@ def uintBits : UintTy → Nat
   | .uint32 => 32
   | .uint64 => 64
   | .usize => 64
+  | .uint16 => 16
 
 theorem uintInRange_some {u : UintTy} {v : BitVec 64} {e : SrcExpr} (h : uintInRange u v = some e) :
     v.toNat < 2 ^ uintBits u ∧ e = .unsigned u v := by

@@ -410,7 +410,7 @@ def decls : SrcDecls where
     { id := 18, variants := [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []] },
     { id := 7, variants := [[], [ty9, ty10]] },
     { id := 9, variants := [[], [], [ty4], [(.uint .usize), ty5], [(.uint .usize), ty6], [], [ty7], [], []] },
-    { id := 10, variants := [[], [], [], []] },
+    { id := 10, variants := [[], [], [], [], []] },
     { id := 2, variants := [[ty1], []] },
     { id := 0, variants := [[], [.i32, ty0]] }]
 

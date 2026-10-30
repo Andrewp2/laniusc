@@ -48,6 +48,7 @@ def uintCode (u : UintTy) : Nat :=
   | .uint32 => 1
   | .uint64 => 2
   | .usize => 3
+  | .uint16 => 4
 
 mutual
 def sameTy (a : Ty) (b : Ty) : Bool :=

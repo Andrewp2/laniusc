@@ -207,6 +207,13 @@ theorem readWord_holds {P : Core.Program} {heap : Memory.Heap} {hp : Heap} (hc :
         subst wrapped
         exact ⟨uint_load_holds (k := .uint8) (by simpa [UintTy.width] using small), inside (by decide)⟩
       · simp at wrapped
+    case uint16 =>
+      split at wrapped
+      · rename_i small
+        simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+        subst wrapped
+        exact ⟨uint_load_holds (k := .uint16) (by simpa [UintTy.width] using small), inside (by decide)⟩
+      · simp at wrapped
     all_goals
       simp only [pure, Except.pure, Except.ok.injEq] at wrapped
       subst wrapped

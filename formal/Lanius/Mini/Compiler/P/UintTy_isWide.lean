@@ -16,5 +16,6 @@ def UintTy.isWide (self : UintTy) : Bool :=
   | .uint32 => false
   | .uint64 => true
   | .usize => true
+  | .uint16 => false
 
 end Lanius.Mini

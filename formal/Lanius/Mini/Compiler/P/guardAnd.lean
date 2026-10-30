@@ -34,6 +34,7 @@ def UintTy.bits (self : UintTy) : BitVec 64 :=
   | .uint32 => 32
   | .uint64 => 64
   | .usize => 64
+  | .uint16 => 16
 
 /-- The bits of a shift's operand type. -/
 def shiftWidth (ty : SrcType) : BitVec 64 :=

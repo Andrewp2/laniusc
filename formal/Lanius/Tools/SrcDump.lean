@@ -33,6 +33,7 @@ def uintName : UintTy → String
   | .uint32 => "u32"
   | .uint64 => "u64"
   | .usize => "usize"
+  | .uint16 => "u16"
 
 /-- A type as Lanius writes it, each named type with its module. -/
 partial def tyName (decls : Decls) : Ty → String
@@ -163,6 +164,7 @@ def uintText : UintTy → String
   | .uint32 => ".uint32"
   | .uint64 => ".uint64"
   | .usize => ".usize"
+  | .uint16 => ".uint16"
 
 /-- A type's text: scalars as themselves, the rest by name. -/
 partial def typeText : SrcType → StateM Table String

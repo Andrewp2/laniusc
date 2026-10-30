@@ -994,7 +994,7 @@ set_option linter.unusedVariables false
 -- The front end's program, written the way this script writes the expected
 -- one (elaborating the expected programs as Lean terms is far too slow).
 def serTy : UintTy → String
-  | .uint8 => ".uint8" | .uint32 => ".uint32" | .uint64 => ".uint64" | .usize => ".usize"
+  | .uint8 => ".uint8" | .uint32 => ".uint32" | .uint64 => ".uint64" | .usize => ".usize" | .uint16 => ".uint16"
 
 def serOp : SrcOp → String
   | .plus => "plus" | .minus => "minus" | .times => "times" | .bitAnd => "bitAnd"

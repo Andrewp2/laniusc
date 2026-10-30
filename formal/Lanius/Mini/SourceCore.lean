@@ -21,12 +21,14 @@ def UintTy.toCore : UintTy → Core.UnsignedIntTy
   | .uint32 => .u32
   | .uint64 => .u64
   | .usize => .usize
+  | .uint16 => .u16
 
 def UintTy.width : UintTy → Nat
   | .uint8 => 8
   | .uint32 => 32
   | .uint64 => 64
   | .usize => 64
+  | .uint16 => 16
 
 def SrcType.toCore : SrcType → Core.Ty
   | .i32 => .scalar (.signed .i32)

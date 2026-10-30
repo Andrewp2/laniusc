@@ -12,7 +12,7 @@ they are, never edited.
    (`pub impl Ord<i32> for i32 { pub fn lt(..) }`), is a target. A target is
    testable when its parameter and result types, after the module's type
    aliases and with every type parameter at i32, are scalars the front pass
-   has (i32, bool, u8, u32, u64, usize, isize) or `core::option::Option` of
+   has (i32, bool, u8, u16, u32, u64, usize, isize) or `core::option::Option` of
    one; others are counted by the type that stops them.
 2. Each testable target gets a program of its own: a first file, the module
    app::main, holding one wrapper `w` that takes scalar arguments (an
@@ -62,7 +62,7 @@ import run_cache  # noqa: E402
 
 STDLIB = 'stdlib'
 HEAVY = 'target/claude-work/bin/heavy'
-SCALARS = ('i32', 'bool', 'u8', 'u32', 'u64', 'usize', 'isize')
+SCALARS = ('i32', 'bool', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize')
 WIDE = ('u64', 'usize', 'isize')
 
 
@@ -707,7 +707,7 @@ def lani_arg(value, ty):
 
 # ---------------------------------------------------------------- reasons
 
-UNREAD_TYPES = ('i8', 'i16', 'i64', 'u16', 'char', 'f32', 'f64', 'str')
+UNREAD_TYPES = ('i8', 'i16', 'i64', 'char', 'f32', 'f64', 'str')
 
 
 def constructs(mods, module, fn):

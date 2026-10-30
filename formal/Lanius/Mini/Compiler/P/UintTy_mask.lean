@@ -16,5 +16,6 @@ def UintTy.mask (self : UintTy) : BitVec 64 :=
   | .uint32 => 4294967295
   | .uint64 => 18446744073709551615
   | .usize => 18446744073709551615
+  | .uint16 => 65535
 
 end Lanius.Mini

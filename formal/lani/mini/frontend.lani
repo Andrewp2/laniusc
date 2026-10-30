@@ -153,7 +153,7 @@ pub fn get_or<T>(items: List<T>, index: usize, fallback: T) -> T {
     };
 }
 
-pub enum UintTy { Uint8, Uint32, Uint64, Usize, }
+pub enum UintTy { Uint8, Uint32, Uint64, Usize, Uint16, }
 
 pub enum SrcType {
     I32,
@@ -778,7 +778,7 @@ pub fn spelled5(name: List<usize>, a: usize, b: usize, c: usize, d: usize, e: us
     };
 }
 
-// i32, bool, u8, u32, u64, usize, ptr, isize
+// i32, bool, u8, u16, u32, u64, usize, ptr, isize
 pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     if (spelled3(name, 105, 51, 50)) {
         return Some(I32);
@@ -788,6 +788,9 @@ pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     }
     if (spelled2(name, 117, 56)) {
         return Some(Uint(Uint8));
+    }
+    if (spelled3(name, 117, 49, 54)) {
+        return Some(Uint(Uint16));
     }
     if (spelled3(name, 117, 51, 50)) {
         return Some(Uint(Uint32));
@@ -1698,6 +1701,7 @@ pub fn uint_code(u: UintTy) -> usize {
         Uint32 -> 1,
         Uint64 -> 2,
         Usize -> 3,
+        Uint16 -> 4,
     };
 }
 
@@ -2742,6 +2746,7 @@ pub fn uint_mask(u: UintTy) -> u64 {
         Uint32 -> 4294967295,
         Uint64 -> 18446744073709551615,
         Usize -> 18446744073709551615,
+        Uint16 -> 65535,
     };
 }
 
@@ -4280,6 +4285,7 @@ pub fn is_usize(t: SrcType) -> bool {
             Uint32 -> false,
             Uint64 -> false,
             Usize -> true,
+            Uint16 -> false,
         },
         Struct(id, fields) -> false,
         Enum(id, variants) -> false,

@@ -14,7 +14,7 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-/-- The width a scalar of a slice element is loaded and stored with. Each takes one native word: 4 bytes are read and written for i32, bool, u8 and u32, 8 for u64, usize, isize and ptr. -/
+/-- The width a scalar of a slice element is loaded and stored with. Each takes one native word: 4 bytes are read and written for i32, bool, u8, u16 and u32, 8 for u64, usize, isize and ptr. -/
 def wordWidth (ty : SrcType) : Option MemWidth :=
   match ty with
   | .i32 => some MemWidth.m32

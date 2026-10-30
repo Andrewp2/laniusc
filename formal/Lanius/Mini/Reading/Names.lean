@@ -34,7 +34,7 @@ def constNames (d : Decls) (m : ModPath) : List Name :=
 /-- The primitive types' spellings: `i32`, `bool`, `u8`, `u32`, `u64`,
 `usize`, `ptr` and `isize`. -/
 def primNames : List (Name × SrcType) :=
-  [([105, 51, 50], .i32), ([98, 111, 111, 108], .bool), ([117, 56], .uint .uint8), ([117, 51, 50], .uint .uint32),
+  [([105, 51, 50], .i32), ([98, 111, 111, 108], .bool), ([117, 56], .uint .uint8), ([117, 49, 54], .uint .uint16), ([117, 51, 50], .uint .uint32),
    ([117, 54, 52], .uint .uint64), ([117, 115, 105, 122, 101], .uint .usize), ([112, 116, 114], .ptr),
    ([105, 115, 105, 122, 101], .isize)]
 
@@ -159,6 +159,9 @@ theorem primitive_eq (n : Name) : primitive n = primName n := by
   by_cases h3 : n = [117, 56]
   · subst h3; rfl
   rw [if_neg (by rw [spelled_iff2]; exact h3)]
+  by_cases h3' : n = [117, 49, 54]
+  · subst h3'; rfl
+  rw [if_neg (by rw [spelled_iff3]; exact h3')]
   by_cases h4 : n = [117, 51, 50]
   · subst h4; rfl
   rw [if_neg (by rw [spelled_iff3]; exact h4)]
@@ -174,7 +177,7 @@ theorem primitive_eq (n : Name) : primitive n = primName n := by
   by_cases h8 : n = [105, 115, 105, 122, 101]
   · subst h8; rfl
   rw [if_neg (by rw [spelled_iff5]; exact h8)]
-  simp [primName, primNames, List.lookup, beq_false_of_ne h1, beq_false_of_ne h2, beq_false_of_ne h3,
+  simp [primName, primNames, List.lookup, beq_false_of_ne h1, beq_false_of_ne h2, beq_false_of_ne h3, beq_false_of_ne h3',
     beq_false_of_ne h4, beq_false_of_ne h5, beq_false_of_ne h6, beq_false_of_ne h7, beq_false_of_ne h8]
 
 theorem noPrimitive_iff : ∀ (types : List TypeDecl), noPrimitive types = true ↔ ∀ t ∈ types, primName t.name = none

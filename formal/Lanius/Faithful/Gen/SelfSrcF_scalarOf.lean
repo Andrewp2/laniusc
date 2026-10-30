@@ -41,7 +41,7 @@ def src_scalar_of (ix_scalar_src : Nat) : SrcFunc := { params := [{ id := 10, ty
 def src_uint_in_range (ix_uint_mask : Nat) : SrcFunc := { params := [{ id := 14, ty := ty4 }, { id := 25, ty := SrcType.uint (UintTy.uint64) }], ret := ty291, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eApply (SrcOp.lessEq) (SrcEff.ePure (SrcExpr.local 25)) (SrcEff.eCall ix_uint_mask [SrcEff.ePure (SrcExpr.local 14)])) (SrcStmt.returnEval (SrcEff.eVariant ty291 0 [SrcEff.eVariant ty14 2 [SrcEff.ePure (SrcExpr.local 14), SrcEff.ePure (SrcExpr.local 25)]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty291 1 [])) }
 
 /-- mini::selfhost::uint_mask -/
-def src_uint_mask : SrcFunc := { params := [{ id := 10, ty := ty4 }], ret := SrcType.uint (UintTy.uint64), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty4 (SrcType.uint (UintTy.uint64)) [[], [], [], []] [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x00000000000000ff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x00000000ffffffff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0xffffffffffffffff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0xffffffffffffffff#64)]) }
+def src_uint_mask : SrcFunc := { params := [{ id := 10, ty := ty4 }], ret := SrcType.uint (UintTy.uint64), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty4 (SrcType.uint (UintTy.uint64)) [[], [], [], [], []] [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x00000000000000ff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x00000000ffffffff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0xffffffffffffffff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0xffffffffffffffff#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x000000000000ffff#64)]) }
 
 end
 

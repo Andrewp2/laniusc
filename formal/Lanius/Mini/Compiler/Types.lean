@@ -204,6 +204,7 @@ inductive UintTy where
   | uint32 : UintTy
   | uint64 : UintTy
   | usize : UintTy
+  | uint16 : UintTy
   deriving DecidableEq, Repr
 
 inductive SrcType where

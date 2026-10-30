@@ -99,8 +99,8 @@ ARITH = [('plus', '+'), ('minus', '-'), ('times', '*'), ('bitAnd', '&'), ('bitOr
 ORDER = [('less', '<'), ('lessEq', '<='), ('greater', '>'), ('greaterEq', '>=')]
 EQUAL = [('equal', '=='), ('notEqual', '!=')]
 LOGIC = [('logicalAnd', '&&'), ('logicalOr', '||')]
-UINT_BITS = {'u8': 8, 'u32': 32, 'u64': 64, 'usize': 64}
-UINT_LEAN = {'u8': '.uint8', 'u32': '.uint32', 'u64': '.uint64', 'usize': '.usize'}
+UINT_BITS = {'u8': 8, 'u16': 16, 'u32': 32, 'u64': 64, 'usize': 64}
+UINT_LEAN = {'u8': '.uint8', 'u16': '.uint16', 'u32': '.uint32', 'u64': '.uint64', 'usize': '.usize'}
 INTEGERS = ['i32'] + list(UINT_BITS)
 SHIFT_BITS = dict(UINT_BITS, i32=32, isize=64)
 WORDS = ['i32', 'bool'] + list(UINT_BITS)  # the field types slices hold, one native word each
@@ -142,7 +142,7 @@ def i32(x):
 
 
 # ---------------------------------------------------------------- generator
-# Types: 'i32' 'bool' 'u8' 'u32' 'u64' 'usize' 'ptr' ('struct', k) ('enum', k) ('slice', element, n),
+# Types: 'i32' 'bool' 'u8' 'u16' 'u32' 'u64' 'usize' 'ptr' ('struct', k) ('enum', k) ('slice', element, n),
 # struct k's field types TYPES.structs[k], enum k's variants' payload types TYPES.enums[k];
 # n is the slice's length, known statically.
 # Expressions: ('int', k) ('bool', b) ('uint', ty, k) ('local', id) ('field', id, j) ('neg', e)

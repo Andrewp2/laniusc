@@ -94,5 +94,6 @@ def UintTy.code (self : UintTy) : Nat :=
   | .uint32 => 1
   | .uint64 => 2
   | .usize => 3
+  | .uint16 => 4
 
 end Lanius.Mini

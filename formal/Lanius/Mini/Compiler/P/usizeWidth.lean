@@ -15,5 +15,6 @@ def usizeWidth (kind : UintTy) : Option MemWidth :=
   | .uint32 => some MemWidth.m32
   | .uint64 => some MemWidth.m64
   | .usize => some MemWidth.m64
+  | .uint16 => some MemWidth.m32
 
 end Lanius.Mini

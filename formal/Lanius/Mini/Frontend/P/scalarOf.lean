@@ -67,6 +67,7 @@ def uintMask (u : UintTy) : BitVec 64 :=
   | .uint32 => 4294967295
   | .uint64 => 18446744073709551615
   | .usize => 18446744073709551615
+  | .uint16 => 65535
 
 def uintInRange (u : UintTy) (v : BitVec 64) : Option SrcExpr :=
   if v ≤ uintMask u then

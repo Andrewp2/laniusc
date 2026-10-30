@@ -91,6 +91,15 @@ theorem NativeStoreSpec.unsigned {k : UintTy} {n : Nat} (fits : n < 2 ^ k.width)
     rw [encodeNatLE_length] at loaded
     simp only [UintTy.toCore, readNativeValue, loadNatLE_of_encoded loaded (by omega)]
     rfl
+  | uint16 =>
+    simp only [UintTy.width] at fits
+    refine NativeStoreSpec.bytes (encodeNatLE 4 n) (by simp [encodeNatLE_length]) (fun _ _ _ => rfl)
+      fun heap address loaded => ?_
+    rw [encodeNatLE_length] at loaded
+    simp only [UintTy.toCore, readNativeValue, loadNatLE_of_encoded loaded (by omega)]
+    dsimp only [Bind.bind, Except.bind]
+    rw [if_pos fits]
+    rfl
 
 theorem NativeStoreSpec.i32range {n : Int} (low : -2 ^ 31 ≤ n) (high : n < 2 ^ 31) :
     NativeStoreSpec (fuel + 1) program (.scalar (.signed .i32)) (.signed .i32 n) 8 := by
