@@ -54,6 +54,7 @@ theorem fieldTyAt_sound {fuel : Nat} {decls : Decls} {t : Ty} {j : Nat} :
   | tyUint _ => cases h
   | tyPtr => cases h
   | tyIsize => cases h
+  | tySint _ => cases h
   | tySlice _ => cases h
 
 theorem effPostfix_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Option Ty} {pf : CTree}

@@ -1,0 +1,23 @@
+struct S { a: i8, b: i16, c: i64 }
+
+fn step(x: i8, y: i16, z: i64) -> i64 {
+    let a: i8 = x * (3 as i8) + (1 as i8);
+    let b: i16 = -32768;
+    let c: i64 = 9223372036854775807;
+    let d: i8 = -x;
+    if (a < (0 as i8) || (10 as i8) <= a) {
+        a = a - (100 as i8);
+    }
+    let s: S = S { a: (2 as i8), b: (4 as i16), c: -(1 as i64) };
+    s.b = s.b + y;
+    let q: i16 = y / (7 as i16) + y % (3 as i16);
+    let low: i8 = -128;
+    let wide: i64 = -9223372036854775808;
+    let r: i64 = z / (5 as i64) - (a as i64) + (b as i64) + (s.b as i64) + (q as i64);
+    return r + c + (d as i64) + (low as i64) + ((300 as i16) as i64) + wide;
+}
+
+fn top(n: i32) -> i32 {
+    let r: i64 = step((5 as i8), (1000 as i16), -(77 as i64));
+    return (r as i32) + n;
+}

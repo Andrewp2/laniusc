@@ -61,7 +61,8 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyPtr => false
      | .tyIsize => false
      | .tySlice f => false
-     | .tyNamed e bs => false)
+     | .tyNamed e bs => false
+     | .tySint v => false)
   | .tyBool =>
     (match b with
      | .tyI32 => false
@@ -70,7 +71,8 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyPtr => false
      | .tyIsize => false
      | .tySlice f => false
-     | .tyNamed e bs => false)
+     | .tyNamed e bs => false
+     | .tySint v => false)
   | .tyUint u =>
     (match b with
      | .tyI32 => false
@@ -79,7 +81,8 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyPtr => false
      | .tyIsize => false
      | .tySlice f => false
-     | .tyNamed e bs => false)
+     | .tyNamed e bs => false
+     | .tySint v => false)
   | .tyPtr =>
     (match b with
      | .tyI32 => false
@@ -88,7 +91,8 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyPtr => true
      | .tyIsize => false
      | .tySlice f => false
-     | .tyNamed e bs => false)
+     | .tyNamed e bs => false
+     | .tySint v => false)
   | .tyIsize =>
     (match b with
      | .tyI32 => false
@@ -97,7 +101,8 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyPtr => false
      | .tyIsize => true
      | .tySlice f => false
-     | .tyNamed e bs => false)
+     | .tyNamed e bs => false
+     | .tySint v => false)
   | .tySlice x =>
     (match b with
      | .tyI32 => false
@@ -106,8 +111,19 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
      | .tyPtr => false
      | .tyIsize => false
      | .tySlice f => sameTy x f
-     | .tyNamed e bs => false)
+     | .tyNamed e bs => false
+     | .tySint v => false)
   | .tyNamed d args =>
+    (match b with
+     | .tyI32 => false
+     | .tyBool => false
+     | .tyUint v => false
+     | .tyPtr => false
+     | .tyIsize => false
+     | .tySlice f => false
+     | .tyNamed e bs => decide (d = e) && sameTys args bs
+     | .tySint v => false)
+  | .tySint u =>
     match b with
     | .tyI32 => false
     | .tyBool => false
@@ -115,7 +131,8 @@ def sameTy (a : Ty) (b : Ty) : Bool :=
     | .tyPtr => false
     | .tyIsize => false
     | .tySlice f => false
-    | .tyNamed e bs => decide (d = e) && sameTys args bs
+    | .tyNamed e bs => false
+    | .tySint v => decide (uintCode u = uintCode v)
 def sameTys (a : List Ty) (b : List Ty) : Bool :=
   match a with
   | [] =>

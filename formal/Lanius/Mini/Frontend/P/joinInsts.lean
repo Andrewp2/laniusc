@@ -39,6 +39,7 @@ def tyInsts (fuel : Nat) (decls : Decls) (t : Ty) : Option (List Inst) :=
     | .tyIsize => some []
     | .tySlice e => tyInsts (fuel - 1) decls e
     | .tyNamed d args => consInst ({ decl := d, args := args } : Inst) (namedInsts (fuel - 1) decls d args)
+    | .tySint k => some []
 def namedInsts (fuel : Nat) (decls : Decls) (d : Nat) (args : List Ty) : Option (List Inst) :=
   if fuel = 0 then
     none

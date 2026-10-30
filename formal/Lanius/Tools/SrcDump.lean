@@ -50,6 +50,7 @@ partial def tyName (decls : Decls) : Ty → String
   | .tyUint k => uintName k
   | .tyPtr => "ptr"
   | .tyIsize => "isize"
+  | .tySint k => sintName k
   | .tySlice e => s!"[{tyName decls e}]"
   | .tyNamed d args =>
     let name := match decls.types[d]? with

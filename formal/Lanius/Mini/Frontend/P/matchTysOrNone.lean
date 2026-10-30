@@ -32,10 +32,10 @@ import Lanius.Mini.Frontend.P.retBinds
 import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.sliceHead
 import Lanius.Mini.Frontend.P.textSelf
-import Lanius.Mini.Frontend.P.treeTokens
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.typePathSpellings
 import Lanius.Mini.Frontend.P.variantIn
+import Lanius.Mini.Frontend.P.wideOf
 import Lanius.Mini.Frontend.P.xDivideOf
 
 public section

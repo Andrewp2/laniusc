@@ -14,17 +14,20 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-/-- left in slot, right in slot + 1, then the division into slot: on the low 32 bits for i32, on the whole word for the unsigned types, whose values are below their width. -/
+/-- left in slot, right in slot + 1, then the division into slot: on the low 32 bits for i32, on the whole word for isize and the unsigned types, whose values are below their width. -/
 def evalDivide (op : SrcDivOp) (slot : Nat) (l : Evaluated) (r : Evaluated) : Option Evaluated :=
   if SrcType.isI32 l.ty && SrcType.isI32 r.ty then
     some ({ stmt := Stmt.seq l.stmt (Stmt.seq r.stmt (Stmt.divide Word.s32 (signedDiv op) slot (Expr.var slot) (Expr.var (slot + 1)))), ty := SrcType.i32 } : Evaluated)
   else
-    match SrcType.sintKind l.ty with
-    | none =>
-      (match SrcType.uintKind l.ty with
-       | none => none
-       | some k => evalDivideUint op slot l r k)
-    | some k => evalDivideSint op slot l r k
+    if SrcType.isIsize l.ty && SrcType.isIsize r.ty then
+      some ({ stmt := Stmt.seq l.stmt (Stmt.seq r.stmt (Stmt.divide Word.u64 (signedDiv op) slot (Expr.var slot) (Expr.var (slot + 1)))), ty := SrcType.isize } : Evaluated)
+    else
+      match SrcType.sintKind l.ty with
+      | none =>
+        (match SrcType.uintKind l.ty with
+         | none => none
+         | some k => evalDivideUint op slot l r k)
+      | some k => evalDivideSint op slot l r k
 
 def evalDivision (op : SrcDivOp) (slot : Nat) (left : Option Evaluated) (right : Option Evaluated) : Option Evaluated :=
   match left with

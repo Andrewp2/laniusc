@@ -84,6 +84,7 @@ def isPtrTy (t : Ty) : Bool :=
   | .tyIsize => false
   | .tySlice e => false
   | .tyNamed d args => false
+  | .tySint k => false
 
 def allocLet (ok : Bool) (id : Nat) (size : SrcExpr) (shift : Nat) (body : MStmt) : Option MStmt :=
   if ok then

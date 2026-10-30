@@ -149,9 +149,21 @@ theorem uintInRange_some {u : UintTy} {v : BitVec 64} {e : SrcExpr} (h : uintInR
     cases u <;> simp [uintMask, uintBits] at this ⊢ <;> omega
   · rw [if_neg le] at h; cases h
 
+/-- An `i32` value in the range of the signed type as wide as `u`. -/
+def SintFits (u : UintTy) (k : BitVec 32) : Prop :=
+  32 ≤ uintBits u ∨ (-2 ^ (uintBits u - 1) ≤ k.toInt ∧ k.toInt < 2 ^ (uintBits u - 1))
+
+theorem sintFits_iff (u : UintTy) (k : BitVec 32) : sintFits u k = true ↔ SintFits u k := by
+  have := k.isLt
+  cases u <;> simp only [sintFits, SintFits, uintBits, Bool.or_eq_true, decide_eq_true_eq, BitVec.le_def,
+    BitVec.toInt_eq_toNat_cond, true_iff] <;>
+    first | exact .inl (by decide) | skip
+  all_goals split <;> omega
+
 /-- A constant's value as a literal of its type: an `i32` literal (or its
 negation) of `i32`, of `isize` (cast), of an unsigned type when it fits, `0`
-of `ptr` (the null pointer), and `true` or `false` of `bool`. -/
+of `ptr` (the null pointer), `true` or `false` of `bool`, and of a signed
+type the cast of the `i32` literal (or of its negation) when the type holds it. -/
 inductive TypedLiteral : Ty → SrcExpr → SrcExpr → Prop
   | i32 {k : BitVec 32} : TypedLiteral .tyI32 (.int k) (.int k)
   | uint {u : UintTy} {k : BitVec 32} : k.toNat < 2 ^ uintBits u →
@@ -161,6 +173,9 @@ inductive TypedLiteral : Ty → SrcExpr → SrcExpr → Prop
   | bool {b : Bool} : TypedLiteral .tyBool (.boolean b) (.boolean b)
   | negI32 {k : BitVec 32} : TypedLiteral .tyI32 (.negate (.int k)) (.negate (.int k))
   | negIsize {k : BitVec 32} : TypedLiteral .tyIsize (.negate (.int k)) (.negate (.cast .isize (.int k)))
+  | sint {u : UintTy} {k : BitVec 32} : SintFits u k → TypedLiteral (.tySint u) (.int k) (.cast (.sint u) (.int k))
+  | negSint {u : UintTy} {k : BitVec 32} : SintFits u (0 - k) →
+      TypedLiteral (.tySint u) (.negate (.int k)) (.cast (.sint u) (.int (0 - k)))
 
 theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some e) : TypedLiteral t v e := by
   cases v with
@@ -183,6 +198,13 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyBool => cases h
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
+    | tySint u =>
+      simp only [typedLiteral, sintConst] at h
+      by_cases f : sintFits u k = true
+      · rw [if_pos f, Option.some.injEq] at h
+        subst h
+        exact .sint ((sintFits_iff u k).1 f)
+      · rw [if_neg f] at h; cases h
   | boolean b =>
     cases t with
     | tyBool => cases h; exact .bool
@@ -192,6 +214,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyIsize => cases h
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
+    | tySint _ => cases h
   | negate x =>
     cases t with
     | tyI32 =>
@@ -207,6 +230,16 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyPtr => cases h
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
+    | tySint u =>
+      cases x
+      case int k =>
+        simp only [typedLiteral, negSintConst, sintConst] at h
+        by_cases f : sintFits u (0 - k) = true
+        · rw [if_pos f, Option.some.injEq] at h
+          subst h
+          exact .negSint ((sintFits_iff u _).1 f)
+        · rw [if_neg f] at h; cases h
+      all_goals simp [typedLiteral, negSintConst] at h
   | unsigned _ _ => cases h
   | «local» _ => cases h
   | field _ _ => cases h
@@ -224,6 +257,10 @@ inductive WideOf : Ty → Bool → Nat → SrcExpr → Prop
   | isize {n : Nat} : n < 2 ^ 63 → WideOf .tyIsize false n (.cast .isize (.unsigned .uint64 (BitVec.ofNat 64 n)))
   | isizeNeg {n : Nat} : n ≤ 2 ^ 63 →
       WideOf .tyIsize true n (.cast .isize (.unsigned .uint64 (BitVec.ofNat 64 (2 ^ 64 - n))))
+  | sint {u : UintTy} {n : Nat} : uintBits u = 64 → n < 2 ^ 63 →
+      WideOf (.tySint u) false n (.cast (.sint u) (.unsigned .uint64 (BitVec.ofNat 64 n)))
+  | sintNeg {u : UintTy} {n : Nat} : uintBits u = 64 → n ≤ 2 ^ 63 →
+      WideOf (.tySint u) true n (.cast (.sint u) (.unsigned .uint64 (BitVec.ofNat 64 (2 ^ 64 - n))))
 
 /-- A constant's value tokens `n` or `-` `n` as a wide literal. -/
 inductive WideConst (t : Ty) : List Token → SrcExpr → Prop
@@ -271,6 +308,25 @@ theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wid
   | tyPtr => cases h
   | tySlice _ => cases h
   | tyNamed _ _ => cases h
+  | tySint u =>
+    simp only [wideOf, wideSint] at h
+    by_cases w : sintWide u = true
+    · have bits : uintBits u = 64 := by cases u <;> simp_all [sintWide, uintBits]
+      rw [if_neg (by simp [w])] at h
+      by_cases c : negative = false ∧ n ≤ 9223372036854775807
+      · obtain ⟨rfl, le⟩ := c
+        rw [if_pos (by simpa using le), Option.some.injEq] at h
+        subst h
+        exact .sint bits (by omega)
+      · rw [if_neg (by cases negative <;> simp_all)] at h
+        by_cases d : negative = true ∧ n ≤ 9223372036854775808
+        · obtain ⟨rfl, le⟩ := d
+          rw [if_pos (by simpa using le), Option.some.injEq] at h
+          subst h
+          rw [show 18446744073709551615 - n + 1 = 2 ^ 64 - n by omega]
+          exact .sintNeg bits (by omega)
+        · rw [if_neg (by cases negative <;> simp_all)] at h; cases h
+    · rw [if_pos (by simpa using w)] at h; cases h
 
 theorem wideDigits_sound {t : Ty} {negative : Bool} {text : List Nat} {e : SrcExpr}
     (h : wideDigits t negative (wideDecimal text 0) = some e) :
@@ -419,6 +475,7 @@ theorem memberOf_sound {env : FrontEnv} {scope : List Local} {primary tail : CTr
         | tyPtr => rw [ht] at hf; cases hf
         | tyIsize => rw [ht] at hf; cases hf
         | tySlice _ => rw [ht] at hf; cases hf
+        | tySint _ => rw [ht] at hf; cases hf
   · rw [if_neg (by simpa using c)] at h; cases h
 
 /-! ## Casts -/
@@ -430,6 +487,7 @@ inductive ScalarTy : Ty → SrcType → Prop
   | uint {k : UintTy} : ScalarTy (.tyUint k) (.uint k)
   | ptr : ScalarTy .tyPtr .ptr
   | isize : ScalarTy .tyIsize .isize
+  | sint {k : UintTy} : ScalarTy (.tySint k) (.sint k)
 
 theorem scalarSrc_sound {t : Ty} {s : SrcType} (h : scalarSrc t = some s) : ScalarTy t s := by
   cases t <;> simp [scalarSrc] at h <;> subst h <;> constructor

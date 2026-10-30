@@ -55,7 +55,7 @@ def srcTy (t : SrcType) : Option Ty :=
   | .slice e => none
   | .unit => none
   | .isize => some Ty.tyIsize
-  | .sint sk => none
+  | .sint sk => some (Ty.tySint sk)
 
 def scalarSrc (t : Ty) : Option SrcType :=
   match t with
@@ -66,6 +66,7 @@ def scalarSrc (t : Ty) : Option SrcType :=
   | .tyIsize => some SrcType.isize
   | .tySlice e => none
   | .tyNamed d args => none
+  | .tySint k => some (SrcType.sint k)
 
 def primTy (name : List Nat) : Option Ty :=
   match primitive name with

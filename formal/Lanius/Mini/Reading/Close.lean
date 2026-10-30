@@ -45,6 +45,7 @@ theorem closeTy_sound {t : Tables} (ok : LoweredOk t) :
     | tyUint k => cases h; exact .uint
     | tyPtr => cases h; exact .ptr
     | tyIsize => cases h; exact .isize
+    | tySint _ => cases h; exact .sint
     | tySlice e =>
       simp only at h
       cases he : closeTy f t e with

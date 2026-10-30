@@ -4,7 +4,9 @@ import Lanius.Mini.Reading.Close
 
 `LitExpr locals want e e'`: the closed expression `e` with each integer
 literal at the type its context expects (`intAt`: an unsigned literal, the
-null pointer for `0` at ptr, the cast of the i32 literal at isize), and each
+null pointer for `0` at ptr, the cast of the i32 literal at isize or at a
+signed type that holds it, and `-k` at a narrow signed type whose least
+value it is as the cast of the i32 literal `-k`: `negLeast`), and each
 wide literal (one of 2^31 or more, read as a marker) at its expected type
 too (`wideAt`, `negWideAt`). What a position expects: a let's type, a
 local's or field's when stored to, a parameter's, the function's result for
@@ -30,7 +32,7 @@ inductive LitExpr (locals : List LocalTy) : Option SrcType → SrcExpr → SrcEx
   | «local» {want : Option SrcType} {id : Nat} : LitExpr locals want (.local id) (.local id)
   | field {want : Option SrcType} {id j : Nat} : LitExpr locals want (.field id j) (.field id j)
   | negate {want : Option SrcType} {x y : SrcExpr} :
-      wideValue x = none → LitExpr locals want x y → LitExpr locals want (.negate x) (.negate y)
+      wideValue x = none → LitExpr locals want x y → LitExpr locals want (.negate x) (negLeast want x (.negate y))
   | negWide {want : Option SrcType} {x : SrcExpr} {n : BitVec 64} :
       wideValue x = some n → LitExpr locals want (.negate x) (negWideAt want n (.negate x))
   | not {want : Option SrcType} {x y : SrcExpr} :

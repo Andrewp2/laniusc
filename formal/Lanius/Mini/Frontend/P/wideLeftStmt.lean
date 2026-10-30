@@ -4,6 +4,7 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
+import Lanius.Mini.Frontend.P.closeFuncs
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.monoLoop
 import Lanius.Mini.Frontend.P.negWideI32
@@ -16,6 +17,58 @@ public section
 set_option linter.unusedVariables false
 
 namespace Lanius.Mini
+
+def wideLeftStmt (s : SrcStmt) : Bool :=
+  match s with
+  | .nop => false
+  | .let id ty e body => wideLeft e || wideLeftStmt body
+  | .letStruct id ty es body => wideLeftExprs es || wideLeftStmt body
+  | .letCall id ty f args body => wideLeftExprs args || wideLeftStmt body
+  | .letEnum id ty k es body => wideLeftExprs es || wideLeftStmt body
+  | .letMatch id ty sc eid arms body => wideLeftArms arms || wideLeftStmt body
+  | .set id e => wideLeft e
+  | .setField id j e => wideLeft e
+  | .setCall id f args => wideLeftExprs args
+  | .then a b => wideLeftStmt a || wideLeftStmt b
+  | .if c a b => wideLeft c || wideLeftStmt a || wideLeftStmt b
+  | .while c body => wideLeft c || wideLeftStmt body
+  | .return e => wideLeft e
+  | .letAlloc id size shift body => wideLeft size || wideLeftStmt body
+  | .letLoad id p o body => wideLeft p || wideLeft o || wideLeftStmt body
+  | .setByte p o v => wideLeft p || wideLeft o || wideLeft v
+  | .free p size shift => wideLeft p || wideLeft size
+  | .letSlice id el p n body => wideLeft p || wideLeft n || wideLeftStmt body
+  | .letIndex id ty sl i body => wideLeft i || wideLeftStmt body
+  | .setIndex sl i v => wideLeft i || wideLeft v
+  | .letEval id ty x body => wideLeftEff x || wideLeftStmt body
+  | .setEval id x => wideLeftEff x
+  | .ifEval c a b => wideLeftEff c || wideLeftStmt a || wideLeftStmt b
+  | .whileEval c body => wideLeftEff c || wideLeftStmt body
+  | .returnEval x => wideLeftEff x
+  | .discard x => wideLeftEff x
+  | .setIndexEval sl i v => wideLeftEff i || wideLeftEff v
+  | .setFieldEval id j x => wideLeftEff x
+  | .returnUnit => false
+  | .assert x => wideLeftEff x
+
+def wideLeftFuncs (fs : List SrcFunc) : Bool :=
+  match fs with
+  | [] => false
+  | g :: rest => wideLeftStmt g.body || wideLeftFuncs rest
+
+def untypedRejected (fs : List SrcFunc) : Option SrcProgram :=
+  if wideLeftFuncs fs then
+    none
+  else
+    some ({ funcs := fs } : SrcProgram)
+
+def buildClosed (fuel : Nat) (decls : Decls) (fns : List Inst) (types : Option (List Inst)) (funcs : List MFunc) : Option SrcProgram :=
+  match types with
+  | none => none
+  | some ts =>
+    match closeFuncs fuel ({ decls := decls, fns := fns, types := ts, lowered := loweredAll fuel decls ts ts } : Tables) funcs with
+    | none => none
+    | some fs => untypedRejected (litFuncs fs fs)
 
 def buildMono (fuel : Nat) (decls : Decls) (seeds : List Inst) (m : Option Mono) : Option SrcProgram :=
   match m with

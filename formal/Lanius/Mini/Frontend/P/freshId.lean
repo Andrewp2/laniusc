@@ -42,6 +42,7 @@ def fieldIndex (env : FrontEnv) (t : Ty) (name : List Nat) : Option Nat :=
   | .tyIsize => none
   | .tySlice e => none
   | .tyNamed d args => fieldIn env.decls.types[d]? name
+  | .tySint k => none
 
 def fieldExpr (id : Nat) (index : Option Nat) : Option SrcExpr :=
   match index with

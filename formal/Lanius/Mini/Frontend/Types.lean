@@ -68,6 +68,7 @@ inductive Ty where
   | tyIsize : Ty
   | tySlice : Ty → Ty
   | tyNamed : Nat → (List Ty) → Ty
+  | tySint : UintTy → Ty
   deriving Repr
 
 /-- A declaration at type arguments: a type instance (the declaration is a type's index) or a function instance (a function's index). -/

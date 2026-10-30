@@ -3,8 +3,8 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_frontEndRead
-public import Lanius.Faithful.Gen.SelfStmtF_buildMono
 public import Lanius.Faithful.Gen.SelfStmtF_frontEndRead
+public import Lanius.Faithful.Gen.SelfStmtF_wideLeftStmt
 import all Lanius.Faithful.Gen.SelfSrcF_frontEndRead
 import all Lanius.Mini.Frontend.P.frontEndRead
 

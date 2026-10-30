@@ -779,7 +779,7 @@ pub fn spelled5(name: List<usize>, a: usize, b: usize, c: usize, d: usize, e: us
     };
 }
 
-// i32, bool, u8, u16, u32, u64, usize, ptr, isize
+// i32, bool, u8, u16, u32, u64, usize, ptr, isize, i8, i16, i64
 pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     if (spelled3(name, 105, 51, 50)) {
         return Some(I32);
@@ -807,6 +807,15 @@ pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     }
     if (spelled5(name, 105, 115, 105, 122, 101)) {
         return Some(Isize);
+    }
+    if (spelled2(name, 105, 56)) {
+        return Some(Sint(Uint8));
+    }
+    if (spelled3(name, 105, 49, 54)) {
+        return Some(Sint(Uint16));
+    }
+    if (spelled3(name, 105, 54, 52)) {
+        return Some(Sint(Uint64));
     }
     return None;
 }
@@ -1017,6 +1026,7 @@ pub enum Ty {
     TyIsize,
     TySlice(Box<Ty>),
     TyNamed(usize, Box<List<Ty>>),
+    TySint(UintTy),
 }
 
 // A declaration at type arguments: a type instance (the declaration is a
@@ -1717,6 +1727,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
+            TySint(v) -> false,
         },
         TyBool -> match (b) {
             TyI32 -> false,
@@ -1726,6 +1737,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
+            TySint(v) -> false,
         },
         TyUint(u) -> match (b) {
             TyI32 -> false,
@@ -1735,6 +1747,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
+            TySint(v) -> false,
         },
         TyPtr -> match (b) {
             TyI32 -> false,
@@ -1744,6 +1757,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
+            TySint(v) -> false,
         },
         TyIsize -> match (b) {
             TyI32 -> false,
@@ -1753,6 +1767,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> true,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
+            TySint(v) -> false,
         },
         TySlice(x) -> match (b) {
             TyI32 -> false,
@@ -1762,6 +1777,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TySlice(f) -> same_ty(unbox(x), unbox(f)),
             TyNamed(e, bs) -> false,
+            TySint(v) -> false,
         },
         TyNamed(d, args) -> match (b) {
             TyI32 -> false,
@@ -1771,6 +1787,17 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyIsize -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> (d == e) && same_tys(unbox(args), unbox(bs)),
+            TySint(v) -> false,
+        },
+        TySint(u) -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TyIsize -> false,
+            TySlice(f) -> false,
+            TyNamed(e, bs) -> false,
+            TySint(v) -> uint_code(u) == uint_code(v),
         },
     };
 }
@@ -1956,7 +1983,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         Slice(e) -> None,
         Unit -> None,
         Isize -> Some(TyIsize),
-        Sint(sk) -> None,
+        Sint(sk) -> Some(TySint(sk)),
     };
 }
 
@@ -1969,6 +1996,7 @@ pub fn scalar_src(t: Ty) -> core::option::Option<SrcType> {
         TyIsize -> Some(Isize),
         TySlice(e) -> None,
         TyNamed(d, args) -> None,
+        TySint(k) -> Some(Sint(k)),
     };
 }
 
@@ -2305,6 +2333,7 @@ pub fn lower_ty(fuel: usize, decls: Decls, table: List<Inst>, t: Ty) -> core::op
         TyIsize -> Some(Isize),
         TySlice(e) -> slice_type(lower_ty(minus(fuel, 1), decls, table, unbox(e))),
         TyNamed(d, args) -> lower_named(minus(fuel, 1), decls, table, d, unbox(args)),
+        TySint(k) -> Some(Sint(k)),
     };
 }
 
@@ -2387,6 +2416,7 @@ pub fn ty_insts(fuel: usize, decls: Decls, t: Ty) -> core::option::Option<List<I
         TyIsize -> Some(empty()),
         TySlice(e) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
         TyNamed(d, args) -> cons_inst(Inst { decl: d, args: unbox(args) }, named_insts(minus(fuel, 1), decls, d, unbox(args))),
+        TySint(k) -> Some(empty()),
     };
 }
 
@@ -2663,6 +2693,7 @@ pub fn field_index(env: FrontEnv, t: Ty, name: List<usize>) -> core::option::Opt
         TyIsize -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> field_in(get(env.decls.types, d), name),
+        TySint(k) -> None,
     };
 }
 
@@ -2783,6 +2814,53 @@ pub fn null_const(k: i32) -> core::option::Option<SrcExpr> {
     return None;
 }
 
+// Whether an i32 value is in the range of the signed type as wide as u:
+// its 32 bits at most 2^(w-1) - 1, or at least 2^32 - 2^(w-1).
+pub fn sint_fits(u: UintTy, k: i32) -> bool {
+    return match (u) {
+        Uint8 -> (((k as u32) as usize) <= 127) || (((k as u32) as usize) >= 4294967168),
+        Uint32 -> true,
+        Uint64 -> true,
+        Usize -> true,
+        Uint16 -> (((k as u32) as usize) <= 32767) || (((k as u32) as usize) >= 4294934528),
+    };
+}
+
+// The 64-bit signed types; the others are held as i32.
+pub fn sint_wide(u: UintTy) -> bool {
+    return match (u) {
+        Uint8 -> false,
+        Uint32 -> false,
+        Uint64 -> true,
+        Usize -> true,
+        Uint16 -> false,
+    };
+}
+
+// A signed constant: the cast of the i32 literal k, when the type holds it.
+pub fn sint_const(u: UintTy, k: i32) -> core::option::Option<SrcExpr> {
+    if (sint_fits(u, k)) {
+        return Some(Cast(Sint(u), boxed(Int(k))));
+    }
+    return None;
+}
+
+// `-k` as a signed constant.
+pub fn neg_sint_const(u: UintTy, x: SrcExpr) -> core::option::Option<SrcExpr> {
+    return match (x) {
+        Int(k) -> sint_const(u, 0 - k),
+        Boolean(b) -> None,
+        Unsigned(v, k) -> None,
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(y) -> None,
+        Not(y) -> None,
+        Apply(op, a, b) -> None,
+        Cast(t, y) -> None,
+        Null -> None,
+    };
+}
+
 // A constant's value: a literal of its type. An integer literal of an
 // unsigned type is that type's literal.
 pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
@@ -2795,6 +2873,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyIsize -> Some(Cast(Isize, boxed(e))),
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
+            TySint(u) -> sint_const(u, k),
         },
         Boolean(b) -> match (t) {
             TyI32 -> None,
@@ -2804,6 +2883,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyIsize -> None,
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
+            TySint(u) -> None,
         },
         Unsigned(u, k) -> None,
         Local(id) -> None,
@@ -2816,6 +2896,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyIsize -> negated_int(unbox(x), Negate(boxed(Cast(Isize, x)))),
             TySlice(y) -> None,
             TyNamed(d, args) -> None,
+            TySint(u) -> neg_sint_const(u, unbox(x)),
         },
         Not(x) -> None,
         Apply(op, a, b) -> None,
@@ -2874,6 +2955,21 @@ pub fn wide_isize(negative: bool, n: usize) -> core::option::Option<SrcExpr> {
     return None;
 }
 
+// A wide literal of a 64-bit signed type: the cast of the u64 literal of its
+// two's complement bits.
+pub fn wide_sint(u: UintTy, negative: bool, n: usize) -> core::option::Option<SrcExpr> {
+    if (!sint_wide(u)) {
+        return None;
+    }
+    if (!negative && n <= 9223372036854775807) {
+        return Some(Cast(Sint(u), boxed(Unsigned(Uint64, n as u64))));
+    }
+    if (negative && n <= 9223372036854775808) {
+        return Some(Cast(Sint(u), boxed(Unsigned(Uint64, plus(minus(18446744073709551615, n), 1) as u64))));
+    }
+    return None;
+}
+
 pub fn wide_of(ty: Ty, negative: bool, n: usize) -> core::option::Option<SrcExpr> {
     return match (ty) {
         TyI32 -> wide_i32(negative, n),
@@ -2883,6 +2979,7 @@ pub fn wide_of(ty: Ty, negative: bool, n: usize) -> core::option::Option<SrcExpr
         TyIsize -> wide_isize(negative, n),
         TySlice(e) -> None,
         TyNamed(d, args) -> None,
+        TySint(u) -> wide_sint(u, negative, n),
     };
 }
 
@@ -3209,6 +3306,7 @@ pub fn struct_field_tys(fuel: usize, decls: Decls, t: Ty) -> core::option::Optio
         TyIsize -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> field_tys(fuel, decls, d, unbox(args)),
+        TySint(k) -> None,
     };
 }
 
@@ -3351,6 +3449,7 @@ pub fn slice_elem(t: Ty) -> core::option::Option<Ty> {
         TyIsize -> None,
         TySlice(e) -> Some(unbox(e)),
         TyNamed(d, args) -> None,
+        TySint(k) -> None,
     };
 }
 
@@ -3363,6 +3462,7 @@ pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
         TyIsize -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> Some(Inst { decl: d, args: unbox(args) }),
+        TySint(k) -> None,
     };
 }
 
@@ -5756,6 +5856,7 @@ pub fn is_ptr_ty(t: Ty) -> bool {
         TyIsize -> false,
         TySlice(e) -> false,
         TyNamed(d, args) -> false,
+        TySint(k) -> false,
     };
 }
 
@@ -6594,6 +6695,7 @@ pub fn ty_known(table: List<Inst>, t: Ty) -> bool {
         TyIsize -> true,
         TySlice(e) -> ty_known(table, unbox(e)),
         TyNamed(d, args) -> inst_member(table, Inst { decl: d, args: unbox(args) }),
+        TySint(k) -> true,
     };
 }
 
@@ -6662,6 +6764,7 @@ pub fn close_ty(fuel: usize, t: Tables, ty: Ty) -> core::option::Option<SrcType>
         TyIsize -> Some(Isize),
         TySlice(e) -> slice_type(close_ty(minus(fuel, 1), t, unbox(e))),
         TyNamed(d, args) -> close_named(fuel, t, d, unbox(args), inst_index(t.types, Inst { decl: d, args: unbox(args) }, 0)),
+        TySint(k) -> Some(Sint(k)),
     };
 }
 
@@ -7150,6 +7253,14 @@ pub fn null_at(k: i32, e: SrcExpr) -> SrcExpr {
     return e;
 }
 
+// A signed type's literal: the cast of the i32 literal, when the type holds it.
+pub fn sint_at(u: UintTy, k: i32, e: SrcExpr) -> SrcExpr {
+    if (sint_fits(u, k)) {
+        return Cast(Sint(u), boxed(e));
+    }
+    return e;
+}
+
 // An integer literal at its expected type: an unsigned type's literal, the
 // null pointer for `0` at ptr, or for isize the cast of the i32 literal.
 pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
@@ -7163,7 +7274,7 @@ pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
         Slice(el) -> e,
         Unit -> e,
         Isize -> Cast(Isize, boxed(e)),
-        Sint(sk) -> e,
+        Sint(sk) -> sint_at(sk, k, e),
     };
 }
 
@@ -7351,6 +7462,13 @@ pub fn wide_isize_at(n: u64, e: SrcExpr) -> SrcExpr {
     return e;
 }
 
+pub fn wide_sint_at(u: UintTy, n: u64, e: SrcExpr) -> SrcExpr {
+    if (sint_wide(u) && n <= 9223372036854775807) {
+        return Cast(Sint(u), boxed(Unsigned(Uint64, n)));
+    }
+    return e;
+}
+
 // A wide literal n at its expected type: an unsigned type's literal when n
 // fits it, for isize (n below 2^63) the cast of the u64 literal n; else it
 // stays as read, and build rejects it.
@@ -7367,7 +7485,7 @@ pub fn wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> SrcEx
             Slice(el) -> e,
             Unit -> e,
             Isize -> wide_isize_at(n, e),
-            Sint(sk) -> e,
+            Sint(sk) -> wide_sint_at(sk, n, e),
         },
     };
 }
@@ -7383,6 +7501,13 @@ pub fn neg_wide_i32(n: u64, e: SrcExpr) -> SrcExpr {
 pub fn neg_wide_isize(n: u64, e: SrcExpr) -> SrcExpr {
     if (n <= 9223372036854775808) {
         return Cast(Isize, boxed(Unsigned(Uint64, (18446744073709551615 - n) + 1)));
+    }
+    return e;
+}
+
+pub fn neg_wide_sint(u: UintTy, n: u64, e: SrcExpr) -> SrcExpr {
+    if (sint_wide(u) && n <= 9223372036854775808) {
+        return Cast(Sint(u), boxed(Unsigned(Uint64, (18446744073709551615 - n) + 1)));
     }
     return e;
 }
@@ -7403,7 +7528,49 @@ pub fn neg_wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> S
             Slice(el) -> e,
             Unit -> e,
             Isize -> neg_wide_isize(n, e),
-            Sint(sk) -> e,
+            Sint(sk) -> neg_wide_sint(sk, n, e),
+        },
+    };
+}
+
+pub fn least_cast(u: UintTy, k: i32, d: SrcExpr) -> SrcExpr {
+    if (!sint_fits(u, k) && sint_fits(u, 0 - k)) {
+        return Cast(Sint(u), boxed(Int(0 - k)));
+    }
+    return d;
+}
+
+pub fn neg_least_at(u: UintTy, x: SrcExpr, d: SrcExpr) -> SrcExpr {
+    return match (x) {
+        Int(k) -> least_cast(u, k, d),
+        Boolean(b) -> d,
+        Unsigned(v, k) -> d,
+        Local(id) -> d,
+        Field(id, j) -> d,
+        Negate(y) -> d,
+        Not(y) -> d,
+        Apply(op, a, b) -> d,
+        Cast(t, y) -> d,
+        Null -> d,
+    };
+}
+
+// `-k` at a narrow signed type whose least value is -k, which k alone is not
+// in the range of: the cast of the i32 literal -k.
+pub fn neg_least(want: core::option::Option<SrcType>, x: SrcExpr, d: SrcExpr) -> SrcExpr {
+    return match (want) {
+        None -> d,
+        Some(t) -> match (t) {
+            I32 -> d,
+            Bool -> d,
+            Uint(u) -> d,
+            Struct(id, fields) -> d,
+            Enum(id, variants) -> d,
+            Ptr -> d,
+            Slice(el) -> d,
+            Unit -> d,
+            Isize -> d,
+            Sint(sk) -> neg_least_at(sk, x, d),
         },
     };
 }
@@ -7432,7 +7599,7 @@ pub fn lit_expr(locals: List<LocalTy>, want: core::option::Option<SrcType>, e: S
         Local(id) -> e,
         Field(id, j) -> e,
         Negate(x) -> match (wide_value(unbox(x))) {
-            None -> Negate(boxed(lit_expr(locals, want, unbox(x)))),
+            None -> neg_least(want, unbox(x), Negate(boxed(lit_expr(locals, want, unbox(x))))),
             Some(n) -> neg_wide_at(want, n, e),
         },
         Not(x) -> Not(boxed(lit_expr(locals, Some(Bool), unbox(x)))),

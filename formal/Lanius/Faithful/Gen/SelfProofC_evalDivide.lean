@@ -31,10 +31,11 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_eval_divide {prog : SrcProgram} {prims : Prims} {ix_eval_divide ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_i32 ix_SrcType_sint_kind ix_signed_div ix_eval_divide_sint ix_SrcType_uint_kind ix_eval_divide_uint : Nat} (fn : prog.funcs[ix_eval_divide]? = some (src_eval_divide ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_i32 ix_SrcType_sint_kind ix_signed_div ix_eval_divide_sint ix_SrcType_uint_kind ix_eval_divide_uint)) (np : prims.isPrim ix_eval_divide = false)
+theorem proof_eval_divide {prog : SrcProgram} {prims : Prims} {ix_eval_divide ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_signed_div ix_eval_divide_sint ix_SrcType_uint_kind ix_eval_divide_uint : Nat} (fn : prog.funcs[ix_eval_divide]? = some (src_eval_divide ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_signed_div ix_eval_divide_sint ix_SrcType_uint_kind ix_eval_divide_uint)) (np : prims.isPrim ix_eval_divide = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
+    (ext_SrcType_is_isize : Certified (∀ {n : Nat}, Stmt_SrcType_is_isize prog prims ix_SrcType_is_isize n))
     (ext_SrcType_sint_kind : Certified (∀ {n : Nat}, Stmt_SrcType_sint_kind prog prims ix_SrcType_sint_kind n))
     (ext_signed_div : Certified (∀ {n : Nat}, Stmt_signed_div prog prims ix_signed_div n))
     (ext_eval_divide_sint : Certified (∀ {n : Nat}, Stmt_eval_divide_sint prog prims ix_eval_divide_sint n))

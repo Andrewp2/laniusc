@@ -7,7 +7,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_armsOf
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
-public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
+public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_armsOf
 import all Lanius.Mini.Frontend.P.armsOf
 

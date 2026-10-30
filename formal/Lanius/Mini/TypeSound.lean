@@ -1454,6 +1454,16 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           cases op
           · exact .binary typedL typedR (.divide IsInt.i32.arith)
           · exact .binary typedL typedR (.remainder IsInt.i32.integer)
+        split at h
+        · rename_i both
+          simp only [Bool.and_eq_true] at both
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [eq_isize both.1] at typedL
+          rw [eq_isize both.2] at typedR
+          cases op
+          · exact .binary typedL typedR (.divide IsInt.isize.arith)
+          · exact .binary typedL typedR (.remainder IsInt.isize.integer)
         · split at h
           · split at h
             · simp at h

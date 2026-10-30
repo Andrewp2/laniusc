@@ -473,6 +473,8 @@ inductive RepTy : Lanius.Mini.Ty → Value → Prop where
       RepTy x0 v0 → RepTy (Lanius.Mini.Ty.tySlice x0) (.enumeration 133 5 [v0])
   | c6 {x0 : Nat} {x1 : List Lanius.Mini.Ty} {v0 v1 : Value} :
       RepNat x0 v0 → (RepList 132 RepTy) x1 v1 → RepTy (Lanius.Mini.Ty.tyNamed x0 x1) (.enumeration 133 6 [v0, v1])
+  | c7 {x0 : Lanius.Mini.UintTy} {v0 : Value} :
+      RepUintTy x0 v0 → RepTy (Lanius.Mini.Ty.tySint x0) (.enumeration 133 7 [v0])
 
 inductive RepInst : Lanius.Mini.Inst → Value → Prop where
   | c0 {x0 : Nat} {x1 : List Lanius.Mini.Ty} {v0 v1 : Value} :
@@ -748,18 +750,18 @@ attribute [rep_rule] RepExpr.c2 RepExpr.c3 RepExpr.c4 RepStmt.c0 RepStmt.c1 RepS
 attribute [rep_rule] RepStmt.c5 RepStmt.c6 RepStmt.c7 RepStmt.c8 RepStmt.c9 RepStmt.c10 RepStmt.c11 RepStmt.c12
 attribute [rep_rule] RepFunc.c0 RepProgram.c0 RepSig.c0 RepNumsRead.c0 RepTypeDecl.c0 RepFnDecl.c0 RepConstDecl.c0 RepImportDecl.c0
 attribute [rep_rule] RepAliasDecl.c0 RepDecls.c0 RepFileDecls.c0 RepCollected.c0 RepCursor.c0 RepAttached.c0 RepBinding.c0 RepTy.c0
-attribute [rep_rule] RepTy.c1 RepTy.c2 RepTy.c3 RepTy.c4 RepTy.c5 RepTy.c6 RepInst.c0 RepArity.c0
-attribute [rep_rule] RepTyped.c0 RepEvaluated.c0 RepRawTok.c0 RepMParam.c0 RepRetTy.c0 RepRetTy.c1 RepMEff.c0 RepMEff.c1
-attribute [rep_rule] RepMEff.c2 RepMEff.c3 RepMEff.c4 RepMEff.c5 RepMEff.c6 RepMEff.c7 RepMEff.c8 RepMEff.c9
-attribute [rep_rule] RepMEff.c10 RepMEff.c11 RepMStmt.c0 RepMStmt.c1 RepMStmt.c2 RepMStmt.c3 RepMStmt.c4 RepMStmt.c5
-attribute [rep_rule] RepMStmt.c6 RepMStmt.c7 RepMStmt.c8 RepMStmt.c9 RepMStmt.c10 RepMStmt.c11 RepMStmt.c12 RepMStmt.c13
-attribute [rep_rule] RepMStmt.c14 RepMStmt.c15 RepMStmt.c16 RepMStmt.c17 RepMStmt.c18 RepMStmt.c19 RepMStmt.c20 RepMStmt.c21
-attribute [rep_rule] RepMStmt.c22 RepMStmt.c23 RepMStmt.c24 RepMStmt.c25 RepMStmt.c26 RepMStmt.c27 RepMFunc.c0 RepMono.c0
-attribute [rep_rule] RepFact.c0 RepEvaluatedArgs.c0 RepSymRule.c0 RepOneTok.c0 RepOneTok.c1 RepTables.c0 RepPlace.c0 RepVariants.c0
-attribute [rep_rule] RepLocalTy.c0 RepFrontEnv.c0 RepNumScan.c0 RepNumScan.c1 RepScan.c0 RepScan.c1 RepFields.c0 RepLocal.c0
-attribute [rep_rule] RepMParams.c0 RepSplit.c0 RepCalled.c0 RepLetHead.c0 RepLetHead.c1 RepLetHead.c2 RepLetHead.c3 RepLetHead.c4
-attribute [rep_rule] RepLetHead.c5 RepLetHead.c6 RepLetHead.c7 RepLetHead.c8 RepPathRef.c0 RepVariantAt.c0 RepBind.c0 RepFound.c0
-attribute [rep_rule] RepFit.c0 RepFit.c1 RepFit.c2 RepEffArm.c0 RepVariantTy.c0 RepArgsBound.c0 RepBound.c0
+attribute [rep_rule] RepTy.c1 RepTy.c2 RepTy.c3 RepTy.c4 RepTy.c5 RepTy.c6 RepTy.c7 RepInst.c0
+attribute [rep_rule] RepArity.c0 RepTyped.c0 RepEvaluated.c0 RepRawTok.c0 RepMParam.c0 RepRetTy.c0 RepRetTy.c1 RepMEff.c0
+attribute [rep_rule] RepMEff.c1 RepMEff.c2 RepMEff.c3 RepMEff.c4 RepMEff.c5 RepMEff.c6 RepMEff.c7 RepMEff.c8
+attribute [rep_rule] RepMEff.c9 RepMEff.c10 RepMEff.c11 RepMStmt.c0 RepMStmt.c1 RepMStmt.c2 RepMStmt.c3 RepMStmt.c4
+attribute [rep_rule] RepMStmt.c5 RepMStmt.c6 RepMStmt.c7 RepMStmt.c8 RepMStmt.c9 RepMStmt.c10 RepMStmt.c11 RepMStmt.c12
+attribute [rep_rule] RepMStmt.c13 RepMStmt.c14 RepMStmt.c15 RepMStmt.c16 RepMStmt.c17 RepMStmt.c18 RepMStmt.c19 RepMStmt.c20
+attribute [rep_rule] RepMStmt.c21 RepMStmt.c22 RepMStmt.c23 RepMStmt.c24 RepMStmt.c25 RepMStmt.c26 RepMStmt.c27 RepMFunc.c0
+attribute [rep_rule] RepMono.c0 RepFact.c0 RepEvaluatedArgs.c0 RepSymRule.c0 RepOneTok.c0 RepOneTok.c1 RepTables.c0 RepPlace.c0
+attribute [rep_rule] RepVariants.c0 RepLocalTy.c0 RepFrontEnv.c0 RepNumScan.c0 RepNumScan.c1 RepScan.c0 RepScan.c1 RepFields.c0
+attribute [rep_rule] RepLocal.c0 RepMParams.c0 RepSplit.c0 RepCalled.c0 RepLetHead.c0 RepLetHead.c1 RepLetHead.c2 RepLetHead.c3
+attribute [rep_rule] RepLetHead.c4 RepLetHead.c5 RepLetHead.c6 RepLetHead.c7 RepLetHead.c8 RepPathRef.c0 RepVariantAt.c0 RepBind.c0
+attribute [rep_rule] RepFound.c0 RepFit.c0 RepFit.c1 RepFit.c2 RepEffArm.c0 RepVariantTy.c0 RepArgsBound.c0 RepBound.c0
 
 @[pure_rule] theorem ty0_typeId : ty0.typeId = 1 := rfl
 @[pure_rule] theorem ty1_typeId : ty1.typeId = 0 := rfl

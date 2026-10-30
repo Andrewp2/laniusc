@@ -420,6 +420,9 @@ theorem divOp_unsigned (op : SrcDivOp) :
 theorem eq_of_isI32 {ty : SrcType} (h : ty.isI32 = true) : ty = .i32 := by
   cases ty <;> simp_all [SrcType.isI32]
 
+theorem eq_of_isIsize {ty : SrcType} (h : ty.isIsize = true) : ty = .isize := by
+  cases ty <;> simp_all [SrcType.isIsize]
+
 theorem eq_of_isUint {ty : SrcType} {k : UintTy} (h : ty.isUint k = true) : ty = .uint k := by
   cases ty <;> simp [SrcType.isUint] at h
   rw [UintTy.eq_of_code h]
@@ -797,6 +800,19 @@ theorem eval_divide {k : Nat} (ihe : EvalSound sp mp k) {op : SrcDivOp} {l r : S
     refine ⟨fresh2, keeps1.chain keeps2, locals2.trans locals1, by simp [SrcType.size], max d1 d2, _, hp2,
       .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (.divide defined)),
       below _, holdsAt_set (holds_i32 _) env2 slot, hc2⟩
+  split at ok
+  · rename_i both
+    simp only [Bool.and_eq_true] at both
+    simp only [Option.some.injEq] at ok
+    subst ok
+    rw [eq_of_isIsize both.1] at holds1
+    rw [eq_of_isIsize both.2] at holds2
+    have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
+    have holdsr := holds_var holds2 rfl
+    obtain ⟨defined, fits⟩ := eval_isize_div (divOp_signed op) (holdsl ▸ holdsr ▸ evaluated)
+    refine ⟨fresh2, keeps1.chain keeps2, locals2.trans locals1, by simp [SrcType.size], max d1 d2, _, hp2,
+      .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (.divide defined)),
+      below _, holdsAt_set (ty := .isize) fits env2 slot, hc2⟩
   · split at ok
     · split at ok
       · simp at ok

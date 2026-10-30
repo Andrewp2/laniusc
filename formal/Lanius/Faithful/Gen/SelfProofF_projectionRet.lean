@@ -15,7 +15,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
-public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
+public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_projectionRet
 import all Lanius.Mini.Frontend.P.projectionRet
 

@@ -104,6 +104,7 @@ def tyKnown (table : List Inst) (t : Ty) : Bool :=
   | .tyIsize => true
   | .tySlice e => tyKnown table e
   | .tyNamed d args => instMember table ({ decl := d, args := args } : Inst)
+  | .tySint k => true
 
 /-- type_table over more types, from a table that holds every instance the types of its members need (as type_table's result from the seeds does): a type whose instance the table holds adds nothing new, so it is passed over without reading its declaration again. The types are every type the functions mention, most of them many times over. -/
 def typeTableMore (fuel : Nat) (decls : Decls) (table : Option (List Inst)) (ts : List Ty) : Option (List Inst) :=
@@ -144,6 +145,7 @@ def closeTy (fuel : Nat) (t : Tables) (ty : Ty) : Option SrcType :=
     | .tyIsize => some SrcType.isize
     | .tySlice e => sliceType (closeTy (fuel - 1) t e)
     | .tyNamed d args => closeNamed fuel t d args (instIndex t.types ({ decl := d, args := args } : Inst) 0)
+    | .tySint k => some (SrcType.sint k)
 
 def srcEnumId (t : Option SrcType) : Option Nat :=
   match t with

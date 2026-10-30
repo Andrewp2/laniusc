@@ -9,10 +9,11 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_firstSrc
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteralAt
+public import Lanius.Faithful.Gen.SelfStmtF_nullConst
 public import Lanius.Faithful.Gen.SelfStmtF_scalarOf
-public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
+public import Lanius.Faithful.Gen.SelfStmtF_sintAt
 public import Lanius.Faithful.Gen.SelfStmtF_unitTy
+public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_firstSrc
 import all Lanius.Mini.Frontend.P.firstSrc
 
@@ -137,9 +138,10 @@ theorem proof_rest_src {prog : SrcProgram} {prims : Prims} {ix_rest_src ix_unbox
   simp only [src_rest_src] at h
   faithful [Lanius.Mini.restSrc]
 
-theorem proof_wide_at {prog : SrcProgram} {prims : Prims} {ix_wide_at ix_wide_uint_at ix_wide_isize_at : Nat} (fn : prog.funcs[ix_wide_at]? = some (src_wide_at ix_wide_uint_at ix_wide_isize_at)) (np : prims.isPrim ix_wide_at = false)
+theorem proof_wide_at {prog : SrcProgram} {prims : Prims} {ix_wide_at ix_wide_uint_at ix_wide_isize_at ix_wide_sint_at : Nat} (fn : prog.funcs[ix_wide_at]? = some (src_wide_at ix_wide_uint_at ix_wide_isize_at ix_wide_sint_at)) (np : prims.isPrim ix_wide_at = false)
     (ext_wide_uint_at : Certified (∀ {n : Nat}, Stmt_wide_uint_at prog prims ix_wide_uint_at n))
-    (ext_wide_isize_at : Certified (∀ {n : Nat}, Stmt_wide_isize_at prog prims ix_wide_isize_at n)) {n : Nat} :
+    (ext_wide_isize_at : Certified (∀ {n : Nat}, Stmt_wide_isize_at prog prims ix_wide_isize_at n))
+    (ext_wide_sint_at : Certified (∀ {n : Nat}, Stmt_wide_sint_at prog prims ix_wide_sint_at n)) {n : Nat} :
     Stmt_wide_at prog prims ix_wide_at n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n
@@ -157,6 +159,17 @@ theorem proof_wide_isize_at {prog : SrcProgram} {prims : Prims} {ix_wide_isize_a
   rw [pcall_succ np fn] at h
   simp only [src_wide_isize_at] at h
   faithful [Lanius.Mini.wideIsizeAt]
+
+theorem proof_wide_sint_at {prog : SrcProgram} {prims : Prims} {ix_wide_sint_at ix_boxed_of_mini_selfhost_SrcExpr ix_sint_wide : Nat} (fn : prog.funcs[ix_wide_sint_at]? = some (src_wide_sint_at ix_boxed_of_mini_selfhost_SrcExpr ix_sint_wide)) (np : prims.isPrim ix_wide_sint_at = false)
+    (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n))
+    (ext_sint_wide : Certified (∀ {n : Nat}, Stmt_sint_wide prog prims ix_sint_wide n)) {n : Nat} :
+    Stmt_wide_sint_at prog prims ix_wide_sint_at n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_wide_sint_at] at h
+  faithful [Lanius.Mini.wideSintAt]
 
 theorem proof_wide_uint_at {prog : SrcProgram} {prims : Prims} {ix_wide_uint_at ix_uint_mask : Nat} (fn : prog.funcs[ix_wide_uint_at]? = some (src_wide_uint_at ix_uint_mask)) (np : prims.isPrim ix_wide_uint_at = false)
     (ext_uint_mask : Certified (∀ {n : Nat}, Stmt_uint_mask prog prims ix_uint_mask n)) {n : Nat} :

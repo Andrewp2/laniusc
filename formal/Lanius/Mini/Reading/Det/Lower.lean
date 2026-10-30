@@ -45,6 +45,7 @@ theorem lowerR_unique {decls : Decls} {table : List Inst} :
   | _, _, _, .uint, .uint => rfl
   | _, _, _, .ptr, .ptr => rfl
   | _, _, _, .isize, .isize => rfl
+  | _, _, _, .sint, .sint => rfl
   | _, _, _, .slice e, .slice e' => by rw [lowerR_unique e e']
   | _, _, _, .struct _ _ k f l, .struct _ _ k' f' l' => by
     rw [(firstWith_unique k k').1]
@@ -76,6 +77,7 @@ theorem tyInsts_unique {decls : Decls} : ∀ {t : Ty} {a b : List Inst}, TyInsts
   | _, _, _, .uint, .uint => rfl
   | _, _, _, .ptr, .ptr => rfl
   | _, _, _, .isize, .isize => rfl
+  | _, _, _, .sint, .sint => rfl
   | _, _, _, .slice e, .slice e' => tyInsts_unique e e'
   | _, _, _, .struct _ _ f r, .struct _ _ f' r' => by
     rw [fieldTys_unique f f'] at r

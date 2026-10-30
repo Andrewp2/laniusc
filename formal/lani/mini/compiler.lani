@@ -3128,11 +3128,14 @@ pub fn eval_divide_sint(op: SrcDivOp, slot: usize, l: Evaluated, r: Evaluated, k
 }
 
 // left in slot, right in slot + 1, then the division into slot: on the
-// low 32 bits for i32, on the whole word for the unsigned types, whose
-// values are below their width.
+// low 32 bits for i32, on the whole word for isize and the unsigned types,
+// whose values are below their width.
 pub fn eval_divide(op: SrcDivOp, slot: usize, l: Evaluated, r: Evaluated) -> core::option::Option<Evaluated> {
     if (l.ty.is_i32() && r.ty.is_i32()) {
         return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Stmt::Divide(S32, signed_div(op), slot, Var(slot), Var(plus(slot, 1))))))), ty: I32 });
+    }
+    if (l.ty.is_isize() && r.ty.is_isize()) {
+        return Some(Evaluated { stmt: Seq(boxed(l.stmt), boxed(Seq(boxed(r.stmt), boxed(Stmt::Divide(U64, signed_div(op), slot, Var(slot), Var(plus(slot, 1))))))), ty: Isize });
     }
     return match (l.ty.sint_kind()) {
         None -> match (l.ty.uint_kind()) {

@@ -28,6 +28,7 @@ def lowerTy (fuel : Nat) (decls : Decls) (table : List Inst) (t : Ty) : Option S
     | .tyIsize => some SrcType.isize
     | .tySlice e => sliceType (lowerTy (fuel - 1) decls table e)
     | .tyNamed d args => lowerNamed (fuel - 1) decls table d args
+    | .tySint k => some (SrcType.sint k)
 def lowerNamed (fuel : Nat) (decls : Decls) (table : List Inst) (d : Nat) (args : List Ty) : Option SrcType :=
   if fuel = 0 then
     none

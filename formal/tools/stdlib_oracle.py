@@ -62,8 +62,8 @@ import run_cache  # noqa: E402
 
 STDLIB = 'stdlib'
 HEAVY = 'target/claude-work/bin/heavy'
-SCALARS = ('i32', 'bool', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize')
-WIDE = ('u64', 'usize', 'isize')
+SCALARS = ('i32', 'bool', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize', 'i8', 'i16', 'i64')
+WIDE = ('u64', 'usize', 'isize', 'i64')
 
 
 # ---------------------------------------------------------------- scanning
@@ -644,7 +644,7 @@ class Native(oracle.Native):
 
 
 def slot(value, ty):
-    if ty == 'i32':
+    if ty in ('i32', 'i8', 'i16'):
         return value & 0xffffffff
     return value & (2 ** 64 - 1)
 
@@ -679,18 +679,25 @@ def native_call(native, args, types):
 SMALL = [0, 1, 2, 3, 5, 7, 10, 31, 32, 63, 64, 100, 255, 256]
 
 
+SIGNED_BITS = {'i8': 8, 'i16': 16}
+
+
 def gen_arg(rng, ty):
     if ty == 'bool':
         return int(rng.random() < 0.5)
     if rng.random() < 0.3:
-        v = rng.choice([v for v in SMALL if ty not in oracle.UINT_BITS or v < 2 ** oracle.UINT_BITS[ty]])
-        if ty in ('i32', 'isize') and rng.random() < 0.4:
+        v = rng.choice([v for v in SMALL if (ty not in oracle.UINT_BITS or v < 2 ** oracle.UINT_BITS[ty])
+                        and (ty not in SIGNED_BITS or v < 2 ** (SIGNED_BITS[ty] - 1))])
+        if ty in ('i32', 'isize') + tuple(SIGNED_BITS) and rng.random() < 0.4:
             v = -v
         return v
     if ty == 'i32':
         return rng.choice(oracle.I32_EDGES) if rng.random() < 0.4 else rng.randint(-2 ** 31, 2 ** 31 - 1)
-    if ty == 'isize':
+    if ty in ('isize', 'i64'):
         return rng.choice(oracle.ISIZE_EDGES) if rng.random() < 0.4 else rng.randint(-2 ** 63, 2 ** 63 - 1)
+    if ty in SIGNED_BITS:
+        half = 2 ** (SIGNED_BITS[ty] - 1)
+        return rng.choice([0, 1, -1, half - 1, -half, -half + 1]) if rng.random() < 0.4 else rng.randrange(-half, half)
     bits = oracle.UINT_BITS[ty]
     if rng.random() < 0.3:
         return rng.choice([0, 1, 2 ** bits - 1, 2 ** (bits - 1), 2 ** (bits - 1) - 1])
@@ -700,6 +707,10 @@ def gen_arg(rng, ty):
 def lani_arg(value, ty):
     if ty == 'i32':
         return oracle.lani_expr(('int', value))
+    if ty in SIGNED_BITS:
+        return f'({oracle.lani_expr(("int", value))} as {ty})'
+    if ty == 'i64':
+        return f'({oracle.lani_expr(("uint", "isize", value))} as i64)'
     if ty == 'bool':
         return 'true' if value else 'false'
     return oracle.lani_expr(('uint', ty, value))
@@ -707,7 +718,7 @@ def lani_arg(value, ty):
 
 # ---------------------------------------------------------------- reasons
 
-UNREAD_TYPES = ('i8', 'i16', 'i64', 'char', 'f32', 'f64', 'str')
+UNREAD_TYPES = ('char', 'f32', 'f64', 'str')
 
 
 def constructs(mods, module, fn):

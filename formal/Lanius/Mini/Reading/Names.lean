@@ -31,12 +31,13 @@ def aliasNames (d : Decls) (m : ModPath) : List Name :=
 def constNames (d : Decls) (m : ModPath) : List Name :=
   (d.consts.filter fun c => decide (c.home = m)).map (·.name)
 
-/-- The primitive types' spellings: `i32`, `bool`, `u8`, `u32`, `u64`,
-`usize`, `ptr` and `isize`. -/
+/-- The primitive types' spellings: `i32`, `bool`, `u8`, `u16`, `u32`, `u64`,
+`usize`, `ptr`, `isize`, `i8`, `i16` and `i64`. -/
 def primNames : List (Name × SrcType) :=
   [([105, 51, 50], .i32), ([98, 111, 111, 108], .bool), ([117, 56], .uint .uint8), ([117, 49, 54], .uint .uint16), ([117, 51, 50], .uint .uint32),
    ([117, 54, 52], .uint .uint64), ([117, 115, 105, 122, 101], .uint .usize), ([112, 116, 114], .ptr),
-   ([105, 115, 105, 122, 101], .isize)]
+   ([105, 115, 105, 122, 101], .isize), ([105, 56], .sint .uint8), ([105, 49, 54], .sint .uint16),
+   ([105, 54, 52], .sint .uint64)]
 
 def primName (n : Name) : Option SrcType := primNames.lookup n
 
@@ -177,8 +178,18 @@ theorem primitive_eq (n : Name) : primitive n = primName n := by
   by_cases h8 : n = [105, 115, 105, 122, 101]
   · subst h8; rfl
   rw [if_neg (by rw [spelled_iff5]; exact h8)]
+  by_cases h9 : n = [105, 56]
+  · subst h9; rfl
+  rw [if_neg (by rw [spelled_iff2]; exact h9)]
+  by_cases h10 : n = [105, 49, 54]
+  · subst h10; rfl
+  rw [if_neg (by rw [spelled_iff3]; exact h10)]
+  by_cases h11 : n = [105, 54, 52]
+  · subst h11; rfl
+  rw [if_neg (by rw [spelled_iff3]; exact h11)]
   simp [primName, primNames, List.lookup, beq_false_of_ne h1, beq_false_of_ne h2, beq_false_of_ne h3, beq_false_of_ne h3',
-    beq_false_of_ne h4, beq_false_of_ne h5, beq_false_of_ne h6, beq_false_of_ne h7, beq_false_of_ne h8]
+    beq_false_of_ne h4, beq_false_of_ne h5, beq_false_of_ne h6, beq_false_of_ne h7, beq_false_of_ne h8,
+    beq_false_of_ne h9, beq_false_of_ne h10, beq_false_of_ne h11]
 
 theorem noPrimitive_iff : ∀ (types : List TypeDecl), noPrimitive types = true ↔ ∀ t ∈ types, primName t.name = none
   | [] => by simp [noPrimitive]

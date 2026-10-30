@@ -700,6 +700,22 @@ theorem eff_divide (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     · obtain ⟨v, okv⟩ := i32_div_ok (divOp_signed op) div
       exact (fails.not_done (binary_done general run1 run2 okv) bound2).elim
     · exact after 0 (.divide (by simpa using div))
+  split at ok
+  · rename_i both
+    simp only [Bool.and_eq_true] at both
+    simp only [Option.some.injEq] at ok
+    subst ok
+    rcases pair_split lowered ihl ihr general leOk reOk corr fr fresh hc within fails _ with
+      stops | ⟨k1, vl, st1, k2, vr, st2, env1, env2, hp2, run1, run2, bound2, holds1, same2, holds2, after⟩
+    · exact stops
+    rw [eq_of_isIsize both.1] at holds1
+    rw [eq_of_isIsize both.2] at holds2
+    have holdsl := holds_var (env := env2) (holds1.congr fun i lt => same2 _ (by simp [SrcType.size] at lt; omega)) rfl
+    have holdsr := holds_var holds2 rfl
+    by_cases div : Word.u64.divides (signedDiv op) ((Expr.var slot).eval env2) ((Expr.var (slot + 1)).eval env2) = true
+    · obtain ⟨v, okv⟩ := isize_div_ok (divOp_signed op) div
+      exact (fails.not_done (binary_done general run1 run2 (holdsl ▸ holdsr ▸ okv)) bound2).elim
+    · exact after 0 (.divide (by simpa using div))
   · split at ok
     · split at ok
       · simp at ok

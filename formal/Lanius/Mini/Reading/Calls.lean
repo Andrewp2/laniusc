@@ -85,6 +85,7 @@ theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : i
         | tyUint _ => cases hs
         | tyPtr => cases hs
         | tyIsize => cases hs
+        | tySint _ => cases hs
         | tySlice _ => cases hs
 
 theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x : MEff} {t : Ty},
@@ -128,6 +129,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
         | tyUint _ => rw [hty] at h; cases h
         | tyPtr => rw [hty] at h; cases h
         | tyIsize => rw [hty] at h; cases h
+        | tySint _ => rw [hty] at h; cases h
         | tyNamed _ _ => rw [hty] at h; cases h
     | xStruct t' fs => cases h; exact .struct
     | xVariant t' k ps => cases h; exact .variant

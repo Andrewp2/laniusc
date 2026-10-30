@@ -89,6 +89,7 @@ theorem exprTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {e
           | tyUint _ => rw [hty] at hs; cases hs
           | tyPtr => rw [hty] at hs; cases hs
           | tyIsize => rw [hty] at hs; cases hs
+          | tySint _ => rw [hty] at hs; cases hs
           | tySlice _ => rw [hty] at hs; cases hs
     | negate x => exact .negate (exprTy_sound h)
     | not x => cases h; exact .not
@@ -319,6 +320,7 @@ theorem matchSound : ∀ fuel, MatchSound fuel
         | tyUint _ => cases h
         | tyPtr => cases h
         | tyIsize => cases h
+        | tySint _ => cases h
         | tyNamed _ _ => cases h
       rw [if_neg (by simpa using sl)] at h
       by_cases ti : nodeProd p = pTypeIdent
@@ -373,6 +375,7 @@ theorem matchSound : ∀ fuel, MatchSound fuel
           | tyUint _ => cases ha
           | tyPtr => cases ha
           | tyIsize => cases ha
+          | tySint _ => cases ha
           | tySlice _ => cases ha
     · intro env names dOpt items aOpt b b' h
       rw [matchDecl.eq_def] at h

@@ -71,7 +71,7 @@ def spelled5 (name : List Nat) (a : Nat) (b : Nat) (c : Nat) (d : Nat) (e : Nat)
   | [] => false
   | x :: rest => decide (x = a) && spelled4 rest b c d e
 
-/-- i32, bool, u8, u16, u32, u64, usize, ptr, isize -/
+/-- i32, bool, u8, u16, u32, u64, usize, ptr, isize, i8, i16, i64 -/
 def primitive (name : List Nat) : Option SrcType :=
   if spelled3 name 105 51 50 then
     some SrcType.i32
@@ -100,7 +100,16 @@ def primitive (name : List Nat) : Option SrcType :=
                   if spelled5 name 105 115 105 122 101 then
                     some SrcType.isize
                   else
-                    none
+                    if spelled2 name 105 56 then
+                      some (SrcType.sint UintTy.uint8)
+                    else
+                      if spelled3 name 105 49 54 then
+                        some (SrcType.sint UintTy.uint16)
+                      else
+                        if spelled3 name 105 54 52 then
+                          some (SrcType.sint UintTy.uint64)
+                        else
+                          none
 
 def member (names : List (List Nat)) (name : List Nat) : Bool :=
   match names with

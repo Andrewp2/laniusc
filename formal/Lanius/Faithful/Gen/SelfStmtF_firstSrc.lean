@@ -68,6 +68,10 @@ abbrev Stmt_wide_isize_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {x0 : BitVec 64} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepU64 x0 v0 → RepSrcExpr x1 v1 →
     RepSrcExpr (Lanius.Mini.wideIsizeAt x0 x1) w
 
+abbrev Stmt_wide_sint_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.UintTy} {x1 : BitVec 64} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepUintTy x0 v0 → RepU64 x1 v1 → RepSrcExpr x2 v2 →
+    RepSrcExpr (Lanius.Mini.wideSintAt x0 x1 x2) w
+
 abbrev Stmt_wide_uint_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : BitVec 64} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepUintTy x0 v0 → RepU64 x1 v1 → RepSrcExpr x2 v2 →
     RepSrcExpr (Lanius.Mini.wideUintAt x0 x1 x2) w
