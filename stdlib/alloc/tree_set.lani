@@ -5,6 +5,7 @@ import alloc::tree_map;
 import core::cmp;
 import core::iter;
 import core::option;
+import core::ordering;
 import core::result;
 
 pub struct TreeSet<T> { state: alloc::tree_map::KeyStorage }
@@ -47,6 +48,20 @@ pub impl<T> TreeSet<T> {
     }
     // Return the stored representative; callers manage any nested resources.
     pub fn remove(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return alloc::tree_map::key_remove<T>(self.state.borrow(), key); }
+    // The shared map query laws and call-scoped observation rules apply.
+    // Get borrows the stored representative; remove transfers that owner.
+    pub fn contains_by<Q,P>(&self, query:Q, policy:&P) -> bool
+        where P:core::ordering::Comparator<T,Q> {
+        return alloc::tree_map::key_contains_by<T,Q,P>(self.state.borrow(),query,policy);
+    }
+    pub fn get_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
+        where P:core::ordering::Comparator<T,Q> {
+        return alloc::tree_map::key_get_by<T,Q,P>(self.state.borrow(),query,policy);
+    }
+    pub fn remove_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
+        where P:core::ordering::Comparator<T,Q> {
+        return alloc::tree_map::key_remove_by<T,Q,P>(self.state.borrow(),query,policy);
+    }
     // Any mutation/destruction invalidates outstanding cursors and borrowed keys.
     pub fn iter(&self) -> Cursor<T> { return Cursor { state: alloc::tree_map::key_iter<T>(self.state.borrow()) }; }
     pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, alloc::tree_map::Error> { return alloc::tree_map::key_reserve<T>(self.state.borrow(), additional); }

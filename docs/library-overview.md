@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[borrowed collection lookup](stdlib-borrowed-lookup.md) adds sixteen point
+methods across hash/tree maps and sets with explicit query laws and stored
+representative ownership. `alloc::string::TextKey` permits borrowed Text
+queries of String keys. The [word deduplicator](stdlib-unique-words.md) checks
+both committed and pending words before allocating a new key. All nine library
+groups and the migrated application's 124 native cases pass on Linux x86_64 CPU
+output, with four selected regressions recorded separately. Heterogeneous
+ordered bounds/ranges and caller-backed buffering remain separate work.
+The preceding
 [lazy Option/Result increment](stdlib-lazy-outcomes.md) adds nineteen
 free-function/method pairs over one shared `core::function::Mapper` and
 argument-free `Producer` protocol. Invocation is lazy; callback construction,

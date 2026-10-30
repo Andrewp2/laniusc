@@ -37,13 +37,21 @@ drivers and receipts.
   and missing ordered-key capability. Executing positive controls live in
   the admission and contracts fixtures.
 
-The contracts fixture also snapshots the complete concrete allocation before
-and after each scalar update. Test-only source-shaped mirrors provide the
-storage extent; the only permitted byte change is the unique old u64 value
-word becoming its new value. This is an additional observation on the admitted
-native representation, including unused cells. It is not a portable padding
-or storage-layout guarantee. Any mismatch must be classified against semantic
-key/structure preservation before production changes are considered.
+For every present or missing query, the contracts fixture snapshots all logical
+entries through public iteration before and after the update. Fixed caller-backed
+arrays record each rank, full representative tag and full-width value. Duplicate
+ranks are rejected, both snapshots must contain all six entries, and comparison
+allows only the selected value to change. No hash iteration order is assumed.
+Every iterated entry must also remain retrievable through public `get_entry`,
+with its exact rank, representative tag and value. This observes hash lookup
+and tree search connectivity without inspecting cached hashes or node links.
+
+Each snapshot also invokes the stored key's borrowed `Log` and checks the exact
+counter and marker cells in the original caller-owned Log. These observations
+occur outside the saved lookup/callback windows. They detect a copied or
+retargeted context without reference equality or native pointer-layout rules.
+The fixture does not inspect bucket/node storage, inactive payloads or scalar
+padding. Existing owner metadata and exact callback-prefix checks remain.
 
 ## Execution and scope
 
@@ -88,12 +96,49 @@ with each outer command bounded to 100 seconds.
 - Independent source reviews accepted the tiny admission and remaining exact
   lookup/callback/representative/storage observations, type shapes and
   capability boundaries. Source review is not runtime acceptance.
-- All four registered groups are accepted across these receipts: three
+- All four registered groups were accepted across these original receipts: three
   execute native programs and one checks five capability rejections. The
   jointly zero-sized V/R callback path executed successfully. No source change
-  or native rerun followed acceptance.
+  or native rerun followed that initial acceptance. Subsequent migration and
+  observer-repair receipts retain their separate source scope below.
 
-## Frozen sources
+## Borrowed-lookup regression observer repair
+
+The selected existing contracts regression failed an assertion after the
+borrowed-lookup refactor. The original observer compared every byte of map
+storage, including unused bytes in native scalar words. A diagnostic retained
+all logical/callback assertions and reported every unexpected byte change;
+it also wrote and read a standalone typed slot to identify the field layout.
+The diagnostic executed successfully with all five query cases.
+
+The unexpected differences were bytes 36 and 37 within the 48-byte slots for
+the three updated entries: allocation offsets 900/901, 852/853 and 612/613.
+These are in the unused upper half of the cached `u32` hash word. Typed hashes
+remained 13, the stored references and representative fields were unchanged,
+and only the selected values increased by 17. Both missing queries left storage
+unchanged. The first diagnostic stopped at offset 900; this was a representation
+assumption in the observer, not evidence of a changed logical hash or pointer.
+Receipts are `target/stdlib-work/borrowed-lookup-regression-updates.log` and
+`target/stdlib-work/borrowed-lookup-debug/hash_fields.out`; the latter used
+diagnostic source `02c278d7...`.
+
+The corrected `contracts.lani` removes raw storage snapshots and mirrors and
+uses the logical-entry and context-identity checks described above. Its SHA-256
+is `1c29664eaabfc929e21225ca01fa65395fa14f2392290c773788fa1ba9069d98`.
+The driver and expected two map allocations are unchanged. No production map
+or compiler source changed for this repair. Independent source review accepted
+the complete snapshots, public lookup reachability, original Log effects and
+preserved callback/owner checks. The focused native retry then passed one test
+in 5.84 seconds, with three other groups filtered, exit 0, empty stdout/stderr
+and the exact two-allocation lifetime ledger. Log:
+`target/stdlib-work/borrowed-lookup-regression-updates-semantic.log`.
+This receipt accepts the corrected observer above; it does not rerun or add
+cases to the original model, shape, capability or resource groups.
+
+## Initial accepted sources
+
+These hashes bind the original receipts, before later callback-path migration
+and the observer repair above.
 
 | Source | SHA-256 |
 | --- | --- |

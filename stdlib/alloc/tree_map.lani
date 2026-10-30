@@ -7,6 +7,7 @@ import core::cmp;
 import core::iter;
 import core::mem;
 import core::option;
+import core::ordering;
 import core::pair;
 import core::result;
 import core::slice;
@@ -22,6 +23,17 @@ pub struct Cursor<K, V> { storage: ptr, reserved: i32, front: i32, back: i32 }
 // One active owner of a valid current tree and every unconsumed pair.
 pub struct IntoIter<K, V> { owner: TreeMap<K, V> }
 const ALIGN: usize = 8;
+
+// Preserve the original same-key point lookup's query-first comparison order.
+struct NaturalKey<K> {}
+impl<K> NaturalKey<K> { fn borrow(&self) -> &NaturalKey<K> { return self; } }
+pub impl<K> core::ordering::Comparator<K,K> for NaturalKey<K> where K:core::cmp::Ord<K> {
+    pub fn compare(&self, stored:K, query:K) -> core::ordering::Ordering {
+        if (K::lt(query,stored)) { return core::ordering::Greater; }
+        if (K::lt(stored,query)) { return core::ordering::Less; }
+        return core::ordering::Equal;
+    }
+}
 
 pub fn new<K, V>() -> TreeMap<K, V> {
     let empty: ptr = 0;
@@ -118,17 +130,26 @@ pub impl<K, V> TreeMap<K, V> {
     }
     fn nodes(&self) -> [Node<K, V>] { return core::mem::typed_slice_from_storage(self.storage, self.reserved); }
     fn find(&self, key: K) -> i32 where K: core::cmp::Ord<K> {
+        let policy:NaturalKey<K> = NaturalKey {};
+        return self.find_by<K,NaturalKey<K>>(key,policy.borrow());
+    }
+    fn find_by<Q,P>(&self, query:Q, policy:&P) -> i32 where P:core::ordering::Comparator<K,Q> {
         let nodes: [Node<K, V>] = self.nodes(); let index: i32 = self.root;
         while (index >= 0) {
             let node: Node<K, V> = nodes[index];
-            if (K::lt(key, node.item.key)) { index = node.left; }
-            else { if (K::lt(node.item.key, key)) { index = node.right; } else { return index; } }
+            let stored:K = node.item.key;
+            let order:core::ordering::Ordering = policy.compare(stored,query);
+            if (core::ordering::is_greater(order)) { index = node.left; }
+            else { if (core::ordering::is_less(order)) { index = node.right; } else { return index; } }
         }
         return -1;
     }
     pub fn contains_key(&self, key: K) -> bool where K: core::cmp::Ord<K> { return self.find(key) >= 0; }
     pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::cmp::Ord<K> {
-        let index: i32 = self.find(key); if (index < 0) { return core::option::None(); }
+        return self.entry_at(self.find(key));
+    }
+    fn entry_at(&self, index:i32) -> core::option::Option<Entry<K,V>> {
+        if (index < 0) { return core::option::None(); }
         let nodes: [Node<K, V>] = self.nodes(); let node: Node<K, V> = nodes[index]; return core::option::Some(node.item);
     }
     pub fn get(&self, key: K) -> core::option::Option<V> where K: core::cmp::Ord<K> {
@@ -144,6 +165,10 @@ pub impl<K, V> TreeMap<K, V> {
     pub fn update_value<M, R>(&self, key: K, update: &M) -> core::option::Option<R>
         where K: core::cmp::Ord<K>, M: core::function::Mapper<V, core::pair::Pair<V, R>> {
         let index: i32 = self.find(key);
+        return self.update_at<M,R>(index,update);
+    }
+    fn update_at<M,R>(&self, index:i32, update:&M) -> core::option::Option<R>
+        where M:core::function::Mapper<V,core::pair::Pair<V,R>> {
         if (index < 0) { return core::option::None(); }
         let nodes: [Node<K, V>] = self.nodes();
         let node: Node<K, V> = nodes[index];
@@ -152,6 +177,32 @@ pub impl<K, V> TreeMap<K, V> {
         node.item = Entry { key: item.key, value: updated.first };
         nodes[index] = node;
         return core::option::Some(updated.second);
+    }
+    // Policies partition the stored order as Less, optional Equal, Greater;
+    // each query identifies at most one key identity. Operands are call-scoped
+    // observations: no mutation, retirement, reentry or descriptor escape.
+    // Keep query backing live and stable through any subsequent value update.
+    pub fn contains_key_by<Q,P>(&self, query:Q, policy:&P) -> bool
+        where P:core::ordering::Comparator<K,Q> {
+        return self.find_by<Q,P>(query,policy) >= 0;
+    }
+    pub fn get_entry_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
+        where P:core::ordering::Comparator<K,Q> {
+        return self.entry_at(self.find_by<Q,P>(query,policy));
+    }
+    pub fn get_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<V>
+        where P:core::ordering::Comparator<K,Q> {
+        let found:core::option::Option<Entry<K,V>> = self.get_entry_by<Q,P>(query,policy);
+        return match (found) { Some(item) -> core::option::Some(item.value), None -> core::option::None() };
+    }
+    pub fn update_value_by<Q,P,M,R>(&self, query:Q, policy:&P, update:&M) -> core::option::Option<R>
+        where P:core::ordering::Comparator<K,Q>, M:core::function::Mapper<V,core::pair::Pair<V,R>> {
+        let index:i32 = self.find_by<Q,P>(query,policy);
+        return self.update_at<M,R>(index,update);
+    }
+    pub fn remove_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
+        where P:core::ordering::Comparator<K,Q> {
+        return self.remove_at(self.find_by<Q,P>(query,policy));
     }
     pub fn first(&self) -> core::option::Option<Entry<K, V>> {
         let nodes: [Node<K, V>] = self.nodes(); let index: i32 = endpoint(nodes, self.root, false);
@@ -493,6 +544,25 @@ pub fn key_remove<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> wher
     key_update<T>(owner, map);
     if (core::option::is_none(result)) { return core::option::None(); }
     let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_contains_by<T,Q,P>(owner:&KeyStorage, query:Q, policy:&P) -> bool
+    where P:core::ordering::Comparator<T,Q> {
+    let map:TreeMap<T,KeyUnit> = key_view<T>(owner); return map.contains_key_by<Q,P>(query,policy);
+}
+pub fn key_get_by<T,Q,P>(owner:&KeyStorage, query:Q, policy:&P) -> core::option::Option<T>
+    where P:core::ordering::Comparator<T,Q> {
+    let map:TreeMap<T,KeyUnit> = key_view<T>(owner);
+    let found:core::option::Option<Entry<T,KeyUnit>> = map.get_entry_by<Q,P>(query,policy);
+    if (core::option::is_none(found)) { return core::option::None(); }
+    let item:Entry<T,KeyUnit> = core::option::unwrap(found); return core::option::Some(item.key);
+}
+pub fn key_remove_by<T,Q,P>(owner:&KeyStorage, query:Q, policy:&P) -> core::option::Option<T>
+    where P:core::ordering::Comparator<T,Q> {
+    let map:TreeMap<T,KeyUnit> = key_view<T>(owner);
+    let found:core::option::Option<Entry<T,KeyUnit>> = map.remove_by<Q,P>(query,policy);
+    key_update<T>(owner,map);
+    if (core::option::is_none(found)) { return core::option::None(); }
+    let item:Entry<T,KeyUnit> = core::option::unwrap(found); return core::option::Some(item.key);
 }
 pub fn key_reserve<T>(owner: &KeyStorage, additional: i32) -> core::result::Result<i32, Error> {
     let map: TreeMap<T, KeyUnit> = key_view<T>(owner);

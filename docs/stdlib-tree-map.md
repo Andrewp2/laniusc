@@ -11,7 +11,9 @@ algorithm uses portable values; storage uses the existing allocator bindings.
 
 ## Ordering and ownership
 
-Key operations require `K: core::cmp::Ord<K>` and use `K::lt`. The relation must
+Insertion and same-key operations require `K: core::cmp::Ord<K>` and use
+`K::lt`. The new borrowed point queries use an explicit `Comparator<K,Q>`
+while preserving this stored-key ordering. The relation must
 be a stable strict weak order: keys are equivalent when neither is less than
 the other. Equivalent-key `try_insert` replaces both the key and value, returning
 the previous `Entry<K, V>`. Values need no comparison implementation. Do not
@@ -45,6 +47,20 @@ overlap; either returns None repeatedly after exhaustion. Range bounds are
 used during cursor construction and are not retained. Later
 [shared iterator-trait integration](stdlib-collection-iterators.md) has separate
 accepted evidence.
+
+## Borrowed point queries
+
+[Borrowed collection lookup](stdlib-borrowed-lookup.md) adds `contains_key_by`,
+`get_by`, `get_entry_by`, `remove_by` and `update_value_by` for a distinct Q.
+Their borrowed `Comparator<K,Q>` receives stored key first, query second,
+once per visited node. It must partition stored order into Less, optionally
+Equal, then Greater and identify at most one stored key class. Getters borrow
+the stored representative; removal transfers the actual entry; update retains
+the original key and reinstalls V on every normal callback return.
+`alloc::string::TextKey` supplies String/Text policy. All sixteen map/set
+methods pass the nine-group library acceptance and migrated application
+on native Linux x86_64 CPU output. Existing ordered
+bounds/ranges still take K and are not extended by this point-query contract.
 
 ## API contracts
 
@@ -143,8 +159,9 @@ The old `std::map` was removed after its repository callers migrated to checked
 `alloc::hash_map` owners and explicit order vectors where their output needs
 first-seen order. See [collection migration](stdlib-legacy-collections.md).
 [Ordered sets](stdlib-owned-sets.md) delegate to this map's storage and cursor
-engine. Broader Entry handles and lookup through a distinct borrowed key type
-remain work; the scoped value update above is a separate method.
+engine. Broader Entry handles and heterogeneous ordered bounds/ranges remain
+work. Distinct borrowed-key point lookup has the separate contract and
+acceptance above; scoped value update retains its explicit callback policy.
 
 ## Executable evidence
 

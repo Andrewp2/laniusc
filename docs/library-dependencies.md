@@ -132,6 +132,15 @@ policy context, without specializing these public generic APIs or changing the
 compiler. The nested resource retry corrected only a test-ledger size
 assumption to the existing 24-byte Vec layout; production sources were unchanged.
 
+The [borrowed collection lookup](stdlib-borrowed-lookup.md) type fixture later
+hit the same restriction on `Never` with distinct Mapper applications:
+`borrowed-lookup-types-fixed.log` records `LNC0027` at line 82 and no native
+execution (0/1, 3.71s). Separate `Never` and `NeverUpdate` receivers retain the
+public query/update bounds; the positive generic/TextKey test passes 1/1 in
+6.78s (`borrowed-lookup-types-qualified.log`). This reuses the existing
+reduction and executing split-receiver control above,
+without a new compiler repair or duplicate reproduction.
+
 The [bidirectional Text increment](stdlib-bidirectional-text.md) extends
 existing Iterator/DoubleEndedIterator and UTF-8 contracts. Forward Text scalar
 and word cursors already use the shared iterator protocol. New borrowed line

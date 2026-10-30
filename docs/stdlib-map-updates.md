@@ -50,6 +50,40 @@ displaced pair. `update_value` never inserts a missing key. A caller that wants
 to insert on absence must handle `None` and perform an ordinary checked
 insertion, including its allocation and ownership outcomes.
 
+## Borrowed-query updates
+
+`update_value_by<Q,P,M,R>(query, policy, update)` extends the same value
+reinstall contract to a distinct query type. The
+[borrowed lookup guide](stdlib-borrowed-lookup.md) specifies the hash or tree
+policy bounds and laws. All search-policy calls finish before the update
+callback starts; a miss makes no update call. A hit preserves the exact stored
+key and installs the latest V even when R is an error. The query remains
+caller-owned and must stay valid throughout the operation, including when it
+borrows backing reachable through V. The update must not invalidate that
+backing. All nine borrowed-lookup library groups pass, including actual
+String/Text owner tests and ordinary-error updates. The earlier receipts here
+retain their same-key API/source scope.
+
+### Current regression and representation scope
+
+The shared-search migration exposed an overly strict assertion in the older
+map-update fixture: a whole-allocation byte snapshot rejected changes in the
+unused upper 32 bits of a u32 cached-hash storage word. A native diagnostic
+preserved all logical keys, values, pointers and callback observations. Those
+unused bits are not part of the update contract; retaining a cached u32 hash
+does not promise identical inactive storage bytes.
+
+The corrected fixture compares every public logical entry after each update,
+checks each entry's `get_entry` findability and key callback-context identity,
+and retains owner metadata, exact callback checks and the two-allocation
+ledger. That focused regression
+passes 1/1 in 5.84s at fixture `1c29664e`, recorded in
+`target/stdlib-work/borrowed-lookup-regression-updates-semantic.log`.
+The earlier failed run took 6.50s and is retained in
+`borrowed-lookup-regression-updates.log`. This corrects the observer without
+changing production code. The original finite representation observations
+below retain their historical source scope.
+
 ## Value ownership and errors
 
 The caller lends the callback exclusive authority over the stored V for the
@@ -162,8 +196,11 @@ selectors with separate receipts; they do not add to the new API gate count.
 All four direct groups are now accepted across separate runs: three execute
 native programs and one checks five negative Mapper/key capability fixtures.
 The [direct fixture guide](../tests/fixtures/stdlib_map_update/README.md)
-records exact representative keys, one-lookup callback transcripts, map
-structure/backing preservation, arrays, bool and zero-sized V/R shapes. The
+records exact representative keys, one-lookup callback transcripts, logical
+map contents and backing preservation, arrays, bool and zero-sized V/R shapes.
+Its original concrete storage snapshots were finite observations, not a
+portable inactive-byte guarantee; the current regression section above records
+the corrected observer. The
 mixed first direct run passed shapes and capability groups but failed to
 compile the contracts fixture at an inferred tree constructor (LNC0006), taking
 9.06 seconds after a 1.76-second build. Explicit constructor type arguments

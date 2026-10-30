@@ -1,0 +1,69 @@
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import alloc::vec;
+import core::result;
+import fixture::scale;
+import fixture::support;
+
+fn hash(count:i32) {
+    fixture::support::mark(65);
+    let map:alloc::hash_map::HashMap<fixture::scale::Key,u64> = alloc::hash_map::new(); map.try_reserve(count).unwrap();
+    let scratch:alloc::vec::Vec<u8> = fixture::scale::scratch();
+    let output:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(count*16).unwrap(); output.try_resize(count*16,0).unwrap();
+    let counter:fixture::scale::Counter = fixture::scale::Counter { hashes:0,comparisons:0 };
+    let policy:fixture::scale::Policy = fixture::scale::Policy {};
+    let i:i32 = 0; while(i<count) { assert(map.try_insert(fixture::scale::key(i),fixture::scale::value(i)).unwrap().is_none()); i+=1; }
+    let storage:ptr = map.storage; let capacity:i32 = map.capacity(); let scratch_pointer:ptr = scratch.storage;
+    let output_pointer:ptr = output.storage; let bytes:[u8] = output.as_slice();
+    fixture::support::mark(83); fixture::support::mark(80);
+    i=0; while(i<count) {
+        let query:fixture::scale::Query = fixture::scale::query(scratch.borrow(),i,counter.borrow());
+        let found = map.get_entry_by<fixture::scale::Query,fixture::scale::Policy>(query,policy.borrow()).unwrap();
+        assert(found.key.id==i && found.key.stamp==fixture::scale::stamp(i) && found.value==fixture::scale::value(i));
+        fixture::support::number(bytes,i*16,found.key.stamp,8); fixture::support::number(bytes,i*16+8,found.value,8);
+        // The previous query's backing is reused only after the call returns.
+        let missing:fixture::scale::Query = fixture::scale::query(scratch.borrow(),count+i,counter.borrow());
+        assert(!map.contains_key_by<fixture::scale::Query,fixture::scale::Policy>(missing,policy.borrow())); i+=1;
+    }
+    assert(counter.hashes==count*2 && counter.comparisons==count);
+    assert(map.storage==storage && map.capacity()==capacity && map.len()==count && scratch.storage==scratch_pointer);
+    assert(output.storage==output_pointer && output.len()==count*16 && output.capacity()==count*16);
+    fixture::support::mark(112);
+    fixture::support::mark(82); scratch.destroy(); map.destroy();
+    fixture::support::mark(80);
+    assert(output.storage==output_pointer && output.len()==count*16); fixture::support::mark(112);
+    fixture::support::publish(output.storage,output.len()); output.destroy(); fixture::support::mark(68);
+}
+
+fn tree(count:i32) {
+    fixture::support::mark(65);
+    let map:alloc::tree_map::TreeMap<fixture::scale::Key,u64> = alloc::tree_map::new(); map.try_reserve(count).unwrap();
+    let scratch:alloc::vec::Vec<u8> = fixture::scale::scratch();
+    let output:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(count*16).unwrap(); output.try_resize(count*16,0).unwrap();
+    let counter:fixture::scale::Counter = fixture::scale::Counter { hashes:0,comparisons:0 };
+    let policy:fixture::scale::Policy = fixture::scale::Policy {};
+    let i:i32 = 0; while(i<count) { assert(map.try_insert(fixture::scale::key(i),fixture::scale::value(i)).unwrap().is_none()); i+=1; }
+    let storage:ptr = map.storage; let capacity:i32 = map.capacity(); let scratch_pointer:ptr = scratch.storage;
+    let output_pointer:ptr = output.storage; let bytes:[u8] = output.as_slice();
+    fixture::support::mark(83); fixture::support::mark(80);
+    i=0; while(i<count) {
+        let query:fixture::scale::Query = fixture::scale::query(scratch.borrow(),i,counter.borrow());
+        let found = map.get_entry_by<fixture::scale::Query,fixture::scale::Policy>(query,policy.borrow()).unwrap();
+        assert(found.key.id==i && found.key.stamp==fixture::scale::stamp(i) && found.value==fixture::scale::value(i));
+        fixture::support::number(bytes,i*16,found.key.stamp,8); fixture::support::number(bytes,i*16+8,found.value,8);
+        // The previous query's backing is reused only after the call returns.
+        let missing:fixture::scale::Query = fixture::scale::query(scratch.borrow(),count+i,counter.borrow());
+        assert(!map.contains_key_by<fixture::scale::Query,fixture::scale::Policy>(missing,policy.borrow())); i+=1;
+    }
+    assert(counter.hashes==0 && counter.comparisons>=count*2 && counter.comparisons<=count*32);
+    assert(map.storage==storage && map.capacity()==capacity && map.len()==count && scratch.storage==scratch_pointer);
+    assert(output.storage==output_pointer && output.len()==count*16 && output.capacity()==count*16);
+    fixture::support::mark(112);
+    fixture::support::mark(82); scratch.destroy(); map.destroy();
+    fixture::support::mark(80);
+    assert(output.storage==output_pointer && output.len()==count*16); fixture::support::mark(112);
+    fixture::support::publish(output.storage,output.len()); output.destroy(); fixture::support::mark(68);
+}
+
+fn main() -> i32 { hash(4096); hash(16384); tree(4096); tree(16384); return 0; }

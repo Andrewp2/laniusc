@@ -76,6 +76,21 @@ use these traits. Existing containers copy handles rather than automatically
 cloning or destroying nested String allocations; keep each key's owner alive
 until the container is destroyed, or manage transferred owners explicitly.
 
+## Borrowed collection queries
+
+`alloc::string::TextKey {}` is a zero-sized policy with `borrow()`. It implements
+`core::function::Mapper<Pair<String,Text>,bool>` and
+`core::ordering::Comparator<String,Text>` for the
+[borrowed map/set point methods](stdlib-borrowed-lookup.md). Stored String is
+the first operand and borrowed Text the second. Both use exact UTF-8 byte
+identity, including NUL, and the same existing FNV-1a hash; ordering is byte
+lexicographic. The policy neither owns text nor normalizes it. Keep both
+operands' backing live and unchanged during the call. No independent String
+query allocation is needed. Actual String/Text owner tests pass for both map
+families, including distinct query backing and transferred-owner cleanup;
+the linked guide records all nine accepted library groups and their finite scope.
+Earlier String receipts below keep their original source/API scope.
+
 ## Execution evidence
 
 The native integer constructors and append methods also pass

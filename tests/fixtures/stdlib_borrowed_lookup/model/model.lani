@@ -1,0 +1,450 @@
+// Full public values and bounded search observations from real collections.
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import alloc::hash_set;
+import alloc::tree_set;
+import core::cmp;
+import core::function;
+import core::hash;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::pair;
+import core::result;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32,allow_eof:bool) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(allow_eof && done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0); done+=got;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let i:i32=0;
+    while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn word(&self,value:u64) {
+        if(self.used==4096) { self.flush(); }
+        let i:i32=0; while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; }
+        self.used+=8;
+    }
+    fn address(&self,value:ptr) {
+        if(self.used==4096) { self.flush(); }
+        assert(self.used>=0 && self.used<=4088 && self.used%8==0);
+        let slot:[ptr]=core::mem::typed_slice_from_raw_parts<ptr>(self.pointer+(self.used as usize),1);
+        slot[0]=value; self.used+=8;
+    }
+}
+fn emit_bool(value:bool,output:&Output) { if(value) { output.word(1); } else { output.word(0); } }
+struct StoredKey { identity:i32,stamp:u64,hashing:i32 }
+fn key_hash(identity:i32,hashing:i32) -> u32 {
+    if(hashing==0) { return 65535; }
+    return ((identity%3) as u32)*2654435761;
+}
+pub impl core::hash::Hash<StoredKey> for StoredKey {
+    pub fn hash(value:StoredKey) -> u32 { return key_hash(value.identity,value.hashing); }
+}
+pub impl core::cmp::Eq<StoredKey> for StoredKey {
+    pub fn eq(left:StoredKey,right:StoredKey) -> bool { return left.identity==right.identity; }
+    pub fn ne(left:StoredKey,right:StoredKey) -> bool { return left.identity!=right.identity; }
+}
+pub impl core::cmp::Ord<StoredKey> for StoredKey {
+    pub fn lt(left:StoredKey,right:StoredKey) -> bool { return left.identity<right.identity; }
+    pub fn le(left:StoredKey,right:StoredKey) -> bool { return left.identity<=right.identity; }
+    pub fn gt(left:StoredKey,right:StoredKey) -> bool { return left.identity>right.identity; }
+    pub fn ge(left:StoredKey,right:StoredKey) -> bool { return left.identity>=right.identity; }
+}
+fn emit_key(value:StoredKey,output:&Output) {
+    output.word(value.identity as u64); output.word(value.stamp); output.word(value.hashing as u64);
+}
+struct Trace { hashes:u64,comparisons:u64,updates:u64,mode:i32,token:u64,output:&Output }
+impl Trace {
+    fn borrow(&self) -> &Trace { return self; }
+    fn totals(&self) { let output:&Output=self.output; output.word(self.hashes); output.word(self.comparisons); output.word(self.updates); }
+}
+// Query deliberately implements Hash only, with a different record layout.
+struct Query { encoded:i32,bias:i32,tag:u64,hashing:i32,state:&Trace }
+fn emit_query(value:Query,output:&Output) {
+    output.word(value.encoded as i64 as u64); output.word(value.bias as i64 as u64);
+    output.word(value.tag); output.word(value.hashing as u64);
+}
+pub impl core::hash::Hash<Query> for Query {
+    pub fn hash(value:Query) -> u32 {
+        let state:&Trace=value.state; let output:&Output=state.output; state.hashes+=1;
+        let hash:u32=key_hash(value.encoded-value.bias,value.hashing);
+        output.word(1); output.word(state.hashes); emit_query(value,output); output.word(hash as u64);
+        return hash;
+    }
+}
+struct Equality { state:&Trace }
+impl Equality { fn borrow(&self) -> &Equality { return self; } }
+pub impl core::function::Mapper<core::pair::Pair<StoredKey,Query>,bool> for Equality {
+    pub fn apply(&self,values:core::pair::Pair<StoredKey,Query>) -> bool {
+        let left:StoredKey=values.first; let right:Query=values.second;
+        let state:&Trace=self.state; let output:&Output=state.output; state.comparisons+=1;
+        let answer:bool=left.identity==right.encoded-right.bias;
+        output.word(2); output.word(state.comparisons); emit_key(left,output); emit_query(right,output); emit_bool(answer,output);
+        return answer;
+    }
+}
+struct Ordering { state:&Trace }
+impl Ordering { fn borrow(&self) -> &Ordering { return self; } }
+pub impl core::ordering::Comparator<StoredKey,Query> for Ordering {
+    pub fn compare(&self,left:StoredKey,right:Query) -> core::ordering::Ordering {
+        let state:&Trace=self.state; let output:&Output=state.output; state.comparisons+=1;
+        output.word(3); output.word(state.comparisons); emit_key(left,output); emit_query(right,output);
+        if(left.identity<right.encoded-right.bias) { output.word(0); return core::ordering::Ordering::Less; }
+        if(left.identity>right.encoded-right.bias) { output.word(2); return core::ordering::Ordering::Greater; }
+        output.word(1); return core::ordering::Ordering::Equal;
+    }
+}
+struct Payload { number:u64,mark:core::option::Option<bool>,words:[i32;3] }
+struct Receipt { before:Payload,tick:u64 }
+struct Failure { after:Payload,token:u64 }
+fn payload(token:u64) -> Payload {
+    let n:i32=(token%2000001) as i32-1000000;
+    let mark:core::option::Option<bool> = core::option::None();
+    if(token%3!=0) { mark=core::option::Some((token&1)!=0); }
+    let words:[i32;3]=[n,-n,n/2];
+    return Payload { number:token^10494147739710322440,mark:mark,words:words };
+}
+fn emit_payload(value:Payload,output:&Output) {
+    output.word(value.number);
+    if(value.mark.is_none()) { output.word(0); }
+    else { if(value.mark.unwrap()) { output.word(2); } else { output.word(1); } }
+    let i:i32=0; while(i<3) { output.word(value.words[i] as i64 as u64); i+=1; }
+}
+fn emit_receipt(value:core::result::Result<Receipt,Failure>,output:&Output) {
+    if(value.is_ok()) { let receipt:Receipt=value.unwrap(); output.word(0); emit_payload(receipt.before,output); output.word(receipt.tick); }
+    else { let failure:Failure=value.unwrap_err(); output.word(1); emit_payload(failure.after,output); output.word(failure.token); }
+}
+struct Update { state:&Trace }
+impl Update { fn borrow(&self) -> &Update { return self; } }
+pub impl core::function::Mapper<Payload,core::pair::Pair<Payload,core::result::Result<Receipt,Failure>>> for Update {
+    pub fn apply(&self,old:Payload) -> core::pair::Pair<Payload,core::result::Result<Receipt,Failure>> {
+        let state:&Trace=self.state; let output:&Output=state.output; state.updates+=1;
+        let token:u64=state.token; let tick:u64=state.updates; let mode:i32=state.mode;
+        let mark:core::option::Option<bool> = core::option::None();
+        if(mode==0 && old.mark.is_some()) { mark=core::option::Some(!old.mark.unwrap()); }
+        if(mode>=2) { mark=core::option::Some(((token^tick)&1)!=0); }
+        let words:[i32;3]=[old.words[1],old.words[2],(token%2000001) as i32-1000000];
+        let new:Payload=Payload { number:old.number^token^(tick<<32),mark:mark,words:words };
+        let answer:core::result::Result<Receipt,Failure> = core::result::Ok(Receipt { before:old,tick:tick });
+        if(mode%2!=0) { answer=core::result::Err(Failure { after:new,token:token }); }
+        output.word(4); output.word(tick); output.word(mode as u64); output.word(token);
+        emit_payload(old,output); emit_payload(new,output); emit_receipt(answer,output);
+        return core::pair::Pair { first:new,second:answer };
+    }
+}
+fn emit_optional_payload(value:core::option::Option<Payload>,output:&Output) {
+    if(value.is_none()) { output.word(0); return; }
+    output.word(1); emit_payload(value.unwrap(),output);
+}
+fn emit_optional_key(value:core::option::Option<StoredKey>,output:&Output) {
+    if(value.is_none()) { output.word(0); return; }
+    output.word(1); emit_key(value.unwrap(),output);
+}
+fn emit_optional_receipt(value:core::option::Option<core::result::Result<Receipt,Failure>>,output:&Output) {
+    if(value.is_none()) { output.word(0); return; }
+    output.word(1); emit_receipt(value.unwrap(),output);
+}
+fn emit_hash_entry(value:core::option::Option<alloc::hash_map::Entry<StoredKey,Payload>>,output:&Output) {
+    if(value.is_none()) { output.word(0); return; }
+    let entry:alloc::hash_map::Entry<StoredKey,Payload> = value.unwrap(); output.word(1); emit_key(entry.key,output); emit_payload(entry.value,output);
+}
+fn emit_tree_entry(value:core::option::Option<alloc::tree_map::Entry<StoredKey,Payload>>,output:&Output) {
+    if(value.is_none()) { output.word(0); return; }
+    let entry:alloc::tree_map::Entry<StoredKey,Payload> = value.unwrap(); output.word(1); emit_key(entry.key,output); emit_payload(entry.value,output);
+}
+
+fn snapshot_hash_map(owner:&alloc::hash_map::HashMap<StoredKey,Payload>,output:&Output) {
+    output.word(owner.len() as u64); emit_bool(owner.is_empty(),output);
+    output.word(owner.capacity() as u64); output.address(owner.storage);
+    output.word(owner.buckets as u64); output.word(owner.occupied as u64); output.word(0);
+    let cursor:alloc::hash_map::Iter<StoredKey,Payload> = owner.iter();
+    let count:i32=0;
+    while(true) {
+        let item:core::option::Option<alloc::hash_map::Entry<StoredKey,Payload>> = cursor.next();
+        emit_hash_entry(item,output);
+        if(item.is_none()) { break; }
+        count+=1; assert(count<=31);
+    }
+    let terminal:core::option::Option<alloc::hash_map::Entry<StoredKey,Payload>> = cursor.next();
+    assert(terminal.is_none()); output.word(0); assert(count==owner.len());
+}
+fn run_hash_map(hashing:i32,actions:[u8],count:i32,output:&Output) {
+    let owner:alloc::hash_map::HashMap<StoredKey,Payload> = alloc::hash_map::new();
+    let state:Trace=Trace { hashes:0,comparisons:0,updates:0,mode:0,token:0,output:output };
+    let policy:Equality=Equality { state:state.borrow() };
+    let update:Update=Update { state:state.borrow() };
+    snapshot_hash_map(owner.borrow(),output);
+    let step:i32=0;
+    while(step<count) {
+        let offset:i32=step*40;
+        let op:i32=get64(actions,offset) as i32; let key:i32=get64(actions,offset+8) as i32;
+        let stamp:u64=get64(actions,offset+16); let token:u64=get64(actions,offset+24);
+        let mode:i32=get64(actions,offset+32) as i32;
+        assert(op>=0 && op<=6 && key>=0 && key<=30 && mode>=0 && mode<=3);
+        output.word(step as u64); output.word(op as u64); output.word(key as u64);
+        output.word(stamp); output.word(token); output.word(mode as u64);
+        let supplied:StoredKey=StoredKey { identity:key,stamp:stamp,hashing:hashing };
+        let bias:i32=(stamp%9) as i32-4;
+        let query:Query=Query { encoded:key+bias,bias:bias,tag:stamp^6172765953749496780,hashing:hashing,state:state.borrow() };
+        state.mode=mode; state.token=token;
+        if(op==0) {
+            let answer:core::result::Result<core::option::Option<alloc::hash_map::Entry<StoredKey,Payload>>,alloc::hash_map::Error> = owner.try_insert(supplied,payload(token));
+            assert(answer.is_ok()); output.word(99); emit_hash_entry(answer.unwrap(),output);
+        }
+        if(op==1) {
+            let answer:bool=owner.contains_key_by<Query,Equality>(query,policy.borrow());
+            output.word(99); emit_bool(answer,output);
+        }
+        if(op==2) {
+            let answer:core::option::Option<Payload> = owner.get_by<Query,Equality>(query,policy.borrow());
+            output.word(99); emit_optional_payload(answer,output);
+        }
+        if(op==3) {
+            let answer:core::option::Option<alloc::hash_map::Entry<StoredKey,Payload>> = owner.get_entry_by<Query,Equality>(query,policy.borrow());
+            output.word(99); emit_hash_entry(answer,output);
+        }
+        if(op==4) {
+            let answer:core::option::Option<alloc::hash_map::Entry<StoredKey,Payload>> = owner.remove_by<Query,Equality>(query,policy.borrow());
+            output.word(99); emit_hash_entry(answer,output);
+        }
+        if(op==5) {
+            let answer:core::option::Option<core::result::Result<Receipt,Failure>> = owner.update_value_by<Query,Equality,Update,core::result::Result<Receipt,Failure>>(query,policy.borrow(),update.borrow());
+            output.word(99); emit_optional_receipt(answer,output);
+        }
+        if(op==6) { owner.clear(); output.word(99); output.word(0); }
+        state.totals(); snapshot_hash_map(owner.borrow(),output); step+=1;
+    }
+    output.word(100); snapshot_hash_map(owner.borrow(),output); owner.destroy();
+}
+
+fn snapshot_tree_map(owner:&alloc::tree_map::TreeMap<StoredKey,Payload>,output:&Output) {
+    output.word(owner.len() as u64); emit_bool(owner.is_empty(),output);
+    output.word(owner.capacity() as u64); output.address(owner.storage);
+    output.word(owner.used as u64); output.word(owner.root as i64 as u64); output.word(owner.free as i64 as u64);
+    let cursor:alloc::tree_map::Cursor<StoredKey,Payload> = owner.iter();
+    let count:i32=0;
+    while(true) {
+        let item:core::option::Option<alloc::tree_map::Entry<StoredKey,Payload>> = cursor.next();
+        emit_tree_entry(item,output);
+        if(item.is_none()) { break; }
+        count+=1; assert(count<=31);
+    }
+    let terminal:core::option::Option<alloc::tree_map::Entry<StoredKey,Payload>> = cursor.next();
+    assert(terminal.is_none()); output.word(0); assert(count==owner.len());
+}
+fn run_tree_map(hashing:i32,actions:[u8],count:i32,output:&Output) {
+    let owner:alloc::tree_map::TreeMap<StoredKey,Payload> = alloc::tree_map::new();
+    let state:Trace=Trace { hashes:0,comparisons:0,updates:0,mode:0,token:0,output:output };
+    let policy:Ordering=Ordering { state:state.borrow() };
+    let update:Update=Update { state:state.borrow() };
+    snapshot_tree_map(owner.borrow(),output);
+    let step:i32=0;
+    while(step<count) {
+        let offset:i32=step*40;
+        let op:i32=get64(actions,offset) as i32; let key:i32=get64(actions,offset+8) as i32;
+        let stamp:u64=get64(actions,offset+16); let token:u64=get64(actions,offset+24);
+        let mode:i32=get64(actions,offset+32) as i32;
+        assert(op>=0 && op<=6 && key>=0 && key<=30 && mode>=0 && mode<=3);
+        output.word(step as u64); output.word(op as u64); output.word(key as u64);
+        output.word(stamp); output.word(token); output.word(mode as u64);
+        let supplied:StoredKey=StoredKey { identity:key,stamp:stamp,hashing:hashing };
+        let bias:i32=(stamp%9) as i32-4;
+        let query:Query=Query { encoded:key+bias,bias:bias,tag:stamp^6172765953749496780,hashing:hashing,state:state.borrow() };
+        state.mode=mode; state.token=token;
+        if(op==0) {
+            let answer:core::result::Result<core::option::Option<alloc::tree_map::Entry<StoredKey,Payload>>,alloc::tree_map::Error> = owner.try_insert(supplied,payload(token));
+            assert(answer.is_ok()); output.word(99); emit_tree_entry(answer.unwrap(),output);
+        }
+        if(op==1) {
+            let answer:bool=owner.contains_key_by<Query,Ordering>(query,policy.borrow());
+            output.word(99); emit_bool(answer,output);
+        }
+        if(op==2) {
+            let answer:core::option::Option<Payload> = owner.get_by<Query,Ordering>(query,policy.borrow());
+            output.word(99); emit_optional_payload(answer,output);
+        }
+        if(op==3) {
+            let answer:core::option::Option<alloc::tree_map::Entry<StoredKey,Payload>> = owner.get_entry_by<Query,Ordering>(query,policy.borrow());
+            output.word(99); emit_tree_entry(answer,output);
+        }
+        if(op==4) {
+            let answer:core::option::Option<alloc::tree_map::Entry<StoredKey,Payload>> = owner.remove_by<Query,Ordering>(query,policy.borrow());
+            output.word(99); emit_tree_entry(answer,output);
+        }
+        if(op==5) {
+            let answer:core::option::Option<core::result::Result<Receipt,Failure>> = owner.update_value_by<Query,Ordering,Update,core::result::Result<Receipt,Failure>>(query,policy.borrow(),update.borrow());
+            output.word(99); emit_optional_receipt(answer,output);
+        }
+        if(op==6) { owner.clear(); output.word(99); output.word(0); }
+        state.totals(); snapshot_tree_map(owner.borrow(),output); step+=1;
+    }
+    output.word(100); snapshot_tree_map(owner.borrow(),output); owner.destroy();
+}
+
+fn snapshot_hash_set(owner:&alloc::hash_set::HashSet<StoredKey>,output:&Output) {
+    output.word(owner.len() as u64); emit_bool(owner.is_empty(),output);
+    output.word(owner.capacity() as u64); output.address(owner.state.storage);
+    output.word(owner.state.buckets as u64); output.word(owner.state.occupied as u64); output.word(0);
+    let cursor:alloc::hash_set::Iter<StoredKey> = owner.iter();
+    let count:i32=0;
+    while(true) {
+        let item:core::option::Option<StoredKey> = cursor.next();
+        emit_optional_key(item,output);
+        if(item.is_none()) { break; }
+        count+=1; assert(count<=31);
+    }
+    let terminal:core::option::Option<StoredKey> = cursor.next();
+    assert(terminal.is_none()); output.word(0); assert(count==owner.len());
+}
+fn run_hash_set(hashing:i32,actions:[u8],count:i32,output:&Output) {
+    let owner:alloc::hash_set::HashSet<StoredKey> = alloc::hash_set::new();
+    let state:Trace=Trace { hashes:0,comparisons:0,updates:0,mode:0,token:0,output:output };
+    let policy:Equality=Equality { state:state.borrow() };
+    snapshot_hash_set(owner.borrow(),output);
+    let step:i32=0;
+    while(step<count) {
+        let offset:i32=step*40;
+        let op:i32=get64(actions,offset) as i32; let key:i32=get64(actions,offset+8) as i32;
+        let stamp:u64=get64(actions,offset+16); let token:u64=get64(actions,offset+24);
+        let mode:i32=get64(actions,offset+32) as i32;
+        assert(op>=0 && op<=6 && key>=0 && key<=30 && mode>=0 && mode<=3);
+        assert(op!=5);
+        output.word(step as u64); output.word(op as u64); output.word(key as u64);
+        output.word(stamp); output.word(token); output.word(mode as u64);
+        let supplied:StoredKey=StoredKey { identity:key,stamp:stamp,hashing:hashing };
+        let bias:i32=(stamp%9) as i32-4;
+        let query:Query=Query { encoded:key+bias,bias:bias,tag:stamp^6172765953749496780,hashing:hashing,state:state.borrow() };
+        state.mode=mode; state.token=token;
+        if(op==0) {
+            let answer:core::result::Result<core::option::Option<StoredKey>,alloc::hash_map::Error> = owner.try_insert(supplied);
+            assert(answer.is_ok()); output.word(99); emit_optional_key(answer.unwrap(),output);
+        }
+        if(op==1) {
+            let answer:bool=owner.contains_by<Query,Equality>(query,policy.borrow());
+            output.word(99); emit_bool(answer,output);
+        }
+        if(op==2) {
+            let answer:core::option::Option<StoredKey> = owner.get_by<Query,Equality>(query,policy.borrow());
+            output.word(99); emit_optional_key(answer,output);
+        }
+        if(op==3) {
+            let answer:core::result::Result<core::option::Option<StoredKey>,alloc::hash_map::Error> = owner.try_replace(supplied);
+            assert(answer.is_ok()); output.word(99); emit_optional_key(answer.unwrap(),output);
+        }
+        if(op==4) {
+            let answer:core::option::Option<StoredKey> = owner.remove_by<Query,Equality>(query,policy.borrow());
+            output.word(99); emit_optional_key(answer,output);
+        }
+        if(op==6) { owner.clear(); output.word(99); output.word(0); }
+        state.totals(); snapshot_hash_set(owner.borrow(),output); step+=1;
+    }
+    output.word(100); snapshot_hash_set(owner.borrow(),output); owner.destroy();
+}
+
+fn snapshot_tree_set(owner:&alloc::tree_set::TreeSet<StoredKey>,output:&Output) {
+    output.word(owner.len() as u64); emit_bool(owner.is_empty(),output);
+    output.word(owner.capacity() as u64); output.address(owner.state.storage);
+    output.word(owner.state.used as u64); output.word(owner.state.root as i64 as u64); output.word(owner.state.free as i64 as u64);
+    let cursor:alloc::tree_set::Cursor<StoredKey> = owner.iter();
+    let count:i32=0;
+    while(true) {
+        let item:core::option::Option<StoredKey> = cursor.next();
+        emit_optional_key(item,output);
+        if(item.is_none()) { break; }
+        count+=1; assert(count<=31);
+    }
+    let terminal:core::option::Option<StoredKey> = cursor.next();
+    assert(terminal.is_none()); output.word(0); assert(count==owner.len());
+}
+fn run_tree_set(hashing:i32,actions:[u8],count:i32,output:&Output) {
+    let owner:alloc::tree_set::TreeSet<StoredKey> = alloc::tree_set::new();
+    let state:Trace=Trace { hashes:0,comparisons:0,updates:0,mode:0,token:0,output:output };
+    let policy:Ordering=Ordering { state:state.borrow() };
+    snapshot_tree_set(owner.borrow(),output);
+    let step:i32=0;
+    while(step<count) {
+        let offset:i32=step*40;
+        let op:i32=get64(actions,offset) as i32; let key:i32=get64(actions,offset+8) as i32;
+        let stamp:u64=get64(actions,offset+16); let token:u64=get64(actions,offset+24);
+        let mode:i32=get64(actions,offset+32) as i32;
+        assert(op>=0 && op<=6 && key>=0 && key<=30 && mode>=0 && mode<=3);
+        assert(op!=5);
+        output.word(step as u64); output.word(op as u64); output.word(key as u64);
+        output.word(stamp); output.word(token); output.word(mode as u64);
+        let supplied:StoredKey=StoredKey { identity:key,stamp:stamp,hashing:hashing };
+        let bias:i32=(stamp%9) as i32-4;
+        let query:Query=Query { encoded:key+bias,bias:bias,tag:stamp^6172765953749496780,hashing:hashing,state:state.borrow() };
+        state.mode=mode; state.token=token;
+        if(op==0) {
+            let answer:core::result::Result<core::option::Option<StoredKey>,alloc::tree_map::Error> = owner.try_insert(supplied);
+            assert(answer.is_ok()); output.word(99); emit_optional_key(answer.unwrap(),output);
+        }
+        if(op==1) {
+            let answer:bool=owner.contains_by<Query,Ordering>(query,policy.borrow());
+            output.word(99); emit_bool(answer,output);
+        }
+        if(op==2) {
+            let answer:core::option::Option<StoredKey> = owner.get_by<Query,Ordering>(query,policy.borrow());
+            output.word(99); emit_optional_key(answer,output);
+        }
+        if(op==3) {
+            let answer:core::result::Result<core::option::Option<StoredKey>,alloc::tree_map::Error> = owner.try_replace(supplied);
+            assert(answer.is_ok()); output.word(99); emit_optional_key(answer.unwrap(),output);
+        }
+        if(op==4) {
+            let answer:core::option::Option<StoredKey> = owner.remove_by<Query,Ordering>(query,policy.borrow());
+            output.word(99); emit_optional_key(answer,output);
+        }
+        if(op==6) { owner.clear(); output.word(99); output.word(0); }
+        state.totals(); snapshot_tree_set(owner.borrow(),output); step+=1;
+    }
+    output.word(100); snapshot_tree_set(owner.borrow(),output); owner.destroy();
+}
+
+fn main() -> i32 {
+    assert(core::mem::size_of<ptr>()==8);
+    let header_storage:[i32;6]=[0;6]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_storage);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,24);
+    let action_storage:[i32;960]=[0;960]; let action_pointer:ptr=core::mem::i32_array_data_ptr(action_storage);
+    let actions:[u8]=core::mem::typed_slice_from_raw_parts<u8>(action_pointer,3840);
+    let output_storage:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_storage);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    assert(read_exact(header_pointer,16,false)); assert(get64(header,0)==7093013773953754468);
+    let cases:i32=get64(header,8) as i32; assert(cases>0 && cases<=48);
+    output.word(7093013773953754468); output.word(cases as u64);
+    let number:i32=0;
+    while(number<cases) {
+        assert(read_exact(header_pointer,24,false));
+        let family:i32=get64(header,0) as i32; let hashing:i32=get64(header,8) as i32; let count:i32=get64(header,16) as i32;
+        assert(family>=0 && family<4 && hashing>=0 && hashing<=1 && count>0 && count<=96);
+        assert(read_exact(action_pointer,count*40,false));
+        output.word(number as u64); output.word(family as u64); output.word(hashing as u64); output.word(count as u64);
+        if(family==0) { run_hash_map(hashing,actions,count,output.borrow()); }
+        if(family==1) { run_tree_map(hashing,actions,count,output.borrow()); }
+        if(family==2) { run_hash_set(hashing,actions,count,output.borrow()); }
+        if(family==3) { run_tree_set(hashing,actions,count,output.borrow()); }
+        number+=1;
+    }
+    assert(!read_exact(header_pointer,1,true)); output.word(7308889619208237679); output.flush(); return 0;
+}

@@ -6,7 +6,9 @@ dependency beyond the allocator.
 
 ## Key contracts
 
-Keys implement `core::cmp::Eq<K>` and `core::hash::Hash<K>`.
+Stored-key insertion and same-key queries use `core::cmp::Eq<K>` and
+`core::hash::Hash<K>`. The borrowed query methods below instead name Q and
+a policy, while preserving the stored-key laws.
 Equality must be reflexive, symmetric and transitive. Equal keys must have the
 same hash. Hash/equality-relevant key contents must stay unchanged while stored.
 
@@ -20,6 +22,20 @@ equivalence relation for NaNs.
 String and 64-bit hashing use [FNV-1a](https://www.rfc-editor.org/rfc/rfc9923.html).
 Hashing is deterministic and noncryptographic. This table does not provide
 randomized or collision-resistant hashing for adversarial keys.
+
+## Borrowed point queries
+
+[Borrowed collection lookup](stdlib-borrowed-lookup.md) adds `contains_key_by`,
+`get_by`, `get_entry_by`, `remove_by` and `update_value_by`. Q hashes once per
+operation; a borrowed `Mapper<Pair<K,Q>,bool>` compares stored key first and
+query second only after the full cached hash matches. Matching keys must have
+the query hash and belong to one stored equivalence class. Queries allocate
+no owned key; getters borrow stored representatives, and removal transfers
+the actual stored entry. `alloc::string::TextKey` supplies String/Text policy.
+All nine borrowed-lookup library groups and the migrated application pass
+on native Linux x86_64 CPU output; the dedicated guide defines their scope.
+The dedicated guide records current evidence separately from the older
+hash-map receipts below.
 
 ## API and ownership
 
@@ -143,8 +159,9 @@ timeout --kill-after=2s 100s env \
 ```
 
 Native execution is established for x86_64 Linux. GPU user-program execution
-and other hosts remain unverified. Keyed hashing, automatic destruction and
-lookup through a distinct borrowed key type remain work. Later
+and other hosts remain unverified. Keyed hashing and automatic destruction
+remain work. Distinct borrowed-key point lookup has its separate contract and
+acceptance above. Later
 [shared cursor integration](stdlib-collection-iterators.md) and
 [opt-in deep cleanup](stdlib-clone-hash-map.md) have separate accepted evidence.
 

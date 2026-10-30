@@ -5,7 +5,6 @@ import alloc::tree_map;
 import core::cmp;
 import core::hash;
 import core::iter;
-import core::mem;
 import core::option;
 import core::pair;
 import core::result;
@@ -41,24 +40,60 @@ pub impl core::function::Mapper<u64,core::pair::Pair<u64,Report>> for Update {
         return core::pair::Pair { first:next,second:Report { old:old,new:next,ordinal:self.calls } };
     }
 }
-// Test-only mirrors size the existing storage for byte snapshots. They are
-// never used as replacement map engines or read as potentially inactive fields.
-enum HashStorage { Empty,Deleted,Full(u32,alloc::hash_map::Entry<Key,u64>) }
-struct TreeStorage { item:alloc::tree_map::Entry<Key,u64>,left:i32,right:i32,parent:i32,height:i32,next_free:i32 }
 fn marker(rank:i32) -> u64 { return 1234605616436508416+(rank as u64)*256; }
-fn snapshot(source:[u8],saved:[u8],length:i32) { let i:i32=0; while(i<length) { saved[i]=source[i]; i+=1; } }
-fn identical_except_value(saved:[u8],actual:[u8],length:i32,old:u64,next:u64,changed:bool) {
-    let location:i32=-1; let matches:i32=0;
-    if(changed) {
-        let i:i32=0; while(i<=length-8) { let same:bool=true; let j:i32=0;
-            while(j<8) { if(saved[i+j]!=((old>>(j*8))&255) as u8) { same=false; } j+=1; }
-            if(same) { location=i; matches+=1; } i+=1;
-        } assert(matches==1);
+// Caller-backed logical snapshots do not retain entry descriptors or depend on
+// bucket/node layout, inactive payloads, scalar padding or iteration order.
+struct Entries { present:[bool],tags:[u64],values:[u64],count:i32 }
+impl Entries {
+    fn borrow(&self) -> &Entries { return self; }
+    fn reset(&self) {
+        let i:i32=0; while(i<10) { self.present[i]=false; self.tags[i]=0; self.values[i]=0; i+=1; } self.count=0;
     }
-    let i:i32=0; while(i<length) {
-        let expected:u8=saved[i]; if(changed && i>=location && i<location+8) { expected=((next>>((i-location)*8))&255) as u8; }
-        assert(actual[i]==expected); i+=1;
+    fn record(&self,stored:Key,value:u64,log:&Log) {
+        let rank:i32=stored.rank; assert(rank>=0 && rank<10 && !self.present[rank]);
+        self.present[rank]=true; self.tags[rank]=stored.tag; self.values[rank]=value; self.count+=1;
+        // Observe this exact borrowed context through its effect on the caller's
+        // Log. A copied/retargeted Log must not replace the original receiver.
+        let used:i32=log.used; let at:i32=used*5;
+        stored.log.record(5,rank as u64,stored.tag,value,used as u64);
+        assert(log.used==used+1);
+        assert(log.words[at]==5 && log.words[at+1]==rank as u64 && log.words[at+2]==stored.tag && log.words[at+3]==value && log.words[at+4]==used as u64);
     }
+}
+fn hash_entries(map:&alloc::hash_map::HashMap<Key,u64>,saved:&Entries,log:&Log) {
+    saved.reset(); log.used=0; let cursor:alloc::hash_map::Iter<Key,u64> =map.iter();
+    while(true) {
+        let next:core::option::Option<alloc::hash_map::Entry<Key,u64>> =cursor.next(); if(next.is_none()) { break; }
+        let item:alloc::hash_map::Entry<Key,u64> =next.unwrap(); saved.record(item.key,item.value,log);
+        let found:core::option::Option<alloc::hash_map::Entry<Key,u64>> =map.get_entry(item.key); assert(found.is_some());
+        let retrieved:alloc::hash_map::Entry<Key,u64> =found.unwrap();
+        assert(retrieved.key.rank==item.key.rank && retrieved.key.tag==item.key.tag && retrieved.value==item.value);
+    }
+    assert(saved.count==6);
+}
+fn tree_entries(map:&alloc::tree_map::TreeMap<Key,u64>,saved:&Entries,log:&Log) {
+    saved.reset(); log.used=0; let cursor:alloc::tree_map::Cursor<Key,u64> =map.iter();
+    while(true) {
+        let next:core::option::Option<alloc::tree_map::Entry<Key,u64>> =cursor.next(); if(next.is_none()) { break; }
+        let item:alloc::tree_map::Entry<Key,u64> =next.unwrap(); saved.record(item.key,item.value,log);
+        let found:core::option::Option<alloc::tree_map::Entry<Key,u64>> =map.get_entry(item.key); assert(found.is_some());
+        let retrieved:alloc::tree_map::Entry<Key,u64> =found.unwrap();
+        assert(retrieved.key.rank==item.key.rank && retrieved.key.tag==item.key.tag && retrieved.value==item.value);
+    }
+    assert(saved.count==6);
+}
+fn identical_except_value(saved:&Entries,actual:&Entries,rank:i32,old:u64,next:u64,changed:bool) {
+    assert(saved.count==actual.count); let selected:i32=0; let i:i32=0;
+    while(i<10) {
+        assert(saved.present[i]==actual.present[i]);
+        if(saved.present[i]) {
+            assert(saved.tags[i]==actual.tags[i]); let expected:u64=saved.values[i];
+            if(changed && i==rank) { assert(expected==old); expected=next; selected+=1; }
+            assert(actual.values[i]==expected);
+        }
+        i+=1;
+    }
+    assert(selected==changed as i32);
 }
 fn lookup_prefix(log:&Log,saved:[u64],calls:i32,changed:bool,old:u64,next:u64,ordinal:i32) {
     let expected:i32=calls; if(changed) { expected+=1; } assert(log.used==expected);
@@ -74,19 +109,23 @@ fn hash_contract() {
     assert(map.try_insert(key(8,1008,log.borrow()),marker(8)).is_ok()); assert(map.try_insert(key(9,1009,log.borrow()),marker(9)).is_ok());
     assert(map.remove(key(1,8001,log.borrow())).is_some()); assert(map.len()==6 && map.occupied>map.length);
     let pointer:ptr=map.storage; let capacity:i32=map.capacity(); let buckets:i32=map.buckets; let occupied:i32=map.occupied;
-    let length:i32=(core::mem::size_of<HashStorage>()*(buckets as usize)) as i32; assert(length>0 && length<=2048);
-    let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,length); let before:[u8;2048]=[0;2048]; let prefix:[u64;640]=[0;640];
+    let before_present:[bool;10]=[false;10]; let before_tags:[u64;10]=[0;10]; let before_values:[u64;10]=[0;10];
+    let after_present:[bool;10]=[false;10]; let after_tags:[u64;10]=[0;10]; let after_values:[u64;10]=[0;10];
+    let before:Entries=Entries { present:before_present,tags:before_tags,values:before_values,count:0 };
+    let after:Entries=Entries { present:after_present,tags:after_tags,values:after_values,count:0 }; let prefix:[u64;640]=[0;640];
     let update:Update=Update { log:log.borrow(),calls:0 }; let queries:[i32;5]=[4,6,8,99,7]; i=0;
     while(i<5) {
+        hash_entries(map.borrow(),before.borrow(),log.borrow());
         let rank:i32=queries[i]; let query:Key=key(rank,9000+rank as u64,log.borrow()); log.used=0;
         let existing:core::option::Option<alloc::hash_map::Entry<Key,u64>> =map.get_entry(query); let present:bool=existing.is_some();
         let old:u64=0; if(present) { let found:alloc::hash_map::Entry<Key,u64> =existing.unwrap(); old=found.value; assert(found.key.tag==1000+rank as u64); }
         let calls:i32=log.used; let j:i32=0; while(j<calls*5) { prefix[j]=words[j]; j+=1; }
-        assert(calls>=1 && prefix[0]==1); snapshot(raw,before,length); log.used=0; let previous:i32=update.calls;
+        assert(calls>=1 && prefix[0]==1); log.used=0; let previous:i32=update.calls;
         let result:core::option::Option<Report> =map.update_value(query,update.borrow()); assert(result.is_some()==present);
         let next:u64=old; if(present) { let report:Report=result.unwrap(); next=old+17; assert(report.old==old && report.new==next && report.ordinal==previous+1); }
         assert(update.calls==previous+(present as i32)); lookup_prefix(log.borrow(),prefix,calls,present,old,next,update.calls);
-        identical_except_value(before,raw,length,old,next,present);
+        hash_entries(map.borrow(),after.borrow(),log.borrow());
+        identical_except_value(before.borrow(),after.borrow(),rank,old,next,present);
         assert(map.storage==pointer && map.buckets==buckets && map.occupied==occupied && map.len()==6 && map.capacity()==capacity && query.tag==9000+rank as u64);
         i+=1;
     }
@@ -104,19 +143,23 @@ fn tree_contract() {
     assert(map.try_insert(key(8,1008,log.borrow()),marker(8)).is_ok()); assert(map.try_insert(key(9,1009,log.borrow()),marker(9)).is_ok());
     assert(map.remove(key(1,8001,log.borrow())).is_some()); assert(map.len()==6 && map.free>=0);
     let pointer:ptr=map.storage; let reserved:i32=map.reserved; let used:i32=map.used; let root:i32=map.root; let free:i32=map.free;
-    let length:i32=(core::mem::size_of<TreeStorage>()*(reserved as usize)) as i32; assert(length>0 && length<=2048);
-    let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,length); let before:[u8;2048]=[0;2048]; let prefix:[u64;640]=[0;640];
+    let before_present:[bool;10]=[false;10]; let before_tags:[u64;10]=[0;10]; let before_values:[u64;10]=[0;10];
+    let after_present:[bool;10]=[false;10]; let after_tags:[u64;10]=[0;10]; let after_values:[u64;10]=[0;10];
+    let before:Entries=Entries { present:before_present,tags:before_tags,values:before_values,count:0 };
+    let after:Entries=Entries { present:after_present,tags:after_tags,values:after_values,count:0 }; let prefix:[u64;640]=[0;640];
     let update:Update=Update { log:log.borrow(),calls:0 }; let queries:[i32;5]=[4,6,8,99,7]; i=0;
     while(i<5) {
+        tree_entries(map.borrow(),before.borrow(),log.borrow());
         let rank:i32=queries[i]; let query:Key=key(rank,9000+rank as u64,log.borrow()); log.used=0;
         let existing:core::option::Option<alloc::tree_map::Entry<Key,u64>> =map.get_entry(query); let present:bool=existing.is_some();
         let old:u64=0; if(present) { let found:alloc::tree_map::Entry<Key,u64> =existing.unwrap(); old=found.value; assert(found.key.tag==1000+rank as u64); }
         let calls:i32=log.used; let j:i32=0; while(j<calls*5) { prefix[j]=words[j]; j+=1; } assert(calls>0 && prefix[0]==3);
-        snapshot(raw,before,length); log.used=0; let previous:i32=update.calls;
+        log.used=0; let previous:i32=update.calls;
         let result:core::option::Option<Report> =map.update_value(query,update.borrow()); assert(result.is_some()==present);
         let next:u64=old; if(present) { let report:Report=result.unwrap(); next=old+17; assert(report.old==old && report.new==next && report.ordinal==previous+1); }
         assert(update.calls==previous+(present as i32)); lookup_prefix(log.borrow(),prefix,calls,present,old,next,update.calls);
-        identical_except_value(before,raw,length,old,next,present);
+        tree_entries(map.borrow(),after.borrow(),log.borrow());
+        identical_except_value(before.borrow(),after.borrow(),rank,old,next,present);
         assert(map.storage==pointer && map.reserved==reserved && map.used==used && map.root==root && map.free==free && map.len()==6 && query.tag==9000+rank as u64);
         i+=1;
     }

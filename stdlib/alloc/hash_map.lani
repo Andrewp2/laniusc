@@ -33,10 +33,22 @@ fn state<K, V>(slot: Slot<K, V>) -> i32 {
     let result: i32 = match (slot) { Empty -> 0, Deleted -> 1, Full(hash, item) -> 2 };
     return result;
 }
-fn matches<K, V>(slot: Slot<K, V>, hash: u32, key: K) -> bool
-    where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+struct NaturalKey<K> {}
+impl<K> NaturalKey<K> { fn borrow(&self) -> &NaturalKey<K> { return self; } }
+pub impl<K> core::function::Mapper<core::pair::Pair<K,K>,bool> for NaturalKey<K>
+    where K:core::cmp::Eq<K> {
+    pub fn apply(&self, values:core::pair::Pair<K,K>) -> bool { return K::eq(values.first,values.second); }
+}
+fn equivalent<K,V,Q,P>(item:Entry<K,V>, query:Q, policy:&P) -> bool
+    where P:core::function::Mapper<core::pair::Pair<K,Q>,bool> {
+    let stored:K = item.key;
+    let values:core::pair::Pair<K,Q> = core::pair::Pair { first:stored,second:query };
+    return policy.apply(values);
+}
+fn matches_by<K,V,Q,P>(slot:Slot<K,V>, hash:u32, query:Q, policy:&P) -> bool
+    where P:core::function::Mapper<core::pair::Pair<K,Q>,bool> {
     let result: bool = match (slot) {
-        Full(stored, item) -> stored == hash && K::eq(item.key, key), _ -> false,
+        Full(stored, item) -> stored == hash && equivalent<K,V,Q,P>(item,query,policy), _ -> false,
     };
     return result;
 }
@@ -85,6 +97,11 @@ pub impl<K, V> HashMap<K, V> {
     fn slots(&self) -> [Slot<K, V>] { return core::mem::typed_slice_from_storage(self.storage, self.buckets); }
     fn find(&self, key: K, hash: u32) -> i32
         where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        let policy:NaturalKey<K> = NaturalKey {};
+        return self.find_by<K,NaturalKey<K>>(key,hash,policy.borrow());
+    }
+    fn find_by<Q,P>(&self, query:Q, hash:u32, policy:&P) -> i32
+        where P:core::function::Mapper<core::pair::Pair<K,Q>,bool> {
         if (self.length == 0) { return -1; }
         let slots: [Slot<K, V>] = self.slots();
         let index: i32 = bucket(hash, self.buckets);
@@ -92,7 +109,7 @@ pub impl<K, V> HashMap<K, V> {
         while (visited < self.buckets) {
             let slot: Slot<K, V> = slots[index];
             if (state(slot) == 0) { return -1; }
-            if (matches(slot, hash, key)) { return index; }
+            if (matches_by<K,V,Q,P>(slot,hash,query,policy)) { return index; }
             index = advance(index, self.buckets);
             visited += 1;
         }
@@ -104,7 +121,9 @@ pub impl<K, V> HashMap<K, V> {
     // Returned copies borrow any nested resources owned by stored values.
     pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>>
         where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
-        let index: i32 = self.find(key, K::hash(key));
+        return self.entry_at(self.find(key,K::hash(key)));
+    }
+    fn entry_at(&self, index:i32) -> core::option::Option<Entry<K,V>> {
         if (index < 0) { return core::option::None(); }
         let slots: [Slot<K, V>] = self.slots();
         return entry(slots[index]);
@@ -125,14 +144,47 @@ pub impl<K, V> HashMap<K, V> {
         where K: core::hash::Hash<K>, K: core::cmp::Eq<K>, M: core::function::Mapper<V, core::pair::Pair<V, R>> {
         let hash: u32 = K::hash(key);
         let index: i32 = self.find(key, hash);
+        return self.update_at<M,R>(index,update);
+    }
+    fn update_at<M,R>(&self, index:i32, update:&M) -> core::option::Option<R>
+        where M:core::function::Mapper<V,core::pair::Pair<V,R>> {
         if (index < 0) { return core::option::None(); }
         let slots: [Slot<K, V>] = self.slots();
-        let item: Entry<K, V> = core::option::unwrap(entry(slots[index]));
+        let slot:Slot<K,V> = slots[index];
+        let hash:u32 = match (slot) { Full(stored,item) -> stored, _ -> 0 };
+        let item: Entry<K, V> = core::option::unwrap(entry(slot));
         let changed: core::pair::Pair<V, R> = update.apply(item.value);
         item.value = changed.first;
-        // find matched this exact cached hash; the stored key is unchanged.
+        // Preserve the actual cached hash and representative without rehashing.
         slots[index] = Slot::Full(hash, item);
         return core::option::Some(changed.second);
+    }
+    // A query denotes one key identity and hashes exactly like matching keys.
+    // Policies observe stored/query descriptors only for the call: no mutation,
+    // retirement, reentry or descriptor escape. Query backing stays live even
+    // during update. Each operation hashes Q once, including empty maps.
+    pub fn contains_key_by<Q,P>(&self, query:Q, policy:&P) -> bool
+        where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<K,Q>,bool> {
+        return self.find_by<Q,P>(query,Q::hash(query),policy) >= 0;
+    }
+    pub fn get_entry_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
+        where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<K,Q>,bool> {
+        return self.entry_at(self.find_by<Q,P>(query,Q::hash(query),policy));
+    }
+    pub fn get_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<V>
+        where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<K,Q>,bool> {
+        let found:core::option::Option<Entry<K,V>> = self.get_entry_by<Q,P>(query,policy);
+        return match (found) { Some(item) -> core::option::Some(item.value), None -> core::option::None() };
+    }
+    pub fn update_value_by<Q,P,M,R>(&self, query:Q, policy:&P, update:&M) -> core::option::Option<R>
+        where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<K,Q>,bool>,
+              M:core::function::Mapper<V,core::pair::Pair<V,R>> {
+        let index:i32 = self.find_by<Q,P>(query,Q::hash(query),policy);
+        return self.update_at<M,R>(index,update);
+    }
+    pub fn remove_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<Entry<K,V>>
+        where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<K,Q>,bool> {
+        return self.remove_at(self.find_by<Q,P>(query,Q::hash(query),policy));
     }
     // Construct a replacement in full before changing or freeing this owner.
     fn rehash(&self, buckets: i32) -> core::result::Result<i32, Error> {
@@ -210,7 +262,9 @@ pub impl<K, V> HashMap<K, V> {
     }
     pub fn remove(&self, key: K) -> core::option::Option<Entry<K, V>>
         where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
-        let index: i32 = self.find(key, K::hash(key));
+        return self.remove_at(self.find(key,K::hash(key)));
+    }
+    fn remove_at(&self, index:i32) -> core::option::Option<Entry<K,V>> {
         if (index < 0) { return core::option::None(); }
         let slots: [Slot<K, V>] = self.slots();
         let removed: core::option::Option<Entry<K, V>> = entry(slots[index]);
@@ -447,6 +501,25 @@ pub fn key_remove<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> wher
     key_update<T>(owner, map);
     if (core::option::is_none(result)) { return core::option::None(); }
     let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+pub fn key_contains_by<T,Q,P>(owner:&KeyStorage, query:Q, policy:&P) -> bool
+    where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<T,Q>,bool> {
+    let map:HashMap<T,KeyUnit> = key_view<T>(owner); return map.contains_key_by<Q,P>(query,policy);
+}
+pub fn key_get_by<T,Q,P>(owner:&KeyStorage, query:Q, policy:&P) -> core::option::Option<T>
+    where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<T,Q>,bool> {
+    let map:HashMap<T,KeyUnit> = key_view<T>(owner);
+    let found:core::option::Option<Entry<T,KeyUnit>> = map.get_entry_by<Q,P>(query,policy);
+    if (core::option::is_none(found)) { return core::option::None(); }
+    let item:Entry<T,KeyUnit> = core::option::unwrap(found); return core::option::Some(item.key);
+}
+pub fn key_remove_by<T,Q,P>(owner:&KeyStorage, query:Q, policy:&P) -> core::option::Option<T>
+    where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<T,Q>,bool> {
+    let map:HashMap<T,KeyUnit> = key_view<T>(owner);
+    let found:core::option::Option<Entry<T,KeyUnit>> = map.remove_by<Q,P>(query,policy);
+    key_update<T>(owner,map);
+    if (core::option::is_none(found)) { return core::option::None(); }
+    let item:Entry<T,KeyUnit> = core::option::unwrap(found); return core::option::Some(item.key);
 }
 pub fn key_reserve<T>(owner: &KeyStorage, additional: i32) -> core::result::Result<i32, Error> {
     let map: HashMap<T, KeyUnit> = key_view<T>(owner);

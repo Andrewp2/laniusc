@@ -7,9 +7,11 @@ import core::clone;
 import core::u8;
 import core::cmp;
 import core::decimal;
+import core::function;
 import core::hash;
 import core::iter;
 import core::option;
+import core::ordering;
 import core::pair;
 import core::result;
 import core::slice;
@@ -29,6 +31,26 @@ pub enum Error {
 
 pub struct String {
     bytes: alloc::vec::Vec<u8>,
+}
+
+// Borrowed Text queries for owned String keys. Exact UTF-8 byte identity/order,
+// including NUL, with no case folding or normalization. Both operands remain
+// call-scoped read-only observations; the policy retains no descriptors.
+pub struct TextKey {}
+pub impl TextKey { pub fn borrow(&self) -> &TextKey { return self; } }
+pub impl core::function::Mapper<core::pair::Pair<String,core::text::Text>,bool> for TextKey {
+    pub fn apply(&self, values:core::pair::Pair<String,core::text::Text>) -> bool {
+        let stored:core::text::Text = values.first.as_text();
+        return stored.equals(values.second);
+    }
+}
+pub impl core::ordering::Comparator<String,core::text::Text> for TextKey {
+    pub fn compare(&self, stored:String, query:core::text::Text) -> core::ordering::Ordering {
+        let text:core::text::Text = stored.as_text(); let order:i32 = text.compare(query);
+        if (order < 0) { return core::ordering::Less; }
+        if (order > 0) { return core::ordering::Greater; }
+        return core::ordering::Equal;
+    }
 }
 
 pub fn new() -> String {

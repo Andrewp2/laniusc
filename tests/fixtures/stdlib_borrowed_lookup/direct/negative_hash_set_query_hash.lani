@@ -1,0 +1,21 @@
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::function;
+import core::hash;
+import core::option;
+import core::ordering;
+import core::pair;
+struct Key { value:i32 }
+struct Query { value:i32 }
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::function::Mapper<core::pair::Pair<Key,Query>,bool> for Policy { pub fn apply(&self,pair:core::pair::Pair<Key,Query>) -> bool { return pair.first.value==pair.second.value; } }
+// An empty collection still requires the exact query capabilities.
+fn main() -> i32 {
+    let collection:alloc::hash_set::HashSet<Key> =alloc::hash_set::new<Key>(); let query:Query=Query { value:3 }; let policy:Policy=Policy {};
+    let rejected_lookup_bound = collection.contains_by<Query,Policy>(query,policy.borrow());
+    return 0;
+}

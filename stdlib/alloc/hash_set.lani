@@ -3,9 +3,11 @@
 module alloc::hash_set;
 import alloc::hash_map;
 import core::cmp;
+import core::function;
 import core::iter;
 import core::hash;
 import core::option;
+import core::pair;
 import core::result;
 
 pub struct HashSet<T> { state: alloc::hash_map::KeyStorage }
@@ -42,6 +44,20 @@ pub impl<T> HashSet<T> {
     }
     // Return the stored representative; callers manage any nested resources.
     pub fn remove(&self, key: T) -> core::option::Option<T> where T: core::hash::Hash<T>, T: core::cmp::Eq<T> { return alloc::hash_map::key_remove<T>(self.state.borrow(), key); }
+    // The shared map query laws and call-scoped observation rules apply.
+    // Get borrows the stored representative; remove transfers that owner.
+    pub fn contains_by<Q,P>(&self, query:Q, policy:&P) -> bool
+        where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<T,Q>,bool> {
+        return alloc::hash_map::key_contains_by<T,Q,P>(self.state.borrow(),query,policy);
+    }
+    pub fn get_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
+        where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<T,Q>,bool> {
+        return alloc::hash_map::key_get_by<T,Q,P>(self.state.borrow(),query,policy);
+    }
+    pub fn remove_by<Q,P>(&self, query:Q, policy:&P) -> core::option::Option<T>
+        where Q:core::hash::Hash<Q>, P:core::function::Mapper<core::pair::Pair<T,Q>,bool> {
+        return alloc::hash_map::key_remove_by<T,Q,P>(self.state.borrow(),query,policy);
+    }
     // Any mutation/destruction invalidates outstanding cursors and borrowed keys.
     pub fn iter(&self) -> Iter<T> { return Iter { state: alloc::hash_map::key_iter<T>(self.state.borrow()) }; }
     // Reset the actual source. End borrowed key/cursor use before transfer;

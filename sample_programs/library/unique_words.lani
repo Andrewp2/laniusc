@@ -1,5 +1,5 @@
-// Streaming UTF-8 words, owned batch cursors, and a sorted unique String set.
-// Accepted on x86_64 Linux native ELF via the GPU compiler; see docs/stdlib-unique-words.md.
+// Streaming UTF-8 words, borrowed duplicate lookup, and owned unique Strings.
+// Native target and execution receipts: docs/stdlib-unique-words.md.
 module app::main;
 import alloc::clone;
 import alloc::clone_tree_set;
@@ -13,6 +13,7 @@ import core::iter;
 import core::mem;
 import core::option;
 import core::result;
+import core::text;
 import std::process;
 import std::signal;
 import std::stream;
@@ -23,7 +24,9 @@ const BATCH_SIZE: i32 = 64;
 struct Words {
     token: alloc::io::Buffer,
     batch: alloc::vec::Vec<alloc::string::String>,
-    unique: alloc::tree_set::TreeSet<alloc::string::String>
+    unique: alloc::tree_set::TreeSet<alloc::string::String>,
+    policy: alloc::string::TextKey,
+    completed: i32
 }
 impl Words { fn borrow(&self) -> &Words { return self; } }
 
@@ -60,18 +63,40 @@ fn flush_batch(words: &Words) -> i32 {
         // No allocation: restore the same empty backing/capacity for reuse.
         // take_remaining disarms the cursor; the old Vec owner owns nothing.
         words.batch = cursor.take_remaining();
+        words.completed = 0;
         return 0;
     }
     return 7;
 }
 
-fn finish_token(words: &Words) -> i32 {
-    if (words.token.len() == 0) { return 0; }
+fn known_word(words: &Words, query: core::text::Text) -> bool {
+    if (words.unique.contains_by<core::text::Text,alloc::string::TextKey>(query,words.policy.borrow())) { return true; }
+    // Before this token completes, the current window has at most 63 words.
+    // Pending Strings own stable backing; these shallow copies only borrow it.
+    let index: i32 = 0;
+    while (index < words.batch.len()) {
+        let word: alloc::string::String = words.batch.at(index);
+        let text: core::text::Text = word.as_text();
+        if (text.equals(query)) { return true; }
+        index += 1;
+    }
+    return false;
+}
+
+fn stage_token(words: &Words) -> i32 {
     // A token may span chunks or contain a split UTF-8 sequence. Validate only
-    // after the whole token is present, then copy it to independent storage.
-    let made: core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_utf8(words.token.as_bytes(),words.token.len());
+    // after the whole token is present, including when it may be a duplicate.
+    let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8(words.token.as_bytes(),words.token.len());
+    if (checked.is_err()) {
+        return match (checked.unwrap_err()) { core::text::Error::InvalidUtf8(offset) -> 6, _ -> 7 };
+    }
+    let query: core::text::Text = checked.unwrap();
+    if (known_word(words,query)) { return 0; }
+    // Only a novel token gains independent backing. The token remains stable
+    // until this synchronous copy and all borrowed lookups have returned.
+    let made: core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_text(query);
     if (made.is_err()) {
-        return match (made.unwrap_err()) { alloc::string::Error::InvalidUtf8(offset) -> 6, alloc::string::Error::AllocationFailed -> 4, _ -> 7 };
+        return match (made.unwrap_err()) { alloc::string::Error::AllocationFailed -> 4, _ -> 7 };
     }
     let word: alloc::string::String = made.unwrap();
     let added: core::result::Result<i32,alloc::vec::Error> = words.batch.try_push(word);
@@ -79,8 +104,18 @@ fn finish_token(words: &Words) -> i32 {
         word.destroy();
         return match (added.unwrap_err()) { alloc::vec::Error::AllocationFailed -> 4, _ -> 7 };
     }
+    return 0;
+}
+
+fn finish_token(words: &Words) -> i32 {
+    if (words.token.len() == 0) { return 0; }
+    let status: i32 = stage_token(words);
+    if (status != 0) { return status; }
+    // stage_token has ended every token/key borrow. Count completed tokens,
+    // including duplicates, so each flush retains the original 64-token window.
     words.token.clear();
-    if (words.batch.len() == BATCH_SIZE) { return flush_batch(words); }
+    words.completed += 1;
+    if (words.completed == BATCH_SIZE) { return flush_batch(words); }
     return 0;
 }
 
@@ -118,7 +153,7 @@ fn collect(words: &Words) -> i32 {
         if (received == 0) {
             let final_token: i32 = finish_token(words);
             if (final_token != 0) { return final_token; }
-            if (words.batch.len() != 0) { return flush_batch(words); }
+            if (words.completed != 0) { return flush_batch(words); }
             return 0;
         }
         if (received > MAX_INPUT - total) { return 7; }
@@ -178,7 +213,7 @@ fn main() -> i32 {
     if (batch_result.is_err()) { token.destroy(); return match (batch_result.unwrap_err()) { alloc::vec::Error::AllocationFailed -> 4, _ -> 7 }; }
     let batch: alloc::vec::Vec<alloc::string::String> = batch_result.unwrap();
     let unique: alloc::tree_set::TreeSet<alloc::string::String> = alloc::tree_set::new();
-    let words: Words = Words { token: token, batch: batch, unique: unique };
+    let words: Words = Words { token: token, batch: batch, unique: unique, policy: alloc::string::TextKey {}, completed: 0 };
     let status: i32 = collect(words.borrow());
     // No input buffer is retained for publication: Strings own their bytes.
     // This also destroys any unflushed partial batch on a collection error.
