@@ -7,7 +7,6 @@ public import Lanius.Faithful.Gen.SelfStmtF_ifEff
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_setIndexOrEval
-public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfSrcF_setIndexOrEval
 import all Lanius.Mini.Frontend.P.setIndexOrEval
@@ -39,11 +38,9 @@ theorem proof_field_eval_stmt {prog : SrcProgram} {prims : Prims} {ix_field_eval
   simp only [src_field_eval_stmt] at h
   faithful [Lanius.Mini.fieldEvalStmt]
 
-theorem proof_set_index_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_index_or_eval ix_eff_of ix_expr_of ix_slice_elem ix_set_index_of ix_set_index_eval_of : Nat} (fn : prog.funcs[ix_set_index_or_eval]? = some (src_set_index_or_eval ix_eff_of ix_expr_of ix_slice_elem ix_set_index_of ix_set_index_eval_of)) (np : prims.isPrim ix_set_index_or_eval = false)
+theorem proof_set_index_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_index_or_eval ix_eff_of ix_slice_elem ix_set_index_eval_of : Nat} (fn : prog.funcs[ix_set_index_or_eval]? = some (src_set_index_or_eval ix_eff_of ix_slice_elem ix_set_index_eval_of)) (np : prims.isPrim ix_set_index_or_eval = false)
     (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n))
-    (ext_expr_of : Certified (∀ {n : Nat}, Stmt_expr_of prog prims ix_expr_of n))
     (ext_slice_elem : Certified (∀ {n : Nat}, Stmt_slice_elem prog prims ix_slice_elem n))
-    (ext_set_index_of : Certified (∀ {n : Nat}, Stmt_set_index_of prog prims ix_set_index_of n))
     (ext_set_index_eval_of : Certified (∀ {n : Nat}, Stmt_set_index_eval_of prog prims ix_set_index_eval_of n)) {n : Nat} :
     Stmt_set_index_or_eval prog prims ix_set_index_or_eval n := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5

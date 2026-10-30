@@ -1,39 +1,19 @@
 import Lanius.Mini.Reading.Calls
 
-/-! # The reading, V8d: let heads
+/-! # The reading, V8d: let heads and their parts
 
-A `let`'s initializer is read by its shape under wrappers (`Peel`): a
-`match` over an enum local, a struct literal of the let's own type, a call
-`path(args)` (an allocation `alloc(size, 2^k)`, a raw slice
-`slice_from_raw_parts(pointer, length)`, a free or static call, or a variant
-of the let's own enum type with a payload), a method call, a slice index
-`local[index]`, a unit variant, or a plain expression.
-
-A plain reading is allowed for any initializer that reads as an expression:
-the builder falls back to it when the peel or a unit variant's path fails,
-which can fail for want of fuel (SEMANTIC_DECISIONS, "The reading states
-searches' positive part"). The same holds for a call's path: the alloc and
-slice readings are not excluded from the named reading, and a match's arms
-are one naming arm per variant, without the condition that no other arm
-names it. -/
+The let heads a spelling decides: an initializer that is (under wrappers,
+`Peel`) a call of the allocator `alloc(size, 2^k)` or a raw slice
+`slice_from_raw_parts(pointer, length)`. Every other initializer is read as
+an effectful expression (`Reading/Stmts`, `LetInitR`). Also the parts the
+effectful reading uses: variants by path, functions by path, and match arms'
+names and binders. -/
 
 namespace Lanius.Mini.Reading
 
 open Lanius.Mini Lanius.Mini.Prod
 
 /-! ## Small helpers -/
-
-theorem namedDecl_eq : ∀ {ty : Ty} {d : Nat}, namedDecl ty = some d → ∃ args, ty = .tyNamed d args
-  | .tyNamed d' args, d, h => by
-    simp only [namedDecl, Option.some.injEq] at h
-    subst h
-    exact ⟨args, rfl⟩
-  | .tyI32, _, h => by simp [namedDecl] at h
-  | .tyBool, _, h => by simp [namedDecl] at h
-  | .tyUint _, _, h => by simp [namedDecl] at h
-  | .tyPtr, _, h => by simp [namedDecl] at h
-  | .tyIsize, _, h => by simp [namedDecl] at h
-  | .tySlice _, _, h => by simp [namedDecl] at h
 
 theorem namedParts_eq : ∀ {ty : Ty} {n : Inst}, namedParts ty = some n → ty = .tyNamed n.decl n.args
   | .tyNamed d args, n, h => by
@@ -61,14 +41,6 @@ theorem hasKids_false {c : CTree} (h : hasKids c = false) : kidsOf c = [] := by
     have := (hasKids_iff c).2 (by rw [hk]; simp)
     rw [h] at this
     cases this
-
-theorem plainHead_some {e : Option SrcExpr} {hd : LetHead} (h : plainHead e = some hd) :
-    ∃ x, e = some x ∧ hd = .plain x := by
-  cases e with
-  | none => simp [plainHead] at h
-  | some x =>
-    simp only [plainHead, Option.some.injEq] at h
-    exact ⟨x, rfl, h.symm⟩
 
 /-! ## Peeling wrappers -/
 
@@ -273,27 +245,6 @@ theorem variantByPath_sound {env : FrontEnv} {s : Split} {v : VariantAt} (h : va
       rw [he] at h
       exact .module ne (enumVariant_none he) (onlyVariant_sound h)
 
-/-- A variant of the let's own enum type, with no type arguments written. -/
-def VariantHeadR (ty : Ty) (v : VariantAt) (targs : List CTree) (es : List SrcExpr) (hd : LetHead) : Prop :=
-  (∃ args, ty = .tyNamed v.owner args) ∧ targs = [] ∧ hd = .variantOf v.index es
-
-theorem variantHead_sound {ty : Ty} {v : VariantAt} {targs : List CTree} {es : List SrcExpr} {hd : LetHead}
-    (h : variantHead ty (some v) targs es = some hd) : VariantHeadR ty v targs es hd := by
-  simp only [variantHead] at h
-  cases hn : namedDecl ty with
-  | none => rw [hn] at h; cases h
-  | some d =>
-    rw [hn] at h
-    obtain ⟨args, rfl⟩ := namedDecl_eq hn
-    simp only [variantChecked] at h
-    split at h
-    · rename_i c
-      simp only [Bool.and_eq_true, decide_eq_true_eq, noTrees_iff] at c
-      obtain ⟨rfl, rfl⟩ := c
-      simp only [Option.some.injEq] at h
-      exact ⟨⟨args, rfl⟩, rfl, h.symm⟩
-    · cases h
-
 /-! ## Named calls -/
 
 /-- A path names a function: its prefix names a type, or it names a free
@@ -314,48 +265,16 @@ theorem isFnPath_iff (env : FrontEnv) (s : Split) : isFnPath env s = true ↔ Is
     simp only [isSomeIndex, true_iff]
     exact ⟨d, findFn_sound hf⟩
 
-/-- `front::name(args)` in a let: a call when the path names a function,
-else a variant with a payload. The negation is fuel-free and exact. -/
-inductive NamedHeadR (env : FrontEnv) (scope : List Local) (ty : Ty) (front : ModPath) (name : Name)
-    (targs : List CTree) (es : List SrcExpr) : LetHead → Prop
-  | call {c : Called} : IsFnPath env front name → PathCall env scope ty front name targs es c →
-      NamedHeadR env scope ty front name targs es (.callOf c)
-  | variant {v : VariantAt} {hd : LetHead} : ¬IsFnPath env front name → VariantByPath env front name v →
-      VariantHeadR ty v targs es hd → NamedHeadR env scope ty front name targs es hd
-
-theorem namedHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {ty : Ty} {s : Split}
-    {targs : List CTree} {es : List SrcExpr} {hd : LetHead} (h : namedHead fuel env scope ty s targs es = some hd) :
-    NamedHeadR env scope ty s.home s.name targs es hd := by
-  unfold namedHead at h
-  split at h
-  · rename_i fp
-    cases hc : pathCall fuel env scope ty s targs es with
-    | none => rw [hc] at h; simp [callHeadOf] at h
-    | some c =>
-      rw [hc] at h
-      simp only [callHeadOf, Option.some.injEq] at h
-      subst h
-      exact .call ((isFnPath_iff env s).1 fp) (pathCall_sound hc)
-  · rename_i fp
-    cases hv : variantByPath env s with
-    | none => rw [hv] at h; simp [variantHead] at h
-    | some v =>
-      rw [hv] at h
-      exact .variant (fun q => fp ((isFnPath_iff env s).2 q)) (variantByPath_sound hv) (variantHead_sound h)
-
-/-- `path(args)` in a let: an allocation, a raw slice, or a named call or
-variant. -/
-inductive CallPathHeadR (env : FrontEnv) (scope : List Local) (ty : Ty) (path args : CTree) : LetHead → Prop
+/-- `path(args)` in a let, read by its spelling: an allocation or a raw
+slice. -/
+inductive CallPathHeadR (env : FrontEnv) (scope : List Local) (path args : CTree) : LetHead → Prop
   | alloc {es : List SrcExpr} {hd : LetHead} : PathSpellings (kid path 0) (kid path 1) allocPath →
-      ArgsOfR env scope args es → AllocHeadR es hd → CallPathHeadR env scope ty path args hd
+      ArgsOfR env scope args es → AllocHeadR es hd → CallPathHeadR env scope path args hd
   | slice {p l : SrcExpr} : PathSpellings (kid path 0) (kid path 1) [textSliceFromRawParts] →
-      ArgsOfR env scope args [p, l] → CallPathHeadR env scope ty path args (.sliceOf p l)
-  | named {pr : PathRef} {front : ModPath} {name : Name} {es : List SrcExpr} {hd : LetHead} :
-      PathRefR (kid path 0) (kid path 1) pr → pr.segments = front ++ [name] → ArgsOfR env scope args es →
-      NamedHeadR env scope ty front name pr.targs es hd → CallPathHeadR env scope ty path args hd
+      ArgsOfR env scope args [p, l] → CallPathHeadR env scope path args (.sliceOf p l)
 
-theorem callPathHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {ty : Ty} {path args : CTree}
-    {hd : LetHead} (h : callPathHead fuel env scope ty path args = some hd) : CallPathHeadR env scope ty path args hd := by
+theorem callPathHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {path args : CTree}
+    {hd : LetHead} (h : callPathHead fuel env scope path args = some hd) : CallPathHeadR env scope path args hd := by
   unfold callPathHead at h
   simp only at h
   split at h
@@ -373,21 +292,7 @@ theorem callPathHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {t
         rw [ha] at h
         obtain ⟨p, l, rfl, rfl⟩ := sliceHead_sound h
         exact .slice (pathSpellings_sound (isPath_eq isl)) (argsOf_sound ha)
-    · cases hp : pathRef fuel (kid path 0) (kid path 1) with
-      | none => rw [hp] at h; cases h
-      | some pr =>
-        rw [hp] at h
-        simp only at h
-        cases hs : splitLast pr.segments with
-        | none => rw [hs] at h; cases h
-        | some s =>
-          rw [hs] at h
-          simp only at h
-          cases ha : argsOf fuel env scope args with
-          | none => rw [ha] at h; cases h
-          | some es =>
-            rw [ha] at h
-            exact .named (pathRef_sound hp) (splitLast_sound hs) (argsOf_sound ha) (namedHead_sound h)
+    · cases h
 
 /-! ## Struct literals -/
 
@@ -401,60 +306,6 @@ theorem sameNames_iff : ∀ (names : List Name) (fs : List CTree),
 theorem fieldValues_eq : ∀ (fs : List CTree), fieldValues fs = fs.map (kid · 2)
   | [] => by simp [fieldValues]
   | f :: rest => by simp [fieldValues, fieldValues_eq rest]
-
-/-- `T { f: e, .. }` in a let of struct type `T`, its fields written in
-declaration order. -/
-def LiteralHeadR (env : FrontEnv) (scope : List Local) (ty : Ty) (path fields : CTree) (hd : LetHead) : Prop :=
-  ∃ ss d args t fs es, PathSpellings (kid path 0) (kid path 1) ss ∧ DeclAt env ss d ∧ ty = .tyNamed d args ∧
-    env.decls.types[d]? = some t ∧ t.isEnum = false ∧ Items fields fs ∧
-    t.fields = fs.map (fun f => (kidToken f 0).text) ∧ ExprsR env scope (fs.map (kid · 2)) es ∧ hd = .literalOf es
-
-theorem literalHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {ty : Ty} {path fields : CTree}
-    {hd : LetHead} (h : literalHead fuel env scope ty path fields = some hd) :
-    LiteralHeadR env scope ty path fields hd := by
-  unfold literalHead at h
-  cases hs : pathSpellings fuel (kid path 0) (kid path 1) with
-  | none => rw [hs] at h; cases h
-  | some ss =>
-    rw [hs] at h
-    simp only at h
-    cases hi : listItems fuel fields with
-    | none => rw [hi] at h; cases h
-    | some fs =>
-      rw [hi] at h
-      simp only [literalAt] at h
-      cases hx : typeDeclAt env ss with
-      | none => rw [hx] at h; cases h
-      | some x =>
-        rw [hx] at h
-        simp only at h
-        cases hn : namedDecl ty with
-        | none => rw [hn] at h; cases h
-        | some e =>
-          rw [hn] at h
-          obtain ⟨args, rfl⟩ := namedDecl_eq hn
-          simp only [literalEntry] at h
-          cases ht : env.decls.types[x]? with
-          | none => rw [ht] at h; cases h
-          | some t =>
-            rw [ht] at h
-            simp only [literalChecked] at h
-            split at h
-            · rename_i c
-              simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true', sameNames_iff] at c
-              obtain ⟨⟨xe, en⟩, names⟩ := c
-              subst xe
-              cases he : exprsOf fuel env scope (fieldValues fs) with
-              | none => rw [he] at h; cases h
-              | some es =>
-                rw [he] at h
-                simp only [Option.some.injEq] at h
-                subst h
-                refine ⟨ss, _, args, t, fs, es, pathSpellings_sound hs, typeDeclAt_sound hx, rfl, ht, en,
-                  listItems_sound hi, names, ?_, rfl⟩
-                rw [← fieldValues_eq]
-                exact exprsOf_sound he
-            · cases h
 
 /-! ## Matches -/
 
@@ -651,75 +502,6 @@ theorem zipVariants_eq : ∀ (ns : List Name) (ps : List (List Ty)), zipVariants
   | _ :: _, [] => by simp [zipVariants]
   | n :: rest, p :: more => by simp [zipVariants, zipVariants_eq rest more]
 
-/-- `match x { arms }` with `x` a local of enum type: one arm per variant
-(at the local's type arguments), in declaration order. -/
-def MatchHeadR (env : FrontEnv) (scope : List Local) (m : CTree) (hd : LetHead) : Prop :=
-  ∃ pf l d args t ps arms os sas, Peel (kid m 2) pf ∧ nodeProd (kid pf 1) = pPostfixEnd ∧
-    LocalOf scope (kid pf 0) l ∧ l.ty = .tyNamed d args ∧ env.decls.types[d]? = some t ∧ t.isEnum = true ∧
-    PayloadTys env.decls d args ps ∧ Items (kid m 5) arms ∧
-    arms.length = (List.zipWith VariantTy.mk t.variants ps).length ∧ (∀ a ∈ os, a ∈ arms) ∧
-    ArmsR env scope t (List.zipWith VariantTy.mk t.variants ps) os sas ∧ hd = .matchOf l.id l.ty sas
-
-theorem matchHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {m : CTree} {hd : LetHead}
-    (h : matchHead fuel env scope m = some hd) : MatchHeadR env scope m hd := by
-  unfold matchHead at h
-  cases hp : peel fuel (kid m 2) with
-  | none => rw [hp] at h; cases h
-  | some pf =>
-    rw [hp] at h
-    simp only [matchScrutinee] at h
-    split at h
-    · rename_i pe
-      cases hl : localOf env scope (kid pf 0) with
-      | none => rw [hl] at h; cases h
-      | some l =>
-        rw [hl] at h
-        simp only [matchLocal] at h
-        cases hn : namedParts l.ty with
-        | none => rw [hn] at h; cases h
-        | some n =>
-          rw [hn] at h
-          simp only at h
-          cases ht : env.decls.types[n.decl]? with
-          | none => rw [ht] at h; cases h
-          | some t =>
-            rw [ht] at h
-            simp only [matchEnum] at h
-            split at h
-            · rename_i en
-              cases hq : payloadTys fuel env.decls n.decl n.args with
-              | none => rw [hq] at h; cases h
-              | some ps =>
-                rw [hq] at h
-                simp only at h
-                cases hi : listItems fuel (kid m 5) with
-                | none => rw [hi] at h; cases h
-                | some arms =>
-                  rw [hi] at h
-                  simp only at h
-                  cases ho : armsOrdered fuel env scope t (zipVariants t.variants ps) arms with
-                  | none => rw [ho] at h; simp [matchArms] at h
-                  | some sas =>
-                    rw [ho] at h
-                    simp only [matchArms, Option.some.injEq] at h
-                    subst h
-                    unfold armsOrdered at ho
-                    cases hio : armsInOrder fuel t (zipVariants t.variants ps) arms with
-                    | none => rw [hio] at ho; cases ho
-                    | some os =>
-                      rw [hio] at ho
-                      simp only at ho
-                      unfold armsInOrder at hio
-                      split at hio
-                      · rename_i len
-                        rw [zipVariants_eq] at len hio ho
-                        exact ⟨pf, l, n.decl, n.args, t, ps, arms, os, sas, peel_sound hp, pe, localOf_sound hl,
-                          namedParts_eq hn, ht, en, payloadTys_sound hq, listItems_sound hi, len,
-                          armsByVariant_mem hio, armsOf_sound ho, rfl⟩
-                      · cases hio
-            · cases h
-    · cases h
-
 /-! ## Let heads -/
 
 /-- `recv.m(args)` with no type arguments, the receiver `self` or a name. -/
@@ -731,104 +513,27 @@ def MethodForm (pf : CTree) : Prop :=
 theorem isMethodForm_sound {pf : CTree} (h : isMethodForm pf = true) : MethodForm pf := by
   simpa [isMethodForm, MethodForm, and_assoc] using h
 
-/-- The head of `let x: ty = init`. -/
-inductive LetHeadR (env : FrontEnv) (scope : List Local) (ty : Ty) (init : CTree) : LetHead → Prop
-  | plain {e : SrcExpr} : ExprR env scope init e → LetHeadR env scope ty init (.plain e)
-  | «match» {pf : CTree} {hd : LetHead} : Peel init pf → nodeProd (kid pf 0) = pMatchExpr →
-      nodeProd (kid pf 1) = pPostfixEnd → MatchHeadR env scope (kid pf 0) hd → LetHeadR env scope ty init hd
-  | literal {pf : CTree} {hd : LetHead} : Peel init pf → nodeProd (kid pf 0) = pIdent →
-      nodeProd (kid (kid pf 0) 1) = pStructLit → nodeProd (kid pf 1) = pPostfixEnd →
-      LiteralHeadR env scope ty (kid (kid pf 0) 0) (kid (kid (kid pf 0) 1) 1) hd → LetHeadR env scope ty init hd
+/-- The head of `let x: ty = init` that its spelling decides: `init` (through
+wrappers) is a call of the allocator or a raw slice. -/
+inductive LetHeadR (env : FrontEnv) (scope : List Local) (init : CTree) : LetHead → Prop
   | callPath {pf : CTree} {hd : LetHead} : Peel init pf → nodeProd (kid pf 0) = pIdent →
       nodeProd (kid (kid pf 0) 1) = pIdentPlain → nodeProd (kid pf 1) = pPostfixCall →
-      nodeProd (kid (kid pf 1) 3) = pPostfixEnd → CallPathHeadR env scope ty (kid (kid pf 0) 0) (kid (kid pf 1) 1) hd →
-      LetHeadR env scope ty init hd
-  | method {pf : CTree} {c : Called} : Peel init pf → MethodForm pf → MethodCallOf env scope ty pf c →
-      LetHeadR env scope ty init (.callOf c)
-  | index {pf : CTree} {l : Local} {i : SrcExpr} : Peel init pf → nodeProd (kid pf 0) = pIdent →
-      nodeProd (kid (kid pf 0) 1) = pIdentPlain → nodeProd (kid pf 1) = pPostfixIndex →
-      nodeProd (kid (kid pf 1) 3) = pPostfixEnd → LocalOf scope (kid pf 0) l → ExprR env scope (kid (kid pf 1) 1) i →
-      LetHeadR env scope ty init (.indexOf l.id i)
-  | unit {pf : CTree} {ss : List Name} {front : ModPath} {name : Name} {v : VariantAt} {hd : LetHead} :
-      Peel init pf → nodeProd (kid pf 0) = pIdent → nodeProd (kid (kid pf 0) 1) = pIdentPlain →
-      nodeProd (kid pf 1) = pPostfixEnd → PathSpellings (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) ss →
-      ss = front ++ [name] → VariantByPath env front name v → VariantHeadR ty v [] [] hd → LetHeadR env scope ty init hd
+      nodeProd (kid (kid pf 1) 3) = pPostfixEnd → CallPathHeadR env scope (kid (kid pf 0) 0) (kid (kid pf 1) 1) hd →
+      LetHeadR env scope init hd
 
-theorem plainHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {ty : Ty} {init : CTree} {hd : LetHead}
-    (h : plainHead (exprOf fuel env scope init) = some hd) : LetHeadR env scope ty init hd := by
-  obtain ⟨e, he, rfl⟩ := plainHead_some h
-  exact .plain (exprOf_sound he)
-
-theorem postfixHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {ty : Ty} {pf init : CTree}
-    {hd : LetHead} (pe : Peel init pf) (h : postfixHead fuel env scope ty pf init = some hd) :
-    LetHeadR env scope ty init hd := by
-  unfold postfixHead at h
-  simp only at h
-  split at h
-  · rename_i c
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at c
-    exact .match pe c.1 c.2 (matchHead_sound h)
-  · split at h
-    · rename_i c
-      simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
-      exact .literal pe c.1 c.2.1 c.2.2 (literalHead_sound h)
-    · split at h
-      · rename_i c
-        simp only [isPathCall, Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
-        exact .callPath pe c.1 c.2.1 c.2.2.1 c.2.2.2 (callPathHead_sound h)
-      · split at h
-        · rename_i c
-          cases hm : methodCallOf fuel env scope ty pf with
-          | none => rw [hm] at h; simp [callHeadOf] at h
-          | some m =>
-            rw [hm] at h
-            simp only [callHeadOf, Option.some.injEq] at h
-            subst h
-            exact .method pe (isMethodForm_sound c) (methodCallOf_sound hm)
-        · split at h
-          · rename_i c
-            simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
-            cases hl : localOf env scope (kid pf 0) with
-            | none => rw [hl] at h; simp [indexHead] at h
-            | some l =>
-              rw [hl] at h
-              cases hi : exprOf fuel env scope (kid (kid pf 1) 1) with
-              | none => rw [hi] at h; simp [indexHead] at h
-              | some i =>
-                rw [hi] at h
-                simp only [indexHead, Option.some.injEq] at h
-                subst h
-                exact .index pe c.1 c.2.1 c.2.2.1 c.2.2.2 (localOf_sound hl) (exprOf_sound hi)
-          · split at h
-            · rename_i c
-              simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
-              unfold unitHead at h
-              cases hs : pathSpellings fuel (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) with
-              | none => rw [hs] at h; exact plainHead_sound h
-              | some ss =>
-                rw [hs] at h
-                simp only at h
-                cases hl : splitLast ss with
-                | none => rw [hl] at h; cases h
-                | some s =>
-                  rw [hl] at h
-                  simp only at h
-                  cases hv : variantByPath env s with
-                  | none => rw [hv] at h; exact plainHead_sound h
-                  | some v =>
-                    rw [hv] at h
-                    simp only at h
-                    exact .unit pe c.1 c.2.1 c.2.2 (pathSpellings_sound hs) (splitLast_sound hl)
-                      (variantByPath_sound hv) (variantHead_sound h)
-            · exact plainHead_sound h
-
-theorem letHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {ty : Ty} {init : CTree} {hd : LetHead}
-    (h : letHead fuel env scope ty init = some hd) : LetHeadR env scope ty init hd := by
+theorem letHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {init : CTree} {hd : LetHead}
+    (h : letHead fuel env scope init = some hd) : LetHeadR env scope init hd := by
   unfold letHead at h
   cases hp : peel fuel init with
-  | none => rw [hp] at h; exact plainHead_sound h
+  | none => rw [hp] at h; cases h
   | some pf =>
     rw [hp] at h
-    exact postfixHead_sound (peel_sound hp) h
+    simp only [postfixHead] at h
+    by_cases c : isPathCall pf = true
+    · rw [if_pos c] at h
+      simp only [isPathCall, Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
+      exact .callPath (peel_sound hp) c.1 c.2.1 c.2.2.1 c.2.2.2 (callPathHead_sound h)
+    · rw [if_neg c] at h
+      cases h
 
 end Lanius.Mini.Reading

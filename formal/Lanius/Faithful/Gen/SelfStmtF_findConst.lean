@@ -30,7 +30,7 @@ abbrev Stmt_add_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_bare_variant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepList 24 RepNat) x1 v1 →
-    (RepOption 244 RepVariantAt) (Lanius.Mini.bareVariant x0 x1) w
+    (RepOption 246 RepVariantAt) (Lanius.Mini.bareVariant x0 x1) w
 
 abbrev Stmt_decl_env (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {x1 : List (List Nat)} {x2 : List (List Nat)} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepDecls x0 v0 → (RepList 30 (RepList 24 RepNat)) x1 v1 → (RepList 30 (RepList 24 RepNat)) x2 v2 → (RepList 132 RepTy) x3 v3 →
@@ -42,11 +42,11 @@ abbrev Stmt_find_alias (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_find_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.ConstDecl} {x1 : List (List Nat)} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 106 RepConstDecl) x0 v0 → (RepList 30 (RepList 24 RepNat)) x1 v1 → (RepList 24 RepNat) x2 v2 →
-    (RepOption 246 RepConstDecl) (Lanius.Mini.findConst x0 x1 x2) w
+    (RepOption 245 RepConstDecl) (Lanius.Mini.findConst x0 x1 x2) w
 
 abbrev Stmt_imported_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : List Lanius.Mini.ImportDecl} {x2 : List (List Nat)} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 98 RepTypeDecl) x0 v0 → (RepList 109 RepImportDecl) x1 v1 → (RepList 30 (RepList 24 RepNat)) x2 v2 → (RepList 24 RepNat) x3 v3 →
-    (RepList 252 RepVariantAt) (Lanius.Mini.importedVariants x0 x1 x2 x3) w
+    (RepList 254 RepVariantAt) (Lanius.Mini.importedVariants x0 x1 x2 x3) w
 
 abbrev Stmt_inst_index (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Inst} {x1 : Lanius.Mini.Inst} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 130 RepInst) x0 v0 → RepInst x1 v1 → RepNat x2 v2 →
@@ -57,8 +57,8 @@ abbrev Stmt_inst_member (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     RepBool (Lanius.Mini.instMember x0 x1) w
 
 abbrev Stmt_only_variant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.VariantAt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 252 RepVariantAt) x0 v0 →
-    (RepOption 244 RepVariantAt) (Lanius.Mini.onlyVariant x0) w
+  ∀ {x0 : List Lanius.Mini.VariantAt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 254 RepVariantAt) x0 v0 →
+    (RepOption 246 RepVariantAt) (Lanius.Mini.onlyVariant x0) w
 
 abbrev Stmt_same_inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Inst} {x1 : Lanius.Mini.Inst} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepInst x0 v0 → RepInst x1 v1 →
@@ -78,6 +78,6 @@ abbrev Stmt_uint_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_variants_named (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : List (List Nat)} {x2 : List Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 98 RepTypeDecl) x0 v0 → (RepList 30 (RepList 24 RepNat)) x1 v1 → (RepList 24 RepNat) x2 v2 → RepNat x3 v3 →
-    (RepList 252 RepVariantAt) (Lanius.Mini.variantsNamed x0 x1 x2 x3) w
+    (RepList 254 RepVariantAt) (Lanius.Mini.variantsNamed x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

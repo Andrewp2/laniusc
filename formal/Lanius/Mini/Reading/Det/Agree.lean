@@ -257,23 +257,4 @@ theorem fold_agree : ∀ {env : FrontEnv} {scope : List Local} {a : SrcExpr} {ta
       exact fold_agree fo nd ef
 end
 
-/-! ## Statements over a pure value
-
-A statement over an effectful value whose value is pure takes the pure
-statement's form, so with `pure_agree` both readings of a pure value give
-one statement. -/
-
-theorem returnEff_pure (e : SrcExpr) : returnEff (.xPure e) = .mReturn e := by simp [returnEff, purePart]
-theorem ifEff_pure (e : SrcExpr) (a b : MStmt) : ifEff (.xPure e) a b = .mIf e a b := by simp [ifEff, purePart]
-theorem whileEff_pure (e : SrcExpr) (b : MStmt) : whileEff (.xPure e) b = .mWhile e b := by
-  simp [whileEff, purePart]
-theorem setFieldEff_pure (id j : Nat) (e : SrcExpr) : setFieldEff id j (.xPure e) = .mSetField id j e := by
-  simp [setFieldEff, purePart]
-theorem setIndexEff_pure (id : Nat) (i v : SrcExpr) : setIndexEff id (.xPure i) (.xPure v) = .mSetIndex id i v := by
-  simp [setIndexEff, setIndexPure, purePart]
-theorem setEvalOf_pure (id : Nat) (e : SrcExpr) : setEvalOf id (some (.xPure e)) = some (.mSet id e) := by
-  simp [setEvalOf, callParts, setEff, purePart]
-theorem evalHead_pure (e : SrcExpr) : evalHead (some (.xPure e)) = some (.plain e) := by
-  simp [evalHead, callParts, evalLetHead, purePart]
-
 end Lanius.Mini.Reading

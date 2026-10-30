@@ -1,13 +1,12 @@
 import Lanius.Mini.Reading.Method
 
-/-! # The reading, V8d: effectful expression types and calls
+/-! # The reading, V8d: effectful expression types, arguments and paths
 
 `EffTy decls scope x t`: the type of an effectful expression, as type
 arguments are inferred from it (a call's is its instance's result type,
-`InstRet`). A call `path(args)` is a static method call `T::m(args)` when
-the path's prefix is a type parameter or primitive type, and else a call of
-the free function the path names, at the type arguments written or
-inferred; `x.m(args)` is `T::m(x, args)` for `x`'s type `T`. -/
+`InstRet`). A path's prefix names a type (`TypeOwner`) when it is one
+segment, a type parameter or a primitive type; the calls themselves are
+read in `Reading/Effs`. -/
 
 namespace Lanius.Mini.Reading
 
@@ -242,92 +241,7 @@ theorem pathRef_sound : ∀ {fuel : Nat} {segment tail : CTree} {pr : PathRef},
     rw [if_neg (by simpa using mo)] at h
     cases h
 
-/-! ## Calls -/
-
-/-- A call's instance by inference: none to infer, or the instance
-inferred from the arguments' types. -/
-def InferCall (decls : Decls) (scope : List Local) (d : Nat) (fd : FnDecl) (start : List Bind) (es : List SrcExpr)
-    (expected : Ty) (inst : Inst) : Prop :=
-  (fd.implParams ++ fd.params = [] ∧ inst = ⟨d, []⟩) ∨
-  ∃ ts, ListRel (ExprTy decls scope) es ts ∧ InferInst decls d fd start (some ts) expected inst
-
-theorem inferCall_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {d : Nat} {fd : FnDecl} {start : List Bind}
-    {es : List SrcExpr} {expected : Ty} {inst : Inst}
-    (h : inferInst fuel env.decls d fd start (exprsTys fuel env scope es) expected = some inst) :
-    InferCall env.decls scope d fd start es expected inst := by
-  have r := inferInst_sound h
-  cases ht : exprsTys fuel env scope es with
-  | none =>
-    rw [ht] at r
-    cases r with
-    | plain e => exact .inl ⟨e, rfl⟩
-    | infer _ e => cases e
-  | some ts =>
-    rw [ht] at r
-    exact .inr ⟨ts, exprsTys_sound ht, r⟩
-
-/-- A call of the free function `d`: at the type arguments inferred, or
-written. -/
-inductive FreeCall (env : FrontEnv) (scope : List Local) (expected : Ty) (d : Nat) (targs : List CTree)
-    (es : List SrcExpr) : Called → Prop
-  | inferred {fd : FnDecl} {inst : Inst} : env.decls.fns[d]? = some fd → targs = [] →
-      InferCall env.decls scope d fd [] es expected inst → FreeCall env scope expected d targs es ⟨inst, es⟩
-  | explicit {fd : FnDecl} {inst : Inst} : env.decls.fns[d]? = some fd → targs ≠ [] → ExplicitInst env d fd targs inst →
-      FreeCall env scope expected d targs es ⟨inst, es⟩
-
-theorem freeCall_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Ty} {d : Nat}
-    {targs : List CTree} {es : List SrcExpr} {c : Called} (h : freeCall fuel env scope expected d targs es = some c) :
-    FreeCall env scope expected d targs es c := by
-  unfold freeCall at h
-  cases hf : env.decls.fns[d]? with
-  | none => rw [hf] at h; cases h
-  | some fd =>
-    rw [hf] at h
-    simp only [freeCallOf] at h
-    by_cases nt : noTrees targs = true
-    · rw [if_pos nt] at h
-      simp only [called] at h
-      cases hi : inferInst fuel env.decls d fd [] (exprsTys fuel env scope es) expected with
-      | none => rw [hi] at h; cases h
-      | some inst =>
-        rw [hi, Option.some.injEq] at h
-        subst h
-        exact .inferred hf ((noTrees_iff _).1 nt) (inferCall_sound hi)
-    · rw [if_neg nt] at h
-      simp only [called] at h
-      cases hi : explicitInst fuel env d fd targs with
-      | none => rw [hi] at h; cases h
-      | some inst =>
-        rw [hi, Option.some.injEq] at h
-        subst h
-        exact .explicit hf (fun e => nt ((noTrees_iff _).2 e)) (explicitInst_sound hi)
-
-/-- `T::m(args)` for the type `t`: a method `m` whose impl's type matches
-`t`, at the type arguments inferred from the impl's and the arguments. -/
-def StaticCall (env : FrontEnv) (scope : List Local) (expected : Ty) (t : Ty) (name : Name) (es : List SrcExpr)
-    (c : Called) : Prop :=
-  ∃ found fd inst, MethodFor env.decls env.decls.fns 0 name t found ∧ env.decls.fns[found.decl]? = some fd ∧
-    InferCall env.decls scope found.decl fd found.binds es expected inst ∧ c = ⟨inst, es⟩
-
-theorem staticCall_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected t : Ty} {name : Name}
-    {es : List SrcExpr} {c : Called} (h : staticCall fuel env scope expected (some t) name es = some c) :
-    StaticCall env scope expected t name es c := by
-  simp only [staticCall, methodInst] at h
-  cases hm : findMethod fuel env.decls env.decls.fns 0 name t with
-  | none => rw [hm] at h; cases h
-  | some found =>
-    rw [hm] at h
-    simp only at h
-    cases hf : env.decls.fns[found.decl]? with
-    | none => rw [hf] at h; cases h
-    | some fd =>
-      rw [hf] at h
-      simp only [called] at h
-      cases hi : inferInst fuel env.decls found.decl fd found.binds (exprsTys fuel env scope es) expected with
-      | none => rw [hi] at h; cases h
-      | some inst =>
-        rw [hi, Option.some.injEq] at h
-        exact ⟨found, fd, inst, findMethod_sound hm, hf, inferCall_sound hi, h.symm⟩
+/-! ## Type owners -/
 
 /-- A path's prefix that names a type: one segment, a type parameter or a
 primitive type. -/
@@ -337,17 +251,6 @@ def TypeOwner (env : FrontEnv) (front : ModPath) (n : Name) : Prop :=
 /-- The type a type owner names. -/
 def OwnerTy (env : FrontEnv) (n : Name) (t : Ty) : Prop :=
   ParamTy env n t ∨ (NoParam env n ∧ primTys.lookup n = some t)
-
-/-- `front::name(args)`: a static call when `front` names a type and no
-type arguments are written, else a call of the free function the path
-names. -/
-inductive PathCall (env : FrontEnv) (scope : List Local) (expected : Ty) (front : ModPath) (name : Name)
-    (targs : List CTree) (es : List SrcExpr) : Called → Prop
-  | static {n : Name} {t : Ty} {c : Called} : TypeOwner env front n → targs = [] → OwnerTy env n t →
-      StaticCall env scope expected t name es c → PathCall env scope expected front name targs es c
-  | free {d : Nat} {c : Called} : ¬(∃ n, TypeOwner env front n ∧ targs = []) →
-      FnNamed env.decls (if front = [] then env.home else front) name d → FreeCall env scope expected d targs es c →
-      PathCall env scope expected front name targs es c
 
 theorem isTypeParam_iff (env : FrontEnv) (front : ModPath) :
     (isTypeParam env (singleName front) = true) ↔ ∃ n, TypeOwner env front n := by
@@ -370,83 +273,5 @@ theorem isTypeParam_iff (env : FrontEnv) (front : ModPath) :
         cases hp : primName n <;> simp_all [isNoneType]
   | [] => simp [isTypeParam, TypeOwner]
   | _ :: _ :: _ => simp [isTypeParam, TypeOwner]
-
-theorem pathCall_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Ty} {s : Split}
-    {targs : List CTree} {es : List SrcExpr} {c : Called} (h : pathCall fuel env scope expected s targs es = some c) :
-    PathCall env scope expected s.home s.name targs es c := by
-  unfold pathCall at h
-  simp only at h
-  by_cases st : (isTypeParam env (singleName s.home) && noTrees targs) = true
-  · rw [if_pos st] at h
-    simp only [Bool.and_eq_true] at st
-    obtain ⟨n, own⟩ := (isTypeParam_iff env s.home).1 st.1
-    have hs : singleName s.home = some n := by rw [own.1]; rfl
-    rw [hs] at h
-    simp only [ownerTy] at h
-    cases hp : paramTy env n with
-    | some t =>
-      rw [hp] at h
-      exact .static own ((noTrees_iff _).1 st.2) (.inl (paramTy_sound hp)) (staticCall_sound h)
-    | none =>
-      rw [hp] at h
-      simp only at h
-      rw [primTy_eq] at h
-      cases hq : primTys.lookup n with
-      | none => rw [hq] at h; simp [staticCall] at h
-      | some t =>
-        rw [hq] at h
-        exact .static own ((noTrees_iff _).1 st.2) (.inr ⟨paramTy_none hp, hq⟩) (staticCall_sound h)
-  · rw [if_neg st] at h
-    cases hf : findFn env.decls.fns (moduleOr env.home s.home) s.name 0 with
-    | none => rw [hf] at h; cases h
-    | some d =>
-      rw [hf] at h
-      refine .free (fun ⟨n, own, e⟩ => st ?_) (by rw [← moduleOr_eq]; exact findFn_sound hf) (freeCall_sound h)
-      simp only [Bool.and_eq_true]
-      exact ⟨(isTypeParam_iff env s.home).2 ⟨n, own⟩, (noTrees_iff _).2 e⟩
-
-/-- `path(args)` as a call, its value stored at type `expected`. -/
-def PathCallOf (env : FrontEnv) (scope : List Local) (expected : Ty) (path args : CTree) (c : Called) : Prop :=
-  ∃ pr front name es, PathRefR (kid path 0) (kid path 1) pr ∧ pr.segments = front ++ [name] ∧
-    ArgsOfR env scope args es ∧ PathCall env scope expected front name pr.targs es c
-
-theorem pathCallOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Ty} {path args : CTree}
-    {c : Called} (h : pathCallOf fuel env scope expected path args = some c) : PathCallOf env scope expected path args c := by
-  unfold pathCallOf at h
-  cases hp : pathRef fuel (kid path 0) (kid path 1) with
-  | none => rw [hp] at h; cases h
-  | some pr =>
-    rw [hp] at h
-    simp only at h
-    cases hs : splitLast pr.segments with
-    | none => rw [hs] at h; cases h
-    | some s =>
-      rw [hs] at h
-      simp only at h
-      cases ha : argsOf fuel env scope args with
-      | none => rw [ha] at h; cases h
-      | some es =>
-        rw [ha] at h
-        exact ⟨pr, s.home, s.name, es, pathRef_sound hp, splitLast_sound hs, argsOf_sound ha, pathCall_sound h⟩
-
-/-- `recv.m(args)`, the receiver a local. -/
-def MethodCallOf (env : FrontEnv) (scope : List Local) (expected : Ty) (pf : CTree) (c : Called) : Prop :=
-  ∃ l es, LocalOf scope (kid pf 0) l ∧ ArgsOfR env scope (kid (kid (kid pf 1) 3) 1) es ∧
-    StaticCall env scope expected l.ty (kidToken (kid pf 1) 1).text (.local l.id :: es) c
-
-theorem methodCallOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Ty} {pf : CTree}
-    {c : Called} (h : methodCallOf fuel env scope expected pf = some c) : MethodCallOf env scope expected pf c := by
-  unfold methodCallOf at h
-  simp only [methodCall] at h
-  cases hl : localOf env scope (kid pf 0) with
-  | none => rw [hl] at h; cases h
-  | some l =>
-    rw [hl] at h
-    simp only at h
-    cases ha : argsOf fuel env scope (kid (kid (kid pf 1) 3) 1) with
-    | none => rw [ha] at h; cases h
-    | some es =>
-      rw [ha] at h
-      exact ⟨l, es, localOf_sound hl, argsOf_sound ha, staticCall_sound h⟩
 
 end Lanius.Mini.Reading

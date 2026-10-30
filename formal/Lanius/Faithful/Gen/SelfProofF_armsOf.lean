@@ -3,27 +3,9 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_armsOf
-public import Lanius.Faithful.Gen.SelfStmt2
-public import Lanius.Faithful.Gen.SelfStmt4
-public import Lanius.Faithful.Gen.SelfStmt5
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pIdentPlain
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
-public import Lanius.Faithful.Gen.SelfStmtF_armsNaming
 public import Lanius.Faithful.Gen.SelfStmtF_armsOf
-public import Lanius.Faithful.Gen.SelfStmtF_consBinder
-public import Lanius.Faithful.Gen.SelfStmtF_consTys
-public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
-public import Lanius.Faithful.Gen.SelfStmtF_hasKids
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
-public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_isSomeIndex
-public import Lanius.Faithful.Gen.SelfStmtF_matchArms
-public import Lanius.Faithful.Gen.SelfStmtF_methodCallOf
+public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
-public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 import all Lanius.Faithful.Gen.SelfSrcF_armsOf
@@ -45,30 +27,6 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
-
-theorem step_arms_of {prog : SrcProgram} {prims : Prims} {ix_arms_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_SrcArm ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_cons_arm ix_arm_of : Nat} (fn : prog.funcs[ix_arms_of]? = some (src_arms_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_SrcArm ix_arms_of ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_cons_arm ix_arm_of)) (np : prims.isPrim ix_arms_of = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
-    (ext_empty_of_mini_selfhost_SrcArm : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcArm prog prims ix_empty_of_mini_selfhost_SrcArm n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy n))
-    (ext_cons_arm : Certified (∀ {n : Nat}, Stmt_cons_arm prog prims ix_cons_arm n))
-    (ext_arm_of : Certified (∀ {n : Nat}, Stmt_arm_of prog prims ix_arm_of n)) {n : Nat}
-    (ih_arms_of : Certified (Stmt_arms_of prog prims ix_arms_of n)) :
-    Stmt_arms_of prog prims ix_arms_of (n + 1) := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
-  rw [pcall_succ np fn] at h
-  simp only [src_arms_of] at h
-  faithful [Lanius.Mini.armsOf]
-
-theorem proof_arms_ordered {prog : SrcProgram} {prims : Prims} {ix_arms_ordered ix_arms_in_order ix_arms_of : Nat} (fn : prog.funcs[ix_arms_ordered]? = some (src_arms_ordered ix_arms_in_order ix_arms_of)) (np : prims.isPrim ix_arms_ordered = false)
-    (ext_arms_in_order : Certified (∀ {n : Nat}, Stmt_arms_in_order prog prims ix_arms_in_order n))
-    (ext_arms_of : Certified (∀ {n : Nat}, Stmt_arms_of prog prims ix_arms_of n)) {n : Nat} :
-    Stmt_arms_ordered prog prims ix_arms_ordered n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_arms_ordered] at h
-  faithful [Lanius.Mini.armsOrdered]
 
 theorem proof_checked_bound {prog : SrcProgram} {prims : Prims} {ix_checked_bound : Nat} (fn : prog.funcs[ix_checked_bound]? = some (src_checked_bound)) (np : prims.isPrim ix_checked_bound = false) {n : Nat} :
     Stmt_checked_bound prog prims ix_checked_bound n := by
@@ -133,96 +91,23 @@ theorem proof_has_tys {prog : SrcProgram} {prims : Prims} {ix_has_tys : Nat} (fn
   simp only [src_has_tys] at h
   faithful [Lanius.Mini.hasTys]
 
-theorem proof_let_head {prog : SrcProgram} {prims : Prims} {ix_let_head ix_expr_of ix_peel ix_postfix_head ix_plain_head : Nat} (fn : prog.funcs[ix_let_head]? = some (src_let_head ix_expr_of ix_peel ix_postfix_head ix_plain_head)) (np : prims.isPrim ix_let_head = false)
-    (ext_expr_of : Certified (∀ {n : Nat}, Stmt_expr_of prog prims ix_expr_of n))
+theorem proof_let_head {prog : SrcProgram} {prims : Prims} {ix_let_head ix_peel ix_postfix_head : Nat} (fn : prog.funcs[ix_let_head]? = some (src_let_head ix_peel ix_postfix_head)) (np : prims.isPrim ix_let_head = false)
     (ext_peel : Certified (∀ {n : Nat}, Stmt_peel prog prims ix_peel n))
-    (ext_postfix_head : Certified (∀ {n : Nat}, Stmt_postfix_head prog prims ix_postfix_head n))
-    (ext_plain_head : Certified (∀ {n : Nat}, Stmt_plain_head prog prims ix_plain_head n)) {n : Nat} :
+    (ext_postfix_head : Certified (∀ {n : Nat}, Stmt_postfix_head prog prims ix_postfix_head n)) {n : Nat} :
     Stmt_let_head prog prims ix_let_head n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_let_head] at h
   faithful [Lanius.Mini.letHead]
 
-theorem proof_match_enum {prog : SrcProgram} {prims : Prims} {ix_match_enum ix_list_items ix_kid ix_zip_variants ix_match_arms ix_arms_ordered : Nat} (fn : prog.funcs[ix_match_enum]? = some (src_match_enum ix_list_items ix_kid ix_zip_variants ix_match_arms ix_arms_ordered)) (np : prims.isPrim ix_match_enum = false)
-    (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
+theorem proof_postfix_head {prog : SrcProgram} {prims : Prims} {ix_postfix_head ix_kid ix_is_path_call ix_call_path_head : Nat} (fn : prog.funcs[ix_postfix_head]? = some (src_postfix_head ix_kid ix_is_path_call ix_call_path_head)) (np : prims.isPrim ix_postfix_head = false)
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_zip_variants : Certified (∀ {n : Nat}, Stmt_zip_variants prog prims ix_zip_variants n))
-    (ext_match_arms : Certified (∀ {n : Nat}, Stmt_match_arms prog prims ix_match_arms n))
-    (ext_arms_ordered : Certified (∀ {n : Nat}, Stmt_arms_ordered prog prims ix_arms_ordered n)) {n : Nat} :
-    Stmt_match_enum prog prims ix_match_enum n := by
-  intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_match_enum] at h
-  faithful [Lanius.Mini.matchEnum]
-
-theorem proof_match_head {prog : SrcProgram} {prims : Prims} {ix_match_head ix_kid ix_peel ix_match_scrutinee : Nat} (fn : prog.funcs[ix_match_head]? = some (src_match_head ix_kid ix_peel ix_match_scrutinee)) (np : prims.isPrim ix_match_head = false)
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_peel : Certified (∀ {n : Nat}, Stmt_peel prog prims ix_peel n))
-    (ext_match_scrutinee : Certified (∀ {n : Nat}, Stmt_match_scrutinee prog prims ix_match_scrutinee n)) {n : Nat} :
-    Stmt_match_head prog prims ix_match_head n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_match_head] at h
-  faithful [Lanius.Mini.matchHead]
-
-theorem proof_match_local {prog : SrcProgram} {prims : Prims} {ix_match_local ix_field_types_Decls_of_mini_selfhost_Decls ix_get_of_mini_selfhost_TypeDecl ix_payload_tys ix_named_parts ix_match_enum : Nat} (fn : prog.funcs[ix_match_local]? = some (src_match_local ix_field_types_Decls_of_mini_selfhost_Decls ix_get_of_mini_selfhost_TypeDecl ix_payload_tys ix_named_parts ix_match_enum)) (np : prims.isPrim ix_match_local = false)
-    (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
-    (ext_get_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_TypeDecl prog prims ix_get_of_mini_selfhost_TypeDecl n))
-    (ext_payload_tys : Certified (∀ {n : Nat}, Stmt_payload_tys prog prims ix_payload_tys n))
-    (ext_named_parts : Certified (∀ {n : Nat}, Stmt_named_parts prog prims ix_named_parts n))
-    (ext_match_enum : Certified (∀ {n : Nat}, Stmt_match_enum prog prims ix_match_enum n)) {n : Nat} :
-    Stmt_match_local prog prims ix_match_local n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_match_local] at h
-  faithful [Lanius.Mini.matchLocal]
-
-theorem proof_match_scrutinee {prog : SrcProgram} {prims : Prims} {ix_match_scrutinee ix_node_prod ix_kid ix_local_of ix_p_postfix_end ix_match_local : Nat} (fn : prog.funcs[ix_match_scrutinee]? = some (src_match_scrutinee ix_node_prod ix_kid ix_local_of ix_p_postfix_end ix_match_local)) (np : prims.isPrim ix_match_scrutinee = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_local_of : Certified (∀ {n : Nat}, Stmt_local_of prog prims ix_local_of n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
-    (ext_match_local : Certified (∀ {n : Nat}, Stmt_match_local prog prims ix_match_local n)) {n : Nat} :
-    Stmt_match_scrutinee prog prims ix_match_scrutinee n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_match_scrutinee] at h
-  faithful [Lanius.Mini.matchScrutinee]
-
-theorem proof_postfix_head {prog : SrcProgram} {prims : Prims} {ix_postfix_head ix_node_prod ix_kid ix_expr_of ix_plain_head ix_p_ident ix_local_of ix_p_postfix_end ix_p_postfix_index ix_is_path_call ix_is_method_form ix_p_match_expr ix_match_head ix_p_struct_lit ix_literal_head ix_call_path_head ix_call_head_of ix_method_call_of ix_p_ident_plain ix_index_head ix_unit_head : Nat} (fn : prog.funcs[ix_postfix_head]? = some (src_postfix_head ix_node_prod ix_kid ix_expr_of ix_plain_head ix_p_ident ix_local_of ix_p_postfix_end ix_p_postfix_index ix_is_path_call ix_is_method_form ix_p_match_expr ix_match_head ix_p_struct_lit ix_literal_head ix_call_path_head ix_call_head_of ix_method_call_of ix_p_ident_plain ix_index_head ix_unit_head)) (np : prims.isPrim ix_postfix_head = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_expr_of : Certified (∀ {n : Nat}, Stmt_expr_of prog prims ix_expr_of n))
-    (ext_plain_head : Certified (∀ {n : Nat}, Stmt_plain_head prog prims ix_plain_head n))
-    (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
-    (ext_local_of : Certified (∀ {n : Nat}, Stmt_local_of prog prims ix_local_of n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
-    (ext_p_postfix_index : Certified (∀ {n : Nat}, Stmt_p_postfix_index prog prims ix_p_postfix_index n))
     (ext_is_path_call : Certified (∀ {n : Nat}, Stmt_is_path_call prog prims ix_is_path_call n))
-    (ext_is_method_form : Certified (∀ {n : Nat}, Stmt_is_method_form prog prims ix_is_method_form n))
-    (ext_p_match_expr : Certified (∀ {n : Nat}, Stmt_p_match_expr prog prims ix_p_match_expr n))
-    (ext_match_head : Certified (∀ {n : Nat}, Stmt_match_head prog prims ix_match_head n))
-    (ext_p_struct_lit : Certified (∀ {n : Nat}, Stmt_p_struct_lit prog prims ix_p_struct_lit n))
-    (ext_literal_head : Certified (∀ {n : Nat}, Stmt_literal_head prog prims ix_literal_head n))
-    (ext_call_path_head : Certified (∀ {n : Nat}, Stmt_call_path_head prog prims ix_call_path_head n))
-    (ext_call_head_of : Certified (∀ {n : Nat}, Stmt_call_head_of prog prims ix_call_head_of n))
-    (ext_method_call_of : Certified (∀ {n : Nat}, Stmt_method_call_of prog prims ix_method_call_of n))
-    (ext_p_ident_plain : Certified (∀ {n : Nat}, Stmt_p_ident_plain prog prims ix_p_ident_plain n))
-    (ext_index_head : Certified (∀ {n : Nat}, Stmt_index_head prog prims ix_index_head n))
-    (ext_unit_head : Certified (∀ {n : Nat}, Stmt_unit_head prog prims ix_unit_head n)) {n : Nat} :
+    (ext_call_path_head : Certified (∀ {n : Nat}, Stmt_call_path_head prog prims ix_call_path_head n)) {n : Nat} :
     Stmt_postfix_head prog prims ix_postfix_head n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h

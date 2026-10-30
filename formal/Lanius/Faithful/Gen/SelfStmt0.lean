@@ -44,8 +44,8 @@ abbrev Stmt_concat_of_mini_selfhost_MEff (prog : SrcProgram) (prims : Prims) (ix
     (RepList 217 RepMEff) (x0 ++ x1) w
 
 abbrev Stmt_concat_of_mini_selfhost_VariantAt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.VariantAt} {x1 : List Lanius.Mini.VariantAt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 252 RepVariantAt) x0 v0 → (RepList 252 RepVariantAt) x1 v1 →
-    (RepList 252 RepVariantAt) (x0 ++ x1) w
+  ∀ {x0 : List Lanius.Mini.VariantAt} {x1 : List Lanius.Mini.VariantAt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 254 RepVariantAt) x0 v0 → (RepList 254 RepVariantAt) x1 v1 →
+    (RepList 254 RepVariantAt) (x0 ++ x1) w
 
 abbrev Stmt_cons_of_mini_selfhost_List_mini_selfhost_Ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Ty} {x1 : List (List Lanius.Mini.Ty)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 132 RepTy) x0 v0 → (RepList 226 (RepList 132 RepTy)) x1 v1 →
@@ -60,8 +60,8 @@ abbrev Stmt_cons_of_mini_selfhost_SrcEnumDecl (prog : SrcProgram) (prims : Prims
     (RepList 69 RepSrcEnumDecl) (x0 :: x1) w
 
 abbrev Stmt_cons_of_mini_selfhost_VariantAt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.VariantAt} {x1 : List Lanius.Mini.VariantAt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepVariantAt x0 v0 → (RepList 252 RepVariantAt) x1 v1 →
-    (RepList 252 RepVariantAt) (x0 :: x1) w
+  ∀ {x0 : Lanius.Mini.VariantAt} {x1 : List Lanius.Mini.VariantAt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepVariantAt x0 v0 → (RepList 254 RepVariantAt) x1 v1 →
+    (RepList 254 RepVariantAt) (x0 :: x1) w
 
 abbrev Stmt_core_panic_panic (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {vs : List Value} {w : Value}, pcall prog prims n ix vs = some w → False

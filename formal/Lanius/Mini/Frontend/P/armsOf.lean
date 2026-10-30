@@ -1,19 +1,9 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Frontend.P.armsNaming
 import Lanius.Mini.Frontend.P.consBinder
-import Lanius.Mini.Frontend.P.consTys
-import Lanius.Mini.Frontend.P.fnInstRet
-import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.intLiteral
-import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.isSomeIndex
-import Lanius.Mini.Frontend.P.matchArms
-import Lanius.Mini.Frontend.P.methodCallOf
+import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.noToken
-import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.sliceHead
 import Lanius.Mini.Frontend.P.treeTokens
 
@@ -36,72 +26,17 @@ def armsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (owner : TypeDecl)
     | [] => none
     | a :: more => consArm (armOf fuel env scope owner v a) (armsOf fuel env scope owner rest more)
 
-def armsOrdered (fuel : Nat) (env : FrontEnv) (scope : List Local) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List SrcArm) :=
-  match armsInOrder fuel owner variants arms with
-  | none => none
-  | some os => armsOf fuel env scope owner variants os
-
-def matchEnum (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (owner : TypeDecl) (payloads : Option (List (List Ty))) (m : CTree) : Option LetHead :=
-  if owner.isEnum then
-    match payloads with
-    | none => none
-    | some ps =>
-      match listItems fuel (kid m 5) with
-      | none => none
-      | some arms => matchArms l.id l.ty (armsOrdered fuel env scope owner (zipVariants owner.variants ps) arms)
+def postfixHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) : Option LetHead :=
+  if isPathCall pf then
+    callPathHead fuel env scope (kid (kid pf 0) 0) (kid (kid pf 1) 1)
   else
     none
 
-def matchLocal (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (m : CTree) : Option LetHead :=
-  match namedParts l.ty with
-  | none => none
-  | some n =>
-    match env.decls.types[n.decl]? with
-    | none => none
-    | some t => matchEnum fuel env scope l t (payloadTys fuel env.decls n.decl n.args) m
-
-def matchScrutinee (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) (m : CTree) : Option LetHead :=
-  if nodeProd (kid pf 1) = (164) then
-    match localOf env scope (kid pf 0) with
-    | none => none
-    | some l => matchLocal fuel env scope l m
-  else
-    none
-
-/-- `match (x) { arms }`: x a local of an enum type, one arm per variant in order. -/
-def matchHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (m : CTree) : Option LetHead :=
-  match peel fuel (kid m 2) with
-  | none => none
-  | some pf => matchScrutinee fuel env scope pf m
-
-def postfixHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (ty : Ty) (pf : CTree) (init : CTree) : Option LetHead :=
-  let primary : CTree := kid pf 0
-  let tail : CTree := kid pf 1
-  if decide (nodeProd primary = (187)) && decide (nodeProd tail = (164)) then
-    matchHead fuel env scope primary
-  else
-    if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (275)) && decide (nodeProd tail = (164)) then
-      literalHead fuel env scope ty (kid primary 0) (kid (kid primary 1) 1)
-    else
-      if isPathCall pf then
-        callPathHead fuel env scope ty (kid primary 0) (kid tail 1)
-      else
-        if isMethodForm pf then
-          callHeadOf (methodCallOf fuel env scope ty pf)
-        else
-          if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (162)) && decide (nodeProd (kid tail 3) = (164)) then
-            indexHead (localOf env scope primary) (exprOf fuel env scope (kid tail 1))
-          else
-            if decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (164)) then
-              unitHead fuel env scope ty (kid primary 0) init
-            else
-              plainHead (exprOf fuel env scope init)
-
-/-- The head of `let x: ty = init;`. -/
-def letHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (ty : Ty) (init : CTree) : Option LetHead :=
+/-- The head of `let x: ty = init;` that its spelling decides: an allocation or a raw view. -/
+def letHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (init : CTree) : Option LetHead :=
   match peel fuel init with
-  | none => plainHead (exprOf fuel env scope init)
-  | some pf => postfixHead fuel env scope ty pf init
+  | none => none
+  | some pf => postfixHead fuel env scope pf
 
 def sameDeclArgs (ok : Bool) (args : List Ty) : Option (List Ty) :=
   if ok then

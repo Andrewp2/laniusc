@@ -83,13 +83,13 @@ theorem proof_local_expr {prog : SrcProgram} {prims : Prims} {ix_local_expr : Na
   simp only [src_local_expr] at h
   faithful [Lanius.Mini.localExpr]
 
-theorem proof_member_of {prog : SrcProgram} {prims : Prims} {ix_member_of ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_local_of ix_p_postfix_end ix_p_member_type_args_none ix_field_index ix_field_expr : Nat} (fn : prog.funcs[ix_member_of]? = some (src_member_of ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_local_of ix_p_postfix_end ix_p_member_type_args_none ix_field_index ix_field_expr)) (np : prims.isPrim ix_member_of = false)
+theorem proof_member_of {prog : SrcProgram} {prims : Prims} {ix_member_of ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix_end ix_local_of ix_p_member_type_args_none ix_field_index ix_field_expr : Nat} (fn : prog.funcs[ix_member_of]? = some (src_member_of ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix_end ix_local_of ix_p_member_type_args_none ix_field_index ix_field_expr)) (np : prims.isPrim ix_member_of = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_text_Token_of_mini_selfhost_Token prog prims ix_field_text_Token_of_mini_selfhost_Token n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
-    (ext_local_of : Certified (∀ {n : Nat}, Stmt_local_of prog prims ix_local_of n))
     (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
+    (ext_local_of : Certified (∀ {n : Nat}, Stmt_local_of prog prims ix_local_of n))
     (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n))
     (ext_field_index : Certified (∀ {n : Nat}, Stmt_field_index prog prims ix_field_index n))
     (ext_field_expr : Certified (∀ {n : Nat}, Stmt_field_expr prog prims ix_field_expr n)) {n : Nat} :

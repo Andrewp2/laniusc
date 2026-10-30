@@ -14,7 +14,6 @@ public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_matchArms
 public import Lanius.Faithful.Gen.SelfStmtF_noNames
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
@@ -64,25 +63,6 @@ theorem proof_arm_names {prog : SrcProgram} {prims : Prims} {ix_arm_names ix_nod
   rw [pcall_succ np fn] at h
   simp only [src_arm_names] at h
   faithful [Lanius.Mini.armNames]
-
-theorem proof_arm_of {prog : SrcProgram} {prims : Prims} {ix_arm_of ix_node_prod ix_list_items ix_kid ix_empty_of_usize ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_arm_bound : Nat} (fn : prog.funcs[ix_arm_of]? = some (src_arm_of ix_node_prod ix_list_items ix_kid ix_empty_of_usize ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_arm_bound)) (np : prims.isPrim ix_arm_of = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
-    (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
-    (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
-    (ext_p_pattern_ident : Certified (∀ {n : Nat}, Stmt_p_pattern_ident prog prims ix_p_pattern_ident n))
-    (ext_arm_named : Certified (∀ {n : Nat}, Stmt_arm_named prog prims ix_arm_named n))
-    (ext_p_pattern_plain : Certified (∀ {n : Nat}, Stmt_p_pattern_plain prog prims ix_p_pattern_plain n))
-    (ext_binders_of : Certified (∀ {n : Nat}, Stmt_binders_of prog prims ix_binders_of n))
-    (ext_arm_bound : Certified (∀ {n : Nat}, Stmt_arm_bound prog prims ix_arm_bound n)) {n : Nat} :
-    Stmt_arm_of prog prims ix_arm_of n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_arm_of] at h
-  faithful [Lanius.Mini.armOf]
 
 theorem proof_arm_prefix {prog : SrcProgram} {prims : Prims} {ix_arm_prefix ix_no_names ix_single_of_mini_selfhost_List_usize ix_same_spellings ix_concat_of_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_arm_prefix]? = some (src_arm_prefix ix_no_names ix_single_of_mini_selfhost_List_usize ix_same_spellings ix_concat_of_mini_selfhost_List_usize)) (np : prims.isPrim ix_arm_prefix = false)
     (ext_no_names : Certified (∀ {n : Nat}, Stmt_no_names prog prims ix_no_names n))

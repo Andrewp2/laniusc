@@ -4,7 +4,6 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.ifEff
 import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.pickTy
-import Lanius.Mini.Frontend.P.treeTokens
 import Lanius.Mini.Frontend.P.whileEvalOf
 
 public section
@@ -16,9 +15,7 @@ namespace Lanius.Mini
 
 /-- `v[index] = value;` -/
 def setIndexOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (index : CTree) (value : CTree) : Option MStmt :=
-  match setIndexOf l.id (exprOf fuel env scope index) (exprOf fuel env scope value) with
-  | some s => some s
-  | none => setIndexEvalOf l.id (effOf fuel env scope none index) (effOf fuel env scope (sliceElem l.ty) value)
+  setIndexEvalOf l.id (effOf fuel env scope none index) (effOf fuel env scope (sliceElem l.ty) value)
 
 def fieldEvalStmt (id : Nat) (j : Nat) (x : Option MEff) : Option MStmt :=
   match x with

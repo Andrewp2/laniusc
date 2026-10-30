@@ -2,13 +2,12 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.compoundEval
-import Lanius.Mini.Frontend.P.compoundTarget
 import Lanius.Mini.Frontend.P.consTreeTail
-import Lanius.Mini.Frontend.P.evalHead
 import Lanius.Mini.Frontend.P.fieldTyAt
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.matchLetHead
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.treeTokens
@@ -25,10 +24,7 @@ namespace Lanius.Mini
 def compoundOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : Option CTree) (p : Nat) (value : CTree) : Option MStmt :=
   match target with
   | none => none
-  | some t =>
-    match compoundPure fuel env scope t (compoundOp p) value with
-    | some s => some s
-    | none => compoundEval fuel env scope t p value
+  | some t => compoundEval fuel env scope t p value
 
 /-- `target = value;`: target a local, a field of one or a slice element; value a call (to a plain local) or an expression. Also `target op= value;`, and the call statement `dealloc(...)`. -/
 def assignment (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : Option MStmt :=

@@ -533,46 +533,42 @@ passes can be related to this core language. Translation validation can later
 compare artifacts emitted by the CPU and GPU compilers without treating the
 current GPU implementation as the definition of the language.
 
-## The reading's constant values (decided 10-29)
+## The reading is one reading (decided 10-29, F1)
 
-`Reading.ConstValue` (V8c) gives a constant two readings when its value's
-tokens are `n` or `-n`: the literal reading and the wide one. The builder
-tries the literal reading first and uses the wide one only when it fails;
-the relation cannot say "only when it fails", since that is a negative
-condition on the relation itself (constants' values are read with the
-expression relation). Where both readings apply (`n` below 2^31 of an
-unsigned type or `isize`) they denote the same value. The builder is not
-changed: its self-compiled code carries the faithfulness certificates.
+Earlier the relation stated only the positive part of the builder's
+searches, so a text could have several readings. F1 changes the builder
+where it recovered from a failed search, so that every choice it makes is
+one the relation can state exactly:
 
-## The reading states searches' positive part (decided 10-29)
-
-Where the builder decides by a search that failed under fuel (a method
-call's method: the first impl of that spelling whose type matches, and no
-second one), the relation (`Reading.MethodFor`, V8d) states only that the
-method's impl matches. A failed search under fuel does not show that no
-derivation exists, so "first" and "only" are not provable for the builder
-without a fuel-adequacy argument. The relation is sound for the builder;
-for an ambiguous call it admits each matching method, where the builder
-rejects the call. Lookups that need no fuel (names, fields, locals,
-parameters, primitive types) are stated exactly, first match included.
-
-The let heads (`Reading.LetHeadR`, V8d) follow the same rule. The builder
-falls back to a plain expression when the peel through wrappers or a unit
-variant's path fails, and both use fuel, so a plain reading is admitted for
-any initializer that reads as an expression. A call's path is read as an
-allocation or raw slice without excluding the named reading, and a match's
-arms are one naming arm per variant without the condition that no other
-arm names it. The tests the builder makes without fuel (the production
-checks, whether a path names a function, the enum a path names) are stated
-exactly.
-
-The effectful expressions (`Reading.EffR`, V8d) treat an expected type the
-builder finds by a search under fuel (a parameter's type at the bindings so
-far, a field's or payload's type at known arguments) as a hint: where the
-search fails the builder reads the value with no expected type, so the
-relation admits either (`MaybeTy`, `MaybeTys`). The pure reading is admitted
-for any node that reads as a pure expression, since `expr_of` failing may
-be for want of fuel.
+- Constants' values (`Reading.ConstValue`): a value is wide only when it
+  reads as a wide marker (`wide_read_of`), else literal.
+- Method calls (`Reading.MethodFor`): `impl_fit` and the type matches it
+  uses are three-valued (fits, misfit, spent); a misfit is proved by
+  induction on fuel, and a spent search fails the reading. The relation
+  states the method's impl matches and no other impl of that name does.
+- Expected types (`Reading.EffR`): a hint the builder needs is never
+  dropped. Where a search for a parameter's, field's or payload's type at
+  known arguments fails, the reading fails (`checked_eff`, `has_tys`); the
+  relation states the hint exactly (`KnownTys`, `ArgHint`, `FieldTyAt`,
+  `ParamExpects`). Only a match's arm types keep `MaybeTy`, since only the
+  first arm's type is used.
+- Locals: each binding's id is fresh in its scope (`fresh_id`, the
+  relation's `FreshId`), so a local found by name is the local found by id.
+  A unit variant is not read where a local or constant of that name exists.
+- One path for values: a statement's value is read once, as an effectful
+  expression, and the statement constructors put a value that reads as
+  pure, a call with pure arguments, a literal or variant of the let's type
+  with pure fields, a slice element at a pure index or a match of a local
+  with pure arms in that statement's form (`returnEff`, `ifEff`, `setEff`,
+  `evalHead`, ...). The separate pure readers of returns, conditions,
+  assignments and let heads are gone. Only an allocation and a raw slice
+  are decided by their spelling.
+- Reserved paths: `alloc::allocator::alloc`, `alloc::allocator::dealloc`,
+  `slice_from_raw_parts`, `slice_stride` and `assert` (`builtinPaths`) are
+  never read as a function or variant.
+- The pure and effectful expression readings agree: a node read as the
+  pure expression `e` reads effectfully only as `XPure e` (`pure_agree`,
+  `Reading/Det/Agree`).
 
 ## The reading of a closed program, and which reading the theorems mean (decided 10-29)
 
@@ -587,9 +583,8 @@ expected-type helpers (`intAt`, `wideAt`, `negWideAt`, `operandWant`,
 (`wideLeftFuncs`) are small total functions with no fuel or search, so the
 relation uses them as vocabulary rather than restating them.
 
-Because the relation states searches' positive part, a text may have more
-than one reading. `compileText_correct` and the process theorems therefore
-say that the program is a reading (`TextReading`, on `Reading.Reading`) and
-that it is the one the front end builds, which depends on the text alone
-(`TextBuilt`, unique by V4). Proving the relation deterministic, and that
-`build` finds a reading whenever there is one, is a later step.
+Until F1 proves the relation deterministic, `compileText_correct` and the
+process theorems say that the program is a reading (`TextReading`, on
+`Reading.Reading`) and that it is the one the front end builds, which
+depends on the text alone (`TextBuilt`, unique by V4). That `build` finds a
+reading whenever there is one is a later step.

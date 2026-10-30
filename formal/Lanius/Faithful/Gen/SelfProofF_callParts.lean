@@ -56,9 +56,9 @@ theorem proof_eff_local {prog : SrcProgram} {prims : Prims} {ix_eff_local ix_pur
   simp only [src_eff_local] at h
   faithful [Lanius.Mini.effLocal]
 
-theorem proof_eff_slice_local {prog : SrcProgram} {prims : Prims} {ix_eff_slice_local ix_find_local_id ix_eff_local : Nat} (fn : prog.funcs[ix_eff_slice_local]? = some (src_eff_slice_local ix_find_local_id ix_eff_local)) (np : prims.isPrim ix_eff_slice_local = false)
-    (ext_find_local_id : Certified (∀ {n : Nat}, Stmt_find_local_id prog prims ix_find_local_id n))
-    (ext_eff_local : Certified (∀ {n : Nat}, Stmt_eff_local prog prims ix_eff_local n)) {n : Nat} :
+theorem proof_eff_slice_local {prog : SrcProgram} {prims : Prims} {ix_eff_slice_local ix_eff_local ix_find_local_id : Nat} (fn : prog.funcs[ix_eff_slice_local]? = some (src_eff_slice_local ix_eff_local ix_find_local_id)) (np : prims.isPrim ix_eff_slice_local = false)
+    (ext_eff_local : Certified (∀ {n : Nat}, Stmt_eff_local prog prims ix_eff_local n))
+    (ext_find_local_id : Certified (∀ {n : Nat}, Stmt_find_local_id prog prims ix_find_local_id n)) {n : Nat} :
     Stmt_eff_slice_local prog prims ix_eff_slice_local n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
@@ -78,10 +78,10 @@ theorem proof_field_of_ty {prog : SrcProgram} {prims : Prims} {ix_field_of_ty ix
   simp only [src_field_of_ty] at h
   faithful [Lanius.Mini.fieldOfTy]
 
-theorem proof_field_value {prog : SrcProgram} {prims : Prims} {ix_field_value ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_single_of_mini_selfhost_MEff ix_eff_local ix_projection : Nat} (fn : prog.funcs[ix_field_value]? = some (src_field_value ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_single_of_mini_selfhost_MEff ix_eff_local ix_projection)) (np : prims.isPrim ix_field_value = false)
+theorem proof_field_value {prog : SrcProgram} {prims : Prims} {ix_field_value ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_eff_local ix_single_of_mini_selfhost_MEff ix_projection : Nat} (fn : prog.funcs[ix_field_value]? = some (src_field_value ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff ix_eff_local ix_single_of_mini_selfhost_MEff ix_projection)) (np : prims.isPrim ix_field_value = false)
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff n))
-    (ext_single_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_MEff prog prims ix_single_of_mini_selfhost_MEff n))
     (ext_eff_local : Certified (∀ {n : Nat}, Stmt_eff_local prog prims ix_eff_local n))
+    (ext_single_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_MEff prog prims ix_single_of_mini_selfhost_MEff n))
     (ext_projection : Certified (∀ {n : Nat}, Stmt_projection prog prims ix_projection n)) {n : Nat} :
     Stmt_field_value prog prims ix_field_value n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3

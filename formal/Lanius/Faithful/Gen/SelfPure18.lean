@@ -8,268 +8,97 @@ open Lanius.Mini
 open Lanius.Faithful
 open Lanius.Faithful.Self
 
-/-- mini::selfhost::match_tys_or_none -/
+/-- mini::selfhost::fit_decl -/
 theorem pure1800 : PureFunc prog prims outside src1800 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::find_bind -/
-theorem pure1801 : PureFunc prog prims outside src1801 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::match_path -/
+/-- mini::selfhost::diverge_eff -/
 theorem pure1802 : PureFunc prog prims outside src1802 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::fit_path -/
+/-- mini::selfhost::is_some_name -/
 theorem pure1803 : PureFunc prog prims outside src1803 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::cons_arm -/
+/-- mini::selfhost::cons_binder -/
 theorem pure1804 : PureFunc prog prims outside src1804 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arm_of -/
+/-- mini::selfhost::param_named -/
 theorem pure1805 : PureFunc prog prims outside src1805 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arms_naming -/
-theorem pure1807 : PureFunc prog prims outside src1807 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::cons_tree_tail -/
-theorem pure1808 : PureFunc prog prims outside src1808 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::cons<mini::selfhost::EffArm> -/
-theorem pure1809 : PureFunc prog prims outside src1809 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::p_pattern_ident -/
-theorem pure1810 : PureFunc prog prims outside src1810 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::arm_named -/
-theorem pure1811 : PureFunc prog prims outside src1811 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::p_pattern_plain -/
-theorem pure1812 : PureFunc prog prims outside src1812 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::eff_arm_bound -/
-theorem pure1813 : PureFunc prog prims outside src1813 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::binders_of -/
-theorem pure1814 : PureFunc prog prims outside src1814 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::find_bind_at -/
-theorem pure1817 : PureFunc prog prims outside src1817 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::match_named -/
-theorem pure1819 : PureFunc prog prims outside src1819 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::fit_named -/
-theorem pure1820 : PureFunc prog prims outside src1820 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::cons_arm_tail -/
-theorem pure1821 : PureFunc prog prims outside src1821 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::arm_bound -/
-theorem pure1822 : PureFunc prog prims outside src1822 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::arms_naming_at -/
-theorem pure1823 : PureFunc prog prims outside src1823 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::arm_names -/
-theorem pure1824 : PureFunc prog prims outside src1824 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::arm_prefix -/
-theorem pure1826 : PureFunc prog prims outside src1826 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::arm_eff -/
-theorem pure1827 : PureFunc prog prims outside src1827 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::diverge_arm -/
-theorem pure1828 : PureFunc prog prims outside src1828 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::binder_of -/
-theorem pure1829 : PureFunc prog prims outside src1829 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::param_spelling -/
-theorem pure1831 : PureFunc prog prims outside src1831 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::bind_ty -/
-theorem pure1832 : PureFunc prog prims outside src1832 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::bare_prim -/
-theorem pure1833 : PureFunc prog prims outside src1833 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::same_or_none -/
-theorem pure1834 : PureFunc prog prims outside src1834 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::match_decl -/
-theorem pure1835 : PureFunc prog prims outside src1835 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::fit_of -/
-theorem pure1836 : PureFunc prog prims outside src1836 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::fit_if -/
-theorem pure1837 : PureFunc prog prims outside src1837 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::fit_decl -/
-theorem pure1838 : PureFunc prog prims outside src1838 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::arm_value -/
-theorem pure1839 : PureFunc prog prims outside src1839 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::diverge_eff -/
-theorem pure1841 : PureFunc prog prims outside src1841 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::is_some_name -/
-theorem pure1842 : PureFunc prog prims outside src1842 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::cons_binder -/
-theorem pure1843 : PureFunc prog prims outside src1843 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::param_named -/
-theorem pure1844 : PureFunc prog prims outside src1844 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
 /-- mini::selfhost::cons<mini::selfhost::Bind> -/
-theorem pure1845 : PureFunc prog prims outside src1845 = true :=
+theorem pure1806 : PureFunc prog prims outside src1806 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::prim_if -/
-theorem pure1846 : PureFunc prog prims outside src1846 = true :=
+theorem pure1807 : PureFunc prog prims outside src1807 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::match_same_decl -/
-theorem pure1847 : PureFunc prog prims outside src1847 = true :=
+theorem pure1808 : PureFunc prog prims outside src1808 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::fit_same_decl -/
-theorem pure1848 : PureFunc prog prims outside src1848 = true :=
+theorem pure1809 : PureFunc prog prims outside src1809 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::diverge_call -/
-theorem pure1849 : PureFunc prog prims outside src1849 = true :=
+theorem pure1810 : PureFunc prog prims outside src1810 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::match_args -/
-theorem pure1851 : PureFunc prog prims outside src1851 = true :=
+theorem pure1812 : PureFunc prog prims outside src1812 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::fit_args -/
-theorem pure1852 : PureFunc prog prims outside src1852 = true :=
+theorem pure1813 : PureFunc prog prims outside src1813 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::diverge_checked -/
-theorem pure1853 : PureFunc prog prims outside src1853 = true :=
+theorem pure1814 : PureFunc prog prims outside src1814 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::match_args_next -/
-theorem pure1855 : PureFunc prog prims outside src1855 = true :=
+theorem pure1816 : PureFunc prog prims outside src1816 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::match_arg -/
-theorem pure1856 : PureFunc prog prims outside src1856 = true :=
+theorem pure1817 : PureFunc prog prims outside src1817 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::fit_args_next -/
-theorem pure1857 : PureFunc prog prims outside src1857 = true :=
+theorem pure1818 : PureFunc prog prims outside src1818 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 /-- mini::selfhost::fit_arg -/
-theorem pure1858 : PureFunc prog prims outside src1858 = true :=
+theorem pure1819 : PureFunc prog prims outside src1819 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-def part18 : List SrcFunc := [src1800, src1801, src1802, src1803, src1804, src1805, src1806, src1807, src1808, src1809, src1810, src1811, src1812, src1813, src1814, src1815, src1816, src1817, src1818, src1819, src1820, src1821, src1822, src1823, src1824, src1825, src1826, src1827, src1828, src1829, src1830, src1831, src1832, src1833, src1834, src1835, src1836, src1837, src1838, src1839, src1840, src1841, src1842, src1843, src1844, src1845, src1846, src1847, src1848, src1849, src1850, src1851, src1852, src1853, src1854, src1855, src1856, src1857, src1858]
+def part18 : List SrcFunc := [src1800, src1801, src1802, src1803, src1804, src1805, src1806, src1807, src1808, src1809, src1810, src1811, src1812, src1813, src1814, src1815, src1816, src1817, src1818, src1819]
 
 theorem chunk18 : FuncsOk prog prims outside 1800 part18 :=
   funcsOk_cons (funcOk_pure pure1800) <|
-  funcsOk_cons (funcOk_pure pure1801) <|
+  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1801 core::mem::size_of<mini::selfhost::List<mini::selfhost::EffArm>>, outside
   funcsOk_cons (funcOk_pure pure1802) <|
   funcsOk_cons (funcOk_pure pure1803) <|
   funcsOk_cons (funcOk_pure pure1804) <|
   funcsOk_cons (funcOk_pure pure1805) <|
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1806 core::mem::typed_slice_from_storage<mini::selfhost::List<mini::selfhost::EffArm>>, outside
+  funcsOk_cons (funcOk_pure pure1806) <|
   funcsOk_cons (funcOk_pure pure1807) <|
   funcsOk_cons (funcOk_pure pure1808) <|
   funcsOk_cons (funcOk_pure pure1809) <|
   funcsOk_cons (funcOk_pure pure1810) <|
-  funcsOk_cons (funcOk_pure pure1811) <|
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 1811 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Bind>>, a prim
   funcsOk_cons (funcOk_pure pure1812) <|
   funcsOk_cons (funcOk_pure pure1813) <|
   funcsOk_cons (funcOk_pure pure1814) <|
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1815 core::mem::typed_slice_from_storage<mini::selfhost::List<mini::selfhost::VariantTy>>, outside
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1816 core::mem::size_of<mini::selfhost::List<mini::selfhost::VariantTy>>, outside
+  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1815 core::mem::size_of<mini::selfhost::List<mini::selfhost::Bind>>, outside
+  funcsOk_cons (funcOk_pure pure1816) <|
   funcsOk_cons (funcOk_pure pure1817) <|
-  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 1818 mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Bind>>, a prim
+  funcsOk_cons (funcOk_pure pure1818) <|
   funcsOk_cons (funcOk_pure pure1819) <|
-  funcsOk_cons (funcOk_pure pure1820) <|
-  funcsOk_cons (funcOk_pure pure1821) <|
-  funcsOk_cons (funcOk_pure pure1822) <|
-  funcsOk_cons (funcOk_pure pure1823) <|
-  funcsOk_cons (funcOk_pure pure1824) <|
-  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 1825 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::EffArm>>, a prim
-  funcsOk_cons (funcOk_pure pure1826) <|
-  funcsOk_cons (funcOk_pure pure1827) <|
-  funcsOk_cons (funcOk_pure pure1828) <|
-  funcsOk_cons (funcOk_pure pure1829) <|
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1830 core::mem::typed_slice_from_storage<mini::selfhost::List<mini::selfhost::Bind>>, outside
-  funcsOk_cons (funcOk_pure pure1831) <|
-  funcsOk_cons (funcOk_pure pure1832) <|
-  funcsOk_cons (funcOk_pure pure1833) <|
-  funcsOk_cons (funcOk_pure pure1834) <|
-  funcsOk_cons (funcOk_pure pure1835) <|
-  funcsOk_cons (funcOk_pure pure1836) <|
-  funcsOk_cons (funcOk_pure pure1837) <|
-  funcsOk_cons (funcOk_pure pure1838) <|
-  funcsOk_cons (funcOk_pure pure1839) <|
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1840 core::mem::size_of<mini::selfhost::List<mini::selfhost::EffArm>>, outside
-  funcsOk_cons (funcOk_pure pure1841) <|
-  funcsOk_cons (funcOk_pure pure1842) <|
-  funcsOk_cons (funcOk_pure pure1843) <|
-  funcsOk_cons (funcOk_pure pure1844) <|
-  funcsOk_cons (funcOk_pure pure1845) <|
-  funcsOk_cons (funcOk_pure pure1846) <|
-  funcsOk_cons (funcOk_pure pure1847) <|
-  funcsOk_cons (funcOk_pure pure1848) <|
-  funcsOk_cons (funcOk_pure pure1849) <|
-  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 1850 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Bind>>, a prim
-  funcsOk_cons (funcOk_pure pure1851) <|
-  funcsOk_cons (funcOk_pure pure1852) <|
-  funcsOk_cons (funcOk_pure pure1853) <|
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1854 core::mem::size_of<mini::selfhost::List<mini::selfhost::Bind>>, outside
-  funcsOk_cons (funcOk_pure pure1855) <|
-  funcsOk_cons (funcOk_pure pure1856) <|
-  funcsOk_cons (funcOk_pure pure1857) <|
-  funcsOk_cons (funcOk_pure pure1858) <|
   funcsOk_nil
 
 end Lanius.Faithful.SelfPure

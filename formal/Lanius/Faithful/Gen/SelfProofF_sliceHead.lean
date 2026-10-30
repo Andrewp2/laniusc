@@ -5,22 +5,17 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
-public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
-public import Lanius.Faithful.Gen.SelfStmtF_methodCallOf
+public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
-public import Lanius.Faithful.Gen.SelfStmtF_pathRef
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
-public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
-public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
-public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 import all Lanius.Faithful.Gen.SelfSrcF_sliceHead
 import all Lanius.Mini.Frontend.P.sliceHead
 
@@ -54,21 +49,34 @@ theorem proof_alloc_path {prog : SrcProgram} {prims : Prims} {ix_alloc_path ix_s
   simp only [src_alloc_path] at h
   faithful [Lanius.Mini.allocPath]
 
-theorem proof_call_path_head {prog : SrcProgram} {prims : Prims} {ix_call_path_head ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_split_last ix_is_path ix_args_of ix_alloc_path ix_alloc_head ix_text_slice_from_raw_parts ix_slice_head ix_path_ref ix_named_head : Nat} (fn : prog.funcs[ix_call_path_head]? = some (src_call_path_head ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_split_last ix_is_path ix_args_of ix_alloc_path ix_alloc_head ix_text_slice_from_raw_parts ix_slice_head ix_path_ref ix_named_head)) (np : prims.isPrim ix_call_path_head = false)
+theorem proof_builtin_path {prog : SrcProgram} {prims : Prims} {ix_builtin_path ix_single_of_mini_selfhost_List_usize ix_same_spellings ix_dealloc_path ix_text_assert ix_alloc_path ix_text_slice_from_raw_parts ix_text_slice_stride : Nat} (fn : prog.funcs[ix_builtin_path]? = some (src_builtin_path ix_single_of_mini_selfhost_List_usize ix_same_spellings ix_dealloc_path ix_text_assert ix_alloc_path ix_text_slice_from_raw_parts ix_text_slice_stride)) (np : prims.isPrim ix_builtin_path = false)
+    (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))
+    (ext_dealloc_path : Certified (∀ {n : Nat}, Stmt_dealloc_path prog prims ix_dealloc_path n))
+    (ext_text_assert : Certified (∀ {n : Nat}, Stmt_text_assert prog prims ix_text_assert n))
+    (ext_alloc_path : Certified (∀ {n : Nat}, Stmt_alloc_path prog prims ix_alloc_path n))
+    (ext_text_slice_from_raw_parts : Certified (∀ {n : Nat}, Stmt_text_slice_from_raw_parts prog prims ix_text_slice_from_raw_parts n))
+    (ext_text_slice_stride : Certified (∀ {n : Nat}, Stmt_text_slice_stride prog prims ix_text_slice_stride n)) {n : Nat} :
+    Stmt_builtin_path prog prims ix_builtin_path n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_builtin_path] at h
+  faithful [Lanius.Mini.builtinPath]
+
+theorem proof_call_path_head {prog : SrcProgram} {prims : Prims} {ix_call_path_head ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_is_path ix_args_of ix_alloc_path ix_alloc_head ix_text_slice_from_raw_parts ix_slice_head : Nat} (fn : prog.funcs[ix_call_path_head]? = some (src_call_path_head ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_is_path ix_args_of ix_alloc_path ix_alloc_head ix_text_slice_from_raw_parts ix_slice_head)) (np : prims.isPrim ix_call_path_head = false)
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
     (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))
-    (ext_split_last : Certified (∀ {n : Nat}, Stmt_split_last prog prims ix_split_last n))
     (ext_is_path : Certified (∀ {n : Nat}, Stmt_is_path prog prims ix_is_path n))
     (ext_args_of : Certified (∀ {n : Nat}, Stmt_args_of prog prims ix_args_of n))
     (ext_alloc_path : Certified (∀ {n : Nat}, Stmt_alloc_path prog prims ix_alloc_path n))
     (ext_alloc_head : Certified (∀ {n : Nat}, Stmt_alloc_head prog prims ix_alloc_head n))
     (ext_text_slice_from_raw_parts : Certified (∀ {n : Nat}, Stmt_text_slice_from_raw_parts prog prims ix_text_slice_from_raw_parts n))
-    (ext_slice_head : Certified (∀ {n : Nat}, Stmt_slice_head prog prims ix_slice_head n))
-    (ext_path_ref : Certified (∀ {n : Nat}, Stmt_path_ref prog prims ix_path_ref n))
-    (ext_named_head : Certified (∀ {n : Nat}, Stmt_named_head prog prims ix_named_head n)) {n : Nat} :
+    (ext_slice_head : Certified (∀ {n : Nat}, Stmt_slice_head prog prims ix_slice_head n)) {n : Nat} :
     Stmt_call_path_head prog prims ix_call_path_head n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
@@ -101,15 +109,6 @@ theorem step_field_values {prog : SrcProgram} {prims : Prims} {ix_field_values i
   simp only [src_field_values] at h
   faithful [Lanius.Mini.fieldValues]
 
-theorem proof_index_head {prog : SrcProgram} {prims : Prims} {ix_index_head : Nat} (fn : prog.funcs[ix_index_head]? = some (src_index_head)) (np : prims.isPrim ix_index_head = false) {n : Nat} :
-    Stmt_index_head prog prims ix_index_head n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_index_head] at h
-  faithful [Lanius.Mini.indexHead]
-
 theorem proof_is_path {prog : SrcProgram} {prims : Prims} {ix_is_path ix_same_spellings : Nat} (fn : prog.funcs[ix_is_path]? = some (src_is_path ix_same_spellings)) (np : prims.isPrim ix_is_path = false)
     (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n)) {n : Nat} :
     Stmt_is_path prog prims ix_is_path n := by
@@ -120,54 +119,25 @@ theorem proof_is_path {prog : SrcProgram} {prims : Prims} {ix_is_path ix_same_sp
   simp only [src_is_path] at h
   faithful [Lanius.Mini.isPath]
 
-theorem proof_literal_at {prog : SrcProgram} {prims : Prims} {ix_literal_at ix_field_types_Decls_of_mini_selfhost_Decls ix_get_of_mini_selfhost_TypeDecl ix_named_decl ix_literal_entry : Nat} (fn : prog.funcs[ix_literal_at]? = some (src_literal_at ix_field_types_Decls_of_mini_selfhost_Decls ix_get_of_mini_selfhost_TypeDecl ix_named_decl ix_literal_entry)) (np : prims.isPrim ix_literal_at = false)
-    (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
-    (ext_get_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_TypeDecl prog prims ix_get_of_mini_selfhost_TypeDecl n))
-    (ext_named_decl : Certified (∀ {n : Nat}, Stmt_named_decl prog prims ix_named_decl n))
-    (ext_literal_entry : Certified (∀ {n : Nat}, Stmt_literal_entry prog prims ix_literal_entry n)) {n : Nat} :
-    Stmt_literal_at prog prims ix_literal_at n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
+theorem proof_is_some_name {prog : SrcProgram} {prims : Prims} {ix_is_some_name : Nat} (fn : prog.funcs[ix_is_some_name]? = some (src_is_some_name)) (np : prims.isPrim ix_is_some_name = false) {n : Nat} :
+    Stmt_is_some_name prog prims ix_is_some_name n := by
+  intro x0 v0 w h r0
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_literal_at] at h
-  faithful [Lanius.Mini.literalAt]
+  simp only [src_is_some_name] at h
+  faithful [Lanius.Mini.isSomeName]
 
-theorem proof_literal_checked {prog : SrcProgram} {prims : Prims} {ix_literal_checked ix_exprs_of ix_field_values : Nat} (fn : prog.funcs[ix_literal_checked]? = some (src_literal_checked ix_exprs_of ix_field_values)) (np : prims.isPrim ix_literal_checked = false)
-    (ext_exprs_of : Certified (∀ {n : Nat}, Stmt_exprs_of prog prims ix_exprs_of n))
-    (ext_field_values : Certified (∀ {n : Nat}, Stmt_field_values prog prims ix_field_values n)) {n : Nat} :
-    Stmt_literal_checked prog prims ix_literal_checked n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+theorem proof_named_split {prog : SrcProgram} {prims : Prims} {ix_named_split ix_split_last ix_builtin_path : Nat} (fn : prog.funcs[ix_named_split]? = some (src_named_split ix_split_last ix_builtin_path)) (np : prims.isPrim ix_named_split = false)
+    (ext_split_last : Certified (∀ {n : Nat}, Stmt_split_last prog prims ix_split_last n))
+    (ext_builtin_path : Certified (∀ {n : Nat}, Stmt_builtin_path prog prims ix_builtin_path n)) {n : Nat} :
+    Stmt_named_split prog prims ix_named_split n := by
+  intro x0 v0 w h r0
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_literal_checked] at h
-  faithful [Lanius.Mini.literalChecked]
-
-theorem proof_literal_entry {prog : SrcProgram} {prims : Prims} {ix_literal_entry ix_same_names ix_literal_checked : Nat} (fn : prog.funcs[ix_literal_entry]? = some (src_literal_entry ix_same_names ix_literal_checked)) (np : prims.isPrim ix_literal_entry = false)
-    (ext_same_names : Certified (∀ {n : Nat}, Stmt_same_names prog prims ix_same_names n))
-    (ext_literal_checked : Certified (∀ {n : Nat}, Stmt_literal_checked prog prims ix_literal_checked n)) {n : Nat} :
-    Stmt_literal_entry prog prims ix_literal_entry n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_literal_entry] at h
-  faithful [Lanius.Mini.literalEntry]
-
-theorem proof_literal_head {prog : SrcProgram} {prims : Prims} {ix_literal_head ix_list_items ix_kid ix_path_spellings ix_type_decl_at ix_literal_at : Nat} (fn : prog.funcs[ix_literal_head]? = some (src_literal_head ix_list_items ix_kid ix_path_spellings ix_type_decl_at ix_literal_at)) (np : prims.isPrim ix_literal_head = false)
-    (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
-    (ext_type_decl_at : Certified (∀ {n : Nat}, Stmt_type_decl_at prog prims ix_type_decl_at n))
-    (ext_literal_at : Certified (∀ {n : Nat}, Stmt_literal_at prog prims ix_literal_at n)) {n : Nat} :
-    Stmt_literal_head prog prims ix_literal_head n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_literal_head] at h
-  faithful [Lanius.Mini.literalHead]
+  simp only [src_named_split] at h
+  faithful [Lanius.Mini.namedSplit]
 
 theorem step_same_names {prog : SrcProgram} {prims : Prims} {ix_same_names ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_same_text : Nat} (fn : prog.funcs[ix_same_names]? = some (src_same_names ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_same_text ix_same_names)) (np : prims.isPrim ix_same_names = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
@@ -191,23 +161,5 @@ theorem proof_slice_head {prog : SrcProgram} {prims : Prims} {ix_slice_head ix_u
   rw [pcall_succ np fn] at h
   simp only [src_slice_head] at h
   faithful [Lanius.Mini.sliceHead]
-
-theorem proof_unit_head {prog : SrcProgram} {prims : Prims} {ix_unit_head ix_empty_of_mini_selfhost_CTree ix_kid ix_path_spellings ix_empty_of_mini_selfhost_SrcExpr ix_split_last ix_expr_of ix_plain_head ix_variant_by_path ix_variant_head : Nat} (fn : prog.funcs[ix_unit_head]? = some (src_unit_head ix_empty_of_mini_selfhost_CTree ix_kid ix_path_spellings ix_empty_of_mini_selfhost_SrcExpr ix_split_last ix_expr_of ix_plain_head ix_variant_by_path ix_variant_head)) (np : prims.isPrim ix_unit_head = false)
-    (ext_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_CTree prog prims ix_empty_of_mini_selfhost_CTree n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
-    (ext_empty_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcExpr prog prims ix_empty_of_mini_selfhost_SrcExpr n))
-    (ext_split_last : Certified (∀ {n : Nat}, Stmt_split_last prog prims ix_split_last n))
-    (ext_expr_of : Certified (∀ {n : Nat}, Stmt_expr_of prog prims ix_expr_of n))
-    (ext_plain_head : Certified (∀ {n : Nat}, Stmt_plain_head prog prims ix_plain_head n))
-    (ext_variant_by_path : Certified (∀ {n : Nat}, Stmt_variant_by_path prog prims ix_variant_by_path n))
-    (ext_variant_head : Certified (∀ {n : Nat}, Stmt_variant_head prog prims ix_variant_head n)) {n : Nat} :
-    Stmt_unit_head prog prims ix_unit_head n := by
-  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_unit_head] at h
-  faithful [Lanius.Mini.unitHead]
 
 end Lanius.Faithful.SelfCert

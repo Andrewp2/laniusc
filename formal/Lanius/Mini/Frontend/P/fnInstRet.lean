@@ -5,11 +5,12 @@ import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral
-import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.projectionRet
+import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.treeTokens
 import Lanius.Mini.Frontend.P.typeDeclAt
+import Lanius.Mini.Frontend.P.typeDecls
 import Lanius.Mini.Frontend.P.variantIn
 
 public section
@@ -128,11 +129,6 @@ def consEffArm (head : Option EffArm) (tail : Option (List EffArm)) : Option (Li
     | none => none
     | some xs => some (a :: xs)
 
-def plainHead (e : Option SrcExpr) : Option LetHead :=
-  match e with
-  | none => none
-  | some x => some (LetHead.plain x)
-
 def consExprTail (e : SrcExpr) (tail : Option (List SrcExpr)) : Option (List SrcExpr) :=
   match tail with
   | none => none
@@ -153,15 +149,18 @@ def argsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (args : CTree) : O
   | none => none
   | some items => exprsOf fuel env scope items
 
-def called (inst : Option Inst) (args : List SrcExpr) : Option Called :=
-  match inst with
-  | none => none
-  | some i => some ({ inst := i, args := args } : Called)
+/-- A path's one-segment prefix that names a type: a type parameter or a primitive type (`T::m`, `i32::hash`). -/
+def isTypeParam (env : FrontEnv) (owner : Option (List Nat)) : Bool :=
+  match owner with
+  | none => false
+  | some n => member env.names n || !(isNoneType (primitive n))
 
-def freeCallOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Ty) (d : Nat) (fd : FnDecl) (targs : List CTree) (es : List SrcExpr) : Option Called :=
-  if noTrees targs then
-    called (inferInst fuel env.decls d fd [] (exprsTys fuel env scope es) expected) es
-  else
-    called (explicitInst fuel env d fd targs) es
+def ownerTy (env : FrontEnv) (owner : Option (List Nat)) : Option Ty :=
+  match owner with
+  | none => none
+  | some n =>
+    match paramTy env n with
+    | some t => some t
+    | none => primTy n
 
 end Lanius.Mini

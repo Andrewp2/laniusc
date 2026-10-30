@@ -196,7 +196,7 @@ theorem proof_param_expects {prog : SrcProgram} {prims : Prims} {ix_param_expect
   simp only [src_param_expects] at h
   faithful [Lanius.Mini.paramExpects]
 
-theorem step_pure_list {prog : SrcProgram} {prims : Prims} {ix_pure_list ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_SrcExpr ix_cons_of_mini_selfhost_SrcExpr ix_pure_part : Nat} (fn : prog.funcs[ix_pure_list]? = some (src_pure_list ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_SrcExpr ix_cons_of_mini_selfhost_SrcExpr ix_pure_list ix_pure_part)) (np : prims.isPrim ix_pure_list = false)
+theorem step_pure_list {prog : SrcProgram} {prims : Prims} {ix_pure_list ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_SrcExpr ix_cons_of_mini_selfhost_SrcExpr ix_pure_part : Nat} (fn : prog.funcs[ix_pure_list]? = some (src_pure_list ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_empty_of_mini_selfhost_SrcExpr ix_cons_of_mini_selfhost_SrcExpr ix_pure_part ix_pure_list)) (np : prims.isPrim ix_pure_list = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff n))
     (ext_empty_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcExpr prog prims ix_empty_of_mini_selfhost_SrcExpr n))
     (ext_cons_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcExpr prog prims ix_cons_of_mini_selfhost_SrcExpr n))

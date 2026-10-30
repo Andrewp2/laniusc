@@ -11,15 +11,16 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArgsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_armsOf
+public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_fieldTyAt
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
+public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_isSomeIndex
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
-public import Lanius.Faithful.Gen.SelfStmtF_methodCallOf
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_setIndexOrEval
@@ -27,6 +28,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
+public import Lanius.Faithful.Gen.SelfStmtF_xDivideOf
 import all Lanius.Faithful.Gen.SelfSrcF_fieldTyAt
 import all Lanius.Mini.Frontend.P.fieldTyAt
 
@@ -68,13 +70,13 @@ theorem proof_assert_of {prog : SrcProgram} {prims : Prims} {ix_assert_of : Nat}
   simp only [src_assert_of] at h
   faithful [Lanius.Mini.assertOf]
 
-theorem proof_assign_target {prog : SrcProgram} {prims : Prims} {ix_assign_target ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_local_of ix_p_postfix_end ix_set_or_eval ix_p_postfix_member ix_p_member_type_args_none ix_set_field_or_eval ix_p_postfix_index ix_set_index_or_eval : Nat} (fn : prog.funcs[ix_assign_target]? = some (src_assign_target ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_local_of ix_p_postfix_end ix_set_or_eval ix_p_postfix_member ix_p_member_type_args_none ix_set_field_or_eval ix_p_postfix_index ix_set_index_or_eval)) (np : prims.isPrim ix_assign_target = false)
+theorem proof_assign_target {prog : SrcProgram} {prims : Prims} {ix_assign_target ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix_end ix_local_of ix_set_or_eval ix_p_postfix_member ix_p_member_type_args_none ix_set_field_or_eval ix_p_postfix_index ix_set_index_or_eval : Nat} (fn : prog.funcs[ix_assign_target]? = some (src_assign_target ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_postfix_end ix_local_of ix_set_or_eval ix_p_postfix_member ix_p_member_type_args_none ix_set_field_or_eval ix_p_postfix_index ix_set_index_or_eval)) (np : prims.isPrim ix_assign_target = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_text_Token_of_mini_selfhost_Token prog prims ix_field_text_Token_of_mini_selfhost_Token n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
-    (ext_local_of : Certified (∀ {n : Nat}, Stmt_local_of prog prims ix_local_of n))
     (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
+    (ext_local_of : Certified (∀ {n : Nat}, Stmt_local_of prog prims ix_local_of n))
     (ext_set_or_eval : Certified (∀ {n : Nat}, Stmt_set_or_eval prog prims ix_set_or_eval n))
     (ext_p_postfix_member : Certified (∀ {n : Nat}, Stmt_p_postfix_member prog prims ix_p_postfix_member n))
     (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n))
@@ -112,17 +114,34 @@ theorem proof_call_stmt {prog : SrcProgram} {prims : Prims} {ix_call_stmt ix_lis
   simp only [src_call_stmt] at h
   faithful [Lanius.Mini.callStmt]
 
-theorem proof_compound_field {prog : SrcProgram} {prims : Prims} {ix_compound_field ix_expr_of ix_compound_value ix_set_field_value : Nat} (fn : prog.funcs[ix_compound_field]? = some (src_compound_field ix_expr_of ix_compound_value ix_set_field_value)) (np : prims.isPrim ix_compound_field = false)
-    (ext_expr_of : Certified (∀ {n : Nat}, Stmt_expr_of prog prims ix_expr_of n))
-    (ext_compound_value : Certified (∀ {n : Nat}, Stmt_compound_value prog prims ix_compound_value n))
-    (ext_set_field_value : Certified (∀ {n : Nat}, Stmt_set_field_value prog prims ix_set_field_value n)) {n : Nat} :
-    Stmt_compound_field prog prims ix_compound_field n := by
+theorem proof_compound_eff {prog : SrcProgram} {prims : Prims} {ix_compound_eff ix_p_assign_div ix_x_divide_of ix_p_assign_mod ix_compound_op ix_x_apply_of : Nat} (fn : prog.funcs[ix_compound_eff]? = some (src_compound_eff ix_p_assign_div ix_x_divide_of ix_p_assign_mod ix_compound_op ix_x_apply_of)) (np : prims.isPrim ix_compound_eff = false)
+    (ext_p_assign_div : Certified (∀ {n : Nat}, Stmt_p_assign_div prog prims ix_p_assign_div n))
+    (ext_x_divide_of : Certified (∀ {n : Nat}, Stmt_x_divide_of prog prims ix_x_divide_of n))
+    (ext_p_assign_mod : Certified (∀ {n : Nat}, Stmt_p_assign_mod prog prims ix_p_assign_mod n))
+    (ext_compound_op : Certified (∀ {n : Nat}, Stmt_compound_op prog prims ix_compound_op n))
+    (ext_x_apply_of : Certified (∀ {n : Nat}, Stmt_x_apply_of prog prims ix_x_apply_of n)) {n : Nat} :
+    Stmt_compound_eff prog prims ix_compound_eff n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_compound_eff] at h
+  faithful [Lanius.Mini.compoundEff]
+
+theorem proof_compound_field_eval {prog : SrcProgram} {prims : Prims} {ix_compound_field_eval ix_eff_of ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt ix_compound_eff : Nat} (fn : prog.funcs[ix_compound_field_eval]? = some (src_compound_field_eval ix_eff_of ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt ix_compound_eff)) (np : prims.isPrim ix_compound_field_eval = false)
+    (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n))
+    (ext_checked_stmt : Certified (∀ {n : Nat}, Stmt_checked_stmt prog prims ix_checked_stmt n))
+    (ext_has_ty : Certified (∀ {n : Nat}, Stmt_has_ty prog prims ix_has_ty n))
+    (ext_field_ty_at : Certified (∀ {n : Nat}, Stmt_field_ty_at prog prims ix_field_ty_at n))
+    (ext_field_eval_stmt : Certified (∀ {n : Nat}, Stmt_field_eval_stmt prog prims ix_field_eval_stmt n))
+    (ext_compound_eff : Certified (∀ {n : Nat}, Stmt_compound_eff prog prims ix_compound_eff n)) {n : Nat} :
+    Stmt_compound_field_eval prog prims ix_compound_field_eval n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_compound_field] at h
-  faithful [Lanius.Mini.compoundField]
+  simp only [src_compound_field_eval] at h
+  faithful [Lanius.Mini.compoundFieldEval]
 
 theorem proof_compound_op {prog : SrcProgram} {prims : Prims} {ix_compound_op ix_p_assign_add ix_p_assign_sub ix_p_assign_mul ix_p_assign_band ix_p_assign_bor ix_p_assign_xor ix_p_assign_shl ix_p_assign_shr : Nat} (fn : prog.funcs[ix_compound_op]? = some (src_compound_op ix_p_assign_add ix_p_assign_sub ix_p_assign_mul ix_p_assign_band ix_p_assign_bor ix_p_assign_xor ix_p_assign_shl ix_p_assign_shr)) (np : prims.isPrim ix_compound_op = false)
     (ext_p_assign_add : Certified (∀ {n : Nat}, Stmt_p_assign_add prog prims ix_p_assign_add n))
@@ -140,16 +159,6 @@ theorem proof_compound_op {prog : SrcProgram} {prims : Prims} {ix_compound_op ix
   rw [pcall_succ np fn] at h
   simp only [src_compound_op] at h
   faithful [Lanius.Mini.compoundOp]
-
-theorem proof_compound_value {prog : SrcProgram} {prims : Prims} {ix_compound_value ix_boxed_of_mini_selfhost_SrcExpr : Nat} (fn : prog.funcs[ix_compound_value]? = some (src_compound_value ix_boxed_of_mini_selfhost_SrcExpr)) (np : prims.isPrim ix_compound_value = false)
-    (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n)) {n : Nat} :
-    Stmt_compound_value prog prims ix_compound_value n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_compound_value] at h
-  faithful [Lanius.Mini.compoundValue]
 
 theorem proof_discard_of {prog : SrcProgram} {prims : Prims} {ix_discard_of : Nat} (fn : prog.funcs[ix_discard_of]? = some (src_discard_of)) (np : prims.isPrim ix_discard_of = false) {n : Nat} :
     Stmt_discard_of prog prims ix_discard_of n := by
@@ -192,9 +201,8 @@ theorem proof_free_shifted {prog : SrcProgram} {prims : Prims} {ix_free_shifted 
   simp only [src_free_shifted] at h
   faithful [Lanius.Mini.freeShifted]
 
-theorem proof_set_field_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_field_or_eval ix_eff_of ix_expr_of ix_field_index ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt : Nat} (fn : prog.funcs[ix_set_field_or_eval]? = some (src_set_field_or_eval ix_eff_of ix_expr_of ix_field_index ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt)) (np : prims.isPrim ix_set_field_or_eval = false)
+theorem proof_set_field_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_field_or_eval ix_eff_of ix_field_index ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt : Nat} (fn : prog.funcs[ix_set_field_or_eval]? = some (src_set_field_or_eval ix_eff_of ix_field_index ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt)) (np : prims.isPrim ix_set_field_or_eval = false)
     (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n))
-    (ext_expr_of : Certified (∀ {n : Nat}, Stmt_expr_of prog prims ix_expr_of n))
     (ext_field_index : Certified (∀ {n : Nat}, Stmt_field_index prog prims ix_field_index n))
     (ext_checked_stmt : Certified (∀ {n : Nat}, Stmt_checked_stmt prog prims ix_checked_stmt n))
     (ext_has_ty : Certified (∀ {n : Nat}, Stmt_has_ty prog prims ix_has_ty n))

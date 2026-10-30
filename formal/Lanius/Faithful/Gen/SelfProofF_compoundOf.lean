@@ -20,12 +20,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pWhileStmt
 public import Lanius.Faithful.Gen.SelfStmtF_compoundEval
 public import Lanius.Faithful.Gen.SelfStmtF_compoundOf
-public import Lanius.Faithful.Gen.SelfStmtF_compoundTarget
-public import Lanius.Faithful.Gen.SelfStmtF_evalHead
 public import Lanius.Faithful.Gen.SelfStmtF_fieldTyAt
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
+public import Lanius.Faithful.Gen.SelfStmtF_matchLetHead
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
@@ -81,9 +80,7 @@ theorem step_block_of {prog : SrcProgram} {prims : Prims} {ix_block_of ix_minus 
   simp only [src_block_of] at h
   faithful [Lanius.Mini.blockOf]
 
-theorem proof_compound_of {prog : SrcProgram} {prims : Prims} {ix_compound_of ix_compound_pure ix_compound_op ix_compound_eval : Nat} (fn : prog.funcs[ix_compound_of]? = some (src_compound_of ix_compound_pure ix_compound_op ix_compound_eval)) (np : prims.isPrim ix_compound_of = false)
-    (ext_compound_pure : Certified (∀ {n : Nat}, Stmt_compound_pure prog prims ix_compound_pure n))
-    (ext_compound_op : Certified (∀ {n : Nat}, Stmt_compound_op prog prims ix_compound_op n))
+theorem proof_compound_of {prog : SrcProgram} {prims : Prims} {ix_compound_of ix_compound_eval : Nat} (fn : prog.funcs[ix_compound_of]? = some (src_compound_of ix_compound_eval)) (np : prims.isPrim ix_compound_of = false)
     (ext_compound_eval : Certified (∀ {n : Nat}, Stmt_compound_eval prog prims ix_compound_eval n)) {n : Nat} :
     Stmt_compound_of prog prims ix_compound_of n := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5

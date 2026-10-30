@@ -14,11 +14,9 @@ An expected type the builder computes by a search under fuel (a parameter's
 type, a field's or payload's type) is exact: none only where nothing is
 known to search from (`KnownTys`, `ArgHint`), and where the search fails
 otherwise the builder fails. An arm's own type is kept only when found
-(`MaybeTy`); just the first arm's is read, and only when it is found. As
-with the let heads, the pure reading is admitted for
-any node that reads as a pure expression, and a call's path is not excluded
-from the named reading by the allocation and raw-slice spellings
-(SEMANTIC_DECISIONS, "The reading states searches' positive part"). -/
+(`MaybeTy`); just the first arm's is read, and only when it is found. The
+paths the language reserves (`builtinPaths`) are not read as a function or
+variant (SEMANTIC_DECISIONS, "The reading is one reading"). -/
 
 namespace Lanius.Mini.Reading
 
@@ -89,6 +87,23 @@ inductive EffCasts (env : FrontEnv) : MEff → CTree → MEff → Prop
       xCastInto (some s) (some a) = some b → EffCasts env b (kid tail 2) x → EffCasts env a tail x
 
 /-! ## The relation -/
+
+/-- The paths the language reserves: the allocator's `alloc` and `dealloc`,
+`slice_from_raw_parts`, `slice_stride` and `assert`. No function or variant
+is read at them. -/
+def builtinPaths : List ModPath :=
+  [allocPath, deallocPath, [textSliceFromRawParts], [textSliceStride], [textAssert]]
+
+theorem namedSplit_sound {ss : List Name} {s : Split} (h : namedSplit ss = some s) :
+    ss ∉ builtinPaths ∧ ss = s.home ++ [s.name] := by
+  unfold namedSplit at h
+  split at h
+  · cases h
+  · rename_i nb
+    refine ⟨?_, splitLast_sound h⟩
+    simp only [builtinPath, Bool.or_eq_true, sameSpellings_iff, not_or] at nb
+    simp only [builtinPaths, List.mem_cons, List.not_mem_nil, or_false, not_or]
+    exact ⟨nb.1.1.1.1, nb.1.1.1.2, nb.1.1.2, nb.1.2, nb.2⟩
 
 mutual
 inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff → Prop
@@ -196,8 +211,8 @@ inductive EffPathCall (env : FrontEnv) : List Local → Option Ty → CTree → 
       nodeProd (kid pf 1) = pPostfixEnd → LocalOf scope (kid pf 0) l → l.ty = .tySlice e →
       EffPathCall env scope expected path args (.xStride l.id)
   | named {scope : List Local} {expected : Option Ty} {path args : CTree} {pr : PathRef} {front : ModPath} {name : Name}
-      {items : List CTree} {x : MEff} : PathRefR (kid path 0) (kid path 1) pr → pr.segments = front ++ [name] →
-      Items args items → EffNamed env scope expected front name pr.targs items x →
+      {items : List CTree} {x : MEff} : PathRefR (kid path 0) (kid path 1) pr → pr.segments ∉ builtinPaths →
+      pr.segments = front ++ [name] → Items args items → EffNamed env scope expected front name pr.targs items x →
       EffPathCall env scope expected path args x
 
 /-- `front::name(args)`: a static method of the type `front` names, a free
@@ -1077,7 +1092,7 @@ theorem effSound : ∀ fuel, EffSound fuel
       | some pr =>
         rw [hp] at h
         simp only at h
-        cases hs : splitLast pr.segments with
+        cases hs : namedSplit pr.segments with
         | none => rw [hs] at h; cases h
         | some s =>
           rw [hs] at h
@@ -1087,7 +1102,8 @@ theorem effSound : ∀ fuel, EffSound fuel
           | some items =>
             rw [hi] at h
             simp only at h
-            exact .named (pathRef_sound hp) (splitLast_sound hs) (listItems_sound hi) (ihNamed h)
+            have ns := namedSplit_sound hs
+            exact .named (pathRef_sound hp) ns.1 ns.2 (listItems_sound hi) (ihNamed h)
     -- effNamed
     · intro env scope expected s targs items x h
       rw [effNamed.eq_def] at h

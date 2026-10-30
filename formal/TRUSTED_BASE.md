@@ -245,10 +245,11 @@ still a parse tree of the same tokens. Trusted:
   `knownExpr`, and the wide-literal check `wideLeftFuncs`) as its
   vocabulary. `buildFiles_sound` (standard axioms) proves that what `build`
   returns is a reading, so `build`'s code is no longer the specification.
-  The relation states the positive part of the builder's searches
-  (SEMANTIC_DECISIONS.md), so a text may have more than one reading; the
-  program the theorems are about is the one the front end builds, which
-  depends on the text alone (`TextBuilt`, `textBuilt_unique`). The reading
+  The builder's choices are ones the relation states exactly
+  (SEMANTIC_DECISIONS.md, "The reading is one reading"); until F1 proves
+  the relation deterministic, the program the theorems are about is the
+  one the front end builds, which depends on the text alone (`TextBuilt`,
+  `textBuilt_unique`). The reading
   makes these choices:
   - each file is a module, named by its `module` item (the empty path
     without one); `m::x` names `x` of the module `m`, a bare `x` names `x`
@@ -332,7 +333,9 @@ still a parse tree of the same tokens. Trusted:
     alignment must be a literal `2^k` (`8` or `(8 as usize)`), read as the
     shift `k`. `slice_from_raw_parts(p, n)`, in a `let` of type `[T]`, is
     Core's raw view of `T`. These spellings are fixed: build does not look
-    at the extern declarations in `alloc::allocator`;
+    at the extern declarations in `alloc::allocator`, and these paths,
+    `slice_stride` and `assert` are never read as a function or variant
+    (`builtinPaths`);
   - `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`, for
     `op` one of `+ - * & | ^`. Core has the compound form itself
     (`assign .add` and so on, `evalAssignValue`), which evaluates `e` before

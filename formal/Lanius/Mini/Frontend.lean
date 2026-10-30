@@ -36,11 +36,9 @@ public import Lanius.Mini.Frontend.P.consTreeTail
 public import Lanius.Mini.Frontend.P.xDivideOf
 public import Lanius.Mini.Frontend.P.projectionRet
 public import Lanius.Mini.Frontend.P.fnInstRet
-public import Lanius.Mini.Frontend.P.freeCall
 public import Lanius.Mini.Frontend.P.isSomeIndex
-public import Lanius.Mini.Frontend.P.methodCallOf
+public import Lanius.Mini.Frontend.P.isPathCall
 public import Lanius.Mini.Frontend.P.sliceHead
-public import Lanius.Mini.Frontend.P.matchArms
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.armsNaming
 public import Lanius.Mini.Frontend.P.armsOf
@@ -50,11 +48,12 @@ public import Lanius.Mini.Frontend.P.consBound
 public import Lanius.Mini.Frontend.P.retBinds
 public import Lanius.Mini.Frontend.P.matchTysOrNone
 public import Lanius.Mini.Frontend.P.ifEff
-public import Lanius.Mini.Frontend.P.evalHead
+public import Lanius.Mini.Frontend.P.structHead
+public import Lanius.Mini.Frontend.P.variantLetHead
+public import Lanius.Mini.Frontend.P.matchLetHead
 public import Lanius.Mini.Frontend.P.whileEvalOf
 public import Lanius.Mini.Frontend.P.setIndexOrEval
 public import Lanius.Mini.Frontend.P.fieldTyAt
-public import Lanius.Mini.Frontend.P.compoundTarget
 public import Lanius.Mini.Frontend.P.compoundEval
 public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.readFn
@@ -130,6 +129,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 119 parts, `.P0` on, in source order, whose bodies
+The definitions are in 118 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

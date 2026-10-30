@@ -14,10 +14,10 @@ public import Lanius.Mini.Frontend.P.isEmptyUsize
 public import Lanius.Mini.Frontend.P.lxBlockEnd
 public import Lanius.Mini.Frontend.P.lxSpaceEnd
 public import Lanius.Mini.Frontend.P.lxSymbolStart
-public import Lanius.Mini.Frontend.P.matchArms
 public import Lanius.Mini.Frontend.P.monoLoop
 public import Lanius.Mini.Frontend.P.noToken
 public import Lanius.Mini.Frontend.P.noTrees
+public import Lanius.Mini.Frontend.P.sliceHead
 public import Lanius.Mini.Frontend.P.textSelf
 public import Lanius.Mini.Frontend.P.typeDeclAt
 

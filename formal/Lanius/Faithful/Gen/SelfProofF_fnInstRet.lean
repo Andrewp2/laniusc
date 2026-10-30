@@ -16,11 +16,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
-public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
+public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
+public import Lanius.Faithful.Gen.SelfStmtF_typeDecls
 public import Lanius.Faithful.Gen.SelfStmtF_variantIn
 import all Lanius.Faithful.Gen.SelfSrcF_fnInstRet
 import all Lanius.Mini.Frontend.P.fnInstRet
@@ -85,15 +86,6 @@ theorem step_bare_eff {prog : SrcProgram} {prims : Prims} {ix_bare_eff ix_unbox_
   rw [pcall_succ np fn] at h
   simp only [src_bare_eff] at h
   faithful [Lanius.Mini.bareEff]
-
-theorem proof_called {prog : SrcProgram} {prims : Prims} {ix_called : Nat} (fn : prog.funcs[ix_called]? = some (src_called)) (np : prims.isPrim ix_called = false) {n : Nat} :
-    Stmt_called prog prims ix_called n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_called] at h
-  faithful [Lanius.Mini.called]
 
 theorem proof_cons_eff_arm {prog : SrcProgram} {prims : Prims} {ix_cons_eff_arm ix_cons_of_mini_selfhost_EffArm : Nat} (fn : prog.funcs[ix_cons_eff_arm]? = some (src_cons_eff_arm ix_cons_of_mini_selfhost_EffArm)) (np : prims.isPrim ix_cons_eff_arm = false)
     (ext_cons_of_mini_selfhost_EffArm : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_EffArm prog prims ix_cons_of_mini_selfhost_EffArm n)) {n : Nat} :
@@ -182,21 +174,6 @@ theorem proof_fn_inst_ret {prog : SrcProgram} {prims : Prims} {ix_fn_inst_ret ix
   simp only [src_fn_inst_ret] at h
   faithful [Lanius.Mini.fnInstRet]
 
-theorem proof_free_call_of {prog : SrcProgram} {prims : Prims} {ix_free_call_of ix_no_trees ix_called ix_infer_inst ix_exprs_tys ix_empty_of_mini_selfhost_Bind ix_explicit_inst : Nat} (fn : prog.funcs[ix_free_call_of]? = some (src_free_call_of ix_no_trees ix_called ix_infer_inst ix_exprs_tys ix_empty_of_mini_selfhost_Bind ix_explicit_inst)) (np : prims.isPrim ix_free_call_of = false)
-    (ext_no_trees : Certified (∀ {n : Nat}, Stmt_no_trees prog prims ix_no_trees n))
-    (ext_called : Certified (∀ {n : Nat}, Stmt_called prog prims ix_called n))
-    (ext_infer_inst : Certified (∀ {n : Nat}, Stmt_infer_inst prog prims ix_infer_inst n))
-    (ext_exprs_tys : Certified (∀ {n : Nat}, Stmt_exprs_tys prog prims ix_exprs_tys n))
-    (ext_empty_of_mini_selfhost_Bind : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Bind prog prims ix_empty_of_mini_selfhost_Bind n))
-    (ext_explicit_inst : Certified (∀ {n : Nat}, Stmt_explicit_inst prog prims ix_explicit_inst n)) {n : Nat} :
-    Stmt_free_call_of prog prims ix_free_call_of n := by
-  intro x0 x1 x2 x3 x4 x5 x6 x7 v0 v1 v2 v3 v4 v5 v6 v7 w h r0 r1 r2 r3 r4 r5 r6 r7
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_free_call_of] at h
-  faithful [Lanius.Mini.freeCallOf]
-
 theorem proof_head_ty {prog : SrcProgram} {prims : Prims} {ix_head_ty : Nat} (fn : prog.funcs[ix_head_ty]? = some (src_head_ty)) (np : prims.isPrim ix_head_ty = false) {n : Nat} :
     Stmt_head_ty prog prims ix_head_ty n := by
   intro x0 v0 w h r0
@@ -228,14 +205,28 @@ theorem proof_inst_ret {prog : SrcProgram} {prims : Prims} {ix_inst_ret ix_get_o
   simp only [src_inst_ret] at h
   faithful [Lanius.Mini.instRet]
 
-theorem proof_plain_head {prog : SrcProgram} {prims : Prims} {ix_plain_head : Nat} (fn : prog.funcs[ix_plain_head]? = some (src_plain_head)) (np : prims.isPrim ix_plain_head = false) {n : Nat} :
-    Stmt_plain_head prog prims ix_plain_head n := by
-  intro x0 v0 w h r0
+theorem proof_is_type_param {prog : SrcProgram} {prims : Prims} {ix_is_type_param ix_is_none_type ix_primitive ix_member : Nat} (fn : prog.funcs[ix_is_type_param]? = some (src_is_type_param ix_is_none_type ix_primitive ix_member)) (np : prims.isPrim ix_is_type_param = false)
+    (ext_is_none_type : Certified (∀ {n : Nat}, Stmt_is_none_type prog prims ix_is_none_type n))
+    (ext_primitive : Certified (∀ {n : Nat}, Stmt_primitive prog prims ix_primitive n))
+    (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n)) {n : Nat} :
+    Stmt_is_type_param prog prims ix_is_type_param n := by
+  intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_plain_head] at h
-  faithful [Lanius.Mini.plainHead]
+  simp only [src_is_type_param] at h
+  faithful [Lanius.Mini.isTypeParam]
+
+theorem proof_owner_ty {prog : SrcProgram} {prims : Prims} {ix_owner_ty ix_param_ty ix_prim_ty : Nat} (fn : prog.funcs[ix_owner_ty]? = some (src_owner_ty ix_param_ty ix_prim_ty)) (np : prims.isPrim ix_owner_ty = false)
+    (ext_param_ty : Certified (∀ {n : Nat}, Stmt_param_ty prog prims ix_param_ty n))
+    (ext_prim_ty : Certified (∀ {n : Nat}, Stmt_prim_ty prog prims ix_prim_ty n)) {n : Nat} :
+    Stmt_owner_ty prog prims ix_owner_ty n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_owner_ty] at h
+  faithful [Lanius.Mini.ownerTy]
 
 theorem proof_result_ty {prog : SrcProgram} {prims : Prims} {ix_result_ty : Nat} (fn : prog.funcs[ix_result_ty]? = some (src_result_ty)) (np : prims.isPrim ix_result_ty = false) {n : Nat} :
     Stmt_result_ty prog prims ix_result_ty n := by

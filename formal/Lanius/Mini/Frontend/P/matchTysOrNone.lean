@@ -14,14 +14,13 @@ import Lanius.Mini.Frontend.P.consTys
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.fnInstRet
-import Lanius.Mini.Frontend.P.freeCall
 import Lanius.Mini.Frontend.P.hasConst
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.isSomeIndex
 import Lanius.Mini.Frontend.P.joinInsts
-import Lanius.Mini.Frontend.P.methodCallOf
 import Lanius.Mini.Frontend.P.moduleOr
 import Lanius.Mini.Frontend.P.noNames
 import Lanius.Mini.Frontend.P.noToken
@@ -307,7 +306,7 @@ def effPathCall (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : O
         match pathRef fuel (kid path 0) (kid path 1) with
         | none => none
         | some pr =>
-          match splitLast pr.segments with
+          match namedSplit pr.segments with
           | none => none
           | some s =>
             match listItems fuel args with
@@ -503,11 +502,6 @@ def effArmBound (fuel : Nat) (env : FrontEnv) (expected : Option Ty) (bound : Op
 end
 
 /-- A statement over an effectful value whose value is pure takes the pure statement's form, so a pure value has one reading. -/
-def evalLetHead (x : MEff) : LetHead :=
-  match purePart x with
-  | some v => LetHead.plain v
-  | none => LetHead.evalOf x
-
 def returnEff (x : MEff) : MStmt :=
   match purePart x with
   | some v => MStmt.mReturn v
