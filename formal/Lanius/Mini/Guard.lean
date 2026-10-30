@@ -22,6 +22,7 @@ import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
@@ -201,15 +202,29 @@ theorem shift_amount {op : SrcOp} (shift : op = .shiftLeft ∨ op = .shiftRight)
     rcases shift with rfl | rfl
     · exact .inl rfl
     · exact .inr rfl
-  have both : arith .shl tl tr = some t ∨ arith .sar tl tr = some t ∨ arith .shr tl tr = some t := by
+  have both : lowerShift .shl tl tr = some t ∨ lowerShift .sar tl tr = some t ∨
+      lowerShift .shr tl tr = some t := by
     rcases shift with rfl | rfl
     · exact .inl lowered
     · simp only [SrcOp.lower, arithShiftRight] at lowered
       split at lowered
       · exact .inr (.inl lowered)
       · exact .inr (.inr lowered)
-  have core : ∀ {o : BinOp}, arith o tl tr = some t → (tr.expr.eval env).toNat < (shiftWidth tl.ty).toNat := by
+  have core : ∀ {o : BinOp}, lowerShift o tl tr = some t → (tr.expr.eval env).toNat < (shiftWidth tl.ty).toNat := by
     intro o ar
+    simp only [lowerShift] at ar
+    split at ar
+    rotate_left
+    · simp at ar
+    rename_i ints
+    simp only [Bool.and_eq_true] at ints
+    obtain ⟨vr', holdsr', evaluated'⟩ := shift_retype cshift ints.1 ints.2 holdsl holdsr evaluated
+    clear holdsr evaluated
+    change ({ expr := tr.expr, ty := tl.ty } : Typed).ty.Holds vr' (({ expr := tr.expr, ty := tl.ty } : Typed).expr.eval env) at holdsr'
+    change ((({ expr := tr.expr, ty := tl.ty } : Typed).expr.eval env)).toNat < (shiftWidth tl.ty).toNat
+    revert ar holdsr' evaluated'
+    generalize ({ expr := tr.expr, ty := tl.ty } : Typed) = tr
+    intro ar evaluated holdsr
     simp only [arith] at ar
     split at ar
     · rename_i types

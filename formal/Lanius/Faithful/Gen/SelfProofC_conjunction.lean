@@ -9,6 +9,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_arithShiftRight
 public import Lanius.Faithful.Gen.SelfStmtC_arithUint
 public import Lanius.Faithful.Gen.SelfStmtC_conjunction
 public import Lanius.Faithful.Gen.SelfStmtC_equality
+public import Lanius.Faithful.Gen.SelfStmtC_lowerShift
 import all Lanius.Faithful.Gen.SelfSrcC_conjunction
 import all Lanius.Mini.Compiler.P.conjunction
 
@@ -29,9 +30,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_SrcOp_lower {prog : SrcProgram} {prims : Prims} {ix_SrcOp_lower ix_offset_or_arith ix_arith ix_arith_shift_right ix_order ix_equality ix_conjunction ix_disjunction : Nat} (fn : prog.funcs[ix_SrcOp_lower]? = some (src_SrcOp_lower ix_offset_or_arith ix_arith ix_arith_shift_right ix_order ix_equality ix_conjunction ix_disjunction)) (np : prims.isPrim ix_SrcOp_lower = false)
+theorem proof_SrcOp_lower {prog : SrcProgram} {prims : Prims} {ix_SrcOp_lower ix_offset_or_arith ix_arith ix_lower_shift ix_arith_shift_right ix_order ix_equality ix_conjunction ix_disjunction : Nat} (fn : prog.funcs[ix_SrcOp_lower]? = some (src_SrcOp_lower ix_offset_or_arith ix_arith ix_lower_shift ix_arith_shift_right ix_order ix_equality ix_conjunction ix_disjunction)) (np : prims.isPrim ix_SrcOp_lower = false)
     (ext_offset_or_arith : Certified (∀ {n : Nat}, Stmt_offset_or_arith prog prims ix_offset_or_arith n))
     (ext_arith : Certified (∀ {n : Nat}, Stmt_arith prog prims ix_arith n))
+    (ext_lower_shift : Certified (∀ {n : Nat}, Stmt_lower_shift prog prims ix_lower_shift n))
     (ext_arith_shift_right : Certified (∀ {n : Nat}, Stmt_arith_shift_right prog prims ix_arith_shift_right n))
     (ext_order : Certified (∀ {n : Nat}, Stmt_order prog prims ix_order n))
     (ext_equality : Certified (∀ {n : Nat}, Stmt_equality prog prims ix_equality n))

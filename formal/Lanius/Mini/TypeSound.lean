@@ -335,6 +335,33 @@ theorem arith_typed {op : BinOp} {cop : Core.BinaryOp} {l r t : Typed}
   rw [hl, hr]
   exact ⟨rule int.arith int.integer, int.scalar⟩
 
+theorem shiftTy_of {ty : SrcType} (int : ty.isInteger = true) : Typing.ShiftTy ty.toCore := by
+  cases ty with
+  | i32 => exact .signed _
+  | isize => exact .signed _
+  | uint k => exact .unsigned _
+  | sint k => exact .signed _
+  | bool => simp [SrcType.isInteger] at int
+  | unit => simp [SrcType.isInteger] at int
+  | struct => simp [SrcType.isInteger] at int
+  | enum => simp [SrcType.isInteger] at int
+  | ptr => simp [SrcType.isInteger] at int
+  | slice => simp [SrcType.isInteger] at int
+
+/-- A shift by an amount of any integer type keeps its left operand's type. -/
+theorem lowerShift_typed {op : BinOp} {cop : Core.BinaryOp} {l r t : Typed}
+    (rule : ∀ {T R : Core.Ty}, Typing.ShiftTy T → Typing.ShiftTy R → Typing.BinaryOpHasType cop T R T)
+    (h : lowerShift op l r = some t) :
+    Typing.BinaryOpHasType cop l.ty.toCore r.ty.toCore t.ty.toCore ∧ t.ty.isScalar = true := by
+  simp only [lowerShift] at h
+  split at h
+  · rename_i ints
+    simp only [Bool.and_eq_true] at ints
+    obtain ⟨hl, -, int⟩ := arith_some h
+    rw [← hl]
+    exact ⟨rule (shiftTy_of ints.1) (shiftTy_of ints.2), hl ▸ int.scalar⟩
+  · simp at h
+
 theorem order_typed {op : CmpOp} {cop : Core.BinaryOp} {l r t : Typed}
     (rule : ∀ {T : Core.Ty}, Typing.OrderedTy T → Typing.BinaryOpHasType cop T T (.scalar .bool))
     (h : order op l r = some t) :
@@ -369,12 +396,12 @@ theorem SrcOp.lower_typed {op : SrcOp} {l r t : Typed} (scalar : l.ty.isScalar =
   | bitAnd => exact arith_typed (fun _ i => .bitAnd i) h
   | bitOr => exact arith_typed (fun _ i => .bitOr i) h
   | bitXor => exact arith_typed (fun _ i => .bitXor i) h
-  | shiftLeft => exact arith_typed (fun _ i => .shiftLeft i) h
+  | shiftLeft => exact lowerShift_typed (fun a b => .shiftLeftBy a b) h
   | shiftRight =>
     simp only [SrcOp.lower, arithShiftRight] at h
     split at h
-    · exact arith_typed (fun _ i => .shiftRight i) h
-    · exact arith_typed (fun _ i => .shiftRight i) h
+    · exact lowerShift_typed (fun a b => .shiftRightBy a b) h
+    · exact lowerShift_typed (fun a b => .shiftRightBy a b) h
   | less => exact order_typed .less h
   | lessEq => exact order_typed .lessEqual h
   | greater => exact order_typed .greater h

@@ -8,6 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_arithShiftRight
 public import Lanius.Faithful.Gen.SelfStmtC_arithUint
+public import Lanius.Faithful.Gen.SelfStmtC_lowerShift
 import all Lanius.Faithful.Gen.SelfSrcC_arithShiftRight
 import all Lanius.Mini.Compiler.P.arithShiftRight
 
@@ -28,10 +29,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_arith_shift_right {prog : SrcProgram} {prims : Prims} {ix_arith_shift_right ix_SrcType_is_i32 ix_SrcType_is_isize ix_arith ix_SrcType_is_sint_any : Nat} (fn : prog.funcs[ix_arith_shift_right]? = some (src_arith_shift_right ix_SrcType_is_i32 ix_SrcType_is_isize ix_arith ix_SrcType_is_sint_any)) (np : prims.isPrim ix_arith_shift_right = false)
+theorem proof_arith_shift_right {prog : SrcProgram} {prims : Prims} {ix_arith_shift_right ix_SrcType_is_i32 ix_SrcType_is_isize ix_lower_shift ix_SrcType_is_sint_any : Nat} (fn : prog.funcs[ix_arith_shift_right]? = some (src_arith_shift_right ix_SrcType_is_i32 ix_SrcType_is_isize ix_lower_shift ix_SrcType_is_sint_any)) (np : prims.isPrim ix_arith_shift_right = false)
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
     (ext_SrcType_is_isize : Certified (∀ {n : Nat}, Stmt_SrcType_is_isize prog prims ix_SrcType_is_isize n))
-    (ext_arith : Certified (∀ {n : Nat}, Stmt_arith prog prims ix_arith n))
+    (ext_lower_shift : Certified (∀ {n : Nat}, Stmt_lower_shift prog prims ix_lower_shift n))
     (ext_SrcType_is_sint_any : Certified (∀ {n : Nat}, Stmt_SrcType_is_sint_any prog prims ix_SrcType_is_sint_any n)) {n : Nat} :
     Stmt_arith_shift_right prog prims ix_arith_shift_right n := by
   intro x0 x1 v0 v1 w h r0 r1

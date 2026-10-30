@@ -300,6 +300,23 @@ theorem equality_defined {op : CmpOp} {cop : Core.BinaryOp}
       · exact sint_defined (by simp) holdsl holdsr
   · simp at lowered
 
+/-- A shift by an amount of any integer type below the left operand's width
+has a result (`shift_retype_lt`). -/
+theorem lowerShift_defined {op : BinOp} {cop : Core.BinaryOp} (shift : cop = .shiftLeft ∨ cop = .shiftRight)
+    {tl tr t : Typed} (lowered : lowerShift op tl tr = some t) {env : Env} {vl vr : Value}
+    (holdsl : tl.ty.Holds vl (tl.expr.eval env)) (holdsr : tr.ty.Holds vr (tr.expr.eval env))
+    (amount : (tr.expr.eval env).toNat < (shiftWidth tl.ty).toNat) :
+    ∃ v, evalBinaryValue .x86_64 cop vl vr = .ok v := by
+  simp only [lowerShift] at lowered
+  split at lowered
+  rotate_left
+  · simp at lowered
+  rename_i ints
+  simp only [Bool.and_eq_true] at ints
+  obtain ⟨vr', holdsr', same⟩ := shift_retype_lt shift ints.1 ints.2 holdsl holdsr amount
+  rw [← same]
+  exact shift_defined (tr := { expr := tr.expr, ty := tl.ty }) shift lowered holdsl holdsr' amount
+
 /-- An operator other than `&&` and `||` has a result on the values its
 operands represent, a shift when its amount guard passes. -/
 theorem SrcOp.lower_defined {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl tr = some t)
@@ -324,12 +341,12 @@ theorem SrcOp.lower_defined {op : SrcOp} {tl tr t : Typed} (lowered : op.lower t
   case bitAnd => exact arith_defined (.inr (.inr (.inr (.inl ⟨rfl, rfl⟩)))) lowered holdsl holdsr
   case bitOr => exact arith_defined (.inr (.inr (.inr (.inr (.inl ⟨rfl, rfl⟩))))) lowered holdsl holdsr
   case bitXor => exact arith_defined (.inr (.inr (.inr (.inr (.inr ⟨rfl, rfl⟩))))) lowered holdsl holdsr
-  case shiftLeft => exact shift_defined (.inl rfl) lowered holdsl holdsr (amount (.inl rfl))
+  case shiftLeft => exact lowerShift_defined (.inl rfl) lowered holdsl holdsr (amount (.inl rfl))
   case shiftRight =>
     simp only [SrcOp.lower, arithShiftRight] at lowered
     split at lowered
-    · exact shift_defined (.inr rfl) lowered holdsl holdsr (amount (.inr rfl))
-    · exact shift_defined (.inr rfl) lowered holdsl holdsr (amount (.inr rfl))
+    · exact lowerShift_defined (.inr rfl) lowered holdsl holdsr (amount (.inr rfl))
+    · exact lowerShift_defined (.inr rfl) lowered holdsl holdsr (amount (.inr rfl))
   case less => exact order_defined (.inl ⟨rfl, rfl⟩) lowered holdsl holdsr
   case lessEq => exact order_defined (.inr (.inl ⟨rfl, rfl⟩)) lowered holdsl holdsr
   case greater => exact order_defined (.inr (.inr (.inl ⟨rfl, rfl⟩))) lowered holdsl holdsr

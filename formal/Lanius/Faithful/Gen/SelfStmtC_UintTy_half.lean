@@ -28,6 +28,10 @@ abbrev Stmt_SrcType_is_i32 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
     RepBool (Lanius.Mini.SrcType.isI32 x0) w
 
+abbrev Stmt_SrcType_is_integer (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
+    RepBool (Lanius.Mini.SrcType.isInteger x0) w
+
 abbrev Stmt_SrcType_is_isize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
     RepBool (Lanius.Mini.SrcType.isIsize x0) w

@@ -31,7 +31,9 @@ Lean definition or judgment.
 - Division and remainder truncate toward zero. Division by zero, remainder by
   zero, and signed `MIN / -1` trap at every integer width.
 - A shift amount outside `0..width-1` traps. Signed right shift is arithmetic;
-  unsigned right shift is logical.
+  unsigned right shift is logical. The amount of a signed or unsigned shift may
+  be of any signed or unsigned integer type; its number is what is checked
+  (`evalShiftBy`, since 2026-10-30).
 - `f32` and `f64` values are represented by their IEEE bit patterns. Arithmetic
   and ordered comparisons use Lean's `Float32` and `Float` operations, so
   division by zero and NaNs follow floating-point behavior rather than integer

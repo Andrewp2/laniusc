@@ -157,6 +157,20 @@ def SrcType.isIsize (self : SrcType) : Bool :=
   | .isize => true
   | .sint kind => false
 
+/-- An integer type: a shift takes an amount of any of them. -/
+def SrcType.isInteger (self : SrcType) : Bool :=
+  match self with
+  | .i32 => true
+  | .bool => false
+  | .uint kind => true
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice element => false
+  | .unit => false
+  | .isize => true
+  | .sint kind => true
+
 def SrcType.isSintAny (self : SrcType) : Bool :=
   match self with
   | .i32 => false

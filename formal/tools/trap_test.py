@@ -38,6 +38,17 @@ def i32(k):
 CASES = [
     ('shift', [fn(f'(.return (.apply .shiftLeft {i32(1)} (.local 0)))')],
      [(3, 8), (31, -2 ** 31), (32, 'fault'), (40, 'fault'), (-1, 'fault')]),
+    # Shifts by an amount of another integer type: Core traps on the amount's
+    # number, so 256 as a u32 amount traps a u8 shift (its low 8 bits are 0).
+    ('shift-u8-by-u32', [fn('(.return (.cast .i32 (.apply .shiftLeft (.unsigned .uint8 1) '
+                            '(.cast (.uint .uint32) (.local 0)))))')],
+     [(3, 8), (7, 128), (8, 'fault'), (256, 'fault'), (-1, 'fault')]),
+    ('shift-i8-by-u32', [fn(f'(.return (.cast .i32 (.apply .shiftRight (.cast (.sint .uint8) {i32(-128)}) '
+                            '(.cast (.uint .uint32) (.local 0)))))')],
+     [(0, -128), (7, -1), (8, 'fault'), (264, 'fault')]),
+    ('shift-i64-by-u8', [fn(f'(.return (.cast .i32 (.apply .shiftLeft (.cast (.sint .uint64) {i32(1)}) '
+                            '(.cast (.uint .uint8) (.local 0)))))')],
+     [(31, -2 ** 31), (32, 0), (64, 'fault'), (256, 1)]),
     ('quotient', [fn(f'(.returnEval (.eDivide .quotient (.ePure {i32(100)}) (.ePure (.local 0))))')],
      [(7, 14), (-3, -33), (0, 'fault')]),
     ('remainder', [fn(f'(.returnEval (.eDivide .remainder (.ePure {i32(100)}) (.ePure (.local 0))))')],

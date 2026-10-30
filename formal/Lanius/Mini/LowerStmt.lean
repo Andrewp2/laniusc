@@ -1280,11 +1280,13 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     have br := ihr rightLowered
     cases op
     case plus | minus | times | bitAnd | bitOr | bitXor | shiftLeft | shiftRight =>
-      simp only [SrcOp.lower, arithShiftRight] at lowered
+      simp only [SrcOp.lower, arithShiftRight, lowerShift] at lowered
       try
         rcases offsetOrArith_some lowered with ⟨-, -, rfl⟩ | lowered
         · exact ⟨bl, br⟩
       try split at lowered
+      all_goals try (split at lowered; rotate_left; · simp at lowered)
+      all_goals first | (simp at lowered; done) | skip
       all_goals
         simp only [arith] at lowered
         split at lowered

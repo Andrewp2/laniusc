@@ -147,6 +147,12 @@ inductive IntegerTy : Ty → Prop where
   | unsigned (type) : IntegerTy (.scalar (.unsigned type))
   | character : IntegerTy (.scalar .char)
 
+/-- The signed and unsigned integer types, whose shifts take an amount of
+any of them. -/
+inductive ShiftTy : Ty → Prop where
+  | signed (type) : ShiftTy (.scalar (.signed type))
+  | unsigned (type) : ShiftTy (.scalar (.unsigned type))
+
 inductive OrderedTy : Ty → Prop where
   | signed (type) : OrderedTy (.scalar (.signed type))
   | unsigned (type) : OrderedTy (.scalar (.unsigned type))
@@ -260,6 +266,11 @@ inductive BinaryOpHasType : BinaryOp → Ty → Ty → Ty → Prop where
       BinaryOpHasType .shiftLeft operandType operandType operandType
   | shiftRight (type : IntegerTy operandType) :
       BinaryOpHasType .shiftRight operandType operandType operandType
+  /-- A signed or unsigned integer shifted by an amount of another such type. -/
+  | shiftLeftBy (type : ShiftTy operandType) (amount : ShiftTy amountType) :
+      BinaryOpHasType .shiftLeft operandType amountType operandType
+  | shiftRightBy (type : ShiftTy operandType) (amount : ShiftTy amountType) :
+      BinaryOpHasType .shiftRight operandType amountType operandType
 
 /-- Once the operator and both operand types are fixed, binary typing
     determines one result type. -/

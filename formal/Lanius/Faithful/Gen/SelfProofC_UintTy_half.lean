@@ -51,6 +51,15 @@ theorem proof_SrcType_is_i32 {prog : SrcProgram} {prims : Prims} {ix_SrcType_is_
   simp only [src_SrcType_is_i32] at h
   faithful [Lanius.Mini.SrcType.isI32]
 
+theorem proof_SrcType_is_integer {prog : SrcProgram} {prims : Prims} {ix_SrcType_is_integer : Nat} (fn : prog.funcs[ix_SrcType_is_integer]? = some (src_SrcType_is_integer)) (np : prims.isPrim ix_SrcType_is_integer = false) {n : Nat} :
+    Stmt_SrcType_is_integer prog prims ix_SrcType_is_integer n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_SrcType_is_integer] at h
+  faithful [Lanius.Mini.SrcType.isInteger]
+
 theorem proof_SrcType_is_isize {prog : SrcProgram} {prims : Prims} {ix_SrcType_is_isize : Nat} (fn : prog.funcs[ix_SrcType_is_isize]? = some (src_SrcType_is_isize)) (np : prims.isPrim ix_SrcType_is_isize = false) {n : Nat} :
     Stmt_SrcType_is_isize prog prims ix_SrcType_is_isize n := by
   intro x0 v0 w h r0

@@ -122,6 +122,15 @@ output is kept only when the proved validator accepts it. Nor are
   that the language itself lends (`mapBorrowed`) still make borrowed blocks.
   This is the meaning `Vec` needs: its buffer is one block and its
   elements are a view of a prefix of it.
+- **Shift amounts (changed 10-30).** A shift of a signed or unsigned
+  integer may take an amount of another such type (`x << n` with `x: i64`,
+  `n: u32`), as laniusc allows: typing `BinaryOpHasType.shiftLeftBy` and
+  `shiftRightBy` (`ShiftTy` on both sides, the result the left operand's
+  type), evaluation `Semantics.evalShiftBy`, which checks the amount's
+  number against the left operand's width, as a shift by its own type does
+  (`u8` by a `u32` amount of 256 traps). Before 10-30 Core typed only shifts
+  by the left operand's own type and gave a mixed one `typeMismatch`;
+  shifts of one type evaluate as before.
 - **`slice_stride` (added 10-22).** `Intrinsic.sliceStride` gives a raw
   view's signed byte stride as an `isize` (`rawSliceStride?`): 4 for `i32`
   views, and `-8 × words` for views of structs and enums. On these views

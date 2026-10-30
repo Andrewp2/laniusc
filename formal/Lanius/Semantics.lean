@@ -546,6 +546,22 @@ def pointerOffset
   let result := if subtract then Int.ofNat address - offset else Int.ofNat address + offset
   .pointer (Int.toNat (result % modulus))
 
+/-- A shift of a signed or unsigned integer by an amount of another integer
+type: the amount's value, as for a shift by its own type, out of
+`0..width-1` traps. Other operators on two integer types are type errors. -/
+def evalShiftBy
+    (target : Target) (op : BinaryOp) (left : Value) (amount : Int) : Except Trap Value :=
+  match op, left with
+  | .shiftLeft, .signed type value => evalSignedBinary target .shiftLeft type value amount
+  | .shiftRight, .signed type value => evalSignedBinary target .shiftRight type value amount
+  | .shiftLeft, .unsigned type value =>
+      if amount < 0 then .error .invalidShift
+      else evalUnsignedBinary target .shiftLeft type value amount.toNat
+  | .shiftRight, .unsigned type value =>
+      if amount < 0 then .error .invalidShift
+      else evalUnsignedBinary target .shiftRight type value amount.toNat
+  | _, _ => .error .typeMismatch
+
 def evalBinaryValue
     (target : Target) (op : BinaryOp) (left right : Value) : Except Trap Value :=
   match op, left, right with
@@ -573,10 +589,14 @@ def evalBinaryValue
       .ok (pointerOffset target true address (Int.ofNat offset.toNat))
   | op, .signed leftType left, .signed rightType right =>
       if leftType == rightType then evalSignedBinary target op leftType left right
-      else .error .typeMismatch
+      else evalShiftBy target op (.signed leftType left) right
   | op, .unsigned leftType left, .unsigned rightType right =>
       if leftType == rightType then evalUnsignedBinary target op leftType left right
-      else .error .typeMismatch
+      else evalShiftBy target op (.unsigned leftType left) (Int.ofNat right)
+  | op, .signed leftType left, .unsigned _ right =>
+      evalShiftBy target op (.signed leftType left) (Int.ofNat right)
+  | op, .unsigned leftType left, .signed _ right =>
+      evalShiftBy target op (.unsigned leftType left) right
   | op, .f32Bits left, .f32Bits right => evalF32Binary op left right
   | op, .f64Bits left, .f64Bits right => evalF64Binary op left right
   | op, .character left, .character right => evalCharBinary op left right

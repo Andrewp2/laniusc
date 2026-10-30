@@ -4,6 +4,7 @@ public import Lanius.Mini.Semantics
 public import Lanius.Mini.Unsigned
 public import Lanius.Mini.Shifts
 public import Lanius.Mini.Signed
+public import Lanius.Mini.ShiftBy
 -- import all: Lanius.Mini.Compiler
 import all Lanius.Mini.Compiler.Types
 import all Lanius.Mini.Compiler.P.Lists_empty
@@ -24,6 +25,7 @@ import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
@@ -575,7 +577,20 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
       rw [wrap_eval]
       exact holds_uint k (Nat.mod_lt _ (Nat.two_pow_pos _))
   case shiftLeft =>
-    simp only [SrcOp.lower, arith] at lowered
+    simp only [SrcOp.lower] at lowered
+    simp only [lowerShift] at lowered
+    split at lowered
+    rotate_left
+    · simp at lowered
+    rename_i ints
+    simp only [Bool.and_eq_true] at ints
+    obtain ⟨vr', holdsr', evaluated'⟩ := shift_retype (.inl rfl) ints.1 ints.2 holdsl holdsr evaluated
+    clear holdsr evaluated
+    change ({ expr := tr.expr, ty := tl.ty } : Typed).ty.Holds vr' (({ expr := tr.expr, ty := tl.ty } : Typed).expr.eval env) at holdsr'
+    revert lowered holdsr' evaluated'
+    generalize ({ expr := tr.expr, ty := tl.ty } : Typed) = tr
+    intro lowered evaluated holdsr
+    simp only [arith] at lowered
     split at lowered
     · rename_i types
       simp only [Option.some.injEq] at lowered
@@ -612,6 +627,18 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
     simp only [SrcOp.lower, arithShiftRight] at lowered
     split at lowered
     · rename_i signed
+      simp only [lowerShift] at lowered
+      split at lowered
+      rotate_left
+      · simp at lowered
+      rename_i ints
+      simp only [Bool.and_eq_true] at ints
+      obtain ⟨vr', holdsr', evaluated'⟩ := shift_retype (.inr rfl) ints.1 ints.2 holdsl holdsr evaluated
+      clear holdsr evaluated
+      change ({ expr := tr.expr, ty := tl.ty } : Typed).ty.Holds vr' (({ expr := tr.expr, ty := tl.ty } : Typed).expr.eval env) at holdsr'
+      revert lowered holdsr' evaluated'
+      generalize ({ expr := tr.expr, ty := tl.ty } : Typed) = tr
+      intro lowered evaluated holdsr
       simp only [arith] at lowered
       split at lowered
       · rename_i types
@@ -641,6 +668,18 @@ theorem SrcOp.lower_holds {op : SrcOp} {tl tr t : Typed} (lowered : op.lower tl 
         rw [SrcType.eq_of_uintKind hk] at signed
         simp [SrcType.isI32, SrcType.isIsize, SrcType.isSintAny] at signed
     · rename_i signed
+      simp only [lowerShift] at lowered
+      split at lowered
+      rotate_left
+      · simp at lowered
+      rename_i ints
+      simp only [Bool.and_eq_true] at ints
+      obtain ⟨vr', holdsr', evaluated'⟩ := shift_retype (.inr rfl) ints.1 ints.2 holdsl holdsr evaluated
+      clear holdsr evaluated
+      change ({ expr := tr.expr, ty := tl.ty } : Typed).ty.Holds vr' (({ expr := tr.expr, ty := tl.ty } : Typed).expr.eval env) at holdsr'
+      revert lowered holdsr' evaluated'
+      generalize ({ expr := tr.expr, ty := tl.ty } : Typed) = tr
+      intro lowered evaluated holdsr
       simp only [arith] at lowered
       split at lowered
       · rename_i types

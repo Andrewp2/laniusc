@@ -1630,6 +1630,22 @@ impl SrcType {
         };
     }
 
+    // An integer type: a shift takes an amount of any of them.
+    pub fn is_integer(self) -> bool {
+        return match (self) {
+            I32 -> true,
+            Bool -> false,
+            Uint(kind) -> true,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            Unit -> false,
+            Isize -> true,
+            Sint(kind) -> true,
+        };
+    }
+
     pub fn is_sint_any(self) -> bool {
         return match (self) {
             I32 -> false,
@@ -1911,14 +1927,24 @@ pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Optio
     return arith_uint(operation, left, right, left.ty.uint_kind());
 }
 
+// A shift's amount may be of any integer type. Core traps unless it is below
+// the left operand's width, and then its slot holds the same number as the
+// left operand's type would, so it is lowered as that type.
+pub fn lower_shift(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_integer() && right.ty.is_integer()) {
+        return arith(operation, left, Typed { expr: right.expr, ty: left.ty });
+    }
+    return None;
+}
+
 // >> is arithmetic on the signed types, logical on the unsigned ones. Core
 // traps on an amount outside the type's bits, so the low bits x86 keeps are
 // the whole amount.
 pub fn arith_shift_right(left: Typed, right: Typed) -> core::option::Option<Typed> {
     if (left.ty.is_i32() || left.ty.is_isize() || left.ty.is_sint_any()) {
-        return arith(Sar, left, right);
+        return lower_shift(Sar, left, right);
     }
-    return arith(Shr, left, right);
+    return lower_shift(Shr, left, right);
 }
 
 // ptr + usize and ptr - usize move the address, wrapping at 2^64 like
@@ -2014,7 +2040,7 @@ impl SrcOp {
             BitAnd -> arith(And, left, right),
             BitOr -> arith(Or, left, right),
             BitXor -> arith(Xor, left, right),
-            ShiftLeft -> arith(Shl, left, right),
+            ShiftLeft -> lower_shift(Shl, left, right),
             ShiftRight -> arith_shift_right(left, right),
             Less -> order(Lt, left, right),
             LessEq -> order(Le, left, right),
