@@ -3,8 +3,9 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_whileEvalOf
-public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_callParts
+public import Lanius.Faithful.Gen.SelfStmtF_evalHead
+public import Lanius.Faithful.Gen.SelfStmtF_ifEff
 public import Lanius.Faithful.Gen.SelfStmtF_isSomeIndex
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_methodCallOf
@@ -40,8 +41,9 @@ theorem proof_set_call_of {prog : SrcProgram} {prims : Prims} {ix_set_call_of : 
   simp only [src_set_call_of] at h
   faithful [Lanius.Mini.setCallOf]
 
-theorem proof_set_eval_of {prog : SrcProgram} {prims : Prims} {ix_set_eval_of ix_call_parts : Nat} (fn : prog.funcs[ix_set_eval_of]? = some (src_set_eval_of ix_call_parts)) (np : prims.isPrim ix_set_eval_of = false)
-    (ext_call_parts : Certified (∀ {n : Nat}, Stmt_call_parts prog prims ix_call_parts n)) {n : Nat} :
+theorem proof_set_eval_of {prog : SrcProgram} {prims : Prims} {ix_set_eval_of ix_call_parts ix_set_eff : Nat} (fn : prog.funcs[ix_set_eval_of]? = some (src_set_eval_of ix_call_parts ix_set_eff)) (np : prims.isPrim ix_set_eval_of = false)
+    (ext_call_parts : Certified (∀ {n : Nat}, Stmt_call_parts prog prims ix_call_parts n))
+    (ext_set_eff : Certified (∀ {n : Nat}, Stmt_set_eff prog prims ix_set_eff n)) {n : Nat} :
     Stmt_set_eval_of prog prims ix_set_eval_of n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
@@ -59,7 +61,8 @@ theorem proof_set_field_value {prog : SrcProgram} {prims : Prims} {ix_set_field_
   simp only [src_set_field_value] at h
   faithful [Lanius.Mini.setFieldValue]
 
-theorem proof_set_index_eval_of {prog : SrcProgram} {prims : Prims} {ix_set_index_eval_of : Nat} (fn : prog.funcs[ix_set_index_eval_of]? = some (src_set_index_eval_of)) (np : prims.isPrim ix_set_index_eval_of = false) {n : Nat} :
+theorem proof_set_index_eval_of {prog : SrcProgram} {prims : Prims} {ix_set_index_eval_of ix_set_index_eff : Nat} (fn : prog.funcs[ix_set_index_eval_of]? = some (src_set_index_eval_of ix_set_index_eff)) (np : prims.isPrim ix_set_index_eval_of = false)
+    (ext_set_index_eff : Certified (∀ {n : Nat}, Stmt_set_index_eff prog prims ix_set_index_eff n)) {n : Nat} :
     Stmt_set_index_eval_of prog prims ix_set_index_eval_of n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n
@@ -128,8 +131,8 @@ theorem proof_set_value {prog : SrcProgram} {prims : Prims} {ix_set_value : Nat}
   simp only [src_set_value] at h
   faithful [Lanius.Mini.setValue]
 
-theorem proof_while_eval_of {prog : SrcProgram} {prims : Prims} {ix_while_eval_of ix_boxed_of_mini_selfhost_MStmt : Nat} (fn : prog.funcs[ix_while_eval_of]? = some (src_while_eval_of ix_boxed_of_mini_selfhost_MStmt)) (np : prims.isPrim ix_while_eval_of = false)
-    (ext_boxed_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_MStmt prog prims ix_boxed_of_mini_selfhost_MStmt n)) {n : Nat} :
+theorem proof_while_eval_of {prog : SrcProgram} {prims : Prims} {ix_while_eval_of ix_while_eff : Nat} (fn : prog.funcs[ix_while_eval_of]? = some (src_while_eval_of ix_while_eff)) (np : prims.isPrim ix_while_eval_of = false)
+    (ext_while_eff : Certified (∀ {n : Nat}, Stmt_while_eff prog prims ix_while_eff n)) {n : Nat} :
     Stmt_while_eval_of prog prims ix_while_eval_of n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n

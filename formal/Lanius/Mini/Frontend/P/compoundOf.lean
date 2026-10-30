@@ -4,13 +4,12 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.compoundEval
 import Lanius.Mini.Frontend.P.compoundTarget
 import Lanius.Mini.Frontend.P.consTreeTail
+import Lanius.Mini.Frontend.P.evalHead
 import Lanius.Mini.Frontend.P.fieldTyAt
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.noToken
-import Lanius.Mini.Frontend.P.returnOrEval
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.treeTokens
 import Lanius.Mini.Frontend.P.typeDeclAt

@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.ifEff
 import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.treeTokens
@@ -22,6 +23,6 @@ def setIndexOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local
 def fieldEvalStmt (id : Nat) (j : Nat) (x : Option MEff) : Option MStmt :=
   match x with
   | none => none
-  | some e => some (MStmt.mSetFieldEval id j e)
+  | some e => some (setFieldEff id j e)
 
 end Lanius.Mini

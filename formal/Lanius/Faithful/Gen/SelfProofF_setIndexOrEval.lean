@@ -3,6 +3,7 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_setIndexOrEval
+public import Lanius.Faithful.Gen.SelfStmtF_ifEff
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_setIndexOrEval
@@ -28,7 +29,8 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_field_eval_stmt {prog : SrcProgram} {prims : Prims} {ix_field_eval_stmt : Nat} (fn : prog.funcs[ix_field_eval_stmt]? = some (src_field_eval_stmt)) (np : prims.isPrim ix_field_eval_stmt = false) {n : Nat} :
+theorem proof_field_eval_stmt {prog : SrcProgram} {prims : Prims} {ix_field_eval_stmt ix_set_field_eff : Nat} (fn : prog.funcs[ix_field_eval_stmt]? = some (src_field_eval_stmt ix_set_field_eff)) (np : prims.isPrim ix_field_eval_stmt = false)
+    (ext_set_field_eff : Certified (∀ {n : Nat}, Stmt_set_field_eff prog prims ix_set_field_eff n)) {n : Nat} :
     Stmt_field_eval_stmt prog prims ix_field_eval_stmt n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n

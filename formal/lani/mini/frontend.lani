@@ -5832,12 +5832,70 @@ pub fn eff_arm_bound(fuel: usize, env: FrontEnv, expected: core::option::Option<
 }
 // extract: mutual end
 
+// A statement over an effectful value whose value is pure takes the pure
+// statement's form, so a pure value has one reading.
+pub fn eval_let_head(x: MEff) -> LetHead {
+    return match (pure_part(x)) {
+        Some(v) -> Plain(v),
+        None -> EvalOf(x),
+    };
+}
+
+pub fn return_eff(x: MEff) -> MStmt {
+    return match (pure_part(x)) {
+        Some(v) -> MReturn(v),
+        None -> MReturnEval(x),
+    };
+}
+
+pub fn if_eff(x: MEff, a: MStmt, b: MStmt) -> MStmt {
+    return match (pure_part(x)) {
+        Some(v) -> MIf(v, boxed(a), boxed(b)),
+        None -> MIfEval(x, boxed(a), boxed(b)),
+    };
+}
+
+pub fn while_eff(x: MEff, body: MStmt) -> MStmt {
+    return match (pure_part(x)) {
+        Some(v) -> MWhile(v, boxed(body)),
+        None -> MWhileEval(x, boxed(body)),
+    };
+}
+
+pub fn set_eff(id: usize, x: MEff) -> MStmt {
+    return match (pure_part(x)) {
+        Some(v) -> MSet(id, v),
+        None -> MSetEval(id, x),
+    };
+}
+
+pub fn set_field_eff(id: usize, j: usize, x: MEff) -> MStmt {
+    return match (pure_part(x)) {
+        Some(v) -> MSetField(id, j, v),
+        None -> MSetFieldEval(id, j, x),
+    };
+}
+
+pub fn set_index_pure(slice: usize, i: MEff, v: MEff, value: core::option::Option<SrcExpr>) -> MStmt {
+    return match (pure_part(i)) {
+        None -> MSetIndexEval(slice, i, v),
+        Some(a) -> match (value) {
+            None -> MSetIndexEval(slice, i, v),
+            Some(b) -> MSetIndex(slice, a, b),
+        },
+    };
+}
+
+pub fn set_index_eff(slice: usize, i: MEff, v: MEff) -> MStmt {
+    return set_index_pure(slice, i, v, pure_part(v));
+}
+
 pub fn eval_head(x: core::option::Option<MEff>) -> core::option::Option<LetHead> {
     return match (x) {
         None -> None,
         Some(e) -> match (call_parts(e)) {
             Some(c) -> Some(CallOf(c)),
-            None -> Some(EvalOf(e)),
+            None -> Some(eval_let_head(e)),
         },
     };
 }
@@ -5944,7 +6002,7 @@ pub fn while_body(x: SrcExpr, body: core::option::Option<MStmt>) -> core::option
 pub fn return_eval_of(x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
     return match (x) {
         None -> None,
-        Some(e) -> Some(MReturnEval(e)),
+        Some(e) -> Some(return_eff(e)),
     };
 }
 
@@ -5999,7 +6057,7 @@ pub fn if_eval_of(c: core::option::Option<MEff>, a: core::option::Option<MStmt>,
             None -> None,
             Some(s) -> match (b) {
                 None -> None,
-                Some(t) -> Some(MIfEval(x, boxed(s), boxed(t))),
+                Some(t) -> Some(if_eff(x, s, t)),
             },
         },
     };
@@ -6018,7 +6076,7 @@ pub fn while_eval_of(c: core::option::Option<MEff>, body: core::option::Option<M
         None -> None,
         Some(x) -> match (body) {
             None -> None,
-            Some(b) -> Some(MWhileEval(x, boxed(b))),
+            Some(b) -> Some(while_eff(x, b)),
         },
     };
 }
@@ -6085,7 +6143,7 @@ pub fn set_eval_of(id: usize, x: core::option::Option<MEff>) -> core::option::Op
         None -> None,
         Some(e) -> match (call_parts(e)) {
             Some(c) -> Some(MSetCall(id, c.inst, c.args)),
-            None -> Some(MSetEval(id, e)),
+            None -> Some(set_eff(id, e)),
         },
     };
 }
@@ -6103,7 +6161,7 @@ pub fn set_index_eval_of(slice: usize, index: core::option::Option<MEff>, value:
         None -> None,
         Some(i) -> match (value) {
             None -> None,
-            Some(v) -> Some(MSetIndexEval(slice, i, v)),
+            Some(v) -> Some(set_index_eff(slice, i, v)),
         },
     };
 }
@@ -6119,7 +6177,7 @@ pub fn set_index_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Loca
 pub fn field_eval_stmt(id: usize, j: usize, x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
     return match (x) {
         None -> None,
-        Some(e) -> Some(MSetFieldEval(id, j, e)),
+        Some(e) -> Some(set_field_eff(id, j, e)),
     };
 }
 

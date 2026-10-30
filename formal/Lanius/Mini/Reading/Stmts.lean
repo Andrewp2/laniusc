@@ -93,7 +93,7 @@ inductive ReturnR (env : FrontEnv) (scope : List Local) (e : CTree) : MStmt → 
   | slice {el : Ty} {first : Token} {rest : List Token} {p l : SrcExpr} : env.ret = some (.tySlice el) →
       e.leaves = first :: rest → LetHeadR env scope (.tySlice el) e (.sliceOf p l) →
       ReturnR env scope e (.mLetSlice (first.start - env.base) el p l (.mReturn (.local (first.start - env.base))))
-  | eval {x : MEff} : EffR env scope env.ret e x → ReturnR env scope e (.mReturnEval x)
+  | eval {x : MEff} : EffR env scope env.ret e x → ReturnR env scope e (returnEff x)
 
 theorem returnOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {e : CTree} {m : MStmt}
     (h : returnOrEval fuel env scope e = some m) : ReturnR env scope e m := by
@@ -161,7 +161,7 @@ theorem returnOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {e
 /-- `if (c) { a } else { b }`, c pure or else effectful. -/
 inductive IfR (env : FrontEnv) (scope : List Local) (c : CTree) (a b : MStmt) : MStmt → Prop
   | pure {x : SrcExpr} : ExprR env scope c x → IfR env scope c a b (.mIf x a b)
-  | eval {x : MEff} : EffR env scope (some .tyBool) c x → IfR env scope c a b (.mIfEval x a b)
+  | eval {x : MEff} : EffR env scope (some .tyBool) c x → IfR env scope c a b (ifEff x a b)
 
 theorem ifOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {c : CTree} {a b : Option MStmt}
     {m : MStmt} (h : ifOrEval fuel env scope c a b = some m) :
@@ -201,7 +201,7 @@ theorem ifOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {c : C
 /-- `while (c) { body }`, c pure or else effectful. -/
 inductive WhileR (env : FrontEnv) (scope : List Local) (c : CTree) (body : MStmt) : MStmt → Prop
   | pure {x : SrcExpr} : ExprR env scope c x → WhileR env scope c body (.mWhile x body)
-  | eval {x : MEff} : EffR env scope (some .tyBool) c x → WhileR env scope c body (.mWhileEval x body)
+  | eval {x : MEff} : EffR env scope (some .tyBool) c x → WhileR env scope c body (whileEff x body)
 
 theorem whileOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {c : CTree} {body : Option MStmt}
     {m : MStmt} (h : whileOrEval fuel env scope c body = some m) :
@@ -309,7 +309,7 @@ inductive AssignTargetR (env : FrontEnv) (scope : List Local) (target value : CT
       nodeProd (kid (kid target 1) 2) = pMemberTypeArgsNone → nodeProd (kid (kid target 1) 3) = pPostfixEnd →
       LocalOf scope (kid target 0) l → FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j →
       FieldTyAt env.decls l.ty j t → EffR env scope (some t) value x →
-      AssignTargetR env scope target value (.mSetFieldEval l.id j x)
+      AssignTargetR env scope target value (setFieldEff l.id j x)
   | indexPure {l : Local} {i v : SrcExpr} : nodeProd (kid target 1) = pPostfixIndex →
       nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l →
       ExprR env scope (kid (kid target 1) 1) i → ExprR env scope value v →
@@ -317,7 +317,7 @@ inductive AssignTargetR (env : FrontEnv) (scope : List Local) (target value : CT
   | indexEval {l : Local} {i v : MEff} : nodeProd (kid target 1) = pPostfixIndex →
       nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l →
       EffR env scope none (kid (kid target 1) 1) i → EffR env scope (sliceElem l.ty) value v →
-      AssignTargetR env scope target value (.mSetIndexEval l.id i v)
+      AssignTargetR env scope target value (setIndexEff l.id i v)
 
 theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {target value : CTree} {m : MStmt}
     (h : assignTarget fuel env scope target value = some m) : AssignTargetR env scope target value m := by
@@ -425,7 +425,7 @@ inductive CompoundR (env : FrontEnv) (scope : List Local) (target : CTree) (p : 
       LocalOf scope (kid target 0) l → FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j →
       FieldTyAt env.decls l.ty j t → EffR env scope (some t) value x →
       compoundEff p (.xPure (.field l.id j)) (some x) = some y →
-      CompoundR env scope target p value (.mSetFieldEval l.id j y)
+      CompoundR env scope target p value (setFieldEff l.id j y)
 
 theorem compoundEff_some {p : Nat} {left : MEff} {right : Option MEff} {y : MEff}
     (h : compoundEff p left right = some y) : ∃ x, right = some x ∧ compoundEff p left (some x) = some y := by

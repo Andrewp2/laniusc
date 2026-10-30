@@ -2,6 +2,8 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.callParts
+import Lanius.Mini.Frontend.P.evalHead
+import Lanius.Mini.Frontend.P.ifEff
 import Lanius.Mini.Frontend.P.isSomeIndex
 import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.methodCallOf
@@ -21,7 +23,7 @@ def whileEvalOf (c : Option MEff) (body : Option MStmt) : Option MStmt :=
   | some x =>
     match body with
     | none => none
-    | some b => some (MStmt.mWhileEval x b)
+    | some b => some (whileEff x b)
 
 /-- `while (c) { body }`, c pure or else effectful. -/
 def whileOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) (body : Option MStmt) : Option MStmt :=
@@ -73,7 +75,7 @@ def setEvalOf (id : Nat) (x : Option MEff) : Option MStmt :=
   | some e =>
     match callParts e with
     | some c => some (MStmt.mSetCall id c.inst c.args)
-    | none => some (MStmt.mSetEval id e)
+    | none => some (setEff id e)
 
 /-- `x = value;`: a statement form, or else an effectful expression. -/
 def setOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (value : CTree) : Option MStmt :=
@@ -87,6 +89,6 @@ def setIndexEvalOf (slice : Nat) (index : Option MEff) (value : Option MEff) : O
   | some i =>
     match value with
     | none => none
-    | some v => some (MStmt.mSetIndexEval slice i v)
+    | some v => some (setIndexEff slice i v)
 
 end Lanius.Mini
