@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import core::iter;
 import core::option;
 import core::pair;
@@ -7,10 +8,10 @@ import core::slice;
 struct Item { key:i32, flag:core::option::Option<bool> }
 struct Separator { calls:i32 }
 impl Separator { fn borrow(&self) -> &Separator { return self; } }
-pub impl core::iter::Mapper<Item,bool> for Separator { pub fn apply(&self,value:Item) -> bool { self.calls+=1; return value.key==0; } }
+pub impl core::function::Mapper<Item,bool> for Separator { pub fn apply(&self,value:Item) -> bool { self.calls+=1; return value.key==0; } }
 struct Same { calls:i32 }
 impl Same { fn borrow(&self) -> &Same { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<Item,Item>,bool> for Same { pub fn apply(&self,pair:core::pair::Pair<Item,Item>) -> bool { self.calls+=1; return pair.first.key==pair.second.key; } }
+pub impl core::function::Mapper<core::pair::Pair<Item,Item>,bool> for Same { pub fn apply(&self,pair:core::pair::Pair<Item,Item>) -> bool { self.calls+=1; return pair.first.key==pair.second.key; } }
 fn segment<I,T>(source:&I,start:i32,length:i32) -> core::slice::View<T> where I:core::iter::Iterator<core::slice::View<T>> {
     let item:core::option::Option<core::slice::View<T>> =source.next(); let value:core::slice::View<T> =core::option::unwrap<core::slice::View<T>>(item); assert(value.start==start && value.length==length); return value;
 }

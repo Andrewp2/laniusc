@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::vec;
 import core::clone;
 import core::clone_values;
@@ -31,7 +32,7 @@ pub impl core::cmp::PartialEq<Item> for Item {
 }
 struct Keep { visits:[i32] }
 impl Keep { fn borrow(&self) -> &Keep { return self; } }
-pub impl core::iter::Mapper<Item,bool> for Keep {
+pub impl core::function::Mapper<Item,bool> for Keep {
     pub fn apply(&self,value:Item) -> bool {
         check(value); let log:[i32]=self.visits; log[log[0]+1]=value.id; log[0]+=1;
         return value.id!=2;
@@ -39,7 +40,7 @@ pub impl core::iter::Mapper<Item,bool> for Keep {
 }
 struct Same { pairs:[i32] }
 impl Same { fn borrow(&self) -> &Same { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<Item,Item>,bool> for Same {
+pub impl core::function::Mapper<core::pair::Pair<Item,Item>,bool> for Same {
     pub fn apply(&self,values:core::pair::Pair<Item,Item>) -> bool {
         check(values.first); check(values.second);
         let log:[i32]=self.pairs; log[log[0]+1]=values.first.id*10+values.second.id; log[0]+=1;

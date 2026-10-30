@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::vec;
 import core::clone;
 import core::iter;
@@ -15,12 +16,12 @@ pub impl core::clone::Destroy<Item> for Item {
 }
 struct Keep {}
 impl Keep { fn borrow(&self) -> &Keep { return self; } }
-pub impl core::iter::Mapper<Item,bool> for Keep {
+pub impl core::function::Mapper<Item,bool> for Keep {
     pub fn apply(&self,item:Item) -> bool { check(item); item.stats.predicates+=1; return item.id%3!=0; }
 }
 struct Same {}
 impl Same { fn borrow(&self) -> &Same { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<Item,Item>,bool> for Same {
+pub impl core::function::Mapper<core::pair::Pair<Item,Item>,bool> for Same {
     pub fn apply(&self,pair:core::pair::Pair<Item,Item>) -> bool { check(pair.first); check(pair.second); pair.first.stats.comparisons+=1; return pair.first.key==pair.second.key; }
 }
 fn publish(values:&alloc::vec::Vec<Item>,count:i32,stage:i32,pointer:ptr) {

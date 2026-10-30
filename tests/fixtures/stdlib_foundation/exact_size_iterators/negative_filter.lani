@@ -1,8 +1,9 @@
 module app::main;
+import core::function;
 import core::iter;
 struct Keep {}
 impl Keep { fn borrow(&self) -> &Keep { return self; } }
-pub impl core::iter::Mapper<i32,bool> for Keep {
+pub impl core::function::Mapper<i32,bool> for Keep {
     pub fn apply(&self,value:i32) -> bool { return value==7; }
 }
 fn require_exact<I,T>(source:&I) -> u64

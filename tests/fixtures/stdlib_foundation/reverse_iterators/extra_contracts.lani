@@ -1,5 +1,6 @@
 // Allocation-free public bidirectional contracts and callback observations.
 module app::main;
+import core::function;
 import core::iter;
 import core::mem;
 import core::option;
@@ -53,7 +54,7 @@ fn check(item:Packet,id:i32) {
 }
 struct NestedSelect { marker:i32 }
 impl NestedSelect { fn borrow(&self) -> &NestedSelect { return self; } }
-pub impl core::iter::Mapper<i32,core::option::Option<core::option::Option<i32>>> for NestedSelect {
+pub impl core::function::Mapper<i32,core::option::Option<core::option::Option<i32>>> for NestedSelect {
     pub fn apply(&self,value:i32) -> core::option::Option<core::option::Option<i32>> {
         if (value==1) { return core::option::None(); }
         let inner:core::option::Option<i32> =core::option::None();
@@ -63,7 +64,7 @@ pub impl core::iter::Mapper<i32,core::option::Option<core::option::Option<i32>>>
 }
 struct Pack { marker:i32 }
 impl Pack { fn borrow(&self) -> &Pack { return self; } }
-pub impl core::iter::Mapper<i32,Packet> for Pack {
+pub impl core::function::Mapper<i32,Packet> for Pack {
     pub fn apply(&self,value:i32) -> Packet { return packet(value); }
 }
 fn nested_filter_map_and_compound_map() {

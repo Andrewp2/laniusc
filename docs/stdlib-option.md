@@ -18,8 +18,10 @@ fn pair_or(value: core::option::Option<Pair>, fallback: Pair) -> Pair {
 }
 ```
 
-Every operation takes the option by value, so the caller's copy is never
-changed. Each exists as a free function, `core::option::is_some(value)`, and
+Operations take the option by value and leave its caller-side wrapper
+descriptor unchanged. A selected transformation callback may affect backing
+referenced by a shallow payload; its ownership policy is explicit below.
+Each exists as a free function, `core::option::is_some(value)`, and
 as a method, `value.is_some()`, except `ok` and `err`, which remain free
 functions. Nested options also have specialized `flatten` and `transpose`
 methods; both transpose receiver extensions live in `core::option`.
@@ -46,6 +48,24 @@ methods; both transpose receiver extensions live in `core::option`.
 `ptr`, and the wide integers in `core::wide_i64` and `core::wide_u64`. A user
 type gets `contains` by implementing `core::cmp::PartialEq` for itself. `f32`
 equality is IEEE: `Some(NaN)` contains nothing, and `0.0` matches `-0.0`.
+
+## Lazy callbacks
+
+The [lazy-outcome guide](stdlib-lazy-outcomes.md) specifies 10 new operations
+in free-function and method forms, using the canonical
+`core::function::Mapper` and `core::function::Producer` traits. Selected
+callbacks run once; skipped callbacks never run. Callback construction and
+ordinary arguments remain eager, and every static bound applies even to a
+runtime-skipped branch.
+
+Library selection does no allocation or destruction. Transformation callbacks
+have their own effects and explicit owner-transfer policy; predicates only
+borrow their payload for the call. Discarded payloads and eager fallback
+owners stay the caller's cleanup responsibility. All eight new library groups
+and the current 98-case optional-sum application pass on native Linux x86_64
+CPU output from the GPU compiler; six selected regressions pass separately.
+The new guide records exact scopes; the receipts below retain their earlier
+API scope.
 
 ## Eager composition and nested methods
 
@@ -81,13 +101,17 @@ new guide records current selected checks separately.
 - Borrowed payloads (slices, strings) keep pointing at the caller's storage,
   which must outlive the option.
 
-## Verification
+## Historical verification
+
+These receipts cover the operations present at their source revision, before
+the lazy callback additions. Current coverage is listed in the
+[lazy-outcome guide](stdlib-lazy-outcomes.md).
 
 - `tests/fixtures/stdlib_foundation/core_option_result.lani` runs every free
   function and method through one generic checker for i8, i16, i32, i64,
   isize, u8, u16, u32, u64, usize, bool, char, f32, ptr, both wide integers
-  and a user record. `tests/stdlib_foundation_execution.rs` runs it and checks
-  that it calls every public function and method of `core::option`.
+  and a user record. `tests/stdlib_foundation_execution.rs` ran it and checked
+  its then-current public function and method inventory.
 - `tests/stdlib_option_scalar_execution.rs` checks every state pair of the
   combinators for scalar payloads, NaN membership and negative zero.
 - `tests/stdlib_option_bool_execution.rs`, `stdlib_option_slice_execution.rs`

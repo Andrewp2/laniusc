@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import core::iter;
 import core::mem;
 import core::option;
@@ -13,10 +14,10 @@ struct Packet { tag:i32, flag:core::option::Option<core::option::Option<bool>>, 
 fn flag(value:core::option::Option<core::option::Option<bool>>) -> i32 { return match(value) { core::option::None -> 0,core::option::Some(inner) -> match(inner) { core::option::None -> 1,core::option::Some(bit) -> match(bit) { false -> 2,true -> 3 } } }; }
 struct Separator { calls:i32 }
 impl Separator { fn borrow(&self) -> &Separator { return self; } }
-pub impl core::iter::Mapper<Packet,bool> for Separator { pub fn apply(&self,value:Packet) -> bool { self.calls+=1; return value.tag==0; } }
+pub impl core::function::Mapper<Packet,bool> for Separator { pub fn apply(&self,value:Packet) -> bool { self.calls+=1; return value.tag==0; } }
 struct Same { calls:i32 }
 impl Same { fn borrow(&self) -> &Same { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<Packet,Packet>,bool> for Same { pub fn apply(&self,pair:core::pair::Pair<Packet,Packet>) -> bool { self.calls+=1; return pair.first.tag==pair.second.tag; } }
+pub impl core::function::Mapper<core::pair::Pair<Packet,Packet>,bool> for Same { pub fn apply(&self,pair:core::pair::Pair<Packet,Packet>) -> bool { self.calls+=1; return pair.first.tag==pair.second.tag; } }
 struct Lengths { calls:i32 }
 impl Lengths { fn borrow(&self) -> &Lengths { return self; } }
 pub impl core::iter::Folder<i32,core::slice::View<Packet>> for Lengths { pub fn apply(&self,total:i32,value:core::slice::View<Packet>) -> i32 { self.calls+=1; return total+value.length; } }
@@ -37,10 +38,10 @@ fn packets() {
 }
 struct Unary { calls:i32,log:[i32],delimiter:u8 }
 impl Unary { fn borrow(&self) -> &Unary { return self; } }
-pub impl core::iter::Mapper<u8,bool> for Unary { pub fn apply(&self,value:u8) -> bool { self.log[self.calls]=value as i32; self.calls+=1; return value==self.delimiter; } }
+pub impl core::function::Mapper<u8,bool> for Unary { pub fn apply(&self,value:u8) -> bool { self.log[self.calls]=value as i32; self.calls+=1; return value==self.delimiter; } }
 struct Adjacent { calls:i32,left:[i32],right:[i32],mode:i32 }
 impl Adjacent { fn borrow(&self) -> &Adjacent { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for Adjacent { pub fn apply(&self,pair:core::pair::Pair<u8,u8>) -> bool { self.left[self.calls]=pair.first as i32; self.right[self.calls]=pair.second as i32; self.calls+=1; if(self.mode==0) { return pair.first==pair.second; } return (pair.second as i32)==(pair.first as i32)+1; } }
+pub impl core::function::Mapper<core::pair::Pair<u8,u8>,bool> for Adjacent { pub fn apply(&self,pair:core::pair::Pair<u8,u8>) -> bool { self.left[self.calls]=pair.first as i32; self.right[self.calls]=pair.second as i32; self.calls+=1; if(self.mode==0) { return pair.first==pair.second; } return (pair.second as i32)==(pair.first as i32)+1; } }
 fn alias_edits() {
     let backing:[u8;7]=[255,1,0,2,0,3,255]; let log:[i32;12]=[777;12]; let policy:Unary=Unary { calls:0,log:log,delimiter:0 }; let view:core::slice::View<u8> =core::slice::view_range(backing,1,5).unwrap();
     let source:core::slice::Split<u8,Unary> =core::slice::split<u8,Unary>(view,policy.borrow()).unwrap(); let first:core::slice::View<u8> =segment<core::slice::Split<u8,Unary>,u8>(source.borrow(),1,1); let fork:core::slice::Split<u8,Unary> =source; assert(policy.calls==2);
@@ -62,10 +63,10 @@ fn alias_edits() {
 struct Unit {}
 struct EverySecond { calls:i32 }
 impl EverySecond { fn borrow(&self) -> &EverySecond { return self; } }
-pub impl core::iter::Mapper<Unit,bool> for EverySecond { pub fn apply(&self,value:Unit) -> bool { self.calls+=1; return self.calls%2==0; } }
+pub impl core::function::Mapper<Unit,bool> for EverySecond { pub fn apply(&self,value:Unit) -> bool { self.calls+=1; return self.calls%2==0; } }
 struct NeverJoin { calls:i32 }
 impl NeverJoin { fn borrow(&self) -> &NeverJoin { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<Unit,Unit>,bool> for NeverJoin { pub fn apply(&self,value:core::pair::Pair<Unit,Unit>) -> bool { self.calls+=1; return false; } }
+pub impl core::function::Mapper<core::pair::Pair<Unit,Unit>,bool> for NeverJoin { pub fn apply(&self,value:core::pair::Pair<Unit,Unit>) -> bool { self.calls+=1; return false; } }
 fn zero_sized() {
     let units:[Unit;3]=[Unit {},Unit {},Unit {}]; let selected:core::slice::View<Unit> =core::slice::view(units,3).unwrap(); assert(core::mem::slice_stride(units)==0); let policy:EverySecond=EverySecond { calls:0 }; let relation:NeverJoin=NeverJoin { calls:0 };
     let split:core::slice::Split<Unit,EverySecond> =core::slice::split<Unit,EverySecond>(selected,policy.borrow()).unwrap(); segment<core::slice::Split<Unit,EverySecond>,Unit>(split.borrow(),0,1); segment<core::slice::Split<Unit,EverySecond>,Unit>(split.borrow(),2,1); ended<core::slice::Split<Unit,EverySecond>,Unit>(split.borrow()); assert(policy.calls==3);

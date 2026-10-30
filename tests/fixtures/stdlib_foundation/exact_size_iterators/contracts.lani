@@ -1,5 +1,6 @@
 // Exact cardinalities without polling, callbacks, allocation or item reads.
 module app::main;
+import core::function;
 import core::iter;
 import core::mem;
 import core::option;
@@ -38,7 +39,7 @@ type Payload=core::option::Option<core::result::Result<[u64;2],i64>>;
 struct Packet { id:i32, wide:[u64;2], payload:Payload }
 struct Pack { calls:i32 }
 impl Pack { fn borrow(&self) -> &Pack { return self; } }
-pub impl core::iter::Mapper<i32,Packet> for Pack {
+pub impl core::function::Mapper<i32,Packet> for Pack {
     pub fn apply(&self,value:i32) -> Packet {
         self.calls+=1;
         let detail:core::result::Result<[u64;2],i64> =core::result::Err(-4294967297);

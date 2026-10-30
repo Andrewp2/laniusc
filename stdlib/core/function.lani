@@ -1,0 +1,15 @@
+// Borrowed, statically dispatched callbacks. No closure or dynamic-call ABI.
+module core::function;
+
+// Ordinary shallow input/output values. The caller keeps the mapper and any
+// borrowed mutable context alive. Cleanup authority follows the application's
+// explicit transfer policy; no Clone or Destroy is implied by this protocol.
+pub trait Mapper<T,U> {
+    pub fn apply(&self,value:T) -> U;
+}
+
+// Produce a value only when invoked. Construction of the callback is eager;
+// callers decide when to invoke it and retain the output's cleanup authority.
+pub trait Producer<T> {
+    pub fn produce(&self) -> T;
+}

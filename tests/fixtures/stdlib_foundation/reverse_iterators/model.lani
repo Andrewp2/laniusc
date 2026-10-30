@@ -1,5 +1,6 @@
 // Six-u64 commands: mode, length A/B, preconsumed A, pulls, end schedule.
 module app::main;
+import core::function;
 import core::io;
 import core::iter;
 import core::option;
@@ -35,17 +36,17 @@ pub impl core::iter::DoubleEndedIterator<i32> for Probe {
 }
 struct Scale { log:&Log }
 impl Scale { fn borrow(&self) -> &Scale { return self; } }
-pub impl core::iter::Mapper<i32,i32> for Scale {
+pub impl core::function::Mapper<i32,i32> for Scale {
     pub fn apply(&self,value:i32) -> i32 { let log:&Log=self.log; log.add(300+value); return value*3+7; }
 }
 struct Even { log:&Log }
 impl Even { fn borrow(&self) -> &Even { return self; } }
-pub impl core::iter::Mapper<i32,bool> for Even {
+pub impl core::function::Mapper<i32,bool> for Even {
     pub fn apply(&self,value:i32) -> bool { let log:&Log=self.log; log.add(400+value); return value%2==0; }
 }
 struct Select { log:&Log }
 impl Select { fn borrow(&self) -> &Select { return self; } }
-pub impl core::iter::Mapper<i32,core::option::Option<i32>> for Select {
+pub impl core::function::Mapper<i32,core::option::Option<i32>> for Select {
     pub fn apply(&self,value:i32) -> core::option::Option<i32> {
         let log:&Log=self.log; log.add(500+value);
         if (value%2!=0) { return core::option::None(); } return core::option::Some(value*2+1);

@@ -8,9 +8,13 @@ All seven new library gates and four application groups/103 native cases pass
 on the finite native Linux x86_64 profile. Earlier map and clone receipts retain their original API and source
 scope.
 
+The current Mapper path is `core::function::Mapper`. The
+[lazy-outcome migration](stdlib-lazy-outcomes.md) records a selected current
+regression separately; earlier receipts below keep their original source scope.
+
 ## API and lookup behavior
 
-Both methods use the existing `core::iter::Mapper` and `core::pair::Pair`:
+Both methods use the existing `core::function::Mapper` and `core::pair::Pair`:
 
 ```text
 update_value<M,R>(&self, key:K, update:&M) -> Option<R>

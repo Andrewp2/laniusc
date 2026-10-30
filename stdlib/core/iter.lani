@@ -12,6 +12,7 @@
 module core::iter;
 import core::clone_values;
 import core::cmp;
+import core::function::Mapper;
 import core::option;
 import core::ordering;
 import core::pair;
@@ -38,13 +39,6 @@ pub trait DoubleEndedIterator<T> {
 // for unchecked access. External mutation can change the count between calls.
 pub trait ExactSizeIterator<T> {
     pub fn remaining_count(&self) -> u64;
-}
-
-// A source-defined callback, with ordinary shallow input/output values. The
-// caller keeps the mapper and any borrowed mutable context alive. Output
-// cleanup authority remains with the application; no Destroy is implied.
-pub trait Mapper<T, U> {
-    pub fn apply(&self, value: T) -> U;
 }
 
 // Retirement transfers one exhausted inner by value. None consumes all its

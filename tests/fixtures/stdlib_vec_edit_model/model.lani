@@ -1,5 +1,6 @@
 // Test-only raw observations of real Vec editing operations.
 module app::main;
+import core::function;
 import alloc::vec;
 import core::clone;
 import core::cmp;
@@ -149,14 +150,14 @@ pub impl core::cmp::PartialEq<Owned> for Owned {
 }
 struct Unary<T> { state:&Context,mode:i32 }
 impl<T> Unary<T> { fn borrow(&self) -> &Unary<T> { return self; } }
-pub impl<T> core::iter::Mapper<T,bool> for Unary<T> where T:Model<T> {
+pub impl<T> core::function::Mapper<T,bool> for Unary<T> where T:Model<T> {
     pub fn apply(&self,value:T) -> bool {
         let state:&Context=self.state; return state.retain(T::identity(value),T::key(value),self.mode);
     }
 }
 struct Adjacent<T> { state:&Context,mode:i32 }
 impl<T> Adjacent<T> { fn borrow(&self) -> &Adjacent<T> { return self; } }
-pub impl<T> core::iter::Mapper<core::pair::Pair<T,T>,bool> for Adjacent<T> where T:Model<T> {
+pub impl<T> core::function::Mapper<core::pair::Pair<T,T>,bool> for Adjacent<T> where T:Model<T> {
     pub fn apply(&self,values:core::pair::Pair<T,T>) -> bool {
         let state:&Context=self.state;
         return state.compare(2,T::identity(values.first),T::key(values.first),T::identity(values.second),T::key(values.second),self.mode);

@@ -1,5 +1,6 @@
 // Test-only sequence consumer adapter; all payloads and wire framing are finite.
 module app::main;
+import core::function;
 import core::cmp;
 import core::f64;
 import core::iter;
@@ -74,7 +75,7 @@ struct BuildAtom { keys: [i64], bits: [u64], base: u64, log: &Log }
 struct BuildOther { keys: [i64], bits: [u64], base: u64 }
 impl BuildAtom { fn borrow(&self) -> &BuildAtom { return self; } }
 impl BuildOther { fn borrow(&self) -> &BuildOther { return self; } }
-pub impl core::iter::Mapper<u8,Atom> for BuildAtom {
+pub impl core::function::Mapper<u8,Atom> for BuildAtom {
     pub fn apply(&self, index: u8) -> Atom {
         let id: u64 = self.base + (index as u64) + 1;
         let flag: core::option::Option<bool> = core::option::None();
@@ -83,7 +84,7 @@ pub impl core::iter::Mapper<u8,Atom> for BuildAtom {
             marker: 18446744073709551615-id*17, flag: flag, log: self.log };
     }
 }
-pub impl core::iter::Mapper<u8,Other> for BuildOther {
+pub impl core::function::Mapper<u8,Other> for BuildOther {
     pub fn apply(&self, index: u8) -> Other {
         let id: u64 = self.base + (index as u64) + 1;
         return Other { id: id, number: self.keys[index as i32], bits: self.bits[index as i32],
@@ -172,7 +173,7 @@ impl Equality { fn borrow(&self) -> &Equality { return self; } }
 impl Compare { fn borrow(&self) -> &Compare { return self; } }
 impl PartialCompare { fn borrow(&self) -> &PartialCompare { return self; } }
 impl Sorted { fn borrow(&self) -> &Sorted { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<Atom,Other>,bool> for Equality {
+pub impl core::function::Mapper<core::pair::Pair<Atom,Other>,bool> for Equality {
     pub fn apply(&self, pair: core::pair::Pair<Atom,Other>) -> bool {
         let log: &Log = self.log; let a: Atom=pair.first; let b: Other=pair.second;
         let result: bool=relation(log.policy,a.key,b.number,a.bits,b.bits)==1;
@@ -185,14 +186,14 @@ pub impl core::ordering::Comparator<Atom,Other> for Compare {
         log.add(4,a.id,b.id,a.key,b.number,a.bits,b.bits,result); return total(result);
     }
 }
-pub impl core::iter::Mapper<core::pair::Pair<Atom,Other>,core::cmp::PartialOrdering> for PartialCompare {
+pub impl core::function::Mapper<core::pair::Pair<Atom,Other>,core::cmp::PartialOrdering> for PartialCompare {
     pub fn apply(&self, pair: core::pair::Pair<Atom,Other>) -> core::cmp::PartialOrdering {
         let log:&Log=self.log; let a:Atom=pair.first; let b:Other=pair.second;
         let result:u64=relation(log.policy,a.key,b.number,a.bits,b.bits);
         log.add(5,a.id,b.id,a.key,b.number,a.bits,b.bits,result); return partial(result);
     }
 }
-pub impl core::iter::Mapper<core::pair::Pair<Atom,Atom>,bool> for Sorted {
+pub impl core::function::Mapper<core::pair::Pair<Atom,Atom>,bool> for Sorted {
     pub fn apply(&self, pair: core::pair::Pair<Atom,Atom>) -> bool {
         let log:&Log=self.log; let a:Atom=pair.first; let b:Atom=pair.second;
         let order:u64=relation(log.policy,a.key,b.key,a.bits,b.bits);

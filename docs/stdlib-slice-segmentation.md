@@ -8,6 +8,10 @@ x86_64 profile. The standalone application build and both guide examples pass.
 Existing slice/iterator receipts retain their original API/source scope. The
 full standard/extended-library goal remains open.
 
+The current Mapper path is `core::function::Mapper`. The
+[lazy-outcome migration](stdlib-lazy-outcomes.md) records a selected current
+regression separately; earlier receipts below keep their original source scope.
+
 ## Factories and iteration capabilities
 
 The checked free functions and cursor types belong to `core::slice`:
@@ -26,9 +30,9 @@ Each cursor has `borrow()`. Import `core::iter` to use its single canonical
 
 | Cursor | Capability needed to iterate |
 | --- | --- |
-| `Split<T,P>` | `P: core::iter::Mapper<T,bool>` |
-| `SplitInclusive<T,P>` | `P: core::iter::Mapper<T,bool>` |
-| `ChunkBy<T,P>` | `P: core::iter::Mapper<core::pair::Pair<T,T>,bool>` |
+| `Split<T,P>` | `P: core::function::Mapper<T,bool>` |
+| `SplitInclusive<T,P>` | `P: core::function::Mapper<T,bool>` |
+| `ChunkBy<T,P>` | `P: core::function::Mapper<core::pair::Pair<T,T>,bool>` |
 
 Factories do not require these Mapper bounds because they invoke no callback.
 A descriptor with a non-Mapper predicate type can be constructed, but it cannot

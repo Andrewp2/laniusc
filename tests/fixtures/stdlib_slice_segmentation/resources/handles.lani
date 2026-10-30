@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::vec;
 import core::io;
 import core::iter;
@@ -22,7 +23,7 @@ fn check(value:alloc::vec::Vec<u8>,index:i32) {
 }
 struct Unary { calls:i32, strict:bool }
 impl Unary { fn borrow(&self) -> &Unary { return self; } }
-pub impl core::iter::Mapper<alloc::vec::Vec<u8>,bool> for Unary {
+pub impl core::function::Mapper<alloc::vec::Vec<u8>,bool> for Unary {
     pub fn apply(&self,value:alloc::vec::Vec<u8>) -> bool {
         let index:i32=value.at(1) as i32; check(value,index);
         if(self.strict) { assert(index==self.calls+3); }
@@ -31,7 +32,7 @@ pub impl core::iter::Mapper<alloc::vec::Vec<u8>,bool> for Unary {
 }
 struct Adjacent { calls:i32, strict:bool }
 impl Adjacent { fn borrow(&self) -> &Adjacent { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::vec::Vec<u8>>,bool> for Adjacent {
+pub impl core::function::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::vec::Vec<u8>>,bool> for Adjacent {
     pub fn apply(&self,values:core::pair::Pair<alloc::vec::Vec<u8>,alloc::vec::Vec<u8>>) -> bool {
         let first:alloc::vec::Vec<u8> = values.first; let second:alloc::vec::Vec<u8> = values.second;
         let index:i32=first.at(1) as i32; check(first,index); check(second,index+1);

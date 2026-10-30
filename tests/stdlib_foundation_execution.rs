@@ -706,11 +706,14 @@ fn executable_core_function_surface_has_runtime_cases() {
         include_str!("fixtures/stdlib_foundation/float_bits.lani"),
     );
     let slice_fixtures = format!(
-        "{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("fixtures/stdlib_foundation/core_slice.lani"),
         include_str!("fixtures/stdlib_foundation/core_slice_view.lani"),
         include_str!("fixtures/stdlib_foundation/slice_view_model.lani"),
         include_str!("fixtures/stdlib_foundation/slice_ordering/contracts.lani"),
+        include_str!("fixtures/stdlib_foundation/slice_selection/admission.lani"),
+        include_str!("fixtures/stdlib_slice_segmentation/direct/contracts.lani"),
+        include_str!("fixtures/stdlib_slice_segmentation/direct/composition.lani"),
     );
     let bitset_fixtures = format!(
         "{}\n{}\n{}",
@@ -747,7 +750,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "base64",
             include_str!("../stdlib/core/base64.lani"),
-            include_str!("fixtures/stdlib_foundation/core_base64.lani"),
+            include_str!("fixtures/stdlib_foundation/checked_base64/contracts.lani"),
         ),
         (
             "endian",
@@ -899,16 +902,17 @@ fn executable_core_function_surface_has_runtime_cases() {
     // Call-name inventory across the old and current executing producers.
     // This bookkeeping check does not itself establish runtime behavior.
     let option_result_fixture = format!(
-        "{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("fixtures/stdlib_foundation/core_option_result.lani"),
         include_str!("fixtures/stdlib_foundation/option_bool.lani"),
         include_str!("fixtures/stdlib_foundation/option_generic_scalar_predicates.lani"),
         include_str!("fixtures/stdlib_foundation/option_generic_scalar_payload_functions.lani"),
         include_str!("fixtures/stdlib_foundation/outcome_composition/contracts.lani"),
+        include_str!("fixtures/stdlib_lazy_outcomes/branches.lani"),
     );
     for (module, source, expected_functions, expected_methods) in [
-        ("option", include_str!("../stdlib/core/option.lani"), 14, 12),
-        ("result", include_str!("../stdlib/core/result.lani"), 11, 11),
+        ("option", include_str!("../stdlib/core/option.lani"), 24, 22),
+        ("result", include_str!("../stdlib/core/result.lani"), 20, 20),
     ] {
         let mut functions = 0;
         let mut methods = 0;

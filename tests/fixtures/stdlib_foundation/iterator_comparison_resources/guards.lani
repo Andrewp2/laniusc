@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::allocator;
 import core::cmp;
 import core::iter;
@@ -25,8 +26,8 @@ struct Reverse{count:&Count}
 impl Strict{fn borrow(&self)->&Strict{return self;}}
 impl Equal{fn borrow(&self)->&Equal{return self;}}
 impl Reverse{fn borrow(&self)->&Reverse{return self;}}
-pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for Strict{pub fn apply(&self,pair:core::pair::Pair<u8,u8>)->bool{self.count.calls+=1;return pair.first<pair.second;}}
-pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for Equal{pub fn apply(&self,pair:core::pair::Pair<u8,u8>)->bool{self.count.calls+=1;return pair.first==pair.second;}}
+pub impl core::function::Mapper<core::pair::Pair<u8,u8>,bool> for Strict{pub fn apply(&self,pair:core::pair::Pair<u8,u8>)->bool{self.count.calls+=1;return pair.first<pair.second;}}
+pub impl core::function::Mapper<core::pair::Pair<u8,u8>,bool> for Equal{pub fn apply(&self,pair:core::pair::Pair<u8,u8>)->bool{self.count.calls+=1;return pair.first==pair.second;}}
 pub impl core::ordering::Comparator<u8,u8> for Reverse{pub fn compare(&self,left:u8,right:u8)->core::ordering::Ordering{self.count.calls+=1;return core::ordering::compare_u8(right,left);}}
 struct Unit{}
 pub impl core::cmp::PartialEq<Unit> for Unit{pub fn partial_eq(left:Unit,right:Unit)->bool{return true;}pub fn partial_ne(left:Unit,right:Unit)->bool{return false;}}

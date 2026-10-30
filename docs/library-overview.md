@@ -1,6 +1,18 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[lazy Option/Result increment](stdlib-lazy-outcomes.md) adds nineteen
+free-function/method pairs over one shared `core::function::Mapper` and
+argument-free `Producer` protocol. Invocation is lazy; callback construction,
+static bounds and owner cleanup stay explicit. The
+[optional-sum consumer](stdlib-optional-sum.md) skips checked arithmetic after
+parse failure while retaining its exact output contract. All eight library
+groups pass, including all 76 branch routes in the independent model and
+actual nested-owner callback effects. The four current application groups
+pass 98 cases, and six selected migration/Option/Result regressions pass
+separately. Acceptance is finite native Linux x86_64 CPU execution; lifetime
+enforcement and the broader library goal remain open.
+The preceding
 [owned Vec editing](stdlib-vec-edit.md) adds explicit stable filtering,
 adjacent deduplication and reverse tail cleanup while retaining capacity.
 Temporary predicate borrows, exact cleanup order and zero-sized effects stay

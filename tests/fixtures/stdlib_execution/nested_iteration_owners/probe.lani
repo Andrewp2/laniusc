@@ -1,5 +1,6 @@
 // Test-only ownership/fault checkpoints around the actual core::iter adapters.
 module app::main;
+import core::function;
 import alloc::deque;
 import alloc::string;
 import alloc::vec;
@@ -227,14 +228,14 @@ fn map_failure(audit:&Audit) -> Fault {
     let owner=partial.unwrap(); owner.try_push(99).unwrap(); owner.destroy();
     return fault(2,audit);
 }
-pub impl core::iter::Mapper<alloc::string::String,core::result::Result<Inner<alloc::vec::IntoIter<alloc::string::String>>,Fault>> for Make<alloc::vec::IntoIter<alloc::string::String>> {
+pub impl core::function::Mapper<alloc::string::String,core::result::Result<Inner<alloc::vec::IntoIter<alloc::string::String>>,Fault>> for Make<alloc::vec::IntoIter<alloc::string::String>> {
     pub fn apply(&self,value:alloc::string::String) -> core::result::Result<Inner<alloc::vec::IntoIter<alloc::string::String>>,Fault> {
         mark(77); let audit:&Audit=self.audit; audit.maps+=1; let id=row_id(value); value.destroy();
         if(self.fail && id==1) { let error=map_failure(audit); mark(109); return core::result::Err(error); }
         let made=vector(id,audit); mark(109); return made;
     }
 }
-pub impl core::iter::Mapper<alloc::string::String,core::result::Result<Inner<alloc::deque::IntoIter<alloc::string::String>>,Fault>> for Make<alloc::deque::IntoIter<alloc::string::String>> {
+pub impl core::function::Mapper<alloc::string::String,core::result::Result<Inner<alloc::deque::IntoIter<alloc::string::String>>,Fault>> for Make<alloc::deque::IntoIter<alloc::string::String>> {
     pub fn apply(&self,value:alloc::string::String) -> core::result::Result<Inner<alloc::deque::IntoIter<alloc::string::String>>,Fault> {
         mark(77); let audit:&Audit=self.audit; audit.maps+=1; let id=row_id(value); value.destroy();
         if(self.fail && id==1) { let error=map_failure(audit); mark(109); return core::result::Err(error); }
@@ -331,7 +332,7 @@ fn run_flat<J>(made:core::result::Result<Outer<J>,Fault>,pid:u64,backend:i32,pro
 // applied where subject Make<J>:Mapper<...> is isolated in compiler-state tests.
 fn run_map<J,M>(made:core::result::Result<Rows,Fault>,mapper:&M,pid:u64,backend:i32,profile:i32,audit:&Audit) -> i32
     where J:core::iter::Iterator<alloc::string::String>,J:CursorOwner,
-          M:core::iter::Mapper<alloc::string::String,core::result::Result<Inner<J>,Fault>> {
+          M:core::function::Mapper<alloc::string::String,core::result::Result<Inner<J>,Fault>> {
     if(made.is_err()) { return setup_error(pid,backend,1,profile,audit,made.unwrap_err()); }
     let source=made.unwrap(); let policy:Policy<J> =Policy { audit:audit,fail:profile==1 };
     let none:core::option::Option<Fault> =core::option::None();

@@ -1,0 +1,95 @@
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::function;
+import core::mem;
+import core::option;
+import core::result;
+import fixture::owners;
+
+fn main() -> i32 {
+    assert(fixture::owners::mode()==0); fixture::owners::mark(65);
+    let source:fixture::owners::Owner = fixture::owners::make(1);
+    let error:fixture::owners::Owner = fixture::owners::make(2);
+    let fallback:fixture::owners::Owner = fixture::owners::make(3);
+    let selected:fixture::owners::Owner = fixture::owners::make(4);
+    let rejected:fixture::owners::Owner = fixture::owners::make(5);
+    let kept:fixture::owners::Owner = fixture::owners::make(6);
+    let fallback_data:ptr = fallback.payload.first.storage; let fallback_text:ptr = fallback.payload.second.bytes.storage;
+    let selected_data:ptr = selected.payload.first.storage; let selected_text:ptr = selected.payload.second.bytes.storage;
+    let rejected_data:ptr = rejected.payload.first.storage; let rejected_text:ptr = rejected.payload.second.bytes.storage;
+    let kept_data:ptr = kept.payload.first.storage; let kept_text:ptr = kept.payload.second.bytes.storage;
+    let build:fixture::owners::Build = fixture::owners::Build { calls:0 };
+    let retire:fixture::owners::Retire = fixture::owners::Retire { calls:0 };
+    let keep:fixture::owners::Keep = fixture::owners::Keep { calls:0 };
+    let observe:fixture::owners::Observe = fixture::owners::Observe { calls:0,id:5,data:rejected_data,text:rejected_text,answer:false };
+    let fail:fixture::owners::Fail = fixture::owners::Fail { calls:0 };
+    let empty:fixture::owners::Empty = fixture::owners::Empty {};
+    fixture::owners::mark(83);
+
+    // Sole source authority moves through Option.map into Build, then into
+    // transformed. Neither source nor the intermediate wrapper is used again.
+    fixture::owners::mark(67);
+    let input:core::option::Option<fixture::owners::Owner> = core::option::Some(source);
+    let mapped:core::option::Option<core::result::Result<fixture::owners::Owner,fixture::owners::Failure>> = input.map<core::result::Result<fixture::owners::Owner,fixture::owners::Failure>,fixture::owners::Build>(build.borrow());
+    let built:core::result::Result<fixture::owners::Owner,fixture::owners::Failure> = mapped.unwrap();
+    let transformed:fixture::owners::Owner = built.unwrap(); fixture::owners::mark(70);
+    let transformed_data:ptr = transformed.payload.first.storage; let transformed_text:ptr = transformed.payload.second.bytes.storage;
+
+    fixture::owners::mark(67);
+    let bad:core::result::Result<i32,fixture::owners::Owner> = core::result::Err(error);
+    let retired:core::result::Result<i32,i32> = core::result::map_err<i32,fixture::owners::Owner,i32,fixture::owners::Retire>(bad,retire.borrow());
+    assert(retired.unwrap_err()==2); fixture::owners::mark(70);
+
+    fixture::owners::mark(80);
+    let present:core::option::Option<fixture::owners::Owner> = core::option::Some(selected);
+    let chosen:fixture::owners::Owner = present.map_or<fixture::owners::Owner,fixture::owners::Keep>(fallback,keep.borrow());
+    // The unused eager fallback remains a caller-owned resource.
+    fixture::owners::check(fallback,3,fallback_data,fallback_text);
+    fixture::owners::check(chosen,4,selected_data,selected_text); assert(keep.calls==1);
+    fixture::owners::mark(112);
+
+    fixture::owners::mark(80);
+    let observed:core::option::Option<fixture::owners::Owner> = core::option::Some(rejected);
+    assert(observed.filter<fixture::owners::Observe>(observe.borrow()).is_none());
+    assert(!observed.is_some_and<fixture::owners::Observe>(observe.borrow()));
+    assert(!observed.is_none_or<fixture::owners::Observe>(observe.borrow()));
+    let good:core::result::Result<fixture::owners::Owner,i32> = core::result::Ok(rejected);
+    let bad_owner:core::result::Result<i32,fixture::owners::Owner> = core::result::Err(rejected);
+    assert(!good.is_ok_and<fixture::owners::Observe>(observe.borrow()));
+    assert(!bad_owner.is_err_and<fixture::owners::Observe>(observe.borrow()));
+    assert(observe.calls==5); fixture::owners::check(rejected,5,rejected_data,rejected_text);
+    fixture::owners::mark(112);
+
+    fixture::owners::mark(80);
+    let stopped:core::result::Result<fixture::owners::Owner,i32> = core::result::Err(77);
+    let skipped:core::result::Result<fixture::owners::Owner,i32> = stopped.and_then<fixture::owners::Owner,fixture::owners::Fail>(fail.borrow());
+    assert(skipped.unwrap_err()==77);
+    let successful:core::result::Result<fixture::owners::Owner,i32> = core::result::Ok(kept);
+    let wrapped:core::option::Option<core::result::Result<fixture::owners::Owner,i32>> = core::option::Some(successful);
+    let still:core::result::Result<fixture::owners::Owner,i32> = wrapped.unwrap_or_else<fixture::owners::Fail>(fail.borrow());
+    let final_kept:fixture::owners::Owner = still.unwrap();
+    fixture::owners::check(final_kept,6,kept_data,kept_text); assert(fail.calls==0);
+    fixture::owners::mark(112);
+
+    fixture::owners::mark(80);
+    assert(core::mem::size_of<fixture::owners::Empty>()==0 && core::mem::size_of<fixture::owners::Unit>()==0);
+    let unit:core::option::Option<fixture::owners::Unit> = core::option::Some(fixture::owners::Unit {});
+    assert(unit.map<i32,fixture::owners::Empty>(empty.borrow()).unwrap()==17);
+    let absent:core::option::Option<i32> = core::option::None();
+    assert(absent.unwrap_or_else<fixture::owners::Empty>(empty.borrow())==42);
+    fixture::owners::check(transformed,11,transformed_data,transformed_text);
+    fixture::owners::check(fallback,3,fallback_data,fallback_text);
+    fixture::owners::check(chosen,4,selected_data,selected_text);
+    fixture::owners::check(rejected,5,rejected_data,rejected_text);
+    fixture::owners::check(final_kept,6,kept_data,kept_text);
+    assert(build.calls==1 && retire.calls==1 && keep.calls==1 && observe.calls==5 && fail.calls==0);
+    fixture::owners::mark(112);
+
+    fixture::owners::mark(82);
+    fixture::owners::destroy(fallback); fixture::owners::destroy(rejected);
+    fixture::owners::destroy(chosen); fixture::owners::destroy(final_kept);
+    fixture::owners::mark(80); fixture::owners::check(transformed,11,transformed_data,transformed_text); fixture::owners::mark(112);
+    fixture::owners::publish(transformed); fixture::owners::destroy(transformed);
+    fixture::owners::mark(68); return 0;
+}

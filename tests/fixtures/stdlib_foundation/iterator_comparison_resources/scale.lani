@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::vec;
 import core::cmp;
 import core::iter;
@@ -27,10 +28,10 @@ impl Adjacent{fn borrow(&self)->&Adjacent{return self;}}
 fn check(row:Row){assert(row.id>=0&&row.id<65536&&row.seal==18446744073709551615-(row.id as u64));}
 fn compare_row(row:Row,value:u64)->core::ordering::Ordering{check(row);let key:u64=9223372036854775808+(row.key as u64);if(key<value){return core::ordering::Ordering::Less;}if(key>value){return core::ordering::Ordering::Greater;}return core::ordering::Ordering::Equal;}
 fn partial_compare(value:core::ordering::Ordering)->core::cmp::PartialOrdering{return match(value){core::ordering::Ordering::Less->core::cmp::PartialOrdering::Less,core::ordering::Ordering::Equal->core::cmp::PartialOrdering::Equal,core::ordering::Ordering::Greater->core::cmp::PartialOrdering::Greater};}
-pub impl core::iter::Mapper<core::pair::Pair<Row,u64>,bool> for Equal{pub fn apply(&self,pair:core::pair::Pair<Row,u64>)->bool{self.count.calls+=1;return match(compare_row(pair.first,pair.second)){core::ordering::Ordering::Equal->true,_ ->false};}}
+pub impl core::function::Mapper<core::pair::Pair<Row,u64>,bool> for Equal{pub fn apply(&self,pair:core::pair::Pair<Row,u64>)->bool{self.count.calls+=1;return match(compare_row(pair.first,pair.second)){core::ordering::Ordering::Equal->true,_ ->false};}}
 pub impl core::ordering::Comparator<Row,u64> for Compare{pub fn compare(&self,left:Row,right:u64)->core::ordering::Ordering{self.count.calls+=1;return compare_row(left,right);}}
-pub impl core::iter::Mapper<core::pair::Pair<Row,u64>,core::cmp::PartialOrdering> for Partial{pub fn apply(&self,pair:core::pair::Pair<Row,u64>)->core::cmp::PartialOrdering{self.count.calls+=1;check(pair.first);if(pair.first.id==self.count.unordered){return core::cmp::PartialOrdering::Unordered;}return partial_compare(compare_row(pair.first,pair.second));}}
-pub impl core::iter::Mapper<core::pair::Pair<Row,Row>,bool> for Adjacent{pub fn apply(&self,pair:core::pair::Pair<Row,Row>)->bool{self.count.calls+=1;check(pair.first);check(pair.second);assert(pair.second.id==pair.first.id+1);if(self.count.strict){return pair.first.key<pair.second.key;}return pair.first.key<=pair.second.key;}}
+pub impl core::function::Mapper<core::pair::Pair<Row,u64>,core::cmp::PartialOrdering> for Partial{pub fn apply(&self,pair:core::pair::Pair<Row,u64>)->core::cmp::PartialOrdering{self.count.calls+=1;check(pair.first);if(pair.first.id==self.count.unordered){return core::cmp::PartialOrdering::Unordered;}return partial_compare(compare_row(pair.first,pair.second));}}
+pub impl core::function::Mapper<core::pair::Pair<Row,Row>,bool> for Adjacent{pub fn apply(&self,pair:core::pair::Pair<Row,Row>)->bool{self.count.calls+=1;check(pair.first);check(pair.second);assert(pair.second.id==pair.first.id+1);if(self.count.strict){return pair.first.key<pair.second.key;}return pair.first.key<=pair.second.key;}}
 fn mark(value:i32){let byte:[i32;1]=[value];assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1);}
 fn order(value:core::ordering::Ordering)->i32{return match(value){core::ordering::Ordering::Less-> -1,core::ordering::Ordering::Equal->0,core::ordering::Ordering::Greater->1};}
 fn partial(value:core::cmp::PartialOrdering)->i32{return match(value){core::cmp::PartialOrdering::Less-> -1,core::cmp::PartialOrdering::Equal->0,core::cmp::PartialOrdering::Greater->1,core::cmp::PartialOrdering::Unordered->2};}

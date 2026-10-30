@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::vec;
 import core::io;
 import core::iter;
@@ -12,12 +13,12 @@ fn mark(value:u8) { let bytes:[u8;1]=[value]; let sink=std::stream::stderr(); as
 fn element(index:i32) -> i32 { let pattern:[i32;16]=[0,0,1,1,1,2,0,3,3,0,0,4,5,5,5,0]; return (index/16)*16+pattern[index%16]; }
 struct Unary { calls:i32, strict:bool }
 impl Unary { fn borrow(&self) -> &Unary { return self; } }
-pub impl core::iter::Mapper<i32,bool> for Unary {
+pub impl core::function::Mapper<i32,bool> for Unary {
     pub fn apply(&self,value:i32) -> bool { if(self.strict) { assert(value==element(self.calls)); } self.calls+=1; return value%16==0; }
 }
 struct Adjacent { calls:i32, strict:bool }
 impl Adjacent { fn borrow(&self) -> &Adjacent { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,bool> for Adjacent {
+pub impl core::function::Mapper<core::pair::Pair<i32,i32>,bool> for Adjacent {
     pub fn apply(&self,values:core::pair::Pair<i32,i32>) -> bool {
         if(self.strict) { assert(values.first==element(self.calls) && values.second==element(self.calls+1)); }
         self.calls+=1; return values.first%16==values.second%16;

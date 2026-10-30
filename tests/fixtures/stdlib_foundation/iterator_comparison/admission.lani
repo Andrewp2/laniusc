@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import core::cmp;
 import core::f64;
 import core::iter;
@@ -8,7 +9,7 @@ import core::slice;
 
 struct EqualPair { calls:i32 }
 impl EqualPair { fn borrow(&self) -> &EqualPair { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32,u64>,bool> for EqualPair {
+pub impl core::function::Mapper<core::pair::Pair<i32,u64>,bool> for EqualPair {
     pub fn apply(&self,pair:core::pair::Pair<i32,u64>) -> bool { self.calls+=1; return (pair.first as u64)==pair.second; }
 }
 struct ComparePair { calls:i32 }
@@ -21,7 +22,7 @@ pub impl core::ordering::Comparator<i32,u64> for ComparePair {
 }
 struct PartialPair { calls:i32 }
 impl PartialPair { fn borrow(&self) -> &PartialPair { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32,u64>,core::cmp::PartialOrdering> for PartialPair {
+pub impl core::function::Mapper<core::pair::Pair<i32,u64>,core::cmp::PartialOrdering> for PartialPair {
     pub fn apply(&self,pair:core::pair::Pair<i32,u64>) -> core::cmp::PartialOrdering {
         self.calls+=1; if(pair.first==2) { return core::cmp::PartialOrdering::Unordered; }
         if((pair.first as u64)<pair.second) { return core::cmp::PartialOrdering::Less; }
@@ -30,7 +31,7 @@ pub impl core::iter::Mapper<core::pair::Pair<i32,u64>,core::cmp::PartialOrdering
 }
 struct StrictPair { calls:i32 }
 impl StrictPair { fn borrow(&self) -> &StrictPair { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,bool> for StrictPair {
+pub impl core::function::Mapper<core::pair::Pair<i32,i32>,bool> for StrictPair {
     pub fn apply(&self,pair:core::pair::Pair<i32,i32>) -> bool { self.calls+=1; return pair.first<pair.second; }
 }
 fn main() -> i32 {

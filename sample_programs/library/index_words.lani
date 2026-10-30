@@ -1,6 +1,7 @@
 // Bounded unique-word indexing through real fallible iterator transfer to TreeMap.
 // Accepted on x86_64 Linux native ELF via the GPU compiler; see docs/stdlib-index-words.md.
 module app::main;
+import core::function;
 import alloc::io;
 import alloc::tree_map;
 import core::decimal;
@@ -21,7 +22,7 @@ struct IndexEntry {}
 impl IndexEntry {
     fn borrow(&self) -> &IndexEntry { return self; }
 }
-pub impl core::iter::Mapper<core::pair::Pair<u64,core::text::Text>,alloc::tree_map::Entry<core::text::Text,u64>> for IndexEntry {
+pub impl core::function::Mapper<core::pair::Pair<u64,core::text::Text>,alloc::tree_map::Entry<core::text::Text,u64>> for IndexEntry {
     pub fn apply(&self, value: core::pair::Pair<u64,core::text::Text>) -> alloc::tree_map::Entry<core::text::Text,u64> {
         let entry: alloc::tree_map::Entry<core::text::Text,u64> = alloc::tree_map::Entry { key: value.second, value: value.first };
         return entry;

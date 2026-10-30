@@ -1,6 +1,7 @@
 // Generic open-addressed map. Values are copied, not deeply cloned/destroyed.
 // Keep one owner of the backing allocation. See docs/stdlib-hash-collections.md.
 module alloc::hash_map;
+import core::function;
 import alloc::allocator;
 import core::cmp;
 import core::iter;
@@ -121,7 +122,7 @@ pub impl<K, V> HashMap<K, V> {
     // The callback must not access this map or change key identity through an
     // alias. No implicit destruction, rollback or map allocation occurs.
     pub fn update_value<M, R>(&self, key: K, update: &M) -> core::option::Option<R>
-        where K: core::hash::Hash<K>, K: core::cmp::Eq<K>, M: core::iter::Mapper<V, core::pair::Pair<V, R>> {
+        where K: core::hash::Hash<K>, K: core::cmp::Eq<K>, M: core::function::Mapper<V, core::pair::Pair<V, R>> {
         let hash: u32 = K::hash(key);
         let index: i32 = self.find(key, hash);
         if (index < 0) { return core::option::None(); }

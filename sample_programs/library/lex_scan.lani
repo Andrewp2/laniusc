@@ -1,6 +1,7 @@
 // Bounded CSV rules and UTF-8 stdin -> maximal-munch spans or per-kind counts.
 // Stage all output before publication; I/O failure can leave a confirmed prefix.
 module app::main;
+import core::function;
 import alloc::hash_map;
 import alloc::io;
 import alloc::vec;
@@ -36,7 +37,7 @@ impl Detail { fn borrow(&self) -> &Detail { return self; } }
 struct Kind { id: i32, skip: bool }
 struct IncrementCount {}
 impl IncrementCount { fn borrow(&self) -> &IncrementCount { return self; } }
-pub impl core::iter::Mapper<u64,core::pair::Pair<u64,bool>> for IncrementCount {
+pub impl core::function::Mapper<u64,core::pair::Pair<u64,bool>> for IncrementCount {
     pub fn apply(&self, value: u64) -> core::pair::Pair<u64,bool> {
         if (value == 18446744073709551615) { return core::pair::Pair { first: value, second: false }; }
         return core::pair::Pair { first: value+1, second: true };

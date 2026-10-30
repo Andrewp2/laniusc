@@ -4,26 +4,28 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/core/result.lani#L7)
+[All modules](../README.md) · [Source](../../../stdlib/core/result.lani#L9)
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
-Result and<T,E,U> changes the success type while retaining E; or<T,E,F> changes the error type while retaining T. Both select eager shallow inputs. The new flatten removes one Result layer with one shared error type and also has a specialized method. Both transpose directions and their receiver extensions are defined in core::option; importing core::option includes Result<Option<T>,E>.transpose without a Result-to-Option module cycle. Selection and shape changes introduce no allocation, callback, host service, clone, cleanup or ordinary error; selected/discarded owners retain manual cleanup. Native Linux x86_64 admission, full contracts and the independent 2180-case model pass separately in 4.87s, 6.81s and 6.94s. One selected old Result-method test passes nine payload combinations in 9.64s. One owner/memory test passes in 7.28s with six records/twelve actual backings, seven zero-host-call pure phases and twelve exact releases. The real optional-sum application passes four groups/98 native cases (model 33/7.26s; CLI 17, rejection 30 and I/O 18/8.02s), including five reached OOM sites and a genuine ten-byte write prefix before EFBIG. One selected Option regression passes three existing fixtures in 6.86s. Six focused new typed-call rejections pass one test in 7.71s, and eight old Result type rejections pass a separate test in 6.72s. CPU surface inventory passes one test in 0.01s with runtime tests filtered; this is bookkeeping. All five new library tests and four application groups pass; this finite native Linux x86_64 increment is accepted. Historical receipts keep their source/API scope; no broad generic, automatic ownership, device or proof claim follows.
+The lazy-outcome increment adds nineteen free-function/method pairs: ten Option operations and nine Result operations. Callbacks use canonical core::function::Mapper<T,U>; argument-free Option fallbacks use Producer<T>. Selected callbacks run once, skipped callbacks never run; argument/callback construction remains eager and all static bounds apply. Library selection adds no allocation, clone, destruction, host call or panic. Transformation callbacks have their own effects and explicit sole-owner transfer policy; filter and Boolean-query payloads are call-scoped read-only observations that must not escape. Discarded payloads and eager fallbacks retain manual cleanup obligations; no rollback or unwind guarantee is supplied. All eight new library groups pass on native Linux x86_64 CPU output: six native-positive tests and two bound-rejection groups covering fourteen invalid calls. The independent model checks sixteen cases/1536 actions/1044 API calls across all 76 branch routes; nested-owner tests observe selected callback cleanup and one reached callback allocation denial with same-process recovery. Four migrated optional-sum groups pass 98 cases with unchanged output; six selected existing family regressions pass separately. No GPU-device execution, automatic ownership, general generic completeness or formal proof is claimed. Historical eager-composition evidence below retains its earlier source/API scope. Result and<T,E,U> changes the success type while retaining E; or<T,E,F> changes the error type while retaining T. Both select eager shallow inputs. The new flatten removes one Result layer with one shared error type and also has a specialized method. Both transpose directions and their receiver extensions are defined in core::option; importing core::option includes Result<Option<T>,E>.transpose without a Result-to-Option module cycle. Selection and shape changes introduce no allocation, callback, host service, clone, cleanup or ordinary error; selected/discarded owners retain manual cleanup. Native Linux x86_64 admission, full contracts and the independent 2180-case model pass separately in 4.87s, 6.81s and 6.94s. One selected old Result-method test passes nine payload combinations in 9.64s. One owner/memory test passes in 7.28s with six records/twelve actual backings, seven zero-host-call pure phases and twelve exact releases. The real optional-sum application passes four groups/98 native cases (model 33/7.26s; CLI 17, rejection 30 and I/O 18/8.02s), including five reached OOM sites and a genuine ten-byte write prefix before EFBIG. One selected Option regression passes three existing fixtures in 6.86s. Six focused new typed-call rejections pass one test in 7.71s, and eight old Result type rejections pass a separate test in 6.72s. CPU surface inventory passes one test in 0.01s with runtime tests filtered; this is bookkeeping. All five new library tests and four application groups pass; this finite native Linux x86_64 increment is accepted. Historical receipts keep their source/API scope; no broad generic, automatic ownership, device or proof claim follows.
 
 ## Contract and evidence guides
 
 - [stdlib-result](../../stdlib-result.md)
+- [stdlib-lazy-outcomes](../../stdlib-lazy-outcomes.md)
 - [stdlib-outcome-composition](../../stdlib-outcome-composition.md)
 - [stdlib-optional-sum](../../stdlib-optional-sum.md)
 
-Declaration counts: enum: 1; function: 11; impl: 2; method: 11; variant: 2.
+Declaration counts: enum: 1; function: 20; impl: 2; method: 20; variant: 2.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::cmp](cmp.md) · [source](../../../stdlib/core/result.lani#L9)
-- [core::panic](panic.md) · [source](../../../stdlib/core/result.lani#L10)
+- [core::cmp](cmp.md) · [source](../../../stdlib/core/result.lani#L11)
+- [core::function](function.md) · [source](../../../stdlib/core/result.lani#L12)
+- [core::panic](panic.md) · [source](../../../stdlib/core/result.lani#L13)
 
 ## Types, fields and variants
 
@@ -31,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Result
 
-[Source line 12](../../../stdlib/core/result.lani#L12)
+[Source line 15](../../../stdlib/core/result.lani#L15)
 
 ```lanius
 pub enum Result<T, E>
@@ -39,7 +41,7 @@ pub enum Result<T, E>
 
 #### variant: Ok
 
-[Source line 13](../../../stdlib/core/result.lani#L13)
+[Source line 16](../../../stdlib/core/result.lani#L16)
 
 ```lanius
 Ok(T)
@@ -47,7 +49,7 @@ Ok(T)
 
 #### variant: Err
 
-[Source line 14](../../../stdlib/core/result.lani#L14)
+[Source line 17](../../../stdlib/core/result.lani#L17)
 
 ```lanius
 Err(E)
@@ -57,7 +59,7 @@ Err(E)
 
 ### function: is_ok
 
-[Source line 17](../../../stdlib/core/result.lani#L17)
+[Source line 20](../../../stdlib/core/result.lani#L20)
 
 ```lanius
 pub fn is_ok<T, E>(value: Result<T, E>) -> bool
@@ -65,7 +67,7 @@ pub fn is_ok<T, E>(value: Result<T, E>) -> bool
 
 ### function: is_err
 
-[Source line 21](../../../stdlib/core/result.lani#L21)
+[Source line 24](../../../stdlib/core/result.lani#L24)
 
 ```lanius
 pub fn is_err<T, E>(value: Result<T, E>) -> bool
@@ -73,7 +75,7 @@ pub fn is_err<T, E>(value: Result<T, E>) -> bool
 
 ### function: contains
 
-[Source line 25](../../../stdlib/core/result.lani#L25)
+[Source line 28](../../../stdlib/core/result.lani#L28)
 
 ```lanius
 pub fn contains<T, E>(value: Result<T, E>, expected: T) -> bool where T: core::cmp::PartialEq<T>
@@ -81,7 +83,7 @@ pub fn contains<T, E>(value: Result<T, E>, expected: T) -> bool where T: core::c
 
 ### function: contains_err
 
-[Source line 29](../../../stdlib/core/result.lani#L29)
+[Source line 32](../../../stdlib/core/result.lani#L32)
 
 ```lanius
 pub fn contains_err<T, E>(value: Result<T, E>, expected: E) -> bool where E: core::cmp::PartialEq<E>
@@ -89,7 +91,7 @@ pub fn contains_err<T, E>(value: Result<T, E>, expected: E) -> bool where E: cor
 
 ### function: unwrap
 
-[Source line 33](../../../stdlib/core/result.lani#L33)
+[Source line 36](../../../stdlib/core/result.lani#L36)
 
 ```lanius
 pub fn unwrap<T, E>(value: Result<T, E>) -> T
@@ -97,7 +99,7 @@ pub fn unwrap<T, E>(value: Result<T, E>) -> T
 
 ### function: unwrap_err
 
-[Source line 37](../../../stdlib/core/result.lani#L37)
+[Source line 40](../../../stdlib/core/result.lani#L40)
 
 ```lanius
 pub fn unwrap_err<T, E>(value: Result<T, E>) -> E
@@ -105,7 +107,7 @@ pub fn unwrap_err<T, E>(value: Result<T, E>) -> E
 
 ### function: unwrap_or
 
-[Source line 41](../../../stdlib/core/result.lani#L41)
+[Source line 44](../../../stdlib/core/result.lani#L44)
 
 ```lanius
 pub fn unwrap_or<T, E>(value: Result<T, E>, fallback: T) -> T
@@ -113,7 +115,7 @@ pub fn unwrap_or<T, E>(value: Result<T, E>, fallback: T) -> T
 
 ### function: unwrap_err_or
 
-[Source line 45](../../../stdlib/core/result.lani#L45)
+[Source line 48](../../../stdlib/core/result.lani#L48)
 
 ```lanius
 pub fn unwrap_err_or<T, E>(value: Result<T, E>, fallback: E) -> E
@@ -121,7 +123,7 @@ pub fn unwrap_err_or<T, E>(value: Result<T, E>, fallback: E) -> E
 
 ### function: or
 
-[Source line 50](../../../stdlib/core/result.lani#L50)
+[Source line 53](../../../stdlib/core/result.lani#L53)
 
 ```lanius
 pub fn or<T,E,F>(value: Result<T,E>, fallback: Result<T,F>) -> Result<T,F>
@@ -131,7 +133,7 @@ Eager fallback with a changed error type: left Ok(T) wins, otherwise selects fal
 
 ### function: and
 
-[Source line 55](../../../stdlib/core/result.lani#L55)
+[Source line 58](../../../stdlib/core/result.lani#L58)
 
 ```lanius
 pub fn and<T,E,U>(value: Result<T,E>, next: Result<U,E>) -> Result<U,E>
@@ -139,9 +141,108 @@ pub fn and<T,E,U>(value: Result<T,E>, next: Result<U,E>) -> Result<U,E>
 
 Eager next selection with a changed success type: left Ok(T) selects next: Result<U,E>, otherwise preserves the left error E. Inputs share E. Discarded resource owners remain caller responsibilities.
 
+### function: map
+
+[Source line 65](../../../stdlib/core/result.lani#L65)
+
+```lanius
+pub fn map<T,E,U,M>(value:Result<T,E>, mapper:&M) -> Result<U,E>
+    where M:core::function::Mapper<T,U>
+```
+
+Ok calls Mapper<T,U> once and returns Ok(U); Err preserves E without calling. Nested callback results remain nested payloads.
+
+### function: map_err
+
+[Source line 72](../../../stdlib/core/result.lani#L72)
+
+```lanius
+pub fn map_err<T,E,F,M>(value:Result<T,E>, mapper:&M) -> Result<T,F>
+    where M:core::function::Mapper<E,F>
+```
+
+Err calls Mapper<E,F> once and returns Err(F); Ok preserves T without calling.
+
+### function: map_or
+
+[Source line 80](../../../stdlib/core/result.lani#L80)
+
+```lanius
+pub fn map_or<T,E,U,M>(value:Result<T,E>, fallback:U, mapper:&M) -> U
+    where M:core::function::Mapper<T,U>
+```
+
+Ok calls Mapper<T,U> once; Err returns the already evaluated fallback U. Discarded errors and unused eager fallbacks are not implicitly destroyed.
+
+### function: map_or_else
+
+[Source line 86](../../../stdlib/core/result.lani#L86)
+
+```lanius
+pub fn map_or_else<T,E,U,D,M>(value:Result<T,E>, fallback:&D, mapper:&M) -> U
+    where D:core::function::Mapper<E,U>, M:core::function::Mapper<T,U>
+```
+
+Ok calls Mapper<T,U> once with T; Err calls the fallback Mapper<E,U> once with E. Exactly one callback runs; both objects are constructed eagerly.
+
+### function: and_then
+
+[Source line 92](../../../stdlib/core/result.lani#L92)
+
+```lanius
+pub fn and_then<T,E,U,M>(value:Result<T,E>, mapper:&M) -> Result<U,E>
+    where M:core::function::Mapper<T,Result<U,E>>
+```
+
+Ok calls Mapper<T,Result<U,E>> once and returns its Result directly; Err preserves E without calling.
+
+### function: or_else
+
+[Source line 98](../../../stdlib/core/result.lani#L98)
+
+```lanius
+pub fn or_else<T,E,F,M>(value:Result<T,E>, fallback:&M) -> Result<T,F>
+    where M:core::function::Mapper<E,Result<T,F>>
+```
+
+Err calls Mapper<E,Result<T,F>> once and returns its Result directly; Ok preserves T without calling.
+
+### function: unwrap_or_else
+
+[Source line 104](../../../stdlib/core/result.lani#L104)
+
+```lanius
+pub fn unwrap_or_else<T,E,M>(value:Result<T,E>, fallback:&M) -> T
+    where M:core::function::Mapper<E,T>
+```
+
+Ok returns T without calling; Err calls Mapper<E,T> once with the error. Library selection adds no panic; callback effects remain explicit.
+
+### function: is_ok_and
+
+[Source line 113](../../../stdlib/core/result.lani#L113)
+
+```lanius
+pub fn is_ok_and<T,E,P>(value:Result<T,E>, predicate:&P) -> bool
+    where P:core::function::Mapper<T,bool>
+```
+
+Err returns false without calling; Ok returns one Mapper<T,bool> predicate result from a call-scoped read-only payload observation.
+
+### function: is_err_and
+
+[Source line 119](../../../stdlib/core/result.lani#L119)
+
+```lanius
+pub fn is_err_and<T,E,P>(value:Result<T,E>, predicate:&P) -> bool
+    where P:core::function::Mapper<E,bool>
+```
+
+Ok returns false without calling; Err returns one Mapper<E,bool> predicate result from a call-scoped read-only error observation.
+
 ### function: flatten
 
-[Source line 103](../../../stdlib/core/result.lani#L103)
+[Source line 200](../../../stdlib/core/result.lani#L200)
 
 ```lanius
 pub fn flatten<T,E>(value:Result<Result<T,E>,E>) -> Result<T,E>
@@ -151,9 +252,9 @@ Removes one Result layer: outer Ok(inner) returns inner and outer Err(e) preserv
 
 ## Implementation blocks and public methods
 
-### impl at line 59
+### impl at line 125
 
-[Source line 59](../../../stdlib/core/result.lani#L59)
+[Source line 125](../../../stdlib/core/result.lani#L125)
 
 ```lanius
 pub impl<T, E> Result<T, E>
@@ -161,7 +262,7 @@ pub impl<T, E> Result<T, E>
 
 #### method: is_ok
 
-[Source line 60](../../../stdlib/core/result.lani#L60)
+[Source line 126](../../../stdlib/core/result.lani#L126)
 
 ```lanius
 pub fn is_ok(self) -> bool
@@ -169,7 +270,7 @@ pub fn is_ok(self) -> bool
 
 #### method: is_err
 
-[Source line 64](../../../stdlib/core/result.lani#L64)
+[Source line 130](../../../stdlib/core/result.lani#L130)
 
 ```lanius
 pub fn is_err(self) -> bool
@@ -177,7 +278,7 @@ pub fn is_err(self) -> bool
 
 #### method: contains
 
-[Source line 68](../../../stdlib/core/result.lani#L68)
+[Source line 134](../../../stdlib/core/result.lani#L134)
 
 ```lanius
 pub fn contains(self, expected: T) -> bool where T: core::cmp::PartialEq<T>
@@ -185,7 +286,7 @@ pub fn contains(self, expected: T) -> bool where T: core::cmp::PartialEq<T>
 
 #### method: contains_err
 
-[Source line 72](../../../stdlib/core/result.lani#L72)
+[Source line 138](../../../stdlib/core/result.lani#L138)
 
 ```lanius
 pub fn contains_err(self, expected: E) -> bool where E: core::cmp::PartialEq<E>
@@ -193,7 +294,7 @@ pub fn contains_err(self, expected: E) -> bool where E: core::cmp::PartialEq<E>
 
 #### method: unwrap
 
-[Source line 76](../../../stdlib/core/result.lani#L76)
+[Source line 142](../../../stdlib/core/result.lani#L142)
 
 ```lanius
 pub fn unwrap(self) -> T
@@ -201,7 +302,7 @@ pub fn unwrap(self) -> T
 
 #### method: unwrap_err
 
-[Source line 80](../../../stdlib/core/result.lani#L80)
+[Source line 146](../../../stdlib/core/result.lani#L146)
 
 ```lanius
 pub fn unwrap_err(self) -> E
@@ -209,7 +310,7 @@ pub fn unwrap_err(self) -> E
 
 #### method: unwrap_or
 
-[Source line 84](../../../stdlib/core/result.lani#L84)
+[Source line 150](../../../stdlib/core/result.lani#L150)
 
 ```lanius
 pub fn unwrap_or(self, fallback: T) -> T
@@ -217,7 +318,7 @@ pub fn unwrap_or(self, fallback: T) -> T
 
 #### method: unwrap_err_or
 
-[Source line 88](../../../stdlib/core/result.lani#L88)
+[Source line 154](../../../stdlib/core/result.lani#L154)
 
 ```lanius
 pub fn unwrap_err_or(self, fallback: E) -> E
@@ -225,7 +326,7 @@ pub fn unwrap_err_or(self, fallback: E) -> E
 
 #### method: or
 
-[Source line 92](../../../stdlib/core/result.lani#L92)
+[Source line 158](../../../stdlib/core/result.lani#L158)
 
 ```lanius
 pub fn or<F>(self, fallback: Result<T,F>) -> Result<T,F>
@@ -233,15 +334,90 @@ pub fn or<F>(self, fallback: Result<T,F>) -> Result<T,F>
 
 #### method: and
 
-[Source line 96](../../../stdlib/core/result.lani#L96)
+[Source line 162](../../../stdlib/core/result.lani#L162)
 
 ```lanius
 pub fn and<U>(self, next: Result<U,E>) -> Result<U,E>
 ```
 
-### impl at line 106
+#### method: map
 
-[Source line 106](../../../stdlib/core/result.lani#L106)
+[Source line 166](../../../stdlib/core/result.lani#L166)
+
+```lanius
+pub fn map<U,M>(self, mapper:&M) -> Result<U,E> where M:core::function::Mapper<T,U>
+```
+
+#### method: map_err
+
+[Source line 169](../../../stdlib/core/result.lani#L169)
+
+```lanius
+pub fn map_err<F,M>(self, mapper:&M) -> Result<T,F> where M:core::function::Mapper<E,F>
+```
+
+#### method: map_or
+
+[Source line 172](../../../stdlib/core/result.lani#L172)
+
+```lanius
+pub fn map_or<U,M>(self, fallback:U, mapper:&M) -> U where M:core::function::Mapper<T,U>
+```
+
+#### method: map_or_else
+
+[Source line 175](../../../stdlib/core/result.lani#L175)
+
+```lanius
+pub fn map_or_else<U,D,M>(self, fallback:&D, mapper:&M) -> U
+        where D:core::function::Mapper<E,U>, M:core::function::Mapper<T,U>
+```
+
+#### method: and_then
+
+[Source line 179](../../../stdlib/core/result.lani#L179)
+
+```lanius
+pub fn and_then<U,M>(self, mapper:&M) -> Result<U,E>
+        where M:core::function::Mapper<T,Result<U,E>>
+```
+
+#### method: or_else
+
+[Source line 183](../../../stdlib/core/result.lani#L183)
+
+```lanius
+pub fn or_else<F,M>(self, fallback:&M) -> Result<T,F>
+        where M:core::function::Mapper<E,Result<T,F>>
+```
+
+#### method: unwrap_or_else
+
+[Source line 187](../../../stdlib/core/result.lani#L187)
+
+```lanius
+pub fn unwrap_or_else<M>(self, fallback:&M) -> T where M:core::function::Mapper<E,T>
+```
+
+#### method: is_ok_and
+
+[Source line 190](../../../stdlib/core/result.lani#L190)
+
+```lanius
+pub fn is_ok_and<P>(self, predicate:&P) -> bool where P:core::function::Mapper<T,bool>
+```
+
+#### method: is_err_and
+
+[Source line 193](../../../stdlib/core/result.lani#L193)
+
+```lanius
+pub fn is_err_and<P>(self, predicate:&P) -> bool where P:core::function::Mapper<E,bool>
+```
+
+### impl at line 203
+
+[Source line 203](../../../stdlib/core/result.lani#L203)
 
 ```lanius
 pub impl<T,E> Result<Result<T,E>,E>
@@ -249,7 +425,7 @@ pub impl<T,E> Result<Result<T,E>,E>
 
 #### method: flatten
 
-[Source line 107](../../../stdlib/core/result.lani#L107)
+[Source line 204](../../../stdlib/core/result.lani#L204)
 
 ```lanius
 pub fn flatten(self) -> Result<T,E>

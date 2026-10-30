@@ -19,6 +19,11 @@ calls. Only the shared trait implements `next`; ordinary `.next()` calls work.
 
 ## Map and mutable callback context
 
+`Mapper` is declared in `core::function`, shared with
+[lazy Option/Result composition](stdlib-lazy-outcomes.md). The old
+`core::iter::Mapper` path has no compatibility alias. Historical test receipts
+below retain their original source scope.
+
 ```lani
 pub trait Mapper<T, U> {
     pub fn apply(&self, value: T) -> U;
@@ -33,7 +38,7 @@ manual borrow rules. For example:
 ```lani
 struct Totals { calls: u64 }
 struct Widen { totals: &Totals }
-pub impl core::iter::Mapper<i32, i64> for Widen {
+pub impl core::function::Mapper<i32, i64> for Widen {
     pub fn apply(&self, value: i32) -> i64 {
         let totals: &Totals = self.totals;
         totals.calls += 1;

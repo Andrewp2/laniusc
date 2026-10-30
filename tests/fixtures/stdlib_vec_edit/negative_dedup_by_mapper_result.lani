@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::vec;
 import core::clone;
 import core::cmp;
@@ -8,7 +9,7 @@ import core::result;
 import core::clone_values;
 struct Policy {}
 impl Policy { fn borrow(&self) -> &Policy { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,i32> for Policy { pub fn apply(&self,value:core::pair::Pair<i32,i32>) -> i32 { return 1; } }
+pub impl core::function::Mapper<core::pair::Pair<i32,i32>,i32> for Policy { pub fn apply(&self,value:core::pair::Pair<i32,i32>) -> i32 { return 1; } }
 fn main() -> i32 {
     let rejected_edit_bound:alloc::vec::Vec<i32> =alloc::vec::new<i32>(); let policy:Policy=Policy {};
     rejected_edit_bound.dedup_by_destroy(policy.borrow());

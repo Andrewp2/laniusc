@@ -1,4 +1,5 @@
 module fixture::support;
+import core::function;
 import core::cmp;
 import core::io;
 import core::iter;
@@ -37,7 +38,7 @@ pub impl core::ordering::Comparator<Item,Item> for Compare {
 }
 pub struct Predicate { target: i32, calls: i32 }
 pub impl Predicate { pub fn borrow(&self) -> &Predicate { return self; } }
-pub impl core::iter::Mapper<Item,bool> for Predicate {
+pub impl core::function::Mapper<Item,bool> for Predicate {
     pub fn apply(&self,value: Item) -> bool { self.calls+=1; return value.id==self.target; }
 }
 pub fn pull<I,T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> { return source.next(); }

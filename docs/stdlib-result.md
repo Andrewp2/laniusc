@@ -5,8 +5,10 @@ is active, so `Ok(0)`, `Ok(false)` and an `Err` holding zero are all ordinary
 values. A result does not allocate, and it does not own storage that its
 payloads borrow.
 
-Every operation takes the result by value, so the caller's copy is never
-changed. Each exists as a free function, `core::result::is_ok(value)`, and as
+Operations take the result by value and leave its caller-side wrapper
+descriptor unchanged. A selected transformation callback may affect backing
+referenced by a shallow payload; its ownership policy is explicit below.
+Each exists as a free function, `core::result::is_ok(value)`, and as
 a method, `value.is_ok()`.
 The specialized Result-of-Option `transpose` method is defined in
 `core::option`; import that module to include the extension.
@@ -33,6 +35,24 @@ import `core::option`.
 The `PartialEq` impls in `core::cmp` cover every integer width, `bool`, `char`,
 `f32` and `f64` (IEEE equality), `ptr` and the wide integers; a user type implements
 `core::cmp::PartialEq` for itself.
+
+## Lazy callbacks
+
+The [lazy-outcome guide](stdlib-lazy-outcomes.md) specifies 9 new operations
+in free-function and method forms, using the canonical
+`core::function::Mapper` trait. Result fallbacks receive the error payload;
+Option's argument-free fallbacks use Producer. Selected callbacks run once; skipped callbacks never run. Callback construction and
+ordinary arguments remain eager, and every static bound applies even to a
+runtime-skipped branch.
+
+Library selection does no allocation or destruction. Transformation callbacks
+have their own effects and explicit owner-transfer policy; predicates only
+borrow their payload for the call. Discarded payloads and eager fallback
+owners stay the caller's cleanup responsibility. All eight new library groups
+and the current 98-case optional-sum application pass on native Linux x86_64
+CPU output from the GPU compiler; six selected regressions pass separately.
+The new guide records exact scopes; the receipts below retain their earlier
+API scope.
 
 ## Eager composition and nested methods
 
@@ -68,13 +88,17 @@ new guide records current selected checks separately.
 - Borrowed payloads keep pointing at the caller's storage, which must outlive
   the result.
 
-## Verification
+## Historical verification
+
+These receipts cover the operations present at their source revision, before
+the lazy callback additions. Current coverage is listed in the
+[lazy-outcome guide](stdlib-lazy-outcomes.md).
 
 - `tests/fixtures/stdlib_foundation/core_option_result.lani` runs every free
   function and method through one generic checker for every payload type
   above, a user record, and a result whose two payload types differ.
-  `tests/stdlib_foundation_execution.rs` checks that it calls every public
-  function and method of `core::result`.
+  `tests/stdlib_foundation_execution.rs` checked its then-current public
+  function and method inventory.
 - `tests/stdlib_result_generic_execution.rs` and
   `tests/stdlib_result_methods_execution.rs` cover every state pair of the
   combinators, NaN and negative zero, string, slice and array payloads, bounds

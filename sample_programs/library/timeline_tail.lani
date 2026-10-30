@@ -1,5 +1,6 @@
 // Latest matching CSV timeline records through rev -> filter -> take -> enumerate.
 module app::main;
+import core::function;
 import alloc::io;
 import alloc::vec;
 import alloc::vec::Vec;
@@ -47,7 +48,7 @@ fn valid_level(value:View<u8>) -> bool {
     }
     return true;
 }
-pub impl core::iter::Mapper<Entry,bool> for Level {
+pub impl core::function::Mapper<Entry,bool> for Level {
     pub fn apply(&self, entry:Entry) -> bool { return self.value.is_none() || equal(bytes(entry.level),self.value.unwrap()); }
 }
 fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {

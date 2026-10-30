@@ -22,9 +22,9 @@ Declaration counts: enum: 2; function: 4; variant: 11.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::result::Result](result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../stdlib/core/base64.lani#L5)
-- [core::result::Ok](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../stdlib/core/base64.lani#L6)
-- [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../stdlib/core/base64.lani#L7)
+- [core::result::Result](result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../stdlib/core/base64.lani#L5)
+- [core::result::Ok](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../stdlib/core/base64.lani#L6)
+- [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../stdlib/core/base64.lani#L7)
 - [core::slice::View](slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../stdlib/core/base64.lani#L8)
 
 ## Types, fields and variants

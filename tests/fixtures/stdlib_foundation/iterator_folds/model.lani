@@ -4,6 +4,7 @@
 // APIs, 8/9 are direct front/back resumption. Each result is 16 u64 words;
 // the case ends with a trace length and triples (event,accumulator,item).
 module app::main;
+import core::function;
 import core::iter;
 import core::mem;
 import core::option;
@@ -27,10 +28,10 @@ pub impl<I,T> core::iter::DoubleEndedIterator<T> for Meter<I,T> where I:core::it
 pub impl<I,T> core::iter::ExactSizeIterator<T> for Meter<I,T> where I:core::iter::Iterator<T>,I:core::iter::ExactSizeIterator<T> { pub fn remaining_count(&self) -> u64 { let state:&State=self.state; let log:&Log=state.log; log.add(7,0,0); state.queries+=1; let source:&I=self.source; return source.remaining_count(); } }
 struct Promote { state:&State }
 impl Promote { fn borrow(&self) -> &Promote { return self; } }
-pub impl core::iter::Mapper<i32,i64> for Promote { pub fn apply(&self,value:i32) -> i64 { let state:&State=self.state; let log:&Log=state.log; let result:i64=value as i64; log.add(3,value as i64,result); state.maps+=1; return result; } }
+pub impl core::function::Mapper<i32,i64> for Promote { pub fn apply(&self,value:i32) -> i64 { let state:&State=self.state; let log:&Log=state.log; let result:i64=value as i64; log.add(3,value as i64,result); state.maps+=1; return result; } }
 struct Transform { state:&State }
 impl Transform { fn borrow(&self) -> &Transform { return self; } }
-pub impl core::iter::Mapper<i64,i64> for Transform { pub fn apply(&self,value:i64) -> i64 { let state:&State=self.state; let log:&Log=state.log; let result:i64=value*2+1; log.add(4,value,result); state.maps+=1; return result; } }
+pub impl core::function::Mapper<i64,i64> for Transform { pub fn apply(&self,value:i64) -> i64 { let state:&State=self.state; let log:&Log=state.log; let result:i64=value*2+1; log.add(4,value,result); state.maps+=1; return result; } }
 struct Failure { item:i64, before:i64, stamp:u64, call:u64 }
 struct Folder { state:&State, mode:i32, target:i64 }
 impl Folder { fn borrow(&self) -> &Folder { return self; } }

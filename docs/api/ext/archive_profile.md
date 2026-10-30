@@ -21,9 +21,9 @@ Declaration counts: enum: 2; function: 2; variant: 9.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../extended/ext/archive_profile.lani#L4)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../extended/ext/archive_profile.lani#L5)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../extended/ext/archive_profile.lani#L6)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/archive_profile.lani#L4)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/archive_profile.lani#L5)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/archive_profile.lani#L6)
 - [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/archive_profile.lani#L7)
 - [core::text](../core/text.md) · [source](../../../extended/ext/archive_profile.lani#L8)
 - [ext::tar](tar.md) · [source](../../../extended/ext/archive_profile.lani#L9)

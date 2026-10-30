@@ -1,5 +1,6 @@
 // Test-only callback traces, shared state and borrowed segmentation cursors.
 module app::main;
+import core::function;
 import core::iter;
 import core::mem;
 import core::option;
@@ -78,10 +79,10 @@ struct UnaryPredicate { state:&Context }
 impl UnaryPredicate { fn borrow(&self) -> &UnaryPredicate { return self; } }
 struct AdjacentPredicate { state:&Context }
 impl AdjacentPredicate { fn borrow(&self) -> &AdjacentPredicate { return self; } }
-pub impl core::iter::Mapper<u8,bool> for UnaryPredicate {
+pub impl core::function::Mapper<u8,bool> for UnaryPredicate {
     pub fn apply(&self,value:u8) -> bool { let state:&Context=self.state; return state.evaluate(value,0,false); }
 }
-pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for AdjacentPredicate {
+pub impl core::function::Mapper<core::pair::Pair<u8,u8>,bool> for AdjacentPredicate {
     pub fn apply(&self,value:core::pair::Pair<u8,u8>) -> bool {
         let state:&Context=self.state; return state.evaluate(value.first,value.second,true);
     }

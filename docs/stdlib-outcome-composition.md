@@ -103,9 +103,9 @@ its actual owner is released. The calls do not free discarded resources.
 Borrowed slices and strings retain their original lifetime and alias rules.
 No automatic ownership, arbitrary generic-composition or formal claim follows.
 
-## Optional-field application
+## Historical optional-field application
 
-The real [optional-sum program](stdlib-optional-sum.md) uses both public
+The application revision tested for this increment used both public
 transpose directions to distinguish missing, valid and invalid signed-i64
 records. It reuses the decimal parser and checked addition, validates through
 EOF and computes the total in input order before publishing CSV. Its input
@@ -118,7 +118,9 @@ Five selected allocation denials reach actual owner setup/growth; required-EOF
 failure leaves stdout empty. A genuine file-size limit produces a ten-byte
 output prefix followed by EFBIG, with no fabricated successful write counts.
 Finite 8,192-attempt controls and cleanup observations have their precise
-scopes in the [application guide](stdlib-optional-sum.md).
+scopes in the [application guide](stdlib-optional-sum.md). The current
+application uses [lazy composition](stdlib-lazy-outcomes.md); its separate
+migration receipt does not rewrite the source scope of these earlier checks.
 
 ## Verification and target
 

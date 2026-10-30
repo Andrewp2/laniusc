@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::hash_map;
 import alloc::tree_map;
 import core::cmp;
@@ -11,14 +12,14 @@ import core::result;
 struct Value { count:i32, flag:core::option::Option<bool>, stamp:u64 }
 struct Swap<T> { next:T, calls:i32 }
 impl<T> Swap<T> { fn borrow(&self) -> &Swap<T> { return self; } }
-pub impl<T> core::iter::Mapper<T,core::pair::Pair<T,T>> for Swap<T> {
+pub impl<T> core::function::Mapper<T,core::pair::Pair<T,T>> for Swap<T> {
     pub fn apply(&self,old:T) -> core::pair::Pair<T,T> {
         self.calls+=1; return core::pair::Pair { first:self.next,second:old };
     }
 }
 struct Update { calls:i32 }
 impl Update { fn borrow(&self) -> &Update { return self; } }
-pub impl core::iter::Mapper<Value,core::pair::Pair<Value,core::result::Result<core::option::Option<bool>,u64>>> for Update {
+pub impl core::function::Mapper<Value,core::pair::Pair<Value,core::result::Result<core::option::Option<bool>,u64>>> for Update {
     pub fn apply(&self,old:Value) -> core::pair::Pair<Value,core::result::Result<core::option::Option<bool>,u64>> {
         self.calls+=1; assert(old.count==7 && old.stamp==18446744073709551614);
         let current:Value=Value { count:old.count+1,flag:core::option::Some(false),stamp:18446744073709551615 };
@@ -27,11 +28,11 @@ pub impl core::iter::Mapper<Value,core::pair::Pair<Value,core::result::Result<co
     }
 }
 fn hash_update<K,V,M,R>(map:&alloc::hash_map::HashMap<K,V>,key:K,mapper:&M) -> core::option::Option<R>
-    where K:core::hash::Hash<K>,K:core::cmp::Eq<K>,M:core::iter::Mapper<V,core::pair::Pair<V,R>> {
+    where K:core::hash::Hash<K>,K:core::cmp::Eq<K>,M:core::function::Mapper<V,core::pair::Pair<V,R>> {
     return map.update_value(key,mapper);
 }
 fn tree_update<K,V,M,R>(map:&alloc::tree_map::TreeMap<K,V>,key:K,mapper:&M) -> core::option::Option<R>
-    where K:core::cmp::Ord<K>,M:core::iter::Mapper<V,core::pair::Pair<V,R>> {
+    where K:core::cmp::Ord<K>,M:core::function::Mapper<V,core::pair::Pair<V,R>> {
     return map.update_value(key,mapper);
 }
 fn main() -> i32 {

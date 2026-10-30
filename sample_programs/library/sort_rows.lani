@@ -1,5 +1,6 @@
 // Bounded CSV ordering through a borrowed per-call comparator and checked view.
 module app::main;
+import core::function;
 import alloc::io;
 import alloc::slice;
 import alloc::vec;
@@ -45,10 +46,10 @@ struct Compare { numeric:bool, descending:bool }
 impl Compare { fn borrow(&self) -> &Compare { return self; } }
 struct NonEmpty {}
 impl NonEmpty { fn borrow(&self) -> &NonEmpty { return self; } }
-pub impl core::iter::Mapper<Row,bool> for NonEmpty {
+pub impl core::function::Mapper<Row,bool> for NonEmpty {
     pub fn apply(&self, row:Row) -> bool { return row.key.length != 0; }
 }
-pub impl core::iter::Mapper<core::pair::Pair<Row,Row>,bool> for Compare {
+pub impl core::function::Mapper<core::pair::Pair<Row,Row>,bool> for Compare {
     pub fn apply(&self, pair:core::pair::Pair<Row,Row>) -> bool {
         return match(self.compare(pair.first,pair.second)) {
             core::ordering::Ordering::Equal -> true,

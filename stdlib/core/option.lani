@@ -1,11 +1,13 @@
-// Optional values. A stored false is Some(false), not None. Every operation
-// takes the option by value and leaves the caller's copy unchanged. Free
-// functions and methods select shallow values. contains needs PartialEq on the
-// payload. unwrap panics on None; unwrap_or takes an explicit fallback and
-// never panics. See docs/stdlib-option.md.
+// Optional values. A stored false is Some(false), not None. Operations take
+// the wrapper by value and do not rewrite the caller's wrapper descriptor.
+// Values are shallow: a selected transformation callback may affect referenced
+// backing under the application's explicit ownership-transfer policy.
+// contains needs PartialEq on the payload. unwrap panics on None; unwrap_or
+// selects an explicit fallback. See docs/stdlib-option.md.
 module core::option;
 
 import core::cmp;
+import core::function;
 import core::panic;
 import core::result;
 
@@ -82,6 +84,82 @@ pub fn err<T, E>(value: core::result::Result<T, E>) -> Option<E> {
     return match (value) { Ok(_) -> absent, Err(error) -> Some(error) };
 }
 
+// Selected callbacks run once; skipped callbacks never run. Inputs and
+// outputs remain shallow: account for discarded owners and deactivate older
+// aliases after any explicit transfer into a transformation callback.
+pub fn map<T,U,M>(value:Option<T>, mapper:&M) -> Option<U>
+    where M:core::function::Mapper<T,U> {
+    let absent:Option<U> = None();
+    if (is_none(value)) { return absent; }
+    let inner:T = unwrap(value); let mapped:U = mapper.apply(inner);
+    return Some(mapped);
+}
+
+// fallback is evaluated before entry even when Some selects the mapper.
+pub fn map_or<T,U,M>(value:Option<T>, fallback:U, mapper:&M) -> U
+    where M:core::function::Mapper<T,U> {
+    if (is_none(value)) { return fallback; }
+    let inner:T = unwrap(value); return mapper.apply(inner);
+}
+
+pub fn map_or_else<T,U,D,M>(value:Option<T>, fallback:&D, mapper:&M) -> U
+    where D:core::function::Producer<U>, M:core::function::Mapper<T,U> {
+    if (is_none(value)) { return fallback.produce(); }
+    let inner:T = unwrap(value); return mapper.apply(inner);
+}
+
+pub fn and_then<T,U,M>(value:Option<T>, mapper:&M) -> Option<U>
+    where M:core::function::Mapper<T,Option<U>> {
+    let absent:Option<U> = None();
+    if (is_none(value)) { return absent; }
+    let inner:T = unwrap(value); return mapper.apply(inner);
+}
+
+pub fn or_else<T,P>(value:Option<T>, fallback:&P) -> Option<T>
+    where P:core::function::Producer<Option<T>> {
+    if (is_some(value)) { return value; }
+    return fallback.produce();
+}
+
+pub fn unwrap_or_else<T,P>(value:Option<T>, fallback:&P) -> T
+    where P:core::function::Producer<T> {
+    if (is_none(value)) { return fallback.produce(); }
+    return unwrap(value);
+}
+
+pub fn ok_or_else<T,E,P>(value:Option<T>, fallback:&P) -> core::result::Result<T,E>
+    where P:core::function::Producer<E> {
+    if (is_none(value)) {
+        let error:E = fallback.produce(); return core::result::Err(error);
+    }
+    let inner:T = unwrap(value); return core::result::Ok(inner);
+}
+
+// Predicates only observe call-scoped borrowed descriptors. They must not
+// mutate or retire represented resources, or retain those descriptors beyond
+// the callback. Independent scalar observations are allowed. A rejected filter
+// value stays the caller's cleanup concern. These rules cover all three below.
+pub fn filter<T,P>(value:Option<T>, predicate:&P) -> Option<T>
+    where P:core::function::Mapper<T,bool> {
+    if (is_some(value)) {
+        let inner:T = unwrap(value);
+        if (predicate.apply(inner)) { return value; }
+    }
+    let absent:Option<T> = None(); return absent;
+}
+
+pub fn is_some_and<T,P>(value:Option<T>, predicate:&P) -> bool
+    where P:core::function::Mapper<T,bool> {
+    if (is_none(value)) { return false; }
+    let inner:T = unwrap(value); return predicate.apply(inner);
+}
+
+pub fn is_none_or<T,P>(value:Option<T>, predicate:&P) -> bool
+    where P:core::function::Mapper<T,bool> {
+    if (is_none(value)) { return true; }
+    let inner:T = unwrap(value); return predicate.apply(inner);
+}
+
 pub impl<T> Option<T> {
     pub fn is_some(self) -> bool {
         return match (self) { Some(_) -> true, None -> false };
@@ -130,6 +208,40 @@ pub impl<T> Option<T> {
             Some(inner) -> core::result::Ok(inner),
             None -> core::result::Err(error),
         };
+    }
+
+    pub fn map<U,M>(self, mapper:&M) -> Option<U> where M:core::function::Mapper<T,U> {
+        return core::option::map<T,U,M>(self,mapper);
+    }
+    pub fn map_or<U,M>(self, fallback:U, mapper:&M) -> U where M:core::function::Mapper<T,U> {
+        return core::option::map_or<T,U,M>(self,fallback,mapper);
+    }
+    pub fn map_or_else<U,D,M>(self, fallback:&D, mapper:&M) -> U
+        where D:core::function::Producer<U>, M:core::function::Mapper<T,U> {
+        return core::option::map_or_else<T,U,D,M>(self,fallback,mapper);
+    }
+    pub fn and_then<U,M>(self, mapper:&M) -> Option<U>
+        where M:core::function::Mapper<T,Option<U>> {
+        return core::option::and_then<T,U,M>(self,mapper);
+    }
+    pub fn or_else<P>(self, fallback:&P) -> Option<T> where P:core::function::Producer<Option<T>> {
+        return core::option::or_else<T,P>(self,fallback);
+    }
+    pub fn unwrap_or_else<P>(self, fallback:&P) -> T where P:core::function::Producer<T> {
+        return core::option::unwrap_or_else<T,P>(self,fallback);
+    }
+    pub fn ok_or_else<E,P>(self, fallback:&P) -> core::result::Result<T,E>
+        where P:core::function::Producer<E> {
+        return core::option::ok_or_else<T,E,P>(self,fallback);
+    }
+    pub fn filter<P>(self, predicate:&P) -> Option<T> where P:core::function::Mapper<T,bool> {
+        return core::option::filter<T,P>(self,predicate);
+    }
+    pub fn is_some_and<P>(self, predicate:&P) -> bool where P:core::function::Mapper<T,bool> {
+        return core::option::is_some_and<T,P>(self,predicate);
+    }
+    pub fn is_none_or<P>(self, predicate:&P) -> bool where P:core::function::Mapper<T,bool> {
+        return core::option::is_none_or<T,P>(self,predicate);
     }
 }
 

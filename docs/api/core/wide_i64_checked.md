@@ -16,11 +16,11 @@ Declaration counts: function: 11.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::option::Option](option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L12) · [source](../../../stdlib/core/wide_i64_checked.lani#L4)
-- [core::option::Some](option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L13) · [source](../../../stdlib/core/wide_i64_checked.lani#L5)
-- [core::option::None](option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../stdlib/core/wide_i64_checked.lani#L6)
-- [core::option::unwrap_or](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L33) · [source](../../../stdlib/core/wide_i64_checked.lani#L7)
-- [core::option::is_some](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L17) · [source](../../../stdlib/core/wide_i64_checked.lani#L8)
+- [core::option::Option](option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../stdlib/core/wide_i64_checked.lani#L4)
+- [core::option::Some](option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../stdlib/core/wide_i64_checked.lani#L5)
+- [core::option::None](option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../stdlib/core/wide_i64_checked.lani#L6)
+- [core::option::unwrap_or](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L35) · [source](../../../stdlib/core/wide_i64_checked.lani#L7)
+- [core::option::is_some](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L19) · [source](../../../stdlib/core/wide_i64_checked.lani#L8)
 - [core::wide_i64](wide_i64.md) · [source](../../../stdlib/core/wide_i64_checked.lani#L9)
 - [core::wide_u64](wide_u64.md) · [source](../../../stdlib/core/wide_i64_checked.lani#L10)
 

@@ -1,5 +1,6 @@
 // Test-only raw-binary map actions, full contents and mapper event capture.
 module app::main;
+import core::function;
 import alloc::hash_map;
 import alloc::tree_map;
 import core::cmp;
@@ -102,7 +103,7 @@ struct ScalarUpdate { state:&Context }
 impl ScalarUpdate { fn borrow(&self) -> &ScalarUpdate { return self; } }
 struct CompoundUpdate { state:&Context }
 impl CompoundUpdate { fn borrow(&self) -> &CompoundUpdate { return self; } }
-pub impl core::iter::Mapper<u64,core::pair::Pair<u64,core::option::Option<u64>>> for ScalarUpdate {
+pub impl core::function::Mapper<u64,core::pair::Pair<u64,core::option::Option<u64>>> for ScalarUpdate {
     pub fn apply(&self,old:u64) -> core::pair::Pair<u64,core::option::Option<u64>> {
         let state:&Context=self.state; state.calls+=1;
         let tick:u64=state.calls; let token:u64=state.token;
@@ -115,7 +116,7 @@ pub impl core::iter::Mapper<u64,core::pair::Pair<u64,core::option::Option<u64>>>
         return core::pair::Pair { first:new,second:answer };
     }
 }
-pub impl core::iter::Mapper<Payload,core::pair::Pair<Payload,core::result::Result<Receipt,Failure>>> for CompoundUpdate {
+pub impl core::function::Mapper<Payload,core::pair::Pair<Payload,core::result::Result<Receipt,Failure>>> for CompoundUpdate {
     pub fn apply(&self,old:Payload) -> core::pair::Pair<Payload,core::result::Result<Receipt,Failure>> {
         let state:&Context=self.state; state.calls+=1;
         let tick:u64=state.calls; let token:u64=state.token;

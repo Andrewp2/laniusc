@@ -1,5 +1,6 @@
 // Exact consumer effects, nested values and one manually retained String owner.
 module app::main;
+import core::function;
 import alloc::string;
 import core::iter;
 import core::option;
@@ -30,7 +31,7 @@ pub impl core::iter::Iterator<i32> for Probe {
 }
 struct Predicate { target: i32, equal: bool, calls: i32, log: &Log }
 impl Predicate { fn borrow(&self) -> &Predicate { return self; } }
-pub impl core::iter::Mapper<i32, bool> for Predicate {
+pub impl core::function::Mapper<i32, bool> for Predicate {
     pub fn apply(&self, value: i32) -> bool {
         let log: &Log = self.log; log.add(2); self.calls += 1;
         return (value == self.target) == self.equal;
@@ -38,7 +39,7 @@ pub impl core::iter::Mapper<i32, bool> for Predicate {
 }
 struct NestedOption { calls: i32, log: &Log }
 impl NestedOption { fn borrow(&self) -> &NestedOption { return self; } }
-pub impl core::iter::Mapper<i32, core::option::Option<core::option::Option<u64>>> for NestedOption {
+pub impl core::function::Mapper<i32, core::option::Option<core::option::Option<u64>>> for NestedOption {
     pub fn apply(&self, value: i32) -> core::option::Option<core::option::Option<u64>> {
         let log: &Log = self.log; log.add(2); self.calls += 1;
         if (value != 1) { return core::option::None(); }
@@ -48,7 +49,7 @@ pub impl core::iter::Mapper<i32, core::option::Option<core::option::Option<u64>>
 }
 struct NestedResult { calls: i32, log: &Log }
 impl NestedResult { fn borrow(&self) -> &NestedResult { return self; } }
-pub impl core::iter::Mapper<i32, core::option::Option<core::result::Result<[u64; 2], i32>>> for NestedResult {
+pub impl core::function::Mapper<i32, core::option::Option<core::result::Result<[u64; 2], i32>>> for NestedResult {
     pub fn apply(&self, value: i32) -> core::option::Option<core::result::Result<[u64; 2], i32>> {
         let log: &Log = self.log; log.add(2); self.calls += 1;
         if (value != 1) { return core::option::None(); }
@@ -131,7 +132,7 @@ pub impl core::iter::TryFolder<Acc, i32, Failure> for Stop {
 struct Payload { words: [u64; 2], tag: core::option::Option<core::result::Result<i32, bool>> }
 struct Choose { calls: i32 }
 impl Choose { fn borrow(&self) -> &Choose { return self; } }
-pub impl core::iter::Mapper<Payload, bool> for Choose {
+pub impl core::function::Mapper<Payload, bool> for Choose {
     pub fn apply(&self, value: Payload) -> bool { self.calls += 1; return value.words[1] == 2; }
 }
 struct Nest { calls: i32 }
@@ -196,12 +197,12 @@ fn compound_values() {
 
 struct OwnerPredicate { calls: i32, choose: i32 }
 impl OwnerPredicate { fn borrow(&self) -> &OwnerPredicate { return self; } }
-pub impl core::iter::Mapper<alloc::string::String, bool> for OwnerPredicate {
+pub impl core::function::Mapper<alloc::string::String, bool> for OwnerPredicate {
     pub fn apply(&self, value: alloc::string::String) -> bool { assert(value.byte_len() == 4); self.calls += 1; return self.calls == self.choose; }
 }
 struct OwnerMap { calls: i32 }
 impl OwnerMap { fn borrow(&self) -> &OwnerMap { return self; } }
-pub impl core::iter::Mapper<alloc::string::String, core::option::Option<alloc::string::String>> for OwnerMap {
+pub impl core::function::Mapper<alloc::string::String, core::option::Option<alloc::string::String>> for OwnerMap {
     pub fn apply(&self, value: alloc::string::String) -> core::option::Option<alloc::string::String> {
         self.calls += 1; if (self.calls == 2) { return core::option::Some(value); } return core::option::None();
     }

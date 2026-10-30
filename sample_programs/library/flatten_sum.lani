@@ -1,5 +1,6 @@
 // Physical row owners -> FlatMap/scalar retirement -> TryScan -> staged output.
 module app::main;
+import core::function;
 import alloc::vec;
 import core::clone_values::Infallible;
 import core::decimal;
@@ -30,7 +31,7 @@ struct Running { total:i64 }
 impl<T> RowMap<T> { fn borrow(&self) -> &RowMap<T> { return self; } }
 impl Retire { fn borrow(&self) -> &Retire { return self; } }
 impl Running { fn borrow(&self) -> &Running { return self; } }
-pub impl<T> core::iter::Mapper<alloc::vec::Vec<T>,alloc::vec::IntoIter<T>> for RowMap<T> {
+pub impl<T> core::function::Mapper<alloc::vec::Vec<T>,alloc::vec::IntoIter<T>> for RowMap<T> {
     pub fn apply(&self,row:alloc::vec::Vec<T>) -> alloc::vec::IntoIter<T> { return row.take_iter(); }
 }
 pub impl core::iter::InnerRetirement<alloc::vec::IntoIter<i64>,Infallible> for Retire {
@@ -41,7 +42,7 @@ pub impl core::iter::InnerRetirement<alloc::vec::IntoIter<i64>,Infallible> for R
         return None();
     }
 }
-pub impl core::iter::Mapper<i64,Result<Option<i64>,AppError>> for Running {
+pub impl core::function::Mapper<i64,Result<Option<i64>,AppError>> for Running {
     pub fn apply(&self,value:i64) -> Result<Option<i64>,AppError> {
         let added=core::i64::checked_add(self.total,value);
         if(added.is_none()) { return Err(AppError::Overflow); }

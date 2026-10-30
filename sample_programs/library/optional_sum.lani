@@ -1,7 +1,8 @@
-// Optional integer records composed through public eager outcomes and transpose.
+// Optional integer records composed through lazy parsing and checked addition.
 module app::main;
 import alloc::io;
 import core::decimal;
+import core::function;
 import core::i64;
 import core::io;
 import core::mem;
@@ -16,6 +17,29 @@ import std::signal;
 import std::stream;
 
 struct Summary { present:u64, missing:u64, sum:i64 }
+struct ParseStatus {}
+impl ParseStatus { fn borrow(&self) -> &ParseStatus { return self; } }
+pub impl core::function::Mapper<core::decimal::ParseError,i32> for ParseStatus {
+    pub fn apply(&self, error:core::decimal::ParseError) -> i32 { return 2; }
+}
+struct ParseNumber {}
+impl ParseNumber { fn borrow(&self) -> &ParseNumber { return self; } }
+pub impl core::function::Mapper<View<u8>,Result<i64,i32>> for ParseNumber {
+    pub fn apply(&self, field:View<u8>) -> Result<i64,i32> {
+        let parsed:Result<i64,core::decimal::ParseError> = core::decimal::parse_i64_range(field.values,field.start,field.length);
+        let category = ParseStatus {};
+        return core::result::map_err<i64,core::decimal::ParseError,i32,ParseStatus>(parsed,category.borrow());
+    }
+}
+struct AddToSummary { total:Summary }
+impl AddToSummary { fn borrow(&self) -> &AddToSummary { return self; } }
+pub impl core::function::Mapper<i64,Result<Summary,i32>> for AddToSummary {
+    pub fn apply(&self, number:i64) -> Result<Summary,i32> {
+        let added:Option<i64> = core::i64::checked_add(self.total.sum,number);
+        if (added.is_none()) { return core::result::Err(2); }
+        return core::result::Ok(Summary { present:self.total.present+1,missing:self.total.missing,sum:added.unwrap() });
+    }
+}
 fn literal(value:str, count:i32) -> View<u8> {
     let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
     return core::slice::view(raw,count).unwrap();
@@ -64,17 +88,14 @@ fn read(input:&alloc::io::Buffer) -> i32 {
     return 3;
 }
 fn field(bytes:[u8], offset:i32, count:i32) -> Option<Result<i64,i32>> {
-    let parsed:Option<Result<i64,core::decimal::ParseError>> = core::option::None();
+    let present:Option<View<u8>> = core::option::None();
     if ((count != 1) || (bytes[offset] != 45)) {
-        let number:Result<i64,core::decimal::ParseError> = core::decimal::parse_i64_range(bytes,offset,count);
-        parsed = core::option::Some(number);
+        present = core::option::Some(View { values:bytes,start:offset,length:count });
     }
-    // Preserve missing/success/error while selecting the application's error
-    // category. Eager fallback carries no owner and has no side effect.
-    let shaped:Result<Option<i64>,core::decimal::ParseError> = core::option::transpose_to_result<i64,core::decimal::ParseError>(parsed);
-    let fallback:Result<Option<i64>,i32> = core::result::Err(2);
-    let categorized:Result<Option<i64>,i32> = core::result::or<Option<i64>,core::decimal::ParseError,i32>(shaped,fallback);
-    return core::option::transpose_to_option<i64,i32>(categorized);
+    // Missing fields never invoke the parser. Both the borrowed field and
+    // callback remain live throughout this synchronous mapping operation.
+    let parser = ParseNumber {};
+    return core::option::map<View<u8>,Result<i64,i32>,ParseNumber>(present,parser.borrow());
 }
 fn record(bytes:[u8], offset:i32, count:i32, total:Summary) -> Result<Summary,i32> {
     if ((count == 0) || (count > 64) || (total.present+total.missing == 65536)) { return core::result::Err(2); }
@@ -83,14 +104,10 @@ fn record(bytes:[u8], offset:i32, count:i32, total:Summary) -> Result<Summary,i3
         return core::result::Ok(Summary { present:total.present,missing:total.missing+1,sum:total.sum });
     }
     let parsed:Result<i64,i32> = optional.unwrap();
-    // Eagerly prepare a candidate with the safe fallback zero. A parse error
-    // cannot commit that candidate: public and preserves the left error.
-    let added:Option<i64> = core::i64::checked_add(total.sum,parsed.unwrap_or(0));
-    let candidate:Result<Summary,i32> = core::result::Err(2);
-    if (added.is_some()) {
-        candidate = core::result::Ok(Summary { present:total.present+1,missing:total.missing,sum:added.unwrap() });
-    }
-    return core::result::and<i64,i32,Summary>(parsed,candidate);
+    // Failed parsing never invokes arithmetic. A successful callback returns
+    // a new plain summary; summarize commits it only after the result is Ok.
+    let add = AddToSummary { total:total };
+    return core::result::and_then<i64,i32,Summary,AddToSummary>(parsed,add.borrow());
 }
 fn summarize(input:&alloc::io::Buffer) -> Result<Summary,i32> {
     let bytes:[u8] = input.as_bytes(); let length:i32 = input.len();
@@ -120,7 +137,7 @@ fn render(total:Summary, destination:[u8]) -> Result<i32,i32> {
     while(index < 3) {
         let formatted:Result<i32,core::decimal::FormatError> = core::decimal::format_i64(destination,writer.position(),writer.remaining(),values[index]);
         if (formatted.is_err()) { return core::result::Err(6); }
-        if (writer.seek(writer.position()+formatted.unwrap()).is_err()) { return core::result::Err(6); }
+        if (writer.seek(core::io::SeekFrom::Start((writer.position()+formatted.unwrap()) as u64)).is_err()) { return core::result::Err(6); }
         let separator:[u8;1] = [44]; if (index == 2) { separator[0] = 10; }
         let separated:Result<i32,core::io::Error> = writer.write(separator,0,1);
         if (separated.is_err() || (separated.unwrap() != 1)) { return core::result::Err(6); }

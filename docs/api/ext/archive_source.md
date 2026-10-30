@@ -21,15 +21,15 @@ Declaration counts: enum: 2; field: 18; function: 4; impl: 1; method: 9; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L18) · [source](../../../extended/ext/archive_source.lani#L4)
-- [alloc::vec::with_capacity](../alloc/vec.md) (item: function) · [declaration](../../../stdlib/alloc/vec.lani#L27) · [source](../../../extended/ext/archive_source.lani#L5)
+- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L19) · [source](../../../extended/ext/archive_source.lani#L4)
+- [alloc::vec::with_capacity](../alloc/vec.md) (item: function) · [declaration](../../../stdlib/alloc/vec.lani#L28) · [source](../../../extended/ext/archive_source.lani#L5)
 - [core::mem](../core/mem.md) · [source](../../../extended/ext/archive_source.lani#L6)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L12) · [source](../../../extended/ext/archive_source.lani#L7)
-- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L13) · [source](../../../extended/ext/archive_source.lani#L8)
-- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/archive_source.lani#L9)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../extended/ext/archive_source.lani#L10)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../extended/ext/archive_source.lani#L11)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../extended/ext/archive_source.lani#L12)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/archive_source.lani#L7)
+- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/archive_source.lani#L8)
+- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/archive_source.lani#L9)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/archive_source.lani#L10)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/archive_source.lani#L11)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/archive_source.lani#L12)
 - [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/archive_source.lani#L13)
 - [ext::archive_plan](archive_plan.md) · [source](../../../extended/ext/archive_source.lani#L14)
 - [ext::archive_profile](archive_profile.md) · [source](../../../extended/ext/archive_source.lani#L15)

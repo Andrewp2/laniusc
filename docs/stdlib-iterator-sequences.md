@@ -29,7 +29,7 @@ is_sorted_by<I,P,T>(source:&I,predicate:&P) -> bool
     where I:Iterator<T>, P:Mapper<Pair<T,T>,bool>
 ```
 
-Iterator and Mapper belong to core::iter; Pair to core::pair; Comparator and
+Iterator belongs to core::iter; Mapper to core::function; Pair to core::pair; Comparator and
 Ordering to core::ordering. The [comparison traits](stdlib-comparison.md) and
 four-variant PartialOrdering belong to core::cmp. No implicit supertrait or
 blanket comparison implementation is assumed. Natural calls use the same item
@@ -135,7 +135,7 @@ four-test command. The documented standalone compile exits zero silently
 pipelines both exit zero and match exact 111-byte CRLF reports. These examples
 overlap the corpus and add no case count.
 
-Current production core::iter is 0efff466. The all-eight-API native admission
+The production core::iter revision for the following receipts is 0efff466. The all-eight-API native admission
 passes one registered test in 6.48s
 (target/stdlib-work/iterator-comparison-admission-typed-retry.log). Its first
 attempt stopped before execution with LNC0006 at a generic Option extraction

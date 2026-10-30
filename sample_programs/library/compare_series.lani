@@ -1,5 +1,6 @@
 // Compare bounded CSV integer series through shared iterator consumers.
 module app::main;
+import core::function;
 import alloc::io;
 import alloc::string;
 import alloc::vec;
@@ -43,7 +44,7 @@ pub impl core::ordering::Comparator<i64,i64> for DescendingOrder {
 }
 struct DescendingAdjacent {}
 impl DescendingAdjacent { fn borrow(&self) -> &DescendingAdjacent { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i64,i64>,bool> for DescendingAdjacent {
+pub impl core::function::Mapper<core::pair::Pair<i64,i64>,bool> for DescendingAdjacent {
     pub fn apply(&self, pair:core::pair::Pair<i64,i64>) -> bool { return pair.first >= pair.second; }
 }
 

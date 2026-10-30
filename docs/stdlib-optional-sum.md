@@ -44,25 +44,23 @@ produces the data row `0,0,0`.
 
 ## Public outcome composition
 
-The application uses the public outcome operations for the three distinct
-input states, rather than reproducing their variant conversion:
+The application uses [lazy outcome operations](stdlib-lazy-outcomes.md) with
+borrowed, statically dispatched `core::function::Mapper` callbacks:
 
-1. Missing is `None`; a parsed field is `Some(Result<i64, ParseError>)`.
-2. `core::option::transpose_to_result` converts this to
-   `Result<Option<i64>, ParseError>`.
-3. The widened `core::result::or` keeps a successful optional payload and
-   selects application error 2 after a decimal-parser error.
-4. `core::option::transpose_to_option` restores the optional outer shape,
-   preserving missing, valid and invalid states in the application error type.
-5. For a present field, the widened `core::result::and` selects a proposed
-   Summary only when parsing succeeded, while retaining a parse error
-   otherwise. Its success payload changes from i64 to Summary.
+1. Missing is `None`; a present field is `Some(View<u8>)`.
+2. `Option.map(ParseNumber)` parses only a present field.
+3. `Result.map_err(ParseStatus)` maps a decimal-parser error to application
+   status 2 without changing a successful i64.
+4. For a present result, `Result.and_then(AddToSummary)` performs checked
+   addition only after successful parsing and returns the proposed Summary.
+5. `summarize` commits that Summary only after success. Missing input updates
+   only the missing count; parser errors never invoke the arithmetic callback.
 
-The proposed Summary uses checked addition. An eager candidate may use the
-safe zero fallback when a parser result is erroneous, but public `and`
-retains that earlier error; the fallback can never turn invalid input into
-an accepted zero. No candidate mutates the committed summary before selection.
-All composed payloads are plain values, with no resource owners or callbacks.
+The callbacks use borrowed field views and plain Summary values. They allocate
+nothing and perform no I/O. They replace the previous transpose/classification
+scaffolding and eager zero-fallback candidate while preserving grammar,
+limits, output and cleanup. Formatting uses the current
+`SliceWriter.seek(SeekFrom::Start(...))` interface.
 
 ## Validation, output and ownership
 
@@ -130,7 +128,22 @@ SIGPIPE is ignored before I/O; setup failure returns 5 without a diagnostic.
 A successful run has no stderr output. Success acknowledges completed
 descriptor writes, not downstream consumption or crash durability.
 
-## Target and acceptance
+## Current migration
+
+The lazy composition source is frozen at
+`7d606840e3660725ea24af285e47d22fab567a3fd14aee83e5d7537f48474968`.
+All four current application groups pass in one 8.02s invocation:
+model 33, CLI 17, rejection 30 and I/O 18, totaling 98 native cases.
+The unchanged independent oracle checks the same grammar, help, output,
+statuses and owner/I/O contracts. The log is
+`target/stdlib-work/lazy-outcomes-optional-sum.log`; evidence directories are
+`/tmp/optional-sum-model-x9o1y6tr`, `/tmp/optional-sum-cli-ulrgys3d`,
+`/tmp/optional-sum-rejection-rfrb6uqu` and `/tmp/optional-sum-io-fdattrvz`.
+These CPU executions use GPU-compiler output on Linux x86_64. They are current
+migration receipts, separate from the earlier 98 cases below, which remain
+bound to their historical source hash. No device or other-target claim follows.
+
+## Historical target and acceptance
 
 All four registered application groups passed on 2026-10-28, totaling 98
 native cases across two focused runs:

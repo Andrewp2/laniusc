@@ -22,9 +22,9 @@ Declaration counts: enum: 2; field: 8; function: 2; struct: 1; variant: 11.
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [core::mem](../core/mem.md) · [source](../../../extended/ext/cli_bash.lani#L5)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../extended/ext/cli_bash.lani#L6)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../extended/ext/cli_bash.lani#L7)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../extended/ext/cli_bash.lani#L8)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/cli_bash.lani#L6)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/cli_bash.lani#L7)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/cli_bash.lani#L8)
 - [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/cli_bash.lani#L9)
 - [ext::bash_words](bash_words.md) · [source](../../../extended/ext/cli_bash.lani#L10)
 

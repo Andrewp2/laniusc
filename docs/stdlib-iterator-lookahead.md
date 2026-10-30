@@ -10,6 +10,10 @@ The existing [iterator protocol](stdlib-iterators.md), callback lifetimes and
 shallow-value ownership rules apply. `StepBy` remains the existing
 [source adapter](stdlib-iterator-sources.md).
 
+`Mapper` bounds below name `core::function::Mapper`; iterator and lookahead
+operations remain in `core::iter`. The [callback migration](stdlib-lazy-outcomes.md)
+records current checks separately from the historical receipts here.
+
 ## Lookahead API
 
 ```lanius

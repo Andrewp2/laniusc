@@ -2,6 +2,7 @@
 // sources, whose item types follow from the stdlib Iterator implementations
 // of Enumerate and Map in later rounds.
 module app::main;
+import core::function;
 import core::iter;
 import core::option;
 import core::pair;
@@ -24,7 +25,7 @@ struct Weigh {}
 impl Weigh {
     fn borrow(&self) -> &Weigh { return self; }
 }
-pub impl core::iter::Mapper<core::pair::Pair<u64,i32>, i64> for Weigh {
+pub impl core::function::Mapper<core::pair::Pair<u64,i32>, i64> for Weigh {
     pub fn apply(&self, value: core::pair::Pair<u64,i32>) -> i64 {
         return (value.first as i64) * (value.second as i64);
     }

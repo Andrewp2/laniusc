@@ -18,7 +18,7 @@ implementations can perform their own effects.
 Every factory also requires `I:Iterator<T>`. Each returned type provides
 `borrow()` for downstream adapters and consumers. Import `core::iter` for the
 shared `next` implementations. Construction makes no source or callback calls.
-Selection reuses the existing `Mapper<T,U>` interface; no separate predicate
+Selection reuses `core::function::Mapper<T,U>`; no separate predicate
 trait or closure runtime is required.
 
 Filter tests each successful source item once and returns the first accepted

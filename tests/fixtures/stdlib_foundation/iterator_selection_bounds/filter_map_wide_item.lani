@@ -1,11 +1,12 @@
 module app::main;
+import core::function;
 import core::iter;
 import core::option;
 import core::range;
 
 struct WideMapper {}
 impl WideMapper { fn borrow(&self) -> &WideMapper { return self; } }
-pub impl core::iter::Mapper<i32, core::option::Option<u64>> for WideMapper {
+pub impl core::function::Mapper<i32, core::option::Option<u64>> for WideMapper {
     pub fn apply(&self, value: i32) -> core::option::Option<u64> {
         let widened: u64 = value as u64;
         let result: core::option::Option<u64> = core::option::Some(widened);

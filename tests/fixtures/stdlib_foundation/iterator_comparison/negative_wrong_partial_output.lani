@@ -1,11 +1,12 @@
 module app::main;
+import core::function;
 import core::cmp;
 import core::iter;
 import core::ordering;
 import core::pair;
 struct TotalOnly {}
 impl TotalOnly { fn borrow(&self) -> &TotalOnly { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,core::ordering::Ordering> for TotalOnly {
+pub impl core::function::Mapper<core::pair::Pair<i32,i32>,core::ordering::Ordering> for TotalOnly {
     pub fn apply(&self,pair:core::pair::Pair<i32,i32>) -> core::ordering::Ordering { return core::ordering::compare_i32(pair.first,pair.second); }
 }
 fn main() -> i32 {

@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::string;
 import alloc::vec;
 import core::clone;
@@ -40,12 +41,12 @@ pub impl core::cmp::PartialEq<Entry> for Entry {
 }
 struct Keep {}
 impl Keep { fn borrow(&self) -> &Keep { return self; } }
-pub impl core::iter::Mapper<Entry,bool> for Keep {
+pub impl core::function::Mapper<Entry,bool> for Keep {
     pub fn apply(&self,value:Entry) -> bool { check(value); value.trace.record(1000+value.id); return value.id%3!=0; }
 }
 struct Same {}
 impl Same { fn borrow(&self) -> &Same { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<Entry,Entry>,bool> for Same {
+pub impl core::function::Mapper<core::pair::Pair<Entry,Entry>,bool> for Same {
     pub fn apply(&self,pair:core::pair::Pair<Entry,Entry>) -> bool { return Entry::partial_eq(pair.first,pair.second); }
 }
 fn state(values:&alloc::vec::Vec<Entry>,pointer:ptr,stage:i32) {

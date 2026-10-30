@@ -1,0 +1,143 @@
+module app::main;
+import core::function;
+import core::option;
+import core::result;
+
+const WIDE:u64=18446744073709551615;
+const FAILURE:i64=-9223372036854775808;
+struct Log { ids:[i32], inputs:[i64], used:i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn put(&self,id:i32,input:i64) { self.ids[self.used]=id; self.inputs[self.used]=input; self.used+=1; }
+    fn reset(&self) { self.used=0; let i:i32=0; while(i<8) { self.ids[i]=777; self.inputs[i]=888; i+=1; } }
+}
+fn expect(log:&Log,count:i32,id:i32,input:i64) {
+    assert(log.used==count); if(count==1) { assert(log.ids[0]==id && log.inputs[0]==input); }
+    let i:i32=count; while(i<8) { assert(log.ids[i]==777 && log.inputs[i]==888); i+=1; }
+}
+fn eager(log:&Log) -> u64 { log.put(9,0); return 4294967297; }
+fn eager_trace(log:&Log,selected:bool) {
+    assert(log.ids[0]==9 && log.inputs[0]==0); let count:i32=1;
+    if(selected) { assert(log.ids[1]==11 && log.inputs[1]==-7); count=2; }
+    assert(log.used==count); let i:i32=count; while(i<8) { assert(log.ids[i]==777 && log.inputs[i]==888); i+=1; }
+}
+struct ValueMap { log:&Log, enabled:bool }
+impl ValueMap { fn borrow(&self) -> &ValueMap { return self; } }
+pub impl core::function::Mapper<i32,u64> for ValueMap { pub fn apply(&self,input:i32) -> u64 { assert(self.enabled); self.log.put(11,input as i64); return WIDE; } }
+struct ErrorMap { log:&Log, enabled:bool }
+impl ErrorMap { fn borrow(&self) -> &ErrorMap { return self; } }
+pub impl core::function::Mapper<i64,u64> for ErrorMap { pub fn apply(&self,input:i64) -> u64 { assert(self.enabled); self.log.put(12,input); return WIDE; } }
+struct OptionChain { log:&Log, enabled:bool, present:bool }
+impl OptionChain { fn borrow(&self) -> &OptionChain { return self; } }
+pub impl core::function::Mapper<i32,core::option::Option<u64>> for OptionChain { pub fn apply(&self,input:i32) -> core::option::Option<u64> { assert(self.enabled); self.log.put(13,input as i64); if(self.present) { return core::option::Some(WIDE); } return core::option::None(); } }
+struct ResultChain { log:&Log, enabled:bool, success:bool }
+impl ResultChain { fn borrow(&self) -> &ResultChain { return self; } }
+pub impl core::function::Mapper<i32,core::result::Result<u64,i64>> for ResultChain { pub fn apply(&self,input:i32) -> core::result::Result<u64,i64> { assert(self.enabled); self.log.put(14,input as i64); if(self.success) { return core::result::Ok(WIDE); } return core::result::Err(-19); } }
+struct Recover { log:&Log, enabled:bool, success:bool }
+impl Recover { fn borrow(&self) -> &Recover { return self; } }
+pub impl core::function::Mapper<i64,core::result::Result<i32,u64>> for Recover { pub fn apply(&self,input:i64) -> core::result::Result<i32,u64> { assert(self.enabled); self.log.put(15,input); if(self.success) { return core::result::Ok(29); } return core::result::Err(WIDE); } }
+struct RecoverValue { log:&Log, enabled:bool }
+impl RecoverValue { fn borrow(&self) -> &RecoverValue { return self; } }
+pub impl core::function::Mapper<i64,i32> for RecoverValue { pub fn apply(&self,input:i64) -> i32 { assert(self.enabled); self.log.put(16,input); return 29; } }
+struct WideProducer { log:&Log, enabled:bool }
+impl WideProducer { fn borrow(&self) -> &WideProducer { return self; } }
+pub impl core::function::Producer<u64> for WideProducer { pub fn produce(&self) -> u64 { assert(self.enabled); self.log.put(21,0); return WIDE; } }
+struct OptionProducer { log:&Log, enabled:bool, present:bool }
+impl OptionProducer { fn borrow(&self) -> &OptionProducer { return self; } }
+pub impl core::function::Producer<core::option::Option<i32>> for OptionProducer { pub fn produce(&self) -> core::option::Option<i32> { assert(self.enabled); self.log.put(22,0); if(self.present) { return core::option::Some(29); } return core::option::None(); } }
+struct ErrorProducer { log:&Log, enabled:bool }
+impl ErrorProducer { fn borrow(&self) -> &ErrorProducer { return self; } }
+pub impl core::function::Producer<i64> for ErrorProducer { pub fn produce(&self) -> i64 { assert(self.enabled); self.log.put(23,0); return FAILURE; } }
+struct IntProducer { log:&Log, enabled:bool }
+impl IntProducer { fn borrow(&self) -> &IntProducer { return self; } }
+pub impl core::function::Producer<i32> for IntProducer { pub fn produce(&self) -> i32 { assert(self.enabled); self.log.put(24,0); return 29; } }
+struct ValuePredicate { log:&Log, enabled:bool, answer:bool }
+impl ValuePredicate { fn borrow(&self) -> &ValuePredicate { return self; } }
+pub impl core::function::Mapper<i32,bool> for ValuePredicate { pub fn apply(&self,input:i32) -> bool { assert(self.enabled); self.log.put(31,input as i64); return self.answer; } }
+struct ErrorPredicate { log:&Log, enabled:bool, answer:bool }
+impl ErrorPredicate { fn borrow(&self) -> &ErrorPredicate { return self; } }
+pub impl core::function::Mapper<i64,bool> for ErrorPredicate { pub fn apply(&self,input:i64) -> bool { assert(self.enabled); self.log.put(32,input); return self.answer; } }
+
+fn options(method:bool,present:bool) {
+    let ids:[i32;8]=[777;8]; let inputs:[i64;8]=[888;8]; let log:Log=Log { ids:ids,inputs:inputs,used:0 };
+    let source:core::option::Option<i32> =core::option::None(); if(present) { source=core::option::Some(-7); }
+    let mapper:ValueMap=ValueMap { log:log.borrow(),enabled:present }; let wide:WideProducer=WideProducer { log:log.borrow(),enabled:!present };
+    let chain:OptionChain=OptionChain { log:log.borrow(),enabled:present,present:true }; let fallback:OptionProducer=OptionProducer { log:log.borrow(),enabled:!present,present:true };
+    let error:ErrorProducer=ErrorProducer { log:log.borrow(),enabled:!present }; let integer:IntProducer=IntProducer { log:log.borrow(),enabled:!present };
+    let predicate:ValuePredicate=ValuePredicate { log:log.borrow(),enabled:present,answer:false };
+    let mapped:core::option::Option<u64> =core::option::None();
+    if(method) { mapped=source.map<u64,ValueMap>(mapper.borrow()); } else { mapped=core::option::map<i32,u64,ValueMap>(source,mapper.borrow()); }
+    assert(mapped.is_some()==present); if(present) { assert(mapped.unwrap()==WIDE); } expect(log.borrow(),present as i32,11,-7); log.reset();
+    let selected:u64=0;
+    if(method) { selected=source.map_or<u64,ValueMap>(eager(log.borrow()),mapper.borrow()); } else { selected=core::option::map_or<i32,u64,ValueMap>(source,eager(log.borrow()),mapper.borrow()); }
+    let expected:u64=4294967297; if(present) { expected=WIDE; } assert(selected==expected); eager_trace(log.borrow(),present); log.reset();
+    if(method) { selected=source.map_or_else<u64,WideProducer,ValueMap>(wide.borrow(),mapper.borrow()); } else { selected=core::option::map_or_else<i32,u64,WideProducer,ValueMap>(source,wide.borrow(),mapper.borrow()); }
+    assert(selected==WIDE); let event:i32=21; let input:i64=0; if(present) { event=11; input=-7; } expect(log.borrow(),1,event,input); log.reset();
+    let mode:i32=0; while(mode<2) {
+        chain.present=mode==1;
+        if(method) { mapped=source.and_then<u64,OptionChain>(chain.borrow()); } else { mapped=core::option::and_then<i32,u64,OptionChain>(source,chain.borrow()); }
+        assert(mapped.is_some()==(present && mode==1)); if(mapped.is_some()) { assert(mapped.unwrap()==WIDE); } expect(log.borrow(),present as i32,13,-7); log.reset();
+        fallback.present=mode==1; let chosen:core::option::Option<i32> =core::option::None();
+        if(method) { chosen=source.or_else<OptionProducer>(fallback.borrow()); } else { chosen=core::option::or_else<i32,OptionProducer>(source,fallback.borrow()); }
+        assert(chosen.is_some()==(present || mode==1)); if(chosen.is_some()) { let value:i32=29; if(present) { value=-7; } assert(chosen.unwrap()==value); }
+        expect(log.borrow(),(!present) as i32,22,0); log.reset(); mode+=1;
+    }
+    let unwrapped:i32=0;
+    if(method) { unwrapped=source.unwrap_or_else<IntProducer>(integer.borrow()); } else { unwrapped=core::option::unwrap_or_else<i32,IntProducer>(source,integer.borrow()); }
+    let expected_int:i32=29; if(present) { expected_int=-7; } assert(unwrapped==expected_int); expect(log.borrow(),(!present) as i32,24,0); log.reset();
+    let result:core::result::Result<i32,i64> =core::result::Err(0);
+    if(method) { result=source.ok_or_else<i64,ErrorProducer>(error.borrow()); } else { result=core::option::ok_or_else<i32,i64,ErrorProducer>(source,error.borrow()); }
+    assert(result.is_ok()==present); if(present) { assert(result.unwrap()==-7); } else { assert(result.unwrap_err()==FAILURE); } expect(log.borrow(),(!present) as i32,23,0); log.reset();
+    mode=0; while(mode<2) {
+        predicate.answer=mode==1; let filtered:core::option::Option<i32> =core::option::None();
+        if(method) { filtered=source.filter<ValuePredicate>(predicate.borrow()); } else { filtered=core::option::filter<i32,ValuePredicate>(source,predicate.borrow()); }
+        assert(filtered.is_some()==(present && mode==1)); if(filtered.is_some()) { assert(filtered.unwrap()==-7); } expect(log.borrow(),present as i32,31,-7); log.reset();
+        let answer:bool=false;
+        if(method) { answer=source.is_some_and<ValuePredicate>(predicate.borrow()); } else { answer=core::option::is_some_and<i32,ValuePredicate>(source,predicate.borrow()); }
+        assert(answer==(present && mode==1)); expect(log.borrow(),present as i32,31,-7); log.reset();
+        if(method) { answer=source.is_none_or<ValuePredicate>(predicate.borrow()); } else { answer=core::option::is_none_or<i32,ValuePredicate>(source,predicate.borrow()); }
+        assert(answer==(!present || mode==1)); expect(log.borrow(),present as i32,31,-7); log.reset(); mode+=1;
+    }
+    assert(source.is_some()==present); if(present) { assert(source.unwrap()==-7); }
+}
+
+fn results(method:bool,success:bool) {
+    let ids:[i32;8]=[777;8]; let inputs:[i64;8]=[888;8]; let log:Log=Log { ids:ids,inputs:inputs,used:0 };
+    let source:core::result::Result<i32,i64> =core::result::Err(FAILURE); if(success) { source=core::result::Ok(-7); }
+    let mapper:ValueMap=ValueMap { log:log.borrow(),enabled:success }; let error:ErrorMap=ErrorMap { log:log.borrow(),enabled:!success };
+    let chain:ResultChain=ResultChain { log:log.borrow(),enabled:success,success:false }; let recover:Recover=Recover { log:log.borrow(),enabled:!success,success:false };
+    let integer:RecoverValue=RecoverValue { log:log.borrow(),enabled:!success }; let predicate:ValuePredicate=ValuePredicate { log:log.borrow(),enabled:success,answer:false }; let error_predicate:ErrorPredicate=ErrorPredicate { log:log.borrow(),enabled:!success,answer:false };
+    let mapped:core::result::Result<u64,i64> =core::result::Err(0);
+    if(method) { mapped=source.map<u64,ValueMap>(mapper.borrow()); } else { mapped=core::result::map<i32,i64,u64,ValueMap>(source,mapper.borrow()); }
+    assert(mapped.is_ok()==success); if(success) { assert(mapped.unwrap()==WIDE); } else { assert(mapped.unwrap_err()==FAILURE); } expect(log.borrow(),success as i32,11,-7); log.reset();
+    let changed:core::result::Result<i32,u64> =core::result::Ok(0);
+    if(method) { changed=source.map_err<u64,ErrorMap>(error.borrow()); } else { changed=core::result::map_err<i32,i64,u64,ErrorMap>(source,error.borrow()); }
+    assert(changed.is_ok()==success); if(success) { assert(changed.unwrap()==-7); } else { assert(changed.unwrap_err()==WIDE); } expect(log.borrow(),(!success) as i32,12,FAILURE); log.reset();
+    let selected:u64=0;
+    if(method) { selected=source.map_or<u64,ValueMap>(eager(log.borrow()),mapper.borrow()); } else { selected=core::result::map_or<i32,i64,u64,ValueMap>(source,eager(log.borrow()),mapper.borrow()); }
+    let expected:u64=4294967297; if(success) { expected=WIDE; } assert(selected==expected); eager_trace(log.borrow(),success); log.reset();
+    if(method) { selected=source.map_or_else<u64,ErrorMap,ValueMap>(error.borrow(),mapper.borrow()); } else { selected=core::result::map_or_else<i32,i64,u64,ErrorMap,ValueMap>(source,error.borrow(),mapper.borrow()); }
+    assert(selected==WIDE); let event:i32=12; let input:i64=FAILURE; if(success) { event=11; input=-7; } expect(log.borrow(),1,event,input); log.reset();
+    let mode:i32=0; while(mode<2) {
+        chain.success=mode==1;
+        if(method) { mapped=source.and_then<u64,ResultChain>(chain.borrow()); } else { mapped=core::result::and_then<i32,i64,u64,ResultChain>(source,chain.borrow()); }
+        assert(mapped.is_ok()==(success && mode==1)); if(mapped.is_ok()) { assert(mapped.unwrap()==WIDE); } else { let code:i64=FAILURE; if(success) { code=-19; } assert(mapped.unwrap_err()==code); }
+        expect(log.borrow(),success as i32,14,-7); log.reset();
+        recover.success=mode==1;
+        if(method) { changed=source.or_else<u64,Recover>(recover.borrow()); } else { changed=core::result::or_else<i32,i64,u64,Recover>(source,recover.borrow()); }
+        assert(changed.is_ok()==(success || mode==1)); if(changed.is_ok()) { let value:i32=29; if(success) { value=-7; } assert(changed.unwrap()==value); } else { assert(changed.unwrap_err()==WIDE); }
+        expect(log.borrow(),(!success) as i32,15,FAILURE); log.reset(); mode+=1;
+    }
+    let unwrapped:i32=0;
+    if(method) { unwrapped=source.unwrap_or_else<RecoverValue>(integer.borrow()); } else { unwrapped=core::result::unwrap_or_else<i32,i64,RecoverValue>(source,integer.borrow()); }
+    let expected_int:i32=29; if(success) { expected_int=-7; } assert(unwrapped==expected_int); expect(log.borrow(),(!success) as i32,16,FAILURE); log.reset();
+    mode=0; while(mode<2) {
+        predicate.answer=mode==1; error_predicate.answer=mode==1; let answer:bool=false;
+        if(method) { answer=source.is_ok_and<ValuePredicate>(predicate.borrow()); } else { answer=core::result::is_ok_and<i32,i64,ValuePredicate>(source,predicate.borrow()); }
+        assert(answer==(success && mode==1)); expect(log.borrow(),success as i32,31,-7); log.reset();
+        if(method) { answer=source.is_err_and<ErrorPredicate>(error_predicate.borrow()); } else { answer=core::result::is_err_and<i32,i64,ErrorPredicate>(source,error_predicate.borrow()); }
+        assert(answer==(!success && mode==1)); expect(log.borrow(),(!success) as i32,32,FAILURE); log.reset(); mode+=1;
+    }
+    assert(source.is_ok()==success); if(success) { assert(source.unwrap()==-7); } else { assert(source.unwrap_err()==FAILURE); }
+}
+fn main() -> i32 { options(false,false); options(false,true); options(true,false); options(true,true); results(false,false); results(false,true); results(true,false); results(true,true); return 0; }

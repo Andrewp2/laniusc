@@ -1,6 +1,7 @@
 // Actual public ordinary facades. Scripted inner cursors own no backing;
 // resources, wide data and model campaigns have separate fixtures.
 module app::main;
+import core::function;
 import core::clone_values;
 import core::iter;
 import core::option;
@@ -38,7 +39,7 @@ pub impl core::iter::InnerRetirement<Inner,core::clone_values::Infallible> for R
 }
 struct Make { calls: i32, trace: &Trace }
 impl Make { fn borrow(&self) -> &Make { return self; } }
-pub impl core::iter::Mapper<i32,Inner> for Make {
+pub impl core::function::Mapper<i32,Inner> for Make {
     pub fn apply(&self, value: i32) -> Inner {
         let trace: &Trace = self.trace; trace.add(400+value); self.calls += 1;
         return Inner { id: value, length: value, position: 0, trace: trace };

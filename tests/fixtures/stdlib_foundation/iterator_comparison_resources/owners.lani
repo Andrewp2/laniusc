@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::string;
 import alloc::vec;
 import core::cmp;
@@ -63,19 +64,19 @@ impl PartialLookup { fn borrow(&self)->&PartialLookup{return self;} }
 impl OwnerOrder { fn borrow(&self)->&OwnerOrder{return self;} }
 impl Adjacent { fn borrow(&self)->&Adjacent{return self;} }
 fn lookup(left:Record<Payload>,right:Lookup){check_payload(left);assert(left.id%6==right.position&&right.flag.unwrap());}
-pub impl core::iter::Mapper<core::pair::Pair<Record<Payload>,Lookup>,bool> for EqualLookup{
+pub impl core::function::Mapper<core::pair::Pair<Record<Payload>,Lookup>,bool> for EqualLookup{
     pub fn apply(&self,pair:core::pair::Pair<Record<Payload>,Lookup>)->bool{lookup(pair.first,pair.second);self.context.custom+=1;return pair.first.key==pair.second.key;}
 }
 pub impl core::ordering::Comparator<Record<Payload>,Lookup> for OrderLookup{
     pub fn compare(&self,left:Record<Payload>,right:Lookup)->core::ordering::Ordering{lookup(left,right);self.context.custom+=1;return core::ordering::compare_i32(left.key,right.key);}
 }
-pub impl core::iter::Mapper<core::pair::Pair<Record<Payload>,Lookup>,core::cmp::PartialOrdering> for PartialLookup{
+pub impl core::function::Mapper<core::pair::Pair<Record<Payload>,Lookup>,core::cmp::PartialOrdering> for PartialLookup{
     pub fn apply(&self,pair:core::pair::Pair<Record<Payload>,Lookup>)->core::cmp::PartialOrdering{lookup(pair.first,pair.second);self.context.custom+=1;if(pair.second.position==1){return core::cmp::PartialOrdering::Unordered;}return core::cmp::PartialOrdering::Equal;}
 }
 pub impl core::ordering::Comparator<Record<Payload>,Record<Payload>> for OwnerOrder{
     pub fn compare(&self,left:Record<Payload>,right:Record<Payload>)->core::ordering::Ordering{check_payload(left);check_payload(right);self.context.custom+=1;return core::ordering::compare_i32(left.key,right.key);}
 }
-pub impl core::iter::Mapper<core::pair::Pair<Record<Payload>,Record<Payload>>,bool> for Adjacent{
+pub impl core::function::Mapper<core::pair::Pair<Record<Payload>,Record<Payload>>,bool> for Adjacent{
     pub fn apply(&self,pair:core::pair::Pair<Record<Payload>,Record<Payload>>)->bool{check_payload(pair.first);check_payload(pair.second);self.context.custom+=1;return pair.first.key<=pair.second.key;}
 }
 // Every owning Some first moves cleanup authority into a pre-reserved keeper.

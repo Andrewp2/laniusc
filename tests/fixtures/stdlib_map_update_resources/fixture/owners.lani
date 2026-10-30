@@ -1,4 +1,5 @@
 module fixture::owners;
+import core::function;
 import alloc::string;
 import alloc::vec;
 import core::cmp;
@@ -77,7 +78,7 @@ fn allocation(value:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,
     let result:core::result::Result<i32,Fault> =core::result::Err(Fault::Allocation(stage)); mark(98);
     return core::pair::Pair { first:value,second:result };
 }
-pub impl core::iter::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::result::Result<i32,Fault>>> for Grow {
+pub impl core::function::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::result::Result<i32,Fault>>> for Grow {
     pub fn apply(&self,owned:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>)
         -> core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::result::Result<i32,Fault>> {
         mark(66); self.calls+=1;
@@ -97,7 +98,7 @@ pub impl core::iter::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::
         mark(98); return core::pair::Pair { first:owned,second:result };
     }
 }
-pub impl core::iter::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>>> for Replace {
+pub impl core::function::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>>> for Replace {
     pub fn apply(&self,owned:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>)
         -> core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>> {
         mark(66); self.calls+=1; value(owned,2); replacement(self.replacement);

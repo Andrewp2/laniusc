@@ -1,5 +1,6 @@
 // Public-module admission and finite runtime contracts; no local adapter copy.
 module app::main;
+import core::function;
 import core::iter;
 import core::option;
 import core::result;
@@ -16,7 +17,7 @@ pub impl core::iter::Iterator<i32> for Source {
 }
 struct Running { calls: i32, total: i64, stop: i32 }
 impl Running { fn borrow(&self) -> &Running { return self; } }
-pub impl core::iter::Mapper<i32,core::option::Option<i64>> for Running {
+pub impl core::function::Mapper<i32,core::option::Option<i64>> for Running {
     pub fn apply(&self, value: i32) -> core::option::Option<i64> {
         self.calls += 1; self.total += value as i64;
         if (value == self.stop) { return core::option::None(); }
@@ -25,7 +26,7 @@ pub impl core::iter::Mapper<i32,core::option::Option<i64>> for Running {
 }
 struct Fallible { calls: i32, total: u64, stop: i32, fail: i32 }
 impl Fallible { fn borrow(&self) -> &Fallible { return self; } }
-pub impl core::iter::Mapper<i32,core::result::Result<core::option::Option<u64>,u64>> for Fallible {
+pub impl core::function::Mapper<i32,core::result::Result<core::option::Option<u64>,u64>> for Fallible {
     pub fn apply(&self, value: i32) -> core::result::Result<core::option::Option<u64>,u64> {
         self.calls += 1; self.total += value as u64;
         if (value == self.fail) { return core::result::Err(18446744073709551615); }

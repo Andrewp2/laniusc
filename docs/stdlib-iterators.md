@@ -68,6 +68,16 @@ behavior, allocation, cost and termination.
 Lanius `for` syntax retains its existing compiler lowering; declaring this trait
 does not automatically extend `for` to custom iterator types.
 
+## Shared callback home
+
+Current adapters and consumers use `core::function::Mapper<T,U>`, shared
+with [lazy Option/Result composition](stdlib-lazy-outcomes.md). The same
+import-free module supplies `Producer<T>` for argument-free callbacks.
+`core::iter` owns iteration-specific traits and supplies no Mapper alias.
+This changes the callback declaration path, not traversal or cleanup policy.
+Current migration checks are recorded in the lazy-outcome guide; older
+receipts here retain their original source/API scope.
+
 ## Double-ended traversal
 
 ```text

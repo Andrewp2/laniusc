@@ -1,5 +1,6 @@
 // Ordinary adapters with true empty Infallible retirement; test-only owners.
 module app::main;
+import core::function;
 import alloc::deque;
 import alloc::string;
 import alloc::vec;
@@ -189,7 +190,7 @@ pub impl<J> core::iter::Iterator<Row<J>> for Rows<J> {
 }
 struct Make<J> { audit:&Audit }
 impl<J> Make<J> { fn borrow(&self) -> &Make<J> { return self; } }
-pub impl<J> core::iter::Mapper<Row<J>,Inner<J>> for Make<J> {
+pub impl<J> core::function::Mapper<Row<J>,Inner<J>> for Make<J> {
     pub fn apply(&self,row:Row<J>) -> Inner<J> {
         mark(77); let audit:&Audit=self.audit; audit.maps+=1; release_label(row); mark(109); return row.inner;
     }

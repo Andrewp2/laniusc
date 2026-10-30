@@ -2,6 +2,7 @@
 // Methods borrow that owner; errors preserve contents, capacity and views.
 // Nested resources copy shallowly and require explicit application ownership.
 module alloc::vec;
+import core::function;
 import alloc::allocator;
 import core::clone;
 import core::cmp;
@@ -49,7 +50,7 @@ struct NaturalEquality<T> {}
 impl<T> NaturalEquality<T> {
     fn borrow(&self) -> &NaturalEquality<T> { return self; }
 }
-pub impl<T> core::iter::Mapper<core::pair::Pair<T,T>,bool> for NaturalEquality<T>
+pub impl<T> core::function::Mapper<core::pair::Pair<T,T>,bool> for NaturalEquality<T>
     where T: core::cmp::PartialEq<T> {
     pub fn apply(&self, values: core::pair::Pair<T,T>) -> bool {
         return T::partial_eq(values.first,values.second);
@@ -261,7 +262,7 @@ pub impl<T> Vec<T> {
     // or its backing through aliases, reenter, mutate inputs, or retain owners.
     // The call owns the unvisited suffix while self.length names the survivors.
     pub fn retain_destroy<P>(&self, predicate: &P) -> i32
-        where T: core::clone::Destroy<T>, P: core::iter::Mapper<T,bool> {
+        where T: core::clone::Destroy<T>, P: core::function::Mapper<T,bool> {
         let original: i32 = self.length;
         let slots: [T] = self.slots();
         let read: i32 = 0; self.length = 0;
@@ -279,7 +280,7 @@ pub impl<T> Vec<T> {
     // True consumes current; false retains it as the next representative.
     // Even zero-sized items receive every comparison and required destruction.
     pub fn dedup_by_destroy<P>(&self, same: &P) -> i32
-        where T: core::clone::Destroy<T>, P: core::iter::Mapper<core::pair::Pair<T,T>,bool> {
+        where T: core::clone::Destroy<T>, P: core::function::Mapper<core::pair::Pair<T,T>,bool> {
         let original: i32 = self.length;
         if (original < 2) { return 0; }
         let slots: [T] = self.slots();

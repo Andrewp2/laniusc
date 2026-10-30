@@ -2,6 +2,7 @@
 // Ten u64 words/step: before,present,value,width,finish-error,cached,after,
 // underlying front polls, underlying back polls, mapping callbacks.
 module app::main;
+import core::function;
 import core::io;
 import core::iter;
 import core::mem;
@@ -19,7 +20,7 @@ pub impl core::iter::DoubleEndedIterator<i32> for Probe { pub fn next_back(&self
 pub impl core::iter::ExactSizeIterator<i32> for Probe { pub fn remaining_count(&self) -> u64 { return (self.back-self.front) as u64; } }
 struct Scale { counts:&Counts }
 impl Scale { fn borrow(&self) -> &Scale { return self; } }
-pub impl core::iter::Mapper<i32,i32> for Scale { pub fn apply(&self,value:i32) -> i32 { let c:&Counts=self.counts; c.maps+=1; return value*3+7; } }
+pub impl core::function::Mapper<i32,i32> for Scale { pub fn apply(&self,value:i32) -> i32 { let c:&Counts=self.counts; c.maps+=1; return value*3+7; } }
 pub struct Encoded { value:u64, width:u64 }
 pub trait Encoder<T> { pub fn encode(&self,value:T) -> Encoded; }
 struct Integer {}

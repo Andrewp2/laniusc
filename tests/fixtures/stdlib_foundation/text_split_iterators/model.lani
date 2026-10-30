@@ -2,6 +2,7 @@
 // Output: Take fields, one source field, mapped remaining lengths/call count,
 // then every field from an independent copied leaf cursor.
 module app::main;
+import core::function;
 import core::io;
 import core::iter;
 import core::mem;
@@ -12,7 +13,7 @@ import std::stream;
 
 struct ByteCount { calls: u64 }
 impl ByteCount { fn borrow(&self) -> &ByteCount { return self; } }
-pub impl core::iter::Mapper<core::text::Text, i32> for ByteCount {
+pub impl core::function::Mapper<core::text::Text, i32> for ByteCount {
     pub fn apply(&self, value: core::text::Text) -> i32 {
         self.calls += 1;
         return value.byte_len();

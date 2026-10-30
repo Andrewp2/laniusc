@@ -1,6 +1,7 @@
 // Ordered map with AVL balancing and reusable indexed node storage.
 // Copies borrow nested resources; keep one active owner of the allocation.
 module alloc::tree_map;
+import core::function;
 import alloc::allocator;
 import core::cmp;
 import core::iter;
@@ -141,7 +142,7 @@ pub impl<K, V> TreeMap<K, V> {
     // this map through any alias or change key ordering through shared backing.
     // The query key remains caller-owned; only the stored value is replaced.
     pub fn update_value<M, R>(&self, key: K, update: &M) -> core::option::Option<R>
-        where K: core::cmp::Ord<K>, M: core::iter::Mapper<V, core::pair::Pair<V, R>> {
+        where K: core::cmp::Ord<K>, M: core::function::Mapper<V, core::pair::Pair<V, R>> {
         let index: i32 = self.find(key);
         if (index < 0) { return core::option::None(); }
         let nodes: [Node<K, V>] = self.nodes();

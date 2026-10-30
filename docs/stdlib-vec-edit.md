@@ -10,6 +10,10 @@ capability rejection. The migrated application passes all four groups/132 group
 cases. Earlier
 vector, transfer and sort-row receipts keep their original scope.
 
+The current Mapper path is `core::function::Mapper`. The
+[lazy-outcome migration](stdlib-lazy-outcomes.md) records a selected current
+regression separately; earlier receipts below keep their original source scope.
+
 ## Methods and order
 
 All five methods borrow the actual Vec owner and require
@@ -17,8 +21,8 @@ All five methods borrow the actual Vec owner and require
 
 | Method | Additional bound | Result and effect |
 | --- | --- | --- |
-| `retain_destroy<P>(&self, predicate: &P) -> i32` | `P: core::iter::Mapper<T,bool>` | Visit original items left to right; retain true items in order and immediately destroy false items. Return the removed count. |
-| `dedup_by_destroy<P>(&self, same: &P) -> i32` | `P: core::iter::Mapper<core::pair::Pair<T,T>,bool>` | Compare `(last retained, current)` left to right; true immediately destroys current, false retains it. Return the removed count. |
+| `retain_destroy<P>(&self, predicate: &P) -> i32` | `P: core::function::Mapper<T,bool>` | Visit original items left to right; retain true items in order and immediately destroy false items. Return the removed count. |
+| `dedup_by_destroy<P>(&self, same: &P) -> i32` | `P: core::function::Mapper<core::pair::Pair<T,T>,bool>` | Compare `(last retained, current)` left to right; true immediately destroys current, false retains it. Return the removed count. |
 | `dedup_destroy(&self) -> i32` | `T: core::cmp::PartialEq<T>` | Use the same deduplication engine with partial equality. |
 | `truncate_destroy(&self, length: i32) -> Result<i32,Error>` | None | Reject negative length with `Bounds`; otherwise destroy any removed tail from back to front. Return the resulting length. |
 | `clear_destroy(&self)` | None | Destroy all logical items from back to front, leaving an empty reusable vector. |

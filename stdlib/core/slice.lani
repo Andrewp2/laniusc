@@ -53,7 +53,7 @@ pub fn view_range<T>(values: [T], start: i32, count: i32) -> core::result::Resul
 
 // Exclude separators, retaining leading, adjacent and final empty segments.
 // Empty input yields one empty View. Construction never invokes the predicate;
-// iteration requires P:core::iter::Mapper<T,bool> through core::iter.
+// iteration requires P:core::function::Mapper<T,bool> through core::iter.
 pub fn split<T,P>(values: View<T>, predicate: &P) -> core::result::Result<Split<T,P>,ViewError> {
     if (!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
     let cursor: Split<T,P> = Split { values: values.values, predicate: predicate, position: values.start, end: values.start + values.length, done: false };
@@ -70,7 +70,7 @@ pub fn split_inclusive<T,P>(values: View<T>, predicate: &P) -> core::result::Res
 
 // Join adjacent elements while the predicate returns true; false starts the
 // next nonempty run. No equivalence law is needed. Iteration requires
-// P:core::iter::Mapper<core::pair::Pair<T,T>,bool>; construction invokes none.
+// P:core::function::Mapper<core::pair::Pair<T,T>,bool>; construction invokes none.
 pub fn chunk_by<T,P>(values: View<T>, predicate: &P) -> core::result::Result<ChunkBy<T,P>,ViewError> {
     if (!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
     let cursor: ChunkBy<T,P> = ChunkBy { values: values.values, predicate: predicate, position: values.start, end: values.start + values.length };

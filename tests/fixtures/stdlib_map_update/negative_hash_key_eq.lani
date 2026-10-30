@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::hash_map;
 import alloc::tree_map;
 import core::cmp;
@@ -8,7 +9,7 @@ import core::option;
 import core::pair;
 struct Callback { marker:i32 }
 impl Callback { fn borrow(&self) -> &Callback { return self; } }
-pub impl core::iter::Mapper<u64,core::pair::Pair<u64,bool>> for Callback {
+pub impl core::function::Mapper<u64,core::pair::Pair<u64,bool>> for Callback {
     pub fn apply(&self,value:u64) -> core::pair::Pair<u64,bool> { return core::pair::Pair { first:value,second:true }; }
 }
 struct Key { rank:i32 }

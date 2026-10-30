@@ -1,5 +1,6 @@
 // Raw slice cursors through the shared protocol; no allocation or destruction.
 module app::main;
+import core::function;
 import core::cmp;
 import core::iter;
 import core::mem;
@@ -12,7 +13,7 @@ import core::vec;
 struct Ends<T> { length: i32, first: core::option::Option<T>, last: core::option::Option<T> }
 struct Describe<T> { calls: i32 }
 impl<T> Describe<T> { fn borrow(&self) -> &Describe<T> { return self; } }
-pub impl<T> core::iter::Mapper<core::slice::View<T>, Ends<T>> for Describe<T> {
+pub impl<T> core::function::Mapper<core::slice::View<T>, Ends<T>> for Describe<T> {
     pub fn apply(&self, view: core::slice::View<T>) -> Ends<T> {
         self.calls += 1;
         let first: core::option::Option<T> = view.first();

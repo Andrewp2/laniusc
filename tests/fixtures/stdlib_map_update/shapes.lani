@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import alloc::hash_map;
 import alloc::tree_map;
 import core::iter;
@@ -8,17 +9,17 @@ import core::result;
 struct Unit {}
 struct Swap<T> { value:T,calls:i32 }
 impl<T> Swap<T> { fn borrow(&self) -> &Swap<T> { return self; } }
-pub impl<T> core::iter::Mapper<T,core::pair::Pair<T,T>> for Swap<T> {
+pub impl<T> core::function::Mapper<T,core::pair::Pair<T,T>> for Swap<T> {
     pub fn apply(&self,old:T) -> core::pair::Pair<T,T> { self.calls+=1; return core::pair::Pair { first:self.value,second:old }; }
 }
 struct UnitToBool { calls:i32 }
 impl UnitToBool { fn borrow(&self) -> &UnitToBool { return self; } }
-pub impl core::iter::Mapper<Unit,core::pair::Pair<Unit,bool>> for UnitToBool {
+pub impl core::function::Mapper<Unit,core::pair::Pair<Unit,bool>> for UnitToBool {
     pub fn apply(&self,old:Unit) -> core::pair::Pair<Unit,bool> { self.calls+=1; return core::pair::Pair { first:old,second:true }; }
 }
 struct BoolToUnit { calls:i32 }
 impl BoolToUnit { fn borrow(&self) -> &BoolToUnit { return self; } }
-pub impl core::iter::Mapper<bool,core::pair::Pair<bool,Unit>> for BoolToUnit {
+pub impl core::function::Mapper<bool,core::pair::Pair<bool,Unit>> for BoolToUnit {
     pub fn apply(&self,old:bool) -> core::pair::Pair<bool,Unit> { assert(!old); self.calls+=1; return core::pair::Pair { first:true,second:Unit {} }; }
 }
 fn hash_shapes() {

@@ -1,5 +1,6 @@
 // Bounded binary stdin summarized through generic borrowed slice segmentation.
 module app::main;
+import core::function;
 import alloc::io;
 import alloc::string;
 import alloc::vec;
@@ -95,12 +96,12 @@ fn read_failure(cause:alloc::io::ReadError) -> Failure {
 
 struct ByteEquals { value:u8 }
 impl ByteEquals { fn borrow(&self) -> &ByteEquals { return self; } }
-pub impl core::iter::Mapper<u8,bool> for ByteEquals {
+pub impl core::function::Mapper<u8,bool> for ByteEquals {
     pub fn apply(&self, value:u8) -> bool { return value == self.value; }
 }
 struct EqualBytes {}
 impl EqualBytes { fn borrow(&self) -> &EqualBytes { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for EqualBytes {
+pub impl core::function::Mapper<core::pair::Pair<u8,u8>,bool> for EqualBytes {
     pub fn apply(&self, values:core::pair::Pair<u8,u8>) -> bool { return values.first == values.second; }
 }
 

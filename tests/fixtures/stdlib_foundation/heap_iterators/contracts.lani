@@ -1,6 +1,7 @@
 // Read-only cursor composition over small heaps. Output order is observed,
 // never prescribed: the host checks complete item multisets independently.
 module app::main;
+import core::function;
 import alloc::binary_heap;
 import core::cmp;
 import core::io;
@@ -14,7 +15,7 @@ struct Payload { priority: i64, wide: u64, identity: i32, bytes: [u8; 3], flag: 
 struct Stamp { identity: i32, wide: u64 }
 struct Project { calls: i32 }
 impl Project { fn borrow(&self) -> &Project { return self; } }
-pub impl core::iter::Mapper<Payload, Stamp> for Project {
+pub impl core::function::Mapper<Payload, Stamp> for Project {
     pub fn apply(&self, item: Payload) -> Stamp {
         self.calls += 1;
         return Stamp { identity: item.identity, wide: item.wide };

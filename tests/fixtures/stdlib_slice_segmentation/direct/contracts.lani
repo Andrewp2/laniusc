@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import core::iter;
 import core::mem;
 import core::option;
@@ -7,10 +8,10 @@ import core::result;
 import core::slice;
 struct Unary { calls:i32, log:[i32], delimiter:u8 }
 impl Unary { fn borrow(&self) -> &Unary { return self; } }
-pub impl core::iter::Mapper<u8,bool> for Unary { pub fn apply(&self,value:u8) -> bool { self.log[self.calls+1]=value as i32; self.calls+=1; return value==self.delimiter; } }
+pub impl core::function::Mapper<u8,bool> for Unary { pub fn apply(&self,value:u8) -> bool { self.log[self.calls+1]=value as i32; self.calls+=1; return value==self.delimiter; } }
 struct Adjacent { calls:i32, left:[i32], right:[i32], mode:i32 }
 impl Adjacent { fn borrow(&self) -> &Adjacent { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for Adjacent {
+pub impl core::function::Mapper<core::pair::Pair<u8,u8>,bool> for Adjacent {
     pub fn apply(&self,values:core::pair::Pair<u8,u8>) -> bool { self.left[self.calls+1]=values.first as i32; self.right[self.calls+1]=values.second as i32; self.calls+=1; if(self.mode==0) { return values.first==values.second; } return values.second as i32==(values.first as i32)+1; }
 }
 fn view(values:[u8],start:i32,length:i32) -> core::slice::View<u8> { return core::slice::View { values:values,start:start,length:length }; }

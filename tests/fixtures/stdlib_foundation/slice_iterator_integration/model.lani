@@ -1,6 +1,7 @@
 // Three-u64 commands: length, positive width, chunk quota. Return each mapped
 // view summary, terminal None, remaining cursor/quota state and callback count.
 module app::main;
+import core::function;
 import core::io;
 import core::iter;
 import core::option;
@@ -11,7 +12,7 @@ import std::stream;
 struct Summary { length: i32, first: i32, last: i32, sum: i64 }
 struct Describe { calls: i32 }
 impl Describe { fn borrow(&self) -> &Describe { return self; } }
-pub impl core::iter::Mapper<core::slice::View<i32>, Summary> for Describe {
+pub impl core::function::Mapper<core::slice::View<i32>, Summary> for Describe {
     pub fn apply(&self, view: core::slice::View<i32>) -> Summary {
         self.calls += 1;
         let length: i32 = view.len(); assert(length > 0 && length <= 6);

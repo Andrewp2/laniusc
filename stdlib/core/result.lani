@@ -1,12 +1,15 @@
-// Recoverable results: Ok carries the value, Err the error. Every operation
-// takes the result by value and leaves the caller's copy unchanged. Each one
-// exists as a free function and as a method. Membership needs PartialEq on the
-// payload it compares. unwrap and unwrap_err panic on the other variant;
-// the *_or forms take an explicit fallback and never panic.
+// Recoverable results: Ok carries the value, Err the error. Operations take
+// the wrapper by value and do not rewrite the caller's wrapper descriptor.
+// Values are shallow: a selected transformation callback may affect referenced
+// backing under the application's explicit ownership-transfer policy.
+// Each operation exists as a free function and a method. Membership needs
+// PartialEq on the payload it compares. unwrap and unwrap_err panic on the
+// other variant; unwrap_or and unwrap_err_or select explicit fallback values.
 
 module core::result;
 
 import core::cmp;
+import core::function;
 import core::panic;
 
 pub enum Result<T, E> {
@@ -56,6 +59,69 @@ pub fn and<T,E,U>(value: Result<T,E>, next: Result<U,E>) -> Result<U,E> {
     return match(value) { Ok(_)->next, Err(error)->Err(error) };
 }
 
+// Selected callbacks run once; skipped callbacks never run. Inputs and
+// outputs remain shallow: account for discarded owners and deactivate older
+// aliases after any explicit transfer into a transformation callback.
+pub fn map<T,E,U,M>(value:Result<T,E>, mapper:&M) -> Result<U,E>
+    where M:core::function::Mapper<T,U> {
+    if (is_err(value)) { let error:E = unwrap_err(value); return Err(error); }
+    let inner:T = unwrap(value); let mapped:U = mapper.apply(inner);
+    return Ok(mapped);
+}
+
+pub fn map_err<T,E,F,M>(value:Result<T,E>, mapper:&M) -> Result<T,F>
+    where M:core::function::Mapper<E,F> {
+    if (is_ok(value)) { let inner:T = unwrap(value); return Ok(inner); }
+    let error:E = unwrap_err(value); let mapped:F = mapper.apply(error);
+    return Err(mapped);
+}
+
+// fallback is evaluated before entry even when Ok selects the mapper.
+pub fn map_or<T,E,U,M>(value:Result<T,E>, fallback:U, mapper:&M) -> U
+    where M:core::function::Mapper<T,U> {
+    if (is_err(value)) { return fallback; }
+    let inner:T = unwrap(value); return mapper.apply(inner);
+}
+
+pub fn map_or_else<T,E,U,D,M>(value:Result<T,E>, fallback:&D, mapper:&M) -> U
+    where D:core::function::Mapper<E,U>, M:core::function::Mapper<T,U> {
+    if (is_err(value)) { let error:E = unwrap_err(value); return fallback.apply(error); }
+    let inner:T = unwrap(value); return mapper.apply(inner);
+}
+
+pub fn and_then<T,E,U,M>(value:Result<T,E>, mapper:&M) -> Result<U,E>
+    where M:core::function::Mapper<T,Result<U,E>> {
+    if (is_err(value)) { let error:E = unwrap_err(value); return Err(error); }
+    let inner:T = unwrap(value); return mapper.apply(inner);
+}
+
+pub fn or_else<T,E,F,M>(value:Result<T,E>, fallback:&M) -> Result<T,F>
+    where M:core::function::Mapper<E,Result<T,F>> {
+    if (is_ok(value)) { let inner:T = unwrap(value); return Ok(inner); }
+    let error:E = unwrap_err(value); return fallback.apply(error);
+}
+
+pub fn unwrap_or_else<T,E,M>(value:Result<T,E>, fallback:&M) -> T
+    where M:core::function::Mapper<E,T> {
+    if (is_ok(value)) { return unwrap(value); }
+    let error:E = unwrap_err(value); return fallback.apply(error);
+}
+
+// Both predicates only observe call-scoped borrowed descriptors. They must
+// not mutate or retire represented resources, or retain those descriptors
+// beyond the callback. Independent scalar observations are allowed.
+pub fn is_ok_and<T,E,P>(value:Result<T,E>, predicate:&P) -> bool
+    where P:core::function::Mapper<T,bool> {
+    if (is_err(value)) { return false; }
+    let inner:T = unwrap(value); return predicate.apply(inner);
+}
+
+pub fn is_err_and<T,E,P>(value:Result<T,E>, predicate:&P) -> bool
+    where P:core::function::Mapper<E,bool> {
+    if (is_ok(value)) { return false; }
+    let error:E = unwrap_err(value); return predicate.apply(error);
+}
+
 pub impl<T, E> Result<T, E> {
     pub fn is_ok(self) -> bool {
         return match (self) { Ok(_) -> true, Err(_) -> false };
@@ -95,6 +161,37 @@ pub impl<T, E> Result<T, E> {
 
     pub fn and<U>(self, next: Result<U,E>) -> Result<U,E> {
         return match(self) { Ok(_)->next, Err(error)->Err(error) };
+    }
+
+    pub fn map<U,M>(self, mapper:&M) -> Result<U,E> where M:core::function::Mapper<T,U> {
+        return core::result::map<T,E,U,M>(self,mapper);
+    }
+    pub fn map_err<F,M>(self, mapper:&M) -> Result<T,F> where M:core::function::Mapper<E,F> {
+        return core::result::map_err<T,E,F,M>(self,mapper);
+    }
+    pub fn map_or<U,M>(self, fallback:U, mapper:&M) -> U where M:core::function::Mapper<T,U> {
+        return core::result::map_or<T,E,U,M>(self,fallback,mapper);
+    }
+    pub fn map_or_else<U,D,M>(self, fallback:&D, mapper:&M) -> U
+        where D:core::function::Mapper<E,U>, M:core::function::Mapper<T,U> {
+        return core::result::map_or_else<T,E,U,D,M>(self,fallback,mapper);
+    }
+    pub fn and_then<U,M>(self, mapper:&M) -> Result<U,E>
+        where M:core::function::Mapper<T,Result<U,E>> {
+        return core::result::and_then<T,E,U,M>(self,mapper);
+    }
+    pub fn or_else<F,M>(self, fallback:&M) -> Result<T,F>
+        where M:core::function::Mapper<E,Result<T,F>> {
+        return core::result::or_else<T,E,F,M>(self,fallback);
+    }
+    pub fn unwrap_or_else<M>(self, fallback:&M) -> T where M:core::function::Mapper<E,T> {
+        return core::result::unwrap_or_else<T,E,M>(self,fallback);
+    }
+    pub fn is_ok_and<P>(self, predicate:&P) -> bool where P:core::function::Mapper<T,bool> {
+        return core::result::is_ok_and<T,E,P>(self,predicate);
+    }
+    pub fn is_err_and<P>(self, predicate:&P) -> bool where P:core::function::Mapper<E,bool> {
+        return core::result::is_err_and<T,E,P>(self,predicate);
     }
 }
 

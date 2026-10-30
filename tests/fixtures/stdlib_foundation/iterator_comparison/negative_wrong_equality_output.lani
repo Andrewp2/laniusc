@@ -1,9 +1,10 @@
 module app::main;
+import core::function;
 import core::iter;
 import core::pair;
 struct Wrong {}
 impl Wrong { fn borrow(&self) -> &Wrong { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32,u64>,i32> for Wrong {
+pub impl core::function::Mapper<core::pair::Pair<i32,u64>,i32> for Wrong {
     pub fn apply(&self,pair:core::pair::Pair<i32,u64>) -> i32 { return pair.first; }
 }
 fn main() -> i32 {

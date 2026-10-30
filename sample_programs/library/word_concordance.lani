@@ -1,5 +1,6 @@
 // UTF-8 words -> sorted borrowed keys with owned byte-position vectors.
 module app::main;
+import core::function;
 import alloc::io;
 import alloc::string;
 import alloc::tree_map;
@@ -20,7 +21,7 @@ import std::stream;
 
 struct AppendPosition { position:u64 }
 impl AppendPosition { fn borrow(&self) -> &AppendPosition { return self; } }
-pub impl core::iter::Mapper<alloc::vec::Vec<u64>,core::pair::Pair<alloc::vec::Vec<u64>,Result<i32,alloc::vec::Error>>> for AppendPosition {
+pub impl core::function::Mapper<alloc::vec::Vec<u64>,core::pair::Pair<alloc::vec::Vec<u64>,Result<i32,alloc::vec::Error>>> for AppendPosition {
     pub fn apply(&self, positions:alloc::vec::Vec<u64>) -> core::pair::Pair<alloc::vec::Vec<u64>,Result<i32,alloc::vec::Error>> {
         let added:Result<i32,alloc::vec::Error> = positions.try_push(self.position);
         // Always restore the latest descriptor, including on allocation error.

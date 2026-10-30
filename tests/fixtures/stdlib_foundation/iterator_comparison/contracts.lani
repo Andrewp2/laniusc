@@ -1,4 +1,5 @@
 module app::main;
+import core::function;
 import core::cmp;
 import core::f32;
 import core::f64;
@@ -43,7 +44,7 @@ fn partial(value:core::cmp::PartialOrdering) -> i32 {
 fn truth(value:bool) -> i32 { if(value) { return 0; } return 9; }
 struct Equal { calls:i32, log:&Log }
 impl Equal { fn borrow(&self) -> &Equal { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,bool> for Equal {
+pub impl core::function::Mapper<core::pair::Pair<i32,i32>,bool> for Equal {
     pub fn apply(&self,pair:core::pair::Pair<i32,i32>) -> bool { self.calls+=1; let log:&Log=self.log; log.add(1000+(pair.first as i64)*10+(pair.second as i64)); return pair.first==pair.second; }
 }
 struct Compare { calls:i32, reverse:bool, log:&Log }
@@ -57,7 +58,7 @@ pub impl core::ordering::Comparator<i32,i32> for Compare {
 }
 struct Part { calls:i32, log:&Log }
 impl Part { fn borrow(&self) -> &Part { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,core::cmp::PartialOrdering> for Part {
+pub impl core::function::Mapper<core::pair::Pair<i32,i32>,core::cmp::PartialOrdering> for Part {
     pub fn apply(&self,pair:core::pair::Pair<i32,i32>) -> core::cmp::PartialOrdering {
         self.calls+=1; let log:&Log=self.log; log.add(1000+(pair.first as i64)*10+(pair.second as i64));
         if(pair.first==9 || pair.second==9) { return core::cmp::PartialOrdering::Unordered; }
@@ -67,7 +68,7 @@ pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,core::cmp::PartialOrdering
 }
 struct Adjacent { calls:i32, reverse:bool, strict:bool, log:&Log }
 impl Adjacent { fn borrow(&self) -> &Adjacent { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,bool> for Adjacent {
+pub impl core::function::Mapper<core::pair::Pair<i32,i32>,bool> for Adjacent {
     pub fn apply(&self,pair:core::pair::Pair<i32,i32>) -> bool {
         self.calls+=1; let log:&Log=self.log; log.add(1000+(pair.first as i64)*10+(pair.second as i64));
         if(self.reverse) { if(self.strict) { return pair.first>pair.second; } return pair.first>=pair.second; }
@@ -130,7 +131,7 @@ fn pairwise_empty_equal_mismatch_and_prefix_effects() {
 
 struct Identity { calls:i32, log:&Log }
 impl Identity { fn borrow(&self) -> &Identity { return self; } }
-pub impl core::iter::Mapper<i32,i32> for Identity {
+pub impl core::function::Mapper<i32,i32> for Identity {
     pub fn apply(&self,value:i32) -> i32 { self.calls+=1; let log:&Log=self.log; log.add(2000+(value as i64)); return value; }
 }
 fn aliases_current_remainders_and_adapter_composition() {
@@ -230,21 +231,21 @@ fn record_key(value:Record) -> i32 { let words:[u64;2]=value.payload.unwrap().un
 fn lookup_key(value:Key) -> i32 { let words:[i64;2]=value.payload.unwrap().unwrap_err(); assert(words[0]==-9223372036854775808 && words[1]==4294967297); return value.rank; }
 struct RecordEq { calls:i32 }
 impl RecordEq { fn borrow(&self) -> &RecordEq { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<Record,Key>,bool> for RecordEq { pub fn apply(&self,pair:core::pair::Pair<Record,Key>) -> bool { self.calls+=1; return record_key(pair.first)==lookup_key(pair.second); } }
+pub impl core::function::Mapper<core::pair::Pair<Record,Key>,bool> for RecordEq { pub fn apply(&self,pair:core::pair::Pair<Record,Key>) -> bool { self.calls+=1; return record_key(pair.first)==lookup_key(pair.second); } }
 struct RecordCmp { calls:i32 }
 impl RecordCmp { fn borrow(&self) -> &RecordCmp { return self; } }
 pub impl core::ordering::Comparator<Record,Key> for RecordCmp { pub fn compare(&self,left:Record,right:Key) -> core::ordering::Ordering { self.calls+=1; return core::ordering::compare_i32(record_key(left),lookup_key(right)); } }
 struct RecordPartial { calls:i32 }
 impl RecordPartial { fn borrow(&self) -> &RecordPartial { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<Record,Key>,core::cmp::PartialOrdering> for RecordPartial {
+pub impl core::function::Mapper<core::pair::Pair<Record,Key>,core::cmp::PartialOrdering> for RecordPartial {
     pub fn apply(&self,pair:core::pair::Pair<Record,Key>) -> core::cmp::PartialOrdering { self.calls+=1; let left:i32=record_key(pair.first); let right:i32=lookup_key(pair.second); if(left==4) { return core::cmp::PartialOrdering::Unordered; } assert(left==right); return core::cmp::PartialOrdering::Equal; }
 }
 struct RecordAdj { calls:i32 }
 impl RecordAdj { fn borrow(&self) -> &RecordAdj { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<Record,Record>,bool> for RecordAdj { pub fn apply(&self,pair:core::pair::Pair<Record,Record>) -> bool { self.calls+=1; return record_key(pair.first)<=record_key(pair.second); } }
+pub impl core::function::Mapper<core::pair::Pair<Record,Record>,bool> for RecordAdj { pub fn apply(&self,pair:core::pair::Pair<Record,Record>) -> bool { self.calls+=1; return record_key(pair.first)<=record_key(pair.second); } }
 struct OptionalEq { calls:i32, absent:i32 }
 impl OptionalEq { fn borrow(&self) -> &OptionalEq { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<core::option::Option<i32>,core::option::Option<i32>>,bool> for OptionalEq {
+pub impl core::function::Mapper<core::pair::Pair<core::option::Option<i32>,core::option::Option<i32>>,bool> for OptionalEq {
     pub fn apply(&self,pair:core::pair::Pair<core::option::Option<i32>,core::option::Option<i32>>) -> bool { self.calls+=1; if(pair.first.is_none()) { self.absent+=1; return pair.second.is_none(); } return pair.second.is_some() && pair.first.unwrap()==pair.second.unwrap(); }
 }
 fn heterogeneous_compound_items_and_some_none() {
