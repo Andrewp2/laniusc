@@ -435,7 +435,8 @@ inductive AssignR (env : FrontEnv) (scope : List Local) (e : CTree) : MStmt → 
       kidsOf (kid (kid e 0) 1) ≠ [] → nodeProd (kid (kid e 0) 1) ≠ pAssignSet → Peel (kid (kid e 0) 0) target →
       CompoundR env scope target (nodeProd (kid (kid e 0) 1)) (kid (kid (kid e 0) 1) 1) m → AssignR env scope e m
   | call {pf : CTree} {m : MStmt} : nodeProd e = pExpr → nodeProd (kid e 0) = pAssign →
-      nodeProd (kid (kid e 0) 1) = pAssignEnd → Peel (kid (kid e 0) 0) pf → CallStmtR env scope pf m →
+      nodeProd (kid (kid e 0) 1) = pAssignEnd → kidsOf (kid (kid e 0) 1) = [] → Peel (kid (kid e 0) 0) pf →
+      CallStmtR env scope pf m →
       AssignR env scope e m
 
 theorem assignment_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {e : CTree} {m : MStmt}
@@ -459,14 +460,17 @@ theorem assignment_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {e :
       rw [hp] at h
       exact .compound c.1 c.2.1 ((hasKids_iff _).1 c.2.2.1) c.2.2.2 (peel_sound hp) (compoundOf_sound h)
   split at h
-  · rename_i _ _ c
+  · rename_i _ c2 c
     simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
+    have kn : kidsOf (kid (kid e 0) 1) = [] := Classical.byContradiction fun hne => c2 (by
+      simp only [Bool.and_eq_true, decide_eq_true_eq]
+      exact ⟨⟨⟨c.1, c.2.1⟩, (hasKids_iff _).2 hne⟩, by rw [c.2.2]; decide⟩)
     cases hp : peel fuel (kid (kid e 0) 0) with
     | none => rw [hp] at h; cases h
     | some pf =>
       rw [hp] at h
       have pe := peel_sound hp
-      exact .call c.1 c.2.1 c.2.2 pe (callStmt_sound (peel_postfix pe) h)
+      exact .call c.1 c.2.1 c.2.2 kn pe (callStmt_sound (peel_postfix pe) h)
   cases h
 
 /-! ## Statement lists -/
