@@ -18,13 +18,14 @@ structure DataEq (s t : State) : Prop where
   registers : s.registers = t.registers
   rip : s.rip = t.rip
   memory : s.memory = t.memory
+  xmm : s.xmm = t.xmm
 
-theorem DataEq.refl (s : State) : DataEq s s := ⟨rfl, rfl, rfl⟩
+theorem DataEq.refl (s : State) : DataEq s s := ⟨rfl, rfl, rfl, rfl⟩
 
-theorem DataEq.symm (h : DataEq s t) : DataEq t s := ⟨h.registers.symm, h.rip.symm, h.memory.symm⟩
+theorem DataEq.symm (h : DataEq s t) : DataEq t s := ⟨h.registers.symm, h.rip.symm, h.memory.symm, h.xmm.symm⟩
 
 theorem DataEq.trans (h : DataEq s t) (h' : DataEq t u) : DataEq s u :=
-  ⟨h.registers.trans h'.registers, h.rip.trans h'.rip, h.memory.trans h'.memory⟩
+  ⟨h.registers.trans h'.registers, h.rip.trans h'.rip, h.memory.trans h'.memory, h.xmm.trans h'.xmm⟩
 
 /-- The flag bits that condition codes read (CF, PF, ZF, SF, OF) agree. -/
 def CondEq (f g : BitVec 64) : Prop := ∀ code, condition f code = condition g code
@@ -38,7 +39,9 @@ def Instruction.readsFlags : Instruction → Bool
   | .shift64 _ _ | .signExtendDividend32 | .signExtendDividend64 | .divide32 _ _ | .divide64 _ _
   | .alu32 _ _ _ | .alu64 _ _ _ | .compare64 _ _ | .compare32 _ _ | .test32 _ _ | .test64 _ _
   | .signExtend32 _ _ | .zeroExtendByte _ _ | .address64 _ _ _ _ _ | .ripRelative _ _ | .jump _
-  | .call _ | .returnNear => false
+  | .call _ | .returnNear
+  | .moveToXmm _ _ _ | .moveFromXmm _ _ _ | .sseArith _ _ _ _ | .sseCompare _ _ _ _ | .convertInt _ _ _ _
+  | .convertFloat _ _ _ => false
 
 /-- Instructions after which the condition-code flags depend only on the operands. -/
 def Instruction.setsFlags : Instruction → Bool
@@ -49,7 +52,9 @@ def Instruction.setsFlags : Instruction → Bool
   | .multiply32 _ _ | .multiply64 _ _ | .negate32 _ | .negate64 _ | .shift32 _ _
   | .shift64 _ _ | .signExtendDividend32 | .signExtendDividend64 | .divide32 _ _ | .divide64 _ _
   | .signExtend32 _ _ | .setCondition _ _ | .zeroExtendByte _ _ | .address64 _ _ _ _ _
-  | .ripRelative _ _ | .branch _ _ | .jump _ | .call _ | .returnNear => false
+  | .ripRelative _ _ | .branch _ _ | .jump _ | .call _ | .returnNear
+  | .moveToXmm _ _ _ | .moveFromXmm _ _ _ | .sseArith _ _ _ _ | .sseCompare _ _ _ _ | .convertInt _ _ _ _
+  | .convertFloat _ _ _ => false
 
 /-- Some bytes loaded at rip decode to `instruction` of `size` bytes. -/
 def DecodesAt (s : State) (instruction : Instruction) (size : Nat) : Prop :=
@@ -106,6 +111,12 @@ def Results : Instruction → Nat → State → State → Prop
   | .jump disp, k, s, a => a = s.jump disp k
   | .call disp, k, s, a => a = s.call disp k
   | .returnNear, k, s, a => k = k ∧ a = s.returnNear
+  | .moveToXmm w d src, k, s, a => a = s.moveToXmm w d src k
+  | .moveFromXmm w d src, k, s, a => a = s.moveFromXmm w d src k
+  | .sseArith double op d src, k, s, a => a = s.sseArith double op d src k
+  | .sseCompare double p d src, k, s, a => a = s.sseCompare double p d src k
+  | .convertInt double w d src, k, s, a => a = s.convertInt double w d src k
+  | .convertFloat fromDouble d src, k, s, a => a = s.convertFloat fromDouble d src k
 
 theorem execute_results (i : Instruction) (k : Nat) (s : State) (nonDivision : i.isDivision = false) :
     Results i k s (execute i k s) := by
@@ -180,8 +191,9 @@ theorem Alu.flags_cond (operation : Alu) (b1 b2 : BitVec 64) (left right : BitVe
 
 /-- DIV and IDIV leave no choice in the quotient and remainder they write. -/
 theorem DivisionSuccess.unique {R : Register → BitVec 64} {P : Address} {M : Memory} {F G : BitVec 64}
-    (one : DivisionSuccess width signed ⟨R, P, M, F⟩ divisor q r)
-    (two : DivisionSuccess width signed ⟨R, P, M, G⟩ divisor q' r') :
+    {X : Fin 16 → BitVec 64}
+    (one : DivisionSuccess width signed ⟨R, P, M, F, X⟩ divisor q r)
+    (two : DivisionSuccess width signed ⟨R, P, M, G, X⟩ divisor q' r') :
     q.setWidth width = q'.setWidth width ∧ r.setWidth width = r'.setWidth width := by
   obtain ⟨-, -, one⟩ := one
   obtain ⟨-, -, two⟩ := two
@@ -197,48 +209,48 @@ their flags, provided the flags a condition code reads agree whenever the
 instruction reads them. -/
 theorem Results.dataEq {i : Instruction} {k : Nat} (same : DataEq s t) (ra : Results i k s a)
     (rb : Results i k t b) (reads : i.readsFlags = true → CondEq s.flags t.flags) : DataEq a b := by
-  obtain ⟨R, P, M, F⟩ := s
-  obtain ⟨R', P', M', G⟩ := t
-  obtain ⟨hR, hP, hM⟩ := same
-  simp only at hR hP hM
-  subst hR hP hM
+  obtain ⟨R, P, M, F, X⟩ := s
+  obtain ⟨R', P', M', G, X'⟩ := t
+  obtain ⟨hR, hP, hM, hX⟩ := same
+  simp only at hR hP hM hX
+  subst hR hP hM hX
   cases i
   case branch code disp =>
     simp only [Results] at ra rb
     subst ra rb
     have := reads rfl code
-    exact ⟨rfl, by simp only [State.branch]; rw [this], rfl⟩
+    exact ⟨rfl, by simp only [State.branch]; rw [this], rfl, rfl⟩
   case setCondition code d =>
     simp only [Results] at ra rb
     subst ra rb
     have := reads rfl code
-    exact ⟨by simp only [State.setCondition]; rw [this], rfl, rfl⟩
+    exact ⟨by simp only [State.setCondition]; rw [this], rfl, rfl, rfl⟩
   case divide32 signed d =>
     obtain ⟨q, r, f, one, rfl⟩ := ra
     obtain ⟨q', r', f', two, rfl⟩ := rb
     obtain ⟨hq, hr⟩ := one.unique two
-    exact ⟨by simp only [State.divide]; rw [hq, hr], rfl, rfl⟩
+    exact ⟨by simp only [State.divide]; rw [hq, hr], rfl, rfl, rfl⟩
   case divide64 signed d =>
     obtain ⟨q, r, f, one, rfl⟩ := ra
     obtain ⟨q', r', f', two, rfl⟩ := rb
     obtain ⟨hq, hr⟩ := one.unique two
-    exact ⟨by simp only [State.divide]; rw [hq, hr], rfl, rfl⟩
+    exact ⟨by simp only [State.divide]; rw [hq, hr], rfl, rfl, rfl⟩
   case returnNear =>
     obtain ⟨-, rfl⟩ := ra
     obtain ⟨-, rfl⟩ := rb
-    exact ⟨rfl, rfl, rfl⟩
+    exact ⟨rfl, rfl, rfl, rfl⟩
   all_goals first
-    | (simp only [Results] at ra rb; subst ra rb; exact ⟨rfl, rfl, rfl⟩)
-    | (obtain ⟨f, rfl⟩ := ra; obtain ⟨f', rfl⟩ := rb; exact ⟨rfl, rfl, rfl⟩)
+    | (simp only [Results] at ra rb; subst ra rb; exact ⟨rfl, rfl, rfl, rfl⟩)
+    | (obtain ⟨f, rfl⟩ := ra; obtain ⟨f', rfl⟩ := rb; exact ⟨rfl, rfl, rfl, rfl⟩)
 
 /-- After CMP, TEST, SUB or an ALU operation the condition codes agree. -/
 theorem Results.condEq {i : Instruction} {k : Nat} (same : DataEq s t) (ra : Results i k s a)
     (rb : Results i k t b) (sets : i.setsFlags = true) : CondEq a.flags b.flags := by
-  obtain ⟨R, P, M, F⟩ := s
-  obtain ⟨R', P', M', G⟩ := t
-  obtain ⟨hR, hP, hM⟩ := same
-  simp only at hR hP hM
-  subst hR hP hM
+  obtain ⟨R, P, M, F, X⟩ := s
+  obtain ⟨R', P', M', G, X'⟩ := t
+  obtain ⟨hR, hP, hM, hX⟩ := same
+  simp only at hR hP hM hX
+  subst hR hP hM hX
   cases i
   case subtract64 d src =>
     simp only [Results] at ra rb

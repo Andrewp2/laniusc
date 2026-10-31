@@ -14,6 +14,8 @@ structure State where
   rip : Address
   memory : Memory
   flags : BitVec 64
+  /-- The low 64 bits of xmm0-xmm15 (`Sse.lean`: no instruction modeled reads the high 64). -/
+  xmm : Fin 16 → BitVec 64 := fun _ => 0
 
 theorem offset_ne (address : Address) (left right : Nat)
     (leftBound : left < 2 ^ 64) (rightBound : right < 2 ^ 64) (different : left ≠ right) :

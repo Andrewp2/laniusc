@@ -199,6 +199,78 @@ theorem escapedForm_reads (rex : X86.Register.Rex) (present : Bool) : Reads (esc
     · simp at h
 
 
+theorem sseForm_reads (p : Nat) (rex : X86.Register.Rex) : Reads (sseForm p rex) 0 := by
+  intro bytes x k h
+  rcases bytes with _ | ⟨e, _ | ⟨o, _ | ⟨m, rest⟩⟩⟩
+  · simp [sseForm] at h
+  · simp [sseForm] at h
+  · simp [sseForm] at h
+  have h0 := h
+  simp only [sseForm] at h
+  split at h
+  · cases h
+  rename_i bad
+  by_cases c194 : o.toNat = 194
+  · rcases rest with _ | ⟨q, rest⟩
+    · split at h <;> simp_all
+    · have hk : k = 4 := by
+        split at h
+        · split at h <;> simp_all
+        · split at h
+          · simp_all
+          · split at h
+            · simp_all
+            · simp only [c194] at h
+              cases hp : SsePredicate.ofImm? q.toNat <;> simp_all
+      subst hk
+      refine ⟨by omega, by simp, fun t => ?_⟩
+      rw [← h0]
+      simp [sseForm]
+  · have hk : k = 3 := by
+      simp only [c194, if_false] at h
+      repeat' (split at h)
+      all_goals first
+        | (simp at h; omega)
+        | (simp at h; done)
+        | (cases ha : SseArith.ofOpcode? o.toNat <;> simp_all)
+    subst hk
+    refine ⟨by omega, by simp, fun t => ?_⟩
+    rw [← h0]
+    simp [sseForm, c194]
+
+theorem sseDecode_reads (p : Nat) : Reads (sseDecode p) 1 := by
+  intro bytes x k h
+  rcases bytes with _ | ⟨second, rest⟩
+  · simp [sseDecode] at h
+  cases hr : X86.Register.Rex.decode? second.toNat with
+  | some rex =>
+    cases inner : sseForm p rex rest with
+    | none => simp [sseDecode, hr, inner] at h
+    | some pair =>
+      obtain ⟨y, j⟩ := pair
+      simp [sseDecode, hr, inner] at h
+      obtain ⟨rfl, rfl⟩ := h
+      obtain ⟨-, high, take⟩ := sseForm_reads p rex rest y j inner
+      simp only [Nat.sub_zero] at high take
+      refine ⟨by omega, by simp; omega, fun t => ?_⟩
+      simp [sseDecode, hr, take t]
+  | none =>
+    cases inner : sseForm p ⟨false, false, false, false⟩ (second :: rest) with
+    | none => simp [sseDecode, hr, inner] at h
+    | some pair =>
+      obtain ⟨y, j⟩ := pair
+      simp [sseDecode, hr, inner] at h
+      obtain ⟨rfl, rfl⟩ := h
+      obtain ⟨low, high, take⟩ := sseForm_reads p _ _ y j inner
+      simp only [Nat.sub_zero] at low high take
+      obtain ⟨i, rfl⟩ : ∃ i, j = i + 1 := ⟨j - 1, by
+        cases j with
+        | zero => have := take []; simp [sseForm] at this
+        | succ i => simp⟩
+      refine ⟨by omega, by simpa using high, fun t => ?_⟩
+      have := take t
+      simp only [Nat.add_sub_cancel, List.take_succ_cons, List.cons_append] at this ⊢
+      simp [sseDecode, hr, this]
 theorem decodeOpcode_reads (rex : X86.Register.Rex) (present : Bool) : Reads (decodeOpcode rex present) 0 := by
   intro bytes x k h
   rcases bytes with _ | ⟨opcode, rest⟩
@@ -390,7 +462,18 @@ theorem decodeOpcode_reads (rex : X86.Register.Rex) (present : Bool) : Reads (de
     simp only [Nat.add_sub_cancel] at this
     simp only [List.take_succ_cons, List.cons_append]
     simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, Alu.ofOpcode?, c133, c99, c247, c211, c141, c153, c15, this, inner]
-  · simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, c133, c99, c247, c211, c141, c153, c15] at h
+  by_cases sse : (!present && (opcode.toNat = 102 || opcode.toNat = 242 || opcode.toNat = 243)) = true
+  · have inner : sseDecode opcode.toNat rest = some (x, k) := by
+      simpa [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, c133, c99, c247, c211, c141, c153, c15, sse] using h
+    obtain ⟨low, high, take⟩ := sseDecode_reads opcode.toNat rest x k inner
+    obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+    refine ⟨by simp; omega, fun t => ?_⟩
+    rw [← h0]
+    have := take t
+    simp only [Nat.add_sub_cancel] at this
+    simp only [List.take_succ_cons, List.cons_append]
+    simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, c133, c99, c247, c211, c141, c153, c15, sse, this, inner]
+  · simp [decodeOpcode, c195, c232, c233, push, pop, imm, c136, c137, c41, alu, c133, c99, c247, c211, c141, c153, c15, sse] at h
 
 theorem decode_reads : Reads decode 0 := by
   intro bytes x k h

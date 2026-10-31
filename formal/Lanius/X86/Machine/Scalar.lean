@@ -2,6 +2,7 @@ import Lanius.X86.Machine.Memory
 import Lanius.X86.Machine.Alu
 import Lanius.X86.Register
 import Lanius.X86.Control.Decode
+import Lanius.X86.Machine.Sse
 
 namespace Lanius.X86.Machine
 
@@ -61,6 +62,18 @@ inductive Instruction where
   | jump (displacement : BitVec 32)
   | call (displacement : BitVec 32)
   | returnNear
+  /-- MOVD xmm, r32 or MOVQ xmm, r64: the register, zero-extended. -/
+  | moveToXmm (wide : Bool) (destination : Fin 16) (source : Register)
+  /-- MOVD r32, xmm or MOVQ r64, xmm. -/
+  | moveFromXmm (wide : Bool) (destination : Register) (source : Fin 16)
+  /-- ADDSS ... DIVSD xmm, xmm. -/
+  | sseArith (double : Bool) (operation : SseArith) (destination source : Fin 16)
+  /-- CMPSS/CMPSD xmm, xmm, imm8. -/
+  | sseCompare (double : Bool) (predicate : SsePredicate) (destination source : Fin 16)
+  /-- CVTSI2SS/CVTSI2SD xmm, r32/r64. -/
+  | convertInt (double wide : Bool) (destination : Fin 16) (source : Register)
+  /-- CVTSS2SD (`fromDouble` false) or CVTSD2SS xmm, xmm. -/
+  | convertFloat (fromDouble : Bool) (destination source : Fin 16)
   deriving DecidableEq, Repr
 
 def Instruction.isDivision : Instruction → Bool
@@ -149,6 +162,41 @@ def escapedForm (rex : X86.Register.Rex) (rexPresent : Bool) (bytes : List UInt8
       | some (.branch condition displacement, size) => some (.branch condition displacement, size)
       | _ => none
   | _ => none
+
+/-- The SSE scalar forms after a mandatory prefix (102 = 66, 242 = F2,
+243 = F3) and an optional REX: 0F, the opcode and a register-direct ModRM
+(and CMPSS/CMPSD's predicate byte). REX.R and REX.B extend the ModRM's reg
+and r/m numbers, REX.W selects a 64-bit general register. The size counts
+from the 0F byte. Only the forms of `Sse.lean` decode. -/
+def sseForm (prefixByte : Nat) (rex : X86.Register.Rex) (bytes : List UInt8) : Option (Instruction × Nat) :=
+  match bytes with
+  | escape :: opcode :: modrm :: rest =>
+    if escape.toNat != 15 || modrm.toNat / 64 != 3 then none else
+    let reg : Fin 16 := extendRegister ⟨modrm.toNat / 8 % 8, by omega⟩ rex.r
+    let rm : Fin 16 := extendRegister ⟨modrm.toNat % 8, by omega⟩ rex.b
+    if prefixByte = 102 then
+      if opcode.toNat = 110 then some (.moveToXmm rex.w reg rm, 3)
+      else if opcode.toNat = 126 then some (.moveFromXmm rex.w rm reg, 3)
+      else none
+    else
+      let double := prefixByte == 242
+      if opcode.toNat = 42 then some (.convertInt double rex.w reg rm, 3)
+      else if rex.w then none
+      else if opcode.toNat = 90 then some (.convertFloat double reg rm, 3)
+      else if opcode.toNat = 194 then
+        match rest with
+        | predicate :: _ => (SsePredicate.ofImm? predicate.toNat).map fun p => (.sseCompare double p reg rm, 4)
+        | [] => none
+      else (SseArith.ofOpcode? opcode.toNat).map fun op => (.sseArith double op reg rm, 3)
+  | _ => none
+
+/-- A mandatory SSE prefix's bytes: an optional REX, then `sseForm`. -/
+def sseDecode (prefixByte : Nat) : List UInt8 → Option (Instruction × Nat)
+  | [] => none
+  | second :: rest => match X86.Register.Rex.decode? second.toNat with
+    | some rex => (sseForm prefixByte rex rest).map fun (instruction, size) => (instruction, size + 2)
+    | none => (sseForm prefixByte ⟨false, false, false, false⟩ (second :: rest)).map
+        fun (instruction, size) => (instruction, size + 1)
 
 def decodeOpcode (rex : X86.Register.Rex) (rexPresent : Bool) : List UInt8 → Option (Instruction × Nat)
   | [] => none
@@ -250,6 +298,8 @@ def decodeOpcode (rex : X86.Register.Rex) (rexPresent : Bool) : List UInt8 → O
       some (if rex.w then .signExtendDividend64 else .signExtendDividend32, 1)
     else if opcode.toNat = 15 then
       escapedForm rex rexPresent rest
+    else if !rexPresent && (opcode.toNat = 102 || opcode.toNat = 242 || opcode.toNat = 243) then
+      sseDecode opcode.toNat rest
     else none
 
 /-- One optional REX prefix followed by supported MOV/MOVSXD/MOVZX, byte memory
@@ -561,6 +611,49 @@ def State.call (before : State) (displacement : BitVec 32) (size : Nat) : State 
     memory := write64 before.memory stack next
     rip := next + displacement.signExtend 64 }
 
+def State.setXmm (before : State) (destination : Fin 16) (value : BitVec 64) (size : Nat) : State :=
+  { before with
+    xmm := fun register => if register = destination then value else before.xmm register
+    rip := before.rip + BitVec.ofNat 64 size }
+
+/-- MOVD/MOVQ xmm, r: the low 32 bits (MOVD) or all 64, zero-extended. -/
+def State.moveToXmm (before : State) (wide : Bool) (destination : Fin 16) (source : Register)
+    (size : Nat) : State :=
+  before.setXmm destination
+    (if wide then before.registers source else BitVec.ofNat 64 ((before.registers source).toNat % 2 ^ 32)) size
+
+/-- MOVD/MOVQ r, xmm: a 32-bit write zero-extends. -/
+def State.moveFromXmm (before : State) (wide : Bool) (destination : Register) (source : Fin 16)
+    (size : Nat) : State :=
+  { before with
+    registers := fun register => if register = destination then
+      (if wide then before.xmm source else BitVec.ofNat 64 ((before.xmm source).toNat % 2 ^ 32))
+      else before.registers register
+    rip := before.rip + BitVec.ofNat 64 size }
+
+def State.sseArith (before : State) (double : Bool) (operation : SseArith) (destination source : Fin 16)
+    (size : Nat) : State :=
+  before.setXmm destination (sseResult double (before.xmm destination)
+    (operation.apply (sseFormat double) (sseOperand double (before.xmm destination))
+      (sseOperand double (before.xmm source)))) size
+
+def State.sseCompare (before : State) (double : Bool) (predicate : SsePredicate) (destination source : Fin 16)
+    (size : Nat) : State :=
+  before.setXmm destination (sseResult double (before.xmm destination)
+    (sseMask double (predicate.holds (sseFormat double) (sseOperand double (before.xmm destination))
+      (sseOperand double (before.xmm source))))) size
+
+/-- CVTSI2SS/CVTSI2SD: the signed 32-bit (or, `wide`, 64-bit) integer, rounded. -/
+def State.convertInt (before : State) (double wide : Bool) (destination : Fin 16) (source : Register)
+    (size : Nat) : State :=
+  let value : Int := if wide then (before.registers source).toInt else ((before.registers source).setWidth 32).toInt
+  before.setXmm destination (sseResult double (before.xmm destination) ((sseFormat double).ofInt value)) size
+
+/-- CVTSS2SD (exact) or CVTSD2SS (rounded). -/
+def State.convertFloat (before : State) (fromDouble : Bool) (destination source : Fin 16) (size : Nat) : State :=
+  before.setXmm destination (sseResult (!fromDouble) (before.xmm destination)
+    ((sseFormat fromDouble).convert (sseFormat (!fromDouble)) (sseOperand fromDouble (before.xmm source)))) size
+
 def execute (instruction : Instruction) (size : Nat) (before : State) : State :=
   match instruction with
   | .move32 destination source => before.move32 destination source size
@@ -607,6 +700,12 @@ def execute (instruction : Instruction) (size : Nat) (before : State) : State :=
   | .jump displacement => before.jump displacement size
   | .call displacement => before.call displacement size
   | .returnNear => before.returnNear
+  | .moveToXmm wide destination source => before.moveToXmm wide destination source size
+  | .moveFromXmm wide destination source => before.moveFromXmm wide destination source size
+  | .sseArith double operation destination source => before.sseArith double operation destination source size
+  | .sseCompare double predicate destination source => before.sseCompare double predicate destination source size
+  | .convertInt double wide destination source => before.convertInt double wide destination source size
+  | .convertFloat fromDouble destination source => before.convertFloat fromDouble destination source size
 
 /-- Decoding consumes bytes actually loaded at RIP. Division must use
 `divided`, which also requires nonzero-divisor and quotient-range evidence;
