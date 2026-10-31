@@ -30,6 +30,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stdlib_oracle  # noqa: E402
+import run_cache  # noqa: E402
 
 PROGRAMS = {
     'compiler': ('formal/lani/mini/compiler.lani', 'Lanius.Mini.Compiler'),
@@ -44,8 +45,9 @@ LANIUSC = 'target/release/laniusc'
 def build_extract():
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'],
                LEAN_NUM_THREADS='3')
-    run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                          'lake', 'build', 'extract'], cwd='formal', env=env, capture_output=True, text=True)
+    with run_cache.lean_lock():
+        run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+                              'lake', 'build', 'extract'], cwd='formal', env=env, capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build extract failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])
 

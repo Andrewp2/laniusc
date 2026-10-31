@@ -538,8 +538,9 @@ def run_lean(formal, path_lean):
     lake = os.path.expanduser('~/.elan/bin/lake')
     if not os.path.exists(lake):
         lake = 'lake'
-    proc = subprocess.run([lake, 'env', 'lean', path_lean], cwd=formal,
-                          capture_output=True, text=True)
+    with run_cache.lean_lock():
+        proc = subprocess.run([lake, 'env', 'lean', path_lean], cwd=formal,
+                              capture_output=True, text=True)
     if proc.returncode != 0:
         sys.stderr.write(proc.stdout + proc.stderr)
         raise SystemExit('lean failed')

@@ -14,6 +14,24 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CACHE = os.path.join(ROOT, 'target/claude-work/cache')
 
+
+class lean_lock:
+    """Held while Lean builds or runs: one lock for every worktree of the
+    repository (in its common git directory), so Lean runs one at a time and
+    the memory caps of parallel worktrees never add up past the machine's."""
+
+    def __enter__(self):
+        import fcntl
+        import subprocess
+        common = subprocess.run(['git', 'rev-parse', '--git-common-dir'], cwd=ROOT, capture_output=True,
+                                text=True).stdout.strip() or '.git'
+        self.f = open(os.path.join(ROOT, common, 'lean.lock'), 'a')
+        fcntl.flock(self.f, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        self.f.close()
+
 _digests = {}
 
 
@@ -141,9 +159,10 @@ def run_lean(lean_path, memory='6G'):
     if hit is not None:
         return types.SimpleNamespace(returncode=0, stdout=hit['stdout'], stderr='')
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={memory}', '-p', 'MemorySwapMax=0',
-                          'lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL, env=env,
-                         capture_output=True, text=True)
+    with lean_lock():
+        run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={memory}', '-p',
+                              'MemorySwapMax=0', 'lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL,
+                             env=env, capture_output=True, text=True)
     if run.returncode == 0 and digest:
         store('lean', k, dict(stdout=run.stdout))
     return run

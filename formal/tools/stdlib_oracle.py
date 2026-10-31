@@ -648,8 +648,9 @@ def accepted(lani_path, tree, workdir):
     """Whether the verified validator accepts tree as lani_path's parse tree."""
     if not os.path.exists(RUN_ALL):
         env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-        subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                        'lake', 'build', 'runAll'], cwd='formal', env=env, capture_output=True, check=True)
+        with run_cache.lean_lock():
+            subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+                            'lake', 'build', 'runAll'], cwd='formal', env=env, capture_output=True, check=True)
     base = os.path.join(workdir, 'candidate')
     shutil.copy(lani_path, base + '.lani')
     open(base + '.prods', 'w').write(' '.join(map(str, tree[0])))
@@ -787,8 +788,9 @@ def parse_checked(laniusc, base, workdir):
 def build_run_all():
     """Build runAll (a no-op when it is current)."""
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
-    subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                    'lake', 'build', 'runAll'], cwd='formal', env=env, capture_output=True, check=True)
+    with run_cache.lean_lock():
+        subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+                        'lake', 'build', 'runAll'], cwd='formal', env=env, capture_output=True, check=True)
 
 
 def validate_all(bases, workdir):
