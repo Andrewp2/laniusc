@@ -51,14 +51,14 @@ namespace Lanius.Mini
 @[expose] def Inline.pPostfixEnd : Nat :=
   164
 
-@[expose] def Inline.pPostfixTry : Nat :=
-  318
-
 @[expose] def Inline.pPostfixIndex : Nat :=
   162
 
 @[expose] def Inline.pPostfixMember : Nat :=
   163
+
+@[expose] def Inline.pPostfixTry : Nat :=
+  318
 
 @[expose] def Inline.pRangeBound : Nat :=
   102

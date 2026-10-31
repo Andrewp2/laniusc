@@ -55,6 +55,7 @@ def lowerMatchArm (scope : List Binding) (binding : Option Binding) (enumId : Na
     | .enum id variants => lowerArmFound scope b.slot (decide (id = enumId) && decide (variants.length < 4294967296)) variant variants[variant]? binds binder ty next body rest
     | .ptr => none
     | .slice element => none
+    | .array arrayElement arrayLength => none
     | .unit => none
     | .isize => none
     | .char => none
@@ -77,6 +78,7 @@ def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : Lis
   | .enum id variants => lowerMatchArms scope b.slot (decide (id = enumId)) variants arms ty target
   | .ptr => none
   | .slice element => none
+  | .array arrayElement arrayLength => none
   | .unit => none
   | .isize => none
   | .char => none

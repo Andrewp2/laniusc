@@ -38,6 +38,7 @@ def castToI32 (e : Typed) : Option Typed :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .array arrayElement arrayLength => none
   | .unit => none
   | .isize => some ({ expr := wrap UintTy.uint32 e.expr, ty := SrcType.i32 } : Typed)
   | .char => some ({ expr := wrap UintTy.uint32 e.expr, ty := SrcType.i32 } : Typed)
@@ -53,6 +54,7 @@ def castToUint (kind : UintTy) (e : Typed) : Option Typed :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .array arrayElement arrayLength => none
   | .unit => none
   | .isize => some ({ expr := wrap kind e.expr, ty := SrcType.uint kind } : Typed)
   | .char => some ({ expr := wrap kind e.expr, ty := SrcType.uint kind } : Typed)
@@ -69,6 +71,7 @@ def castToIsize (e : Typed) : Option Typed :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .array arrayElement arrayLength => none
   | .unit => none
   | .isize => some e
   | .char => some ({ expr := e.expr, ty := SrcType.isize } : Typed)
@@ -118,6 +121,7 @@ def castToFloat (t : FloatTy) (e : Typed) : Option Typed :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .array arrayElement arrayLength => none
   | .unit => none
   | .isize => intToFloat t Word.u64 e.expr
   | .char => intToFloat t Word.u64 e.expr
@@ -133,6 +137,7 @@ def castTo (ty : SrcType) (e : Typed) : Option Typed :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .array arrayElement arrayLength => none
   | .unit => none
   | .isize => castToIsize e
   | .char => none

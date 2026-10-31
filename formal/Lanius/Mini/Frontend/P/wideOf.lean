@@ -38,6 +38,7 @@ def wideOf (ty : Ty) (negative : Bool) (n : Nat) : Option SrcExpr :=
   | .tyChar => none
   | .tyFloat ft => none
   | .tySlice e => none
+  | .tyArray e n => none
   | .tyNamed d args => none
   | .tySint u => wideSint u negative n
 
@@ -339,6 +340,7 @@ def structFieldTys (fuel : Nat) (decls : Decls) (t : Ty) : Option (List Ty) :=
   | .tyChar => none
   | .tyFloat ft => none
   | .tySlice e => none
+  | .tyArray e n => none
   | .tyNamed d args => fieldTys fuel decls d args
   | .tySint k => none
 

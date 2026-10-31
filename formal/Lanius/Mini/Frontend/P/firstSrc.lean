@@ -121,6 +121,7 @@ def wideAt (want : Option SrcType) (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
     | .enum id variants => e
     | .ptr => e
     | .slice el => e
+    | .array el arrayLength => e
     | .unit => e
     | .isize => wideIsizeAt n e
     | .char => e

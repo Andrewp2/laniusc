@@ -11,7 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
-public import Lanius.Faithful.Gen.SelfStmtC_copyBinding
+public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 import all Lanius.Faithful.Gen.SelfSrcC_assignFrom
 import all Lanius.Mini.Compiler.P.assignFrom
 

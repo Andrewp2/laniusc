@@ -86,10 +86,25 @@ read in: the declaration's module, its parameters standing for `ts`. -/
 abbrev declScope (decls : Decls) (home : ModPath) (params : List Name) (ts : List Ty) : FrontEnv :=
   { decls := decls, home := home, names := params, subst := ts, globals := [], ret := none, base := 0 }
 
+/-- An array length written as a decimal integer literal. -/
+def ArrayLen (l : CTree) (n : Nat) : Prop :=
+  nodeProd l = pTypeArrayLenConstant ∧ nodeProd (kid l 0) = pGenericArgumentInteger ∧
+    decimal (kidToken (kid l 0) 0).text 0 = some n
+
+theorem arrayLen_sound {l : CTree} {n : Nat} (h : arrayLen l = some n) : ArrayLen l n := by
+  unfold arrayLen at h
+  split at h
+  · rename_i c
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+    exact ⟨c.1, c.2, h⟩
+  · cases h
+
 mutual
 inductive TyR : FrontEnv → CTree → Ty → Prop
   | slice {env : FrontEnv} {t : CTree} {e : Ty} : nodeProd t = pTypeArray → nodeProd (kid t 2) = pTypeSliceTail →
       TyR env (kid t 1) e → TyR env t (.tySlice e)
+  | array {env : FrontEnv} {t : CTree} {e : Ty} {n : Nat} : nodeProd t = pTypeArray → nodeProd (kid t 2) = pTypeArrayTail →
+      TyR env (kid t 1) e → ArrayLen (kid (kid t 2) 1) n → TyR env t (.tyArray e n)
   | bare {env : FrontEnv} {t : CTree} {ss : List Name} {ty : Ty} : nodeProd t = pTypeIdent →
       nodeProd (kid t 1) = pTypeArgsNone → TypePathSpellings (kid (kid t 0) 0) (kid (kid t 0) 1) ss →
       BareTy env ss ty → TyR env t ty
@@ -391,6 +406,19 @@ theorem tySound : ∀ fuel, TySound fuel
           subst h
           exact .slice sl.1 sl.2 (tyOf_ih he)
       rw [if_neg (by simpa using sl)] at h
+      by_cases ar : nodeProd t = pTypeArray ∧ nodeProd (kid t 2) = pTypeArrayTail
+      · rw [if_pos (by simpa using ar)] at h
+        simp only [arrayTy] at h
+        cases he : tyOf f env (kid t 1) with
+        | none => rw [he] at h; cases h
+        | some e =>
+          cases hn : arrayLen (kid (kid t 2) 1) with
+          | none => rw [he, hn] at h; cases h
+          | some n =>
+            rw [he, hn, Option.some.injEq] at h
+            subst h
+            exact .array ar.1 ar.2 (tyOf_ih he) (arrayLen_sound hn)
+      rw [if_neg (by simpa using ar)] at h
       by_cases bn : nodeProd t = pTypeIdent ∧ nodeProd (kid t 1) = pTypeArgsNone
       · rw [if_pos (by simpa using bn)] at h
         obtain ⟨ss, hs, r⟩ := bareOrAlias_ih h

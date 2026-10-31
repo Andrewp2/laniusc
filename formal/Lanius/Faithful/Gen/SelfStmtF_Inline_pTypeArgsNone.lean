@@ -32,6 +32,14 @@ abbrev Stmt_p_type_array (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pTypeArray) w
 
+abbrev Stmt_p_type_array_len_constant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pTypeArrayLenConstant) w
+
+abbrev Stmt_p_type_array_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pTypeArrayTail) w
+
 abbrev Stmt_p_type_ident (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pTypeIdent) w

@@ -205,5 +205,15 @@ abbrev pTypeSliceTail : Nat := 284
 abbrev pWhereNone : Nat := 36
 abbrev pWhileStmt : Nat := 80
 abbrev pXorTail : Nat := 128
+abbrev pArrayLit : Nat := 171
+abbrev pArraySome : Nat := 180
+abbrev pArrayMore : Nat := 181
+abbrev pArrayEnd : Nat := 182
+abbrev pArrayRepeat : Nat := 316
+abbrev pArrayAfterCommaMore : Nat := 183
+abbrev pArrayAfterCommaTrailing : Nat := 184
+abbrev pTypeArrayTail : Nat := 283
+abbrev pTypeArrayLenConstant : Nat := 291
+abbrev pGenericArgumentInteger : Nat := 296
 
 end Lanius.Mini.Prod

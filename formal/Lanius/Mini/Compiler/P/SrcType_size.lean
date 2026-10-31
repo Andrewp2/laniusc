@@ -27,6 +27,7 @@ def SrcType.size (self : SrcType) : Nat :=
   | .enum id variants => 1 + maxSize variants
   | .ptr => 1
   | .slice element => 2
+  | .array arrayElement arrayLength => arrayLength * SrcType.size arrayElement
   | .unit => 1
   | .isize => 1
   | .char => 1

@@ -37,7 +37,7 @@ import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.copyBinding
+import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
@@ -69,6 +69,7 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.lowerBody
@@ -523,7 +524,7 @@ theorem narrow_cast_holds {k : UintTy} (narrow : k.isWide = false) {ty : SrcType
       rw [hb]
       exact emod_width narrow (by rw [low_widen])
   | bool | ptr => simp [SrcType.isScalar, SrcType.isBool, SrcType.isPtr] at scalar
-  | struct | enum | slice | unit => simp [SrcType.Holds] at holds
+  | struct | enum | slice | array | unit => simp [SrcType.Holds] at holds
 
 theorem holds_compare (c : Bool) : SrcType.Holds .bool (.boolean c) (if c then 1 else 0) :=
   ⟨c, rfl, by cases c <;> rfl⟩

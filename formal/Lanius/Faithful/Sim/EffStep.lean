@@ -138,12 +138,12 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     rfl
   | eIndex => simp [effTy] at ht
   | eStruct ty fields =>
-    simp only [SrcEff.toCore] at run
-    obtain ⟨j, vs, hj, frun, rfl⟩ := structValue_inv run
-    obtain rfl : j = k := by omega
     simp only [effTy, Option.bind_eq_some_iff] at ht
     obtain ⟨ts, hts, hs⟩ := ht
     obtain ⟨id, rfl, hb, rfl⟩ := structTy_some hs
+    simp only [SrcEff.toCore, SrcType.literal] at run
+    obtain ⟨j, vs, hj, frun, rfl⟩ := structValue_inv run
+    obtain rfl : j = k := by omega
     obtain ⟨ps, hps, rs, ran⟩ := effs frun hts inv rel bound
     exact ⟨.structure id ps, by simp [peff, hps, SrcType.typeId], .struct hb rs, ran⟩
   | eVariant ty variant payload =>
@@ -193,6 +193,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     | char => simp at hm
     | float => simp at hm
     | sint => simp at hm
+    | array => simp at hm
   | eDivide op l r =>
     simp only [SrcEff.toCore] at run
     have notAnd : op.toCore ≠ .logicalAnd := by cases op <;> simp [SrcDivOp.toCore]

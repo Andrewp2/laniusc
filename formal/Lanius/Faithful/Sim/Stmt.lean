@@ -71,15 +71,16 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
   | letStruct id ty fields body ih =>
     intro k tenv env st c st' le run ok inv rel bound
     obtain ⟨j, v, s1, s2, rfl, vrun, brun, rfl⟩ := letLocal_inv run
-    obtain ⟨i, vs, rfl, frun, rfl⟩ := structValue_inv vrun
-    have e := evalExprs_state fields frun
-    subst s1
     simp only [stmtOk] at ok
     split at ok
     · rename_i t ht
       simp only [Option.bind_eq_some_iff] at ht
       obtain ⟨ts, hts, hs⟩ := ht
       obtain ⟨sid, rfl, hb, rfl⟩ := structTy_some hs
+      simp only [SrcType.literal] at vrun
+      obtain ⟨i, vs, rfl, frun, rfl⟩ := structValue_inv vrun
+      have e := evalExprs_state fields frun
+      subst s1
       obtain ⟨ps, hps, rs⟩ := exprs_sim (toCore_target sp) tenv env fields frun hts rel
       have r : VRel sp.toCore (boxElem sp prims) st.heap (.struct sid ts) (.structure sid vs) (.structure sid ps) :=
         .struct hb rs

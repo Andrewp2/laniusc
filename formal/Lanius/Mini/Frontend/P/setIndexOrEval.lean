@@ -1,8 +1,8 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.ifEff
-import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.whileEvalOf
 

@@ -22,6 +22,12 @@ def src_p_type_args_some : SrcFunc := { params := [], ret := SrcType.uint (UintT
 /-- mini::selfhost::p_type_array -/
 def src_p_type_array : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000046#64) }
 
+/-- mini::selfhost::p_type_array_len_constant -/
+def src_p_type_array_len_constant : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000123#64) }
+
+/-- mini::selfhost::p_type_array_tail -/
+def src_p_type_array_tail : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000011b#64) }
+
 /-- mini::selfhost::p_type_ident -/
 def src_p_type_ident : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000045#64) }
 

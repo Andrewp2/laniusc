@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.joinInsts
+import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.wideMarker
 
 public section

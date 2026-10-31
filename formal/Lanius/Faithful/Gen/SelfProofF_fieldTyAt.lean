@@ -7,11 +7,12 @@ public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArgsMore
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArrayMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_armsOf
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
+public import Lanius.Faithful.Gen.SelfStmtF_divergeArm
 public import Lanius.Faithful.Gen.SelfStmtF_fieldTyAt
 public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
@@ -20,7 +21,6 @@ public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_isFnPath
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
-public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_setIndexOrEval

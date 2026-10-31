@@ -6,7 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_retBinds
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
-public import Lanius.Faithful.Gen.SelfStmtF_pickTy
+public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 public import Lanius.Faithful.Gen.SelfStmtF_retBinds
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 import all Lanius.Faithful.Gen.SelfSrcF_retBinds

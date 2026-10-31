@@ -1215,6 +1215,7 @@ theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty i
   | enum => simp [castTo] at h
   | ptr => simp [castTo] at h
   | slice => simp [castTo] at h
+  | array => simp [castTo] at h
   | unit => simp [castTo] at h
 
 theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
@@ -1266,6 +1267,7 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     case h_10 => simp at lowered
     case h_11 => simp at lowered
     case h_12 => simp at lowered
+    case h_13 => simp at lowered
     rename_i sid fields hty
     simp only [lowerFieldAt] at lowered
     split at lowered
@@ -1857,9 +1859,9 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
     split at run
     · rename_i v st1 valueRun
       cases fuel with
-      | zero => simp [evalExpr] at valueRun
+      | zero => simp [SrcType.literal, evalExpr] at valueRun
       | succ k =>
-        simp only [SrcType.typeId, evalExpr] at valueRun
+        simp only [SrcType.literal, evalExpr] at valueRun
         split at valueRun
         · rename_i vs st2 fieldsRun
           simp only [Semantics.Outcome.done.injEq] at valueRun
@@ -1874,6 +1876,40 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
             exact shape.below fr.slots x inYs
           obtain ⟨fresh', keeps, d, out, exec, matched⟩ := let_tail ih (hp := hp) bodyOk corr fr fresh le
             (by simp only [SrcType.size]; omega)
+            (fr.agree fun j below => setFrom_outside xs next env j (.inl below))
+            (flat.store insens) hc run bound
+          exact ⟨fresh', keeps, d, out, assignFrom_exec xs next exec, matched⟩
+        all_goals simp at valueRun
+    all_goals simp at run
+  | array e n =>
+    simp only [lowerLiteral, lowerStructFields] at literalOk
+    split at literalOk
+    · simp at literalOk
+    rename_i nonempty
+    rw [repeatType_eq] at literalOk nonempty
+    rw [sizes_replicate] at nonempty
+    simp only [SrcStmt.toCore, execStmt] at run
+    split at run
+    · rename_i v st1 valueRun
+      cases fuel with
+      | zero => simp [SrcType.literal, evalExpr] at valueRun
+      | succ k =>
+        simp only [SrcType.literal, evalExpr] at valueRun
+        split at valueRun
+        · rename_i vs st2 fieldsRun
+          simp only [Semantics.Outcome.done.injEq] at valueRun
+          obtain ⟨rfl, rfl⟩ := valueRun
+          refine Simulates.checked (lowerArgs_guard corr (SrcProgram.target_toCore sp) literalOk fieldsRun) ?_
+          obtain ⟨rfl, fieldsHold, len, shapes⟩ :=
+            lowerArgs_sound corr (SrcProgram.target_toCore sp) literalOk fieldsRun
+          rw [sizes_replicate] at len
+          have flat : FlatValue (.array e n) (.array vs) env xs :=
+            ⟨by simp only [SrcType.size, len], .array fieldsHold⟩
+          have insens : Insens xs next := Insens.below fun x mem => by
+            obtain ⟨ys, shape, inYs⟩ := shapes x mem
+            exact shape.below fr.slots x inYs
+          obtain ⟨fresh', keeps, d, out, exec, matched⟩ := let_tail ih (hp := hp) bodyOk corr fr fresh le
+            (by simp only [SrcType.size]; exact Nat.pos_of_ne_zero nonempty)
             (fr.agree fun j below => setFrom_outside xs next env j (.inl below))
             (flat.store insens) hc run bound
           exact ⟨fresh', keeps, d, out, assignFrom_exec xs next exec, matched⟩
@@ -1948,6 +1984,7 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
   | struct => simp [lowerEnumValue] at valueOk
   | ptr => simp [lowerEnumValue] at valueOk
   | slice => simp [lowerEnumValue] at valueOk
+  | array => simp [lowerEnumValue] at valueOk
   | unit => simp [lowerEnumValue] at valueOk
   | isize => simp [lowerEnumValue] at valueOk
   | char => simp [lowerEnumValue] at valueOk
@@ -2038,6 +2075,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
   case h_10 => simp at matchOk
   case h_11 => simp at matchOk
   case h_12 => simp at matchOk
+  case h_13 => simp at matchOk
   rename_i eid variants hty
   simp only [lowerMatchArms] at matchOk
   split at matchOk
@@ -2400,6 +2438,7 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   case h_10 => simp at ok
   case h_11 => simp at ok
   case h_12 => simp at ok
+  case h_13 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -3005,7 +3044,7 @@ theorem slice_kind {ds : SrcDecls} {element : SrcType}
   | i32 => exact .inl rfl
   | struct sid fields => exact .inr (.inl ⟨sid, fields, rfl⟩)
   | enum eid variants => exact .inr (.inr ⟨eid, variants, rfl⟩)
-  | bool | uint | ptr | slice | unit | isize | char | float | sint => simp [SrcType.isI32, wordElement] at cond
+  | bool | uint | ptr | slice | array | unit | isize | char | float | sint => simp [SrcType.isI32, wordElement] at cond
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
@@ -3163,7 +3202,7 @@ theorem index_toNat {t : Typed} {iv : Value} {x : BitVec 64} {pos : Nat}
     obtain ⟨rfl, -⟩ := holds
     simp only [Semantics.integerIndex, Except.ok.injEq] at ok
     exact ok
-  | bool | struct | enum | ptr | slice | unit | isize | char | float | sint => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
+  | bool | struct | enum | ptr | slice | array | unit | isize | char | float | sint => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
 
 /-- Core's read of `slice[idx]` from a raw slice local. -/
 theorem eval_index_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx : Core.Expr}
@@ -4143,13 +4182,17 @@ theorem stmt_setIndex_word {slice : Nat} {index value : SrcExpr} {b : Binding} {
 
 theorem stmt_letIndex (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {slice : Nat}
     {index : SrcExpr} {body : SrcStmt}
+    (arrayCase : (SrcStmt.letEval id ty (.eIndex slice (.ePure index)) body).lower (sigs sp.funcs) sp.decls ret scope next =
+      some stmt → Simulates mp hp ret scope frame base st env stmt c st')
     (ok : (SrcStmt.letIndex id ty slice index body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letIndex id ty slice index body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
-  simp only [SrcStmt.lower] at ok
+  simp only [SrcStmt.lower, lowerLetIndexAny] at ok
+  split at ok
+  case isTrue => exact arrayCase (by simp only [SrcStmt.lower, SrcEff.eval]; exact ok)
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
   simp only [lowerLetIndex] at ok

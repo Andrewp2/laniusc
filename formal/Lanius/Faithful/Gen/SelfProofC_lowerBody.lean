@@ -63,12 +63,12 @@ theorem step_SrcStmt_returns {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_ret
   simp only [src_SrcStmt_returns] at h
   faithful [Lanius.Mini.SrcStmt.returns]
 
-theorem step_SrcType_declare {prog : SrcProgram} {prims : Prims} {ix_SrcType_declare ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_declare_struct ix_declare_types ix_declare_enum ix_declare_variants ix_unbox_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_SrcType_declare]? = some (src_SrcType_declare ix_SrcType_declare ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_declare_struct ix_declare_types ix_declare_enum ix_declare_variants ix_unbox_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_SrcType_declare = false)
+theorem step_SrcType_declare {prog : SrcProgram} {prims : Prims} {ix_SrcType_declare ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_declare_struct ix_declare_types ix_declare_enum ix_declare_variants : Nat} (fn : prog.funcs[ix_SrcType_declare]? = some (src_SrcType_declare ix_SrcType_declare ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_declare_struct ix_declare_types ix_declare_enum ix_declare_variants)) (np : prims.isPrim ix_SrcType_declare = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
+    (ext_unbox_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_SrcType n))
     (ext_declare_struct : Certified (∀ {n : Nat}, Stmt_declare_struct prog prims ix_declare_struct n))
-    (ext_declare_enum : Certified (∀ {n : Nat}, Stmt_declare_enum prog prims ix_declare_enum n))
-    (ext_unbox_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_SrcType n)) {n : Nat}
+    (ext_declare_enum : Certified (∀ {n : Nat}, Stmt_declare_enum prog prims ix_declare_enum n)) {n : Nat}
     (ih_SrcType_declare : Certified (Stmt_SrcType_declare prog prims ix_SrcType_declare n))
     (ih_declare_types : Certified (Stmt_declare_types prog prims ix_declare_types n))
     (ih_declare_variants : Certified (Stmt_declare_variants prog prims ix_declare_variants n)) :

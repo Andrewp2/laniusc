@@ -235,6 +235,30 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       have ag := ih2 arms'
       rw [armsAgree_binders ag, armsAgree_values ag, armsAgree_resultTy ag rt rt']
     | _ => eff_clash
+  | _, _, _, _, .array pa nr he it el len, nd, vn, _, h₂ => by
+    have ih1 := fun {y} k' => effList_unique el nd vn (ys := y) k'
+    cases h₂ with
+    | pure p => exact pure_agree p nd (.array pa nr he it el len)
+    | array _ _ he' it' el' _ =>
+      rw [he] at he'
+      cases he'
+      have e := items_unique it it'
+      subst e
+      rw [ih1 el']
+    | arrayRepeat _ ps pr _ _ _ => exact (nr ⟨ps, pr⟩).elim
+    | _ => eff_clash
+  | _, _, _, _, .arrayRepeat pa ps pr he hw k, nd, vn, _, h₂ => by
+    have ih1 := fun {y} k' => effR_unique k nd vn (y := y) k'
+    cases h₂ with
+    | pure p => exact pure_agree p nd (.arrayRepeat pa ps pr he hw k)
+    | array _ nr _ _ _ _ => exact (nr ⟨ps, pr⟩).elim
+    | arrayRepeat _ _ _ he' _ k' =>
+      rw [he] at he'
+      cases he'
+      have e := ih1 k'
+      cases e
+      rfl
+    | _ => eff_clash
 termination_by structural _ _ _ _ h _ _ _ _ => h
 
 theorem effFold_unique : ∀ {scope : List Local} {a : MEff} {tail : CTree} {x : MEff},

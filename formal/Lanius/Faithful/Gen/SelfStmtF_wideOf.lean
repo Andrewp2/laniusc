@@ -57,11 +57,11 @@ abbrev Stmt_fold (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 223 RepSrcExpr) (Lanius.Mini.fold x0 x1 x2 x3 x4) w
 
 abbrev Stmt_fold_left (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.SrcExpr} {x4 : Option Lanius.Mini.SrcOp} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → RepSrcExpr x3 v3 → (RepOption 252 RepSrcOp) x4 v4 → RepCTree x5 v5 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.SrcExpr} {x4 : Option Lanius.Mini.SrcOp} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → RepSrcExpr x3 v3 → (RepOption 254 RepSrcOp) x4 v4 → RepCTree x5 v5 →
     (RepOption 223 RepSrcExpr) (Lanius.Mini.foldLeft x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_fold_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Option Lanius.Mini.SrcExpr} {x4 : Option Lanius.Mini.SrcOp} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → (RepOption 223 RepSrcExpr) x3 v3 → (RepOption 252 RepSrcOp) x4 v4 → RepCTree x5 v5 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Option Lanius.Mini.SrcExpr} {x4 : Option Lanius.Mini.SrcOp} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → (RepOption 223 RepSrcExpr) x3 v3 → (RepOption 254 RepSrcOp) x4 v4 → RepCTree x5 v5 →
     (RepOption 223 RepSrcExpr) (Lanius.Mini.foldOp x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_gives_bool (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

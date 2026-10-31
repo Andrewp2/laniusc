@@ -127,6 +127,30 @@ theorem struct_done {id : Nat} {args : List Core.Expr} {k : Nat} {vs : List Valu
     (h : evalExprs k P st args = .done vs s) : evalExpr (k + 1) P st (.structValue id args) = .done (.structure id vs) s := by
   rw [evalExpr.eq_def]; simp only [h]
 
+theorem array_trap {ty : Core.Ty} {args : List Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
+    (h : evalExprs j P st args = .trapped r s) : evalExpr (j + 1) P st (.array ty args) = .trapped r s := by
+  rw [evalExpr.eq_def]; simp only [h]
+
+theorem array_done {ty : Core.Ty} {args : List Core.Expr} {k : Nat} {vs : List Value} {s : State}
+    (h : evalExprs k P st args = .done vs s) : evalExpr (k + 1) P st (.array ty args) = .done (.array vs) s := by
+  rw [evalExpr.eq_def]; simp only [h]
+
+/-- `array[idx]` of an array local whose index traps traps. -/
+theorem arrayIndex_trap {slice : Nat} {idx : Core.Expr} {vs : List Value} {j : Nat}
+    {r : Lanius.Trap} {s : State}
+    (base : evalExpr (j + 1) P st (.local slice) = .done (.array vs) st)
+    (h : evalExpr j P st idx = .trapped r s) : evalExpr (j + 2) P st (.index (.local slice) idx) = .trapped r s := by
+  have h' := Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)
+  rw [evalExpr.eq_def]; simp only [base, h']
+
+/-- `array[idx]` of an array local, the index in bounds, completes. -/
+theorem arrayIndex_done {k : Nat} {slice : Nat} {idx : Core.Expr} {vs : List Value} {iv : Value} {pos : Nat}
+    {st1 : State} (base : evalExpr (k + 1) P st (.local slice) = .done (.array vs) st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st1) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < vs.length) :
+    evalExpr (k + 2) P st (.index (.local slice) idx) = .done vs[pos] st1 := by
+  rw [evalExpr.eq_def]; simp only [base, idxRun, posOk, List.getElem?_eq_getElem lt]
+
 theorem enum_trap {id variant : Nat} {args : List Core.Expr} {j : Nat} {r : Lanius.Trap} {s : State}
     (h : evalExprs j P st args = .trapped r s) :
     evalExpr (j + 1) P st (.enumValue id variant args) = .trapped r s := by
@@ -791,6 +815,39 @@ theorem boundsGuard_ne {b : Binding} {i : Expr} {env : Env} (g : (boundsGuard b 
   · exact h
   · simp [h] at g
 
+theorem eff_arrayIndex (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {slice : Nat}
+    {index : SrcEff} (ih : EffStops sp mp n index) {hp : Heap} {scope : List Binding} {slot : Nat}
+    {ev : Evaluated} {frame : Nat → Nat} {base : Nat} {st : State} {env : Env} {b : Binding}
+    (found : lookup scope slice = some b)
+    (ok : evalArrayIndex b slot (index.eval (sigs sp.funcs) sp.decls scope slot) = some ev)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (fails : EFails sp hp.limit st (.index (.local slice) index.toCore)) : ∃ d, Stops mp d env hp ev.stmt n := by
+  obtain ⟨e, n', i, bty, indexOk, kind, -, nsmall, -, rfl⟩ := evalArrayIndex_some ok
+  obtain ⟨w0, localRun0, holdsW⟩ := corr.local found 0 sp.toCore
+  rw [bty] at holdsW
+  cases holdsW with
+  | @array _ _ vs _ _ elems =>
+  rcases eff_split lowered ih indexOk corr fr fresh hc within fails
+      (fun j r s h => ⟨j + 2, s, arrayIndex_trap (value_after localRun0 (by omega)) h, rfl⟩) with
+    ⟨d, stops⟩ | ⟨k, iv, st1, run, bound, -, -, -, _, d1, env1, hp1, exec1, same1, holds1, -⟩
+  · exact ⟨d, .seqFirst stops⟩
+  by_cases zero : (Expr.compare .u64 .lt (.var slot) (.lit (BitVec.ofNat 64 n'))).eval env1 = 0
+  · exact ⟨_, Stops.after exec1 (Stops.check (d := 0) fun h => absurd zero h)⟩
+  have inBounds : (env1 slot).toNat < n' := by
+    have small : n' < 2 ^ 64 := by omega
+    by_cases h : (env1 slot).toNat < n'
+    · exact h
+    · simp [Expr.eval, Word.holds, CmpOp.holdsU, BitVec.ult, Nat.mod_eq_of_lt small, h] at zero
+  have len : vs.length = n' := by rw [elems.length, List.length_replicate]
+  have scalar : i.ty.isScalar = true := by
+    cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+  have posOk := index_ok (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) (by
+    simp only [Expr.eval]; omega)
+  have done := arrayIndex_done (value_after localRun0 (by omega : 0 + 1 ≤ k + 1)) (value_after run (Nat.le_succ k))
+    posOk (by simp only [Expr.eval]; omega)
+  exact (fails.not_done done bound).elim
+
 theorem eff_index (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {slice : Nat}
     {index : SrcEff} (ih : EffStops sp mp n index) : EffStops sp mp n (.eIndex slice index) := by
   intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
@@ -799,7 +856,8 @@ theorem eff_index (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
   · simp at ok
   rename_i b found
   split at ok
-  · simp at ok
+  · simp only [SrcEff.toCore] at fails
+    exact eff_arrayIndex lowered ih found ok corr fr fresh hc within fails
   rename_i element elementOk
   have bty := eq_of_elementOf elementOk
   simp only [SrcEff.toCore] at fails
@@ -873,10 +931,22 @@ theorem eff_struct (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     case isFalse => simp at ok
     simp only [Option.some.injEq] at ok
     subst ok
+    simp only [SrcType.literal] at fails
     rcases args_split lowered each argsOk corr fr fresh hc within fails
         (fun j r s h => ⟨j + 1, s, struct_trap h, rfl⟩) with stops | ⟨k, vs, st1, run, bound, -⟩
     · exact stops
     · exact (fails.not_done (struct_done run) bound).elim
+  case array e n =>
+    simp only [evalStructOf] at ok
+    split at ok
+    case isFalse => simp at ok
+    simp only [Option.some.injEq] at ok
+    subst ok
+    simp only [SrcType.literal] at fails
+    rcases args_split lowered each argsOk corr fr fresh hc within fails
+        (fun j r s h => ⟨j + 1, s, array_trap h, rfl⟩) with stops | ⟨k, vs, st1, run, bound, -⟩
+    · exact stops
+    · exact (fails.not_done (array_done run) bound).elim
   all_goals simp at ok
 
 theorem eff_variant (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {ty : SrcType}
@@ -1148,6 +1218,7 @@ theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
   | struct => cases values <;> simp [matchVariants, evalArms] at armsOk
   | ptr => cases values <;> simp [matchVariants, evalArms] at armsOk
   | slice => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | array => cases values <;> simp [matchVariants, evalArms] at armsOk
   | unit => cases values <;> simp [matchVariants, evalArms] at armsOk
   | isize => cases values <;> simp [matchVariants, evalArms] at armsOk
   | char => cases values <;> simp [matchVariants, evalArms] at armsOk
@@ -1284,6 +1355,7 @@ theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
   case h_10 => simp at ok
   case h_11 => simp at ok
   case h_12 => simp at ok
+  case h_13 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok
@@ -1754,7 +1826,9 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
   | .setByte _ _ _ => stops_setByte
   | .free _ _ _ => stops_free
   | .letSlice _ _ _ _ body => stops_letSlice (stmtStops_succ lowered returns prev body)
-  | .letIndex _ _ _ _ body => stops_letIndex (stmtStops_succ lowered returns prev body)
+  | .letIndex _ _ slice index body => stops_letIndex (stmtStops_succ lowered returns prev body)
+      (stops_letEval lowered (effStops_all lowered returns prev (.eIndex slice (.ePure index)))
+        (stmtStops_succ lowered returns prev body))
   | .setIndex _ _ _ => stops_setIndex
   | .letEval _ _ value body =>
       stops_letEval lowered (effStops_all lowered returns prev value) (stmtStops_succ lowered returns prev body)

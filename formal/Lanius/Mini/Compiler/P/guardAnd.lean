@@ -46,6 +46,7 @@ def shiftWidth (ty : SrcType) : BitVec 64 :=
   | .enum id variants => 64
   | .ptr => 64
   | .slice element => 64
+  | .array arrayElement arrayLength => 64
   | .unit => 64
   | .isize => 64
   | .char => 32

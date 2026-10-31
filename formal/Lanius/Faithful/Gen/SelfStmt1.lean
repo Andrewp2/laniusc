@@ -76,8 +76,8 @@ abbrev Stmt_cons_of_mini_selfhost_RawTok (prog : SrcProgram) (prims : Prims) (ix
     (RepList 157 RepRawTok) (x0 :: x1) w
 
 abbrev Stmt_cons_of_mini_selfhost_VariantTy (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.VariantTy} {x1 : List Lanius.Mini.VariantTy} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepVariantTy x0 v0 → (RepList 260 RepVariantTy) x1 v1 →
-    (RepList 260 RepVariantTy) (x0 :: x1) w
+  ∀ {x0 : Lanius.Mini.VariantTy} {x1 : List Lanius.Mini.VariantTy} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepVariantTy x0 v0 → (RepList 263 RepVariantTy) x1 v1 →
+    (RepList 263 RepVariantTy) (x0 :: x1) w
 
 abbrev Stmt_empty_of_mini_selfhost_Code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

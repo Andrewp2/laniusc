@@ -13,6 +13,9 @@ open Lanius.Mini
 
 noncomputable section
 
+/-- mini::selfhost::array_type -/
+def src_array_type (ix_boxed_of_mini_selfhost_SrcType : Nat) : SrcFunc := { params := [{ id := 11, ty := ty173 }, { id := 51, ty := SrcType.uint (UintTy.usize) }], ret := ty173, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty173 ty173 [[165], []] [SrcEff.eVariant ty173 0 [SrcEff.eVariant ty9 7 [SrcEff.eCall ix_boxed_of_mini_selfhost_SrcType [SrcEff.ePure (SrcExpr.local 165)], SrcEff.ePure (SrcExpr.local 51)]], SrcEff.eVariant ty173 1 []]) }
+
 /-- mini::selfhost::cons_type -/
 def src_cons_type (ix_cons_type_tail : Nat) : SrcFunc := { params := [{ id := 10, ty := ty173 }, { id := 47, ty := ty210 }], ret := ty210, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty173 ty210 [[192], []] [SrcEff.eCall ix_cons_type_tail [SrcEff.ePure (SrcExpr.local 192), SrcEff.ePure (SrcExpr.local 47)], SrcEff.eVariant ty210 1 []]) }
 

@@ -38,7 +38,7 @@ import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.copyBinding
+import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
@@ -70,6 +70,7 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.lowerBody
@@ -95,10 +96,11 @@ import all Lanius.Mini.Compiler.P.Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
 import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
--- import parts: Lanius.Mini.Compiler BinOp.size Code.size DivOp.size Instr.size Piece.size SrcType.isI32 SrcType.isScalar SrcType.isUint SrcType.same SrcType.size arith boolBits compileOptimized compileSource declareProgram enumVariants fieldOffset funcsReturn lowerFuncs maxSize offsetOrArith sigs sizes storeEvalThen storeEvalWord structFields
+-- import parts: Lanius.Mini.Compiler BinOp.size Code.size DivOp.size Instr.size Piece.size SrcType.isI32 SrcType.isScalar SrcType.isUint SrcType.same SrcType.size arith boolBits checkThen evalArrayIndex pickElement repeatType compileOptimized compileSource declareProgram enumVariants fieldOffset funcsReturn lowerFuncs maxSize offsetOrArith sigs sizes storeEvalThen storeEvalWord structFields
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.FArith_opcode
 public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.SrcType_size
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.arithShiftRight
@@ -110,9 +112,11 @@ public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.floatApply
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerLoadType
+public import Lanius.Mini.Compiler.P.repeatType
 public import Lanius.Mini.Compiler.P.sigs
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.structFields
+public import Lanius.Mini.Compiler.P.wordStride
 -- end import parts
 
 @[expose] public section
@@ -265,6 +269,7 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .enum _ _, _, _ => False
   | .ptr, value, bits => value = .pointer bits.toNat
   | .slice _, _, _ => False
+  | .array _ _, _, _ => False
   | .unit, _, _ => False
   | .isize, value, bits => value = .signed .isize bits.toInt
   | .char, value, bits => value = .character (UInt32.ofNat bits.toNat) ∧ bits.toNat < 2 ^ 32
@@ -296,6 +301,11 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
   | slice {element : SrcType} {length : Nat} {env : Env} {slot : Nat} :
       (env (slot + 1)).toNat = length → length < 2 ^ 31 →
       SrcType.HoldsAt (.slice element) (.rawSlice element.toCore (env slot).toNat length) env slot
+  /-- An array is its elements one after another, like a struct of `length`
+  fields of the element type. -/
+  | array {element : SrcType} {length : Nat} {vs : List Value} {env : Env} {slot : Nat} :
+      FieldsHold (List.replicate length element) vs env slot →
+      SrcType.HoldsAt (.array element length) (.array vs) env slot
   /-- The unit value's one slot holds any bits. -/
   | unit {env : Env} {slot : Nat} : SrcType.HoldsAt .unit .unit env slot
   | isize {value : Value} {env : Env} {slot : Nat} :
@@ -325,6 +335,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | enum => simp [SrcType.isScalar] at scalar
   | ptr => exact ⟨fun | .ptr h => h, .ptr⟩
   | slice => simp [SrcType.isScalar] at scalar
+  | array => simp [SrcType.isScalar] at scalar
   | unit => simp [SrcType.isScalar] at scalar
   | isize => exact ⟨fun | .isize h => h, .isize⟩
   | char => exact ⟨fun | .char h => h, .char⟩
@@ -348,6 +359,20 @@ theorem sizes_le_maxSize : ∀ {variants : List (List SrcType)} {k : Nat} {fs : 
     have := sizes_le_maxSize found
     simp only [maxSize]
     omega
+
+/-- An array's slots: its length times its element's. -/
+theorem sizes_replicate (element : SrcType) : ∀ n, sizes (List.replicate n element) = n * element.size
+  | 0 => by simp [sizes]
+  | n + 1 => by
+    simp only [List.replicate_succ, sizes, sizes_replicate element n, Nat.succ_mul]
+    omega
+
+/-- An array's element types: `length` copies of its element type. -/
+theorem repeatType_eq (ty : SrcType) : ∀ n, repeatType ty n = List.replicate n ty
+  | 0 => by rw [repeatType]; rfl
+  | n + 1 => by
+    rw [repeatType]
+    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel, repeatType_eq ty n, List.replicate_succ]
 
 mutual
 theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot : Nat},
@@ -387,6 +412,9 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     simp only [Nat.add_zero] at this
     rw [← this]
     exact .slice (by rw [second]; exact len) small
+  | .array _ _, _, _, _, .array holds, _, _, agree =>
+    .array (FieldsHold.congr holds fun i below => agree i (by
+      simp only [SrcType.size]; rw [sizes_replicate] at below; exact below))
   | .unit, _, _, _, .unit, _, _, _ => .unit
   | .isize, _, _, _, .isize holds, _, _, agree => by
     have := agree 0 (by simp [SrcType.size])
@@ -533,5 +561,29 @@ theorem storeEvalWord_cond {decls : SrcDecls} {b : Binding} {e : SrcType} {slot 
   split at h
   · exact storeEvalThen_cond h
   · simp at h
+
+/-- `array[index]` of an array local: the index evaluated into `slot`,
+checked below the length, then the element it picks copied over it. -/
+theorem evalArrayIndex_some {b : Binding} {slot : Nat} {index : Option Evaluated} {ev : Evaluated}
+    (h : evalArrayIndex b slot index = some ev) :
+    ∃ e n i, b.ty = .array e n ∧ index = some i ∧ (i.ty.isI32 || i.ty.isUint .usize) = true ∧
+      0 < n ∧ n < 2147483648 ∧ 0 < e.size ∧
+      ev = { stmt := .seq i.stmt (checkThen slot (.compare .u64 .lt (.var slot) (.lit (BitVec.ofNat 64 n)))
+        (pickElement slot b.slot e.size 0 n)), ty := e } := by
+  unfold evalArrayIndex at h
+  split at h
+  case h_8 e n hty =>
+    simp only [evalArrayElement] at h
+    split at h
+    · simp at h
+    · rename_i i
+      simp only [evalPick] at h
+      split at h
+      · rename_i c
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        simp only [Option.some.injEq] at h
+        exact ⟨e, n, i, hty, rfl, c.1.1.1, c.1.1.2, c.1.2, c.2, h.symm⟩
+      · simp at h
+  all_goals simp at h
 
 end Lanius.Mini

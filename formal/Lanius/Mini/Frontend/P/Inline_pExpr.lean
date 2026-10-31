@@ -27,6 +27,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pFile : Nat :=
   0
 
+@[expose] def Inline.pFloat : Nat :=
+  176
+
 @[expose] def Inline.pFn : Nat :=
   11
 
@@ -38,6 +41,9 @@ namespace Lanius.Mini
 
 @[expose] def Inline.pGeTail : Nat :=
   141
+
+@[expose] def Inline.pGenericArgumentInteger : Nat :=
+  296
 
 @[expose] def Inline.pGenericArgumentType : Nat :=
   294

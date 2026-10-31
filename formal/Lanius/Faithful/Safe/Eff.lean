@@ -360,7 +360,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     simp only [SrcEff.toCore] at run
     simp only [effTy, Option.bind_eq_some_iff] at ht
     obtain ⟨ts, hts, -⟩ := ht
-    obtain ⟨j, hj, frun⟩ := structValue_trap_inv run
+    obtain ⟨j, hj, frun⟩ := literal_trap_inv run
     obtain rfl : k = j := Nat.succ.inj hj
     exact effs frun hts inv rel bound
   | eVariant ty variant payload =>
@@ -405,6 +405,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     | char => simp at hm
     | float => simp at hm
     | sint => simp at hm
+    | array => simp at hm
 
 theorem effs_safe_step (calls : ∀ m, FuncSim sp prims outside m) (eff : EffSafe sp prims outside k)
     (effs : EffsSafe sp prims outside k) : EffsSafe sp prims outside (k + 1) := by

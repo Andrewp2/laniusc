@@ -912,7 +912,7 @@ theorem index_ok {t : Typed} {iv : Value} {x : BitVec 64}
     cases UintTy.eq_of_code kind
     obtain ⟨rfl, -⟩ := holds
     simp only [Semantics.integerIndex]
-  | bool | struct | enum | ptr | slice | unit | isize | char | float | sint => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
+  | bool | struct | enum | ptr | slice | array | unit | isize | char | float | sint => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
 
 /-- Statements one after another, then `body`. -/
 def chain : List Stmt → Stmt → Stmt
@@ -947,6 +947,7 @@ theorem loadType_chain : ∀ (t : SrcType) (target : Nat) (base : Expr) (offset 
   | .float _, _, _, _ => ⟨[_], fun _ => rfl⟩
   | .sint _, _, _, _ => ⟨[_], fun _ => rfl⟩
   | .slice _, _, _, _ => ⟨[_], fun _ => rfl⟩
+  | .array _ _, _, _, _ => ⟨[], fun _ => rfl⟩
   | .unit, _, _, _ => ⟨[_], fun _ => rfl⟩
   | .enum _ _, _, _, _ => ⟨[_, _], fun _ => rfl⟩
   | .struct _ fields, target, base, offset => by
@@ -1287,6 +1288,7 @@ theorem stops_setField {id index : Nat} {value : SrcExpr} : SrcStops sp mp n (.s
   case h_10 => simp at ok
   case h_11 => simp at ok
   case h_12 => simp at ok
+  case h_13 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -1340,6 +1342,31 @@ theorem stops_letStruct {id : Nat} {ty : SrcType} {fields : List SrcExpr} {body 
   | float => simp [lowerLiteral] at literalOk
   | sint => simp [lowerLiteral] at literalOk
   | ptr => simp [lowerLiteral] at literalOk
+  | array e n =>
+    simp only [lowerLiteral, lowerStructFields] at literalOk
+    split at literalOk
+    · simp at literalOk
+    rename_i nonempty
+    rw [repeatType_eq] at literalOk nonempty
+    rw [sizes_replicate] at nonempty
+    refine Stops.checked fun g => ?_
+    obtain ⟨k, vs, fieldsRun⟩ := lowerArgs_progress corr (SrcProgram.target_toCore sp) literalOk g
+    obtain ⟨-, fieldsHold, len, shapes⟩ := lowerArgs_sound corr (SrcProgram.target_toCore sp) literalOk fieldsRun
+    rw [sizes_replicate] at len
+    have valueRun : evalExpr (k + 1) sp.toCore st ((SrcType.array e n).literal (fields.map SrcExpr.toCore)) =
+        .done (.array vs) st := by
+      simp only [SrcType.literal, evalExpr, fieldsRun]
+    have flat : FlatValue (.array e n) (.array vs) env xs :=
+      ⟨by simp only [SrcType.size, len], .array fieldsHold⟩
+    have insens : Insens xs next := Insens.below fun x mem => by
+      obtain ⟨ys, shape, inYs⟩ := shapes x mem
+      exact shape.below fr.slots x inYs
+    simp only [SrcStmt.toCore] at fails
+    obtain ⟨d, stops⟩ := let_stops ih bodyOk corr fr fresh le
+      (by simp only [SrcType.size]; exact Nat.pos_of_ne_zero nonempty)
+      (fr.agree fun j below => setFrom_outside xs next env j (.inl below)) (flat.store insens) hc within
+      (fails.letBody valueRun)
+    exact ⟨d, Stops.assignFrom xs next stops⟩
   | struct sid types =>
     simp only [lowerLiteral, lowerStructFields] at literalOk
     split at literalOk
@@ -1348,15 +1375,15 @@ theorem stops_letStruct {id : Nat} {ty : SrcType} {fields : List SrcExpr} {body 
     refine Stops.checked fun g => ?_
     obtain ⟨k, vs, fieldsRun⟩ := lowerArgs_progress corr (SrcProgram.target_toCore sp) literalOk g
     obtain ⟨-, fieldsHold, len, shapes⟩ := lowerArgs_sound corr (SrcProgram.target_toCore sp) literalOk fieldsRun
-    have valueRun : evalExpr (k + 1) sp.toCore st (.structValue sid (fields.map SrcExpr.toCore)) =
+    have valueRun : evalExpr (k + 1) sp.toCore st ((SrcType.struct sid types).literal (fields.map SrcExpr.toCore)) =
         .done (.structure sid vs) st := by
-      simp only [evalExpr, fieldsRun]
+      simp only [SrcType.literal, evalExpr, fieldsRun]
     have flat : FlatValue (.struct sid types) (.structure sid vs) env xs :=
       ⟨by simp [SrcType.size, len], .struct fieldsHold⟩
     have insens : Insens xs next := Insens.below fun x mem => by
       obtain ⟨ys, shape, inYs⟩ := shapes x mem
       exact shape.below fr.slots x inYs
-    simp only [SrcStmt.toCore, SrcType.typeId] at fails
+    simp only [SrcStmt.toCore] at fails
     obtain ⟨d, stops⟩ := let_stops ih bodyOk corr fr fresh le (by simp only [SrcType.size]; omega)
       (fr.agree fun j below => setFrom_outside xs next env j (.inl below)) (flat.store insens) hc within
       (fails.letBody valueRun)
@@ -1384,6 +1411,7 @@ theorem stops_letEnum {id : Nat} {ty : SrcType} {variant : Nat} {payload : List 
   | struct => simp [lowerEnumValue] at valueOk
   | ptr => simp [lowerEnumValue] at valueOk
   | slice => simp [lowerEnumValue] at valueOk
+  | array => simp [lowerEnumValue] at valueOk
   | unit => simp [lowerEnumValue] at valueOk
   | isize => simp [lowerEnumValue] at valueOk
   | char => simp [lowerEnumValue] at valueOk
@@ -1424,7 +1452,7 @@ theorem stops_letEnum {id : Nat} {ty : SrcType} {variant : Nat} {payload : List 
         rw [show next + 1 + i = next + (i + 1) by omega,
           setFrom_value _ next env insens (i + 1) x (by simpa using xFound), Nat.zero_add,
           entry_evalAll env fxs i x xFound]
-    simp only [SrcStmt.toCore, SrcType.typeId] at fails
+    simp only [SrcStmt.toCore] at fails
     obtain ⟨d, stops⟩ := let_stops ih bodyOk corr fr fresh le (by simp only [SrcType.size]; omega)
       (fr.agree fun j below => setFrom_outside _ next env j (.inl below)) holds hc within (fails.letBody valueRun)
     exact ⟨d, Stops.assignFrom _ next stops⟩
@@ -1459,6 +1487,7 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
   case h_10 => simp at matchOk
   case h_11 => simp at matchOk
   case h_12 => simp at matchOk
+  case h_13 => simp at matchOk
   rename_i eid variants hty
   simp only [lowerMatchArms] at matchOk
   split at matchOk
@@ -2107,9 +2136,13 @@ theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : Src
     exact (trap_within this undefined within).elim
 
 theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr} {body : SrcStmt}
-    (ih : SrcStops sp mp n body) : SrcStops sp mp n (.letIndex id ty slice index body) := by
+    (ih : SrcStops sp mp n body) (arrayCase : SrcStops sp mp n (.letEval id ty (.eIndex slice (.ePure index)) body)) :
+    SrcStops sp mp n (.letIndex id ty slice index body) := by
   intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
-  simp only [SrcStmt.lower] at ok
+  simp only [SrcStmt.lower, lowerLetIndexAny] at ok
+  split at ok
+  case isTrue =>
+    exact arrayCase (by simp only [SrcStmt.lower, SrcEff.eval]; exact ok) corr fr fresh le hc within fails
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
   simp only [lowerLetIndex] at ok

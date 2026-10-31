@@ -14,6 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
+public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_variantsNamedAt
 import all Lanius.Mini.Frontend.P.Inline_variantsNamedAt
 

@@ -28,6 +28,7 @@ def intLiteralAt (t : SrcType) (k : BitVec 32) (e : SrcExpr) : SrcExpr :=
   | .enum id variants => e
   | .ptr => nullAt k e
   | .slice el => e
+  | .array el arrayLength => e
   | .unit => e
   | .isize => SrcExpr.cast SrcType.isize e
   | .char => e
@@ -49,6 +50,13 @@ def tyLocal (locals : List LocalTy) (id : Nat) : Option SrcType :=
     else
       tyLocal rest id
 
+/-- count copies of t: an array literal's element types -/
+def repeatSrc (t : SrcType) (count : Nat) : List SrcType :=
+  if count = 0 then
+    []
+  else
+    t :: repeatSrc t (count - 1)
+
 def srcFields (t : Option SrcType) : Option (List SrcType) :=
   match t with
   | none => none
@@ -61,6 +69,7 @@ def srcFields (t : Option SrcType) : Option (List SrcType) :=
     | .enum id variants => none
     | .ptr => none
     | .slice e => none
+    | .array e arrayLength => some (repeatSrc e arrayLength)
     | .unit => none
     | .isize => none
     | .char => none
@@ -79,6 +88,7 @@ def srcVariants (t : Option SrcType) : Option (List (List SrcType)) :=
     | .enum id variants => some variants
     | .ptr => none
     | .slice e => none
+    | .array e arrayLength => none
     | .unit => none
     | .isize => none
     | .char => none
@@ -97,6 +107,7 @@ def srcElement (t : Option SrcType) : Option SrcType :=
     | .enum id variants => none
     | .ptr => none
     | .slice e => some e
+    | .array e arrayLength => some e
     | .unit => none
     | .isize => none
     | .char => none

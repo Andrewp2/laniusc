@@ -20,6 +20,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+abbrev Stmt_array_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 154 RepSrcType) x0 v0 → RepNat x1 v1 →
+    (RepOption 154 RepSrcType) (Lanius.Mini.arrayType x0 x1) w
+
 abbrev Stmt_cons_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 154 RepSrcType) x0 v0 → (RepOption 182 (RepList 72 RepSrcType)) x1 v1 →
     (RepOption 182 (RepList 72 RepSrcType)) (Lanius.Mini.consType x0 x1) w

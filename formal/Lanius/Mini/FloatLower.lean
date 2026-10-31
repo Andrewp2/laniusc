@@ -36,7 +36,7 @@ import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.copyBinding
+import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
@@ -68,6 +68,7 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.lowerBody
@@ -380,6 +381,7 @@ theorem castToFloat_sound {ft : FloatTy} {inner t : Typed} {env : Env} {w result
     cases ft <;> simp only [SrcType.toScalar, FloatTy.toCore, Semantics.evalScalarCast, Except.ok.injEq] at casted <;>
       subst casted <;>
       simp only [Expr.eval, FOp.apply] <;> rw [toInt_small small] <;> exact fromInt_holds _ _
+  · simp at lowered
   · simp at lowered
   · simp at lowered
   · simp at lowered

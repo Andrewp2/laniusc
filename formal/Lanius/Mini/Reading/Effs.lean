@@ -176,6 +176,16 @@ inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff �
       arms.length = (List.zipWith VariantTy.mk t.variants ps).length → (∀ a ∈ os, a ∈ arms) →
       EffArmsR env scope expected t (List.zipWith VariantTy.mk t.variants ps) os eas → resultTy expected eas = some rt →
       EffR env scope expected c (.xMatch s ety rt (armBinders eas) (armValues eas))
+  | array {scope : List Local} {expected : Option Ty} {c : CTree} {e : Ty} {n : Nat} {items : List CTree}
+      {vs : List MEff} : nodeProd c = pArrayLit →
+      ¬(nodeProd (kid c 1) = pArraySome ∧ nodeProd (kid (kid c 1) 1) = pArrayRepeat) → expected = some (.tyArray e n) →
+      Items (kid c 1) items → EffList env scope (some (List.replicate n e)) items vs → vs.length = n →
+      EffR env scope expected c (.xStruct (.tyArray e n) vs)
+  | arrayRepeat {scope : List Local} {expected : Option Ty} {c : CTree} {e : Ty} {n : Nat} {x : SrcExpr} :
+      nodeProd c = pArrayLit → nodeProd (kid c 1) = pArraySome → nodeProd (kid (kid c 1) 1) = pArrayRepeat →
+      expected = some (.tyArray e n) → decimal (kidToken (kid (kid (kid c 1) 1) 1) 0).text 0 = some n →
+      EffR env scope (some e) (kid (kid c 1) 0) (.xPure x) →
+      EffR env scope expected c (.xStruct (.tyArray e n) (List.replicate n (.xPure x)))
 
 /-- `acc op operand op operand ...` -/
 inductive EffFold (env : FrontEnv) : List Local → MEff → CTree → MEff → Prop
@@ -528,6 +538,7 @@ theorem fieldIndex_sound {env : FrontEnv} {t : Ty} {name : Name} {j : Nat} (h : 
   | tyChar => cases h
   | tyFloat ft => cases h
   | tySint _ => cases h
+  | tyArray _ _ => cases h
   | tySlice _ => cases h
 
 theorem effSliceLocal_sound {scope : List Local} {x : MEff} {l : Local} (h : effSliceLocal scope x = some l) :
@@ -674,6 +685,46 @@ def FreeEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d : Na
   (targs ≠ [] ∧ ∃ i ts xs, ExplicitInst env d fd targs i ∧ ParamExpects env.decls fd i.args ts ∧
     EffList env scope (some ts) items xs ∧ x = .xCall i xs)
 
+theorem repeatTy_eq (t : Ty) : ∀ n, repeatTy t n = List.replicate n t
+  | 0 => by rw [repeatTy]; rfl
+  | n + 1 => by rw [repeatTy]; simp [repeatTy_eq t n, List.replicate_succ]
+
+theorem repeatEff_eq (x : MEff) : ∀ n, repeatEff x n = List.replicate n x
+  | 0 => by rw [repeatEff]; rfl
+  | n + 1 => by rw [repeatEff]; simp [repeatEff_eq x n, List.replicate_succ]
+
+theorem expectedArray_some {expected : Option Ty} {a : ArrayParts} (h : expectedArray expected = some a) :
+    expected = some (.tyArray a.element a.count) ∧ a.ty = .tyArray a.element a.count := by
+  cases expected with
+  | none => cases h
+  | some t =>
+    cases t with
+    | tyArray e n =>
+      simp only [expectedArray, arrayParts, Option.some.injEq] at h
+      subst h
+      exact ⟨rfl, rfl⟩
+    | tyI32 => cases h
+    | tyBool => cases h
+    | tyUint _ => cases h
+    | tyPtr => cases h
+    | tyIsize => cases h
+    | tyChar => cases h
+    | tyFloat _ => cases h
+    | tySlice _ => cases h
+    | tyNamed _ _ => cases h
+    | tySint _ => cases h
+
+theorem checkedEff_some {ok : Bool} {x : Option MEff} {y : MEff} (h : checkedEff ok x = some y) :
+    ok = true ∧ x = some y := by
+  cases ok with
+  | true => exact ⟨rfl, h⟩
+  | false => simp [checkedEff] at h
+
+theorem purePart_eq {x : MEff} {e : SrcExpr} (h : purePart x = some e) : x = .xPure e := by
+  cases x with
+  | xPure e' => simp only [purePart, Option.some.injEq] at h; rw [h]
+  | _ => simp [purePart] at h
+
 def EffSound (fuel : Nat) : Prop :=
   (∀ {env scope expected c x}, effOf fuel env scope expected c = some x → EffR env scope expected c x) ∧
   (∀ {env scope expected c x}, effNode fuel env scope expected c = some x → EffR env scope expected c x) ∧
@@ -724,11 +775,14 @@ def EffSound (fuel : Nat) : Prop :=
     EffArmR env scope expected owner v arm ea) ∧
   (∀ {env expected bound value ea}, effArmBound fuel env expected bound value = some ea →
     ∃ b y z T, bound = some b ∧ EffR env b.scope expected value y ∧ divergeArm env.decls expected (some y) = some z ∧
-      MaybeTy (EffTy env.decls b.scope z) T ∧ ea = { binders := b.ids, value := z, ty := T })
+      MaybeTy (EffTy env.decls b.scope z) T ∧ ea = { binders := b.ids, value := z, ty := T }) ∧
+  (∀ {env scope expected c x}, nodeProd c = pArrayLit → effArray fuel env scope expected (kid c 1) = some x →
+    EffR env scope expected c x)
 
+set_option maxHeartbeats 1000000 in
 theorem effSound : ∀ fuel, EffSound fuel
   | 0 => by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     all_goals intros
     all_goals rename_i h
     · rw [effOf.eq_def] at h; simp at h
@@ -763,10 +817,11 @@ theorem effSound : ∀ fuel, EffSound fuel
     · rw [effArms.eq_def] at h; simp at h
     · rw [effArm.eq_def] at h; simp at h
     · rw [effArmBound.eq_def] at h; simp at h
+    · rw [effArray.eq_def] at h; simp at h
   | f + 1 => by
     obtain ⟨ihOf, ihNode, ihFold, ihPostfix, ihPrimary, ihChain, ihStep, ihIdent, ihLiteral, ihVariant, ihList,
       ihPathCall, ihNamed, ihFnPath, ihFree, ihInfer, ihArgs, ihArgNext, ihFound, ihMethod, ihMatch, ihMatchOn,
-      ihMatchEnum, ihArmsOrdered, ihArms, ihArm, ihArmBound⟩ := effSound f
+      ihMatchEnum, ihArmsOrdered, ihArms, ihArm, ihArmBound, ihArray⟩ := effSound f
     have node : ∀ {env scope expected c x}, effNode (f + 1) env scope expected c = some x →
         EffR env scope expected c x := by
       intro env scope expected c x h
@@ -817,8 +872,11 @@ theorem effSound : ∀ fuel, EffSound fuel
       split at h
       · rename_i _ _ _ _ _ _ _ _ _ pm
         exact ihMatch pm h
+      split at h
+      · rename_i pa
+        exact ihArray pa h
       cases h
-    refine ⟨?_, node, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, node, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     -- effOf
     · intro env scope expected c x h
       rw [effOf.eq_def] at h
@@ -1496,6 +1554,58 @@ theorem effSound : ∀ fuel, EffSound fuel
             simp only [Option.some.injEq] at h
             subst h
             exact ⟨b, y, z, _, rfl, ihOf hy, hz, maybeTy_effTy, rfl⟩
+    -- effArray
+    · intro env scope expected c x pa h
+      rw [effArray.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      split at h
+      · rename_i rp
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at rp
+        cases ha : expectedArray expected with
+        | none => rw [ha] at h; cases h
+        | some a =>
+          rw [ha] at h
+          obtain ⟨he, hty⟩ := expectedArray_some ha
+          simp only [arrayRepeatOf] at h
+          cases hw : decimal (kidToken (kid (kid (kid c 1) 1) 1) 0).text 0 with
+          | none => simp [hw] at h
+          | some w =>
+            cases hv : effOf f env scope (some a.element) (kid (kid c 1) 0) with
+            | none => simp [hw, hv] at h
+            | some v =>
+              cases hp : purePart v with
+              | none => simp [hw, hv, hp] at h
+              | some e =>
+                simp only [hw, hv, hp] at h
+                obtain ⟨ok, h⟩ := checkedEff_some h
+                simp only [decide_eq_true_eq] at ok
+                simp only [Option.some.injEq] at h
+                subst h ok
+                rw [purePart_eq hp] at hv
+                rw [hty, repeatEff_eq]
+                exact .arrayRepeat pa rp.1 rp.2 he hw (ihOf hv)
+      · rename_i rp
+        cases ha : expectedArray expected with
+        | none => rw [ha] at h; cases h
+        | some a =>
+          rw [ha] at h
+          obtain ⟨he, hty⟩ := expectedArray_some ha
+          cases hl : listItems f (kid c 1) with
+          | none => rw [hl] at h; cases h
+          | some items =>
+            rw [hl] at h
+            simp only [arrayOf] at h
+            cases hv : effList f env scope (some (repeatTy a.element a.count)) items with
+            | none => rw [hv] at h; cases h
+            | some vs =>
+              rw [hv] at h
+              obtain ⟨ok, h⟩ := checkedEff_some h
+              simp only [decide_eq_true_eq] at ok
+              simp only [Option.some.injEq] at h
+              subst h
+              rw [repeatTy_eq] at hv
+              rw [hty]
+              exact .array pa (by simpa using rp) he (listItems_sound hl) (ihList hv) ok
 
 theorem effOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Option Ty} {c : CTree} {x : MEff}
     (h : effOf fuel env scope expected c = some x) : EffR env scope expected c x :=

@@ -6,11 +6,11 @@ public import Lanius.Faithful.Gen.SelfSrcF_tryLet
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_armsOf
+public import Lanius.Faithful.Gen.SelfStmtF_divergeArm
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_ifEff
 public import Lanius.Faithful.Gen.SelfStmtF_matchLetHead
-public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_treeTokens
 public import Lanius.Faithful.Gen.SelfStmtF_tryLet

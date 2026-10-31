@@ -72,6 +72,8 @@ inductive Ty where
   | tySlice : Ty → Ty
   | tyNamed : Nat → (List Ty) → Ty
   | tySint : UintTy → Ty
+  /-- [element; length] -/
+  | tyArray : Ty → Nat → Ty
   deriving Repr
 
 /-- A declaration at type arguments: a type instance (the declaration is a type's index) or a function instance (a function's index). -/
@@ -198,6 +200,13 @@ structure Local where
 structure Bind where
   name : List Nat
   ty : Ty
+  deriving Repr
+
+/-- An array type, its element type and its length. -/
+structure ArrayParts where
+  ty : Ty
+  element : Ty
+  count : Nat
   deriving Repr
 
 /-- Whether a type expression matches an actual type, as match_ty decides it, with a mismatch told apart from running out of fuel: a method's impl is passed over only when its type does not match. -/

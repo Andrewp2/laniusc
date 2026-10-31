@@ -53,6 +53,7 @@ def srcTy (t : SrcType) : Option Ty :=
   | .enum id variants => none
   | .ptr => some Ty.tyPtr
   | .slice e => none
+  | .array e arrayLength => none
   | .unit => none
   | .isize => some Ty.tyIsize
   | .char => some Ty.tyChar
@@ -69,6 +70,7 @@ def scalarSrc (t : Ty) : Option SrcType :=
   | .tyChar => some SrcType.char
   | .tyFloat ft => some (SrcType.float ft)
   | .tySlice e => none
+  | .tyArray e n => none
   | .tyNamed d args => none
   | .tySint k => some (SrcType.sint k)
 

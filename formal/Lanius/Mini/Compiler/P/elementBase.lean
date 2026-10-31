@@ -34,6 +34,7 @@ def loadType (ty : SrcType) (target : Nat) (base : Expr) (offset : Nat) (body : 
   | .enum id variants => Stmt.seq (Stmt.loadWord MemWidth.m32 target (addressBelow base offset)) (Stmt.seq (loadCases target base offset 0 variants) body)
   | .ptr => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
   | .slice element => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
+  | .array arrayElement arrayLength => body
   | .unit => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
   | .isize => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body
   | .char => Stmt.seq (Stmt.loadWord (widthOf ty) target (addressBelow base offset)) body

@@ -41,7 +41,7 @@ import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.copyBinding
+import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
@@ -73,6 +73,7 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.lowerBody
@@ -357,6 +358,7 @@ theorem castToIsize_sound {inner t : Typed} {env : Env} {w result : Value}
     · simp at lowered
     · simp at lowered
     · simp at lowered
+    · simp at lowered
     · rename_i hty
       simp only [Option.some.injEq] at lowered
       subst lowered
@@ -403,6 +405,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
         simp only [widen, BitVec.toNat_ofNat, BitVec.toNat_setWidth, UintTy.width]
       simp only [wrap_eval, low32]
       exact holds_i32 _
+    · simp at lowered
     · simp at lowered
     · simp at lowered
     · simp at lowered
@@ -460,6 +463,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
     · simp at lowered
     · simp at lowered
     · simp at lowered
+    · simp at lowered
     · rename_i hty
       simp only [Option.some.injEq] at lowered
       subst lowered
@@ -478,6 +482,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
   | enum => simp [castTo] at lowered
   | ptr => simp [castTo] at lowered
   | slice => simp [castTo] at lowered
+  | array => simp [castTo] at lowered
   | unit => simp [castTo] at lowered
   | isize =>
     simp only [castTo] at lowered
@@ -546,7 +551,7 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
 /-- Types `same` agrees on are equal, apart from aggregates (which no word holds). -/
 theorem SrcType.same_cases {a b : SrcType} (h : a.same b = true) :
     (∃ id fields, a = .struct id fields) ∨ (∃ id variants, a = .enum id variants) ∨
-      (∃ element, a = .slice element) ∨ b = a := by
+      (∃ element, a = .slice element) ∨ (∃ element n, a = .array element n) ∨ b = a := by
   cases a <;> cases b <;>
     simp [SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr, SrcType.isUnit,
       SrcType.isIsize, SrcType.isSint, SrcType.isChar, SrcType.isFloat] at h ⊢ <;>
@@ -652,7 +657,7 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
     · rename_i types
       simp only [Option.some.injEq] at lowered
       subst lowered
-      rcases SrcType.same_cases types with ⟨_, _, e⟩ | ⟨_, _, e⟩ | ⟨_, e⟩ | e
+      rcases SrcType.same_cases types with ⟨_, _, e⟩ | ⟨_, _, e⟩ | ⟨_, e⟩ | ⟨_, _, e⟩ | e
       any_goals (rw [e] at holdsl; simp [SrcType.Holds] at holdsl)
       rw [e] at holdsr
       cases htl : tl.ty <;> rw [htl] at holdsl holdsr
@@ -682,6 +687,7 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
         subst evaluated
         simp only [Expr.eval, htl, SrcType.word, Word.holds]
         exact holds_compare _
+      · simp [SrcType.Holds] at holdsl
       · simp [SrcType.Holds] at holdsl
       · simp [SrcType.Holds] at holdsl
       · subst holdsl

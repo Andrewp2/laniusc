@@ -24,15 +24,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_p_arm_block {prog : SrcProgram} {prims : Prims} {ix_p_arm_block : Nat} (fn : prog.funcs[ix_p_arm_block]? = some (src_p_arm_block)) (np : prims.isPrim ix_p_arm_block = false) {n : Nat} :
-    Stmt_p_arm_block prog prims ix_p_arm_block n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_arm_block] at h
-  faithful [Lanius.Mini.Inline.pArmBlock]
-
 theorem proof_p_le_tail {prog : SrcProgram} {prims : Prims} {ix_p_le_tail : Nat} (fn : prog.funcs[ix_p_le_tail]? = some (src_p_le_tail)) (np : prims.isPrim ix_p_le_tail = false) {n : Nat} :
     Stmt_p_le_tail prog prims ix_p_le_tail n := by
   intro w h

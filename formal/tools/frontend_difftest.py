@@ -1024,6 +1024,7 @@ partial def serType : SrcType → String
   | .struct n fs => s!"(.struct {n} {bracket (fs.map serType)})"
   | .enum n vs => s!"(.enum {n} {bracket (vs.map fun v => bracket (v.map serType))})"
   | .slice t => s!"(.slice {serType t})"
+  | .array t n => s!"(.array {serType t} {n})"
   | .unit => ".unit"
   | .isize => ".isize"
   | .char => ".char"

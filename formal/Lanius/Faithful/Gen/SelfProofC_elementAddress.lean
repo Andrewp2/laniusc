@@ -7,9 +7,9 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
-public import Lanius.Faithful.Gen.SelfStmtC_copyBinding
 public import Lanius.Faithful.Gen.SelfStmtC_elementAddress
 public import Lanius.Faithful.Gen.SelfStmtC_elementBase
+public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
 public import Lanius.Faithful.Gen.SelfStmtC_storeType
 public import Lanius.Faithful.Gen.SelfStmtC_wordElement
@@ -88,11 +88,11 @@ theorem proof_store_any {prog : SrcProgram} {prims : Prims} {ix_store_any ix_Src
   simp only [src_store_any] at h
   faithful [Lanius.Mini.storeAny]
 
-theorem proof_store_word_element {prog : SrcProgram} {prims : Prims} {ix_store_word_element ix_SrcType_size ix_lower_value ix_element_base ix_store_type : Nat} (fn : prog.funcs[ix_store_word_element]? = some (src_store_word_element ix_SrcType_size ix_lower_value ix_element_base ix_store_type)) (np : prims.isPrim ix_store_word_element = false)
+theorem proof_store_word_element {prog : SrcProgram} {prims : Prims} {ix_store_word_element ix_SrcType_size ix_lower_value ix_store_type ix_element_base : Nat} (fn : prog.funcs[ix_store_word_element]? = some (src_store_word_element ix_SrcType_size ix_lower_value ix_store_type ix_element_base)) (np : prims.isPrim ix_store_word_element = false)
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_lower_value : Certified (∀ {n : Nat}, Stmt_lower_value prog prims ix_lower_value n))
-    (ext_element_base : Certified (∀ {n : Nat}, Stmt_element_base prog prims ix_element_base n))
-    (ext_store_type : Certified (∀ {n : Nat}, Stmt_store_type prog prims ix_store_type n)) {n : Nat} :
+    (ext_store_type : Certified (∀ {n : Nat}, Stmt_store_type prog prims ix_store_type n))
+    (ext_element_base : Certified (∀ {n : Nat}, Stmt_element_base prog prims ix_element_base n)) {n : Nat} :
     Stmt_store_word_element prog prims ix_store_word_element n := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
   rcases n with _ | n

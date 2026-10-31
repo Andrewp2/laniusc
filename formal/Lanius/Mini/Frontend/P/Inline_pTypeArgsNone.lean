@@ -18,6 +18,12 @@ namespace Lanius.Mini
 @[expose] def Inline.pTypeArray : Nat :=
   70
 
+@[expose] def Inline.pTypeArrayLenConstant : Nat :=
+  291
+
+@[expose] def Inline.pTypeArrayTail : Nat :=
+  283
+
 @[expose] def Inline.pTypeIdent : Nat :=
   69
 

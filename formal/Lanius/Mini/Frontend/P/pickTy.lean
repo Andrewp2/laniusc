@@ -1,17 +1,13 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.typeDeclAt
-import Lanius.Mini.Frontend.P.typePathSpellings
 import Lanius.Mini.Frontend.P.variantIn
 import Lanius.Mini.Frontend.P.wideOf
 
@@ -107,10 +103,26 @@ def sliceElem (t : Ty) : Option Ty :=
   | .tyChar => none
   | .tyFloat ft => none
   | .tySlice e => some e
+  | .tyArray e n => none
   | .tyNamed d args => none
   | .tySint k => none
 
-def namedParts (t : Ty) : Option Inst :=
+/-- The element type of a slice or an array: the type of x[i]. -/
+def indexElem (t : Ty) : Option Ty :=
+  match t with
+  | .tyI32 => none
+  | .tyBool => none
+  | .tyUint k => none
+  | .tyPtr => none
+  | .tyIsize => none
+  | .tyChar => none
+  | .tyFloat ft => none
+  | .tySlice e => some e
+  | .tyArray e n => some e
+  | .tyNamed d args => none
+  | .tySint k => none
+
+def arrayParts (t : Ty) : Option ArrayParts :=
   match t with
   | .tyI32 => none
   | .tyBool => none
@@ -120,120 +132,20 @@ def namedParts (t : Ty) : Option Inst :=
   | .tyChar => none
   | .tyFloat ft => none
   | .tySlice e => none
-  | .tyNamed d args => some ({ decl := d, args := args } : Inst)
+  | .tyArray e n => some ({ ty := t, element := e, count := n } : ArrayParts)
+  | .tyNamed d args => none
   | .tySint k => none
 
-mutual
-/-- Match a type expression of a declaration, whose type parameters names are being inferred, against an actual type, extending binds. -/
-def matchTy (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (pattern : CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
-  if fuel = 0 then
-    none
-  else
-    let f : Nat := fuel - 1
-    let path : CTree := kid pattern 0
-    if decide (nodeProd pattern = (70)) && decide (nodeProd (kid pattern 2) = (284)) then
-      match sliceElem actual with
-      | none => none
-      | some a => matchTy f env names (kid pattern 1) a binds
-    else
-      if nodeProd pattern = (69) then
-        matchPath f env names (typePathSpellings f (kid path 0) (kid path 1)) (listItems f (kid pattern 1)) actual binds
-      else
-        none
-def matchPath (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (segments : Option (List (List Nat))) (items : Option (List CTree)) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
-  if fuel = 0 then
-    none
-  else
-    match segments with
-    | none => none
-    | some ss =>
-      match items with
-      | none => none
-      | some gs => matchNamed (fuel - 1) env names ss gs actual binds
-def matchNamed (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (segments : List (List Nat)) (items : List CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
-  if fuel = 0 then
-    none
-  else
-    match paramSpelling names segments items with
-    | some n => bindTy binds n actual
-    | none =>
-      match barePrim segments items with
-      | some t => sameOrNone (sameTy t actual) binds
-      | none => matchDecl (fuel - 1) env names (typeDeclAt env segments) items (namedParts actual) binds
-def matchDecl (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (d : Option Nat) (items : List CTree) (actual : Option Inst) (binds : List Bind) : Option (List Bind) :=
-  if fuel = 0 then
-    none
-  else
-    match d with
-    | none => none
-    | some x =>
-      match actual with
-      | none => none
-      | some a => matchSameDecl (fuel - 1) env names (decide (x = a.decl)) items a.args binds
-def matchSameDecl (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (same : Bool) (items : List CTree) (args : List Ty) (binds : List Bind) : Option (List Bind) :=
-  if fuel = 0 then
-    none
-  else
-    if same then
-      matchArgs (fuel - 1) env names items args binds
-    else
-      none
-/-- Generic arguments (generic_argument_type) against the actual arguments. -/
-def matchArgs (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (items : List CTree) (actuals : List Ty) (binds : List Bind) : Option (List Bind) :=
-  if fuel = 0 then
-    none
-  else
-    match items with
-    | [] =>
-      (match actuals with
-       | [] => some binds
-       | a :: more => none)
-    | g :: rest =>
-      match actuals with
-      | [] => none
-      | a :: more => matchArgsNext (fuel - 1) env names rest more (matchArg (fuel - 1) env names g a binds)
-def matchArg (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (g : CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
-  if fuel = 0 then
-    none
-  else
-    if nodeProd g = (294) then
-      matchTy (fuel - 1) env names (kid g 0) actual binds
-    else
-      none
-def matchArgsNext (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (items : List CTree) (actuals : List Ty) (got : Option (List Bind)) : Option (List Bind) :=
-  if fuel = 0 then
-    none
-  else
-    match got with
-    | none => none
-    | some b => matchArgs (fuel - 1) env names items actuals b
-/-- Type expressions against actual types, in order. -/
-def matchTys (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (patterns : List CTree) (actuals : List Ty) (binds : List Bind) : Option (List Bind) :=
-  if fuel = 0 then
-    none
-  else
-    match patterns with
-    | [] =>
-      (match actuals with
-       | [] => some binds
-       | a :: more => none)
-    | p :: rest =>
-      match actuals with
-      | [] => none
-      | a :: more => matchTysNext (fuel - 1) env names rest more (matchTy (fuel - 1) env names p a binds)
-def matchTysNext (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (patterns : List CTree) (actuals : List Ty) (got : Option (List Bind)) : Option (List Bind) :=
-  if fuel = 0 then
-    none
-  else
-    match got with
-    | none => none
-    | some b => matchTys (fuel - 1) env names patterns actuals b
-end
+def expectedArray (expected : Option Ty) : Option ArrayParts :=
+  match expected with
+  | none => none
+  | some t => arrayParts t
 
-/-- The inferred arguments, in the order of the parameters. -/
-def boundArgs (names : List (List Nat)) (binds : List Bind) : Option (List Ty) :=
-  match names with
-  | [] => some []
-  | n :: rest => consTy (findBind binds n) (boundArgs rest binds)
+/-- count copies of t -/
+def repeatTy (t : Ty) (count : Nat) : List Ty :=
+  if count = 0 then
+    []
+  else
+    t :: repeatTy t (count - 1)
 
 end Lanius.Mini

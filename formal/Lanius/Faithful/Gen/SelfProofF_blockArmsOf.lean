@@ -23,12 +23,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pWhileStmt
 public import Lanius.Faithful.Gen.SelfStmtF_blockArmsOf
 public import Lanius.Faithful.Gen.SelfStmtF_compoundOf
+public import Lanius.Faithful.Gen.SelfStmtF_divergeArm
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_isMatchStmt
 public import Lanius.Faithful.Gen.SelfStmtF_matchStmtIf
-public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_tryLet

@@ -183,8 +183,8 @@ theorem proof_head_ty {prog : SrcProgram} {prims : Prims} {ix_head_ty : Nat} (fn
   simp only [src_head_ty] at h
   faithful [Lanius.Mini.headTy]
 
-theorem proof_index_ty {prog : SrcProgram} {prims : Prims} {ix_index_ty ix_slice_elem : Nat} (fn : prog.funcs[ix_index_ty]? = some (src_index_ty ix_slice_elem)) (np : prims.isPrim ix_index_ty = false)
-    (ext_slice_elem : Certified (∀ {n : Nat}, Stmt_slice_elem prog prims ix_slice_elem n)) {n : Nat} :
+theorem proof_index_ty {prog : SrcProgram} {prims : Prims} {ix_index_ty ix_index_elem : Nat} (fn : prog.funcs[ix_index_ty]? = some (src_index_ty ix_index_elem)) (np : prims.isPrim ix_index_ty = false)
+    (ext_index_elem : Certified (∀ {n : Nat}, Stmt_index_elem prog prims ix_index_elem n)) {n : Nat} :
     Stmt_index_ty prog prims ix_index_ty n := by
   intro x0 v0 w h r0
   rcases n with _ | n

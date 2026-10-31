@@ -72,6 +72,35 @@ def sliceTy (element : Option Ty) : Option Ty :=
   | none => none
   | some e => some (Ty.tySlice e)
 
+/-- [element; length] -/
+def arrayTy (element : Option Ty) (length : Option Nat) : Option Ty :=
+  match element with
+  | none => none
+  | some e =>
+    match length with
+    | none => none
+    | some n => some (Ty.tyArray e n)
+
+/-- The value of a decimal literal below 2^31. -/
+def decimal (text : List Nat) (acc : Nat) : Option Nat :=
+  if 2147483647 < acc then
+    none
+  else
+    match text with
+    | [] => some acc
+    | b :: rest =>
+      if decide (48 ≤ b) && decide (b ≤ 57) then
+        decimal rest (acc * 10 + (b - 48))
+      else
+        none
+
+/-- An array length written as a decimal integer literal -/
+def arrayLen (l : CTree) : Option Nat :=
+  if decide (nodeProd l = (291)) && decide (nodeProd (kid l 0) = (296)) then
+    decimal (kidToken (kid l 0) 0).text 0
+  else
+    none
+
 def consTyTail (t : Ty) (tail : Option (List Ty)) : Option (List Ty) :=
   match tail with
   | none => none
@@ -93,13 +122,16 @@ def tyOf (fuel : Nat) (env : FrontEnv) (t : CTree) : Option Ty :=
     if decide (nodeProd t = (70)) && decide (nodeProd (kid t 2) = (284)) then
       sliceTy (tyOf f env (kid t 1))
     else
-      if decide (nodeProd t = (69)) && decide (nodeProd (kid t 1) = (226)) then
-        bareOrAlias f env (typePathSpellings f (kid path 0) (kid path 1))
+      if decide (nodeProd t = (70)) && decide (nodeProd (kid t 2) = (283)) then
+        arrayTy (tyOf f env (kid t 1)) (arrayLen (kid (kid t 2) 1))
       else
-        if decide (nodeProd t = (69)) && decide (nodeProd (kid t 1) = (227)) then
-          appliedOf f env (typePathSpellings f (kid path 0) (kid path 1)) (listItems f (kid t 1))
+        if decide (nodeProd t = (69)) && decide (nodeProd (kid t 1) = (226)) then
+          bareOrAlias f env (typePathSpellings f (kid path 0) (kid path 1))
         else
-          none
+          if decide (nodeProd t = (69)) && decide (nodeProd (kid t 1) = (227)) then
+            appliedOf f env (typePathSpellings f (kid path 0) (kid path 1)) (listItems f (kid t 1))
+          else
+            none
 def appliedOf (fuel : Nat) (env : FrontEnv) (segments : Option (List (List Nat))) (items : Option (List CTree)) : Option Ty :=
   if fuel = 0 then
     none

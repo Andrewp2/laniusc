@@ -40,6 +40,8 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   | cast {s : SrcType} {a : MEff} {t : Ty} : ScalarTy t s → EffTy decls scope (.xCast s a) t
   | index {s : Nat} {i : MEff} {l : Local} {t : Ty} : LocalWithId scope s l → l.ty = .tySlice t →
       EffTy decls scope (.xIndex s i) t
+  | indexArray {s : Nat} {i : MEff} {l : Local} {t : Ty} {n : Nat} : LocalWithId scope s l → l.ty = .tyArray t n →
+      EffTy decls scope (.xIndex s i) t
   | struct {t : Ty} {fs : List MEff} : EffTy decls scope (.xStruct t fs) t
   | variant {t : Ty} {k : Nat} {ps : List MEff} : EffTy decls scope (.xVariant t k ps) t
   | «match» {s : MEff} {ety t : Ty} {bs : List (List Nat)} {vs : List MEff} : EffTy decls scope (.xMatch s ety t bs vs) t
@@ -90,6 +92,7 @@ theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : i
         | tyChar => cases hs
         | tyFloat ft => cases hs
         | tySint _ => cases hs
+        | tyArray _ _ => cases hs
         | tySlice _ => cases hs
 
 theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x : MEff} {t : Ty},
@@ -125,7 +128,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
       | some l =>
         rw [hl] at h
         simp only at h
-        unfold sliceElem at h
+        unfold indexElem at h
         cases hty : l.ty with
         | tySlice e => rw [hty] at h; cases h; exact .index (findLocalId_sound hl) hty
         | tyI32 => rw [hty] at h; cases h
@@ -136,6 +139,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
         | tyChar => rw [hty] at h; cases h
         | tyFloat ft => rw [hty] at h; cases h
         | tySint _ => rw [hty] at h; cases h
+        | tyArray e n => rw [hty] at h; cases h; exact .indexArray (findLocalId_sound hl) hty
         | tyNamed _ _ => rw [hty] at h; cases h
     | xStruct t' fs => cases h; exact .struct
     | xVariant t' k ps => cases h; exact .variant

@@ -46,14 +46,14 @@ theorem step_store_cases {prog : SrcProgram} {prims : Prims} {ix_store_cases ix_
   simp only [src_store_cases] at h
   faithful [Lanius.Mini.storeCases]
 
-theorem step_store_type {prog : SrcProgram} {prims : Prims} {ix_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_width_of ix_address_below ix_store_one ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases : Nat} (fn : prog.funcs[ix_store_type]? = some (src_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_width_of ix_address_below ix_store_one ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases)) (np : prims.isPrim ix_store_type = false)
+theorem step_store_type {prog : SrcProgram} {prims : Prims} {ix_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_store_one ix_width_of ix_address_below ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases : Nat} (fn : prog.funcs[ix_store_type]? = some (src_store_type ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_lower_then ix_store_one ix_width_of ix_address_below ix_get_of_mini_selfhost_Expr ix_store_types ix_store_cases)) (np : prims.isPrim ix_store_type = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_lower_then : Certified (∀ {n : Nat}, Stmt_lower_then prog prims ix_lower_then n))
+    (ext_store_one : Certified (∀ {n : Nat}, Stmt_store_one prog prims ix_store_one n))
     (ext_width_of : Certified (∀ {n : Nat}, Stmt_width_of prog prims ix_width_of n))
     (ext_address_below : Certified (∀ {n : Nat}, Stmt_address_below prog prims ix_address_below n))
-    (ext_store_one : Certified (∀ {n : Nat}, Stmt_store_one prog prims ix_store_one n))
     (ext_get_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Expr prog prims ix_get_of_mini_selfhost_Expr n)) {n : Nat}
     (ih_store_types : Certified (Stmt_store_types prog prims ix_store_types n))
     (ih_store_cases : Certified (Stmt_store_cases prog prims ix_store_cases n)) :

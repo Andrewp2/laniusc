@@ -46,7 +46,7 @@ abbrev Stmt_compound_field_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat)
 
 abbrev Stmt_compound_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepOption 252 RepSrcOp) (Lanius.Mini.compoundOp x0) w
+    (RepOption 254 RepSrcOp) (Lanius.Mini.compoundOp x0) w
 
 abbrev Stmt_discard_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 241 RepMEff) x0 v0 →
@@ -57,7 +57,7 @@ abbrev Stmt_field_ty_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 203 RepTy) (Lanius.Mini.fieldTyAt x0 x1 x2 x3) w
 
 abbrev Stmt_free_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 280 (RepList 21 RepSrcExpr)) x0 v0 →
+  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 282 (RepList 21 RepSrcExpr)) x0 v0 →
     (RepOption 236 RepMStmt) (Lanius.Mini.freeOf x0) w
 
 abbrev Stmt_free_shifted (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -28,8 +28,8 @@ abbrev Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Arity (prog : SrcProgram) 
     (RepList 142 RepArity) x0 w
 
 abbrev Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Bind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Bind} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 267 RepBind) x0 v0 →
-    (RepList 267 RepBind) x0 w
+  ∀ {x0 : List Lanius.Mini.Bind} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 270 RepBind) x0 v0 →
+    (RepList 270 RepBind) x0 w
 
 abbrev Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 91 RepExpr) x0 v0 →
@@ -68,8 +68,8 @@ abbrev Stmt_cons_of_bool (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     (RepList 245 RepBool) (x0 :: x1) w
 
 abbrev Stmt_cons_of_mini_selfhost_Bind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Bind} {x1 : List Lanius.Mini.Bind} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBind x0 v0 → (RepList 267 RepBind) x1 v1 →
-    (RepList 267 RepBind) (x0 :: x1) w
+  ∀ {x0 : Lanius.Mini.Bind} {x1 : List Lanius.Mini.Bind} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBind x0 v0 → (RepList 270 RepBind) x1 v1 →
+    (RepList 270 RepBind) (x0 :: x1) w
 
 abbrev Stmt_cons_of_mini_selfhost_Expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {x1 : List Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepExpr x0 v0 → (RepList 91 RepExpr) x1 v1 →

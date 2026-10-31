@@ -16,6 +16,13 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+/-- count copies of ty: an array's element types, which it takes slots as a struct of count fields of type ty does -/
+def repeatType (ty : SrcType) (count : Nat) : List SrcType :=
+  if count = 0 then
+    []
+  else
+    ty :: repeatType ty (count - 1)
+
 def copyBinding (binding : Option Binding) (ty : SrcType) : Option (List Expr) :=
   match binding with
   | none => none
@@ -43,6 +50,7 @@ def copyFieldOf (b : Binding) (index : Nat) (ty : SrcType) : Option (List Expr) 
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .array arrayElement arrayLength => none
   | .unit => none
   | .isize => none
   | .char => none
@@ -111,6 +119,7 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .array arrayElement arrayLength => lowerStructFields scope fields (repeatType arrayElement arrayLength)
   | .unit => none
   | .isize => none
   | .char => none

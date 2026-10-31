@@ -49,13 +49,14 @@ theorem proof_close_named {prog : SrcProgram} {prims : Prims} {ix_close_named ix
   simp only [src_close_named] at h
   faithful [Lanius.Mini.closeNamed]
 
-theorem step_close_ty {prog : SrcProgram} {prims : Prims} {ix_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_inst_index ix_slice_type ix_close_named : Nat} (fn : prog.funcs[ix_close_ty]? = some (src_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_close_ty ix_inst_index ix_slice_type ix_close_named)) (np : prims.isPrim ix_close_ty = false)
+theorem step_close_ty {prog : SrcProgram} {prims : Prims} {ix_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_inst_index ix_slice_type ix_close_named ix_array_type : Nat} (fn : prog.funcs[ix_close_ty]? = some (src_close_ty ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_close_ty ix_inst_index ix_slice_type ix_close_named ix_array_type)) (np : prims.isPrim ix_close_ty = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n))
     (ext_unbox_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_Ty n))
     (ext_inst_index : Certified (∀ {n : Nat}, Stmt_inst_index prog prims ix_inst_index n))
     (ext_slice_type : Certified (∀ {n : Nat}, Stmt_slice_type prog prims ix_slice_type n))
-    (ext_close_named : Certified (∀ {n : Nat}, Stmt_close_named prog prims ix_close_named n)) {n : Nat}
+    (ext_close_named : Certified (∀ {n : Nat}, Stmt_close_named prog prims ix_close_named n))
+    (ext_array_type : Certified (∀ {n : Nat}, Stmt_array_type prog prims ix_array_type n)) {n : Nat}
     (ih_close_ty : Certified (Stmt_close_ty prog prims ix_close_ty n)) :
     Stmt_close_ty prog prims ix_close_ty (n + 1) := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2

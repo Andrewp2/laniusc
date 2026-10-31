@@ -33,6 +33,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | enum => simp [SrcType.same] at same
     | ptr => simp [SrcType.same] at same
     | slice => simp [SrcType.same] at same
+    | array => simp [SrcType.same] at same
     | unit => simp [SrcType.same] at same
     | isize => simp [SrcType.same] at same
     | char => simp [SrcType.same] at same
@@ -49,6 +50,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | struct => simp [SrcType.same] at same
     | ptr => simp [SrcType.same] at same
     | slice => simp [SrcType.same] at same
+    | array => simp [SrcType.same] at same
     | unit => simp [SrcType.same] at same
     | isize => simp [SrcType.same] at same
     | char => simp [SrcType.same] at same
@@ -65,6 +67,24 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | struct => simp [SrcType.same] at same
     | enum => simp [SrcType.same] at same
     | ptr => simp [SrcType.same] at same
+    | array => simp [SrcType.same] at same
+    | unit => simp [SrcType.same] at same
+    | isize => simp [SrcType.same] at same
+    | char => simp [SrcType.same] at same
+    | float => simp [SrcType.same] at same
+    | sint => simp [SrcType.same] at same
+  | .array e n, b, same => by
+    cases b with
+    | array e' n' =>
+      simp only [SrcType.same, Bool.and_eq_true, decide_eq_true_eq] at same
+      rw [same.1, SrcType.eq_of_same e same.2]
+    | i32 => simp [SrcType.same] at same
+    | bool => simp [SrcType.same] at same
+    | uint => simp [SrcType.same] at same
+    | struct => simp [SrcType.same] at same
+    | enum => simp [SrcType.same] at same
+    | ptr => simp [SrcType.same] at same
+    | slice => simp [SrcType.same] at same
     | unit => simp [SrcType.same] at same
     | isize => simp [SrcType.same] at same
     | char => simp [SrcType.same] at same
@@ -108,7 +128,7 @@ theorem wordWidth_cases {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) 
   | ptr => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inl ⟨rfl, h.symm⟩)))
   | isize => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inr (.inl ⟨rfl, h.symm⟩))))
   | sint k => exact .inr (.inr (.inr (.inr (.inr ⟨k, rfl, h⟩))))
-  | struct | enum | slice | unit | char | float => simp [wordWidth] at h
+  | struct | enum | slice | array | unit | char | float => simp [wordWidth] at h
 
 theorem wordWidth_size {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) : f.size = 1 := by
   rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ <;> rfl

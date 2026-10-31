@@ -37,7 +37,7 @@ def instRet (fuel : Nat) (decls : Decls) (inst : Inst) : Option Ty :=
 def indexTy (l : Option Local) : Option Ty :=
   match l with
   | none => none
-  | some x => sliceElem x.ty
+  | some x => indexElem x.ty
 
 /-- The type of an effectful expression, as type arguments are inferred from it. -/
 def bareEff (x : MEff) : Bool :=
