@@ -843,9 +843,11 @@ the match's `}` and `R` the function's result type.
   statements after the match would run. compileSource rejects such a match
   when it ends a function with a result, since not every path returns
   (case `match_block_open`).
-- Not read yet: a match with both block and expression arms (`let x =
-  match (s) { Ok(v) -> v, Err(e) -> { return ...; } }`), which needs a
-  local bound before the match and set in the expression arms.
+- `let x: T = match (s) { arms }; rest` with at least one block arm and
+  exactly one value arm reads as the same chain. The value arm's body is
+  `let x: T = value; rest`, so the statements after the let are read once,
+  inside that arm (case `let_match_block`). A let's match with two or more
+  value arms and a block arm is not read: it would copy rest into each.
 
 ## Untyped lets (decided 10-31, F4)
 

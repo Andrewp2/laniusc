@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Frontend.P.blockArmsOf
 public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail
@@ -15,7 +16,6 @@ public import Lanius.Mini.Frontend.P.isEmptyUsize
 public import Lanius.Mini.Frontend.P.lxBlockEnd
 public import Lanius.Mini.Frontend.P.lxSpaceEnd
 public import Lanius.Mini.Frontend.P.lxSymbolStart
-public import Lanius.Mini.Frontend.P.matchStmtIf
 public import Lanius.Mini.Frontend.P.monoLoop
 public import Lanius.Mini.Frontend.P.noToken
 public import Lanius.Mini.Frontend.P.noTrees

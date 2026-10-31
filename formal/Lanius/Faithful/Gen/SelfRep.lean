@@ -782,11 +782,11 @@ inductive RepUntyped : Lanius.Mini.Untyped → Value → Prop where
 
 inductive RepVariantTy : Lanius.Mini.VariantTy → Value → Prop where
   | c0 {x0 : List Nat} {x1 : List Lanius.Mini.Ty} {v0 v1 : Value} :
-      (RepList 25 RepNat) x0 v0 → (RepList 137 RepTy) x1 v1 → RepVariantTy (Lanius.Mini.VariantTy.mk x0 x1) (.structure 252 [v0, v1])
+      (RepList 25 RepNat) x0 v0 → (RepList 137 RepTy) x1 v1 → RepVariantTy (Lanius.Mini.VariantTy.mk x0 x1) (.structure 250 [v0, v1])
 
 inductive RepMatchStmt : Lanius.Mini.MatchStmt → Value → Prop where
   | c0 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.MEff} {x3 : Lanius.Mini.TypeDecl} {x4 : List Lanius.Mini.VariantTy} {x5 : Nat} {x6 : Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 v6 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → (RepOption 246 RepMEff) x2 v2 → RepTypeDecl x3 v3 → (RepList 251 RepVariantTy) x4 v4 → RepNat x5 v5 → RepTy x6 v6 → RepMatchStmt (Lanius.Mini.MatchStmt.mk x0 x1 x2 x3 x4 x5 x6) (.structure 250 [v0, v1, v2, v3, v4, v5, v6])
+      RepNat x0 v0 → RepTy x1 v1 → (RepOption 246 RepMEff) x2 v2 → RepTypeDecl x3 v3 → (RepList 249 RepVariantTy) x4 v4 → RepNat x5 v5 → RepTy x6 v6 → RepMatchStmt (Lanius.Mini.MatchStmt.mk x0 x1 x2 x3 x4 x5 x6) (.structure 248 [v0, v1, v2, v3, v4, v5, v6])
 
 inductive RepBound : Lanius.Mini.Bound → Value → Prop where
   | c0 {x0 : List Nat} {x1 : List Lanius.Mini.Local} {v0 v1 : Value} :
@@ -1120,13 +1120,13 @@ attribute [rep_rule] RepArgsBound.c0 RepFlDiv.c0
 @[pure_rule] theorem ty298_typeId : ty298.typeId = 243 := rfl
 @[pure_rule] theorem ty299_typeId : ty299.typeId = 242 := rfl
 @[pure_rule] theorem ty300_typeId : ty300.typeId = 241 := rfl
-@[pure_rule] theorem ty301_typeId : ty301.typeId = 247 := rfl
-@[pure_rule] theorem ty302_typeId : ty302.typeId = 248 := rfl
-@[pure_rule] theorem ty303_typeId : ty303.typeId = 252 := rfl
-@[pure_rule] theorem ty304_typeId : ty304.typeId = 253 := rfl
-@[pure_rule] theorem ty305_typeId : ty305.typeId = 251 := rfl
-@[pure_rule] theorem ty306_typeId : ty306.typeId = 250 := rfl
-@[pure_rule] theorem ty307_typeId : ty307.typeId = 249 := rfl
+@[pure_rule] theorem ty301_typeId : ty301.typeId = 250 := rfl
+@[pure_rule] theorem ty302_typeId : ty302.typeId = 251 := rfl
+@[pure_rule] theorem ty303_typeId : ty303.typeId = 249 := rfl
+@[pure_rule] theorem ty304_typeId : ty304.typeId = 248 := rfl
+@[pure_rule] theorem ty305_typeId : ty305.typeId = 247 := rfl
+@[pure_rule] theorem ty306_typeId : ty306.typeId = 252 := rfl
+@[pure_rule] theorem ty307_typeId : ty307.typeId = 253 := rfl
 @[pure_rule] theorem ty308_typeId : ty308.typeId = 254 := rfl
 @[pure_rule] theorem ty309_typeId : ty309.typeId = 256 := rfl
 @[pure_rule] theorem ty310_typeId : ty310.typeId = 255 := rfl

@@ -7690,6 +7690,15 @@ pub fn arm_stmt(h: MatchStmt, k: usize, b: Bound, v: VariantTy, body: core::opti
     };
 }
 
+// A local's id and type (read inside nested arms, as bound_scope).
+pub fn local_id_of(l: Local) -> usize {
+    return l.id;
+}
+
+pub fn local_ty_of(l: Local) -> Ty {
+    return l.ty;
+}
+
 // A binding's scope (the self front end does not read `b.scope` for an
 // outer arm's binder b inside a nested match arm).
 pub fn bound_scope(b: Bound) -> List<Local> {
@@ -7704,6 +7713,58 @@ pub fn match_stmt_value(h: MatchStmt, chain: core::option::Option<MStmt>) -> cor
             None -> Some(c),
             Some(x) -> Some(MLetEval(h.scrutinee, h.sty, x, boxed(c))),
         },
+    };
+}
+
+// The match a let's value spells, `match (s) { arms }`.
+pub fn match_init(fuel: usize, init: CTree) -> core::option::Option<CTree> {
+    return match (peel(fuel, init)) {
+        None -> None,
+        Some(pf) -> match_of_postfix(pf),
+    };
+}
+
+pub fn is_block_arm(fuel: usize, a: CTree) -> bool {
+    return match (arm_block_list(fuel, a)) {
+        None -> false,
+        Some(list) -> true,
+    };
+}
+
+pub fn some_block_arm(fuel: usize, arms: List<CTree>) -> bool {
+    return match (arms) {
+        Nil -> false,
+        Cons(a, rest) -> is_block_arm(fuel, a) || some_block_arm(fuel, unbox(rest)),
+    };
+}
+
+pub fn if_one(b: bool) -> usize {
+    if (b) {
+        return 1;
+    }
+    return 0;
+}
+
+pub fn value_arms(fuel: usize, arms: List<CTree>) -> usize {
+    return match (arms) {
+        Nil -> 0,
+        Cons(a, rest) -> plus(if_one(!is_block_arm(fuel, a)), value_arms(fuel, unbox(rest))),
+    };
+}
+
+pub fn block_arms_of(fuel: usize, items: core::option::Option<List<CTree>>) -> bool {
+    return match (items) {
+        None -> false,
+        Some(arms) -> some_block_arm(fuel, arms) && value_arms(fuel, arms) == 1,
+    };
+}
+
+// A let's match with block arms and exactly one value arm: the statements
+// after the let are read once, into that arm.
+pub fn is_block_match(fuel: usize, init: CTree) -> bool {
+    return match (match_init(fuel, init)) {
+        None -> false,
+        Some(m) -> block_arms_of(fuel, list_items(fuel, kid(m, 5))),
     };
 }
 
@@ -7749,6 +7810,12 @@ pub fn let_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest:
         return None;
     }
     let tok: Token = kid_token(s, 1);
+    if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base)) && is_block_match(fuel, kid(kid(s, 3), 1))) {
+        return match (ty_of(fuel, env, kid(kid(s, 2), 1))) {
+            None -> None,
+            Some(t) -> let_match_of(minus(fuel, 1), env, scope, Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, kid(kid(s, 3), 1), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), rest)),
+        };
+    }
     if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base))) {
         return match (ty_of(fuel, env, kid(kid(s, 2), 1))) {
             None -> None,
@@ -7864,6 +7931,57 @@ pub fn match_arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt
         Some(b) -> match (arm_block_list(fuel, a)) {
             None -> None,
             Some(list) -> arm_stmt(h, k, b, v, block_of(minus(fuel, 1), env, bound_scope(b), list), rest),
+        },
+    };
+}
+
+// `let x: ty = match (s) { arms }; rest` with block arms and one value arm:
+// the match statement's chain, where the value arm binds x to its value
+// and runs rest.
+pub fn let_match_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, init: CTree, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (match_init(fuel, init)) {
+        None -> None,
+        Some(m) -> match (match_stmt_parts(fuel, env, scope, m)) {
+            None -> None,
+            Some(h) -> match (match_stmt_arms(fuel, h, m)) {
+                None -> None,
+                Some(os) -> match (body) {
+                    None -> None,
+                    Some(b) -> match_stmt_value(h, let_arms_of(minus(fuel, 1), env, scope, h, x, b, 0, h.variants, os)),
+                },
+            },
+        },
+    };
+}
+
+pub fn let_arms_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt, x: Local, rest: MStmt, k: usize, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (variants) {
+        Nil -> match (arms) {
+            Nil -> Some(MUnreachable(h.closer, h.ret)),
+            Cons(a, more) -> None,
+        },
+        Cons(v, vs) -> match (arms) {
+            Nil -> None,
+            Cons(a, more) -> let_arm_of(minus(fuel, 1), env, scope, h, x, rest, k, v, a, let_arms_of(minus(fuel, 1), env, scope, h, x, rest, plus(k, 1), unbox(vs), unbox(more))),
+        },
+    };
+}
+
+pub fn let_arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt, x: Local, rest: MStmt, k: usize, v: VariantTy, a: CTree, others: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (arm_binding(fuel, env, scope, h.owner, v, a)) {
+        None -> None,
+        Some(b) -> match (arm_block_list(fuel, a)) {
+            Some(list) -> arm_stmt(h, k, b, v, block_of(minus(fuel, 1), env, bound_scope(b), list), others),
+            None -> arm_stmt(h, k, b, v, let_of(local_id_of(x), local_ty_of(x), let_head_or_eval(minus(fuel, 1), env, bound_scope(b), local_ty_of(x), kid(a, 2)), Some(rest)), others),
         },
     };
 }

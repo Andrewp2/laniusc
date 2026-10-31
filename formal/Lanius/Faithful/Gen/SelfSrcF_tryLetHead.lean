@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::try_let_head -/
-def src_try_let_head (ix_try_of_init : Nat) (ix_try_head : Nat) : SrcFunc := { params := [{ id := 13, ty := SrcType.uint (UintTy.usize) }, { id := 26, ty := ty261 }, { id := 41, ty := ty277 }, { id := 61, ty := ty83 }], ret := ty301, body := SrcStmt.returnEval (SrcEff.eCall ix_try_head [SrcEff.eCall ix_try_of_init [SrcEff.ePure (SrcExpr.local 13), SrcEff.ePure (SrcExpr.local 26), SrcEff.ePure (SrcExpr.local 41), SrcEff.ePure (SrcExpr.local 61)]]) }
+def src_try_let_head (ix_try_of_init : Nat) (ix_try_head : Nat) : SrcFunc := { params := [{ id := 13, ty := SrcType.uint (UintTy.usize) }, { id := 26, ty := ty261 }, { id := 41, ty := ty277 }, { id := 61, ty := ty83 }], ret := ty306, body := SrcStmt.returnEval (SrcEff.eCall ix_try_head [SrcEff.eCall ix_try_of_init [SrcEff.ePure (SrcExpr.local 13), SrcEff.ePure (SrcExpr.local 26), SrcEff.ePure (SrcExpr.local 41), SrcEff.ePure (SrcExpr.local 61)]]) }
 
 /-- mini::selfhost::try_payload -/
 def src_try_payload (ix_empty_of_mini_selfhost_MEff : Nat) (ix_single_of_mini_selfhost_MEff : Nat) : SrcFunc := { params := [{ id := 12, ty := SrcType.bool }, { id := 25, ty := SrcType.uint (UintTy.usize) }], ret := ty272, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 12) (SrcStmt.returnEval (SrcEff.eCall ix_single_of_mini_selfhost_MEff [SrcEff.eVariant ty187 0 [SrcEff.eVariant ty15 3 [SrcEff.ePure (SrcExpr.local 25)]]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eCall ix_empty_of_mini_selfhost_MEff [])) }

@@ -36,8 +36,8 @@ abbrev Stmt_boxed_of_mini_selfhost_List_mini_selfhost_SymRule (prog : SrcProgram
     (RepList 184 RepSymRule) x0 w
 
 abbrev Stmt_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.VariantTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 251 RepVariantTy) x0 v0 →
-    (RepList 251 RepVariantTy) x0 w
+  ∀ {x0 : List Lanius.Mini.VariantTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 249 RepVariantTy) x0 v0 →
+    (RepList 249 RepVariantTy) x0 w
 
 abbrev Stmt_boxed_of_mini_selfhost_List_usize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
@@ -129,7 +129,7 @@ abbrev Stmt_empty_of_mini_selfhost_SymRule (prog : SrcProgram) (prims : Prims) (
 
 abbrev Stmt_empty_of_mini_selfhost_VariantTy (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 251 RepVariantTy) (([] : List Lanius.Mini.VariantTy)) w
+    (RepList 249 RepVariantTy) (([] : List Lanius.Mini.VariantTy)) w
 
 abbrev Stmt_get_of_mini_selfhost_TypeDecl (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 103 RepTypeDecl) x0 v0 → RepNat x1 v1 →

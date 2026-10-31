@@ -50,11 +50,11 @@ abbrev Stmt_has_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → RepCTree x3 v3 →
-    (RepOption 247 RepLetHead) (Lanius.Mini.letHead x0 x1 x2 x3) w
+    (RepOption 252 RepLetHead) (Lanius.Mini.letHead x0 x1 x2 x3) w
 
 abbrev Stmt_postfix_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → RepCTree x3 v3 →
-    (RepOption 247 RepLetHead) (Lanius.Mini.postfixHead x0 x1 x2 x3) w
+    (RepOption 252 RepLetHead) (Lanius.Mini.postfixHead x0 x1 x2 x3) w
 
 abbrev Stmt_same_decl_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 137 RepTy) x1 v1 →

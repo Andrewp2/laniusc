@@ -444,7 +444,7 @@ theorem step_eff_named {prog : SrcProgram} {prims : Prims} {ix_eff_named ix_minu
   simp only [src_eff_named] at h
   faithful [Lanius.Mini.effNamed]
 
-theorem step_eff_node {prog : SrcProgram} {prims : Prims} {ix_eff_node ix_minus ix_node_prod ix_kid ix_has_kids ix_eff_of ix_p_expr ix_p_assign ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_eff_postfix ix_p_neg ix_p_not ix_p_group ix_p_ident ix_eff_fold ix_eff_casts ix_x_neg_of ix_x_not_of ix_eff_ident ix_p_match_expr ix_eff_match : Nat} (fn : prog.funcs[ix_eff_node]? = some (src_eff_node ix_minus ix_node_prod ix_kid ix_has_kids ix_eff_of ix_p_expr ix_p_assign ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_eff_postfix ix_p_neg ix_p_not ix_p_group ix_p_ident ix_eff_fold ix_eff_casts ix_x_neg_of ix_x_not_of ix_eff_ident ix_p_match_expr ix_eff_match)) (np : prims.isPrim ix_eff_node = false)
+theorem step_eff_node {prog : SrcProgram} {prims : Prims} {ix_eff_node ix_minus ix_node_prod ix_kid ix_has_kids ix_eff_of ix_p_expr ix_p_assign ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_eff_postfix ix_p_match_expr ix_p_neg ix_p_not ix_p_group ix_p_ident ix_eff_fold ix_eff_casts ix_x_neg_of ix_x_not_of ix_eff_ident ix_eff_match : Nat} (fn : prog.funcs[ix_eff_node]? = some (src_eff_node ix_minus ix_node_prod ix_kid ix_has_kids ix_eff_of ix_p_expr ix_p_assign ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_eff_postfix ix_p_match_expr ix_p_neg ix_p_not ix_p_group ix_p_ident ix_eff_fold ix_eff_casts ix_x_neg_of ix_x_not_of ix_eff_ident ix_eff_match)) (np : prims.isPrim ix_eff_node = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -455,14 +455,14 @@ theorem step_eff_node {prog : SrcProgram} {prims : Prims} {ix_eff_node ix_minus 
     (ext_is_level : Certified (∀ {n : Nat}, Stmt_is_level prog prims ix_is_level n))
     (ext_p_cast : Certified (∀ {n : Nat}, Stmt_p_cast prog prims ix_p_cast n))
     (ext_p_postfix : Certified (∀ {n : Nat}, Stmt_p_postfix prog prims ix_p_postfix n))
+    (ext_p_match_expr : Certified (∀ {n : Nat}, Stmt_p_match_expr prog prims ix_p_match_expr n))
     (ext_p_neg : Certified (∀ {n : Nat}, Stmt_p_neg prog prims ix_p_neg n))
     (ext_p_not : Certified (∀ {n : Nat}, Stmt_p_not prog prims ix_p_not n))
     (ext_p_group : Certified (∀ {n : Nat}, Stmt_p_group prog prims ix_p_group n))
     (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
     (ext_eff_casts : Certified (∀ {n : Nat}, Stmt_eff_casts prog prims ix_eff_casts n))
     (ext_x_neg_of : Certified (∀ {n : Nat}, Stmt_x_neg_of prog prims ix_x_neg_of n))
-    (ext_x_not_of : Certified (∀ {n : Nat}, Stmt_x_not_of prog prims ix_x_not_of n))
-    (ext_p_match_expr : Certified (∀ {n : Nat}, Stmt_p_match_expr prog prims ix_p_match_expr n)) {n : Nat}
+    (ext_x_not_of : Certified (∀ {n : Nat}, Stmt_x_not_of prog prims ix_x_not_of n)) {n : Nat}
     (ih_eff_of : Certified (Stmt_eff_of prog prims ix_eff_of n))
     (ih_eff_postfix : Certified (Stmt_eff_postfix prog prims ix_eff_postfix n))
     (ih_eff_fold : Certified (Stmt_eff_fold prog prims ix_eff_fold n))

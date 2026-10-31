@@ -6,23 +6,15 @@ import Lanius.Mini.Frontend.P.armsNaming
 import Lanius.Mini.Frontend.P.callParts
 import Lanius.Mini.Frontend.P.compoundOf
 import Lanius.Mini.Frontend.P.consBinder
-import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.consTys
-import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.isMatchStmt
 import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.pickTy
-import Lanius.Mini.Frontend.P.textSelf
-import Lanius.Mini.Frontend.P.tryLet
-import Lanius.Mini.Frontend.P.typeDeclAt
-import Lanius.Mini.Frontend.P.whileEvalOf
 import Lanius.Mini.Frontend.P.wideOf
 
 public section
@@ -125,6 +117,13 @@ def armStmt (h : MatchStmt) (k : Nat) (b : Bound) (v : VariantTy) (body : Option
     | none => none
     | some r => armBinder h k b.ids v.payload x r
 
+/-- A local's id and type (read inside nested arms, as bound_scope). -/
+def localIdOf (l : Local) : Nat :=
+  l.id
+
+def localTyOf (l : Local) : Ty :=
+  l.ty
+
 /-- A binding's scope (the self front end does not read `b.scope` for an outer arm's binder b inside a nested match arm). -/
 def boundScope (b : Bound) : List Local :=
   b.scope
@@ -138,218 +137,31 @@ def matchStmtValue (h : MatchStmt) (chain : Option MStmt) : Option MStmt :=
     | none => some c
     | some x => some (MStmt.mLetEval h.scrutinee h.sty x c)
 
-mutual
-/-- A statement list: a let scopes over the statements after it. -/
-def blockOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (list : CTree) : Option MStmt :=
-  if fuel = 0 then
-    none
-  else
-    match listItems fuel list with
-    | none => none
-    | some items => stmtsOf (fuel - 1) env scope items
-def stmtsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (items : List CTree) : Option MStmt :=
-  if fuel = 0 then
-    none
-  else
-    match items with
-    | [] => some MStmt.mNop
-    | s :: rest => stmtFirst (fuel - 1) env scope s rest
-def stmtFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (rest : List CTree) : Option MStmt :=
-  if fuel = 0 then
-    none
-  else
-    if nodeProd s = (75) then
-      letFirst (fuel - 1) env scope s rest
-    else
-      match rest with
-      | [] => stmtOf (fuel - 1) env scope s
-      | next :: more => thenOf (stmtOf (fuel - 1) env scope s) (stmtsOf (fuel - 1) env scope rest)
-/-- `let x: ty = init;` and `let x = init;` (let_stmt -> Let LetIdent let_type_opt let_init LetSemicolon). -/
-def letFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (rest : List CTree) : Option MStmt :=
-  if fuel = 0 then
-    none
-  else
-    let tok : Token := kidToken s 1
-    if decide (nodeProd (kid s 2) = (86)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
-      match tyOf fuel env (kid (kid s 2) 1) with
-      | none => none
-      | some t => letOf (tok.start - env.base) t (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
-    else
-      if decide (nodeProd (kid s 2) = (87)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
-        match untypedHead (fuel - 1) env scope (kid (kid s 3) 1) with
-        | none => none
-        | some u => letBody (tok.start - env.base) u.ty u.head (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := u.ty } : Local) :: scope) rest)
-      else
-        none
-/-- return, break, continue, if, while, for, block statements, and assignments. -/
-def stmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option MStmt :=
-  if fuel = 0 then
-    none
-  else
-    let f : Nat := fuel - 1
-    let p : Nat := nodeProd s
-    if decide (p = (76)) && decide (nodeProd (kid s 1) = (90)) then
-      returnOrEval f env scope (kid (kid s 1) 0)
-    else
-      if decide (p = (76)) && decide (nodeProd (kid s 1) = (91)) then
-        some MStmt.mReturnUnit
-      else
-        if p = (82) then
-          some MStmt.mBreak
-        else
-          if p = (83) then
-            some MStmt.mContinue
-          else
-            if decide (p = (77)) && decide (nodeProd (kid s 5) = (78)) then
-              ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (blockOf f env scope (kid (kid (kid s 5) 1) 1))
-            else
-              if decide (p = (77)) && decide (nodeProd (kid s 5) = (79)) then
-                ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (some MStmt.mNop)
-              else
-                if p = (80) then
-                  whileOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1))
-                else
-                  if decide (p = (81)) || decide (p = (84)) then
-                    nestedOf f env scope s
-                  else
-                    if decide (p = (85)) && isMatchStmt f (kid s 0) then
-                      matchStmtOf f env scope (kid s 0)
-                    else
-                      if p = (85) then
-                        assignment f env scope (kid s 0)
-                      else
-                        none
-/-- for and block statements. -/
-def nestedOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option MStmt :=
-  if fuel = 0 then
-    none
-  else
-    let f : Nat := fuel - 1
-    if nodeProd s = (81) then
-      let x : Token := kidToken s 1
-      let iter : CTree := kid s 3
-      let bound : CTree := kid (kid (kid iter 1) 1) 0
-      if decide (nodeProd iter = (93)) && decide (nodeProd (kid iter 0) = (96)) && decide (nodeProd (kid iter 1) = (97)) && decide (nodeProd (kid (kid iter 1) 1) = (102)) && decide (nodeProd bound = (99)) && decide (nodeProd (kid bound 1) = (164)) && !(member env.globals x.text) && freshId scope (x.start - env.base) && freshId scope ((kidToken s 0).start - env.base) && freshId scope ((kidToken s 2).start - env.base) then
-        match findLocal scope (kidToken (kid bound 0) 0).text with
-        | none => none
-        | some n =>
-          match intLiteral (kidToken (kid iter 0) 0).text with
-          | none => none
-          | some a => forRange ((kidToken s 0).start - env.base) (x.start - env.base) ((kidToken s 2).start - env.base) n.ty a n.id (blockOf f env (({ name := x.text, id := (kidToken s 2).start - env.base, ty := n.ty } : Local) :: scope) (kid (kid s 4) 1))
-      else
-        none
-    else
-      if nodeProd s = (84) then
-        blockOf f env scope (kid (kid s 0) 1)
-      else
-        none
-/-- `match (s) { arms };` with every arm a block: arm k (variant k) runs its block, else the next arm is tried; after the last, Unreachable. Every block arm leaves the match (laniusc rejects one whose end is reachable), so the match's own end is never reached either. -/
-def matchStmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : Option MStmt :=
-  if fuel = 0 then
-    none
-  else
-    match matchPrimary fuel e with
-    | none => none
-    | some m =>
-      match matchStmtParts fuel env scope m with
-      | none => none
-      | some h =>
-        match matchStmtArms fuel h m with
-        | none => none
-        | some os => matchStmtValue h (matchArmsOf (fuel - 1) env scope h 0 h.variants os)
-def matchArmsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (h : MatchStmt) (k : Nat) (variants : List VariantTy) (arms : List CTree) : Option MStmt :=
-  if fuel = 0 then
-    none
-  else
-    match variants with
-    | [] =>
-      (match arms with
-       | [] => some (MStmt.mUnreachable h.closer h.ret)
-       | a :: more => none)
-    | v :: rest =>
-      match arms with
-      | [] => none
-      | a :: more => matchArmOf (fuel - 1) env scope h k v a (matchArmsOf (fuel - 1) env scope h (k + 1) rest more)
-def matchArmOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (h : MatchStmt) (k : Nat) (v : VariantTy) (a : CTree) (rest : Option MStmt) : Option MStmt :=
-  if fuel = 0 then
-    none
-  else
-    match armBinding fuel env scope h.owner v a with
-    | none => none
-    | some b =>
-      match armBlockList fuel a with
-      | none => none
-      | some list => armStmt h k b v (blockOf (fuel - 1) env (boundScope b) list) rest
-end
-
-def consParam (p : MParam) (rest : Option MParams) : Option MParams :=
-  match rest with
+/-- The match a let's value spells, `match (s) { arms }`. -/
+def matchInit (fuel : Nat) (init : CTree) : Option CTree :=
+  match peel fuel init with
   | none => none
-  | some r => some ({ params := p :: r.params, scope := r.scope } : MParams)
+  | some pf => matchOfPostfix pf
 
-/-- A parameter's name token: `self` after the `&` of `&self`. -/
-def paramToken (p : CTree) : Token :=
-  if nodeProd p = (64) then
-    kidToken p 1
+def isBlockArm (fuel : Nat) (a : CTree) : Bool :=
+  match armBlockList fuel a with
+  | none => false
+  | some list => true
+
+def someBlockArm (fuel : Nat) (arms : List CTree) : Bool :=
+  match arms with
+  | [] => false
+  | a :: rest => isBlockArm fuel a || someBlockArm fuel rest
+
+def ifOne (b : Bool) : Nat :=
+  if b then
+    1
   else
-    kidToken p 0
+    0
 
-/-- `name: T`, `self` or `&self` (both by value); each a local named by its spelling. -/
-def paramsOf (fuel : Nat) (env : FrontEnv) (fd : FnDecl) (scope : List Local) (items : List CTree) : Option MParams :=
-  match items with
-  | [] => some ({ params := [], scope := scope } : MParams)
-  | p :: rest =>
-    let tok : Token := paramToken p
-    if (decide (nodeProd p = (62)) || decide (nodeProd p = (63)) || decide (nodeProd p = (64))) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
-      match patternOf fd p with
-      | none => none
-      | some t =>
-        match tyOf fuel env t with
-        | none => none
-        | some x => consParam ({ id := tok.start - env.base, ty := x } : MParam) (paramsOf fuel env fd (({ name := tok.text, id := tok.start - env.base, ty := x } : Local) :: scope) rest)
-    else
-      none
-
-def funcBody (ps : MParams) (r : RetTy) (body : Option MStmt) : Option MFunc :=
-  match body with
-  | none => none
-  | some b => some ({ params := ps.params, ret := r, body := b } : MFunc)
-
-def funcRet (fuel : Nat) (env : FrontEnv) (ps : MParams) (ret : Option RetTy) (body : CTree) : Option MFunc :=
-  match ret with
-  | none => none
-  | some r => funcBody ps r (blockOf fuel env ps.scope body)
-
-def funcParams (fuel : Nat) (env : FrontEnv) (params : Option MParams) (ret : Option RetTy) (body : CTree) : Option MFunc :=
-  match params with
-  | none => none
-  | some ps => funcRet fuel env ps ret body
-
-def retOfTy (t : Option Ty) : Option RetTy :=
-  match t with
-  | none => none
-  | some x => some (RetTy.retOf x)
-
-/-- The result type a return_type_opt names. -/
-def resultOf (fuel : Nat) (env : FrontEnv) (ret : CTree) : Option RetTy :=
-  if nodeProd ret = (35) then
-    some RetTy.retUnit
-  else
-    if decide (nodeProd ret = (34)) && decide (nodeProd (kid ret 1) = (315)) then
-      some RetTy.retUnit
-    else
-      if nodeProd ret = (34) then
-        retOfTy (tyOf fuel env (kid ret 1))
-      else
-        none
-
-/-- The type a `return e;` stores at: none in a unit function. -/
-def retExpected (r : Option RetTy) : Option Ty :=
-  match r with
-  | none => none
-  | some x =>
-    match x with
-    | .retUnit => none
-    | .retOf t => some t
+def valueArms (fuel : Nat) (arms : List CTree) : Nat :=
+  match arms with
+  | [] => 0
+  | a :: rest => ifOne (!(isBlockArm fuel a)) + valueArms fuel rest
 
 end Lanius.Mini

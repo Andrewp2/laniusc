@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_try_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Tried} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 248 RepTried) x0 v0 →
-    (RepOption 247 RepLetHead) (Lanius.Mini.tryHead x0) w
+  ∀ {x0 : Option Lanius.Mini.Tried} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 253 RepTried) x0 v0 →
+    (RepOption 252 RepLetHead) (Lanius.Mini.tryHead x0) w
 
 abbrev Stmt_try_local_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → RepCTree x3 v3 →
-    (RepOption 248 RepTried) (Lanius.Mini.tryLocalOf x0 x1 x2 x3) w
+    (RepOption 253 RepTried) (Lanius.Mini.tryLocalOf x0 x1 x2 x3) w
 
 abbrev Stmt_try_of_init (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → RepCTree x3 v3 →
-    (RepOption 248 RepTried) (Lanius.Mini.tryOfInit x0 x1 x2 x3) w
+    (RepOption 253 RepTried) (Lanius.Mini.tryOfInit x0 x1 x2 x3) w
 
 abbrev Stmt_try_postfix (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → RepCTree x3 v3 →
-    (RepOption 248 RepTried) (Lanius.Mini.tryPostfix x0 x1 x2 x3) w
+    (RepOption 253 RepTried) (Lanius.Mini.tryPostfix x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

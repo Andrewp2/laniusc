@@ -332,43 +332,43 @@ theorem pure1488 : PureFunc prog prims outside src1488 = true :=
 theorem pure1489 : PureFunc prog prims outside src1489 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::let_of -/
+/-- mini::selfhost::is_block_match -/
 theorem pure1490 : PureFunc prog prims outside src1490 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::let_head_or_eval -/
+/-- mini::selfhost::let_match_of -/
 theorem pure1491 : PureFunc prog prims outside src1491 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::p_let_type_none -/
+/-- mini::selfhost::let_of -/
 theorem pure1492 : PureFunc prog prims outside src1492 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::untyped_head -/
+/-- mini::selfhost::let_head_or_eval -/
 theorem pure1493 : PureFunc prog prims outside src1493 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::let_body -/
+/-- mini::selfhost::p_let_type_none -/
 theorem pure1494 : PureFunc prog prims outside src1494 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::p_return_stmt -/
+/-- mini::selfhost::untyped_head -/
 theorem pure1495 : PureFunc prog prims outside src1495 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::p_return_value -/
+/-- mini::selfhost::let_body -/
 theorem pure1496 : PureFunc prog prims outside src1496 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::return_or_eval -/
+/-- mini::selfhost::p_return_stmt -/
 theorem pure1497 : PureFunc prog prims outside src1497 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::p_return_void -/
+/-- mini::selfhost::p_return_value -/
 theorem pure1498 : PureFunc prog prims outside src1498 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::p_break_stmt -/
+/-- mini::selfhost::return_or_eval -/
 theorem pure1499 : PureFunc prog prims outside src1499 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 

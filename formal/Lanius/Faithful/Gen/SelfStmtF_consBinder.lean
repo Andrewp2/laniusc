@@ -46,6 +46,6 @@ abbrev Stmt_cons_binder (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_zip_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : List (List Lanius.Mini.Ty)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 233 (RepList 137 RepTy)) x1 v1 →
-    (RepList 251 RepVariantTy) (Lanius.Mini.zipVariants x0 x1) w
+    (RepList 249 RepVariantTy) (Lanius.Mini.zipVariants x0 x1) w
 
 end Lanius.Faithful.SelfCert

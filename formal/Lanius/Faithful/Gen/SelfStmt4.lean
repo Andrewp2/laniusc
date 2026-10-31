@@ -120,7 +120,7 @@ abbrev Stmt_length_of_mini_selfhost_CTree (prog : SrcProgram) (prims : Prims) (i
     RepNat (x0.length) w
 
 abbrev Stmt_length_of_mini_selfhost_VariantTy (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.VariantTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 251 RepVariantTy) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.VariantTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 249 RepVariantTy) x0 v0 →
     RepNat (x0.length) w
 
 abbrev Stmt_length_of_usize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
