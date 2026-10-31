@@ -31,331 +31,331 @@ theorem boxed75 : BoxedAt prog prims 75 :=
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Sig>> -/
 theorem boxed122 : BoxedAt prog prims 122 :=
-  ⟨ty103, 97, 215, 216, 53, rfl, rfl, rfl, rfl,
+  ⟨ty103, 97, 213, 214, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::FileInput>> -/
 theorem boxed132 : BoxedAt prog prims 132 :=
-  ⟨ty47, 48, 230, 137, 53, rfl, rfl, rfl, rfl,
+  ⟨ty47, 48, 228, 137, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<mini::selfhost::List<usize>>>> -/
 theorem boxed151 : BoxedAt prog prims 151 :=
-  ⟨ty127, 122, 256, 257, 53, rfl, rfl, rfl, rfl,
+  ⟨ty127, 122, 254, 255, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Func>> -/
 theorem boxed158 : BoxedAt prog prims 158 :=
-  ⟨ty98, 93, 271, 272, 53, rfl, rfl, rfl, rfl,
+  ⟨ty98, 93, 269, 270, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::Stmt> -/
 theorem boxed166 : BoxedAt prog prims 166 :=
-  ⟨ty95, 90, 279, 280, 53, rfl, rfl, rfl, rfl,
+  ⟨ty95, 90, 277, 278, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::SrcType> -/
 theorem boxed195 : BoxedAt prog prims 195 :=
-  ⟨ty9, 13, 311, 275, 53, rfl, rfl, rfl, rfl,
+  ⟨ty9, 13, 309, 273, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcType>> -/
-theorem boxed217 : BoxedAt prog prims 217 :=
-  ⟨ty70, 11, 354, 273, 53, rfl, rfl, rfl, rfl,
+theorem boxed215 : BoxedAt prog prims 215 :=
+  ⟨ty70, 11, 353, 271, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::CTree>> -/
-theorem boxed231 : BoxedAt prog prims 231 :=
-  ⟨ty84, 83, 370, 150, 53, rfl, rfl, rfl, rfl,
+theorem boxed229 : BoxedAt prog prims 229 :=
+  ⟨ty84, 83, 369, 150, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Expr>> -/
-theorem boxed281 : BoxedAt prog prims 281 :=
-  ⟨ty94, 92, 439, 440, 53, rfl, rfl, rfl, rfl,
+theorem boxed279 : BoxedAt prog prims 279 :=
+  ⟨ty94, 92, 438, 439, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Binding>> -/
-theorem boxed290 : BoxedAt prog prims 290 :=
-  ⟨ty143, 133, 458, 459, 53, rfl, rfl, rfl, rfl,
+theorem boxed288 : BoxedAt prog prims 288 :=
+  ⟨ty143, 133, 457, 458, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::Expr> -/
-theorem boxed307 : BoxedAt prog prims 307 :=
-  ⟨ty91, 89, 468, 469, 53, rfl, rfl, rfl, rfl,
+theorem boxed305 : BoxedAt prog prims 305 :=
+  ⟨ty91, 89, 467, 468, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Code>> -/
-theorem boxed430 : BoxedAt prog prims 430 :=
-  ⟨ty65, 65, 659, 660, 53, rfl, rfl, rfl, rfl,
+theorem boxed429 : BoxedAt prog prims 429 :=
+  ⟨ty65, 65, 661, 662, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Arity>> -/
-theorem boxed431 : BoxedAt prog prims 431 :=
-  ⟨ty158, 144, 661, 662, 53, rfl, rfl, rfl, rfl,
+theorem boxed430 : BoxedAt prog prims 430 :=
+  ⟨ty158, 144, 663, 664, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<usize>> -/
-theorem boxed532 : BoxedAt prog prims 532 :=
-  ⟨ty20, 26, 738, 76, 53, rfl, rfl, rfl, rfl,
+theorem boxed534 : BoxedAt prog prims 534 :=
+  ⟨ty20, 26, 740, 76, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Ty>> -/
-theorem boxed585 : BoxedAt prog prims 585 :=
-  ⟨ty150, 140, 861, 857, 53, rfl, rfl, rfl, rfl,
+theorem boxed587 : BoxedAt prog prims 587 :=
+  ⟨ty150, 140, 863, 859, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Inst>> -/
-theorem boxed600 : BoxedAt prog prims 600 :=
-  ⟨ty153, 141, 881, 862, 53, rfl, rfl, rfl, rfl,
+theorem boxed602 : BoxedAt prog prims 602 :=
+  ⟨ty153, 141, 883, 864, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::TypeDecl>> -/
-theorem boxed601 : BoxedAt prog prims 601 :=
-  ⟨ty110, 107, 882, 404, 53, rfl, rfl, rfl, rfl,
+theorem boxed603 : BoxedAt prog prims 603 :=
+  ⟨ty110, 107, 884, 403, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::FnDecl>> -/
-theorem boxed602 : BoxedAt prog prims 602 :=
-  ⟨ty113, 110, 883, 403, 53, rfl, rfl, rfl, rfl,
+theorem boxed604 : BoxedAt prog prims 604 :=
+  ⟨ty113, 110, 885, 402, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ConstDecl>> -/
-theorem boxed603 : BoxedAt prog prims 603 :=
-  ⟨ty116, 113, 884, 885, 53, rfl, rfl, rfl, rfl,
+theorem boxed605 : BoxedAt prog prims 605 :=
+  ⟨ty116, 113, 886, 887, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ImportDecl>> -/
-theorem boxed605 : BoxedAt prog prims 605 :=
-  ⟨ty119, 116, 886, 887, 53, rfl, rfl, rfl, rfl,
+theorem boxed607 : BoxedAt prog prims 607 :=
+  ⟨ty119, 116, 888, 889, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::AliasDecl>> -/
-theorem boxed607 : BoxedAt prog prims 607 :=
-  ⟨ty122, 119, 888, 841, 53, rfl, rfl, rfl, rfl,
+theorem boxed609 : BoxedAt prog prims 609 :=
+  ⟨ty122, 119, 890, 843, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Instr>> -/
-theorem boxed648 : BoxedAt prog prims 648 :=
-  ⟨ty62, 64, 912, 913, 53, rfl, rfl, rfl, rfl,
+theorem boxed650 : BoxedAt prog prims 650 :=
+  ⟨ty62, 64, 914, 915, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<u8>> -/
-theorem boxed663 : BoxedAt prog prims 663 :=
-  ⟨ty67, 67, 919, 77, 53, rfl, rfl, rfl, rfl,
+theorem boxed665 : BoxedAt prog prims 665 :=
+  ⟨ty67, 67, 921, 77, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcStructDecl>> -/
-theorem boxed723 : BoxedAt prog prims 723 :=
-  ⟨ty73, 73, 965, 724, 53, rfl, rfl, rfl, rfl,
+theorem boxed725 : BoxedAt prog prims 725 :=
+  ⟨ty73, 73, 970, 726, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcEnumDecl>> -/
-theorem boxed725 : BoxedAt prog prims 725 :=
-  ⟨ty77, 77, 966, 726, 53, rfl, rfl, rfl, rfl,
+theorem boxed727 : BoxedAt prog prims 727 :=
+  ⟨ty77, 77, 971, 728, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SymRule>> -/
-theorem boxed730 : BoxedAt prog prims 730 :=
-  ⟨ty214, 186, 979, 980, 53, rfl, rfl, rfl, rfl,
+theorem boxed732 : BoxedAt prog prims 732 :=
+  ⟨ty214, 186, 984, 985, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<usize>>> -/
-theorem boxed827 : BoxedAt prog prims 827 :=
-  ⟨ty27, 32, 999, 710, 53, rfl, rfl, rfl, rfl,
+theorem boxed829 : BoxedAt prog prims 829 :=
+  ⟨ty27, 32, 1004, 711, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::MFunc>> -/
-theorem boxed871 : BoxedAt prog prims 871 :=
-  ⟨ty191, 174, 1068, 866, 53, rfl, rfl, rfl, rfl,
+theorem boxed873 : BoxedAt prog prims 873 :=
+  ⟨ty191, 174, 1073, 868, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::RawTok>> -/
-theorem boxed978 : BoxedAt prog prims 978 :=
-  ⟨ty177, 159, 1172, 733, 53, rfl, rfl, rfl, rfl,
+theorem boxed983 : BoxedAt prog prims 983 :=
+  ⟨ty177, 159, 1177, 735, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Token>> -/
-theorem boxed981 : BoxedAt prog prims 981 :=
-  ⟨ty44, 47, 1173, 258, 53, rfl, rfl, rfl, rfl,
+theorem boxed986 : BoxedAt prog prims 986 :=
+  ⟨ty44, 47, 1178, 256, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<core::option::Option<mini::selfhost::SrcType>>> -/
-theorem boxed1039 : BoxedAt prog prims 1039 :=
-  ⟨ty220, 193, 1209, 1210, 53, rfl, rfl, rfl, rfl,
+theorem boxed1044 : BoxedAt prog prims 1044 :=
+  ⟨ty220, 193, 1214, 1215, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcFunc>> -/
-theorem boxed1043 : BoxedAt prog prims 1043 :=
-  ⟨ty33, 34, 1220, 79, 53, rfl, rfl, rfl, rfl,
+theorem boxed1048 : BoxedAt prog prims 1048 :=
+  ⟨ty33, 34, 1225, 79, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::SrcStmt> -/
-theorem boxed1045 : BoxedAt prog prims 1045 :=
-  ⟨ty30, 20, 1231, 106, 53, rfl, rfl, rfl, rfl,
+theorem boxed1050 : BoxedAt prog prims 1050 :=
+  ⟨ty30, 20, 1236, 106, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::MStmt> -/
-theorem boxed1078 : BoxedAt prog prims 1078 :=
-  ⟨ty188, 170, 1264, 1063, 53, rfl, rfl, rfl, rfl,
+theorem boxed1083 : BoxedAt prog prims 1083 :=
+  ⟨ty188, 170, 1269, 1068, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::MEff>> -/
-theorem boxed1079 : BoxedAt prog prims 1079 :=
-  ⟨ty272, 172, 1265, 1254, 53, rfl, rfl, rfl, rfl,
+theorem boxed1084 : BoxedAt prog prims 1084 :=
+  ⟨ty272, 172, 1270, 1259, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::MParam>> -/
-theorem boxed1084 : BoxedAt prog prims 1084 :=
-  ⟨ty182, 167, 1269, 1062, 53, rfl, rfl, rfl, rfl,
+theorem boxed1089 : BoxedAt prog prims 1089 :=
+  ⟨ty182, 167, 1274, 1067, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::SrcExpr> -/
-theorem boxed1225 : BoxedAt prog prims 1225 :=
-  ⟨ty15, 18, 1329, 442, 53, rfl, rfl, rfl, rfl,
+theorem boxed1230 : BoxedAt prog prims 1230 :=
+  ⟨ty15, 18, 1334, 441, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcEff>> -/
-theorem boxed1245 : BoxedAt prog prims 1245 :=
-  ⟨ty207, 29, 1342, 485, 53, rfl, rfl, rfl, rfl,
+theorem boxed1250 : BoxedAt prog prims 1250 :=
+  ⟨ty207, 29, 1347, 486, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::SrcEff> -/
-theorem boxed1247 : BoxedAt prog prims 1247 :=
-  ⟨ty29, 30, 1344, 487, 53, rfl, rfl, rfl, rfl,
+theorem boxed1252 : BoxedAt prog prims 1252 :=
+  ⟨ty29, 30, 1349, 488, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::LocalTy>> -/
-theorem boxed1250 : BoxedAt prog prims 1250 :=
-  ⟨ty257, 215, 1348, 1341, 53, rfl, rfl, rfl, rfl,
+theorem boxed1255 : BoxedAt prog prims 1255 :=
+  ⟨ty257, 215, 1353, 1346, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Fact>> -/
-theorem boxed1274 : BoxedAt prog prims 1274 :=
-  ⟨ty199, 178, 1376, 1095, 53, rfl, rfl, rfl, rfl,
+theorem boxed1279 : BoxedAt prog prims 1279 :=
+  ⟨ty199, 178, 1381, 1100, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcParam>> -/
-theorem boxed1311 : BoxedAt prog prims 1311 :=
-  ⟨ty12, 15, 1400, 218, 53, rfl, rfl, rfl, rfl,
+theorem boxed1316 : BoxedAt prog prims 1316 :=
+  ⟨ty12, 15, 1405, 216, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<mini::selfhost::SrcType>>> -/
-theorem boxed1315 : BoxedAt prog prims 1315 :=
-  ⟨ty74, 12, 1402, 274, 53, rfl, rfl, rfl, rfl,
+theorem boxed1320 : BoxedAt prog prims 1320 :=
+  ⟨ty74, 12, 1407, 272, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcExpr>> -/
-theorem boxed1339 : BoxedAt prog prims 1339 :=
-  ⟨ty18, 22, 1415, 460, 53, rfl, rfl, rfl, rfl,
+theorem boxed1344 : BoxedAt prog prims 1344 :=
+  ⟨ty18, 22, 1420, 459, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcArm>> -/
-theorem boxed1340 : BoxedAt prog prims 1340 :=
-  ⟨ty23, 27, 1416, 1155, 53, rfl, rfl, rfl, rfl,
+theorem boxed1345 : BoxedAt prog prims 1345 :=
+  ⟨ty23, 27, 1421, 1160, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<mini::selfhost::CTree>>> -/
-theorem boxed1399 : BoxedAt prog prims 1399 :=
-  ⟨ty107, 106, 1446, 1447, 53, rfl, rfl, rfl, rfl,
+theorem boxed1404 : BoxedAt prog prims 1404 :=
+  ⟨ty107, 106, 1451, 1452, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Local>> -/
-theorem boxed1422 : BoxedAt prog prims 1422 :=
-  ⟨ty277, 229, 1454, 1453, 53, rfl, rfl, rfl, rfl,
+theorem boxed1427 : BoxedAt prog prims 1427 :=
+  ⟨ty277, 229, 1459, 1458, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::Ty> -/
-theorem boxed1423 : BoxedAt prog prims 1423 :=
-  ⟨ty149, 139, 1455, 1060, 53, rfl, rfl, rfl, rfl,
+theorem boxed1428 : BoxedAt prog prims 1428 :=
+  ⟨ty149, 139, 1460, 1065, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::List<mini::selfhost::Ty>>> -/
-theorem boxed1506 : BoxedAt prog prims 1506 :=
-  ⟨ty283, 234, 1537, 1404, 53, rfl, rfl, rfl, rfl,
+theorem boxed1511 : BoxedAt prog prims 1511 :=
+  ⟨ty283, 234, 1542, 1409, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::MEff> -/
-theorem boxed1764 : BoxedAt prog prims 1764 :=
-  ⟨ty187, 173, 1855, 1255, 53, rfl, rfl, rfl, rfl,
+theorem boxed1770 : BoxedAt prog prims 1770 :=
+  ⟨ty187, 173, 1860, 1260, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::VariantTy>> -/
-theorem boxed1904 : BoxedAt prog prims 1904 :=
-  ⟨ty303, 251, 1959, 1642, 53, rfl, rfl, rfl, rfl,
+theorem boxed1909 : BoxedAt prog prims 1909 :=
+  ⟨ty303, 251, 1964, 1647, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::VariantAt>> -/
-theorem boxed1985 : BoxedAt prog prims 1985 :=
-  ⟨ty334, 279, 2050, 1986, 53, rfl, rfl, rfl, rfl,
+theorem boxed1990 : BoxedAt prog prims 1990 :=
+  ⟨ty334, 279, 2055, 1991, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<bool>> -/
-theorem boxed2047 : BoxedAt prog prims 2047 :=
-  ⟨ty316, 263, 2072, 2036, 53, rfl, rfl, rfl, rfl,
+theorem boxed2052 : BoxedAt prog prims 2052 :=
+  ⟨ty316, 263, 2077, 2041, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::EffArm>> -/
-theorem boxed2083 : BoxedAt prog prims 2083 :=
-  ⟨ty339, 284, 2096, 2073, 53, rfl, rfl, rfl, rfl,
+theorem boxed2088 : BoxedAt prog prims 2088 :=
+  ⟨ty339, 284, 2101, 2078, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
 /-- mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Bind>> -/
-theorem boxed2105 : BoxedAt prog prims 2105 :=
-  ⟨ty330, 277, 2110, 2086, 53, rfl, rfl, rfl, rfl,
+theorem boxed2110 : BoxedAt prog prims 2110 :=
+  ⟨ty330, 277, 2115, 2091, 53, rfl, rfl, rfl, rfl,
     by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl,
     by rw [prog_decls]; decide +kernel⟩
 
@@ -393,203 +393,203 @@ theorem unbox100 : UnboxAt prog prims 100 :=
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcParam>> -/
 theorem unbox125 : UnboxAt prog prims 125 :=
-  ⟨ty12, 15, 218, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+  ⟨ty12, 15, 216, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Token>> -/
 theorem unbox152 : UnboxAt prog prims 152 :=
-  ⟨ty44, 47, 258, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+  ⟨ty44, 47, 256, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcType>> -/
 theorem unbox160 : UnboxAt prog prims 160 :=
-  ⟨ty70, 11, 273, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+  ⟨ty70, 11, 271, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<mini::selfhost::SrcType>>> -/
 theorem unbox162 : UnboxAt prog prims 162 :=
-  ⟨ty74, 12, 274, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+  ⟨ty74, 12, 272, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::SrcType> -/
 theorem unbox163 : UnboxAt prog prims 163 :=
-  ⟨ty9, 13, 275, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+  ⟨ty9, 13, 273, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Sym>> -/
-theorem unbox233 : UnboxAt prog prims 233 :=
+theorem unbox231 : UnboxAt prog prims 231 :=
   ⟨ty38, 39, 105, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::FnDecl>> -/
-theorem unbox252 : UnboxAt prog prims 252 :=
-  ⟨ty113, 110, 403, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox250 : UnboxAt prog prims 250 :=
+  ⟨ty113, 110, 402, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::TypeDecl>> -/
-theorem unbox254 : UnboxAt prog prims 254 :=
-  ⟨ty110, 107, 404, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox252 : UnboxAt prog prims 252 :=
+  ⟨ty110, 107, 403, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Func>> -/
-theorem unbox261 : UnboxAt prog prims 261 :=
-  ⟨ty98, 93, 272, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox259 : UnboxAt prog prims 259 :=
+  ⟨ty98, 93, 270, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::Stmt> -/
-theorem unbox277 : UnboxAt prog prims 277 :=
-  ⟨ty95, 90, 280, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox275 : UnboxAt prog prims 275 :=
+  ⟨ty95, 90, 278, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::SrcExpr> -/
-theorem unbox283 : UnboxAt prog prims 283 :=
-  ⟨ty15, 18, 442, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox281 : UnboxAt prog prims 281 :=
+  ⟨ty15, 18, 441, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcExpr>> -/
-theorem unbox291 : UnboxAt prog prims 291 :=
-  ⟨ty18, 22, 460, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox289 : UnboxAt prog prims 289 :=
+  ⟨ty18, 22, 459, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Binding>> -/
-theorem unbox299 : UnboxAt prog prims 299 :=
-  ⟨ty143, 133, 459, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox297 : UnboxAt prog prims 297 :=
+  ⟨ty143, 133, 458, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcEff>> -/
-theorem unbox322 : UnboxAt prog prims 322 :=
-  ⟨ty207, 29, 485, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox320 : UnboxAt prog prims 320 :=
+  ⟨ty207, 29, 486, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::SrcEff> -/
-theorem unbox324 : UnboxAt prog prims 324 :=
-  ⟨ty29, 30, 487, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox322 : UnboxAt prog prims 322 :=
+  ⟨ty29, 30, 488, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Code>> -/
-theorem unbox433 : UnboxAt prog prims 433 :=
-  ⟨ty65, 65, 660, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox432 : UnboxAt prog prims 432 :=
+  ⟨ty65, 65, 662, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::Expr> -/
-theorem unbox437 : UnboxAt prog prims 437 :=
-  ⟨ty91, 89, 469, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox436 : UnboxAt prog prims 436 :=
+  ⟨ty91, 89, 468, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Expr>> -/
-theorem unbox438 : UnboxAt prog prims 438 :=
-  ⟨ty94, 92, 440, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox437 : UnboxAt prog prims 437 :=
+  ⟨ty94, 92, 439, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Sig>> -/
-theorem unbox462 : UnboxAt prog prims 462 :=
-  ⟨ty103, 97, 216, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox461 : UnboxAt prog prims 461 :=
+  ⟨ty103, 97, 214, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<usize>>> -/
-theorem unbox497 : UnboxAt prog prims 497 :=
-  ⟨ty27, 32, 710, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox498 : UnboxAt prog prims 498 :=
+  ⟨ty27, 32, 711, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcStructDecl>> -/
-theorem unbox514 : UnboxAt prog prims 514 :=
-  ⟨ty73, 73, 724, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox516 : UnboxAt prog prims 516 :=
+  ⟨ty73, 73, 726, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcEnumDecl>> -/
-theorem unbox517 : UnboxAt prog prims 517 :=
-  ⟨ty77, 77, 726, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox519 : UnboxAt prog prims 519 :=
+  ⟨ty77, 77, 728, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::RawTok>> -/
-theorem unbox529 : UnboxAt prog prims 529 :=
-  ⟨ty177, 159, 733, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox531 : UnboxAt prog prims 531 :=
+  ⟨ty177, 159, 735, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<mini::selfhost::List<usize>>>> -/
-theorem unbox571 : UnboxAt prog prims 571 :=
-  ⟨ty127, 122, 257, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox573 : UnboxAt prog prims 573 :=
+  ⟨ty127, 122, 255, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::AliasDecl>> -/
-theorem unbox575 : UnboxAt prog prims 575 :=
-  ⟨ty122, 119, 841, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox577 : UnboxAt prog prims 577 :=
+  ⟨ty122, 119, 843, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Ty>> -/
-theorem unbox581 : UnboxAt prog prims 581 :=
-  ⟨ty150, 140, 857, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox583 : UnboxAt prog prims 583 :=
+  ⟨ty150, 140, 859, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Inst>> -/
-theorem unbox586 : UnboxAt prog prims 586 :=
-  ⟨ty153, 141, 862, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox588 : UnboxAt prog prims 588 :=
+  ⟨ty153, 141, 864, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::MFunc>> -/
-theorem unbox591 : UnboxAt prog prims 591 :=
-  ⟨ty191, 174, 866, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox593 : UnboxAt prog prims 593 :=
+  ⟨ty191, 174, 868, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::ConstDecl>> -/
-theorem unbox604 : UnboxAt prog prims 604 :=
-  ⟨ty116, 113, 885, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox606 : UnboxAt prog prims 606 :=
+  ⟨ty116, 113, 887, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::ImportDecl>> -/
-theorem unbox606 : UnboxAt prog prims 606 :=
-  ⟨ty119, 116, 887, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox608 : UnboxAt prog prims 608 :=
+  ⟨ty119, 116, 889, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Instr>> -/
-theorem unbox650 : UnboxAt prog prims 650 :=
-  ⟨ty62, 64, 913, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox652 : UnboxAt prog prims 652 :=
+  ⟨ty62, 64, 915, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::Ty> -/
-theorem unbox858 : UnboxAt prog prims 858 :=
-  ⟨ty149, 139, 1060, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox860 : UnboxAt prog prims 860 :=
+  ⟨ty149, 139, 1065, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::MParam>> -/
-theorem unbox863 : UnboxAt prog prims 863 :=
-  ⟨ty182, 167, 1062, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox865 : UnboxAt prog prims 865 :=
+  ⟨ty182, 167, 1067, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::MStmt> -/
-theorem unbox864 : UnboxAt prog prims 864 :=
-  ⟨ty188, 170, 1063, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox866 : UnboxAt prog prims 866 :=
+  ⟨ty188, 170, 1068, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Fact>> -/
-theorem unbox895 : UnboxAt prog prims 895 :=
-  ⟨ty199, 178, 1095, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox897 : UnboxAt prog prims 897 :=
+  ⟨ty199, 178, 1100, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SrcArm>> -/
-theorem unbox944 : UnboxAt prog prims 944 :=
-  ⟨ty23, 27, 1155, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox946 : UnboxAt prog prims 946 :=
+  ⟨ty23, 27, 1160, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::MEff>> -/
-theorem unbox1065 : UnboxAt prog prims 1065 :=
-  ⟨ty272, 172, 1254, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1070 : UnboxAt prog prims 1070 :=
+  ⟨ty272, 172, 1259, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::MEff> -/
-theorem unbox1066 : UnboxAt prog prims 1066 :=
-  ⟨ty187, 173, 1255, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1071 : UnboxAt prog prims 1071 :=
+  ⟨ty187, 173, 1260, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Arity>> -/
-theorem unbox1113 : UnboxAt prog prims 1113 :=
-  ⟨ty158, 144, 662, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1118 : UnboxAt prog prims 1118 :=
+  ⟨ty158, 144, 664, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::SymRule>> -/
-theorem unbox1176 : UnboxAt prog prims 1176 :=
-  ⟨ty214, 186, 980, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1181 : UnboxAt prog prims 1181 :=
+  ⟨ty214, 186, 985, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::LocalTy>> -/
-theorem unbox1244 : UnboxAt prog prims 1244 :=
-  ⟨ty257, 215, 1341, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1249 : UnboxAt prog prims 1249 :=
+  ⟨ty257, 215, 1346, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<mini::selfhost::Ty>>> -/
-theorem unbox1317 : UnboxAt prog prims 1317 :=
-  ⟨ty283, 234, 1404, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1322 : UnboxAt prog prims 1322 :=
+  ⟨ty283, 234, 1409, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<core::option::Option<mini::selfhost::SrcType>>> -/
-theorem unbox1401 : UnboxAt prog prims 1401 :=
-  ⟨ty220, 193, 1210, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1406 : UnboxAt prog prims 1406 :=
+  ⟨ty220, 193, 1215, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::List<mini::selfhost::CTree>>> -/
-theorem unbox1407 : UnboxAt prog prims 1407 :=
-  ⟨ty107, 106, 1447, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1412 : UnboxAt prog prims 1412 :=
+  ⟨ty107, 106, 1452, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Local>> -/
-theorem unbox1418 : UnboxAt prog prims 1418 :=
-  ⟨ty277, 229, 1453, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1423 : UnboxAt prog prims 1423 :=
+  ⟨ty277, 229, 1458, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::VariantTy>> -/
-theorem unbox1573 : UnboxAt prog prims 1573 :=
-  ⟨ty303, 251, 1642, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1578 : UnboxAt prog prims 1578 :=
+  ⟨ty303, 251, 1647, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::VariantAt>> -/
-theorem unbox1926 : UnboxAt prog prims 1926 :=
-  ⟨ty334, 279, 1986, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1931 : UnboxAt prog prims 1931 :=
+  ⟨ty334, 279, 1991, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<bool>> -/
-theorem unbox1974 : UnboxAt prog prims 1974 :=
-  ⟨ty316, 263, 2036, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox1979 : UnboxAt prog prims 1979 :=
+  ⟨ty316, 263, 2041, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::EffArm>> -/
-theorem unbox2051 : UnboxAt prog prims 2051 :=
-  ⟨ty339, 284, 2073, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox2056 : UnboxAt prog prims 2056 :=
+  ⟨ty339, 284, 2078, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 /-- mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Bind>> -/
-theorem unbox2078 : UnboxAt prog prims 2078 :=
-  ⟨ty330, 277, 2086, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
+theorem unbox2083 : UnboxAt prog prims 2083 :=
+  ⟨ty330, 277, 2091, rfl, rfl, by rw [prog_decls]; decide +kernel, by rw [boxElem_self]; rfl⟩
 
 theorem primsOk : PrimsOk prog prims :=
   ⟨List.forall_mem_cons.2 ⟨boxed33,
@@ -601,55 +601,55 @@ theorem primsOk : PrimsOk prog prims :=
     List.forall_mem_cons.2 ⟨boxed158,
     List.forall_mem_cons.2 ⟨boxed166,
     List.forall_mem_cons.2 ⟨boxed195,
-    List.forall_mem_cons.2 ⟨boxed217,
-    List.forall_mem_cons.2 ⟨boxed231,
-    List.forall_mem_cons.2 ⟨boxed281,
-    List.forall_mem_cons.2 ⟨boxed290,
-    List.forall_mem_cons.2 ⟨boxed307,
+    List.forall_mem_cons.2 ⟨boxed215,
+    List.forall_mem_cons.2 ⟨boxed229,
+    List.forall_mem_cons.2 ⟨boxed279,
+    List.forall_mem_cons.2 ⟨boxed288,
+    List.forall_mem_cons.2 ⟨boxed305,
+    List.forall_mem_cons.2 ⟨boxed429,
     List.forall_mem_cons.2 ⟨boxed430,
-    List.forall_mem_cons.2 ⟨boxed431,
-    List.forall_mem_cons.2 ⟨boxed532,
-    List.forall_mem_cons.2 ⟨boxed585,
-    List.forall_mem_cons.2 ⟨boxed600,
-    List.forall_mem_cons.2 ⟨boxed601,
+    List.forall_mem_cons.2 ⟨boxed534,
+    List.forall_mem_cons.2 ⟨boxed587,
     List.forall_mem_cons.2 ⟨boxed602,
     List.forall_mem_cons.2 ⟨boxed603,
+    List.forall_mem_cons.2 ⟨boxed604,
     List.forall_mem_cons.2 ⟨boxed605,
     List.forall_mem_cons.2 ⟨boxed607,
-    List.forall_mem_cons.2 ⟨boxed648,
-    List.forall_mem_cons.2 ⟨boxed663,
-    List.forall_mem_cons.2 ⟨boxed723,
+    List.forall_mem_cons.2 ⟨boxed609,
+    List.forall_mem_cons.2 ⟨boxed650,
+    List.forall_mem_cons.2 ⟨boxed665,
     List.forall_mem_cons.2 ⟨boxed725,
-    List.forall_mem_cons.2 ⟨boxed730,
-    List.forall_mem_cons.2 ⟨boxed827,
-    List.forall_mem_cons.2 ⟨boxed871,
-    List.forall_mem_cons.2 ⟨boxed978,
-    List.forall_mem_cons.2 ⟨boxed981,
-    List.forall_mem_cons.2 ⟨boxed1039,
-    List.forall_mem_cons.2 ⟨boxed1043,
-    List.forall_mem_cons.2 ⟨boxed1045,
-    List.forall_mem_cons.2 ⟨boxed1078,
-    List.forall_mem_cons.2 ⟨boxed1079,
+    List.forall_mem_cons.2 ⟨boxed727,
+    List.forall_mem_cons.2 ⟨boxed732,
+    List.forall_mem_cons.2 ⟨boxed829,
+    List.forall_mem_cons.2 ⟨boxed873,
+    List.forall_mem_cons.2 ⟨boxed983,
+    List.forall_mem_cons.2 ⟨boxed986,
+    List.forall_mem_cons.2 ⟨boxed1044,
+    List.forall_mem_cons.2 ⟨boxed1048,
+    List.forall_mem_cons.2 ⟨boxed1050,
+    List.forall_mem_cons.2 ⟨boxed1083,
     List.forall_mem_cons.2 ⟨boxed1084,
-    List.forall_mem_cons.2 ⟨boxed1225,
-    List.forall_mem_cons.2 ⟨boxed1245,
-    List.forall_mem_cons.2 ⟨boxed1247,
+    List.forall_mem_cons.2 ⟨boxed1089,
+    List.forall_mem_cons.2 ⟨boxed1230,
     List.forall_mem_cons.2 ⟨boxed1250,
-    List.forall_mem_cons.2 ⟨boxed1274,
-    List.forall_mem_cons.2 ⟨boxed1311,
-    List.forall_mem_cons.2 ⟨boxed1315,
-    List.forall_mem_cons.2 ⟨boxed1339,
-    List.forall_mem_cons.2 ⟨boxed1340,
-    List.forall_mem_cons.2 ⟨boxed1399,
-    List.forall_mem_cons.2 ⟨boxed1422,
-    List.forall_mem_cons.2 ⟨boxed1423,
-    List.forall_mem_cons.2 ⟨boxed1506,
-    List.forall_mem_cons.2 ⟨boxed1764,
-    List.forall_mem_cons.2 ⟨boxed1904,
-    List.forall_mem_cons.2 ⟨boxed1985,
-    List.forall_mem_cons.2 ⟨boxed2047,
-    List.forall_mem_cons.2 ⟨boxed2083,
-    List.forall_mem_cons.2 ⟨boxed2105,
+    List.forall_mem_cons.2 ⟨boxed1252,
+    List.forall_mem_cons.2 ⟨boxed1255,
+    List.forall_mem_cons.2 ⟨boxed1279,
+    List.forall_mem_cons.2 ⟨boxed1316,
+    List.forall_mem_cons.2 ⟨boxed1320,
+    List.forall_mem_cons.2 ⟨boxed1344,
+    List.forall_mem_cons.2 ⟨boxed1345,
+    List.forall_mem_cons.2 ⟨boxed1404,
+    List.forall_mem_cons.2 ⟨boxed1427,
+    List.forall_mem_cons.2 ⟨boxed1428,
+    List.forall_mem_cons.2 ⟨boxed1511,
+    List.forall_mem_cons.2 ⟨boxed1770,
+    List.forall_mem_cons.2 ⟨boxed1909,
+    List.forall_mem_cons.2 ⟨boxed1990,
+    List.forall_mem_cons.2 ⟨boxed2052,
+    List.forall_mem_cons.2 ⟨boxed2088,
+    List.forall_mem_cons.2 ⟨boxed2110,
     fun _ h => nomatch h⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩,
   List.forall_mem_cons.2 ⟨unbox10,
     List.forall_mem_cons.2 ⟨unbox47,
@@ -664,51 +664,51 @@ theorem primsOk : PrimsOk prog prims :=
     List.forall_mem_cons.2 ⟨unbox160,
     List.forall_mem_cons.2 ⟨unbox162,
     List.forall_mem_cons.2 ⟨unbox163,
-    List.forall_mem_cons.2 ⟨unbox233,
+    List.forall_mem_cons.2 ⟨unbox231,
+    List.forall_mem_cons.2 ⟨unbox250,
     List.forall_mem_cons.2 ⟨unbox252,
-    List.forall_mem_cons.2 ⟨unbox254,
-    List.forall_mem_cons.2 ⟨unbox261,
-    List.forall_mem_cons.2 ⟨unbox277,
-    List.forall_mem_cons.2 ⟨unbox283,
-    List.forall_mem_cons.2 ⟨unbox291,
-    List.forall_mem_cons.2 ⟨unbox299,
+    List.forall_mem_cons.2 ⟨unbox259,
+    List.forall_mem_cons.2 ⟨unbox275,
+    List.forall_mem_cons.2 ⟨unbox281,
+    List.forall_mem_cons.2 ⟨unbox289,
+    List.forall_mem_cons.2 ⟨unbox297,
+    List.forall_mem_cons.2 ⟨unbox320,
     List.forall_mem_cons.2 ⟨unbox322,
-    List.forall_mem_cons.2 ⟨unbox324,
-    List.forall_mem_cons.2 ⟨unbox433,
+    List.forall_mem_cons.2 ⟨unbox432,
+    List.forall_mem_cons.2 ⟨unbox436,
     List.forall_mem_cons.2 ⟨unbox437,
-    List.forall_mem_cons.2 ⟨unbox438,
-    List.forall_mem_cons.2 ⟨unbox462,
-    List.forall_mem_cons.2 ⟨unbox497,
-    List.forall_mem_cons.2 ⟨unbox514,
-    List.forall_mem_cons.2 ⟨unbox517,
-    List.forall_mem_cons.2 ⟨unbox529,
-    List.forall_mem_cons.2 ⟨unbox571,
-    List.forall_mem_cons.2 ⟨unbox575,
-    List.forall_mem_cons.2 ⟨unbox581,
-    List.forall_mem_cons.2 ⟨unbox586,
-    List.forall_mem_cons.2 ⟨unbox591,
-    List.forall_mem_cons.2 ⟨unbox604,
+    List.forall_mem_cons.2 ⟨unbox461,
+    List.forall_mem_cons.2 ⟨unbox498,
+    List.forall_mem_cons.2 ⟨unbox516,
+    List.forall_mem_cons.2 ⟨unbox519,
+    List.forall_mem_cons.2 ⟨unbox531,
+    List.forall_mem_cons.2 ⟨unbox573,
+    List.forall_mem_cons.2 ⟨unbox577,
+    List.forall_mem_cons.2 ⟨unbox583,
+    List.forall_mem_cons.2 ⟨unbox588,
+    List.forall_mem_cons.2 ⟨unbox593,
     List.forall_mem_cons.2 ⟨unbox606,
-    List.forall_mem_cons.2 ⟨unbox650,
-    List.forall_mem_cons.2 ⟨unbox858,
-    List.forall_mem_cons.2 ⟨unbox863,
-    List.forall_mem_cons.2 ⟨unbox864,
-    List.forall_mem_cons.2 ⟨unbox895,
-    List.forall_mem_cons.2 ⟨unbox944,
-    List.forall_mem_cons.2 ⟨unbox1065,
-    List.forall_mem_cons.2 ⟨unbox1066,
-    List.forall_mem_cons.2 ⟨unbox1113,
-    List.forall_mem_cons.2 ⟨unbox1176,
-    List.forall_mem_cons.2 ⟨unbox1244,
-    List.forall_mem_cons.2 ⟨unbox1317,
-    List.forall_mem_cons.2 ⟨unbox1401,
-    List.forall_mem_cons.2 ⟨unbox1407,
-    List.forall_mem_cons.2 ⟨unbox1418,
-    List.forall_mem_cons.2 ⟨unbox1573,
-    List.forall_mem_cons.2 ⟨unbox1926,
-    List.forall_mem_cons.2 ⟨unbox1974,
-    List.forall_mem_cons.2 ⟨unbox2051,
-    List.forall_mem_cons.2 ⟨unbox2078,
+    List.forall_mem_cons.2 ⟨unbox608,
+    List.forall_mem_cons.2 ⟨unbox652,
+    List.forall_mem_cons.2 ⟨unbox860,
+    List.forall_mem_cons.2 ⟨unbox865,
+    List.forall_mem_cons.2 ⟨unbox866,
+    List.forall_mem_cons.2 ⟨unbox897,
+    List.forall_mem_cons.2 ⟨unbox946,
+    List.forall_mem_cons.2 ⟨unbox1070,
+    List.forall_mem_cons.2 ⟨unbox1071,
+    List.forall_mem_cons.2 ⟨unbox1118,
+    List.forall_mem_cons.2 ⟨unbox1181,
+    List.forall_mem_cons.2 ⟨unbox1249,
+    List.forall_mem_cons.2 ⟨unbox1322,
+    List.forall_mem_cons.2 ⟨unbox1406,
+    List.forall_mem_cons.2 ⟨unbox1412,
+    List.forall_mem_cons.2 ⟨unbox1423,
+    List.forall_mem_cons.2 ⟨unbox1578,
+    List.forall_mem_cons.2 ⟨unbox1931,
+    List.forall_mem_cons.2 ⟨unbox1979,
+    List.forall_mem_cons.2 ⟨unbox2056,
+    List.forall_mem_cons.2 ⟨unbox2083,
     fun _ h => nomatch h⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩⟩
 
 end Lanius.Faithful.SelfPure

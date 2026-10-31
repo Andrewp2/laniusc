@@ -5026,6 +5026,57 @@ pub fn store_eval_element(decls: SrcDecls, b: Binding, element: SrcType, slot: u
     };
 }
 
+// The value in slot + 1, slot + 2, ... copied over element k of the array
+// whose elements start at slot base when the index in slot is k, by a chain
+// of compares of the index with k .. k + count - 1 (the last unchecked).
+pub fn put_element(slot: usize, base: usize, size: usize, k: usize, count: usize) -> Stmt {
+    let copy: Stmt = assign_from(plus(base, times(k, size)), slot_vars(plus(slot, 1), size), Skip);
+    if (count < 2) {
+        return copy;
+    }
+    return Stmt::Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(k as u64))), boxed(copy), boxed(put_element(slot, base, size, plus(k, 1), minus(count, 1))));
+}
+
+// array[index] = value of an array local whose elements start at slot base:
+// the index in slot, checked below the length, then the value in slot + 1
+// and its copy over the element. Core checks the bound before it evaluates
+// the value.
+pub fn store_pick(base: usize, element: SrcType, count: usize, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
+    if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.same(element) && (0 < count) && (count < 2147483648) && (0 < element.size())) {
+        return Some(Seq(boxed(i.stmt), boxed(check_then(slot, Compare(U64, Lt, boxed(Var(slot)), boxed(Lit(count as u64))), Seq(boxed(v.stmt), boxed(put_element(slot, base, element.size(), 0, count)))))));
+    }
+    return None;
+}
+
+pub fn store_array_element(base: usize, element: SrcType, count: usize, slot: usize, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (index) {
+        None -> None,
+        Some(i) -> match (value) {
+            None -> None,
+            Some(v) -> store_pick(base, element, count, slot, i, v),
+        },
+    };
+}
+
+// array[index] = value on an array local.
+pub fn store_array(b: Binding, slot: usize, index: core::option::Option<Evaluated>, value: core::option::Option<Evaluated>) -> core::option::Option<Stmt> {
+    return match (b.ty) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> store_array_element(b.slot, unbox(array_element), array_length, slot, index, value),
+        Unit -> None,
+        Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
+    };
+}
+
 // x.field = value: the value in slot, then copied to the field's slot.
 pub fn set_field_eval_at(target: usize, found: core::option::Option<SrcType>, slot: usize, v: Evaluated) -> core::option::Option<Stmt> {
     return match (found) {
@@ -5102,10 +5153,20 @@ pub fn lower_set_index_eval(decls: SrcDecls, slot: usize, binding: core::option:
     return match (binding) {
         None -> None,
         Some(b) -> match (element_of(b.ty)) {
-            None -> None,
+            None -> store_array(b, slot, index, value),
             Some(element) -> store_eval_element(decls, b, element, slot, index, value),
         },
     };
+}
+
+// slice[index] = value with pure operands: on an array local, the store of
+// the evaluated operands (as SetIndexEval of EPure), on a raw slice, the
+// guarded store.
+pub fn lower_set_index_any(decls: SrcDecls, scope: List<Binding>, next: usize, slice: usize, index: SrcExpr, value: SrcExpr) -> core::option::Option<Stmt> {
+    if (is_array_local(lookup(scope, slice))) {
+        return lower_set_index_eval(decls, next, lookup(scope, slice), eval_pure(scope, index, next), eval_pure(scope, value, plus(next, 1)));
+    }
+    return guarded(next, guard_and(guard_and(index.guard(scope), index_guard(scope, slice, index)), value.guard(scope)), lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value));
 }
 
 impl SrcStmt {
@@ -5130,7 +5191,7 @@ impl SrcStmt {
             Free(pointer, size, shift) -> guarded(next, guard_and(pointer.guard(scope), size.guard(scope)), lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize)))),
             LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 2)))),
             LetIndex(id, ty, slice, index, body) -> lower_let_index_any(decls, scope, next, ty, slice, index, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
-            SetIndex(slice, index, value) -> guarded(next, guard_and(guard_and(index.guard(scope), index_guard(scope, slice, index)), value.guard(scope)), lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value)),
+            SetIndex(slice, index, value) -> lower_set_index_any(decls, scope, next, slice, index, value),
             LetEval(id, ty, value, body) -> lower_let_eval(ty, value.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, decls, scope, next)),
             IfEval(condition, then_branch, else_branch) -> lower_if_eval(next, condition.eval(sigs, decls, scope, next), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next)),

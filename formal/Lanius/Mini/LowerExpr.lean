@@ -75,6 +75,7 @@ import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.declareFuncs
@@ -106,7 +107,7 @@ public import Lanius.Mini.Compiler.P.equality
 public import Lanius.Mini.Compiler.P.lowerApply
 public import Lanius.Mini.Compiler.P.lowerLocal
 public import Lanius.Mini.Compiler.P.render
-public import Lanius.Mini.Compiler.P.storeEvalWord
+public import Lanius.Mini.Compiler.P.storeArray
 -- end import parts
 
 @[expose] public section

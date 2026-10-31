@@ -1876,6 +1876,28 @@ theorem evalArms_typed {P : Core.Program} (target : P.target = Core.Target.x86_6
 
 end
 
+/-- `array[index] = value` on an array local is a well-typed Core assignment. -/
+theorem setIndexEval_array_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
+    {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) {ret : SrcType} {slice : Nat}
+    {index value : SrcEff} {scope : List Binding} {ctx : Typing.Context} {next : Nat} {inLoop : Bool}
+    {b : Binding} {out : Stmt}
+    (ok : ScopeOk P ctx scope) (d : ∀ t ∈ index.types ++ value.types, TypeDeclared P t)
+    (found : lookup scope slice = some b)
+    (h : storeArray b next (index.eval sigs decls scope next) (value.eval sigs decls scope (next + 1)) = some out) :
+    StmtHasType P ret.toCore ctx inLoop (SrcStmt.setIndexEval slice index value).toCore := by
+  obtain ⟨e, n, i, v, bty, hi, hv, cond, same, -, -, -, -⟩ := storeArray_some h
+  have typedIndex := SrcEff.eval_typed target sigsOk index ok (fun t mem => d t (List.mem_append_left _ mem)) hi
+  have typedValue := SrcEff.eval_typed target sigsOk value ok (fun t mem => d t (List.mem_append_right _ mem)) hv
+  have inCtx := (ok slice b found).1
+  rw [bty] at inCtx
+  rw [same_toCore same] at typedValue
+  have integer : Typing.IntegerTy i.ty.toCore := by
+    simp only [Bool.or_eq_true] at cond
+    rcases cond with c | c
+    · rw [eq_i32 c]; exact .signed _
+    · rw [eq_uint c]; exact .unsigned _
+  exact .expression (.assign (.indexArray (.local inCtx) typedIndex integer) typedValue .set)
+
 theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} {decls : SrcDecls} (sigsOk : SigsOk P sigs) {ret : SrcType} :
     ∀ (s : SrcStmt) {scope : List Binding} {ctx : Typing.Context} {next : Nat} {inLoop : Bool}
@@ -2194,7 +2216,20 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
               (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
           · simp at ha
   | .setIndex slice index value, scope, ctx, next, inLoop, out, ok, _, _, h => by
-    simp only [SrcStmt.lower] at h
+    simp only [SrcStmt.lower, lowerSetIndexAny] at h
+    split at h
+    case isTrue arr =>
+      simp only [lowerSetIndexEval] at h
+      split at h
+      · simp at h
+      rename_i sb found
+      split at h
+      · exact setIndexEval_array_typed (decls := decls) (index := .ePure index) (value := .ePure value) target sigsOk ok
+          (by simp [SrcEff.types]) found (by simpa only [SrcEff.eval] using h)
+      · rename_i e he
+        exfalso
+        have bty : sb.ty = .slice e := by cases hb : sb.ty <;> simp_all [elementOf]
+        simp [isArrayLocal, found, bty] at arr
     obtain ⟨_, h, -⟩ := guarded_some h
     simp only [lowerSetIndex] at h
     split at h
@@ -2388,7 +2423,7 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
     · simp at h
     · rename_i sb found
       split at h
-      · simp at h
+      · exact setIndexEval_array_typed target sigsOk ok d found h
       · rename_i e he
         simp only [storeEvalElement] at h
         split at h

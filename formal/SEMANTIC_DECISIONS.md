@@ -601,7 +601,14 @@ Core's array, held by value:
   `let x: T = a[i];` is read as `slice[i]` is (`LetIndex`), and lowered as
   the `let` of the indexed value (`lower_let_index_any`), whose Core
   meaning is the same.
-- Not yet: `a[i] = v` on an array local, an array passed where a slice is
+- `a[i] = v` on an array local, i an `i32` or `usize`, evaluates i into its
+  slot, checks `i <u N`, then evaluates v (Core checks the bound before it
+  evaluates the value, as for a slice) and copies it over element i by the
+  same chain of compares (`putElement`, `storeArray`). With pure operands it
+  is read as `slice[i] = v` is (`SetIndex`) and lowered as the effectful
+  form (`lower_set_index_any`). The front end reads v at the element type
+  (`index_elem`), so `bytes[i] = 48` is a `u8` store.
+- Not yet: an array passed where a slice is
   expected (Core's coercion of `[T; N]` to `[T]`), `for` over an array,
   `==` of arrays, `core::mem::i32_array_data_ptr`, a length that names a
   constant, and arrays of floats (no element layout for float slices yet;

@@ -430,7 +430,7 @@ inductive AssignTargetR (env : FrontEnv) (scope : List Local) (target : CTree) (
       AssignTargetR env scope target v value (setFieldEff l.id j x)
   | indexEval {l : Local} {i x : MEff} : nodeProd (kid target 1) = pPostfixIndex →
       nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l →
-      EffR env scope none (kid (kid target 1) 1) i → EffR env scope (sliceElem l.ty) value x →
+      EffR env scope none (kid (kid target 1) 1) i → EffR env scope (indexElem l.ty) value x →
       AssignTargetR env scope target v value (setIndexEff l.id i x)
 
 theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {target : CTree} {v : Nat}
@@ -482,7 +482,7 @@ theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {t
       | none => rw [hi] at h; cases h
       | some i =>
         rw [hi] at h
-        cases hv : effOf fuel env scope (sliceElem l.ty) value with
+        cases hv : effOf fuel env scope (indexElem l.ty) value with
         | none => rw [hv] at h; cases h
         | some v =>
           rw [hv] at h

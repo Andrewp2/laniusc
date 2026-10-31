@@ -7492,7 +7492,7 @@ pub fn set_index_eval_of(slice: usize, index: core::option::Option<MEff>, value:
 
 // `v[index] = value;`
 pub fn set_index_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, index: CTree, value: CTree) -> core::option::Option<MStmt> {
-    return set_index_eval_of(l.id, eff_of(fuel, env, scope, None, index), eff_of(fuel, env, scope, slice_elem(l.ty), value));
+    return set_index_eval_of(l.id, eff_of(fuel, env, scope, None, index), eff_of(fuel, env, scope, index_elem(l.ty), value));
 }
 
 pub fn field_eval_stmt(id: usize, j: usize, x: core::option::Option<MEff>) -> core::option::Option<MStmt> {

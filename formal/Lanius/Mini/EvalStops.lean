@@ -1661,7 +1661,112 @@ theorem setIndex_value_done {iv : Value} {st1 : State} {pos at_ : Nat} {right : 
       Semantics.syncI32ViewsFromHeapFrom, ite_self] at hout
     exact .inl ⟨_, hout.symm, writeNativeValue_next _ stored⟩
 
+/-- Core's `array[idx] = e` on an array local whose index traps traps. -/
+theorem arraySet_idx_trap {vs : List Value} {r : Lanius.Trap} {s : State}
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.array vs) } st)
+    (h : evalExpr (k + 1) P st idx = .trapped r s) :
+    evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r s := by
+  generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
+  rw [evalExpr] at hout
+  rw [Semantics.evalPlace] at hout
+  rw [base] at hout
+  simp only [h] at hout
+  exact hout.symm
+
+theorem arraySet_value_trap {vs : List Value} {iv : Value} {st1 : State} {pos : Nat} {r : Lanius.Trap}
+    {s : State}
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.array vs) } st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st1) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < vs.length) (h : evalExpr (k + 2) P st1 e = .trapped r s) :
+    evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r s := by
+  generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
+  rw [evalExpr] at hout
+  rw [Semantics.evalPlace] at hout
+  rw [base] at hout
+  simp only [idxRun, posOk, List.getElem?_eq_getElem lt, h] at hout
+  exact hout.symm
+
+/-- Core's `array[idx] = e` on an array local completes once the index, in
+bounds, and the value do, when the array is still there. -/
+theorem arraySet_done {vs : List Value} {iv : Value} {st1 : State} {pos : Nat} {right : Value} {st2 : State}
+    (views : st2.i32ArrayViews = [])
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.array vs) } st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st1) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < vs.length) (eRun : evalExpr (k + 2) P st1 e = .done right st2)
+    (entry2 : st2.cellEntry? root = some ⟨root, some (.array vs)⟩) :
+    evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) =
+      .done .unit { st2 with cells := Semantics.replaceCell st2.cells root (.array (Semantics.setValue vs pos right)) } := by
+  have synced := sync_ok (st := { st2 with cells := Semantics.replaceCell st2.cells root (.array (Semantics.setValue vs pos right)) }) views
+  generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
+  rw [evalExpr] at hout
+  rw [Semantics.evalPlace] at hout
+  rw [base] at hout
+  simp only [idxRun, posOk, List.getElem?_eq_getElem lt, eRun, Semantics.evalAssignValue,
+    Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace, entry2,
+    List.nil_append, Semantics.replaceProjectedValue, assignCell_some entry2, synced, ite_self] at hout
+  exact hout.symm
+
 end SetIndex
+
+/-- A failing `array[index] = value` on an array local: the index's code
+stops, or the bound check does, or the value's code. -/
+theorem stops_setIndexEval_array (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    {slice : Nat} {index value : SrcEff} (ihi : EffStops sp mp n index) (ihv : EffStops sp mp n value)
+    {hp : Heap} {scope : List Binding} {next : Nat} {stmt : Stmt} {frame : Nat → Nat} {base : Nat}
+    {st : State} {env : Env} {b : Binding} (found : lookup scope slice = some b)
+    (ok : storeArray b next (index.eval (sigs sp.funcs) sp.decls scope next)
+      (value.eval (sigs sp.funcs) sp.decls scope (next + 1)) = some stmt)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (fails : Fails sp hp.limit st (SrcStmt.setIndexEval slice index value).toCore) :
+    ∃ d, Stops mp d env hp stmt n := by
+  obtain ⟨e, n', i, w, bty, indexOk, valueOk, kind, -, -, nsmall, -, rfl⟩ := storeArray_some ok
+  have bmem := (lookup_mem found).1
+  obtain ⟨v0, entry, holds0⟩ := corr.values b bmem
+  rw [bty] at holds0
+  cases holds0 with
+  | @array _ _ vs _ _ elems =>
+  have placeAt : ∀ f, Semantics.evalPlace (f + 1) sp.toCore st .read (.local slice) =
+      .done { root := frame b.slot, projections := [], value := some (.array vs) } st := fun f => by
+    simp [Semantics.evalPlace, corr.cellId, found, entry]
+  have len : vs.length = n' := by rw [elems.length, List.length_replicate]
+  simp only [SrcStmt.toCore] at fails
+  have efails := fails.expression
+  rcases eff_split lowered ihi indexOk corr fr fresh hc within efails
+      (fun j r s h => ⟨j + 3, s, arraySet_idx_trap (placeAt j)
+        (Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j)), rfl⟩) with
+    ⟨d, stops⟩ | ⟨k, iv, st1, indexRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
+  · exact ⟨d, .seqFirst stops⟩
+  by_cases zero : (Expr.compare .u64 .lt (.var next) (.lit (BitVec.ofNat 64 n'))).eval env1 = 0
+  · exact ⟨_, Stops.after exec1 (Stops.check (d := 0) fun h => absurd zero h)⟩
+  have inBounds : (env1 next).toNat < n' := by
+    have small : n' < 2 ^ 64 := by omega
+    by_cases h : (env1 next).toNat < n'
+    · exact h
+    · simp [Expr.eval, Word.holds, CmpOp.holdsU, BitVec.ult, Nat.mod_eq_of_lt small, h] at zero
+  have scalar : i.ty.isScalar = true := by
+    cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+  have posOk := index_ok (t := { expr := .var next, ty := i.ty }) kind (holds_var holds1 scalar) (by
+    simp only [Expr.eval]; omega)
+  have lt : ((Expr.var next).eval env1).toNat < vs.length := by simp only [Expr.eval]; omega
+  have limit := exec1.limit_normal
+  have efails1 : EFails sp hp1.limit st (.assign .set (.index (.local slice) index.toCore) value.toCore) := by
+    rw [limit]; exact efails
+  rcases eff_split lowered ihv valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
+      fresh1 hc1 (by rw [limit]; exact bound1) efails1
+      (fun j r s h => ⟨k + j + 3, s, arraySet_value_trap (placeAt (k + j))
+        (value_after indexRun (by omega)) posOk lt
+        (Semantics.evalExpr_of_le h (by intro h; cases h) (by omega)), rfl⟩) with
+    ⟨d, stops⟩ | ⟨j, right, st2, valueRun, bound2, fresh2, keeps2, -⟩
+  · exact ⟨_, Stops.after exec1 (Stops.check fun _ => .seqFirst stops)⟩
+  · have entry2 : st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.array vs)⟩ := by
+      rw [(keeps1.chain keeps2).cells _ (corr.below fresh b bmem)]; exact entry
+    have run := arraySet_done fresh2.2 (placeAt (k + j)) (value_after indexRun (by omega)) posOk lt
+      (value_after valueRun (by omega)) entry2
+    exact (efails1.not_done run bound2).elim
 
 theorem stops_setIndexEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {slice : Nat} {index value : SrcEff} (ihi : EffStops sp mp n index) (ihv : EffStops sp mp n value) :
@@ -1672,7 +1777,7 @@ theorem stops_setIndexEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
   · simp at ok
   rename_i b found
   split at ok
-  · simp at ok
+  · exact stops_setIndexEval_array lowered ihi ihv found ok corr fr fresh hc within fails
   rename_i element elementOk
   have bty := eq_of_elementOf elementOk
   have shape : ∃ i w rest, index.eval (sigs sp.funcs) sp.decls scope next = some i ∧
@@ -1829,7 +1934,9 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
   | .letIndex _ _ slice index body => stops_letIndex (stmtStops_succ lowered returns prev body)
       (stops_letEval lowered (effStops_all lowered returns prev (.eIndex slice (.ePure index)))
         (stmtStops_succ lowered returns prev body))
-  | .setIndex _ _ _ => stops_setIndex
+  | .setIndex _ index value => stops_setIndex
+      (stops_setIndexEval lowered (effStops_all lowered returns prev (.ePure index))
+        (effStops_all lowered returns prev (.ePure value)))
   | .letEval _ _ value body =>
       stops_letEval lowered (effStops_all lowered returns prev value) (stmtStops_succ lowered returns prev body)
   | .setEval _ value => stops_setEval lowered (effStops_all lowered returns prev value)

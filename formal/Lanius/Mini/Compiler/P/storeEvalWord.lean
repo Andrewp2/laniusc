@@ -7,27 +7,9 @@ import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.UintTy_half
-import Lanius.Mini.Compiler.P.arithShiftRight
-import Lanius.Mini.Compiler.P.armBodyScope
-import Lanius.Mini.Compiler.P.armPayload
+import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
-import Lanius.Mini.Compiler.P.conjunction
 import Lanius.Mini.Compiler.P.elementBase
-import Lanius.Mini.Compiler.P.evalSame
-import Lanius.Mini.Compiler.P.guardAnd
-import Lanius.Mini.Compiler.P.indexOf
-import Lanius.Mini.Compiler.P.lowerAddress
-import Lanius.Mini.Compiler.P.lowerApply
-import Lanius.Mini.Compiler.P.lowerCallSig
-import Lanius.Mini.Compiler.P.lowerLoadType
-import Lanius.Mini.Compiler.P.lowerReturn
-import Lanius.Mini.Compiler.P.lowerSetCallArgs
-import Lanius.Mini.Compiler.P.lowerSetValues
-import Lanius.Mini.Compiler.P.lowerSlice
-import Lanius.Mini.Compiler.P.lowerTagged
-import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Compiler.P.repeatType
-import Lanius.Mini.Compiler.P.shortCircuit
 import Lanius.Mini.Compiler.P.storeType
 import Lanius.Mini.Compiler.P.wordElement
 import Lanius.Mini.Compiler.P.wordStride
@@ -70,199 +52,27 @@ def storeEvalElement (decls : SrcDecls) (b : Binding) (element : SrcType) (slot 
       | none => none
       | some v => storeEvalWord decls b element slot i v
 
-/-- x.field = value: the value in slot, then copied to the field's slot. -/
-def setFieldEvalAt (target : Nat) (found : Option SrcType) (slot : Nat) (v : Evaluated) : Option Stmt :=
-  match found with
-  | none => none
-  | some ty =>
-    if SrcType.isScalar ty then
-      evalSame v ty (Stmt.seq v.stmt (Stmt.assign target (Expr.var slot)))
-    else
-      none
+/-- The value in slot + 1, slot + 2, ... copied over element k of the array whose elements start at slot base when the index in slot is k, by a chain of compares of the index with k .. k + count - 1 (the last unchecked). -/
+def putElement (slot : Nat) (base : Nat) (size : Nat) (k : Nat) (count : Nat) : Stmt :=
+  let copy : Stmt := assignFrom (base + k * size) (slotVars (slot + 1) size) Stmt.skip
+  if count < 2 then
+    copy
+  else
+    Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit (BitVec.ofNat 64 k))) copy (putElement slot base size (k + 1) (count - 1))
 
-def setFieldEvalOf (b : Binding) (field : Nat) (slot : Nat) (v : Evaluated) : Option Stmt :=
-  match b.ty with
-  | .i32 => none
-  | .bool => none
-  | .uint kind => none
-  | .struct id fields => setFieldEvalAt (b.slot + fieldOffset fields field) fields[field]? slot v
-  | .enum id variants => none
-  | .ptr => none
-  | .slice element => none
-  | .array arrayElement arrayLength => none
-  | .unit => none
-  | .isize => none
-  | .char => none
-  | .float ft => none
-  | .sint sk => none
+/-- array[index] = value of an array local whose elements start at slot base: the index in slot, checked below the length, then the value in slot + 1 and its copy over the element. Core checks the bound before it evaluates the value. -/
+def storePick (base : Nat) (element : SrcType) (count : Nat) (slot : Nat) (i : Evaluated) (v : Evaluated) : Option Stmt :=
+  if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && SrcType.same v.ty element && decide (0 < count) && decide (count < 2147483648) && decide (0 < SrcType.size element) then
+    some (Stmt.seq i.stmt (checkThen slot (Expr.compare Word.u64 CmpOp.lt (Expr.var slot) (Expr.lit (BitVec.ofNat 64 count))) (Stmt.seq v.stmt (putElement slot base (SrcType.size element) 0 count))))
+  else
+    none
 
-def lowerSetFieldEval (slot : Nat) (binding : Option Binding) (field : Nat) (value : Option Evaluated) : Option Stmt :=
-  match binding with
+def storeArrayElement (base : Nat) (element : SrcType) (count : Nat) (slot : Nat) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
+  match index with
   | none => none
-  | some b =>
+  | some i =>
     match value with
     | none => none
-    | some v => setFieldEvalOf b field slot v
-
-/-- return; in a unit function: its one slot, whose bits do not matter. -/
-def lowerReturnUnit (ret : SrcType) : Option Stmt :=
-  if SrcType.isUnit ret then
-    some (Stmt.ret [Expr.lit 0])
-  else
-    none
-
-/-- assert(condition): the condition's code, then 1 / condition into the same slot, which has no run when the condition is false (on x86 the division traps, as Core does), so a failed assert or a panic stops the program. Unreachable at the function's result type: 1 / 0 into the slot, which has no run (on x86 the division traps), as Core traps reading the uninitialized local. -/
-def lowerUnreachable (same : Bool) (slot : Nat) : Option Stmt :=
-  if same then
-    some (Stmt.divide Word.u64 DivOp.uDiv slot (Expr.lit 1) (Expr.lit 0))
-  else
-    none
-
-def lowerAssert (condition : Option Evaluated) (slot : Nat) : Option Stmt :=
-  match condition with
-  | none => none
-  | some c => evalSame c SrcType.bool (Stmt.seq c.stmt (Stmt.divide Word.u64 DivOp.uDiv slot (Expr.lit 1) (Expr.var slot)))
-
-def lowerSetIndexEval (decls : SrcDecls) (slot : Nat) (binding : Option Binding) (index : Option Evaluated) (value : Option Evaluated) : Option Stmt :=
-  match binding with
-  | none => none
-  | some b =>
-    match elementOf b.ty with
-    | none => none
-    | some element => storeEvalElement decls b element slot index value
-
-def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : SrcType) (scope : List Binding) (next : Nat) : Option Stmt :=
-  match self with
-  | .nop => some Stmt.skip
-  | .let id ty value body => guarded next (SrcExpr.guard value scope) (lowerLet next (lowerValue scope value ty) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty)))
-  | .letStruct id ty fields body => guarded next (guardAll scope fields) (lowerLet next (lowerLiteral scope ty fields) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty)))
-  | .letCall id ty callee args body => guarded next (guardAll scope args) (lowerLetCall next (SrcType.size ty) callee (lowerCall sigs scope callee args ty) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty)))
-  | .letEnum id ty variant payload body => guarded next (guardAll scope payload) (lowerLet next (lowerEnumValue scope ty variant payload) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty)))
-  | .letMatch id ty scrutinee enumId arms body => lowerThen (lowerMatch scope (lookup scope scrutinee) enumId arms ty next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
-  | .set id value => guarded next (SrcExpr.guard value scope) (lowerSet (lookup scope id) scope value)
-  | .setField id index value => guarded next (SrcExpr.guard value scope) (lowerSetField (lookup scope id) index scope value)
-  | .setCall id callee args => guarded next (guardAll scope args) (lowerSetCall sigs scope (lookup scope id) callee args)
-  | .then first second => lowerThen (SrcStmt.lower first sigs decls ret scope next) (SrcStmt.lower second sigs decls ret scope next)
-  | .if condition thenBranch elseBranch => guarded next (SrcExpr.guard condition scope) (lowerIf (lowerAs scope condition SrcType.bool) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next))
-  | .while condition body => lowerWhile next (SrcExpr.guard condition scope) (lowerAs scope condition SrcType.bool) (SrcStmt.lower body sigs decls ret scope next)
-  | .return value => guarded next (SrcExpr.guard value scope) (lowerReturn (lowerValue scope value ret))
-  | .letAlloc id size shift body => guarded next (SrcExpr.guard size scope) (lowerAlloc next shift (lowerAs scope size (SrcType.uint UintTy.usize)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.ptr } : Binding) :: scope) (next + 1)))
-  | .letLoad id pointer offset body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard offset scope)) (lowerLoad next (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.uint UintTy.uint8 } : Binding) :: scope) (next + 1)))
-  | .setByte pointer offset value => guarded next (guardAnd (SrcExpr.guard pointer scope) (guardAnd (SrcExpr.guard offset scope) (SrcExpr.guard value scope))) (lowerStore (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (lowerAs scope value (SrcType.uint UintTy.uint8)))
-  | .free pointer size shift => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard size scope)) (lowerFree shift (lowerAs scope pointer SrcType.ptr) (lowerAs scope size (SrcType.uint UintTy.usize)))
-  | .letSlice id element pointer length body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard length scope)) (lowerLet next (lowerSlice decls element (lowerAs scope pointer SrcType.ptr) (lowerAs scope length SrcType.i32)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.slice element } : Binding) :: scope) (next + 2)))
-  | .letIndex id ty slice index body => lowerLetIndexAny decls scope next ty slice index (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
-  | .setIndex slice index value => guarded next (guardAnd (guardAnd (SrcExpr.guard index scope) (indexGuard scope slice index)) (SrcExpr.guard value scope)) (lowerSetIndex decls (lookup scope slice) (lowerIndex scope index) scope value)
-  | .letEval id ty value body => lowerLetEval ty (SrcEff.eval value sigs decls scope next) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := ty } : Binding) :: scope) (next + SrcType.size ty))
-  | .setEval id value => lowerSetEval next (lookup scope id) (SrcEff.eval value sigs decls scope next)
-  | .ifEval condition thenBranch elseBranch => lowerIfEval next (SrcEff.eval condition sigs decls scope next) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next)
-  | .whileEval condition body => lowerWhileEval next (SrcEff.eval condition sigs decls scope next) (SrcStmt.lower body sigs decls ret scope next)
-  | .returnEval value => lowerReturnEval next ret (SrcEff.eval value sigs decls scope next)
-  | .discard value => lowerDiscard (SrcEff.eval value sigs decls scope next)
-  | .setIndexEval slice index value => lowerSetIndexEval decls next (lookup scope slice) (SrcEff.eval index sigs decls scope next) (SrcEff.eval value sigs decls scope (next + 1))
-  | .setFieldEval id field value => lowerSetFieldEval next (lookup scope id) field (SrcEff.eval value sigs decls scope next)
-  | .returnUnit => lowerReturnUnit ret
-  | .assert condition => lowerAssert (SrcEff.eval condition sigs decls scope next) next
-  | .break => some Stmt.brk
-  | .continue => some Stmt.cont
-  | .matchArm scrutinee enumId variant binds binder ty body rest => lowerMatchArm scope (lookup scope scrutinee) enumId variant binds binder ty next (SrcStmt.lower body sigs decls ret (armBodyScope binds binder ty next scope) (next + SrcType.size ty)) (SrcStmt.lower rest sigs decls ret scope next)
-  | .unreachable id ty => lowerUnreachable (SrcType.same ty ret) next
-
-/-- A break or continue outside every loop of the statement: Core's typing rejects one outside every loop of the function. -/
-def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
-  match self with
-  | .nop => false
-  | .let id ty value body => SrcStmt.breaksOut body
-  | .letStruct id ty fields body => SrcStmt.breaksOut body
-  | .letCall id ty callee args body => SrcStmt.breaksOut body
-  | .letEnum id ty variant payload body => SrcStmt.breaksOut body
-  | .letMatch id ty scrutinee enumId arms body => SrcStmt.breaksOut body
-  | .set id value => false
-  | .setField id index value => false
-  | .setCall id callee args => false
-  | .then first second => SrcStmt.breaksOut first || SrcStmt.breaksOut second
-  | .if condition thenBranch elseBranch => SrcStmt.breaksOut thenBranch || SrcStmt.breaksOut elseBranch
-  | .while condition body => false
-  | .return value => false
-  | .letAlloc id size shift body => SrcStmt.breaksOut body
-  | .letLoad id pointer offset body => SrcStmt.breaksOut body
-  | .setByte pointer offset value => false
-  | .free pointer size shift => false
-  | .letSlice id element pointer length body => SrcStmt.breaksOut body
-  | .letIndex id ty slice index body => SrcStmt.breaksOut body
-  | .setIndex slice index value => false
-  | .letEval id ty value body => SrcStmt.breaksOut body
-  | .setEval id value => false
-  | .ifEval condition thenBranch elseBranch => SrcStmt.breaksOut thenBranch || SrcStmt.breaksOut elseBranch
-  | .whileEval condition body => false
-  | .returnEval value => false
-  | .discard value => false
-  | .setIndexEval slice index value => false
-  | .setFieldEval id field value => false
-  | .returnUnit => false
-  | .assert condition => false
-  | .break => true
-  | .continue => true
-  | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.breaksOut body || SrcStmt.breaksOut rest
-  | .unreachable id ty => false
-
-/-- Slots the statement's lets need beyond the ones in scope. -/
-def SrcStmt.depth (self : SrcStmt) : Nat :=
-  match self with
-  | .nop => 0
-  | .let id ty value body => SrcStmt.depth body + SrcType.size ty
-  | .letStruct id ty fields body => SrcStmt.depth body + SrcType.size ty
-  | .letCall id ty callee args body => SrcStmt.depth body + SrcType.size ty
-  | .letEnum id ty variant payload body => SrcStmt.depth body + SrcType.size ty
-  | .letMatch id ty scrutinee enumId arms body => SrcStmt.depth body + SrcType.size ty
-  | .set id value => 0
-  | .setField id index value => 0
-  | .setCall id callee args => 0
-  | .then first second => max (SrcStmt.depth first) (SrcStmt.depth second)
-  | .if condition thenBranch elseBranch => max (SrcStmt.depth thenBranch) (SrcStmt.depth elseBranch)
-  | .while condition body => SrcStmt.depth body
-  | .return value => 0
-  | .letAlloc id size shift body => SrcStmt.depth body + 1
-  | .letLoad id pointer offset body => SrcStmt.depth body + 1
-  | .setByte pointer offset value => 0
-  | .free pointer size shift => 0
-  | .letSlice id element pointer length body => SrcStmt.depth body + 2
-  | .letIndex id ty slice index body => SrcStmt.depth body + SrcType.size ty
-  | .setIndex slice index value => 0
-  | .letEval id ty value body => SrcStmt.depth body + SrcType.size ty
-  | .setEval id value => 0
-  | .ifEval condition thenBranch elseBranch => max (SrcStmt.depth thenBranch) (SrcStmt.depth elseBranch)
-  | .whileEval condition body => SrcStmt.depth body
-  | .returnEval value => 0
-  | .discard value => 0
-  | .setIndexEval slice index value => 0
-  | .setFieldEval id field value => 0
-  | .returnUnit => 0
-  | .assert condition => 0
-  | .break => 0
-  | .continue => 0
-  | .matchArm scrutinee enumId variant binds binder ty body rest => max (SrcStmt.depth body + SrcType.size ty) (SrcStmt.depth rest)
-  | .unreachable id ty => 1
-
-/-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
-def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
-  match params with
-  | [] => scope
-  | param :: rest => paramScope rest (slot + SrcType.size param.ty) (({ id := param.id, slot := slot, ty := param.ty } : Binding) :: scope)
-
-def paramsValid (params : List SrcParam) : Bool :=
-  match params with
-  | [] => true
-  | param :: rest => decide (0 < SrcType.size param.ty) && paramsValid rest
-
-def paramsSize (params : List SrcParam) : Nat :=
-  match params with
-  | [] => 0
-  | param :: rest => SrcType.size param.ty + paramsSize rest
-
-def paramTypes (params : List SrcParam) : List SrcType :=
-  match params with
-  | [] => []
-  | param :: rest => param.ty :: paramTypes rest
+    | some v => storePick base element count slot i v
 
 end Lanius.Mini

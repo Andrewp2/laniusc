@@ -12,7 +12,7 @@ import Lanius.Mini.Compiler.P.enumVariants
 import Lanius.Mini.Compiler.P.lowerApply
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.sigs
-import Lanius.Mini.Compiler.P.storeEvalWord
+import Lanius.Mini.Compiler.P.storeArray
 import Lanius.Mini.Compiler.P.structFields
 
 public section

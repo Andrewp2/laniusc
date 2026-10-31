@@ -105,7 +105,7 @@ theorem proof_eval_pick {prog : SrcProgram} {prims : Prims} {ix_eval_pick ix_Src
   simp only [src_eval_pick] at h
   faithful [Lanius.Mini.evalPick]
 
-theorem proof_eval_word_element {prog : SrcProgram} {prims : Prims} {ix_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_assign_from ix_SrcType_is_i32 ix_word_element ix_bounds_guard ix_slot_vars ix_SrcType_is_uint ix_element_base ix_load_type : Nat} (fn : prog.funcs[ix_eval_word_element]? = some (src_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_assign_from ix_SrcType_is_i32 ix_word_element ix_bounds_guard ix_slot_vars ix_SrcType_is_uint ix_element_base ix_load_type)) (np : prims.isPrim ix_eval_word_element = false)
+theorem proof_eval_word_element {prog : SrcProgram} {prims : Prims} {ix_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_assign_from ix_SrcType_is_i32 ix_word_element ix_slot_vars ix_SrcType_is_uint ix_bounds_guard ix_element_base ix_load_type : Nat} (fn : prog.funcs[ix_eval_word_element]? = some (src_eval_word_element ix_plus ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_assign_from ix_SrcType_is_i32 ix_word_element ix_slot_vars ix_SrcType_is_uint ix_bounds_guard ix_element_base ix_load_type)) (np : prims.isPrim ix_eval_word_element = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
@@ -113,9 +113,9 @@ theorem proof_eval_word_element {prog : SrcProgram} {prims : Prims} {ix_eval_wor
     (ext_assign_from : Certified (∀ {n : Nat}, Stmt_assign_from prog prims ix_assign_from n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
     (ext_word_element : Certified (∀ {n : Nat}, Stmt_word_element prog prims ix_word_element n))
-    (ext_bounds_guard : Certified (∀ {n : Nat}, Stmt_bounds_guard prog prims ix_bounds_guard n))
     (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n))
     (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
+    (ext_bounds_guard : Certified (∀ {n : Nat}, Stmt_bounds_guard prog prims ix_bounds_guard n))
     (ext_element_base : Certified (∀ {n : Nat}, Stmt_element_base prog prims ix_element_base n))
     (ext_load_type : Certified (∀ {n : Nat}, Stmt_load_type prog prims ix_load_type n)) {n : Nat} :
     Stmt_eval_word_element prog prims ix_eval_word_element n := by
@@ -148,18 +148,18 @@ theorem proof_lower_let_index {prog : SrcProgram} {prims : Prims} {ix_lower_let_
   simp only [src_lower_let_index] at h
   faithful [Lanius.Mini.lowerLetIndex]
 
-theorem proof_lower_let_index_any {prog : SrcProgram} {prims : Prims} {ix_lower_let_index_any ix_guarded ix_SrcExpr_guard ix_lookup ix_guard_and ix_index_guard ix_lower_index ix_lower_let_eval ix_is_array_local ix_eval_index ix_eval_pure ix_lower_let_index : Nat} (fn : prog.funcs[ix_lower_let_index_any]? = some (src_lower_let_index_any ix_guarded ix_SrcExpr_guard ix_lookup ix_guard_and ix_index_guard ix_lower_index ix_lower_let_eval ix_is_array_local ix_eval_index ix_eval_pure ix_lower_let_index)) (np : prims.isPrim ix_lower_let_index_any = false)
+theorem proof_lower_let_index_any {prog : SrcProgram} {prims : Prims} {ix_lower_let_index_any ix_guarded ix_SrcExpr_guard ix_lookup ix_guard_and ix_lower_let_eval ix_is_array_local ix_eval_index ix_eval_pure ix_index_guard ix_lower_let_index ix_lower_index : Nat} (fn : prog.funcs[ix_lower_let_index_any]? = some (src_lower_let_index_any ix_guarded ix_SrcExpr_guard ix_lookup ix_guard_and ix_lower_let_eval ix_is_array_local ix_eval_index ix_eval_pure ix_index_guard ix_lower_let_index ix_lower_index)) (np : prims.isPrim ix_lower_let_index_any = false)
     (ext_guarded : Certified (∀ {n : Nat}, Stmt_guarded prog prims ix_guarded n))
     (ext_SrcExpr_guard : Certified (∀ {n : Nat}, Stmt_SrcExpr_guard prog prims ix_SrcExpr_guard n))
     (ext_lookup : Certified (∀ {n : Nat}, Stmt_lookup prog prims ix_lookup n))
     (ext_guard_and : Certified (∀ {n : Nat}, Stmt_guard_and prog prims ix_guard_and n))
-    (ext_index_guard : Certified (∀ {n : Nat}, Stmt_index_guard prog prims ix_index_guard n))
-    (ext_lower_index : Certified (∀ {n : Nat}, Stmt_lower_index prog prims ix_lower_index n))
     (ext_lower_let_eval : Certified (∀ {n : Nat}, Stmt_lower_let_eval prog prims ix_lower_let_eval n))
     (ext_is_array_local : Certified (∀ {n : Nat}, Stmt_is_array_local prog prims ix_is_array_local n))
     (ext_eval_index : Certified (∀ {n : Nat}, Stmt_eval_index prog prims ix_eval_index n))
     (ext_eval_pure : Certified (∀ {n : Nat}, Stmt_eval_pure prog prims ix_eval_pure n))
-    (ext_lower_let_index : Certified (∀ {n : Nat}, Stmt_lower_let_index prog prims ix_lower_let_index n)) {n : Nat} :
+    (ext_index_guard : Certified (∀ {n : Nat}, Stmt_index_guard prog prims ix_index_guard n))
+    (ext_lower_let_index : Certified (∀ {n : Nat}, Stmt_lower_let_index prog prims ix_lower_let_index n))
+    (ext_lower_index : Certified (∀ {n : Nat}, Stmt_lower_index prog prims ix_lower_index n)) {n : Nat} :
     Stmt_lower_let_index_any prog prims ix_lower_let_index_any n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6
   rcases n with _ | n

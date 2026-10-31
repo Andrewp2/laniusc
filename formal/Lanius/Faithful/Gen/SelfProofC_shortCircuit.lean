@@ -69,13 +69,13 @@ theorem proof_eval_divide_uint {prog : SrcProgram} {prims : Prims} {ix_eval_divi
   simp only [src_eval_divide_uint] at h
   faithful [Lanius.Mini.evalDivideUint]
 
-theorem proof_eval_load {prog : SrcProgram} {prims : Prims} {ix_eval_load ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_bounds_guard ix_SrcType_is_uint : Nat} (fn : prog.funcs[ix_eval_load]? = some (src_eval_load ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_bounds_guard ix_SrcType_is_uint)) (np : prims.isPrim ix_eval_load = false)
+theorem proof_eval_load {prog : SrcProgram} {prims : Prims} {ix_eval_load ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_bounds_guard : Nat} (fn : prog.funcs[ix_eval_load]? = some (src_eval_load ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_uint ix_bounds_guard)) (np : prims.isPrim ix_eval_load = false)
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
     (ext_check_then : Certified (∀ {n : Nat}, Stmt_check_then prog prims ix_check_then n))
     (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
-    (ext_bounds_guard : Certified (∀ {n : Nat}, Stmt_bounds_guard prog prims ix_bounds_guard n))
-    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n)) {n : Nat} :
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
+    (ext_bounds_guard : Certified (∀ {n : Nat}, Stmt_bounds_guard prog prims ix_bounds_guard n)) {n : Nat} :
     Stmt_eval_load prog prims ix_eval_load n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n

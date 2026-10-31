@@ -17,7 +17,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_enumVariants
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 public import Lanius.Faithful.Gen.SelfStmtC_matchVariants
 public import Lanius.Faithful.Gen.SelfStmtC_sigs
-public import Lanius.Faithful.Gen.SelfStmtC_storeEvalWord
+public import Lanius.Faithful.Gen.SelfStmtC_storeArray
 public import Lanius.Faithful.Gen.SelfStmtC_structFields
 import all Lanius.Faithful.Gen.SelfSrcC_lowerBody
 import all Lanius.Mini.Compiler.P.lowerBody
