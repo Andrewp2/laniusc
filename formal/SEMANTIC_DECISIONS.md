@@ -945,8 +945,15 @@ operand, `r` is the local and there is no call.
   token, and its body is `x = v`. The statements after it follow the whole
   chain, as they follow any statement. A field or element target with `?`
   is not read.
-- Not read yet: `?` after a method call or field (`a.b()?`), on a field or
-  element target, or nested inside a larger expression.
+- `x.m(args)?` and `self.m(args)?` (10-31), with no further postfix, read
+  like `path(args)?`: the operand is the method call as `x.m(args)` alone
+  reads (`T::m(x, args)` for x's type T), `r` is numbered by the call's
+  `(` and `w` by the `?`. This is the stdlib's only `?` after a method
+  (`core::path`'s `cursor.next_back()?` and `self.file_name()?`).
+- Not read: `?` after a field (`a.b?`) or after a chain longer than one
+  method call, on a field or element target, `x.m()?;` as a statement, or
+  nested inside a larger expression. The stdlib uses none of these (10-31
+  survey of its 168 files).
 
 ## Match statements with block arms (decided 10-31, F4)
 

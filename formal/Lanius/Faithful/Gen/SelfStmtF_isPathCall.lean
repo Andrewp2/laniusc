@@ -20,18 +20,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-abbrev Stmt_alloc_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 293 (RepList 21 RepSrcExpr)) x0 v0 →
-    (RepOption 280 RepLetHead) (Lanius.Mini.allocHead x0) w
-
-abbrev Stmt_alloc_shifted (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Option Nat} {x2 : List Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcExpr x0 v0 → (RepOption 204 RepNat) x1 v1 → (RepList 21 RepSrcExpr) x2 v2 →
-    (RepOption 280 RepLetHead) (Lanius.Mini.allocShifted x0 x1 x2) w
-
-abbrev Stmt_cast_shift (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepSrcExpr x1 v1 →
-    (RepOption 204 RepNat) (Lanius.Mini.castShift x0 x1) w
-
 abbrev Stmt_is_path_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
     RepBool (Lanius.Mini.isPathCall x0) w
@@ -40,29 +28,13 @@ abbrev Stmt_is_try_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
     RepBool (Lanius.Mini.isTryCall x0) w
 
-abbrev Stmt_is_try_enum (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.TypeDecl} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepTypeDecl x0 v0 →
-    RepBool (Lanius.Mini.isTryEnum x0) w
-
 abbrev Stmt_is_try_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
     RepBool (Lanius.Mini.isTryLocal x0) w
 
-abbrev Stmt_is_usize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
-    RepBool (Lanius.Mini.isUsize x0) w
-
-abbrev Stmt_literal_shift (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcExpr x0 v0 →
-    (RepOption 204 RepNat) (Lanius.Mini.literalShift x0) w
-
-abbrev Stmt_shift_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcExpr x0 v0 →
-    (RepOption 204 RepNat) (Lanius.Mini.shiftOf x0) w
-
-abbrev Stmt_shift_of_u64 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : BitVec 64} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepU64 x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
-    (RepOption 204 RepNat) (Lanius.Mini.shiftOfU64 x0 x1 x2 x3) w
+abbrev Stmt_is_try_method (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
+    RepBool (Lanius.Mini.isTryMethod x0) w
 
 abbrev Stmt_text_core (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

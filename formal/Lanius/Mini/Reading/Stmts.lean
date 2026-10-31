@@ -78,6 +78,20 @@ def TryCallForm (pf : CTree) : Prop :=
 theorem isTryCall_sound {pf : CTree} (h : isTryCall pf = true) : TryCallForm pf := by
   simpa [isTryCall, TryCallForm, and_assoc] using h
 
+theorem effMethod_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Option Ty} {pf : CTree}
+    {x : MEff} (h : effMethod fuel env scope expected pf = some x) : MethodEff env scope expected pf x :=
+  (effSound fuel).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1 h
+
+/-- `x.m(args)?` with no further postfix, x a plain name or `self`. -/
+def TryMethodForm (pf : CTree) : Prop :=
+  (nodeProd (kid pf 0) = pSelfValue ∨ (nodeProd (kid pf 0) = pIdent ∧ nodeProd (kid (kid pf 0) 1) = pIdentPlain)) ∧
+    nodeProd (kid pf 1) = pPostfixMember ∧ nodeProd (kid (kid pf 1) 2) = pMemberTypeArgsNone ∧
+    nodeProd (kid (kid pf 1) 3) = pPostfixCall ∧ nodeProd (kid (kid (kid pf 1) 3) 3) = pPostfixTry ∧
+    nodeProd (kid (kid (kid (kid pf 1) 3) 3) 1) = pPostfixEnd
+
+theorem isTryMethod_sound {pf : CTree} (h : isTryMethod pf = true) : TryMethodForm pf := by
+  simpa [isTryMethod, TryMethodForm, and_assoc] using h
+
 /-- `op?`: op's type st is a `core::result::Result` or `core::option::Option`
 and the function returns the same enum with the same failure payload. -/
 inductive TriedR (env : FrontEnv) (r : Nat) (call : Option MEff) (st : Ty) (w : Nat) : Tried → Prop
@@ -99,6 +113,18 @@ inductive TryCallR (env : FrontEnv) (scope : List Local) (pf : CTree) : Tried �
         ((kidToken (kid (kid pf 1) 3) 0).start - env.base) tr →
       TryCallR env scope pf tr
 
+/-- `x.m(args)?`: the method call's value is bound to a local numbered by
+its `(`, the failure binder is numbered by the `?`. -/
+inductive TryMethodR (env : FrontEnv) (scope : List Local) (pf : CTree) : Tried → Prop
+  | mk {x : MEff} {st : Ty} {tr : Tried} : TryMethodForm pf →
+      FreshId scope ((kidToken (kid (kid pf 1) 3) 0).start - env.base) →
+      FreshId scope ((kidToken (kid (kid (kid pf 1) 3) 3) 0).start - env.base) →
+      (kidToken (kid (kid pf 1) 3) 0).start - env.base ≠ (kidToken (kid (kid (kid pf 1) 3) 3) 0).start - env.base →
+      MethodEff env scope none pf x → EffTy env.decls scope x st →
+      TriedR env ((kidToken (kid (kid pf 1) 3) 0).start - env.base) (some x) st
+        ((kidToken (kid (kid (kid pf 1) 3) 3) 0).start - env.base) tr →
+      TryMethodR env scope pf tr
+
 /-- `x?`: the failure binder is numbered by the `?`. -/
 inductive TryLocalR (env : FrontEnv) (scope : List Local) (pf : CTree) : Tried → Prop
   | mk {l : Local} {tr : Tried} : nodeProd (kid pf 1) = pPostfixTry → nodeProd (kid (kid pf 1) 1) = pPostfixEnd →
@@ -108,6 +134,7 @@ inductive TryLocalR (env : FrontEnv) (scope : List Local) (pf : CTree) : Tried �
 /-- A let's `op?`. -/
 inductive TryR (env : FrontEnv) (scope : List Local) (init : CTree) : Tried → Prop
   | call {pf : CTree} {tr : Tried} : Peel init pf → TryCallR env scope pf tr → TryR env scope init tr
+  | method {pf : CTree} {tr : Tried} : Peel init pf → TryMethodR env scope pf tr → TryR env scope init tr
   | «local» {pf : CTree} {tr : Tried} : Peel init pf → TryLocalR env scope pf tr → TryR env scope init tr
 
 theorem triedOf_sound {fuel : Nat} {env : FrontEnv} {r : Nat} {call : Option MEff} {sty : Option Ty} {w : Nat}
@@ -172,6 +199,28 @@ theorem tryCallOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {pf :
         exact .mk c ((freshId_iff _ _).1 f1) ((freshId_iff _ _).1 f2) ne (effPathCall_sound hx) (effTy_sound hty) tr'
   · cases h
 
+theorem tryMethodOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {pf : CTree} {tr : Tried}
+    (c : TryMethodForm pf) (h : tryMethodOf fuel env scope pf = some tr) : TryMethodR env scope pf tr := by
+  unfold tryMethodOf at h
+  simp only at h
+  split at h
+  · rename_i k
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at k
+    obtain ⟨⟨f1, f2⟩, ne⟩ := k
+    cases hx : effMethod fuel env scope none pf with
+    | none => rw [hx] at h; simp [triedCall] at h
+    | some x =>
+      rw [hx] at h
+      simp only [triedCall] at h
+      cases hty : effTy fuel env scope x with
+      | none => rw [hty] at h; simp [triedOf] at h
+      | some st =>
+        rw [hty] at h
+        obtain ⟨st', hst, tr'⟩ := triedOf_sound h
+        cases hst
+        exact .mk c ((freshId_iff _ _).1 f1) ((freshId_iff _ _).1 f2) ne (effMethod_sound hx) (effTy_sound hty) tr'
+  · cases h
+
 theorem tryLocalOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {pf : CTree} {tr : Tried}
     (c : isTryLocal pf = true) (h : tryLocalOf fuel env scope pf = some tr) : TryLocalR env scope pf tr := by
   simp only [isTryLocal, Bool.and_eq_true, decide_eq_true_eq] at c
@@ -202,8 +251,11 @@ theorem tryOfInit_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {init
       exact .call (peel_sound hp) (tryCallOf_sound (isTryCall_sound c) h)
     · split at h
       · rename_i _ c
-        exact .local (peel_sound hp) (tryLocalOf_sound c h)
-      · cases h
+        exact .method (peel_sound hp) (tryMethodOf_sound (isTryMethod_sound c) h)
+      · split at h
+        · rename_i _ _ c
+          exact .local (peel_sound hp) (tryLocalOf_sound c h)
+        · cases h
 
 theorem tryLetHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {init : CTree} {hd : LetHead}
     (h : tryLetHead fuel env scope init = some hd) : ∃ tr, hd = .tryOf tr ∧ TryR env scope init tr := by

@@ -11,7 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_divergeArm
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
-public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
+public import Lanius.Faithful.Gen.SelfStmtF_isTryEnum
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 public import Lanius.Faithful.Gen.SelfStmtF_triedErr
@@ -97,5 +97,21 @@ theorem proof_try_call_of {prog : SrcProgram} {prims : Prims} {ix_try_call_of ix
   rw [pcall_succ np fn] at h
   simp only [src_try_call_of] at h
   faithful [Lanius.Mini.tryCallOf]
+
+theorem proof_try_method_of {prog : SrcProgram} {prims : Prims} {ix_try_method_of ix_minus ix_kid ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_eff_method ix_tried_call : Nat} (fn : prog.funcs[ix_try_method_of]? = some (src_try_method_of ix_minus ix_kid ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_eff_method ix_tried_call)) (np : prims.isPrim ix_try_method_of = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
+    (ext_field_start_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_start_Token_of_mini_selfhost_Token prog prims ix_field_start_Token_of_mini_selfhost_Token n))
+    (ext_fresh_id : Certified (∀ {n : Nat}, Stmt_fresh_id prog prims ix_fresh_id n))
+    (ext_eff_method : Certified (∀ {n : Nat}, Stmt_eff_method prog prims ix_eff_method n))
+    (ext_tried_call : Certified (∀ {n : Nat}, Stmt_tried_call prog prims ix_tried_call n)) {n : Nat} :
+    Stmt_try_method_of prog prims ix_try_method_of n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_try_method_of] at h
+  faithful [Lanius.Mini.tryMethodOf]
 
 end Lanius.Faithful.SelfCert
