@@ -5057,8 +5057,8 @@ theorem cert_type_params {n : Nat} :
   @proof_type_params prog prims 545 140 810 fn_type_params np_type_params ⟨@cert_list_items⟩ ⟨@cert_param_spellings⟩ n
 
 theorem cert_p_where_none {n : Nat} :
-    Stmt_p_where_none prog prims 551 n :=
-  @proof_p_where_none prog prims 551 fn_p_where_none np_p_where_none n
+    Stmt_p_where_none prog prims 557 n :=
+  @proof_p_where_none prog prims 557 fn_p_where_none np_p_where_none n
 
 theorem certs_member : ∀ n, (Stmt_member prog prims 993 n) := by
   intro n
@@ -5158,7 +5158,7 @@ theorem cert_variants_of {n : Nat} :
 
 theorem cert_type_decl {n : Nat} :
     Stmt_type_decl prog prims 540 n :=
-  @proof_type_decl prog prims 540 138 140 141 537 538 545 548 549 551 806 807 808 fn_type_decl np_type_decl ⟨@cert_node_prod⟩ ⟨@cert_list_items⟩ ⟨@cert_kid⟩ ⟨@cert_p_struct⟩ ⟨@cert_p_enum⟩ ⟨@cert_type_params⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_where_none⟩ ⟨@cert_struct_decl_of⟩ ⟨@cert_enum_decl_of⟩ ⟨@cert_variants_of⟩ n
+  @proof_type_decl prog prims 540 138 140 141 537 538 545 548 549 557 806 807 808 fn_type_decl np_type_decl ⟨@cert_node_prod⟩ ⟨@cert_list_items⟩ ⟨@cert_kid⟩ ⟨@cert_p_struct⟩ ⟨@cert_p_enum⟩ ⟨@cert_type_params⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_where_none⟩ ⟨@cert_struct_decl_of⟩ ⟨@cert_enum_decl_of⟩ ⟨@cert_variants_of⟩ n
 
 theorem cert_p_fn {n : Nat} :
     Stmt_p_fn prog prims 541 n :=
@@ -5222,32 +5222,32 @@ theorem cert_methods_of {n : Nat} :
   (certs_methods_of n)
 
 theorem cert_impl_methods {n : Nat} :
-    Stmt_impl_methods prog prims 552 n :=
-  @proof_impl_methods prog prims 552 140 542 812 fn_impl_methods np_impl_methods ⟨@cert_list_items⟩ ⟨@cert_fns_decls⟩ ⟨@cert_methods_of⟩ n
+    Stmt_impl_methods prog prims 551 n :=
+  @proof_impl_methods prog prims 551 140 542 812 fn_impl_methods np_impl_methods ⟨@cert_list_items⟩ ⟨@cert_fns_decls⟩ ⟨@cert_methods_of⟩ n
 
 theorem cert_p_impl_trait {n : Nat} :
-    Stmt_p_impl_trait prog prims 553 n :=
-  @proof_p_impl_trait prog prims 553 fn_p_impl_trait np_p_impl_trait n
+    Stmt_p_impl_trait prog prims 552 n :=
+  @proof_p_impl_trait prog prims 552 fn_p_impl_trait np_p_impl_trait n
 
 theorem cert_p_import {n : Nat} :
-    Stmt_p_import prog prims 554 n :=
-  @proof_p_import prog prims 554 fn_p_import np_p_import n
+    Stmt_p_import prog prims 553 n :=
+  @proof_p_import prog prims 553 fn_p_import np_p_import n
 
 theorem cert_p_import_path {n : Nat} :
-    Stmt_p_import_path prog prims 555 n :=
-  @proof_p_import_path prog prims 555 fn_p_import_path np_p_import_path n
+    Stmt_p_import_path prog prims 554 n :=
+  @proof_p_import_path prog prims 554 fn_p_import_path np_p_import_path n
 
 theorem cert_single_of_mini_selfhost_ImportDecl {n : Nat} :
     Stmt_single_of_mini_selfhost_ImportDecl prog prims 813 n :=
   @proof_single_of_mini_selfhost_ImportDecl prog prims 813 603 fn_single_of_mini_selfhost_ImportDecl np_single_of_mini_selfhost_ImportDecl ⟨@cert_boxed_of_mini_selfhost_List_mini_selfhost_ImportDecl⟩ n
 
 theorem cert_import_decls {n : Nat} :
-    Stmt_import_decls prog prims 556 n :=
-  @proof_import_decls prog prims 556 379 380 381 383 813 fn_import_decls np_import_decls ⟨@cert_empty_of_mini_selfhost_TypeDecl⟩ ⟨@cert_empty_of_mini_selfhost_FnDecl⟩ ⟨@cert_empty_of_mini_selfhost_ConstDecl⟩ ⟨@cert_empty_of_mini_selfhost_AliasDecl⟩ ⟨@cert_single_of_mini_selfhost_ImportDecl⟩ n
+    Stmt_import_decls prog prims 555 n :=
+  @proof_import_decls prog prims 555 379 380 381 383 813 fn_import_decls np_import_decls ⟨@cert_empty_of_mini_selfhost_TypeDecl⟩ ⟨@cert_empty_of_mini_selfhost_FnDecl⟩ ⟨@cert_empty_of_mini_selfhost_ConstDecl⟩ ⟨@cert_empty_of_mini_selfhost_AliasDecl⟩ ⟨@cert_single_of_mini_selfhost_ImportDecl⟩ n
 
 theorem cert_p_type_alias {n : Nat} :
-    Stmt_p_type_alias prog prims 557 n :=
-  @proof_p_type_alias prog prims 557 fn_p_type_alias np_p_type_alias n
+    Stmt_p_type_alias prog prims 556 n :=
+  @proof_p_type_alias prog prims 556 fn_p_type_alias np_p_type_alias n
 
 theorem cert_single_of_mini_selfhost_AliasDecl {n : Nat} :
     Stmt_single_of_mini_selfhost_AliasDecl prog prims 814 n :=
@@ -5287,7 +5287,7 @@ theorem cert_host_id {n : Nat} :
 
 theorem cert_host_extern {n : Nat} :
     Stmt_host_extern prog prims 560 n :=
-  @proof_host_extern prog prims 560 138 141 548 549 551 815 816 817 818 fn_host_extern np_host_extern ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_where_none⟩ ⟨@cert_p_extern_abi⟩ ⟨@cert_same_text⟩ ⟨@cert_text_lanius_std⟩ ⟨@cert_host_id⟩ n
+  @proof_host_extern prog prims 560 138 141 548 549 557 815 816 817 818 fn_host_extern np_host_extern ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_where_none⟩ ⟨@cert_p_extern_abi⟩ ⟨@cert_same_text⟩ ⟨@cert_text_lanius_std⟩ ⟨@cert_host_id⟩ n
 
 theorem cert_extern_tree {n : Nat} :
     Stmt_extern_tree prog prims 561 n :=
@@ -5299,7 +5299,7 @@ theorem cert_p_trait {n : Nat} :
 
 theorem cert_item_decls {n : Nat} :
     Stmt_item_decls prog prims 378 n :=
-  @proof_item_decls prog prims 378 138 141 242 243 245 379 380 382 383 384 385 537 538 539 540 541 542 543 544 545 546 547 548 549 550 551 552 553 554 555 556 557 558 559 560 561 562 fn_item_decls np_item_decls ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_no_decls⟩ ⟨@cert_empty_of_mini_selfhost_List_usize⟩ ⟨@cert_item_body⟩ ⟨@cert_empty_of_mini_selfhost_TypeDecl⟩ ⟨@cert_empty_of_mini_selfhost_FnDecl⟩ ⟨@cert_empty_of_mini_selfhost_ImportDecl⟩ ⟨@cert_empty_of_mini_selfhost_AliasDecl⟩ ⟨@cert_p_module⟩ ⟨@cert_path_spellings⟩ ⟨@cert_p_struct⟩ ⟨@cert_p_enum⟩ ⟨@cert_type_decls⟩ ⟨@cert_type_decl⟩ ⟨@cert_p_fn⟩ ⟨@cert_fns_decls⟩ ⟨@cert_cons_fn_decl⟩ ⟨@cert_fn_decl_of⟩ ⟨@cert_type_params⟩ ⟨@cert_p_const⟩ ⟨@cert_single_of_mini_selfhost_ConstDecl⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_impl_inherent⟩ ⟨@cert_p_where_none⟩ ⟨@cert_impl_methods⟩ ⟨@cert_p_impl_trait⟩ ⟨@cert_p_import⟩ ⟨@cert_p_import_path⟩ ⟨@cert_import_decls⟩ ⟨@cert_p_type_alias⟩ ⟨@cert_alias_decls⟩ ⟨@cert_p_extern_fn⟩ ⟨@cert_host_extern⟩ ⟨@cert_extern_tree⟩ ⟨@cert_p_trait⟩ n
+  @proof_item_decls prog prims 378 138 141 242 243 245 379 380 382 383 384 385 537 538 539 540 541 542 543 544 545 546 547 548 549 550 551 552 553 554 555 556 557 558 559 560 561 562 fn_item_decls np_item_decls ⟨@cert_node_prod⟩ ⟨@cert_kid⟩ ⟨@cert_no_decls⟩ ⟨@cert_empty_of_mini_selfhost_List_usize⟩ ⟨@cert_item_body⟩ ⟨@cert_empty_of_mini_selfhost_TypeDecl⟩ ⟨@cert_empty_of_mini_selfhost_FnDecl⟩ ⟨@cert_empty_of_mini_selfhost_ImportDecl⟩ ⟨@cert_empty_of_mini_selfhost_AliasDecl⟩ ⟨@cert_p_module⟩ ⟨@cert_path_spellings⟩ ⟨@cert_p_struct⟩ ⟨@cert_p_enum⟩ ⟨@cert_type_decls⟩ ⟨@cert_type_decl⟩ ⟨@cert_p_fn⟩ ⟨@cert_fns_decls⟩ ⟨@cert_cons_fn_decl⟩ ⟨@cert_fn_decl_of⟩ ⟨@cert_type_params⟩ ⟨@cert_p_const⟩ ⟨@cert_single_of_mini_selfhost_ConstDecl⟩ ⟨@cert_field_text_Token_of_mini_selfhost_Token⟩ ⟨@cert_kid_token⟩ ⟨@cert_p_impl_inherent⟩ ⟨@cert_impl_methods⟩ ⟨@cert_p_impl_trait⟩ ⟨@cert_p_import⟩ ⟨@cert_p_import_path⟩ ⟨@cert_import_decls⟩ ⟨@cert_p_type_alias⟩ ⟨@cert_p_where_none⟩ ⟨@cert_alias_decls⟩ ⟨@cert_p_extern_fn⟩ ⟨@cert_host_extern⟩ ⟨@cert_extern_tree⟩ ⟨@cert_p_trait⟩ n
 
 theorem certs_collect : ∀ n, (Stmt_collect prog prims 241 n) ∧ (Stmt_collect_next prog prims 376 n) := by
   intro n

@@ -196,31 +196,31 @@ theorem pure549 : PureFunc prog prims outside src549 = true :=
 theorem pure550 : PureFunc prog prims outside src550 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::p_where_none -/
+/-- mini::selfhost::impl_methods -/
 theorem pure551 : PureFunc prog prims outside src551 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::impl_methods -/
+/-- mini::selfhost::p_impl_trait -/
 theorem pure552 : PureFunc prog prims outside src552 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::p_impl_trait -/
+/-- mini::selfhost::p_import -/
 theorem pure553 : PureFunc prog prims outside src553 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::p_import -/
+/-- mini::selfhost::p_import_path -/
 theorem pure554 : PureFunc prog prims outside src554 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::p_import_path -/
+/-- mini::selfhost::import_decls -/
 theorem pure555 : PureFunc prog prims outside src555 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::import_decls -/
+/-- mini::selfhost::p_type_alias -/
 theorem pure556 : PureFunc prog prims outside src556 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::p_type_alias -/
+/-- mini::selfhost::p_where_none -/
 theorem pure557 : PureFunc prog prims outside src557 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 

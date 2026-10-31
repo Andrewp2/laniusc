@@ -3319,13 +3319,15 @@ def tail_p_trait : List SrcFunc :=
 def tail_extern_tree : List SrcFunc :=
   src_extern_tree 133 141 231 536 559 :: tail_p_trait
 def tail_host_extern : List SrcFunc :=
-  src_host_extern 138 141 548 549 551 815 816 817 818 :: tail_extern_tree
+  src_host_extern 138 141 548 549 557 815 816 817 818 :: tail_extern_tree
 def tail_p_extern_fn : List SrcFunc :=
   src_p_extern_fn :: tail_host_extern
 def tail_alias_decls : List SrcFunc :=
   src_alias_decls 379 380 381 382 814 :: tail_p_extern_fn
+def tail_p_where_none : List SrcFunc :=
+  src_p_where_none :: tail_alias_decls
 def tail_p_type_alias : List SrcFunc :=
-  src_p_type_alias :: tail_alias_decls
+  src_p_type_alias :: tail_p_where_none
 def tail_import_decls : List SrcFunc :=
   src_import_decls 379 380 381 383 813 :: tail_p_type_alias
 def tail_p_import_path : List SrcFunc :=
@@ -3336,10 +3338,8 @@ def tail_p_impl_trait : List SrcFunc :=
   src_p_impl_trait :: tail_p_import
 def tail_impl_methods : List SrcFunc :=
   src_impl_methods 140 542 812 :: tail_p_impl_trait
-def tail_p_where_none : List SrcFunc :=
-  src_p_where_none :: tail_impl_methods
 def tail_p_impl_inherent : List SrcFunc :=
-  src_p_impl_inherent :: tail_p_where_none
+  src_p_impl_inherent :: tail_impl_methods
 def tail_kid_token : List SrcFunc :=
   src_kid_token 141 811 :: tail_p_impl_inherent
 def tail_field_text_Token_of_mini_selfhost_Token : List SrcFunc :=
@@ -3359,7 +3359,7 @@ def tail_fns_decls : List SrcFunc :=
 def tail_p_fn : List SrcFunc :=
   src_p_fn :: tail_fns_decls
 def tail_type_decl : List SrcFunc :=
-  src_type_decl 138 140 141 537 538 545 548 549 551 806 807 808 :: tail_p_fn
+  src_type_decl 138 140 141 537 538 545 548 549 557 806 807 808 :: tail_p_fn
 def tail_type_decls : List SrcFunc :=
   src_type_decls 380 381 382 383 805 :: tail_type_decl
 def tail_p_enum : List SrcFunc :=
@@ -4987,7 +4987,7 @@ abbrev src536 : SrcFunc := src_single_of_mini_selfhost_CTree 231
 abbrev src537 : SrcFunc := src_p_struct
 abbrev src538 : SrcFunc := src_p_enum
 abbrev src539 : SrcFunc := src_type_decls 380 381 382 383 805
-abbrev src540 : SrcFunc := src_type_decl 138 140 141 537 538 545 548 549 551 806 807 808
+abbrev src540 : SrcFunc := src_type_decl 138 140 141 537 538 545 548 549 557 806 807 808
 abbrev src541 : SrcFunc := src_p_fn
 abbrev src542 : SrcFunc := src_fns_decls 379 381 382 383
 abbrev src543 : SrcFunc := src_cons_fn_decl 809
@@ -4998,16 +4998,16 @@ abbrev src547 : SrcFunc := src_single_of_mini_selfhost_ConstDecl 601
 abbrev src548 : SrcFunc := src_field_text_Token_of_mini_selfhost_Token
 abbrev src549 : SrcFunc := src_kid_token 141 811
 abbrev src550 : SrcFunc := src_p_impl_inherent
-abbrev src551 : SrcFunc := src_p_where_none
-abbrev src552 : SrcFunc := src_impl_methods 140 542 812
-abbrev src553 : SrcFunc := src_p_impl_trait
-abbrev src554 : SrcFunc := src_p_import
-abbrev src555 : SrcFunc := src_p_import_path
-abbrev src556 : SrcFunc := src_import_decls 379 380 381 383 813
-abbrev src557 : SrcFunc := src_p_type_alias
+abbrev src551 : SrcFunc := src_impl_methods 140 542 812
+abbrev src552 : SrcFunc := src_p_impl_trait
+abbrev src553 : SrcFunc := src_p_import
+abbrev src554 : SrcFunc := src_p_import_path
+abbrev src555 : SrcFunc := src_import_decls 379 380 381 383 813
+abbrev src556 : SrcFunc := src_p_type_alias
+abbrev src557 : SrcFunc := src_p_where_none
 abbrev src558 : SrcFunc := src_alias_decls 379 380 381 382 814
 abbrev src559 : SrcFunc := src_p_extern_fn
-abbrev src560 : SrcFunc := src_host_extern 138 141 548 549 551 815 816 817 818
+abbrev src560 : SrcFunc := src_host_extern 138 141 548 549 557 815 816 817 818
 abbrev src561 : SrcFunc := src_extern_tree 133 141 231 536 559
 abbrev src562 : SrcFunc := src_p_trait
 abbrev src563 : SrcFunc := src_p_path_ident

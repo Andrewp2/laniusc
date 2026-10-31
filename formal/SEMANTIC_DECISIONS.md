@@ -885,3 +885,13 @@ clash), and a module with no declarations counts as no module. Module
 imports still bring only variants into scope by their bare names.
 Stdlib: `core::wide_i64_checked` and `core::wide_u64_checked`, 20 targets,
 all compile now (432 calls agree with laniusc).
+
+## Impls with where clauses (decided 10-31, F7)
+
+An `impl` block with a `where` clause is read as the same block without it,
+as a function's `where` clause already was: bounds are not checked yet (F7),
+so a method is found by its type alone. The clause can only reject programs
+in laniusc, never change what an accepted one does, so the reading of a
+program laniusc accepts is unchanged. Unlocks the 51 such impls in 15
+stdlib and `extended/` files, among them `core::iter` and
+`core::clone_values`, which most of the stdlib reaches (case impl_where).

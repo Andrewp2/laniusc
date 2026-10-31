@@ -1,0 +1,4 @@
+{ params := [{ id := 0, ty := .i32 }], ret := (.uint .uint32), body := (.return (.cast (.uint .uint32) (.local 0))) }
+{ params := [{ id := 0, ty := .i32 }], ret := (.uint .uint32), body := (.letStruct 1 (.struct 0 [.i32]) [(.local 0)] (.returnEval (.eCall 2 [(.ePure (.local 1))]))) }
+{ params := [{ id := 0, ty := (.struct 0 [.i32]) }], ret := (.uint .uint32), body := (.returnEval (.eCall 3 [(.ePure (.local 0))])) }
+{ params := [{ id := 0, ty := (.struct 0 [.i32]) }], ret := (.uint .uint32), body := (.returnEval (.eApply .plus (.eCall 0 [(.ePure (.field 0 0))]) (.ePure (.unsigned .uint32 1)))) }

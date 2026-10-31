@@ -356,7 +356,7 @@ theorem fn_p_enum : prog.funcs[538]? = some (src_p_enum) := get_of_drop at_p_enu
 theorem np_p_enum : prims.isPrim 538 = false := by decide +kernel
 theorem fn_type_decls : prog.funcs[539]? = some (src_type_decls 380 381 382 383 805) := get_of_drop at_type_decls
 theorem np_type_decls : prims.isPrim 539 = false := by decide +kernel
-theorem fn_type_decl : prog.funcs[540]? = some (src_type_decl 138 140 141 537 538 545 548 549 551 806 807 808) := get_of_drop at_type_decl
+theorem fn_type_decl : prog.funcs[540]? = some (src_type_decl 138 140 141 537 538 545 548 549 557 806 807 808) := get_of_drop at_type_decl
 theorem np_type_decl : prims.isPrim 540 = false := by decide +kernel
 theorem fn_p_fn : prog.funcs[541]? = some (src_p_fn) := get_of_drop at_p_fn
 theorem np_p_fn : prims.isPrim 541 = false := by decide +kernel
@@ -378,25 +378,25 @@ theorem fn_kid_token : prog.funcs[549]? = some (src_kid_token 141 811) := get_of
 theorem np_kid_token : prims.isPrim 549 = false := by decide +kernel
 theorem fn_p_impl_inherent : prog.funcs[550]? = some (src_p_impl_inherent) := get_of_drop at_p_impl_inherent
 theorem np_p_impl_inherent : prims.isPrim 550 = false := by decide +kernel
-theorem fn_p_where_none : prog.funcs[551]? = some (src_p_where_none) := get_of_drop at_p_where_none
-theorem np_p_where_none : prims.isPrim 551 = false := by decide +kernel
-theorem fn_impl_methods : prog.funcs[552]? = some (src_impl_methods 140 542 812) := get_of_drop at_impl_methods
-theorem np_impl_methods : prims.isPrim 552 = false := by decide +kernel
-theorem fn_p_impl_trait : prog.funcs[553]? = some (src_p_impl_trait) := get_of_drop at_p_impl_trait
-theorem np_p_impl_trait : prims.isPrim 553 = false := by decide +kernel
-theorem fn_p_import : prog.funcs[554]? = some (src_p_import) := get_of_drop at_p_import
-theorem np_p_import : prims.isPrim 554 = false := by decide +kernel
-theorem fn_p_import_path : prog.funcs[555]? = some (src_p_import_path) := get_of_drop at_p_import_path
-theorem np_p_import_path : prims.isPrim 555 = false := by decide +kernel
-theorem fn_import_decls : prog.funcs[556]? = some (src_import_decls 379 380 381 383 813) := get_of_drop at_import_decls
-theorem np_import_decls : prims.isPrim 556 = false := by decide +kernel
-theorem fn_p_type_alias : prog.funcs[557]? = some (src_p_type_alias) := get_of_drop at_p_type_alias
-theorem np_p_type_alias : prims.isPrim 557 = false := by decide +kernel
+theorem fn_impl_methods : prog.funcs[551]? = some (src_impl_methods 140 542 812) := get_of_drop at_impl_methods
+theorem np_impl_methods : prims.isPrim 551 = false := by decide +kernel
+theorem fn_p_impl_trait : prog.funcs[552]? = some (src_p_impl_trait) := get_of_drop at_p_impl_trait
+theorem np_p_impl_trait : prims.isPrim 552 = false := by decide +kernel
+theorem fn_p_import : prog.funcs[553]? = some (src_p_import) := get_of_drop at_p_import
+theorem np_p_import : prims.isPrim 553 = false := by decide +kernel
+theorem fn_p_import_path : prog.funcs[554]? = some (src_p_import_path) := get_of_drop at_p_import_path
+theorem np_p_import_path : prims.isPrim 554 = false := by decide +kernel
+theorem fn_import_decls : prog.funcs[555]? = some (src_import_decls 379 380 381 383 813) := get_of_drop at_import_decls
+theorem np_import_decls : prims.isPrim 555 = false := by decide +kernel
+theorem fn_p_type_alias : prog.funcs[556]? = some (src_p_type_alias) := get_of_drop at_p_type_alias
+theorem np_p_type_alias : prims.isPrim 556 = false := by decide +kernel
+theorem fn_p_where_none : prog.funcs[557]? = some (src_p_where_none) := get_of_drop at_p_where_none
+theorem np_p_where_none : prims.isPrim 557 = false := by decide +kernel
 theorem fn_alias_decls : prog.funcs[558]? = some (src_alias_decls 379 380 381 382 814) := get_of_drop at_alias_decls
 theorem np_alias_decls : prims.isPrim 558 = false := by decide +kernel
 theorem fn_p_extern_fn : prog.funcs[559]? = some (src_p_extern_fn) := get_of_drop at_p_extern_fn
 theorem np_p_extern_fn : prims.isPrim 559 = false := by decide +kernel
-theorem fn_host_extern : prog.funcs[560]? = some (src_host_extern 138 141 548 549 551 815 816 817 818) := get_of_drop at_host_extern
+theorem fn_host_extern : prog.funcs[560]? = some (src_host_extern 138 141 548 549 557 815 816 817 818) := get_of_drop at_host_extern
 theorem np_host_extern : prims.isPrim 560 = false := by decide +kernel
 theorem fn_extern_tree : prog.funcs[561]? = some (src_extern_tree 133 141 231 536 559) := get_of_drop at_extern_tree
 theorem np_extern_tree : prims.isPrim 561 = false := by decide +kernel

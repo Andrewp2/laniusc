@@ -1446,10 +1446,12 @@ pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::op
     if (p == p_const()) {
         return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { home: home, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty(), aliases: empty() });
     }
-    if (p == p_impl_inherent() && node_prod(kid(b, 3)) == p_where_none()) {
+    // An impl's where clause is not checked (F7): its methods are read as
+    // without it.
+    if (p == p_impl_inherent()) {
         return impl_methods(fuel, home, type_params(fuel, kid(b, 1)), kid(b, 2), kid(b, 5));
     }
-    if (p == p_impl_trait() && node_prod(kid(b, 5)) == p_where_none()) {
+    if (p == p_impl_trait()) {
         return impl_methods(fuel, home, type_params(fuel, kid(b, 1)), kid(b, 4), kid(b, 7));
     }
     if (p == p_import() && node_prod(kid(b, 1)) == p_import_path()) {

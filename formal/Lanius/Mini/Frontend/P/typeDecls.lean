@@ -81,10 +81,10 @@ def itemDecls (fuel : Nat) (home : List (List Nat)) (item : CTree) : Option Decl
       if p = (208) then
         some ({ types := [], fns := [], consts := [({ home := home, name := (kidToken b 1).text, ty := kid b 3, value := kid b 5 } : ConstDecl)], imports := [], aliases := [] } : Decls)
       else
-        if decide (p = (17)) && decide (nodeProd (kid b 3) = (36)) then
+        if p = (17) then
           implMethods fuel home (typeParams fuel (kid b 1)) (kid b 2) (kid b 5)
         else
-          if decide (p = (18)) && decide (nodeProd (kid b 5) = (36)) then
+          if p = (18) then
             implMethods fuel home (typeParams fuel (kid b 1)) (kid b 4) (kid b 7)
           else
             if decide (p = (43)) && decide (nodeProd (kid b 1) = (44)) then
