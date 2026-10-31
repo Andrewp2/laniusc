@@ -137,16 +137,6 @@ theorem proof_enum_named_ok {prog : SrcProgram} {prims : Prims} {ix_enum_named_o
   simp only [src_enum_named_ok] at h
   faithful [Lanius.Mini.enumNamedOk]
 
-theorem step_enums_named_ok {prog : SrcProgram} {prims : Prims} {ix_enums_named_ok ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl ix_enum_named_ok : Nat} (fn : prog.funcs[ix_enums_named_ok]? = some (src_enums_named_ok ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl ix_enums_named_ok ix_enum_named_ok)) (np : prims.isPrim ix_enums_named_ok = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl n))
-    (ext_enum_named_ok : Certified (∀ {n : Nat}, Stmt_enum_named_ok prog prims ix_enum_named_ok n)) {n : Nat}
-    (ih_enums_named_ok : Certified (Stmt_enums_named_ok prog prims ix_enums_named_ok n)) :
-    Stmt_enums_named_ok prog prims ix_enums_named_ok (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rw [pcall_succ np fn] at h
-  simp only [src_enums_named_ok] at h
-  faithful [Lanius.Mini.enumsNamedOk]
-
 theorem proof_extern_tree {prog : SrcProgram} {prims : Prims} {ix_extern_tree ix_cons_of_mini_selfhost_CTree ix_kid ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree ix_single_of_mini_selfhost_CTree ix_p_extern_fn : Nat} (fn : prog.funcs[ix_extern_tree]? = some (src_extern_tree ix_cons_of_mini_selfhost_CTree ix_kid ix_boxed_of_mini_selfhost_List_mini_selfhost_CTree ix_single_of_mini_selfhost_CTree ix_p_extern_fn)) (np : prims.isPrim ix_extern_tree = false)
     (ext_cons_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_CTree prog prims ix_cons_of_mini_selfhost_CTree n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -225,11 +215,12 @@ theorem proof_host_extern {prog : SrcProgram} {prims : Prims} {ix_host_extern ix
   simp only [src_host_extern] at h
   faithful [Lanius.Mini.hostExtern]
 
-theorem proof_host_id {prog : SrcProgram} {prims : Prims} {ix_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr : Nat} (fn : prog.funcs[ix_host_id]? = some (src_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr)) (np : prims.isPrim ix_host_id = false)
+theorem proof_host_id {prog : SrcProgram} {prims : Prims} {ix_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin : Nat} (fn : prog.funcs[ix_host_id]? = some (src_host_id ix_same_text ix_text_write_byte ix_text_write_stdout ix_text_write_stderr ix_text_read_stdin)) (np : prims.isPrim ix_host_id = false)
     (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
     (ext_text_write_byte : Certified (∀ {n : Nat}, Stmt_text_write_byte prog prims ix_text_write_byte n))
     (ext_text_write_stdout : Certified (∀ {n : Nat}, Stmt_text_write_stdout prog prims ix_text_write_stdout n))
-    (ext_text_write_stderr : Certified (∀ {n : Nat}, Stmt_text_write_stderr prog prims ix_text_write_stderr n)) {n : Nat} :
+    (ext_text_write_stderr : Certified (∀ {n : Nat}, Stmt_text_write_stderr prog prims ix_text_write_stderr n))
+    (ext_text_read_stdin : Certified (∀ {n : Nat}, Stmt_text_read_stdin prog prims ix_text_read_stdin n)) {n : Nat} :
     Stmt_host_id prog prims ix_host_id n := by
   intro x0 v0 w h r0
   rcases n with _ | n
@@ -304,6 +295,17 @@ theorem proof_text_lanius_std {prog : SrcProgram} {prims : Prims} {ix_text_laniu
   rw [pcall_succ np fn] at h
   simp only [src_text_lanius_std] at h
   faithful [Lanius.Mini.textLaniusStd]
+
+theorem proof_text_read_stdin {prog : SrcProgram} {prims : Prims} {ix_text_read_stdin ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_read_stdin]? = some (src_text_read_stdin ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_read_stdin = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_read_stdin prog prims ix_text_read_stdin n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_read_stdin] at h
+  faithful [Lanius.Mini.textReadStdin]
 
 theorem proof_text_write_byte {prog : SrcProgram} {prims : Prims} {ix_text_write_byte ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_write_byte]? = some (src_text_write_byte ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_write_byte = false)
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))

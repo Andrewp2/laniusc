@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.Code_image
+import Lanius.Mini.Compiler.P.Code_size
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.storeType
 import Lanius.Mini.Compiler.P.wordElement

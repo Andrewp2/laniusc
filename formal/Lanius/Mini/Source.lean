@@ -12,7 +12,7 @@ import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.Code_image
+import all Lanius.Mini.Compiler.P.Code_size
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -98,8 +98,8 @@ import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
 import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
 -- import parts: Lanius.Mini.Compiler BinOp.size Code.size DivOp.size Instr.size Piece.size SrcType.isI32 SrcType.isScalar SrcType.isUint SrcType.same SrcType.size arith boolBits checkThen evalArrayIndex pickElement storeArray putElement repeatType compileOptimized compileSource declareProgram enumVariants fieldOffset funcsReturn lowerFuncs maxSize offsetOrArith sigs sizes storeEvalThen storeEvalWord structFields
+public import Lanius.Mini.Compiler.P.Code_size
 public import Lanius.Mini.Compiler.P.DivOp_size
-public import Lanius.Mini.Compiler.P.FArith_opcode
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.SrcType_size

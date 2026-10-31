@@ -14,7 +14,7 @@ public import Lanius.Mini.Frontend.P.pathRef
 public import Lanius.Mini.Frontend.P.typePathSpellings
 public import Lanius.Mini.Frontend.P.moduleOr
 public import Lanius.Mini.Frontend.P.typeDecls
-public import Lanius.Mini.Frontend.P.moduleNamesOk
+public import Lanius.Mini.Frontend.P.enumsNamedOk
 public import Lanius.Mini.Frontend.P.rootInsts
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.itemOf

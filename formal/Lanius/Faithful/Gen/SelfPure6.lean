@@ -344,7 +344,7 @@ theorem pure697 : PureFunc prog prims outside src697 = true :=
 theorem pure698 : PureFunc prog prims outside src698 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::short_circuit -/
+/-- mini::selfhost::host_read_code -/
 theorem pure699 : PureFunc prog prims outside src699 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 

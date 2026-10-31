@@ -138,7 +138,7 @@ theorem compileText_correct {files : List SourceFile} {binary : Binary} (h : com
       bits.length = paramsSize func.params →
       ∀ {fuel : Nat} {v : Value} {final : Semantics.State} {heap : Heap}, heap.cursor = 1 →
       (∀ a, 1 ≤ a → heap.bytes a = 0) → heap.limit < 2 ^ 62 → heap.io.trace = [] →
-      Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final →
+      Semantics.evalExpr fuel sp.toCore (startState heap.io.input) (.call f (args.map Core.Expr.value)) = .done v final →
       final.heap.nextAddress ≤ heap.limit →
       ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
         after.cursor = final.heap.nextAddress ∧ final.world.standardOutput = outputOf 1 after.io.trace ∧
@@ -182,9 +182,9 @@ theorem compileText_behaviour {files : List SourceFile} {binary : Binary} (h : c
           read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k]) →
         HeapAt window s heap → StackAt binary.guard window s →
         ∀ {m : Nat} {u : State}, Steps m s u → (∀ v, ¬Lanius.X86.Machine.Step u v) → ¬Lanius.X86.Machine.Fault u →
-        (∃ fuel v final, Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final ∧
+        (∃ fuel v final, Semantics.evalExpr fuel sp.toCore (startState heap.io.input) (.call f (args.map Core.Expr.value)) = .done v final ∧
           final.heap.nextAddress ≤ heap.limit) ∨
-        ∃ fuel r st, Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .trapped r st ∧
+        ∃ fuel r st, Semantics.evalExpr fuel sp.toCore (startState heap.io.input) (.call f (args.map Core.Expr.value)) = .trapped r st ∧
           undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap.limit := by
   obtain ⟨sp, reading, unique, compiled⟩ := compileText_reading h
   refine ⟨sp, reading, unique, ?_⟩

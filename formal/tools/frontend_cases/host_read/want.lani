@@ -1,0 +1,13 @@
+fn top(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((16 as usize), (1 as usize));
+    let got: i32 = read_stdin(p, (4 as usize));
+    if (got != 4) {
+        return 0 - got;
+    }
+    let w: i32 = write_stdout(p, (4 as usize));
+    return got + w + n;
+}
+
+extern "lanius_std" fn read_stdin(ptr: ptr, len: usize) -> i32;
+
+extern "lanius_std" fn write_stdout(ptr: ptr, len: usize) -> i32;

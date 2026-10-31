@@ -4,11 +4,11 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.armsOf
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.consTys
+import Lanius.Mini.Frontend.P.enumsNamedOk
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.joinInsts
-import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.repeatEff
 import Lanius.Mini.Frontend.P.scalarOf

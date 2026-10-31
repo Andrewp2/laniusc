@@ -883,10 +883,8 @@ theorem sysAgrees_cases {kind : Syscall} {target : Nat} {args : List Expr} {othe
     ∃ others, other = .sys kind target others ∧ argsAgree args others = true := by
   cases other <;> simp only [sysAgrees, Bool.false_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h
   rename_i c t a
-  obtain ⟨⟨_, rfl⟩, agree⟩ := h
-  cases kind
-  cases c
-  exact ⟨a, rfl, agree⟩
+  obtain ⟨⟨same, rfl⟩, agree⟩ := h
+  cases kind <;> cases c <;> simp [Syscall.number] at same <;> exact ⟨a, rfl, agree⟩
 
 theorem retAgrees_cases {values : List Expr} {other : Stmt} (h : retAgrees values other = true) :
     ∃ others, other = .ret others ∧ argsAgree values others = true := by

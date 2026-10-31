@@ -784,6 +784,30 @@ for a process the trusted part is only this:
   `write_stderr` are lowered to this `write` (SEMANTIC_DECISIONS.md,
   "Externs and the runtime"); their Core meaning is `World.call`, part of
   Core's semantics (section 3).
+- **The kernel's `read` (`Kernel.read`, roadmap F8, 10-31).** The state's
+  `io` also holds `input`, the bytes not yet read from standard input.
+  With rax 0, rdi 0 and rdx at most `maxTransfer`, the call
+  - delivers the first rdx bytes of `input`, or all of it when fewer are
+    left, written to memory from rsi on (`writeBytes`; no other byte
+    changes), and drops rdx bytes from `input`;
+  - returns how many it delivered in rax (0 at the end of the input),
+    with rcx, rip, r11 and the other registers and RFLAGS as for `write`.
+
+  So it is trusted that fd 0 is open for reading when the process starts
+  and that it delivers like a regular file: every read returns as many
+  bytes as were asked for until the input ends, never fails, never blocks
+  forever and is never interrupted. A terminal or a pipe can return fewer
+  bytes than asked for before its end (a short read), which the model does
+  not have; the compiled code would still be right on one (it reads again
+  only after a full read), but the theorems do not cover it. Linux checks
+  the buffer with `access_ok` before reading, and could return EFAULT for
+  a range outside user space even when the file has no bytes left; the
+  model assumes the call does not fault, and the verified compiler's
+  buffers are inside its heap, whose end is below 2^62 (`HeapAt`). Core's
+  `read_stdin` is lowered to this `read` (SEMANTIC_DECISIONS.md, "Host
+  reads"). `Loaded` leaves `input` as the stream the process was given:
+  `process_exits` takes it as a premise (`s.io.input = input`), with Core's
+  world starting from the same `standardInput` (`startState input`).
   No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
   runtime").
 - The startup code sets rsp, r12 to r15 and calls `entry` (the driver's

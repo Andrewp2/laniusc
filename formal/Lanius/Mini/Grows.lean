@@ -10,7 +10,7 @@ import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.Code_image
+import all Lanius.Mini.Compiler.P.Code_size
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -148,7 +148,10 @@ theorem hostFuncs_find (i : Nat) :
     · by_cases c : i = hostBase + 2
       · subst c
         simp [hostFunc, hostBase]
-      · simp [hostFunc, a, b, c, Ne.symm a, Ne.symm b, Ne.symm c]
+      · by_cases d : i = hostBase + 3
+        · subst d
+          simp [hostFunc, hostBase]
+        · simp [hostFunc, a, b, c, d, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d]
 
 /-- A function of the program, or else a host function. -/
 theorem SrcProgram.function?_toCore (sp : SrcProgram) (i : Nat) :
@@ -901,8 +904,45 @@ theorem call_writeByte_inv {heap : Memory.Heap} {world : World.State} {values : 
       | _ => simp [World.call, World.callSimple] at h
     | _ => simp [World.call, World.callSimple] at h
 
-/-- The host functions leave Core's heap as it was. -/
+/-- What `read_stdin` did when it returned: stored the next bytes of
+standard input, as many as asked for or all that are left. -/
+theorem call_readStdin_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .readStdin values = .returned v heap' world') :
+    ∃ p n, values = [.pointer p, .unsigned .usize n] ∧
+      heap.storeBytes p (world.standardInput.take n) = .ok heap' ∧
+      v = World.i32Result (world.standardInput.take n).length ∧
+      world' = { World.record world .readStdin with standardInput := world.standardInput.drop n } := by
+  match values, h with
+  | [], h => simp [World.call, World.callSimple] at h
+  | [a], h => cases a <;> simp [World.call, World.callSimple] at h
+  | a :: b :: c :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+  | [a, b], h =>
+    cases a with
+    | pointer p =>
+      cases b with
+      | unsigned k n =>
+        cases k
+        all_goals simp only [World.call, World.callSimple] at h
+        all_goals first
+          | (split at h
+             · simp at h
+             · rename_i copied stored
+               simp only [World.EffectResult.returned.injEq] at h
+               obtain ⟨rfl, rfl, rfl⟩ := h
+               refine ⟨p, n, rfl, stored, rfl, ?_⟩
+               simp only [World.record, List.length_take]
+               congr 1
+               rcases Nat.le_total n world.standardInput.length with le | le
+               · rw [Nat.min_eq_left le]
+               · rw [Nat.min_eq_right le, List.drop_eq_nil_of_le le, List.drop_eq_nil_of_le (Nat.le_refl _)])
+          | simp at h
+      | _ => simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+
+/-- The host functions other than `read_stdin` leave Core's heap as it was. -/
 theorem hostCall_heap {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
+    (writes : service ≠ .readStdin)
     {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value} {heap' : Memory.Heap}
     {world' : World.State} (h : World.call heap world service values = .returned v heap' world') : heap' = heap := by
   unfold hostService? at hs
@@ -918,14 +958,30 @@ theorem hostCall_heap {id : Nat} {service : Core.HostService} (hs : hostService?
   · cases hs
     obtain ⟨_, _, _, _, _, _, same, _⟩ := call_writeOut_inv (.inr rfl) h
     exact same
+  split at hs
   · cases hs
+    exact absurd rfl writes
+  · cases hs
+
+/-- The host functions keep Core's next free address. -/
+theorem hostCall_next {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
+    {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value} {heap' : Memory.Heap}
+    {world' : World.State} (h : World.call heap world service values = .returned v heap' world') :
+    heap'.nextAddress = heap.nextAddress := by
+  by_cases reads : service = .readStdin
+  · subst reads
+    obtain ⟨p, n, -, stored, -⟩ := call_readStdin_inv h
+    exact storeBytes_next stored
+  · rw [hostCall_heap hs reads h]
 
 theorem host_grows {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
     {st : State} {values : List Value} {v : Value} {st' : State} (returns : HostReturns st service values v st') :
     Grows st st' := fun views => by
   obtain ⟨heap, world, called, rfl⟩ := returns views
-  rw [hostCall_heap hs called]
-  exact ⟨views, Nat.le_refl _⟩
+  refine ⟨views, ?_⟩
+  show st.heap.nextAddress ≤ heap.nextAddress
+  rw [hostCall_next hs called]
+  exact Nat.le_refl _
 
 theorem numberedParams_length : ∀ (n : Nat) (tys : List Core.Ty), (numberedParams n tys).length = tys.length
   | _, [] => rfl
@@ -941,6 +997,8 @@ theorem host_call_eval {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat
       Semantics.worldCallOutcome callee afterArgs (World.call afterArgs.heap afterArgs.world service values) := by
   have two : service.parameterTypes.length = 2 := by
     unfold hostService? at hs
+    split at hs
+    · cases hs; rfl
     split at hs
     · cases hs; rfl
     split at hs
@@ -983,6 +1041,16 @@ theorem writeOut_outcome {service : Core.HostService} (which : service = .writeS
     | error r => exact .inr ⟨r, _, by simp [World.call, World.callSimple, lb] <;> rfl, rfl⟩
     | ok bytes => exact .inl ⟨_, _, by simp [World.call, World.callSimple, lb] <;> exact ⟨rfl, rfl⟩⟩
 
+/-- `read_stdin` on a pointer and a count returns, or traps as the heap's
+store of the bytes does. -/
+theorem readStdin_outcome (heap : Memory.Heap) (world : World.State) (p n : Nat) :
+    (∃ v heap' world', World.call heap world .readStdin [.pointer p, .unsigned .usize n] = .returned v heap' world') ∨
+    (∃ r world', World.call heap world .readStdin [.pointer p, .unsigned .usize n] = .trapped r heap world' ∧
+      heap.storeBytes p (world.standardInput.take n) = .error r) := by
+  cases sb : heap.storeBytes p (world.standardInput.take n) with
+  | error r => exact .inr ⟨r, _, by simp [World.call, World.callSimple, World.record, sb] <;> rfl, rfl⟩
+  | ok copied => exact .inl ⟨_, _, _, by simp [World.call, World.callSimple, World.record, sb] <;> exact ⟨rfl, rfl, rfl⟩⟩
+
 /-- The heap a world call's result carries. -/
 def resultHeap : World.EffectResult → Memory.Heap
   | .returned _ h _ => h
@@ -991,20 +1059,24 @@ def resultHeap : World.EffectResult → Memory.Heap
   | .trapped _ h _ => h
   | .typeMismatch h _ => h
 
+/-- A host call that did not return leaves the heap as it was. -/
 theorem hostCall_resultHeap {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
-    (heap : Memory.Heap) (world : World.State) (values : List Value) :
+    (heap : Memory.Heap) (world : World.State) (values : List Value)
+    (stopped : ∀ v heap' world', World.call heap world service values ≠ .returned v heap' world') :
     resultHeap (World.call heap world service values) = heap := by
-  have three : service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr := by
+  have four : service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr ∨ service = .readStdin := by
     unfold hostService? at hs
     split at hs
     · cases hs; exact .inl rfl
     split at hs
     · cases hs; exact .inr (.inl rfl)
     split at hs
-    · cases hs; exact .inr (.inr rfl)
+    · cases hs; exact .inr (.inr (.inl rfl))
+    split at hs
+    · cases hs; exact .inr (.inr (.inr rfl))
     · cases hs
-  rcases three with rfl | rfl | rfl <;>
-  · simp only [World.call]
+  rcases four with rfl | rfl | rfl | rfl <;>
+  · simp only [World.call] at stopped ⊢
     repeat' split
     all_goals first | rfl | contradiction | simp_all
 
@@ -1028,30 +1100,35 @@ theorem host_trap_grows {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Na
       rw [← run.2]
       exact ⟨views, Nat.le_refl _⟩
     all_goals try (rename_i same _; simp at same; done)
-    have hh := hostCall_resultHeap hs afterArgs.heap afterArgs.world values
-    generalize World.call afterArgs.heap afterArgs.world service values = res at run hh
-    cases res with
+    cases called : World.call afterArgs.heap afterArgs.world service values with
     | returned v h w =>
-      simp only [resultHeap] at hh
-      subst hh
-      simp [Semantics.worldCallOutcome, syncFrom_ok (st := { afterArgs with heap := afterArgs.heap, world := w }) views] at run
+      rw [called] at run
+      simp [Semantics.worldCallOutcome, syncFrom_ok (st := { afterArgs with heap := h, world := w }) views] at run
     | exited c h w =>
+      have hh := hostCall_resultHeap hs afterArgs.heap afterArgs.world values (by rw [called]; intro _ _ _ h; cases h)
+      rw [called] at run hh
       simp only [resultHeap] at hh
       subst hh
       simp [Semantics.worldCallOutcome, syncFrom_ok (st := { afterArgs with heap := afterArgs.heap, world := w }) views] at run
     | unavailable s h w =>
+      have hh := hostCall_resultHeap hs afterArgs.heap afterArgs.world values (by rw [called]; intro _ _ _ h; cases h)
+      rw [called] at run hh
       simp only [resultHeap] at hh
       subst hh
       simp only [Semantics.worldCallOutcome, Semantics.Outcome.trapped.injEq] at run
       rw [← run.2]
       exact ⟨views, Nat.le_refl _⟩
     | trapped t h w =>
+      have hh := hostCall_resultHeap hs afterArgs.heap afterArgs.world values (by rw [called]; intro _ _ _ h; cases h)
+      rw [called] at run hh
       simp only [resultHeap] at hh
       subst hh
       simp only [Semantics.worldCallOutcome, Semantics.Outcome.trapped.injEq] at run
       rw [← run.2]
       exact ⟨views, Nat.le_refl _⟩
     | typeMismatch h w =>
+      have hh := hostCall_resultHeap hs afterArgs.heap afterArgs.world values (by rw [called]; intro _ _ _ h; cases h)
+      rw [called] at run hh
       simp only [resultHeap] at hh
       subst hh
       simp only [Semantics.worldCallOutcome, Semantics.Outcome.trapped.injEq] at run

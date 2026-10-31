@@ -1,0 +1,11 @@
+module app::main;
+
+fn top(n: i32) -> i32 {
+    let p: ptr = alloc::allocator::alloc((16 as usize), (1 as usize));
+    let got: i32 = std::io::read_stdin(p, (4 as usize));
+    if (got != 4) {
+        return 0 - got;
+    }
+    let w: i32 = std::io::write_stdout(p, (4 as usize));
+    return got + w + n;
+}
