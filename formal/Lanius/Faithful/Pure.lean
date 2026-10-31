@@ -206,6 +206,7 @@ def pstmt (env : Env) : SrcStmt → Option Done
   | .returnUnit => some (.ret none)
   | .break => none
   | .continue => none
+  | .matchArm _ _ _ _ _ _ _ _ => none
   | .assert condition =>
       ((peff call env condition).bind asBool).bind fun b => if b then some .next else none
 

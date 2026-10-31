@@ -83,6 +83,7 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .assert condition => ∀ t ∈ condition.types, TypeDeclared P t
   | .break => True
   | .continue => True
+  | .matchArm _ _ _ _ _ ty body rest => TypeDeclared P ty ∧ SrcStmt.Declared P body ∧ SrcStmt.Declared P rest
 
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
@@ -131,6 +132,13 @@ theorem returns_sound : ∀ (s : SrcStmt), s.returns = true → Typing.Definitel
   | .assert _, h => by simp [SrcStmt.returns] at h
   | .break, h => by simp [SrcStmt.returns] at h
   | .continue, h => by simp [SrcStmt.returns] at h
+  | .matchArm _ _ _ _ _ ty body rest, h => by
+    simp only [SrcStmt.returns, Bool.and_eq_true] at h
+    simp only [SrcStmt.toCore]
+    refine .ifThenElse ?_ (returns_sound rest h.2)
+    split
+    · exact .letLocal (returns_sound body h.1)
+    · exact returns_sound body h.1
 
 /-! ## Types -/
 
@@ -2103,6 +2111,40 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
   | .continue, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     rw [bo rfl]
     exact .continueLoop
+  | .matchArm scrutinee enumId variant binds binder ty body rest, scope, ctx, next, inLoop, out, ok, d, bo, h => by
+    simp only [SrcStmt.Declared] at d
+    obtain ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, -, payloadOk, bodyOk, restOk, -⟩ :=
+      matchArm_lower_inv h
+    obtain ⟨inCtx, declared⟩ := ok scrutinee b found
+    rw [hty] at inCtx declared
+    obtain ⟨decl, inner⟩ := declared_enum declared
+    have pat : ∀ {pats : List Core.Pattern} {bs : List (Nat × Core.Ty)},
+        Typing.PatternsHaveTypes P pats (fields.map SrcType.toCore) bs →
+        Typing.PatternHasType P (.enumVariant enumId variant pats) (.enumeration enumId) bs :=
+      fun pats => .enumVariant _ decl (by simp [fieldsFound]) pats
+    have restTyped := SrcStmt.lower_typed target sigsOk rest ok d.2.2
+      (fun e => bo (by simp [SrcStmt.breaksOut, e])) restOk
+    rcases armPayload_shape payloadOk with ⟨u, rfl, rfl⟩ | ⟨u, _, s', scopeOk, valueOk⟩
+    · simp only [armBodyScope, u, Bool.not_false, ↓reduceIte] at bodyOk
+      have bodyTyped := SrcStmt.lower_typed target sigsOk body ok d.2.1
+        (fun e => bo (by simp [SrcStmt.breaksOut, e])) bodyOk
+      simp only [SrcStmt.toCore, u, Bool.false_eq_true, ↓reduceIte]
+      exact .ifThenElse (.matchValue (.local inCtx)
+        (.cons (pat .nil) (.value (.boolean true)) (.one .wildcard (.value (.boolean false))))) bodyTyped restTyped
+    · obtain ⟨f, rfl⟩ : ∃ f, fields = [f] := by
+        rcases fields with _ | ⟨f, _ | ⟨g, more⟩⟩
+        · simp [armScope] at scopeOk
+        · exact ⟨f, rfl⟩
+        · simp [armScope] at scopeOk
+      obtain ⟨ok', pats⟩ := armScope_ok [binder] [f] ok (inner [f] (List.mem_of_getElem? fieldsFound)) scopeOk
+      have init := lowerValue_typed target ok' valueOk
+      simp only [armBodyScope, u, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at bodyOk
+      have bodyTyped := SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2.1
+        (fun e => bo (by simp [SrcStmt.breaksOut, e])) bodyOk
+      simp only [SrcStmt.toCore, u, ↓reduceIte]
+      exact .ifThenElse (.matchValue (.local inCtx)
+          (.cons (pat (.cons .wildcard .nil)) (.value (.boolean true)) (.one .wildcard (.value (.boolean false)))))
+        (.letLocal (.matchValue (.local inCtx) (.one (pat pats) init)) bodyTyped) restTyped
   | .assert condition, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerAssert] at h
     split at h
@@ -2670,6 +2712,21 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
     simp only [SrcStmt.declare, Option.some.injEq] at h
     subst h
     exact ⟨Extends.refl _, fun _ _ => trivial⟩
+  | .matchArm _ _ _ _ _ ty body rest, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    cases h1 : ty.declare d with
+    | none => simp [h1] at h
+    | some d1 =>
+      cases h2 : body.declare d1 with
+      | none => simp [h1, h2] at h
+      | some d2 =>
+        simp only [h1, h2] at h
+        obtain ⟨ext1, head⟩ := SrcType.declare_sound ty h1
+        obtain ⟨ext2, declared2⟩ := SrcStmt.declare_sound body h2
+        obtain ⟨ext3, declared3⟩ := SrcStmt.declare_sound rest h
+        exact ⟨ext1.trans (ext2.trans ext3), fun extD agrees =>
+          ⟨head ((ext2.trans ext3).trans extD) agrees, declared2 (ext3.trans extD) agrees,
+            declared3 extD agrees⟩⟩
   | .assert condition, d, d', h => by
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h

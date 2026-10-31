@@ -40,7 +40,8 @@ import all Lanius.Mini.Compiler.P.copyBinding
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit

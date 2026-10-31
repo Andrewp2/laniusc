@@ -694,3 +694,28 @@ the bound once, on `i32`, the one type Core's loop takes.
 numbered by the `for` token and `x`'s token, and `x` by the `in` token, so the
 locals are numbered in the order the desugared text declares them and the
 front end's cases can write the desugaring as the expected reading.
+
+## Match arm statements (decided 10-31, F4)
+
+The source statement `MatchArm(scrutinee, enum_id, variant, binds, binder,
+ty, body, rest)` runs `body` when the enum local `scrutinee` is `variant`,
+and `rest` otherwise. A match statement, and `?`, are read as a chain of
+these, so the statement type has no list of arms and no nested inductive. In
+Core (`SrcStmt.toCore`) it is, when `binds`,
+
+    if (match scrutinee { enum_id::variant(_) => true, _ => false }) {
+        let binder: ty = match scrutinee { enum_id::variant(binder) => binder };
+        body
+    } else { rest }
+
+and without `binds` the test's pattern has no fields and `body` runs as it
+is. So that:
+
+- a variant with no payload binds nothing (`binds` false); a variant with a
+  payload has exactly one field, of type `ty`, which takes slots, and
+  `binder` is a copy of it, not an alias, as in Core's `let`;
+- `binds` is a flag, not read off `ty`: `Ok(())` has one field of type unit,
+  which takes a slot, while `None` has none;
+- the lowering tests the tag word against `variant` and copies the field to
+  the next free slots (`lower_match_arm`); a tag never needs more than 32
+  bits, as for `let match`.

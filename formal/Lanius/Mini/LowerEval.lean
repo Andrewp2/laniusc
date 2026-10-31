@@ -2351,6 +2351,7 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | «continue» => exact stmt_continue ok corr fresh hc run
         | setIndexEval => exact stmt_setIndexEval belowE ok corr fr fresh le hc run bound
         | setFieldEval => exact stmt_setFieldEval belowE ok corr fr fresh le hc run bound
+        | matchArm => exact stmt_matchArm below ok corr fr fresh le hc run bound
       · intro hp e scope slot ev frame base st env v st' ok corr fr fresh hc run bound
         cases e with
         | ePure e => exact eval_pure ok corr fr fresh hc run

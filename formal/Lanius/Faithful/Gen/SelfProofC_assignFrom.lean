@@ -76,14 +76,14 @@ theorem proof_lower_arm_value {prog : SrcProgram} {prims : Prims} {ix_lower_arm_
   simp only [src_lower_arm_value] at h
   faithful [Lanius.Mini.lowerArmValue]
 
-theorem step_lower_arms {prog : SrcProgram} {prims : Prims} {ix_lower_arms ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_arm_scope ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm ix_lower_arm ix_arm_guard ix_lower_arm_value : Nat} (fn : prog.funcs[ix_lower_arms]? = some (src_lower_arms ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_arm_scope ix_lower_arms ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm ix_lower_arm ix_arm_guard ix_lower_arm_value)) (np : prims.isPrim ix_lower_arms = false)
+theorem step_lower_arms {prog : SrcProgram} {prims : Prims} {ix_lower_arms ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_arm_scope ix_lower_arm_value ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm ix_lower_arm ix_arm_guard : Nat} (fn : prog.funcs[ix_lower_arms]? = some (src_lower_arms ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_arm_scope ix_lower_arms ix_lower_arm_value ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm ix_lower_arm ix_arm_guard)) (np : prims.isPrim ix_lower_arms = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_arm_scope : Certified (∀ {n : Nat}, Stmt_arm_scope prog prims ix_arm_scope n))
+    (ext_lower_arm_value : Certified (∀ {n : Nat}, Stmt_lower_arm_value prog prims ix_lower_arm_value n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcArm n))
     (ext_lower_arm : Certified (∀ {n : Nat}, Stmt_lower_arm prog prims ix_lower_arm n))
-    (ext_arm_guard : Certified (∀ {n : Nat}, Stmt_arm_guard prog prims ix_arm_guard n))
-    (ext_lower_arm_value : Certified (∀ {n : Nat}, Stmt_lower_arm_value prog prims ix_lower_arm_value n)) {n : Nat}
+    (ext_arm_guard : Certified (∀ {n : Nat}, Stmt_arm_guard prog prims ix_arm_guard n)) {n : Nat}
     (ih_lower_arms : Certified (Stmt_lower_arms prog prims ix_lower_arms n)) :
     Stmt_lower_arms prog prims ix_lower_arms (n + 1) := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6

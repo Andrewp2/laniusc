@@ -183,6 +183,7 @@ theorem pstmt_mono (le : CallsLe call call') (s : SrcStmt) :
       (fun _ _ hx => hx) h
   | «break» => intro env d h; simp [pstmt] at h
   | «continue» => intro env d h; simp [pstmt] at h
+  | matchArm => intro env d h; simp [pstmt] at h
 
 end
 

@@ -214,6 +214,7 @@ theorem litStmt_eq {ret : SrcType} : ∀ {locals : List LocalTy} {s s' : SrcStmt
   | _, _, _, .returnUnit => by simp only [litStmt]
   | _, _, _, .break => by simp only [litStmt]
   | _, _, _, .continue => by simp only [litStmt]
+  | _, _, _, .matchArm b r => by rw [litStmt_eq b, litStmt_eq r]; simp only [litStmt]
   | _, _, _, .assert h => by rw [litEff_eq h]; simp only [litStmt]
 
 theorem litFunc_unique {g a b : SrcFunc} (h₁ : LitFunc funcs g a) (h₂ : LitFunc funcs g b) : a = b := by

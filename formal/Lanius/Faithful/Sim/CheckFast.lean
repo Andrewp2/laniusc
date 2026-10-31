@@ -109,6 +109,7 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .assert condition => isBoolTy (effTyC calls boxes tenv condition)
   | .break => false
   | .continue => false
+  | .matchArm _ _ _ _ _ _ _ _ => false
 
 end
 
@@ -196,6 +197,7 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | «assert» condition => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq] <;> rfl
   | «break» => intro tenv; rw [stmtOkC, stmtOk]
   | «continue» => intro tenv; rw [stmtOkC, stmtOk]
+  | matchArm => intro tenv; rw [stmtOkC, stmtOk]
 
 end
 

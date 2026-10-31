@@ -257,6 +257,7 @@ pub enum SrcStmt {
     Assert(SrcEff),
     Break,
     Continue,
+    MatchArm(usize, usize, usize, bool, usize, SrcType, Box<SrcStmt>, Box<SrcStmt>),
 }
 
 pub struct SrcParam {
@@ -8108,6 +8109,7 @@ pub fn lit_stmt(funcs: List<SrcFunc>, ret: SrcType, locals: List<LocalTy>, s: Sr
         Assert(x) -> Assert(lit_eff(funcs, locals, Some(Bool), x)),
         Break -> Break,
         Continue -> Continue,
+        MatchArm(sc, en, k, bs, x, ty, body, rest) -> MatchArm(sc, en, k, bs, x, ty, boxed(lit_stmt(funcs, ret, with_local(x, ty, locals), unbox(body))), boxed(lit_stmt(funcs, ret, locals, unbox(rest)))),
     };
 }
 
@@ -8219,6 +8221,7 @@ pub fn wide_left_stmt(s: SrcStmt) -> bool {
         Assert(x) -> wide_left_eff(x),
         Break -> false,
         Continue -> false,
+        MatchArm(sc, en, k, bs, x, ty, body, rest) -> wide_left_stmt(unbox(body)) || wide_left_stmt(unbox(rest)),
     };
 }
 

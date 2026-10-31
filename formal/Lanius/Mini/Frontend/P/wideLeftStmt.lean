@@ -52,6 +52,7 @@ def wideLeftStmt (s : SrcStmt) : Bool :=
   | .assert x => wideLeftEff x
   | .break => false
   | .continue => false
+  | .matchArm sc en k bs x ty body rest => wideLeftStmt body || wideLeftStmt rest
 
 def wideLeftFuncs (fs : List SrcFunc) : Bool :=
   match fs with

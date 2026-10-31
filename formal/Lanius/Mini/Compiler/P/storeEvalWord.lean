@@ -6,6 +6,8 @@ import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.arithShiftRight
+import Lanius.Mini.Compiler.P.armBodyScope
+import Lanius.Mini.Compiler.P.armPayload
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.conjunction
 import Lanius.Mini.Compiler.P.copyBinding
@@ -16,7 +18,6 @@ import Lanius.Mini.Compiler.P.indexOf
 import Lanius.Mini.Compiler.P.lowerAddress
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.lowerLoadType
-import Lanius.Mini.Compiler.P.lowerMatchArms
 import Lanius.Mini.Compiler.P.lowerReturn
 import Lanius.Mini.Compiler.P.lowerSetCallArgs
 import Lanius.Mini.Compiler.P.lowerSetValues
@@ -154,6 +155,7 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .assert condition => lowerAssert (SrcEff.eval condition sigs decls scope next) next
   | .break => some Stmt.brk
   | .continue => some Stmt.cont
+  | .matchArm scrutinee enumId variant binds binder ty body rest => lowerMatchArm scope (lookup scope scrutinee) enumId variant binds binder ty next (SrcStmt.lower body sigs decls ret (armBodyScope binds binder ty next scope) (next + SrcType.size ty)) (SrcStmt.lower rest sigs decls ret scope next)
 
 /-- A break or continue outside every loop of the statement: Core's typing rejects one outside every loop of the function. -/
 def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
@@ -190,6 +192,7 @@ def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
   | .assert condition => false
   | .break => true
   | .continue => true
+  | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.breaksOut body || SrcStmt.breaksOut rest
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -226,6 +229,7 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .assert condition => 0
   | .break => 0
   | .continue => 0
+  | .matchArm scrutinee enumId variant binds binder ty body rest => max (SrcStmt.depth body + SrcType.size ty) (SrcStmt.depth rest)
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=
