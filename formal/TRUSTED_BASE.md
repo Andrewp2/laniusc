@@ -334,6 +334,9 @@ still a parse tree of the same tokens. Trusted:
     expectation) `Int` of -2^31, and `-n` at `isize` (n at most 2^63) the
     cast of the `u64` literal of its two's complement bits; any other
     rejects the program;
+  - a bare literal operand of a shift (added 10-30) takes the shifted
+    value's type, or else the shift's expected type, and a bare amount the
+    value's (`amountWant`), as a shift's type is its left operand's;
   - `0` where a `ptr` is expected (a `let`, a parameter, an operand beside a
     `ptr`, a `ptr` constant) is `Null`, Core's null pointer;
   - a match arm whose value calls a `-> !` function g, in a match of value

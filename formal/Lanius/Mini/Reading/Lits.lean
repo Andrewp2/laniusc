@@ -14,7 +14,9 @@ return, a field's or payload's in a literal, a slice element's in an index
 store, an arm's result type, Bool for conditions, asserts and `!`; an
 operator's operands expect the type of whichever operand has one
 (`knownExpr`, `knownEff`), or else, for arithmetic, the operator's expected
-type (`operandWant`). The operand of `as`, an index and the heap
+type (`operandWant`); a shift's value expects its own type or else the
+shift's, and its amount its own type or else the value's (`amountWant`), so
+`h | (1 << n)` reads the `1` at `h`'s type. The operand of `as`, an index and the heap
 operations' operands expect nothing. `ClosedProgram`: the closed functions
 with their literals typed, accepted when no wide marker is left untyped. -/
 
@@ -39,7 +41,7 @@ inductive LitExpr (locals : List LocalTy) : Option SrcType → SrcExpr → SrcEx
       LitExpr locals (some .bool) x y → LitExpr locals want (.not x) (.not y)
   | apply {want : Option SrcType} {op : SrcOp} {a b a' b' : SrcExpr} :
       LitExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) a a' →
-      LitExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) b b' →
+      LitExpr locals (amountWant op want (knownExpr locals a) (knownExpr locals b)) b b' →
       LitExpr locals want (.apply op a b) (.apply op a' b')
   | cast {want : Option SrcType} {t : SrcType} {x y : SrcExpr} :
       wideValue (.cast t x) = none → LitExpr locals none x y → LitExpr locals want (.cast t x) (.cast t y)
@@ -108,7 +110,7 @@ inductive LitEff (funcs : List SrcFunc) : List LocalTy → Option SrcType → Sr
       LitEff funcs locals want (.eCall f args) (.eCall f args')
   | apply {locals : List LocalTy} {want : Option SrcType} {op : SrcOp} {a b a' b' : SrcEff} :
       LitEff funcs locals (operandWant op want (knownEff funcs locals a) (knownEff funcs locals b)) a a' →
-      LitEff funcs locals (operandWant op want (knownEff funcs locals a) (knownEff funcs locals b)) b b' →
+      LitEff funcs locals (amountWant op want (knownEff funcs locals a) (knownEff funcs locals b)) b b' →
       LitEff funcs locals want (.eApply op a b) (.eApply op a' b')
   | neg {locals : List LocalTy} {want : Option SrcType} {a a' : SrcEff} :
       LitEff funcs locals want a a' → LitEff funcs locals want (.eNeg a) (.eNeg a')

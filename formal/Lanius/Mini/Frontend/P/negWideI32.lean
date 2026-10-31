@@ -116,7 +116,7 @@ def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcE
      | none => negLeast want x (SrcExpr.negate (litExpr locals want x))
      | some n => negWideAt want n e)
   | .not x => SrcExpr.not (litExpr locals (some SrcType.bool) x)
-  | .apply op a b => SrcExpr.apply op (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) a) (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) b)
+  | .apply op a b => SrcExpr.apply op (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) a) (litExpr locals (amountWant op want (knownExpr locals a) (knownExpr locals b)) b)
   | .cast t x =>
     (match wideValue e with
      | none => SrcExpr.cast t (litExpr locals none x)
@@ -169,7 +169,7 @@ def litEff (funcs : List SrcFunc) (locals : List LocalTy) (want : Option SrcType
   match x with
   | .ePure e => SrcEff.ePure (litExpr locals want e)
   | .eCall f args => SrcEff.eCall f (litEffs funcs locals (calleeParams funcs f) args)
-  | .eApply op a b => SrcEff.eApply op (litEff funcs locals (operandWant op want (knownEff funcs locals a) (knownEff funcs locals b)) a) (litEff funcs locals (operandWant op want (knownEff funcs locals a) (knownEff funcs locals b)) b)
+  | .eApply op a b => SrcEff.eApply op (litEff funcs locals (operandWant op want (knownEff funcs locals a) (knownEff funcs locals b)) a) (litEff funcs locals (amountWant op want (knownEff funcs locals a) (knownEff funcs locals b)) b)
   | .eNeg a => SrcEff.eNeg (litEff funcs locals want a)
   | .eNot a => SrcEff.eNot (litEff funcs locals (some SrcType.bool) a)
   | .eCast t a => SrcEff.eCast t (litEff funcs locals none a)

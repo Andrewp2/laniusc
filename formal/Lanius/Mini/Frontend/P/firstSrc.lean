@@ -62,13 +62,26 @@ def operandWant (op : SrcOp) (want : Option SrcType) (a : Option SrcType) (b : O
   if givesBool op then
     eitherTy a b
   else
-    eitherTy (eitherTy a b) want
+    if shiftOp op then
+      eitherTy a want
+    else
+      eitherTy (eitherTy a b) want
+
+/-- A shift's amount has a type of its own; a bare amount takes the shifted value's type. -/
+def amountWant (op : SrcOp) (want : Option SrcType) (a : Option SrcType) (b : Option SrcType) : Option SrcType :=
+  if shiftOp op then
+    eitherTy b (eitherTy a want)
+  else
+    operandWant op want a b
 
 def knownApply (op : SrcOp) (a : Option SrcType) (b : Option SrcType) : Option SrcType :=
   if givesBool op then
     some SrcType.bool
   else
-    eitherTy a b
+    if shiftOp op then
+      a
+    else
+      eitherTy a b
 
 /-- A cast's type; a wide literal (a cast to Unit) has none of its own. -/
 def knownCast (t : SrcType) : Option SrcType :=

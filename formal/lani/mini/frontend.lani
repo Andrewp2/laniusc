@@ -3487,6 +3487,27 @@ pub fn gives_bool(op: SrcOp) -> bool {
     };
 }
 
+pub fn shift_op(op: SrcOp) -> bool {
+    return match (op) {
+        Plus -> false,
+        Minus -> false,
+        Times -> false,
+        BitAnd -> false,
+        BitOr -> false,
+        BitXor -> false,
+        ShiftLeft -> true,
+        ShiftRight -> true,
+        Less -> false,
+        LessEq -> false,
+        Greater -> false,
+        GreaterEq -> false,
+        Equal -> false,
+        NotEqual -> false,
+        LogicalAnd -> false,
+        LogicalOr -> false,
+    };
+}
+
 pub fn apply_ty(op: SrcOp, left: core::option::Option<Ty>) -> core::option::Option<Ty> {
     if (gives_bool(op)) {
         return Some(TyBool);
@@ -7652,12 +7673,27 @@ pub fn operand_want(op: SrcOp, want: core::option::Option<SrcType>, a: core::opt
     if (gives_bool(op)) {
         return either_ty(a, b);
     }
+    if (shift_op(op)) {
+        return either_ty(a, want);
+    }
     return either_ty(either_ty(a, b), want);
+}
+
+// A shift's amount has a type of its own; a bare amount takes the shifted
+// value's type.
+pub fn amount_want(op: SrcOp, want: core::option::Option<SrcType>, a: core::option::Option<SrcType>, b: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
+    if (shift_op(op)) {
+        return either_ty(b, either_ty(a, want));
+    }
+    return operand_want(op, want, a, b);
 }
 
 pub fn known_apply(op: SrcOp, a: core::option::Option<SrcType>, b: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
     if (gives_bool(op)) {
         return Some(Bool);
+    }
+    if (shift_op(op)) {
+        return a;
     }
     return either_ty(a, b);
 }
@@ -7830,7 +7866,7 @@ pub fn lit_expr(locals: List<LocalTy>, want: core::option::Option<SrcType>, e: S
             Some(n) -> neg_wide_at(want, n, e),
         },
         Not(x) -> Not(boxed(lit_expr(locals, Some(Bool), unbox(x)))),
-        Apply(op, a, b) -> Apply(op, boxed(lit_expr(locals, operand_want(op, want, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))), unbox(a))), boxed(lit_expr(locals, operand_want(op, want, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))), unbox(b)))),
+        Apply(op, a, b) -> Apply(op, boxed(lit_expr(locals, operand_want(op, want, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))), unbox(a))), boxed(lit_expr(locals, amount_want(op, want, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))), unbox(b)))),
         Cast(t, x) -> match (wide_value(e)) {
             None -> Cast(t, boxed(lit_expr(locals, None, unbox(x)))),
             Some(n) -> wide_at(want, n, e),
@@ -7898,7 +7934,7 @@ pub fn lit_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, want: core::option::
     return match (x) {
         EPure(e) -> EPure(lit_expr(locals, want, e)),
         ECall(f, args) -> ECall(f, boxed(lit_effs(funcs, locals, callee_params(funcs, f), unbox(args)))),
-        EApply(op, a, b) -> EApply(op, boxed(lit_eff(funcs, locals, operand_want(op, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(a))), boxed(lit_eff(funcs, locals, operand_want(op, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(b)))),
+        EApply(op, a, b) -> EApply(op, boxed(lit_eff(funcs, locals, operand_want(op, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(a))), boxed(lit_eff(funcs, locals, amount_want(op, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(b)))),
         ENeg(a) -> ENeg(boxed(lit_eff(funcs, locals, want, unbox(a)))),
         ENot(a) -> ENot(boxed(lit_eff(funcs, locals, Some(Bool), unbox(a)))),
         ECast(t, a) -> ECast(t, boxed(lit_eff(funcs, locals, None, unbox(a)))),

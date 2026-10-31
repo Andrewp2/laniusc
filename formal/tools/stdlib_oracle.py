@@ -204,6 +204,9 @@ class Module:
         self.aliases = {a: norm(t) for a, t in re.findall(r'^\s*(?:pub\s+)?type\s+(\w+)\s*=\s*([^;]+);', clean, re.M)}
         self.traits = set(re.findall(r'^\s*(?:pub\s+)?trait\s+(\w+)', clean, re.M))
         self.types = set(re.findall(r'^\s*(?:pub\s+)?(?:struct|enum)\s+(\w+)', clean, re.M))
+        # Non-generic structs: their fields' names and types, in order.
+        self.structs = {name: [tuple(x.strip() for x in f.split(':', 1)) for f in body.split(',') if ':' in f]
+                        for name, body in re.findall(r'^\s*(?:pub\s+)?struct\s+(\w+)\s*\{([^}]*)\}', clean, re.M)}
         self.fns = {}           # name -> fn (top level)
         self.trait_methods = []  # (trait text, impl type, fn)
         self.paths = set(re.findall(r'\b([a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)+)::', clean))
@@ -286,14 +289,58 @@ def resolve(mods, module, t, subst):
         path, name = t.rsplit('::', 1)
         if path in mods and name in mods[path].aliases:
             return resolve(mods, path, mods[path].aliases[name], {})
+        if path in mods and name in mods[path].structs:
+            return resolve_struct(mods, path, name)
         return None
     if module in mods and t in mods[module].aliases:
         return resolve(mods, module, mods[module].aliases[t], {})
+    if module in mods and t in mods[module].structs:
+        return resolve_struct(mods, module, t)
     return None
 
 
+# A struct a target passes or returns: its fields, each a scalar or such a
+# struct, by its resolved name `struct:m::S`.
+STRUCTS = {}
+
+
+def resolve_struct(mods, module, name):
+    key = f'struct:{module}::{name}'
+    if key not in STRUCTS:
+        STRUCTS[key] = None  # a struct that contains itself is not testable
+        fields = [(f, resolve(mods, module, ty, {})) for f, ty in mods[module].structs[name]]
+        if fields and all(ty and (ty in SCALARS or (ty.startswith('struct:') and STRUCTS.get(ty)))
+                          for _, ty in fields):
+            STRUCTS[key] = fields
+    return key if STRUCTS[key] else None
+
+
+def leaves(ty, path=''):
+    """A type's scalar leaves: (field path, scalar type)."""
+    if ty.startswith('struct:'):
+        return [leaf for f, fty in STRUCTS[ty] for leaf in leaves(fty, f'{path}.{f}')]
+    return [(path, ty)]
+
+
+def type_text(ty):
+    return ty[len('struct:'):] if ty.startswith('struct:') else ty
+
+
+def struct_value(ty, names):
+    """The literal of a struct type from its leaves' wrapper parameters."""
+    if not ty.startswith('struct:'):
+        return next(names)
+    return type_text(ty) + ' { ' + ', '.join(f'{f}: {struct_value(fty, names)}' for f, fty in STRUCTS[ty]) + ' }'
+
+
+def struct_modules(ty):
+    if not ty.startswith('struct:'):
+        return set()
+    return {type_text(ty).rsplit('::', 1)[0]} | {m for _, fty in STRUCTS[ty] for m in struct_modules(fty)}
+
+
 def testable(t):
-    if t in SCALARS:
+    if t in SCALARS or (t or '').startswith('struct:'):
         return True
     m = re.match(r'^Option<(.*)>$', t or '')
     return bool(m) and m.group(1) in SCALARS
@@ -348,13 +395,24 @@ def targets(mods, wanted):
             t.why = 'type ' + fn['ret']
         elif bad or any(not testable(ty) for _, ty in params):
             t.why = 'type ' + next(orig for (p, ty), (_, orig) in zip(params, fn['params']) if not testable(ty))
+        elif sum(arg_words(ty) for _, ty in params) > 6:
+            t.why = 'more than six argument words'
         else:
             t.params, t.ret = params, ret
     return out
 
 
+def arg_words(ty):
+    """How many wrapper parameters an argument of the type takes."""
+    if ty.startswith('Option<'):
+        return 2
+    return len(leaves(ty))
+
+
 def results_of(ret):
     """The parts of a result the wrapper can return, one wrapper each."""
+    if ret.startswith('struct:'):
+        return [f'f{j}:{sub}' for j, (_, ty) in enumerate(leaves(ret)) for sub in results_of(ty)]
     if ret in WIDE:
         return ['lo', 'hi']
     if ret.startswith('Option<'):
@@ -366,8 +424,9 @@ def wrapper_text(mods, t, part):
     """The first file of a target's program, and the wrapper's scalar parameter types."""
     fn = t.fn
     lines = ['module app::main;', '']
-    for dep in sorted({t.module, 'core::option'} if any(ty.startswith('Option<') for _, ty in t.params) or
-                      t.ret.startswith('Option<') else {t.module}):
+    imports = {t.module, 'core::option'} if any(ty.startswith('Option<') for _, ty in t.params) or \
+        t.ret.startswith('Option<') else {t.module}
+    for dep in sorted(imports | {m for ty in [t.ret] + [ty for _, ty in t.params] for m in struct_modules(ty)}):
         lines.append(f'import {dep};')
     lines.append('')
     lines += t.decls + ([''] if t.decls else [])
@@ -379,10 +438,16 @@ def wrapper_text(mods, t, part):
             setup += [f'    let o{k}: core::option::Option<{inner}> = None();',
                       f'    if (a{k}s) {{', f'        o{k} = Some(a{k});', '    }']
             args.append(f'o{k}')
+        elif ty.startswith('struct:'):
+            names = [f'a{k}_{j}' for j in range(len(leaves(ty)))]
+            wparams += [(n, lty) for n, (_, lty) in zip(names, leaves(ty))]
+            setup.append(f'    let s{k}: {type_text(ty)} = {struct_value(ty, iter(names))};')
+            args.append(f's{k}')
         else:
             wparams.append((f'a{k}', ty))
             args.append(f'a{k}')
     ret = t.ret if not t.ret.startswith('Option<') else f'core::option::Option<{t.ret[7:-1]}>'
+    ret = type_text(ret)
     if t.trait:
         # A generic helper calls the method as T::m, as the stdlib's generic code does.
         tparams = ', '.join(f'{p}: {"T" if ty == t.impl_type else ty}' for p, ty in fn['params'])
@@ -402,8 +467,15 @@ def wrapper_text(mods, t, part):
     sig = ', '.join(f'{p}: {ty}' for p, ty in wparams)
     lines.append(f'fn w({sig}) -> i32 {{')
     lines += setup
-    lines.append(f'    let r: {ret} = {call};')
     base = t.ret
+    if part.startswith('f'):
+        # One scalar leaf of a struct result, returned as a scalar result is.
+        j, part = part[1:].split(':')
+        path, base = leaves(t.ret)[int(j)]
+        lines.append(f'    let r0: {ret} = {call};')
+        lines.append(f'    let r: {base} = r0{path};')
+    else:
+        lines.append(f'    let r: {ret} = {call};')
     if part == 'all':
         if base == 'bool':
             lines += ['    if (r) {', '        return 1;', '    }', '    return 0;']
@@ -753,10 +825,6 @@ def constructs(mods, module, fn):
     for ty in UNREAD_TYPES:
         if re.search(rf'\b{ty}\b', text):
             out.append(f'type {ty}')
-    if re.search(r'<<|>>=|>>\s*[\w(]', body):
-        out.append('shift')
-    if re.search(r'\b(i8|i16|i64|u16|char|f32)::\w+\s*\(', body):
-        out.append('builtin type::method call')
     if '=>' in body:
         out.append('=> arm')
     if re.search(r'->\s*(\{|if\b)', body):
@@ -832,11 +900,14 @@ def main():
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--chunk', type=int, default=40)
     parser.add_argument('--laniusc', default='target/release/laniusc')
+    parser.add_argument('--shard', default='0/1', help='k/n: every nth target from the kth')
     args = parser.parse_args()
     rng = random.Random(args.seed)
     mods = load_modules()
     wanted = set(args.modules.split(',')) if args.modules else None
     all_targets = targets(mods, wanted)
+    shard, shards = (int(x) for x in args.shard.split('/'))
+    all_targets = all_targets[shard::shards]
     workdir = os.path.abspath(args.workdir)
     os.makedirs(workdir, exist_ok=True)
     files_dir = os.path.join(workdir, 'files')
@@ -852,7 +923,10 @@ def main():
             text, wparams = wrapper_text(mods, t, part)
             base = os.path.join(workdir, f'p{k}')
             open(base + '.lani', 'w').write(text)
-            programs.append(dict(target=t, part=part, base=base, wparams=wparams, deps=closure(mods, t.module)))
+            deps = closure(mods, t.module)
+            for m in sorted({m for ty in [t.ret] + [ty for _, ty in t.params] for m in struct_modules(ty)}):
+                deps += [d for d in closure(mods, m) if d not in deps]
+            programs.append(dict(target=t, part=part, base=base, wparams=wparams, deps=deps))
 
     # laniusc's parse trees: the stdlib files one by one, the wrappers in
     # batches (both cached); a tree the validator rejects is parsed again the

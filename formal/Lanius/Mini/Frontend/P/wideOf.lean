@@ -290,6 +290,25 @@ def givesBool (op : SrcOp) : Bool :=
   | .logicalAnd => true
   | .logicalOr => true
 
+def shiftOp (op : SrcOp) : Bool :=
+  match op with
+  | .plus => false
+  | .minus => false
+  | .times => false
+  | .bitAnd => false
+  | .bitOr => false
+  | .bitXor => false
+  | .shiftLeft => true
+  | .shiftRight => true
+  | .less => false
+  | .lessEq => false
+  | .greater => false
+  | .greaterEq => false
+  | .equal => false
+  | .notEqual => false
+  | .logicalAnd => false
+  | .logicalOr => false
+
 def applyTy (op : SrcOp) (left : Option Ty) : Option Ty :=
   if givesBool op then
     some Ty.tyBool
