@@ -34,6 +34,7 @@ namespace Lanius.Mini
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- A loop's body runs from states the facts may not describe: no facts. -/
 @[expose] def Inline.loopAgrees (condition : Expr) (body : Stmt) (other : Stmt) : Bool :=
@@ -51,6 +52,7 @@ namespace Lanius.Mini
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- The second statement is optimized with the facts after the first; a store to a slot the optimized rest kills is dropped. -/
 @[expose] def Inline.optimizeSequence (first : Stmt) (second : Stmt) (facts : List Fact) : Stmt :=

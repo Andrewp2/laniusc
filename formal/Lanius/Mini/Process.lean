@@ -40,6 +40,8 @@ structure Loaded (file : List UInt8) (s : State) : Prop where
   bytes : ∀ i, i < fieldAt file 96 8 → s.memory (BitVec.ofNat 64 (fieldAt file 80 8 + i)) = file.getD i 0
   zeros : ∀ i, fieldAt file 96 8 ≤ i → i < fieldAt file 104 8 → s.memory (BitVec.ofNat 64 (fieldAt file 80 8 + i)) = 0
   rip : s.rip = BitVec.ofNat 64 (fieldAt file 24 8)
+  /-- A new process has written nothing yet. -/
+  io : s.io = {}
 
 /-- Linux's `exit`: a `syscall` with rax 60 ends the process with status
 rdi, of which a parent sees the low byte. -/
@@ -50,31 +52,17 @@ structure Exits (s : State) (code : BitVec 64) : Prop where
 
 /-! ## The exit stops the machine model -/
 
-theorem decode_syscall_prefix (memory : Memory) (rip : X86.Machine.Address) (loaded : CodeAt memory rip [15, 5]) :
-    ∀ bytes, CodeAt memory rip bytes → decode bytes = none
-  | [], _ => rfl
-  | [b], h => by
-    have e : b = 15 := by have := h 0 (by simp); have := loaded 0 (by simp); simp_all
-    subst e; decide
-  | b :: c :: rest, h => by
-    have e : b = 15 := by have := h 0 (by simp); have := loaded 0 (by simp); simp_all
-    have f : c = 5 := by have := h 1 (by simp); have := loaded 1 (by simp); simp_all
-    subst e; subst f
-    cases rest with
-    | nil => decide
-    | cons d more =>
-      have sys : X86.Control.decode (15 :: 5 :: d :: more) = some (.syscall, 2) := syscall_decodes (d :: more)
-      simp [decode, X86.Register.Rex.decode?, decodeOpcode, Alu.ofOpcode?, escapedForm, sys]
-
 /-- At `Exits` the model takes no step and is not at a fault: `syscall` is
 not an instruction of the model. -/
 theorem Exits.stuck {s : State} {code : BitVec 64} (h : Exits s code) :
     (∀ v, ¬Lanius.X86.Machine.Step s v) ∧ ¬Lanius.X86.Machine.Fault s := by
   have none := decode_syscall_prefix s.memory s.rip h.syscall
   refine ⟨fun v step => ?_, fun fault => ?_⟩
-  · obtain ⟨i, k, ⟨bytes, loaded, decoded⟩, -⟩ := step.results
-    rw [none bytes loaded] at decoded
-    cases decoded
+  · rcases step.results with ⟨i, k, ⟨bytes, loaded, decoded⟩, -⟩ | ⟨-, kernel⟩
+    · rw [none bytes loaded] at decoded
+      cases decoded
+    · cases kernel with
+      | write number => rw [h.number] at number; exact absurd number (by decide)
   · cases fault with
     | ud2 loaded =>
       have := loaded 1 (by simp)
@@ -273,12 +261,13 @@ structure AtEntry (binary : Binary) (entry stack heap : Nat) (file : List UInt8)
   code : ∀ i, i < file.length → t.memory (BitVec.ofNat 64 (elfBase + i)) = file.getD i 0
   zero : ∀ a, a < heap → t.memory (BitVec.ofNat 64 (elfTop binary stack + a)) = 0
   ret : read64 t.memory (BitVec.ofNat 64 (elfTop binary stack - 8)) = BitVec.ofNat 64 (elfBase + 175)
+  io : t.io = {}
 
 theorem AtEntry.congr {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {t u : State}
     (h : AtEntry binary entry stack heap file t) (same : DataEq t u) : AtEntry binary entry stack heap file u := by
-  obtain ⟨r, i, m⟩ := same
+  obtain ⟨r, i, m, o⟩ := same
   exact ⟨r ▸ h.rsp, r ▸ h.limit, r ▸ h.base, r ▸ h.heapLimit, r ▸ h.cursor, i ▸ h.rip, m ▸ h.code, m ▸ h.zero,
-    m ▸ h.ret⟩
+    m ▸ h.ret, o ▸ h.io⟩
 
 theorem imm_bytes (r : Register) (v : Nat) (rex op : UInt8)
     (prefix_ : immediateBytes .w64 r (lowHalf (BitVec.ofNat 64 v)) (highHalf (BitVec.ofNat 64 v)) =
@@ -354,6 +343,7 @@ theorem startup {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {
       if r = rspRegister then BitVec.ofNat 64 (elfTop binary stack) else s.registers r := by
     intro r; rw [← hs5]; rfl
   have m5 : s5.memory = s.memory := by rw [← hs5]; rfl
+  have io5 : s5.io = s.io := by rw [← hs5]; rfl
   have rip5 : s5.rip = BitVec.ofNat 64 (elfBase + 170) := by
     rw [← hs5]; simp only [State.immediate64, rip, ofNat_add64]
   have sp5 : s5.registers 4 - 8 = BitVec.ofNat 64 (elfTop binary stack - 8) := by
@@ -398,6 +388,7 @@ theorem startup {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {
     exact this
   · simp only [State.call, m5]
     rw [sp5, read64_write64, next5]
+  · exact io5.trans loaded.io
 
 /-! ## The entry meets the compiled function's premises -/
 
@@ -469,7 +460,7 @@ theorem atEntry_premises {binary : Binary} {entry stack heap : Nat} {file : List
   · rw [at_.rip, ofNat_add64]
   · have top : BitVec.ofNat 64 (elfTop binary stack - 8) + 8 = BitVec.ofNat 64 (elfTop binary stack) := by
       rw [show (8 : BitVec 64) = BitVec.ofNat 64 8 from rfl, ofNat_add64]; congr 1; omega
-    refine ⟨at_.cursor, ?_, ?_, fun a aLt => ?_, fun address inHeap below => ?_⟩
+    refine ⟨at_.cursor, ?_, ?_, fun a aLt => ?_, fun address inHeap below => ?_, at_.io⟩
     · rw [at_.heapLimit, toNat_ofNat64 (by omega)]; rfl
     · show heap < 2 ^ 62; omega
     · rw [at_.base, ofNat_add64]; exact at_.zero a aLt
@@ -485,7 +476,7 @@ theorem atEntry_premises {binary : Binary} {entry stack heap : Nat} {file : List
 /-! ## The return and the exit -/
 
 theorem Exits.congr {s t : State} {code : BitVec 64} (h : Exits s code) (same : DataEq s t) : Exits t code := by
-  obtain ⟨r, i, m⟩ := same
+  obtain ⟨r, i, m, -⟩ := same
   exact ⟨i ▸ m ▸ h.syscall, r ▸ h.number, r ▸ h.status⟩
 
 /-- `mov rdi, rax`, `mov eax, 60`, then the exit's `syscall`. -/

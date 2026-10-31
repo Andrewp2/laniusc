@@ -15,6 +15,7 @@ def Instr.Fits (slots bound funcs : Nat) : Instr → Prop
   | .call callee args target count => callee < funcs ∧ args.length ≤ slots ∧ (∀ slot ∈ args, slot < slots) ∧
       target + count ≤ slots ∧ 0 < count
   | .ret sources => ∀ slot ∈ sources, slot < slots ∧ sources.length ≤ slot
+  | .sys _ slot => slot + 3 ≤ slots
 
 theorem Instr.Fits.mono {i : Instr} {slots slots' bound bound' funcs : Nat} (fits : i.Fits slots bound funcs)
     (moreSlots : slots ≤ slots') (moreBound : bound ≤ bound') : i.Fits slots' bound' funcs := by
@@ -28,6 +29,7 @@ theorem Instr.Fits.mono {i : Instr} {slots slots' bound bound' funcs : Nat} (fit
       by have := fits.2.2.2.1; omega, fits.2.2.2.2⟩
   | ret sources =>
     exact fun slot mem => ⟨by have := (fits slot mem).1; omega, (fits slot mem).2⟩
+  | sys => simp only [Instr.Fits] at fits ⊢; omega
 
 theorem compileExpr_fits (base : Nat) (e : Expr) (depth : Nat) (within : e.within base = true)
     (bound funcs : Nat) : ∀ i ∈ compileExpr base e depth, i.Fits (base + depth + e.temps) bound funcs := by
@@ -216,6 +218,15 @@ theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (re
     · exact (compileExpr_fits base left 0 within.1.2 _ _ i inLeft).mono (by omega) (Nat.le_refl _)
     · simp only [Instr.Fits]; omega
     · exact (compileExpr_fits base right 1 within.2 _ _ i inRight).mono (by omega) (Nat.le_refl _)
+    · simp only [Instr.Fits]; omega
+    · simp only [Instr.Fits]; omega
+  | sys kind target args =>
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
+    obtain ⟨⟨below, len⟩, argsWithin⟩ := within
+    have three := argsTemps_length args 0 (by intro empty; rw [empty] at len; simp at len)
+    simp only [compileStmt, List.mem_append, List.mem_cons, List.not_mem_nil, or_false, Stmt.temps]
+    rintro i (inArgs | rfl | rfl)
+    · exact compileArgs_fits base args 0 argsWithin _ _ i inArgs
     · simp only [Instr.Fits]; omega
     · simp only [Instr.Fits]; omega
 

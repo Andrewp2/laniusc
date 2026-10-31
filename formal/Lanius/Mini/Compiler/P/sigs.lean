@@ -43,5 +43,6 @@ def Stmt.extent (self : Stmt) : Nat :=
   | .loadWord width target address => max (target + 1) (Expr.extent address)
   | .storeWord width address value => max (Expr.extent address) (Expr.extent value)
   | .divide word operation target left right => max (target + 1) (max (Expr.extent left) (Expr.extent right))
+  | .sys kind target args => max (target + 1) (argsExtent args)
 
 end Lanius.Mini

@@ -290,6 +290,9 @@ theorem Exec.limit {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stm
   | loopReturned _ _ ih => exact ih
   | skip | assign | loopDone | ret | alloc | loadByte | storeByte | loadWord | divide => rfl
   | storeWord => exact (Heap.writeLE_limit _ _ _ _).1
+  | sys ran =>
+    have same := congrArg Heap.limit (Syscall.run_heap ran)
+    exact same
 
 /-! ## Lowered heap operations -/
 

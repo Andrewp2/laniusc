@@ -171,6 +171,7 @@ namespace Lanius.Mini
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 @[expose] def Inline.seqAgrees (first : Stmt) (second : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
   match other with
@@ -187,6 +188,7 @@ namespace Lanius.Mini
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- A condition the facts do not make a constant. -/
 @[expose] def Inline.unknown (known : Option (BitVec 64)) : Bool :=

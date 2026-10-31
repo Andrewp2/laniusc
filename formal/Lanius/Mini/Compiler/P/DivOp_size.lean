@@ -36,5 +36,6 @@ def Instr.size (self : Instr) : Nat :=
   | .loadWordAt width => 9 + MemWidth.prefix width
   | .storeWordAt width slot => 16 + MemWidth.prefix width
   | .div word operation slot => 18 + Word.prefix word + DivOp.size operation word
+  | .sys kind slot => 34
 
 end Lanius.Mini

@@ -128,6 +128,7 @@ theorem Stops.killed {prog : Program} (s : Stmt) :
   | loadWord => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | storeWord => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | divide => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | sys => intro _ _ _ _ _ k; simp [Stmt.kills] at k
 
 /-- Every stop of an original statement from an environment where `facts`
 hold is a stop of the statement the validator accepted, for the same `n`. -/

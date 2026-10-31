@@ -154,7 +154,7 @@ theorem wordWrite_outside (width : MemWidth) (memory : Memory) (address value ot
 
 /-- The word load: rax becomes the heap word at offset rax. -/
 theorem loadWord_steps (s : State) (width : MemWidth) (loaded : CodeAt s.memory s.rip (loadWordSpec width)) :
-    ∃ s', Steps 2 s s' ∧ Det 2 s s' ∧ s'.memory = s.memory ∧
+    ∃ s', Steps 2 s s' ∧ Det 2 s s' ∧ s'.io = s.io ∧ s'.memory = s.memory ∧
       s'.rip = s.rip + BitVec.ofNat 64 (Instr.loadWordAt width).size ∧
       s'.registers 0 = wordRead width s.memory (s.registers heapBaseRegister + s.registers 0) ∧
       ∀ register, register ≠ 0 → s'.registers register = s.registers register := by
@@ -172,7 +172,7 @@ theorem loadWord_steps (s : State) (width : MemWidth) (loaded : CodeAt s.memory 
     refine ⟨s2, .cons t1 (.cons t2 (.refl _)),
       Det.cons t1 (alu_noRead c0.prefix)
         (Det.cons t2 (memory_noRead (CodeAt.prefix (rest := []) (by simpa using c1))) (Det.refl _)),
-      rfl, ?_, ?_, ?_⟩
+      rfl, rfl, ?_, ?_, ?_⟩
     · simp only [s2, s1, State.load32, State.immediate32, State.alu64, State.alu, Instr.size, MemWidth.prefix]
       rw [show (aluBytes .w64 .add 0 heapBaseRegister).length = 3 from rfl,
         show (memoryBytes .w32 true 0 0 0).length = 6 from rfl]
@@ -194,7 +194,7 @@ theorem loadWord_steps (s : State) (width : MemWidth) (loaded : CodeAt s.memory 
     refine ⟨s2, .cons t1 (.cons t2 (.refl _)),
       Det.cons t1 (alu_noRead c0.prefix)
         (Det.cons t2 (memory_noRead (CodeAt.prefix (rest := []) (by simpa using c1))) (Det.refl _)),
-      rfl, ?_, ?_, ?_⟩
+      rfl, rfl, ?_, ?_, ?_⟩
     · simp only [s2, s1, State.load64, State.alu64, State.alu, Instr.size, MemWidth.prefix]
       rw [show (aluBytes .w64 .add 0 heapBaseRegister).length = 3 from rfl,
         show (memoryBytes .w64 true 0 0 0).length = 7 from rfl]
@@ -209,7 +209,7 @@ theorem loadWord_steps (s : State) (width : MemWidth) (loaded : CodeAt s.memory 
 /-- The word store: the low bytes of rax go to the heap at the offset in `slot`. -/
 theorem storeWord_steps (s : State) (width : MemWidth) (slot : Nat)
     (loaded : CodeAt s.memory s.rip (storeWordSpec width slot)) :
-    ∃ s', Steps 3 s s' ∧ Det 3 s s' ∧ s'.rip = s.rip + BitVec.ofNat 64 (Instr.storeWordAt width slot).size ∧
+    ∃ s', Steps 3 s s' ∧ Det 3 s s' ∧ s'.io = s.io ∧ s'.rip = s.rip + BitVec.ofNat 64 (Instr.storeWordAt width slot).size ∧
       s'.memory = wordWrite width s.memory (s.registers heapBaseRegister +
           read64 s.memory (s.registers rbpRegister + (BitVec.ofInt 32 (frameDisplacement slot)).signExtend 64))
         (s.registers 0) ∧
@@ -236,7 +236,7 @@ theorem storeWord_steps (s : State) (width : MemWidth) (slot : Nat)
     refine ⟨s3, .cons t1 (.cons t2 (.cons t3 (.refl _))),
       Det.cons t1 (memory_noRead c0.prefix) (Det.cons t2 (alu_noRead c1.prefix)
         (Det.cons t3 (memory_noRead (CodeAt.prefix (rest := []) (by simpa using c2))) (Det.refl _))),
-      ?_, ?_, ?_⟩
+      rfl, ?_, ?_, ?_⟩
     · simp only [s3, s2, s1, State.store32, State.alu64, State.alu, State.load64, Instr.size, MemWidth.prefix]
       rw [show (memoryBytes .w64 true rcxRegister rbpRegister (frameDisplacement slot)).length = 7 from by
           simp only [memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append, List.length_map,
@@ -269,7 +269,7 @@ theorem storeWord_steps (s : State) (width : MemWidth) (slot : Nat)
     refine ⟨s3, .cons t1 (.cons t2 (.cons t3 (.refl _))),
       Det.cons t1 (memory_noRead c0.prefix) (Det.cons t2 (alu_noRead c1.prefix)
         (Det.cons t3 (memory_noRead (CodeAt.prefix (rest := []) (by simpa using c2))) (Det.refl _))),
-      ?_, ?_, ?_⟩
+      rfl, ?_, ?_, ?_⟩
     · simp only [s3, s2, s1, State.store64, State.alu64, State.alu, State.load64, Instr.size, MemWidth.prefix]
       rw [show (memoryBytes .w64 true rcxRegister rbpRegister (frameDisplacement slot)).length = 7 from by
           simp only [memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append, List.length_map,

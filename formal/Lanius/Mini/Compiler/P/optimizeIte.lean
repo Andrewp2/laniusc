@@ -46,6 +46,7 @@ def Stmt.deadBefore (self : Stmt) (rest : Stmt) : Bool :=
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- facts hold on entry: each expression is read with them substituted. -/
 def Stmt.optimize (self : Stmt) (facts : List Fact) : Stmt :=
@@ -68,6 +69,7 @@ def Stmt.optimize (self : Stmt) (facts : List Fact) : Stmt :=
   | .loadWord width target address => Stmt.loadWord width target (Expr.optimize (Expr.subst address facts))
   | .storeWord width address value => Stmt.storeWord width (Expr.optimize (Expr.subst address facts)) (Expr.optimize (Expr.subst value facts))
   | .divide word operation target left right => Stmt.divide word operation target (Expr.optimize (Expr.subst left facts)) (Expr.optimize (Expr.subst right facts))
+  | .sys kind target args => Stmt.sys kind target (optimizeAll (substAll args facts))
 
 def optimizeFuncs (funcs : List Func) : List Func :=
   match funcs with

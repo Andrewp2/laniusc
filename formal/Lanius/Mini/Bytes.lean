@@ -85,6 +85,8 @@ def cmpBytes (word : Word) (operation : CmpOp) (slot : Nat) : List UInt8 :=
     setConditionBytes (operation.code word) 0 ++ zeroExtendByteBytes 0 0
 
 def rdxRegister : Register := 2
+def rsiRegister : Register := 6
+def rdiRegister : Register := 7
 
 def DivOp.signed : DivOp → Bool
   | .sDiv | .sRem => true
@@ -174,6 +176,23 @@ def storeWordSpec (width : MemWidth) (slot : Nat) : List UInt8 :=
   memoryBytes .w64 true rcxRegister rbpRegister (frameDisplacement slot) ++
     (aluBytes .w64 .add rcxRegister heapBaseRegister ++ memoryBytes width.x86 false 0 rcxRegister 0)
 
+/-- `syscall` -/
+def syscallBytes : List UInt8 := [15, 5]
+
+/-- The Linux number of a system call. -/
+def Syscall.linux : Syscall → BitVec 32
+  | .write => 1
+
+/-- `mov rdi, [slot]; mov rsi, [slot + 1]; add rsi, r12; mov rdx, [slot + 2];
+mov eax, number; syscall; mov r11, rcx`. The kernel leaves r11 unknown; the last
+move makes it a function of the state again. -/
+def sysSpec (kind : Syscall) (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 true rdiRegister rbpRegister (frameDisplacement slot) ++
+    (memoryBytes .w64 true rsiRegister rbpRegister (frameDisplacement (slot + 1)) ++
+    (aluBytes .w64 .add rsiRegister heapBaseRegister ++
+    (memoryBytes .w64 true rdxRegister rbpRegister (frameDisplacement (slot + 2)) ++
+    (immediateBytes .w32 0 kind.linux 0 ++ (syscallBytes ++ moveBytes .w64 r11Register rcxRegister)))))
+
 /-- The bytes of the instruction at body offset `pc`, as the x86 encoders write them. -/
 def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   match i with
@@ -195,6 +214,7 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .loadWordAt width => loadWordSpec width
   | .storeWordAt width slot => storeWordSpec width slot
   | .div word operation slot => operation.spec word slot
+  | .sys kind slot => sysSpec kind slot
 
 /-! The extracted encoders are the x86 ones. -/
 
@@ -283,6 +303,11 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
   | storeWordAt width slot =>
     cases width <;> rw [Instr.encode, Instr.bytes, storeWordBytes, le32_i32Bytes _ _ (slotOffset_toNat slot)] <;> rfl
   | div word operation slot => exact DivOp.bytes_eq operation word slot
+  | sys kind slot =>
+    cases kind
+    rw [Instr.encode, Instr.bytes, sysBytes, le32_i32Bytes _ _ (slotOffset_toNat slot),
+      le32_i32Bytes _ _ (slotOffset_toNat (slot + 1)), le32_i32Bytes _ _ (slotOffset_toNat (slot + 2))]
+    rfl
 
 /-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
 theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
@@ -374,6 +399,11 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
     cases word <;> cases operation <;>
       simp only [Instr.bytes, DivOp.spec, List.length_append, slotLoadBytes_length, Instr.size, DivOp.size,
         Word.prefix] <;> decide
+  | sys kind slot =>
+    cases kind
+    simp only [Instr.bytes, sysSpec, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
+      List.length_map, List.length_range, Instr.size]
+    decide
 
 theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
   rw [Instr.encode_eq, Instr.bytes_length]

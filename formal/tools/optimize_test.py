@@ -61,6 +61,7 @@ partial def Stmt.bump : Stmt → Stmt
   | .loadWord w t a => .loadWord w t a.bump
   | .storeWord w a v => .storeWord w a.bump v.bump
   | .divide w o t l r => .divide w o t l.bump r.bump
+  | .sys k t args => .sys k t (args.map Expr.bump)
 
 def mutant (p : Program) : Program :=
   { funcs := p.funcs.map fun f => { f with body := f.body.bump } }

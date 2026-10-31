@@ -45,6 +45,13 @@ def loadWordBytes (width : MemWidth) : List UInt8 :=
 def storeWordBytes (width : MemWidth) (slot : Nat) : List UInt8 :=
   72 :: 139 :: [141] ++ le32 (slotOffset slot) ++ 76 :: 1 :: 225 :: (MemWidth.rex width ++ 137 :: 129 :: 0 :: 0 :: 0 :: [0])
 
+/-- mov rdi, [rbp + disp32] (the fd); mov rsi, [rbp + disp32]; add rsi, r12 (the heap address); mov rdx, [rbp + disp32] (the count); mov eax, 1; syscall; mov r11, rcx (the kernel leaves RFLAGS in r11) -/
+def sysBytes (kind : Syscall) (slot : Nat) : List UInt8 :=
+  let fd : List UInt8 := 72 :: 139 :: [189] ++ le32 (slotOffset slot)
+  let address : List UInt8 := 72 :: 139 :: [181] ++ le32 (slotOffset (slot + 1)) ++ 76 :: 1 :: [230]
+  let count : List UInt8 := 72 :: 139 :: [149] ++ le32 (slotOffset (slot + 2))
+  fd ++ address ++ (count ++ 184 :: 1 :: 0 :: 0 :: 0 :: 15 :: 5 :: 73 :: 137 :: [203])
+
 /-- mov rsp, rbp; pop rbp; ret -/
 def epilogue : List UInt8 :=
   72 :: 137 :: 236 :: 93 :: [195]
@@ -101,6 +108,7 @@ def Instr.encode (self : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .loadWordAt width => loadWordBytes width
   | .storeWordAt width slot => storeWordBytes width slot
   | .div word operation slot => DivOp.bytes operation word slot
+  | .sys kind slot => sysBytes kind slot
 
 def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
   match code with

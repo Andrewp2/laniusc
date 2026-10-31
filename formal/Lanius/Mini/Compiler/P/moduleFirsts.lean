@@ -42,6 +42,7 @@ def Stmt.rename (self : Stmt) (table : List Nat) (missing : Nat) : Stmt :=
   | .loadWord width target address => Stmt.loadWord width target address
   | .storeWord width address value => Stmt.storeWord width address value
   | .divide word operation target left right => Stmt.divide word operation target left right
+  | .sys kind target args => Stmt.sys kind target args
 
 def renameFuncs (table : List Nat) (missing : Nat) (funcs : List Func) : List Func :=
   match funcs with

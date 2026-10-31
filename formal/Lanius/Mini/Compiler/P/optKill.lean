@@ -40,6 +40,7 @@ def optFactsAfter (s : Stmt) (facts : List Fact) : List Fact :=
   | .loadWord w target a => optKill facts target
   | .storeWord w a v => facts
   | .divide w o target l r => optKill facts target
+  | .sys c t a => []
 
 def Expr.literal (self : Expr) : Option (BitVec 64) :=
   match self with
