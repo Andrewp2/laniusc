@@ -326,6 +326,9 @@ pub enum Instr {
     Fp(FOp, usize),
     // rax := call(slot, slot + 1, slot + 2), through rdi, rsi and rdx
     Sys(Syscall, usize),
+    // Frame memory: the frame pointer (rbx) drops by bytes, to no lower than
+    // the limit (r14), and rax gets its new value
+    Frame(usize),
 }
 
 impl BinOp {
@@ -453,6 +456,7 @@ impl Instr {
             Div(word, operation, slot) -> plus(plus(18, word.prefix()), operation.size(word)),
             Instr::Fp(operation, slot) -> plus(10, operation.size()),
             Instr::Sys(kind, slot) -> 34,
+            Instr::Frame(bytes) -> 39,
         };
     }
 }
@@ -515,7 +519,7 @@ pub fn compile_stmt(base: usize, pos: usize, brk: usize, cont: usize, s: Stmt) -
         StoreWord(width, address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreWordAt(width, base)))),
         Divide(word, operation, target, left, right) -> concat(concat(concat(compile_expr(base, left, 0), single(Store(base))), compile_expr(base, right, 1)), cons(Div(word, operation, base), single(Store(target)))),
         Stmt::Sys(kind, target, args) -> concat(compile_args(base, args, 0), cons(Instr::Sys(kind, base), single(Store(target)))),
-        Stmt::Frame(target, bytes) -> empty(),
+        Stmt::Frame(target, bytes) -> cons(Instr::Frame(bytes), single(Store(target))),
     };
 }
 
@@ -616,7 +620,7 @@ impl Stmt {
             StoreWord(width, address, value) -> address.within(locals) && value.within(locals),
             Divide(word, operation, target, left, right) -> locals > target && left.within(locals) && right.within(locals),
             Stmt::Sys(kind, target, args) -> locals > target && (length(args) == 3) && all_within(locals, args),
-            Stmt::Frame(target, bytes) -> false,
+            Stmt::Frame(target, bytes) -> locals > target && 2147483648 > bytes,
         };
     }
 
@@ -943,6 +947,14 @@ pub fn bump_bytes(shift: usize) -> List<u8> {
     return concat(concat(concat(round, mask), concat(carry, check)), cons(77, cons(137, cons(221, cons(72, cons(137, single(200)))))));
 }
 
+// mov r11, bytes; mov rax, rbx; sub rax, r11; jb +12 (below zero);
+// mov r11, rax; cmp r11, r14; jae +2; ud2 (below the limit); mov rbx, rax
+pub fn frame_memory_bytes(bytes: usize) -> List<u8> {
+    let start: List<u8> = concat(cons(73, cons(187, le64(bytes as u64))), cons(72, cons(137, cons(216, cons(76, cons(41, single(216)))))));
+    let check: List<u8> = cons(15, cons(130, cons(12, cons(0, cons(0, cons(0, cons(73, cons(137, cons(195, cons(77, cons(57, cons(243, cons(15, cons(131, cons(2, cons(0, cons(0, single(0))))))))))))))))));
+    return concat(concat(start, check), cons(15, cons(11, cons(72, cons(137, single(195))))));
+}
+
 // add rax, r12; movzx eax, byte [rax + 0]
 pub fn load_at_bytes() -> List<u8> {
     return cons(76, cons(1, cons(224, cons(15, cons(182, cons(128, cons(0, cons(0, cons(0, single(0))))))))));
@@ -1060,6 +1072,7 @@ impl Instr {
             Div(word, operation, slot) -> operation.bytes(word, slot),
             Instr::Fp(operation, slot) -> operation.bytes(slot),
             Instr::Sys(kind, slot) -> sys_bytes(kind, slot),
+            Instr::Frame(bytes) -> frame_memory_bytes(bytes),
         };
     }
 }
@@ -1306,6 +1319,7 @@ impl Instr {
             Div(word, operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
             Instr::Fp(operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
             Instr::Sys(kind, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Instr::Frame(bytes) -> single(Piece::Bytes(self.encode(place, pc))),
         };
     }
 }

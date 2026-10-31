@@ -151,6 +151,7 @@ theorem Stops.deeper {prog : Program} {d : Nat} {env : Env} {hp : Heap} {s : Stm
   | call found length lower body => exact .call found length (Nat.lt_of_lt_of_le lower le) body
   | alloc inside over => exact .alloc inside over
   | divide undefined => exact .divide undefined
+  | frame over => exact .frame over
 
 /-- `1 / 0` stops. -/
 theorem Stops.trap {prog : Program} {d : Nat} {env : Env} {hp : Heap} {slot n : Nat} :

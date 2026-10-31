@@ -1,12 +1,12 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.Code_size
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Instr_pieces
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.importsOk
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.moduleFirsts
 
 public section

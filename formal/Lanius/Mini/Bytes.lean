@@ -166,6 +166,14 @@ def bumpSpec (shift : Nat) : List UInt8 :=
   (aluBytes .w64 .add r11Register 0 ++ (branchBytes 2 9 ++ (limitCompareBytes ++ (branchBytes 6 2 ++
   (trapBytes ++ (moveBytes .w64 cursorRegister r11Register ++ moveBytes .w64 0 rcxRegister)))))))))))
 
+/-- `mov r11, bytes; mov rax, rbx; sub rax, r11; jb +12; mov r11, rax; cmp r11, r14; jae +2; ud2;
+mov rbx, rax`: the frame pointer drops by `bytes`, faulting when that passes zero or the limit, and rax
+gets its new value. -/
+def frameSpec (bytes : Nat) : List UInt8 :=
+  r11Bytes (BitVec.ofNat 64 bytes) ++ (moveBytes .w64 0 fspRegister ++ (aluBytes .w64 .subtract 0 r11Register ++
+  (branchBytes 2 12 ++ (moveBytes .w64 r11Register 0 ++ (limitCompareBytes ++ (branchBytes 3 2 ++
+  (trapBytes ++ moveBytes .w64 fspRegister 0)))))))
+
 /-- `add rax, r12; movzx eax, byte [rax]` -/
 def loadAtSpec : List UInt8 := aluBytes .w64 .add 0 heapBaseRegister ++ loadByteBytes 0 0 0
 
@@ -230,6 +238,7 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .div word operation slot => operation.spec word slot
   | .fp operation slot => accToRcxBytes ++ slotLoadBytes slot ++ operation.opcodeBytes
   | .sys kind slot => sysSpec kind slot
+  | .frame bytes => frameSpec bytes
 
 /-! The extracted encoders are the x86 ones. (A float operation's SSE bytes
 are the extracted ones themselves: `Simulation.lean` proves what each
@@ -336,6 +345,7 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
     · rw [Instr.encode, Instr.bytes, sysBytes, le32_i32Bytes _ _ (slotOffset_toNat slot),
         le32_i32Bytes _ _ (slotOffset_toNat (slot + 1)), le32_i32Bytes _ _ (slotOffset_toNat (slot + 2))]
       rfl
+  | frame bytes => simp only [Instr.encode, Instr.bytes, frameMemoryBytes, le64_eq]; rfl
 
 /-- A transfer by `relative source target` from `base + source` lands on `base + target`. -/
 theorem relative_eq (base : BitVec 64) (source target : Nat) (sourceSmall : source < 2 ^ 31)
@@ -448,6 +458,7 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
     · simp only [Instr.bytes, sysSpec, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
         List.length_map, List.length_range, Instr.size]
       decide
+  | frame bytes => rw [← Instr.encode_eq]; simp [Instr.encode, frameMemoryBytes, le64, Instr.size]
 
 theorem Instr.encode_length (place : Place) (pc : Nat) (i : Instr) : (i.encode place pc).length = i.size := by
   rw [Instr.encode_eq, Instr.bytes_length]

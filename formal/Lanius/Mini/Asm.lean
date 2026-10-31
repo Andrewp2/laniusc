@@ -73,7 +73,7 @@ def readSlots (slots : Nat → BitVec 64) : List Nat → List (BitVec 64)
 def Instr.straight : Instr → Bool
   | .imm _ | .load _ | .store _ | .neg | .op _ _ _ | .cmp _ _ _ | .fp _ _ => true
   | .jmp _ | .jz _ | .call _ _ _ _ | .ret _ | .bump _ | .loadAt | .storeAt _ | .loadWordAt _
-  | .storeWordAt _ _ | .div _ _ _ | .sys _ _ => false
+  | .storeWordAt _ _ | .div _ _ _ | .sys _ _ | .frame _ => false
 
 /-- Effect on the accumulator and slots of a straight-line instruction. -/
 def Instr.update : Instr → Machine → Machine
@@ -85,7 +85,7 @@ def Instr.update : Instr → Machine → Machine
   | .cmp word operation slot, m => { m with acc := if word.holds operation (m.slots slot) m.acc then 1 else 0 }
   | .fp operation slot, m => { m with acc := operation.apply (m.slots slot) m.acc }
   | .jmp _, m | .jz _, m | .call _ _ _ _, m | .ret _, m | .bump _, m | .loadAt, m | .storeAt _, m
-  | .loadWordAt _, m | .storeWordAt _ _, m | .div _ _ _, m | .sys _ _, m => m
+  | .loadWordAt _, m | .storeWordAt _ _, m | .div _ _ _, m | .sys _ _, m | .frame _, m => m
 
 def Instr.step (i : Instr) (m : Machine) : Machine := { i.update m with pc := m.pc + i.size }
 
@@ -143,6 +143,11 @@ inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Pro
   | sys : fetch code m.pc = some (.sys call slot) →
       call.run [m.slots slot, m.slots (slot + 1), m.slots (slot + 2)] m.heap = some (result, after) →
       Step calls code m { m with pc := m.pc + (Instr.sys call slot).size, acc := result, heap := after }
+  | frame : fetch code m.pc = some (.frame bytes) → m.heap.limit + bytes ≤ m.heap.fsp →
+      Step calls code m { m with
+        pc := m.pc + (Instr.frame bytes).size
+        acc := BitVec.ofNat 64 (m.heap.fsp - bytes)
+        heap := { m.heap with fsp := m.heap.fsp - bytes } }
 
 inductive Star (calls : Calls) (code : List Instr) : Machine → Machine → Prop where
   | refl (m : Machine) : Star calls code m m
@@ -172,6 +177,7 @@ theorem Step.mono (sub : ∀ callee args heap value after, calls callee args hea
   | storeWordAt fetched below => exact .storeWordAt fetched below
   | div fetched defined => exact .div fetched defined
   | sys fetched ran => exact .sys fetched ran
+  | frame fetched room => exact .frame fetched room
 
 theorem Star.mono (sub : ∀ callee args heap value after, calls callee args heap value after →
       calls' callee args heap value after)
