@@ -24,6 +24,7 @@ theorem Returned.congr {window : Nat} {s s' t : State} {values : List (BitVec 64
   unchanged := by rw [← same.memory]; exact returned.unchanged
   cursor := by rw [← same.registers]; exact returned.cursor
   limit := returned.limit
+  top := returned.top
   heap := by rw [← same.memory]; exact returned.heap
   io := by rw [← same.io]; exact returned.io
 

@@ -56,6 +56,11 @@ structure HeapCorr (h : Memory.Heap) (w : World.State) (hp : Heap) : Prop where
   err : w.standardError = outputOf 2 hp.io.trace
   closed : w.fileHandles = []
 
+/-- Frame memory starts at the limit. -/
+theorem HeapCorr.topped {h : Memory.Heap} {w : World.State} {hp : Heap} (_ : HeapCorr h w hp) :
+    hp.limit ≤ hp.top :=
+  hp.limit_le_top
+
 /-- The correspondence does not see the frame pointer. -/
 theorem HeapCorr.withFsp {h : Memory.Heap} {w : World.State} {hp : Heap} (hc : HeapCorr h w hp) (fsp : Nat) :
     HeapCorr h w { hp with fsp := fsp } :=
@@ -330,6 +335,26 @@ theorem Exec.limit {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stm
   | storeWord => exact (Heap.writeLE_limit _ _ _ _).1
   | sys ran =>
     have same := congrArg Heap.limit (Syscall.run_heap ran)
+    exact same
+
+theorem Exec.top {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt} {out : Outcome}
+    (exec : Exec prog d env heap s out) : out.heap.top = heap.top := by
+  induction exec with
+  | seq _ _ ih1 ih2 => exact ih2.trans ih1
+  | loopNext _ _ _ ih1 ih2 => exact ih2.trans ih1
+  | call _ _ _ _ _ ih => exact ih
+  | seqReturned _ ih => exact ih
+  | ifTrue _ _ ih => exact ih
+  | ifFalse _ _ ih => exact ih
+  | loopReturned _ _ ih => exact ih
+  | seqBroke _ ih => exact ih
+  | seqContinued _ ih => exact ih
+  | loopBroke _ _ ih => exact ih
+  | loopContinued _ _ _ ih1 ih2 => exact ih2.trans ih1
+  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame => rfl
+  | storeWord => exact (Heap.writeLE_top _ _ _ _).1
+  | sys ran =>
+    have same := congrArg Heap.top (Syscall.run_heap ran)
     exact same
 
 /-! ## Lowered heap operations -/

@@ -90,6 +90,8 @@ structure Rel (frame : Frame) (s : State) (m : Machine) : Prop where
     s.memory address = frame.entry address
   cursor : s.registers cursorRegister = BitVec.ofNat 64 m.heap.cursor
   limit : m.heap.limit = frame.heapLimit
+  /-- No frame memory on x86 yet: the heap's top is its limit. -/
+  top : m.heap.top = m.heap.limit
   heap : ∀ a, a < m.heap.limit → s.memory (frame.heapBase + BitVec.ofNat 64 a) = m.heap.bytes a
   /-- The trace so far: only system calls add to it. -/
   io : s.io = m.heap.io
@@ -158,6 +160,7 @@ theorem Rel.accumulate (rel : Rel frame s m) (memory : s'.memory = s.memory) (si
   unchanged := by rw [memory]; exact rel.unchanged
   cursor := (registers _ (by decide) (by decide)).trans rel.cursor
   limit := rel.limit
+  top := rel.top
   heap := by rw [memory]; exact rel.heap
   io := io.trans rel.io
 
@@ -181,6 +184,7 @@ theorem Rel.accumulate11 (rel : Rel frame s m) (memory : s'.memory = s.memory) (
   unchanged := by rw [memory]; exact rel.unchanged
   cursor := (registers _ (by decide) (by decide) (by decide)).trans rel.cursor
   limit := rel.limit
+  top := rel.top
   heap := by rw [memory]; exact rel.heap
   io := io.trans rel.io
 
@@ -197,6 +201,7 @@ theorem Rel.jump (rel : Rel frame s m) (memory : s'.memory = s.memory) (register
   unchanged := by rw [memory]; exact rel.unchanged
   cursor := by rw [registers]; exact rel.cursor
   limit := rel.limit
+  top := rel.top
   heap := by rw [memory]; exact rel.heap
   io := io.trans rel.io
 
@@ -636,7 +641,7 @@ theorem store_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slo
   have bounded := fits.bounded
   have big := frameBytes_slots frame.slots
   refine ⟨1, s', .cons step (.refl _), Det.step step (slotStore_noRead loaded), ?_⟩
-  refine ⟨?_, rel.rbp, rel.rsp, rel.acc, ?_, ?_, rel.preserved, ?_, rel.cursor, rel.limit, ?_, rel.io⟩
+  refine ⟨?_, rel.rbp, rel.rsp, rel.acc, ?_, ?_, rel.preserved, ?_, rel.cursor, rel.limit, rel.top, ?_, rel.io⟩
   · simp only [s', State.store64, slotStoreBytes_length]
     exact rel.advance 7
   · intro other otherInFrame
@@ -906,13 +911,14 @@ theorem Rel.congr (rel : Rel frame s m) {m' : Machine} (pc : m'.pc = m.pc) (acc 
   unchanged := rel.unchanged
   cursor := by rw [heap]; exact rel.cursor
   limit := by rw [heap]; exact rel.limit
+  top := by rw [heap]; exact rel.top
   heap := by rw [heap]; exact rel.heap
   io := by rw [heap]; exact rel.io
 
 /-- The relation does not see the frame pointer. -/
 theorem Rel.withFsp (rel : Rel frame s m) (fsp : Nat) : Rel frame s { m with heap := { m.heap with fsp := fsp } } :=
   ⟨rel.rip, rel.rbp, rel.rsp, rel.acc, rel.slots, rel.saved, rel.preserved, rel.unchanged, rel.cursor, rel.limit,
-    rel.heap, rel.io⟩
+    rel.top, rel.heap, rel.io⟩
 
 /-- The machine after copy code of `size` bytes stored `values` at `target`, ... -/
 def Machine.copied (m : Machine) (size target : Nat) (values : List (BitVec 64)) : Machine :=
@@ -951,7 +957,7 @@ theorem copy_simulates (rel : Rel frame s m) (fits : frame.Fits) {target : Nat} 
         slot_lanes_ne _ (by unfold slotLimit; omega) (by unfold slotLimit; omega) (by omega) i lane)
   refine ⟨n, s', steps, det, ?_⟩
   simp only [Machine.copied]
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, rel.limit, ?_, io'.trans rel.io⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, rel.limit, rel.top, ?_, io'.trans rel.io⟩
   · rw [rip']
     exact rel.advance _
   · rw [registers' _ (by decide)]; exact rel.rbp
@@ -1005,6 +1011,7 @@ structure Frame.Exit (frame : Frame) (s : State) (values : List (BitVec 64)) (fi
     s.memory address = frame.entry address
   cursor : s.registers cursorRegister = BitVec.ofNat 64 final.cursor
   limit : final.limit = frame.heapLimit
+  top : final.top = final.limit
   heap : ∀ a, a < final.limit → s.memory (frame.heapBase + BitVec.ofNat 64 a) = final.bytes a
   io : s.io = final.io
 
@@ -1052,7 +1059,7 @@ theorem ret_simulates (rel : Rel frame s m) (fits : frame.Fits) {sources : List 
     exact tail index small
   obtain ⟨n2, s2, steps2, det2, io2, left, memory2, cursor2⟩ := epilogue_simulates rel1 fits loaded1
   refine ⟨_, s2, steps1.trans steps2, det1.trans det2, left.rip, left.rsp, left.rbp, ?_, ?_, left.preserved, left.unchanged,
-    cursor2.trans rel1.cursor, rel1.limit, fun a inside => by rw [memory2]; exact rel1.heap a inside,
+    cursor2.trans rel1.cursor, rel1.limit, rel1.top, fun a inside => by rw [memory2]; exact rel1.heap a inside,
     io2.trans rel1.io⟩
   · intro v last
     rw [left.value]
@@ -1080,6 +1087,7 @@ structure Returned (window : Nat) (s s' : State) (values : List (BitVec 64)) (af
     s'.memory address = s.memory address
   cursor : s'.registers cursorRegister = BitVec.ofNat 64 after.cursor
   limit : after.limit = (s.registers limitRegister).toNat
+  top : after.top = after.limit
   heap : ∀ a, a < after.limit → s'.memory (s.registers heapBaseRegister + BitVec.ofNat 64 a) = after.bytes a
   io : s'.io = after.io
 
@@ -1088,6 +1096,7 @@ may use and its return address. -/
 structure HeapAt (window : Nat) (s : State) (heap : Heap) : Prop where
   cursor : s.registers cursorRegister = BitVec.ofNat 64 heap.cursor
   limit : heap.limit = (s.registers limitRegister).toNat
+  top : heap.top = heap.limit
   small : heap.limit < 2 ^ 62
   bytes : ∀ a, a < heap.limit → s.memory (s.registers heapBaseRegister + BitVec.ofNat 64 a) = heap.bytes a
   apart : ∀ address, s.InHeap address → ¬Below (s.registers rspRegister + 8) (window + 8) address
@@ -1289,6 +1298,7 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
   have heapAt2 : HeapAt inner s2 m.heap :=
     { cursor := (registers2 _ (by decide) (by decide)).trans rel.cursor
       limit := by rw [limit2]; exact rel.limit
+      top := rel.top
       small := by rw [rel.limit]; exact fits.heapSmall
       bytes := fun a inside => by
         have inside' : a < frame.heapLimit := by rw [← rel.limit]; exact inside
@@ -1350,7 +1360,8 @@ theorem call_simulates {binary : Binary} {imageBase : BitVec 64} {place : Place}
         exact depth_ne _ (by omega) (by omega) (by omega))]
   let m3 : Machine := { m with pc := m.pc + 14 * args.length + 5, acc := s3.registers 0, heap := after }
   have rel3 : Rel frame s3 m3 := by
-    refine ⟨?_, ?_, ?_, rfl, ?_, ?_, ?_, ?_, returned.cursor, by rw [returned.limit, limit2], ?_, returned.io⟩
+    refine ⟨?_, ?_, ?_, rfl, ?_, ?_, ?_, ?_, returned.cursor, by rw [returned.limit, limit2], returned.top, ?_,
+      returned.io⟩
     · rw [returned.rip, rsp2, memory2, read64_write64]
     · rw [returned.rbp]
       simp only [s2, State.call, rbpRegister, if_neg (show (5 : Register) ≠ 4 by decide)]
@@ -1461,6 +1472,7 @@ theorem bump_simulates (rel : Rel frame s m) (fits : frame.Fits) {shift : Nat} (
       unchanged := by rw [memory]; exact rel.unchanged
       cursor := cursor
       limit := rel.limit
+      top := rel.top
       heap := by rw [memory]; exact rel.heap
       io := io.trans rel.io }
 
@@ -1520,6 +1532,7 @@ theorem storeAt_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : s
         exact rel.unchanged address outside notHeap
       cursor := (kept _ (by decide)).trans rel.cursor
       limit := rel.limit
+      top := rel.top
       heap := fun a below => by
         have small : a < 2 ^ 62 := by
           have := rel.limit
@@ -1600,6 +1613,7 @@ theorem storeWordAt_simulates (rel : Rel frame s m) (fits : frame.Fits) {width :
         rw [(Heap.writeLE_limit _ _ _ _).2]
         exact (kept _ (by decide)).trans rel.cursor
       limit := by rw [(Heap.writeLE_limit _ _ _ _).1]; exact rel.limit
+      top := by rw [(Heap.writeLE_top _ _ _ _).1, (Heap.writeLE_limit _ _ _ _).1]; exact rel.top
       heap := fun a below => by
         rw [(Heap.writeLE_limit _ _ _ _).1] at below
         have small : a < 2 ^ 62 := by omega
@@ -1742,8 +1756,9 @@ theorem sys_simulates (rel : Rel frame s m) (inFrame : slot + 3 ≤ frame.slots)
         unchanged := rel.unchanged
         cursor := (kept 13 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).trans rel.cursor
         limit := rel.limit
+        top := rel.top
         heap := rel.heap
-        io := by rw [io7, r7, r6, r2, rel.io, address, bytesAt_heap rel _ _ inside] }
+        io := by rw [io7, r7, r6, r2, rel.io, address, bytesAt_heap rel _ _ (rel.top ▸ inside)] }
   next => cases ran
 
 theorem CodeAt.middle {memory : Memory} {address : BitVec 64} {first middle rest : List UInt8}
@@ -1878,16 +1893,18 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
     exact .inl <| forward fetched rfl <| bump_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded room
   | loadAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| forward fetched rfl <| loadAt_simulates rel loaded inside
+    exact .inl <| forward fetched rfl <| loadAt_simulates rel loaded (rel.top ▸ inside)
   | storeAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| forward fetched rfl <| storeAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
+    exact .inl <| forward fetched rfl <|
+      storeAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded (rel.top ▸ inside)
   | loadWordAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| forward fetched rfl <| loadWordAt_simulates rel loaded inside
+    exact .inl <| forward fetched rfl <| loadWordAt_simulates rel loaded (rel.top ▸ inside)
   | storeWordAt fetched inside =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| forward fetched rfl <| storeWordAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded inside
+    exact .inl <| forward fetched rfl <|
+      storeWordAt_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded (rel.top ▸ inside)
   | div fetched defined =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
     exact .inl <| forward fetched rfl <| div_simulates _ _ rel (body.fits _ (fetch_mem fetched)) loaded defined

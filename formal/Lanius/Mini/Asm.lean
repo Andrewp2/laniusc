@@ -118,20 +118,20 @@ inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Pro
         pc := m.pc + (Instr.bump shift).size
         acc := BitVec.ofNat 64 (alignUp m.heap.cursor shift)
         heap := { m.heap with cursor := alignUp m.heap.cursor shift + m.acc.toNat } }
-  | loadAt : fetch code m.pc = some .loadAt → m.acc.toNat < m.heap.limit →
+  | loadAt : fetch code m.pc = some .loadAt → m.acc.toNat < m.heap.top →
       Step calls code m { m with
         pc := m.pc + Instr.loadAt.size
         acc := BitVec.ofNat 64 (m.heap.bytes m.acc.toNat).toNat }
-  | storeAt : fetch code m.pc = some (.storeAt slot) → (m.slots slot).toNat < m.heap.limit →
+  | storeAt : fetch code m.pc = some (.storeAt slot) → (m.slots slot).toNat < m.heap.top →
       Step calls code m { m with
         pc := m.pc + (Instr.storeAt slot).size
         heap := m.heap.write (m.slots slot).toNat (lowByte m.acc) }
-  | loadWordAt : fetch code m.pc = some (.loadWordAt width) → m.acc.toNat + width.bytes ≤ m.heap.limit →
+  | loadWordAt : fetch code m.pc = some (.loadWordAt width) → m.acc.toNat + width.bytes ≤ m.heap.top →
       Step calls code m { m with
         pc := m.pc + (Instr.loadWordAt width).size
         acc := BitVec.ofNat 64 (m.heap.readLE m.acc.toNat width.bytes) }
   | storeWordAt : fetch code m.pc = some (.storeWordAt width slot) →
-      (m.slots slot).toNat + width.bytes ≤ m.heap.limit →
+      (m.slots slot).toNat + width.bytes ≤ m.heap.top →
       Step calls code m { m with
         pc := m.pc + (Instr.storeWordAt width slot).size
         heap := m.heap.writeLE (m.slots slot).toNat m.acc.toNat width.bytes }

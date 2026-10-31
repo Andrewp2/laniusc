@@ -259,6 +259,14 @@ structure Heap where
   /-- The frame pointer: frame memory is handed out downward from here, and
   stays at or above `limit` (SEMANTIC_DECISIONS, "Addressed locals"). -/
   fsp : Nat := 0
+  /-- The bytes of frame memory above `limit`. -/
+  frameSize : Nat := 0
+
+/-- The end of the memory loads and stores reach: the bump heap below
+`limit`, then frame memory. -/
+def Heap.top (heap : Heap) : Nat := heap.limit + heap.frameSize
+
+theorem Heap.limit_le_top (heap : Heap) : heap.limit ≤ heap.top := Nat.le_add_right _ _
 
 /-- `n` rounded up to a multiple of `2 ^ shift`. -/
 def alignUp (n shift : Nat) : Nat := (n + 2 ^ shift - 1) / 2 ^ shift * 2 ^ shift
@@ -284,6 +292,13 @@ theorem Heap.writeLE_limit : ∀ (heap : Heap) (address value count : Nat),
   | _, _, _, 0 => ⟨rfl, rfl⟩
   | heap, address, value, count + 1 => by
     have := Heap.writeLE_limit (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
+    exact ⟨this.1, this.2⟩
+
+theorem Heap.writeLE_top : ∀ (heap : Heap) (address value count : Nat),
+    (heap.writeLE address value count).top = heap.top ∧ (heap.writeLE address value count).fsp = heap.fsp
+  | _, _, _, 0 => ⟨rfl, rfl⟩
+  | heap, address, value, count + 1 => by
+    have := Heap.writeLE_top (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
     exact ⟨this.1, this.2⟩
 
 theorem Heap.writeLE_io : ∀ (heap : Heap) (address value count : Nat),
@@ -312,7 +327,7 @@ appends them to the trace and returns the count; no other call returns. -/
 def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 × Heap)
   | .write, [fd, address, count], heap =>
     if (fd = 1 ∨ fd = 2) ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
-        address.toNat + count.toNat ≤ heap.limit then
+        address.toNat + count.toNat ≤ heap.top then
       some (count, { heap with io := { heap.io with trace := heap.io.trace ++
         [.write fd.toNat (heap.slice address.toNat count.toNat)] } })
     else none
@@ -406,19 +421,19 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
         (.normal (env.set target (BitVec.ofNat 64 (alignUp heap.cursor shift)))
           { heap with cursor := alignUp heap.cursor shift + (size.eval env).toNat })
   | loadByte {depth : Nat} {env : Env} {heap : Heap} {target : Nat} {address : Expr} :
-      (address.eval env).toNat < heap.limit →
+      (address.eval env).toNat < heap.top →
       Exec prog depth env heap (.loadByte target address)
         (.normal (env.set target (BitVec.ofNat 64 (heap.bytes (address.eval env).toNat).toNat)) heap)
   | storeByte {depth : Nat} {env : Env} {heap : Heap} {address value : Expr} :
-      (address.eval env).toNat < heap.limit →
+      (address.eval env).toNat < heap.top →
       Exec prog depth env heap (.storeByte address value)
         (.normal env (heap.write (address.eval env).toNat (lowByte (value.eval env))))
   | loadWord {depth : Nat} {env : Env} {heap : Heap} {width : MemWidth} {target : Nat} {address : Expr} :
-      (address.eval env).toNat + width.bytes ≤ heap.limit →
+      (address.eval env).toNat + width.bytes ≤ heap.top →
       Exec prog depth env heap (.loadWord width target address)
         (.normal (env.set target (BitVec.ofNat 64 (heap.readLE (address.eval env).toNat width.bytes))) heap)
   | storeWord {depth : Nat} {env : Env} {heap : Heap} {width : MemWidth} {address value : Expr} :
-      (address.eval env).toNat + width.bytes ≤ heap.limit →
+      (address.eval env).toNat + width.bytes ≤ heap.top →
       Exec prog depth env heap (.storeWord width address value)
         (.normal env (heap.writeLE (address.eval env).toNat (value.eval env).toNat width.bytes))
   | divide {depth : Nat} {env : Env} {heap : Heap} {word : Word} {operation : DivOp} {target : Nat}

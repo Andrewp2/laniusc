@@ -135,7 +135,7 @@ theorem Heap.slice_append (hp : Heap) : ∀ (address first second : Nat),
 heap's slice to the trace. -/
 theorem Syscall.run_write {heap : Heap} {fd address count : BitVec 64}
     (which : fd = 1 ∨ fd = 2) (small : count.toNat ≤ maxTransfer)
-    (inside : address.toNat + count.toNat ≤ heap.limit) :
+    (inside : address.toNat + count.toNat ≤ heap.top) :
     Syscall.run .write [fd, address, count] heap =
       some (count, { heap with io := { heap.io with trace := heap.io.trace ++
         [.write fd.toNat (heap.slice address.toNat count.toNat)] } }) := by
@@ -154,17 +154,17 @@ theorem set_get (E : Env) (j v : Nat) (x : BitVec 64) : E.set j x v = if v = j t
 
 /-- `write_byte` to handle 1 or 2: one event with the value's low byte, the
 heap's bytes as they were, and 1 in `slot`. -/
-theorem hostByte_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat) (pos : 0 < H.limit)
+theorem hostByte_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat) (pos : 0 < H.top)
     (which : E slot = 1 ∨ E slot = 2) :
     ∃ E' H', Exec mp d E H (hostByteCode slot) (.normal E' H') ∧ (∀ j < slot, E' j = E j) ∧ E' slot = 1 ∧
-      H'.bytes = H.bytes ∧ H'.cursor = H.cursor ∧ H'.limit = H.limit ∧
+      H'.bytes = H.bytes ∧ H'.cursor = H.cursor ∧ H'.limit = H.limit ∧ H'.top = H.top ∧
       H'.io.trace = H.io.trace ++ [Event.write (E slot).toNat [lowByte (E (slot + 1))]] := by
   have cond : (Expr.binary .u64 .or (.compare .u64 .eq (.var slot) (.lit 1))
       (.compare .u64 .eq (.var slot) (.lit 2))).eval E ≠ 0 := by
     rcases which with one | two
     · simp [Expr.eval, Word.apply, Word.holds, BinOp.apply, CmpOp.holdsU, one]
     · simp [Expr.eval, Word.apply, Word.holds, BinOp.apply, CmpOp.holdsU, two]
-  have inside : ((Expr.lit 0).eval E).toNat < H.limit := by simpa [Expr.eval] using pos
+  have inside : ((Expr.lit 0).eval E).toNat < H.top := by simpa [Expr.eval] using pos
   let E1 := E.set (slot + 2) (BitVec.ofNat 64 (H.bytes ((Expr.lit 0).eval E).toNat).toNat)
   have s1 : Exec mp d E H (.loadByte (slot + 2) (.lit 0)) (.normal E1 H) := .loadByte inside
   let H1 := H.write ((Expr.lit 0).eval E1).toNat (lowByte ((Expr.var (slot + 1)).eval E1))
@@ -176,17 +176,17 @@ theorem hostByte_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
     [Event.write (E1 slot).toNat (H1.slice (0 : BitVec 64).toNat (1 : BitVec 64).toNat)] } }
   have ran : Syscall.run .write (Expr.evalAll E1 [.var slot, .lit 0, .lit 1]) H1 = some (1, H2) :=
     Syscall.run_write (by simpa [Expr.eval, fd] using which) (by simp [Expr.eval, maxTransfer])
-      (by simp [Expr.eval, H1, Heap.write]; omega)
+      (by simp [Expr.eval, H1, Heap.write, Heap.top] at pos ⊢; omega)
   have s3 : Exec mp d E1 H1 (.sys .write (slot + 3) [.var slot, .lit 0, .lit 1]) (.normal (E1.set (slot + 3) 1) H2) :=
     .sys ran
   let E2 := E1.set (slot + 3) 1
   let H3 := H2.write ((Expr.lit 0).eval E2).toNat (lowByte ((Expr.var (slot + 2)).eval E2))
   have s4 : Exec mp d E2 H2 (.storeByte (.lit 0) (.var (slot + 2))) (.normal E2 H3) :=
-    .storeByte (by simpa [Expr.eval, H2, H1, Heap.write] using pos)
+    .storeByte (by simpa [Expr.eval, H2, H1, Heap.write, Heap.top] using pos)
   have s5 : Exec mp d E2 H3 (.assign slot (.lit 1)) (.normal (E2.set slot ((Expr.lit 1).eval E2)) H3) := .assign
   have saved : E2 (slot + 2) = BitVec.ofNat 64 (H.bytes 0).toNat := by simp [E2, E1, set_get, Expr.eval]
   refine ⟨_, _, .ifTrue cond (.seq s1 (.seq s2 (.seq s3 (.seq s4 s5)))), ?_, by simp [set_get, Expr.eval], ?_,
-    rfl, rfl, ?_⟩
+    rfl, rfl, rfl, ?_⟩
   · intro j lt
     simp only [E2, E1, set_get]
     rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]
@@ -234,7 +234,7 @@ theorem eval_pick (E : Env) (slot : Nat) :
 the slots below `slot` and `slot + 2`. -/
 theorem writeLoop {mp : Program} {d : Nat} (fd : BitVec 64) (which : fd = 1 ∨ fd = 2) (slot : Nat) :
     ∀ (n : Nat) (E : Env) (H : Heap), (E (slot + 1)).toNat = n →
-      (0 < n → (E slot).toNat + n ≤ H.limit) → H.limit < 2 ^ 62 →
+      (0 < n → (E slot).toNat + n ≤ H.limit) → H.limit < 2 ^ 62 → H.limit ≤ H.top →
       ∃ E' events, Exec mp d E H (.loop (writeCond slot) (writeBody fd slot))
           (.normal E' { H with io := { trace := H.io.trace ++ events } }) ∧
         (∀ j, j < slot ∨ j = slot + 2 → E' j = E j) ∧
@@ -242,7 +242,7 @@ theorem writeLoop {mp : Program} {d : Nat} (fd : BitVec 64) (which : fd = 1 ∨ 
   intro n
   induction n using Nat.strongRecOn with
   | ind n ih =>
-    intro E H count inside small
+    intro E H count inside small topped
     rcases Nat.eq_zero_or_pos n with zero | pos
     · subst zero
       have done : (writeCond slot).eval E = 0 := by
@@ -288,7 +288,7 @@ theorem writeLoop {mp : Program} {d : Nat} (fd : BitVec 64) (which : fd = 1 ∨ 
           simp [E4, E3, E2, E1, set_get, Expr.eval, Word.apply, BinOp.apply]
         rw [this, BitVec.toNat_sub_of_le (by rw [BitVec.le_def, cnat, count]; exact cle), cnat, count]
       obtain ⟨E', events, loop, keep, outs⟩ := ih (n - c) (by omega) E4 H1 e4n
-        (fun _ => by rw [e4p]; simp only [H1]; omega) small
+        (fun _ => by rw [e4p]; simp only [H1]; omega) small topped
       refine ⟨E', Event.write fd.toNat (H.slice (E slot).toNat c) :: events, ?_, ?_, ?_⟩
       · have : ({ H1 with io := { trace := H1.io.trace ++ events } } : Heap) =
             { H with io := { trace := H.io.trace ++ Event.write fd.toNat (H.slice (E slot).toNat c) :: events } } := by
@@ -318,7 +318,7 @@ theorem writeLoop {mp : Program} {d : Nat} (fd : BitVec 64) (which : fd = 1 ∨ 
 bytes from the pointer, and `slot` holds the count as `i32`. -/
 theorem hostWrite_exec {mp : Program} {d : Nat} (fd : BitVec 64) (which : fd = 1 ∨ fd = 2) {E : Env} {H : Heap}
     (slot : Nat) (inside : 0 < (E (slot + 1)).toNat → (E slot).toNat + (E (slot + 1)).toNat ≤ H.limit)
-    (small : H.limit < 2 ^ 62) :
+    (small : H.limit < 2 ^ 62) (topped : H.limit ≤ H.top) :
     ∃ E' events, Exec mp d E H (hostWriteCode fd slot) (.normal E' { H with io := { trace := H.io.trace ++ events } }) ∧
       (∀ j < slot, E' j = E j) ∧ E' slot = widen (low (E (slot + 1))) ∧
       ∀ k, outputOf k events = if fd.toNat = k then H.slice (E slot).toNat (E (slot + 1)).toNat else [] := by
@@ -326,7 +326,7 @@ theorem hostWrite_exec {mp : Program} {d : Nat} (fd : BitVec 64) (which : fd = 1
   have e0p : E0 slot = E slot := by simp [E0, set_get]
   have e0n : E0 (slot + 1) = E (slot + 1) := by simp [E0, set_get]
   obtain ⟨E', events, loop, keep, outs⟩ := writeLoop (mp := mp) (d := d) fd which slot (E (slot + 1)).toNat E0 H
-    (by rw [e0n]) (by rw [e0p]; exact inside) small
+    (by rw [e0n]) (by rw [e0p]; exact inside) small topped
   refine ⟨E'.set slot ((Expr.binary .s32 .add (.var (slot + 2)) (.lit 0)).eval E'), events, ?_, ?_, ?_, ?_⟩
   · rw [hostWriteCode_eq]
     exact .seq (.assign (env := E)) (.seq loop .assign)

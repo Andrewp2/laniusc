@@ -1783,7 +1783,7 @@ theorem stops_letLoad {id : Nat} {pointer offset : SrcExpr} {body : SrcStmt} (ih
           have := b.toNat_lt
           exact ⟨by rw [Nat.mod_eq_of_lt (by omega)], by rw [Nat.mod_eq_of_lt (by omega)]; exact this⟩))
         hc within (fails.letBody valueRun)
-    exact ⟨_, Stops.after (.loadByte (depth := 0) room) stops⟩
+    exact ⟨_, Stops.after (.loadByte (depth := 0) (Nat.lt_of_lt_of_le room hc.topped)) stops⟩
 
 theorem stops_setByte {pointer offset value : SrcExpr} : SrcStops sp mp n (.setByte pointer offset value) := by
   intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
@@ -2054,7 +2054,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
           simp only [Env.set, if_pos, address, MemWidth.bytes]
           exact i32_load_holds (by simpa using lt32)))
         hc within (fails.letBody valueRun)
-    exact ⟨_, Stops.after (.loadWord (depth := 0) room) stops⟩
+    exact ⟨_, Stops.after (.loadWord (depth := 0) (Nat.le_trans room hc.topped)) stops⟩
   · have := fails (fi + 2 + 1)
     simp only [execStmt, trapRun, Failing] at this
     exact (trap_within this undefined within).elim
