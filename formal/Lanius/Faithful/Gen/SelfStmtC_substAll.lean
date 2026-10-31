@@ -21,8 +21,8 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_Stmt_facts_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepStmt x0 v0 → (RepList 176 RepFact) x1 v1 →
-    (RepList 176 RepFact) (Lanius.Mini.Stmt.factsAfter x0 x1) w
+  ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepStmt x0 v0 → (RepList 179 RepFact) x1 v1 →
+    (RepList 179 RepFact) (Lanius.Mini.Stmt.factsAfter x0 x1) w
 
 abbrev Stmt_Stmt_ignores (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepStmt x0 v0 → RepNat x1 v1 →
@@ -45,19 +45,19 @@ abbrev Stmt_Stmt_jumps (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     RepBool (Lanius.Mini.Stmt.jumps x0) w
 
 abbrev Stmt_assigned (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {x2 : Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 176 RepFact) x0 v0 → RepNat x1 v1 → RepExpr x2 v2 →
-    (RepList 176 RepFact) (Lanius.Mini.assigned x0 x1 x2) w
+  ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {x2 : Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 179 RepFact) x0 v0 → RepNat x1 v1 → RepExpr x2 v2 →
+    (RepList 179 RepFact) (Lanius.Mini.assigned x0 x1 x2) w
 
 abbrev Stmt_kill (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 176 RepFact) x0 v0 → RepNat x1 v1 →
-    (RepList 176 RepFact) (Lanius.Mini.kill x0 x1) w
+  ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 179 RepFact) x0 v0 → RepNat x1 v1 →
+    (RepList 179 RepFact) (Lanius.Mini.kill x0 x1) w
 
 abbrev Stmt_mentions_any (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Expr} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 91 RepExpr) x0 v0 → RepNat x1 v1 →
     RepBool (Lanius.Mini.mentionsAny x0 x1) w
 
 abbrev Stmt_subst_all (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Expr} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 91 RepExpr) x0 v0 → (RepList 176 RepFact) x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Expr} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 91 RepExpr) x0 v0 → (RepList 179 RepFact) x1 v1 →
     (RepList 91 RepExpr) (Lanius.Mini.substAll x0 x1) w
 
 end Lanius.Faithful.SelfCert

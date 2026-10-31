@@ -2,9 +2,9 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.callParts
-import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasConst
+import Lanius.Mini.Frontend.P.purePart
 import Lanius.Mini.Frontend.P.structHead
 import Lanius.Mini.Frontend.P.variantLetHead
 

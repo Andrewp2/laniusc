@@ -4,8 +4,8 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_ifEff
 public import Lanius.Faithful.Gen.SelfStmt5
-public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_ifEff
+public import Lanius.Faithful.Gen.SelfStmtF_purePart
 import all Lanius.Faithful.Gen.SelfSrcF_ifEff
 import all Lanius.Mini.Frontend.P.ifEff
 

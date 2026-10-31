@@ -13,8 +13,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
+public import Lanius.Faithful.Gen.SelfStmtF_purePart
 public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
-public import Lanius.Faithful.Gen.SelfStmtF_xDivideOf
 import all Lanius.Faithful.Gen.SelfSrcF_matchTysOrNone
 import all Lanius.Mini.Frontend.P.matchTysOrNone
 
@@ -107,10 +107,10 @@ theorem proof_eff_inferred {prog : SrcProgram} {prims : Prims} {ix_eff_inferred 
   simp only [src_eff_inferred] at h
   faithful [Lanius.Mini.effInferred]
 
-theorem proof_inst_bound {prog : SrcProgram} {prims : Prims} {ix_inst_bound ix_effs_tys ix_bound_or_none ix_bound_args ix_callee_env ix_inst_from ix_match_tys_or_none : Nat} (fn : prog.funcs[ix_inst_bound]? = some (src_inst_bound ix_effs_tys ix_bound_or_none ix_bound_args ix_callee_env ix_inst_from ix_match_tys_or_none)) (np : prims.isPrim ix_inst_bound = false)
-    (ext_effs_tys : Certified (∀ {n : Nat}, Stmt_effs_tys prog prims ix_effs_tys n))
+theorem proof_inst_bound {prog : SrcProgram} {prims : Prims} {ix_inst_bound ix_bound_or_none ix_bound_args ix_effs_tys ix_callee_env ix_inst_from ix_match_tys_or_none : Nat} (fn : prog.funcs[ix_inst_bound]? = some (src_inst_bound ix_bound_or_none ix_bound_args ix_effs_tys ix_callee_env ix_inst_from ix_match_tys_or_none)) (np : prims.isPrim ix_inst_bound = false)
     (ext_bound_or_none : Certified (∀ {n : Nat}, Stmt_bound_or_none prog prims ix_bound_or_none n))
     (ext_bound_args : Certified (∀ {n : Nat}, Stmt_bound_args prog prims ix_bound_args n))
+    (ext_effs_tys : Certified (∀ {n : Nat}, Stmt_effs_tys prog prims ix_effs_tys n))
     (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
     (ext_inst_from : Certified (∀ {n : Nat}, Stmt_inst_from prog prims ix_inst_from n))
     (ext_match_tys_or_none : Certified (∀ {n : Nat}, Stmt_match_tys_or_none prog prims ix_match_tys_or_none n)) {n : Nat} :

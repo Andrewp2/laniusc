@@ -8,7 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
-public import Lanius.Faithful.Gen.SelfStmtF_enumsNamedOk
+public import Lanius.Faithful.Gen.SelfStmtF_constNamesIn
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_itemOf

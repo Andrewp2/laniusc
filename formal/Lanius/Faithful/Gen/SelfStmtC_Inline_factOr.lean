@@ -21,39 +21,39 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_branch_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (BitVec 64)} {x1 : Lanius.Mini.Stmt} {x2 : Lanius.Mini.Stmt} {x3 : List Lanius.Mini.Fact} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepOption 197 RepU64) x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 → (RepList 176 RepFact) x3 v3 → RepStmt x4 v4 →
+  ∀ {x0 : Option (BitVec 64)} {x1 : Lanius.Mini.Stmt} {x2 : Lanius.Mini.Stmt} {x3 : List Lanius.Mini.Fact} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepOption 200 RepU64) x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 → (RepList 179 RepFact) x3 v3 → RepStmt x4 v4 →
     RepBool (Lanius.Mini.Inline.branchAgrees x0 x1 x2 x3 x4) w
 
 abbrev Stmt_dead_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 176 RepFact) x2 v2 → RepStmt x3 v3 →
+  ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 179 RepFact) x2 v2 → RepStmt x3 v3 →
     RepBool (Lanius.Mini.Inline.deadAgrees x0 x1 x2 x3) w
 
 abbrev Stmt_fact_or (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFact x0 v0 → RepNat x1 v1 → (RepList 176 RepFact) x2 v2 →
+  ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFact x0 v0 → RepNat x1 v1 → (RepList 179 RepFact) x2 v2 →
     RepExpr (Lanius.Mini.Inline.factOr x0 x1 x2) w
 
 abbrev Stmt_ite_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Expr} {x1 : Lanius.Mini.Stmt} {x2 : Lanius.Mini.Stmt} {x3 : List Lanius.Mini.Fact} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepExpr x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 → (RepList 176 RepFact) x3 v3 → RepStmt x4 v4 →
+  ∀ {x0 : Lanius.Mini.Expr} {x1 : Lanius.Mini.Stmt} {x2 : Lanius.Mini.Stmt} {x3 : List Lanius.Mini.Fact} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepExpr x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 → (RepList 179 RepFact) x3 v3 → RepStmt x4 v4 →
     RepBool (Lanius.Mini.Inline.iteAgrees x0 x1 x2 x3 x4) w
 
 abbrev Stmt_kept (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFact x0 v0 → RepNat x1 v1 → (RepList 176 RepFact) x2 v2 →
-    (RepList 176 RepFact) (Lanius.Mini.Inline.kept x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFact x0 v0 → RepNat x1 v1 → (RepList 179 RepFact) x2 v2 →
+    (RepList 179 RepFact) (Lanius.Mini.Inline.kept x0 x1 x2) w
 
 abbrev Stmt_loop_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {x1 : Lanius.Mini.Stmt} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepExpr x0 v0 → RepStmt x1 v1 → RepStmt x2 v2 →
     RepBool (Lanius.Mini.Inline.loopAgrees x0 x1 x2) w
 
 abbrev Stmt_optimize_sequence (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 176 RepFact) x2 v2 →
+  ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 179 RepFact) x2 v2 →
     RepStmt (Lanius.Mini.Inline.optimizeSequence x0 x1 x2) w
 
 abbrev Stmt_seq_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 176 RepFact) x2 v2 → RepStmt x3 v3 →
+  ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 179 RepFact) x2 v2 → RepStmt x3 v3 →
     RepBool (Lanius.Mini.Inline.seqAgrees x0 x1 x2 x3) w
 
 abbrev Stmt_unknown (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (BitVec 64)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 197 RepU64) x0 v0 →
+  ∀ {x0 : Option (BitVec 64)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 200 RepU64) x0 v0 →
     RepBool (Lanius.Mini.Inline.unknown x0) w
 
 end Lanius.Faithful.SelfCert

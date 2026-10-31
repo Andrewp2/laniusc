@@ -50,6 +50,10 @@ theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_Func {prog : SrcProgram}
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Func prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Func n :=
   fun h r => prim_cert np h r
 
+theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl = true) {n : Nat} :
+    Stmt_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl n :=
+  fun h r => prim_cert np h r
+
 theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_Instr {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_Instr : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_Instr = true) {n : Nat} :
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Instr prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Instr n :=
   fun h r => prim_cert np h r
@@ -219,6 +223,24 @@ theorem proof_field_aliases_Decls_of_mini_selfhost_Decls {prog : SrcProgram} {pr
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_field_aliases_Decls_of_mini_selfhost_Decls] at h
+  faithful []
+
+theorem proof_field_args_TraitRef_of_mini_selfhost_TraitRef {prog : SrcProgram} {prims : Prims} {ix_field_args_TraitRef_of_mini_selfhost_TraitRef : Nat} (fn : prog.funcs[ix_field_args_TraitRef_of_mini_selfhost_TraitRef]? = some (src_field_args_TraitRef_of_mini_selfhost_TraitRef)) (np : prims.isPrim ix_field_args_TraitRef_of_mini_selfhost_TraitRef = false) {n : Nat} :
+    Stmt_field_args_TraitRef_of_mini_selfhost_TraitRef prog prims ix_field_args_TraitRef_of_mini_selfhost_TraitRef n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_field_args_TraitRef_of_mini_selfhost_TraitRef] at h
+  faithful []
+
+theorem proof_field_impls_Decls_of_mini_selfhost_Decls {prog : SrcProgram} {prims : Prims} {ix_field_impls_Decls_of_mini_selfhost_Decls : Nat} (fn : prog.funcs[ix_field_impls_Decls_of_mini_selfhost_Decls]? = some (src_field_impls_Decls_of_mini_selfhost_Decls)) (np : prims.isPrim ix_field_impls_Decls_of_mini_selfhost_Decls = false) {n : Nat} :
+    Stmt_field_impls_Decls_of_mini_selfhost_Decls prog prims ix_field_impls_Decls_of_mini_selfhost_Decls n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_field_impls_Decls_of_mini_selfhost_Decls] at h
   faithful []
 
 theorem step_get_of_mini_selfhost_Expr {prog : SrcProgram} {prims : Prims} {ix_get_of_mini_selfhost_Expr ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_get_of_mini_selfhost_Expr]? = some (src_get_of_mini_selfhost_Expr ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_Expr ix_get_of_mini_selfhost_Expr)) (np : prims.isPrim ix_get_of_mini_selfhost_Expr = false)

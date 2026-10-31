@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::optimize_neg -/
-def src_optimize_neg (ix_boxed_of_mini_selfhost_Expr : Nat) (ix_Expr_literal : Nat) (ix_low_bits : Nat) : SrcFunc := { params := [{ id := 13, ty := ty91 }], ret := ty91, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_Expr_literal [SrcEff.ePure (SrcExpr.local 13)]) ty225 ty91 [[90], []] [SrcEff.eVariant ty91 0 [SrcEff.eCall ix_low_bits [SrcEff.ePure (SrcExpr.apply (SrcOp.minus) (SrcExpr.unsigned (UintTy.uint64) 0x0000000000000000#64) (SrcExpr.local 90))]], SrcEff.eVariant ty91 2 [SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.ePure (SrcExpr.local 13)]]]) }
+def src_optimize_neg (ix_boxed_of_mini_selfhost_Expr : Nat) (ix_Expr_literal : Nat) (ix_low_bits : Nat) : SrcFunc := { params := [{ id := 13, ty := ty91 }], ret := ty91, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_Expr_literal [SrcEff.ePure (SrcExpr.local 13)]) ty228 ty91 [[90], []] [SrcEff.eVariant ty91 0 [SrcEff.eCall ix_low_bits [SrcEff.ePure (SrcExpr.apply (SrcOp.minus) (SrcExpr.unsigned (UintTy.uint64) 0x0000000000000000#64) (SrcExpr.local 90))]], SrcEff.eVariant ty91 2 [SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.ePure (SrcExpr.local 13)]]]) }
 
 end
 

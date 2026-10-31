@@ -21,15 +21,15 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_arm_body_scope (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Nat} {x2 : Lanius.Mini.SrcType} {x3 : Nat} {x4 : List Lanius.Mini.Binding} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepBool x0 v0 → RepNat x1 v1 → RepSrcType x2 v2 → RepNat x3 v3 → (RepList 131 RepBinding) x4 v4 →
-    (RepList 131 RepBinding) (Lanius.Mini.armBodyScope x0 x1 x2 x3 x4) w
+  ∀ {x0 : Bool} {x1 : Nat} {x2 : Lanius.Mini.SrcType} {x3 : Nat} {x4 : List Lanius.Mini.Binding} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepBool x0 v0 → RepNat x1 v1 → RepSrcType x2 v2 → RepNat x3 v3 → (RepList 134 RepBinding) x4 v4 →
+    (RepList 134 RepBinding) (Lanius.Mini.armBodyScope x0 x1 x2 x3 x4) w
 
 abbrev Stmt_field_payload (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Option (List Lanius.Mini.Expr)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 146 (RepList 91 RepExpr)) x1 v1 →
-    (RepOption 146 (RepList 91 RepExpr)) (Lanius.Mini.fieldPayload x0 x1) w
+  ∀ {x0 : Bool} {x1 : Option (List Lanius.Mini.Expr)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 149 (RepList 91 RepExpr)) x1 v1 →
+    (RepOption 149 (RepList 91 RepExpr)) (Lanius.Mini.fieldPayload x0 x1) w
 
 abbrev Stmt_unit_payload (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepBool x0 v0 →
-    (RepOption 146 (RepList 91 RepExpr)) (Lanius.Mini.unitPayload x0) w
+    (RepOption 149 (RepList 91 RepExpr)) (Lanius.Mini.unitPayload x0) w
 
 end Lanius.Faithful.SelfCert

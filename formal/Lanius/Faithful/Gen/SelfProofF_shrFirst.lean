@@ -8,7 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_attachParent
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pWhileStmt
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBoundTypeArgsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfStmtF_shrFirst
 import all Lanius.Faithful.Gen.SelfSrcF_shrFirst
 import all Lanius.Mini.Frontend.P.shrFirst

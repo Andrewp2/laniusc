@@ -7,10 +7,10 @@ public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_callParts
-public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasConst
 public import Lanius.Faithful.Gen.SelfStmtF_matchLetHead
+public import Lanius.Faithful.Gen.SelfStmtF_purePart
 public import Lanius.Faithful.Gen.SelfStmtF_structHead
 public import Lanius.Faithful.Gen.SelfStmtF_variantLetHead
 import all Lanius.Faithful.Gen.SelfSrcF_matchLetHead

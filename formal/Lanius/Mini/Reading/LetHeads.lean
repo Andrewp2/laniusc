@@ -250,11 +250,11 @@ theorem variantByPath_sound {env : FrontEnv} {s : Split} {v : VariantAt} (h : va
 /-- A path names a function: its prefix names a type, or it names a free
 function. -/
 def IsFnPath (env : FrontEnv) (front : ModPath) (name : Name) : Prop :=
-  (∃ n, TypeOwner env front n) ∨ ∃ d, FnNamed env.decls (pathHome env.decls env.home front name) name d
+  TypeOwner env front name ∨ ∃ d, FnNamed env.decls (pathHome env.decls env.home front name) name d
 
 theorem isFnPath_iff (env : FrontEnv) (s : Split) : isFnPath env s = true ↔ IsFnPath env s.home s.name := by
   unfold isFnPath IsFnPath
-  rw [Bool.or_eq_true, isTypeParam_iff, ← pathModule_eq]
+  rw [Bool.or_eq_true, isTypeOwner_iff, ← pathModule_eq]
   apply or_congr Iff.rfl
   cases hf : findFn env.decls.fns (pathModule env s.home s.name) s.name 0 with
   | none =>

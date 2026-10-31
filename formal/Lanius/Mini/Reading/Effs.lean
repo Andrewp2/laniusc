@@ -238,16 +238,16 @@ inductive EffPathCall (env : FrontEnv) : List Local → Option Ty → CTree → 
 function at type arguments inferred or written, or a variant. -/
 inductive EffNamed (env : FrontEnv) : List Local → Option Ty → ModPath → Name → List CTree → List CTree → MEff → Prop
   | static {scope : List Local} {expected : Option Ty} {front : ModPath} {name : Name} {targs items : List CTree}
-      {n : Name} {t : Ty} {found : Found} {fd : FnDecl} {x : MEff} : TypeOwner env front n → targs = [] →
-      OwnerTy env n t → MethodFor env.decls env.decls.fns 0 name t found → env.decls.fns[found.decl]? = some fd →
+      {t : Ty} {found : Found} {fd : FnDecl} {x : MEff} : TypeOwner env front name → targs = [] →
+      BareTy env front t → MethodFor env.decls env.decls.fns 0 name t found → env.decls.fns[found.decl]? = some fd →
       EffInfer env scope expected found.decl fd found.binds [] items x → EffNamed env scope expected front name targs items x
   | infer {scope : List Local} {expected : Option Ty} {front : ModPath} {name : Name} {targs items : List CTree}
-      {d : Nat} {fd : FnDecl} {x : MEff} : ¬(∃ n, TypeOwner env front n ∧ targs = []) →
+      {d : Nat} {fd : FnDecl} {x : MEff} : ¬(TypeOwner env front name ∧ targs = []) →
       FnNamed env.decls (pathHome env.decls env.home front name) name d → env.decls.fns[d]? = some fd → targs = [] →
       EffInfer env scope expected d fd [] [] items x → EffNamed env scope expected front name targs items x
   | explicit {scope : List Local} {expected : Option Ty} {front : ModPath} {name : Name} {targs items : List CTree}
       {d : Nat} {fd : FnDecl} {i : Inst} {ts : List Ty} {xs : List MEff} :
-      ¬(∃ n, TypeOwner env front n ∧ targs = []) → FnNamed env.decls (pathHome env.decls env.home front name) name d →
+      ¬(TypeOwner env front name ∧ targs = []) → FnNamed env.decls (pathHome env.decls env.home front name) name d →
       env.decls.fns[d]? = some fd → targs ≠ [] → ExplicitInst env d fd targs i →
       ParamExpects env.decls fd i.args ts → EffList env scope (some ts) items xs →
       EffNamed env scope expected front name targs items (.xCall i xs)
@@ -609,27 +609,6 @@ theorem effCasts_sound {env : FrontEnv} : ∀ {fuel : Nat} {acc : Option MEff} {
           exact ⟨a, rfl, .step ((hasKids_iff _).1 hk) (castTypeOf_sound hs) hb rest⟩
     · rename_i hk
       exact ⟨x, h, .done (hasKids_false (by simpa using hk))⟩
-
-theorem ownerTy_sound {env : FrontEnv} {n : Name} {t : Ty} (h : ownerTy env (some n) = some t) : OwnerTy env n t := by
-  simp only [ownerTy] at h
-  cases hp : paramTy env n with
-  | some t' =>
-    rw [hp] at h
-    simp only [Option.some.injEq] at h
-    subst h
-    exact .inl (paramTy_sound hp)
-  | none =>
-    rw [hp] at h
-    simp only [primOrNamed] at h
-    rw [primTy_eq] at h
-    cases hq : primTys.lookup n with
-    | some t' =>
-      rw [hq] at h
-      exact .inr (.inl ⟨paramTy_none hp, hq.trans h⟩)
-    | none =>
-      rw [hq] at h
-      obtain ⟨d, at', ar, rfl⟩ := namedOf_sound h
-      exact .inr (.inr ⟨paramTy_none hp, hq, d, at', ar, rfl⟩)
 
 theorem effBinary_some {p : Nat} {acc r : Option MEff} {b : MEff} (h : effBinary p acc r = some b) :
     ∃ a x, acc = some a ∧ r = some x := by
@@ -1213,16 +1192,14 @@ theorem effSound : ∀ fuel, EffSound fuel
       split at h
       · rename_i c
         simp only [Bool.and_eq_true] at c
-        obtain ⟨n, own⟩ := (isTypeParam_iff env s.home).1 c.1
-        have hs : singleName s.home = some n := by rw [own.1]; rfl
-        rw [hs] at h
-        cases ho : ownerTy env (some n) with
+        have own := (isTypeOwner_iff env s.home s.name).1 c.1
+        cases ho : bareTy env s.home with
         | none => rw [ho] at h; cases h
         | some t =>
           rw [ho] at h
           simp only at h
           obtain ⟨fo, fd, hfo, hfd, inf⟩ := ihFound h
-          exact .static own ((noTrees_iff _).1 c.2) (ownerTy_sound ho) (findMethod_sound hfo) hfd inf
+          exact .static own ((noTrees_iff _).1 c.2) (bareTy_sound.1 ho) (findMethod_sound hfo) hfd inf
       · rename_i c
         cases hf : findFn env.decls.fns (pathModule env s.home s.name) s.name 0 with
         | none => rw [hf] at h; cases h
@@ -1234,9 +1211,9 @@ theorem effSound : ∀ fuel, EffSound fuel
           | some fd =>
             rw [hd] at h
             simp only at h
-            have no : ¬(∃ n, TypeOwner env s.home n ∧ targs = []) := fun ⟨n, own, e⟩ => c (by
+            have no : ¬(TypeOwner env s.home s.name ∧ targs = []) := fun ⟨own, e⟩ => c (by
               simp only [Bool.and_eq_true]
-              exact ⟨(isTypeParam_iff env s.home).2 ⟨n, own⟩, (noTrees_iff _).2 e⟩)
+              exact ⟨(isTypeOwner_iff env s.home s.name).2 own, (noTrees_iff _).2 e⟩)
             have fn : FnNamed env.decls (pathHome env.decls env.home s.home s.name) s.name d := by
               rw [← pathModule_eq]; exact findFn_sound hf
             rcases ihFree h with ⟨nt, inf⟩ | ⟨nt, i, E, xs, ei, hE, el, rfl⟩

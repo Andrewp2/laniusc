@@ -21,31 +21,31 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_diverge_func (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MFunc} {x1 : Lanius.Mini.Inst} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 195 RepMFunc) x0 v0 → RepInst x1 v1 →
-    (RepOption 195 RepMFunc) (Lanius.Mini.divergeFunc x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.MFunc} {x1 : Lanius.Mini.Inst} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 198 RepMFunc) x0 v0 → RepInst x1 v1 →
+    (RepOption 198 RepMFunc) (Lanius.Mini.divergeFunc x0 x1) w
 
 abbrev Stmt_if_not_writes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Lanius.Mini.MFunc} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepMFunc x1 v1 →
-    (RepOption 195 RepMFunc) (Lanius.Mini.ifNotWrites x0 x1) w
+    (RepOption 198 RepMFunc) (Lanius.Mini.ifNotWrites x0 x1) w
 
 abbrev Stmt_param_effs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.MParam} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 165 RepMParam) x0 v0 →
-    (RepList 224 RepMEff) (Lanius.Mini.paramEffs x0) w
+  ∀ {x0 : List Lanius.Mini.MParam} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 168 RepMParam) x0 v0 →
+    (RepList 227 RepMEff) (Lanius.Mini.paramEffs x0) w
 
 abbrev Stmt_projection_func (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Lanius.Mini.Inst} {x2 : Lanius.Mini.Decls} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 203 RepTy) x0 v0 → RepInst x1 v1 → RepDecls x2 v2 →
-    (RepOption 195 RepMFunc) (Lanius.Mini.projectionFunc x0 x1 x2) w
+  ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Lanius.Mini.Inst} {x2 : Lanius.Mini.Decls} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 206 RepTy) x0 v0 → RepInst x1 v1 → RepDecls x2 v2 →
+    (RepOption 198 RepMFunc) (Lanius.Mini.projectionFunc x0 x1 x2) w
 
 abbrev Stmt_read_fn (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 137 RepTy) x3 v3 →
-    (RepOption 195 RepMFunc) (Lanius.Mini.readFn x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 140 RepTy) x3 v3 →
+    (RepOption 198 RepMFunc) (Lanius.Mini.readFn x0 x1 x2 x3) w
 
 abbrev Stmt_ref_checked (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MFunc} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 195 RepMFunc) x0 v0 → (RepOption 201 RepNat) x1 v1 →
-    (RepOption 195 RepMFunc) (Lanius.Mini.refChecked x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.MFunc} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 198 RepMFunc) x0 v0 → (RepOption 204 RepNat) x1 v1 →
+    (RepOption 198 RepMFunc) (Lanius.Mini.refChecked x0 x1) w
 
 abbrev Stmt_self_ref_id (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepList 81 RepCTree) x1 v1 →
-    (RepOption 201 RepNat) (Lanius.Mini.selfRefId x0 x1) w
+    (RepOption 204 RepNat) (Lanius.Mini.selfRefId x0 x1) w
 
 end Lanius.Faithful.SelfCert

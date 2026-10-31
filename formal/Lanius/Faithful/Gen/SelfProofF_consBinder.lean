@@ -11,8 +11,8 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
+public import Lanius.Faithful.Gen.SelfStmtF_constNamesIn
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
-public import Lanius.Faithful.Gen.SelfStmtF_enumsNamedOk
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_noToken

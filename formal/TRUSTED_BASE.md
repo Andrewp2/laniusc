@@ -306,8 +306,10 @@ still a parse tree of the same tokens. Trusted:
   - each file is a module, named by its `module` item (the empty path
     without one); `m::x` names `x` of the module `m`, a bare `x` names `x`
     of the current module; `import m;` only adds m's variants to those a
-    bare variant name may mean, and traits, type aliases with a `where`
-    clause and extern functions are skipped, except that an `extern
+    bare variant name may mean, and trait declarations, type aliases with
+    a `where` clause and extern functions are skipped (a trait impl's
+    methods are functions, and the impl itself is kept for the bounds,
+    `Decls.impls`), except that an `extern
     "lanius_std" fn` named `write_byte`, `write_stdout` or `write_stderr`
     (`hostExtern`) is a function whose instance returns the call of that
     host service on its parameters, `ECall(2^32 + k, params)` (`ReadExtern`;
@@ -343,11 +345,16 @@ still a parse tree of the same tokens. Trusted:
   - `x.f` is `Field` when `x` is a local, and otherwise the call of the
     projection `fn(v: T) -> F { return v.f; }` on `x`, an instance numbered
     like any other;
-  - bounds and `where` clauses on functions are not checked. A wrong
-    instance is still a well-formed `SrcProgram`, and its meaning is what
-    `toCore` gives it, so this choice affects which programs are read, not
-    what a read program means; an `impl` or type with a `where` clause is
-    rejected;
+  - bounds and `where` clauses (F7, 10-31) are checked on each function
+    instance (`FnBound`, `Implements`, `Reading/Bounds.lean`; a method's
+    impl's too): the type a bounded type parameter stands for must have an
+    impl of the bound's trait at its arguments, an `impl<P..> Tr<..> for S`
+    whose trait and type read as the bound's for some P.., with its own
+    bounds holding there. A trait is the module and spelling its path
+    resolves to (as a type path's) with its type arguments; there are no
+    implicit impls. This decides which programs are read, not what a read
+    program means. A struct, enum or alias with a `where` clause or a
+    bounded type parameter is not read (`FreeParams`);
   - a type parameter that no field or payload uses (a phantom) still makes
     distinct instances, but they lower to the same field types;
   - a constant is replaced by its value, which must be a literal of its
@@ -416,10 +423,13 @@ still a parse tree of the same tokens. Trusted:
     method that writes `self` is not read (10-31, `writesLocal`,
     `refChecked`, `ReadFn`); while nothing writes through it, the reference
     and the value read the same, as no other code runs during the call;
-  - `S::m(args)` for a struct S of the current module (added 10-30) is read
-    as `T::m` is for a type parameter bound to S: the one method spelled m
-    of an impl whose type matches S (`TypeOwner`, `OwnerTy`); an enum's
-    path still names its variants;
+  - `S::m(args)` (added 10-30; enums and qualified paths 10-31, F7), where
+    S names, as a type path resolved like any other (the current module's,
+    an item import's, or `p::S`), a struct, or an enum with no variant
+    spelled m, is read as `T::m` is for a type parameter bound to S: the
+    one method spelled m of an impl whose type matches S read without type
+    arguments (`TypeOwner`, `BareTy`); `E::V(args)` for a variant V of E
+    still names the variant;
   - `0` where a `ptr` is expected (a `let`, a parameter, an operand beside a
     `ptr`, a `ptr` constant) is `Null`, Core's null pointer;
   - a match arm whose value calls a `-> !` function g, in a match of value

@@ -29,6 +29,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 public import Lanius.Faithful.Gen.SelfStmtF_monoLoop
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
+public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
 public import Lanius.Faithful.Gen.SelfStmtF_sintAt
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf

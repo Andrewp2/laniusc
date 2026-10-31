@@ -22,6 +22,6 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_self_ref_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → RepCTree x1 v1 →
-    (RepOption 201 RepNat) (Lanius.Mini.selfRefOf x0 x1) w
+    (RepOption 204 RepNat) (Lanius.Mini.selfRefOf x0 x1) w
 
 end Lanius.Faithful.SelfCert

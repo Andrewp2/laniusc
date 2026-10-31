@@ -14,13 +14,13 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::arith_sint -/
-def src_arith_sint (ix_arith_signed_of : Nat) : SrcFunc := { params := [{ id := 11, ty := ty52 }, { id := 29, ty := ty169 }, { id := 42, ty := ty169 }, { id := 56, ty := ty229 }], ret := ty170, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 56)) ty229 ty170 [[186], []] [SrcEff.eCall ix_arith_signed_of [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.local 29), SrcEff.ePure (SrcExpr.local 42), SrcEff.ePure (SrcExpr.local 186)], SrcEff.eVariant ty170 1 []]) }
+def src_arith_sint (ix_arith_signed_of : Nat) : SrcFunc := { params := [{ id := 11, ty := ty52 }, { id := 29, ty := ty172 }, { id := 42, ty := ty172 }, { id := 56, ty := ty232 }], ret := ty173, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 56)) ty232 ty173 [[186], []] [SrcEff.eCall ix_arith_signed_of [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.local 29), SrcEff.ePure (SrcExpr.local 42), SrcEff.ePure (SrcExpr.local 186)], SrcEff.eVariant ty173 1 []]) }
 
 /-- mini::selfhost::arith_uint -/
-def src_arith_uint (ix_arith_of : Nat) : SrcFunc := { params := [{ id := 11, ty := ty52 }, { id := 29, ty := ty169 }, { id := 42, ty := ty169 }, { id := 56, ty := ty229 }], ret := ty170, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 56)) ty229 ty170 [[186], []] [SrcEff.eCall ix_arith_of [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.local 29), SrcEff.ePure (SrcExpr.local 42), SrcEff.ePure (SrcExpr.local 186)], SrcEff.eVariant ty170 1 []]) }
+def src_arith_uint (ix_arith_of : Nat) : SrcFunc := { params := [{ id := 11, ty := ty52 }, { id := 29, ty := ty172 }, { id := 42, ty := ty172 }, { id := 56, ty := ty232 }], ret := ty173, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 56)) ty232 ty173 [[186], []] [SrcEff.eCall ix_arith_of [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.local 29), SrcEff.ePure (SrcExpr.local 42), SrcEff.ePure (SrcExpr.local 186)], SrcEff.eVariant ty173 1 []]) }
 
 /-- mini::selfhost::float_op -/
-def src_float_op : SrcFunc := { params := [{ id := 9, ty := ty52 }], ret := ty289, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 9)) ty52 ty289 [[], [], [], [], [], [], [], [], []] [SrcEff.eVariant ty289 0 [SrcEff.eVariant ty56 0 []], SrcEff.eVariant ty289 0 [SrcEff.eVariant ty56 1 []], SrcEff.eVariant ty289 0 [SrcEff.eVariant ty56 2 []], SrcEff.eVariant ty289 1 [], SrcEff.eVariant ty289 1 [], SrcEff.eVariant ty289 1 [], SrcEff.eVariant ty289 1 [], SrcEff.eVariant ty289 1 [], SrcEff.eVariant ty289 1 []]) }
+def src_float_op : SrcFunc := { params := [{ id := 9, ty := ty52 }], ret := ty298, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 9)) ty52 ty298 [[], [], [], [], [], [], [], [], []] [SrcEff.eVariant ty298 0 [SrcEff.eVariant ty56 0 []], SrcEff.eVariant ty298 0 [SrcEff.eVariant ty56 1 []], SrcEff.eVariant ty298 0 [SrcEff.eVariant ty56 2 []], SrcEff.eVariant ty298 1 [], SrcEff.eVariant ty298 1 [], SrcEff.eVariant ty298 1 [], SrcEff.eVariant ty298 1 [], SrcEff.eVariant ty298 1 [], SrcEff.eVariant ty298 1 []]) }
 
 end
 

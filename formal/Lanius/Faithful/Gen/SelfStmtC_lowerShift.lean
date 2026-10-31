@@ -22,6 +22,6 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lower_shift (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    (RepOption 150 RepTyped) (Lanius.Mini.lowerShift x0 x1 x2) w
+    (RepOption 153 RepTyped) (Lanius.Mini.lowerShift x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

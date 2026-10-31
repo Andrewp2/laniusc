@@ -21,15 +21,15 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_build_checked (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Collected} {x2 : List Lanius.Mini.Inst} {x3 : List Lanius.Mini.Inst} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepCollected x1 v1 → (RepList 135 RepInst) x2 v2 → (RepList 135 RepInst) x3 v3 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Collected} {x2 : List Lanius.Mini.Inst} {x3 : List Lanius.Mini.Inst} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepCollected x1 v1 → (RepList 138 RepInst) x2 v2 → (RepList 138 RepInst) x3 v3 →
     (RepOption 3 RepSrcProgram) (Lanius.Mini.buildChecked x0 x1 x2 x3) w
 
 abbrev Stmt_build_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Option (List Lanius.Mini.Inst)} {x4 : List Lanius.Mini.MFunc} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 135 RepInst) x2 v2 → (RepOption 190 (RepList 135 RepInst)) x3 v3 → (RepList 163 RepMFunc) x4 v4 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Option (List Lanius.Mini.Inst)} {x4 : List Lanius.Mini.MFunc} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 138 RepInst) x2 v2 → (RepOption 193 (RepList 138 RepInst)) x3 v3 → (RepList 166 RepMFunc) x4 v4 →
     (RepOption 3 RepSrcProgram) (Lanius.Mini.buildClosed x0 x1 x2 x3 x4) w
 
 abbrev Stmt_build_collected (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FileDecls} {x2 : Option Lanius.Mini.Collected} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFileDecls x1 v1 → (RepOption 128 RepCollected) x2 v2 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FileDecls} {x2 : Option Lanius.Mini.Collected} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFileDecls x1 v1 → (RepOption 131 RepCollected) x2 v2 →
     (RepOption 3 RepSrcProgram) (Lanius.Mini.buildCollected x0 x1 x2) w
 
 abbrev Stmt_build_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -37,11 +37,11 @@ abbrev Stmt_build_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 3 RepSrcProgram) (Lanius.Mini.buildFiles x0 x1) w
 
 abbrev Stmt_build_mono (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Option Lanius.Mini.Mono} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 135 RepInst) x2 v2 → (RepOption 161 RepMono) x3 v3 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Option Lanius.Mini.Mono} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 138 RepInst) x2 v2 → (RepOption 164 RepMono) x3 v3 →
     (RepOption 3 RepSrcProgram) (Lanius.Mini.buildMono x0 x1 x2 x3) w
 
 abbrev Stmt_cons_root (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 124 RepCTree) x0 v0 → (RepOption 80 (RepList 81 RepCTree)) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 127 RepCTree) x0 v0 → (RepOption 80 (RepList 81 RepCTree)) x1 v1 →
     (RepOption 80 (RepList 81 RepCTree)) (Lanius.Mini.consRoot x0 x1) w
 
 abbrev Stmt_files_fuel (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

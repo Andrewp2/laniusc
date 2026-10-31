@@ -22,11 +22,11 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_args_segment (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → (RepOption 80 (RepList 81 RepCTree)) x1 v1 →
-    (RepOption 256 RepPathRef) (Lanius.Mini.argsSegment x0 x1) w
+    (RepOption 270 RepPathRef) (Lanius.Mini.argsSegment x0 x1) w
 
 abbrev Stmt_cons_segment (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Option Lanius.Mini.PathRef} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → (RepOption 256 RepPathRef) x1 v1 →
-    (RepOption 256 RepPathRef) (Lanius.Mini.consSegment x0 x1) w
+  ∀ {x0 : List Nat} {x1 : Option Lanius.Mini.PathRef} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → (RepOption 270 RepPathRef) x1 v1 →
+    (RepOption 270 RepPathRef) (Lanius.Mini.consSegment x0 x1) w
 
 abbrev Stmt_no_trees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 81 RepCTree) x0 v0 →
@@ -34,10 +34,10 @@ abbrev Stmt_no_trees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_path_name (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
-    (RepOption 189 (RepList 25 RepNat)) (Lanius.Mini.pathName x0) w
+    (RepOption 192 (RepList 25 RepNat)) (Lanius.Mini.pathName x0) w
 
 abbrev Stmt_path_spellings (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepCTree x1 v1 → RepCTree x2 v2 →
-    (RepOption 134 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.pathSpellings x0 x1 x2) w
+    (RepOption 137 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.pathSpellings x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

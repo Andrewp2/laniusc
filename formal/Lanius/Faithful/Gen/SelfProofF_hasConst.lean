@@ -14,17 +14,18 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_armsOf
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_consTys
-public import Lanius.Faithful.Gen.SelfStmtF_enumsNamedOk
+public import Lanius.Faithful.Gen.SelfStmtF_constNamesIn
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_hasConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
+public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
+public import Lanius.Faithful.Gen.SelfStmtF_purePart
 public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
 public import Lanius.Faithful.Gen.SelfStmtF_scalarOf
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
-public import Lanius.Faithful.Gen.SelfStmtF_xDivideOf
 import all Lanius.Faithful.Gen.SelfSrcF_hasConst
 import all Lanius.Mini.Frontend.P.hasConst
 
@@ -55,16 +56,16 @@ theorem proof_arm_eff {prog : SrcProgram} {prims : Prims} {ix_arm_eff ix_eff_ty 
   simp only [src_arm_eff] at h
   faithful [Lanius.Mini.armEff]
 
-theorem proof_decl_inst {prog : SrcProgram} {prims : Prims} {ix_decl_inst ix_empty_of_mini_selfhost_List_usize ix_empty_of_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_Ty ix_decl_env ix_effs_tys ix_named_inferred ix_bound_or_none ix_match_tys ix_empty_of_mini_selfhost_Bind : Nat} (fn : prog.funcs[ix_decl_inst]? = some (src_decl_inst ix_empty_of_mini_selfhost_List_usize ix_empty_of_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_Ty ix_decl_env ix_effs_tys ix_named_inferred ix_bound_or_none ix_match_tys ix_empty_of_mini_selfhost_Bind)) (np : prims.isPrim ix_decl_inst = false)
+theorem proof_decl_inst {prog : SrcProgram} {prims : Prims} {ix_decl_inst ix_empty_of_mini_selfhost_List_usize ix_empty_of_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_Ty ix_decl_env ix_empty_of_mini_selfhost_Bind ix_bound_or_none ix_effs_tys ix_named_inferred ix_match_tys : Nat} (fn : prog.funcs[ix_decl_inst]? = some (src_decl_inst ix_empty_of_mini_selfhost_List_usize ix_empty_of_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_Ty ix_decl_env ix_empty_of_mini_selfhost_Bind ix_bound_or_none ix_effs_tys ix_named_inferred ix_match_tys)) (np : prims.isPrim ix_decl_inst = false)
     (ext_empty_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_List_usize prog prims ix_empty_of_mini_selfhost_List_usize n))
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Ty n))
     (ext_decl_env : Certified (∀ {n : Nat}, Stmt_decl_env prog prims ix_decl_env n))
+    (ext_empty_of_mini_selfhost_Bind : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Bind prog prims ix_empty_of_mini_selfhost_Bind n))
+    (ext_bound_or_none : Certified (∀ {n : Nat}, Stmt_bound_or_none prog prims ix_bound_or_none n))
     (ext_effs_tys : Certified (∀ {n : Nat}, Stmt_effs_tys prog prims ix_effs_tys n))
     (ext_named_inferred : Certified (∀ {n : Nat}, Stmt_named_inferred prog prims ix_named_inferred n))
-    (ext_bound_or_none : Certified (∀ {n : Nat}, Stmt_bound_or_none prog prims ix_bound_or_none n))
-    (ext_match_tys : Certified (∀ {n : Nat}, Stmt_match_tys prog prims ix_match_tys n))
-    (ext_empty_of_mini_selfhost_Bind : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Bind prog prims ix_empty_of_mini_selfhost_Bind n)) {n : Nat} :
+    (ext_match_tys : Certified (∀ {n : Nat}, Stmt_match_tys prog prims ix_match_tys n)) {n : Nat} :
     Stmt_decl_inst prog prims ix_decl_inst n := by
   intro x0 x1 x2 x3 x4 x5 x6 x7 v0 v1 v2 v3 v4 v5 v6 v7 w h r0 r1 r2 r3 r4 r5 r6 r7
   rcases n with _ | n
@@ -132,12 +133,12 @@ theorem proof_has_const {prog : SrcProgram} {prims : Prims} {ix_has_const : Nat}
   simp only [src_has_const] at h
   faithful [Lanius.Mini.hasConst]
 
-theorem proof_infer_args {prog : SrcProgram} {prims : Prims} {ix_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_param_patterns ix_bound_or_none ix_match_tys ix_callee_env ix_inst_from : Nat} (fn : prog.funcs[ix_infer_args]? = some (src_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_param_patterns ix_bound_or_none ix_match_tys ix_callee_env ix_inst_from)) (np : prims.isPrim ix_infer_args = false)
+theorem proof_infer_args {prog : SrcProgram} {prims : Prims} {ix_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_param_patterns ix_match_tys ix_callee_env ix_inst_from : Nat} (fn : prog.funcs[ix_infer_args]? = some (src_infer_args ix_no_names ix_empty_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_List_usize ix_bound_or_none ix_param_patterns ix_match_tys ix_callee_env ix_inst_from)) (np : prims.isPrim ix_infer_args = false)
     (ext_no_names : Certified (∀ {n : Nat}, Stmt_no_names prog prims ix_no_names n))
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize n))
-    (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n))
     (ext_bound_or_none : Certified (∀ {n : Nat}, Stmt_bound_or_none prog prims ix_bound_or_none n))
+    (ext_param_patterns : Certified (∀ {n : Nat}, Stmt_param_patterns prog prims ix_param_patterns n))
     (ext_match_tys : Certified (∀ {n : Nat}, Stmt_match_tys prog prims ix_match_tys n))
     (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
     (ext_inst_from : Certified (∀ {n : Nat}, Stmt_inst_from prog prims ix_inst_from n)) {n : Nat} :

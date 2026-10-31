@@ -666,6 +666,8 @@ pub fn is_link(p: usize) -> bool {
         || p == p_type_args_some() || p == p_type_args_more() || p == p_type_args_after_comma_more()
         || p == p_path_type_args_more() || p == p_path_type_args_after_comma_more()
         || p == p_impl_methods_some() || p == p_impl_methods_more()
+        || p == p_type_param_bound_more() || p == p_where_predicates_more() || p == p_where_predicate_more_after_comma()
+        || p == p_bound_type_args_more() || p == p_bound_type_args_after_comma_more()
         || p == p_array_some() || p == p_array_more() || p == p_array_end()
         || p == p_array_after_comma_more() || p == p_array_after_comma_trailing();
 }
@@ -1115,8 +1117,9 @@ pub struct TypeDecl {
 }
 
 // A function or an impl method: its module, spelling, the impl's type
-// parameters and type as written (a method), its own type parameters, and
-// its fn_item or impl_fn_item node.
+// parameters and type as written (a method), its own type parameters, its
+// fn_item or impl_fn_item node, and a method's impl node (whose type
+// parameters and where clause bound the method's instances too).
 pub struct FnDecl {
     home: List<List<usize>>,
     name: List<usize>,
@@ -1125,6 +1128,7 @@ pub struct FnDecl {
     self_type: CTree,
     params: List<List<usize>>,
     tree: CTree,
+    impl_tree: CTree,
 }
 
 // `const name: ty = value;`
@@ -1149,6 +1153,13 @@ pub struct AliasDecl {
     ty: CTree,
 }
 
+// `impl<params> Trait<..> for T where ..` (impl_trait), its node.
+pub struct ImplDecl {
+    home: List<List<usize>>,
+    params: List<List<usize>>,
+    tree: CTree,
+}
+
 // The declarations of all the files, in file order.
 pub struct Decls {
     types: List<TypeDecl>,
@@ -1156,23 +1167,24 @@ pub struct Decls {
     consts: List<ConstDecl>,
     imports: List<ImportDecl>,
     aliases: List<AliasDecl>,
+    impls: List<ImplDecl>,
 }
 
 pub fn no_decls() -> Decls {
-    return Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: empty() };
+    return Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty() };
 }
 
 pub fn join_decls(a: Decls, b: core::option::Option<Decls>) -> core::option::Option<Decls> {
     return match (b) {
         None -> None,
-        Some(d) -> Some(Decls { types: concat(a.types, d.types), fns: concat(a.fns, d.fns), consts: concat(a.consts, d.consts), imports: concat(a.imports, d.imports), aliases: concat(a.aliases, d.aliases) }),
+        Some(d) -> Some(Decls { types: concat(a.types, d.types), fns: concat(a.fns, d.fns), consts: concat(a.consts, d.consts), imports: concat(a.imports, d.imports), aliases: concat(a.aliases, d.aliases), impls: concat(a.impls, d.impls) }),
     };
 }
 
 pub fn import_decls(home: List<List<usize>>, target: core::option::Option<List<List<usize>>>) -> core::option::Option<Decls> {
     return match (target) {
         None -> None,
-        Some(t) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: single(ImportDecl { home: home, target: t }), aliases: empty() }),
+        Some(t) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: single(ImportDecl { home: home, target: t }), aliases: empty(), impls: empty() }),
     };
 }
 
@@ -1222,6 +1234,30 @@ pub fn type_params(fuel: usize, t: CTree) -> core::option::Option<List<List<usiz
     return match (list_items(fuel, t)) {
         None -> None,
         Some(items) -> param_spellings(items),
+    };
+}
+
+// Type parameters without bounds (`T`, not `T: Tr`).
+pub fn unbounded(items: List<CTree>) -> bool {
+    return match (items) {
+        Nil -> true,
+        Cons(p, rest) -> node_prod(kid(p, 1)) == p_type_param_bound_none() && unbounded(unbox(rest)),
+    };
+}
+
+pub fn if_unbounded(ok: bool, ps: core::option::Option<List<List<usize>>>) -> core::option::Option<List<List<usize>>> {
+    if (ok) {
+        return ps;
+    }
+    return None;
+}
+
+// The type parameters of a struct, enum or alias, which take no bounds: a
+// bound there is not checked, so it is not read.
+pub fn free_params(fuel: usize, t: CTree) -> core::option::Option<List<List<usize>>> {
+    return match (list_items(fuel, t)) {
+        None -> None,
+        Some(items) -> if_unbounded(unbounded(items), param_spellings(items)),
     };
 }
 
@@ -1308,21 +1344,21 @@ pub fn enum_decl_of(home: List<List<usize>>, name: List<usize>, params: core::op
 // A struct_item or enum_item: no where clause.
 pub fn type_decl(fuel: usize, home: List<List<usize>>, s: CTree) -> core::option::Option<TypeDecl> {
     if (node_prod(s) == p_struct() && node_prod(kid(s, 3)) == p_where_none()) {
-        return struct_decl_of(home, kid_token(s, 1).text, type_params(fuel, kid(s, 2)), list_items(fuel, kid(s, 5)));
+        return struct_decl_of(home, kid_token(s, 1).text, free_params(fuel, kid(s, 2)), list_items(fuel, kid(s, 5)));
     }
     if (node_prod(s) == p_enum() && node_prod(kid(s, 3)) == p_where_none()) {
         return match (list_items(fuel, kid(s, 5))) {
             None -> None,
-            Some(items) -> enum_decl_of(home, kid_token(s, 1).text, type_params(fuel, kid(s, 2)), variants_of(fuel, items)),
+            Some(items) -> enum_decl_of(home, kid_token(s, 1).text, free_params(fuel, kid(s, 2)), variants_of(fuel, items)),
         };
     }
     return None;
 }
 
-pub fn fn_decl_of(home: List<List<usize>>, f: CTree, in_impl: bool, impl_params: List<List<usize>>, self_type: CTree, params: core::option::Option<List<List<usize>>>) -> core::option::Option<FnDecl> {
+pub fn fn_decl_of(home: List<List<usize>>, f: CTree, in_impl: bool, impl_params: List<List<usize>>, self_type: CTree, impl_tree: CTree, params: core::option::Option<List<List<usize>>>) -> core::option::Option<FnDecl> {
     return match (params) {
         None -> None,
-        Some(ps) -> Some(FnDecl { home: home, name: kid_token(f, 1).text, in_impl: in_impl, impl_params: impl_params, self_type: self_type, params: ps, tree: f }),
+        Some(ps) -> Some(FnDecl { home: home, name: kid_token(f, 1).text, in_impl: in_impl, impl_params: impl_params, self_type: self_type, params: ps, tree: f, impl_tree: impl_tree }),
     };
 }
 
@@ -1336,39 +1372,54 @@ pub fn cons_fn_decl(f: core::option::Option<FnDecl>, rest: core::option::Option<
     };
 }
 
-pub fn method_decl(fuel: usize, home: List<List<usize>>, impl_params: List<List<usize>>, self_type: CTree, m: CTree) -> core::option::Option<FnDecl> {
+pub fn method_decl(fuel: usize, home: List<List<usize>>, impl_params: List<List<usize>>, self_type: CTree, impl_tree: CTree, m: CTree) -> core::option::Option<FnDecl> {
     let f: CTree = kid(m, 0);
     let g: CTree = kid(m, 1);
     if (node_prod(m) == p_impl_method() && node_prod(f) == p_impl_fn()) {
-        return fn_decl_of(home, f, true, impl_params, self_type, type_params(fuel, kid(f, 2)));
+        return fn_decl_of(home, f, true, impl_params, self_type, impl_tree, type_params(fuel, kid(f, 2)));
     }
     if (node_prod(m) == p_impl_method_pub() && node_prod(g) == p_impl_fn()) {
-        return fn_decl_of(home, g, true, impl_params, self_type, type_params(fuel, kid(g, 2)));
+        return fn_decl_of(home, g, true, impl_params, self_type, impl_tree, type_params(fuel, kid(g, 2)));
     }
     return None;
 }
 
 // The methods of an impl block: impl_method items holding impl_fn_items.
-pub fn methods_of(fuel: usize, home: List<List<usize>>, impl_params: List<List<usize>>, self_type: CTree, items: List<CTree>) -> core::option::Option<List<FnDecl>> {
+pub fn methods_of(fuel: usize, home: List<List<usize>>, impl_params: List<List<usize>>, self_type: CTree, impl_tree: CTree, items: List<CTree>) -> core::option::Option<List<FnDecl>> {
     return match (items) {
         Nil -> Some(empty()),
-        Cons(m, rest) -> cons_fn_decl(method_decl(fuel, home, impl_params, self_type, m), methods_of(fuel, home, impl_params, self_type, unbox(rest))),
+        Cons(m, rest) -> cons_fn_decl(method_decl(fuel, home, impl_params, self_type, impl_tree, m), methods_of(fuel, home, impl_params, self_type, impl_tree, unbox(rest))),
     };
 }
 
 pub fn fns_decls(fns: core::option::Option<List<FnDecl>>) -> core::option::Option<Decls> {
     return match (fns) {
         None -> None,
-        Some(fs) -> Some(Decls { types: empty(), fns: fs, consts: empty(), imports: empty(), aliases: empty() }),
+        Some(fs) -> Some(Decls { types: empty(), fns: fs, consts: empty(), imports: empty(), aliases: empty(), impls: empty() }),
     };
 }
 
-pub fn impl_methods(fuel: usize, home: List<List<usize>>, params: core::option::Option<List<List<usize>>>, self_type: CTree, list: CTree) -> core::option::Option<Decls> {
+pub fn impl_methods(fuel: usize, home: List<List<usize>>, params: core::option::Option<List<List<usize>>>, self_type: CTree, impl_tree: CTree, list: CTree) -> core::option::Option<Decls> {
     return match (params) {
         None -> None,
         Some(ps) -> match (list_items(fuel, list)) {
             None -> None,
-            Some(items) -> fns_decls(methods_of(fuel, home, ps, self_type, items)),
+            Some(items) -> fns_decls(methods_of(fuel, home, ps, self_type, impl_tree, items)),
+        },
+    };
+}
+
+pub fn with_impl_decl(i: ImplDecl, d: Decls) -> Decls {
+    return Decls { types: d.types, fns: d.fns, consts: d.consts, imports: d.imports, aliases: d.aliases, impls: cons(i, d.impls) };
+}
+
+// A trait impl: its methods, and the impl itself, which the bounds look up.
+pub fn with_impl(home: List<List<usize>>, params: core::option::Option<List<List<usize>>>, b: CTree, methods: core::option::Option<Decls>) -> core::option::Option<Decls> {
+    return match (params) {
+        None -> None,
+        Some(ps) -> match (methods) {
+            None -> None,
+            Some(d) -> Some(with_impl_decl(ImplDecl { home: home, params: ps, tree: b }, d)),
         },
     };
 }
@@ -1376,14 +1427,14 @@ pub fn impl_methods(fuel: usize, home: List<List<usize>>, params: core::option::
 pub fn type_decls(t: core::option::Option<TypeDecl>) -> core::option::Option<Decls> {
     return match (t) {
         None -> None,
-        Some(d) -> Some(Decls { types: single(d), fns: empty(), consts: empty(), imports: empty(), aliases: empty() }),
+        Some(d) -> Some(Decls { types: single(d), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty() }),
     };
 }
 
 pub fn alias_decls(home: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, ty: CTree) -> core::option::Option<Decls> {
     return match (params) {
         None -> None,
-        Some(ps) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: single(AliasDecl { home: home, name: name, params: ps, ty: ty }) }),
+        Some(ps) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: single(AliasDecl { home: home, name: name, params: ps, ty: ty }), impls: empty() }),
     };
 }
 
@@ -1457,28 +1508,28 @@ pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::op
         return type_decls(type_decl(fuel, home, b));
     }
     if (p == p_fn()) {
-        return fns_decls(cons_fn_decl(fn_decl_of(home, b, false, empty(), b, type_params(fuel, kid(b, 2))), Some(empty())));
+        return fns_decls(cons_fn_decl(fn_decl_of(home, b, false, empty(), b, b, type_params(fuel, kid(b, 2))), Some(empty())));
     }
     if (p == p_const()) {
-        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { home: home, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty(), aliases: empty() });
+        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { home: home, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty(), aliases: empty(), impls: empty() });
     }
-    // An impl's where clause is not checked (F7): its methods are read as
-    // without it.
+    // An impl's bounds and where clause are checked where its methods'
+    // instances are read (fn_bounds_ok).
     if (p == p_impl_inherent()) {
-        return impl_methods(fuel, home, type_params(fuel, kid(b, 1)), kid(b, 2), kid(b, 5));
+        return impl_methods(fuel, home, type_params(fuel, kid(b, 1)), kid(b, 2), b, kid(b, 5));
     }
     if (p == p_impl_trait()) {
-        return impl_methods(fuel, home, type_params(fuel, kid(b, 1)), kid(b, 4), kid(b, 7));
+        return with_impl(home, type_params(fuel, kid(b, 1)), b, impl_methods(fuel, home, type_params(fuel, kid(b, 1)), kid(b, 4), b, kid(b, 7)));
     }
     if (p == p_import() && node_prod(kid(b, 1)) == p_import_path()) {
         return import_decls(home, path_spellings(fuel, kid(kid(kid(b, 1), 0), 0), kid(kid(kid(b, 1), 0), 1)));
     }
     if (p == p_type_alias() && node_prod(kid(b, 3)) == p_where_none()) {
         // A `distinct` alias (kid 5) runs as its target type.
-        return alias_decls(home, kid_token(b, 1).text, type_params(fuel, kid(b, 2)), kid(b, 6));
+        return alias_decls(home, kid_token(b, 1).text, free_params(fuel, kid(b, 2)), kid(b, 6));
     }
     if (p == p_extern_fn() && host_extern(b)) {
-        return fns_decls(cons_fn_decl(fn_decl_of(home, extern_tree(b), false, empty(), b, type_params(fuel, kid(b, 4))), Some(empty())));
+        return fns_decls(cons_fn_decl(fn_decl_of(home, extern_tree(b), false, empty(), b, b, type_params(fuel, kid(b, 4))), Some(empty())));
     }
     if (p == p_module() || p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
         return Some(no_decls());
@@ -1538,7 +1589,7 @@ pub struct Collected {
 }
 
 pub fn collected_with(c: Collected, f: FileDecls) -> Collected {
-    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts), imports: concat(c.decls.imports, f.decls.imports), aliases: concat(c.decls.aliases, f.decls.aliases) }, modules: concat(c.modules, single(f.home)) };
+    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts), imports: concat(c.decls.imports, f.decls.imports), aliases: concat(c.decls.aliases, f.decls.aliases), impls: concat(c.decls.impls, f.decls.impls) }, modules: concat(c.modules, single(f.home)) };
 }
 
 pub fn collect_files(fuel: usize, roots: List<CTree>, acc: Collected) -> core::option::Option<Collected> {
@@ -4799,6 +4850,279 @@ pub fn bound_or_none(names: List<List<usize>>, binds: core::option::Option<List<
     };
 }
 
+// ---------------------------------------------------------------- trait bounds
+
+// A trait as a bound or an impl names it: its module and spelling, resolved
+// like a type path's, and its type arguments.
+pub struct TraitRef {
+    home: List<List<usize>>,
+    name: List<usize>,
+    args: List<Ty>,
+}
+
+// A bound to check: the type ty has an impl of the trait.
+pub struct BoundGoal {
+    trait_ref: TraitRef,
+    ty: Ty,
+}
+
+// The spellings of a bound's trait path (bound_type_path).
+pub fn bound_path_spellings(fuel: usize, segment: CTree, tail: CTree) -> core::option::Option<List<List<usize>>> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(segment) == p_bound_type_path_ident() && node_prod(tail) == p_bound_type_path_end()) {
+        return Some(single(kid_token(segment, 0).text));
+    }
+    if (node_prod(segment) == p_bound_type_path_ident() && node_prod(tail) == p_bound_type_path_more()) {
+        return cons_name(Some(kid_token(segment, 0).text), bound_path_spellings(minus(fuel, 1), kid(tail, 2), kid(tail, 3)));
+    }
+    return None;
+}
+
+pub fn trait_split(env: FrontEnv, s: Split, args: core::option::Option<List<Ty>>) -> core::option::Option<TraitRef> {
+    return match (args) {
+        None -> None,
+        Some(ts) -> Some(TraitRef { home: path_module(env, s.home, s.name), name: s.name, args: ts }),
+    };
+}
+
+// The trait a path names, at the arguments.
+pub fn trait_at(env: FrontEnv, segments: core::option::Option<List<List<usize>>>, args: core::option::Option<List<Ty>>) -> core::option::Option<TraitRef> {
+    return match (segments) {
+        None -> None,
+        Some(ss) -> match (split_last(ss)) {
+            None -> None,
+            Some(s) -> trait_split(env, s, args),
+        },
+    };
+}
+
+pub fn args_of_items(fuel: usize, env: FrontEnv, items: core::option::Option<List<CTree>>) -> core::option::Option<List<Ty>> {
+    return match (items) {
+        None -> None,
+        Some(gs) -> args_tys(fuel, env, gs),
+    };
+}
+
+// The trait a bound names (`Tr`, `p::Tr<A, ..>`).
+pub fn trait_of_bound(fuel: usize, env: FrontEnv, b: CTree) -> core::option::Option<TraitRef> {
+    let path: CTree = kid(b, 0);
+    if (node_prod(b) == p_bound_type_ident()) {
+        return trait_at(env, bound_path_spellings(fuel, kid(path, 0), kid(path, 1)), args_of_items(fuel, env, list_items(fuel, kid(b, 1))));
+    }
+    return None;
+}
+
+// The trait an impl names, as a type expression.
+pub fn trait_of_ty(fuel: usize, env: FrontEnv, t: CTree) -> core::option::Option<TraitRef> {
+    let path: CTree = kid(t, 0);
+    if (node_prod(t) == p_type_ident()) {
+        return trait_at(env, type_path_spellings(fuel, kid(path, 0), kid(path, 1)), args_of_items(fuel, env, list_items(fuel, kid(t, 1))));
+    }
+    return None;
+}
+
+pub fn goal_at(t: core::option::Option<Ty>, tr: core::option::Option<TraitRef>) -> core::option::Option<BoundGoal> {
+    return match (t) {
+        None -> None,
+        Some(x) -> match (tr) {
+            None -> None,
+            Some(r) -> Some(BoundGoal { trait_ref: r, ty: x }),
+        },
+    };
+}
+
+pub fn cons_goal_tail(g: BoundGoal, rest: core::option::Option<List<BoundGoal>>) -> core::option::Option<List<BoundGoal>> {
+    return match (rest) {
+        None -> None,
+        Some(gs) -> Some(cons(g, gs)),
+    };
+}
+
+pub fn cons_goal(g: core::option::Option<BoundGoal>, rest: core::option::Option<List<BoundGoal>>) -> core::option::Option<List<BoundGoal>> {
+    return match (g) {
+        None -> None,
+        Some(x) -> cons_goal_tail(x, rest),
+    };
+}
+
+pub fn join_goals_tail(a: List<BoundGoal>, b: core::option::Option<List<BoundGoal>>) -> core::option::Option<List<BoundGoal>> {
+    return match (b) {
+        None -> None,
+        Some(gs) -> Some(concat(a, gs)),
+    };
+}
+
+pub fn join_goals(a: core::option::Option<List<BoundGoal>>, b: core::option::Option<List<BoundGoal>>) -> core::option::Option<List<BoundGoal>> {
+    return match (a) {
+        None -> None,
+        Some(gs) -> join_goals_tail(gs, b),
+    };
+}
+
+// The bounds bs of the type parameter spelled n: its type has an impl of
+// each one's trait.
+pub fn goals_of(fuel: usize, env: FrontEnv, n: List<usize>, bs: List<CTree>) -> core::option::Option<List<BoundGoal>> {
+    return match (bs) {
+        Nil -> Some(empty()),
+        Cons(b, rest) -> cons_goal(goal_at(param_ty(env, n), trait_of_bound(fuel, env, b)), goals_of(fuel, env, n, unbox(rest))),
+    };
+}
+
+pub fn bound_goals(fuel: usize, env: FrontEnv, n: List<usize>, bs: core::option::Option<List<CTree>>) -> core::option::Option<List<BoundGoal>> {
+    return match (bs) {
+        None -> None,
+        Some(l) -> goals_of(fuel, env, n, l),
+    };
+}
+
+// A type parameter's bounds (`T: A + B`).
+pub fn param_goals(fuel: usize, env: FrontEnv, p: CTree) -> core::option::Option<List<BoundGoal>> {
+    if (node_prod(kid(p, 1)) == p_type_param_bound()) {
+        return bound_goals(fuel, env, kid_token(p, 0).text, list_items(fuel, kid(kid(p, 1), 1)));
+    }
+    return Some(empty());
+}
+
+pub fn params_goals(fuel: usize, env: FrontEnv, ps: List<CTree>) -> core::option::Option<List<BoundGoal>> {
+    return match (ps) {
+        Nil -> Some(empty()),
+        Cons(p, rest) -> join_goals(param_goals(fuel, env, p), params_goals(fuel, env, unbox(rest))),
+    };
+}
+
+// A where clause's predicates (`T: A + B, U: C`).
+pub fn preds_goals(fuel: usize, env: FrontEnv, qs: List<CTree>) -> core::option::Option<List<BoundGoal>> {
+    return match (qs) {
+        Nil -> Some(empty()),
+        Cons(q, rest) -> join_goals(bound_goals(fuel, env, kid_token(q, 0).text, list_items(fuel, kid(q, 2))), preds_goals(fuel, env, unbox(rest))),
+    };
+}
+
+pub fn where_goals(fuel: usize, env: FrontEnv, w: CTree) -> core::option::Option<List<BoundGoal>> {
+    if (node_prod(w) == p_where_some()) {
+        return match (list_items(fuel, w)) {
+            None -> None,
+            Some(qs) -> preds_goals(fuel, env, qs),
+        };
+    }
+    return Some(empty());
+}
+
+// The bounds of an item's type parameters and of its where clause, read
+// in env.
+pub fn item_goals(fuel: usize, env: FrontEnv, tparams: CTree, w: CTree) -> core::option::Option<List<BoundGoal>> {
+    return match (list_items(fuel, tparams)) {
+        None -> None,
+        Some(ps) -> join_goals(params_goals(fuel, env, ps), where_goals(fuel, env, w)),
+    };
+}
+
+// An impl's where clause: kid 5 of a trait impl, kid 3 of an inherent one.
+pub fn impl_where(t: CTree) -> CTree {
+    if (node_prod(t) == p_impl_trait()) {
+        return kid(t, 5);
+    }
+    return kid(t, 3);
+}
+
+// The arguments an impl's parameters take for the goal, matched against
+// its type and then its trait's arguments, all of them bound.
+pub fn impl_args(fuel: usize, decls: Decls, im: ImplDecl, g: BoundGoal) -> core::option::Option<List<Ty>> {
+    let env: FrontEnv = decl_env(decls, im.home, empty(), empty());
+    return match (match_ty(fuel, env, im.params, kid(im.tree, 4), g.ty, empty())) {
+        None -> None,
+        Some(b) -> match (list_items(fuel, kid(kid(im.tree, 2), 1))) {
+            None -> None,
+            Some(gs) -> bound_or_none(im.params, match_args(fuel, env, im.params, gs, g.trait_ref.args, b)),
+        },
+    };
+}
+
+pub fn same_trait(a: TraitRef, b: TraitRef) -> bool {
+    return same_spellings(a.home, b.home) && same_text(a.name, b.name) && same_tys(a.args, b.args);
+}
+
+pub fn trait_is(a: core::option::Option<TraitRef>, b: TraitRef) -> bool {
+    return match (a) {
+        None -> false,
+        Some(r) -> same_trait(r, b),
+    };
+}
+
+pub fn ty_is(a: core::option::Option<Ty>, b: Ty) -> bool {
+    return match (a) {
+        None -> false,
+        Some(t) -> same_ty(t, b),
+    };
+}
+
+// extract: mutual begin
+// The goal's type has an impl of its trait: an impl whose trait and type
+// read as the goal's at some arguments for its parameters, and whose own
+// bounds hold at them.
+pub fn trait_holds(fuel: usize, decls: Decls, g: BoundGoal) -> bool {
+    if (fuel == 0) {
+        return false;
+    }
+    return any_impl(minus(fuel, 1), decls, decls.impls, g);
+}
+
+pub fn any_impl(fuel: usize, decls: Decls, ims: List<ImplDecl>, g: BoundGoal) -> bool {
+    if (fuel == 0) {
+        return false;
+    }
+    return match (ims) {
+        Nil -> false,
+        Cons(im, rest) -> impl_gives(minus(fuel, 1), decls, im, g) || any_impl(minus(fuel, 1), decls, unbox(rest), g),
+    };
+}
+
+pub fn impl_gives(fuel: usize, decls: Decls, im: ImplDecl, g: BoundGoal) -> bool {
+    if (fuel == 0) {
+        return false;
+    }
+    return match (impl_args(fuel, decls, im, g)) {
+        None -> false,
+        Some(args) -> impl_fits(minus(fuel, 1), decls, im, g, decl_env(decls, im.home, im.params, args)),
+    };
+}
+
+pub fn impl_fits(fuel: usize, decls: Decls, im: ImplDecl, g: BoundGoal, env: FrontEnv) -> bool {
+    if (fuel == 0) {
+        return false;
+    }
+    return trait_is(trait_of_ty(fuel, env, kid(im.tree, 2)), g.trait_ref) && ty_is(ty_of(fuel, env, kid(im.tree, 4)), g.ty) && goals_hold(minus(fuel, 1), decls, item_goals(fuel, env, kid(im.tree, 1), kid(im.tree, 5)));
+}
+
+pub fn goals_hold(fuel: usize, decls: Decls, gs: core::option::Option<List<BoundGoal>>) -> bool {
+    if (fuel == 0) {
+        return false;
+    }
+    return match (gs) {
+        None -> false,
+        Some(l) -> all_hold(minus(fuel, 1), decls, l),
+    };
+}
+
+pub fn all_hold(fuel: usize, decls: Decls, gs: List<BoundGoal>) -> bool {
+    if (fuel == 0) {
+        return false;
+    }
+    return match (gs) {
+        Nil -> true,
+        Cons(g, rest) -> trait_holds(minus(fuel, 1), decls, g) && all_hold(minus(fuel, 1), decls, unbox(rest)),
+    };
+}
+// extract: mutual end
+
+// A function instance's bounds hold: its own type parameters' and where
+// clause's, and for a method its impl's, read where its signature is.
+pub fn fn_bounds_ok(fuel: usize, decls: Decls, fd: FnDecl, env: FrontEnv) -> bool {
+    return goals_hold(fuel, decls, item_goals(fuel, env, kid(fd.tree, 2), kid(fd.tree, 7))) && (!fd.in_impl || goals_hold(fuel, decls, item_goals(fuel, env, kid(fd.impl_tree, 1), impl_where(fd.impl_tree))));
+}
+
 pub fn infer_ret(fuel: usize, decls: Decls, d: usize, fd: FnDecl, names: List<List<usize>>, binds: core::option::Option<List<Bind>>, expected: Ty) -> core::option::Option<Inst> {
     return match (binds) {
         None -> None,
@@ -5476,42 +5800,38 @@ pub fn is_some_index(k: core::option::Option<usize>) -> bool {
     };
 }
 
-// A struct's declaration (an enum's path names its variants).
-pub fn is_struct_at(env: FrontEnv, k: core::option::Option<usize>) -> bool {
+// A declared type that owns the function spelled name: a struct, or an
+// enum with no variant so spelled (`E::V(..)` names the variant).
+pub fn is_owner_at(env: FrontEnv, k: core::option::Option<usize>, name: List<usize>) -> bool {
     return match (k) {
         None -> false,
         Some(d) -> match (get(env.decls.types, d)) {
             None -> false,
-            Some(t) -> !t.is_enum,
+            Some(t) -> !t.is_enum || !member(t.variants, name),
         },
     };
 }
 
-// A path's one-segment prefix that names a type: a type parameter, a
-// primitive type or a struct of the current module (`T::m`, `i32::hash`,
-// `Date::lt`).
-pub fn is_type_param(env: FrontEnv, owner: core::option::Option<List<usize>>) -> bool {
+// A one-segment prefix naming a type parameter or a primitive type.
+pub fn is_scalar_owner(env: FrontEnv, owner: core::option::Option<List<usize>>) -> bool {
     return match (owner) {
         None -> false,
-        Some(n) -> member(env.names, n) || !is_none_type(primitive(n)) || is_struct_at(env, type_decl_at(env, single(n))),
+        Some(n) -> member(env.names, n) || !is_none_type(primitive(n)),
     };
 }
 
-// A type of the current module stands for itself with no type arguments.
-pub fn owner_ty(env: FrontEnv, owner: core::option::Option<List<usize>>) -> core::option::Option<Ty> {
-    return match (owner) {
-        None -> None,
-        Some(n) -> match (param_ty(env, n)) {
-            Some(t) -> Some(t),
-            None -> prim_or_named(env, single(n), n),
-        },
-    };
+// A path's prefix that names a type, for the function spelled name: a type
+// parameter or a primitive type (one segment), or a struct or an enum the
+// prefix names as a type path, resolved like any other (`T::m`,
+// `i32::hash`, `Date::lt`, `Color::next`, `p::Date::lt`).
+pub fn is_type_owner(env: FrontEnv, front: List<List<usize>>, name: List<usize>) -> bool {
+    return is_scalar_owner(env, single_name(front)) || is_owner_at(env, type_decl_at(env, front), name);
 }
 
-// A path naming a function: `T::m` for a type parameter T, or a free
-// function of the path's module.
+// A path naming a function: `T::m` for a type T, or a free function of the
+// path's module.
 pub fn is_fn_path(env: FrontEnv, s: Split) -> bool {
-    return is_type_param(env, single_name(s.home)) || is_some_index(find_fn(env.decls.fns, path_module(env, s.home, s.name), s.name, 0));
+    return is_type_owner(env, s.home, s.name) || is_some_index(find_fn(env.decls.fns, path_module(env, s.home, s.name), s.name, 0));
 }
 
 // A postfix `recv.m(args)` (recv a local, no further postfix).
@@ -6758,9 +7078,9 @@ pub fn eff_fn_path(fuel: usize, env: FrontEnv, scope: List<Local>, expected: cor
     if (fuel == 0) {
         return None;
     }
-    let owner: core::option::Option<List<usize>> = single_name(s.home);
-    if (is_type_param(env, owner) && no_trees(targs)) {
-        return match (owner_ty(env, owner)) {
+    // The owner type stands for itself with no type arguments.
+    if (is_type_owner(env, s.home, s.name) && no_trees(targs)) {
+        return match (bare_ty(env, s.home)) {
             None -> None,
             Some(t) -> eff_found(minus(fuel, 1), env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, s.name, t), empty(), items),
         };
@@ -8520,7 +8840,7 @@ pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::o
     let tenv: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None, base: kid_token(f, 1).start };
     let rt: core::option::Option<RetTy> = result_of(fuel, tenv, kid(f, 6));
     let env: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: ret_expected(rt), base: kid_token(f, 1).start };
-    if (length(names) == length(args)) {
+    if (length(names) == length(args) && fn_bounds_ok(fuel, decls, fd, tenv)) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,
             Some(items) -> ref_checked(func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(f, 8), kid(kid(f, 9), 1)), self_ref_id(env, items)),
@@ -12702,6 +13022,66 @@ fn p_type_slice_tail() -> usize {
 // extract: inline
 fn p_where_none() -> usize {
     return 36;
+}
+
+// extract: inline
+fn p_bound_type_args_after_comma_more() -> usize {
+    return 251;
+}
+
+// extract: inline
+fn p_bound_type_args_more() -> usize {
+    return 249;
+}
+
+// extract: inline
+fn p_bound_type_ident() -> usize {
+    return 241;
+}
+
+// extract: inline
+fn p_bound_type_path_end() -> usize {
+    return 246;
+}
+
+// extract: inline
+fn p_bound_type_path_ident() -> usize {
+    return 244;
+}
+
+// extract: inline
+fn p_bound_type_path_more() -> usize {
+    return 245;
+}
+
+// extract: inline
+fn p_type_param_bound() -> usize {
+    return 236;
+}
+
+// extract: inline
+fn p_type_param_bound_more() -> usize {
+    return 239;
+}
+
+// extract: inline
+fn p_type_param_bound_none() -> usize {
+    return 237;
+}
+
+// extract: inline
+fn p_where_predicate_more_after_comma() -> usize {
+    return 41;
+}
+
+// extract: inline
+fn p_where_predicates_more() -> usize {
+    return 39;
+}
+
+// extract: inline
+fn p_where_some() -> usize {
+    return 37;
 }
 
 // extract: inline

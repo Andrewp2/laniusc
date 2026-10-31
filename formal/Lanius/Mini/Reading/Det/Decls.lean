@@ -9,17 +9,17 @@ namespace Lanius.Mini.Reading
 
 open Lanius.Mini Lanius.Mini.Prod
 
-theorem methodDecl_unique : ∀ {home : ModPath} {ips : List Name} {selfType m : CTree} {a b : FnDecl},
-    MethodDecl home ips selfType m a → MethodDecl home ips selfType m b → a = b
-  | _, _, _, _, _, _, .plain _ _ p, .plain _ _ p' => by rw [typeParams_unique p p']
-  | _, _, _, _, _, _, .plain .., .pub .. => by prod_clash
-  | _, _, _, _, _, _, .pub .., .plain .. => by prod_clash
-  | _, _, _, _, _, _, .pub _ _ p, .pub _ _ p' => by rw [typeParams_unique p p']
+theorem methodDecl_unique : ∀ {home : ModPath} {ips : List Name} {selfType implTree m : CTree} {a b : FnDecl},
+    MethodDecl home ips selfType implTree m a → MethodDecl home ips selfType implTree m b → a = b
+  | _, _, _, _, _, _, _, .plain _ _ p, .plain _ _ p' => by rw [typeParams_unique p p']
+  | _, _, _, _, _, _, _, .plain .., .pub .. => by prod_clash
+  | _, _, _, _, _, _, _, .pub .., .plain .. => by prod_clash
+  | _, _, _, _, _, _, _, .pub _ _ p, .pub _ _ p' => by rw [typeParams_unique p p']
 
-theorem methodDecls_unique {home : ModPath} {ips : List Name} {selfType : CTree} {ms : List CTree}
-    {a b : List FnDecl} (h₁ : ListRel (MethodDecl home ips selfType) ms a)
-    (h₂ : ListRel (MethodDecl home ips selfType) ms b) : a = b :=
-  listRel_unique (R := MethodDecl home ips selfType) (fun _ _ _ x y => methodDecl_unique x y) h₁ h₂
+theorem methodDecls_unique {home : ModPath} {ips : List Name} {selfType implTree : CTree} {ms : List CTree}
+    {a b : List FnDecl} (h₁ : ListRel (MethodDecl home ips selfType implTree) ms a)
+    (h₂ : ListRel (MethodDecl home ips selfType implTree) ms b) : a = b :=
+  listRel_unique (R := MethodDecl home ips selfType implTree) (fun _ _ _ x y => methodDecl_unique x y) h₁ h₂
 
 theorem itemDecls_unique : ∀ {home : ModPath} {item : CTree} {a b : Decls},
     ItemDecls home item a → ItemDecls home item b → a = b
@@ -93,7 +93,7 @@ theorem itemDecls_unique : ∀ {home : ModPath} {item : CTree} {a b : Decls},
   | _, _, _, _, .alias .., .implInherent .. => by prod_clash
   | _, _, _, _, .alias .., .implTrait .. => by prod_clash
   | _, _, _, _, .alias .., .imports .. => by prod_clash
-  | _, _, _, _, .alias _ _ p, .alias _ _ p' => by rw [typeParams_unique p p']
+  | _, _, _, _, .alias _ _ p, .alias _ _ p' => by rw [freeParams_unique p p']
   | _, _, _, _, .alias .., .host .. => by prod_clash
   | _, _, _, _, .alias .., .none .. => by prod_clash
   | _, _, _, _, .host .., .type .. => by prod_clash

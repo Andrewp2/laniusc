@@ -1,4 +1,5 @@
 import Lanius.Mini.Reading.Stmts
+import Lanius.Mini.Reading.Bounds
 
 /-! # The reading, V8e: functions and monomorphization
 
@@ -157,11 +158,13 @@ theorem contractsOf_none {env : FrontEnv} {scope : List Local} :
       split <;> rfl
     rfl
 
-/-- A function instance's body: its parameters, its result type, its block
-read with the result type as `return`'s, after its `requires` checks; a
-method taking `&self` (read by value) does not write `self`. -/
+/-- A function instance's body: its bounds hold at its arguments (F7,
+`FnBound`), and it has its parameters, its result type, its block read
+with the result type as `return`'s, after its `requires` checks; a method
+taking `&self` (read by value) does not write `self`. -/
 def ReadFn (decls : Decls) (fd : FnDecl) (args : List Ty) (mf : MFunc) : Prop :=
   ∃ r items ps body mb, (fd.implParams ++ fd.params).length = args.length ∧
+    (∀ n b, FnBound fd n b → BoundOk decls (fnScope decls fd args none) n b) ∧
     ResultR (fnScope decls fd args none) (kid fd.tree 6) r ∧ Items (kid fd.tree 4) items ∧
     ParamsR (fnScope decls fd args (retExpected (some r))) fd [] items ps ∧
     BlockR (fnScope decls fd args (retExpected (some r))) ps.scope (kid (kid fd.tree 9) 1) body ∧
@@ -192,7 +195,8 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
   simp only at h
   split at h
   · rename_i c
-    try simp only [decide_eq_true_eq] at c
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+    have bo := fnBoundsOk_sound c.2
     cases hr : resultOf fuel (fnScope decls fd args none) (kid fd.tree 6) with
     | none =>
       rw [hr] at h
@@ -229,7 +233,7 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
               rw [hc] at h
               simp only [Option.some.injEq] at h
               subst h
-              exact ⟨r, items, ps, body, mb, c, resultOf_sound hr, listItems_sound hi, paramsOf_sound hp,
+              exact ⟨r, items, ps, body, mb, c.1, bo, resultOf_sound hr, listItems_sound hi, paramsOf_sound hp,
                 blockOf_sound hb, contractsOf_sound hc, nw, rfl⟩
   · cases h
 
