@@ -238,28 +238,34 @@ def variantsNamed (types : List TypeDecl) (m : List (List Nat)) (name : List Nat
     else
       variantsNamed rest m name (k + 1)
 
-/-- The variants spelled name in the modules that module m imports. -/
-def importedVariants (types : List TypeDecl) (imports : List ImportDecl) (m : List (List Nat)) (name : List Nat) : List VariantAt :=
-  match imports with
-  | [] => []
-  | i :: rest =>
-    if sameSpellings i.home m then
-      variantsNamed types i.target name 0 ++ importedVariants types rest m name
-    else
-      importedVariants types rest m name
+/-- Some declaration of module m: then m is a module, and `import m;` imports it rather than an item of m's prefix. -/
+def typesHome (types : List TypeDecl) (m : List (List Nat)) : Bool :=
+  match types with
+  | [] => false
+  | t :: rest => sameSpellings t.home m || typesHome rest m
 
-def onlyVariant (vs : List VariantAt) : Option VariantAt :=
-  match vs with
-  | [] => none
-  | v :: rest =>
-    match rest with
-    | [] => some v
-    | w :: more => none
+def fnsHome (fns : List FnDecl) (m : List (List Nat)) : Bool :=
+  match fns with
+  | [] => false
+  | f :: rest => sameSpellings f.home m || fnsHome rest m
 
-/-- A bare variant name: the one enum of the current module that has it, or else the one enum of the imported modules that has it. -/
-def bareVariant (env : FrontEnv) (name : List Nat) : Option VariantAt :=
-  match variantsNamed env.decls.types env.home name 0 with
-  | [] => onlyVariant (importedVariants env.decls.types env.decls.imports env.home name)
-  | v :: rest => onlyVariant (v :: rest)
+def constsHome (consts : List ConstDecl) (m : List (List Nat)) : Bool :=
+  match consts with
+  | [] => false
+  | c :: rest => sameSpellings c.home m || constsHome rest m
+
+def aliasesHome (aliases : List AliasDecl) (m : List (List Nat)) : Bool :=
+  match aliases with
+  | [] => false
+  | a :: rest => sameSpellings a.home m || aliasesHome rest m
+
+def isModule (d : Decls) (m : List (List Nat)) : Bool :=
+  typesHome d.types m || fnsHome d.fns m || constsHome d.consts m || aliasesHome d.aliases m
+
+def ifItem (b : Bool) (p : List (List Nat)) : Option (List (List Nat)) :=
+  if b then
+    some p
+  else
+    none
 
 end Lanius.Mini

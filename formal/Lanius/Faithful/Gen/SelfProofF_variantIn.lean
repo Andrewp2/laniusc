@@ -8,8 +8,8 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
+public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_moduleNamesOk
-public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
@@ -35,10 +35,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_enum_variant {prog : SrcProgram} {prims : Prims} {ix_enum_variant ix_field_types_Decls_of_mini_selfhost_Decls ix_split_last ix_module_or ix_find_type ix_variant_in : Nat} (fn : prog.funcs[ix_enum_variant]? = some (src_enum_variant ix_field_types_Decls_of_mini_selfhost_Decls ix_split_last ix_module_or ix_find_type ix_variant_in)) (np : prims.isPrim ix_enum_variant = false)
+theorem proof_enum_variant {prog : SrcProgram} {prims : Prims} {ix_enum_variant ix_field_types_Decls_of_mini_selfhost_Decls ix_split_last ix_path_module ix_find_type ix_variant_in : Nat} (fn : prog.funcs[ix_enum_variant]? = some (src_enum_variant ix_field_types_Decls_of_mini_selfhost_Decls ix_split_last ix_path_module ix_find_type ix_variant_in)) (np : prims.isPrim ix_enum_variant = false)
     (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
     (ext_split_last : Certified (∀ {n : Nat}, Stmt_split_last prog prims ix_split_last n))
-    (ext_module_or : Certified (∀ {n : Nat}, Stmt_module_or prog prims ix_module_or n))
+    (ext_path_module : Certified (∀ {n : Nat}, Stmt_path_module prog prims ix_path_module n))
     (ext_find_type : Certified (∀ {n : Nat}, Stmt_find_type prog prims ix_find_type n))
     (ext_variant_in : Certified (∀ {n : Nat}, Stmt_variant_in prog prims ix_variant_in n)) {n : Nat} :
     Stmt_enum_variant prog prims ix_enum_variant n := by

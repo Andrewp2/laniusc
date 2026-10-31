@@ -870,3 +870,18 @@ runs. A false clause traps as a false `assert` does, which matches laniusc
 (its `requires_fails` fixture stops with SIGILL before the body runs). The
 lexer spec gains the `requires` keyword (laniusc's token code 201). The
 grammar has no `ensures` clause, so none is read.
+
+## Item imports (decided 10-31, F11)
+
+`import p::name;` in module `m`, when no file declares anything in module
+`p::name`, imports the item `name` of module `p`: in `m`, the bare path
+`name` names `p`'s `name`, whether a type, a function, a constant, an alias
+or a variant (`pathHome`, `itemImport`, `BareVariant.item`). As in laniusc
+(docs/language-ergonomics.md) the import names only that item and beats
+module imports for its name; a module of that whole path wins over the
+item. Two deliberate differences, both on programs laniusc rejects: an item
+import also beats a declaration of the same name in `m` (laniusc reports a
+clash), and a module with no declarations counts as no module. Module
+imports still bring only variants into scope by their bare names.
+Stdlib: `core::wide_i64_checked` and `core::wide_u64_checked`, 20 targets,
+all compile now (432 calls agree with laniusc).

@@ -460,18 +460,25 @@ theorem onlyVariant_sound : ∀ {vs : List VariantAt} {v : VariantAt}, onlyVaria
   | _ :: _ :: _, _, h => by simp [onlyVariant] at h
 
 /-- A bare variant name is the one variant with that spelling among the
-current module's enums, or, when they have none, the one among the imported
-modules' enums. -/
+enums of the module it is imported from by name (`import p::name;`, see
+`itemImport`); else among the current module's enums, or, when they have
+none, among the imported modules' enums. -/
 inductive BareVariant (d : Decls) (m : ModPath) (name : Name) : VariantAt → Prop
-  | here {v} : variantsNamed d.types m name 0 = [v] → BareVariant d m name v
-  | imported {v} : variantsNamed d.types m name 0 = [] → importedVariants d.types d.imports m name = [v] →
+  | item {p v} : itemImport d d.imports m name = some p → variantsNamed d.types p name 0 = [v] →
       BareVariant d m name v
+  | here {v} : itemImport d d.imports m name = none → variantsNamed d.types m name 0 = [v] → BareVariant d m name v
+  | imported {v} : itemImport d d.imports m name = none → variantsNamed d.types m name 0 = [] →
+      importedVariants d.types d.imports m name = [v] → BareVariant d m name v
 
 theorem bareVariant_sound {env : FrontEnv} {name : Name} {v : VariantAt}
     (h : bareVariant env name = some v) : BareVariant env.decls env.home name v := by
   unfold bareVariant at h
-  cases hv : variantsNamed env.decls.types env.home name 0 with
-  | nil => rw [hv] at h; exact .imported hv (onlyVariant_sound h)
-  | cons w rest => rw [hv] at h; exact .here (hv.trans (onlyVariant_sound h))
+  cases hi : itemImport env.decls env.decls.imports env.home name with
+  | some p => rw [hi] at h; exact .item hi (onlyVariant_sound h)
+  | none =>
+    rw [hi] at h
+    cases hv : variantsNamed env.decls.types env.home name 0 with
+    | nil => rw [hv] at h; exact .imported hi hv (onlyVariant_sound h)
+    | cons w rest => rw [hv] at h; exact .here hi (hv.trans (onlyVariant_sound h))
 
 end Lanius.Mini.Reading

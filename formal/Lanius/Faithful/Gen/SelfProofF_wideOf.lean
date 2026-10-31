@@ -26,8 +26,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
+public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
-public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_scalarOf
@@ -99,11 +99,11 @@ theorem step_bare_int {prog : SrcProgram} {prims : Prims} {ix_bare_int ix_unbox_
   simp only [src_bare_int] at h
   faithful [Lanius.Mini.bareInt]
 
-theorem step_const_ref {prog : SrcProgram} {prims : Prims} {ix_const_ref ix_minus ix_field_consts_Decls_of_mini_selfhost_Decls ix_split_last ix_module_or ix_find_const ix_const_value : Nat} (fn : prog.funcs[ix_const_ref]? = some (src_const_ref ix_minus ix_field_consts_Decls_of_mini_selfhost_Decls ix_split_last ix_module_or ix_find_const ix_const_value)) (np : prims.isPrim ix_const_ref = false)
+theorem step_const_ref {prog : SrcProgram} {prims : Prims} {ix_const_ref ix_minus ix_field_consts_Decls_of_mini_selfhost_Decls ix_split_last ix_path_module ix_find_const ix_const_value : Nat} (fn : prog.funcs[ix_const_ref]? = some (src_const_ref ix_minus ix_field_consts_Decls_of_mini_selfhost_Decls ix_split_last ix_path_module ix_find_const ix_const_value)) (np : prims.isPrim ix_const_ref = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_field_consts_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_consts_Decls_of_mini_selfhost_Decls prog prims ix_field_consts_Decls_of_mini_selfhost_Decls n))
     (ext_split_last : Certified (∀ {n : Nat}, Stmt_split_last prog prims ix_split_last n))
-    (ext_module_or : Certified (∀ {n : Nat}, Stmt_module_or prog prims ix_module_or n))
+    (ext_path_module : Certified (∀ {n : Nat}, Stmt_path_module prog prims ix_path_module n))
     (ext_find_const : Certified (∀ {n : Nat}, Stmt_find_const prog prims ix_find_const n)) {n : Nat}
     (ih_const_value : Certified (Stmt_const_value prog prims ix_const_value n)) :
     Stmt_const_ref prog prims ix_const_ref (n + 1) := by

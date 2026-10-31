@@ -1,0 +1,14 @@
+module core::option;
+
+pub enum Option<T> {
+    Some(T),
+    None,
+}
+
+pub fn unwrap_or<T>(o: Option<T>, d: T) -> T {
+    let r: T = match (o) {
+        Some(x) -> x,
+        None -> d,
+    };
+    return r;
+}

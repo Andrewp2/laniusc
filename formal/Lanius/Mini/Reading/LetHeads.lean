@@ -185,7 +185,7 @@ theorem enumVariant_sound {env : FrontEnv} {front : ModPath} {name : Name} {v : 
   | some sp =>
     rw [hs] at h
     simp only [variantIn] at h
-    cases hf : findType env.decls.types (moduleOr env.home sp.home) sp.name 0 with
+    cases hf : findType env.decls.types (pathModule env sp.home sp.name) sp.name 0 with
     | none => rw [hf] at h; cases h
     | some k =>
       rw [hf] at h
@@ -215,7 +215,7 @@ theorem enumVariant_none {env : FrontEnv} {front : ModPath} {name : Name}
   rw [hs] at h
   simp only [variantIn] at h
   obtain ⟨t', fw⟩ := ft
-  cases hf : findType env.decls.types (moduleOr env.home front.dropLast) n 0 with
+  cases hf : findType env.decls.types (pathModule env front.dropLast n) n 0 with
   | none => exact findType_none hf t' (firstWith_mem fw).1 (firstWith_mem fw).2
   | some k =>
     rw [hf] at h
@@ -250,13 +250,13 @@ theorem variantByPath_sound {env : FrontEnv} {s : Split} {v : VariantAt} (h : va
 /-- A path names a function: its prefix names a type, or it names a free
 function. -/
 def IsFnPath (env : FrontEnv) (front : ModPath) (name : Name) : Prop :=
-  (∃ n, TypeOwner env front n) ∨ ∃ d, FnNamed env.decls (if front = [] then env.home else front) name d
+  (∃ n, TypeOwner env front n) ∨ ∃ d, FnNamed env.decls (pathHome env.decls env.home front name) name d
 
 theorem isFnPath_iff (env : FrontEnv) (s : Split) : isFnPath env s = true ↔ IsFnPath env s.home s.name := by
   unfold isFnPath IsFnPath
-  rw [Bool.or_eq_true, isTypeParam_iff, ← moduleOr_eq]
+  rw [Bool.or_eq_true, isTypeParam_iff, ← pathModule_eq]
   apply or_congr Iff.rfl
-  cases hf : findFn env.decls.fns (moduleOr env.home s.home) s.name 0 with
+  cases hf : findFn env.decls.fns (pathModule env s.home s.name) s.name 0 with
   | none =>
     simp only [isSomeIndex, Bool.false_eq_true, false_iff, not_exists]
     rintro d ⟨f, fw⟩

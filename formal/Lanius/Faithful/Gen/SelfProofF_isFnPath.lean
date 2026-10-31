@@ -13,7 +13,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_isFnPath
-public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
+public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 import all Lanius.Faithful.Gen.SelfSrcF_isFnPath
@@ -36,10 +36,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_is_fn_path {prog : SrcProgram} {prims : Prims} {ix_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_single_name ix_module_or ix_is_type_param ix_is_some_index ix_find_fn : Nat} (fn : prog.funcs[ix_is_fn_path]? = some (src_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_single_name ix_module_or ix_is_type_param ix_is_some_index ix_find_fn)) (np : prims.isPrim ix_is_fn_path = false)
+theorem proof_is_fn_path {prog : SrcProgram} {prims : Prims} {ix_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_single_name ix_path_module ix_is_type_param ix_is_some_index ix_find_fn : Nat} (fn : prog.funcs[ix_is_fn_path]? = some (src_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_single_name ix_path_module ix_is_type_param ix_is_some_index ix_find_fn)) (np : prims.isPrim ix_is_fn_path = false)
     (ext_field_fns_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_fns_Decls_of_mini_selfhost_Decls prog prims ix_field_fns_Decls_of_mini_selfhost_Decls n))
     (ext_single_name : Certified (∀ {n : Nat}, Stmt_single_name prog prims ix_single_name n))
-    (ext_module_or : Certified (∀ {n : Nat}, Stmt_module_or prog prims ix_module_or n))
+    (ext_path_module : Certified (∀ {n : Nat}, Stmt_path_module prog prims ix_path_module n))
     (ext_is_type_param : Certified (∀ {n : Nat}, Stmt_is_type_param prog prims ix_is_type_param n))
     (ext_is_some_index : Certified (∀ {n : Nat}, Stmt_is_some_index prog prims ix_is_some_index n))
     (ext_find_fn : Certified (∀ {n : Nat}, Stmt_find_fn prog prims ix_find_fn n)) {n : Nat} :

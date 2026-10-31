@@ -4,6 +4,7 @@ public import Lanius.Mini.Frontend.Types
 public import Lanius.Mini.Frontend.P.distinct
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.intLiteral
+public import Lanius.Mini.Frontend.P.itemOf
 public import Lanius.Mini.Frontend.P.joinInsts
 
 public section
@@ -20,6 +21,14 @@ namespace Lanius.Mini
     | some j => ({ owner := nk, index := j } : VariantAt) :: variantsNamed nrest nm nname (nk + 1)
   else
     variantsNamed nrest nm nname (nk + 1)
+
+@[expose] def Inline.itemImportAt (jd : Decls) (ji : ImportDecl) (jrest : List ImportDecl) (jm : List (List Nat)) (jname : List Nat) : Option (List (List Nat)) :=
+  if sameSpellings ji.home jm then
+    match itemOf jd ji.target jname with
+    | none => itemImport jd jrest jm jname
+    | some p => some p
+  else
+    itemImport jd jrest jm jname
 
 @[expose] def Inline.importedVariantsAt (it : List TypeDecl) (ii : ImportDecl) (irest : List ImportDecl) (im : List (List Nat)) (iname : List Nat) : List VariantAt :=
   if sameSpellings ii.home im then

@@ -215,15 +215,6 @@ theorem step_methods_of {prog : SrcProgram} {prims : Prims} {ix_methods_of ix_un
   simp only [src_methods_of] at h
   faithful [Lanius.Mini.methodsOf]
 
-theorem proof_module_or {prog : SrcProgram} {prims : Prims} {ix_module_or : Nat} (fn : prog.funcs[ix_module_or]? = some (src_module_or)) (np : prims.isPrim ix_module_or = false) {n : Nat} :
-    Stmt_module_or prog prims ix_module_or n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_module_or] at h
-  faithful [Lanius.Mini.moduleOr]
-
 theorem step_module_path {prog : SrcProgram} {prims : Prims} {ix_module_path ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_List_usize ix_module_at ix_item_body : Nat} (fn : prog.funcs[ix_module_path]? = some (src_module_path ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_List_usize ix_module_at ix_item_body)) (np : prims.isPrim ix_module_path = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
     (ext_empty_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_List_usize prog prims ix_empty_of_mini_selfhost_List_usize n))

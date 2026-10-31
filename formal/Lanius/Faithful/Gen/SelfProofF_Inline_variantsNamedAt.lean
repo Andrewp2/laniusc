@@ -12,6 +12,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
+public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_variantsNamedAt
 import all Lanius.Mini.Frontend.P.Inline_variantsNamedAt
@@ -109,6 +110,16 @@ theorem proof_int_in_range {prog : SrcProgram} {prims : Prims} {ix_int_in_range 
   rw [pcall_succ np fn] at h
   simp only [src_int_in_range] at h
   faithful [Lanius.Mini.Inline.intInRange]
+
+theorem step_item_import_at {prog : SrcProgram} {prims : Prims} {ix_item_import_at ix_same_spellings ix_item_import ix_item_of : Nat} (fn : prog.funcs[ix_item_import_at]? = some (src_item_import_at ix_same_spellings ix_item_import ix_item_of)) (np : prims.isPrim ix_item_import_at = false)
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))
+    (ext_item_of : Certified (∀ {n : Nat}, Stmt_item_of prog prims ix_item_of n)) {n : Nat}
+    (ih_item_import : Certified (Stmt_item_import prog prims ix_item_import n)) :
+    Stmt_item_import_at prog prims ix_item_import_at (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_item_import_at] at h
+  faithful [Lanius.Mini.Inline.itemImportAt]
 
 theorem step_variants_named_at {prog : SrcProgram} {prims : Prims} {ix_variants_named_at ix_plus ix_same_spellings ix_position ix_variants_named ix_cons_of_mini_selfhost_VariantAt : Nat} (fn : prog.funcs[ix_variants_named_at]? = some (src_variants_named_at ix_plus ix_same_spellings ix_position ix_variants_named ix_cons_of_mini_selfhost_VariantAt)) (np : prims.isPrim ix_variants_named_at = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))

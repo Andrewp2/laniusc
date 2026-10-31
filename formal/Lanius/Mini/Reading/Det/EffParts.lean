@@ -125,14 +125,21 @@ theorem ownerTy_unique {env : FrontEnv} {n : Name} {a b : Ty} (h₁ : OwnerTy en
 theorem bareVariant_unique {d : Decls} {m : ModPath} {name : Name} {a b : VariantAt}
     (h₁ : BareVariant d m name a) (h₂ : BareVariant d m name b) : a = b := by
   cases h₁ with
-  | here h =>
+  | item i h =>
     cases h₂ with
-    | here h' => rw [h] at h'; cases h'; rfl
-    | imported h' _ => rw [h] at h'; cases h'
-  | imported h i =>
+    | item i' h' => rw [i] at i'; cases i'; rw [h] at h'; cases h'; rfl
+    | here i' _ => rw [i] at i'; cases i'
+    | imported i' _ _ => rw [i] at i'; cases i'
+  | here i h =>
     cases h₂ with
-    | here h' => rw [h] at h'; cases h'
-    | imported _ i' => rw [i] at i'; cases i'; rfl
+    | item i' _ => rw [i] at i'; cases i'
+    | here _ h' => rw [h] at h'; cases h'; rfl
+    | imported _ h' _ => rw [h] at h'; cases h'
+  | imported i h k =>
+    cases h₂ with
+    | item i' _ => rw [i] at i'; cases i'
+    | here _ h' => rw [h] at h'; cases h'
+    | imported _ _ k' => rw [k] at k'; cases k'; rfl
 
 theorem enumVariant_unique {env : FrontEnv} {front : ModPath} {name : Name} {a b : VariantAt}
     (h₁ : EnumVariant env front name a) (h₂ : EnumVariant env front name b) : a = b := by

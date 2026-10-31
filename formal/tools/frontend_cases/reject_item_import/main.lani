@@ -1,0 +1,13 @@
+module app::main;
+
+// An item import names only its item: `half` here is core::option's, which
+// does not exist, not this module's.
+import core::option::half;
+
+fn half(n: i32) -> i32 {
+    return n / 2;
+}
+
+fn top(n: i32) -> i32 {
+    return half(n);
+}

@@ -2057,6 +2057,88 @@ fn variants_named_at(nt: TypeDecl, nrest: List<TypeDecl>, nm: List<List<usize>>,
     return variants_named(nrest, nm, nname, plus(nk, 1));
 }
 
+// Some declaration of module m: then m is a module, and `import m;` imports
+// it rather than an item of m's prefix.
+pub fn types_home(types: List<TypeDecl>, m: List<List<usize>>) -> bool {
+    return match (types) {
+        Nil -> false,
+        Cons(t, rest) -> same_spellings(t.home, m) || types_home(unbox(rest), m),
+    };
+}
+
+pub fn fns_home(fns: List<FnDecl>, m: List<List<usize>>) -> bool {
+    return match (fns) {
+        Nil -> false,
+        Cons(f, rest) -> same_spellings(f.home, m) || fns_home(unbox(rest), m),
+    };
+}
+
+pub fn consts_home(consts: List<ConstDecl>, m: List<List<usize>>) -> bool {
+    return match (consts) {
+        Nil -> false,
+        Cons(c, rest) -> same_spellings(c.home, m) || consts_home(unbox(rest), m),
+    };
+}
+
+pub fn aliases_home(aliases: List<AliasDecl>, m: List<List<usize>>) -> bool {
+    return match (aliases) {
+        Nil -> false,
+        Cons(a, rest) -> same_spellings(a.home, m) || aliases_home(unbox(rest), m),
+    };
+}
+
+pub fn is_module(d: Decls, m: List<List<usize>>) -> bool {
+    return types_home(d.types, m) || fns_home(d.fns, m) || consts_home(d.consts, m) || aliases_home(d.aliases, m);
+}
+
+pub fn if_item(b: bool, p: List<List<usize>>) -> core::option::Option<List<List<usize>>> {
+    if (b) {
+        return Some(p);
+    }
+    return None;
+}
+
+// `import p::name;` with p a module path and p::name no module: the item
+// import of name from p.
+pub fn item_of(d: Decls, target: List<List<usize>>, name: List<usize>) -> core::option::Option<List<List<usize>>> {
+    return match (split_last(target)) {
+        None -> None,
+        Some(s) -> if_item(same_text(s.name, name) && !no_names(s.home) && !is_module(d, target), s.home),
+    };
+}
+
+// The module that module m imports the item name from (its first such
+// import), if any.
+pub fn item_import(d: Decls, imports: List<ImportDecl>, m: List<List<usize>>, name: List<usize>) -> core::option::Option<List<List<usize>>> {
+    return match (imports) {
+        Nil -> None,
+        Cons(i, rest) -> item_import_at(d, i, unbox(rest), m, name),
+    };
+}
+
+// extract: inline
+fn item_import_at(jd: Decls, ji: ImportDecl, jrest: List<ImportDecl>, jm: List<List<usize>>, jname: List<usize>) -> core::option::Option<List<List<usize>>> {
+    if (same_spellings(ji.home, jm)) {
+        return match (item_of(jd, ji.target, jname)) {
+            None -> item_import(jd, jrest, jm, jname),
+            Some(p) -> Some(p),
+        };
+    }
+    return item_import(jd, jrest, jm, jname);
+}
+
+// The module a path's front names, for the item name: the front itself, or
+// for a bare name the module it is imported from, else the current module.
+pub fn path_module(env: FrontEnv, front: List<List<usize>>, name: List<usize>) -> List<List<usize>> {
+    return match (front) {
+        Nil -> match (item_import(env.decls, env.decls.imports, env.home, name)) {
+            None -> env.home,
+            Some(p) -> p,
+        },
+        Cons(n, rest) -> front,
+    };
+}
+
 // The variants spelled name in the modules that module m imports.
 pub fn imported_variants(types: List<TypeDecl>, imports: List<ImportDecl>, m: List<List<usize>>, name: List<usize>) -> List<VariantAt> {
     return match (imports) {
@@ -2083,12 +2165,16 @@ pub fn only_variant(vs: List<VariantAt>) -> core::option::Option<VariantAt> {
     };
 }
 
-// A bare variant name: the one enum of the current module that has it, or
-// else the one enum of the imported modules that has it.
+// A bare variant name: the one enum of the module it is imported from by
+// name, else the one enum of the current module that has it, else the one
+// enum of the imported modules that has it.
 pub fn bare_variant(env: FrontEnv, name: List<usize>) -> core::option::Option<VariantAt> {
-    return match (variants_named(env.decls.types, env.home, name, 0)) {
-        Nil -> only_variant(imported_variants(env.decls.types, env.decls.imports, env.home, name)),
-        Cons(v, rest) -> only_variant(cons(v, unbox(rest))),
+    return match (item_import(env.decls, env.decls.imports, env.home, name)) {
+        None -> match (variants_named(env.decls.types, env.home, name, 0)) {
+            Nil -> only_variant(imported_variants(env.decls.types, env.decls.imports, env.home, name)),
+            Cons(v, rest) -> only_variant(cons(v, unbox(rest))),
+        },
+        Some(p) -> only_variant(variants_named(env.decls.types, p, name, 0)),
     };
 }
 
@@ -2116,7 +2202,7 @@ pub fn variant_in(types: List<TypeDecl>, d: core::option::Option<usize>, name: L
 pub fn enum_variant(env: FrontEnv, front: List<List<usize>>, name: List<usize>) -> core::option::Option<VariantAt> {
     return match (split_last(front)) {
         None -> None,
-        Some(t) -> variant_in(env.decls.types, find_type(env.decls.types, module_or(env.home, t.home), t.name, 0), name),
+        Some(t) -> variant_in(env.decls.types, find_type(env.decls.types, path_module(env, t.home, t.name), t.name, 0), name),
     };
 }
 
@@ -2186,7 +2272,7 @@ pub fn param_ty(env: FrontEnv, name: List<usize>) -> core::option::Option<Ty> {
 pub fn type_decl_at(env: FrontEnv, segments: List<List<usize>>) -> core::option::Option<usize> {
     return match (split_last(segments)) {
         None -> None,
-        Some(s) -> find_type(env.decls.types, module_or(env.home, s.home), s.name, 0),
+        Some(s) -> find_type(env.decls.types, path_module(env, s.home, s.name), s.name, 0),
     };
 }
 
@@ -2325,7 +2411,7 @@ pub fn alias_ty(fuel: usize, env: FrontEnv, segments: List<List<usize>>, args: c
     }
     return match (split_last(segments)) {
         None -> None,
-        Some(s) -> match (find_alias(env.decls.aliases, module_or(env.home, s.home), s.name)) {
+        Some(s) -> match (find_alias(env.decls.aliases, path_module(env, s.home, s.name), s.name)) {
             None -> None,
             Some(a) -> match (args) {
                 None -> None,
@@ -3937,7 +4023,7 @@ pub fn const_ref(fuel: usize, env: FrontEnv, segments: core::option::Option<List
         None -> None,
         Some(ss) -> match (split_last(ss)) {
             None -> None,
-            Some(s) -> match (find_const(env.decls.consts, module_or(env.home, s.home), s.name)) {
+            Some(s) -> match (find_const(env.decls.consts, path_module(env, s.home, s.name), s.name)) {
                 None -> None,
                 Some(k) -> const_value(minus(fuel, 1), env.decls, k),
             },
@@ -5276,7 +5362,7 @@ pub fn owner_ty(env: FrontEnv, owner: core::option::Option<List<usize>>) -> core
 // A path naming a function: `T::m` for a type parameter T, or a free
 // function of the path's module.
 pub fn is_fn_path(env: FrontEnv, s: Split) -> bool {
-    return is_type_param(env, single_name(s.home)) || is_some_index(find_fn(env.decls.fns, module_or(env.home, s.home), s.name, 0));
+    return is_type_param(env, single_name(s.home)) || is_some_index(find_fn(env.decls.fns, path_module(env, s.home, s.name), s.name, 0));
 }
 
 // A postfix `recv.m(args)` (recv a local, no further postfix).
@@ -6341,7 +6427,7 @@ pub fn eff_ident(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core:
             None -> None,
             Some(ss) -> match (split_last(ss)) {
                 None -> None,
-                Some(s) -> checked_eff(!has_local(local_of(env, scope, c)) && !has_const(find_const(env.decls.consts, module_or(env.home, s.home), s.name)), eff_variant(minus(fuel, 1), env, scope, expected, variant_by_path(env, s), empty())),
+                Some(s) -> checked_eff(!has_local(local_of(env, scope, c)) && !has_const(find_const(env.decls.consts, path_module(env, s.home, s.name), s.name)), eff_variant(minus(fuel, 1), env, scope, expected, variant_by_path(env, s), empty())),
             },
         };
     }
@@ -6482,7 +6568,7 @@ pub fn eff_fn_path(fuel: usize, env: FrontEnv, scope: List<Local>, expected: cor
             Some(t) -> eff_found(minus(fuel, 1), env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, s.name, t), empty(), items),
         };
     }
-    return match (find_fn(env.decls.fns, module_or(env.home, s.home), s.name, 0)) {
+    return match (find_fn(env.decls.fns, path_module(env, s.home, s.name), s.name, 0)) {
         None -> None,
         Some(d) -> match (get(env.decls.fns, d)) {
             None -> None,

@@ -7,7 +7,7 @@ import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.moduleOr
+import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.textSelf
@@ -25,7 +25,7 @@ namespace Lanius.Mini
 def typeDeclAt (env : FrontEnv) (segments : List (List Nat)) : Option Nat :=
   match splitLast segments with
   | none => none
-  | some s => findType env.decls.types (moduleOr env.home s.home) s.name 0
+  | some s => findType env.decls.types (pathModule env s.home s.name) s.name 0
 
 def arityOk (env : FrontEnv) (d : Nat) (args : List Ty) : Bool :=
   match env.decls.types[d]? with
@@ -132,7 +132,7 @@ def aliasTy (fuel : Nat) (env : FrontEnv) (segments : List (List Nat)) (args : O
     match splitLast segments with
     | none => none
     | some s =>
-      match findAlias env.decls.aliases (moduleOr env.home s.home) s.name with
+      match findAlias env.decls.aliases (pathModule env s.home s.name) s.name with
       | none => none
       | some a =>
         match args with

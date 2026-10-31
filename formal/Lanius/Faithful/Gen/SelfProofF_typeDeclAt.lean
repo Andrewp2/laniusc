@@ -16,7 +16,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
+public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
@@ -54,12 +54,12 @@ theorem step_alias_at {prog : SrcProgram} {prims : Prims} {ix_alias_at ix_minus 
   simp only [src_alias_at] at h
   faithful [Lanius.Mini.aliasAt]
 
-theorem step_alias_ty {prog : SrcProgram} {prims : Prims} {ix_alias_ty ix_minus ix_field_aliases_Decls_of_mini_selfhost_Decls ix_split_last ix_find_alias ix_module_or ix_alias_at : Nat} (fn : prog.funcs[ix_alias_ty]? = some (src_alias_ty ix_minus ix_field_aliases_Decls_of_mini_selfhost_Decls ix_split_last ix_find_alias ix_module_or ix_alias_at)) (np : prims.isPrim ix_alias_ty = false)
+theorem step_alias_ty {prog : SrcProgram} {prims : Prims} {ix_alias_ty ix_minus ix_field_aliases_Decls_of_mini_selfhost_Decls ix_split_last ix_find_alias ix_path_module ix_alias_at : Nat} (fn : prog.funcs[ix_alias_ty]? = some (src_alias_ty ix_minus ix_field_aliases_Decls_of_mini_selfhost_Decls ix_split_last ix_find_alias ix_path_module ix_alias_at)) (np : prims.isPrim ix_alias_ty = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_field_aliases_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_aliases_Decls_of_mini_selfhost_Decls prog prims ix_field_aliases_Decls_of_mini_selfhost_Decls n))
     (ext_split_last : Certified (∀ {n : Nat}, Stmt_split_last prog prims ix_split_last n))
     (ext_find_alias : Certified (∀ {n : Nat}, Stmt_find_alias prog prims ix_find_alias n))
-    (ext_module_or : Certified (∀ {n : Nat}, Stmt_module_or prog prims ix_module_or n)) {n : Nat}
+    (ext_path_module : Certified (∀ {n : Nat}, Stmt_path_module prog prims ix_path_module n)) {n : Nat}
     (ih_alias_at : Certified (Stmt_alias_at prog prims ix_alias_at n)) :
     Stmt_alias_ty prog prims ix_alias_ty (n + 1) := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
@@ -261,10 +261,10 @@ theorem step_ty_of {prog : SrcProgram} {prims : Prims} {ix_ty_of ix_minus ix_nod
   simp only [src_ty_of] at h
   faithful [Lanius.Mini.tyOf]
 
-theorem proof_type_decl_at {prog : SrcProgram} {prims : Prims} {ix_type_decl_at ix_field_types_Decls_of_mini_selfhost_Decls ix_split_last ix_module_or ix_find_type : Nat} (fn : prog.funcs[ix_type_decl_at]? = some (src_type_decl_at ix_field_types_Decls_of_mini_selfhost_Decls ix_split_last ix_module_or ix_find_type)) (np : prims.isPrim ix_type_decl_at = false)
+theorem proof_type_decl_at {prog : SrcProgram} {prims : Prims} {ix_type_decl_at ix_field_types_Decls_of_mini_selfhost_Decls ix_split_last ix_path_module ix_find_type : Nat} (fn : prog.funcs[ix_type_decl_at]? = some (src_type_decl_at ix_field_types_Decls_of_mini_selfhost_Decls ix_split_last ix_path_module ix_find_type)) (np : prims.isPrim ix_type_decl_at = false)
     (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
     (ext_split_last : Certified (∀ {n : Nat}, Stmt_split_last prog prims ix_split_last n))
-    (ext_module_or : Certified (∀ {n : Nat}, Stmt_module_or prog prims ix_module_or n))
+    (ext_path_module : Certified (∀ {n : Nat}, Stmt_path_module prog prims ix_path_module n))
     (ext_find_type : Certified (∀ {n : Nat}, Stmt_find_type prog prims ix_find_type n)) {n : Nat} :
     Stmt_type_decl_at prog prims ix_type_decl_at n := by
   intro x0 x1 v0 v1 w h r0 r1

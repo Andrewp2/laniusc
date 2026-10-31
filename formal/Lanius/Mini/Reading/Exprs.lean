@@ -1186,7 +1186,7 @@ inductive ExprR : FrontEnv → List Local → CTree → SrcExpr → Prop
   | const {env : FrontEnv} {scope : List Local} {c : CTree} {ss : List Name} {m : ModPath} {n : Name} {k : ConstDecl}
       {e : SrcExpr} :
       nodeProd c = pIdent → nodeProd (kid c 1) = pIdentPlain → (∀ l, ¬LocalOf scope c l) →
-      PathSpellings (kid (kid c 0) 0) (kid (kid c 0) 1) ss → Resolves env.home ss m n → ConstNamed env.decls m n k →
+      PathSpellings (kid (kid c 0) 0) (kid (kid c 0) 1) ss → Resolves env.decls env.home ss m n → ConstNamed env.decls m n k →
       ConstValue env.decls k e → ExprR env scope c e
   | self {env : FrontEnv} {scope : List Local} {c : CTree} {l : Local} :
       nodeProd c = pSelfValue → LocalOf scope c l → ExprR env scope c (.local l.id)
@@ -1234,8 +1234,8 @@ def ExprSound (fuel : Nat) : Prop :=
   (∀ {env scope c e}, identExpr fuel env scope c = some e → nodeProd (kid c 1) = pIdentPlain ∧
     ((∃ l, LocalOf scope c l ∧ e = .local l.id) ∨
      ((∀ l, ¬LocalOf scope c l) ∧ ∃ ss m n k, PathSpellings (kid (kid c 0) 0) (kid (kid c 0) 1) ss ∧
-       Resolves env.home ss m n ∧ ConstNamed env.decls m n k ∧ ConstValue env.decls k e))) ∧
-  (∀ {env segs e}, constRef fuel env segs = some e → ∃ ss m n k, segs = some ss ∧ Resolves env.home ss m n ∧
+       Resolves env.decls env.home ss m n ∧ ConstNamed env.decls m n k ∧ ConstValue env.decls k e))) ∧
+  (∀ {env segs e}, constRef fuel env segs = some e → ∃ ss m n k, segs = some ss ∧ Resolves env.decls env.home ss m n ∧
     ConstNamed env.decls m n k ∧ ConstValue env.decls k e) ∧
   (∀ {decls k e}, constValue fuel decls k = some e → ConstValue decls k e) ∧
   (∀ {env scope c e}, assignValue fuel env scope c = some e →
@@ -1387,7 +1387,7 @@ theorem exprSound : ∀ fuel, ExprSound fuel
         | some s =>
           rw [hs] at h
           simp only at h
-          cases hk : findConst env.decls.consts (moduleOr env.home s.home) s.name with
+          cases hk : findConst env.decls.consts (pathModule env s.home s.name) s.name with
           | none => rw [hk] at h; cases h
           | some k =>
             rw [hk] at h
