@@ -96,7 +96,7 @@ theorem paramsR_fresh : ∀ {scope : List Local} {ps : List CTree} {r : MParams}
   | _, _, _, .nil, nd => nd
   | _, _, _, @ParamsR.cons _ _ _ p _ _ x _ _ _ fr _ _ rest, nd => by
     have h := paramsR_fresh rest
-      (idsFresh_cons (l := { name := (kidToken p 0).text, id := (kidToken p 0).start - env.base, ty := x }) nd fr)
+      (idsFresh_cons (l := { name := (paramToken p).text, id := (paramToken p).start - env.base, ty := x }) nd fr)
     exact h
 
 end

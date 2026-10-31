@@ -38,7 +38,7 @@ public import Lanius.Mini.Frontend.P.consTreeTail
 public import Lanius.Mini.Frontend.P.xDivideOf
 public import Lanius.Mini.Frontend.P.projectionRet
 public import Lanius.Mini.Frontend.P.fnInstRet
-public import Lanius.Mini.Frontend.P.isSomeIndex
+public import Lanius.Mini.Frontend.P.isFnPath
 public import Lanius.Mini.Frontend.P.isPathCall
 public import Lanius.Mini.Frontend.P.sliceHead
 public import Lanius.Mini.Frontend.P.consBinder

@@ -118,6 +118,7 @@ abbrev pOrTail : Nat := 119
 abbrev pOrexpr : Nat := 118
 abbrev pParamNamed : Nat := 62
 abbrev pParamSelf : Nat := 63
+abbrev pParamSelfRef : Nat := 64
 abbrev pParamsAfterCommaMore : Nat := 292
 abbrev pParamsAfterCommaTrailing : Nat := 293
 abbrev pParamsEnd : Nat := 68

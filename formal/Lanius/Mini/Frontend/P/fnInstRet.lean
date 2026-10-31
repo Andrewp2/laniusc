@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
@@ -149,18 +150,33 @@ def argsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (args : CTree) : O
   | none => none
   | some items => exprsOf fuel env scope items
 
-/-- A path's one-segment prefix that names a type: a type parameter or a primitive type (`T::m`, `i32::hash`). -/
+def isSomeIndex (k : Option Nat) : Bool :=
+  match k with
+  | none => false
+  | some x => true
+
+/-- A struct's declaration (an enum's path names its variants). -/
+def isStructAt (env : FrontEnv) (k : Option Nat) : Bool :=
+  match k with
+  | none => false
+  | some d =>
+    match env.decls.types[d]? with
+    | none => false
+    | some t => !t.isEnum
+
+/-- A path's one-segment prefix that names a type: a type parameter, a primitive type or a struct of the current module (`T::m`, `i32::hash`, `Date::lt`). -/
 def isTypeParam (env : FrontEnv) (owner : Option (List Nat)) : Bool :=
   match owner with
   | none => false
-  | some n => member env.names n || !(isNoneType (primitive n))
+  | some n => member env.names n || !(isNoneType (primitive n)) || isStructAt env (typeDeclAt env [n])
 
+/-- A type of the current module stands for itself with no type arguments. -/
 def ownerTy (env : FrontEnv) (owner : Option (List Nat)) : Option Ty :=
   match owner with
   | none => none
   | some n =>
     match paramTy env n with
     | some t => some t
-    | none => primTy n
+    | none => primOrNamed env [n] n
 
 end Lanius.Mini

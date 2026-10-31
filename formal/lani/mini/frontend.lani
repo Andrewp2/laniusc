@@ -3853,7 +3853,8 @@ pub fn cons_tree(t: core::option::Option<CTree>, rest: core::option::Option<List
     };
 }
 
-// The declared type of a parameter: `name: T`, `self` (the impl's type) or
+// The declared type of a parameter: `name: T`, `self` (the impl's type),
+// `&self` (the impl's type: a shared reference is read as the value) or
 // `self: T`.
 pub fn pattern_of(fd: FnDecl, p: CTree) -> core::option::Option<CTree> {
     let tail: CTree = kid(p, 1);
@@ -3861,6 +3862,9 @@ pub fn pattern_of(fd: FnDecl, p: CTree) -> core::option::Option<CTree> {
         return Some(kid(p, 2));
     }
     if (node_prod(p) == p_param_self() && node_prod(tail) == p_self_param_plain() && fd.in_impl) {
+        return Some(fd.self_type);
+    }
+    if (node_prod(p) == p_param_self_ref() && fd.in_impl) {
         return Some(fd.self_type);
     }
     if (node_prod(p) == p_param_self() && node_prod(tail) == p_self_param_typed()) {
@@ -4549,29 +4553,42 @@ pub fn args_of(fuel: usize, env: FrontEnv, scope: List<Local>, args: CTree) -> c
 
 // ---------------------------------------------------------------- calls
 
-// A path's one-segment prefix that names a type: a type parameter or a
-// primitive type (`T::m`, `i32::hash`).
-pub fn is_type_param(env: FrontEnv, owner: core::option::Option<List<usize>>) -> bool {
-    return match (owner) {
+pub fn is_some_index(k: core::option::Option<usize>) -> bool {
+    return match (k) {
         None -> false,
-        Some(n) -> member(env.names, n) || !is_none_type(primitive(n)),
+        Some(x) -> true,
     };
 }
 
+// A struct's declaration (an enum's path names its variants).
+pub fn is_struct_at(env: FrontEnv, k: core::option::Option<usize>) -> bool {
+    return match (k) {
+        None -> false,
+        Some(d) -> match (get(env.decls.types, d)) {
+            None -> false,
+            Some(t) -> !t.is_enum,
+        },
+    };
+}
+
+// A path's one-segment prefix that names a type: a type parameter, a
+// primitive type or a struct of the current module (`T::m`, `i32::hash`,
+// `Date::lt`).
+pub fn is_type_param(env: FrontEnv, owner: core::option::Option<List<usize>>) -> bool {
+    return match (owner) {
+        None -> false,
+        Some(n) -> member(env.names, n) || !is_none_type(primitive(n)) || is_struct_at(env, type_decl_at(env, single(n))),
+    };
+}
+
+// A type of the current module stands for itself with no type arguments.
 pub fn owner_ty(env: FrontEnv, owner: core::option::Option<List<usize>>) -> core::option::Option<Ty> {
     return match (owner) {
         None -> None,
         Some(n) -> match (param_ty(env, n)) {
             Some(t) -> Some(t),
-            None -> prim_ty(n),
+            None -> prim_or_named(env, single(n), n),
         },
-    };
-}
-
-pub fn is_some_index(k: core::option::Option<usize>) -> bool {
-    return match (k) {
-        None -> false,
-        Some(x) -> true,
     };
 }
 
@@ -6578,7 +6595,16 @@ pub fn cons_param(p: MParam, rest: core::option::Option<MParams>) -> core::optio
     };
 }
 
-// `name: T` or `self` (by value); each a local named by its spelling.
+// A parameter's name token: `self` after the `&` of `&self`.
+pub fn param_token(p: CTree) -> Token {
+    if (node_prod(p) == p_param_self_ref()) {
+        return kid_token(p, 1);
+    }
+    return kid_token(p, 0);
+}
+
+// `name: T`, `self` or `&self` (both by value); each a local named by its
+// spelling.
 pub fn params_of(fuel: usize, env: FrontEnv, fd: FnDecl, scope: List<Local>, items: List<CTree>) -> core::option::Option<MParams> {
     return match (items) {
         Nil -> Some(MParams { params: empty(), scope: scope }),
@@ -6588,8 +6614,8 @@ pub fn params_of(fuel: usize, env: FrontEnv, fd: FnDecl, scope: List<Local>, ite
 
 // extract: inline
 fn param_of(pfuel: usize, penv: FrontEnv, pfd: FnDecl, pscope: List<Local>, pp: CTree, prest: List<CTree>) -> core::option::Option<MParams> {
-    let tok: Token = kid_token(pp, 0);
-    if ((node_prod(pp) == p_param_named() || node_prod(pp) == p_param_self()) && !member(penv.globals, tok.text) && fresh_id(pscope, minus(tok.start, penv.base))) {
+    let tok: Token = param_token(pp);
+    if ((node_prod(pp) == p_param_named() || node_prod(pp) == p_param_self() || node_prod(pp) == p_param_self_ref()) && !member(penv.globals, tok.text) && fresh_id(pscope, minus(tok.start, penv.base))) {
         return match (pattern_of(pfd, pp)) {
             None -> None,
             Some(t) -> match (ty_of(pfuel, penv, t)) {
@@ -10249,6 +10275,11 @@ fn p_param_named() -> usize {
 // extract: inline
 fn p_param_self() -> usize {
     return 63;
+}
+
+// extract: inline
+fn p_param_self_ref() -> usize {
+    return 64;
 }
 
 // extract: inline

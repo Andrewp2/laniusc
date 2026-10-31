@@ -460,12 +460,14 @@ theorem matchTys_sound {fuel : Nat} {env : FrontEnv} {names : List Name} {ps : L
 
 /-! ## Call instances -/
 
-/-- The declared type of a parameter: `name: T`, `self` (the impl's type)
-or `self: T`. -/
+/-- The declared type of a parameter: `name: T`, `self` (the impl's type),
+`&self` (the impl's type too: a shared reference is read as the value) or
+`self: T`. -/
 inductive PatternOf (fd : FnDecl) (p : CTree) : CTree → Prop
   | named : nodeProd p = pParamNamed → PatternOf fd p (kid p 2)
   | self : nodeProd p = pParamSelf → nodeProd (kid p 1) = pSelfParamPlain → fd.inImpl = true → PatternOf fd p fd.selfType
   | selfTyped : nodeProd p = pParamSelf → nodeProd (kid p 1) = pSelfParamTyped → PatternOf fd p (kid (kid p 1) 1)
+  | selfRef : nodeProd p = pParamSelfRef → fd.inImpl = true → PatternOf fd p fd.selfType
 
 /-- The declared types of a function's parameters. -/
 def ParamPatterns (fd : FnDecl) (ps : List CTree) : Prop :=
@@ -507,6 +509,11 @@ theorem patternOf_sound {fd : FnDecl} {p q : CTree} (h : patternOf fd p = some q
     subst h
     exact .self s.1 s.2.1 s.2.2
   rw [if_neg (by simpa [and_assoc] using s)] at h
+  by_cases r : nodeProd p = pParamSelfRef ∧ fd.inImpl = true
+  · rw [if_pos (by simpa using r), Option.some.injEq] at h
+    subst h
+    exact .selfRef r.1 r.2
+  rw [if_neg (by simpa using r)] at h
   by_cases t : nodeProd p = pParamSelf ∧ nodeProd (kid p 1) = pSelfParamTyped
   · rw [if_pos (by simpa using t), Option.some.injEq] at h
     subst h

@@ -18,8 +18,8 @@ import Lanius.Mini.Frontend.P.hasConst
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.isFnPath
 import Lanius.Mini.Frontend.P.isPathCall
-import Lanius.Mini.Frontend.P.isSomeIndex
 import Lanius.Mini.Frontend.P.joinInsts
 import Lanius.Mini.Frontend.P.moduleOr
 import Lanius.Mini.Frontend.P.noNames

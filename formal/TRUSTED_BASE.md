@@ -337,6 +337,13 @@ still a parse tree of the same tokens. Trusted:
   - a bare literal operand of a shift (added 10-30) takes the shifted
     value's type, or else the shift's expected type, and a bare amount the
     value's (`amountWant`), as a shift's type is its left operand's;
+  - `&self` (added 10-30) is read as `self`: the method takes the impl's
+    type by value, as a shared reference to a value no one can change while
+    it lives means the value (`PatternOf.selfRef`, `paramToken`);
+  - `S::m(args)` for a struct S of the current module (added 10-30) is read
+    as `T::m` is for a type parameter bound to S: the one method spelled m
+    of an impl whose type matches S (`TypeOwner`, `OwnerTy`); an enum's
+    path still names its variants;
   - `0` where a `ptr` is expected (a `let`, a parameter, an operand beside a
     `ptr`, a `ptr` constant) is `Null`, Core's null pointer;
   - a match arm whose value calls a `-> !` function g, in a match of value

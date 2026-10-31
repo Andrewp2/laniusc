@@ -26,16 +26,17 @@ abbrev fnScope (decls : Decls) (fd : FnDecl) (args : List Ty) (ret : Option Ty) 
   { decls := decls, home := fd.home, names := fd.implParams ++ fd.params, subst := args,
     globals := moduleGlobals decls fd.home, ret := ret, base := (kidToken fd.tree 1).start }
 
-/-- `name: T` or `self`, each a local named by its spelling, numbered by
+/-- `name: T`, `self` or `&self` (`paramToken`: the `self` after the `&`),
+each a local named by its spelling, numbered by
 its offset from the function's name. -/
 inductive ParamsR (env : FrontEnv) (fd : FnDecl) : List Local → List CTree → MParams → Prop
   | nil {scope : List Local} : ParamsR env fd scope [] { params := [], scope := scope }
   | cons {scope : List Local} {p : CTree} {rest : List CTree} {t : CTree} {x : Ty} {r : MParams} :
-      (nodeProd p = pParamNamed ∨ nodeProd p = pParamSelf) → (kidToken p 0).text ∉ env.globals →
-      FreshId scope ((kidToken p 0).start - env.base) → PatternOf fd p t → TyR env t x →
-      ParamsR env fd ({ name := (kidToken p 0).text, id := (kidToken p 0).start - env.base, ty := x } :: scope) rest r →
+      (nodeProd p = pParamNamed ∨ nodeProd p = pParamSelf ∨ nodeProd p = pParamSelfRef) → (paramToken p).text ∉ env.globals →
+      FreshId scope ((paramToken p).start - env.base) → PatternOf fd p t → TyR env t x →
+      ParamsR env fd ({ name := (paramToken p).text, id := (paramToken p).start - env.base, ty := x } :: scope) rest r →
       ParamsR env fd scope (p :: rest)
-        { params := { id := (kidToken p 0).start - env.base, ty := x } :: r.params, scope := r.scope }
+        { params := { id := (paramToken p).start - env.base, ty := x } :: r.params, scope := r.scope }
 
 theorem paramsOf_sound {fuel : Nat} {env : FrontEnv} {fd : FnDecl} :
     ∀ {scope : List Local} {items : List CTree} {ps : MParams}, paramsOf fuel env fd scope items = some ps →
@@ -60,7 +61,7 @@ theorem paramsOf_sound {fuel : Nat} {env : FrontEnv} {fd : FnDecl} :
         | some x =>
           rw [ht] at h
           simp only [consParam] at h
-          cases hr : paramsOf fuel env fd (⟨(kidToken p 0).text, (kidToken p 0).start - env.base, x⟩ :: scope) rest with
+          cases hr : paramsOf fuel env fd (⟨(paramToken p).text, (paramToken p).start - env.base, x⟩ :: scope) rest with
           | none => rw [hr] at h; cases h
           | some r =>
             rw [hr] at h

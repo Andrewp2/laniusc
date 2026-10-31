@@ -420,12 +420,31 @@ def results_of(ret):
     return ['all']
 
 
+def trait_home(mods, t):
+    """The trait's qualified name: module::Trait."""
+    tname = re.match(r'[\w:]+', t.trait).group(0)
+    if '::' in tname:
+        return tname
+    home = t.module if tname in mods[t.module].traits else next(
+        (n for n in mods if tname in mods[n].traits), t.module)
+    return f'{home}::{tname}'
+
+
+def written(ty):
+    """A resolved type as the wrapper writes it."""
+    if ty.startswith('Option<'):
+        return f'core::option::Option<{ty[7:-1]}>'
+    return type_text(ty)
+
+
 def wrapper_text(mods, t, part):
     """The first file of a target's program, and the wrapper's scalar parameter types."""
     fn = t.fn
     lines = ['module app::main;', '']
     imports = {t.module, 'core::option'} if any(ty.startswith('Option<') for _, ty in t.params) or \
         t.ret.startswith('Option<') else {t.module}
+    if t.trait:
+        imports.add(trait_home(mods, t).rsplit('::', 1)[0])
     for dep in sorted(imports | {m for ty in [t.ret] + [ty for _, ty in t.params] for m in struct_modules(ty)}):
         lines.append(f'import {dep};')
     lines.append('')
@@ -450,17 +469,16 @@ def wrapper_text(mods, t, part):
     ret = type_text(ret)
     if t.trait:
         # A generic helper calls the method as T::m, as the stdlib's generic code does.
-        tparams = ', '.join(f'{p}: {"T" if ty == t.impl_type else ty}' for p, ty in fn['params'])
-        hret = 'T' if fn['ret'] == t.impl_type else fn['ret']
+        itype = type_text(resolve(mods, t.module, t.impl_type, {}))
+        tparams = ', '.join(f'{p}: {"T" if ty == t.impl_type else written(rty)}'
+                            for (p, ty), (_, rty) in zip(fn['params'], t.params))
+        hret = 'T' if fn['ret'] == t.impl_type else written(t.ret)
         trait = re.sub(rf'\b{t.impl_type}\b', 'T', t.trait)
-        tname = re.match(r'[\w:]+', t.trait).group(0)
-        if '::' not in tname:
-            home = t.module if tname in mods[t.module].traits else next(
-                (n for n in mods if tname in mods[n].traits), t.module)
-            trait = f'{home}::{trait}'
+        if '::' not in re.match(r'[\w:]+', t.trait).group(0):
+            trait = f'{trait_home(mods, t).rsplit("::", 1)[0]}::{trait}'
         lines += [f'fn oracle_helper<T>({tparams}) -> {hret} where T: {trait} {{',
                   f'    return T::{fn["name"]}({", ".join(p for p, _ in fn["params"])});', '}', '']
-        call = f'oracle_helper<{t.impl_type}>({", ".join(args)})'
+        call = f'oracle_helper<{itype}>({", ".join(args)})'
     else:
         targs = f'<{t.targs or ", ".join("i32" for _ in fn["generics"])}>' if fn['generics'] else ''
         call = f'{t.module}::{fn["name"]}{targs}({", ".join(args)})'

@@ -116,13 +116,20 @@ def consParam (p : MParam) (rest : Option MParams) : Option MParams :=
   | none => none
   | some r => some ({ params := p :: r.params, scope := r.scope } : MParams)
 
-/-- `name: T` or `self` (by value); each a local named by its spelling. -/
+/-- A parameter's name token: `self` after the `&` of `&self`. -/
+def paramToken (p : CTree) : Token :=
+  if nodeProd p = (64) then
+    kidToken p 1
+  else
+    kidToken p 0
+
+/-- `name: T`, `self` or `&self` (both by value); each a local named by its spelling. -/
 def paramsOf (fuel : Nat) (env : FrontEnv) (fd : FnDecl) (scope : List Local) (items : List CTree) : Option MParams :=
   match items with
   | [] => some ({ params := [], scope := scope } : MParams)
   | p :: rest =>
-    let tok : Token := kidToken p 0
-    if (decide (nodeProd p = (62)) || decide (nodeProd p = (63))) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
+    let tok : Token := paramToken p
+    if (decide (nodeProd p = (62)) || decide (nodeProd p = (63)) || decide (nodeProd p = (64))) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
       match patternOf fd p with
       | none => none
       | some t =>

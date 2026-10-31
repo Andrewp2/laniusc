@@ -29,7 +29,7 @@ def consTree (t : Option CTree) (rest : Option (List CTree)) : Option (List CTre
   | none => none
   | some x => consTreeTail x rest
 
-/-- The declared type of a parameter: `name: T`, `self` (the impl's type) or `self: T`. -/
+/-- The declared type of a parameter: `name: T`, `self` (the impl's type), `&self` (the impl's type: a shared reference is read as the value) or `self: T`. -/
 def patternOf (fd : FnDecl) (p : CTree) : Option CTree :=
   let tail : CTree := kid p 1
   if nodeProd p = (62) then
@@ -38,10 +38,13 @@ def patternOf (fd : FnDecl) (p : CTree) : Option CTree :=
     if decide (nodeProd p = (63)) && decide (nodeProd tail = (66)) && fd.inImpl then
       some fd.selfType
     else
-      if decide (nodeProd p = (63)) && decide (nodeProd tail = (65)) then
-        some (kid tail 1)
+      if decide (nodeProd p = (64)) && fd.inImpl then
+        some fd.selfType
       else
-        none
+        if decide (nodeProd p = (63)) && decide (nodeProd tail = (65)) then
+          some (kid tail 1)
+        else
+          none
 
 def patternsOf (fd : FnDecl) (items : List CTree) : Option (List CTree) :=
   match items with

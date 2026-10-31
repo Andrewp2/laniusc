@@ -105,13 +105,21 @@ theorem typeOwner_unique {env : FrontEnv} {front : ModPath} {a b : Name} (h₁ :
 
 theorem ownerTy_unique {env : FrontEnv} {n : Name} {a b : Ty} (h₁ : OwnerTy env n a) (h₂ : OwnerTy env n b) :
     a = b := by
-  rcases h₁ with p | ⟨np, l⟩ <;> rcases h₂ with p' | ⟨np', l'⟩
+  rcases h₁ with p | ⟨np, l⟩ | ⟨np, l, d, at', -, rfl⟩ <;>
+    rcases h₂ with p' | ⟨np', l'⟩ | ⟨np', l', d', at'', -, rfl⟩
   · exact paramTy_unique p p'
+  · exact (paramTy_noParam p np').elim
   · exact (paramTy_noParam p np').elim
   · exact (paramTy_noParam p' np).elim
   · rw [l] at l'
     cases l'
     rfl
+  · rw [l] at l'
+    cases l'
+  · exact (paramTy_noParam p' np).elim
+  · rw [l] at l'
+    cases l'
+  · rw [declAt_unique at' at'']
 
 theorem bareVariant_unique {d : Decls} {m : ModPath} {name : Name} {a b : VariantAt}
     (h₁ : BareVariant d m name a) (h₂ : BareVariant d m name b) : a = b := by

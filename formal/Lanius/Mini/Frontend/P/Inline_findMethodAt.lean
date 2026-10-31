@@ -46,8 +46,8 @@ namespace Lanius.Mini
     none
 
 @[expose] def Inline.paramOf (pfuel : Nat) (penv : FrontEnv) (pfd : FnDecl) (pscope : List Local) (pp : CTree) (prest : List CTree) : Option MParams :=
-  let tok : Token := kidToken pp 0
-  if (decide (nodeProd pp = (62)) || decide (nodeProd pp = (63))) && !(member penv.globals tok.text) && freshId pscope (tok.start - penv.base) then
+  let tok : Token := paramToken pp
+  if (decide (nodeProd pp = (62)) || decide (nodeProd pp = (63)) || decide (nodeProd pp = (64))) && !(member penv.globals tok.text) && freshId pscope (tok.start - penv.base) then
     match patternOf pfd pp with
     | none => none
     | some t =>

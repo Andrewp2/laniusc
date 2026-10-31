@@ -15,11 +15,6 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-def isSomeIndex (k : Option Nat) : Bool :=
-  match k with
-  | none => false
-  | some x => true
-
 /-- A path naming a function: `T::m` for a type parameter T, or a free function of the path's module. -/
 def isFnPath (env : FrontEnv) (s : Split) : Bool :=
   isTypeParam env (singleName s.home) || isSomeIndex (findFn env.decls.fns (moduleOr env.home s.home) s.name 0)

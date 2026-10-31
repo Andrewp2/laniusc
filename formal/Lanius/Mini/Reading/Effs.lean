@@ -608,9 +608,16 @@ theorem ownerTy_sound {env : FrontEnv} {n : Name} {t : Ty} (h : ownerTy env (som
     exact .inl (paramTy_sound hp)
   | none =>
     rw [hp] at h
-    simp only at h
+    simp only [primOrNamed] at h
     rw [primTy_eq] at h
-    exact .inr ⟨paramTy_none hp, h⟩
+    cases hq : primTys.lookup n with
+    | some t' =>
+      rw [hq] at h
+      exact .inr (.inl ⟨paramTy_none hp, hq.trans h⟩)
+    | none =>
+      rw [hq] at h
+      obtain ⟨d, at', ar, rfl⟩ := namedOf_sound h
+      exact .inr (.inr ⟨paramTy_none hp, hq, d, at', ar, rfl⟩)
 
 theorem effBinary_some {p : Nat} {acc r : Option MEff} {b : MEff} (h : effBinary p acc r = some b) :
     ∃ a x, acc = some a ∧ r = some x := by

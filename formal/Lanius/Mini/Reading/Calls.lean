@@ -5,7 +5,8 @@ import Lanius.Mini.Reading.Method
 `EffTy decls scope x t`: the type of an effectful expression, as type
 arguments are inferred from it (a call's is its instance's result type,
 `InstRet`). A path's prefix names a type (`TypeOwner`) when it is one
-segment, a type parameter or a primitive type; the calls themselves are
+segment, a type parameter, a primitive type or a type of the current
+module; the calls themselves are
 read in `Reading/Effs`. -/
 
 namespace Lanius.Mini.Reading
@@ -247,34 +248,67 @@ theorem pathRef_sound : ∀ {fuel : Nat} {segment tail : CTree} {pr : PathRef},
 
 /-! ## Type owners -/
 
-/-- A path's prefix that names a type: one segment, a type parameter or a
-primitive type. -/
+/-- A path's prefix that names a type: one segment, a type parameter, a
+primitive type or a struct of the current module (an enum's path names its
+variants). -/
 def TypeOwner (env : FrontEnv) (front : ModPath) (n : Name) : Prop :=
-  front = [n] ∧ (n ∈ env.names ∨ primName n ≠ none)
+  front = [n] ∧ (n ∈ env.names ∨ primName n ≠ none ∨
+    ∃ d t, DeclAt env [n] d ∧ env.decls.types[d]? = some t ∧ t.isEnum = false)
 
-/-- The type a type owner names. -/
+/-- The type a type owner names: a type of the current module stands for
+itself with no type arguments. -/
 def OwnerTy (env : FrontEnv) (n : Name) (t : Ty) : Prop :=
-  ParamTy env n t ∨ (NoParam env n ∧ primTys.lookup n = some t)
+  ParamTy env n t ∨ (NoParam env n ∧ primTys.lookup n = some t) ∨
+    (NoParam env n ∧ primTys.lookup n = none ∧ ∃ d, DeclAt env [n] d ∧ Arity env.decls d 0 ∧ t = .tyNamed d [])
+
+theorem isStructAt_typeDeclAt (env : FrontEnv) (ss : List Name) :
+    isStructAt env (typeDeclAt env ss) = true ↔
+      ∃ d t, DeclAt env ss d ∧ env.decls.types[d]? = some t ∧ t.isEnum = false := by
+  cases h : typeDeclAt env ss with
+  | some d =>
+    have a := typeDeclAt_sound h
+    unfold isStructAt
+    cases ht : env.decls.types[d]? with
+    | none =>
+      simp only [ht]
+      refine ⟨fun e => by cases e, ?_⟩
+      rintro ⟨d', t, a', ht', -⟩
+      rw [declAt_unique a a', ht'] at ht
+      cases ht
+    | some t =>
+      simp only [ht, Bool.not_eq_true']
+      refine ⟨fun e => ⟨d, t, a, ht, e⟩, ?_⟩
+      rintro ⟨d', t', a', ht', e⟩
+      rw [declAt_unique a a', ht'] at ht
+      cases ht
+      exact e
+  | none =>
+    refine ⟨fun e => (by simp [isStructAt] at e), ?_⟩
+    rintro ⟨d, -, a, -⟩
+    exact absurd a (noDeclAt_not (typeDeclAt_none h))
 
 theorem isTypeParam_iff (env : FrontEnv) (front : ModPath) :
     (isTypeParam env (singleName front) = true) ↔ ∃ n, TypeOwner env front n := by
   rw [singleName_eq]
   match front with
   | [n] =>
-    simp only [isTypeParam, Bool.or_eq_true, member_iff, Bool.not_eq_true', primitive_eq, TypeOwner]
+    simp only [isTypeParam, Bool.or_eq_true, member_iff, Bool.not_eq_true', primitive_eq, TypeOwner,
+      isStructAt_typeDeclAt]
     constructor
     · intro h
       refine ⟨n, rfl, ?_⟩
-      rcases h with h | h
+      rcases h with (h | h) | h
       · exact .inl h
-      · right
+      · right; left
         cases hp : primName n <;> simp_all [isNoneType]
+      · exact .inr (.inr h)
     · rintro ⟨m, e, h⟩
       cases e
-      rcases h with h | h
-      · exact .inl h
-      · right
+      rcases h with h | h | h
+      · exact .inl (.inl h)
+      · left; right
         cases hp : primName n <;> simp_all [isNoneType]
+      · exact .inr h
   | [] => simp [isTypeParam, TypeOwner]
   | _ :: _ :: _ => simp [isTypeParam, TypeOwner]
 
