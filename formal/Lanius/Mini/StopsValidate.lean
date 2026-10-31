@@ -141,6 +141,7 @@ theorem Stops.killed {prog : Program} (s : Stmt) :
   | brk => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | cont => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | sys => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | frame => intro _ _ _ _ _ k; simp [Stmt.kills] at k
 
 /-- Every stop of an original statement from an environment where `facts`
 hold is a stop of the statement the validator accepted, for the same `n`. -/

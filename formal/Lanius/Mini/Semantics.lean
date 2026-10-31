@@ -256,6 +256,9 @@ structure Heap where
   cursor : Nat
   limit : Nat
   io : Lanius.X86.Machine.Io := {}
+  /-- The frame pointer: frame memory is handed out downward from here, and
+  stays at or above `limit` (SEMANTIC_DECISIONS, "Addressed locals"). -/
+  fsp : Nat := 0
 
 /-- `n` rounded up to a multiple of `2 ^ shift`. -/
 def alignUp (n shift : Nat) : Nat := (n + 2 ^ shift - 1) / 2 ^ shift * 2 ^ shift
@@ -425,6 +428,12 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
       {result : BitVec 64} :
       call.run (Expr.evalAll env args) heap = some (result, after) →
       Exec prog depth env heap (.sys call target args) (.normal (env.set target result) after)
+  /-- `bytes` of frame memory below the frame pointer, whose new value goes to
+  `target`. -/
+  | frame {depth : Nat} {env : Env} {heap : Heap} {target bytes : Nat} :
+      heap.limit + bytes ≤ heap.fsp →
+      Exec prog depth env heap (.frame target bytes)
+        (.normal (env.set target (BitVec.ofNat 64 (heap.fsp - bytes))) { heap with fsp := heap.fsp - bytes })
 
 /-- Calling function `callee` with `args` from `heap` returns `value` and
 leaves `after`, nesting calls fewer than `depth` deep. -/

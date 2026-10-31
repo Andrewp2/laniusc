@@ -575,6 +575,7 @@ theorem Stmt.factsAfter_hold {prog : Program} (s : Stmt) :
   | call => intro _ _ _ _ _ _ _ _; exact Facts.Hold.nil _
   | ret => intro _ _ _ _ _ _ _ _; exact Facts.Hold.nil _
   | alloc target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
+  | frame target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
   | loadByte target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
   | storeByte => intro _ _ _ _ _ _ hold run; cases run; exact hold
   | loadWord _ target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
@@ -606,7 +607,7 @@ theorem Exec.stays {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s :
   | loopNext _ _ _ _ ih | loopContinued _ _ _ _ ih => exact ih stays
   | brk | cont => simp [Stmt.jumps] at stays
   | skip | assign | seqReturned | loopDone | loopReturned | loopBroke | call | ret | alloc | loadByte
-    | storeByte | loadWord | storeWord | divide | sys => intro _ _; simp
+    | storeByte | loadWord | storeWord | divide | sys | frame => intro _ _; simp
 
 /-- Outcomes of runs from environments that differ only at `index`. -/
 def Outcome.Except (index : Nat) : Outcome → Outcome → Prop
@@ -744,6 +745,9 @@ theorem Exec.ignores {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s
     have same := Expr.eval_except h size p
     rw [same] at fits ⊢
     exact ⟨_, .alloc fits, rfl, h.set target _⟩
+  | @frame depth env heap target bytes room =>
+    intro _ env2 h
+    exact ⟨_, .frame room, rfl, h.set target _⟩
   | @loadByte depth env heap target address below =>
     intro p env2 h
     simp only [Stmt.ignores, Bool.not_eq_eq_eq_not, Bool.not_true] at p
@@ -855,6 +859,7 @@ theorem Exec.killed {prog : Program} (s : Stmt) :
     rw [Expr.evalAll_except h values k]
     exact .ret
   | alloc => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | frame => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | loadByte => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | storeByte => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | loadWord => intro _ _ _ _ _ k; simp [Stmt.kills] at k
@@ -896,6 +901,10 @@ theorem allocAgrees_cases {target shift : Nat} {size : Expr} {other : Stmt}
     (h : allocAgrees target shift size other = true) :
     ∃ size', other = .alloc target shift size' ∧ size.agrees size' = true := by
   cases other <;> simp_all [allocAgrees]
+
+theorem frameAgrees_cases {target bytes : Nat} {other : Stmt}
+    (h : frameAgrees target bytes other = true) : other = .frame target bytes := by
+  cases other <;> simp_all [frameAgrees]
 
 theorem loadByteAgrees_cases {target : Nat} {address : Expr} {other : Stmt}
     (h : loadByteAgrees target address other = true) :
@@ -1150,6 +1159,10 @@ theorem Exec.agrees {p q : Program} (ok : funcsAgree p.funcs q.funcs = true) {de
     have := (Expr.agrees_eval _ _ same env).trans (Expr.subst_eval hold size)
     rw [← this] at fits ⊢
     exact .alloc fits
+  | @frame depth env heap target bytes room =>
+    intro facts s' hold h
+    rw [frameAgrees_cases h]
+    exact .frame room
   | @loadByte depth env heap target address below =>
     intro facts s' hold h
     obtain ⟨address', rfl, same⟩ := loadByteAgrees_cases h

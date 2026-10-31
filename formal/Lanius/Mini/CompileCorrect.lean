@@ -575,6 +575,9 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     · simp only [Instr.exec_pc, pc, codeSize_append, codeSize, Instr.size]; omega
     · exact fun slot below _ => (slots slot below).trans (agree slot below)
     · exact heapAt
+  | frame =>
+    intro pos brk cont m _ _ _ _ within
+    simp [Stmt.within] at within
   | @sys depth env heap after call target args result ran =>
     intro pos brk cont m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within

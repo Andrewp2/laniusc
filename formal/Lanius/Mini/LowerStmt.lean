@@ -295,6 +295,7 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt
   | call found arity counted inner body _ => exact .call found arity counted (Nat.lt_of_lt_of_le inner le) body
   | ret => exact .ret
   | alloc room => exact .alloc room
+  | frame room => exact .frame room
   | loadByte inside => exact .loadByte inside
   | storeByte inside => exact .storeByte inside
   | loadWord inside => exact .loadWord inside

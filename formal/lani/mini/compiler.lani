@@ -265,6 +265,9 @@ pub enum Stmt {
     Divide(Word, DivOp, usize, Expr, Expr),
     // target = what the kernel returns for call(args)
     Sys(Syscall, usize, List<Expr>),
+    // target = the frame pointer less bytes, which becomes the frame
+    // pointer: this activation's frame memory (not produced yet)
+    Frame(usize, usize),
 }
 
 pub struct Func {
@@ -512,6 +515,7 @@ pub fn compile_stmt(base: usize, pos: usize, brk: usize, cont: usize, s: Stmt) -
         StoreWord(width, address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreWordAt(width, base)))),
         Divide(word, operation, target, left, right) -> concat(concat(concat(compile_expr(base, left, 0), single(Store(base))), compile_expr(base, right, 1)), cons(Div(word, operation, base), single(Store(target)))),
         Stmt::Sys(kind, target, args) -> concat(compile_args(base, args, 0), cons(Instr::Sys(kind, base), single(Store(target)))),
+        Stmt::Frame(target, bytes) -> empty(),
     };
 }
 
@@ -612,6 +616,7 @@ impl Stmt {
             StoreWord(width, address, value) -> address.within(locals) && value.within(locals),
             Divide(word, operation, target, left, right) -> locals > target && left.within(locals) && right.within(locals),
             Stmt::Sys(kind, target, args) -> locals > target && (length(args) == 3) && all_within(locals, args),
+            Stmt::Frame(target, bytes) -> false,
         };
     }
 
@@ -633,6 +638,7 @@ impl Stmt {
             StoreWord(width, address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
             Divide(word, operation, target, left, right) -> max_of(left.temps(), plus(right.temps(), 1)),
             Stmt::Sys(kind, target, args) -> args_temps(args, 0),
+            Stmt::Frame(target, bytes) -> 0,
         };
     }
 }
@@ -1189,6 +1195,7 @@ impl Stmt {
             StoreWord(width, address, value) -> Stmt::StoreWord(width, address, value),
             Divide(word, operation, target, left, right) -> Stmt::Divide(word, operation, target, left, right),
             Stmt::Sys(kind, target, args) -> Stmt::Sys(kind, target, args),
+            Stmt::Frame(target, bytes) -> Stmt::Frame(target, bytes),
         };
     }
 }
@@ -5371,6 +5378,7 @@ impl Stmt {
             StoreWord(width, address, value) -> max_of(address.extent(), value.extent()),
             Stmt::Divide(word, operation, target, left, right) -> max_of(plus(target, 1), max_of(left.extent(), right.extent())),
             Stmt::Sys(kind, target, args) -> max_of(plus(target, 1), args_extent(args)),
+            Stmt::Frame(target, bytes) -> plus(target, 1),
         };
     }
 }
@@ -6121,6 +6129,7 @@ pub fn assign_agrees(index: usize, value: Expr, other: Stmt) -> bool {
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6142,6 +6151,7 @@ pub fn call_agrees(target: usize, count: usize, callee: usize, args: List<Expr>,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6163,6 +6173,7 @@ pub fn ret_agrees(values: List<Expr>, other: Stmt) -> bool {
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6184,6 +6195,29 @@ pub fn alloc_agrees(target: usize, shift: usize, size: Expr, other: Stmt) -> boo
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
+    };
+}
+
+pub fn frame_agrees(target: usize, bytes: usize, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> (target == t) && (bytes == b),
     };
 }
 
@@ -6205,6 +6239,7 @@ pub fn load_byte_agrees(target: usize, address: Expr, other: Stmt) -> bool {
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6226,6 +6261,7 @@ pub fn store_byte_agrees(address: Expr, value: Expr, other: Stmt) -> bool {
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6247,6 +6283,7 @@ pub fn load_word_agrees(width: MemWidth, target: usize, address: Expr, other: St
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6268,6 +6305,7 @@ pub fn store_word_agrees(width: MemWidth, address: Expr, value: Expr, other: Stm
         StoreWord(w, a, v) -> (width.bytes() == w.bytes()) && address.agrees(a) && value.agrees(v),
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6289,6 +6327,7 @@ pub fn divide_agrees(word: Word, operation: DivOp, target: usize, left: Expr, ri
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> (word.number() == w.number()) && (operation.number() == o.number()) && (target == t) && left.agrees(l) && right.agrees(r),
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6310,6 +6349,7 @@ pub fn sys_agrees(kind: Syscall, target: usize, args: List<Expr>, other: Stmt) -
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> (kind.number() == c.number()) && (target == t) && args_agree(args, a),
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6434,6 +6474,7 @@ impl Stmt {
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
         };
     }
 
@@ -6455,6 +6496,7 @@ impl Stmt {
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
         };
     }
 
@@ -6477,6 +6519,7 @@ impl Stmt {
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
         };
     }
 
@@ -6498,6 +6541,7 @@ impl Stmt {
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
         };
     }
 
@@ -6522,6 +6566,7 @@ impl Stmt {
             StoreWord(w, a, v) -> facts,
             Divide(w, o, target, l, r) -> kill(facts, target),
             Stmt::Sys(c, t, a) -> empty(),
+            Stmt::Frame(t, b) -> kill(facts, t),
         };
     }
 
@@ -6545,6 +6590,7 @@ impl Stmt {
             StoreWord(w, a, v) -> !a.mentions(index) && !v.mentions(index),
             Divide(w, o, t, l, r) -> !l.mentions(index) && !r.mentions(index),
             Stmt::Sys(c, t, a) -> !mentions_any(a, index),
+            Stmt::Frame(t, b) -> true,
         };
     }
 
@@ -6570,6 +6616,7 @@ impl Stmt {
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
         };
     }
 
@@ -6601,6 +6648,7 @@ impl Stmt {
             StoreWord(width, address, value) -> store_word_agrees(width, address.subst(facts), value.subst(facts), other),
             Divide(word, operation, target, left, right) -> divide_agrees(word, operation, target, left.subst(facts), right.subst(facts), other),
             Stmt::Sys(kind, target, args) -> sys_agrees(kind, target, subst_all(args, facts), other),
+            Stmt::Frame(target, bytes) -> frame_agrees(target, bytes, other),
         };
     }
 }
@@ -6625,6 +6673,7 @@ fn dead_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> boo
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6647,6 +6696,7 @@ fn seq_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> bool
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6686,6 +6736,7 @@ fn ite_agrees(test: Expr, then_branch: Stmt, else_branch: Stmt, facts: List<Fact
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6709,6 +6760,7 @@ fn loop_agrees(condition: Expr, body: Stmt, other: Stmt) -> bool {
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
         Stmt::Sys(c, t, a) -> false,
+        Stmt::Frame(t, b) -> false,
     };
 }
 
@@ -6822,6 +6874,7 @@ pub fn opt_facts_after(s: Stmt, facts: List<Fact>) -> List<Fact> {
         StoreWord(w, a, v) -> facts,
         Divide(w, o, target, l, r) -> opt_kill(facts, target),
         Stmt::Sys(c, t, a) -> empty(),
+        Stmt::Frame(t, b) -> opt_kill(facts, t),
     };
 }
 
@@ -6990,6 +7043,7 @@ impl Stmt {
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
             Stmt::Sys(c, t, a) -> false,
+            Stmt::Frame(t, b) -> false,
         };
     }
 
@@ -7012,6 +7066,7 @@ impl Stmt {
             StoreWord(width, address, value) -> StoreWord(width, address.subst(facts).optimize(), value.subst(facts).optimize()),
             Divide(word, operation, target, left, right) -> Divide(word, operation, target, left.subst(facts).optimize(), right.subst(facts).optimize()),
             Stmt::Sys(kind, target, args) -> Stmt::Sys(kind, target, optimize_all(subst_all(args, facts))),
+            Stmt::Frame(target, bytes) -> Stmt::Frame(target, bytes),
         };
     }
 }

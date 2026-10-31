@@ -127,6 +127,8 @@ inductive Stmt where
   | divide : Word → DivOp → Nat → Expr → Expr → Stmt
   /-- target = what the kernel returns for call(args) -/
   | sys : Syscall → Nat → (List Expr) → Stmt
+  /-- target = the frame pointer less bytes, which becomes the frame pointer: this activation's frame memory (not produced yet) -/
+  | frame : Nat → Nat → Stmt
   deriving DecidableEq, Repr
 
 structure Func where
