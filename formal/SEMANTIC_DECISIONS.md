@@ -764,8 +764,13 @@ operand, `r` is the local and there is no call.
   Core's `DefinitelyReturns` has no rule for `match`, though, so that branch
   is `Unreachable(w, U)`. In Core that binds `w` uninitialized at the result
   type and returns it, which traps, and it counts as returning.
-- Not read yet: `?` in an assignment (`x = f(a)?;`), after a method call
-  or field (`a.b()?`), or nested inside a larger expression.
+- `x = op?;`, with x a local of the success payload's type, reads like
+  the let. Its success arm binds a fresh local `v`, numbered by the `=`
+  token, and its body is `x = v`. The statements after it follow the whole
+  chain, as they follow any statement. A field or element target with `?`
+  is not read.
+- Not read yet: `?` after a method call or field (`a.b()?`), on a field or
+  element target, or nested inside a larger expression.
 
 ## Untyped lets (decided 10-31, F4)
 

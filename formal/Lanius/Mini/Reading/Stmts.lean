@@ -392,14 +392,23 @@ theorem whileOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {c 
 
 /-! ## Assignments -/
 
-/-- `x = value;` for the local `l`: the value read at the local's type. -/
-inductive SetR (env : FrontEnv) (scope : List Local) (l : Local) (value : CTree) : MStmt → Prop
+/-- `x = value;` for the local `l`: `op?` (its success binder v, numbered by
+the `=`), or the value read at the local's type. -/
+inductive SetR (env : FrontEnv) (scope : List Local) (l : Local) (v : Nat) (value : CTree) : MStmt → Prop
+  | «try» {tr : Tried} {m : MStmt} : TryR env scope value tr →
+      trySet (sameTy l.ty tr.okTy && freshId scope v) l.id v tr = some m → SetR env scope l v value m
   | eval {x : MEff} {m : MStmt} : EffR env scope (some l.ty) value x → setEvalOf l.id (some x) = some m →
-      SetR env scope l value m
+      SetR env scope l v value m
 
-theorem setOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {l : Local} {value : CTree} {m : MStmt}
-    (h : setOrEval fuel env scope l value = some m) : SetR env scope l value m := by
-  unfold setOrEval at h
+theorem setOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {l : Local} {v : Nat} {value : CTree}
+    {m : MStmt} (h : setOrEval fuel env scope l v value = some m) : SetR env scope l v value m := by
+  unfold setOrEval setTryOrEval at h
+  cases ht : tryOfInit fuel env scope value with
+  | some tr =>
+    rw [ht] at h
+    exact .try (tryOfInit_sound ht) h
+  | none =>
+  rw [ht] at h
   cases he : effOf fuel env scope (some l.ty) value with
   | none => rw [he] at h; simp [setEvalOf] at h
   | some x =>
@@ -408,21 +417,23 @@ theorem setOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {l : 
 
 /-- `target = value;`: a local, a field of a local, or an element of a
 slice local. -/
-inductive AssignTargetR (env : FrontEnv) (scope : List Local) (target value : CTree) : MStmt → Prop
+inductive AssignTargetR (env : FrontEnv) (scope : List Local) (target : CTree) (v : Nat) (value : CTree) :
+    MStmt → Prop
   | «local» {l : Local} {m : MStmt} : nodeProd (kid target 1) = pPostfixEnd → LocalOf scope (kid target 0) l →
-      SetR env scope l value m → AssignTargetR env scope target value m
+      SetR env scope l v value m → AssignTargetR env scope target v value m
   | fieldEval {l : Local} {j : Nat} {t : Ty} {x : MEff} : nodeProd (kid target 1) = pPostfixMember →
       nodeProd (kid (kid target 1) 2) = pMemberTypeArgsNone → nodeProd (kid (kid target 1) 3) = pPostfixEnd →
       LocalOf scope (kid target 0) l → FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j →
       FieldTyAt env.decls l.ty j t → EffR env scope (some t) value x →
-      AssignTargetR env scope target value (setFieldEff l.id j x)
-  | indexEval {l : Local} {i v : MEff} : nodeProd (kid target 1) = pPostfixIndex →
+      AssignTargetR env scope target v value (setFieldEff l.id j x)
+  | indexEval {l : Local} {i x : MEff} : nodeProd (kid target 1) = pPostfixIndex →
       nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l →
-      EffR env scope none (kid (kid target 1) 1) i → EffR env scope (sliceElem l.ty) value v →
-      AssignTargetR env scope target value (setIndexEff l.id i v)
+      EffR env scope none (kid (kid target 1) 1) i → EffR env scope (sliceElem l.ty) value x →
+      AssignTargetR env scope target v value (setIndexEff l.id i x)
 
-theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {target value : CTree} {m : MStmt}
-    (h : assignTarget fuel env scope target value = some m) : AssignTargetR env scope target value m := by
+theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {target : CTree} {v : Nat}
+    {value : CTree} {m : MStmt} (h : assignTarget fuel env scope target v value = some m) :
+    AssignTargetR env scope target v value m := by
   unfold assignTarget at h
   simp only at h
   split at h
@@ -640,7 +651,8 @@ call statement. -/
 inductive AssignR (env : FrontEnv) (scope : List Local) (e : CTree) : MStmt → Prop
   | set {target : CTree} {m : MStmt} : nodeProd e = pExpr → nodeProd (kid e 0) = pAssign →
       nodeProd (kid (kid e 0) 1) = pAssignSet → Peel (kid (kid e 0) 0) target →
-      AssignTargetR env scope target (kid (kid (kid e 0) 1) 1) m → AssignR env scope e m
+      AssignTargetR env scope target ((kidToken (kid (kid e 0) 1) 0).start - env.base) (kid (kid (kid e 0) 1) 1) m →
+      AssignR env scope e m
   | compound {target : CTree} {m : MStmt} : nodeProd e = pExpr → nodeProd (kid e 0) = pAssign →
       kidsOf (kid (kid e 0) 1) ≠ [] → nodeProd (kid (kid e 0) 1) ≠ pAssignSet → Peel (kid (kid e 0) 0) target →
       CompoundR env scope target (nodeProd (kid (kid e 0) 1)) (kid (kid (kid e 0) 1) 1) m → AssignR env scope e m

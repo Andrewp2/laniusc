@@ -34,7 +34,7 @@ def assignment (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : 
   if decide (nodeProd e = (104)) && decide (nodeProd a = (105)) && decide (nodeProd set = (106)) then
     match peel fuel (kid a 0) with
     | none => none
-    | some target => assignTarget fuel env scope target (kid set 1)
+    | some target => assignTarget fuel env scope target ((kidToken set 0).start - env.base) (kid set 1)
   else
     if decide (nodeProd e = (104)) && decide (nodeProd a = (105)) && hasKids set && decide (nodeProd set ≠ (106)) then
       compoundOf fuel env scope (peel fuel (kid a 0)) (nodeProd set) (kid set 1)

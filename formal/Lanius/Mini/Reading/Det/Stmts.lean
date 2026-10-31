@@ -347,17 +347,24 @@ theorem whileR_unique {c : CTree} {body a b : MStmt} (nd : IdsFresh scope) (vn :
   | eval k => cases h₂ with
     | eval k' => rw [effR_unique k nd vn k']
 
-theorem setR_unique {l : Local} {value : CTree} {a b : MStmt} (nd : IdsFresh scope) (vn : VariantsNodup env.decls)
-    (h₁ : SetR env scope l value a) (h₂ : SetR env scope l value b) : a = b := by
+theorem setR_unique {l : Local} {v : Nat} {value : CTree} {a b : MStmt} (nd : IdsFresh scope)
+    (vn : VariantsNodup env.decls) (h₁ : SetR env scope l v value a) (h₂ : SetR env scope l v value b) : a = b := by
   cases h₁ with
+  | «try» t e => cases h₂ with
+    | «try» t' e' =>
+      cases tryR_unique nd vn t t'
+      rw [e'] at e
+      exact (Option.some.inj e).symm
+    | eval k _ => exact (tryR_noEff t k).elim
   | eval k e => cases h₂ with
+    | «try» t _ => exact (tryR_noEff t k).elim
     | eval k' e' =>
       rw [effR_unique k nd vn k', e'] at e
       exact (Option.some.inj e).symm
 
-theorem assignTargetR_unique {target value : CTree} {a b : MStmt} (nd : IdsFresh scope)
-    (vn : VariantsNodup env.decls) (h₁ : AssignTargetR env scope target value a)
-    (h₂ : AssignTargetR env scope target value b) : a = b := by
+theorem assignTargetR_unique {target : CTree} {v : Nat} {value : CTree} {a b : MStmt} (nd : IdsFresh scope)
+    (vn : VariantsNodup env.decls) (h₁ : AssignTargetR env scope target v value a)
+    (h₂ : AssignTargetR env scope target v value b) : a = b := by
   cases h₁ with
   | «local» _ lo s => cases h₂ with
     | «local» _ lo' s' =>

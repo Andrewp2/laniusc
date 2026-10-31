@@ -41,12 +41,12 @@ def setFieldOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local
   | none => none
   | some j => checkedStmt (hasTy (fieldTyAt fuel env.decls l.ty j)) (fieldEvalStmt l.id j (effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value))
 
-def assignTarget (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (value : CTree) : Option MStmt :=
+def assignTarget (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (v : Nat) (value : CTree) : Option MStmt :=
   let tail : CTree := kid target 1
   if nodeProd tail = (164) then
     match localOf env scope (kid target 0) with
     | none => none
-    | some l => setOrEval fuel env scope l value
+    | some l => setOrEval fuel env scope l v value
   else
     if decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd (kid tail 3) = (164)) then
       match localOf env scope (kid target 0) with

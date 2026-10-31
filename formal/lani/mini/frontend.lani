@@ -6690,9 +6690,25 @@ pub fn set_eval_of(id: usize, x: core::option::Option<MEff>) -> core::option::Op
     };
 }
 
-// `x = value;`: a statement form, or else an effectful expression.
-pub fn set_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, value: CTree) -> core::option::Option<MStmt> {
-    return set_eval_of(l.id, eff_of(fuel, env, scope, Some(l.ty), value));
+// `x = op?;`: the success arm binds v (numbered by the `=`) to the payload
+// and sets x to it; what follows that arm never runs.
+pub fn try_set(ok: bool, id: usize, v: usize, t: Tried) -> core::option::Option<MStmt> {
+    if (ok && v != t.scrutinee && v != t.binder) {
+        return Some(try_rest(t, MMatchArm(t.scrutinee, t.sty, 0, true, v, t.ok_ty, boxed(MSet(id, Local(v))), boxed(MUnreachable(t.binder, t.ret)))));
+    }
+    return None;
+}
+
+pub fn set_try_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, v: usize, t: core::option::Option<Tried>, value: CTree) -> core::option::Option<MStmt> {
+    return match (t) {
+        Some(x) -> try_set(same_ty(l.ty, x.ok_ty) && fresh_id(scope, v), l.id, v, x),
+        None -> set_eval_of(l.id, eff_of(fuel, env, scope, Some(l.ty), value)),
+    };
+}
+
+// `x = value;`: `op?`, a statement form, or else an effectful expression.
+pub fn set_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, v: usize, value: CTree) -> core::option::Option<MStmt> {
+    return set_try_or_eval(fuel, env, scope, l, v, try_of_init(fuel, env, scope, value), value);
 }
 
 pub fn set_index_eval_of(slice: usize, index: core::option::Option<MEff>, value: core::option::Option<MEff>) -> core::option::Option<MStmt> {
@@ -6733,12 +6749,12 @@ pub fn set_field_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Loca
     };
 }
 
-pub fn assign_target(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, value: CTree) -> core::option::Option<MStmt> {
+pub fn assign_target(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, v: usize, value: CTree) -> core::option::Option<MStmt> {
     let tail: CTree = kid(target, 1);
     if (node_prod(tail) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
             None -> None,
-            Some(l) -> set_or_eval(fuel, env, scope, l, value),
+            Some(l) -> set_or_eval(fuel, env, scope, l, v, value),
         };
     }
     if (node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) == p_postfix_end()) {
@@ -6916,7 +6932,7 @@ pub fn assignment(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> c
     if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && node_prod(set) == p_assign_set()) {
         return match (peel(fuel, kid(a, 0))) {
             None -> None,
-            Some(target) -> assign_target(fuel, env, scope, target, kid(set, 1)),
+            Some(target) -> assign_target(fuel, env, scope, target, minus(kid_token(set, 0).start, env.base), kid(set, 1)),
         };
     }
     if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && has_kids(set) && node_prod(set) != p_assign_set()) {
