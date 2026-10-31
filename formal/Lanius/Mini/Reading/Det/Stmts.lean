@@ -200,6 +200,74 @@ theorem peel_noEffTry : ∀ {env : FrontEnv} {scope : List Local} {E : Option Ty
       · exact effChain_noTry t ch
     | _ => rcases tf with ⟨_, _, _, _, _⟩ | _ <;> eff_clash
 
+/-- `x.m(args)?` is never a pure expression: a member read ends its postfix. -/
+theorem peel_noExprTryMethod : ∀ {env : FrontEnv} {scope : List Local} {c pf : CTree} {e : SrcExpr},
+    Peel c pf → nodeProd (kid pf 1) = pPostfixMember → nodeProd (kid (kid pf 1) 3) = pPostfixCall →
+    ExprR env scope c e → False
+  | _, _, _, _, _, .wrap _ p, pm, pc, h => by
+    cases h with
+    | wrap _ r => exact peel_noExprTryMethod p pm pc r
+    | _ => expr_clash
+  | _, _, _, _, _, .bare _ _ p, pm, pc, h => by
+    cases h with
+    | assign _ _ r => exact peel_noExprTryMethod p pm pc r
+    | level _ r _ => exact peel_noExprTryMethod p pm pc r
+    | cast _ r _ => exact peel_noExprTryMethod p pm pc r
+    | _ => expr_clash
+  | _, _, _, _, _, .here _, pm, pc, h => by
+    cases h with
+    | member _ _ m =>
+      obtain ⟨_, m3, _⟩ := m
+      prod_clash
+    | _ => expr_clash
+
+/-- A chain `.m(args)?` never ends: no rule reads the `?`. -/
+theorem effChain_noTryMethod {env : FrontEnv} {scope : List Local} {E : Option Ty} {a : MEff} {tail : CTree}
+    {x : MEff} (pm : nodeProd tail = pPostfixMember) (pc : nodeProd (kid tail 3) = pPostfixCall)
+    (pt : nodeProd (kid (kid tail 3) 3) = pPostfixTry) (h : EffChain env scope E a tail x) : False := by
+  cases h with
+  | method _ _ _ _ _ _ _ _ ch => exact effChain_noTry pt ch
+  | field _ _ nc _ _ _ => exact nc pc
+  | _ => prod_clash
+
+/-- `x.m(args)?` is never an effectful expression. -/
+theorem peel_noEffTryMethod : ∀ {env : FrontEnv} {scope : List Local} {E : Option Ty} {c pf : CTree} {x : MEff},
+    Peel c pf → TryMethodForm pf → EffR env scope E c x → False
+  | _, _, _, _, _, _, .wrap w p, tm, h => by
+    cases h with
+    | pure r => exact peel_noExprTryMethod (.wrap w p) tm.2.1 tm.2.2.2.1 r
+    | wrap _ k => exact peel_noEffTryMethod p tm k
+    | _ => eff_clash
+  | _, _, _, _, _, _, .bare w kn p, tm, h => by
+    cases h with
+    | pure r => exact peel_noExprTryMethod (.bare w kn p) tm.2.1 tm.2.2.2.1 r
+    | bare _ _ k => exact peel_noEffTryMethod p tm k
+    | level _ kn' _ _ => exact kn' kn
+    | cast _ kn' _ _ => exact kn' kn
+    | _ => eff_clash
+  | _, _, _, _, _, _, .here pp, tm, h => by
+    obtain ⟨_, p1, _, p13, p133, _⟩ := tm
+    cases h with
+    | pure r => exact peel_noExprTryMethod (.here pp) p1 p13 r
+    | chainLocal _ _ _ ch => exact effChain_noTryMethod p1 p13 p133 ch
+    | chain _ _ _ ch => exact effChain_noTryMethod p1 p13 p133 ch
+    | _ => eff_clash
+
+theorem methodEff_unique {env : FrontEnv} {scope : List Local} {expected : Option Ty} {pf : CTree} {x y : MEff}
+    (nd : IdsFresh scope) (vn : VariantsNodup env.decls) (h₁ : MethodEff env scope expected pf x)
+    (h₂ : MethodEff env scope expected pf y) : x = y := by
+  obtain ⟨l, items, found, fd, lo, it, mfor, hfd, inf⟩ := h₁
+  obtain ⟨l', items', found', fd', lo', it', mfor', hfd', inf'⟩ := h₂
+  have e := localOf_unique lo lo'
+  subst e
+  have e := items_unique it it'
+  subst e
+  have e := methodFor_unique mfor mfor'
+  subst e
+  rw [hfd] at hfd'
+  cases hfd'
+  exact effInfer_unique inf nd vn inf'
+
 theorem triedR_unique {env : FrontEnv} {r : Nat} {call : Option MEff} {st : Ty} {w : Nat} {a b : Tried}
     (h₁ : TriedR env r call st w a) (h₂ : TriedR env r call st w b) : a = b := by
   cases h₁ with
@@ -225,35 +293,55 @@ theorem tryCallR_unique {env : FrontEnv} {scope : List Local} {pf : CTree} {a b 
       cases effTy_unique ty ty'
       exact triedR_unique tr tr'
 
+theorem tryMethodR_unique {env : FrontEnv} {scope : List Local} {pf : CTree} {a b : Tried} (nd : IdsFresh scope)
+    (vn : VariantsNodup env.decls) (h₁ : TryMethodR env scope pf a) (h₂ : TryMethodR env scope pf b) : a = b := by
+  cases h₁ with
+  | mk _ _ _ _ me ty tr => cases h₂ with
+    | mk _ _ _ _ me' ty' tr' =>
+      cases methodEff_unique nd vn me me'
+      cases effTy_unique ty ty'
+      exact triedR_unique tr tr'
+
+/-- The production after a `?` operand's primary: `(` for a call, `.` for a
+method, `?` for a local. -/
+theorem tryR_tail {env : FrontEnv} {scope : List Local} {init : CTree} {tr : Tried} (t : TryR env scope init tr) :
+    ∃ pf, Peel init pf ∧
+      ((nodeProd (kid pf 1) = pPostfixCall ∧ TryCallR env scope pf tr) ∨
+       (nodeProd (kid pf 1) = pPostfixMember ∧ TryMethodR env scope pf tr) ∨
+       (nodeProd (kid pf 1) = pPostfixTry ∧ TryLocalR env scope pf tr)) := by
+  cases t with
+  | call p c =>
+    refine ⟨_, p, .inl ⟨?_, c⟩⟩
+    cases c with
+    | mk f _ _ _ _ _ _ => exact f.2.2.1
+  | method p m =>
+    refine ⟨_, p, .inr (.inl ⟨?_, m⟩)⟩
+    cases m with
+    | mk f _ _ _ _ _ _ => exact f.2.1
+  | «local» p l =>
+    refine ⟨_, p, .inr (.inr ⟨?_, l⟩)⟩
+    cases l with
+    | mk t _ _ _ _ => exact t
+
 theorem tryR_unique {env : FrontEnv} {scope : List Local} {init : CTree} {a b : Tried} (nd : IdsFresh scope)
     (vn : VariantsNodup env.decls) (h₁ : TryR env scope init a) (h₂ : TryR env scope init b) : a = b := by
-  cases h₁ with
-  | call p c => cases h₂ with
-    | call p' c' =>
-      cases peel_unique p p'
-      exact tryCallR_unique nd vn c c'
-    | «local» p' l' =>
-      cases peel_unique p p'
-      cases c with
-      | mk f _ _ _ _ _ _ => cases l' with
-        | mk t _ _ _ _ =>
-          obtain ⟨_, _, f1, _⟩ := f
-          prod_clash
-  | «local» p l => cases h₂ with
-    | call p' c' =>
-      cases peel_unique p p'
-      cases c' with
-      | mk f _ _ _ _ _ _ => cases l with
-        | mk t _ _ _ _ =>
-          obtain ⟨_, _, f1, _⟩ := f
-          prod_clash
-    | «local» p' l' =>
-      cases peel_unique p p'
-      cases l with
-      | mk _ _ _ lo tr => cases l' with
-        | mk _ _ _ lo' tr' =>
-          cases localOf_unique lo lo'
-          exact triedR_unique tr tr'
+  obtain ⟨pf, p, t₁⟩ := tryR_tail h₁
+  obtain ⟨pf', p', t₂⟩ := tryR_tail h₂
+  cases peel_unique p p'
+  rcases t₁ with ⟨k, c⟩ | ⟨k, m⟩ | ⟨k, l⟩ <;> rcases t₂ with ⟨k', c'⟩ | ⟨k', m'⟩ | ⟨k', l'⟩
+  · exact tryCallR_unique nd vn c c'
+  · prod_clash
+  · prod_clash
+  · prod_clash
+  · exact tryMethodR_unique nd vn m m'
+  · prod_clash
+  · prod_clash
+  · prod_clash
+  · cases l with
+    | mk _ _ _ lo tr => cases l' with
+      | mk _ _ _ lo' tr' =>
+        cases localOf_unique lo lo'
+        exact triedR_unique tr tr'
 
 theorem tryR_noHead {env : FrontEnv} {scope : List Local} {init : CTree} {tr : Tried} {hd : LetHead}
     (t : TryR env scope init tr) (l : LetHeadR env scope init hd) : False := by
@@ -266,6 +354,12 @@ theorem tryR_noHead {env : FrontEnv} {scope : List Local} {init : CTree} {tr : T
       | mk f _ _ _ _ _ _ =>
         obtain ⟨_, _, _, f3, _⟩ := f
         prod_clash
+    | method p m =>
+      cases peel_unique pe p
+      cases m with
+      | mk f _ _ _ _ _ _ =>
+        obtain ⟨_, f1, _⟩ := f
+        prod_clash
     | «local» p l =>
       cases peel_unique pe p
       cases l with
@@ -276,6 +370,8 @@ theorem tryR_noEff {env : FrontEnv} {scope : List Local} {E : Option Ty} {init :
   cases t with
   | call p c => cases c with
     | mk f _ _ _ _ _ _ => exact peel_noEffTry p (.inl f) k
+  | method p m => cases m with
+    | mk f _ _ _ _ _ _ => exact peel_noEffTryMethod p f k
   | «local» p l => cases l with
     | mk t _ _ _ _ => exact peel_noEffTry p (.inr t) k
 
@@ -710,6 +806,10 @@ theorem letInitR_noArmBlock {env : FrontEnv} {scope : List Local} {ty : Ty} {a l
         cases peel_unique p pl
         cases c with
         | mk f _ _ _ _ _ _ => obtain ⟨f0, _⟩ := f; prod_clash
+      | method p m =>
+        cases peel_unique p pl
+        cases m with
+        | mk f _ _ _ _ _ _ => obtain ⟨f0 | ⟨f0, _⟩, _⟩ := f <;> prod_clash
       | «local» p l =>
         cases peel_unique p pl
         cases l with
@@ -729,6 +829,10 @@ theorem letInitR_noBlockMatch {env : FrontEnv} {scope : List Local} {ty : Ty} {i
         cases peel_unique p pl
         cases c with
         | mk f _ _ _ _ _ _ => obtain ⟨f0, _⟩ := f; prod_clash
+      | method p m =>
+        cases peel_unique p pl
+        cases m with
+        | mk f _ _ _ _ _ _ => obtain ⟨f0 | ⟨f0, _⟩, _⟩ := f <;> prod_clash
       | «local» p l =>
         cases peel_unique p pl
         cases l with

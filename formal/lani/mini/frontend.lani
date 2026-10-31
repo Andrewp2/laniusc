@@ -5916,6 +5916,14 @@ pub fn is_try_local(pf: CTree) -> bool {
     return node_prod(tail) == p_postfix_try() && node_prod(kid(tail, 1)) == p_postfix_end();
 }
 
+// A postfix `x.m(args)?` (no further postfix), x a name or self.
+pub fn is_try_method(pf: CTree) -> bool {
+    let primary: CTree = kid(pf, 0);
+    let tail: CTree = kid(pf, 1);
+    let call: CTree = kid(tail, 3);
+    return (node_prod(primary) == p_self_value() || (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain())) && node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(call) == p_postfix_call() && node_prod(kid(call, 3)) == p_postfix_try() && node_prod(kid(kid(call, 3), 1)) == p_postfix_end();
+}
+
 // core::result::Result { Ok, Err } or core::option::Option { Some, None }.
 pub fn is_try_enum(t: TypeDecl) -> bool {
     return t.is_enum && ((same_spellings(t.home, cons(text_core(), single(text_result()))) && same_text(t.name, text_result_ty()) && same_spellings(t.variants, cons(text_ok(), single(text_err()))))
@@ -7542,6 +7550,18 @@ pub fn try_call_of(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) ->
     return None;
 }
 
+// `x.m(args)?`: as `path(args)?`, the method call's value bound to a local
+// numbered by its `(`, the failure binder numbered by the `?`.
+pub fn try_method_of(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) -> core::option::Option<Tried> {
+    let call: CTree = kid(kid(pf, 1), 3);
+    let r: usize = minus(kid_token(call, 0).start, env.base);
+    let w: usize = minus(kid_token(kid(call, 3), 0).start, env.base);
+    if (fresh_id(scope, r) && fresh_id(scope, w) && r != w) {
+        return tried_call(fuel, env, scope, r, w, eff_method(fuel, env, scope, None, pf));
+    }
+    return None;
+}
+
 pub fn tried_local(fuel: usize, env: FrontEnv, l: core::option::Option<Local>, w: usize) -> core::option::Option<Tried> {
     return match (l) {
         None -> None,
@@ -7568,6 +7588,9 @@ pub fn try_head(t: core::option::Option<Tried>) -> core::option::Option<LetHead>
 pub fn try_postfix(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) -> core::option::Option<Tried> {
     if (is_try_call(pf)) {
         return try_call_of(fuel, env, scope, pf);
+    }
+    if (is_try_method(pf)) {
+        return try_method_of(fuel, env, scope, pf);
     }
     if (is_try_local(pf)) {
         return try_local_of(fuel, env, scope, pf);

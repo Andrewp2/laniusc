@@ -174,6 +174,7 @@ public import Lanius.Faithful.Gen.SelfSrcF_intLiteral
 public import Lanius.Faithful.Gen.SelfSrcF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfSrcF_isMatchStmt
 public import Lanius.Faithful.Gen.SelfSrcF_isPathCall
+public import Lanius.Faithful.Gen.SelfSrcF_isTryEnum
 public import Lanius.Faithful.Gen.SelfSrcF_itemOf
 public import Lanius.Faithful.Gen.SelfSrcF_joinInsts
 public import Lanius.Faithful.Gen.SelfSrcF_letClosed
@@ -253,21 +254,21 @@ noncomputable section
 
 def tail_end : List SrcFunc := []
 def tail_fit_arg : List SrcFunc :=
-  src_fit_arg 69 138 141 1557 2085 :: tail_end
+  src_fit_arg 69 138 141 1557 2087 :: tail_end
 def tail_fit_args_next : List SrcFunc :=
-  src_fit_args_next 69 2201 :: tail_fit_arg
+  src_fit_args_next 69 2203 :: tail_fit_arg
 def tail_diverge_checked : List SrcFunc :=
   src_diverge_checked 594 875 :: tail_fit_args_next
 def tail_fit_args : List SrcFunc :=
-  src_fit_args 69 100 588 2203 2204 :: tail_diverge_checked
+  src_fit_args 69 100 588 2205 2206 :: tail_diverge_checked
 def tail_fl_exp_digit_at : List SrcFunc :=
-  src_fl_exp_digit_at 54 69 102 1840 2197 :: tail_fit_args
+  src_fl_exp_digit_at 54 69 102 1840 2199 :: tail_fit_args
 def tail_diverge_call : List SrcFunc :=
-  src_diverge_call 332 603 850 1098 1103 2202 :: tail_fl_exp_digit_at
+  src_diverge_call 332 603 850 1098 1103 2204 :: tail_fl_exp_digit_at
 def tail_fit_same_decl : List SrcFunc :=
-  src_fit_same_decl 69 2201 :: tail_diverge_call
+  src_fit_same_decl 69 2203 :: tail_diverge_call
 def tail_fl_exp_digits : List SrcFunc :=
-  src_fl_exp_digits 55 1750 2200 :: tail_fit_same_decl
+  src_fl_exp_digits 55 1750 2202 :: tail_fit_same_decl
 def tail_if_same_tys : List SrcFunc :=
   src_if_same_tys :: tail_fl_exp_digits
 def tail_single_ty : List SrcFunc :=
@@ -275,17 +276,17 @@ def tail_single_ty : List SrcFunc :=
 def tail_tried_err : List SrcFunc :=
   src_tried_err 588 :: tail_single_ty
 def tail_diverge_eff : List SrcFunc :=
-  src_diverge_eff 2199 :: tail_tried_err
+  src_diverge_eff 2201 :: tail_tried_err
 def tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_EffArm : List SrcFunc :=
   src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_EffArm :: tail_diverge_eff
 def tail_fit_decl : List SrcFunc :=
-  src_fit_decl 69 2198 :: tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_EffArm
+  src_fit_decl 69 2200 :: tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_EffArm
 def tail_fit_if : List SrcFunc :=
   src_fit_if :: tail_fit_decl
 def tail_fit_of : List SrcFunc :=
   src_fit_of :: tail_fit_if
 def tail_fl_exp_first_at : List SrcFunc :=
-  src_fl_exp_first_at 69 1840 2197 :: tail_fit_of
+  src_fl_exp_first_at 69 1840 2199 :: tail_fit_of
 def tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Bind : List SrcFunc :=
   src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Bind :: tail_fl_exp_first_at
 def tail_text_none : List SrcFunc :=
@@ -307,35 +308,35 @@ def tail_text_result : List SrcFunc :=
 def tail_text_core : List SrcFunc :=
   src_text_core 368 529 :: tail_text_result
 def tail_tried_shape : List SrcFunc :=
-  src_tried_shape 1385 1864 2194 2195 2196 :: tail_text_core
+  src_tried_shape 1385 1864 2196 2197 2198 :: tail_text_core
 def tail_cons_binder : List SrcFunc :=
   src_cons_binder 368 :: tail_tried_shape
 def tail_is_some_name : List SrcFunc :=
   src_is_some_name :: tail_cons_binder
 def tail_diverge_arm : List SrcFunc :=
-  src_diverge_arm 2193 :: tail_is_some_name
+  src_diverge_arm 2195 :: tail_is_some_name
 def tail_arm_eff : List SrcFunc :=
   src_arm_eff 1784 :: tail_diverge_arm
 def tail_boxed_of_mini_selfhost_List_mini_selfhost_EffArm : List SrcFunc :=
-  src_boxed_of_mini_selfhost_List_mini_selfhost_EffArm 53 2143 2192 :: tail_arm_eff
+  src_boxed_of_mini_selfhost_List_mini_selfhost_EffArm 53 2145 2194 :: tail_arm_eff
 def tail_fit_named : List SrcFunc :=
-  src_fit_named 69 1458 1473 1785 2027 2028 2029 2189 2190 2191 :: tail_boxed_of_mini_selfhost_List_mini_selfhost_EffArm
+  src_fit_named 69 1458 1473 1785 2029 2030 2031 2191 2192 2193 :: tail_boxed_of_mini_selfhost_List_mini_selfhost_EffArm
 def tail_infer_ret : List SrcFunc :=
-  src_infer_ret 1706 1708 2083 2084 2140 :: tail_fit_named
+  src_infer_ret 1706 1708 2085 2086 2142 :: tail_fit_named
 def tail_fl_sub : List SrcFunc :=
-  src_fl_sub 1646 1945 2049 2050 2134 2169 :: tail_infer_ret
+  src_fl_sub 1646 1945 2051 2052 2136 2171 :: tail_infer_ret
 def tail_fl_exp_first : List SrcFunc :=
-  src_fl_exp_first 55 2188 :: tail_fl_sub
+  src_fl_exp_first 55 2190 :: tail_fl_sub
 def tail_boxed_of_mini_selfhost_List_mini_selfhost_Bind : List SrcFunc :=
-  src_boxed_of_mini_selfhost_List_mini_selfhost_Bind 53 2126 2187 :: tail_fl_exp_first
+  src_boxed_of_mini_selfhost_List_mini_selfhost_Bind 53 2128 2189 :: tail_fl_exp_first
 def tail_is_try_enum : List SrcFunc :=
-  src_is_try_enum 574 843 848 1027 2178 2179 2180 2181 2182 2183 2184 2185 2186 :: tail_boxed_of_mini_selfhost_List_mini_selfhost_Bind
+  src_is_try_enum 574 843 848 1027 2180 2181 2182 2183 2184 2185 2186 2187 2188 :: tail_boxed_of_mini_selfhost_List_mini_selfhost_Bind
 def tail_tried_if : List SrcFunc :=
-  src_tried_if 2177 :: tail_is_try_enum
+  src_tried_if 2179 :: tail_is_try_enum
 def tail_cons_expr_tail : List SrcFunc :=
   src_cons_expr_tail 1262 :: tail_tried_if
 def tail_shift_of_u64 : List SrcFunc :=
-  src_shift_of_u64 54 69 102 2163 :: tail_cons_expr_tail
+  src_shift_of_u64 54 69 102 2165 :: tail_cons_expr_tail
 def tail_p_assign_shr : List SrcFunc :=
   src_p_assign_shr :: tail_shift_of_u64
 def tail_p_assign_shl : List SrcFunc :=
@@ -359,11 +360,11 @@ def tail_alloc_shifted : List SrcFunc :=
 def tail_p_arm_block : List SrcFunc :=
   src_p_arm_block :: tail_alloc_shifted
 def tail_binder_of : List SrcFunc :=
-  src_binder_of 69 138 141 556 1028 1393 1396 1638 2100 2102 2103 2175 2176 :: tail_p_arm_block
+  src_binder_of 69 138 141 556 1028 1393 1396 1638 2102 2104 2105 2177 2178 :: tail_p_arm_block
 def tail_arm_prefix : List SrcFunc :=
   src_arm_prefix 400 574 848 850 :: tail_binder_of
 def tail_arm_names : List SrcFunc :=
-  src_arm_names 138 141 385 2100 2101 :: tail_arm_prefix
+  src_arm_names 138 141 385 2102 2103 :: tail_arm_prefix
 def tail_arms_naming_at : List SrcFunc :=
   src_arms_naming_at 133 :: tail_arm_names
 def tail_match_stmt_if : List SrcFunc :=
@@ -371,23 +372,23 @@ def tail_match_stmt_if : List SrcFunc :=
 def tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy : List SrcFunc :=
   src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy :: tail_match_stmt_if
 def tail_eff_arm_bound : List SrcFunc :=
-  src_eff_arm_bound 69 1487 2173 2174 :: tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy
+  src_eff_arm_bound 69 1487 2175 2176 :: tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy
 def tail_cons_of_mini_selfhost_EffArm : List SrcFunc :=
-  src_cons_of_mini_selfhost_EffArm 2172 :: tail_eff_arm_bound
+  src_cons_of_mini_selfhost_EffArm 2174 :: tail_eff_arm_bound
 def tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm : List SrcFunc :=
   src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm :: tail_cons_of_mini_selfhost_EffArm
 def tail_fit_path : List SrcFunc :=
-  src_fit_path 69 2171 :: tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm
+  src_fit_path 69 2173 :: tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm
 def tail_match_tys_or_none : List SrcFunc :=
   src_match_tys_or_none 1969 :: tail_fit_path
 def tail_inst_from : List SrcFunc :=
   src_inst_from :: tail_match_tys_or_none
 def tail_cons_tree : List SrcFunc :=
-  src_cons_tree 2099 :: tail_inst_from
+  src_cons_tree 2101 :: tail_inst_from
 def tail_infer_args : List SrcFunc :=
-  src_infer_args 400 402 850 1708 1958 1969 2084 2140 :: tail_cons_tree
+  src_infer_args 400 402 850 1708 1958 1969 2086 2142 :: tail_cons_tree
 def tail_infer_inst : List SrcFunc :=
-  src_infer_inst 400 402 850 1958 1969 2084 2170 :: tail_infer_args
+  src_infer_inst 400 402 850 1958 1969 2086 2172 :: tail_infer_args
 def tail_explicit_checked : List SrcFunc :=
   src_explicit_checked :: tail_infer_inst
 def tail_core_mem_size_of_of_mini_selfhost_List_bool : List SrcFunc :=
@@ -395,9 +396,9 @@ def tail_core_mem_size_of_of_mini_selfhost_List_bool : List SrcFunc :=
 def tail_fl_borrow_bit : List SrcFunc :=
   src_fl_borrow_bit :: tail_core_mem_size_of_of_mini_selfhost_List_bool
 def tail_fl_div_step : List SrcFunc :=
-  src_fl_div_step 2049 2063 2169 :: tail_fl_borrow_bit
+  src_fl_div_step 2051 2065 2171 :: tail_fl_borrow_bit
 def tail_fl_exp_sign_at : List SrcFunc :=
-  src_fl_exp_sign_at 368 2168 :: tail_fl_div_step
+  src_fl_exp_sign_at 368 2170 :: tail_fl_div_step
 def tail_negate_some : List SrcFunc :=
   src_negate_some 1254 :: tail_fl_exp_sign_at
 def tail_wide_sint : List SrcFunc :=
@@ -405,7 +406,7 @@ def tail_wide_sint : List SrcFunc :=
 def tail_wide_isize : List SrcFunc :=
   src_wide_isize 54 69 1254 :: tail_wide_sint
 def tail_wide_uint : List SrcFunc :=
-  src_wide_uint 2037 :: tail_wide_isize
+  src_wide_uint 2039 :: tail_wide_isize
 def tail_wide_i32 : List SrcFunc :=
   src_wide_i32 :: tail_wide_uint
 def tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Bind : List SrcFunc :=
@@ -415,21 +416,21 @@ def tail_match_same_decl : List SrcFunc :=
 def tail_prim_if : List SrcFunc :=
   src_prim_if 1552 :: tail_match_same_decl
 def tail_cons_of_mini_selfhost_Bind : List SrcFunc :=
-  src_cons_of_mini_selfhost_Bind 2167 :: tail_prim_if
+  src_cons_of_mini_selfhost_Bind 2169 :: tail_prim_if
 def tail_param_named : List SrcFunc :=
   src_param_named :: tail_cons_of_mini_selfhost_Bind
 def tail_tried_of : List SrcFunc :=
-  src_tried_of 148 1067 1242 1785 2165 2166 :: tail_param_named
+  src_tried_of 148 1067 1242 1785 2167 2168 :: tail_param_named
 def tail_cons_expr : List SrcFunc :=
-  src_cons_expr 2164 :: tail_tried_of
+  src_cons_expr 2166 :: tail_tried_of
 def tail_is_usize : List SrcFunc :=
   src_is_usize :: tail_cons_expr
 def tail_cast_shift : List SrcFunc :=
-  src_cast_shift 2117 :: tail_is_usize
+  src_cast_shift 2119 :: tail_is_usize
 def tail_literal_shift : List SrcFunc :=
-  src_literal_shift 2163 :: tail_cast_shift
+  src_literal_shift 2165 :: tail_cast_shift
 def tail_compound_op : List SrcFunc :=
-  src_compound_op 2155 2156 2157 2158 2159 2160 2161 2162 :: tail_literal_shift
+  src_compound_op 2157 2158 2159 2160 2161 2162 2163 2164 :: tail_literal_shift
 def tail_p_assign_mod : List SrcFunc :=
   src_p_assign_mod :: tail_compound_op
 def tail_p_assign_div : List SrcFunc :=
@@ -437,51 +438,51 @@ def tail_p_assign_div : List SrcFunc :=
 def tail_set_eff : List SrcFunc :=
   src_set_eff 1650 :: tail_p_assign_div
 def tail_set_index_eff : List SrcFunc :=
-  src_set_index_eff 1650 2154 :: tail_set_eff
+  src_set_index_eff 1650 2156 :: tail_set_eff
 def tail_set_field_eff : List SrcFunc :=
   src_set_field_eff 1650 :: tail_set_index_eff
 def tail_try_set : List SrcFunc :=
-  src_try_set 1105 2011 :: tail_set_field_eff
+  src_try_set 1105 2013 :: tail_set_field_eff
 def tail_try_payload : List SrcFunc :=
   src_try_payload 1295 1769 :: tail_try_set
 def tail_tried_local : List SrcFunc :=
-  src_tried_local 2121 :: tail_try_payload
+  src_tried_local 2123 :: tail_try_payload
 def tail_slice_head : List SrcFunc :=
   src_slice_head 289 :: tail_tried_local
 def tail_alloc_head : List SrcFunc :=
-  src_alloc_head 289 2022 2153 :: tail_slice_head
+  src_alloc_head 289 2024 2155 :: tail_slice_head
 def tail_arm_binder : List SrcFunc :=
   src_arm_binder 55 1105 :: tail_alloc_head
 def tail_arm_block_of : List SrcFunc :=
-  src_arm_block_of 138 141 1633 2152 :: tail_arm_binder
+  src_arm_block_of 138 141 1633 2154 :: tail_arm_binder
 def tail_binders_of : List SrcFunc :=
-  src_binders_of 100 223 588 2151 :: tail_arm_block_of
+  src_binders_of 100 223 588 2153 :: tail_arm_block_of
 def tail_p_pattern_plain : List SrcFunc :=
   src_p_pattern_plain :: tail_binders_of
 def tail_arm_named : List SrcFunc :=
-  src_arm_named 843 1514 2150 :: tail_p_pattern_plain
+  src_arm_named 843 1514 2152 :: tail_p_pattern_plain
 def tail_p_pattern_ident : List SrcFunc :=
   src_p_pattern_ident :: tail_arm_named
 def tail_cons_tree_tail : List SrcFunc :=
   src_cons_tree_tail 133 :: tail_p_pattern_ident
 def tail_arms_naming : List SrcFunc :=
-  src_arms_naming 93 100 2098 2148 2149 :: tail_cons_tree_tail
+  src_arms_naming 93 100 2100 2150 2151 :: tail_cons_tree_tail
 def tail_match_stmt_head : List SrcFunc :=
-  src_match_stmt_head 1393 1966 2147 :: tail_arms_naming
+  src_match_stmt_head 1393 1966 2149 :: tail_arms_naming
 def tail_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy : List SrcFunc :=
-  src_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy 53 1998 2146 :: tail_match_stmt_head
+  src_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy 53 1998 2148 :: tail_match_stmt_head
 def tail_eff_arm : List SrcFunc :=
-  src_eff_arm 69 138 140 141 223 385 2100 2101 2102 2103 2145 :: tail_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy
+  src_eff_arm 69 138 140 141 223 385 2102 2103 2104 2105 2147 :: tail_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy
 def tail_cons_eff_arm : List SrcFunc :=
-  src_cons_eff_arm 2144 :: tail_eff_arm
+  src_cons_eff_arm 2146 :: tail_eff_arm
 def tail_empty_of_mini_selfhost_EffArm : List SrcFunc :=
   src_empty_of_mini_selfhost_EffArm :: tail_cons_eff_arm
 def tail_unbox_of_mini_selfhost_List_mini_selfhost_EffArm : List SrcFunc :=
-  src_unbox_of_mini_selfhost_List_mini_selfhost_EffArm 2143 :: tail_empty_of_mini_selfhost_EffArm
+  src_unbox_of_mini_selfhost_List_mini_selfhost_EffArm 2145 :: tail_empty_of_mini_selfhost_EffArm
 def tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantAt : List SrcFunc :=
   src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantAt :: tail_unbox_of_mini_selfhost_List_mini_selfhost_EffArm
 def tail_concat_of_mini_selfhost_VariantAt : List SrcFunc :=
-  src_concat_of_mini_selfhost_VariantAt 1869 1971 2090 :: tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantAt
+  src_concat_of_mini_selfhost_VariantAt 1869 1971 2092 :: tail_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantAt
 def tail_match_tys_next : List SrcFunc :=
   src_match_tys_next 69 1969 :: tail_concat_of_mini_selfhost_VariantAt
 def tail_pure_local : List SrcFunc :=
@@ -491,35 +492,35 @@ def tail_projection : List SrcFunc :=
 def tail_is_misfit : List SrcFunc :=
   src_is_misfit :: tail_projection
 def tail_fit_ty : List SrcFunc :=
-  src_fit_ty 69 138 140 141 1397 1398 1403 1406 1820 2085 2142 :: tail_is_misfit
+  src_fit_ty 69 138 140 141 1397 1398 1403 1406 1820 2087 2144 :: tail_is_misfit
 def tail_callee_env : List SrcFunc :=
   src_callee_env 241 402 1306 :: tail_fit_ty
 def tail_ret_pattern : List SrcFunc :=
   src_ret_pattern 138 141 1289 :: tail_callee_env
 def tail_bind_arg : List SrcFunc :=
-  src_bind_arg 1706 1784 1877 2084 :: tail_ret_pattern
+  src_bind_arg 1706 1784 1877 2086 :: tail_ret_pattern
 def tail_cons_bound : List SrcFunc :=
   src_cons_bound 1296 :: tail_bind_arg
 def tail_eff_arg_next : List SrcFunc :=
-  src_eff_arg_next 69 1295 1960 2081 2082 :: tail_cons_bound
+  src_eff_arg_next 69 1295 1960 2083 2084 :: tail_cons_bound
 def tail_arg_expected : List SrcFunc :=
   src_arg_expected 1292 1306 1822 :: tail_eff_arg_next
 def tail_checked_bound : List SrcFunc :=
   src_checked_bound :: tail_arg_expected
 def tail_inst_bound : List SrcFunc :=
-  src_inst_bound 1708 1822 1967 2084 2140 2141 :: tail_checked_bound
+  src_inst_bound 1708 1822 1967 2086 2142 2143 :: tail_checked_bound
 def tail_patterns_of : List SrcFunc :=
-  src_patterns_of 93 100 1394 2076 2139 :: tail_inst_bound
+  src_patterns_of 93 100 1394 2078 2141 :: tail_inst_bound
 def tail_concat_of_mini_selfhost_MEff : List SrcFunc :=
-  src_concat_of_mini_selfhost_MEff 1092 1106 2075 :: tail_patterns_of
+  src_concat_of_mini_selfhost_MEff 1092 1106 2077 :: tail_patterns_of
 def tail_infer_eff : List SrcFunc :=
-  src_infer_eff 2137 2138 :: tail_concat_of_mini_selfhost_MEff
+  src_infer_eff 2139 2140 :: tail_concat_of_mini_selfhost_MEff
 def tail_x_call_of : List SrcFunc :=
   src_x_call_of 1106 :: tail_infer_eff
 def tail_checked_effs : List SrcFunc :=
   src_checked_effs :: tail_x_call_of
 def tail_explicit_inst : List SrcFunc :=
-  src_explicit_inst 332 400 1098 1475 2136 :: tail_checked_effs
+  src_explicit_inst 332 400 1098 1475 2138 :: tail_checked_effs
 def tail_find_fn_at : List SrcFunc :=
   src_find_fn_at 54 843 848 1953 :: tail_explicit_inst
 def tail_is_owner_at : List SrcFunc :=
@@ -527,21 +528,21 @@ def tail_is_owner_at : List SrcFunc :=
 def tail_is_scalar_owner : List SrcFunc :=
   src_is_scalar_owner 580 581 1028 :: tail_is_owner_at
 def tail_boxed_of_mini_selfhost_List_bool : List SrcFunc :=
-  src_boxed_of_mini_selfhost_List_bool 53 2056 2135 :: tail_is_scalar_owner
+  src_boxed_of_mini_selfhost_List_bool 53 2058 2137 :: tail_is_scalar_owner
 def tail_fl_to_nat : List SrcFunc :=
-  src_fl_to_nat 54 102 1945 2059 2066 :: tail_boxed_of_mini_selfhost_List_bool
+  src_fl_to_nat 54 102 1945 2061 2068 :: tail_boxed_of_mini_selfhost_List_bool
 def tail_fl_round_up : List SrcFunc :=
   src_fl_round_up 1646 1939 :: tail_fl_to_nat
 def tail_fl_odd : List SrcFunc :=
   src_fl_odd :: tail_fl_round_up
 def tail_fl_less : List SrcFunc :=
-  src_fl_less 1646 1945 2063 2134 :: tail_fl_odd
+  src_fl_less 1646 1945 2065 2136 :: tail_fl_odd
 def tail_fl_divmod : List SrcFunc :=
-  src_fl_divmod 1646 1945 2062 2133 :: tail_fl_less
+  src_fl_divmod 1646 1945 2064 2135 :: tail_fl_less
 def tail_fl_shl : List SrcFunc :=
-  src_fl_shl 69 2049 2061 :: tail_fl_divmod
+  src_fl_shl 69 2051 2063 :: tail_fl_divmod
 def tail_fl_ratio_ok : List SrcFunc :=
-  src_fl_ratio_ok 2058 2061 2063 :: tail_fl_shl
+  src_fl_ratio_ok 2060 2063 2065 :: tail_fl_shl
 def tail_fl_bit : List SrcFunc :=
   src_fl_bit :: tail_fl_ratio_ok
 def tail_fl_sat : List SrcFunc :=
@@ -553,17 +554,17 @@ def tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_bool : List Src
 def tail_fl_low_bit : List SrcFunc :=
   src_fl_low_bit :: tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_bool
 def tail_fl_exp_sign : List SrcFunc :=
-  src_fl_exp_sign 55 2132 :: tail_fl_low_bit
+  src_fl_exp_sign 55 2134 :: tail_fl_low_bit
 def tail_fl_nat_half : List SrcFunc :=
-  src_fl_nat_half 54 69 2053 :: tail_fl_exp_sign
+  src_fl_nat_half 54 69 2055 :: tail_fl_exp_sign
 def tail_fl_nat_odd : List SrcFunc :=
-  src_fl_nat_odd 69 2052 :: tail_fl_nat_half
+  src_fl_nat_odd 69 2054 :: tail_fl_nat_half
 def tail_fl_carry : List SrcFunc :=
   src_fl_carry :: tail_fl_nat_odd
 def tail_fl_xor : List SrcFunc :=
   src_fl_xor :: tail_fl_carry
 def tail_cons_of_bool : List SrcFunc :=
-  src_cons_of_bool 2067 :: tail_fl_xor
+  src_cons_of_bool 2069 :: tail_fl_xor
 def tail_fl_carry_out : List SrcFunc :=
   src_fl_carry_out 1646 1949 :: tail_cons_of_bool
 def tail_char_tail_at : List SrcFunc :=
@@ -577,9 +578,9 @@ def tail_char_close_opt : List SrcFunc :=
 def tail_float_typed : List SrcFunc :=
   src_float_typed 1374 :: tail_char_close_opt
 def tail_neg_sint_const : List SrcFunc :=
-  src_neg_sint_const 2039 :: tail_float_typed
+  src_neg_sint_const 2041 :: tail_float_typed
 def tail_negated_float : List SrcFunc :=
-  src_negated_float 281 1374 2131 :: tail_neg_sint_const
+  src_negated_float 281 1374 2133 :: tail_neg_sint_const
 def tail_negated_int : List SrcFunc :=
   src_negated_int :: tail_negated_float
 def tail_sint_const : List SrcFunc :=
@@ -589,47 +590,47 @@ def tail_null_const : List SrcFunc :=
 def tail_uint_in_range : List SrcFunc :=
   src_uint_in_range 1454 :: tail_null_const
 def tail_concat_of_mini_selfhost_Token : List SrcFunc :=
-  src_concat_of_mini_selfhost_Token 152 1005 2036 :: tail_uint_in_range
+  src_concat_of_mini_selfhost_Token 152 1005 2038 :: tail_uint_in_range
 def tail_wide_of : List SrcFunc :=
-  src_wide_of 2127 2128 2129 2130 :: tail_concat_of_mini_selfhost_Token
+  src_wide_of 2129 2130 2131 2132 :: tail_concat_of_mini_selfhost_Token
 def tail_has_wide : List SrcFunc :=
   src_has_wide :: tail_wide_of
 def tail_unbox_of_mini_selfhost_List_mini_selfhost_Bind : List SrcFunc :=
-  src_unbox_of_mini_selfhost_List_mini_selfhost_Bind 2126 :: tail_has_wide
+  src_unbox_of_mini_selfhost_List_mini_selfhost_Bind 2128 :: tail_has_wide
 def tail_find_bind_at : List SrcFunc :=
   src_find_bind_at 843 1928 :: tail_unbox_of_mini_selfhost_List_mini_selfhost_Bind
 def tail_match_decl : List SrcFunc :=
-  src_match_decl 69 2125 :: tail_find_bind_at
+  src_match_decl 69 2127 :: tail_find_bind_at
 def tail_same_or_none : List SrcFunc :=
   src_same_or_none :: tail_match_decl
 def tail_bare_prim : List SrcFunc :=
-  src_bare_prim 1510 1856 2124 :: tail_same_or_none
+  src_bare_prim 1510 1856 2126 :: tail_same_or_none
 def tail_bind_ty : List SrcFunc :=
-  src_bind_ty 1458 1928 2030 2123 :: tail_bare_prim
+  src_bind_ty 1458 1928 2032 2125 :: tail_bare_prim
 def tail_param_spelling : List SrcFunc :=
-  src_param_spelling 1028 1510 1856 2122 :: tail_bind_ty
+  src_param_spelling 1028 1510 1856 2124 :: tail_bind_ty
 def tail_tried_call : List SrcFunc :=
-  src_tried_call 1784 2121 :: tail_param_spelling
+  src_tried_call 1784 2123 :: tail_param_spelling
 def tail_p_postfix_try : List SrcFunc :=
   src_p_postfix_try :: tail_tried_call
 def tail_assert_of : List SrcFunc :=
   src_assert_of :: tail_p_postfix_try
 def tail_exprs_of : List SrcFunc :=
-  src_exprs_of 100 1261 1527 2023 2120 :: tail_assert_of
+  src_exprs_of 100 1261 1527 2025 2122 :: tail_assert_of
 def tail_shift_of : List SrcFunc :=
-  src_shift_of 281 2117 2118 2119 :: tail_exprs_of
+  src_shift_of 281 2119 2120 2121 :: tail_exprs_of
 def tail_free_shifted : List SrcFunc :=
   src_free_shifted :: tail_shift_of
 def tail_compound_field_eval : List SrcFunc :=
-  src_compound_field_eval 1487 2013 2014 2015 2016 2019 :: tail_free_shifted
+  src_compound_field_eval 1487 2015 2016 2017 2018 2021 :: tail_free_shifted
 def tail_compound_eff : List SrcFunc :=
-  src_compound_eff 1754 1756 2114 2115 2116 :: tail_compound_field_eval
+  src_compound_eff 1754 1756 2116 2117 2118 :: tail_compound_field_eval
 def tail_set_eval_of : List SrcFunc :=
-  src_set_eval_of 2001 2113 :: tail_compound_eff
+  src_set_eval_of 2001 2115 :: tail_compound_eff
 def tail_set_index_eval_of : List SrcFunc :=
-  src_set_index_eval_of 2112 :: tail_set_eval_of
+  src_set_index_eval_of 2114 :: tail_set_eval_of
 def tail_field_eval_stmt : List SrcFunc :=
-  src_field_eval_stmt 2111 :: tail_set_index_eval_of
+  src_field_eval_stmt 2113 :: tail_set_index_eval_of
 def tail_field_ty_at : List SrcFunc :=
   src_field_ty_at 898 899 :: tail_field_eval_stmt
 def tail_has_ty : List SrcFunc :=
@@ -637,17 +638,21 @@ def tail_has_ty : List SrcFunc :=
 def tail_checked_stmt : List SrcFunc :=
   src_checked_stmt :: tail_has_ty
 def tail_set_try_or_eval : List SrcFunc :=
-  src_set_try_or_eval 1393 1458 1487 2018 2110 :: tail_checked_stmt
+  src_set_try_or_eval 1393 1458 1487 2020 2112 :: tail_checked_stmt
 def tail_try_rest : List SrcFunc :=
-  src_try_rest 1105 1106 2109 :: tail_set_try_or_eval
+  src_try_rest 1105 1106 2111 :: tail_set_try_or_eval
 def tail_pure_inferred : List SrcFunc :=
   src_pure_inferred :: tail_try_rest
 def tail_try_local_of : List SrcFunc :=
-  src_try_local_of 69 141 556 1097 1393 1580 2108 :: tail_pure_inferred
+  src_try_local_of 69 141 556 1097 1393 1580 2110 :: tail_pure_inferred
 def tail_is_try_local : List SrcFunc :=
-  src_is_try_local 138 141 1633 2025 :: tail_try_local_of
+  src_is_try_local 138 141 1633 2027 :: tail_try_local_of
+def tail_try_method_of : List SrcFunc :=
+  src_try_method_of 69 141 556 1097 1393 1655 2028 :: tail_is_try_local
+def tail_is_try_method : List SrcFunc :=
+  src_is_try_method 138 141 1576 1578 1633 1634 1636 1658 1742 2027 :: tail_try_method_of
 def tail_pure_arms : List SrcFunc :=
-  src_pure_arms 501 1092 1268 1269 1650 2007 :: tail_is_try_local
+  src_pure_arms 501 1092 1268 1269 1650 2007 :: tail_is_try_method
 def tail_match_let_head : List SrcFunc :=
   src_match_let_head :: tail_pure_arms
 def tail_variant_let_head : List SrcFunc :=
@@ -663,7 +668,7 @@ def tail_call_parts : List SrcFunc :=
 def tail_call_let_head : List SrcFunc :=
   src_call_let_head :: tail_call_parts
 def tail_call_path_head : List SrcFunc :=
-  src_call_path_head 141 385 574 1758 1759 1761 1916 2106 2107 :: tail_call_let_head
+  src_call_path_head 141 385 574 1758 1759 1761 1916 2108 2109 :: tail_call_let_head
 def tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantTy : List SrcFunc :=
   src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantTy :: tail_call_path_head
 def tail_local_ty_of : List SrcFunc :=
@@ -673,33 +678,33 @@ def tail_local_id_of : List SrcFunc :=
 def tail_bound_scope : List SrcFunc :=
   src_bound_scope :: tail_local_id_of
 def tail_arm_stmt : List SrcFunc :=
-  src_arm_stmt 2105 :: tail_bound_scope
+  src_arm_stmt 2107 :: tail_bound_scope
 def tail_arm_block_list : List SrcFunc :=
-  src_arm_block_list 141 1814 2104 :: tail_arm_stmt
+  src_arm_block_list 141 1814 2106 :: tail_arm_stmt
 def tail_arm_binding : List SrcFunc :=
-  src_arm_binding 138 140 141 223 385 2100 2101 2102 2103 :: tail_arm_block_list
+  src_arm_binding 138 140 141 223 385 2102 2103 2104 2105 :: tail_arm_block_list
 def tail_arms_by_variant : List SrcFunc :=
-  src_arms_by_variant 93 100 1889 1991 2098 2099 :: tail_arm_binding
+  src_arms_by_variant 93 100 1889 1991 2100 2101 :: tail_arm_binding
 def tail_length_of_mini_selfhost_VariantTy : List SrcFunc :=
   src_length_of_mini_selfhost_VariantTy 54 1889 1990 :: tail_arms_by_variant
 def tail_length_of_mini_selfhost_CTree : List SrcFunc :=
   src_length_of_mini_selfhost_CTree 54 100 1989 :: tail_length_of_mini_selfhost_VariantTy
 def tail_match_stmt_enum : List SrcFunc :=
-  src_match_stmt_enum 69 556 1097 1882 2097 :: tail_length_of_mini_selfhost_CTree
+  src_match_stmt_enum 69 556 1097 1882 2099 :: tail_length_of_mini_selfhost_CTree
 def tail_if_one : List SrcFunc :=
   src_if_one :: tail_match_stmt_enum
 def tail_is_block_arm : List SrcFunc :=
   src_is_block_arm 1993 :: tail_if_one
 def tail_cons_of_mini_selfhost_VariantTy : List SrcFunc :=
-  src_cons_of_mini_selfhost_VariantTy 2096 :: tail_is_block_arm
+  src_cons_of_mini_selfhost_VariantTy 2098 :: tail_is_block_arm
 def tail_empty_of_mini_selfhost_VariantTy : List SrcFunc :=
   src_empty_of_mini_selfhost_VariantTy :: tail_cons_of_mini_selfhost_VariantTy
 def tail_eff_arms : List SrcFunc :=
-  src_eff_arms 69 100 1889 1983 2093 2094 2095 :: tail_empty_of_mini_selfhost_VariantTy
+  src_eff_arms 69 100 1889 1983 2095 2096 2097 :: tail_empty_of_mini_selfhost_VariantTy
 def tail_arm_values : List SrcFunc :=
-  src_arm_values 1295 1296 1982 2092 :: tail_eff_arms
+  src_arm_values 1295 1296 1982 2094 :: tail_eff_arms
 def tail_arm_binders : List SrcFunc :=
-  src_arm_binders 241 1027 1981 2092 :: tail_arm_values
+  src_arm_binders 241 1027 1981 2094 :: tail_arm_values
 def tail_result_ty : List SrcFunc :=
   src_result_ty :: tail_arm_binders
 def tail_find_local_id_at : List SrcFunc :=
@@ -707,7 +712,7 @@ def tail_find_local_id_at : List SrcFunc :=
 def tail_index_elem : List SrcFunc :=
   src_index_elem 877 :: tail_find_local_id_at
 def tail_fn_inst_ret : List SrcFunc :=
-  src_fn_inst_ret 850 892 1104 1292 1306 2083 :: tail_index_elem
+  src_fn_inst_ret 850 892 1104 1292 1306 2085 :: tail_index_elem
 def tail_bare_int : List SrcFunc :=
   src_bare_int 281 1357 1366 1976 :: tail_fn_inst_ret
 def tail_field_ty : List SrcFunc :=
@@ -719,81 +724,81 @@ def tail_variant_of_decl : List SrcFunc :=
 def tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantAt : List SrcFunc :=
   src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantAt :: tail_variant_of_decl
 def tail_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt : List SrcFunc :=
-  src_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt 53 1972 2091 :: tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantAt
+  src_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt 53 1972 2093 :: tail_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantAt
 def tail_imported_variants_at : List SrcFunc :=
-  src_imported_variants_at 848 1779 1867 2090 :: tail_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt
+  src_imported_variants_at 848 1779 1867 2092 :: tail_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt
 def tail_match_tys : List SrcFunc :=
-  src_match_tys 69 100 588 1706 2089 :: tail_imported_variants_at
+  src_match_tys 69 100 588 1706 2091 :: tail_imported_variants_at
 def tail_named_inferred : List SrcFunc :=
   src_named_inferred 592 :: tail_match_tys
 def tail_effs_tys : List SrcFunc :=
   src_effs_tys 402 1092 1415 1784 1967 :: tail_named_inferred
 def tail_eff_local : List SrcFunc :=
-  src_eff_local 1650 2088 :: tail_effs_tys
+  src_eff_local 1650 2090 :: tail_effs_tys
 def tail_field_value : List SrcFunc :=
-  src_field_value 1106 1769 1966 2087 :: tail_eff_local
+  src_field_value 1106 1769 1966 2089 :: tail_eff_local
 def tail_no_method : List SrcFunc :=
-  src_no_method 250 843 1962 1964 2086 :: tail_field_value
+  src_no_method 250 843 1962 1964 2088 :: tail_field_value
 def tail_unique_found : List SrcFunc :=
   src_unique_found :: tail_no_method
 def tail_impl_fit : List SrcFunc :=
-  src_impl_fit 1707 2084 2085 :: tail_unique_found
+  src_impl_fit 1707 2086 2087 :: tail_unique_found
 def tail_ret_binds : List SrcFunc :=
-  src_ret_binds 1706 2083 2084 :: tail_impl_fit
+  src_ret_binds 1706 2085 2086 :: tail_impl_fit
 def tail_eff_args_bound : List SrcFunc :=
-  src_eff_args_bound 69 100 1092 1295 1487 1772 1822 1960 2014 2078 2079 2080 2081 2082 :: tail_ret_binds
+  src_eff_args_bound 69 100 1092 1295 1487 1772 1822 1960 2016 2080 2081 2082 2083 2084 :: tail_ret_binds
 def tail_eff_inferred : List SrcFunc :=
-  src_eff_inferred 2073 2077 :: tail_eff_args_bound
+  src_eff_inferred 2075 2079 :: tail_eff_args_bound
 def tail_param_patterns : List SrcFunc :=
-  src_param_patterns 140 141 2076 :: tail_eff_inferred
+  src_param_patterns 140 141 2078 :: tail_eff_inferred
 def tail_skip_expects : List SrcFunc :=
   src_skip_expects 1792 :: tail_param_patterns
 def tail_eff_called : List SrcFunc :=
-  src_eff_called 1967 2073 2074 2075 :: tail_skip_expects
+  src_eff_called 1967 2075 2076 2077 :: tail_skip_expects
 def tail_param_expects : List SrcFunc :=
   src_param_expects 850 1305 1306 1958 :: tail_eff_called
 def tail_eff_free : List SrcFunc :=
-  src_eff_free 69 1106 1295 1674 1707 1772 1856 1857 1955 2071 2072 :: tail_param_expects
+  src_eff_free 69 1106 1295 1674 1707 1772 1856 1857 1955 2073 2074 :: tail_param_expects
 def tail_find_fn : List SrcFunc :=
-  src_find_fn 250 2070 :: tail_eff_free
+  src_find_fn 250 2072 :: tail_eff_free
 def tail_is_some_index : List SrcFunc :=
   src_is_some_index :: tail_find_fn
 def tail_is_type_owner : List SrcFunc :=
-  src_is_type_owner 1473 1510 2068 2069 :: tail_is_some_index
+  src_is_type_owner 1473 1510 2070 2071 :: tail_is_some_index
 def tail_stride_of_local : List SrcFunc :=
   src_stride_of_local 1820 :: tail_is_type_owner
 def tail_single_of_bool : List SrcFunc :=
-  src_single_of_bool 2067 :: tail_stride_of_local
+  src_single_of_bool 2069 :: tail_stride_of_local
 def tail_fl_times10 : List SrcFunc :=
   src_fl_times10 69 1940 1948 :: tail_single_of_bool
 def tail_fl_round : List SrcFunc :=
-  src_fl_round 54 69 102 1946 2049 2057 2058 2059 2060 2061 2062 2063 2064 2065 2066 :: tail_fl_times10
+  src_fl_round 54 69 102 1946 2051 2059 2060 2061 2062 2063 2064 2065 2066 2067 2068 :: tail_fl_times10
 def tail_fl_pow2 : List SrcFunc :=
   src_fl_pow2 69 102 1946 :: tail_fl_round
 def tail_unbox_of_mini_selfhost_List_bool : List SrcFunc :=
-  src_unbox_of_mini_selfhost_List_bool 2056 :: tail_fl_pow2
+  src_unbox_of_mini_selfhost_List_bool 2058 :: tail_fl_pow2
 def tail_fl_log2_up : List SrcFunc :=
-  src_fl_log2_up 54 2055 :: tail_unbox_of_mini_selfhost_List_bool
+  src_fl_log2_up 54 2057 :: tail_unbox_of_mini_selfhost_List_bool
 def tail_fl_exp_at : List SrcFunc :=
-  src_fl_exp_at 2054 :: tail_fl_log2_up
+  src_fl_exp_at 2056 :: tail_fl_log2_up
 def tail_fl_frac_at : List SrcFunc :=
   src_fl_frac_at 54 368 1840 1841 1842 1843 :: tail_fl_exp_at
 def tail_fl_of_nat : List SrcFunc :=
-  src_fl_of_nat 69 1646 1941 2049 2052 2053 :: tail_fl_frac_at
+  src_fl_of_nat 69 1646 1941 2051 2054 2055 :: tail_fl_frac_at
 def tail_fl_mul10 : List SrcFunc :=
-  src_fl_mul10 1939 2049 :: tail_fl_of_nat
+  src_fl_mul10 1939 2051 :: tail_fl_of_nat
 def tail_fl_add : List SrcFunc :=
-  src_fl_add 1646 1939 1945 2048 2049 2050 2051 :: tail_fl_mul10
+  src_fl_add 1646 1939 1945 2050 2051 2052 2053 :: tail_fl_mul10
 def tail_char_tail : List SrcFunc :=
-  src_char_tail 55 2047 :: tail_fl_add
+  src_char_tail 55 2049 :: tail_fl_add
 def tail_char_close : List SrcFunc :=
-  src_char_close 55 2046 :: tail_char_tail
+  src_char_close 55 2048 :: tail_char_tail
 def tail_char_escape : List SrcFunc :=
-  src_char_escape 55 2044 2045 :: tail_char_close
+  src_char_escape 55 2046 2047 :: tail_char_close
 def tail_typed_literal : List SrcFunc :=
-  src_typed_literal 281 1254 2037 2038 2039 2040 2041 2042 2043 :: tail_char_escape
+  src_typed_literal 281 1254 2039 2040 2041 2042 2043 2044 2045 :: tail_char_escape
 def tail_trees_tokens : List SrcFunc :=
-  src_trees_tokens 100 531 1837 1934 2036 :: tail_typed_literal
+  src_trees_tokens 100 531 1837 1934 2038 :: tail_typed_literal
 def tail_single_of_mini_selfhost_Token : List SrcFunc :=
   src_single_of_mini_selfhost_Token 1005 :: tail_trees_tokens
 def tail_dash_text : List SrcFunc :=
@@ -801,13 +806,13 @@ def tail_dash_text : List SrcFunc :=
 def tail_wide_signed : List SrcFunc :=
   src_wide_signed 1930 :: tail_dash_text
 def tail_wide_digits : List SrcFunc :=
-  src_wide_digits 2035 :: tail_wide_signed
+  src_wide_digits 2037 :: tail_wide_signed
 def tail_wide_read : List SrcFunc :=
-  src_wide_read 281 1251 1360 2034 :: tail_wide_digits
+  src_wide_read 281 1251 1360 2036 :: tail_wide_digits
 def tail_find_bind : List SrcFunc :=
-  src_find_bind 2032 2033 :: tail_wide_read
+  src_find_bind 2034 2035 :: tail_wide_read
 def tail_match_named : List SrcFunc :=
-  src_match_named 69 1458 1473 1785 2027 2028 2029 2030 2031 :: tail_find_bind
+  src_match_named 69 1458 1473 1785 2029 2030 2031 2032 2033 :: tail_find_bind
 def tail_aliases_home : List SrcFunc :=
   src_aliases_home 582 848 1926 :: tail_match_named
 def tail_consts_home : List SrcFunc :=
@@ -817,29 +822,29 @@ def tail_fns_home : List SrcFunc :=
 def tail_types_home : List SrcFunc :=
   src_types_home 252 848 1923 :: tail_fns_home
 def tail_try_call_of : List SrcFunc :=
-  src_try_call_of 69 141 556 1097 1393 1653 2026 :: tail_types_home
+  src_try_call_of 69 141 556 1097 1393 1653 2028 :: tail_types_home
 def tail_try_stmt : List SrcFunc :=
-  src_try_stmt 2011 :: tail_try_call_of
+  src_try_stmt 2013 :: tail_try_call_of
 def tail_is_try_call : List SrcFunc :=
-  src_is_try_call 138 141 1576 1633 1636 1658 2025 :: tail_try_stmt
+  src_is_try_call 138 141 1576 1633 1636 1658 2027 :: tail_try_stmt
 def tail_discard_of : List SrcFunc :=
   src_discard_of :: tail_is_try_call
 def tail_assert_arg : List SrcFunc :=
-  src_assert_arg 100 1487 2024 :: tail_discard_of
+  src_assert_arg 100 1487 2026 :: tail_discard_of
 def tail_text_assert : List SrcFunc :=
   src_text_assert 368 529 :: tail_assert_arg
 def tail_args_of : List SrcFunc :=
-  src_args_of 140 2023 :: tail_text_assert
+  src_args_of 140 2025 :: tail_text_assert
 def tail_free_of : List SrcFunc :=
-  src_free_of 289 2021 2022 :: tail_args_of
+  src_free_of 289 2023 2024 :: tail_args_of
 def tail_compound_eval : List SrcFunc :=
-  src_compound_eval 138 141 555 556 1487 1580 1633 1634 1742 1744 2018 2019 2020 :: tail_free_of
+  src_compound_eval 138 141 555 556 1487 1580 1633 1634 1742 1744 2020 2021 2022 :: tail_free_of
 def tail_set_index_or_eval : List SrcFunc :=
-  src_set_index_or_eval 1487 1978 2017 :: tail_compound_eval
+  src_set_index_or_eval 1487 1978 2019 :: tail_compound_eval
 def tail_set_field_or_eval : List SrcFunc :=
-  src_set_field_or_eval 1487 1744 2013 2014 2015 2016 :: tail_set_index_or_eval
+  src_set_field_or_eval 1487 1744 2015 2016 2017 2018 :: tail_set_index_or_eval
 def tail_set_or_eval : List SrcFunc :=
-  src_set_or_eval 1802 2012 :: tail_set_field_or_eval
+  src_set_or_eval 1802 2014 :: tail_set_field_or_eval
 def tail_match_arm_of : List SrcFunc :=
   src_match_arm_of 69 1414 1992 1993 1994 1995 :: tail_set_or_eval
 def tail_for_range : List SrcFunc :=
@@ -863,7 +868,7 @@ def tail_return_eff : List SrcFunc :=
 def tail_slice_returned : List SrcFunc :=
   src_slice_returned 1105 :: tail_return_eff
 def tail_try_let : List SrcFunc :=
-  src_try_let 1105 2011 :: tail_slice_returned
+  src_try_let 1105 2013 :: tail_slice_returned
 def tail_slice_let : List SrcFunc :=
   src_slice_let 1105 :: tail_try_let
 def tail_is_ptr_ty : List SrcFunc :=
@@ -871,11 +876,11 @@ def tail_is_ptr_ty : List SrcFunc :=
 def tail_alloc_let : List SrcFunc :=
   src_alloc_let 1105 :: tail_is_ptr_ty
 def tail_inferred : List SrcFunc :=
-  src_inferred 2010 :: tail_alloc_let
+  src_inferred 2012 :: tail_alloc_let
 def tail_untyped_if : List SrcFunc :=
   src_untyped_if :: tail_inferred
 def tail_try_postfix : List SrcFunc :=
-  src_try_postfix 1920 1922 2008 2009 :: tail_untyped_if
+  src_try_postfix 1920 1922 2008 2009 2010 2011 :: tail_untyped_if
 def tail_eval_let_head : List SrcFunc :=
   src_eval_let_head 1092 1093 1458 1650 1966 2000 2001 2002 2003 2004 2005 2006 2007 :: tail_try_postfix
 def tail_try_head : List SrcFunc :=
@@ -4666,8 +4671,8 @@ def tail_app_main_w : List SrcFunc :=
 def prog : SrcProgram := { funcs := tail_app_main_w }
 
 def _root_.Lanius.Faithful.SelfRep.prims : Prims :=
-  { boxed := [33, 46, 75, 122, 132, 151, 158, 166, 195, 215, 229, 279, 288, 305, 432, 433, 537, 592, 607, 608, 609, 610, 612, 614, 615, 658, 673, 734, 736, 741, 846, 890, 1002, 1005, 1066, 1070, 1072, 1105, 1106, 1113, 1254, 1274, 1276, 1279, 1309, 1347, 1351, 1375, 1376, 1440, 1463, 1464, 1559, 1608, 1651, 1971, 2067, 2096, 2167, 2172],
-    unbox := [10, 47, 55, 56, 59, 78, 96, 100, 125, 152, 160, 162, 163, 231, 250, 252, 259, 275, 281, 289, 297, 320, 322, 435, 439, 440, 464, 501, 519, 522, 534, 578, 582, 588, 593, 598, 611, 613, 616, 660, 877, 882, 883, 916, 965, 1092, 1093, 1142, 1205, 1273, 1353, 1442, 1448, 1459, 1477, 1869, 1889, 1945, 2033, 2092] }
+  { boxed := [33, 46, 75, 122, 132, 151, 158, 166, 195, 215, 229, 279, 288, 305, 432, 433, 537, 592, 607, 608, 609, 610, 612, 614, 615, 658, 673, 734, 736, 741, 846, 890, 1002, 1005, 1066, 1070, 1072, 1105, 1106, 1113, 1254, 1274, 1276, 1279, 1309, 1347, 1351, 1375, 1376, 1440, 1463, 1464, 1559, 1608, 1651, 1971, 2069, 2098, 2169, 2174],
+    unbox := [10, 47, 55, 56, 59, 78, 96, 100, 125, 152, 160, 162, 163, 231, 250, 252, 259, 275, 281, 289, 297, 320, 322, 435, 439, 440, 464, 501, 519, 522, 534, 578, 582, 588, 593, 598, 611, 613, 616, 660, 877, 882, 883, 916, 965, 1092, 1093, 1142, 1205, 1273, 1353, 1442, 1448, 1459, 1477, 1869, 1889, 1945, 2035, 2094] }
 
 abbrev src0 : SrcFunc := src_app_main_w 1 2 5 6 7 8
 abbrev src1 : SrcFunc := src_app_main_oracle_read 1 9
@@ -6562,13 +6567,13 @@ abbrev src1889 : SrcFunc := src_unbox_of_mini_selfhost_List_mini_selfhost_Varian
 abbrev src1890 : SrcFunc := src_postfix_head 141 1652 1999
 abbrev src1891 : SrcFunc := src_try_head
 abbrev src1892 : SrcFunc := src_eval_let_head 1092 1093 1458 1650 1966 2000 2001 2002 2003 2004 2005 2006 2007
-abbrev src1893 : SrcFunc := src_try_postfix 1920 1922 2008 2009
+abbrev src1893 : SrcFunc := src_try_postfix 1920 1922 2008 2009 2010 2011
 abbrev src1894 : SrcFunc := src_untyped_if
-abbrev src1895 : SrcFunc := src_inferred 2010
+abbrev src1895 : SrcFunc := src_inferred 2012
 abbrev src1896 : SrcFunc := src_alloc_let 1105
 abbrev src1897 : SrcFunc := src_is_ptr_ty
 abbrev src1898 : SrcFunc := src_slice_let 1105
-abbrev src1899 : SrcFunc := src_try_let 1105 2011
+abbrev src1899 : SrcFunc := src_try_let 1105 2013
 abbrev src1900 : SrcFunc := src_slice_returned 1105
 abbrev src1901 : SrcFunc := src_return_eff 1650
 abbrev src1902 : SrcFunc := src_if_eff 1105 1650
@@ -6580,95 +6585,95 @@ abbrev src1907 : SrcFunc := src_p_range_bound
 abbrev src1908 : SrcFunc := src_p_range_bound_name
 abbrev src1909 : SrcFunc := src_for_range 1105 1254
 abbrev src1910 : SrcFunc := src_match_arm_of 69 1414 1992 1993 1994 1995
-abbrev src1911 : SrcFunc := src_set_or_eval 1802 2012
-abbrev src1912 : SrcFunc := src_set_field_or_eval 1487 1744 2013 2014 2015 2016
-abbrev src1913 : SrcFunc := src_set_index_or_eval 1487 1978 2017
-abbrev src1914 : SrcFunc := src_compound_eval 138 141 555 556 1487 1580 1633 1634 1742 1744 2018 2019 2020
-abbrev src1915 : SrcFunc := src_free_of 289 2021 2022
-abbrev src1916 : SrcFunc := src_args_of 140 2023
+abbrev src1911 : SrcFunc := src_set_or_eval 1802 2014
+abbrev src1912 : SrcFunc := src_set_field_or_eval 1487 1744 2015 2016 2017 2018
+abbrev src1913 : SrcFunc := src_set_index_or_eval 1487 1978 2019
+abbrev src1914 : SrcFunc := src_compound_eval 138 141 555 556 1487 1580 1633 1634 1742 1744 2020 2021 2022
+abbrev src1915 : SrcFunc := src_free_of 289 2023 2024
+abbrev src1916 : SrcFunc := src_args_of 140 2025
 abbrev src1917 : SrcFunc := src_text_assert 368 529
-abbrev src1918 : SrcFunc := src_assert_arg 100 1487 2024
+abbrev src1918 : SrcFunc := src_assert_arg 100 1487 2026
 abbrev src1919 : SrcFunc := src_discard_of
-abbrev src1920 : SrcFunc := src_is_try_call 138 141 1576 1633 1636 1658 2025
-abbrev src1921 : SrcFunc := src_try_stmt 2011
-abbrev src1922 : SrcFunc := src_try_call_of 69 141 556 1097 1393 1653 2026
+abbrev src1920 : SrcFunc := src_is_try_call 138 141 1576 1633 1636 1658 2027
+abbrev src1921 : SrcFunc := src_try_stmt 2013
+abbrev src1922 : SrcFunc := src_try_call_of 69 141 556 1097 1393 1653 2028
 abbrev src1923 : SrcFunc := src_types_home 252 848 1923
 abbrev src1924 : SrcFunc := src_fns_home 250 848 1924
 abbrev src1925 : SrcFunc := src_consts_home 611 848 1925
 abbrev src1926 : SrcFunc := src_aliases_home 582 848 1926
-abbrev src1927 : SrcFunc := src_match_named 69 1458 1473 1785 2027 2028 2029 2030 2031
-abbrev src1928 : SrcFunc := src_find_bind 2032 2033
-abbrev src1929 : SrcFunc := src_wide_read 281 1251 1360 2034
-abbrev src1930 : SrcFunc := src_wide_digits 2035
+abbrev src1927 : SrcFunc := src_match_named 69 1458 1473 1785 2029 2030 2031 2032 2033
+abbrev src1928 : SrcFunc := src_find_bind 2034 2035
+abbrev src1929 : SrcFunc := src_wide_read 281 1251 1360 2036
+abbrev src1930 : SrcFunc := src_wide_digits 2037
 abbrev src1931 : SrcFunc := src_wide_signed 1930
 abbrev src1932 : SrcFunc := src_dash_text 529
 abbrev src1933 : SrcFunc := src_single_of_mini_selfhost_Token 1005
-abbrev src1934 : SrcFunc := src_trees_tokens 100 531 1837 1934 2036
-abbrev src1935 : SrcFunc := src_typed_literal 281 1254 2037 2038 2039 2040 2041 2042 2043
-abbrev src1936 : SrcFunc := src_char_escape 55 2044 2045
-abbrev src1937 : SrcFunc := src_char_close 55 2046
-abbrev src1938 : SrcFunc := src_char_tail 55 2047
-abbrev src1939 : SrcFunc := src_fl_add 1646 1939 1945 2048 2049 2050 2051
-abbrev src1940 : SrcFunc := src_fl_mul10 1939 2049
-abbrev src1941 : SrcFunc := src_fl_of_nat 69 1646 1941 2049 2052 2053
+abbrev src1934 : SrcFunc := src_trees_tokens 100 531 1837 1934 2038
+abbrev src1935 : SrcFunc := src_typed_literal 281 1254 2039 2040 2041 2042 2043 2044 2045
+abbrev src1936 : SrcFunc := src_char_escape 55 2046 2047
+abbrev src1937 : SrcFunc := src_char_close 55 2048
+abbrev src1938 : SrcFunc := src_char_tail 55 2049
+abbrev src1939 : SrcFunc := src_fl_add 1646 1939 1945 2050 2051 2052 2053
+abbrev src1940 : SrcFunc := src_fl_mul10 1939 2051
+abbrev src1941 : SrcFunc := src_fl_of_nat 69 1646 1941 2051 2054 2055
 abbrev src1942 : SrcFunc := src_fl_frac_at 54 368 1840 1841 1842 1843
-abbrev src1943 : SrcFunc := src_fl_exp_at 2054
-abbrev src1944 : SrcFunc := src_fl_log2_up 54 2055
-abbrev src1945 : SrcFunc := src_unbox_of_mini_selfhost_List_bool 2056
+abbrev src1943 : SrcFunc := src_fl_exp_at 2056
+abbrev src1944 : SrcFunc := src_fl_log2_up 54 2057
+abbrev src1945 : SrcFunc := src_unbox_of_mini_selfhost_List_bool 2058
 abbrev src1946 : SrcFunc := src_fl_pow2 69 102 1946
-abbrev src1947 : SrcFunc := src_fl_round 54 69 102 1946 2049 2057 2058 2059 2060 2061 2062 2063 2064 2065 2066
+abbrev src1947 : SrcFunc := src_fl_round 54 69 102 1946 2051 2059 2060 2061 2062 2063 2064 2065 2066 2067 2068
 abbrev src1948 : SrcFunc := src_fl_times10 69 1940 1948
-abbrev src1949 : SrcFunc := src_single_of_bool 2067
+abbrev src1949 : SrcFunc := src_single_of_bool 2069
 abbrev src1950 : SrcFunc := src_stride_of_local 1820
-abbrev src1951 : SrcFunc := src_is_type_owner 1473 1510 2068 2069
+abbrev src1951 : SrcFunc := src_is_type_owner 1473 1510 2070 2071
 abbrev src1952 : SrcFunc := src_is_some_index
-abbrev src1953 : SrcFunc := src_find_fn 250 2070
-abbrev src1954 : SrcFunc := src_eff_free 69 1106 1295 1674 1707 1772 1856 1857 1955 2071 2072
+abbrev src1953 : SrcFunc := src_find_fn 250 2072
+abbrev src1954 : SrcFunc := src_eff_free 69 1106 1295 1674 1707 1772 1856 1857 1955 2073 2074
 abbrev src1955 : SrcFunc := src_param_expects 850 1305 1306 1958
-abbrev src1956 : SrcFunc := src_eff_called 1967 2073 2074 2075
+abbrev src1956 : SrcFunc := src_eff_called 1967 2075 2076 2077
 abbrev src1957 : SrcFunc := src_skip_expects 1792
-abbrev src1958 : SrcFunc := src_param_patterns 140 141 2076
-abbrev src1959 : SrcFunc := src_eff_inferred 2073 2077
-abbrev src1960 : SrcFunc := src_eff_args_bound 69 100 1092 1295 1487 1772 1822 1960 2014 2078 2079 2080 2081 2082
-abbrev src1961 : SrcFunc := src_ret_binds 1706 2083 2084
-abbrev src1962 : SrcFunc := src_impl_fit 1707 2084 2085
+abbrev src1958 : SrcFunc := src_param_patterns 140 141 2078
+abbrev src1959 : SrcFunc := src_eff_inferred 2075 2079
+abbrev src1960 : SrcFunc := src_eff_args_bound 69 100 1092 1295 1487 1772 1822 1960 2016 2080 2081 2082 2083 2084
+abbrev src1961 : SrcFunc := src_ret_binds 1706 2085 2086
+abbrev src1962 : SrcFunc := src_impl_fit 1707 2086 2087
 abbrev src1963 : SrcFunc := src_unique_found
-abbrev src1964 : SrcFunc := src_no_method 250 843 1962 1964 2086
-abbrev src1965 : SrcFunc := src_field_value 1106 1769 1966 2087
-abbrev src1966 : SrcFunc := src_eff_local 1650 2088
+abbrev src1964 : SrcFunc := src_no_method 250 843 1962 1964 2088
+abbrev src1965 : SrcFunc := src_field_value 1106 1769 1966 2089
+abbrev src1966 : SrcFunc := src_eff_local 1650 2090
 abbrev src1967 : SrcFunc := src_effs_tys 402 1092 1415 1784 1967
 abbrev src1968 : SrcFunc := src_named_inferred 592
-abbrev src1969 : SrcFunc := src_match_tys 69 100 588 1706 2089
-abbrev src1970 : SrcFunc := src_imported_variants_at 848 1779 1867 2090
-abbrev src1971 : SrcFunc := src_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt 53 1972 2091
+abbrev src1969 : SrcFunc := src_match_tys 69 100 588 1706 2091
+abbrev src1970 : SrcFunc := src_imported_variants_at 848 1779 1867 2092
+abbrev src1971 : SrcFunc := src_boxed_of_mini_selfhost_List_mini_selfhost_VariantAt 53 1972 2093
 abbrev src1972 : SrcFunc := src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantAt
 abbrev src1973 : SrcFunc := src_variant_of_decl 1551
 abbrev src1974 : SrcFunc := src_local_ty
 abbrev src1975 : SrcFunc := src_field_ty 898 899
 abbrev src1976 : SrcFunc := src_bare_int 281 1357 1366 1976
-abbrev src1977 : SrcFunc := src_fn_inst_ret 850 892 1104 1292 1306 2083
+abbrev src1977 : SrcFunc := src_fn_inst_ret 850 892 1104 1292 1306 2085
 abbrev src1978 : SrcFunc := src_index_elem 877
 abbrev src1979 : SrcFunc := src_find_local_id_at 1879
 abbrev src1980 : SrcFunc := src_result_ty
-abbrev src1981 : SrcFunc := src_arm_binders 241 1027 1981 2092
-abbrev src1982 : SrcFunc := src_arm_values 1295 1296 1982 2092
-abbrev src1983 : SrcFunc := src_eff_arms 69 100 1889 1983 2093 2094 2095
+abbrev src1981 : SrcFunc := src_arm_binders 241 1027 1981 2094
+abbrev src1982 : SrcFunc := src_arm_values 1295 1296 1982 2094
+abbrev src1983 : SrcFunc := src_eff_arms 69 100 1889 1983 2095 2096 2097
 abbrev src1984 : SrcFunc := src_empty_of_mini_selfhost_VariantTy
-abbrev src1985 : SrcFunc := src_cons_of_mini_selfhost_VariantTy 2096
+abbrev src1985 : SrcFunc := src_cons_of_mini_selfhost_VariantTy 2098
 abbrev src1986 : SrcFunc := src_is_block_arm 1993
 abbrev src1987 : SrcFunc := src_if_one
-abbrev src1988 : SrcFunc := src_match_stmt_enum 69 556 1097 1882 2097
+abbrev src1988 : SrcFunc := src_match_stmt_enum 69 556 1097 1882 2099
 abbrev src1989 : SrcFunc := src_length_of_mini_selfhost_CTree 54 100 1989
 abbrev src1990 : SrcFunc := src_length_of_mini_selfhost_VariantTy 54 1889 1990
-abbrev src1991 : SrcFunc := src_arms_by_variant 93 100 1889 1991 2098 2099
-abbrev src1992 : SrcFunc := src_arm_binding 138 140 141 223 385 2100 2101 2102 2103
-abbrev src1993 : SrcFunc := src_arm_block_list 141 1814 2104
-abbrev src1994 : SrcFunc := src_arm_stmt 2105
+abbrev src1991 : SrcFunc := src_arms_by_variant 93 100 1889 1991 2100 2101
+abbrev src1992 : SrcFunc := src_arm_binding 138 140 141 223 385 2102 2103 2104 2105
+abbrev src1993 : SrcFunc := src_arm_block_list 141 1814 2106
+abbrev src1994 : SrcFunc := src_arm_stmt 2107
 abbrev src1995 : SrcFunc := src_bound_scope
 abbrev src1996 : SrcFunc := src_local_id_of
 abbrev src1997 : SrcFunc := src_local_ty_of
 abbrev src1998 : SrcFunc := src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_VariantTy
-abbrev src1999 : SrcFunc := src_call_path_head 141 385 574 1758 1759 1761 1916 2106 2107
+abbrev src1999 : SrcFunc := src_call_path_head 141 385 574 1758 1759 1761 1916 2108 2109
 abbrev src2000 : SrcFunc := src_call_let_head
 abbrev src2001 : SrcFunc := src_call_parts 1092 2004
 abbrev src2002 : SrcFunc := src_index_let_head
@@ -6677,203 +6682,205 @@ abbrev src2004 : SrcFunc := src_pure_list 1092 1261 1262 1650 2004
 abbrev src2005 : SrcFunc := src_variant_let_head
 abbrev src2006 : SrcFunc := src_match_let_head
 abbrev src2007 : SrcFunc := src_pure_arms 501 1092 1268 1269 1650 2007
-abbrev src2008 : SrcFunc := src_is_try_local 138 141 1633 2025
-abbrev src2009 : SrcFunc := src_try_local_of 69 141 556 1097 1393 1580 2108
-abbrev src2010 : SrcFunc := src_pure_inferred
-abbrev src2011 : SrcFunc := src_try_rest 1105 1106 2109
-abbrev src2012 : SrcFunc := src_set_try_or_eval 1393 1458 1487 2018 2110
-abbrev src2013 : SrcFunc := src_checked_stmt
-abbrev src2014 : SrcFunc := src_has_ty
-abbrev src2015 : SrcFunc := src_field_ty_at 898 899
-abbrev src2016 : SrcFunc := src_field_eval_stmt 2111
-abbrev src2017 : SrcFunc := src_set_index_eval_of 2112
-abbrev src2018 : SrcFunc := src_set_eval_of 2001 2113
-abbrev src2019 : SrcFunc := src_compound_eff 1754 1756 2114 2115 2116
-abbrev src2020 : SrcFunc := src_compound_field_eval 1487 2013 2014 2015 2016 2019
-abbrev src2021 : SrcFunc := src_free_shifted
-abbrev src2022 : SrcFunc := src_shift_of 281 2117 2118 2119
-abbrev src2023 : SrcFunc := src_exprs_of 100 1261 1527 2023 2120
-abbrev src2024 : SrcFunc := src_assert_of
-abbrev src2025 : SrcFunc := src_p_postfix_try
-abbrev src2026 : SrcFunc := src_tried_call 1784 2121
-abbrev src2027 : SrcFunc := src_param_spelling 1028 1510 1856 2122
-abbrev src2028 : SrcFunc := src_bind_ty 1458 1928 2030 2123
-abbrev src2029 : SrcFunc := src_bare_prim 1510 1856 2124
-abbrev src2030 : SrcFunc := src_same_or_none
-abbrev src2031 : SrcFunc := src_match_decl 69 2125
-abbrev src2032 : SrcFunc := src_find_bind_at 843 1928
-abbrev src2033 : SrcFunc := src_unbox_of_mini_selfhost_List_mini_selfhost_Bind 2126
-abbrev src2034 : SrcFunc := src_has_wide
-abbrev src2035 : SrcFunc := src_wide_of 2127 2128 2129 2130
-abbrev src2036 : SrcFunc := src_concat_of_mini_selfhost_Token 152 1005 2036
-abbrev src2037 : SrcFunc := src_uint_in_range 1454
-abbrev src2038 : SrcFunc := src_null_const
-abbrev src2039 : SrcFunc := src_sint_const 1254 1503
-abbrev src2040 : SrcFunc := src_negated_int
-abbrev src2041 : SrcFunc := src_negated_float 281 1374 2131
-abbrev src2042 : SrcFunc := src_neg_sint_const 2039
-abbrev src2043 : SrcFunc := src_float_typed 1374
-abbrev src2044 : SrcFunc := src_char_close_opt 1937
-abbrev src2045 : SrcFunc := src_escaped_byte
-abbrev src2046 : SrcFunc := src_char_end
-abbrev src2047 : SrcFunc := src_char_tail_at 54 69 102 1937 1938
-abbrev src2048 : SrcFunc := src_fl_carry_out 1646 1949
-abbrev src2049 : SrcFunc := src_cons_of_bool 2067
-abbrev src2050 : SrcFunc := src_fl_xor
-abbrev src2051 : SrcFunc := src_fl_carry
-abbrev src2052 : SrcFunc := src_fl_nat_odd 69 2052
-abbrev src2053 : SrcFunc := src_fl_nat_half 54 69 2053
-abbrev src2054 : SrcFunc := src_fl_exp_sign 55 2132
-abbrev src2055 : SrcFunc := src_fl_low_bit
-abbrev src2056 : SrcFunc := src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_bool
-abbrev src2057 : SrcFunc := src_fl_log2_or0 1844
-abbrev src2058 : SrcFunc := src_fl_sat 69
-abbrev src2059 : SrcFunc := src_fl_bit
-abbrev src2060 : SrcFunc := src_fl_ratio_ok 2058 2061 2063
-abbrev src2061 : SrcFunc := src_fl_shl 69 2049 2061
-abbrev src2062 : SrcFunc := src_fl_divmod 1646 1945 2062 2133
-abbrev src2063 : SrcFunc := src_fl_less 1646 1945 2063 2134
-abbrev src2064 : SrcFunc := src_fl_odd
-abbrev src2065 : SrcFunc := src_fl_round_up 1646 1939
-abbrev src2066 : SrcFunc := src_fl_to_nat 54 102 1945 2059 2066
-abbrev src2067 : SrcFunc := src_boxed_of_mini_selfhost_List_bool 53 2056 2135
-abbrev src2068 : SrcFunc := src_is_scalar_owner 580 581 1028
-abbrev src2069 : SrcFunc := src_is_owner_at 148 1028 1067
-abbrev src2070 : SrcFunc := src_find_fn_at 54 843 848 1953
-abbrev src2071 : SrcFunc := src_explicit_inst 332 400 1098 1475 2136
-abbrev src2072 : SrcFunc := src_checked_effs
-abbrev src2073 : SrcFunc := src_x_call_of 1106
-abbrev src2074 : SrcFunc := src_infer_eff 2137 2138
-abbrev src2075 : SrcFunc := src_concat_of_mini_selfhost_MEff 1092 1106 2075
-abbrev src2076 : SrcFunc := src_patterns_of 93 100 1394 2076 2139
-abbrev src2077 : SrcFunc := src_inst_bound 1708 1822 1967 2084 2140 2141
-abbrev src2078 : SrcFunc := src_checked_bound
-abbrev src2079 : SrcFunc := src_arg_expected 1292 1306 1822
-abbrev src2080 : SrcFunc := src_eff_arg_next 69 1295 1960 2081 2082
-abbrev src2081 : SrcFunc := src_cons_bound 1296
-abbrev src2082 : SrcFunc := src_bind_arg 1706 1784 1877 2084
-abbrev src2083 : SrcFunc := src_ret_pattern 138 141 1289
-abbrev src2084 : SrcFunc := src_callee_env 241 402 1306
-abbrev src2085 : SrcFunc := src_fit_ty 69 138 140 141 1397 1398 1403 1406 1820 2085 2142
-abbrev src2086 : SrcFunc := src_is_misfit
-abbrev src2087 : SrcFunc := src_projection 54 875 897
-abbrev src2088 : SrcFunc := src_pure_local
-abbrev src2089 : SrcFunc := src_match_tys_next 69 1969
-abbrev src2090 : SrcFunc := src_concat_of_mini_selfhost_VariantAt 1869 1971 2090
-abbrev src2091 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantAt
-abbrev src2092 : SrcFunc := src_unbox_of_mini_selfhost_List_mini_selfhost_EffArm 2143
-abbrev src2093 : SrcFunc := src_empty_of_mini_selfhost_EffArm
-abbrev src2094 : SrcFunc := src_cons_eff_arm 2144
-abbrev src2095 : SrcFunc := src_eff_arm 69 138 140 141 223 385 2100 2101 2102 2103 2145
-abbrev src2096 : SrcFunc := src_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy 53 1998 2146
-abbrev src2097 : SrcFunc := src_match_stmt_head 1393 1966 2147
-abbrev src2098 : SrcFunc := src_arms_naming 93 100 2098 2148 2149
-abbrev src2099 : SrcFunc := src_cons_tree_tail 133
-abbrev src2100 : SrcFunc := src_p_pattern_ident
-abbrev src2101 : SrcFunc := src_arm_named 843 1514 2150
-abbrev src2102 : SrcFunc := src_p_pattern_plain
-abbrev src2103 : SrcFunc := src_binders_of 100 223 588 2151
-abbrev src2104 : SrcFunc := src_arm_block_of 138 141 1633 2152
-abbrev src2105 : SrcFunc := src_arm_binder 55 1105
-abbrev src2106 : SrcFunc := src_alloc_head 289 2022 2153
-abbrev src2107 : SrcFunc := src_slice_head 289
-abbrev src2108 : SrcFunc := src_tried_local 2121
-abbrev src2109 : SrcFunc := src_try_payload 1295 1769
-abbrev src2110 : SrcFunc := src_try_set 1105 2011
-abbrev src2111 : SrcFunc := src_set_field_eff 1650
-abbrev src2112 : SrcFunc := src_set_index_eff 1650 2154
-abbrev src2113 : SrcFunc := src_set_eff 1650
-abbrev src2114 : SrcFunc := src_p_assign_div
-abbrev src2115 : SrcFunc := src_p_assign_mod
-abbrev src2116 : SrcFunc := src_compound_op 2155 2156 2157 2158 2159 2160 2161 2162
-abbrev src2117 : SrcFunc := src_literal_shift 2163
-abbrev src2118 : SrcFunc := src_cast_shift 2117
-abbrev src2119 : SrcFunc := src_is_usize
-abbrev src2120 : SrcFunc := src_cons_expr 2164
-abbrev src2121 : SrcFunc := src_tried_of 148 1067 1242 1785 2165 2166
-abbrev src2122 : SrcFunc := src_param_named
-abbrev src2123 : SrcFunc := src_cons_of_mini_selfhost_Bind 2167
-abbrev src2124 : SrcFunc := src_prim_if 1552
-abbrev src2125 : SrcFunc := src_match_same_decl 69 1709
-abbrev src2126 : SrcFunc := src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Bind
-abbrev src2127 : SrcFunc := src_wide_i32
-abbrev src2128 : SrcFunc := src_wide_uint 2037
-abbrev src2129 : SrcFunc := src_wide_isize 54 69 1254
-abbrev src2130 : SrcFunc := src_wide_sint 54 69 1254 1452
-abbrev src2131 : SrcFunc := src_negate_some 1254
-abbrev src2132 : SrcFunc := src_fl_exp_sign_at 368 2168
-abbrev src2133 : SrcFunc := src_fl_div_step 2049 2063 2169
-abbrev src2134 : SrcFunc := src_fl_borrow_bit
-abbrev src2135 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_bool
-abbrev src2136 : SrcFunc := src_explicit_checked
-abbrev src2137 : SrcFunc := src_infer_inst 400 402 850 1958 1969 2084 2170
-abbrev src2138 : SrcFunc := src_infer_args 400 402 850 1708 1958 1969 2084 2140
-abbrev src2139 : SrcFunc := src_cons_tree 2099
-abbrev src2140 : SrcFunc := src_inst_from
-abbrev src2141 : SrcFunc := src_match_tys_or_none 1969
-abbrev src2142 : SrcFunc := src_fit_path 69 2171
-abbrev src2143 : SrcFunc := src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm
-abbrev src2144 : SrcFunc := src_cons_of_mini_selfhost_EffArm 2172
-abbrev src2145 : SrcFunc := src_eff_arm_bound 69 1487 2173 2174
-abbrev src2146 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy
-abbrev src2147 : SrcFunc := src_match_stmt_if
-abbrev src2148 : SrcFunc := src_arms_naming_at 133
-abbrev src2149 : SrcFunc := src_arm_names 138 141 385 2100 2101
-abbrev src2150 : SrcFunc := src_arm_prefix 400 574 848 850
-abbrev src2151 : SrcFunc := src_binder_of 69 138 141 556 1028 1393 1396 1638 2100 2102 2103 2175 2176
-abbrev src2152 : SrcFunc := src_p_arm_block
-abbrev src2153 : SrcFunc := src_alloc_shifted
-abbrev src2154 : SrcFunc := src_set_index_pure 1650
-abbrev src2155 : SrcFunc := src_p_assign_add
-abbrev src2156 : SrcFunc := src_p_assign_sub
-abbrev src2157 : SrcFunc := src_p_assign_mul
-abbrev src2158 : SrcFunc := src_p_assign_band
-abbrev src2159 : SrcFunc := src_p_assign_bor
-abbrev src2160 : SrcFunc := src_p_assign_xor
-abbrev src2161 : SrcFunc := src_p_assign_shl
-abbrev src2162 : SrcFunc := src_p_assign_shr
-abbrev src2163 : SrcFunc := src_shift_of_u64 54 69 102 2163
-abbrev src2164 : SrcFunc := src_cons_expr_tail 1262
-abbrev src2165 : SrcFunc := src_tried_if 2177
-abbrev src2166 : SrcFunc := src_is_try_enum 574 843 848 1027 2178 2179 2180 2181 2182 2183 2184 2185 2186
-abbrev src2167 : SrcFunc := src_boxed_of_mini_selfhost_List_mini_selfhost_Bind 53 2126 2187
-abbrev src2168 : SrcFunc := src_fl_exp_first 55 2188
-abbrev src2169 : SrcFunc := src_fl_sub 1646 1945 2049 2050 2134 2169
-abbrev src2170 : SrcFunc := src_infer_ret 1706 1708 2083 2084 2140
-abbrev src2171 : SrcFunc := src_fit_named 69 1458 1473 1785 2027 2028 2029 2189 2190 2191
-abbrev src2172 : SrcFunc := src_boxed_of_mini_selfhost_List_mini_selfhost_EffArm 53 2143 2192
-abbrev src2173 : SrcFunc := src_arm_eff 1784
-abbrev src2174 : SrcFunc := src_diverge_arm 2193
-abbrev src2175 : SrcFunc := src_is_some_name
-abbrev src2176 : SrcFunc := src_cons_binder 368
-abbrev src2177 : SrcFunc := src_tried_shape 1385 1864 2194 2195 2196
-abbrev src2178 : SrcFunc := src_text_core 368 529
-abbrev src2179 : SrcFunc := src_text_result 368 529
-abbrev src2180 : SrcFunc := src_text_result_ty 368 529
-abbrev src2181 : SrcFunc := src_text_ok 368 529
-abbrev src2182 : SrcFunc := src_text_err 368 529
-abbrev src2183 : SrcFunc := src_text_option 368 529
-abbrev src2184 : SrcFunc := src_text_option_ty 368 529
-abbrev src2185 : SrcFunc := src_text_some 368 529
-abbrev src2186 : SrcFunc := src_text_none 368 529
-abbrev src2187 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Bind
-abbrev src2188 : SrcFunc := src_fl_exp_first_at 69 1840 2197
-abbrev src2189 : SrcFunc := src_fit_of
-abbrev src2190 : SrcFunc := src_fit_if
-abbrev src2191 : SrcFunc := src_fit_decl 69 2198
-abbrev src2192 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_EffArm
-abbrev src2193 : SrcFunc := src_diverge_eff 2199
-abbrev src2194 : SrcFunc := src_tried_err 588
-abbrev src2195 : SrcFunc := src_single_ty 588
-abbrev src2196 : SrcFunc := src_if_same_tys
-abbrev src2197 : SrcFunc := src_fl_exp_digits 55 1750 2200
-abbrev src2198 : SrcFunc := src_fit_same_decl 69 2201
-abbrev src2199 : SrcFunc := src_diverge_call 332 603 850 1098 1103 2202
-abbrev src2200 : SrcFunc := src_fl_exp_digit_at 54 69 102 1840 2197
-abbrev src2201 : SrcFunc := src_fit_args 69 100 588 2203 2204
-abbrev src2202 : SrcFunc := src_diverge_checked 594 875
-abbrev src2203 : SrcFunc := src_fit_args_next 69 2201
-abbrev src2204 : SrcFunc := src_fit_arg 69 138 141 1557 2085
+abbrev src2008 : SrcFunc := src_is_try_method 138 141 1576 1578 1633 1634 1636 1658 1742 2027
+abbrev src2009 : SrcFunc := src_try_method_of 69 141 556 1097 1393 1655 2028
+abbrev src2010 : SrcFunc := src_is_try_local 138 141 1633 2027
+abbrev src2011 : SrcFunc := src_try_local_of 69 141 556 1097 1393 1580 2110
+abbrev src2012 : SrcFunc := src_pure_inferred
+abbrev src2013 : SrcFunc := src_try_rest 1105 1106 2111
+abbrev src2014 : SrcFunc := src_set_try_or_eval 1393 1458 1487 2020 2112
+abbrev src2015 : SrcFunc := src_checked_stmt
+abbrev src2016 : SrcFunc := src_has_ty
+abbrev src2017 : SrcFunc := src_field_ty_at 898 899
+abbrev src2018 : SrcFunc := src_field_eval_stmt 2113
+abbrev src2019 : SrcFunc := src_set_index_eval_of 2114
+abbrev src2020 : SrcFunc := src_set_eval_of 2001 2115
+abbrev src2021 : SrcFunc := src_compound_eff 1754 1756 2116 2117 2118
+abbrev src2022 : SrcFunc := src_compound_field_eval 1487 2015 2016 2017 2018 2021
+abbrev src2023 : SrcFunc := src_free_shifted
+abbrev src2024 : SrcFunc := src_shift_of 281 2119 2120 2121
+abbrev src2025 : SrcFunc := src_exprs_of 100 1261 1527 2025 2122
+abbrev src2026 : SrcFunc := src_assert_of
+abbrev src2027 : SrcFunc := src_p_postfix_try
+abbrev src2028 : SrcFunc := src_tried_call 1784 2123
+abbrev src2029 : SrcFunc := src_param_spelling 1028 1510 1856 2124
+abbrev src2030 : SrcFunc := src_bind_ty 1458 1928 2032 2125
+abbrev src2031 : SrcFunc := src_bare_prim 1510 1856 2126
+abbrev src2032 : SrcFunc := src_same_or_none
+abbrev src2033 : SrcFunc := src_match_decl 69 2127
+abbrev src2034 : SrcFunc := src_find_bind_at 843 1928
+abbrev src2035 : SrcFunc := src_unbox_of_mini_selfhost_List_mini_selfhost_Bind 2128
+abbrev src2036 : SrcFunc := src_has_wide
+abbrev src2037 : SrcFunc := src_wide_of 2129 2130 2131 2132
+abbrev src2038 : SrcFunc := src_concat_of_mini_selfhost_Token 152 1005 2038
+abbrev src2039 : SrcFunc := src_uint_in_range 1454
+abbrev src2040 : SrcFunc := src_null_const
+abbrev src2041 : SrcFunc := src_sint_const 1254 1503
+abbrev src2042 : SrcFunc := src_negated_int
+abbrev src2043 : SrcFunc := src_negated_float 281 1374 2133
+abbrev src2044 : SrcFunc := src_neg_sint_const 2041
+abbrev src2045 : SrcFunc := src_float_typed 1374
+abbrev src2046 : SrcFunc := src_char_close_opt 1937
+abbrev src2047 : SrcFunc := src_escaped_byte
+abbrev src2048 : SrcFunc := src_char_end
+abbrev src2049 : SrcFunc := src_char_tail_at 54 69 102 1937 1938
+abbrev src2050 : SrcFunc := src_fl_carry_out 1646 1949
+abbrev src2051 : SrcFunc := src_cons_of_bool 2069
+abbrev src2052 : SrcFunc := src_fl_xor
+abbrev src2053 : SrcFunc := src_fl_carry
+abbrev src2054 : SrcFunc := src_fl_nat_odd 69 2054
+abbrev src2055 : SrcFunc := src_fl_nat_half 54 69 2055
+abbrev src2056 : SrcFunc := src_fl_exp_sign 55 2134
+abbrev src2057 : SrcFunc := src_fl_low_bit
+abbrev src2058 : SrcFunc := src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_bool
+abbrev src2059 : SrcFunc := src_fl_log2_or0 1844
+abbrev src2060 : SrcFunc := src_fl_sat 69
+abbrev src2061 : SrcFunc := src_fl_bit
+abbrev src2062 : SrcFunc := src_fl_ratio_ok 2060 2063 2065
+abbrev src2063 : SrcFunc := src_fl_shl 69 2051 2063
+abbrev src2064 : SrcFunc := src_fl_divmod 1646 1945 2064 2135
+abbrev src2065 : SrcFunc := src_fl_less 1646 1945 2065 2136
+abbrev src2066 : SrcFunc := src_fl_odd
+abbrev src2067 : SrcFunc := src_fl_round_up 1646 1939
+abbrev src2068 : SrcFunc := src_fl_to_nat 54 102 1945 2061 2068
+abbrev src2069 : SrcFunc := src_boxed_of_mini_selfhost_List_bool 53 2058 2137
+abbrev src2070 : SrcFunc := src_is_scalar_owner 580 581 1028
+abbrev src2071 : SrcFunc := src_is_owner_at 148 1028 1067
+abbrev src2072 : SrcFunc := src_find_fn_at 54 843 848 1953
+abbrev src2073 : SrcFunc := src_explicit_inst 332 400 1098 1475 2138
+abbrev src2074 : SrcFunc := src_checked_effs
+abbrev src2075 : SrcFunc := src_x_call_of 1106
+abbrev src2076 : SrcFunc := src_infer_eff 2139 2140
+abbrev src2077 : SrcFunc := src_concat_of_mini_selfhost_MEff 1092 1106 2077
+abbrev src2078 : SrcFunc := src_patterns_of 93 100 1394 2078 2141
+abbrev src2079 : SrcFunc := src_inst_bound 1708 1822 1967 2086 2142 2143
+abbrev src2080 : SrcFunc := src_checked_bound
+abbrev src2081 : SrcFunc := src_arg_expected 1292 1306 1822
+abbrev src2082 : SrcFunc := src_eff_arg_next 69 1295 1960 2083 2084
+abbrev src2083 : SrcFunc := src_cons_bound 1296
+abbrev src2084 : SrcFunc := src_bind_arg 1706 1784 1877 2086
+abbrev src2085 : SrcFunc := src_ret_pattern 138 141 1289
+abbrev src2086 : SrcFunc := src_callee_env 241 402 1306
+abbrev src2087 : SrcFunc := src_fit_ty 69 138 140 141 1397 1398 1403 1406 1820 2087 2144
+abbrev src2088 : SrcFunc := src_is_misfit
+abbrev src2089 : SrcFunc := src_projection 54 875 897
+abbrev src2090 : SrcFunc := src_pure_local
+abbrev src2091 : SrcFunc := src_match_tys_next 69 1969
+abbrev src2092 : SrcFunc := src_concat_of_mini_selfhost_VariantAt 1869 1971 2092
+abbrev src2093 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantAt
+abbrev src2094 : SrcFunc := src_unbox_of_mini_selfhost_List_mini_selfhost_EffArm 2145
+abbrev src2095 : SrcFunc := src_empty_of_mini_selfhost_EffArm
+abbrev src2096 : SrcFunc := src_cons_eff_arm 2146
+abbrev src2097 : SrcFunc := src_eff_arm 69 138 140 141 223 385 2102 2103 2104 2105 2147
+abbrev src2098 : SrcFunc := src_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy 53 1998 2148
+abbrev src2099 : SrcFunc := src_match_stmt_head 1393 1966 2149
+abbrev src2100 : SrcFunc := src_arms_naming 93 100 2100 2150 2151
+abbrev src2101 : SrcFunc := src_cons_tree_tail 133
+abbrev src2102 : SrcFunc := src_p_pattern_ident
+abbrev src2103 : SrcFunc := src_arm_named 843 1514 2152
+abbrev src2104 : SrcFunc := src_p_pattern_plain
+abbrev src2105 : SrcFunc := src_binders_of 100 223 588 2153
+abbrev src2106 : SrcFunc := src_arm_block_of 138 141 1633 2154
+abbrev src2107 : SrcFunc := src_arm_binder 55 1105
+abbrev src2108 : SrcFunc := src_alloc_head 289 2024 2155
+abbrev src2109 : SrcFunc := src_slice_head 289
+abbrev src2110 : SrcFunc := src_tried_local 2123
+abbrev src2111 : SrcFunc := src_try_payload 1295 1769
+abbrev src2112 : SrcFunc := src_try_set 1105 2013
+abbrev src2113 : SrcFunc := src_set_field_eff 1650
+abbrev src2114 : SrcFunc := src_set_index_eff 1650 2156
+abbrev src2115 : SrcFunc := src_set_eff 1650
+abbrev src2116 : SrcFunc := src_p_assign_div
+abbrev src2117 : SrcFunc := src_p_assign_mod
+abbrev src2118 : SrcFunc := src_compound_op 2157 2158 2159 2160 2161 2162 2163 2164
+abbrev src2119 : SrcFunc := src_literal_shift 2165
+abbrev src2120 : SrcFunc := src_cast_shift 2119
+abbrev src2121 : SrcFunc := src_is_usize
+abbrev src2122 : SrcFunc := src_cons_expr 2166
+abbrev src2123 : SrcFunc := src_tried_of 148 1067 1242 1785 2167 2168
+abbrev src2124 : SrcFunc := src_param_named
+abbrev src2125 : SrcFunc := src_cons_of_mini_selfhost_Bind 2169
+abbrev src2126 : SrcFunc := src_prim_if 1552
+abbrev src2127 : SrcFunc := src_match_same_decl 69 1709
+abbrev src2128 : SrcFunc := src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_Bind
+abbrev src2129 : SrcFunc := src_wide_i32
+abbrev src2130 : SrcFunc := src_wide_uint 2039
+abbrev src2131 : SrcFunc := src_wide_isize 54 69 1254
+abbrev src2132 : SrcFunc := src_wide_sint 54 69 1254 1452
+abbrev src2133 : SrcFunc := src_negate_some 1254
+abbrev src2134 : SrcFunc := src_fl_exp_sign_at 368 2170
+abbrev src2135 : SrcFunc := src_fl_div_step 2051 2065 2171
+abbrev src2136 : SrcFunc := src_fl_borrow_bit
+abbrev src2137 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_bool
+abbrev src2138 : SrcFunc := src_explicit_checked
+abbrev src2139 : SrcFunc := src_infer_inst 400 402 850 1958 1969 2086 2172
+abbrev src2140 : SrcFunc := src_infer_args 400 402 850 1708 1958 1969 2086 2142
+abbrev src2141 : SrcFunc := src_cons_tree 2101
+abbrev src2142 : SrcFunc := src_inst_from
+abbrev src2143 : SrcFunc := src_match_tys_or_none 1969
+abbrev src2144 : SrcFunc := src_fit_path 69 2173
+abbrev src2145 : SrcFunc := src_core_mem_typed_slice_from_storage_of_mini_selfhost_List_mini_selfhost_EffArm
+abbrev src2146 : SrcFunc := src_cons_of_mini_selfhost_EffArm 2174
+abbrev src2147 : SrcFunc := src_eff_arm_bound 69 1487 2175 2176
+abbrev src2148 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_VariantTy
+abbrev src2149 : SrcFunc := src_match_stmt_if
+abbrev src2150 : SrcFunc := src_arms_naming_at 133
+abbrev src2151 : SrcFunc := src_arm_names 138 141 385 2102 2103
+abbrev src2152 : SrcFunc := src_arm_prefix 400 574 848 850
+abbrev src2153 : SrcFunc := src_binder_of 69 138 141 556 1028 1393 1396 1638 2102 2104 2105 2177 2178
+abbrev src2154 : SrcFunc := src_p_arm_block
+abbrev src2155 : SrcFunc := src_alloc_shifted
+abbrev src2156 : SrcFunc := src_set_index_pure 1650
+abbrev src2157 : SrcFunc := src_p_assign_add
+abbrev src2158 : SrcFunc := src_p_assign_sub
+abbrev src2159 : SrcFunc := src_p_assign_mul
+abbrev src2160 : SrcFunc := src_p_assign_band
+abbrev src2161 : SrcFunc := src_p_assign_bor
+abbrev src2162 : SrcFunc := src_p_assign_xor
+abbrev src2163 : SrcFunc := src_p_assign_shl
+abbrev src2164 : SrcFunc := src_p_assign_shr
+abbrev src2165 : SrcFunc := src_shift_of_u64 54 69 102 2165
+abbrev src2166 : SrcFunc := src_cons_expr_tail 1262
+abbrev src2167 : SrcFunc := src_tried_if 2179
+abbrev src2168 : SrcFunc := src_is_try_enum 574 843 848 1027 2180 2181 2182 2183 2184 2185 2186 2187 2188
+abbrev src2169 : SrcFunc := src_boxed_of_mini_selfhost_List_mini_selfhost_Bind 53 2128 2189
+abbrev src2170 : SrcFunc := src_fl_exp_first 55 2190
+abbrev src2171 : SrcFunc := src_fl_sub 1646 1945 2051 2052 2136 2171
+abbrev src2172 : SrcFunc := src_infer_ret 1706 1708 2085 2086 2142
+abbrev src2173 : SrcFunc := src_fit_named 69 1458 1473 1785 2029 2030 2031 2191 2192 2193
+abbrev src2174 : SrcFunc := src_boxed_of_mini_selfhost_List_mini_selfhost_EffArm 53 2145 2194
+abbrev src2175 : SrcFunc := src_arm_eff 1784
+abbrev src2176 : SrcFunc := src_diverge_arm 2195
+abbrev src2177 : SrcFunc := src_is_some_name
+abbrev src2178 : SrcFunc := src_cons_binder 368
+abbrev src2179 : SrcFunc := src_tried_shape 1385 1864 2196 2197 2198
+abbrev src2180 : SrcFunc := src_text_core 368 529
+abbrev src2181 : SrcFunc := src_text_result 368 529
+abbrev src2182 : SrcFunc := src_text_result_ty 368 529
+abbrev src2183 : SrcFunc := src_text_ok 368 529
+abbrev src2184 : SrcFunc := src_text_err 368 529
+abbrev src2185 : SrcFunc := src_text_option 368 529
+abbrev src2186 : SrcFunc := src_text_option_ty 368 529
+abbrev src2187 : SrcFunc := src_text_some 368 529
+abbrev src2188 : SrcFunc := src_text_none 368 529
+abbrev src2189 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_Bind
+abbrev src2190 : SrcFunc := src_fl_exp_first_at 69 1840 2199
+abbrev src2191 : SrcFunc := src_fit_of
+abbrev src2192 : SrcFunc := src_fit_if
+abbrev src2193 : SrcFunc := src_fit_decl 69 2200
+abbrev src2194 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_List_mini_selfhost_EffArm
+abbrev src2195 : SrcFunc := src_diverge_eff 2201
+abbrev src2196 : SrcFunc := src_tried_err 588
+abbrev src2197 : SrcFunc := src_single_ty 588
+abbrev src2198 : SrcFunc := src_if_same_tys
+abbrev src2199 : SrcFunc := src_fl_exp_digits 55 1750 2202
+abbrev src2200 : SrcFunc := src_fit_same_decl 69 2203
+abbrev src2201 : SrcFunc := src_diverge_call 332 603 850 1098 1103 2204
+abbrev src2202 : SrcFunc := src_fl_exp_digit_at 54 69 102 1840 2199
+abbrev src2203 : SrcFunc := src_fit_args 69 100 588 2205 2206
+abbrev src2204 : SrcFunc := src_diverge_checked 594 875
+abbrev src2205 : SrcFunc := src_fit_args_next 69 2203
+abbrev src2206 : SrcFunc := src_fit_arg 69 138 141 1557 2087
 
 end
 

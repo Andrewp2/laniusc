@@ -4,7 +4,7 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.isPathCall
+import Lanius.Mini.Frontend.P.isTryEnum
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.textSelf

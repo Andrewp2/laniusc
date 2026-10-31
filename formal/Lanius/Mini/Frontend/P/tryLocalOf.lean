@@ -33,10 +33,13 @@ def tryPostfix (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) :
   if isTryCall pf then
     tryCallOf fuel env scope pf
   else
-    if isTryLocal pf then
-      tryLocalOf fuel env scope pf
+    if isTryMethod pf then
+      tryMethodOf fuel env scope pf
     else
-      none
+      if isTryLocal pf then
+        tryLocalOf fuel env scope pf
+      else
+        none
 
 /-- A let's `op?`. -/
 def tryOfInit (fuel : Nat) (env : FrontEnv) (scope : List Local) (init : CTree) : Option Tried :=
