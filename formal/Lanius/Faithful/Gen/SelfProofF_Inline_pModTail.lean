@@ -123,6 +123,15 @@ theorem proof_p_param_self {prog : SrcProgram} {prims : Prims} {ix_p_param_self 
   simp only [src_p_param_self] at h
   faithful [Lanius.Mini.Inline.pParamSelf]
 
+theorem proof_p_param_self_ref {prog : SrcProgram} {prims : Prims} {ix_p_param_self_ref : Nat} (fn : prog.funcs[ix_p_param_self_ref]? = some (src_p_param_self_ref)) (np : prims.isPrim ix_p_param_self_ref = false) {n : Nat} :
+    Stmt_p_param_self_ref prog prims ix_p_param_self_ref n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_param_self_ref] at h
+  faithful [Lanius.Mini.Inline.pParamSelfRef]
+
 theorem proof_p_params_after_comma_more {prog : SrcProgram} {prims : Prims} {ix_p_params_after_comma_more : Nat} (fn : prog.funcs[ix_p_params_after_comma_more]? = some (src_p_params_after_comma_more)) (np : prims.isPrim ix_p_params_after_comma_more = false) {n : Nat} :
     Stmt_p_params_after_comma_more prog prims ix_p_params_after_comma_more n := by
   intro w h

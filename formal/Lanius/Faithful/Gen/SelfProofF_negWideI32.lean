@@ -114,7 +114,7 @@ theorem step_lit_arm_effs {prog : SrcProgram} {prims : Prims} {ix_lit_arm_effs i
   simp only [src_lit_arm_effs] at h
   faithful [Lanius.Mini.litArmEffs]
 
-theorem step_lit_eff {prog : SrcProgram} {prims : Prims} {ix_lit_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_lit_expr ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_operand_want ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_lit_effs ix_boxed_of_mini_selfhost_SrcEff ix_known_eff ix_lit_arm_effs : Nat} (fn : prog.funcs[ix_lit_eff]? = some (src_lit_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_lit_expr ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_lit_eff ix_operand_want ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_lit_effs ix_boxed_of_mini_selfhost_SrcEff ix_known_eff ix_lit_arm_effs)) (np : prims.isPrim ix_lit_eff = false)
+theorem step_lit_eff {prog : SrcProgram} {prims : Prims} {ix_lit_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_lit_expr ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_operand_want ix_amount_want ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_lit_effs ix_boxed_of_mini_selfhost_SrcEff ix_known_eff ix_lit_arm_effs : Nat} (fn : prog.funcs[ix_lit_eff]? = some (src_lit_eff ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff ix_unbox_of_mini_selfhost_SrcEff ix_lit_expr ix_src_fields ix_callee_params ix_payload_at ix_src_variants ix_lit_eff ix_operand_want ix_amount_want ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff ix_lit_effs ix_boxed_of_mini_selfhost_SrcEff ix_known_eff ix_lit_arm_effs)) (np : prims.isPrim ix_lit_eff = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEff n))
     (ext_unbox_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcEff prog prims ix_unbox_of_mini_selfhost_SrcEff n))
     (ext_lit_expr : Certified (∀ {n : Nat}, Stmt_lit_expr prog prims ix_lit_expr n))
@@ -123,6 +123,7 @@ theorem step_lit_eff {prog : SrcProgram} {prims : Prims} {ix_lit_eff ix_unbox_of
     (ext_payload_at : Certified (∀ {n : Nat}, Stmt_payload_at prog prims ix_payload_at n))
     (ext_src_variants : Certified (∀ {n : Nat}, Stmt_src_variants prog prims ix_src_variants n))
     (ext_operand_want : Certified (∀ {n : Nat}, Stmt_operand_want prog prims ix_operand_want n))
+    (ext_amount_want : Certified (∀ {n : Nat}, Stmt_amount_want prog prims ix_amount_want n))
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff n))
     (ext_boxed_of_mini_selfhost_SrcEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcEff prog prims ix_boxed_of_mini_selfhost_SrcEff n))
     (ext_known_eff : Certified (∀ {n : Nat}, Stmt_known_eff prog prims ix_known_eff n)) {n : Nat}
@@ -149,7 +150,7 @@ theorem step_lit_effs {prog : SrcProgram} {prims : Prims} {ix_lit_effs ix_unbox_
   simp only [src_lit_effs] at h
   faithful [Lanius.Mini.litEffs]
 
-theorem step_lit_expr {prog : SrcProgram} {prims : Prims} {ix_lit_expr ix_unbox_of_mini_selfhost_SrcExpr ix_int_at ix_wide_value ix_neg_wide_at ix_neg_least ix_boxed_of_mini_selfhost_SrcExpr ix_operand_want ix_known_expr ix_wide_at : Nat} (fn : prog.funcs[ix_lit_expr]? = some (src_lit_expr ix_unbox_of_mini_selfhost_SrcExpr ix_lit_expr ix_int_at ix_wide_value ix_neg_wide_at ix_neg_least ix_boxed_of_mini_selfhost_SrcExpr ix_operand_want ix_known_expr ix_wide_at)) (np : prims.isPrim ix_lit_expr = false)
+theorem step_lit_expr {prog : SrcProgram} {prims : Prims} {ix_lit_expr ix_unbox_of_mini_selfhost_SrcExpr ix_int_at ix_wide_value ix_neg_wide_at ix_neg_least ix_boxed_of_mini_selfhost_SrcExpr ix_operand_want ix_known_expr ix_amount_want ix_wide_at : Nat} (fn : prog.funcs[ix_lit_expr]? = some (src_lit_expr ix_unbox_of_mini_selfhost_SrcExpr ix_lit_expr ix_int_at ix_wide_value ix_neg_wide_at ix_neg_least ix_boxed_of_mini_selfhost_SrcExpr ix_operand_want ix_known_expr ix_amount_want ix_wide_at)) (np : prims.isPrim ix_lit_expr = false)
     (ext_unbox_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_SrcExpr n))
     (ext_int_at : Certified (∀ {n : Nat}, Stmt_int_at prog prims ix_int_at n))
     (ext_wide_value : Certified (∀ {n : Nat}, Stmt_wide_value prog prims ix_wide_value n))
@@ -158,6 +159,7 @@ theorem step_lit_expr {prog : SrcProgram} {prims : Prims} {ix_lit_expr ix_unbox_
     (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n))
     (ext_operand_want : Certified (∀ {n : Nat}, Stmt_operand_want prog prims ix_operand_want n))
     (ext_known_expr : Certified (∀ {n : Nat}, Stmt_known_expr prog prims ix_known_expr n))
+    (ext_amount_want : Certified (∀ {n : Nat}, Stmt_amount_want prog prims ix_amount_want n))
     (ext_wide_at : Certified (∀ {n : Nat}, Stmt_wide_at prog prims ix_wide_at n)) {n : Nat}
     (ih_lit_expr : Certified (Stmt_lit_expr prog prims ix_lit_expr n)) :
     Stmt_lit_expr prog prims ix_lit_expr (n + 1) := by

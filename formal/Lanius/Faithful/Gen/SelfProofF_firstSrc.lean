@@ -34,6 +34,18 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_amount_want {prog : SrcProgram} {prims : Prims} {ix_amount_want ix_operand_want ix_either_ty ix_shift_op : Nat} (fn : prog.funcs[ix_amount_want]? = some (src_amount_want ix_operand_want ix_either_ty ix_shift_op)) (np : prims.isPrim ix_amount_want = false)
+    (ext_operand_want : Certified (∀ {n : Nat}, Stmt_operand_want prog prims ix_operand_want n))
+    (ext_either_ty : Certified (∀ {n : Nat}, Stmt_either_ty prog prims ix_either_ty n))
+    (ext_shift_op : Certified (∀ {n : Nat}, Stmt_shift_op prog prims ix_shift_op n)) {n : Nat} :
+    Stmt_amount_want prog prims ix_amount_want n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_amount_want] at h
+  faithful [Lanius.Mini.amountWant]
+
 theorem step_bound_tys {prog : SrcProgram} {prims : Prims} {ix_bound_tys ix_unbox_of_mini_selfhost_List_usize ix_cons_of_mini_selfhost_LocalTy ix_first_src ix_rest_src : Nat} (fn : prog.funcs[ix_bound_tys]? = some (src_bound_tys ix_unbox_of_mini_selfhost_List_usize ix_cons_of_mini_selfhost_LocalTy ix_first_src ix_rest_src ix_bound_tys)) (np : prims.isPrim ix_bound_tys = false)
     (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
     (ext_cons_of_mini_selfhost_LocalTy : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_LocalTy prog prims ix_cons_of_mini_selfhost_LocalTy n))
@@ -75,9 +87,10 @@ theorem proof_first_src {prog : SrcProgram} {prims : Prims} {ix_first_src ix_ty_
   simp only [src_first_src] at h
   faithful [Lanius.Mini.firstSrc]
 
-theorem proof_known_apply {prog : SrcProgram} {prims : Prims} {ix_known_apply ix_gives_bool ix_either_ty : Nat} (fn : prog.funcs[ix_known_apply]? = some (src_known_apply ix_gives_bool ix_either_ty)) (np : prims.isPrim ix_known_apply = false)
+theorem proof_known_apply {prog : SrcProgram} {prims : Prims} {ix_known_apply ix_gives_bool ix_either_ty ix_shift_op : Nat} (fn : prog.funcs[ix_known_apply]? = some (src_known_apply ix_gives_bool ix_either_ty ix_shift_op)) (np : prims.isPrim ix_known_apply = false)
     (ext_gives_bool : Certified (∀ {n : Nat}, Stmt_gives_bool prog prims ix_gives_bool n))
-    (ext_either_ty : Certified (∀ {n : Nat}, Stmt_either_ty prog prims ix_either_ty n)) {n : Nat} :
+    (ext_either_ty : Certified (∀ {n : Nat}, Stmt_either_ty prog prims ix_either_ty n))
+    (ext_shift_op : Certified (∀ {n : Nat}, Stmt_shift_op prog prims ix_shift_op n)) {n : Nat} :
     Stmt_known_apply prog prims ix_known_apply n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n
@@ -96,9 +109,10 @@ theorem proof_known_cast {prog : SrcProgram} {prims : Prims} {ix_known_cast ix_u
   simp only [src_known_cast] at h
   faithful [Lanius.Mini.knownCast]
 
-theorem proof_operand_want {prog : SrcProgram} {prims : Prims} {ix_operand_want ix_gives_bool ix_either_ty : Nat} (fn : prog.funcs[ix_operand_want]? = some (src_operand_want ix_gives_bool ix_either_ty)) (np : prims.isPrim ix_operand_want = false)
+theorem proof_operand_want {prog : SrcProgram} {prims : Prims} {ix_operand_want ix_gives_bool ix_either_ty ix_shift_op : Nat} (fn : prog.funcs[ix_operand_want]? = some (src_operand_want ix_gives_bool ix_either_ty ix_shift_op)) (np : prims.isPrim ix_operand_want = false)
     (ext_gives_bool : Certified (∀ {n : Nat}, Stmt_gives_bool prog prims ix_gives_bool n))
-    (ext_either_ty : Certified (∀ {n : Nat}, Stmt_either_ty prog prims ix_either_ty n)) {n : Nat} :
+    (ext_either_ty : Certified (∀ {n : Nat}, Stmt_either_ty prog prims ix_either_ty n))
+    (ext_shift_op : Certified (∀ {n : Nat}, Stmt_shift_op prog prims ix_shift_op n)) {n : Nat} :
     Stmt_operand_want prog prims ix_operand_want n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n

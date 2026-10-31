@@ -76,6 +76,14 @@ abbrev Stmt_inst_ret (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Inst} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepInst x2 v2 →
     (RepOption 198 RepTy) (Lanius.Mini.instRet x0 x1 x2) w
 
+abbrev Stmt_is_some_index (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Option Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 196 RepNat) x0 v0 →
+    RepBool (Lanius.Mini.isSomeIndex x0) w
+
+abbrev Stmt_is_struct_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepOption 196 RepNat) x1 v1 →
+    RepBool (Lanius.Mini.isStructAt x0 x1) w
+
 abbrev Stmt_is_type_param (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Option (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFrontEnv x0 v0 → (RepOption 184 (RepList 24 RepNat)) x1 v1 →
     RepBool (Lanius.Mini.isTypeParam x0 x1) w

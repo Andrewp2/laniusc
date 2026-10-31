@@ -52,6 +52,10 @@ abbrev Stmt_let_first (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {x4 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 220 RepLocal) x2 v2 → RepCTree x3 v3 → (RepList 76 RepCTree) x4 v4 →
     (RepOption 229 RepMStmt) (Lanius.Mini.letFirst x0 x1 x2 x3 x4) w
 
+abbrev Stmt_param_token (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
+    RepToken (Lanius.Mini.paramToken x0) w
+
 abbrev Stmt_params_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Local} {x4 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepFnDecl x2 v2 → (RepList 220 RepLocal) x3 v3 → (RepList 76 RepCTree) x4 v4 →
     (RepOption 218 RepMParams) (Lanius.Mini.paramsOf x0 x1 x2 x3 x4) w

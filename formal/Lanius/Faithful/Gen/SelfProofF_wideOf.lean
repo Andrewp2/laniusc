@@ -291,6 +291,15 @@ theorem step_postfix_value {prog : SrcProgram} {prims : Prims} {ix_postfix_value
   simp only [src_postfix_value] at h
   faithful [Lanius.Mini.postfixValue]
 
+theorem proof_shift_op {prog : SrcProgram} {prims : Prims} {ix_shift_op : Nat} (fn : prog.funcs[ix_shift_op]? = some (src_shift_op)) (np : prims.isPrim ix_shift_op = false) {n : Nat} :
+    Stmt_shift_op prog prims ix_shift_op n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_shift_op] at h
+  faithful [Lanius.Mini.shiftOp]
+
 theorem proof_struct_field_tys {prog : SrcProgram} {prims : Prims} {ix_struct_field_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_field_tys : Nat} (fn : prog.funcs[ix_struct_field_tys]? = some (src_struct_field_tys ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_field_tys)) (np : prims.isPrim ix_struct_field_tys = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n))
     (ext_field_tys : Certified (∀ {n : Nat}, Stmt_field_tys prog prims ix_field_tys n)) {n : Nat} :

@@ -271,7 +271,7 @@ theorem isStructAt_typeDeclAt (env : FrontEnv) (ss : List Name) :
     cases ht : env.decls.types[d]? with
     | none =>
       simp only [ht]
-      refine ⟨fun e => by cases e, ?_⟩
+      refine ⟨fun e => absurd e (by decide), ?_⟩
       rintro ⟨d', t, a', ht', -⟩
       rw [declAt_unique a a', ht'] at ht
       cases ht

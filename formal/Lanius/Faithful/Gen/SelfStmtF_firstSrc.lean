@@ -20,6 +20,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+abbrev Stmt_amount_want (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.SrcType} {x3 : Option Lanius.Mini.SrcType} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcOp x0 v0 → (RepOption 149 RepSrcType) x1 v1 → (RepOption 149 RepSrcType) x2 v2 → (RepOption 149 RepSrcType) x3 v3 →
+    (RepOption 149 RepSrcType) (Lanius.Mini.amountWant x0 x1 x2 x3) w
+
 abbrev Stmt_bound_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Option (List Lanius.Mini.SrcType)} {x2 : List Lanius.Mini.LocalTy} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 24 RepNat) x0 v0 → (RepOption 177 (RepList 67 RepSrcType)) x1 v1 → (RepList 207 RepLocalTy) x2 v2 →
     (RepList 207 RepLocalTy) (Lanius.Mini.boundTys x0 x1 x2) w

@@ -46,6 +46,9 @@ def src_p_param_named : SrcFunc := { params := [], ret := SrcType.uint (UintTy.u
 /-- mini::selfhost::p_param_self -/
 def src_p_param_self : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000003f#64) }
 
+/-- mini::selfhost::p_param_self_ref -/
+def src_p_param_self_ref : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000040#64) }
+
 /-- mini::selfhost::p_params_after_comma_more -/
 def src_p_params_after_comma_more : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000124#64) }
 

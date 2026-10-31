@@ -32,8 +32,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_hasConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
+public import Lanius.Faithful.Gen.SelfStmtF_isFnPath
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
-public import Lanius.Faithful.Gen.SelfStmtF_isSomeIndex
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_moduleOr

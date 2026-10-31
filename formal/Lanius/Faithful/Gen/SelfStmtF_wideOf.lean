@@ -88,6 +88,10 @@ abbrev Stmt_postfix_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {x4 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 220 RepLocal) x2 v2 → RepCTree x3 v3 → RepCTree x4 v4 →
     (RepOption 237 RepSrcExpr) (Lanius.Mini.postfixValue x0 x1 x2 x3 x4) w
 
+abbrev Stmt_shift_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcOp} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcOp x0 v0 →
+    RepBool (Lanius.Mini.shiftOp x0) w
+
 abbrev Stmt_struct_field_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepTy x2 v2 →
     (RepOption 199 (RepList 132 RepTy)) (Lanius.Mini.structFieldTys x0 x1 x2) w
