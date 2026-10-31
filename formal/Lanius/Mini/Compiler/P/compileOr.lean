@@ -2,9 +2,9 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Stmt_kills
+import Lanius.Mini.Compiler.P.layout
 import Lanius.Mini.Compiler.P.lowerBody
 import Lanius.Mini.Compiler.P.optimizeIte
-import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.sigs
 
 public section

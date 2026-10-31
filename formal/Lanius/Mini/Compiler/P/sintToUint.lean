@@ -132,5 +132,6 @@ def isOne (e : Expr) : Bool :=
   | .neg operand => false
   | .binary word operation left right => false
   | .compare word operation left right => false
+  | .fp operation left right => false
 
 end Lanius.Mini

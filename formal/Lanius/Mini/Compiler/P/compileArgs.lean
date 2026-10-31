@@ -58,6 +58,7 @@ def Expr.within (self : Expr) (locals : Nat) : Bool :=
   | .neg operand => Expr.within operand locals
   | .binary word operation left right => Expr.within left locals && Expr.within right locals
   | .compare word operation left right => Expr.within left locals && Expr.within right locals
+  | .fp operation left right => Expr.within left locals && Expr.within right locals
 
 /-- Temporary slots an expression's code uses. -/
 def Expr.temps (self : Expr) : Nat :=
@@ -67,6 +68,7 @@ def Expr.temps (self : Expr) : Nat :=
   | .neg operand => Expr.temps operand
   | .binary word operation left right => max (Expr.temps left) (Expr.temps right + 1)
   | .compare word operation left right => max (Expr.temps left) (Expr.temps right + 1)
+  | .fp operation left right => max (Expr.temps left) (Expr.temps right + 1)
 
 def allWithin (locals : Nat) (args : List Expr) : Bool :=
   match args with

@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
+import Lanius.Mini.Compiler.P.FloatTy_rex
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arities
 import Lanius.Mini.Compiler.P.codeSize
@@ -12,6 +13,42 @@ public section
 set_option linter.unusedVariables false
 
 namespace Lanius.Mini
+
+/-- addss, subss, mulss, divss (sd with F2) -/
+def FArith.opcode (self : FArith) : UInt8 :=
+  match self with
+  | .fAdd => 88
+  | .fSub => 92
+  | .fMul => 89
+  | .fDiv => 94
+
+/-- The cmpss/cmpsd predicate: EQ_OQ, LT_OS, LE_OS. -/
+def FCmp.predicate (self : FCmp) : UInt8 :=
+  match self with
+  | .fEq => 0
+  | .fLt => 1
+  | .fLe => 2
+
+/-- movd xmm0, eax; movd xmm1, ecx (movq rax, rcx for F64) -/
+def floatOperands (ty : FloatTy) : List UInt8 :=
+  102 :: (FloatTy.rex ty ++ 15 :: 110 :: [192]) ++ 102 :: (FloatTy.rex ty ++ 15 :: 110 :: [201])
+
+/-- movd eax, xmm0 (movq rax for F64) -/
+def floatResult (ty : FloatTy) : List UInt8 :=
+  102 :: (FloatTy.rex ty ++ 15 :: 126 :: [192])
+
+/-- The operation on rax (left) and rcx (right) into rax: op xmm0, xmm1 with movd/movq around it; for a compare, cmpss/cmpsd xmm0, xmm1, then its mask's low half in eax and neg eax; cvtsi2ss/cvtsi2sd xmm0, ecx (rcx with REX.W); movd xmm0, ecx; cvtss2sd xmm0, xmm0; movq xmm0, rcx; cvtsd2ss xmm0, xmm0. -/
+def FOp.opcodeBytes (self : FOp) : List UInt8 :=
+  match self with
+  | .basic ty operation => floatOperands ty ++ (FloatTy.scalarPrefix ty :: 15 :: FArith.opcode operation :: [193] ++ floatResult ty)
+  | .fCompare ty operation => floatOperands ty ++ (FloatTy.scalarPrefix ty :: 15 :: 194 :: 193 :: [FCmp.predicate operation] ++ 102 :: 15 :: 126 :: 192 :: 247 :: [216])
+  | .fromInt ty word => FloatTy.scalarPrefix ty :: (Word.rex word ++ 15 :: 42 :: [193]) ++ floatResult ty
+  | .widen => 102 :: 15 :: 110 :: [193] ++ (243 :: 15 :: 90 :: [192] ++ floatResult FloatTy.f64)
+  | .narrow => 102 :: 72 :: 15 :: 110 :: [193] ++ (242 :: 15 :: 90 :: [192] ++ floatResult FloatTy.f32)
+
+/-- slot_operands, then the operation -/
+def FOp.bytes (self : FOp) (slot : Nat) : List UInt8 :=
+  slotOperands slot ++ FOp.opcodeBytes self
 
 /-- 2^shift as a 64-bit word. -/
 def pow2 (shift : Nat) : BitVec 64 :=
@@ -101,6 +138,7 @@ def Instr.encode (self : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .loadWordAt width => loadWordBytes width
   | .storeWordAt width slot => storeWordBytes width slot
   | .div word operation slot => DivOp.bytes operation word slot
+  | .fp operation slot => FOp.bytes operation slot
 
 def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
   match code with
@@ -112,31 +150,5 @@ def Code.size (self : Code) : Nat :=
 
 def Code.image (self : Code) (start : Nat) (entries : List Nat) : List UInt8 :=
   prologue self.slots ++ encodeFrom ({ body := start + 24, slots := self.slots, entries := entries } : Place) 0 self.instrs
-
-/-- Entry offsets of functions laid out back to back from start. -/
-def layout (start : Nat) (codes : List Code) : List Nat :=
-  match codes with
-  | [] => []
-  | code :: rest => start :: layout (start + Code.size code) rest
-
-def linkFrom (entries : List Nat) (start : Nat) (codes : List Code) : List UInt8 :=
-  match codes with
-  | [] => []
-  | code :: rest => Code.image code start entries ++ linkFrom entries (start + Code.size code) rest
-
-/-- Images are small enough for every rel32 displacement. -/
-def imageLimit : Nat :=
-  1073741824
-
-def compileProgram (prog : Program) : Option Binary :=
-  match compileFuncs (arities prog.funcs) prog.funcs with
-  | none => none
-  | some codes =>
-    let entries : List Nat := layout 0 codes
-    let image : List UInt8 := linkFrom entries 0 codes
-    if image.length ≤ imageLimit then
-      some ({ codes := codes, entries := entries, image := image } : Binary)
-    else
-      none
 
 end Lanius.Mini

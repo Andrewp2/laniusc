@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
+import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.UintTy_half
@@ -23,7 +24,6 @@ import Lanius.Mini.Compiler.P.lowerSetValues
 import Lanius.Mini.Compiler.P.lowerSlice
 import Lanius.Mini.Compiler.P.lowerTagged
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.shortCircuit
 import Lanius.Mini.Compiler.P.sintToUint
 import Lanius.Mini.Compiler.P.storeType

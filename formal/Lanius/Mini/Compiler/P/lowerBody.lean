@@ -2,13 +2,13 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
+import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.conjunction
 import Lanius.Mini.Compiler.P.enumVariants
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.sigs
 import Lanius.Mini.Compiler.P.sintToUint
 import Lanius.Mini.Compiler.P.storeEvalWord

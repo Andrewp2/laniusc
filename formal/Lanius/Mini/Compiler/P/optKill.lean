@@ -48,5 +48,6 @@ def Expr.literal (self : Expr) : Option (BitVec 64) :=
   | .neg operand => none
   | .binary word operation left right => none
   | .compare word operation left right => none
+  | .fp operation left right => none
 
 end Lanius.Mini

@@ -191,6 +191,7 @@ theorem Expr.constant_eval (env : Env) : ∀ (e : Expr) {v : BitVec 64}, e.const
           boolBits_eq, Word.test_eq]
       · simp at found
     · simp at found
+  | .fp _ _ _, v, found => by simp [Expr.constant] at found
 
 theorem Expr.isConstant_eval {e : Expr} {known : Option (BitVec 64)} (is : e.isConstant known = true) :
     ∃ v, known = some v ∧ ∀ env, e.eval env = v := by
@@ -239,6 +240,7 @@ theorem Expr.narrow_eval {e : Expr} (narrow : e.narrow = true) (env : Env) :
   | compare word operation left right =>
     simp only [Expr.eval]
     split <;> decide
+  | fp operation left right => simp [Expr.narrow] at narrow
 
 theorem Word.keeps_eval {word : Word} {e : Expr} (keeps : word.keeps e = true) :
     word = .u64 ∨ ∀ env, widen (low (e.eval env)) = e.eval env := by
@@ -301,6 +303,27 @@ theorem CmpOp.number_inj {a b : CmpOp} (same : a.number = b.number) : a = b := b
 
 theorem DivOp.number_inj {a b : DivOp} (same : a.number = b.number) : a = b := by
   cases a <;> cases b <;> simp_all [DivOp.number]
+
+/-- The operation a number names: `FOp.number`'s inverse. -/
+def FOp.ofNumber : Nat → Option FOp
+  | 0 => some (.basic .f32 .fAdd) | 1 => some (.basic .f32 .fSub) | 2 => some (.basic .f32 .fMul)
+  | 3 => some (.basic .f32 .fDiv) | 4 => some (.basic .f64 .fAdd) | 5 => some (.basic .f64 .fSub)
+  | 6 => some (.basic .f64 .fMul) | 7 => some (.basic .f64 .fDiv)
+  | 8 => some (.fCompare .f32 .fEq) | 9 => some (.fCompare .f32 .fLt) | 10 => some (.fCompare .f32 .fLe)
+  | 11 => some (.fCompare .f64 .fEq) | 12 => some (.fCompare .f64 .fLt) | 13 => some (.fCompare .f64 .fLe)
+  | 14 => some (.fromInt .f32 .s32) | 15 => some (.fromInt .f32 .u64)
+  | 16 => some (.fromInt .f64 .s32) | 17 => some (.fromInt .f64 .u64)
+  | 18 => some .widen | 19 => some .narrow
+  | _ => none
+
+theorem FOp.ofNumber_number (a : FOp) : FOp.ofNumber a.number = some a := by
+  rcases a with ⟨t, operation⟩ | ⟨t, operation⟩ | ⟨t, word⟩ | _ | _ <;>
+    (try cases t) <;> (try cases operation) <;> (try cases word) <;> rfl
+
+theorem FOp.number_inj {a b : FOp} (same : a.number = b.number) : a = b := by
+  have h := FOp.ofNumber_number a
+  rw [same, FOp.ofNumber_number] at h
+  exact (Option.some.inj h).symm
 
 theorem MemWidth.bytes_inj {a b : MemWidth} (same : a.bytes = b.bytes) : a = b := by
   cases a <;> cases b <;> simp_all [MemWidth.bytes]
@@ -374,6 +397,17 @@ theorem Expr.agrees_eval : ∀ (a b : Expr), a.agrees b = true → ∀ env, b.ev
       cases Word.number_inj w
       cases CmpOp.number_inj o
       simp only [Expr.eval, ihLeft _ l env, ihRight _ r env]
+  | fp operation left right ihLeft ihRight =>
+    intro b h env
+    unfold Expr.agrees at h
+    split at h
+    · rename_i folded
+      obtain ⟨v, known, values⟩ := Expr.isConstant_eval folded
+      rw [values, Expr.constant_eval env _ known]
+    · cases b <;> simp only [Bool.false_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h
+      obtain ⟨⟨o, l⟩, r⟩ := h
+      cases FOp.number_inj o
+      simp only [Expr.eval, ihLeft _ l env, ihRight _ r env]
 
 theorem argsAgree_eval : ∀ {args others : List Expr}, argsAgree args others = true →
     ∀ env, Expr.evalAll env others = Expr.evalAll env args ∧ others.length = args.length
@@ -426,6 +460,9 @@ theorem Expr.eval_except {index : Nat} {a b : Env} (h : Env.Except index a b) :
   | .compare _ _ left right, m => by
     simp only [Expr.mentions, Bool.or_eq_false_iff] at m
     simp only [Expr.eval, Expr.eval_except h left m.1, Expr.eval_except h right m.2]
+  | .fp _ left right, m => by
+    simp only [Expr.mentions, Bool.or_eq_false_iff] at m
+    simp only [Expr.eval, Expr.eval_except h left m.1, Expr.eval_except h right m.2]
 
 theorem Expr.evalAll_except {index : Nat} {a b : Env} (h : Env.Except index a b) :
     ∀ (values : List Expr), mentionsAny values index = false → Expr.evalAll a values = Expr.evalAll b values
@@ -466,6 +503,8 @@ theorem Expr.subst_eval {env : Env} {facts : List Fact} (hold : Facts.Hold env f
   | .binary _ _ left right => by
     simp only [Expr.subst, Expr.eval, Expr.subst_eval hold left, Expr.subst_eval hold right]
   | .compare _ _ left right => by
+    simp only [Expr.subst, Expr.eval, Expr.subst_eval hold left, Expr.subst_eval hold right]
+  | .fp _ left right => by
     simp only [Expr.subst, Expr.eval, Expr.subst_eval hold left, Expr.subst_eval hold right]
 
 theorem substAll_eval {env : Env} {facts : List Fact} (hold : Facts.Hold env facts) :

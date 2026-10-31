@@ -24,5 +24,6 @@ def compileExpr (base : Nat) (e : Expr) (depth : Nat) : List Instr :=
   | .neg operand => compileExpr base operand depth ++ [Instr.neg]
   | .binary word operation left right => compileExpr base left depth ++ [Instr.store (base + depth)] ++ compileExpr base right (depth + 1) ++ [Instr.op word operation (base + depth)]
   | .compare word operation left right => compileExpr base left depth ++ [Instr.store (base + depth)] ++ compileExpr base right (depth + 1) ++ [Instr.cmp word operation (base + depth)]
+  | .fp operation left right => compileExpr base left depth ++ [Instr.store (base + depth)] ++ compileExpr base right (depth + 1) ++ [Instr.fp operation (base + depth)]
 
 end Lanius.Mini

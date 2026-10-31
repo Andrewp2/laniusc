@@ -1062,6 +1062,7 @@ def Expr.Below (n : Nat) : Expr → Prop
   | .neg e => e.Below n
   | .binary _ _ l r => l.Below n ∧ r.Below n
   | .compare _ _ l r => l.Below n ∧ r.Below n
+  | .fp _ l r => l.Below n ∧ r.Below n
 
 theorem Expr.Below.eval_set {n : Nat} : ∀ {x : Expr}, x.Below n → ∀ {j : Nat}, n ≤ j →
     ∀ (E : Env) (w : BitVec 64), x.eval (E.set j w) = x.eval E
@@ -1075,6 +1076,8 @@ theorem Expr.Below.eval_set {n : Nat} : ∀ {x : Expr}, x.Below n → ∀ {j : N
   | .binary _ _ l r, below, j, le, E, w => by
     simp only [Expr.eval, Expr.Below.eval_set below.1 le, Expr.Below.eval_set below.2 le]
   | .compare _ _ l r, below, j, le, E, w => by
+    simp only [Expr.eval, Expr.Below.eval_set below.1 le, Expr.Below.eval_set below.2 le]
+  | .fp _ l r, below, j, le, E, w => by
     simp only [Expr.eval, Expr.Below.eval_set below.1 le, Expr.Below.eval_set below.2 le]
 
 theorem Insens.below {xs : List Expr} {slot : Nat} (all : ∀ x ∈ xs, x.Below slot) : Insens xs slot :=
@@ -3161,6 +3164,7 @@ theorem Expr.Below.mono {n m : Nat} (le : n ≤ m) : ∀ {x : Expr}, x.Below n �
   | .neg e, below => Expr.Below.mono le (x := e) below
   | .binary _ _ l r, below => ⟨Expr.Below.mono le below.1, Expr.Below.mono le below.2⟩
   | .compare _ _ l r, below => ⟨Expr.Below.mono le below.1, Expr.Below.mono le below.2⟩
+  | .fp _ l r, below => ⟨Expr.Below.mono le below.1, Expr.Below.mono le below.2⟩
 
 theorem Expr.Below.eval_agree {n : Nat} : ∀ {x : Expr}, x.Below n → ∀ {E E' : Env},
     (∀ i < n, E' i = E i) → x.eval E' = x.eval E
@@ -3174,6 +3178,8 @@ theorem Expr.Below.eval_agree {n : Nat} : ∀ {x : Expr}, x.Below n → ∀ {E E
   | .binary _ _ l r, below, E, E', agree => by
     simp only [Expr.eval, Expr.Below.eval_agree below.1 agree, Expr.Below.eval_agree below.2 agree]
   | .compare _ _ l r, below, E, E', agree => by
+    simp only [Expr.eval, Expr.Below.eval_agree below.1 agree, Expr.Below.eval_agree below.2 agree]
+  | .fp _ l r, below, E, E', agree => by
     simp only [Expr.eval, Expr.Below.eval_agree below.1 agree, Expr.Below.eval_agree below.2 agree]
 
 theorem addressBelow_eval {env : Env} {base : Expr} {offset : Nat} (fits : offset ≤ (base.eval env).toNat) :

@@ -4,13 +4,13 @@ public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.BinOp_folds
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Expr_agrees
+public import Lanius.Mini.Compiler.P.FArith_opcode
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.Stmt_kills
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.Word_narrows
 public import Lanius.Mini.Compiler.P.binaryConstant
-public import Lanius.Mini.Compiler.P.callAgrees
 public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.declareFuncs
 public import Lanius.Mini.Compiler.P.elementAddress
@@ -19,9 +19,7 @@ public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerSetValues
-public import Lanius.Mini.Compiler.P.pow2
 public import Lanius.Mini.Compiler.P.structFields
-public import Lanius.Mini.Compiler.P.substAll
 public import Lanius.Mini.Compiler.P.wordElement
 
 public section
@@ -123,6 +121,7 @@ namespace Lanius.Mini
   | .neg o => Expr.agrees operand o
   | .binary w op l r => false
   | .compare w op l r => false
+  | .fp op l r => false
 
 @[expose] def Inline.binaryAgrees (word : Word) (operation : BinOp) (left : Expr) (right : Expr) (other : Expr) : Bool :=
   match other with
@@ -131,6 +130,7 @@ namespace Lanius.Mini
   | .neg o => false
   | .binary w op l r => decide (Word.number word = Word.number w) && decide (BinOp.number operation = BinOp.number op) && Expr.agrees left l && Expr.agrees right r
   | .compare w op l r => false
+  | .fp op l r => false
 
 @[expose] def Inline.unitAgrees (word : Word) (operation : BinOp) (left : Expr) (right : Expr) (other : Expr) : Bool :=
   Expr.unitOf right word operation && Word.keeps word other && Expr.agrees left other || BinOp.commutes operation && Expr.unitOf left word operation && Word.keeps word other && Expr.agrees right other
@@ -142,56 +142,15 @@ namespace Lanius.Mini
   | .neg o => false
   | .binary w op l r => false
   | .compare w op l r => decide (Word.number word = Word.number w) && decide (CmpOp.number operation = CmpOp.number op) && Expr.agrees left l && Expr.agrees right r
+  | .fp op l r => false
 
-@[expose] def Inline.factOr (fact : Fact) (index : Nat) (tail : List Fact) : Expr :=
-  if fact.slot = index then
-    fact.value
-  else
-    factValue tail index
-
-@[expose] def Inline.kept (fact : Fact) (index : Nat) (tail : List Fact) : List Fact :=
-  if decide (fact.slot ≠ index) && !(Expr.mentions fact.value index) then
-    fact :: tail
-  else
-    tail
-
-/-- first is index = value, and other, which agrees with second, kills index. -/
-@[expose] def Inline.deadAgrees (first : Stmt) (second : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
-  match first with
-  | .skip => false
-  | .assign index value => Stmt.kills other index && Stmt.agrees second (assigned facts index value) other
-  | .seq f s => false
-  | .ite c t e => false
-  | .loop c b => false
-  | .call t n f a => false
-  | .ret v => false
-  | .alloc t sh sz => false
-  | .loadByte t a => false
-  | .storeByte a v => false
-  | .loadWord w t a => false
-  | .storeWord w a v => false
-  | .divide w o t l r => false
-
-@[expose] def Inline.seqAgrees (first : Stmt) (second : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
+@[expose] def Inline.fpAgrees (operation : FOp) (left : Expr) (right : Expr) (other : Expr) : Bool :=
   match other with
-  | .skip => false
-  | .assign i v => false
-  | .seq f s => Stmt.agrees first facts f && Stmt.agrees second (Stmt.factsAfter first facts) s
-  | .ite c t e => false
-  | .loop c b => false
-  | .call t n f a => false
-  | .ret v => false
-  | .alloc t sh sz => false
-  | .loadByte t a => false
-  | .storeByte a v => false
-  | .loadWord w t a => false
-  | .storeWord w a v => false
-  | .divide w o t l r => false
-
-/-- A condition the facts do not make a constant. -/
-@[expose] def Inline.unknown (known : Option (BitVec 64)) : Bool :=
-  match known with
-  | some v => false
-  | none => true
+  | .lit v => false
+  | .var i => false
+  | .neg o => false
+  | .binary w op l r => false
+  | .compare w op l r => false
+  | .fp op l r => decide (FOp.number operation = FOp.number op) && Expr.agrees left l && Expr.agrees right r
 
 end Lanius.Mini

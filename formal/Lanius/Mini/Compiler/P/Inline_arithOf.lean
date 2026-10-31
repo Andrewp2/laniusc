@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.DivOp_size
+public import Lanius.Mini.Compiler.P.FArith_opcode
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
 public import Lanius.Mini.Compiler.P.UintTy_half
@@ -13,7 +14,6 @@ public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.lowerCallSig
 public import Lanius.Mini.Compiler.P.lowerLoadType
 public import Lanius.Mini.Compiler.P.norm
-public import Lanius.Mini.Compiler.P.pow2
 public import Lanius.Mini.Compiler.P.sigs
 
 public section

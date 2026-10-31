@@ -2,11 +2,11 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
+import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.UintTy_isWide
 import Lanius.Mini.Compiler.P.UintTy_mask
 import Lanius.Mini.Compiler.P.compileModules
-import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.render
 
 public section

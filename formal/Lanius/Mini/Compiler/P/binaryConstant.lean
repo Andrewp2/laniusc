@@ -45,6 +45,7 @@ def Expr.constant (self : Expr) : Option (BitVec 64) :=
   | .neg operand => negateConstant (Expr.constant operand)
   | .binary word operation left right => binaryConstant word operation (Expr.constant left) (Expr.constant right)
   | .compare word operation left right => compareConstant word operation (Expr.constant left) (Expr.constant right)
+  | .fp operation left right => none
 
 /-- The expression is the literal value. -/
 def Expr.isConstant (self : Expr) (value : Option (BitVec 64)) : Bool :=
@@ -54,6 +55,7 @@ def Expr.isConstant (self : Expr) (value : Option (BitVec 64)) : Bool :=
   | .neg operand => false
   | .binary word operation left right => false
   | .compare word operation left right => false
+  | .fp operation left right => false
 
 def Expr.isVar (self : Expr) (index : Nat) : Bool :=
   match self with
@@ -62,6 +64,7 @@ def Expr.isVar (self : Expr) (index : Nat) : Bool :=
   | .neg operand => false
   | .binary word operation left right => false
   | .compare word operation left right => false
+  | .fp operation left right => false
 
 def Expr.isZero (self : Expr) : Bool :=
   constantIs (Expr.constant self) 0

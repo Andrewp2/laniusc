@@ -71,6 +71,7 @@ def Expr.optimize (self : Expr) : Expr :=
   | .neg operand => optimizeNeg (Expr.optimize operand)
   | .binary word operation left right => optimizeBinary word operation (Expr.optimize left) (Expr.optimize right)
   | .compare word operation left right => optimizeCompare word operation (Expr.optimize left) (Expr.optimize right)
+  | .fp operation left right => Expr.fp operation (Expr.optimize left) (Expr.optimize right)
 
 def optimizeAll (values : List Expr) : List Expr :=
   match values with

@@ -2,6 +2,7 @@ import Lanius.Mini.WordSteps
 import Lanius.Mini.DivSteps
 import Lanius.Mini.Frame
 import Lanius.Mini.Fits
+import Lanius.Mini.FloatSteps
 
 /-! The x86 bytes of each abstract instruction simulate it. One relation holds
 between an x86 state and an abstract machine throughout an activation. The
@@ -412,6 +413,45 @@ theorem op_simulates (word : Word) (operation : BinOp) (rel : Rel frame s m) (in
       if_neg one']
   · simp [s', BinOp.final_registers, loadedLeft, moved, State.load64, State.move64, rcxRegister,
       rbpRegister, ← rel.acc, rel_slot rel inFrame, Instr.update]
+
+theorem fp_size (operation : FOp) (slot : Nat) :
+    (Instr.fp operation slot).size = 10 + operation.opcodeBytes.length := by
+  rcases operation with ⟨t, operation⟩ | ⟨t, operation⟩ | ⟨t, word⟩ | _ | _ <;>
+    (try cases t) <;> (try cases word) <;> rfl
+
+/-- `mov rcx, rax; mov rax, [slot]`, then the SSE code of the operation
+(`FOp.program`), which leaves its result in rax. -/
+theorem fp_simulates (operation : FOp) (rel : Rel frame s m) (inFrame : slot < frame.slots)
+    (loaded : CodeAt s.memory s.rip (accToRcxBytes ++ slotLoadBytes slot ++ operation.opcodeBytes)) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' ((Instr.fp operation slot).step m) := by
+  let moved := s.move64 rcxRegister 0 3
+  let loadedLeft := moved.load64 0 rbpRegister
+    (BitVec.ofInt 32 (frameDisplacement slot)) (slotLoadBytes slot).length
+  let s' := runPlain operation.program loadedLeft
+  have first := accToRcx_step s moved loaded.prefix.prefix rfl
+  have bytes1 : CodeAt moved.memory moved.rip (slotLoadBytes slot) := by
+    simpa only [moved, State.move64, accToRcx_length] using loaded.prefix.suffix
+  have second := slotLoad_step moved loadedLeft slot bytes1 rfl
+  have code : CodeAt loadedLeft.memory loadedLeft.rip (operation.program.flatMap Prod.fst) := by
+    rw [FOp.program_bytes]
+    simpa only [loadedLeft, moved, State.load64, State.move64, accToRcx_length,
+      BitVec.ofNat_add, BitVec.add_assoc, List.length_append] using loaded.suffix
+  obtain ⟨run, det⟩ := runPlain_steps _ loadedLeft operation.program_plain code
+  obtain ⟨memory, rip⟩ := runPlain_effect _ loadedLeft operation.program_plain
+  have size := fp_size operation slot
+  refine ⟨_, s', .cons first (.cons second run),
+    Det.cons first (move_noRead loaded.prefix.prefix) (Det.cons second (slotLoad_noRead bytes1) det), ?_⟩
+  refine Rel.accumulate (s' := s') rel (by rw [memory]; rfl) _ ?_ ?_ ?_
+  · rw [rip, FOp.program_bytes]
+    simp only [loadedLeft, moved, State.load64, State.move64, slotLoadBytes_length, size]
+    bv_omega
+  · intro register zero one
+    have one' : register ≠ rcxRegister := one
+    rw [FOp.program_other _ _ zero]
+    simp only [loadedLeft, moved, State.load64, State.move64, if_neg zero, if_neg one']
+  · rw [FOp.program_acc]
+    simp [loadedLeft, moved, State.load64, State.move64, rcxRegister, rbpRegister, ← rel.acc,
+      rel_slot rel inFrame, Instr.update]
 
 /-- `mov rcx, rax; mov rax, [slot]; mov r11, rdx`, the dividend's high half,
 `idiv` or `div`, `mov rax, rdx` for a remainder, `mov rdx, r11` -/
@@ -1642,6 +1682,7 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
     | neg => exact .inl <| forward fetched rfl <| neg_simulates rel loaded
     | op word operation slot => exact .inl <| forward fetched rfl <| op_simulates word operation rel fitted loaded
     | cmp word operation slot => exact .inl <| forward fetched rfl <| cmp_simulates word operation rel fitted loaded
+    | fp operation slot => exact .inl <| forward fetched rfl <| fp_simulates operation rel fitted loaded
     | jmp | jz | call | ret | bump | loadAt | storeAt | loadWordAt | storeWordAt | div =>
       simp [Instr.straight] at isStraight
   | @jmp target _ fetched =>

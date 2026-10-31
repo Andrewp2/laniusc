@@ -23,6 +23,33 @@ def Word.number (self : Word) : Nat :=
   | .s32 => 0
   | .u64 => 1
 
+def FloatTy.number (self : FloatTy) : Nat :=
+  match self with
+  | .f32 => 0
+  | .f64 => 1
+
+def FArith.number (self : FArith) : Nat :=
+  match self with
+  | .fAdd => 0
+  | .fSub => 1
+  | .fMul => 2
+  | .fDiv => 3
+
+def FCmp.number (self : FCmp) : Nat :=
+  match self with
+  | .fEq => 0
+  | .fLt => 1
+  | .fLe => 2
+
+/-- Distinct operations have distinct numbers. -/
+def FOp.number (self : FOp) : Nat :=
+  match self with
+  | .basic ty operation => 4 * FloatTy.number ty + FArith.number operation
+  | .fCompare ty operation => 8 + 3 * FloatTy.number ty + FCmp.number operation
+  | .fromInt ty word => 14 + 2 * FloatTy.number ty + Word.number word
+  | .widen => 18
+  | .narrow => 19
+
 /-- The value is below 2^32 in every environment. -/
 def Expr.narrow (self : Expr) : Bool :=
   match self with
@@ -31,6 +58,7 @@ def Expr.narrow (self : Expr) : Bool :=
   | .neg operand => true
   | .binary word operation left right => Word.narrows word
   | .compare word operation left right => true
+  | .fp operation left right => false
 
 /-- An operation on this word may pass e through unchanged: an S32 one zero-extends, so e must be narrow. -/
 def Word.keeps (self : Word) (e : Expr) : Bool :=

@@ -46,6 +46,7 @@ def Expr.bump : Expr → Expr
   | .neg e => .neg e.bump
   | .binary w o l r => .binary w o l.bump r.bump
   | .compare w o l r => .compare w o l.bump r.bump
+  | .fp o l r => .fp o l.bump r.bump
 
 partial def Stmt.bump : Stmt → Stmt
   | .skip => .skip

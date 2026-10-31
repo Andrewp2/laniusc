@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+public import Lanius.IEEE
 -- import all: Lanius.Mini.Compiler
 import all Lanius.Mini.Compiler.Types
 import all Lanius.Mini.Compiler.P.Lists_empty
@@ -8,7 +9,9 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.pow2
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.layout
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -86,7 +89,7 @@ import all Lanius.Mini.Compiler.P.compileSource
 import all Lanius.Mini.Compiler.P.larger
 import all Lanius.Mini.Compiler.P.Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
-import all Lanius.Mini.Compiler.P.Inline_branchAgrees
+import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
 -- import parts: Lanius.Mini.Compiler BinOp.bytes DivOp.bytes MemWidth.bytes
 public import Lanius.Mini.Compiler.P.Lists_empty
@@ -175,6 +178,45 @@ def Word.divides : Word → DivOp → BitVec 64 → BitVec 64 → Bool
   | .s32, operation, a, b => operation.defined (low a) (low b)
   | .u64, operation, a, b => operation.defined a b
 
+/-! Floats. A word holds a float's IEEE bit pattern, an `f32` one
+zero-extended; each operation is `Lanius.IEEE`'s. -/
+
+def FloatTy.format : FloatTy → IEEE.Format
+  | .f32 => IEEE.binary32
+  | .f64 => IEEE.binary64
+
+def FloatTy.width : FloatTy → Nat
+  | .f32 => 32
+  | .f64 => 64
+
+/-- The pattern a word holds: its low `width` bits. -/
+def FloatTy.bits (t : FloatTy) (x : BitVec 64) : Nat := x.toNat % 2 ^ t.width
+
+/-- A pattern as a word, zero-extended. -/
+def FloatTy.word (t : FloatTy) (v : Nat) : BitVec 64 := BitVec.ofNat 64 (v % 2 ^ t.width)
+
+def FArith.apply (F : IEEE.Format) : FArith → Nat → Nat → Nat
+  | .fAdd => F.add
+  | .fSub => F.sub
+  | .fMul => F.mul
+  | .fDiv => F.div
+
+def FCmp.holds (F : IEEE.Format) : FCmp → Nat → Nat → Bool
+  | .fEq => F.eq
+  | .fLt => F.lt
+  | .fLe => F.le
+
+/-- A float operation of the left and the right operand; a conversion reads
+only the right one, an integer conversion its low 32 bits (`s32`) or all 64
+(`u64`) as a signed integer. -/
+def FOp.apply : FOp → BitVec 64 → BitVec 64 → BitVec 64
+  | .basic t operation, a, b => t.word (operation.apply t.format (t.bits a) (t.bits b))
+  | .fCompare t operation, a, b => if operation.holds t.format (t.bits a) (t.bits b) then 1 else 0
+  | .fromInt t .s32, _, b => t.word (t.format.ofInt (b.setWidth 32).toInt)
+  | .fromInt t .u64, _, b => t.word (t.format.ofInt b.toInt)
+  | .widen, _, b => FloatTy.f64.word (IEEE.binary32.convert IEEE.binary64 (FloatTy.f32.bits b))
+  | .narrow, _, b => FloatTy.f32.word (IEEE.binary64.convert IEEE.binary32 (FloatTy.f64.bits b))
+
 def Expr.eval (env : Env) : Expr → BitVec 64
   | .lit value => value
   | .var index => env index
@@ -182,6 +224,7 @@ def Expr.eval (env : Env) : Expr → BitVec 64
   | .binary word operation left right => word.apply operation (left.eval env) (right.eval env)
   | .compare word operation left right =>
       if word.holds operation (left.eval env) (right.eval env) then 1 else 0
+  | .fp operation left right => operation.apply (left.eval env) (right.eval env)
 
 def Expr.evalAll (env : Env) : List Expr → List (BitVec 64)
   | [] => []

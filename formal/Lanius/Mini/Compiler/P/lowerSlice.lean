@@ -2,7 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.UintTy_half
-import Lanius.Mini.Compiler.P.pow2
+import Lanius.Mini.Compiler.P.layout
 import Lanius.Mini.Compiler.P.storeType
 import Lanius.Mini.Compiler.P.wordElement
 

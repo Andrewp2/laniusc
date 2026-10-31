@@ -18,6 +18,21 @@ def DivOp.size (self : DivOp) (word : Word) : Nat :=
   | .uDiv => 2
   | .uRem => 5
 
+/-- The REX.W prefix of a move between a general register and an xmm register for this format: none for F32 (movd), one byte for F64 (movq). -/
+def FloatTy.rexSize (self : FloatTy) : Nat :=
+  match self with
+  | .f32 => 0
+  | .f64 => 1
+
+/-- The bytes after mov rcx, rax; mov rax, [slot]: the operands into xmm0 and xmm1 (8 bytes, 10 for F64), the operation (4; a compare 5), then the result into eax (4, 5 for F64; a compare's mask 4, then neg eax 2). A conversion reads rcx directly. -/
+def FOp.size (self : FOp) : Nat :=
+  match self with
+  | .basic ty operation => 16 + 3 * FloatTy.rexSize ty
+  | .fCompare ty operation => 19 + 2 * FloatTy.rexSize ty
+  | .fromInt ty word => 8 + Word.prefix word + FloatTy.rexSize ty
+  | .widen => 13
+  | .narrow => 13
+
 def Instr.size (self : Instr) : Nat :=
   match self with
   | .imm value => 10
@@ -36,5 +51,6 @@ def Instr.size (self : Instr) : Nat :=
   | .loadWordAt width => 9 + MemWidth.prefix width
   | .storeWordAt width slot => 16 + MemWidth.prefix width
   | .div word operation slot => 18 + Word.prefix word + DivOp.size operation word
+  | .fp operation slot => 10 + FOp.size operation
 
 end Lanius.Mini

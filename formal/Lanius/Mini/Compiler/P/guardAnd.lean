@@ -59,6 +59,7 @@ def literalBelow (amount : Expr) (width : BitVec 64) : Bool :=
   | .neg operand => false
   | .binary word operation left right => false
   | .compare word operation left right => false
+  | .fp operation left right => false
 
 /-- amount below width, compared as unsigned words: a negative i32 or isize amount is a large word. A literal amount below width needs no check. -/
 def amountGuard (width : BitVec 64) (amount : Expr) : Expr :=

@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
+import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.UintTy_half
@@ -17,7 +18,6 @@ import Lanius.Mini.Compiler.P.evalSame
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.matchDst
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.shortCircuit
 import Lanius.Mini.Compiler.P.wordElement
 

@@ -195,6 +195,31 @@ impl MemWidth {
     }
 }
 
+// An IEEE binary floating-point format: binary32 or binary64. A word holds
+// a float's bit pattern, an F32 one zero-extended.
+pub enum FloatTy { F32, F64, }
+
+// IEEE arithmetic, rounded to nearest, ties to even.
+pub enum FArith { FAdd, FSub, FMul, FDiv, }
+
+// IEEE comparisons: false when either operand is a NaN.
+pub enum FCmp { FEq, FLt, FLe, }
+
+// A float operation of the left and the right operand, by Lanius.IEEE. The
+// conversions read only the right operand.
+pub enum FOp {
+    Basic(FloatTy, FArith),
+    // 1 when the comparison holds, else 0
+    FCompare(FloatTy, FCmp),
+    // the right operand, a signed integer (its low 32 bits for S32, all 64
+    // for U64), to the nearest float
+    FromInt(FloatTy, Word),
+    // the right operand, an F32, as an F64 (exact)
+    Widen,
+    // the right operand, an F64, to the nearest F32
+    Narrow,
+}
+
 pub enum Expr {
     Lit(u64),
     Var(usize),
@@ -202,6 +227,8 @@ pub enum Expr {
     Neg(Box<Expr>),
     Binary(Word, BinOp, Box<Expr>, Box<Expr>),
     Compare(Word, CmpOp, Box<Expr>, Box<Expr>),
+    // a float operation (SSE on x86)
+    Fp(FOp, Box<Expr>, Box<Expr>),
 }
 
 pub enum Stmt {
@@ -282,6 +309,8 @@ pub enum Instr {
     StoreWordAt(MemWidth, usize),
     // rax := slot op rax
     Div(Word, DivOp, usize),
+    // rax := slot op rax, a float operation through xmm0 and xmm1
+    Fp(FOp, usize),
 }
 
 impl BinOp {
@@ -325,6 +354,33 @@ impl DivOp {
     }
 }
 
+impl FloatTy {
+    // The REX.W prefix of a move between a general register and an xmm
+    // register for this format: none for F32 (movd), one byte for F64 (movq).
+    pub fn rex_size(self) -> usize {
+        return match (self) {
+            F32 -> 0,
+            F64 -> 1,
+        };
+    }
+}
+
+impl FOp {
+    // The bytes after mov rcx, rax; mov rax, [slot]: the operands into
+    // xmm0 and xmm1 (8 bytes, 10 for F64), the operation (4; a compare 5),
+    // then the result into eax (4, 5 for F64; a compare's mask 4, then neg
+    // eax 2). A conversion reads rcx directly.
+    pub fn size(self) -> usize {
+        return match (self) {
+            Basic(ty, operation) -> plus(16, times(3, ty.rex_size())),
+            FCompare(ty, operation) -> plus(19, times(2, ty.rex_size())),
+            FromInt(ty, word) -> plus(plus(8, word.prefix()), ty.rex_size()),
+            Widen -> 13,
+            Narrow -> 13,
+        };
+    }
+}
+
 impl Instr {
     pub fn size(self) -> usize {
         return match (self) {
@@ -344,6 +400,7 @@ impl Instr {
             LoadWordAt(width) -> plus(9, width.prefix()),
             StoreWordAt(width, slot) -> plus(16, width.prefix()),
             Div(word, operation, slot) -> plus(plus(18, word.prefix()), operation.size(word)),
+            Instr::Fp(operation, slot) -> plus(10, operation.size()),
         };
     }
 }
@@ -365,6 +422,7 @@ pub fn compile_expr(base: usize, e: Expr, depth: usize) -> List<Instr> {
         Expr::Neg(operand) -> concat(compile_expr(base, unbox(operand), depth), single(Instr::Neg)),
         Binary(word, operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Op(word, operation, plus(base, depth)))),
         Compare(word, operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Cmp(word, operation, plus(base, depth)))),
+        Expr::Fp(operation, left, right) -> concat(concat(concat(compile_expr(base, unbox(left), depth), single(Store(plus(base, depth)))), compile_expr(base, unbox(right), plus(depth, 1))), single(Instr::Fp(operation, plus(base, depth)))),
     };
 }
 
@@ -433,6 +491,7 @@ impl Expr {
             Expr::Neg(operand) -> unbox(operand).within(locals),
             Binary(word, operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
             Compare(word, operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
+            Expr::Fp(operation, left, right) -> unbox(left).within(locals) && unbox(right).within(locals),
         };
     }
 
@@ -444,6 +503,7 @@ impl Expr {
             Expr::Neg(operand) -> unbox(operand).temps(),
             Binary(word, operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
             Compare(word, operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
+            Expr::Fp(operation, left, right) -> max_of(unbox(left).temps(), plus(unbox(right).temps(), 1)),
         };
     }
 }
@@ -711,6 +771,80 @@ pub fn slot_compare(word: Word, operation: CmpOp, slot: usize) -> List<u8> {
     return concat(concat(slot_operands(slot), concat(word.rex(), cons(57, single(200)))), cons(15, cons(operation.setcc(word), cons(192, cons(15, cons(182, single(192)))))));
 }
 
+impl FloatTy {
+    // The REX.W prefix of movq for F64.
+    pub fn rex(self) -> List<u8> {
+        return match (self) {
+            F32 -> empty(),
+            F64 -> single(72),
+        };
+    }
+
+    // The mandatory prefix of its scalar instructions: F3 for single, F2
+    // for double.
+    pub fn scalar_prefix(self) -> u8 {
+        return match (self) {
+            F32 -> 243,
+            F64 -> 242,
+        };
+    }
+}
+
+impl FArith {
+    // addss, subss, mulss, divss (sd with F2)
+    pub fn opcode(self) -> u8 {
+        return match (self) {
+            FAdd -> 88,
+            FSub -> 92,
+            FMul -> 89,
+            FDiv -> 94,
+        };
+    }
+}
+
+impl FCmp {
+    // The cmpss/cmpsd predicate: EQ_OQ, LT_OS, LE_OS.
+    pub fn predicate(self) -> u8 {
+        return match (self) {
+            FEq -> 0,
+            FLt -> 1,
+            FLe -> 2,
+        };
+    }
+}
+
+// movd xmm0, eax; movd xmm1, ecx (movq rax, rcx for F64)
+pub fn float_operands(ty: FloatTy) -> List<u8> {
+    return concat(cons(102, concat(ty.rex(), cons(15, cons(110, single(192))))), cons(102, concat(ty.rex(), cons(15, cons(110, single(201))))));
+}
+
+// movd eax, xmm0 (movq rax for F64)
+pub fn float_result(ty: FloatTy) -> List<u8> {
+    return cons(102, concat(ty.rex(), cons(15, cons(126, single(192)))));
+}
+
+impl FOp {
+    // The operation on rax (left) and rcx (right) into rax: op xmm0, xmm1
+    // with movd/movq around it; for a compare, cmpss/cmpsd xmm0, xmm1, then
+    // its mask's low half in eax and neg eax; cvtsi2ss/cvtsi2sd xmm0, ecx
+    // (rcx with REX.W); movd xmm0, ecx; cvtss2sd xmm0, xmm0; movq xmm0, rcx;
+    // cvtsd2ss xmm0, xmm0.
+    pub fn opcode_bytes(self) -> List<u8> {
+        return match (self) {
+            Basic(ty, operation) -> concat(float_operands(ty), concat(cons(ty.scalar_prefix(), cons(15, cons(operation.opcode(), single(193)))), float_result(ty))),
+            FCompare(ty, operation) -> concat(float_operands(ty), concat(cons(ty.scalar_prefix(), cons(15, cons(194, cons(193, single(operation.predicate()))))), cons(102, cons(15, cons(126, cons(192, cons(247, single(216)))))))),
+            FromInt(ty, word) -> concat(cons(ty.scalar_prefix(), concat(word.rex(), cons(15, cons(42, single(193))))), float_result(ty)),
+            Widen -> concat(cons(102, cons(15, cons(110, single(193)))), concat(cons(243, cons(15, cons(90, single(192)))), float_result(F64))),
+            Narrow -> concat(cons(102, cons(72, cons(15, cons(110, single(193))))), concat(cons(242, cons(15, cons(90, single(192)))), float_result(F32))),
+        };
+    }
+
+    // slot_operands, then the operation
+    pub fn bytes(self, slot: usize) -> List<u8> {
+        return concat(slot_operands(slot), self.opcode_bytes());
+    }
+}
+
 // 2^shift as a 64-bit word.
 pub fn pow2(shift: usize) -> u64 {
     if (shift == 0) {
@@ -829,6 +963,7 @@ impl Instr {
             LoadWordAt(width) -> load_word_bytes(width),
             StoreWordAt(width, slot) -> store_word_bytes(width, slot),
             Div(word, operation, slot) -> operation.bytes(word, slot),
+            Instr::Fp(operation, slot) -> operation.bytes(slot),
         };
     }
 }
@@ -1069,6 +1204,7 @@ impl Instr {
             LoadWordAt(width) -> single(Piece::Bytes(self.encode(place, pc))),
             StoreWordAt(width, slot) -> single(Piece::Bytes(self.encode(place, pc))),
             Div(word, operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Instr::Fp(operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
         };
     }
 }
@@ -2361,6 +2497,7 @@ pub fn is_one(e: Expr) -> bool {
         Expr::Neg(operand) -> false,
         Binary(word, operation, left, right) -> false,
         Compare(word, operation, left, right) -> false,
+        Expr::Fp(operation, left, right) -> false,
     };
 }
 
@@ -2422,6 +2559,7 @@ pub fn literal_below(amount: Expr, width: u64) -> bool {
         Expr::Neg(operand) -> false,
         Binary(word, operation, left, right) -> false,
         Compare(word, operation, left, right) -> false,
+        Expr::Fp(operation, left, right) -> false,
     };
 }
 
@@ -4464,6 +4602,7 @@ impl Expr {
             Expr::Neg(operand) -> unbox(operand).extent(),
             Binary(word, operation, left, right) -> max_of(unbox(left).extent(), unbox(right).extent()),
             Compare(word, operation, left, right) -> max_of(unbox(left).extent(), unbox(right).extent()),
+            Expr::Fp(operation, left, right) -> max_of(unbox(left).extent(), unbox(right).extent()),
         };
     }
 }
@@ -4965,6 +5104,49 @@ impl Word {
     }
 }
 
+impl FloatTy {
+    pub fn number(self) -> usize {
+        return match (self) {
+            F32 -> 0,
+            F64 -> 1,
+        };
+    }
+}
+
+impl FArith {
+    pub fn number(self) -> usize {
+        return match (self) {
+            FAdd -> 0,
+            FSub -> 1,
+            FMul -> 2,
+            FDiv -> 3,
+        };
+    }
+}
+
+impl FCmp {
+    pub fn number(self) -> usize {
+        return match (self) {
+            FEq -> 0,
+            FLt -> 1,
+            FLe -> 2,
+        };
+    }
+}
+
+impl FOp {
+    // Distinct operations have distinct numbers.
+    pub fn number(self) -> usize {
+        return match (self) {
+            Basic(ty, operation) -> plus(times(4, ty.number()), operation.number()),
+            FCompare(ty, operation) -> plus(plus(8, times(3, ty.number())), operation.number()),
+            FromInt(ty, word) -> plus(plus(14, times(2, ty.number())), word.number()),
+            Widen -> 18,
+            Narrow -> 19,
+        };
+    }
+}
+
 impl Expr {
     // The value is below 2^32 in every environment.
     pub fn narrow(self) -> bool {
@@ -4974,6 +5156,7 @@ impl Expr {
             Expr::Neg(operand) -> true,
             Binary(word, operation, left, right) -> word.narrows(),
             Compare(word, operation, left, right) -> true,
+            Expr::Fp(operation, left, right) -> false,
         };
     }
 }
@@ -5049,6 +5232,7 @@ impl Expr {
             Expr::Neg(operand) -> negate_constant(unbox(operand).constant()),
             Binary(word, operation, left, right) -> binary_constant(word, operation, unbox(left).constant(), unbox(right).constant()),
             Compare(word, operation, left, right) -> compare_constant(word, operation, unbox(left).constant(), unbox(right).constant()),
+            Expr::Fp(operation, left, right) -> None,
         };
     }
 
@@ -5060,6 +5244,7 @@ impl Expr {
             Expr::Neg(operand) -> false,
             Binary(word, operation, left, right) -> false,
             Compare(word, operation, left, right) -> false,
+            Expr::Fp(operation, left, right) -> false,
         };
     }
 
@@ -5070,6 +5255,7 @@ impl Expr {
             Expr::Neg(operand) -> false,
             Binary(word, operation, left, right) -> false,
             Compare(word, operation, left, right) -> false,
+            Expr::Fp(operation, left, right) -> false,
         };
     }
 
@@ -5098,6 +5284,7 @@ impl Expr {
             Expr::Neg(operand) -> neg_agrees(unbox(operand), other),
             Binary(word, operation, left, right) -> binary_agrees(word, operation, unbox(left), unbox(right), other) || unit_agrees(word, operation, unbox(left), unbox(right), other),
             Compare(word, operation, left, right) -> compare_agrees(word, operation, unbox(left), unbox(right), other),
+            Expr::Fp(operation, left, right) -> fp_agrees(operation, unbox(left), unbox(right), other),
         };
     }
 }
@@ -5110,6 +5297,7 @@ fn neg_agrees(operand: Expr, other: Expr) -> bool {
         Expr::Neg(o) -> operand.agrees(unbox(o)),
         Binary(w, op, l, r) -> false,
         Compare(w, op, l, r) -> false,
+        Expr::Fp(op, l, r) -> false,
     };
 }
 
@@ -5121,6 +5309,7 @@ fn binary_agrees(word: Word, operation: BinOp, left: Expr, right: Expr, other: E
         Expr::Neg(o) -> false,
         Binary(w, op, l, r) -> (word.number() == w.number()) && (operation.number() == op.number()) && left.agrees(unbox(l)) && right.agrees(unbox(r)),
         Compare(w, op, l, r) -> false,
+        Expr::Fp(op, l, r) -> false,
     };
 }
 
@@ -5137,6 +5326,19 @@ fn compare_agrees(word: Word, operation: CmpOp, left: Expr, right: Expr, other: 
         Expr::Neg(o) -> false,
         Binary(w, op, l, r) -> false,
         Compare(w, op, l, r) -> (word.number() == w.number()) && (operation.number() == op.number()) && left.agrees(unbox(l)) && right.agrees(unbox(r)),
+        Expr::Fp(op, l, r) -> false,
+    };
+}
+
+// extract: inline
+fn fp_agrees(operation: FOp, left: Expr, right: Expr, other: Expr) -> bool {
+    return match (other) {
+        Lit(v) -> false,
+        Var(i) -> false,
+        Expr::Neg(o) -> false,
+        Binary(w, op, l, r) -> false,
+        Compare(w, op, l, r) -> false,
+        Expr::Fp(op, l, r) -> (operation.number() == op.number()) && left.agrees(unbox(l)) && right.agrees(unbox(r)),
     };
 }
 
@@ -5348,6 +5550,7 @@ impl Expr {
             Expr::Neg(operand) -> unbox(operand).mentions(index),
             Binary(word, operation, left, right) -> unbox(left).mentions(index) || unbox(right).mentions(index),
             Compare(word, operation, left, right) -> unbox(left).mentions(index) || unbox(right).mentions(index),
+            Expr::Fp(operation, left, right) -> unbox(left).mentions(index) || unbox(right).mentions(index),
         };
     }
 
@@ -5359,6 +5562,7 @@ impl Expr {
             Expr::Neg(operand) -> Expr::Neg(boxed(unbox(operand).subst(facts))),
             Binary(word, operation, left, right) -> Binary(word, operation, boxed(unbox(left).subst(facts)), boxed(unbox(right).subst(facts))),
             Compare(word, operation, left, right) -> Compare(word, operation, boxed(unbox(left).subst(facts)), boxed(unbox(right).subst(facts))),
+            Expr::Fp(operation, left, right) -> Expr::Fp(operation, boxed(unbox(left).subst(facts)), boxed(unbox(right).subst(facts))),
         };
     }
 
@@ -5370,6 +5574,7 @@ impl Expr {
             Expr::Neg(operand) -> false,
             Binary(word, operation, left, right) -> false,
             Compare(word, operation, left, right) -> false,
+            Expr::Fp(operation, left, right) -> false,
         };
     }
 }
@@ -5736,6 +5941,7 @@ impl Expr {
             Expr::Neg(operand) -> None,
             Binary(word, operation, left, right) -> None,
             Compare(word, operation, left, right) -> None,
+            Expr::Fp(operation, left, right) -> None,
         };
     }
 }
@@ -5808,6 +6014,7 @@ impl Expr {
             Expr::Neg(operand) -> optimize_neg(unbox(operand).optimize()),
             Binary(word, operation, left, right) -> optimize_binary(word, operation, unbox(left).optimize(), unbox(right).optimize()),
             Compare(word, operation, left, right) -> optimize_compare(word, operation, unbox(left).optimize(), unbox(right).optimize()),
+            Expr::Fp(operation, left, right) -> Expr::Fp(operation, boxed(unbox(left).optimize()), boxed(unbox(right).optimize())),
         };
     }
 }

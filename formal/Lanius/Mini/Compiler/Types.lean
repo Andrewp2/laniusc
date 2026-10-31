@@ -49,6 +49,40 @@ inductive MemWidth where
   | m64 : MemWidth
   deriving DecidableEq, Repr
 
+/-- An IEEE binary floating-point format: binary32 or binary64. A word holds a float's bit pattern, an F32 one zero-extended. -/
+inductive FloatTy where
+  | f32 : FloatTy
+  | f64 : FloatTy
+  deriving DecidableEq, Repr
+
+/-- IEEE arithmetic, rounded to nearest, ties to even. -/
+inductive FArith where
+  | fAdd : FArith
+  | fSub : FArith
+  | fMul : FArith
+  | fDiv : FArith
+  deriving DecidableEq, Repr
+
+/-- IEEE comparisons: false when either operand is a NaN. -/
+inductive FCmp where
+  | fEq : FCmp
+  | fLt : FCmp
+  | fLe : FCmp
+  deriving DecidableEq, Repr
+
+/-- A float operation of the left and the right operand, by Lanius.IEEE. The conversions read only the right operand. -/
+inductive FOp where
+  | basic : FloatTy → FArith → FOp
+  /-- 1 when the comparison holds, else 0 -/
+  | fCompare : FloatTy → FCmp → FOp
+  /-- the right operand, a signed integer (its low 32 bits for S32, all 64 for U64), to the nearest float -/
+  | fromInt : FloatTy → Word → FOp
+  /-- the right operand, an F32, as an F64 (exact) -/
+  | widen : FOp
+  /-- the right operand, an F64, to the nearest F32 -/
+  | narrow : FOp
+  deriving DecidableEq, Repr
+
 inductive Expr where
   | lit : (BitVec 64) → Expr
   | var : Nat → Expr
@@ -56,6 +90,8 @@ inductive Expr where
   | neg : Expr → Expr
   | binary : Word → BinOp → Expr → Expr → Expr
   | compare : Word → CmpOp → Expr → Expr → Expr
+  /-- a float operation (SSE on x86) -/
+  | fp : FOp → Expr → Expr → Expr
   deriving DecidableEq, Repr
 
 inductive Stmt where
@@ -129,6 +165,8 @@ inductive Instr where
   | storeWordAt : MemWidth → Nat → Instr
   /-- rax := slot op rax -/
   | div : Word → DivOp → Nat → Instr
+  /-- rax := slot op rax, a float operation through xmm0 and xmm1 -/
+  | fp : FOp → Nat → Instr
   deriving DecidableEq, Repr
 
 /-- A function's parameter and result counts. -/
