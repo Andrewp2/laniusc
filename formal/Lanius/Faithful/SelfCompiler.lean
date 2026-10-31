@@ -203,7 +203,7 @@ theorem start_corr (nonempty : 0 < W.length) {limit : Nat} (small : limit < 2 ^ 
       rw [if_neg (by simp only [selfOutput, selfInput]; omega)]
       simp
   zero := by
-    intro a ge
+    intro a ge _
     apply if_neg
     intro h
     simp only [selfStart, selfNext, selfOutput, selfInput] at ge h
