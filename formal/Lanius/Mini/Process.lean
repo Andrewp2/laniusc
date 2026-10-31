@@ -85,7 +85,7 @@ theorem compileSource_contract {sp : SrcProgram} {binary : Binary}
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62)
     (runs : Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final)
     (fits : final.heap.nextAddress ≤ heap.limit) :
-    ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+    ∃ depth results, ∃ after : Heap, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       ∀ imageBase window, Contract binary imageBase (binary.stackNeed depth) window f bits heap results after := by
   obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
   cases fuel with
@@ -481,7 +481,7 @@ theorem Exits.congr {s t : State} {code : BitVec 64} (h : Exits s code) (same : 
 
 /-- `mov rdi, rax`, `mov eax, 60`, then the exit's `syscall`. -/
 theorem exit_steps {s : State} (loaded : CodeAt s.memory s.rip [72, 137, 199, 184, 60, 0, 0, 0, 15, 5]) :
-    ∃ e, Steps 2 s e ∧ Det 2 s e ∧ Exits e (s.registers 0) := by
+    ∃ e, Steps 2 s e ∧ Det 2 s e ∧ Exits e (s.registers 0) ∧ e.io = s.io := by
   have e1 : moveBytes .w64 7 0 = [72, 137, 199] := by decide
   have e2 : immediateBytes .w32 0 60 0 = [184, 60, 0, 0, 0] := by decide
   have mv : CodeAt s.memory s.rip (moveBytes .w64 7 0) := by
@@ -495,14 +495,14 @@ theorem exit_steps {s : State} (loaded : CodeAt s.memory s.rip [72, 137, 199, 18
   have t2 := immediate_step _ (execute (immediateInstruction .w32 0 60 0) 5 (execute (moveInstruction .w64 7 0) 3 s))
     .w32 0 60 0 im (by rw [e2]; rfl)
   refine ⟨_, .cons t1 (.cons t2 (.refl _)), (Det.step t1 (move_noRead mv)).trans (Det.step t2 (immediate_noRead im)),
-    CodeAt.next (first := [184, 60, 0, 0, 0]) c1 rfl rfl, rfl, rfl⟩
+    ⟨CodeAt.next (first := [184, 60, 0, 0, 0]) c1 rfl rfl, rfl, rfl⟩, rfl⟩
 
 /-- When the compiled entry returns, the process exits with rax. -/
 theorem returned_exits {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {c s' : State}
     {results : List (BitVec 64)} {after : Heap}
     (h : elfFile binary entry stack heap = some file) (at_ : AtEntry binary entry stack heap file c)
     (ret : Returned (stack - 8) c s' results after) :
-    ∃ e, Steps 2 s' e ∧ Det 2 s' e ∧ Exits e (s'.registers 0) := by
+    ∃ e, Steps 2 s' e ∧ Det 2 s' e ∧ Exits e (s'.registers 0) ∧ e.io = s'.io := by
   apply exit_steps
   have sz := elfSizes h
   obtain ⟨pre, start, preLen, startLen, shape⟩ := elf_shape h
@@ -550,7 +550,9 @@ theorem Det.stops {n m : Nat} {s e u : State} (det : Det n s e) (stopped : ∀ w
 
 /-- The process of `elfFile binary entry stack heap`, for a `binary` the
 verified compiler made: when Core runs `entry()` to `v` within the heap,
-every state `Loaded` gives runs to `Exits` with the last of `v`'s slots, or,
+every state `Loaded` gives runs to `Exits` with the last of `v`'s slots,
+having written what the compiled program's run wrote (`after.io`, the trace
+of `write` events; roadmap F8), or,
 when the stack is below what the call needs, every stopped run of it is at
 a fault. -/
 theorem process_exits {sp : SrcProgram} {binary : Binary} {entry stack heap : Nat} {file : List UInt8}
@@ -559,23 +561,24 @@ theorem process_exits {sp : SrcProgram} {binary : Binary} {entry stack heap : Na
     {fuel : Nat} {v : Value} {final : Semantics.State}
     (runs : Semantics.evalExpr fuel sp.toCore {} (.call entry []) = .done v final)
     (fits : final.heap.nextAddress ≤ heap) :
-    ∃ depth results, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+    ∃ depth results, ∃ after : Heap, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       ∀ s, Loaded file s →
-        (∃ n e, Steps n s e ∧ Det n s e ∧ ∃ code, Exits e code ∧ ∀ w, results.getLast? = some w → code = w) ∨
+        (∃ n e, Steps n s e ∧ Det n s e ∧ e.io = after.io ∧
+          ∃ code, Exits e code ∧ ∀ w, results.getLast? = some w → code = w) ∨
         (stack - 8 < binary.stackNeed depth ∧ Faults s) := by
   have sz := elfSizes h
   have typed : FieldsHold (paramTypes func.params) [] (Func.entry []) 0 := by rw [noParams]; exact .nil
   have bitsLen : ([] : List (BitVec 64)).length = paramsSize func.params := by rw [noParams]; rfl
   obtain ⟨depth, results, after, holds, len, contract⟩ := compileSource_contract compiled found typed bitsLen
     (heap := elfHeap heap) rfl (fun _ _ => rfl) (by show heap < 2 ^ 62; have := sz.heap; omega) runs fits
-  refine ⟨depth, results, holds, len, fun s loaded => ?_⟩
+  refine ⟨depth, results, after, holds, len, fun s loaded => ?_⟩
   obtain ⟨c, steps, det, at_⟩ := startup h loaded
   obtain ⟨bounded, code, apart, imageHeap, rip, heapAt, stackAt⟩ := atEntry_premises h at_
   rcases contract (BitVec.ofNat 64 (elfBase + 185)) (stack - 8) c bounded code apart imageHeap rip
       (fun k bound => absurd bound (Nat.not_lt_zero k)) heapAt stackAt with ⟨n, s', run, det', ret⟩ | ⟨short, faults⟩
-  · obtain ⟨e, run2, det2, exits⟩ := returned_exits h at_ ret
-    exact .inl ⟨6 + n + 2, e, (steps.trans run).trans run2, (det.trans det').trans det2, s'.registers 0, exits,
-      ret.value⟩
+  · obtain ⟨e, run2, det2, exits, io⟩ := returned_exits h at_ ret
+    exact .inl ⟨6 + n + 2, e, (steps.trans run).trans run2, (det.trans det').trans det2, io.trans ret.io,
+      s'.registers 0, exits, ret.value⟩
   · exact .inr ⟨short, det.faults faults⟩
 
 /-- Every behaviour of the process: a run from a state `Loaded` gives that
@@ -607,9 +610,9 @@ theorem process_behaviour {sp : SrcProgram} {binary : Binary} {entry stack heap 
       (by show heap < 2 ^ 62; have := sz.heap; omega) sz.room c' _ _ bounded code apart imageHeap rip
       (fun k bound => absurd bound (Nat.not_lt_zero k)) heapAt stackAt rest stuck clean with
     ⟨fuel, v, final, runs, fits⟩ | trap
-  · obtain ⟨depth, results, holds, len, cases⟩ := process_exits compiled h found noParams runs fits
+  · obtain ⟨depth, results, _after, holds, len, cases⟩ := process_exits compiled h found noParams runs fits
     refine .inl ⟨fuel, v, final, runs, fits, results, holds, len, ?_⟩
-    rcases cases s loaded with ⟨n, e, -, detE, code, exits, value⟩ | ⟨-, faults⟩
+    rcases cases s loaded with ⟨n, e, -, detE, -, code, exits, value⟩ | ⟨-, faults⟩
     · exact ⟨code, exits.congr (Det.stops detE exits.stuck.1 run stuck), value⟩
     · exact (clean (faults m s u (DataEq.refl s) run stuck)).elim
   · exact .inr trap
@@ -626,9 +629,10 @@ theorem textProcess_exits {files : List SourceFile} {binary : Binary} {entry sta
       ∀ {func : SrcFunc}, sp.funcs[entry]? = some func → func.params = [] →
       ∀ {fuel : Nat} {v : Value} {final : Semantics.State},
         Semantics.evalExpr fuel sp.toCore {} (.call entry []) = .done v final → final.heap.nextAddress ≤ heap →
-        ∃ depth results, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
+        ∃ depth results, ∃ after : Heap, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
           ∀ s, Loaded file s →
-            (∃ n e, Steps n s e ∧ Det n s e ∧ ∃ code, Exits e code ∧ ∀ w, results.getLast? = some w → code = w) ∨
+            (∃ n e, Steps n s e ∧ Det n s e ∧ e.io = after.io ∧
+              ∃ code, Exits e code ∧ ∀ w, results.getLast? = some w → code = w) ∨
             (stack - 8 < binary.stackNeed depth ∧ Faults s) := by
   obtain ⟨sp, reading, unique, compiledSource⟩ := compileText_reading compiled
   refine ⟨sp, reading, unique, ?_⟩
