@@ -803,12 +803,8 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
   · subst reads
     have callee3 : callee = hostBase + 3 := by
       unfold hostService? at hs
-      split at hs; · cases hs
-      split at hs; · cases hs
-      split at hs; · cases hs
-      split at hs
-      · assumption
-      · split at hs <;> cases hs
+      repeat' split at hs
+      all_goals first | assumption | cases hs
     subst callee3
     simp only [evalHost] at ok
     split at ok
@@ -828,7 +824,17 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
     split at ok
     · rename_i _ _ _ _ checks; simp [hostBase] at checks
     · simp at ok
-  have heapEq := hostCall_heap hs reads called
+  have keeps : service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr ∨ service = .sleepMsI32 := by
+    obtain ⟨service', _, hs', -, shape⟩ := evalHost_some ok
+    rw [hs] at hs'
+    cases hs'
+    rcases shape with ⟨rfl, -⟩ | ⟨rfl | rfl | rfl, -⟩ | ⟨rfl, -⟩
+    · exact .inl rfl
+    · exact .inr (.inl rfl)
+    · exact .inr (.inr (.inl rfl))
+    · exact absurd rfl reads
+    · exact .inr (.inr (.inr rfl))
+  have heapEq := hostCall_heap keeps called
   subst heapEq
   have posA : 0 < hpA.limit := Nat.lt_of_lt_of_le hcA.pos limitA
   simp only [evalHost] at ok

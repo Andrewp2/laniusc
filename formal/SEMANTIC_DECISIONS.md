@@ -921,9 +921,13 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   run the given streams do not describe: `clockExhausted` and
   `entropyExhausted` are undefined traps (`undefinedTrap`), on which the
   stop theorems promise nothing, as for raw memory errors.
-- **Lowering waits for the x86 side.** The externs are not lowered yet: the
-  kernel's `clock_gettime` and `getrandom` write memory, and are added after
-  F6's heap changes.
+- **Host ids.** `monotonic_read`, `system_read` and `fill_secure_bytes` are
+  host functions 2^32 + 5, + 6 and + 7 (`hostFuncs`); the front end reads
+  their `extern "lanius_std"` declarations as those host calls (case
+  `host_clock`). They are not lowered yet, so `compileSource` rejects a
+  program that calls one (the case is marked `compile_rejects`): the
+  kernel's `clock_gettime` and `getrandom` write memory, and come after F6's
+  heap changes.
 
 ## `for` over a range (decided 10-30, F4)
 

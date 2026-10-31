@@ -1,0 +1,5 @@
+module std::random;
+
+pub type RandomOperationResult = i32;
+
+pub extern "lanius_std" fn fill_secure_bytes(ptr: ptr, len: usize) -> RandomOperationResult;
