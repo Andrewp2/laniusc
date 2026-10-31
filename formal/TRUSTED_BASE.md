@@ -131,6 +131,49 @@ output is kept only when the proved validator accepts it. Nor are
   (`u8` by a `u32` amount of 256 traps). Before 10-30 Core typed only shifts
   by the left operand's own type and gave a mixed one `typeMismatch`;
   shifts of one type evaluate as before.
+- **Floats (changed 10-30, F9).** Core's `f32` and `f64` values are their
+  IEEE 754 binary32 and binary64 bit patterns (`.f32Bits`, `.f64Bits`), and
+  every float operation is defined on exact integers in `Lanius/IEEE.lean`
+  (234 lines; no Lean `Float` anywhere, so the kernel can evaluate and
+  reason about it). Before 10-30 Core used Lean's `Float32`/`Float`, which
+  the kernel cannot see into. The specification:
+  - A finite pattern's value is `(-1)^s * significand * 2^unitExp`: a normal
+    one has the hidden bit, a subnormal one the unit `2^(1 - bias - f)`.
+  - `roundRatio` rounds an exact rational `num / den * 2^exp` to nearest,
+    ties to even, with gradual underflow (no flush to zero) and overflow to
+    infinity. `+ - * /` compute the exact result and round it once
+    (`add`, `sub`, `mul`, `div`); an exact zero sum is `+0` unless both
+    operands are `-0`; a zero product or quotient has the sign of the
+    signs' xor.
+  - NaN results follow x86 SSE: an operation with a NaN operand returns the
+    first NaN operand with its quiet bit set (sign and payload kept); an
+    invalid operation on non-NaNs (`inf - inf`, `0 * inf`, `0 / 0`,
+    `inf / inf`) returns the default NaN (sign set, exponent all ones, only
+    the quiet bit), and `x / 0` is a signed infinity.
+  - `==`, `<`, `<=` are false when either operand is a NaN, and `-0 == +0`;
+    `!=` is the negation of `==`, `>` and `>=` swap the operands.
+  - Negation flips the sign bit, NaNs included (`neg`), as `xorps` does.
+  - Integer to float (`ofInt`) rounds the exact integer; `f32 -> f64` is
+    exact, `f64 -> f32` rounds; a NaN converts with its sign and the top bits
+    of its payload, quieted (`convert`), as `cvtss2sd`/`cvtsd2ss` do.
+  - Float to integer (`truncSat`, added: Core had no such cast) truncates
+    toward zero and saturates to the target's range, NaN to 0, as Rust's
+    and laniusc's `as` do.
+  - A decimal literal `m * 10^e` is rounded once to the nearest pattern
+    (`ofDecimal`, used by elaboration); past `10^400` it is infinity and
+    below `10^-400` zero, only to avoid huge powers.
+  This specification is also the meaning of the SSE instructions in the
+  x86 model (section 6). `formal/tools/float_test.py` (gate step `float`)
+  runs it, compiled (`lake exe floatTest`), against this machine's CPU:
+  `addss`...`divsd`, `cmpss`/`cmpsd` with predicates 0, 1, 2, `xorps` of
+  the sign bit, `cvtss2sd`, `cvtsd2ss`, `cvtsi2ss`/`cvtsi2sd` from 32 and 64
+  bits, libc's `strtof`/`strtod` for decimals and Python's exact integers
+  for truncation; on edge patterns (zeros, subnormals, the largest finite
+  values, infinities, quiet and signalling NaNs with payloads), exact ties,
+  near operands and random bits: 79,214 cases at 2,000 per operation, 0
+  differ (AMD Ryzen 9 5900HX). The test assumes Linux's default MXCSR
+  (round to nearest, exceptions masked, no FTZ/DAZ), which no compiled code
+  changes.
 - **`slice_stride` (added 10-22).** `Intrinsic.sliceStride` gives a raw
   view's signed byte stride as an `isize` (`rawSliceStride?`): 4 for `i32`
   views, and `-8 × words` for views of structs and enums. On these views

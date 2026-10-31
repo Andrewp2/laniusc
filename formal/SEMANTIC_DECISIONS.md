@@ -34,10 +34,13 @@ Lean definition or judgment.
   unsigned right shift is logical. The amount of a signed or unsigned shift may
   be of any signed or unsigned integer type; its number is what is checked
   (`evalShiftBy`, since 2026-10-30).
-- `f32` and `f64` values are represented by their IEEE bit patterns. Arithmetic
-  and ordered comparisons use Lean's `Float32` and `Float` operations, so
-  division by zero and NaNs follow floating-point behavior rather than integer
-  traps.
+- `f32` and `f64` values are represented by their IEEE bit patterns.
+  Arithmetic, comparisons, negation and conversions are `Lanius/IEEE.lean`'s,
+  on those bits (since 2026-10-30; before, Lean's `Float32` and `Float`):
+  round to nearest, ties to even, no traps (division by zero gives an
+  infinity), NaN results as x86 SSE gives them (the first NaN operand
+  quieted, or the default NaN for an invalid operation). A float to integer
+  cast truncates toward zero and saturates, NaN to 0 (Rust's `as`).
 - Array indexing outside the array bounds traps.
 - Slices are borrowed views identified by an element type, stable backing cell,
   projection path, start, and length. Reads observe later writes to the backing
@@ -527,7 +530,9 @@ almost certainly wrong. Where both read a literal they give the same code.
 
 - Which NaN payload details are observable through future bit-conversion APIs.
   Literal parsing/rounding is already explicit, and resolved numeric casts are
-  explicit in core and width-correct dynamically.
+  explicit in core and width-correct dynamically. (Since 2026-10-30 Core
+  fixes NaN payloads as x86 SSE does, `Lanius/IEEE.lean`; a target with other
+  NaN rules, Wasm's nondeterministic NaNs, would need this revisited.)
 - Calling-convention classification for aggregate parameters and results on
   x86-64 and Wasm. In-memory value layouts are fixed; register/stack passing is
   not yet part of the language model.

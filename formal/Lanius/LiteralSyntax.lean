@@ -54,9 +54,11 @@ private def parseSignedDecimalChars : List Char → Option Int
   | characters => parseDigitsLoop 10 characters 0 false |>.map Int.ofNat
 
 /-- Decimal and scientific float syntax is parsed exactly once during
-    elaboration. The resulting IEEE rounding is delegated to Lean's specified
-    `Float.ofScientific`, then narrowed explicitly for `f32`. -/
-def parseFloatLiteral (text : String) : Option Float := do
+    elaboration, to its exact value `m * 10 ^ e`: the significand of all its
+    digits and the decimal exponent. Each format rounds that value itself
+    (`Lanius.IEEE.Format.ofDecimal`), so an `f32` literal is rounded once, not
+    through `f64`. -/
+def parseFloatLiteral (text : String) : Option (Nat × Int) := do
   let characters := text.toList.filter (fun character => character != '_')
   let (mantissaCharacters, exponent) ←
     match splitAtEither characters 'e' 'E' with
@@ -71,10 +73,7 @@ def parseFloatLiteral (text : String) : Option Float := do
   /- The lexer admits both `1.` and `.5`. Validating the concatenated
      significant digits accepts either spelling while still rejecting `.`. -/
   let mantissa ← parseDigitsLoop 10 (whole ++ fractional) 0 false
-  let decimalScale := exponent - Int.ofNat fractional.length
-  match decimalScale with
-  | .ofNat scale => pure (Float.ofScientific mantissa false scale)
-  | .negSucc scale => pure (Float.ofScientific mantissa true (scale + 1))
+  pure (mantissa, exponent - Int.ofNat fractional.length)
 
 end Lanius.Elaboration
 

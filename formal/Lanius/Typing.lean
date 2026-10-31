@@ -213,6 +213,11 @@ inductive ScalarCast : ScalarTy → ScalarTy → Prop where
   | charToF64 : ScalarCast .char .f64
   | f32ToF64 : ScalarCast .f32 .f64
   | f64ToF32 : ScalarCast .f64 .f32
+  /-- Rust's `as`: toward zero, saturating, NaN to zero (`IEEE.Format.truncSat`). -/
+  | f32ToSigned (target) : ScalarCast .f32 (.signed target)
+  | f32ToUnsigned (target) : ScalarCast .f32 (.unsigned target)
+  | f64ToSigned (target) : ScalarCast .f64 (.signed target)
+  | f64ToUnsigned (target) : ScalarCast .f64 (.unsigned target)
 
 inductive IntegralScalar : ScalarTy → Prop where
   | signed (type) : IntegralScalar (.signed type)

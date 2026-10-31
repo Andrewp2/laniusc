@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Memory
+public import Lanius.IEEE
 
 @[expose] public section
 
@@ -335,7 +336,7 @@ def callSimple (world : State) (service : HostService) (arguments : List Value) 
           .returned (.unsigned .u32 (value % (2 ^ 32)))
             { world with secureU32Stream := rest }
   | .i32ToF32, [.signed .i32 value] =>
-      .returned (.f32Bits (Float32.ofInt value).toBits) world
+      .returned (.f32Bits (IEEE.F32.ofInt value)) world
   | .sleepMsI32, [.signed .i32 milliseconds] =>
       if milliseconds < 0 then .returned (i32Result (-1)) world
       else .returned (i32Result 0) (world.afterSleepMs milliseconds.toNat)
