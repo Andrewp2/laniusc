@@ -207,9 +207,9 @@ theorem step_get_of_mini_selfhost_Arity {prog : SrcProgram} {prims : Prims} {ix_
   simp only [src_get_of_mini_selfhost_Arity] at h
   faithful []
 
-theorem step_get_of_usize {prog : SrcProgram} {prims : Prims} {ix_get_of_usize ix_unbox_of_mini_selfhost_List_usize ix_minus : Nat} (fn : prog.funcs[ix_get_of_usize]? = some (src_get_of_usize ix_unbox_of_mini_selfhost_List_usize ix_minus ix_get_of_usize)) (np : prims.isPrim ix_get_of_usize = false)
-    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}
+theorem step_get_of_usize {prog : SrcProgram} {prims : Prims} {ix_get_of_usize ix_minus ix_unbox_of_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_get_of_usize]? = some (src_get_of_usize ix_minus ix_unbox_of_mini_selfhost_List_usize ix_get_of_usize)) (np : prims.isPrim ix_get_of_usize = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n)) {n : Nat}
     (ih_get_of_usize : Certified (Stmt_get_of_usize prog prims ix_get_of_usize n)) :
     Stmt_get_of_usize prog prims ix_get_of_usize (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1

@@ -119,9 +119,9 @@ theorem proof_shift_of {prog : SrcProgram} {prims : Prims} {ix_shift_of ix_unbox
   simp only [src_shift_of] at h
   faithful [Lanius.Mini.shiftOf]
 
-theorem step_shift_of_u64 {prog : SrcProgram} {prims : Prims} {ix_shift_of_u64 ix_plus ix_minus ix_times : Nat} (fn : prog.funcs[ix_shift_of_u64]? = some (src_shift_of_u64 ix_plus ix_minus ix_times ix_shift_of_u64)) (np : prims.isPrim ix_shift_of_u64 = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_shift_of_u64 {prog : SrcProgram} {prims : Prims} {ix_shift_of_u64 ix_minus ix_plus ix_times : Nat} (fn : prog.funcs[ix_shift_of_u64]? = some (src_shift_of_u64 ix_minus ix_plus ix_times ix_shift_of_u64)) (np : prims.isPrim ix_shift_of_u64 = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n)) {n : Nat}
     (ih_shift_of_u64 : Certified (Stmt_shift_of_u64 prog prims ix_shift_of_u64 n)) :
     Stmt_shift_of_u64 prog prims ix_shift_of_u64 (n + 1) := by

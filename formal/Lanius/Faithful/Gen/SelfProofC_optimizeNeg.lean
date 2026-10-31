@@ -4,8 +4,8 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_optimizeNeg
 public import Lanius.Faithful.Gen.SelfStmt3
+public import Lanius.Faithful.Gen.SelfStmtC_Stmt_kills
 public import Lanius.Faithful.Gen.SelfStmtC_declareProgram
-public import Lanius.Faithful.Gen.SelfStmtC_optKill
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeNeg
 import all Lanius.Faithful.Gen.SelfSrcC_optimizeNeg
 import all Lanius.Mini.Compiler.P.optimizeNeg

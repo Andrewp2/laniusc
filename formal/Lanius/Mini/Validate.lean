@@ -534,13 +534,78 @@ theorem mem_kill : ∀ {facts : List Fact} {index : Nat} {fact : Fact}, fact ∈
     · obtain ⟨a, b, c⟩ := mem_kill m
       exact ⟨List.mem_cons_of_mem _ a, b, c⟩
 
+theorem factDies_false {fact : Fact} {index : Nat} (h : factDies fact index = false) :
+    fact.slot ≠ index ∧ fact.value.mentions index = false := by
+  simp only [factDies, Bool.or_eq_false_iff, decide_eq_false_iff_not] at h
+  exact h
+
+theorem mem_noneDies : ∀ {facts : List Fact} {index : Nat} {fact : Fact}, noneDies facts index = true →
+    fact ∈ facts → fact.slot ≠ index ∧ fact.value.mentions index = false
+  | [], _, _, _, m => by simp at m
+  | first :: rest, index, fact, h, m => by
+    simp only [noneDies, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+    rcases List.mem_cons.mp m with same | m
+    · subst same; exact factDies_false h.1
+    · exact mem_noneDies h.2 m
+
+theorem mem_killTail {facts : List Fact} {index : Nat} {fact : Fact} (m : fact ∈ killTail facts index) :
+    fact ∈ facts ∧ fact.slot ≠ index ∧ fact.value.mentions index = false := by
+  unfold killTail at m
+  split at m
+  · rename_i none
+    exact ⟨m, mem_noneDies none m⟩
+  · exact mem_kill m
+
+/-- `killPrefix` keeps only facts that survive the write, whatever prefix length it is
+given: past the prefix, `killTail` checks the rest. -/
+theorem mem_killPrefix : ∀ {facts : List Fact} {index n : Nat} {fact : Fact}, fact ∈ killPrefix facts index n →
+    fact ∈ facts ∧ fact.slot ≠ index ∧ fact.value.mentions index = false
+  | [], index, n, fact, m => by
+    unfold killPrefix at m
+    split at m
+    · exact mem_killTail m
+    · simp at m
+  | first :: rest, index, n, fact, m => by
+    unfold killPrefix at m
+    split at m
+    · exact mem_killTail m
+    · simp only [killPrefixAt] at m
+      split at m
+      · obtain ⟨a, b, c⟩ := mem_killPrefix m
+        exact ⟨List.mem_cons_of_mem _ a, b, c⟩
+      · rename_i alive
+        rcases List.mem_cons.mp m with same | m
+        · subst same
+          exact ⟨List.mem_cons_self .., factDies_false (by simpa using alive)⟩
+        · obtain ⟨a, b, c⟩ := mem_killPrefix m
+          exact ⟨List.mem_cons_of_mem _ a, b, c⟩
+
 theorem kill_hold {env : Env} {facts : List Fact} (hold : Facts.Hold env facts) (index : Nat) (v : BitVec 64) :
-    Facts.Hold (env.set index v) (kill facts index) := by
+    Facts.Hold (env.set index v) (killShared facts index) := by
   intro fact m
-  obtain ⟨m, ne, fresh⟩ := mem_kill m
+  unfold killShared at m
+  obtain ⟨m, ne, fresh⟩ := mem_killPrefix m
   show (env.set index v) fact.slot = fact.value.eval (env.set index v)
   rw [Expr.eval_except (Env.Except.set_left v) _ fresh, ← hold fact m]
   simp [Env.set, ne]
+
+theorem mem_firstFacts : ∀ {facts : List Fact} {n : Nat} {fact : Fact}, fact ∈ firstFacts facts n → fact ∈ facts
+  | [], n, _, m => by
+    unfold firstFacts at m
+    split at m <;> simp at m
+  | first :: rest, n, fact, m => by
+    unfold firstFacts at m
+    split at m
+    · simp at m
+    · rcases List.mem_cons.mp m with same | m
+      · subst same; exact List.mem_cons_self ..
+      · exact List.mem_cons_of_mem _ (mem_firstFacts m)
+
+theorem mem_trimFacts {facts : List Fact} {fact : Fact} (m : fact ∈ trimFacts facts) : fact ∈ facts := by
+  unfold trimFacts at m
+  split at m
+  · exact mem_firstFacts m
+  · exact m
 
 theorem assigned_hold {env : Env} {facts : List Fact} (hold : Facts.Hold env facts) (index : Nat) (value : Expr) :
     Facts.Hold (env.set index (value.eval env)) (assigned facts index value) := by
@@ -555,7 +620,7 @@ theorem assigned_hold {env : Env} {facts : List Fact} (hold : Facts.Hold env fac
         (value.subst facts).eval (env.set index (value.eval env))
       rw [Expr.eval_except (Env.Except.set_left _) _ ok.2, Expr.subst_eval hold]
       simp [Env.set]
-    · exact kill_hold hold index _ fact m
+    · exact kill_hold hold index _ fact (mem_trimFacts m)
   · exact kill_hold hold index _
 
 /-- `factsAfter` holds after every run that ends normally. -/

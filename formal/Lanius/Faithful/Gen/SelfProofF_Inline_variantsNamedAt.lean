@@ -69,9 +69,9 @@ theorem proof_char_first {prog : SrcProgram} {prims : Prims} {ix_char_first ix_m
   simp only [src_char_first] at h
   faithful [Lanius.Mini.Inline.charFirst]
 
-theorem step_char_tail_at {prog : SrcProgram} {prims : Prims} {ix_char_tail_at ix_plus ix_minus ix_times ix_char_close ix_char_tail : Nat} (fn : prog.funcs[ix_char_tail_at]? = some (src_char_tail_at ix_plus ix_minus ix_times ix_char_close ix_char_tail)) (np : prims.isPrim ix_char_tail_at = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_char_tail_at {prog : SrcProgram} {prims : Prims} {ix_char_tail_at ix_minus ix_plus ix_times ix_char_close ix_char_tail : Nat} (fn : prog.funcs[ix_char_tail_at]? = some (src_char_tail_at ix_minus ix_plus ix_times ix_char_close ix_char_tail)) (np : prims.isPrim ix_char_tail_at = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
     (ext_char_close : Certified (∀ {n : Nat}, Stmt_char_close prog prims ix_char_close n)) {n : Nat}
     (ih_char_tail : Certified (Stmt_char_tail prog prims ix_char_tail n)) :
@@ -81,9 +81,9 @@ theorem step_char_tail_at {prog : SrcProgram} {prims : Prims} {ix_char_tail_at i
   simp only [src_char_tail_at] at h
   faithful [Lanius.Mini.Inline.charTailAt]
 
-theorem step_decimal_digit {prog : SrcProgram} {prims : Prims} {ix_decimal_digit ix_plus ix_minus ix_times ix_decimal : Nat} (fn : prog.funcs[ix_decimal_digit]? = some (src_decimal_digit ix_plus ix_minus ix_times ix_decimal)) (np : prims.isPrim ix_decimal_digit = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_decimal_digit {prog : SrcProgram} {prims : Prims} {ix_decimal_digit ix_minus ix_plus ix_times ix_decimal : Nat} (fn : prog.funcs[ix_decimal_digit]? = some (src_decimal_digit ix_minus ix_plus ix_times ix_decimal)) (np : prims.isPrim ix_decimal_digit = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n)) {n : Nat}
     (ih_decimal : Certified (Stmt_decimal prog prims ix_decimal n)) :
     Stmt_decimal_digit prog prims ix_decimal_digit (n + 1) := by
@@ -134,9 +134,9 @@ theorem step_variants_named_at {prog : SrcProgram} {prims : Prims} {ix_variants_
   simp only [src_variants_named_at] at h
   faithful [Lanius.Mini.Inline.variantsNamedAt]
 
-theorem step_wide_digit {prog : SrcProgram} {prims : Prims} {ix_wide_digit ix_plus ix_minus ix_times ix_wide_decimal : Nat} (fn : prog.funcs[ix_wide_digit]? = some (src_wide_digit ix_plus ix_minus ix_times ix_wide_decimal)) (np : prims.isPrim ix_wide_digit = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_wide_digit {prog : SrcProgram} {prims : Prims} {ix_wide_digit ix_minus ix_plus ix_times ix_wide_decimal : Nat} (fn : prog.funcs[ix_wide_digit]? = some (src_wide_digit ix_minus ix_plus ix_times ix_wide_decimal)) (np : prims.isPrim ix_wide_digit = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n)) {n : Nat}
     (ih_wide_decimal : Certified (Stmt_wide_decimal prog prims ix_wide_decimal n)) :
     Stmt_wide_digit prog prims ix_wide_digit (n + 1) := by

@@ -173,9 +173,9 @@ theorem step_let_arm_of {prog : SrcProgram} {prims : Prims} {ix_let_arm_of ix_mi
   simp only [src_let_arm_of] at h
   faithful [Lanius.Mini.letArmOf]
 
-theorem step_let_arms_of {prog : SrcProgram} {prims : Prims} {ix_let_arms_of ix_plus ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_let_arm_of ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Nat} (fn : prog.funcs[ix_let_arms_of]? = some (src_let_arms_of ix_plus ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_let_arms_of ix_let_arm_of ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy)) (np : prims.isPrim ix_let_arms_of = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_let_arms_of {prog : SrcProgram} {prims : Prims} {ix_let_arms_of ix_minus ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_let_arm_of ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Nat} (fn : prog.funcs[ix_let_arms_of]? = some (src_let_arms_of ix_minus ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_let_arms_of ix_let_arm_of ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy)) (np : prims.isPrim ix_let_arms_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy n)) {n : Nat}
     (ih_let_arms_of : Certified (Stmt_let_arms_of prog prims ix_let_arms_of n))
@@ -237,9 +237,9 @@ theorem step_match_arm_of {prog : SrcProgram} {prims : Prims} {ix_match_arm_of i
   simp only [src_match_arm_of] at h
   faithful [Lanius.Mini.matchArmOf]
 
-theorem step_match_arms_of {prog : SrcProgram} {prims : Prims} {ix_match_arms_of ix_plus ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_match_arm_of : Nat} (fn : prog.funcs[ix_match_arms_of]? = some (src_match_arms_of ix_plus ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_match_arms_of ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_match_arm_of)) (np : prims.isPrim ix_match_arms_of = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_match_arms_of {prog : SrcProgram} {prims : Prims} {ix_match_arms_of ix_minus ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_match_arm_of : Nat} (fn : prog.funcs[ix_match_arms_of]? = some (src_match_arms_of ix_minus ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_match_arms_of ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_match_arm_of)) (np : prims.isPrim ix_match_arms_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy n)) {n : Nat}
     (ih_match_arms_of : Certified (Stmt_match_arms_of prog prims ix_match_arms_of n))

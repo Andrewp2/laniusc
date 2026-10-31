@@ -14,10 +14,10 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::eval_cast -/
-def src_eval_cast (ix_eval_then : Nat) (ix_scalar_cast : Nat) : SrcFunc := { params := [{ id := 10, ty := ty9 }, { id := 23, ty := SrcType.uint (UintTy.usize) }, { id := 36, ty := ty175 }], ret := ty175, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 36)) ty175 ty175 [[179], []] [SrcEff.eCall ix_eval_then [SrcEff.ePure (SrcExpr.local 23), SrcEff.ePure (SrcExpr.local 179), SrcEff.eCall ix_scalar_cast [SrcEff.ePure (SrcExpr.local 10), SrcEff.eStruct ty172 [SrcEff.eVariant ty91 1 [SrcEff.ePure (SrcExpr.local 23)], SrcEff.ePure (SrcExpr.field 179 1)]]], SrcEff.eVariant ty175 1 []]) }
+def src_eval_cast (ix_eval_then : Nat) (ix_scalar_cast : Nat) : SrcFunc := { params := [{ id := 10, ty := ty9 }, { id := 23, ty := SrcType.uint (UintTy.usize) }, { id := 36, ty := ty176 }], ret := ty176, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 36)) ty176 ty176 [[179], []] [SrcEff.eCall ix_eval_then [SrcEff.ePure (SrcExpr.local 23), SrcEff.ePure (SrcExpr.local 179), SrcEff.eCall ix_scalar_cast [SrcEff.ePure (SrcExpr.local 10), SrcEff.eStruct ty173 [SrcEff.eVariant ty90 1 [SrcEff.ePure (SrcExpr.local 23)], SrcEff.ePure (SrcExpr.field 179 1)]]], SrcEff.eVariant ty176 1 []]) }
 
 /-- mini::selfhost::eval_not -/
-def src_eval_not (ix_eval_then : Nat) (ix_lower_not_typed : Nat) : SrcFunc := { params := [{ id := 9, ty := SrcType.uint (UintTy.usize) }, { id := 22, ty := ty175 }], ret := ty175, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 22)) ty175 ty175 [[165], []] [SrcEff.eCall ix_eval_then [SrcEff.ePure (SrcExpr.local 9), SrcEff.ePure (SrcExpr.local 165), SrcEff.eCall ix_lower_not_typed [SrcEff.eStruct ty172 [SrcEff.eVariant ty91 1 [SrcEff.ePure (SrcExpr.local 9)], SrcEff.ePure (SrcExpr.field 165 1)]]], SrcEff.eVariant ty175 1 []]) }
+def src_eval_not (ix_eval_then : Nat) (ix_lower_not_typed : Nat) : SrcFunc := { params := [{ id := 9, ty := SrcType.uint (UintTy.usize) }, { id := 22, ty := ty176 }], ret := ty176, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 22)) ty176 ty176 [[165], []] [SrcEff.eCall ix_eval_then [SrcEff.ePure (SrcExpr.local 9), SrcEff.ePure (SrcExpr.local 165), SrcEff.eCall ix_lower_not_typed [SrcEff.eStruct ty173 [SrcEff.eVariant ty90 1 [SrcEff.ePure (SrcExpr.local 9)], SrcEff.ePure (SrcExpr.field 165 1)]]], SrcEff.eVariant ty176 1 []]) }
 
 end
 

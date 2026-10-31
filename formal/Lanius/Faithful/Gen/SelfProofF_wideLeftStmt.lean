@@ -116,7 +116,7 @@ theorem proof_cons_root {prog : SrcProgram} {prims : Prims} {ix_cons_root ix_con
   simp only [src_cons_root] at h
   faithful [Lanius.Mini.consRoot]
 
-theorem step_files_fuel {prog : SrcProgram} {prims : Prims} {ix_files_fuel ix_length_of_usize ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_FileInput ix_times ix_length_of_mini_selfhost_Token : Nat} (fn : prog.funcs[ix_files_fuel]? = some (src_files_fuel ix_length_of_usize ix_plus ix_files_fuel ix_unbox_of_mini_selfhost_List_mini_selfhost_FileInput ix_times ix_length_of_mini_selfhost_Token)) (np : prims.isPrim ix_files_fuel = false)
+theorem step_files_fuel {prog : SrcProgram} {prims : Prims} {ix_files_fuel ix_length_of_usize ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_FileInput ix_times ix_length_of_mini_selfhost_Token : Nat} (fn : prog.funcs[ix_files_fuel]? = some (src_files_fuel ix_length_of_usize ix_files_fuel ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_FileInput ix_times ix_length_of_mini_selfhost_Token)) (np : prims.isPrim ix_files_fuel = false)
     (ext_length_of_usize : Certified (∀ {n : Nat}, Stmt_length_of_usize prog prims ix_length_of_usize n))
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_FileInput : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_FileInput prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_FileInput n))

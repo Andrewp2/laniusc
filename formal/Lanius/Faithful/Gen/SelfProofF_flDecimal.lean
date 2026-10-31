@@ -61,9 +61,9 @@ theorem step_fl_exp_digits {prog : SrcProgram} {prims : Prims} {ix_fl_exp_digits
   simp only [src_fl_exp_digits] at h
   faithful [Lanius.Mini.flExpDigits]
 
-theorem proof_fl_finish {prog : SrcProgram} {prims : Prims} {ix_fl_finish ix_plus ix_minus : Nat} (fn : prog.funcs[ix_fl_finish]? = some (src_fl_finish ix_plus ix_minus)) (np : prims.isPrim ix_fl_finish = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat} :
+theorem proof_fl_finish {prog : SrcProgram} {prims : Prims} {ix_fl_finish ix_minus ix_plus : Nat} (fn : prog.funcs[ix_fl_finish]? = some (src_fl_finish ix_minus ix_plus)) (np : prims.isPrim ix_fl_finish = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat} :
     Stmt_fl_finish prog prims ix_fl_finish n := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
   rcases n with _ | n

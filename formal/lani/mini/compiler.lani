@@ -1124,6 +1124,24 @@ pub fn link_from(entries: List<usize>, start: usize, codes: List<Code>) -> List<
     };
 }
 
+// The bytes of code followed by tail.
+pub fn encode_onto(place: Place, pc: usize, code: List<Instr>, tail: List<u8>) -> List<u8> {
+    return match (code) {
+        Nil -> tail,
+        Cons(i, rest) -> concat(i.encode(place, pc), encode_onto(place, plus(pc, i.size()), unbox(rest), tail)),
+    };
+}
+
+// link_from's bytes, each function's built in front of the rest instead of
+// concatenated onto it: concat copies its first list, and the heap of the
+// self-built verified compiler is never freed (roadmap F12).
+pub fn link_onto(entries: List<usize>, start: usize, codes: List<Code>) -> List<u8> {
+    return match (codes) {
+        Nil -> empty(),
+        Cons(code, rest) -> concat(prologue(code.slots), encode_onto(Place { body: plus(start, 24), slots: code.slots, entries: entries }, 0, code.instrs, link_onto(entries, plus(start, code.size()), unbox(rest)))),
+    };
+}
+
 // Machine code of a compiled program.
 pub struct Binary {
     codes: List<Code>,
@@ -1136,6 +1154,15 @@ pub fn image_limit() -> usize {
     return 1073741824;
 }
 
+// The size of functions laid out back to back: the image's length, found
+// without a walk over the image.
+pub fn linked_size(codes: List<Code>) -> usize {
+    return match (codes) {
+        Nil -> 0,
+        Cons(code, rest) -> plus(code.size(), linked_size(unbox(rest))),
+    };
+}
+
 pub fn compile_program(prog: Program) -> core::option::Option<Binary> {
     return match (compile_funcs(arities(prog.funcs), prog.funcs)) {
         None -> None,
@@ -1146,8 +1173,8 @@ pub fn compile_program(prog: Program) -> core::option::Option<Binary> {
 // extract: inline
 fn link(codes: List<Code>) -> core::option::Option<Binary> {
     let entries: List<usize> = layout(0, codes);
-    let image: List<u8> = link_from(entries, 0, codes);
-    if (image_limit() >= length(image)) {
+    let image: List<u8> = link_onto(entries, 0, codes);
+    if (image_limit() >= linked_size(codes)) {
         return Some(Binary { codes: codes, entries: entries, image: image });
     }
     return None;
@@ -6526,12 +6553,111 @@ fn kept(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
     return tail;
 }
 
+pub fn fact_dies(fact: Fact, index: usize) -> bool {
+    return (fact.slot == index) || fact.value.mentions(index);
+}
+
+pub fn none_dies(facts: List<Fact>, index: usize) -> bool {
+    return match (facts) {
+        Nil -> true,
+        Cons(fact, rest) -> !fact_dies(fact, index) && none_dies(unbox(rest), index),
+    };
+}
+
+// The facts themselves when none dies, else kill's list.
+pub fn kill_tail(facts: List<Fact>, index: usize) -> List<Fact> {
+    if (none_dies(facts, index)) {
+        return facts;
+    }
+    return kill(facts, index);
+}
+
+pub fn extent_after(dies: bool, k: usize, extent: usize) -> usize {
+    if (dies) {
+        return k;
+    }
+    return extent;
+}
+
+// How many of the facts, counted from the front, reach the last one that
+// dies (0 when none does); k facts come before these.
+pub fn dying_extent(facts: List<Fact>, index: usize, k: usize, extent: usize) -> usize {
+    return match (facts) {
+        Nil -> extent,
+        Cons(fact, rest) -> dying_extent(unbox(rest), index, plus(k, 1), extent_after(fact_dies(fact, index), plus(k, 1), extent)),
+    };
+}
+
+pub fn kill_prefix_at(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
+    if (fact_dies(fact, index)) {
+        return tail;
+    }
+    return cons(fact, tail);
+}
+
+// The first n facts filtered as kill does, followed by kill_tail of the rest.
+pub fn kill_prefix(facts: List<Fact>, index: usize, n: usize) -> List<Fact> {
+    if (n == 0) {
+        return kill_tail(facts, index);
+    }
+    return match (facts) {
+        Nil -> empty(),
+        Cons(fact, rest) -> kill_prefix_at(fact, index, kill_prefix(unbox(rest), index, minus(n, 1))),
+    };
+}
+
+// The facts that survive a write to slot index, in kill's order, sharing the
+// part of the list after the last fact that dies: the self-built verified
+// compiler's heap is never freed, and rebuilding the list on every write
+// cost gigabytes (roadmap F12). dying_extent only picks where the sharing
+// starts; kill_tail checks that nothing after it dies.
+pub fn kill_shared(facts: List<Fact>, index: usize) -> List<Fact> {
+    return kill_prefix(facts, index, dying_extent(facts, index, 0, 0));
+}
+
+// The first n facts.
+pub fn first_facts(facts: List<Fact>, n: usize) -> List<Fact> {
+    if (n == 0) {
+        return empty();
+    }
+    return match (facts) {
+        Nil -> empty(),
+        Cons(fact, rest) -> cons(fact, first_facts(unbox(rest), minus(n, 1))),
+    };
+}
+
+// The list has more than n facts.
+pub fn longer(facts: List<Fact>, n: usize) -> bool {
+    if (n == 0) {
+        return match (facts) {
+            Nil -> false,
+            Cons(fact, rest) -> true,
+        };
+    }
+    return match (facts) {
+        Nil -> false,
+        Cons(fact, rest) -> longer(unbox(rest), minus(n, 1)),
+    };
+}
+
+// A list past 31 facts is cut to its 15 newest, so a list holds at most 32
+// facts and finding one or killing some walks at most 32, and the cut copies
+// 15 facts once per 16 or more writes (an unbounded list made the self-built
+// verified compiler allocate gigabytes of facts on its own long functions;
+// roadmap F12).
+pub fn trim_facts(facts: List<Fact>) -> List<Fact> {
+    if (longer(facts, 31)) {
+        return first_facts(facts, 15);
+    }
+    return facts;
+}
+
 // The facts after index = value.
 pub fn assigned(facts: List<Fact>, index: usize, value: Expr) -> List<Fact> {
     let known: Expr = value.subst(facts);
-    let rest: List<Fact> = kill(facts, index);
+    let rest: List<Fact> = kill_shared(facts, index);
     if (known.is_atom() && !known.mentions(index)) {
-        return cons(Fact { slot: index, value: known }, rest);
+        return cons(Fact { slot: index, value: known }, trim_facts(rest));
     }
     return rest;
 }
@@ -6640,14 +6766,14 @@ impl Stmt {
             Stmt::Ret(v) -> empty(),
             Brk -> empty(),
             Cont -> empty(),
-            Alloc(target, sh, sz) -> kill(facts, target),
-            LoadByte(target, a) -> kill(facts, target),
+            Alloc(target, sh, sz) -> kill_shared(facts, target),
+            LoadByte(target, a) -> kill_shared(facts, target),
             StoreByte(a, v) -> facts,
-            LoadWord(w, target, a) -> kill(facts, target),
+            LoadWord(w, target, a) -> kill_shared(facts, target),
             StoreWord(w, a, v) -> facts,
-            Divide(w, o, target, l, r) -> kill(facts, target),
+            Divide(w, o, target, l, r) -> kill_shared(facts, target),
             Stmt::Sys(c, t, a) -> empty(),
-            Stmt::Frame(t, b) -> kill(facts, t),
+            Stmt::Frame(t, b) -> kill_shared(facts, t),
         };
     }
 
@@ -6881,84 +7007,6 @@ pub fn validate(original: Program, optimized: Program) -> bool {
 // or y is written; branches, loops and calls forget all of them), and drops
 // x = e when the optimized rest of the sequence writes x before reading it.
 
-pub fn fact_dies(fact: Fact, index: usize) -> bool {
-    return (fact.slot == index) || fact.value.mentions(index);
-}
-
-pub fn extent_after(dies: bool, k: usize, extent: usize) -> usize {
-    if (dies) {
-        return k;
-    }
-    return extent;
-}
-
-// How many of the facts, counted from the front, reach the last one that
-// dies (0 when none does); k facts come before these.
-pub fn dying_extent(facts: List<Fact>, index: usize, k: usize, extent: usize) -> usize {
-    return match (facts) {
-        Nil -> extent,
-        Cons(fact, rest) -> dying_extent(unbox(rest), index, plus(k, 1), extent_after(fact_dies(fact, index), plus(k, 1), extent)),
-    };
-}
-
-pub fn kill_prefix_at(fact: Fact, index: usize, tail: List<Fact>) -> List<Fact> {
-    if (fact_dies(fact, index)) {
-        return tail;
-    }
-    return cons(fact, tail);
-}
-
-// The first n facts filtered as kill does, followed by the rest unchanged.
-pub fn kill_prefix(facts: List<Fact>, index: usize, n: usize) -> List<Fact> {
-    if (n == 0) {
-        return facts;
-    }
-    return match (facts) {
-        Nil -> empty(),
-        Cons(fact, rest) -> kill_prefix_at(fact, index, kill_prefix(unbox(rest), index, minus(n, 1))),
-    };
-}
-
-// kill(facts, index), sharing the facts after the last one that dies.
-pub fn opt_kill(facts: List<Fact>, index: usize) -> List<Fact> {
-    return kill_prefix(facts, index, dying_extent(facts, index, 0, 0));
-}
-
-pub fn opt_assigned(facts: List<Fact>, index: usize, value: Expr) -> List<Fact> {
-    let known: Expr = value.subst(facts);
-    let rest: List<Fact> = opt_kill(facts, index);
-    if (known.is_atom() && !known.mentions(index)) {
-        return cons(Fact { slot: index, value: known }, rest);
-    }
-    return rest;
-}
-
-// The optimizer's copy of the validator's facts_after: the same facts, but a
-// write keeps the part of the list after the last fact it kills instead of
-// rebuilding it (the self-built compiler's heap is never freed, and the
-// validator's kill rebuilds the whole list on every write).
-pub fn opt_facts_after(s: Stmt, facts: List<Fact>) -> List<Fact> {
-    return match (s) {
-        Skip -> facts,
-        Assign(index, value) -> opt_assigned(facts, index, value),
-        Seq(first, second) -> opt_facts_after(unbox(second), opt_facts_after(unbox(first), facts)),
-        Ite(c, t, e) -> empty(),
-        Loop(c, b) -> empty(),
-        Stmt::Call(t, n, f, a) -> empty(),
-        Stmt::Ret(v) -> empty(),
-        Brk -> empty(),
-        Cont -> empty(),
-        Alloc(target, sh, sz) -> opt_kill(facts, target),
-        LoadByte(target, a) -> opt_kill(facts, target),
-        StoreByte(a, v) -> facts,
-        LoadWord(w, target, a) -> opt_kill(facts, target),
-        StoreWord(w, a, v) -> facts,
-        Divide(w, o, target, l, r) -> opt_kill(facts, target),
-        Stmt::Sys(c, t, a) -> empty(),
-        Stmt::Frame(t, b) -> opt_kill(facts, t),
-    };
-}
-
 impl Expr {
     pub fn literal(self) -> core::option::Option<u64> {
         return match (self) {
@@ -7156,7 +7204,7 @@ impl Stmt {
 // to a slot the optimized rest kills is dropped.
 // extract: inline
 fn optimize_sequence(first: Stmt, second: Stmt, facts: List<Fact>) -> Stmt {
-    let rest: Stmt = second.optimize(opt_facts_after(first, facts));
+    let rest: Stmt = second.optimize(first.facts_after(facts));
     if (first.dead_before(rest)) {
         return rest;
     }
@@ -7219,9 +7267,13 @@ pub fn compile_source(prog: SrcProgram) -> core::option::Option<Binary> {
 // ---------------------------------------------------------------- the driver's output
 
 // The words a driver writes for a program the front end read (or did not):
-// the entry count, the entries, the image length and the image's bytes, one
-// word each; none when the program is rejected (roadmap V1). `compile_words`
-// is the entry.
+// the entry count, the entries, the image length, then the image's bytes
+// packed four to a word, little-endian, the last word padded with zeros;
+// none when the program is rejected (roadmap V1). `compile_words` is the
+// entry. The image is packed in rounds of at most 4096 words, so no call
+// chain over it is deeper than one round plus the number of rounds: the
+// self-built compiler's own image is 15 MB, and a call per byte took
+// gigabytes of stack (roadmap F12).
 
 pub fn usize_words(xs: List<usize>) -> List<i32> {
     return match (xs) {
@@ -7230,17 +7282,75 @@ pub fn usize_words(xs: List<usize>) -> List<i32> {
     };
 }
 
-pub fn byte_words(xs: List<u8>) -> List<i32> {
+// Bytes a, b, c, d as one little-endian word.
+pub fn pack_word(a: u8, b: u8, c: u8, d: u8) -> i32 {
+    return (a as i32) + ((b as i32) * 256) + ((c as i32) * 65536) + ((d as i32) * 16777216);
+}
+
+// Packed words, the number of bytes they hold, and the bytes after them.
+pub struct Round {
+    words: List<i32>,
+    count: usize,
+    rest: List<u8>,
+}
+
+pub fn round_end() -> Round {
+    return Round { words: empty(), count: 0, rest: empty() };
+}
+
+// One more word, of k bytes, in front of a round.
+pub fn round_cons(word: i32, k: usize, after: Round) -> Round {
+    return Round { words: cons(word, after.words), count: plus(after.count, k), rest: after.rest };
+}
+
+// Up to n words of the bytes xs.
+pub fn pack_round(xs: List<u8>, n: usize) -> Round {
+    if (n == 0) {
+        return Round { words: empty(), count: 0, rest: xs };
+    }
     return match (xs) {
-        Nil -> empty(),
-        Cons(x, rest) -> cons(x as i32, byte_words(unbox(rest))),
+        Nil -> round_end(),
+        Cons(a, ra) -> match (unbox(ra)) {
+            Nil -> round_cons(pack_word(a, 0, 0, 0), 1, round_end()),
+            Cons(b, rb) -> match (unbox(rb)) {
+                Nil -> round_cons(pack_word(a, b, 0, 0), 2, round_end()),
+                Cons(c, rc) -> match (unbox(rc)) {
+                    Nil -> round_cons(pack_word(a, b, c, 0), 3, round_end()),
+                    Cons(d, rd) -> round_cons(pack_word(a, b, c, d), 4, pack_round(unbox(rd), minus(n, 1))),
+                },
+            },
+        },
     };
 }
 
+// Two rounds, one after the other.
+pub fn round_join(first: Round, second: Round) -> Round {
+    return Round { words: concat(first.words, second.words), count: plus(first.count, second.count), rest: second.rest };
+}
+
+// All the bytes xs packed: rounds of 4096 words while the fuel lasts, then
+// the rest in one round.
+pub fn pack_rounds(xs: List<u8>, fuel: usize) -> Round {
+    if (fuel == 0) {
+        return pack_round(xs, 4611686018427387904);
+    }
+    let round: Round = pack_round(xs, 4096);
+    return match (round.rest) {
+        Nil -> round,
+        Cons(x, more) -> round_join(round, pack_rounds(round.rest, minus(fuel, 1))),
+    };
+}
+
+// The words of a binary, from its entries and its packed image.
+pub fn image_words(entries: List<usize>, packed: Round) -> List<i32> {
+    return concat(cons(length(entries) as i32, usize_words(entries)), cons(packed.count as i32, packed.words));
+}
+
+// 2^20 rounds of 4096 words cover 16 GiB, past the image limit.
 pub fn binary_words(binary: core::option::Option<Binary>) -> core::option::Option<List<i32>> {
     return match (binary) {
         None -> None,
-        Some(b) -> Some(concat(cons(length(b.entries) as i32, usize_words(b.entries)), cons(length(b.image) as i32, byte_words(b.image)))),
+        Some(b) -> Some(image_words(b.entries, pack_rounds(b.image, 1048576))),
     };
 }
 

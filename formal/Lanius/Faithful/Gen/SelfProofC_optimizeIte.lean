@@ -11,7 +11,6 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_factOr
 public import Lanius.Faithful.Gen.SelfStmtC_Stmt_kills
 public import Lanius.Faithful.Gen.SelfStmtC_callAgrees
-public import Lanius.Faithful.Gen.SelfStmtC_optKill
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeIte
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeLeft
 public import Lanius.Faithful.Gen.SelfStmtC_substAll
