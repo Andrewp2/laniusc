@@ -1,0 +1,28 @@
+module app::main;
+
+// Integer literals with a base prefix: `0x` (hexadecimal, either case of
+// digit), `0o` (octal) and `0b` (binary), with `_` between digits; below
+// 2^31 they are i32 literals, from 2^31 typed by their context.
+fn small() -> i32 {
+    return 0x7f + 0o17 + 0b1010_0101 + 0xA_b;
+}
+
+fn wide() -> u64 {
+    let all: u64 = 0xffff_ffff_ffff_ffff;
+    let step: u64 = 0x9e3779b97f4a7c15;
+    return all - step;
+}
+
+fn top() -> u32 {
+    return 0x8000_0000;
+}
+
+fn main() -> i32 {
+    if (wide() != 7046029254386353130) {
+        return 1;
+    }
+    if (top() != 2147483648) {
+        return 2;
+    }
+    return small();
+}

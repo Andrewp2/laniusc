@@ -18,13 +18,13 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pSelfValue
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
+public import Lanius.Faithful.Gen.SelfStmtF_basedValue
 public import Lanius.Faithful.Gen.SelfStmtF_consTys
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_flExpFirst
 public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
@@ -38,11 +38,11 @@ public import Lanius.Faithful.Gen.SelfStmtF_typedLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_unitTy
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_wideOf
+import all Lanius.Mini.Frontend.P.basedValue
 import all Lanius.Mini.Frontend.P.flExpFirst
 import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.freshId
 import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.intLiteral
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.joinInsts
 import all Lanius.Mini.Frontend.P.noToken

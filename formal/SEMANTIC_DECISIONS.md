@@ -1161,3 +1161,27 @@ arms after it are read as before.
   directory (`--source-root`, more than once); the stdlib oracle's `--root
   DIR` adds such a root and makes its modules the targets, which is the
   full-tier gate step `extended`.
+
+## Call statements of any chain (decided 10-31, F11)
+
+A statement that is a postfix chain of calls and members ending in a call,
+such as `x.m(a).n();`, `f(x).m();` or `q.p.m();`, is read as the chain's
+value dropped (`ends_in_call`, `CallEnd`), as `f(x);` and `x.m(y);` were:
+the chain is read as the expression it is everywhere else, then
+discarded. A chain ending in `?`, a member or an index is not a call
+statement (`callEnd_noTry`).
+
+## Integer literals with a base prefix (decided 10-31, F11)
+
+`0x`, `0o` and `0b` with a lowercase letter, then a digit of that base,
+then digits and `_` (`int_literal`, `IntLiteral.based`), read as the
+number they spell: below 2^31 an i32 literal, from 2^31 to 2^64 the wide
+marker a decimal literal of that size gets, so its type comes from its
+context in the same way. A literal of 2^64 or more is not read (case
+reject_based_big). Hex digits may be either case. Decimal literals with
+`_` and uppercase prefixes (`0X`) are not read; no stdlib or extended
+file uses them. Before each multiplication the reader checks that one more
+digit stays below 2^64 (`based_limit`, and 1844674407370955161 for
+decimal digits): in Lean the result is the same, and the self-built
+verified compiler, whose u64 arithmetic traps on overflow, then rejects
+such a literal instead of trapping.

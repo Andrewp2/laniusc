@@ -172,15 +172,15 @@ theorem pure1641 : PureFunc prog prims outside src1641 = true :=
 theorem pure1642 : PureFunc prog prims outside src1642 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::int_in_range -/
+/-- mini::selfhost::decimal_literal -/
 theorem pure1643 : PureFunc prog prims outside src1643 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::wide_marker -/
+/-- mini::selfhost::int_prefixed -/
 theorem pure1644 : PureFunc prog prims outside src1644 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::wide_decimal -/
+/-- mini::selfhost::prefix_base -/
 theorem pure1645 : PureFunc prog prims outside src1645 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 

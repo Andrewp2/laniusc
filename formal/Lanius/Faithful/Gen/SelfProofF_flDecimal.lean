@@ -7,10 +7,10 @@ public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_charOpen
+public import Lanius.Faithful.Gen.SelfStmtF_basedValue
 public import Lanius.Faithful.Gen.SelfStmtF_flDecimal
 public import Lanius.Faithful.Gen.SelfStmtF_flNatHalf
 public import Lanius.Faithful.Gen.SelfStmtF_flRoundUp
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 import all Lanius.Faithful.Gen.SelfSrcF_flDecimal
 import all Lanius.Mini.Frontend.P.flDecimal
 

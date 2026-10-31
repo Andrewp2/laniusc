@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.digitValue
 import Lanius.Mini.Frontend.P.joinInsts
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.wideMarker
@@ -12,7 +13,56 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-def intLiteral (text : List Nat) : Option SrcExpr :=
+/-- Digits in base `base` after `0x`, `0o` or `0b`, with `_` between them skipped, below 2^64. -/
+def basedValue (base : Nat) (text : List Nat) (acc : Nat) : Option Nat :=
+  if 18446744073709551615 < acc then
+    none
+  else
+    match text with
+    | [] => some acc
+    | b :: rest =>
+      if b = 95 then
+        basedValue base rest acc
+      else
+        if decide (digitValue b < base) && decide (acc ≤ basedLimit base) then
+          basedValue base rest (acc * base + digitValue b)
+        else
+          none
+
+/-- The base a prefix letter names: x 16, o 8, b 2 (0 for none). -/
+def prefixBase (letter : Nat) : Nat :=
+  if letter = 120 then
+    16
+  else
+    if letter = 111 then
+      8
+    else
+      if letter = 98 then
+        2
+      else
+        0
+
+def basedSmall (v : Option Nat) (first : Bool) : Option SrcExpr :=
+  if first then
+    match v with
+    | none => none
+    | some n =>
+      match (if n ≤ 2147483647 then
+         some (SrcExpr.int (BitVec.ofNat 32 n))
+       else
+         none) with
+      | none => wideMarker (some n)
+      | some e => some e
+  else
+    none
+
+/-- `0x...`, `0o...` or `0b...` with a digit right after the prefix. -/
+def basedLiteral (base : Nat) (rest : List Nat) : Option SrcExpr :=
+  match rest with
+  | [] => none
+  | d :: more => basedSmall (basedValue base rest 0) (decide (digitValue d < base))
+
+def decimalLiteral (text : List Nat) : Option SrcExpr :=
   match decimal text 0 with
   | none => wideMarker (wideDecimal text 0)
   | some v =>
@@ -20,6 +70,21 @@ def intLiteral (text : List Nat) : Option SrcExpr :=
       some (SrcExpr.int (BitVec.ofNat 32 v))
     else
       none
+
+def intPrefixed (text : List Nat) (prefixed : Bool) (base : Nat) (digits : List Nat) : Option SrcExpr :=
+  if prefixed then
+    basedLiteral base digits
+  else
+    decimalLiteral text
+
+/-- A literal with a base prefix, else a decimal one. -/
+def intLiteral (text : List Nat) : Option SrcExpr :=
+  match text with
+  | [] => none
+  | z :: rest =>
+    match rest with
+    | [] => decimalLiteral text
+    | letter :: digits => intPrefixed text (decide (z = 48) && decide (0 < prefixBase letter)) (prefixBase letter) digits
 
 /-- The closing quote, last. -/
 def charClose (code : Nat) (rest : List Nat) : Option SrcExpr :=

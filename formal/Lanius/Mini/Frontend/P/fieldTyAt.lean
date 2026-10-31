@@ -104,7 +104,29 @@ def assertArg (fuel : Nat) (env : FrontEnv) (scope : List Local) (args : Option 
       | [] => assertOf (effOf fuel env scope (some Ty.tyBool) c)
       | d :: more => none
 
-/-- A call statement: `alloc::allocator::dealloc(pointer, size, align);`, `assert(c);`, or a call whose value (if any) is discarded. -/
+/-- A call statement: `alloc::allocator::dealloc(pointer, size, align);`, `assert(c);`, or a call whose value (if any) is discarded. A postfix tail part: a call `(args)`, a member `.name`, the end. -/
+def isCallPart (t : CTree) : Bool :=
+  decide (nodeProd t = (161))
+
+def isMemberPart (t : CTree) : Bool :=
+  decide (nodeProd t = (163))
+
+def isTailEnd (t : CTree) : Bool :=
+  decide (nodeProd t = (164))
+
+/-- A postfix tail of calls and members whose last part is a call, as in `f(x);`, `x.m(y);` or `x.f.m(y).n();`: a statement whose value is dropped. -/
+def endsInCall (fuel : Nat) (t : CTree) : Bool :=
+  if fuel = 0 then
+    false
+  else
+    if isCallPart t && isTailEnd (kid t 3) then
+      true
+    else
+      if isCallPart t || isMemberPart t then
+        endsInCall (fuel - 1) (kid t 3)
+      else
+        false
+
 def callStmt (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) : Option MStmt :=
   let path : CTree := kid (kid pf 0) 0
   if isPathCall pf && isPath (pathSpellings fuel (kid path 0) (kid path 1)) deallocPath then
@@ -113,7 +135,7 @@ def callStmt (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) : O
     if isPathCall pf && isPath (pathSpellings fuel (kid path 0) (kid path 1)) [textAssert] then
       assertArg fuel env scope (listItems fuel (kid (kid pf 1) 1))
     else
-      if isPathCall pf || isMethodForm pf then
+      if endsInCall fuel (kid pf 1) then
         discardOf (effPostfix fuel env scope none pf)
       else
         if isTryCall pf then

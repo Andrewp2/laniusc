@@ -92,20 +92,20 @@ theorem proof_assign_target {prog : SrcProgram} {prims : Prims} {ix_assign_targe
   simp only [src_assign_target] at h
   faithful [Lanius.Mini.assignTarget]
 
-theorem proof_call_stmt {prog : SrcProgram} {prims : Prims} {ix_call_stmt ix_list_items ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_eff_postfix ix_is_path_call ix_is_method_form ix_is_path ix_dealloc_path ix_free_of ix_args_of ix_text_assert ix_assert_arg ix_discard_of ix_is_try_call ix_try_stmt ix_try_call_of : Nat} (fn : prog.funcs[ix_call_stmt]? = some (src_call_stmt ix_list_items ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_eff_postfix ix_is_path_call ix_is_method_form ix_is_path ix_dealloc_path ix_free_of ix_args_of ix_text_assert ix_assert_arg ix_discard_of ix_is_try_call ix_try_stmt ix_try_call_of)) (np : prims.isPrim ix_call_stmt = false)
+theorem proof_call_stmt {prog : SrcProgram} {prims : Prims} {ix_call_stmt ix_list_items ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_eff_postfix ix_is_path_call ix_is_path ix_dealloc_path ix_free_of ix_args_of ix_text_assert ix_assert_arg ix_ends_in_call ix_discard_of ix_is_try_call ix_try_stmt ix_try_call_of : Nat} (fn : prog.funcs[ix_call_stmt]? = some (src_call_stmt ix_list_items ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_eff_postfix ix_is_path_call ix_is_path ix_dealloc_path ix_free_of ix_args_of ix_text_assert ix_assert_arg ix_ends_in_call ix_discard_of ix_is_try_call ix_try_stmt ix_try_call_of)) (np : prims.isPrim ix_call_stmt = false)
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
     (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))
     (ext_eff_postfix : Certified (∀ {n : Nat}, Stmt_eff_postfix prog prims ix_eff_postfix n))
     (ext_is_path_call : Certified (∀ {n : Nat}, Stmt_is_path_call prog prims ix_is_path_call n))
-    (ext_is_method_form : Certified (∀ {n : Nat}, Stmt_is_method_form prog prims ix_is_method_form n))
     (ext_is_path : Certified (∀ {n : Nat}, Stmt_is_path prog prims ix_is_path n))
     (ext_dealloc_path : Certified (∀ {n : Nat}, Stmt_dealloc_path prog prims ix_dealloc_path n))
     (ext_free_of : Certified (∀ {n : Nat}, Stmt_free_of prog prims ix_free_of n))
     (ext_args_of : Certified (∀ {n : Nat}, Stmt_args_of prog prims ix_args_of n))
     (ext_text_assert : Certified (∀ {n : Nat}, Stmt_text_assert prog prims ix_text_assert n))
     (ext_assert_arg : Certified (∀ {n : Nat}, Stmt_assert_arg prog prims ix_assert_arg n))
+    (ext_ends_in_call : Certified (∀ {n : Nat}, Stmt_ends_in_call prog prims ix_ends_in_call n))
     (ext_discard_of : Certified (∀ {n : Nat}, Stmt_discard_of prog prims ix_discard_of n))
     (ext_is_try_call : Certified (∀ {n : Nat}, Stmt_is_try_call prog prims ix_is_try_call n))
     (ext_try_stmt : Certified (∀ {n : Nat}, Stmt_try_stmt prog prims ix_try_stmt n))
@@ -173,6 +173,19 @@ theorem proof_discard_of {prog : SrcProgram} {prims : Prims} {ix_discard_of : Na
   simp only [src_discard_of] at h
   faithful [Lanius.Mini.discardOf]
 
+theorem step_ends_in_call {prog : SrcProgram} {prims : Prims} {ix_ends_in_call ix_minus ix_kid ix_is_call_part ix_is_tail_end ix_is_member_part : Nat} (fn : prog.funcs[ix_ends_in_call]? = some (src_ends_in_call ix_minus ix_kid ix_ends_in_call ix_is_call_part ix_is_tail_end ix_is_member_part)) (np : prims.isPrim ix_ends_in_call = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_is_call_part : Certified (∀ {n : Nat}, Stmt_is_call_part prog prims ix_is_call_part n))
+    (ext_is_tail_end : Certified (∀ {n : Nat}, Stmt_is_tail_end prog prims ix_is_tail_end n))
+    (ext_is_member_part : Certified (∀ {n : Nat}, Stmt_is_member_part prog prims ix_is_member_part n)) {n : Nat}
+    (ih_ends_in_call : Certified (Stmt_ends_in_call prog prims ix_ends_in_call n)) :
+    Stmt_ends_in_call prog prims ix_ends_in_call (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_ends_in_call] at h
+  faithful [Lanius.Mini.endsInCall]
+
 theorem proof_field_ty_at {prog : SrcProgram} {prims : Prims} {ix_field_ty_at ix_struct_field_tys ix_get_of_mini_selfhost_Ty : Nat} (fn : prog.funcs[ix_field_ty_at]? = some (src_field_ty_at ix_struct_field_tys ix_get_of_mini_selfhost_Ty)) (np : prims.isPrim ix_field_ty_at = false)
     (ext_struct_field_tys : Certified (∀ {n : Nat}, Stmt_struct_field_tys prog prims ix_struct_field_tys n))
     (ext_get_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_Ty prog prims ix_get_of_mini_selfhost_Ty n)) {n : Nat} :
@@ -204,6 +217,39 @@ theorem proof_free_shifted {prog : SrcProgram} {prims : Prims} {ix_free_shifted 
   rw [pcall_succ np fn] at h
   simp only [src_free_shifted] at h
   faithful [Lanius.Mini.freeShifted]
+
+theorem proof_is_call_part {prog : SrcProgram} {prims : Prims} {ix_is_call_part ix_node_prod ix_p_postfix_call : Nat} (fn : prog.funcs[ix_is_call_part]? = some (src_is_call_part ix_node_prod ix_p_postfix_call)) (np : prims.isPrim ix_is_call_part = false)
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_p_postfix_call : Certified (∀ {n : Nat}, Stmt_p_postfix_call prog prims ix_p_postfix_call n)) {n : Nat} :
+    Stmt_is_call_part prog prims ix_is_call_part n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_call_part] at h
+  faithful [Lanius.Mini.isCallPart]
+
+theorem proof_is_member_part {prog : SrcProgram} {prims : Prims} {ix_is_member_part ix_node_prod ix_p_postfix_member : Nat} (fn : prog.funcs[ix_is_member_part]? = some (src_is_member_part ix_node_prod ix_p_postfix_member)) (np : prims.isPrim ix_is_member_part = false)
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_p_postfix_member : Certified (∀ {n : Nat}, Stmt_p_postfix_member prog prims ix_p_postfix_member n)) {n : Nat} :
+    Stmt_is_member_part prog prims ix_is_member_part n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_member_part] at h
+  faithful [Lanius.Mini.isMemberPart]
+
+theorem proof_is_tail_end {prog : SrcProgram} {prims : Prims} {ix_is_tail_end ix_node_prod ix_p_postfix_end : Nat} (fn : prog.funcs[ix_is_tail_end]? = some (src_is_tail_end ix_node_prod ix_p_postfix_end)) (np : prims.isPrim ix_is_tail_end = false)
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n)) {n : Nat} :
+    Stmt_is_tail_end prog prims ix_is_tail_end n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_tail_end] at h
+  faithful [Lanius.Mini.isTailEnd]
 
 theorem proof_set_field_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_field_or_eval ix_eff_of ix_field_index ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt : Nat} (fn : prog.funcs[ix_set_field_or_eval]? = some (src_set_field_or_eval ix_eff_of ix_field_index ix_checked_stmt ix_has_ty ix_field_ty_at ix_field_eval_stmt)) (np : prims.isPrim ix_set_field_or_eval = false)
     (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n))

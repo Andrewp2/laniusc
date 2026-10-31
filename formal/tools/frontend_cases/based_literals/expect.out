@@ -1,0 +1,4 @@
+{ params := [], ret := .i32, body := (.return (.apply .plus (.apply .plus (.apply .plus (.int 127) (.int 15)) (.int 165)) (.int 171))) }
+{ params := [], ret := (.uint .uint64), body := (.let 0 (.uint .uint64) (.unsigned .uint64 18446744073709551615) (.let 1 (.uint .uint64) (.unsigned .uint64 11400714819323198485) (.return (.apply .minus (.local 0) (.local 1))))) }
+{ params := [], ret := (.uint .uint32), body := (.return (.unsigned .uint32 2147483648)) }
+{ params := [], ret := .i32, body := (.then (.ifEval (.eApply .notEqual (.eCall 1 []) (.ePure (.unsigned .uint64 7046029254386353130))) (.return (.int 1)) .nop) (.then (.ifEval (.eApply .notEqual (.eCall 2 []) (.ePure (.unsigned .uint32 2147483648))) (.return (.int 2)) .nop) (.returnEval (.eCall 0 [])))) }

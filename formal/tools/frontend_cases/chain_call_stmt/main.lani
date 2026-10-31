@@ -1,0 +1,40 @@
+module app::main;
+
+// A statement that is a chain of calls and members ending in a call drops
+// the value of its last call: `x.m(a).n();`, `f(x).m();`, `x.f.m();`.
+struct P { x: i32, y: i32 }
+
+struct Q { p: P, k: i32 }
+
+impl P {
+    fn sum(self) -> i32 {
+        return self.x + self.y;
+    }
+
+    fn moved(self, d: i32) -> P {
+        return P { x: self.x + d, y: self.y };
+    }
+
+    fn check(self) -> bool {
+        assert(self.x > 0);
+        return true;
+    }
+}
+
+fn mk(n: i32) -> P {
+    return P { x: n, y: 2 };
+}
+
+fn run(n: i32) -> i32 {
+    let p: P = mk(n);
+    let q: Q = Q { p: p, k: 3 };
+    p.moved(1).sum();
+    mk(n).moved(2).check();
+    app::main::mk(n).check();
+    q.p.moved(4).check();
+    return p.sum() + q.k;
+}
+
+fn main() -> i32 {
+    return run(1);
+}

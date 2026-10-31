@@ -20,21 +20,9 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-abbrev Stmt_char_end (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 25 RepNat) x2 v2 →
-    (RepOption 226 RepSrcExpr) (Lanius.Mini.Inline.charEnd x0 x1 x2) w
-
-abbrev Stmt_char_escape (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
-    (RepOption 226 RepSrcExpr) (Lanius.Mini.Inline.charEscape x0) w
-
-abbrev Stmt_char_first (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 →
-    (RepOption 226 RepSrcExpr) (Lanius.Mini.Inline.charFirst x0 x1) w
-
-abbrev Stmt_char_tail_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Nat} {x2 : Nat} {x3 : Nat} {x4 : Nat} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepNat x4 v4 → RepNat x5 v5 →
-    (RepOption 226 RepSrcExpr) (Lanius.Mini.Inline.charTailAt x0 x1 x2 x3 x4 x5) w
+abbrev Stmt_based_digit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 25 RepNat) x2 v2 → RepNat x3 v3 →
+    (RepOption 204 RepNat) (Lanius.Mini.Inline.basedDigit x0 x1 x2 x3) w
 
 abbrev Stmt_decimal_digit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 →

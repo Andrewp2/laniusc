@@ -87,25 +87,87 @@ theorem wideDecimal_sound : ∀ (text : List Nat) (acc n : Nat), wideDecimal tex
     · rw [if_pos big] at h; cases h
     · rw [if_neg big] at h
       simp only at h
-      by_cases dig : 48 ≤ b ∧ b ≤ 57
-      · rw [if_pos (by simpa using dig)] at h
+      by_cases dig : 48 ≤ b ∧ b ≤ 57 ∧ acc ≤ 1844674407370955161
+      · rw [if_pos (by simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc]; exact dig)] at h
         obtain ⟨ds, rfl, le⟩ := wideDecimal_sound rest _ n h
         exact ⟨fun x mem => by
           rcases List.mem_cons.1 mem with rfl | mem
-          · exact dig
+          · exact ⟨dig.1, dig.2.1⟩
           · exact ds x mem, rfl, le⟩
-      · rw [if_neg (by simpa using dig)] at h; cases h
+      · rw [if_neg (by simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc]; exact dig)] at h; cases h
+
+/-- Digits of base `base` (`digitValue`), with `_` between them. -/
+def BasedDigits (base : Nat) (text : List Nat) : Prop := ∀ b ∈ text, b = 95 ∨ digitValue b < base
+
+/-- Their value read after `acc`, each `_` skipped. -/
+def basedFrom (base acc : Nat) (text : List Nat) : Nat :=
+  text.foldl (fun a b => if b = 95 then a else a * base + digitValue b) acc
+
+theorem basedFrom_ge (base : Nat) (pos : 0 < base) : ∀ (acc : Nat) (text : List Nat), acc ≤ basedFrom base acc text
+  | _, [] => Nat.le_refl _
+  | acc, b :: rest => by
+    by_cases u : b = 95
+    · have e : basedFrom base acc (b :: rest) = basedFrom base acc rest := by simp [basedFrom, u]
+      rw [e]; exact basedFrom_ge base pos acc rest
+    · have e : basedFrom base acc (b :: rest) = basedFrom base (acc * base + digitValue b) rest := by
+        simp [basedFrom, u]
+      rw [e]
+      exact Nat.le_trans (Nat.le_trans (Nat.le_mul_of_pos_right acc pos) (Nat.le_add_right _ _))
+        (basedFrom_ge base pos _ rest)
+
+theorem basedValue_sound (base : Nat) : ∀ (text : List Nat) (acc n : Nat), basedValue base text acc = some n →
+    BasedDigits base text ∧ n = basedFrom base acc text ∧ n ≤ 18446744073709551615
+  | [], acc, n, h => by
+    rw [basedValue.eq_def] at h
+    by_cases big : 18446744073709551615 < acc
+    · rw [if_pos big] at h; cases h
+    · rw [if_neg big] at h
+      cases h
+      exact ⟨by simp [BasedDigits], rfl, by omega⟩
+  | b :: rest, acc, n, h => by
+    rw [basedValue.eq_def] at h
+    by_cases big : 18446744073709551615 < acc
+    · rw [if_pos big] at h; cases h
+    · rw [if_neg big] at h
+      simp only at h
+      by_cases u : b = 95
+      · rw [if_pos u] at h
+        obtain ⟨ds, rfl, le⟩ := basedValue_sound base rest acc n h
+        refine ⟨fun x mem => ?_, by simp [basedFrom, u], le⟩
+        rcases List.mem_cons.1 mem with rfl | mem
+        · exact .inl u
+        · exact ds x mem
+      · rw [if_neg u] at h
+        by_cases dig : digitValue b < base ∧ acc ≤ basedLimit base
+        · rw [if_pos (by simp only [Bool.and_eq_true, decide_eq_true_eq]; exact dig)] at h
+          obtain ⟨ds, rfl, le⟩ := basedValue_sound base rest _ n h
+          refine ⟨fun x mem => ?_, by simp [basedFrom, u], le⟩
+          rcases List.mem_cons.1 mem with rfl | mem
+          · exact .inr dig.1
+          · exact ds x mem
+        · rw [if_neg (by simp only [Bool.and_eq_true, decide_eq_true_eq]; exact dig)] at h; cases h
 
 /-- An integer literal: below 2^31 it is an `i32` literal; from 2^31 to
 2^64 it is the wide marker, `Cast(Unit, Unsigned(u64, n))`, which only a
-constant's or a typed context's literal pass gives a type. -/
+constant's or a typed context's literal pass gives a type. It is decimal,
+or `0x`, `0o` or `0b` (`prefixBase`) and a digit of that base, then
+digits and `_`. -/
 inductive IntLiteral (text : List Nat) : SrcExpr → Prop
   | small : Digits text → digitsValue text < 2 ^ 31 → IntLiteral text (.int (BitVec.ofNat 32 (digitsValue text)))
   | wide : Digits text → 2 ^ 31 ≤ digitsValue text → digitsValue text < 2 ^ 64 →
       IntLiteral text (.cast .unit (.unsigned .uint64 (BitVec.ofNat 64 (digitsValue text))))
+  | based {letter d : Nat} {digits : List Nat} : text = 48 :: letter :: d :: digits → 0 < prefixBase letter →
+      digitValue d < prefixBase letter → BasedDigits (prefixBase letter) (d :: digits) →
+      basedFrom (prefixBase letter) 0 (d :: digits) < 2 ^ 31 →
+      IntLiteral text (.int (BitVec.ofNat 32 (basedFrom (prefixBase letter) 0 (d :: digits))))
+  | basedWide {letter d : Nat} {digits : List Nat} : text = 48 :: letter :: d :: digits → 0 < prefixBase letter →
+      digitValue d < prefixBase letter → BasedDigits (prefixBase letter) (d :: digits) →
+      2 ^ 31 ≤ basedFrom (prefixBase letter) 0 (d :: digits) → basedFrom (prefixBase letter) 0 (d :: digits) < 2 ^ 64 →
+      IntLiteral text (.cast .unit (.unsigned .uint64 (BitVec.ofNat 64 (basedFrom (prefixBase letter) 0 (d :: digits)))))
 
-theorem intLiteral_sound {text : List Nat} {e : SrcExpr} (h : intLiteral text = some e) : IntLiteral text e := by
-  unfold intLiteral at h
+theorem decimalLiteral_sound {text : List Nat} {e : SrcExpr} (h : decimalLiteral text = some e) :
+    IntLiteral text e := by
+  unfold decimalLiteral at h
   cases hd : decimal text 0 with
   | some v =>
     rw [hd] at h
@@ -128,6 +190,44 @@ theorem intLiteral_sound {text : List Nat} {e : SrcExpr} (h : intLiteral text = 
       intro lt
       rw [decimal_complete text 0 ds (by unfold digitsValue at lt; omega)] at hd
       cases hd
+
+theorem intLiteral_sound {text : List Nat} {e : SrcExpr} (h : intLiteral text = some e) : IntLiteral text e := by
+  unfold intLiteral at h
+  match text, h with
+  | [], h => simp at h
+  | [z], h => exact decimalLiteral_sound h
+  | z :: letter :: digits, h =>
+    simp only at h
+    unfold intPrefixed at h
+    by_cases pre : z = 48 ∧ 0 < prefixBase letter
+    · rw [if_pos (by simpa using pre)] at h
+      obtain ⟨rfl, pos⟩ := pre
+      unfold basedLiteral at h
+      match digits, h with
+      | [], h => simp at h
+      | d :: more, h =>
+        simp only at h
+        unfold basedSmall at h
+        by_cases first : digitValue d < prefixBase letter
+        · rw [if_pos (by simpa using first)] at h
+          cases hv : basedValue (prefixBase letter) (d :: more) 0 with
+          | none => rw [hv] at h; cases h
+          | some n =>
+            rw [hv] at h
+            obtain ⟨ds, rfl, le⟩ := basedValue_sound _ _ _ _ hv
+            simp only at h
+            by_cases small : basedFrom (prefixBase letter) 0 (d :: more) ≤ 2147483647
+            · rw [if_pos small] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              exact .based rfl pos first ds (by omega)
+            · rw [if_neg small] at h
+              simp only [wideMarker, Option.some.injEq] at h
+              subst h
+              exact .basedWide rfl pos first ds (by omega) (by omega)
+        · rw [if_neg (by simpa using first)] at h; cases h
+    · rw [if_neg (by simpa using pre)] at h
+      exact decimalLiteral_sound h
 
 /-! ## Char literals -/
 

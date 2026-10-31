@@ -52,6 +52,10 @@ abbrev Stmt_discard_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 249 RepMEff) x0 v0 →
     (RepOption 244 RepMStmt) (Lanius.Mini.discardOf x0) w
 
+abbrev Stmt_ends_in_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepCTree x1 v1 →
+    RepBool (Lanius.Mini.endsInCall x0 x1) w
+
 abbrev Stmt_field_ty_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Ty} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepTy x2 v2 → RepNat x3 v3 →
     (RepOption 206 RepTy) (Lanius.Mini.fieldTyAt x0 x1 x2 x3) w
@@ -63,6 +67,18 @@ abbrev Stmt_free_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 abbrev Stmt_free_shifted (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.SrcExpr} {x2 : Option Nat} {x3 : List Lanius.Mini.SrcExpr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcExpr x0 v0 → RepSrcExpr x1 v1 → (RepOption 204 RepNat) x2 v2 → (RepList 21 RepSrcExpr) x3 v3 →
     (RepOption 244 RepMStmt) (Lanius.Mini.freeShifted x0 x1 x2 x3) w
+
+abbrev Stmt_is_call_part (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
+    RepBool (Lanius.Mini.isCallPart x0) w
+
+abbrev Stmt_is_member_part (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
+    RepBool (Lanius.Mini.isMemberPart x0) w
+
+abbrev Stmt_is_tail_end (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
+    RepBool (Lanius.Mini.isTailEnd x0) w
 
 abbrev Stmt_set_field_or_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.Local} {x4 : List Nat} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 230 RepLocal) x2 v2 → RepLocal x3 v3 → (RepList 25 RepNat) x4 v4 → RepCTree x5 v5 →

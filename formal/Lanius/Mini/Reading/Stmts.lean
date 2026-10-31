@@ -611,6 +611,39 @@ theorem compoundOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {tar
               (effOf_sound hx) hy'
   cases h
 
+/-- A postfix tail of calls and members whose last part is a call
+(`endsInCall`). -/
+inductive CallEnd : CTree → Prop
+  | last {t : CTree} : nodeProd t = pPostfixCall → nodeProd (kid t 3) = pPostfixEnd → CallEnd t
+  | call {t : CTree} : nodeProd t = pPostfixCall → CallEnd (kid t 3) → CallEnd t
+  | member {t : CTree} : nodeProd t = pPostfixMember → CallEnd (kid t 3) → CallEnd t
+
+theorem endsInCall_sound : ∀ {fuel : Nat} {t : CTree}, endsInCall fuel t = true → CallEnd t
+  | 0, _, h => by simp [endsInCall] at h
+  | fuel + 1, t, h => by
+    rw [endsInCall] at h
+    simp only [Nat.add_one_ne_zero, if_false] at h
+    by_cases last : isCallPart t = true ∧ isTailEnd (kid t 3) = true
+    · simp only [isCallPart, isTailEnd, decide_eq_true_eq] at last
+      exact .last last.1 last.2
+    · rw [if_neg (by simp only [Bool.and_eq_true]; exact last)] at h
+      by_cases pc : isCallPart t = true
+      · rw [if_pos (by simp [pc])] at h
+        simp only [isCallPart, decide_eq_true_eq] at pc
+        exact .call pc (endsInCall_sound h)
+      · by_cases pm : isMemberPart t = true
+        · rw [if_pos (by simp [pm])] at h
+          simp only [isMemberPart, decide_eq_true_eq] at pm
+          exact .member pm (endsInCall_sound h)
+        · rw [if_neg (by simp [pc, pm])] at h
+          cases h
+
+theorem callEnd_prod {t : CTree} (c : CallEnd t) : nodeProd t = pPostfixCall ∨ nodeProd t = pPostfixMember := by
+  cases c with
+  | last pc _ => exact .inl pc
+  | call pc _ => exact .inl pc
+  | member pm _ => exact .inr pm
+
 /-- A call statement: `dealloc(pointer, size, align)`, `assert(c)`, or a
 call whose value is discarded. -/
 inductive CallStmtR (env : FrontEnv) (scope : List Local) (pf : CTree) : MStmt → Prop
@@ -621,7 +654,7 @@ inductive CallStmtR (env : FrontEnv) (scope : List Local) (pf : CTree) : MStmt �
   | assert {c : CTree} {x : MEff} : PathCallForm pf →
       PathSpellings (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) [textAssert] →
       Items (kid (kid pf 1) 1) [c] → EffR env scope (some .tyBool) c x → CallStmtR env scope pf (.mAssert x)
-  | discard {x : MEff} : (PathCallForm pf ∨ MethodForm pf) → EffR env scope none pf x →
+  | discard {x : MEff} : CallEnd (kid pf 1) → EffR env scope none pf x →
       CallStmtR env scope pf (.mDiscard x)
   | try {tr : Tried} : TryCallR env scope pf tr → CallStmtR env scope pf (tryRest tr .mNop)
 
@@ -678,17 +711,13 @@ theorem callStmt_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {pf : 
             (effOf_sound he)
   split at h
   · rename_i _ _ c
-    simp only [Bool.or_eq_true] at c
     cases he : effPostfix fuel env scope none pf with
     | none => rw [he] at h; simp [discardOf] at h
     | some x =>
       rw [he] at h
       simp only [discardOf, Option.some.injEq] at h
       subst h
-      refine .discard ?_ (effPostfix_sound pp he)
-      rcases c with c | c
-      · exact .inl (isPathCall_sound c)
-      · exact .inr (isMethodForm_sound c)
+      exact .discard (endsInCall_sound c) (effPostfix_sound pp he)
   split at h
   · rename_i _ _ _ c
     cases ht : tryCallOf fuel env scope pf with

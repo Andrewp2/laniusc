@@ -1,0 +1,7 @@
+module app::main;
+
+// 2^64 written in hexadecimal does not fit any integer type.
+fn main() -> i32 {
+    let value: u64 = 0x1_0000_0000_0000_0000;
+    return 0;
+}

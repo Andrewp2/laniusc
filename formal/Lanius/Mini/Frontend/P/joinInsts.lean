@@ -144,7 +144,7 @@ def wideDecimal (text : List Nat) (acc : Nat) : Option Nat :=
     match text with
     | [] => some acc
     | b :: rest =>
-      if decide (48 ≤ b) && decide (b ≤ 57) then
+      if decide (48 ≤ b) && decide (b ≤ 57) && decide (acc ≤ 1844674407370955161) then
         wideDecimal rest (acc * 10 + (b - 48))
       else
         none

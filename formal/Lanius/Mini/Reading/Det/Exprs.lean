@@ -88,15 +88,60 @@ theorem casts_unique {env : FrontEnv} : ∀ {acc : SrcExpr} {tail : CTree} {a b 
     subst e
     exact casts_unique r r'
 
+/-- A base prefix's letter is no decimal digit. -/
+theorem prefixed_noDigits {text : List Nat} {letter d : Nat} {digits : List Nat}
+    (e : text = 48 :: letter :: d :: digits) (pos : 0 < prefixBase letter) (ds : Digits text) : False := by
+  have dl := ds letter (by rw [e]; simp)
+  unfold prefixBase at pos
+  by_cases x : letter = 120
+  · omega
+  · rw [if_neg x] at pos
+    by_cases o : letter = 111
+    · omega
+    · rw [if_neg o] at pos
+      by_cases b : letter = 98
+      · omega
+      · rw [if_neg b] at pos; omega
+
 theorem intLiteral_unique {text : List Nat} {a b : SrcExpr} (h₁ : IntLiteral text a) (h₂ : IntLiteral text b) :
     a = b := by
   cases h₁ with
-  | small _ lt => cases h₂ with
+  | small ds lt => cases h₂ with
     | small => rfl
     | wide _ ge _ => omega
-  | wide _ ge _ => cases h₂ with
+    | based e pos _ _ _ => exact (prefixed_noDigits e pos ds).elim
+    | basedWide e pos _ _ _ _ => exact (prefixed_noDigits e pos ds).elim
+  | wide ds ge _ => cases h₂ with
     | small _ lt => omega
     | wide => rfl
+    | based e pos _ _ _ => exact (prefixed_noDigits e pos ds).elim
+    | basedWide e pos _ _ _ _ => exact (prefixed_noDigits e pos ds).elim
+  | based e pos _ _ lt => cases h₂ with
+    | small ds _ => exact (prefixed_noDigits e pos ds).elim
+    | wide ds _ _ => exact (prefixed_noDigits e pos ds).elim
+    | based e' _ _ _ _ =>
+      rw [e] at e'
+      simp only [List.cons.injEq, true_and] at e'
+      obtain ⟨rfl, rfl, rfl⟩ := e'
+      rfl
+    | basedWide e' _ _ _ ge _ =>
+      rw [e] at e'
+      simp only [List.cons.injEq, true_and] at e'
+      obtain ⟨rfl, rfl, rfl⟩ := e'
+      omega
+  | basedWide e pos _ _ ge _ => cases h₂ with
+    | small ds _ => exact (prefixed_noDigits e pos ds).elim
+    | wide ds _ _ => exact (prefixed_noDigits e pos ds).elim
+    | based e' _ _ _ lt =>
+      rw [e] at e'
+      simp only [List.cons.injEq, true_and] at e'
+      obtain ⟨rfl, rfl, rfl⟩ := e'
+      omega
+    | basedWide e' _ _ _ _ _ =>
+      rw [e] at e'
+      simp only [List.cons.injEq, true_and] at e'
+      obtain ⟨rfl, rfl, rfl⟩ := e'
+      rfl
 
 /-- Reads back `utf8Encode`. -/
 def utf8Decode (l : List Nat) : Nat :=

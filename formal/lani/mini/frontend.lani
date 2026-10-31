@@ -2950,7 +2950,7 @@ pub fn wide_decimal(text: List<usize>, acc: usize) -> core::option::Option<usize
 
 // extract: inline
 fn wide_digit(wb: usize, wrest: List<usize>, wacc: usize) -> core::option::Option<usize> {
-    if (wb >= 48 && 57 >= wb) {
+    if (wb >= 48 && 57 >= wb && 1844674407370955161 >= wacc) {
         return wide_decimal(wrest, plus(times(wacc, 10), minus(wb, 48)));
     }
     return None;
@@ -2984,10 +2984,113 @@ pub fn wide_marker(v: core::option::Option<usize>) -> core::option::Option<SrcEx
     };
 }
 
-pub fn int_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
+// A digit's value in base 16 (16 for a byte that is no digit).
+pub fn digit_value(b: usize) -> usize {
+    if (48 <= b && b <= 57) {
+        return minus(b, 48);
+    }
+    if (97 <= b && b <= 102) {
+        return minus(b, 87);
+    }
+    if (65 <= b && b <= 70) {
+        return minus(b, 55);
+    }
+    return 16;
+}
+
+// The largest value that one more digit of base `base` (16, 8 or 2) keeps
+// below 2^64 (the check comes before the multiplication, which would
+// overflow in u64).
+pub fn based_limit(base: usize) -> usize {
+    if (base == 16) {
+        return 1152921504606846975;
+    }
+    if (base == 8) {
+        return 2305843009213693951;
+    }
+    return 9223372036854775807;
+}
+
+// Digits in base `base` after `0x`, `0o` or `0b`, with `_` between them
+// skipped, below 2^64.
+pub fn based_value(base: usize, text: List<usize>, acc: usize) -> core::option::Option<usize> {
+    if (acc > 18446744073709551615) {
+        return None;
+    }
+    return match (text) {
+        Nil -> Some(acc),
+        Cons(b, rest) -> based_digit(base, b, unbox(rest), acc),
+    };
+}
+
+// extract: inline
+fn based_digit(bbase: usize, bb: usize, brest: List<usize>, bacc: usize) -> core::option::Option<usize> {
+    if (bb == 95) {
+        return based_value(bbase, brest, bacc);
+    }
+    if (digit_value(bb) < bbase && based_limit(bbase) >= bacc) {
+        return based_value(bbase, brest, plus(times(bacc, bbase), digit_value(bb)));
+    }
+    return None;
+}
+
+// The base a prefix letter names: x 16, o 8, b 2 (0 for none).
+pub fn prefix_base(letter: usize) -> usize {
+    if (letter == 120) {
+        return 16;
+    }
+    if (letter == 111) {
+        return 8;
+    }
+    if (letter == 98) {
+        return 2;
+    }
+    return 0;
+}
+
+pub fn based_small(v: core::option::Option<usize>, first: bool) -> core::option::Option<SrcExpr> {
+    if (first) {
+        return match (v) {
+            None -> None,
+            Some(n) -> match (int_in_range(n)) {
+                None -> wide_marker(Some(n)),
+                Some(e) -> Some(e),
+            },
+        };
+    }
+    return None;
+}
+
+// `0x...`, `0o...` or `0b...` with a digit right after the prefix.
+pub fn based_literal(base: usize, rest: List<usize>) -> core::option::Option<SrcExpr> {
+    return match (rest) {
+        Nil -> None,
+        Cons(d, more) -> based_small(based_value(base, rest, 0), digit_value(d) < base),
+    };
+}
+
+pub fn decimal_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
     return match (decimal(text, 0)) {
         None -> wide_marker(wide_decimal(text, 0)),
         Some(v) -> int_in_range(v),
+    };
+}
+
+pub fn int_prefixed(text: List<usize>, prefixed: bool, base: usize, digits: List<usize>) -> core::option::Option<SrcExpr> {
+    if (prefixed) {
+        return based_literal(base, digits);
+    }
+    return decimal_literal(text);
+}
+
+// A literal with a base prefix, else a decimal one.
+pub fn int_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
+    return match (text) {
+        Nil -> None,
+        Cons(z, rest) -> match (unbox(rest)) {
+            Nil -> decimal_literal(text),
+            Cons(letter, digits) -> int_prefixed(text, z == 48 && prefix_base(letter) > 0, prefix_base(letter), unbox(digits)),
+        },
     };
 }
 
@@ -8185,6 +8288,34 @@ pub fn assert_arg(fuel: usize, env: FrontEnv, scope: List<Local>, args: core::op
 
 // A call statement: `alloc::allocator::dealloc(pointer, size, align);`,
 // `assert(c);`, or a call whose value (if any) is discarded.
+// A postfix tail part: a call `(args)`, a member `.name`, the end.
+pub fn is_call_part(t: CTree) -> bool {
+    return node_prod(t) == p_postfix_call();
+}
+
+pub fn is_member_part(t: CTree) -> bool {
+    return node_prod(t) == p_postfix_member();
+}
+
+pub fn is_tail_end(t: CTree) -> bool {
+    return node_prod(t) == p_postfix_end();
+}
+
+// A postfix tail of calls and members whose last part is a call, as in
+// `f(x);`, `x.m(y);` or `x.f.m(y).n();`: a statement whose value is dropped.
+pub fn ends_in_call(fuel: usize, t: CTree) -> bool {
+    if (fuel == 0) {
+        return false;
+    }
+    if (is_call_part(t) && is_tail_end(kid(t, 3))) {
+        return true;
+    }
+    if (is_call_part(t) || is_member_part(t)) {
+        return ends_in_call(minus(fuel, 1), kid(t, 3));
+    }
+    return false;
+}
+
 pub fn call_stmt(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) -> core::option::Option<MStmt> {
     let path: CTree = kid(kid(pf, 0), 0);
     if (is_path_call(pf) && is_path(path_spellings(fuel, kid(path, 0), kid(path, 1)), dealloc_path())) {
@@ -8193,7 +8324,7 @@ pub fn call_stmt(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) -> c
     if (is_path_call(pf) && is_path(path_spellings(fuel, kid(path, 0), kid(path, 1)), single(text_assert()))) {
         return assert_arg(fuel, env, scope, list_items(fuel, kid(kid(pf, 1), 1)));
     }
-    if (is_path_call(pf) || is_method_form(pf)) {
+    if (ends_in_call(fuel, kid(pf, 1))) {
         return discard_of(eff_postfix(fuel, env, scope, None, pf));
     }
     if (is_try_call(pf)) {

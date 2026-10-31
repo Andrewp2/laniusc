@@ -6,9 +6,9 @@ public import Lanius.Faithful.Gen.SelfSrcF_flLog2Or0
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt7
+public import Lanius.Faithful.Gen.SelfStmtF_basedValue
 public import Lanius.Faithful.Gen.SelfStmtF_flLog2Or0
 public import Lanius.Faithful.Gen.SelfStmtF_flNatHalf
-public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 import all Lanius.Faithful.Gen.SelfSrcF_flLog2Or0
 import all Lanius.Mini.Frontend.P.flLog2Or0
 

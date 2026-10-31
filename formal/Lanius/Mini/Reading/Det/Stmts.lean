@@ -502,6 +502,19 @@ theorem compoundR_unique {target : CTree} {p : Nat} {value : CTree} {a b : MStmt
       rfl
     | _ => prod_clash
 
+/-- A tail ending in a call is not `f(args)?`. -/
+theorem callEnd_noTry {t : CTree} (c : CallEnd t) (pt : nodeProd (kid t 3) = pPostfixTry) : False := by
+  cases c with
+  | last _ pe => rw [pt] at pe; cases pe
+  | call _ c' =>
+    rcases callEnd_prod c' with p | p
+    · rw [pt] at p; cases p
+    · rw [pt] at p; cases p
+  | member _ c' =>
+    rcases callEnd_prod c' with p | p
+    · rw [pt] at p; cases p
+    · rw [pt] at p; cases p
+
 theorem callStmtR_unique {pf : CTree} {a b : MStmt} (pp : nodeProd pf = pPostfix) (nd : IdsFresh scope)
     (vn : VariantsNodup env.decls) (h₁ : CallStmtR env scope pf a) (h₂ : CallStmtR env scope pf b) : a = b := by
   cases h₁ with
@@ -533,8 +546,8 @@ theorem callStmtR_unique {pf : CTree} {a b : MStmt} (pp : nodeProd pf = pPostfix
     | discard _ k' => rw [effR_unique k nd vn k']
     | «try» c => cases c with
       | mk f _ _ _ _ _ _ =>
-        obtain ⟨_, _, f1, f3, _⟩ := f
-        rcases d with ⟨_, _, _, d3⟩ | ⟨_, d1, _⟩ <;> prod_clash
+        obtain ⟨_, _, _, f3, _⟩ := f
+        exact (callEnd_noTry d f3).elim
   | «try» c => cases h₂ with
     | free cf _ _ _ => cases c with
       | mk f _ _ _ _ _ _ =>
@@ -548,8 +561,8 @@ theorem callStmtR_unique {pf : CTree} {a b : MStmt} (pp : nodeProd pf = pPostfix
         prod_clash
     | discard d _ => cases c with
       | mk f _ _ _ _ _ _ =>
-        obtain ⟨_, _, f1, f3, _⟩ := f
-        rcases d with ⟨_, _, _, d3⟩ | ⟨_, d1, _⟩ <;> prod_clash
+        obtain ⟨_, _, _, f3, _⟩ := f
+        exact (callEnd_noTry d f3).elim
     | «try» c' => rw [tryCallR_unique nd vn c c']
 
 theorem assignR_unique {e : CTree} {a b : MStmt} (nd : IdsFresh scope) (vn : VariantsNodup env.decls)
@@ -582,9 +595,9 @@ theorem callStmtR_noEnd {pf : CTree} {a : MStmt} (c : CallStmtR env scope pf a) 
   | free f _ _ _ => obtain ⟨_, _, f3, _⟩ := f; prod_clash
   | assert f _ _ _ => obtain ⟨_, _, f3, _⟩ := f; prod_clash
   | discard f _ =>
-    rcases f with ⟨_, _, f3, _⟩ | ⟨_, f2, _⟩
-    · prod_clash
-    · prod_clash
+    rcases callEnd_prod f with f1 | f1
+    · rw [pe] at f1; cases f1
+    · rw [pe] at f1; cases f1
   | «try» t => cases t with
     | mk f _ _ _ _ _ _ => obtain ⟨_, _, f3, _⟩ := f; prod_clash
 
