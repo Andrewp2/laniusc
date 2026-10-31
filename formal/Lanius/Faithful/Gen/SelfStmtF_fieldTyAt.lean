@@ -25,7 +25,7 @@ abbrev Stmt_assert_arg (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     (RepOption 236 RepMStmt) (Lanius.Mini.assertArg x0 x1 x2 x3) w
 
 abbrev Stmt_assert_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 246 RepMEff) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 241 RepMEff) x0 v0 →
     (RepOption 236 RepMStmt) (Lanius.Mini.assertOf x0) w
 
 abbrev Stmt_assign_target (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -37,8 +37,8 @@ abbrev Stmt_call_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 236 RepMStmt) (Lanius.Mini.callStmt x0 x1 x2 x3) w
 
 abbrev Stmt_compound_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.MEff} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepMEff x1 v1 → (RepOption 246 RepMEff) x2 v2 →
-    (RepOption 246 RepMEff) (Lanius.Mini.compoundEff x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.MEff} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepMEff x1 v1 → (RepOption 241 RepMEff) x2 v2 →
+    (RepOption 241 RepMEff) (Lanius.Mini.compoundEff x0 x1 x2) w
 
 abbrev Stmt_compound_field_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.Local} {x4 : Option Nat} {x5 : Nat} {x6 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → RepLocal x3 v3 → (RepOption 201 RepNat) x4 v4 → RepNat x5 v5 → RepCTree x6 v6 →
@@ -46,10 +46,10 @@ abbrev Stmt_compound_field_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat)
 
 abbrev Stmt_compound_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepOption 266 RepSrcOp) (Lanius.Mini.compoundOp x0) w
+    (RepOption 254 RepSrcOp) (Lanius.Mini.compoundOp x0) w
 
 abbrev Stmt_discard_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 246 RepMEff) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 241 RepMEff) x0 v0 →
     (RepOption 236 RepMStmt) (Lanius.Mini.discardOf x0) w
 
 abbrev Stmt_field_ty_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -57,7 +57,7 @@ abbrev Stmt_field_ty_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 203 RepTy) (Lanius.Mini.fieldTyAt x0 x1 x2 x3) w
 
 abbrev Stmt_free_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 257 (RepList 21 RepSrcExpr)) x0 v0 →
+  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 282 (RepList 21 RepSrcExpr)) x0 v0 →
     (RepOption 236 RepMStmt) (Lanius.Mini.freeOf x0) w
 
 abbrev Stmt_free_shifted (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

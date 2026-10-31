@@ -52,19 +52,19 @@ theorem proof_eval_head {prog : SrcProgram} {prims : Prims} {ix_eval_head ix_eva
   simp only [src_eval_head] at h
   faithful [Lanius.Mini.evalHead]
 
-theorem proof_eval_let_head {prog : SrcProgram} {prims : Prims} {ix_eval_let_head ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_same_ty ix_call_let_head ix_call_parts ix_index_let_head ix_pure_part ix_struct_head ix_pure_list ix_variant_let_head ix_match_let_head ix_eff_local ix_pure_arms : Nat} (fn : prog.funcs[ix_eval_let_head]? = some (src_eval_let_head ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_same_ty ix_call_let_head ix_call_parts ix_index_let_head ix_pure_part ix_struct_head ix_pure_list ix_variant_let_head ix_match_let_head ix_eff_local ix_pure_arms)) (np : prims.isPrim ix_eval_let_head = false)
+theorem proof_eval_let_head {prog : SrcProgram} {prims : Prims} {ix_eval_let_head ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_same_ty ix_pure_part ix_eff_local ix_call_let_head ix_call_parts ix_index_let_head ix_struct_head ix_pure_list ix_variant_let_head ix_match_let_head ix_pure_arms : Nat} (fn : prog.funcs[ix_eval_let_head]? = some (src_eval_let_head ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff ix_unbox_of_mini_selfhost_MEff ix_same_ty ix_pure_part ix_eff_local ix_call_let_head ix_call_parts ix_index_let_head ix_struct_head ix_pure_list ix_variant_let_head ix_match_let_head ix_pure_arms)) (np : prims.isPrim ix_eval_let_head = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_MEff n))
     (ext_unbox_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MEff prog prims ix_unbox_of_mini_selfhost_MEff n))
     (ext_same_ty : Certified (∀ {n : Nat}, Stmt_same_ty prog prims ix_same_ty n))
+    (ext_pure_part : Certified (∀ {n : Nat}, Stmt_pure_part prog prims ix_pure_part n))
+    (ext_eff_local : Certified (∀ {n : Nat}, Stmt_eff_local prog prims ix_eff_local n))
     (ext_call_let_head : Certified (∀ {n : Nat}, Stmt_call_let_head prog prims ix_call_let_head n))
     (ext_call_parts : Certified (∀ {n : Nat}, Stmt_call_parts prog prims ix_call_parts n))
     (ext_index_let_head : Certified (∀ {n : Nat}, Stmt_index_let_head prog prims ix_index_let_head n))
-    (ext_pure_part : Certified (∀ {n : Nat}, Stmt_pure_part prog prims ix_pure_part n))
     (ext_struct_head : Certified (∀ {n : Nat}, Stmt_struct_head prog prims ix_struct_head n))
     (ext_pure_list : Certified (∀ {n : Nat}, Stmt_pure_list prog prims ix_pure_list n))
     (ext_variant_let_head : Certified (∀ {n : Nat}, Stmt_variant_let_head prog prims ix_variant_let_head n))
     (ext_match_let_head : Certified (∀ {n : Nat}, Stmt_match_let_head prog prims ix_match_let_head n))
-    (ext_eff_local : Certified (∀ {n : Nat}, Stmt_eff_local prog prims ix_eff_local n))
     (ext_pure_arms : Certified (∀ {n : Nat}, Stmt_pure_arms prog prims ix_pure_arms n)) {n : Nat} :
     Stmt_eval_let_head prog prims ix_eval_let_head n := by
   intro x0 x1 v0 v1 w h r0 r1

@@ -24,6 +24,15 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_p_contracts_more {prog : SrcProgram} {prims : Prims} {ix_p_contracts_more : Nat} (fn : prog.funcs[ix_p_contracts_more]? = some (src_p_contracts_more)) (np : prims.isPrim ix_p_contracts_more = false) {n : Nat} :
+    Stmt_p_contracts_more prog prims ix_p_contracts_more n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_contracts_more] at h
+  faithful [Lanius.Mini.Inline.pContractsMore]
+
 theorem proof_p_contracts_none {prog : SrcProgram} {prims : Prims} {ix_p_contracts_none : Nat} (fn : prog.funcs[ix_p_contracts_none]? = some (src_p_contracts_none)) (np : prims.isPrim ix_p_contracts_none = false) {n : Nat} :
     Stmt_p_contracts_none prog prims ix_p_contracts_none n := by
   intro w h
@@ -50,5 +59,14 @@ theorem proof_p_else_none {prog : SrcProgram} {prims : Prims} {ix_p_else_none : 
   rw [pcall_succ np fn] at h
   simp only [src_p_else_none] at h
   faithful [Lanius.Mini.Inline.pElseNone]
+
+theorem proof_p_requires {prog : SrcProgram} {prims : Prims} {ix_p_requires : Nat} (fn : prog.funcs[ix_p_requires]? = some (src_p_requires)) (np : prims.isPrim ix_p_requires = false) {n : Nat} :
+    Stmt_p_requires prog prims ix_p_requires n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_requires] at h
+  faithful [Lanius.Mini.Inline.pRequires]
 
 end Lanius.Faithful.SelfCert

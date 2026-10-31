@@ -180,12 +180,12 @@ theorem proof_match_stmt_arms {prog : SrcProgram} {prims : Prims} {ix_match_stmt
   simp only [src_match_stmt_arms] at h
   faithful [Lanius.Mini.matchStmtArms]
 
-theorem proof_match_stmt_enum {prog : SrcProgram} {prims : Prims} {ix_match_stmt_enum ix_minus ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_match_stmt_head ix_zip_variants : Nat} (fn : prog.funcs[ix_match_stmt_enum]? = some (src_match_stmt_enum ix_minus ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_match_stmt_head ix_zip_variants)) (np : prims.isPrim ix_match_stmt_enum = false)
+theorem proof_match_stmt_enum {prog : SrcProgram} {prims : Prims} {ix_match_stmt_enum ix_minus ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_zip_variants ix_match_stmt_head : Nat} (fn : prog.funcs[ix_match_stmt_enum]? = some (src_match_stmt_enum ix_minus ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_zip_variants ix_match_stmt_head)) (np : prims.isPrim ix_match_stmt_enum = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
     (ext_field_start_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_start_Token_of_mini_selfhost_Token prog prims ix_field_start_Token_of_mini_selfhost_Token n))
-    (ext_match_stmt_head : Certified (∀ {n : Nat}, Stmt_match_stmt_head prog prims ix_match_stmt_head n))
-    (ext_zip_variants : Certified (∀ {n : Nat}, Stmt_zip_variants prog prims ix_zip_variants n)) {n : Nat} :
+    (ext_zip_variants : Certified (∀ {n : Nat}, Stmt_zip_variants prog prims ix_zip_variants n))
+    (ext_match_stmt_head : Certified (∀ {n : Nat}, Stmt_match_stmt_head prog prims ix_match_stmt_head n)) {n : Nat} :
     Stmt_match_stmt_enum prog prims ix_match_stmt_enum n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6
   rcases n with _ | n

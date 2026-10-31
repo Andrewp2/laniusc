@@ -53,7 +53,7 @@ theorem itemDecls_unique : ∀ {home : ModPath} {item : CTree} {a b : Decls},
   | _, _, _, _, .implInherent .., .type .. => by prod_clash
   | _, _, _, _, .implInherent .., .fn .. => by prod_clash
   | _, _, _, _, .implInherent .., .const .. => by prod_clash
-  | _, _, _, _, .implInherent _ _ p i ms, .implInherent _ _ p' i' ms' => by
+  | _, _, _, _, .implInherent _ p i ms, .implInherent _ p' i' ms' => by
     have ep := typeParams_unique p p'
     subst ep
     have ei := items_unique i i'
@@ -68,7 +68,7 @@ theorem itemDecls_unique : ∀ {home : ModPath} {item : CTree} {a b : Decls},
   | _, _, _, _, .implTrait .., .fn .. => by prod_clash
   | _, _, _, _, .implTrait .., .const .. => by prod_clash
   | _, _, _, _, .implTrait .., .implInherent .. => by prod_clash
-  | _, _, _, _, .implTrait _ _ p i ms, .implTrait _ _ p' i' ms' => by
+  | _, _, _, _, .implTrait _ p i ms, .implTrait _ p' i' ms' => by
     have ep := typeParams_unique p p'
     subst ep
     have ei := items_unique i i'

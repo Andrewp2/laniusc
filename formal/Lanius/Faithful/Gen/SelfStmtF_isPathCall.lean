@@ -21,12 +21,12 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_alloc_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 257 (RepList 21 RepSrcExpr)) x0 v0 →
-    (RepOption 252 RepLetHead) (Lanius.Mini.allocHead x0) w
+  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 282 (RepList 21 RepSrcExpr)) x0 v0 →
+    (RepOption 266 RepLetHead) (Lanius.Mini.allocHead x0) w
 
 abbrev Stmt_alloc_shifted (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Option Nat} {x2 : List Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcExpr x0 v0 → (RepOption 201 RepNat) x1 v1 → (RepList 21 RepSrcExpr) x2 v2 →
-    (RepOption 252 RepLetHead) (Lanius.Mini.allocShifted x0 x1 x2) w
+    (RepOption 266 RepLetHead) (Lanius.Mini.allocShifted x0 x1 x2) w
 
 abbrev Stmt_cast_shift (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepSrcExpr x1 v1 →

@@ -1,0 +1,17 @@
+module app::main;
+
+// `requires` clauses: each is asserted in order before the body.
+fn halve(n: i32) -> i32 requires (n >= 0) requires (n % 2 == 0) {
+    return n / 2;
+}
+
+fn clamp(n: i32, top: i32) -> i32 requires (top > 0) {
+    if (n > top) {
+        return top;
+    }
+    return n;
+}
+
+fn top(n: i32) -> i32 {
+    return halve(clamp(n, 10) * 2);
+}

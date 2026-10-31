@@ -12,6 +12,7 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_positionAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
+public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 import all Lanius.Faithful.Gen.SelfSrcF_findConst
 import all Lanius.Mini.Frontend.P.findConst
@@ -55,21 +56,25 @@ theorem step_add_insts {prog : SrcProgram} {prims : Prims} {ix_add_insts ix_unbo
   simp only [src_add_insts] at h
   faithful [Lanius.Mini.addInsts]
 
-theorem proof_bare_variant {prog : SrcProgram} {prims : Prims} {ix_bare_variant ix_field_types_Decls_of_mini_selfhost_Decls ix_field_imports_Decls_of_mini_selfhost_Decls ix_only_variant ix_variants_named ix_imported_variants ix_cons_of_mini_selfhost_VariantAt ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt : Nat} (fn : prog.funcs[ix_bare_variant]? = some (src_bare_variant ix_field_types_Decls_of_mini_selfhost_Decls ix_field_imports_Decls_of_mini_selfhost_Decls ix_only_variant ix_variants_named ix_imported_variants ix_cons_of_mini_selfhost_VariantAt ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt)) (np : prims.isPrim ix_bare_variant = false)
-    (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
-    (ext_field_imports_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_imports_Decls_of_mini_selfhost_Decls prog prims ix_field_imports_Decls_of_mini_selfhost_Decls n))
-    (ext_only_variant : Certified (∀ {n : Nat}, Stmt_only_variant prog prims ix_only_variant n))
-    (ext_variants_named : Certified (∀ {n : Nat}, Stmt_variants_named prog prims ix_variants_named n))
-    (ext_imported_variants : Certified (∀ {n : Nat}, Stmt_imported_variants prog prims ix_imported_variants n))
-    (ext_cons_of_mini_selfhost_VariantAt : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_VariantAt prog prims ix_cons_of_mini_selfhost_VariantAt n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt n)) {n : Nat} :
-    Stmt_bare_variant prog prims ix_bare_variant n := by
+theorem step_aliases_home {prog : SrcProgram} {prims : Prims} {ix_aliases_home ix_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl ix_same_spellings : Nat} (fn : prog.funcs[ix_aliases_home]? = some (src_aliases_home ix_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl ix_same_spellings ix_aliases_home)) (np : prims.isPrim ix_aliases_home = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_AliasDecl n))
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n)) {n : Nat}
+    (ih_aliases_home : Certified (Stmt_aliases_home prog prims ix_aliases_home n)) :
+    Stmt_aliases_home prog prims ix_aliases_home (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_bare_variant] at h
-  faithful [Lanius.Mini.bareVariant]
+  simp only [src_aliases_home] at h
+  faithful [Lanius.Mini.aliasesHome]
+
+theorem step_consts_home {prog : SrcProgram} {prims : Prims} {ix_consts_home ix_unbox_of_mini_selfhost_List_mini_selfhost_ConstDecl ix_same_spellings : Nat} (fn : prog.funcs[ix_consts_home]? = some (src_consts_home ix_unbox_of_mini_selfhost_List_mini_selfhost_ConstDecl ix_same_spellings ix_consts_home)) (np : prims.isPrim ix_consts_home = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_ConstDecl : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_ConstDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_ConstDecl n))
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n)) {n : Nat}
+    (ih_consts_home : Certified (Stmt_consts_home prog prims ix_consts_home n)) :
+    Stmt_consts_home prog prims ix_consts_home (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_consts_home] at h
+  faithful [Lanius.Mini.constsHome]
 
 theorem proof_decl_env {prog : SrcProgram} {prims : Prims} {ix_decl_env ix_empty_of_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_decl_env]? = some (src_decl_env ix_empty_of_mini_selfhost_List_usize)) (np : prims.isPrim ix_decl_env = false)
     (ext_empty_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_List_usize prog prims ix_empty_of_mini_selfhost_List_usize n)) {n : Nat} :
@@ -108,15 +113,24 @@ theorem proof_float_code {prog : SrcProgram} {prims : Prims} {ix_float_code : Na
   simp only [src_float_code] at h
   faithful [Lanius.Mini.floatCode]
 
-theorem step_imported_variants {prog : SrcProgram} {prims : Prims} {ix_imported_variants ix_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_VariantAt ix_imported_variants_at : Nat} (fn : prog.funcs[ix_imported_variants]? = some (src_imported_variants ix_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_VariantAt ix_imported_variants_at)) (np : prims.isPrim ix_imported_variants = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl n))
-    (ext_empty_of_mini_selfhost_VariantAt : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_VariantAt prog prims ix_empty_of_mini_selfhost_VariantAt n)) {n : Nat}
-    (ih_imported_variants_at : Certified (Stmt_imported_variants_at prog prims ix_imported_variants_at n)) :
-    Stmt_imported_variants prog prims ix_imported_variants (n + 1) := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+theorem step_fns_home {prog : SrcProgram} {prims : Prims} {ix_fns_home ix_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl ix_same_spellings : Nat} (fn : prog.funcs[ix_fns_home]? = some (src_fns_home ix_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl ix_same_spellings ix_fns_home)) (np : prims.isPrim ix_fns_home = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl n))
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n)) {n : Nat}
+    (ih_fns_home : Certified (Stmt_fns_home prog prims ix_fns_home n)) :
+    Stmt_fns_home prog prims ix_fns_home (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
   rw [pcall_succ np fn] at h
-  simp only [src_imported_variants] at h
-  faithful [Lanius.Mini.importedVariants]
+  simp only [src_fns_home] at h
+  faithful [Lanius.Mini.fnsHome]
+
+theorem proof_if_item {prog : SrcProgram} {prims : Prims} {ix_if_item : Nat} (fn : prog.funcs[ix_if_item]? = some (src_if_item)) (np : prims.isPrim ix_if_item = false) {n : Nat} :
+    Stmt_if_item prog prims ix_if_item n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_if_item] at h
+  faithful [Lanius.Mini.ifItem]
 
 theorem step_inst_index {prog : SrcProgram} {prims : Prims} {ix_inst_index ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst ix_inst_index_at : Nat} (fn : prog.funcs[ix_inst_index]? = some (src_inst_index ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst ix_inst_index_at)) (np : prims.isPrim ix_inst_index = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Inst : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Inst prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Inst n)) {n : Nat}
@@ -137,15 +151,18 @@ theorem step_inst_member {prog : SrcProgram} {prims : Prims} {ix_inst_member ix_
   simp only [src_inst_member] at h
   faithful [Lanius.Mini.instMember]
 
-theorem proof_only_variant {prog : SrcProgram} {prims : Prims} {ix_only_variant ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt : Nat} (fn : prog.funcs[ix_only_variant]? = some (src_only_variant ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt)) (np : prims.isPrim ix_only_variant = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt n)) {n : Nat} :
-    Stmt_only_variant prog prims ix_only_variant n := by
-  intro x0 v0 w h r0
+theorem proof_is_module {prog : SrcProgram} {prims : Prims} {ix_is_module ix_types_home ix_fns_home ix_consts_home ix_aliases_home : Nat} (fn : prog.funcs[ix_is_module]? = some (src_is_module ix_types_home ix_fns_home ix_consts_home ix_aliases_home)) (np : prims.isPrim ix_is_module = false)
+    (ext_types_home : Certified (∀ {n : Nat}, Stmt_types_home prog prims ix_types_home n))
+    (ext_fns_home : Certified (∀ {n : Nat}, Stmt_fns_home prog prims ix_fns_home n))
+    (ext_consts_home : Certified (∀ {n : Nat}, Stmt_consts_home prog prims ix_consts_home n))
+    (ext_aliases_home : Certified (∀ {n : Nat}, Stmt_aliases_home prog prims ix_aliases_home n)) {n : Nat} :
+    Stmt_is_module prog prims ix_is_module n := by
+  intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_only_variant] at h
-  faithful [Lanius.Mini.onlyVariant]
+  simp only [src_is_module] at h
+  faithful [Lanius.Mini.isModule]
 
 theorem proof_same_float {prog : SrcProgram} {prims : Prims} {ix_same_float ix_float_code : Nat} (fn : prog.funcs[ix_same_float]? = some (src_same_float ix_float_code)) (np : prims.isPrim ix_same_float = false)
     (ext_float_code : Certified (∀ {n : Nat}, Stmt_float_code prog prims ix_float_code n)) {n : Nat} :
@@ -189,6 +206,16 @@ theorem step_same_tys {prog : SrcProgram} {prims : Prims} {ix_same_tys ix_unbox_
   rw [pcall_succ np fn] at h
   simp only [src_same_tys] at h
   faithful [Lanius.Mini.sameTys]
+
+theorem step_types_home {prog : SrcProgram} {prims : Prims} {ix_types_home ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl ix_same_spellings : Nat} (fn : prog.funcs[ix_types_home]? = some (src_types_home ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl ix_same_spellings ix_types_home)) (np : prims.isPrim ix_types_home = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl n))
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n)) {n : Nat}
+    (ih_types_home : Certified (Stmt_types_home prog prims ix_types_home n)) :
+    Stmt_types_home prog prims ix_types_home (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_types_home] at h
+  faithful [Lanius.Mini.typesHome]
 
 theorem proof_uint_code {prog : SrcProgram} {prims : Prims} {ix_uint_code : Nat} (fn : prog.funcs[ix_uint_code]? = some (src_uint_code)) (np : prims.isPrim ix_uint_code = false) {n : Nat} :
     Stmt_uint_code prog prims ix_uint_code n := by

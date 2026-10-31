@@ -9,8 +9,8 @@ import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.joinInsts
-import Lanius.Mini.Frontend.P.moduleOr
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.scalarOf
@@ -148,7 +148,7 @@ def constRef (fuel : Nat) (env : FrontEnv) (segments : Option (List (List Nat)))
       match splitLast ss with
       | none => none
       | some s =>
-        match findConst env.decls.consts (moduleOr env.home s.home) s.name with
+        match findConst env.decls.consts (pathModule env s.home s.name) s.name with
         | none => none
         | some k => constValue (fuel - 1) env.decls k
 def wideInner (t : SrcType) (x : SrcExpr) : Option (BitVec 64) :=

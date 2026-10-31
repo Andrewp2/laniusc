@@ -38,6 +38,9 @@ they are, never edited.
    written to each stream, and a call that traps natively must stop the
    laniusc binary too, after the same output (it is then run again from
    the next call).
+   A wrapper laniusc fails to build with its own code-generation error
+   (LNC0057) is listed as not compared; any other laniusc rejection of a
+   program the verified compiler compiles is a disagreement.
 
 The front end gives no reason for a rejection, so for each target it does
 not read, WORKDIR/unread.txt lists the constructs, in the target or in the
@@ -1233,12 +1236,16 @@ def main():
     # laniusc: the compiled wrappers, renamed, in harness binaries.
     compiled = [p for p in programs if p['status'] == 'image']
     disagreements = []
+    unbuilt = set()
     agreed = calls_total = traps = written = 0
     for start in range(0, len(compiled), args.chunk):
         chunk = compiled[start:start + args.chunk]
         results = laniusc_chunk(args, workdir, chunk, start)
         for p, got in zip(chunk, results):
             for a, want, have in zip(p['calls'], p['native'], got):
+                if have[0] == 'laniusc fails':
+                    unbuilt.add(p['target'].label)
+                    continue
                 if want[0] in ('trap', 'timeout'):
                     traps += 1
                     if have[0] not in ('trap', 'timeout', 'laniusc rejects it'):
@@ -1257,6 +1264,9 @@ def main():
                                          f'laniusc {shown(have)}')
 
     print(f'output: {written} bytes written alike to stdout and stderr', file=sys.stderr)
+    if unbuilt:
+        print(f'not compared, laniusc fails to generate code (LNC0057): {len(unbuilt)} targets: '
+              f'{", ".join(sorted(unbuilt))}', file=sys.stderr)
     print(f'time: parse {parse_s:.0f} s, runAll {compile_s:.0f} s, native {native_s:.0f} s, '
           f'laniusc {time.time() - began - parse_s - compile_s - native_s:.0f} s',
           file=sys.stderr)
@@ -1368,7 +1378,10 @@ def laniusc_chunk(args, workdir, chunk, start):
         return out
     if exe is None:
         open(os.path.join(workdir, f'harness{start}.error'), 'w').write(error)
-        return [[('laniusc rejects it', b'', b'')] * len(chunk[0]['calls'])]
+        # LNC0057 is laniusc's own failure while generating code, not a
+        # rejection of the program: there is nothing to compare.
+        tag = 'laniusc fails' if 'LNC0057' in error else 'laniusc rejects it'
+        return [[(tag, b'', b'')] * len(chunk[0]['calls'])]
     got = iter(run_calls(exe, sum(len(p['calls']) for p in chunk)))
     return [[next(got) for _ in p['calls']] for p in chunk]
 

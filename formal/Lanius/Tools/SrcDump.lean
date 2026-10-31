@@ -284,7 +284,14 @@ def diagnose (files : List FileInput) : String := Id.run do
   | first :: rest =>
     let some f := fileDecls fuel first | return "the first file's declarations"
     let some c := collectFiles fuel rest ({ decls := f.decls, modules := [f.home] } : Collected)
-      | return "another file's declarations"
+      | let bad := rest.zipIdx.filter fun (r, _) => (fileDecls fuel r).isNone
+        let why := bad.map fun (r, i) =>
+          let items := (listItems fuel (kid r 0)).getD []
+          let home := (modulePath fuel items).getD []
+          let fails := (items.zipIdx.filter fun (p : CTree × Nat) => (itemDecls fuel home p.1).isNone).map
+            fun (p : CTree × Nat) => (p.2, nodeProd (itemBody p.1), (kidToken (itemBody p.1) 0).start)
+          s!"file {i + 1}: items {fails} (item, production, byte)"
+        return s!"the declarations of {why}"
     let name (inst : Inst) := match c.decls.fns[inst.decl]? with
       | none => "a projection"
       | some d => s!"{path d.home}::{text d.name}"

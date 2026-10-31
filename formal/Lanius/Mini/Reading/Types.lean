@@ -24,10 +24,17 @@ inductive TypePathSpellings : CTree → CTree → List Name → Prop
       TypePathSpellings (kid tail 2) (kid tail 3) rest →
       TypePathSpellings segment tail ((kidToken segment 0).text :: rest)
 
+/-- The module a path's front names for the item `n`: the front itself, or
+for a bare name the module that `here` imports `n` from by name
+(`import p::n;`, see `itemImport`), else `here`. -/
+def pathHome (d : Decls) (here : ModPath) (front : ModPath) (n : Name) : ModPath :=
+  if front = [] then (itemImport d d.imports here n).getD here else front
+
 /-- The path `ss` names the item `n` of module `m`: `a::b::N` is `N` of
-`a::b`, and a single segment `N` is `N` of the current module `here`. -/
-def Resolves (here : ModPath) (ss : List Name) (m : ModPath) (n : Name) : Prop :=
-  ∃ front, ss = front ++ [n] ∧ m = (if front = [] then here else front)
+`a::b`, and a single segment `N` is `N` of the module it is imported from
+by name, else of the current module `here`. -/
+def Resolves (d : Decls) (here : ModPath) (ss : List Name) (m : ModPath) (n : Name) : Prop :=
+  ∃ front, ss = front ++ [n] ∧ m = pathHome d here front n
 
 /-- The type parameter spelled `n` (the first one so spelled) stands for `t`. -/
 def ParamTy (env : FrontEnv) (n : Name) (t : Ty) : Prop :=
@@ -47,11 +54,11 @@ def primTys : List (Name × Ty) :=
 
 /-- The path names the declared type `d`. -/
 def DeclAt (env : FrontEnv) (ss : List Name) (d : Nat) : Prop :=
-  ∃ m n, Resolves env.home ss m n ∧ TypeNamed env.decls m n d
+  ∃ m n, Resolves env.decls env.home ss m n ∧ TypeNamed env.decls m n d
 
 /-- The path names no declared type. -/
 def NoDeclAt (env : FrontEnv) (ss : List Name) : Prop :=
-  ∀ m n, Resolves env.home ss m n → ∀ t ∈ env.decls.types, ¬(t.home = m ∧ t.name = n)
+  ∀ m n, Resolves env.decls env.home ss m n → ∀ t ∈ env.decls.types, ¬(t.home = m ∧ t.name = n)
 
 /-- Declared type `d` has `k` type parameters. -/
 def Arity (decls : Decls) (d k : Nat) : Prop :=
@@ -116,7 +123,7 @@ inductive TyR : FrontEnv → CTree → Ty → Prop
 /-- The alias the path names, at the type arguments `ts`, names `ty`. -/
 inductive AliasTy : FrontEnv → List Name → List Ty → Ty → Prop
   | mk {env : FrontEnv} {ss : List Name} {ts : List Ty} {ty : Ty} {m : ModPath} {n : Name} {a : AliasDecl} :
-      Resolves env.home ss m n → AliasNamed env.decls m n a → a.params.length = ts.length →
+      Resolves env.decls env.home ss m n → AliasNamed env.decls m n a → a.params.length = ts.length →
       TyR (declScope env.decls a.home a.params ts) a.ty ty → AliasTy env ss ts ty
 
 /-- Generic arguments, each a type expression. -/
@@ -193,25 +200,30 @@ theorem splitLast_sound : ∀ {ss : List Name} {s : Split}, splitLast ss = some 
     subst h
     simp [splitLast_sound hr]
 
-theorem moduleOr_eq (here front : ModPath) : moduleOr here front = (if front = [] then here else front) := by
-  cases front <;> simp [moduleOr]
+theorem pathModule_eq (env : FrontEnv) (front : ModPath) (n : Name) :
+    pathModule env front n = pathHome env.decls env.home front n := by
+  cases front with
+  | nil => cases h : itemImport env.decls env.decls.imports env.home n <;> simp [pathModule, pathHome, h]
+  | cons f rest => simp [pathModule, pathHome]
 
-theorem resolves_split {here : ModPath} {ss : List Name} {s : Split} (h : splitLast ss = some s) :
-    Resolves here ss (moduleOr here s.home) s.name :=
-  ⟨s.home, splitLast_sound h, moduleOr_eq _ _⟩
+theorem resolves_split {env : FrontEnv} {ss : List Name} {s : Split} (h : splitLast ss = some s) :
+    Resolves env.decls env.home ss (pathModule env s.home s.name) s.name :=
+  ⟨s.home, splitLast_sound h, pathModule_eq _ _ _⟩
 
-theorem resolves_unique {here : ModPath} {ss : List Name} {m m' : ModPath} {n n' : Name}
-    (a : Resolves here ss m n) (b : Resolves here ss m' n') : m = m' ∧ n = n' := by
+theorem resolves_unique {d : Decls} {here : ModPath} {ss : List Name} {m m' : ModPath} {n n' : Name}
+    (a : Resolves d here ss m n) (b : Resolves d here ss m' n') : m = m' ∧ n = n' := by
   obtain ⟨f, rfl, rfl⟩ := a
   obtain ⟨f', e, rfl⟩ := b
   obtain ⟨rfl, hn⟩ := List.append_inj' e rfl
   simp at hn
-  exact ⟨rfl, hn⟩
+  subst hn
+  exact ⟨rfl, rfl⟩
 
-theorem resolves_split' {here : ModPath} {ss : List Name} {m : ModPath} {n : Name} (h : Resolves here ss m n) :
-    splitLast ss = some ⟨ss.dropLast, n⟩ ∧ m = moduleOr here ss.dropLast := by
+theorem resolves_split' {env : FrontEnv} {ss : List Name} {m : ModPath} {n : Name}
+    (h : Resolves env.decls env.home ss m n) :
+    splitLast ss = some ⟨ss.dropLast, n⟩ ∧ m = pathModule env ss.dropLast n := by
   obtain ⟨f, rfl, rfl⟩ := h
-  rw [List.dropLast_concat, splitLast_append, moduleOr_eq]
+  rw [List.dropLast_concat, splitLast_append, pathModule_eq]
   exact ⟨rfl, rfl⟩
 
 theorem declAt_unique {env : FrontEnv} {ss : List Name} {d d' : Nat} (a : DeclAt env ss d) (b : DeclAt env ss d') :
@@ -478,7 +490,7 @@ theorem tySound : ∀ fuel, TySound fuel
       | some s =>
         rw [hs] at h
         simp only at h
-        cases hf : findAlias env.decls.aliases (moduleOr env.home s.home) s.name with
+        cases hf : findAlias env.decls.aliases (pathModule env s.home s.name) s.name with
         | none => rw [hf] at h; cases h
         | some a =>
           rw [hf] at h

@@ -19,10 +19,10 @@ import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isFnPath
 import Lanius.Mini.Frontend.P.isPathCall
+import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.joinInsts
 import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.moduleNamesOk
-import Lanius.Mini.Frontend.P.moduleOr
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.pathRef
@@ -199,7 +199,7 @@ def effIdent (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Opti
       | some ss =>
         match splitLast ss with
         | none => none
-        | some s => checkedEff (!(hasLocal (localOf env scope c)) && !(hasConst (findConst env.decls.consts (moduleOr env.home s.home) s.name))) (effVariant (fuel - 1) env scope expected (variantByPath env s) [])
+        | some s => checkedEff (!(hasLocal (localOf env scope c)) && !(hasConst (findConst env.decls.consts (pathModule env s.home s.name) s.name))) (effVariant (fuel - 1) env scope expected (variantByPath env s) [])
     else
       if nodeProd (kid c 1) = (275) then
         match pathSpellings fuel (kid path 0) (kid path 1) with
@@ -310,7 +310,7 @@ def effFnPath (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Opt
       | none => none
       | some t => effFound (fuel - 1) env scope expected (findMethod fuel env.decls env.decls.fns 0 s.name t) [] items
     else
-      match findFn env.decls.fns (moduleOr env.home s.home) s.name 0 with
+      match findFn env.decls.fns (pathModule env s.home s.name) s.name 0 with
       | none => none
       | some d =>
         match env.decls.fns[d]? with

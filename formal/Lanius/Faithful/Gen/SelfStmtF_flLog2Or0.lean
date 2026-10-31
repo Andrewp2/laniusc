@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_fl_div_step (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FlDiv} {x1 : Bool} {x2 : List Bool} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFlDiv x0 v0 → RepBool x1 v1 → (RepList 262 RepBool) x2 v2 →
+  ∀ {x0 : Lanius.Mini.FlDiv} {x1 : Bool} {x2 : List Bool} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFlDiv x0 v0 → RepBool x1 v1 → (RepList 245 RepBool) x2 v2 →
     RepFlDiv (Lanius.Mini.flDivStep x0 x1 x2) w
 
 abbrev Stmt_fl_divmod (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Bool} {x1 : List Bool} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 262 RepBool) x0 v0 → (RepList 262 RepBool) x1 v1 →
+  ∀ {x0 : List Bool} {x1 : List Bool} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 245 RepBool) x0 v0 → (RepList 245 RepBool) x1 v1 →
     RepFlDiv (Lanius.Mini.flDivmod x0 x1) w
 
 abbrev Stmt_fl_log2_or0 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 262 RepBool) x0 v0 →
+  ∀ {x0 : List Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 245 RepBool) x0 v0 →
     RepNat (Lanius.Mini.flLog2Or0 x0) w
 
 abbrev Stmt_fl_odd (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 262 RepBool) x0 v0 →
+  ∀ {x0 : List Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 245 RepBool) x0 v0 →
     RepBool (Lanius.Mini.flOdd x0) w
 
 abbrev Stmt_fl_sat (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

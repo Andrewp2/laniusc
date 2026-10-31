@@ -76,10 +76,6 @@ abbrev Stmt_methods_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Nat} {x1 : List (List Nat)} {x2 : List (List Nat)} {x3 : Lanius.Mini.CTree} {x4 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepCTree x3 v3 → (RepList 81 RepCTree) x4 v4 →
     (RepOption 188 (RepList 108 RepFnDecl)) (Lanius.Mini.methodsOf x0 x1 x2 x3 x4) w
 
-abbrev Stmt_module_or (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 →
-    (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.moduleOr x0 x1) w
-
 abbrev Stmt_module_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 81 RepCTree) x1 v1 →
     (RepOption 134 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.modulePath x0 x1) w

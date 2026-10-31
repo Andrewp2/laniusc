@@ -13,7 +13,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_isFnPath
-public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
+public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
 import all Lanius.Faithful.Gen.SelfSrcF_isFnPath
@@ -36,10 +36,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_is_fn_path {prog : SrcProgram} {prims : Prims} {ix_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_single_name ix_module_or ix_is_type_param ix_is_some_index ix_find_fn : Nat} (fn : prog.funcs[ix_is_fn_path]? = some (src_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_single_name ix_module_or ix_is_type_param ix_is_some_index ix_find_fn)) (np : prims.isPrim ix_is_fn_path = false)
+theorem proof_is_fn_path {prog : SrcProgram} {prims : Prims} {ix_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_single_name ix_path_module ix_is_type_param ix_is_some_index ix_find_fn : Nat} (fn : prog.funcs[ix_is_fn_path]? = some (src_is_fn_path ix_field_fns_Decls_of_mini_selfhost_Decls ix_single_name ix_path_module ix_is_type_param ix_is_some_index ix_find_fn)) (np : prims.isPrim ix_is_fn_path = false)
     (ext_field_fns_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_fns_Decls_of_mini_selfhost_Decls prog prims ix_field_fns_Decls_of_mini_selfhost_Decls n))
     (ext_single_name : Certified (∀ {n : Nat}, Stmt_single_name prog prims ix_single_name n))
-    (ext_module_or : Certified (∀ {n : Nat}, Stmt_module_or prog prims ix_module_or n))
+    (ext_path_module : Certified (∀ {n : Nat}, Stmt_path_module prog prims ix_path_module n))
     (ext_is_type_param : Certified (∀ {n : Nat}, Stmt_is_type_param prog prims ix_is_type_param n))
     (ext_is_some_index : Certified (∀ {n : Nat}, Stmt_is_some_index prog prims ix_is_some_index n))
     (ext_find_fn : Certified (∀ {n : Nat}, Stmt_find_fn prog prims ix_find_fn n)) {n : Nat} :
@@ -51,16 +51,16 @@ theorem proof_is_fn_path {prog : SrcProgram} {prims : Prims} {ix_is_fn_path ix_f
   simp only [src_is_fn_path] at h
   faithful [Lanius.Mini.isFnPath]
 
-theorem proof_is_method_form {prog : SrcProgram} {prims : Prims} {ix_is_method_form ix_node_prod ix_kid ix_p_postfix_end ix_p_postfix_member ix_p_member_type_args_none ix_p_ident ix_p_self_value ix_p_ident_plain ix_p_postfix_call : Nat} (fn : prog.funcs[ix_is_method_form]? = some (src_is_method_form ix_node_prod ix_kid ix_p_postfix_end ix_p_postfix_member ix_p_member_type_args_none ix_p_ident ix_p_self_value ix_p_ident_plain ix_p_postfix_call)) (np : prims.isPrim ix_is_method_form = false)
+theorem proof_is_method_form {prog : SrcProgram} {prims : Prims} {ix_is_method_form ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_postfix_end ix_p_postfix_member ix_p_ident_plain ix_p_postfix_call ix_p_member_type_args_none : Nat} (fn : prog.funcs[ix_is_method_form]? = some (src_is_method_form ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_postfix_end ix_p_postfix_member ix_p_ident_plain ix_p_postfix_call ix_p_member_type_args_none)) (np : prims.isPrim ix_is_method_form = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
-    (ext_p_postfix_member : Certified (∀ {n : Nat}, Stmt_p_postfix_member prog prims ix_p_postfix_member n))
-    (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n))
     (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
     (ext_p_self_value : Certified (∀ {n : Nat}, Stmt_p_self_value prog prims ix_p_self_value n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
+    (ext_p_postfix_member : Certified (∀ {n : Nat}, Stmt_p_postfix_member prog prims ix_p_postfix_member n))
     (ext_p_ident_plain : Certified (∀ {n : Nat}, Stmt_p_ident_plain prog prims ix_p_ident_plain n))
-    (ext_p_postfix_call : Certified (∀ {n : Nat}, Stmt_p_postfix_call prog prims ix_p_postfix_call n)) {n : Nat} :
+    (ext_p_postfix_call : Certified (∀ {n : Nat}, Stmt_p_postfix_call prog prims ix_p_postfix_call n))
+    (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n)) {n : Nat} :
     Stmt_is_method_form prog prims ix_is_method_form n := by
   intro x0 v0 w h r0
   rcases n with _ | n

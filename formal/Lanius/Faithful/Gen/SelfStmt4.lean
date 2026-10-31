@@ -124,7 +124,7 @@ abbrev Stmt_length_of_mini_selfhost_MEff (prog : SrcProgram) (prims : Prims) (ix
     RepNat (x0.length) w
 
 abbrev Stmt_length_of_mini_selfhost_VariantTy (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.VariantTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 249 RepVariantTy) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.VariantTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 263 RepVariantTy) x0 v0 →
     RepNat (x0.length) w
 
 abbrev Stmt_length_of_usize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -168,7 +168,7 @@ abbrev Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty (prog : SrcProgram) (pr
     (RepList 137 RepTy) x0 w
 
 abbrev Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantAt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.VariantAt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 278 RepVariantAt) x0 v0 →
-    (RepList 278 RepVariantAt) x0 w
+  ∀ {x0 : List Lanius.Mini.VariantAt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 273 RepVariantAt) x0 v0 →
+    (RepList 273 RepVariantAt) x0 w
 
 end Lanius.Faithful.SelfCert

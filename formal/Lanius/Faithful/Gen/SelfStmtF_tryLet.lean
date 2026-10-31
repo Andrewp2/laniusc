@@ -25,7 +25,7 @@ abbrev Stmt_alloc_let (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 236 RepMStmt) (Lanius.Mini.allocLet x0 x1 x2 x3 x4) w
 
 abbrev Stmt_if_eval_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option Lanius.Mini.MStmt} {x2 : Option Lanius.Mini.MStmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 246 RepMEff) x0 v0 → (RepOption 236 RepMStmt) x1 v1 → (RepOption 236 RepMStmt) x2 v2 →
+  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option Lanius.Mini.MStmt} {x2 : Option Lanius.Mini.MStmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 241 RepMEff) x0 v0 → (RepOption 236 RepMStmt) x1 v1 → (RepOption 236 RepMStmt) x2 v2 →
     (RepOption 236 RepMStmt) (Lanius.Mini.ifEvalOf x0 x1 x2) w
 
 abbrev Stmt_if_or_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -46,10 +46,10 @@ abbrev Stmt_let_body (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_let_head_or_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.Ty} {x4 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → RepTy x3 v3 → RepCTree x4 v4 →
-    (RepOption 252 RepLetHead) (Lanius.Mini.letHeadOrEval x0 x1 x2 x3 x4) w
+    (RepOption 266 RepLetHead) (Lanius.Mini.letHeadOrEval x0 x1 x2 x3 x4) w
 
 abbrev Stmt_let_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.LetHead} {x3 : Option Lanius.Mini.MStmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepTy x1 v1 → (RepOption 252 RepLetHead) x2 v2 → (RepOption 236 RepMStmt) x3 v3 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.LetHead} {x3 : Option Lanius.Mini.MStmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepTy x1 v1 → (RepOption 266 RepLetHead) x2 v2 → (RepOption 236 RepMStmt) x3 v3 →
     (RepOption 236 RepMStmt) (Lanius.Mini.letOf x0 x1 x2 x3) w
 
 abbrev Stmt_let_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -61,7 +61,7 @@ abbrev Stmt_pure_inferred (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepBool (Lanius.Mini.pureInferred x0) w
 
 abbrev Stmt_return_eval_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 246 RepMEff) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 241 RepMEff) x0 v0 →
     (RepOption 236 RepMStmt) (Lanius.Mini.returnEvalOf x0) w
 
 abbrev Stmt_return_or_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -77,7 +77,7 @@ abbrev Stmt_slice_let (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 236 RepMStmt) (Lanius.Mini.sliceLet x0 x1 x2 x3 x4) w
 
 abbrev Stmt_slice_returned (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.LetHead} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepTy x1 v1 → (RepOption 252 RepLetHead) x2 v2 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.LetHead} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepTy x1 v1 → (RepOption 266 RepLetHead) x2 v2 →
     (RepOption 236 RepMStmt) (Lanius.Mini.sliceReturned x0 x1 x2) w
 
 abbrev Stmt_then_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -93,23 +93,23 @@ abbrev Stmt_try_let (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 236 RepMStmt) (Lanius.Mini.tryLet x0 x1 x2 x3 x4) w
 
 abbrev Stmt_try_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Tried} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 253 RepTried) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.Tried} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 267 RepTried) x0 v0 →
     (RepOption 236 RepMStmt) (Lanius.Mini.tryStmt x0) w
 
 abbrev Stmt_untyped_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Option Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → (RepOption 246 RepMEff) x3 v3 →
-    (RepOption 241 RepUntyped) (Lanius.Mini.untypedEval x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Option Lanius.Mini.MEff} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → (RepOption 241 RepMEff) x3 v3 →
+    (RepOption 249 RepUntyped) (Lanius.Mini.untypedEval x0 x1 x2 x3) w
 
 abbrev Stmt_untyped_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 227 RepLocal) x2 v2 → RepCTree x3 v3 →
-    (RepOption 241 RepUntyped) (Lanius.Mini.untypedHead x0 x1 x2 x3) w
+    (RepOption 249 RepUntyped) (Lanius.Mini.untypedHead x0 x1 x2 x3) w
 
 abbrev Stmt_untyped_if (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.LetHead} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBool x0 v0 → RepTy x1 v1 → RepLetHead x2 v2 →
-    (RepOption 241 RepUntyped) (Lanius.Mini.untypedIf x0 x1 x2) w
+    (RepOption 249 RepUntyped) (Lanius.Mini.untypedIf x0 x1 x2) w
 
 abbrev Stmt_untyped_try (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Tried} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 253 RepTried) x0 v0 →
-    (RepOption 241 RepUntyped) (Lanius.Mini.untypedTry x0) w
+  ∀ {x0 : Option Lanius.Mini.Tried} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 267 RepTried) x0 v0 →
+    (RepOption 249 RepUntyped) (Lanius.Mini.untypedTry x0) w
 
 end Lanius.Faithful.SelfCert

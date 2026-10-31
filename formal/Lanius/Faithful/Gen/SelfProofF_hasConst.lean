@@ -73,12 +73,12 @@ theorem proof_decl_inst {prog : SrcProgram} {prims : Prims} {ix_decl_inst ix_emp
   simp only [src_decl_inst] at h
   faithful [Lanius.Mini.declInst]
 
-theorem proof_eff_binary {prog : SrcProgram} {prims : Prims} {ix_eff_binary ix_tail_op ix_x_divide_of ix_x_apply_of ix_p_div_tail ix_p_mod_tail : Nat} (fn : prog.funcs[ix_eff_binary]? = some (src_eff_binary ix_tail_op ix_x_divide_of ix_x_apply_of ix_p_div_tail ix_p_mod_tail)) (np : prims.isPrim ix_eff_binary = false)
+theorem proof_eff_binary {prog : SrcProgram} {prims : Prims} {ix_eff_binary ix_tail_op ix_p_div_tail ix_x_divide_of ix_p_mod_tail ix_x_apply_of : Nat} (fn : prog.funcs[ix_eff_binary]? = some (src_eff_binary ix_tail_op ix_p_div_tail ix_x_divide_of ix_p_mod_tail ix_x_apply_of)) (np : prims.isPrim ix_eff_binary = false)
     (ext_tail_op : Certified (∀ {n : Nat}, Stmt_tail_op prog prims ix_tail_op n))
-    (ext_x_divide_of : Certified (∀ {n : Nat}, Stmt_x_divide_of prog prims ix_x_divide_of n))
-    (ext_x_apply_of : Certified (∀ {n : Nat}, Stmt_x_apply_of prog prims ix_x_apply_of n))
     (ext_p_div_tail : Certified (∀ {n : Nat}, Stmt_p_div_tail prog prims ix_p_div_tail n))
-    (ext_p_mod_tail : Certified (∀ {n : Nat}, Stmt_p_mod_tail prog prims ix_p_mod_tail n)) {n : Nat} :
+    (ext_x_divide_of : Certified (∀ {n : Nat}, Stmt_x_divide_of prog prims ix_x_divide_of n))
+    (ext_p_mod_tail : Certified (∀ {n : Nat}, Stmt_p_mod_tail prog prims ix_p_mod_tail n))
+    (ext_x_apply_of : Certified (∀ {n : Nat}, Stmt_x_apply_of prog prims ix_x_apply_of n)) {n : Nat} :
     Stmt_eff_binary prog prims ix_eff_binary n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n

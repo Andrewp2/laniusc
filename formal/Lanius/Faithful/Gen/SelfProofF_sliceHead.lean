@@ -49,14 +49,14 @@ theorem proof_alloc_path {prog : SrcProgram} {prims : Prims} {ix_alloc_path ix_s
   simp only [src_alloc_path] at h
   faithful [Lanius.Mini.allocPath]
 
-theorem proof_builtin_path {prog : SrcProgram} {prims : Prims} {ix_builtin_path ix_single_of_mini_selfhost_List_usize ix_same_spellings ix_dealloc_path ix_text_assert ix_alloc_path ix_text_slice_from_raw_parts ix_text_slice_stride : Nat} (fn : prog.funcs[ix_builtin_path]? = some (src_builtin_path ix_single_of_mini_selfhost_List_usize ix_same_spellings ix_dealloc_path ix_text_assert ix_alloc_path ix_text_slice_from_raw_parts ix_text_slice_stride)) (np : prims.isPrim ix_builtin_path = false)
+theorem proof_builtin_path {prog : SrcProgram} {prims : Prims} {ix_builtin_path ix_single_of_mini_selfhost_List_usize ix_same_spellings ix_alloc_path ix_dealloc_path ix_text_slice_from_raw_parts ix_text_slice_stride ix_text_assert : Nat} (fn : prog.funcs[ix_builtin_path]? = some (src_builtin_path ix_single_of_mini_selfhost_List_usize ix_same_spellings ix_alloc_path ix_dealloc_path ix_text_slice_from_raw_parts ix_text_slice_stride ix_text_assert)) (np : prims.isPrim ix_builtin_path = false)
     (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))
     (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))
-    (ext_dealloc_path : Certified (∀ {n : Nat}, Stmt_dealloc_path prog prims ix_dealloc_path n))
-    (ext_text_assert : Certified (∀ {n : Nat}, Stmt_text_assert prog prims ix_text_assert n))
     (ext_alloc_path : Certified (∀ {n : Nat}, Stmt_alloc_path prog prims ix_alloc_path n))
+    (ext_dealloc_path : Certified (∀ {n : Nat}, Stmt_dealloc_path prog prims ix_dealloc_path n))
     (ext_text_slice_from_raw_parts : Certified (∀ {n : Nat}, Stmt_text_slice_from_raw_parts prog prims ix_text_slice_from_raw_parts n))
-    (ext_text_slice_stride : Certified (∀ {n : Nat}, Stmt_text_slice_stride prog prims ix_text_slice_stride n)) {n : Nat} :
+    (ext_text_slice_stride : Certified (∀ {n : Nat}, Stmt_text_slice_stride prog prims ix_text_slice_stride n))
+    (ext_text_assert : Certified (∀ {n : Nat}, Stmt_text_assert prog prims ix_text_assert n)) {n : Nat} :
     Stmt_builtin_path prog prims ix_builtin_path n := by
   intro x0 v0 w h r0
   rcases n with _ | n
@@ -65,15 +65,15 @@ theorem proof_builtin_path {prog : SrcProgram} {prims : Prims} {ix_builtin_path 
   simp only [src_builtin_path] at h
   faithful [Lanius.Mini.builtinPath]
 
-theorem proof_call_path_head {prog : SrcProgram} {prims : Prims} {ix_call_path_head ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_is_path ix_args_of ix_alloc_path ix_alloc_head ix_text_slice_from_raw_parts ix_slice_head : Nat} (fn : prog.funcs[ix_call_path_head]? = some (src_call_path_head ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_is_path ix_args_of ix_alloc_path ix_alloc_head ix_text_slice_from_raw_parts ix_slice_head)) (np : prims.isPrim ix_call_path_head = false)
+theorem proof_call_path_head {prog : SrcProgram} {prims : Prims} {ix_call_path_head ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_is_path ix_alloc_path ix_text_slice_from_raw_parts ix_args_of ix_alloc_head ix_slice_head : Nat} (fn : prog.funcs[ix_call_path_head]? = some (src_call_path_head ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_is_path ix_alloc_path ix_text_slice_from_raw_parts ix_args_of ix_alloc_head ix_slice_head)) (np : prims.isPrim ix_call_path_head = false)
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
     (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))
     (ext_is_path : Certified (∀ {n : Nat}, Stmt_is_path prog prims ix_is_path n))
-    (ext_args_of : Certified (∀ {n : Nat}, Stmt_args_of prog prims ix_args_of n))
     (ext_alloc_path : Certified (∀ {n : Nat}, Stmt_alloc_path prog prims ix_alloc_path n))
-    (ext_alloc_head : Certified (∀ {n : Nat}, Stmt_alloc_head prog prims ix_alloc_head n))
     (ext_text_slice_from_raw_parts : Certified (∀ {n : Nat}, Stmt_text_slice_from_raw_parts prog prims ix_text_slice_from_raw_parts n))
+    (ext_args_of : Certified (∀ {n : Nat}, Stmt_args_of prog prims ix_args_of n))
+    (ext_alloc_head : Certified (∀ {n : Nat}, Stmt_alloc_head prog prims ix_alloc_head n))
     (ext_slice_head : Certified (∀ {n : Nat}, Stmt_slice_head prog prims ix_slice_head n)) {n : Nat} :
     Stmt_call_path_head prog prims ix_call_path_head n := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4

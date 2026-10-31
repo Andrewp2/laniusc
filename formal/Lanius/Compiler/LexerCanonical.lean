@@ -36,7 +36,8 @@ def keywordRules : List KeywordRule := [
   ⟨[115, 116, 114, 117, 99, 116], .structKeyword⟩,
   ⟨[116, 114, 97, 105, 116], .traitKeyword⟩,
   ⟨[116, 121, 112, 101], .typeKeyword⟩,
-  ⟨[119, 104, 101, 114, 101], .whereKeyword⟩
+  ⟨[119, 104, 101, 114, 101], .whereKeyword⟩,
+  ⟨[114, 101, 113, 117, 105, 114, 101, 115], .requiresKeyword⟩
 ]
 
 def exactKeywordKind : List Nat → List KeywordRule → Option TokenKind

@@ -70,11 +70,11 @@ theorem proof_cast_shift {prog : SrcProgram} {prims : Prims} {ix_cast_shift ix_l
   simp only [src_cast_shift] at h
   faithful [Lanius.Mini.castShift]
 
-theorem proof_is_path_call {prog : SrcProgram} {prims : Prims} {ix_is_path_call ix_node_prod ix_kid ix_p_postfix_end ix_p_ident ix_p_ident_plain ix_p_postfix_call : Nat} (fn : prog.funcs[ix_is_path_call]? = some (src_is_path_call ix_node_prod ix_kid ix_p_postfix_end ix_p_ident ix_p_ident_plain ix_p_postfix_call)) (np : prims.isPrim ix_is_path_call = false)
+theorem proof_is_path_call {prog : SrcProgram} {prims : Prims} {ix_is_path_call ix_node_prod ix_kid ix_p_ident ix_p_postfix_end ix_p_ident_plain ix_p_postfix_call : Nat} (fn : prog.funcs[ix_is_path_call]? = some (src_is_path_call ix_node_prod ix_kid ix_p_ident ix_p_postfix_end ix_p_ident_plain ix_p_postfix_call)) (np : prims.isPrim ix_is_path_call = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_p_ident_plain : Certified (∀ {n : Nat}, Stmt_p_ident_plain prog prims ix_p_ident_plain n))
     (ext_p_postfix_call : Certified (∀ {n : Nat}, Stmt_p_postfix_call prog prims ix_p_postfix_call n)) {n : Nat} :
     Stmt_is_path_call prog prims ix_is_path_call n := by
@@ -85,11 +85,11 @@ theorem proof_is_path_call {prog : SrcProgram} {prims : Prims} {ix_is_path_call 
   simp only [src_is_path_call] at h
   faithful [Lanius.Mini.isPathCall]
 
-theorem proof_is_try_call {prog : SrcProgram} {prims : Prims} {ix_is_try_call ix_node_prod ix_kid ix_p_postfix_end ix_p_ident ix_p_ident_plain ix_p_postfix_call ix_p_postfix_try : Nat} (fn : prog.funcs[ix_is_try_call]? = some (src_is_try_call ix_node_prod ix_kid ix_p_postfix_end ix_p_ident ix_p_ident_plain ix_p_postfix_call ix_p_postfix_try)) (np : prims.isPrim ix_is_try_call = false)
+theorem proof_is_try_call {prog : SrcProgram} {prims : Prims} {ix_is_try_call ix_node_prod ix_kid ix_p_ident ix_p_postfix_end ix_p_ident_plain ix_p_postfix_call ix_p_postfix_try : Nat} (fn : prog.funcs[ix_is_try_call]? = some (src_is_try_call ix_node_prod ix_kid ix_p_ident ix_p_postfix_end ix_p_ident_plain ix_p_postfix_call ix_p_postfix_try)) (np : prims.isPrim ix_is_try_call = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
     (ext_p_ident_plain : Certified (∀ {n : Nat}, Stmt_p_ident_plain prog prims ix_p_ident_plain n))
     (ext_p_postfix_call : Certified (∀ {n : Nat}, Stmt_p_postfix_call prog prims ix_p_postfix_call n))
     (ext_p_postfix_try : Certified (∀ {n : Nat}, Stmt_p_postfix_try prog prims ix_p_postfix_try n)) {n : Nat} :

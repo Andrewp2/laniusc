@@ -6,8 +6,8 @@ import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.moduleNamesOk
-import Lanius.Mini.Frontend.P.moduleOr
 import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.typePathSpellings
@@ -32,7 +32,7 @@ def variantIn (types : List TypeDecl) (d : Option Nat) (name : List Nat) : Optio
 def enumVariant (env : FrontEnv) (front : List (List Nat)) (name : List Nat) : Option VariantAt :=
   match splitLast front with
   | none => none
-  | some t => variantIn env.decls.types (findType env.decls.types (moduleOr env.home t.home) t.name 0) name
+  | some t => variantIn env.decls.types (findType env.decls.types (pathModule env t.home t.name) t.name 0) name
 
 /-- The variant a value path names: `V` (see bare_variant), `E::V` or `m::E::V` when the prefix names an enum, else `m::V`, the one enum of module m that has V. -/
 def variantByPath (env : FrontEnv) (s : Split) : Option VariantAt :=

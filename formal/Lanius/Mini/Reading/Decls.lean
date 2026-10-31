@@ -401,11 +401,11 @@ inductive ItemDecls (home : ModPath) : CTree → Decls → Prop
   | const {item : CTree} : nodeProd (itemBody item) = pConst →
       ItemDecls home item (onlyConsts [constDeclAt home (itemBody item)])
   | implInherent {item : CTree} {ps : List Name} {ms : List CTree} {fs : List FnDecl} :
-      nodeProd (itemBody item) = pImplInherent → nodeProd (kid (itemBody item) 3) = pWhereNone →
+      nodeProd (itemBody item) = pImplInherent →
       TypeParams (kid (itemBody item) 1) ps → Items (kid (itemBody item) 5) ms →
       ListRel (MethodDecl home ps (kid (itemBody item) 2)) ms fs → ItemDecls home item (onlyFns fs)
   | implTrait {item : CTree} {ps : List Name} {ms : List CTree} {fs : List FnDecl} :
-      nodeProd (itemBody item) = pImplTrait → nodeProd (kid (itemBody item) 5) = pWhereNone →
+      nodeProd (itemBody item) = pImplTrait →
       TypeParams (kid (itemBody item) 1) ps → Items (kid (itemBody item) 7) ms →
       ListRel (MethodDecl home ps (kid (itemBody item) 4)) ms fs → ItemDecls home item (onlyFns fs)
   | imports {item : CTree} {target : ModPath} : nodeProd (itemBody item) = pImport →
@@ -471,15 +471,15 @@ theorem itemDecls_sound {fuel : Nat} {home : ModPath} {item : CTree} {d : Decls}
     subst h
     exact .const cn
   rw [if_neg cn] at h
-  by_cases ii : nodeProd (itemBody item) = pImplInherent ∧ nodeProd (kid (itemBody item) 3) = pWhereNone
+  by_cases ii : nodeProd (itemBody item) = pImplInherent
   · rw [if_pos (by simpa using ii)] at h
     obtain ⟨ps, ms, fs, tp, items, rel, rfl⟩ := implMethods_sound rfl h
-    exact .implInherent ii.1 ii.2 tp items rel
+    exact .implInherent ii tp items rel
   rw [if_neg (by simpa using ii)] at h
-  by_cases it : nodeProd (itemBody item) = pImplTrait ∧ nodeProd (kid (itemBody item) 5) = pWhereNone
+  by_cases it : nodeProd (itemBody item) = pImplTrait
   · rw [if_pos (by simpa using it)] at h
     obtain ⟨ps, ms, fs, tp, items, rel, rfl⟩ := implMethods_sound rfl h
-    exact .implTrait it.1 it.2 tp items rel
+    exact .implTrait it tp items rel
   rw [if_neg (by simpa using it)] at h
   by_cases im : nodeProd (itemBody item) = pImport ∧ nodeProd (kid (itemBody item) 1) = pImportPath
   · rw [if_pos (by simpa using im)] at h

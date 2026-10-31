@@ -107,14 +107,65 @@ theorem resultOf_sound {fuel : Nat} {env : FrontEnv} {ret : CTree} {r : RetTy} (
       exact .ty pt (c pt) (tyOf_sound ht)
   cases h
 
-/-- A function instance's body: no contracts, its parameters, its result
-type, and its block read with the result type as `return`'s. -/
+/-- A function's `requires` clauses, each a bool condition asserted in order
+before the body. -/
+inductive ContractsR (env : FrontEnv) (scope : List Local) : CTree → MStmt → MStmt → Prop
+  | none {c : CTree} {b : MStmt} : nodeProd c = pContractsNone → ContractsR env scope c b b
+  | more {c : CTree} {b : MStmt} {x : MEff} {r : MStmt} : nodeProd c = pContractsMore →
+      nodeProd (kid c 0) = pRequires → EffR env scope (some .tyBool) (kid (kid c 0) 2) x →
+      ContractsR env scope (kid c 1) b r → ContractsR env scope c b (.mThen (.mAssert x) r)
+
+theorem contractsOf_sound {env : FrontEnv} {scope : List Local} {b : MStmt} :
+    ∀ {fuel : Nat} {c : CTree} {m : MStmt}, contractsOf fuel env scope c (some b) = some m → ContractsR env scope c b m
+  | 0, _, _, h => by rw [contractsOf.eq_def] at h; simp at h
+  | f + 1, c, m, h => by
+    rw [contractsOf.eq_def] at h
+    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+    split at h
+    · rename_i pn
+      simp only [Option.some.injEq] at h
+      subst h
+      exact .none (by simpa using pn)
+    split at h
+    · rename_i _ c'
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at c'
+      simp only [contractThen] at h
+      cases hx : effOf (f + 1) env scope (some .tyBool) (kid (kid c 0) 2) with
+      | none => rw [hx] at h; cases h
+      | some x =>
+        rw [hx] at h
+        simp only at h
+        cases hr : contractsOf f env scope (kid c 1) (some b) with
+        | none => rw [hr] at h; cases h
+        | some r =>
+          rw [hr] at h
+          simp only [Option.some.injEq] at h
+          subst h
+          exact .more c'.1 c'.2 (effOf_sound hx) (contractsOf_sound hr)
+    cases h
+
+theorem contractsOf_none {env : FrontEnv} {scope : List Local} :
+    ∀ {fuel : Nat} {c : CTree}, contractsOf fuel env scope c none = none
+  | 0, _ => by rw [contractsOf.eq_def]; simp
+  | f + 1, c => by
+    rw [contractsOf.eq_def]
+    simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel]
+    split
+    · rfl
+    split
+    · simp only [contractThen, contractsOf_none]
+      split <;> rfl
+    rfl
+
+/-- A function instance's body: its parameters, its result type, its block
+read with the result type as `return`'s, after its `requires` checks. -/
 def ReadFn (decls : Decls) (fd : FnDecl) (args : List Ty) (mf : MFunc) : Prop :=
-  ∃ r items ps body, (fd.implParams ++ fd.params).length = args.length ∧ nodeProd (kid fd.tree 8) = pContractsNone ∧
+  ∃ r items ps body mb, (fd.implParams ++ fd.params).length = args.length ∧
     ResultR (fnScope decls fd args none) (kid fd.tree 6) r ∧ Items (kid fd.tree 4) items ∧
     ParamsR (fnScope decls fd args (retExpected (some r))) fd [] items ps ∧
     BlockR (fnScope decls fd args (retExpected (some r))) ps.scope (kid (kid fd.tree 9) 1) body ∧
-    mf = { params := ps.params, ret := r, body := body }
+    ContractsR (fnScope decls fd args (retExpected (some r))) ps.scope (kid fd.tree 8) body mb ∧
+    mf = { params := ps.params, ret := r, body := mb }
 
 theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty} {mf : MFunc}
     (h : readFn fuel decls fd args = some mf) : ReadFn decls fd args mf := by
@@ -122,7 +173,7 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
   simp only at h
   split at h
   · rename_i c
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+    try simp only [decide_eq_true_eq] at c
     cases hr : resultOf fuel (fnScope decls fd args none) (kid fd.tree 6) with
     | none =>
       rw [hr] at h
@@ -147,13 +198,18 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
           rw [hp] at h
           simp only [funcRet, funcBody] at h
           cases hb : blockOf fuel (fnScope decls fd args (retExpected (some r))) ps.scope (kid (kid fd.tree 9) 1) with
-          | none => rw [hb] at h; cases h
+          | none => rw [hb, contractsOf_none] at h; cases h
           | some body =>
             rw [hb] at h
-            simp only [Option.some.injEq] at h
-            subst h
-            exact ⟨r, items, ps, body, c.1, c.2, resultOf_sound hr, listItems_sound hi, paramsOf_sound hp,
-              blockOf_sound hb, rfl⟩
+            cases hc : contractsOf fuel (fnScope decls fd args (retExpected (some r))) ps.scope (kid fd.tree 8)
+                (some body) with
+            | none => rw [hc] at h; cases h
+            | some mb =>
+              rw [hc] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              exact ⟨r, items, ps, body, mb, c, resultOf_sound hr, listItems_sound hi, paramsOf_sound hp,
+                blockOf_sound hb, contractsOf_sound hc, rfl⟩
   · cases h
 
 /-- An extern function's instance (its tree is `externTree`'s): no type

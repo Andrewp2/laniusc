@@ -900,3 +900,38 @@ a call (a method call included), a cast, an element, a struct literal, a
 arithmetic expression, a variant and a `match` are not read untyped. Their
 type depends on a default for literals that the reader does not pick. The
 `let` then reads as the typed `let x: T = init;` would.
+
+## `requires` clauses (decided 10-31, F10)
+
+`fn f(..) -> T requires (c1) requires (c2) { body }` reads as a body of
+`assert(c1); assert(c2); body`: each clause is a `bool` effectful
+expression over the parameters, checked in source order before the body
+runs. A false clause traps as a false `assert` does, which matches laniusc
+(its `requires_fails` fixture stops with SIGILL before the body runs). The
+lexer spec gains the `requires` keyword (laniusc's token code 201). The
+grammar has no `ensures` clause, so none is read.
+
+## Item imports (decided 10-31, F11)
+
+`import p::name;` in module `m`, when no file declares anything in module
+`p::name`, imports the item `name` of module `p`: in `m`, the bare path
+`name` names `p`'s `name`, whether a type, a function, a constant, an alias
+or a variant (`pathHome`, `itemImport`, `BareVariant.item`). As in laniusc
+(docs/language-ergonomics.md) the import names only that item and beats
+module imports for its name; a module of that whole path wins over the
+item. Two deliberate differences, both on programs laniusc rejects: an item
+import also beats a declaration of the same name in `m` (laniusc reports a
+clash), and a module with no declarations counts as no module. Module
+imports still bring only variants into scope by their bare names.
+Stdlib: `core::wide_i64_checked` and `core::wide_u64_checked`, 20 targets,
+all compile now (432 calls agree with laniusc).
+
+## Impls with where clauses (decided 10-31, F7)
+
+An `impl` block with a `where` clause is read as the same block without it,
+as a function's `where` clause already was: bounds are not checked yet (F7),
+so a method is found by its type alone. The clause can only reject programs
+in laniusc, never change what an accepted one does, so the reading of a
+program laniusc accepts is unchanged. Unlocks the 51 such impls in 15
+stdlib and `extended/` files, among them `core::iter` and
+`core::clone_values`, which most of the stdlib reaches (case impl_where).

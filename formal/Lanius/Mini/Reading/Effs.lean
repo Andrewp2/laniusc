@@ -159,7 +159,7 @@ inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff �
   | unitVariant {scope : List Local} {expected : Option Ty} {c : CTree} {ss : List Name} {front : ModPath} {name : Name}
       {v : VariantAt} {x : MEff} : nodeProd c = pIdent → nodeProd (kid c 1) = pIdentPlain →
       PathSpellings (kid (kid c 0) 0) (kid (kid c 0) 1) ss → ss = front ++ [name] → (∀ l, ¬LocalOf scope c l) →
-      (∀ m n k, Resolves env.home ss m n → ¬ConstNamed env.decls m n k) → VariantByPath env front name v →
+      (∀ m n k, Resolves env.decls env.home ss m n → ¬ConstNamed env.decls m n k) → VariantByPath env front name v →
       EffVariant env scope expected v [] x → EffR env scope expected c x
   | literal {scope : List Local} {expected : Option Ty} {c : CTree} {ss : List Name} {fs : List CTree} {d : Nat}
       {t : TypeDecl} {E : Option (List Ty)} {vs : List MEff} {ty : Ty} : nodeProd c = pIdent →
@@ -243,11 +243,11 @@ inductive EffNamed (env : FrontEnv) : List Local → Option Ty → ModPath → N
       EffInfer env scope expected found.decl fd found.binds [] items x → EffNamed env scope expected front name targs items x
   | infer {scope : List Local} {expected : Option Ty} {front : ModPath} {name : Name} {targs items : List CTree}
       {d : Nat} {fd : FnDecl} {x : MEff} : ¬(∃ n, TypeOwner env front n ∧ targs = []) →
-      FnNamed env.decls (if front = [] then env.home else front) name d → env.decls.fns[d]? = some fd → targs = [] →
+      FnNamed env.decls (pathHome env.decls env.home front name) name d → env.decls.fns[d]? = some fd → targs = [] →
       EffInfer env scope expected d fd [] [] items x → EffNamed env scope expected front name targs items x
   | explicit {scope : List Local} {expected : Option Ty} {front : ModPath} {name : Name} {targs items : List CTree}
       {d : Nat} {fd : FnDecl} {i : Inst} {ts : List Ty} {xs : List MEff} :
-      ¬(∃ n, TypeOwner env front n ∧ targs = []) → FnNamed env.decls (if front = [] then env.home else front) name d →
+      ¬(∃ n, TypeOwner env front n ∧ targs = []) → FnNamed env.decls (pathHome env.decls env.home front name) name d →
       env.decls.fns[d]? = some fd → targs ≠ [] → ExplicitInst env d fd targs i →
       ParamExpects env.decls fd i.args ts → EffList env scope (some ts) items xs →
       EffNamed env scope expected front name targs items (.xCall i xs)
@@ -1045,10 +1045,10 @@ theorem effSound : ∀ fuel, EffSound fuel
               cases hc : localOf env scope c with
               | none => exact localOf_none hc
               | some _ => rw [hc] at nl; cases nl
-            have nk' : ∀ m n k, Resolves env.home ss m n → ¬ConstNamed env.decls m n k := by
+            have nk' : ∀ m n k, Resolves env.decls env.home ss m n → ¬ConstNamed env.decls m n k := by
               intro m n k r ⟨_, kn⟩
               obtain ⟨rfl, rfl⟩ := resolves_unique r (resolves_split hl)
-              cases hk : findConst env.decls.consts (moduleOr env.home s.home) s.name with
+              cases hk : findConst env.decls.consts (pathModule env s.home s.name) s.name with
               | none => exact findConst_none hk k (firstWith_mem kn).1 (firstWith_mem kn).2
               | some _ => rw [hk] at nk; cases nk
             obtain ⟨u, hu, ev⟩ := ihVariant h
@@ -1224,7 +1224,7 @@ theorem effSound : ∀ fuel, EffSound fuel
           obtain ⟨fo, fd, hfo, hfd, inf⟩ := ihFound h
           exact .static own ((noTrees_iff _).1 c.2) (ownerTy_sound ho) (findMethod_sound hfo) hfd inf
       · rename_i c
-        cases hf : findFn env.decls.fns (moduleOr env.home s.home) s.name 0 with
+        cases hf : findFn env.decls.fns (pathModule env s.home s.name) s.name 0 with
         | none => rw [hf] at h; cases h
         | some d =>
           rw [hf] at h
@@ -1237,8 +1237,8 @@ theorem effSound : ∀ fuel, EffSound fuel
             have no : ¬(∃ n, TypeOwner env s.home n ∧ targs = []) := fun ⟨n, own, e⟩ => c (by
               simp only [Bool.and_eq_true]
               exact ⟨(isTypeParam_iff env s.home).2 ⟨n, own⟩, (noTrees_iff _).2 e⟩)
-            have fn : FnNamed env.decls (if s.home = [] then env.home else s.home) s.name d := by
-              rw [← moduleOr_eq]; exact findFn_sound hf
+            have fn : FnNamed env.decls (pathHome env.decls env.home s.home s.name) s.name d := by
+              rw [← pathModule_eq]; exact findFn_sound hf
             rcases ihFree h with ⟨nt, inf⟩ | ⟨nt, i, E, xs, ei, hE, el, rfl⟩
             · exact .infer no fn hd nt inf
             · exact .explicit no fn hd nt ei hE el

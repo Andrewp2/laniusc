@@ -4,7 +4,7 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.moduleOr
+import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.rootInsts
 
@@ -17,7 +17,7 @@ namespace Lanius.Mini
 
 /-- A path naming a function: `T::m` for a type parameter T, or a free function of the path's module. -/
 def isFnPath (env : FrontEnv) (s : Split) : Bool :=
-  isTypeParam env (singleName s.home) || isSomeIndex (findFn env.decls.fns (moduleOr env.home s.home) s.name 0)
+  isTypeParam env (singleName s.home) || isSomeIndex (findFn env.decls.fns (pathModule env s.home s.name) s.name 0)
 
 /-- A postfix `recv.m(args)` (recv a local, no further postfix). -/
 def isMethodForm (pf : CTree) : Bool :=
