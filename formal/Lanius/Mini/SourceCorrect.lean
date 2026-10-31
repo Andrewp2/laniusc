@@ -60,7 +60,7 @@ theorem HeapCorr.empty {heap : Heap} (start : heap.cursor = 1) (zero : ∀ a, 1 
     apart := fun _ mem => by cases mem
     unique := fun _ mem => by cases mem
     bytes := fun _ mem => by cases mem
-    zero
+    zero := fun a ge _ => zero a ge
     out := by rw [silent]; rfl
     err := by rw [silent]; rfl
     closed := rfl

@@ -51,7 +51,8 @@ structure HeapCorr (h : Memory.Heap) (w : World.State) (hp : Heap) : Prop where
   apart : ∀ b ∈ h.blocks, ∀ b' ∈ h.blocks, b.base < b'.base → b.base + b.size ≤ b'.base
   unique : ∀ b ∈ h.blocks, ∀ b' ∈ h.blocks, b.base = b'.base → b = b'
   bytes : ∀ b ∈ h.blocks, b.live = true → ∀ i (lt : i < b.bytes.length), hp.bytes (b.base + i) = b.bytes[i]
-  zero : ∀ a, h.nextAddress ≤ a → hp.bytes a = 0
+  /-- Below the limit: frame memory above it holds the activations' values. -/
+  zero : ∀ a, h.nextAddress ≤ a → a < hp.limit → hp.bytes a = 0
   out : w.standardOutput = outputOf 1 hp.io.trace
   err : w.standardError = outputOf 2 hp.io.trace
   closed : w.fileHandles = []
@@ -191,10 +192,10 @@ theorem HeapCorr.store {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {p
           addr_omega
       rw [if_neg disjoint]
       exact corr.bytes b mb bl i inside
-  · intro a above
+  · intro a above below
     simp only [Heap.write]
     rw [if_neg (by addr_omega)]
-    exact corr.zero a above
+    exact corr.zero a above below
 
 theorem HeapCorr.dealloc {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {p s a : Nat}
     {h' : Memory.Heap} (ok : h.deallocate p s a = .ok h') : HeapCorr h' w hp := by
@@ -253,7 +254,8 @@ theorem alignUp_eq (n shift : Nat) : alignUp n shift = Memory.alignUp n (2 ^ shi
 theorem HeapCorr.allocate {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {n shift p : Nat}
     {h' : Memory.Heap} (ok : h.allocate n (2 ^ shift) = .allocated p h') :
     p = alignUp hp.cursor shift ∧ h'.nextAddress = alignUp hp.cursor shift + max n 1 ∧
-      HeapCorr h' w { hp with cursor := alignUp hp.cursor shift + max n 1 } := by
+      (alignUp hp.cursor shift + max n 1 ≤ hp.limit →
+        HeapCorr h' w { hp with cursor := alignUp hp.cursor shift + max n 1 }) := by
   simp only [Memory.Heap.allocate, validAlignment_pow, Bool.not_true, Bool.false_eq_true, ite_false,
     corr.unbounded, Memory.consumeBudget, Memory.AllocationResult.allocated.injEq] at ok
   obtain ⟨rfl, rfl⟩ := ok
@@ -262,7 +264,8 @@ theorem HeapCorr.allocate {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp)
   have ge : hp.cursor ≤ alignUp hp.cursor shift := by
     rw [alignUp_eq]
     exact memAlignUp_ge _ _ (Nat.two_pow_pos _)
-  refine ⟨rfl, rfl, rfl, by addr_omega, rfl, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err, corr.closed, corr.input⟩
+  refine ⟨rfl, rfl, fun roomBound => ⟨rfl, by addr_omega, rfl, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err,
+    corr.closed, corr.input⟩⟩
   · intro b m
     simp only [List.mem_append, List.mem_singleton] at m
     rcases m with m | rfl
@@ -306,9 +309,14 @@ theorem HeapCorr.allocate {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp)
     rcases m with m | rfl
     · exact corr.bytes b m bl i inside
     · simp only [List.getElem_replicate]
-      exact corr.zero _ (by rw [← corr.cursor]; addr_omega)
-  · intro a above
-    exact corr.zero a (by rw [← corr.cursor]; addr_omega)
+      refine corr.zero _ (by rw [← corr.cursor]; addr_omega) ?_
+      rw [List.length_replicate] at inside
+      have := roomBound
+      have := Nat.le_max_left n 1
+      show alignUp hp.cursor shift + i < hp.limit
+      omega
+  · intro a above below
+    exact corr.zero a (by rw [← corr.cursor]; addr_omega) below
 
 /-! ## Mini runs keep the limit -/
 

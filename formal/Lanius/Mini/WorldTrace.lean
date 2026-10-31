@@ -53,9 +53,9 @@ theorem HeapCorr.retrace {h : Memory.Heap} {w : World.State} {hp : Heap} (corr :
   · intro b mem live i lt
     rw [bytes]
     exact bs b mem live i lt
-  · intro a ge
+  · intro a ge below
     rw [bytes]
-    exact zero a ge
+    exact zero a ge (by rw [← limit]; exact below)
 
 /-- A world whose output grew by `bytes` on `fd` and a mini heap with the
 same bytes, cursor and limit whose trace grew by events writing exactly those

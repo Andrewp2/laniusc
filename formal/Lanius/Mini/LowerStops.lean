@@ -1694,7 +1694,7 @@ theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : 
   | exhausted heap' => exact (hc.allocated _ _ alloc).elim
   | trapped r heap' => exact (hc.untrapped _ _ alloc).elim
   | allocated p heap' =>
-    obtain ⟨rfl, grown, hc'⟩ := hc.allocate alloc
+    obtain ⟨rfl, grown, hcRoom⟩ := hc.allocate alloc
     have valueRun : evalExpr (k + 2) sp.toCore st
         (.alloc size.toCore (.value (.unsigned .usize (2 ^ shift)))) =
           .done (.pointer (alignUp hp.cursor shift)) { st with heap := heap' } := by
@@ -1705,6 +1705,7 @@ theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : 
     by_cases fits : heap'.nextAddress ≤ hp.limit
     · have room : alignUp hp.cursor shift + ((atLeastOne x).eval env).toNat ≤ hp.limit := by
         rw [atLeastOne_eval]; rw [grown] at fits; exact fits
+      have hc' := hcRoom (by rw [← atLeastOne_eval]; exact room)
       have small := hc.small
       obtain ⟨d, stops⟩ := let_stops ih (ty := .ptr) (st := { st with heap := heap' })
         (v := .pointer (alignUp hp.cursor shift))

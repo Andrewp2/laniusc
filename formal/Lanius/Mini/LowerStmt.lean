@@ -2754,12 +2754,13 @@ theorem stmt_letAlloc (ih : StmtSound sp mp fuel) {id shift : Nat} {size : SrcEx
             obtain ⟨rfl, rfl⟩ := valueRun
             simp only [UintTy.toCore, Value.unsigned.injEq, true_and] at holdsN
             subst holdsN
-            obtain ⟨rfl, grown, hc'⟩ := hc.allocate allocated
+            obtain ⟨rfl, grown, hcRoom⟩ := hc.allocate allocated
             have tail := tail_bound (st1 := { afterAlign with heap := heap' }) fresh.2 run bound
             simp only [grown] at tail
             have small := hc.small
             have room : alignUp hp.cursor shift + ((atLeastOne x).eval env).toNat ≤ hp.limit := by
               rw [atLeastOne_eval]; exact tail
+            have hc' := hcRoom (by rw [← atLeastOne_eval]; exact room)
             have step := Exec.alloc (prog := mp) (depth := 0) (env := env) (target := next) room
             obtain ⟨fresh', keeps, d, out, exec, matched⟩ := let_tail ih (ty := .ptr) (st := { afterAlign with heap := heap' })
               (v := .pointer (alignUp hp.cursor shift))
