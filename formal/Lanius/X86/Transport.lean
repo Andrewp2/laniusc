@@ -130,6 +130,7 @@ mutual
     | .local id => some [0, Int.ofNat id]
     | .field base field => return [1, Int.ofNat field] ++ (← encodePlace base)
     | .index base index => return [2] ++ (← encodePlace base) ++ (← encodeExpr index)
+    | .deref _ => none
 end
 
 def encodeStmt : Stmt → Option (List Int)
