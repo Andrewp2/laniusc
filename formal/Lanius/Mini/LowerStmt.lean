@@ -300,6 +300,7 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt
   | loadWord inside => exact .loadWord inside
   | storeWord inside => exact .storeWord inside
   | divide defined => exact .divide defined
+  | sys ran => exact .sys ran
 
 /-! ## Programs -/
 

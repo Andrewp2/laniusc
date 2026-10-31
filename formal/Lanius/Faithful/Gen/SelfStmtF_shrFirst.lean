@@ -22,11 +22,11 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_attach (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : List Lanius.Mini.Sym} {x3 : Nat} {x4 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 34 RepRule) x0 v0 → RepNat x1 v1 → (RepList 36 RepSym) x2 v2 → RepNat x3 v3 → RepCursor x4 v4 →
-    (RepOption 121 RepAttached) (Lanius.Mini.attach x0 x1 x2 x3 x4) w
+    (RepOption 122 RepAttached) (Lanius.Mini.attach x0 x1 x2 x3 x4) w
 
 abbrev Stmt_only (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepList 76 RepCTree) x1 v1 →
-    (RepOption 119 RepCTree) (Lanius.Mini.only x0 x1) w
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepList 77 RepCTree) x1 v1 →
+    (RepOption 120 RepCTree) (Lanius.Mini.only x0 x1) w
 
 abbrev Stmt_shr_first (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Token} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepToken x0 v0 →

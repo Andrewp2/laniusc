@@ -34,6 +34,7 @@ def Stmt.kills (self : Stmt) (index : Nat) : Bool :=
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- other ends every run of this statement the same way, when facts hold on entry: the same shape with agreeing expressions (each original one read with the facts substituted), or a statement dropped because it does nothing (skip, x = x, a loop whose condition is 0) or because it stores a slot the rest kills, or a branch chosen because its condition is a constant or both branches agree with other. Against Skip, a Seq's two dropped-statement cases are the same check, and with a constant condition both branches agreeing implies the chosen one does, so those are not tried twice: each would double the time at each level of nesting. The same shape, the usual case, is tried first. -/
 def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
@@ -56,7 +57,8 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .storeByte a v => false
      | .loadWord w t a => false
      | .storeWord w a v => false
-     | .divide w o t l r => false) || (match first with
+     | .divide w o t l r => false
+     | .sys c t a => false) || (match first with
      | .skip => false
      | .assign index value => Stmt.kills other index && Stmt.agrees second (assigned facts index value) other
      | .seq f s => false
@@ -71,7 +73,8 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .storeByte a v => false
      | .loadWord w t a => false
      | .storeWord w a v => false
-     | .divide w o t l r => false) || Stmt.agrees first facts Stmt.skip && Stmt.agrees second (Stmt.factsAfter first facts) other || !(Stmt.isSkip other) && Stmt.agrees second (Stmt.factsAfter first facts) Stmt.skip && Stmt.agrees first facts other
+     | .divide w o t l r => false
+     | .sys c t a => false) || Stmt.agrees first facts Stmt.skip && Stmt.agrees second (Stmt.factsAfter first facts) other || !(Stmt.isSkip other) && Stmt.agrees second (Stmt.factsAfter first facts) Stmt.skip && Stmt.agrees first facts other
   | .ite condition thenBranch elseBranch =>
     (let test : Expr := Expr.subst condition facts
      match other with
@@ -89,7 +92,8 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .storeByte a v => false
      | .loadWord w t a => false
      | .storeWord w a v => false
-     | .divide w o t l r => false) || (let known : Option (BitVec 64) := Expr.constant (Expr.subst condition facts)
+     | .divide w o t l r => false
+     | .sys c t a => false) || (let known : Option (BitVec 64) := Expr.constant (Expr.subst condition facts)
      match known with
      | some v => decide (v = 0) && Stmt.agrees elseBranch facts other || decide (v ≠ 0) && Stmt.agrees thenBranch facts other
      | none => false) || (let known : Option (BitVec 64) := Expr.constant (Expr.subst condition facts)
@@ -112,7 +116,8 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .storeByte a v => false
      | .loadWord w t a => false
      | .storeWord w a v => false
-     | .divide w o t l r => false)
+     | .divide w o t l r => false
+     | .sys c t a => false)
   | .call target count callee args => callAgrees target count callee (substAll args facts) other
   | .ret values => retAgrees (substAll values facts) other
   | .brk => Stmt.isBrk other
@@ -123,6 +128,7 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
   | .loadWord width target address => loadWordAgrees width target (Expr.subst address facts) other
   | .storeWord width address value => storeWordAgrees width (Expr.subst address facts) (Expr.subst value facts) other
   | .divide word operation target left right => divideAgrees word operation target (Expr.subst left facts) (Expr.subst right facts) other
+  | .sys kind target args => sysAgrees kind target (substAll args facts) other
 
 def Func.agrees (self : Func) (other : Func) : Bool :=
   decide (self.params = other.params) && decide (self.results = other.results) && decide (self.locals = other.locals) && Stmt.agrees self.body [] other.body

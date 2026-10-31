@@ -1,5 +1,6 @@
 import Lanius.Mini.DecodeUnique
 import Lanius.Mini.Flags
+import Lanius.X86.Machine.RuntimeEncoding
 
 /-! `Step` is a relation, but its only freedom is the flags that the Intel
 SDM leaves undefined: AF after AND, OR, XOR and TEST, and every flag after
@@ -18,13 +19,14 @@ structure DataEq (s t : State) : Prop where
   registers : s.registers = t.registers
   rip : s.rip = t.rip
   memory : s.memory = t.memory
+  io : s.io = t.io
 
-theorem DataEq.refl (s : State) : DataEq s s := ⟨rfl, rfl, rfl⟩
+theorem DataEq.refl (s : State) : DataEq s s := ⟨rfl, rfl, rfl, rfl⟩
 
-theorem DataEq.symm (h : DataEq s t) : DataEq t s := ⟨h.registers.symm, h.rip.symm, h.memory.symm⟩
+theorem DataEq.symm (h : DataEq s t) : DataEq t s := ⟨h.registers.symm, h.rip.symm, h.memory.symm, h.io.symm⟩
 
 theorem DataEq.trans (h : DataEq s t) (h' : DataEq t u) : DataEq s u :=
-  ⟨h.registers.trans h'.registers, h.rip.trans h'.rip, h.memory.trans h'.memory⟩
+  ⟨h.registers.trans h'.registers, h.rip.trans h'.rip, h.memory.trans h'.memory, h.io.trans h'.io⟩
 
 /-- The flag bits that condition codes read (CF, PF, ZF, SF, OF) agree. -/
 def CondEq (f g : BitVec 64) : Prop := ∀ code, condition f code = condition g code
@@ -115,37 +117,63 @@ theorem execute_results (i : Instruction) (k : Nat) (s : State) (nonDivision : i
     | exact ⟨_, rfl⟩
     | simp [Instruction.isDivision] at nonDivision
 
-/-- What a step decoded, and that its result is one `Results` allows. -/
-theorem Step.results (step : Step s a) : ∃ i k, DecodesAt s i k ∧ Results i k s a := by
+/-- No bytes loaded at a `syscall` decode. -/
+theorem decode_syscall_prefix (memory : Memory) (rip : Address) (loaded : CodeAt memory rip [15, 5]) :
+    ∀ bytes, CodeAt memory rip bytes → decode bytes = none
+  | [], _ => rfl
+  | [b], h => by
+    have e : b = 15 := by have := h 0 (by simp); have := loaded 0 (by simp); simp_all
+    subst e; decide
+  | b :: c :: rest, h => by
+    have e : b = 15 := by have := h 0 (by simp); have := loaded 0 (by simp); simp_all
+    have f : c = 5 := by have := h 1 (by simp); have := loaded 1 (by simp); simp_all
+    subst e; subst f
+    cases rest with
+    | nil => decide
+    | cons d more =>
+      have sys : X86.Control.decode (15 :: 5 :: d :: more) = some (.syscall, 2) := syscall_decodes (d :: more)
+      simp [decode, X86.Register.Rex.decode?, decodeOpcode, Alu.ofOpcode?, escapedForm, sys]
+
+/-- Nothing decodes at a `syscall`. -/
+theorem DecodesAt.not_syscall (h : DecodesAt s i k) (sys : CodeAt s.memory s.rip [15, 5]) : False := by
+  obtain ⟨bytes, loaded, decoded⟩ := h
+  rw [decode_syscall_prefix _ _ sys bytes loaded] at decoded
+  cases decoded
+
+/-- What a step decoded, and that its result is one `Results` allows; or a
+`syscall` and what the kernel did. -/
+theorem Step.results (step : Step s a) :
+    (∃ i k, DecodesAt s i k ∧ Results i k s a) ∨ (CodeAt s.memory s.rip [15, 5] ∧ Kernel s a) := by
   cases step with
   | decoded bytes loaded i k decoded result nonDivision =>
-    exact ⟨i, k, ⟨bytes, loaded, decoded⟩, result ▸ execute_results i k s nonDivision⟩
-  | tested bytes loaded l r k decoded aux result => exact ⟨_, k, ⟨bytes, loaded, decoded⟩, aux, result⟩
-  | tested64 bytes loaded l r k decoded aux result => exact ⟨_, k, ⟨bytes, loaded, decoded⟩, aux, result⟩
+    exact .inl ⟨i, k, ⟨bytes, loaded, decoded⟩, result ▸ execute_results i k s nonDivision⟩
+  | tested bytes loaded l r k decoded aux result => exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, aux, result⟩
+  | tested64 bytes loaded l r k decoded aux result => exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, aux, result⟩
   | arithmetic bytes loaded op d src k decoded aux result =>
-    exact ⟨_, k, ⟨bytes, loaded, decoded⟩, aux, result⟩
+    exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, aux, result⟩
   | arithmetic64 bytes loaded op d src k decoded aux result =>
-    exact ⟨_, k, ⟨bytes, loaded, decoded⟩, aux, result⟩
+    exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, aux, result⟩
   | multiplied bytes loaded width d src k decoded f result =>
     cases width
-    · exact ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
-    · exact ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
+    · exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
+    · exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
   | negated bytes loaded width d k decoded f result =>
     cases width
-    · exact ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
-    · exact ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
+    · exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
+    · exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
   | shifted bytes loaded width op d k decoded f result =>
     cases width
-    · exact ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
-    · exact ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
+    · exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
+    · exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, f, result⟩
   | divided bytes loaded width signed d k decoded q r success f result =>
     cases width
-    · exact ⟨_, k, ⟨bytes, loaded, decoded⟩, q, r, f, success, result⟩
-    · exact ⟨_, k, ⟨bytes, loaded, decoded⟩, q, r, f, success, result⟩
-  | jumped bytes loaded disp k decoded result => exact ⟨_, k, ⟨bytes, loaded, decoded⟩, result⟩
-  | called bytes loaded disp k decoded result => exact ⟨_, k, ⟨bytes, loaded, decoded⟩, result⟩
-  | addressed bytes loaded d b i sc disp k decoded result => exact ⟨_, k, ⟨bytes, loaded, decoded⟩, result⟩
-  | ripAddressed bytes loaded d disp k decoded result => exact ⟨_, k, ⟨bytes, loaded, decoded⟩, result⟩
+    · exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, q, r, f, success, result⟩
+    · exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, q, r, f, success, result⟩
+  | jumped bytes loaded disp k decoded result => exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, result⟩
+  | called bytes loaded disp k decoded result => exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, result⟩
+  | addressed bytes loaded d b i sc disp k decoded result => exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, result⟩
+  | ripAddressed bytes loaded d disp k decoded result => exact .inl ⟨_, k, ⟨bytes, loaded, decoded⟩, result⟩
+  | syscalled loaded kernel => exact .inr ⟨loaded, kernel⟩
 
 theorem arithmeticFlags_condBits (before : BitVec 64) (c p a z s o : Bool) :
     (arithmeticFlags before c p a z s o).getLsbD 0 = c ∧ (arithmeticFlags before c p a z s o).getLsbD 2 = p ∧
@@ -179,9 +207,9 @@ theorem Alu.flags_cond (operation : Alu) (b1 b2 : BitVec 64) (left right : BitVe
   · exact logicalFlags_cond _ _ _ _ _
 
 /-- DIV and IDIV leave no choice in the quotient and remainder they write. -/
-theorem DivisionSuccess.unique {R : Register → BitVec 64} {P : Address} {M : Memory} {F G : BitVec 64}
-    (one : DivisionSuccess width signed ⟨R, P, M, F⟩ divisor q r)
-    (two : DivisionSuccess width signed ⟨R, P, M, G⟩ divisor q' r') :
+theorem DivisionSuccess.unique {R : Register → BitVec 64} {P : Address} {M : Memory} {F G : BitVec 64} {I : Io}
+    (one : DivisionSuccess width signed ⟨R, P, M, F, I⟩ divisor q r)
+    (two : DivisionSuccess width signed ⟨R, P, M, G, I⟩ divisor q' r') :
     q.setWidth width = q'.setWidth width ∧ r.setWidth width = r'.setWidth width := by
   obtain ⟨-, -, one⟩ := one
   obtain ⟨-, -, two⟩ := two
@@ -197,48 +225,48 @@ their flags, provided the flags a condition code reads agree whenever the
 instruction reads them. -/
 theorem Results.dataEq {i : Instruction} {k : Nat} (same : DataEq s t) (ra : Results i k s a)
     (rb : Results i k t b) (reads : i.readsFlags = true → CondEq s.flags t.flags) : DataEq a b := by
-  obtain ⟨R, P, M, F⟩ := s
-  obtain ⟨R', P', M', G⟩ := t
-  obtain ⟨hR, hP, hM⟩ := same
-  simp only at hR hP hM
-  subst hR hP hM
+  obtain ⟨R, P, M, F, I⟩ := s
+  obtain ⟨R', P', M', G, I'⟩ := t
+  obtain ⟨hR, hP, hM, hI⟩ := same
+  simp only at hR hP hM hI
+  subst hR hP hM hI
   cases i
   case branch code disp =>
     simp only [Results] at ra rb
     subst ra rb
     have := reads rfl code
-    exact ⟨rfl, by simp only [State.branch]; rw [this], rfl⟩
+    exact ⟨rfl, by simp only [State.branch]; rw [this], rfl, rfl⟩
   case setCondition code d =>
     simp only [Results] at ra rb
     subst ra rb
     have := reads rfl code
-    exact ⟨by simp only [State.setCondition]; rw [this], rfl, rfl⟩
+    exact ⟨by simp only [State.setCondition]; rw [this], rfl, rfl, rfl⟩
   case divide32 signed d =>
     obtain ⟨q, r, f, one, rfl⟩ := ra
     obtain ⟨q', r', f', two, rfl⟩ := rb
     obtain ⟨hq, hr⟩ := one.unique two
-    exact ⟨by simp only [State.divide]; rw [hq, hr], rfl, rfl⟩
+    exact ⟨by simp only [State.divide]; rw [hq, hr], rfl, rfl, rfl⟩
   case divide64 signed d =>
     obtain ⟨q, r, f, one, rfl⟩ := ra
     obtain ⟨q', r', f', two, rfl⟩ := rb
     obtain ⟨hq, hr⟩ := one.unique two
-    exact ⟨by simp only [State.divide]; rw [hq, hr], rfl, rfl⟩
+    exact ⟨by simp only [State.divide]; rw [hq, hr], rfl, rfl, rfl⟩
   case returnNear =>
     obtain ⟨-, rfl⟩ := ra
     obtain ⟨-, rfl⟩ := rb
-    exact ⟨rfl, rfl, rfl⟩
+    exact ⟨rfl, rfl, rfl, rfl⟩
   all_goals first
-    | (simp only [Results] at ra rb; subst ra rb; exact ⟨rfl, rfl, rfl⟩)
-    | (obtain ⟨f, rfl⟩ := ra; obtain ⟨f', rfl⟩ := rb; exact ⟨rfl, rfl, rfl⟩)
+    | (simp only [Results] at ra rb; subst ra rb; exact ⟨rfl, rfl, rfl, rfl⟩)
+    | (obtain ⟨f, rfl⟩ := ra; obtain ⟨f', rfl⟩ := rb; exact ⟨rfl, rfl, rfl, rfl⟩)
 
 /-- After CMP, TEST, SUB or an ALU operation the condition codes agree. -/
 theorem Results.condEq {i : Instruction} {k : Nat} (same : DataEq s t) (ra : Results i k s a)
     (rb : Results i k t b) (sets : i.setsFlags = true) : CondEq a.flags b.flags := by
-  obtain ⟨R, P, M, F⟩ := s
-  obtain ⟨R', P', M', G⟩ := t
-  obtain ⟨hR, hP, hM⟩ := same
-  simp only at hR hP hM
-  subst hR hP hM
+  obtain ⟨R, P, M, F, I⟩ := s
+  obtain ⟨R', P', M', G, I'⟩ := t
+  obtain ⟨hR, hP, hM, hI⟩ := same
+  simp only at hR hP hM hI
+  subst hR hP hM hI
   cases i
   case subtract64 d src =>
     simp only [Results] at ra rb
@@ -299,6 +327,12 @@ theorem Step.live (sa : Step s a) (same : DataEq s t) : ∃ b, Step t b := by
   | addressed bytes loaded d b i sc disp k decoded _ =>
     exact ⟨_, .addressed bytes (code loaded) d b i sc disp k decoded rfl⟩
   | ripAddressed bytes loaded d disp k decoded _ => exact ⟨_, .ripAddressed bytes (code loaded) d disp k decoded rfl⟩
+  | syscalled loaded kernel =>
+    have registers : t.registers = s.registers := same.registers.symm
+    cases kernel with
+    | write number fd count r11 =>
+      exact ⟨_, .syscalled (code loaded) (.write (by rw [registers]; exact number) (by rw [registers]; exact fd)
+        (by rw [registers]; exact count) r11)⟩
 
 /-- No run from a state that agrees with `s` but for its flags stops before
 its `n`th step. -/
@@ -352,31 +386,34 @@ theorem Writes.of {bytes : List UInt8} {i : Instruction} {k : Nat} (loaded : Cod
     (decoded : decode bytes = some (i, k)) (sets : i.setsFlags = true) : Writes s :=
   ⟨i, k, ⟨bytes, loaded, decoded⟩, sets⟩
 
-/-- Two steps from states that agree but for flags decode the same instruction. -/
-theorem Step.same (same : DataEq s t) (sa : Step s a) (tb : Step t b) :
-    ∃ i k, DecodesAt s i k ∧ Results i k s a ∧ Results i k t b := by
-  obtain ⟨i, k, di, ri⟩ := sa.results
-  obtain ⟨j, l, dj, rj⟩ := tb.results
-  obtain ⟨rfl, rfl⟩ := (di.congr same).unique dj
-  exact ⟨i, k, di, ri, rj⟩
+/-- A step from a state where an instruction decodes is that instruction's. -/
+theorem Step.decodedResults (sa : Step s a) (d : DecodesAt s i k) : Results i k s a := by
+  rcases sa.results with ⟨j, l, dj, rj⟩ | ⟨sys, -⟩
+  · obtain ⟨rfl, rfl⟩ := d.unique dj
+    exact rj
+  · exact (d.not_syscall sys).elim
+
+/-- Two steps from states that agree but for flags, where an instruction
+decodes, decode the same instruction. -/
+theorem Step.same (same : DataEq s t) (sa : Step s a) (tb : Step t b) (d : DecodesAt s i k) :
+    Results i k s a ∧ Results i k t b :=
+  ⟨sa.decodedResults d, tb.decodedResults (d.congr same)⟩
 
 theorem Step.dataEq_of_noRead (same : DataEq s t) (sa : Step s a) (tb : Step t b) (no : NoRead s) :
     DataEq a b := by
-  obtain ⟨i, k, di, ri, rj⟩ := Step.same same sa tb
-  obtain ⟨i0, k0, d0, nr⟩ := no
-  obtain ⟨rfl, rfl⟩ := d0.unique di
+  obtain ⟨i, k, d, nr⟩ := no
+  obtain ⟨ri, rj⟩ := Step.same same sa tb d
   exact Results.dataEq same ri rj (fun reads => by rw [nr] at reads; cases reads)
 
-theorem Step.dataEq_of_condEq (same : DataEq s t) (sa : Step s a) (tb : Step t b)
+theorem Step.dataEq_of_condEq (same : DataEq s t) (sa : Step s a) (tb : Step t b) (d : DecodesAt s i k)
     (flags : CondEq s.flags t.flags) : DataEq a b := by
-  obtain ⟨i, k, di, ri, rj⟩ := Step.same same sa tb
+  obtain ⟨ri, rj⟩ := Step.same same sa tb d
   exact Results.dataEq same ri rj (fun _ => flags)
 
 theorem Step.condEq_of_writes (same : DataEq s t) (sa : Step s a) (tb : Step t b) (w : Writes s) :
     CondEq a.flags b.flags := by
-  obtain ⟨i, k, di, ri, rj⟩ := Step.same same sa tb
-  obtain ⟨i0, k0, d0, sets⟩ := w
-  obtain ⟨rfl, rfl⟩ := d0.unique di
+  obtain ⟨i, k, d, sets⟩ := w
+  obtain ⟨ri, rj⟩ := Step.same same sa tb d
   exact Results.condEq same ri rj sets
 
 /-- A step whose instruction reads no flags. -/
@@ -396,7 +433,7 @@ theorem Det.cons (sa : Step s a) (no : NoRead s) (rest : Det n a s') : Det (n + 
 
 /-- A flag-setting instruction followed by any instruction, which may read
 the flags it set (`cmp; setcc`, `test; jz`, `cmp; jbe`). -/
-theorem Det.pair (sa : Step s a) (w : Writes s) (ab : Step a b) : Det 2 s b := by
+theorem Det.pair (sa : Step s a) (w : Writes s) (ab : Step a b) (d : DecodesAt a i k) : Det 2 s b := by
   have no : NoRead s := by
     obtain ⟨i, k, d, sets⟩ := w
     refine ⟨i, k, d, ?_⟩
@@ -408,7 +445,7 @@ theorem Det.pair (sa : Step s a) (w : Writes s) (ab : Step a b) : Det 2 s b := b
       | cons uv rest =>
         cases rest
         have first := Step.dataEq_of_noRead same sa tu no
-        exact Step.dataEq_of_condEq first ab uv (Step.condEq_of_writes same sa tu w)
+        exact Step.dataEq_of_condEq first ab uv d (Step.condEq_of_writes same sa tu w)
   · cases run with
     | refl => exact sa.live same
     | cons tu rest =>
@@ -416,10 +453,10 @@ theorem Det.pair (sa : Step s a) (w : Writes s) (ab : Step a b) : Det 2 s b := b
       | refl => exact ab.live (Step.dataEq_of_noRead same sa tu no)
       | cons _ _ => omega
 
-theorem Det.pairCons (sa : Step s a) (w : Writes s) (ab : Step a b) (rest : Det n b s') :
+theorem Det.pairCons (sa : Step s a) (w : Writes s) (ab : Step a b) (d : DecodesAt a i k) (rest : Det n b s') :
     Det (n + 2) s s' := by
   rw [Nat.add_comm]
-  exact (Det.pair sa w ab).trans rest
+  exact (Det.pair sa w ab d).trans rest
 
 /-! Faults. -/
 
@@ -431,7 +468,14 @@ theorem decode_ud2 (rest : List UInt8) : decode (15 :: 11 :: rest) = none := by
 
 /-- A fault has no step. -/
 theorem Fault.stuck (fault : Fault s) (step : Step s t) : False := by
-  obtain ⟨i, k, ⟨bytes, loaded, decoded⟩, results⟩ := step.results
+  rcases step.results with ⟨i, k, ⟨bytes, loaded, decoded⟩, results⟩ | ⟨sys, -⟩
+  case inr =>
+    cases fault with
+    | ud2 code => have := code 1 (by simp); have := sys 1 (by simp); simp_all
+    | divideByZero bytes code _ _ _ decoded _ =>
+      rw [decode_syscall_prefix _ _ sys bytes code] at decoded; cases decoded
+    | divideOverflow bytes code _ _ _ decoded _ =>
+      rw [decode_syscall_prefix _ _ sys bytes code] at decoded; cases decoded
   cases fault with
   | ud2 code =>
     by_cases two : 2 ≤ bytes.length

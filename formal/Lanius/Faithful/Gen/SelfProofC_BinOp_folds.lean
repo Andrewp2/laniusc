@@ -96,4 +96,13 @@ theorem proof_DivOp_number {prog : SrcProgram} {prims : Prims} {ix_DivOp_number 
   simp only [src_DivOp_number] at h
   faithful [Lanius.Mini.DivOp.number]
 
+theorem proof_Syscall_number {prog : SrcProgram} {prims : Prims} {ix_Syscall_number : Nat} (fn : prog.funcs[ix_Syscall_number]? = some (src_Syscall_number)) (np : prims.isPrim ix_Syscall_number = false) {n : Nat} :
+    Stmt_Syscall_number prog prims ix_Syscall_number n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_Syscall_number] at h
+  faithful [Lanius.Mini.Syscall.number]
+
 end Lanius.Faithful.SelfCert

@@ -57,6 +57,7 @@ def Stmt.isBrk (self : Stmt) : Bool :=
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 def Stmt.isCont (self : Stmt) : Bool :=
   match self with
@@ -75,6 +76,7 @@ def Stmt.isCont (self : Stmt) : Bool :=
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- A run of this statement may break or continue a loop around it. -/
 def Stmt.jumps (self : Stmt) : Bool :=
@@ -94,6 +96,7 @@ def Stmt.jumps (self : Stmt) : Bool :=
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 def Stmt.isSkip (self : Stmt) : Bool :=
   match self with
@@ -112,6 +115,7 @@ def Stmt.isSkip (self : Stmt) : Bool :=
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- The facts that hold after a run of this statement that ends normally, given facts that hold before it. Branches, loops and calls forget them all. -/
 def Stmt.factsAfter (self : Stmt) (facts : List Fact) : List Fact :=
@@ -131,6 +135,7 @@ def Stmt.factsAfter (self : Stmt) (facts : List Fact) : List Fact :=
   | .loadWord w target a => kill facts target
   | .storeWord w a v => facts
   | .divide w o target l r => kill facts target
+  | .sys c t a => []
 
 /-- No run of this statement reads slot index: runs from two states that differ only at index end in states that differ only at index. -/
 def Stmt.ignores (self : Stmt) (index : Nat) : Bool :=
@@ -150,5 +155,6 @@ def Stmt.ignores (self : Stmt) (index : Nat) : Bool :=
   | .loadWord w t a => !(Expr.mentions a index)
   | .storeWord w a v => !(Expr.mentions a index) && !(Expr.mentions v index)
   | .divide w o t l r => !(Expr.mentions l index) && !(Expr.mentions r index)
+  | .sys c t a => !(mentionsAny a index)
 
 end Lanius.Mini

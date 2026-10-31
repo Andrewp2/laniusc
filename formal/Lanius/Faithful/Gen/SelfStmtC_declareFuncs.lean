@@ -22,6 +22,6 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_declare_funcs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {x1 : Lanius.Mini.SrcDecls} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 5 RepSrcFunc) x0 v0 → RepSrcDecls x1 v1 →
-    (RepOption 63 RepSrcDecls) (Lanius.Mini.declareFuncs x0 x1) w
+    (RepOption 64 RepSrcDecls) (Lanius.Mini.declareFuncs x0 x1) w
 
 end Lanius.Faithful.SelfCert

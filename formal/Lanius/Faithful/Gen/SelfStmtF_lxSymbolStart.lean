@@ -33,7 +33,7 @@ abbrev Stmt_lx_ident_run (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     RepNat (Lanius.Mini.lxIdentRun x0) w
 
 abbrev Stmt_lx_is_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 196 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 197 RepNat) x0 v0 → RepNat x1 v1 →
     RepBool (Lanius.Mini.lxIsByte x0 x1) w
 
 abbrev Stmt_lx_line_run (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

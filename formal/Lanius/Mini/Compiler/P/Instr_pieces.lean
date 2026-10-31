@@ -33,6 +33,7 @@ def Instr.pieces (self : Instr) (own : Nat) (place : Place) (pc : Nat) : List Pi
   | .loadWordAt width => [Piece.bytes (Instr.encode self place pc)]
   | .storeWordAt width slot => [Piece.bytes (Instr.encode self place pc)]
   | .div word operation slot => [Piece.bytes (Instr.encode self place pc)]
+  | .sys kind slot => [Piece.bytes (Instr.encode self place pc)]
 
 def piecesFrom (own : Nat) (place : Place) (pc : Nat) (code : List Instr) : List Piece :=
   match code with

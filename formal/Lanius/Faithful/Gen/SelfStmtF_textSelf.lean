@@ -26,7 +26,7 @@ abbrev Stmt_member (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_primitive (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →
-    (RepOption 149 RepSrcType) (Lanius.Mini.primitive x0) w
+    (RepOption 150 RepSrcType) (Lanius.Mini.primitive x0) w
 
 abbrev Stmt_spelled0 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →

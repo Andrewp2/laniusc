@@ -23,7 +23,7 @@ def src_MemWidth_bytes : SrcFunc := { params := [{ id := 6, ty := ty53 }], ret :
 def src_MemWidth_prefix : SrcFunc := { params := [{ id := 7, ty := ty53 }], ret := SrcType.uint (UintTy.usize), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 7)) ty53 (SrcType.uint (UintTy.usize)) [[], []] [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)]) }
 
 /-- mini::selfhost::rex -/
-def src_MemWidth_rex (ix_empty_of_u8 : Nat) (ix_single_of_u8 : Nat) : SrcFunc := { params := [{ id := 4, ty := ty53 }], ret := ty62, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 4)) ty53 ty62 [[], []] [SrcEff.eCall ix_empty_of_u8 [], SrcEff.eCall ix_single_of_u8 [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint8) 0x0000000000000048#64)]]) }
+def src_MemWidth_rex (ix_empty_of_u8 : Nat) (ix_single_of_u8 : Nat) : SrcFunc := { params := [{ id := 4, ty := ty53 }], ret := ty63, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 4)) ty53 ty63 [[], []] [SrcEff.eCall ix_empty_of_u8 [], SrcEff.eCall ix_single_of_u8 [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint8) 0x0000000000000048#64)]]) }
 
 /-- mini::selfhost::prefix -/
 def src_Word_prefix : SrcFunc := { params := [{ id := 7, ty := ty50 }], ret := SrcType.uint (UintTy.usize), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 7)) ty50 (SrcType.uint (UintTy.usize)) [[], []] [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)]) }

@@ -543,6 +543,7 @@ theorem Stmt.factsAfter_hold {prog : Program} (s : Stmt) :
   | divide _ _ target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
   | brk => intro _ _ _ _ _ _ _ run; cases run
   | cont => intro _ _ _ _ _ _ _ run; cases run
+  | sys => intro _ _ _ _ _ _ _ _; exact Facts.Hold.nil _
 
 /-- A statement that cannot jump never breaks or continues. -/
 theorem Exec.stays {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s : Stmt} {outcome : Outcome}
@@ -566,7 +567,7 @@ theorem Exec.stays {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s :
   | loopNext _ _ _ _ ih | loopContinued _ _ _ _ ih => exact ih stays
   | brk | cont => simp [Stmt.jumps] at stays
   | skip | assign | seqReturned | loopDone | loopReturned | loopBroke | call | ret | alloc | loadByte
-    | storeByte | loadWord | storeWord | divide => intro _ _; simp
+    | storeByte | loadWord | storeWord | divide | sys => intro _ _; simp
 
 /-- Outcomes of runs from environments that differ only at `index`. -/
 def Outcome.Except (index : Nat) : Outcome → Outcome → Prop
@@ -739,6 +740,10 @@ theorem Exec.ignores {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s
     have r := Expr.eval_except h right p.2
     rw [l, r] at defined ⊢
     exact ⟨_, .divide defined, rfl, h.set target _⟩
+  | @sys depth env heap after call target args result ran =>
+    intro p env2 h
+    simp only [Stmt.ignores, Bool.not_eq_eq_eq_not, Bool.not_true] at p
+    refine ⟨_, .sys (by rw [← Expr.evalAll_except h args p]; exact ran), rfl, h.set target _⟩
 
 /-- A statement that kills `index` ends the same way whatever `index` holds on entry. -/
 theorem Exec.killed {prog : Program} (s : Stmt) :
@@ -818,6 +823,7 @@ theorem Exec.killed {prog : Program} (s : Stmt) :
   | divide => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | brk => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | cont => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | sys => intro _ _ _ _ _ k; simp [Stmt.kills] at k
 
 /-! ## Statements: what an accepted statement looks like -/
 
@@ -832,6 +838,16 @@ theorem callAgrees_cases {target count callee : Nat} {args : List Expr} {other :
     (h : callAgrees target count callee args other = true) :
     ∃ others, other = .call target count callee others ∧ argsAgree args others = true := by
   cases other <;> simp_all [callAgrees]
+
+theorem sysAgrees_cases {kind : Syscall} {target : Nat} {args : List Expr} {other : Stmt}
+    (h : sysAgrees kind target args other = true) :
+    ∃ others, other = .sys kind target others ∧ argsAgree args others = true := by
+  cases other <;> simp only [sysAgrees, Bool.false_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h
+  rename_i c t a
+  obtain ⟨⟨_, rfl⟩, agree⟩ := h
+  cases kind
+  cases c
+  exact ⟨a, rfl, agree⟩
 
 theorem retAgrees_cases {values : List Expr} {other : Stmt} (h : retAgrees values other = true) :
     ∃ others, other = .ret others ∧ argsAgree values others = true := by
@@ -1130,6 +1146,13 @@ theorem Exec.agrees {p q : Program} (ok : funcsAgree p.funcs q.funcs = true) {de
     have r := (Expr.agrees_eval _ _ sameRight env).trans (Expr.subst_eval hold right)
     rw [← l, ← r] at defined ⊢
     exact .divide defined
+  | @sys depth env heap after call target args result ran =>
+    intro facts s' hold h
+    obtain ⟨others, rfl, same⟩ := sysAgrees_cases h
+    have values := argsAgree_eval same env
+    refine .sys ?_
+    rw [values.1, substAll_eval hold]
+    exact ran
 
 /-- The validator's guarantee: a call that returns in the original program
 returns the same values and heap in the optimized one, at the same depth. -/

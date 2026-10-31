@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_compile_declared (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcProgram} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 63 RepSrcDecls) x0 v0 → RepSrcProgram x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcProgram} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 64 RepSrcDecls) x0 v0 → RepSrcProgram x1 v1 →
     (RepOption 48 RepBinary) (Lanius.Mini.compileDeclared x0 x1) w
 
 abbrev Stmt_compile_lowered (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Func)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 79 (RepList 80 RepFunc)) x0 v0 →
+  ∀ {x0 : Option (List Lanius.Mini.Func)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 80 (RepList 81 RepFunc)) x0 v0 →
     (RepOption 48 RepBinary) (Lanius.Mini.compileLowered x0) w
 
 abbrev Stmt_compile_optimized (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

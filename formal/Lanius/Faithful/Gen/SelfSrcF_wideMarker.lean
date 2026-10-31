@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::wide_marker -/
-def src_wide_marker (ix_boxed_of_mini_selfhost_SrcExpr : Nat) : SrcFunc := { params := [{ id := 12, ty := ty229 }], ret := ty291, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 12)) ty229 ty291 [[137], []] [SrcEff.eVariant ty291 0 [SrcEff.eVariant ty14 8 [SrcEff.eVariant ty8 7 [], SrcEff.eCall ix_boxed_of_mini_selfhost_SrcExpr [SrcEff.eVariant ty14 2 [SrcEff.eVariant ty4 2 [], SrcEff.ePure (SrcExpr.cast (SrcType.uint (UintTy.uint64)) (SrcExpr.local 137))]]]], SrcEff.eVariant ty291 1 []]) }
+def src_wide_marker (ix_boxed_of_mini_selfhost_SrcExpr : Nat) : SrcFunc := { params := [{ id := 12, ty := ty230 }], ret := ty292, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 12)) ty230 ty292 [[137], []] [SrcEff.eVariant ty292 0 [SrcEff.eVariant ty14 8 [SrcEff.eVariant ty8 7 [], SrcEff.eCall ix_boxed_of_mini_selfhost_SrcExpr [SrcEff.eVariant ty14 2 [SrcEff.eVariant ty4 2 [], SrcEff.ePure (SrcExpr.cast (SrcType.uint (UintTy.uint64)) (SrcExpr.local 137))]]]], SrcEff.eVariant ty292 1 []]) }
 
 end
 

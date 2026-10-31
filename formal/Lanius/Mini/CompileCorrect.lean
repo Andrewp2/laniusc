@@ -567,6 +567,27 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
     · simp only [Instr.exec_pc, pc, codeSize_append, codeSize, Instr.size]; omega
     · exact fun slot below _ => (slots slot below).trans (agree slot below)
     · exact heapAt
+  | @sys depth env heap after call target args result ran =>
+    intro pos brk cont m placed pc agree onHeap within
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
+    simp only [compileStmt] at placed ⊢
+    obtain ⟨values, kept⟩ := compileArgs_correct base args 0 env m agree within.2
+    apply StmtResult.prefix (pc ▸ placed.left) (compileArgs_straight _ _ _)
+    obtain ⟨sysAt, storeAt⟩ := placed.right.pair
+    have heapAt := (Instr.exec_heap (compileArgs base args 0) m).trans onHeap
+    obtain ⟨a, b, c, rfl⟩ : ∃ a b c, args = [a, b, c] := by
+      match args, within.1.2 with
+      | [a, b, c], _ => exact ⟨a, b, c, rfl⟩
+    have read : [(Instr.exec (compileArgs base [a, b, c] 0) m).slots base,
+        (Instr.exec (compileArgs base [a, b, c] 0) m).slots (base + 1),
+        (Instr.exec (compileArgs base [a, b, c] 0) m).slots (base + 2)] = Expr.evalAll env [a, b, c] := by
+      simp only [argSlots, readSlots, Nat.add_zero] at values
+      exact values
+    apply StmtResult.step (.sys (by rw [Instr.exec_pc, pc]; exact sysAt.fetch) (by rw [read, heapAt]; exact ran))
+    refine stored_result ?_ ?_ ?_ _ rfl
+    · exact storeAt.at (by simp only [Instr.exec_pc, pc])
+    · simp only [Instr.exec_pc, pc, codeSize_append, codeSize, Instr.size]; omega
+    · exact fun slot below _ => (kept slot (by omega)).trans (agree slot below)
 
 theorem arityIs_eq (arities : List Arity) (callee count results : Nat) :
     arityIs arities callee count results = true ↔

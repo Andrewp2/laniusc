@@ -58,6 +58,11 @@ inductive Expr where
   | compare : Word → CmpOp → Expr → Expr → Expr
   deriving DecidableEq, Repr
 
+/-- A Linux system call (roadmap F8). Write: write(fd, the heap address, count), arguments in that order. -/
+inductive Syscall where
+  | write : Syscall
+  deriving DecidableEq, Repr
+
 inductive Stmt where
   | skip : Stmt
   | assign : Nat → Expr → Stmt
@@ -84,6 +89,8 @@ inductive Stmt where
   | storeWord : MemWidth → Expr → Expr → Stmt
   /-- target = left op right; a zero divisor, or a signed division of the least value by -1, has no run -/
   | divide : Word → DivOp → Nat → Expr → Expr → Stmt
+  /-- target = what the kernel returns for call(args) -/
+  | sys : Syscall → Nat → (List Expr) → Stmt
   deriving DecidableEq, Repr
 
 structure Func where
@@ -133,6 +140,8 @@ inductive Instr where
   | storeWordAt : MemWidth → Nat → Instr
   /-- rax := slot op rax -/
   | div : Word → DivOp → Nat → Instr
+  /-- rax := call(slot, slot + 1, slot + 2), through rdi, rsi and rdx -/
+  | sys : Syscall → Nat → Instr
   deriving DecidableEq, Repr
 
 /-- A function's parameter and result counts. -/

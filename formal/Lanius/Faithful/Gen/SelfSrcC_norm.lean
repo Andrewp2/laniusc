@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::norm -/
-def src_norm (ix_boxed_of_mini_selfhost_Expr : Nat) (ix_UintTy_spare : Nat) : SrcFunc := { params := [{ id := 5, ty := ty4 }, { id := 19, ty := ty86 }], ret := ty86, body := SrcStmt.returnEval (SrcEff.eVariant ty86 3 [SrcEff.eVariant ty50 0 [], SrcEff.eVariant ty51 8 [], SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.eVariant ty86 3 [SrcEff.eVariant ty50 0 [], SrcEff.eVariant ty51 6 [], SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.ePure (SrcExpr.local 19)], SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.eVariant ty86 0 [SrcEff.eCall ix_UintTy_spare [SrcEff.ePure (SrcExpr.local 5)]]]]], SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.eVariant ty86 0 [SrcEff.eCall ix_UintTy_spare [SrcEff.ePure (SrcExpr.local 5)]]]]) }
+def src_norm (ix_boxed_of_mini_selfhost_Expr : Nat) (ix_UintTy_spare : Nat) : SrcFunc := { params := [{ id := 5, ty := ty4 }, { id := 19, ty := ty87 }], ret := ty87, body := SrcStmt.returnEval (SrcEff.eVariant ty87 3 [SrcEff.eVariant ty50 0 [], SrcEff.eVariant ty51 8 [], SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.eVariant ty87 3 [SrcEff.eVariant ty50 0 [], SrcEff.eVariant ty51 6 [], SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.ePure (SrcExpr.local 19)], SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.eVariant ty87 0 [SrcEff.eCall ix_UintTy_spare [SrcEff.ePure (SrcExpr.local 5)]]]]], SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.eVariant ty87 0 [SrcEff.eCall ix_UintTy_spare [SrcEff.ePure (SrcExpr.local 5)]]]]) }
 
 end
 

@@ -310,7 +310,8 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
         intro a inside
         have inside' : a < frame.heapLimit := by rw [show frame.heapLimit = heap.limit from heapAt.limit.symm]; exact inside
         rw [memoryEntered, write64_frame _ _ _ _ (fun lane => heap_ne_below fits inside' (pushBelow lane))]
-        exact heapAt.bytes a inside }
+        exact heapAt.bytes a inside
+      io := heapAt.io }
   have startParams : ∀ index, index < func.params → start.slots index = args.getD index 0 := by
     intro index below
     have bound : index < slotLimit := by unfold slotLimit; omega
@@ -372,7 +373,8 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       unchanged := exit.unchanged
       cursor := exit.cursor
       limit := exit.limit
-      heap := exit.heap }
+      heap := exit.heap
+      io := exit.io }
 
 /-- Every compiled function meets its contract with the stack its call depth needs. -/
 theorem compiled_contract {prog : Program} {binary : Binary} (compiled : compileProgram prog = some binary)

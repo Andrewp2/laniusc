@@ -33,7 +33,7 @@ abbrev Stmt_lx_fraction_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     RepNumScan (Lanius.Mini.Inline.lxFractionAt x0 x1 x2) w
 
 abbrev Stmt_lx_keyword_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Lanius.Mini.SymRule} {x2 : List Lanius.Mini.SymRule} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 24 RepNat) x0 v0 → RepSymRule x1 v1 → (RepList 179 RepSymRule) x2 v2 →
-    (RepOption 196 RepNat) (Lanius.Mini.Inline.lxKeywordAt x0 x1 x2) w
+  ∀ {x0 : List Nat} {x1 : Lanius.Mini.SymRule} {x2 : List Lanius.Mini.SymRule} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 24 RepNat) x0 v0 → RepSymRule x1 v1 → (RepList 180 RepSymRule) x2 v2 →
+    (RepOption 197 RepNat) (Lanius.Mini.Inline.lxKeywordAt x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

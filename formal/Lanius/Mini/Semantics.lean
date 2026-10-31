@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+public import Lanius.X86.Machine.Io
 -- import all: Lanius.Mini.Compiler
 import all Lanius.Mini.Compiler.Types
 import all Lanius.Mini.Compiler.P.Lists_empty
@@ -199,11 +200,14 @@ def Env.setMany (env : Env) : Nat → List (BitVec 64) → Env
 def Func.entry (args : List (BitVec 64)) : Env := fun index => args.getD index 0
 
 /-- The heap: a byte at each offset, the bump allocator's cursor, and the
-limit no allocation passes and every access stays below. -/
+limit no allocation passes and every access stays below; and the process's
+side of its environment, the trace of its system calls (`Io`, which the x86
+state also holds). -/
 structure Heap where
   bytes : Nat → UInt8
   cursor : Nat
   limit : Nat
+  io : Lanius.X86.Machine.Io := {}
 
 /-- `n` rounded up to a multiple of `2 ^ shift`. -/
 def alignUp (n shift : Nat) : Nat := (n + 2 ^ shift - 1) / 2 ^ shift * 2 ^ shift
@@ -231,6 +235,12 @@ theorem Heap.writeLE_limit : ∀ (heap : Heap) (address value count : Nat),
     have := Heap.writeLE_limit (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
     exact ⟨this.1, this.2⟩
 
+theorem Heap.writeLE_io : ∀ (heap : Heap) (address value count : Nat),
+    (heap.writeLE address value count).io = heap.io
+  | _, _, _, 0 => rfl
+  | heap, address, value, count + 1 =>
+    Heap.writeLE_io (heap.write address (UInt8.ofNat value)) (address + 1) (value / 256) count
+
 theorem Heap.readLE_lt (heap : Heap) : ∀ (address count : Nat), heap.readLE address count < 256 ^ count
   | _, 0 => by simp [Heap.readLE]
   | address, count + 1 => by
@@ -238,6 +248,42 @@ theorem Heap.readLE_lt (heap : Heap) : ∀ (address count : Nat), heap.readLE ad
     have := (heap.bytes address).toNat_lt
     simp only [Heap.readLE, Nat.pow_succ]
     omega
+
+/-- The `count` heap bytes from `address`. -/
+def Heap.slice (heap : Heap) (address : Nat) : Nat → List UInt8
+  | 0 => []
+  | count + 1 => heap.bytes address :: heap.slice (address + 1) count
+
+/-- A system call's meaning on the heap: what the kernel does
+(`Lanius.X86.Machine.Kernel`), with addresses heap offsets. `write(fd,
+address, count)` to fd 1 or 2 of at most `maxTransfer` bytes inside the heap
+appends them to the trace and returns the count; no other call returns. -/
+def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 × Heap)
+  | .write, [fd, address, count], heap =>
+    if (fd = 1 ∨ fd = 2) ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
+        address.toNat + count.toNat ≤ heap.limit then
+      some (count, { heap with io := { heap.io with trace := heap.io.trace ++
+        [.write fd.toNat (heap.slice address.toNat count.toNat)] } })
+    else none
+  | .write, [], _ => none
+  | .write, [_], _ => none
+  | .write, [_, _], _ => none
+  | .write, _ :: _ :: _ :: _ :: _, _ => none
+
+/-- A system call changes only the trace. -/
+theorem Syscall.run_heap {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}
+    (ran : call.run args heap = some (result, after)) : after = { heap with io := after.io } := by
+  cases call
+  match args, ran with
+  | [fd, address, count], ran =>
+    rw [Syscall.run] at ran
+    split at ran
+    · cases ran; rfl
+    · cases ran
+  | [], ran => simp [Syscall.run] at ran
+  | [_], ran => simp [Syscall.run] at ran
+  | [_, _], ran => simp [Syscall.run] at ran
+  | _ :: _ :: _ :: _ :: _, ran => simp [Syscall.run] at ran
 
 inductive Outcome where
   | normal (env : Env) (heap : Heap)
@@ -327,6 +373,10 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
       word.divides operation (left.eval env) (right.eval env) = true →
       Exec prog depth env heap (.divide word operation target left right)
         (.normal (env.set target (word.divide operation (left.eval env) (right.eval env))) heap)
+  | sys {depth : Nat} {env : Env} {heap after : Heap} {call : Syscall} {target : Nat} {args : List Expr}
+      {result : BitVec 64} :
+      call.run (Expr.evalAll env args) heap = some (result, after) →
+      Exec prog depth env heap (.sys call target args) (.normal (env.set target result) after)
 
 /-- Calling function `callee` with `args` from `heap` returns `value` and
 leaves `after`, nesting calls fewer than `depth` deep. -/

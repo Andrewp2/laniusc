@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::enum_variants -/
-def src_enum_variants (ix_enum_variants_at : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl : Nat) : SrcFunc := { params := [{ id := 14, ty := ty72 }, { id := 40, ty := SrcType.uint (UintTy.usize) }], ret := ty206, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 14)) ty72 ty206 [[], [159, 165]] [SrcEff.eVariant ty206 1 [], SrcEff.eCall ix_enum_variants_at [SrcEff.ePure (SrcExpr.local 159), SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl [SrcEff.ePure (SrcExpr.local 165)], SrcEff.ePure (SrcExpr.local 40)]]) }
+def src_enum_variants (ix_enum_variants_at : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl : Nat) : SrcFunc := { params := [{ id := 14, ty := ty73 }, { id := 40, ty := SrcType.uint (UintTy.usize) }], ret := ty207, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 14)) ty73 ty207 [[], [159, 165]] [SrcEff.eVariant ty207 1 [], SrcEff.eCall ix_enum_variants_at [SrcEff.ePure (SrcExpr.local 159), SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl [SrcEff.ePure (SrcExpr.local 165)], SrcEff.ePure (SrcExpr.local 40)]]) }
 
 end
 

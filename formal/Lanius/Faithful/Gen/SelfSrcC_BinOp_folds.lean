@@ -37,6 +37,9 @@ def src_CmpOp_test : SrcFunc := { params := [{ id := 5, ty := ty52 }, { id := 11
 /-- mini::selfhost::number -/
 def src_DivOp_number : SrcFunc := { params := [{ id := 7, ty := ty54 }], ret := SrcType.uint (UintTy.usize), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 7)) ty54 (SrcType.uint (UintTy.usize)) [[], [], [], []] [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000002#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000003#64)]) }
 
+/-- mini::selfhost::number -/
+def src_Syscall_number : SrcFunc := { params := [{ id := 7, ty := ty55 }], ret := SrcType.uint (UintTy.usize), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 7)) ty55 (SrcType.uint (UintTy.usize)) [[]] [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64)]) }
+
 end
 
 end Lanius.Faithful.Self

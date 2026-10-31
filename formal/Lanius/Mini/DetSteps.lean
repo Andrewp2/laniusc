@@ -182,4 +182,61 @@ theorem frameEpilogue_det (before : State)
     (Det.cons popStep' (pop_noRead popLoaded)
       (Det.cons returnStep' (return_noRead returnLoaded) (Det.refl _)))
 
+/-! ## `syscall` -/
+
+/-- From states that agree but for their flags, the kernel leaves states that
+agree but for their flags and r11. -/
+theorem Kernel.agree (same : DataEq s t) (ka : Kernel s a) (kb : Kernel t b) :
+    (∀ r, r ≠ 11 → a.registers r = b.registers r) ∧ a.rip = b.rip ∧ a.memory = b.memory ∧ a.io = b.io := by
+  obtain ⟨R, P, M, F, I⟩ := s
+  obtain ⟨R', P', M', G, I'⟩ := t
+  obtain ⟨hR, hP, hM, hI⟩ := same
+  simp only at hR hP hM hI
+  subst hR hP hM hI
+  cases ka with
+  | write number fd count r11 =>
+    cases kb with
+    | write number' fd' count' r11' =>
+      refine ⟨fun r ne => ?_, rfl, rfl, rfl⟩
+      simp only [State.syscalled, if_neg ne]
+
+/-- A `syscall`, then `mov r11, source`, which gives r11 a value the data
+determines again. -/
+theorem Det.syscall (sa : Step s a) (sys : CodeAt s.memory s.rip [15, 5]) {source : Register}
+    (other : source ≠ 11) (kill : CodeAt a.memory a.rip (moveBytes .w64 11 source)) (ab : Step a b) :
+    Det 2 s b := by
+  have kernelOf : ∀ {t u}, DataEq s t → Step t u → Kernel t u := by
+    intro t u same tu
+    rcases tu.results with ⟨i, k, d, -⟩ | ⟨-, kernel⟩
+    · exact (d.not_syscall (by rw [← same.memory, ← same.rip]; exact sys)).elim
+    · exact kernel
+  have ka := kernelOf (DataEq.refl s) sa
+  have decodes : ∀ {u}, u.memory = a.memory → u.rip = a.rip →
+      DecodesAt u (moveInstruction .w64 11 source) (moveBytes .w64 11 source).length :=
+    fun memory rip => ⟨_, by rw [memory, rip]; exact kill, move_decodes .w64 11 source⟩
+  refine ⟨fun t t' same run => ?_, fun j t u small same run => ?_⟩
+  · cases run with
+    | cons tu rest =>
+      cases rest with
+      | cons ut' rest =>
+        cases rest
+        obtain ⟨registers, rip, memory, io⟩ := Kernel.agree same ka (kernelOf same tu)
+        have rb := ab.decodedResults (decodes rfl rfl)
+        have ru := ut'.decodedResults (decodes memory.symm rip.symm)
+        simp only [Results, moveInstruction] at rb ru
+        subst rb ru
+        refine ⟨funext fun r => ?_, by simp only [State.move64, rip], memory, io⟩
+        simp only [State.move64]
+        by_cases eleven : r = 11
+        · rw [if_pos eleven, if_pos eleven, registers source other]
+        · rw [if_neg eleven, if_neg eleven, registers r eleven]
+  · cases run with
+    | refl => exact sa.live same
+    | cons tu rest =>
+      cases rest with
+      | refl =>
+        obtain ⟨-, rip, memory, -⟩ := Kernel.agree same ka (kernelOf same tu)
+        exact ⟨_, .decoded _ (by rw [← memory, ← rip]; exact kill) _ _ (move_decodes .w64 11 source) rfl rfl⟩
+      | cons _ _ => omega
+
 end Lanius.X86.Machine

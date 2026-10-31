@@ -633,3 +633,40 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   `continue`; a condition that needs none lowers as `Loop(c, body)`. A
   `while` whose condition has effects lowers the same way:
   `Loop(1, c.stmt; if c { body } else { Brk })`.
+
+## Externs and the runtime (decided 10-30, F8)
+
+- **The runtime is the kernel, called directly.** The verified compiler
+  links no C runtime and no `lanius_std` library: a host service is lowered
+  to inline `syscall` code. The mini IR's `Stmt.sys kind target args`
+  (`Instr.sys kind slot`, `Mini/Semantics.lean`) is one system call; its
+  arguments are evaluated into three consecutive frame slots, and the
+  result lands in `target`. Only `Syscall.write` exists so far.
+- **`Syscall.write` at the mini level.** `[fd, address, count]` with fd 1 or
+  2, count at most `maxTransfer`, and `address + count` within the heap
+  limit; it appends `.write fd (heap bytes address..address+count)` to
+  `Heap.io` and returns count. Anything else has no mini step, so a run
+  that reaches it does not return. The address is a heap offset;
+  the code adds r12 (`sysSpec`, `Mini/Bytes.lean`: `mov rdi,[slot]; mov
+  rsi,[slot+1]; add rsi,r12; mov rdx,[slot+2]; mov eax,1; syscall; mov
+  r11,rcx`, 34 bytes). The last move only makes r11 deterministic, so a
+  `Det` run exists (r11 is scratch anyway).
+- **rdx, rsi and rdi are scratch** (`Scratch`, `Mini/Simulation.lean`),
+  like rax, rcx and r11. Callers that keep them across a compiled call must
+  save them.
+- **The trace.** The x86 state has `io : Io`, a list of events; the mini
+  heap has the same field. The simulation relation (`Rel`, `HeapAt`,
+  `Returned`, `Frame.Exit`) says they are equal, and `process_exits` says
+  the process trace at the exit is the compiled program's trace. Core's
+  side is `World.State.standardOutput`/`standardError`; the link from
+  Core's `write_byte`/`write_stdout` services to `.write` events (one event
+  per call, the bytes Core appends) is the next part of F8.
+- **Not yet modeled (deferred).** `read`/`read_stdin` (input is an
+  environment input, so the trace needs read events and the theorem a
+  premise "given the same input"), `getrandom`/`secure_u32`, process
+  arguments and environment variables (the loader would have to place
+  `argv`/`envp`, now arbitrary memory), time (`clock_gettime`, `nanosleep`),
+  files, sockets and processes, the general `syscall6`, the allocator
+  externs (the verified compiler's `alloc` is the mini bump allocator over
+  a heap the startup code provides, not `mmap`), and writes longer than
+  `MAX_RW_COUNT` (Core would have to loop; a short write is not modeled).

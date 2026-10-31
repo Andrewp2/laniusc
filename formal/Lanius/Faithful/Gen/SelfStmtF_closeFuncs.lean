@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_close_funcs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Tables} {x2 : List Lanius.Mini.MFunc} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepTables x1 v1 → (RepList 158 RepMFunc) x2 v2 →
-    (RepOption 189 (RepList 5 RepSrcFunc)) (Lanius.Mini.closeFuncs x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Tables} {x2 : List Lanius.Mini.MFunc} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepTables x1 v1 → (RepList 159 RepMFunc) x2 v2 →
+    (RepOption 190 (RepList 5 RepSrcFunc)) (Lanius.Mini.closeFuncs x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

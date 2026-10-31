@@ -25,7 +25,7 @@ abbrev Stmt_binary_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     (RepOption 2 (RepList 0 RepI32)) (Lanius.Mini.binaryWords x0) w
 
 abbrev Stmt_byte_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List UInt8} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 61 RepU8) x0 v0 →
+  ∀ {x0 : List UInt8} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 62 RepU8) x0 v0 →
     (RepList 0 RepI32) (Lanius.Mini.byteWords x0) w
 
 abbrev Stmt_compile_source (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

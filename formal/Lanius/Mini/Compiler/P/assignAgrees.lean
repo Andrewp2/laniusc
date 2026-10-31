@@ -27,5 +27,6 @@ def assignAgrees (index : Nat) (value : Expr) (other : Stmt) : Bool :=
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 end Lanius.Mini

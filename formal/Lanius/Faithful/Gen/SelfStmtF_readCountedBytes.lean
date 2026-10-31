@@ -21,8 +21,8 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_file_lexed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Token)} {x1 : List Nat} {x2 : Lanius.Mini.NumsRead} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 150 (RepList 44 RepToken)) x0 v0 → (RepList 24 RepNat) x1 v1 → RepNumsRead x2 v2 →
-    (RepOption 73 RepFileRead) (Lanius.Mini.fileLexed x0 x1 x2) w
+  ∀ {x0 : Option (List Lanius.Mini.Token)} {x1 : List Nat} {x2 : Lanius.Mini.NumsRead} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 151 (RepList 44 RepToken)) x0 v0 → (RepList 24 RepNat) x1 v1 → RepNumsRead x2 v2 →
+    (RepOption 74 RepFileRead) (Lanius.Mini.fileLexed x0 x1 x2) w
 
 abbrev Stmt_files_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FileInput} {x1 : Option Lanius.Mini.FilesRead} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepFileInput x0 v0 → (RepOption 40 RepFilesRead) x1 v1 →
@@ -30,7 +30,7 @@ abbrev Stmt_files_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_read_counted_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (BitVec 32)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 0 RepI32) x0 v0 →
-    (RepOption 93 RepNumsRead) (Lanius.Mini.readCountedBytes x0) w
+    (RepOption 94 RepNumsRead) (Lanius.Mini.readCountedBytes x0) w
 
 abbrev Stmt_read_counted_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (BitVec 32)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 0 RepI32) x0 v0 →
@@ -38,15 +38,15 @@ abbrev Stmt_read_counted_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) 
 
 abbrev Stmt_read_file (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (BitVec 32)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 0 RepI32) x0 v0 →
-    (RepOption 73 RepFileRead) (Lanius.Mini.readFile x0) w
+    (RepOption 74 RepFileRead) (Lanius.Mini.readFile x0) w
 
 abbrev Stmt_read_file_end (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : List Nat} {x2 : Option Lanius.Mini.NumsRead} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 24 RepNat) x0 v0 → (RepList 24 RepNat) x1 v1 → (RepOption 93 RepNumsRead) x2 v2 →
-    (RepOption 73 RepFileRead) (Lanius.Mini.readFileEnd x0 x1 x2) w
+  ∀ {x0 : List Nat} {x1 : List Nat} {x2 : Option Lanius.Mini.NumsRead} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 24 RepNat) x0 v0 → (RepList 24 RepNat) x1 v1 → (RepOption 94 RepNumsRead) x2 v2 →
+    (RepOption 74 RepFileRead) (Lanius.Mini.readFileEnd x0 x1 x2) w
 
 abbrev Stmt_read_file_parents (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Option Lanius.Mini.NumsRead} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → (RepOption 93 RepNumsRead) x1 v1 →
-    (RepOption 73 RepFileRead) (Lanius.Mini.readFileParents x0 x1) w
+  ∀ {x0 : List Nat} {x1 : Option Lanius.Mini.NumsRead} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → (RepOption 94 RepNumsRead) x1 v1 →
+    (RepOption 74 RepFileRead) (Lanius.Mini.readFileParents x0 x1) w
 
 abbrev Stmt_read_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (BitVec 32)} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 0 RepI32) x0 v0 → RepNat x1 v1 →

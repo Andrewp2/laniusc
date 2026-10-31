@@ -14,16 +14,16 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::compile_declared -/
-def src_compile_declared (ix_compile_lowered : Nat) (ix_lower_funcs : Nat) (ix_sigs : Nat) : SrcFunc := { params := [{ id := 17, ty := ty74 }, { id := 56, ty := ty33 }], ret := ty64, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 17)) ty74 ty64 [[170], []] [SrcEff.eCall ix_compile_lowered [SrcEff.eCall ix_lower_funcs [SrcEff.eCall ix_sigs [SrcEff.ePure (SrcExpr.field 56 0)], SrcEff.ePure (SrcExpr.local 170), SrcEff.ePure (SrcExpr.field 56 0)]], SrcEff.eVariant ty64 1 []]) }
+def src_compile_declared (ix_compile_lowered : Nat) (ix_lower_funcs : Nat) (ix_sigs : Nat) : SrcFunc := { params := [{ id := 17, ty := ty75 }, { id := 56, ty := ty33 }], ret := ty65, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 17)) ty75 ty65 [[170], []] [SrcEff.eCall ix_compile_lowered [SrcEff.eCall ix_lower_funcs [SrcEff.eCall ix_sigs [SrcEff.ePure (SrcExpr.field 56 0)], SrcEff.ePure (SrcExpr.local 170), SrcEff.ePure (SrcExpr.field 56 0)]], SrcEff.eVariant ty65 1 []]) }
 
 /-- mini::selfhost::compile_lowered -/
-def src_compile_lowered (ix_compile_optimized : Nat) : SrcFunc := { params := [{ id := 16, ty := ty94 }], ret := ty64, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 16)) ty94 ty64 [[153], []] [SrcEff.eCall ix_compile_optimized [SrcEff.eStruct ty95 [SrcEff.ePure (SrcExpr.local 153)]], SrcEff.eVariant ty64 1 []]) }
+def src_compile_lowered (ix_compile_optimized : Nat) : SrcFunc := { params := [{ id := 16, ty := ty95 }], ret := ty65, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 16)) ty95 ty65 [[153], []] [SrcEff.eCall ix_compile_optimized [SrcEff.eStruct ty96 [SrcEff.ePure (SrcExpr.local 153)]], SrcEff.eVariant ty65 1 []]) }
 
 /-- mini::selfhost::compile_optimized -/
-def src_compile_optimized (ix_optimize_program : Nat) (ix_validate : Nat) (ix_compile_or : Nat) (ix_compile_program : Nat) : SrcFunc := { params := [{ id := 18, ty := ty95 }], ret := ty64, body := SrcStmt.letCall 75 ty95 ix_optimize_program [SrcExpr.local 18] (SrcStmt.then (SrcStmt.ifEval (SrcEff.eCall ix_validate [SrcEff.ePure (SrcExpr.local 18), SrcEff.ePure (SrcExpr.local 75)]) (SrcStmt.returnEval (SrcEff.eCall ix_compile_or [SrcEff.eCall ix_compile_program [SrcEff.ePure (SrcExpr.local 75)], SrcEff.ePure (SrcExpr.local 18)])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eCall ix_compile_program [SrcEff.ePure (SrcExpr.local 18)]))) }
+def src_compile_optimized (ix_optimize_program : Nat) (ix_validate : Nat) (ix_compile_or : Nat) (ix_compile_program : Nat) : SrcFunc := { params := [{ id := 18, ty := ty96 }], ret := ty65, body := SrcStmt.letCall 75 ty96 ix_optimize_program [SrcExpr.local 18] (SrcStmt.then (SrcStmt.ifEval (SrcEff.eCall ix_validate [SrcEff.ePure (SrcExpr.local 18), SrcEff.ePure (SrcExpr.local 75)]) (SrcStmt.returnEval (SrcEff.eCall ix_compile_or [SrcEff.eCall ix_compile_program [SrcEff.ePure (SrcExpr.local 75)], SrcEff.ePure (SrcExpr.local 18)])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eCall ix_compile_program [SrcEff.ePure (SrcExpr.local 18)]))) }
 
 /-- mini::selfhost::compile_or -/
-def src_compile_or (ix_compile_program : Nat) : SrcFunc := { params := [{ id := 11, ty := ty64 }, { id := 49, ty := ty95 }], ret := ty64, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty64 ty64 [[139], []] [SrcEff.eVariant ty64 0 [SrcEff.ePure (SrcExpr.local 139)], SrcEff.eCall ix_compile_program [SrcEff.ePure (SrcExpr.local 49)]]) }
+def src_compile_or (ix_compile_program : Nat) : SrcFunc := { params := [{ id := 11, ty := ty65 }, { id := 49, ty := ty96 }], ret := ty65, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty65 ty65 [[139], []] [SrcEff.eVariant ty65 0 [SrcEff.ePure (SrcExpr.local 139)], SrcEff.eCall ix_compile_program [SrcEff.ePure (SrcExpr.local 49)]]) }
 
 end
 
