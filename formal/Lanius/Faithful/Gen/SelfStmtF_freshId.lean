@@ -37,7 +37,7 @@ abbrev Stmt_fresh_id (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.freshId x0 x1) w
 
 abbrev Stmt_local_expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Local} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 254 RepLocal) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.Local} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 242 RepLocal) x0 v0 →
     (RepOption 223 RepSrcExpr) (Lanius.Mini.localExpr x0) w
 
 abbrev Stmt_member_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

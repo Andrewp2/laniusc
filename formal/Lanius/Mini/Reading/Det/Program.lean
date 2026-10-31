@@ -101,14 +101,24 @@ theorem paramsR_fresh : ∀ {scope : List Local} {ps : List CTree} {r : MParams}
 
 end
 
+theorem contractsR_unique {env : FrontEnv} {scope : List Local} {b : MStmt} (nd : IdsFresh scope)
+    (vn : VariantsNodup env.decls) : ∀ {c : CTree} {x y : MStmt}, ContractsR env scope c b x → ContractsR env scope c b y →
+    x = y
+  | _, _, _, .none _, .none _ => rfl
+  | _, _, _, .none pn, .more pm _ _ _ => by prod_clash
+  | _, _, _, .more pm _ _ _, .none pn => by prod_clash
+  | _, _, _, .more _ _ k r, .more _ _ k' r' => by
+    rw [effR_unique k nd vn k', contractsR_unique nd vn r r']
+
 theorem readFn_unique {decls : Decls} {fd : FnDecl} {args : List Ty} {a b : MFunc} (vn : VariantsNodup decls)
     (h₁ : ReadFn decls fd args a) (h₂ : ReadFn decls fd args b) : a = b := by
-  obtain ⟨r, items, ps, body, _, _, rr, it, pr, br, rfl⟩ := h₁
-  obtain ⟨r', items', ps', body', _, _, rr', it', pr', br', rfl⟩ := h₂
+  obtain ⟨r, items, ps, body, mb, _, rr, it, pr, br, cr, rfl⟩ := h₁
+  obtain ⟨r', items', ps', body', mb', _, rr', it', pr', br', cr', rfl⟩ := h₂
   cases resultR_unique rr rr'
   cases items_unique it it'
   cases paramsR_unique pr pr'
   cases blockR_unique br (paramsR_fresh pr List.nodup_nil) vn br'
+  cases contractsR_unique (paramsR_fresh pr List.nodup_nil) vn cr cr'
   rfl
 
 theorem readExtern_unique {decls : Decls} {fd : FnDecl} {args : List Ty} {a b : MFunc}

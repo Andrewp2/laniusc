@@ -28,6 +28,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_isMatchStmt
 public import Lanius.Faithful.Gen.SelfStmtF_matchStmtIf
+public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_tryLet
@@ -84,6 +85,32 @@ theorem proof_cons_param {prog : SrcProgram} {prims : Prims} {ix_cons_param ix_c
   simp only [src_cons_param] at h
   faithful [Lanius.Mini.consParam]
 
+theorem proof_contract_then {prog : SrcProgram} {prims : Prims} {ix_contract_then ix_boxed_of_mini_selfhost_MStmt : Nat} (fn : prog.funcs[ix_contract_then]? = some (src_contract_then ix_boxed_of_mini_selfhost_MStmt)) (np : prims.isPrim ix_contract_then = false)
+    (ext_boxed_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_MStmt prog prims ix_boxed_of_mini_selfhost_MStmt n)) {n : Nat} :
+    Stmt_contract_then prog prims ix_contract_then n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_contract_then] at h
+  faithful [Lanius.Mini.contractThen]
+
+theorem step_contracts_of {prog : SrcProgram} {prims : Prims} {ix_contracts_of ix_minus ix_node_prod ix_kid ix_p_contracts_none ix_p_contracts_more ix_p_requires ix_contract_then ix_eff_of : Nat} (fn : prog.funcs[ix_contracts_of]? = some (src_contracts_of ix_minus ix_node_prod ix_kid ix_contracts_of ix_p_contracts_none ix_p_contracts_more ix_p_requires ix_contract_then ix_eff_of)) (np : prims.isPrim ix_contracts_of = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_p_contracts_none : Certified (∀ {n : Nat}, Stmt_p_contracts_none prog prims ix_p_contracts_none n))
+    (ext_p_contracts_more : Certified (∀ {n : Nat}, Stmt_p_contracts_more prog prims ix_p_contracts_more n))
+    (ext_p_requires : Certified (∀ {n : Nat}, Stmt_p_requires prog prims ix_p_requires n))
+    (ext_contract_then : Certified (∀ {n : Nat}, Stmt_contract_then prog prims ix_contract_then n))
+    (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n)) {n : Nat}
+    (ih_contracts_of : Certified (Stmt_contracts_of prog prims ix_contracts_of n)) :
+    Stmt_contracts_of prog prims ix_contracts_of (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_contracts_of] at h
+  faithful [Lanius.Mini.contractsOf]
+
 theorem proof_func_body {prog : SrcProgram} {prims : Prims} {ix_func_body : Nat} (fn : prog.funcs[ix_func_body]? = some (src_func_body)) (np : prims.isPrim ix_func_body = false) {n : Nat} :
     Stmt_func_body prog prims ix_func_body n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
@@ -96,18 +123,19 @@ theorem proof_func_body {prog : SrcProgram} {prims : Prims} {ix_func_body : Nat}
 theorem proof_func_params {prog : SrcProgram} {prims : Prims} {ix_func_params ix_func_ret : Nat} (fn : prog.funcs[ix_func_params]? = some (src_func_params ix_func_ret)) (np : prims.isPrim ix_func_params = false)
     (ext_func_ret : Certified (∀ {n : Nat}, Stmt_func_ret prog prims ix_func_ret n)) {n : Nat} :
     Stmt_func_params prog prims ix_func_params n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_func_params] at h
   faithful [Lanius.Mini.funcParams]
 
-theorem proof_func_ret {prog : SrcProgram} {prims : Prims} {ix_func_ret ix_func_body ix_block_of : Nat} (fn : prog.funcs[ix_func_ret]? = some (src_func_ret ix_func_body ix_block_of)) (np : prims.isPrim ix_func_ret = false)
+theorem proof_func_ret {prog : SrcProgram} {prims : Prims} {ix_func_ret ix_func_body ix_contracts_of ix_block_of : Nat} (fn : prog.funcs[ix_func_ret]? = some (src_func_ret ix_func_body ix_contracts_of ix_block_of)) (np : prims.isPrim ix_func_ret = false)
     (ext_func_body : Certified (∀ {n : Nat}, Stmt_func_body prog prims ix_func_body n))
+    (ext_contracts_of : Certified (∀ {n : Nat}, Stmt_contracts_of prog prims ix_contracts_of n))
     (ext_block_of : Certified (∀ {n : Nat}, Stmt_block_of prog prims ix_block_of n)) {n : Nat} :
     Stmt_func_ret prog prims ix_func_ret n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h

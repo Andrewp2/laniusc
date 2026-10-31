@@ -8081,17 +8081,43 @@ pub fn func_body(ps: MParams, r: RetTy, body: core::option::Option<MStmt>) -> co
     };
 }
 
-pub fn func_ret(fuel: usize, env: FrontEnv, ps: MParams, ret: core::option::Option<RetTy>, body: CTree) -> core::option::Option<MFunc> {
-    return match (ret) {
+pub fn contract_then(x: core::option::Option<MEff>, rest: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (x) {
         None -> None,
-        Some(r) -> func_body(ps, r, block_of(fuel, env, ps.scope, body)),
+        Some(e) -> match (rest) {
+            None -> None,
+            Some(r) -> Some(MThen(boxed(MAssert(e)), boxed(r))),
+        },
     };
 }
 
-pub fn func_params(fuel: usize, env: FrontEnv, params: core::option::Option<MParams>, ret: core::option::Option<RetTy>, body: CTree) -> core::option::Option<MFunc> {
+// A function's `requires` clauses (contract_list_opt), each checked in order
+// before body: a false one traps before the body runs, as `assert(false)`
+// does (laniusc's requires_fails fixture: SIGILL).
+pub fn contracts_of(fuel: usize, env: FrontEnv, scope: List<Local>, c: CTree, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(c) == p_contracts_none()) {
+        return body;
+    }
+    if (node_prod(c) == p_contracts_more() && node_prod(kid(c, 0)) == p_requires()) {
+        return contract_then(eff_of(fuel, env, scope, Some(TyBool), kid(kid(c, 0), 2)), contracts_of(minus(fuel, 1), env, scope, kid(c, 1), body));
+    }
+    return None;
+}
+
+pub fn func_ret(fuel: usize, env: FrontEnv, ps: MParams, ret: core::option::Option<RetTy>, contracts: CTree, body: CTree) -> core::option::Option<MFunc> {
+    return match (ret) {
+        None -> None,
+        Some(r) -> func_body(ps, r, contracts_of(fuel, env, ps.scope, contracts, block_of(fuel, env, ps.scope, body))),
+    };
+}
+
+pub fn func_params(fuel: usize, env: FrontEnv, params: core::option::Option<MParams>, ret: core::option::Option<RetTy>, contracts: CTree, body: CTree) -> core::option::Option<MFunc> {
     return match (params) {
         None -> None,
-        Some(ps) -> func_ret(fuel, env, ps, ret, body),
+        Some(ps) -> func_ret(fuel, env, ps, ret, contracts, body),
     };
 }
 
@@ -8135,12 +8161,10 @@ pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::o
     let tenv: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None, base: kid_token(f, 1).start };
     let rt: core::option::Option<RetTy> = result_of(fuel, tenv, kid(f, 6));
     let env: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: ret_expected(rt), base: kid_token(f, 1).start };
-    // A `requires` clause would add a run-time check this front end does not
-    // model, so only functions without contracts are read.
-    if (length(names) == length(args) && node_prod(kid(f, 8)) == p_contracts_none()) {
+    if (length(names) == length(args)) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,
-            Some(items) -> func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(kid(f, 9), 1)),
+            Some(items) -> func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(f, 8), kid(kid(f, 9), 1)),
         };
     }
     return None;
@@ -10531,7 +10555,8 @@ pub fn lx_keyword_rules() -> List<SymRule> {
         cons(SymRule { spelling: cons(116, cons(114, cons(97, cons(105, single(116))))), kind: 99 },
         cons(SymRule { spelling: cons(116, cons(121, cons(112, single(101)))), kind: 103 },
         cons(SymRule { spelling: cons(119, cons(104, cons(101, cons(114, single(101))))), kind: 104 },
-        empty())))))))))))))))))))))))));
+        cons(SymRule { spelling: cons(114, cons(101, cons(113, cons(117, cons(105, cons(114, cons(101, single(115)))))))), kind: 201 },
+        empty()))))))))))))))))))))))))));
 }
 
 // `lexTokens`: the tokens of a file's bytes, if it lexes.
@@ -11464,6 +11489,16 @@ fn p_continue_stmt() -> usize {
 // extract: inline
 fn p_contracts_none() -> usize {
     return 321;
+}
+
+// extract: inline
+fn p_contracts_more() -> usize {
+    return 322;
+}
+
+// extract: inline
+fn p_requires() -> usize {
+    return 323;
 }
 
 // extract: inline

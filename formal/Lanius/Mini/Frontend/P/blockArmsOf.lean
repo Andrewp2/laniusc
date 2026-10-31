@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Frontend.P.compoundOf
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.floatTyped
@@ -10,6 +11,7 @@ import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isMatchStmt
 import Lanius.Mini.Frontend.P.matchStmtIf
+import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.tryLet
@@ -256,15 +258,36 @@ def funcBody (ps : MParams) (r : RetTy) (body : Option MStmt) : Option MFunc :=
   | none => none
   | some b => some ({ params := ps.params, ret := r, body := b } : MFunc)
 
-def funcRet (fuel : Nat) (env : FrontEnv) (ps : MParams) (ret : Option RetTy) (body : CTree) : Option MFunc :=
+def contractThen (x : Option MEff) (rest : Option MStmt) : Option MStmt :=
+  match x with
+  | none => none
+  | some e =>
+    match rest with
+    | none => none
+    | some r => some (MStmt.mThen (MStmt.mAssert e) r)
+
+/-- A function's `requires` clauses (contract_list_opt), each checked in order before body: a false one traps before the body runs, as `assert(false)` does (laniusc's requires_fails fixture: SIGILL). -/
+def contractsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) (body : Option MStmt) : Option MStmt :=
+  if fuel = 0 then
+    none
+  else
+    if nodeProd c = (321) then
+      body
+    else
+      if decide (nodeProd c = (322)) && decide (nodeProd (kid c 0) = (323)) then
+        contractThen (effOf fuel env scope (some Ty.tyBool) (kid (kid c 0) 2)) (contractsOf (fuel - 1) env scope (kid c 1) body)
+      else
+        none
+
+def funcRet (fuel : Nat) (env : FrontEnv) (ps : MParams) (ret : Option RetTy) (contracts : CTree) (body : CTree) : Option MFunc :=
   match ret with
   | none => none
-  | some r => funcBody ps r (blockOf fuel env ps.scope body)
+  | some r => funcBody ps r (contractsOf fuel env ps.scope contracts (blockOf fuel env ps.scope body))
 
-def funcParams (fuel : Nat) (env : FrontEnv) (params : Option MParams) (ret : Option RetTy) (body : CTree) : Option MFunc :=
+def funcParams (fuel : Nat) (env : FrontEnv) (params : Option MParams) (ret : Option RetTy) (contracts : CTree) (body : CTree) : Option MFunc :=
   match params with
   | none => none
-  | some ps => funcRet fuel env ps ret body
+  | some ps => funcRet fuel env ps ret contracts body
 
 def retOfTy (t : Option Ty) : Option RetTy :=
   match t with

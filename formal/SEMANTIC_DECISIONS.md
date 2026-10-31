@@ -860,3 +860,13 @@ a call (a method call included), a cast, an element, a struct literal, a
 arithmetic expression, a variant and a `match` are not read untyped. Their
 type depends on a default for literals that the reader does not pick. The
 `let` then reads as the typed `let x: T = init;` would.
+
+## `requires` clauses (decided 10-31, F10)
+
+`fn f(..) -> T requires (c1) requires (c2) { body }` reads as a body of
+`assert(c1); assert(c2); body`: each clause is a `bool` effectful
+expression over the parameters, checked in source order before the body
+runs. A false clause traps as a false `assert` does, which matches laniusc
+(its `requires_fails` fixture stops with SIGILL before the body runs). The
+lexer spec gains the `requires` keyword (laniusc's token code 201). The
+grammar has no `ensures` clause, so none is read.

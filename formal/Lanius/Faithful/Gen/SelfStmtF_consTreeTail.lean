@@ -25,7 +25,7 @@ abbrev Stmt_apply_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepMEff (Lanius.Mini.applyEff x0 x1 x2) w
 
 abbrev Stmt_bound_or_none (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : Option (List Lanius.Mini.Bind)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 285 (RepList 272 RepBind)) x1 v1 →
+  ∀ {x0 : List (List Nat)} {x1 : Option (List Lanius.Mini.Bind)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 284 (RepList 267 RepBind)) x1 v1 →
     (RepOption 204 (RepList 137 RepTy)) (Lanius.Mini.boundOrNone x0 x1) w
 
 abbrev Stmt_callee_env (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -50,14 +50,14 @@ abbrev Stmt_explicit_inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev Stmt_find_method (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.FnDecl} {x3 : Nat} {x4 : List Nat} {x5 : Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 108 RepFnDecl) x2 v2 → RepNat x3 v3 → (RepList 25 RepNat) x4 v4 → RepTy x5 v5 →
-    (RepOption 270 RepFound) (Lanius.Mini.findMethod x0 x1 x2 x3 x4 x5) w
+    (RepOption 265 RepFound) (Lanius.Mini.findMethod x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_fit_arg (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Lanius.Mini.CTree} {x4 : Lanius.Mini.Ty} {x5 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepCTree x3 v3 → RepTy x4 v4 → (RepList 272 RepBind) x5 v5 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Lanius.Mini.CTree} {x4 : Lanius.Mini.Ty} {x5 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepCTree x3 v3 → RepTy x4 v4 → (RepList 267 RepBind) x5 v5 →
     RepFit (Lanius.Mini.fitArg x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_fit_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : List Lanius.Mini.CTree} {x4 : List Lanius.Mini.Ty} {x5 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 81 RepCTree) x3 v3 → (RepList 137 RepTy) x4 v4 → (RepList 272 RepBind) x5 v5 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : List Lanius.Mini.CTree} {x4 : List Lanius.Mini.Ty} {x5 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 81 RepCTree) x3 v3 → (RepList 137 RepTy) x4 v4 → (RepList 267 RepBind) x5 v5 →
     RepFit (Lanius.Mini.fitArgs x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_fit_args_next (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -65,31 +65,31 @@ abbrev Stmt_fit_args_next (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepFit (Lanius.Mini.fitArgsNext x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_fit_decl (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Option Nat} {x4 : List Lanius.Mini.CTree} {x5 : Option Lanius.Mini.Inst} {x6 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepOption 201 RepNat) x3 v3 → (RepList 81 RepCTree) x4 v4 → (RepOption 175 RepInst) x5 v5 → (RepList 272 RepBind) x6 v6 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Option Nat} {x4 : List Lanius.Mini.CTree} {x5 : Option Lanius.Mini.Inst} {x6 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepOption 201 RepNat) x3 v3 → (RepList 81 RepCTree) x4 v4 → (RepOption 175 RepInst) x5 v5 → (RepList 267 RepBind) x6 v6 →
     RepFit (Lanius.Mini.fitDecl x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_fit_if (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : List Lanius.Mini.Bind} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 272 RepBind) x1 v1 →
+  ∀ {x0 : Bool} {x1 : List Lanius.Mini.Bind} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 267 RepBind) x1 v1 →
     RepFit (Lanius.Mini.fitIf x0 x1) w
 
 abbrev Stmt_fit_named (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : List (List Nat)} {x4 : List Lanius.Mini.CTree} {x5 : Lanius.Mini.Ty} {x6 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 31 (RepList 25 RepNat)) x3 v3 → (RepList 81 RepCTree) x4 v4 → RepTy x5 v5 → (RepList 272 RepBind) x6 v6 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : List (List Nat)} {x4 : List Lanius.Mini.CTree} {x5 : Lanius.Mini.Ty} {x6 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepList 31 (RepList 25 RepNat)) x3 v3 → (RepList 81 RepCTree) x4 v4 → RepTy x5 v5 → (RepList 267 RepBind) x6 v6 →
     RepFit (Lanius.Mini.fitNamed x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_fit_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Bind)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 285 (RepList 272 RepBind)) x0 v0 →
+  ∀ {x0 : Option (List Lanius.Mini.Bind)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 284 (RepList 267 RepBind)) x0 v0 →
     RepFit (Lanius.Mini.fitOf x0) w
 
 abbrev Stmt_fit_path (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Option (List (List Nat))} {x4 : Option (List Lanius.Mini.CTree)} {x5 : Lanius.Mini.Ty} {x6 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepOption 134 (RepList 31 (RepList 25 RepNat))) x3 v3 → (RepOption 80 (RepList 81 RepCTree)) x4 v4 → RepTy x5 v5 → (RepList 272 RepBind) x6 v6 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Option (List (List Nat))} {x4 : Option (List Lanius.Mini.CTree)} {x5 : Lanius.Mini.Ty} {x6 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → (RepOption 134 (RepList 31 (RepList 25 RepNat))) x3 v3 → (RepOption 80 (RepList 81 RepCTree)) x4 v4 → RepTy x5 v5 → (RepList 267 RepBind) x6 v6 →
     RepFit (Lanius.Mini.fitPath x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_fit_same_decl (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Bool} {x4 : List Lanius.Mini.CTree} {x5 : List Lanius.Mini.Ty} {x6 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepBool x3 v3 → (RepList 81 RepCTree) x4 v4 → (RepList 137 RepTy) x5 v5 → (RepList 272 RepBind) x6 v6 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Bool} {x4 : List Lanius.Mini.CTree} {x5 : List Lanius.Mini.Ty} {x6 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepBool x3 v3 → (RepList 81 RepCTree) x4 v4 → (RepList 137 RepTy) x5 v5 → (RepList 267 RepBind) x6 v6 →
     RepFit (Lanius.Mini.fitSameDecl x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_fit_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Lanius.Mini.CTree} {x4 : Lanius.Mini.Ty} {x5 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepCTree x3 v3 → RepTy x4 v4 → (RepList 272 RepBind) x5 v5 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Nat)} {x3 : Lanius.Mini.CTree} {x4 : Lanius.Mini.Ty} {x5 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepCTree x3 v3 → RepTy x4 v4 → (RepList 267 RepBind) x5 v5 →
     RepFit (Lanius.Mini.fitTy x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_impl_fit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -97,11 +97,11 @@ abbrev Stmt_impl_fit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepFit (Lanius.Mini.implFit x0 x1 x2 x3) w
 
 abbrev Stmt_infer_inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : Lanius.Mini.FnDecl} {x4 : List Lanius.Mini.Bind} {x5 : Option (List Lanius.Mini.Ty)} {x6 : Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → RepFnDecl x3 v3 → (RepList 272 RepBind) x4 v4 → (RepOption 204 (RepList 137 RepTy)) x5 v5 → RepTy x6 v6 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : Lanius.Mini.FnDecl} {x4 : List Lanius.Mini.Bind} {x5 : Option (List Lanius.Mini.Ty)} {x6 : Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → RepFnDecl x3 v3 → (RepList 267 RepBind) x4 v4 → (RepOption 204 (RepList 137 RepTy)) x5 v5 → RepTy x6 v6 →
     (RepOption 175 RepInst) (Lanius.Mini.inferInst x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_infer_ret (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : Lanius.Mini.FnDecl} {x4 : List (List Nat)} {x5 : Option (List Lanius.Mini.Bind)} {x6 : Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → RepFnDecl x3 v3 → (RepList 31 (RepList 25 RepNat)) x4 v4 → (RepOption 285 (RepList 272 RepBind)) x5 v5 → RepTy x6 v6 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : Lanius.Mini.FnDecl} {x4 : List (List Nat)} {x5 : Option (List Lanius.Mini.Bind)} {x6 : Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → RepFnDecl x3 v3 → (RepList 31 (RepList 25 RepNat)) x4 v4 → (RepOption 284 (RepList 267 RepBind)) x5 v5 → RepTy x6 v6 →
     (RepOption 175 RepInst) (Lanius.Mini.inferRet x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_inst_from (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -137,11 +137,11 @@ abbrev Stmt_ret_pattern (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 124 RepCTree) (Lanius.Mini.retPattern x0) w
 
 abbrev Stmt_unique_found (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Nat} {x2 : List Lanius.Mini.Bind} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBool x0 v0 → RepNat x1 v1 → (RepList 272 RepBind) x2 v2 →
-    (RepOption 270 RepFound) (Lanius.Mini.uniqueFound x0 x1 x2) w
+  ∀ {x0 : Bool} {x1 : Nat} {x2 : List Lanius.Mini.Bind} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBool x0 v0 → RepNat x1 v1 → (RepList 267 RepBind) x2 v2 →
+    (RepOption 265 RepFound) (Lanius.Mini.uniqueFound x0 x1 x2) w
 
 abbrev Stmt_x_apply_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.MEff} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → (RepOption 246 RepMEff) x1 v1 → (RepOption 246 RepMEff) x2 v2 →
-    (RepOption 246 RepMEff) (Lanius.Mini.xApplyOf x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.MEff} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → (RepOption 241 RepMEff) x1 v1 → (RepOption 241 RepMEff) x2 v2 →
+    (RepOption 241 RepMEff) (Lanius.Mini.xApplyOf x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

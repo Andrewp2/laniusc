@@ -13,6 +13,9 @@ open Lanius.Mini
 
 noncomputable section
 
+/-- mini::selfhost::p_contracts_more -/
+def src_p_contracts_more : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000142#64) }
+
 /-- mini::selfhost::p_contracts_none -/
 def src_p_contracts_none : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000141#64) }
 
@@ -21,6 +24,9 @@ def src_p_div_tail : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usiz
 
 /-- mini::selfhost::p_else_none -/
 def src_p_else_none : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000004f#64) }
+
+/-- mini::selfhost::p_requires -/
+def src_p_requires : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000143#64) }
 
 end
 

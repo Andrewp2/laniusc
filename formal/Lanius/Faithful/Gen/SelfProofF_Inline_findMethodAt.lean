@@ -87,7 +87,7 @@ theorem step_find_method_at {prog : SrcProgram} {prims : Prims} {ix_find_method_
   simp only [src_find_method_at] at h
   faithful [Lanius.Mini.Inline.findMethodAt]
 
-theorem step_for_of {prog : SrcProgram} {prims : Prims} {ix_for_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_member ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_cons_of_mini_selfhost_Local ix_block_of ix_p_for_iter_range_from_start ix_p_range_start_int ix_p_range_exclusive ix_p_range_bound ix_p_range_bound_name ix_p_postfix_end ix_find_local ix_int_literal ix_for_range : Nat} (fn : prog.funcs[ix_for_of]? = some (src_for_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_member ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_cons_of_mini_selfhost_Local ix_block_of ix_p_for_iter_range_from_start ix_p_range_start_int ix_p_range_exclusive ix_p_range_bound ix_p_range_bound_name ix_p_postfix_end ix_find_local ix_int_literal ix_for_range)) (np : prims.isPrim ix_for_of = false)
+theorem step_for_of {prog : SrcProgram} {prims : Prims} {ix_for_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_member ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_cons_of_mini_selfhost_Local ix_block_of ix_int_literal ix_p_postfix_end ix_find_local ix_p_for_iter_range_from_start ix_p_range_start_int ix_p_range_exclusive ix_p_range_bound ix_p_range_bound_name ix_for_range : Nat} (fn : prog.funcs[ix_for_of]? = some (src_for_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_member ix_field_start_Token_of_mini_selfhost_Token ix_fresh_id ix_cons_of_mini_selfhost_Local ix_block_of ix_int_literal ix_p_postfix_end ix_find_local ix_p_for_iter_range_from_start ix_p_range_start_int ix_p_range_exclusive ix_p_range_bound ix_p_range_bound_name ix_for_range)) (np : prims.isPrim ix_for_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -97,14 +97,14 @@ theorem step_for_of {prog : SrcProgram} {prims : Prims} {ix_for_of ix_minus ix_n
     (ext_field_start_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_start_Token_of_mini_selfhost_Token prog prims ix_field_start_Token_of_mini_selfhost_Token n))
     (ext_fresh_id : Certified (∀ {n : Nat}, Stmt_fresh_id prog prims ix_fresh_id n))
     (ext_cons_of_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Local prog prims ix_cons_of_mini_selfhost_Local n))
+    (ext_int_literal : Certified (∀ {n : Nat}, Stmt_int_literal prog prims ix_int_literal n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
+    (ext_find_local : Certified (∀ {n : Nat}, Stmt_find_local prog prims ix_find_local n))
     (ext_p_for_iter_range_from_start : Certified (∀ {n : Nat}, Stmt_p_for_iter_range_from_start prog prims ix_p_for_iter_range_from_start n))
     (ext_p_range_start_int : Certified (∀ {n : Nat}, Stmt_p_range_start_int prog prims ix_p_range_start_int n))
     (ext_p_range_exclusive : Certified (∀ {n : Nat}, Stmt_p_range_exclusive prog prims ix_p_range_exclusive n))
     (ext_p_range_bound : Certified (∀ {n : Nat}, Stmt_p_range_bound prog prims ix_p_range_bound n))
     (ext_p_range_bound_name : Certified (∀ {n : Nat}, Stmt_p_range_bound_name prog prims ix_p_range_bound_name n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
-    (ext_find_local : Certified (∀ {n : Nat}, Stmt_find_local prog prims ix_find_local n))
-    (ext_int_literal : Certified (∀ {n : Nat}, Stmt_int_literal prog prims ix_int_literal n))
     (ext_for_range : Certified (∀ {n : Nat}, Stmt_for_range prog prims ix_for_range n)) {n : Nat}
     (ih_block_of : Certified (Stmt_block_of prog prims ix_block_of n)) :
     Stmt_for_of prog prims ix_for_of (n + 1) := by

@@ -96,11 +96,11 @@ theorem proof_let_body {prog : SrcProgram} {prims : Prims} {ix_let_body ix_let_s
   simp only [src_let_body] at h
   faithful [Lanius.Mini.letBody]
 
-theorem proof_let_head_or_eval {prog : SrcProgram} {prims : Prims} {ix_let_head_or_eval ix_let_head ix_try_let_head ix_eval_head ix_eff_of : Nat} (fn : prog.funcs[ix_let_head_or_eval]? = some (src_let_head_or_eval ix_let_head ix_try_let_head ix_eval_head ix_eff_of)) (np : prims.isPrim ix_let_head_or_eval = false)
+theorem proof_let_head_or_eval {prog : SrcProgram} {prims : Prims} {ix_let_head_or_eval ix_eff_of ix_let_head ix_try_let_head ix_eval_head : Nat} (fn : prog.funcs[ix_let_head_or_eval]? = some (src_let_head_or_eval ix_eff_of ix_let_head ix_try_let_head ix_eval_head)) (np : prims.isPrim ix_let_head_or_eval = false)
+    (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n))
     (ext_let_head : Certified (∀ {n : Nat}, Stmt_let_head prog prims ix_let_head n))
     (ext_try_let_head : Certified (∀ {n : Nat}, Stmt_try_let_head prog prims ix_try_let_head n))
-    (ext_eval_head : Certified (∀ {n : Nat}, Stmt_eval_head prog prims ix_eval_head n))
-    (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n)) {n : Nat} :
+    (ext_eval_head : Certified (∀ {n : Nat}, Stmt_eval_head prog prims ix_eval_head n)) {n : Nat} :
     Stmt_let_head_or_eval prog prims ix_let_head_or_eval n := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
   rcases n with _ | n
@@ -166,11 +166,11 @@ theorem proof_return_or_eval {prog : SrcProgram} {prims : Prims} {ix_return_or_e
   simp only [src_return_or_eval] at h
   faithful [Lanius.Mini.returnOrEval]
 
-theorem proof_return_slice {prog : SrcProgram} {prims : Prims} {ix_return_slice ix_minus ix_let_head ix_slice_elem ix_tree_tokens ix_slice_returned : Nat} (fn : prog.funcs[ix_return_slice]? = some (src_return_slice ix_minus ix_let_head ix_slice_elem ix_tree_tokens ix_slice_returned)) (np : prims.isPrim ix_return_slice = false)
+theorem proof_return_slice {prog : SrcProgram} {prims : Prims} {ix_return_slice ix_minus ix_let_head ix_tree_tokens ix_slice_elem ix_slice_returned : Nat} (fn : prog.funcs[ix_return_slice]? = some (src_return_slice ix_minus ix_let_head ix_tree_tokens ix_slice_elem ix_slice_returned)) (np : prims.isPrim ix_return_slice = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_let_head : Certified (∀ {n : Nat}, Stmt_let_head prog prims ix_let_head n))
-    (ext_slice_elem : Certified (∀ {n : Nat}, Stmt_slice_elem prog prims ix_slice_elem n))
     (ext_tree_tokens : Certified (∀ {n : Nat}, Stmt_tree_tokens prog prims ix_tree_tokens n))
+    (ext_slice_elem : Certified (∀ {n : Nat}, Stmt_slice_elem prog prims ix_slice_elem n))
     (ext_slice_returned : Certified (∀ {n : Nat}, Stmt_slice_returned prog prims ix_slice_returned n)) {n : Nat} :
     Stmt_return_slice prog prims ix_return_slice n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
@@ -241,9 +241,9 @@ theorem proof_try_stmt {prog : SrcProgram} {prims : Prims} {ix_try_stmt ix_try_r
   simp only [src_try_stmt] at h
   faithful [Lanius.Mini.tryStmt]
 
-theorem proof_untyped_eval {prog : SrcProgram} {prims : Prims} {ix_untyped_eval ix_eval_let_head ix_eff_ty ix_untyped_if ix_inferred : Nat} (fn : prog.funcs[ix_untyped_eval]? = some (src_untyped_eval ix_eval_let_head ix_eff_ty ix_untyped_if ix_inferred)) (np : prims.isPrim ix_untyped_eval = false)
-    (ext_eval_let_head : Certified (∀ {n : Nat}, Stmt_eval_let_head prog prims ix_eval_let_head n))
+theorem proof_untyped_eval {prog : SrcProgram} {prims : Prims} {ix_untyped_eval ix_eff_ty ix_eval_let_head ix_untyped_if ix_inferred : Nat} (fn : prog.funcs[ix_untyped_eval]? = some (src_untyped_eval ix_eff_ty ix_eval_let_head ix_untyped_if ix_inferred)) (np : prims.isPrim ix_untyped_eval = false)
     (ext_eff_ty : Certified (∀ {n : Nat}, Stmt_eff_ty prog prims ix_eff_ty n))
+    (ext_eval_let_head : Certified (∀ {n : Nat}, Stmt_eval_let_head prog prims ix_eval_let_head n))
     (ext_untyped_if : Certified (∀ {n : Nat}, Stmt_untyped_if prog prims ix_untyped_if n))
     (ext_inferred : Certified (∀ {n : Nat}, Stmt_inferred prog prims ix_inferred n)) {n : Nat} :
     Stmt_untyped_eval prog prims ix_untyped_eval n := by

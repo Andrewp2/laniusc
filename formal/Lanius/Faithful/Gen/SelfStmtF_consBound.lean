@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_cons_bound (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.MEff} {x1 : Option Lanius.Mini.ArgsBound} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepMEff x0 v0 → (RepOption 283 RepArgsBound) x1 v1 →
-    (RepOption 283 RepArgsBound) (Lanius.Mini.consBound x0 x1) w
+  ∀ {x0 : Lanius.Mini.MEff} {x1 : Option Lanius.Mini.ArgsBound} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepMEff x0 v0 → (RepOption 282 RepArgsBound) x1 v1 →
+    (RepOption 282 RepArgsBound) (Lanius.Mini.consBound x0 x1) w
 
 end Lanius.Faithful.SelfCert

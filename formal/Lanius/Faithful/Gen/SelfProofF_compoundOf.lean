@@ -38,7 +38,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_assignment {prog : SrcProgram} {prims : Prims} {ix_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_set ix_peel ix_assign_target ix_compound_of ix_p_assign_end ix_call_stmt : Nat} (fn : prog.funcs[ix_assignment]? = some (src_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_set ix_peel ix_assign_target ix_compound_of ix_p_assign_end ix_call_stmt)) (np : prims.isPrim ix_assignment = false)
+theorem proof_assignment {prog : SrcProgram} {prims : Prims} {ix_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_end ix_p_assign_set ix_peel ix_assign_target ix_compound_of ix_call_stmt : Nat} (fn : prog.funcs[ix_assignment]? = some (src_assignment ix_minus ix_node_prod ix_kid ix_has_kids ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_p_expr ix_p_assign ix_p_assign_end ix_p_assign_set ix_peel ix_assign_target ix_compound_of ix_call_stmt)) (np : prims.isPrim ix_assignment = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -47,11 +47,11 @@ theorem proof_assignment {prog : SrcProgram} {prims : Prims} {ix_assignment ix_m
     (ext_field_start_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_start_Token_of_mini_selfhost_Token prog prims ix_field_start_Token_of_mini_selfhost_Token n))
     (ext_p_expr : Certified (∀ {n : Nat}, Stmt_p_expr prog prims ix_p_expr n))
     (ext_p_assign : Certified (∀ {n : Nat}, Stmt_p_assign prog prims ix_p_assign n))
+    (ext_p_assign_end : Certified (∀ {n : Nat}, Stmt_p_assign_end prog prims ix_p_assign_end n))
     (ext_p_assign_set : Certified (∀ {n : Nat}, Stmt_p_assign_set prog prims ix_p_assign_set n))
     (ext_peel : Certified (∀ {n : Nat}, Stmt_peel prog prims ix_peel n))
     (ext_assign_target : Certified (∀ {n : Nat}, Stmt_assign_target prog prims ix_assign_target n))
     (ext_compound_of : Certified (∀ {n : Nat}, Stmt_compound_of prog prims ix_compound_of n))
-    (ext_p_assign_end : Certified (∀ {n : Nat}, Stmt_p_assign_end prog prims ix_p_assign_end n))
     (ext_call_stmt : Certified (∀ {n : Nat}, Stmt_call_stmt prog prims ix_call_stmt n)) {n : Nat} :
     Stmt_assignment prog prims ix_assignment n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
@@ -82,11 +82,11 @@ theorem proof_for_range {prog : SrcProgram} {prims : Prims} {ix_for_range ix_box
   simp only [src_for_range] at h
   faithful [Lanius.Mini.forRange]
 
-theorem proof_match_of_postfix {prog : SrcProgram} {prims : Prims} {ix_match_of_postfix ix_node_prod ix_kid ix_p_postfix_end ix_p_match_expr : Nat} (fn : prog.funcs[ix_match_of_postfix]? = some (src_match_of_postfix ix_node_prod ix_kid ix_p_postfix_end ix_p_match_expr)) (np : prims.isPrim ix_match_of_postfix = false)
+theorem proof_match_of_postfix {prog : SrcProgram} {prims : Prims} {ix_match_of_postfix ix_node_prod ix_kid ix_p_match_expr ix_p_postfix_end : Nat} (fn : prog.funcs[ix_match_of_postfix]? = some (src_match_of_postfix ix_node_prod ix_kid ix_p_match_expr ix_p_postfix_end)) (np : prims.isPrim ix_match_of_postfix = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
-    (ext_p_match_expr : Certified (∀ {n : Nat}, Stmt_p_match_expr prog prims ix_p_match_expr n)) {n : Nat} :
+    (ext_p_match_expr : Certified (∀ {n : Nat}, Stmt_p_match_expr prog prims ix_p_match_expr n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n)) {n : Nat} :
     Stmt_match_of_postfix prog prims ix_match_of_postfix n := by
   intro x0 v0 w h r0
   rcases n with _ | n
@@ -95,14 +95,14 @@ theorem proof_match_of_postfix {prog : SrcProgram} {prims : Prims} {ix_match_of_
   simp only [src_match_of_postfix] at h
   faithful [Lanius.Mini.matchOfPostfix]
 
-theorem proof_match_primary {prog : SrcProgram} {prims : Prims} {ix_match_primary ix_node_prod ix_kid ix_has_kids ix_p_expr ix_p_assign ix_peel ix_p_assign_end ix_match_of_postfix : Nat} (fn : prog.funcs[ix_match_primary]? = some (src_match_primary ix_node_prod ix_kid ix_has_kids ix_p_expr ix_p_assign ix_peel ix_p_assign_end ix_match_of_postfix)) (np : prims.isPrim ix_match_primary = false)
+theorem proof_match_primary {prog : SrcProgram} {prims : Prims} {ix_match_primary ix_node_prod ix_kid ix_has_kids ix_p_expr ix_p_assign ix_p_assign_end ix_peel ix_match_of_postfix : Nat} (fn : prog.funcs[ix_match_primary]? = some (src_match_primary ix_node_prod ix_kid ix_has_kids ix_p_expr ix_p_assign ix_p_assign_end ix_peel ix_match_of_postfix)) (np : prims.isPrim ix_match_primary = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_has_kids : Certified (∀ {n : Nat}, Stmt_has_kids prog prims ix_has_kids n))
     (ext_p_expr : Certified (∀ {n : Nat}, Stmt_p_expr prog prims ix_p_expr n))
     (ext_p_assign : Certified (∀ {n : Nat}, Stmt_p_assign prog prims ix_p_assign n))
-    (ext_peel : Certified (∀ {n : Nat}, Stmt_peel prog prims ix_peel n))
     (ext_p_assign_end : Certified (∀ {n : Nat}, Stmt_p_assign_end prog prims ix_p_assign_end n))
+    (ext_peel : Certified (∀ {n : Nat}, Stmt_peel prog prims ix_peel n))
     (ext_match_of_postfix : Certified (∀ {n : Nat}, Stmt_match_of_postfix prog prims ix_match_of_postfix n)) {n : Nat} :
     Stmt_match_primary prog prims ix_match_primary n := by
   intro x0 x1 v0 v1 w h r0 r1

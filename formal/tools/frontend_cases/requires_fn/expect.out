@@ -1,0 +1,3 @@
+{ params := [{ id := 0, ty := .i32 }], ret := .i32, body := (.then (.assert (.ePure (.apply .greaterEq (.local 0) (.int 0)))) (.then (.assert (.eApply .equal (.eDivide .remainder (.ePure (.local 0)) (.ePure (.int 2))) (.ePure (.int 0)))) (.returnEval (.eDivide .quotient (.ePure (.local 0)) (.ePure (.int 2)))))) }
+{ params := [{ id := 0, ty := .i32 }, { id := 1, ty := .i32 }], ret := .i32, body := (.then (.assert (.ePure (.apply .greater (.local 1) (.int 0)))) (.then (.if (.apply .greater (.local 0) (.local 1)) (.return (.local 1)) .nop) (.return (.local 0)))) }
+{ params := [{ id := 0, ty := .i32 }], ret := .i32, body := (.returnEval (.eCall 0 [(.eApply .times (.eCall 1 [(.ePure (.local 0)), (.ePure (.int 10))]) (.ePure (.int 2)))])) }

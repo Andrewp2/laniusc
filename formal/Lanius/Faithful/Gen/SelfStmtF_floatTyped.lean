@@ -22,11 +22,11 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_find_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Local} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 227 RepLocal) x0 v0 → (RepList 25 RepNat) x1 v1 →
-    (RepOption 254 RepLocal) (Lanius.Mini.findLocal x0 x1) w
+    (RepOption 242 RepLocal) (Lanius.Mini.findLocal x0 x1) w
 
 abbrev Stmt_find_local_id (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Local} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 227 RepLocal) x0 v0 → RepNat x1 v1 →
-    (RepOption 254 RepLocal) (Lanius.Mini.findLocalId x0 x1) w
+    (RepOption 242 RepLocal) (Lanius.Mini.findLocalId x0 x1) w
 
 abbrev Stmt_float_typed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTy x0 v0 → RepSrcType x1 v1 → RepSrcExpr x2 v2 →
@@ -34,7 +34,7 @@ abbrev Stmt_float_typed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_local_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.Local} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → (RepList 227 RepLocal) x1 v1 → RepCTree x2 v2 →
-    (RepOption 254 RepLocal) (Lanius.Mini.localOf x0 x1 x2) w
+    (RepOption 242 RepLocal) (Lanius.Mini.localOf x0 x1 x2) w
 
 abbrev Stmt_negate_some (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 223 RepSrcExpr) x0 v0 →
