@@ -708,8 +708,9 @@ theorem host_write {fd : BitVec 64} {service : Core.HostService}
     rw [wrote, sliced, Heap.slice_length, i32Result_nat, ← low_ofNat]
     exact holds_i32 _
   · refine (hcA.record service).wrote (fd := fd.toNat) (bytes := bytes) rfl rfl rfl rfl
-      (fun k => by rw [outs k, sliced]) ?_ ?_ ?_ ?_
-    all_goals rcases which with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> simp [worldEq, World.record, hcA.input]
+      (fun k => by rw [outs k, sliced]) ?_ ?_ ?_ ?_ ?_
+    all_goals rcases which with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+      simp [worldEq, World.record, hcA.input, Streams, hcA.streams.1, hcA.streams.2.1, hcA.streams.2.2]
 
 /-- `read_stdin` after its arguments: the mini loop stores the bytes Core
 stored, and takes from the input what Core's world took. -/
@@ -740,7 +741,7 @@ theorem host_read {ea : EvaluatedArgs}
   · refine .i32 ?_
     rw [result, ← input, i32Result_nat]
     exact holds_i32 _
-  · refine hc'.retrace rfl rfl rfl ?_ ?_ ?_ ?_
+  · refine hc'.retrace rfl rfl rfl ?_ ?_ ?_ ?_ hcA.streams
     · show afterArgs.world.standardOutput = outputOf 1 hpA.io.trace
       exact hcA.out
     · show afterArgs.world.standardError = outputOf 2 hpA.io.trace
@@ -852,7 +853,7 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
         rcases which with one | two
         · rw [one]; decide
         · rw [two]; decide
-      obtain ⟨E', H', exec, keep, one, sameBytes, cursor, limit, top, trace, input⟩ :=
+      obtain ⟨E', H', exec, keep, one, sameBytes, cursor, limit, top, trace, input, sameM, sameR, sameE⟩ :=
         hostByte_exec (mp := mp) (d := dA) slot (Nat.lt_of_lt_of_le posA hcA.topped) which
       have byte : UInt8.ofNat ((low (envA (slot + 1))).toInt % 256).toNat = lowByte (envA (slot + 1)) := by
         have := hostByte_low (low (envA (slot + 1)))
@@ -878,6 +879,11 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
               rcases which with one | two
               · simp only [one] at wrote; simp [World.writeBytes] at wrote; subst wrote; rfl
               · simp only [two] at wrote; simp [World.writeBytes] at wrote; subst wrote; rfl)
+            (hcA.streams.congr (by
+              rcases which with one | two
+              · simp only [one] at wrote; simp [World.writeBytes] at wrote; subst wrote; exact ⟨rfl, rfl, rfl⟩
+              · simp only [two] at wrote; simp [World.writeBytes] at wrote; subst wrote; exact ⟨rfl, rfl, rfl⟩)
+              ⟨sameM, sameR, sameE⟩)
           · rcases which with one | two
             · simp only [one] at wrote ⊢; simp [World.writeBytes] at wrote; subst wrote; simp
             · simp only [two] at wrote ⊢; simp [World.writeBytes] at wrote; subst wrote; simp

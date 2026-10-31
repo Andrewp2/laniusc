@@ -47,9 +47,10 @@ theorem HeapCorr.retrace {h : Memory.Heap} {w : World.State} {hp : Heap} (corr :
     {w' : World.State} {hp' : Heap} (bytes : hp'.bytes = hp.bytes) (cursor : hp'.cursor = hp.cursor)
     (limit : hp'.limit = hp.limit) (out : w'.standardOutput = outputOf 1 hp'.io.trace)
     (err : w'.standardError = outputOf 2 hp'.io.trace) (closed : w'.fileHandles = [])
-    (input : w'.standardInput = hp'.io.input) : HeapCorr h w' hp' := by
-  obtain ⟨c, pos, unb, small, sized, below, apart, unique, bs, zero, -, -, -, -⟩ := corr
-  refine ⟨cursor.trans c, pos, unb, limit ▸ small, sized, below, apart, unique, ?_, ?_, out, err, closed, input⟩
+    (input : w'.standardInput = hp'.io.input) (streams : Streams w' hp'.io) : HeapCorr h w' hp' := by
+  obtain ⟨c, pos, unb, small, sized, below, apart, unique, bs, zero, -, -, -, -, -⟩ := corr
+  refine ⟨cursor.trans c, pos, unb, limit ▸ small, sized, below, apart, unique, ?_, ?_, out, err, closed, input,
+    streams⟩
   · intro b mem live i lt
     rw [bytes]
     exact bs b mem live i lt
@@ -67,14 +68,15 @@ theorem HeapCorr.wrote {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : H
     (outs : ∀ k, outputOf k events = if fd = k then bytes else [])
     (out : w'.standardOutput = w.standardOutput ++ (if fd = 1 then bytes else []))
     (err : w'.standardError = w.standardError ++ (if fd = 2 then bytes else []))
-    (closed : w'.fileHandles = w.fileHandles) (input : w'.standardInput = hp'.io.input) : HeapCorr h w' hp' :=
+    (closed : w'.fileHandles = w.fileHandles) (input : w'.standardInput = hp'.io.input)
+    (streams : Streams w' hp'.io) : HeapCorr h w' hp' :=
   corr.retrace sameBytes cursor limit (by simp only [out, corr.out, trace, outputOf_append, outs])
-    (by simp only [err, corr.err, trace, outputOf_append, outs]) (closed.trans corr.closed) input
+    (by simp only [err, corr.err, trace, outputOf_append, outs]) (closed.trans corr.closed) input streams
 
 /-- The record of host calls does not touch the output or the files. -/
 theorem HeapCorr.record {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : HeapCorr h w hp)
     (service : Core.HostService) : HeapCorr h (World.record w service) hp :=
-  corr.retrace rfl rfl rfl corr.out corr.err corr.closed corr.input
+  corr.retrace rfl rfl rfl corr.out corr.err corr.closed corr.input corr.streams
 
 /-- With no file open, a write to a file handle has nowhere to go. -/
 theorem writeFileBytes_closed {w : World.State} (closed : w.fileHandles = []) (handle : Int)
@@ -159,7 +161,8 @@ theorem hostByte_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
     (which : E slot = 1 ∨ E slot = 2) :
     ∃ E' H', Exec mp d E H (hostByteCode slot) (.normal E' H') ∧ (∀ j < slot, E' j = E j) ∧ E' slot = 1 ∧
       H'.bytes = H.bytes ∧ H'.cursor = H.cursor ∧ H'.limit = H.limit ∧ H'.top = H.top ∧
-      H'.io.trace = H.io.trace ++ [Event.write (E slot).toNat [lowByte (E (slot + 1))]] ∧ H'.io.input = H.io.input := by
+      H'.io.trace = H.io.trace ++ [Event.write (E slot).toNat [lowByte (E (slot + 1))]] ∧ H'.io.input = H.io.input ∧
+      H'.io.monotonic = H.io.monotonic ∧ H'.io.realtime = H.io.realtime ∧ H'.io.entropy = H.io.entropy := by
   have cond : (Expr.binary .u64 .or (.compare .u64 .eq (.var slot) (.lit 1))
       (.compare .u64 .eq (.var slot) (.lit 2))).eval E ≠ 0 := by
     rcases which with one | two
@@ -187,7 +190,7 @@ theorem hostByte_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
   have s5 : Exec mp d E2 H3 (.assign slot (.lit 1)) (.normal (E2.set slot ((Expr.lit 1).eval E2)) H3) := .assign
   have saved : E2 (slot + 2) = BitVec.ofNat 64 (H.bytes 0).toNat := by simp [E2, E1, set_get, Expr.eval]
   refine ⟨_, _, .ifTrue cond (.seq s1 (.seq s2 (.seq s3 (.seq s4 s5)))), ?_, by simp [set_get, Expr.eval], ?_,
-    rfl, rfl, rfl, ?_, rfl⟩
+    rfl, rfl, rfl, ?_, rfl, rfl, rfl, rfl⟩
   · intro j lt
     simp only [E2, E1, set_get]
     rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]
@@ -644,7 +647,7 @@ theorem HeapCorr.storeBytesAll {h : Memory.Heap} {w : World.State} {hp : Heap} (
 hold. -/
 theorem HeapCorr.sleep {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : HeapCorr h w hp)
     (milliseconds : Nat) : HeapCorr h (w.afterSleepMs milliseconds) hp :=
-  corr.retrace rfl rfl rfl corr.out corr.err corr.closed corr.input
+  corr.retrace rfl rfl rfl corr.out corr.err corr.closed corr.input corr.streams
 
 /-- The test of `sleep_ms_i32`: a negative count. -/
 theorem hostSleep_cond (E : Env) (slot : Nat) :

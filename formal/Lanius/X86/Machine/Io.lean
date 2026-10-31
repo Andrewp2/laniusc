@@ -12,11 +12,16 @@ inductive Event where
 deriving DecidableEq, Repr
 
 /-- The process's side of its environment: the trace of events so far, and
-the bytes standard input has still to deliver (a stream fixed when the
-process starts, TRUSTED_BASE.md section 8). -/
+what the kernel has still to deliver, streams fixed when the process starts
+(TRUSTED_BASE.md section 8): the bytes of standard input, the readings
+(seconds, nanoseconds) of the monotonic and the real-time clock, and the
+secure random bytes. -/
 structure Io where
   trace : List Event := []
   input : List UInt8 := []
+  monotonic : List (Int × Nat) := []
+  realtime : List (Int × Nat) := []
+  entropy : List UInt8 := []
 deriving Repr
 
 /-- The most bytes Linux's `write` transfers in one call (`MAX_RW_COUNT`,

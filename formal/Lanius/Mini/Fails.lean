@@ -16,10 +16,14 @@ namespace Lanius.Mini
 
 open Lanius.Semantics (State Completion)
 
-/-- The traps the compiled code does not check: raw memory errors, and
+/-- The traps the compiled code does not check: raw memory errors;
 `typeMismatch`, which a typed program reaches only by reading an invalid bit
 pattern from raw memory or by a raw slice of an element type past Core's
-native layout limits. -/
+native layout limits; and the end of a clock's readings or of the secure
+bytes, which are streams fixed before the run: a run that reads past them is
+one the given streams do not describe, so nothing is said about it (the
+kernel's clocks and random bytes do not end; SEMANTIC_DECISIONS.md, "Clock
+readings and secure bytes"). -/
 def undefinedTrap : Lanius.Trap → Bool
   | .arrayBounds => false
   | .invalidShift => false
@@ -30,7 +34,8 @@ def undefinedTrap : Lanius.Trap → Bool
   | .doubleFree => true
   | .allocatorContract => true
   | .allocationFailure => false
-  | .entropyExhausted => false
+  | .entropyExhausted => true
+  | .clockExhausted => true
   | .assertionFailed => false
   | .nonExhaustiveMatch => false
   | .uninitializedLocal => false

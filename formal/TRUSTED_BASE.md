@@ -815,9 +815,22 @@ for a process the trusted part is only this:
   model assumes the call does not fault, and the verified compiler's
   buffers are inside its heap, whose end is below 2^62 (`HeapAt`). Core's
   `read_stdin` is lowered to this `read` (SEMANTIC_DECISIONS.md, "Host
-  reads"). `Loaded` leaves `input` as the stream the process was given:
-  `process_exits` takes it as a premise (`s.io.input = input`), with Core's
-  world starting from the same `standardInput` (`startState input`).
+  reads"). `Loaded` leaves `io` as the process was given it:
+  `process_exits` takes it as a premise (`s.io = given`), with Core's world
+  starting from the same streams (`startState given`).
+- **The clocks' readings and the secure bytes are streams (10-31).** The
+  state's `io` also holds `monotonic` and `realtime`, the readings
+  (seconds, nanoseconds) the two clocks will give, one a read, and
+  `entropy`, the random bytes `getrandom` will deliver. They are fixed
+  when the process starts, like `input`, so a run's behaviour is a
+  function of them; what Linux's clocks and random source actually give is
+  some such stream, and the theorems hold for every one. Core's world
+  starts from the same streams (`startState`: `monotonicReadings`,
+  `systemReadings`, `secureByteStream`), and a Core run that reads past
+  their end traps (`clockExhausted`, `entropyExhausted`), a trap the
+  theorems say nothing about (`undefinedTrap`), since the kernel's streams
+  do not end. No system call reads them yet: the kernel's `clock_gettime`
+  and `getrandom` wait for the heap changes of F6.
 - **The kernel's `poll` with no fds (`Kernel.poll`, roadmap F8, 10-31).**
   With rax 7, rdi 0 (no array), rsi 0 (no fds) and an rdx below 2^31 (a
   nonnegative `int` timeout in milliseconds), the call returns 0 in rax,
@@ -831,8 +844,8 @@ for a process the trusted part is only this:
   for 0 and would report failure, but the theorems do not cover it). How
   long it waits is not modeled: the x86 model has no clock. Core's
   `sleep_ms_i32` is lowered to this `poll` (SEMANTIC_DECISIONS.md, "Host
-  sleep"); Core's world advances its clocks by the count, which no modeled
-  call can observe.
+  sleep"); Core's world advances only its whole-second compatibility clock
+  by the count, which no modeled call reads.
   No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
   runtime").
 - The startup code sets rsp, r12 to r15 and calls `entry` (the driver's
