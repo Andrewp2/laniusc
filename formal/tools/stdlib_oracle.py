@@ -29,11 +29,14 @@ they are, never edited.
    builds are cached (run_cache.py). Then the compiled runAll reads each
    program with `frontEndFiles` and compiles it with `compileSource`.
 4. Each compiled image runs natively on K argument tuples, each call in a
-   forked child (a trap or a two-second timeout is a result, not a crash).
-   The wrappers that compiled are also compiled by laniusc in one harness
-   binary per chunk, which prints each result; the two must agree, and a
-   call that traps natively must stop the laniusc binary too (it is then
-   run again from the next call).
+   forked child whose stdout and stderr are pipes (a trap or a two-second
+   timeout is a result, not a crash). The wrappers that compiled are also
+   compiled by laniusc in one harness binary per chunk, which ends each
+   call's output on both streams with a frame marker (FRAME), the result
+   after it on stdout; the two must agree on the result and on the bytes
+   written to each stream, and a call that traps natively must stop the
+   laniusc binary too, after the same output (it is then run again from
+   the next call).
 
 The front end gives no reason for a rejection, so for each target it does
 not read, WORKDIR/unread.txt lists the constructs, in the target or in the
@@ -49,6 +52,7 @@ import mmap
 import os
 import random
 import re
+import select
 import shutil
 import signal
 import subprocess
@@ -839,29 +843,62 @@ def slot(value, ty):
     return value & (2 ** 64 - 1)
 
 
+def read_all(fd):
+    data = b''
+    while True:
+        chunk = os.read(fd, 1 << 16)
+        if not chunk:
+            break
+        data += chunk
+    os.close(fd)
+    return data
+
+
+def read_both(a, b):
+    """Everything written to two pipes, read as it comes (so neither fills)."""
+    got = {a: b'', b: b''}
+    live = [a, b]
+    while live:
+        ready, _, _ = select.select(live, [], [])
+        for fd in ready:
+            chunk = os.read(fd, 1 << 16)
+            if chunk:
+                got[fd] += chunk
+            else:
+                os.close(fd)
+                live.remove(fd)
+    return got[a], got[b]
+
+
 def native_call(native, args, types):
-    """The wrapper's result, or 'trap' (a signal) or 'timeout', from a forked child."""
+    """The wrapper's result, or 'trap' (a signal) or 'timeout', and the bytes
+    it wrote to stdout and to stderr, from a forked child (both pipes)."""
     r, w = os.pipe()
+    out_r, out_w = os.pipe()
+    err_r, err_w = os.pipe()
+    sys.stdout.flush()
+    sys.stderr.flush()
     pid = os.fork()
     if pid == 0:
         os.close(r)
+        os.close(out_r)
+        os.close(err_r)
+        os.dup2(out_w, 1)
+        os.dup2(err_w, 2)
         signal.alarm(2)
         native.heap[0:native.HEAP] = bytes(native.HEAP)
         value = native.fn(*[slot(a, t) for a, t in zip(args, types)])
         os.write(w, str(oracle.i32(value)).encode())
         os._exit(0)
     os.close(w)
-    data = b''
-    while True:
-        chunk = os.read(r, 64)
-        if not chunk:
-            break
-        data += chunk
-    os.close(r)
+    os.close(out_w)
+    os.close(err_w)
+    out, err = read_both(out_r, err_r)
+    data = read_all(r)
     _, status = os.waitpid(pid, 0)
     if os.WIFSIGNALED(status):
-        return 'timeout' if os.WTERMSIG(status) == signal.SIGALRM else 'trap'
-    return int(data)
+        return ('timeout' if os.WTERMSIG(status) == signal.SIGALRM else 'trap'), out, err
+    return int(data), out, err
 
 
 # ---------------------------------------------------------------- arguments
@@ -1103,37 +1140,58 @@ def main():
         native.load([int(x) for x in entries_s.split(',')], bytes(int(x) for x in image_s.split(',')),
                     len(p['wparams']))
         types = [ty for _, ty in p['wparams']]
-        p['calls'] = [[gen_arg(rng, ty) for ty in types] for _ in range(args.calls if types else 1)]
+        # A stdio handle is 1 or 2: the verified compiler's programs (and
+        # Core's world) have no other file open, where laniusc's process has
+        # (SEMANTIC_DECISIONS.md, "Externs and the runtime").
+        handles = {f'a{k}' for k, (name, ty) in enumerate(p['target'].params) if name == 'handle' and ty == 'i32'}
+        p['calls'] = [[rng.choice((1, 2)) if name in handles else gen_arg(rng, ty) for name, ty in p['wparams']]
+                      for _ in range(args.calls if types else 1)]
         p['native'] = [native_call(native, a, types) for a in p['calls']]
 
     native_s = time.time() - began - parse_s - compile_s
     # laniusc: the compiled wrappers, renamed, in harness binaries.
     compiled = [p for p in programs if p['status'] == 'image']
     disagreements = []
-    agreed = calls_total = traps = 0
+    agreed = calls_total = traps = written = 0
     for start in range(0, len(compiled), args.chunk):
         chunk = compiled[start:start + args.chunk]
         results = laniusc_chunk(args, workdir, chunk, start)
         for p, got in zip(chunk, results):
             for a, want, have in zip(p['calls'], p['native'], got):
-                if want in ('trap', 'timeout'):
+                if want[0] in ('trap', 'timeout'):
                     traps += 1
-                    if have not in ('trap', 'timeout', 'laniusc rejects it'):
+                    if have[0] not in ('trap', 'timeout', 'laniusc rejects it'):
                         disagreements.append(f'{p["target"].label} [{p["part"]}] args {a}: verified compiler traps, '
-                                             f'laniusc {have}')
+                                             f'laniusc {shown(have)}')
+                    elif want[0] == 'trap' and have[0] == 'trap' and want[1:] != have[1:]:
+                        disagreements.append(f'{p["target"].label} [{p["part"]}] args {a}: both trap, the verified '
+                                             f'compiler {shown(want)}, laniusc {shown(have)}')
                     continue
                 calls_total += 1
                 if have == want:
                     agreed += 1
+                    written += len(want[1]) + len(want[2])
                 else:
-                    disagreements.append(f'{p["target"].label} [{p["part"]}] args {a}: verified compiler {want}, '
-                                         f'laniusc {have}')
+                    disagreements.append(f'{p["target"].label} [{p["part"]}] args {a}: verified compiler {shown(want)}, '
+                                         f'laniusc {shown(have)}')
 
+    print(f'output: {written} bytes written alike to stdout and stderr', file=sys.stderr)
     print(f'time: parse {parse_s:.0f} s, runAll {compile_s:.0f} s, native {native_s:.0f} s, '
           f'laniusc {time.time() - began - parse_s - compile_s - native_s:.0f} s',
           file=sys.stderr)
     report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps)
     return 1 if disagreements else 0
+
+
+def shown(result):
+    """A call's result, with what it wrote to stdout and stderr."""
+    value, out, err = result
+    return f'{value}' + (f' stdout {out!r}' if out else '') + (f' stderr {err!r}' if err else '')
+
+
+# In the harness's output each call's result follows its stdout after
+# these bytes, and its stderr ends with them (see frame in harness_text).
+FRAME = bytes([255, 0, 76, 78, 83, 79, 0, 255])
 
 
 def harness_text(chunk, start):
@@ -1152,12 +1210,15 @@ def harness_text(chunk, start):
             body = re.sub(rf'\b{name}\b', f'{name}{start + j}', body)
         body = re.sub(r'\bfn w\(', f'fn w{start + j}(', body)
         out.append(body)
+    out += (['fn frame(value: i32) -> i32 {'] + [f'    put({b});' for b in FRAME] + ['    put32(value);'] +
+            [f'    let e{k}: bool = std::io_byte::write_stderr_byte({b});' for k, b in enumerate(FRAME)] +
+            ['    return 0;', '}', ''])
     out += ['fn main() -> i32 {', '    let start: i32 = std::process::argc() - 1;']
     n = 0
     for j, p in enumerate(chunk):
         types = [ty for _, ty in p['wparams']]
         for a in p['calls']:
-            out.append(f'    if (start <= {n}) {{ put32(w{start + j}({", ".join(lani_arg(v, t) for v, t in zip(a, types))})); }}')
+            out.append(f'    if (start <= {n}) {{ frame(w{start + j}({", ".join(lani_arg(v, t) for v, t in zip(a, types))})); }}')
             n += 1
     out.append('    return 0;\n}')
     return '\n'.join(out) + '\n'
@@ -1183,19 +1244,27 @@ def build(args, workdir, name, text):
 
 
 def run_calls(exe, n):
-    """The binary's result for each of its n calls: a value, or 'trap' or
-    'timeout' for the call it stopped at (it is run again from the next)."""
+    """The binary's result for each of its n calls, with the call's stdout and
+    stderr (each call's output ends with FRAME on both): a value, or 'trap'
+    or 'timeout' for the call it stopped at (it is run again from the next)."""
     got = []
     while len(got) < n:
         try:
             run = subprocess.run([exe] + ['x'] * len(got), capture_output=True, timeout=10)
-            data, code = run.stdout, run.returncode
+            data, errors, code = run.stdout, run.stderr, run.returncode
         except subprocess.TimeoutExpired as e:
-            data, code = e.stdout or b'', 'timeout'
-        done = min(len(data) // 4, n - len(got))
-        got += [oracle.i32(int.from_bytes(data[4 * i:4 * i + 4], 'little')) for i in range(done)]
+            data, errors, code = e.stdout or b'', e.stderr or b'', 'timeout'
+        errs = iter(errors.split(FRAME))
+        parts = data.split(FRAME)
+        out = parts[0]
+        for part in parts[1:]:
+            if len(got) == n or len(part) < 4:
+                break
+            got.append((oracle.i32(int.from_bytes(part[:4], 'little')), out, next(errs, b'')))
+            out = part[4:]
         if len(got) < n:
-            got.append('missing' if code == 0 else 'timeout' if code == 'timeout' else 'trap')
+            got.append(('missing' if code == 0 else 'timeout' if code == 'timeout' else 'trap', out,
+                        next(errs, b'')))
     return got
 
 
@@ -1211,7 +1280,7 @@ def laniusc_chunk(args, workdir, chunk, start):
         return out
     if exe is None:
         open(os.path.join(workdir, f'harness{start}.error'), 'w').write(error)
-        return [['laniusc rejects it'] * len(chunk[0]['calls'])]
+        return [[('laniusc rejects it', b'', b'')] * len(chunk[0]['calls'])]
     got = iter(run_calls(exe, sum(len(p['calls']) for p in chunk)))
     return [[next(got) for _ in p['calls']] for p in chunk]
 

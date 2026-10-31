@@ -55,6 +55,9 @@ STEPS = [
      ['lean', 'run_all', 'lani', 'laniusc', 'stdlib'], True),
     ('stdlib-scalars', ['stdlib_oracle.py', '{w}', '--modules', 'core::cmp,core::u64,core::option', '--seed', '{s}'],
      ['run_all', 'laniusc', 'stdlib'], True),
+    # F8: stdlib output through the host externs, stdout and stderr compared.
+    ('stdlib-io', ['stdlib_oracle.py', '{w}', '--modules', 'std::io_byte,std::io_hex,std::io_binary,std::io_hex_wide_u64,std::io_utf8', '--calls', '32', '--seed', '{s}'],
+     ['run_all', 'laniusc', 'stdlib'], True),
     ('self-host', ['self_host.py', '{w}'], ['run_all', 'lani', 'laniusc', 'stdlib'], True),
     # V6: the verified compiler's ELF executables exit with main's result.
     ('elf', ['elf_test.py', '{w}'], ['run_all', 'laniusc', 'stdlib'], True),
