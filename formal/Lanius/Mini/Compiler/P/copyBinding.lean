@@ -5,6 +5,7 @@ import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
+import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.compileModules
 
@@ -45,6 +46,7 @@ def copyFieldOf (b : Binding) (index : Nat) (ty : SrcType) : Option (List Expr) 
   | .unit => none
   | .isize => none
   | .char => none
+  | .float ft => none
   | .sint sk => none
 
 /-- A field of type ty of a struct local, slot by slot. It takes slots. -/
@@ -67,6 +69,7 @@ def lowerCopy (scope : List Binding) (e : SrcExpr) (ty : SrcType) : Option (List
   | .cast target operand => none
   | .null => none
   | .char code => none
+  | .float ft bits => none
 
 def lowerSingle (value : Option Expr) : Option (List Expr) :=
   match value with
@@ -111,6 +114,7 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
   | .unit => none
   | .isize => none
   | .char => none
+  | .float ft => none
   | .sint sk => none
 
 def lowerTag (variant : Nat) (payload : Option (List Expr)) : Option (List Expr) :=

@@ -111,6 +111,7 @@ theorem exprTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {e
     | cast s x => exact .cast (srcTy_sound h)
     | null => cases h; exact .null
     | char c => cases h
+    | float _ _ => cases h
 
 theorem exprsTys_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} :
     ∀ {es : List SrcExpr} {ts : List Ty}, exprsTys fuel env scope es = some ts → ListRel (ExprTy env.decls scope) es ts

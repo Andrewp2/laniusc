@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.BinOp_folds
+import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Word_narrows
 import Lanius.Mini.Compiler.P.binaryConstant
 

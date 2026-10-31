@@ -24,14 +24,16 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
@@ -96,14 +98,15 @@ import all Lanius.Mini.Compiler.P.Inline_factOr
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.FArith_opcode
 public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.SrcType_size
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.arithShiftRight
-public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.compileOr
 public import Lanius.Mini.Compiler.P.compileSource
 public import Lanius.Mini.Compiler.P.declareProgram
 public import Lanius.Mini.Compiler.P.enumVariants
+public import Lanius.Mini.Compiler.P.floatApply
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerLoadType
 public import Lanius.Mini.Compiler.P.sigs
@@ -264,6 +267,7 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .unit, _, _ => False
   | .isize, value, bits => value = .signed .isize bits.toInt
   | .char, value, bits => value = .character (UInt32.ofNat bits.toNat) ∧ bits.toNat < 2 ^ 32
+  | .float t, value, bits => value = t.value bits ∧ bits.toNat < 2 ^ t.width
   | .sint kind, value, bits => kind.SintHolds value bits
 
 mutual
@@ -297,6 +301,8 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
       SrcType.isize.Holds value (env slot) → SrcType.HoldsAt .isize value env slot
   | char {value : Value} {env : Env} {slot : Nat} :
       SrcType.char.Holds value (env slot) → SrcType.HoldsAt .char value env slot
+  | float {t : FloatTy} {value : Value} {env : Env} {slot : Nat} :
+      (SrcType.float t).Holds value (env slot) → SrcType.HoldsAt (.float t) value env slot
   | sint {kind : UintTy} {value : Value} {env : Env} {slot : Nat} :
       (SrcType.sint kind).Holds value (env slot) → SrcType.HoldsAt (.sint kind) value env slot
 
@@ -321,6 +327,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | unit => simp [SrcType.isScalar] at scalar
   | isize => exact ⟨fun | .isize h => h, .isize⟩
   | char => exact ⟨fun | .char h => h, .char⟩
+  | float => exact ⟨fun | .float h => h, .float⟩
   | sint => exact ⟨fun | .sint h => h, .sint⟩
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold fs vs env slot → vs.length = fs.length
@@ -388,6 +395,10 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .char (by rw [this]; exact holds)
+  | .float _, _, _, _, .float holds, _, _, agree => by
+    have := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at this
+    exact .float (by rw [this]; exact holds)
   | .sint _, _, _, _, .sint holds, _, _, agree => by
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this

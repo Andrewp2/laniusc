@@ -261,6 +261,8 @@ inductive SrcType where
   | isize : SrcType
   /-- a char, its 32-bit code in one slot -/
   | char : SrcType
+  /-- an f32 or f64, its IEEE bit pattern in one slot (an f32's zero-extended) -/
+  | float : FloatTy → SrcType
   /-- the signed integer type as wide as kind (i8, i16, i32, i64, isize). A narrow one sits in its slot as an i32 does, its value's 32-bit two's complement zero-extended; a 64-bit one as an isize does. -/
   | sint : UintTy → SrcType
   deriving Repr
@@ -301,6 +303,8 @@ inductive SrcExpr where
   | null : SrcExpr
   /-- a char literal: its code, a Unicode scalar value -/
   | char : (BitVec 32) → SrcExpr
+  /-- a float literal: its IEEE bit pattern -/
+  | float : FloatTy → (BitVec 64) → SrcExpr
   deriving Repr
 
 /-- A match arm: the binders of its variant's payload, and its value. -/

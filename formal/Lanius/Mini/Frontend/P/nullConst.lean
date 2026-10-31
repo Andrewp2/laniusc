@@ -55,5 +55,6 @@ def negSintConst (u : UintTy) (x : SrcExpr) : Option SrcExpr :=
   | .cast t y => none
   | .null => none
   | .char code => none
+  | .float ft bits => none
 
 end Lanius.Mini

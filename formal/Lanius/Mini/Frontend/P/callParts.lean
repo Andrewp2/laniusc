@@ -48,6 +48,7 @@ def pureLocal (e : SrcExpr) : Option Nat :=
   | .cast t a => none
   | .null => none
   | .char code => none
+  | .float ft bits => none
 
 def effLocal (x : MEff) : Option Nat :=
   match purePart x with

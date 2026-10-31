@@ -23,14 +23,16 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
@@ -230,6 +232,9 @@ theorem shift_amount {op : SrcOp} (shift : op = .shiftLeft ∨ op = .shiftRight)
     intro ar evaluated holdsr
     simp only [arith] at ar
     split at ar
+    · rename_i float
+      cases htl : tl.ty <;> simp [htl, SrcType.isFloatAny, SrcType.isInteger] at float ints
+    split at ar
     · rename_i types
       cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
       rw [htl] at holdsl
@@ -270,6 +275,7 @@ theorem SrcExpr.guard_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
   | boolean x => intro t fuel v st' _ _; rfl
   | null => intro t fuel v st' _ _; rfl
   | char c => intro t fuel v st' _ _; rfl
+  | float ft bits => intro t fuel v st' _ _; rfl
   | unsigned kind value => intro t fuel v st' _ _; rfl
   | «local» id => intro t fuel v st' _ _; rfl
   | field id index => intro t fuel v st' _ _; rfl

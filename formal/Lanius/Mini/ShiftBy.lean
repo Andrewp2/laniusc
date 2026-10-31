@@ -22,14 +22,16 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
@@ -199,6 +201,7 @@ theorem shiftBy_range {cop : Core.BinaryOp} (shift : cop = .shiftLeft ∨ cop = 
       omega
   | bool => obtain ⟨b, rfl, -⟩ := hl; simp [evalShiftBy] at h
   | char => obtain ⟨rfl, -⟩ := hl; simp [evalShiftBy] at h
+  | float t => obtain ⟨rfl, -⟩ := hl; cases t <;> simp [evalShiftBy, FloatTy.value] at h
   | unit => exact hl.elim
   | struct => exact hl.elim
   | enum => exact hl.elim
@@ -219,6 +222,7 @@ theorem shiftWidth_le {tl : SrcType} (int : tl.isInteger = true) : (shiftWidth t
   | i32 => decide
   | isize => decide
   | char => simp [SrcType.isInteger] at int
+  | float _ => simp [SrcType.isInteger] at int
   | uint k => cases k <;> decide
   | sint k => cases k <;> decide
   | bool => simp [SrcType.isInteger] at int
@@ -271,6 +275,7 @@ theorem amount_of {tr : SrcType} (int : tr.isInteger = true) {vr : Value} {wr : 
   | i32 => exact narrow hr.1 hr.2
   | isize => exact wide hr
   | char => simp [SrcType.isInteger] at int
+  | float _ => simp [SrcType.isInteger] at int
   | uint k =>
     obtain ⟨e, -⟩ := hr
     refine ⟨wr.toNat, fun shift int => by rw [e]; exact shift_unsignedAmount shift int _ _, fun _ _ => ?_,
@@ -313,6 +318,7 @@ theorem retype_holds {tl : SrcType} (int : tl.isInteger = true) {n : Nat} (lt : 
     refine ⟨.signed .i32 n, ⟨by rw [hlow, h32], by rw [hlow, hwiden]⟩, signed _⟩
   | isize => exact ⟨.signed .isize n, by simp only [SrcType.Holds, h64], signed _⟩
   | char => simp [SrcType.isInteger] at int
+  | float _ => simp [SrcType.isInteger] at int
   | uint k =>
     have w : (shiftWidth (.uint k)).toNat = k.width := by cases k <;> rfl
     rw [w] at lt
@@ -339,6 +345,7 @@ theorem integer_value {tl : SrcType} (int : tl.isInteger = true) {vl : Value} {w
   | i32 => exact .inl ⟨_, _, hl.1⟩
   | isize => exact .inl ⟨_, _, hl⟩
   | char => simp [SrcType.isInteger] at int
+  | float _ => simp [SrcType.isInteger] at int
   | uint k => exact .inr ⟨_, _, hl.1⟩
   | sint k =>
     cases k with

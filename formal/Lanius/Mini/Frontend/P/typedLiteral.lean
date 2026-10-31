@@ -55,16 +55,17 @@ def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
   | .cast s x => none
   | .null => none
   | .char code =>
-    match t with
-    | .tyI32 => none
-    | .tyBool => none
-    | .tyUint u => none
-    | .tyPtr => none
-    | .tyIsize => none
-    | .tyChar => some e
-    | .tySlice x => none
-    | .tyNamed d args => none
-    | .tySint u => none
+    (match t with
+     | .tyI32 => none
+     | .tyBool => none
+     | .tyUint u => none
+     | .tyPtr => none
+     | .tyIsize => none
+     | .tyChar => some e
+     | .tySlice x => none
+     | .tyNamed d args => none
+     | .tySint u => none)
+  | .float ft bits => none
 
 def literalAs (t : Option Ty) (e : Option SrcExpr) : Option SrcExpr :=
   match t with

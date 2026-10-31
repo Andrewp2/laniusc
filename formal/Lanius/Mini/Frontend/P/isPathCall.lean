@@ -45,6 +45,7 @@ def isUsize (t : SrcType) : Bool :=
   | .unit => false
   | .isize => false
   | .char => false
+  | .float ft => false
   | .sint sk => false
 
 /-- An integer literal 2^shift with shift below 31. -/
@@ -61,6 +62,7 @@ def literalShift (e : SrcExpr) : Option Nat :=
   | .cast t x => none
   | .null => none
   | .char code => none
+  | .float ft bits => none
 
 def castShift (usizeCast : Bool) (x : SrcExpr) : Option Nat :=
   if usizeCast then
@@ -82,6 +84,7 @@ def shiftOf (e : SrcExpr) : Option Nat :=
   | .cast t x => castShift (isUsize t) x
   | .null => none
   | .char code => none
+  | .float ft bits => none
 
 def allocShifted (size : SrcExpr) (shift : Option Nat) (more : List SrcExpr) : Option LetHead :=
   match shift with

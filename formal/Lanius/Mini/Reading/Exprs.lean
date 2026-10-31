@@ -501,6 +501,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     cases t <;> simp only [typedLiteral, reduceCtorEq, Option.some.injEq] at h
     subst h
     exact .char
+  | float _ _ => cases h
 
 /-- A wide literal `n` (or `-n`, `negative`) as a literal of a type:
 `-2^31` of `i32`, `n` of an unsigned type when it fits, and for `isize`

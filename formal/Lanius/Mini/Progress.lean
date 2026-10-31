@@ -153,6 +153,8 @@ theorem arith_defined {op : BinOp} {cop : Core.BinaryOp}
     ∃ v, evalBinaryValue .x86_64 cop vl vr = .ok v := by
   simp only [arith] at lowered
   split at lowered
+  · exact floatArith_defined h lowered holdsl holdsr
+  split at lowered
   · rename_i types
     cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
     rw [htl] at holdsl
@@ -190,10 +192,14 @@ theorem arith_defined {op : BinOp} {cop : Core.BinaryOp}
 /-- A shift has a result when its amount is below the left operand's width. -/
 theorem shift_defined {op : BinOp} {cop : Core.BinaryOp} (shift : cop = .shiftLeft ∨ cop = .shiftRight)
     {tl tr t : Typed} (lowered : arith op tl tr = some t) {env : Env} {vl vr : Value}
+    (integer : tl.ty.isInteger = true)
     (holdsl : tl.ty.Holds vl (tl.expr.eval env)) (holdsr : tr.ty.Holds vr (tr.expr.eval env))
     (amount : (tr.expr.eval env).toNat < (shiftWidth tl.ty).toNat) :
     ∃ v, evalBinaryValue .x86_64 cop vl vr = .ok v := by
   simp only [arith] at lowered
+  split at lowered
+  · rename_i float
+    cases htl : tl.ty <;> simp [htl, SrcType.isFloatAny, SrcType.isInteger] at float integer
   split at lowered
   · rename_i types
     cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
@@ -232,6 +238,8 @@ theorem order_defined {op : CmpOp} {cop : Core.BinaryOp}
     (holdsl : tl.ty.Holds vl (tl.expr.eval env)) (holdsr : tr.ty.Holds vr (tr.expr.eval env)) :
     ∃ v, evalBinaryValue .x86_64 cop vl vr = .ok v := by
   simp only [order] at lowered
+  split at lowered
+  · rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> exact floatOrder_defined lowered holdsl holdsr
   split at lowered
   · rename_i types
     cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
@@ -275,6 +283,9 @@ theorem equality_defined {op : CmpOp} {cop : Core.BinaryOp}
     ∃ v, evalBinaryValue .x86_64 cop vl vr = .ok v := by
   simp only [equality] at lowered
   split at lowered
+  · rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> exact floatOrder_defined lowered holdsl holdsr
+  rename_i notFloat
+  split at lowered
   · rename_i same
     rw [← SrcType.same_eq same] at holdsr
     cases hty : tl.ty <;> rw [hty] at holdsl holdsr <;> simp only [SrcType.Holds] at holdsl holdsr
@@ -308,6 +319,7 @@ theorem equality_defined {op : CmpOp} {cop : Core.BinaryOp}
       rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
       · exact ⟨_, eval_char_eq sl sr⟩
       · exact ⟨_, eval_char_ne sl sr⟩
+    · simp [hty, SrcType.isFloatAny] at notFloat
     · rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
       · exact sint_defined (by simp) holdsl holdsr
       · exact sint_defined (by simp) holdsl holdsr
@@ -328,7 +340,7 @@ theorem lowerShift_defined {op : BinOp} {cop : Core.BinaryOp} (shift : cop = .sh
   simp only [Bool.and_eq_true] at ints
   obtain ⟨vr', holdsr', same⟩ := shift_retype_lt shift ints.1 ints.2 holdsl holdsr amount
   rw [← same]
-  exact shift_defined (tr := { expr := tr.expr, ty := tl.ty }) shift lowered holdsl holdsr' amount
+  exact shift_defined (tr := { expr := tr.expr, ty := tl.ty }) shift lowered ints.1 holdsl holdsr' amount
 
 /-- An operator other than `&&` and `||` has a result on the values its
 operands represent, a shift when its amount guard passes. -/
@@ -406,13 +418,24 @@ theorem castTo_defined {ty : SrcType} {inner t : Typed} (lowered : castTo ty inn
         | (obtain ⟨n, rfl⟩ := sint_value holds; exact ⟨_, rfl⟩)
     · split at lowered
       · rename_i scalar
-        cases hty : inner.ty <;> simp [hty, SrcType.isScalar, SrcType.isBool, SrcType.isPtr] at scalar <;>
+        cases hty : inner.ty <;> simp [hty, SrcType.isScalar, SrcType.isBool, SrcType.isPtr, SrcType.isFloatAny] at scalar <;>
           rw [hty] at holds <;> simp only [SrcType.Holds] at holds
         all_goals first
           | (obtain ⟨rfl, _⟩ := holds; exact ⟨_, rfl⟩)
           | (subst holds; exact ⟨_, rfl⟩)
           | (obtain ⟨n, rfl⟩ := sint_value holds; exact ⟨_, rfl⟩)
       · simp at lowered
+  case float ft =>
+    simp only [castToFloat] at lowered
+    cases hty : inner.ty <;> simp [hty, ifNarrow, intToFloat] at lowered <;> rw [hty] at holds <;>
+      simp only [SrcType.Holds] at holds
+    all_goals first
+      | (obtain ⟨rfl, _⟩ := holds; cases ft <;> exact ⟨_, rfl⟩)
+      | (subst holds; cases ft <;> exact ⟨_, rfl⟩)
+      | (obtain ⟨n, rfl⟩ := sint_value holds; cases ft <;> exact ⟨_, rfl⟩)
+      | (rename_i source
+         obtain ⟨rfl, _⟩ := holds
+         cases source <;> cases ft <;> simp [floatToFloat] at lowered <;> exact ⟨_, rfl⟩)
 
 /-! ## Evaluation steps -/
 
@@ -452,6 +475,7 @@ theorem SrcExpr.progress (e : SrcExpr) {scope : List Binding} {frame : Nat → N
   | boolean x => intro _ _ _; exact ⟨1, _, by simp only [SrcExpr.toCore, evalExpr] <;> rfl⟩
   | null => intro _ _ _; exact ⟨1, _, by simp only [SrcExpr.toCore, evalExpr] <;> rfl⟩
   | char c => intro _ _ _; exact ⟨1, _, by simp only [SrcExpr.toCore, evalExpr] <;> rfl⟩
+  | float ft bits => intro _ _ _; exact ⟨1, _, by simp only [SrcExpr.toCore, evalExpr] <;> rfl⟩
   | unsigned kind value => intro _ _ _; exact ⟨1, _, by simp only [SrcExpr.toCore, evalExpr] <;> rfl⟩
   | «local» id =>
     intro t lowered _
@@ -497,6 +521,9 @@ theorem SrcExpr.progress (e : SrcExpr) {scope : List Binding} {frame : Nat → N
     obtain ⟨f, w, run⟩ := ih innerLowered g
     obtain ⟨-, holds⟩ := operand.lower_sound corr target innerLowered run
     simp only [lowerNegateTyped] at lowered
+    split at lowered
+    · obtain ⟨r, ok, -⟩ := negateFloat_holds lowered holds
+      exact ⟨f + 1, _, unary_progress run (by rw [target]; exact ok)⟩
     split at lowered
     · rename_i isI32
       cases hty : inner.ty <;> simp [hty, SrcType.isI32] at isI32

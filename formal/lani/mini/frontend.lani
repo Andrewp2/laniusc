@@ -155,6 +155,10 @@ pub fn get_or<T>(items: List<T>, index: usize, fallback: T) -> T {
 
 pub enum UintTy { Uint8, Uint32, Uint64, Usize, Uint16, }
 
+// An IEEE binary floating-point format: binary32 or binary64. A word holds
+// a float's bit pattern, an F32 one zero-extended.
+pub enum FloatTy { F32, F64, }
+
 pub enum SrcType {
     I32,
     Bool,
@@ -171,6 +175,9 @@ pub enum SrcType {
     Isize,
     // a char, its 32-bit code in one slot
     Char,
+    // an f32 or f64, its IEEE bit pattern in one slot (an f32's
+    // zero-extended)
+    Float(FloatTy),
     // the signed integer type as wide as kind (i8, i16, i32, i64, isize). A
     // narrow one sits in its slot as an i32 does, its value's 32-bit two's
     // complement zero-extended; a 64-bit one as an isize does.
@@ -200,6 +207,8 @@ pub enum SrcExpr {
     Null,
     // a char literal: its code, a Unicode scalar value
     Char(u32),
+    // a float literal: its IEEE bit pattern
+    Float(FloatTy, u64),
 }
 
 pub struct SrcArm {
@@ -2022,6 +2031,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         Unit -> None,
         Isize -> Some(TyIsize),
         SrcType::Char -> Some(TyChar),
+        SrcType::Float(ft) -> None,
         Sint(sk) -> Some(TySint(sk)),
     };
 }
@@ -2629,6 +2639,7 @@ pub fn unit_ty(t: SrcType) -> bool {
         Unit -> true,
         Isize -> false,
         SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
         Sint(sk) -> false,
     };
 }
@@ -2985,6 +2996,7 @@ pub fn negated_int(x: SrcExpr, e: SrcExpr) -> core::option::Option<SrcExpr> {
         Cast(t, y) -> None,
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -3041,6 +3053,7 @@ pub fn neg_sint_const(u: UintTy, x: SrcExpr) -> core::option::Option<SrcExpr> {
         Cast(t, y) -> None,
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -3099,6 +3112,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyNamed(d, args) -> None,
             TySint(u) -> None,
         },
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -3316,6 +3330,7 @@ pub fn wide_inner(t: SrcType, x: SrcExpr) -> core::option::Option<u64> {
             Cast(s, y) -> None,
             Null -> None,
             SrcExpr::Char(code) -> None,
+            SrcExpr::Float(ft, bits) -> None,
         };
     }
     return None;
@@ -3335,6 +3350,7 @@ pub fn wide_value(e: SrcExpr) -> core::option::Option<u64> {
         Cast(t, x) -> wide_inner(t, unbox(x)),
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -3359,6 +3375,7 @@ pub fn wide_read(e: SrcExpr) -> bool {
         Cast(t, x) -> has_wide(wide_inner(t, unbox(x))),
         Null -> false,
         SrcExpr::Char(code) -> false,
+        SrcExpr::Float(ft, bits) -> false,
     };
 }
 
@@ -3562,6 +3579,7 @@ pub fn bare_int(e: SrcExpr) -> bool {
         Cast(t, x) -> unit_ty(t),
         Null -> false,
         SrcExpr::Char(code) -> false,
+        SrcExpr::Float(ft, bits) -> false,
     };
 }
 
@@ -3589,6 +3607,7 @@ pub fn expr_ty(fuel: usize, env: FrontEnv, scope: List<Local>, e: SrcExpr) -> co
         Cast(t, x) -> src_ty(t),
         Null -> Some(TyPtr),
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -4644,6 +4663,7 @@ pub fn is_usize(t: SrcType) -> bool {
         Unit -> false,
         Isize -> false,
         SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
         Sint(sk) -> false,
     };
 }
@@ -4662,6 +4682,7 @@ pub fn literal_shift(e: SrcExpr) -> core::option::Option<usize> {
         Cast(t, x) -> None,
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -4687,6 +4708,7 @@ pub fn shift_of(e: SrcExpr) -> core::option::Option<usize> {
         Cast(t, x) -> cast_shift(is_usize(t), unbox(x)),
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -5263,6 +5285,7 @@ pub fn pure_local(e: SrcExpr) -> core::option::Option<usize> {
         Cast(t, a) -> None,
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -7045,6 +7068,7 @@ pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usi
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         },
     };
@@ -7506,6 +7530,7 @@ pub fn isize_ty(t: SrcType) -> bool {
         Unit -> false,
         Isize -> true,
         SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
         Sint(sk) -> false,
     };
 }
@@ -7540,6 +7565,7 @@ pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
         Unit -> e,
         Isize -> Cast(Isize, boxed(e)),
         SrcType::Char -> e,
+        SrcType::Float(ft) -> e,
         Sint(sk) -> sint_at(sk, k, e),
     };
 }
@@ -7581,6 +7607,7 @@ pub fn src_fields(t: core::option::Option<SrcType>) -> core::option::Option<List
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         },
     };
@@ -7600,6 +7627,7 @@ pub fn src_variants(t: core::option::Option<SrcType>) -> core::option::Option<Li
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         },
     };
@@ -7619,6 +7647,7 @@ pub fn src_element(t: core::option::Option<SrcType>) -> core::option::Option<Src
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         },
     };
@@ -7770,6 +7799,7 @@ pub fn wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> SrcEx
             Unit -> e,
             Isize -> wide_isize_at(n, e),
             SrcType::Char -> e,
+            SrcType::Float(ft) -> e,
             Sint(sk) -> wide_sint_at(sk, n, e),
         },
     };
@@ -7814,6 +7844,7 @@ pub fn neg_wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> S
             Unit -> e,
             Isize -> neg_wide_isize(n, e),
             SrcType::Char -> e,
+            SrcType::Float(ft) -> e,
             Sint(sk) -> neg_wide_sint(sk, n, e),
         },
     };
@@ -7839,6 +7870,7 @@ pub fn neg_least_at(u: UintTy, x: SrcExpr, d: SrcExpr) -> SrcExpr {
         Cast(t, y) -> d,
         Null -> d,
         SrcExpr::Char(code) -> d,
+        SrcExpr::Float(ft, bits) -> d,
     };
 }
 
@@ -7858,6 +7890,7 @@ pub fn neg_least(want: core::option::Option<SrcType>, x: SrcExpr, d: SrcExpr) ->
             Unit -> d,
             Isize -> d,
             SrcType::Char -> d,
+            SrcType::Float(ft) -> d,
             Sint(sk) -> neg_least_at(sk, x, d),
         },
     };
@@ -7877,6 +7910,7 @@ pub fn known_expr(locals: List<LocalTy>, e: SrcExpr) -> core::option::Option<Src
         Cast(t, x) -> known_cast(t),
         Null -> Some(Ptr),
         SrcExpr::Char(code) -> Some(SrcType::Char),
+        SrcExpr::Float(ft, bits) -> Some(SrcType::Float(ft)),
     };
 }
 
@@ -7900,6 +7934,7 @@ pub fn lit_expr(locals: List<LocalTy>, want: core::option::Option<SrcType>, e: S
 
         Null -> e,
         SrcExpr::Char(code) -> e,
+        SrcExpr::Float(ft, bits) -> e,
     };
 }
 
@@ -8059,6 +8094,7 @@ pub fn wide_left(e: SrcExpr) -> bool {
         Cast(t, x) -> unit_ty(t) || wide_left(unbox(x)),
         Null -> false,
         SrcExpr::Char(code) -> false,
+        SrcExpr::Float(ft, bits) -> false,
     };
 }
 

@@ -38,6 +38,15 @@ def UintTy.width : UintTy → Nat
   | .usize => 64
   | .uint16 => 16
 
+def FloatTy.toCore : FloatTy → Core.ScalarTy
+  | .f32 => .f32
+  | .f64 => .f64
+
+/-- The Core value of a float pattern. -/
+def FloatTy.value : FloatTy → BitVec 64 → Value
+  | .f32, bits => .f32Bits (UInt32.ofNat bits.toNat)
+  | .f64, bits => .f64Bits (UInt64.ofNat bits.toNat)
+
 def SrcType.toCore : SrcType → Core.Ty
   | .i32 => .scalar (.signed .i32)
   | .bool => .scalar .bool
@@ -49,6 +58,7 @@ def SrcType.toCore : SrcType → Core.Ty
   | .unit => .unit
   | .isize => .scalar (.signed .isize)
   | .char => .scalar .char
+  | .float t => .scalar t.toCore
   | .sint kind => .scalar (.signed kind.toSigned)
 
 /-- The Core type id of a struct or enum type. -/
@@ -63,6 +73,7 @@ def SrcType.typeId : SrcType → Nat
   | .unit => 0
   | .isize => 0
   | .char => 0
+  | .float _ => 0
   | .sint _ => 0
 
 /-- The Core type a cast to this type names. Lowering only casts to `i32`
@@ -78,6 +89,7 @@ def SrcType.toScalar : SrcType → Core.ScalarTy
   | .unit => .bool
   | .isize => .signed .isize
   | .char => .char
+  | .float t => t.toCore
   | .sint kind => .signed kind.toSigned
 
 /-- Core's raw slice of this element type from a pointer and a length:
@@ -93,6 +105,7 @@ def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
   | .unit, pointer, length => .typedSliceFromRawParts .unit pointer length
   | .isize, pointer, length => .typedSliceFromRawParts (.scalar (.signed .isize)) pointer length
   | .char, pointer, length => .typedSliceFromRawParts (.scalar .char) pointer length
+  | .float t, pointer, length => .typedSliceFromRawParts (.scalar t.toCore) pointer length
   | .sint kind, pointer, length => .typedSliceFromRawParts (.scalar (.signed kind.toSigned)) pointer length
 
 def SrcDivOp.toCore : SrcDivOp → Core.BinaryOp
@@ -129,6 +142,7 @@ def SrcExpr.toCore : SrcExpr → Core.Expr
   | .cast ty operand => .cast ty.toScalar operand.toCore
   | .null => .value (.pointer 0)
   | .char code => .value (.character (UInt32.ofNat code.toNat))
+  | .float t bits => .value (t.value bits)
 
 /-- Match arms from variant `k`: arm `k` matches variant `k` of enum type
 `id`, binding its payload. -/

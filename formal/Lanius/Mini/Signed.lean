@@ -23,14 +23,16 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
@@ -92,9 +94,9 @@ import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
 import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
 -- import parts: Lanius.Mini.Compiler norm castTo arithSint orderSint signKey
+public import Lanius.Mini.Compiler.P.SrcType_size
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.arithUint
-public import Lanius.Mini.Compiler.P.norm
 public import Lanius.Mini.Compiler.P.sintToUint
 -- end import parts
 
@@ -461,7 +463,8 @@ theorem castTo_base {ty : SrcType} {inner : Typed} {k : UintTy} (hty : inner.ty 
     castTo ty inner = castTo ty { inner with ty := k.base } := by
   by_cases wide : k.isWide = true <;>
     cases ty <;> simp [castTo, castToI32, castToUint, castToIsize, castToSint, hty, UintTy.base, wide,
-      sintToI32, sintToUint, sintToWide, SrcType.isScalar, SrcType.isBool, SrcType.isPtr]
+      sintToI32, sintToUint, sintToWide, SrcType.isScalar, SrcType.isBool, SrcType.isPtr, castToFloat,
+      UintTy.signedWord, SrcType.isFloatAny]
 
 theorem toInt64_emod_width {k : UintTy} (narrow : k.isWide = false) (b : BitVec 64) :
     (b.toNat : Int) % 2 ^ k.width = b.toInt % 2 ^ k.width := by
@@ -471,8 +474,9 @@ theorem toInt64_emod_width {k : UintTy} (narrow : k.isWide = false) (b : BitVec 
 
 /-- A cast to a narrow signed type is `norm` of the source's slot. -/
 theorem narrow_cast_holds {k : UintTy} (narrow : k.isWide = false) {ty : SrcType}
-    (scalar : (ty.isScalar && !ty.isBool && !ty.isPtr) = true) {w result : Value} {e : Expr} {env : Env}
-    (holds : ty.Holds w (e.eval env)) (casted : evalScalarCast .x86_64 (.signed k.toSigned) w = .ok result) :
+    (scalar : (ty.isScalar && !ty.isBool && !ty.isPtr && !ty.isFloatAny) = true) {w result : Value} {e : Expr}
+    {env : Env} (holds : ty.Holds w (e.eval env))
+    (casted : evalScalarCast .x86_64 (.signed k.toSigned) w = .ok result) :
     k.SintHolds result ((norm k e).eval env) := by
   rw [norm_eval narrow]
   generalize e.eval env = b at holds ⊢
@@ -501,6 +505,7 @@ theorem narrow_cast_holds {k : UintTy} (narrow : k.isWide = false) {ty : SrcType
     subst casted
     apply narrow_of_wrap narrow
     simp [Nat.mod_eq_of_lt small]
+  | float _ => simp [SrcType.isFloatAny] at scalar
   | sint k' =>
     simp only [SrcType.Holds] at holds
     by_cases wide' : k'.isWide = true

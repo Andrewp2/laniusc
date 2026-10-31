@@ -49,6 +49,7 @@ inductive LitExpr (locals : List LocalTy) : Option SrcType → SrcExpr → SrcEx
       wideValue (.cast t x) = some n → LitExpr locals want (.cast t x) (wideAt want n (.cast t x))
   | null {want : Option SrcType} : LitExpr locals want .null .null
   | char {want : Option SrcType} {c : BitVec 32} : LitExpr locals want (.char c) (.char c)
+  | float {want : Option SrcType} {t : FloatTy} {b : BitVec 64} : LitExpr locals want (.float t b) (.float t b)
 
 /-- Expressions at a list of expected types, in order (none past its end). -/
 inductive LitExprs (locals : List LocalTy) : Option (List SrcType) → List SrcExpr → List SrcExpr → Prop
@@ -86,6 +87,7 @@ theorem litExpr_sound (locals : List LocalTy) :
     | some n => simp only [litExpr, hw]; exact .wide hw
   | want, .null => by simp only [litExpr]; exact .null
   | want, .char c => by simp only [litExpr]; exact .char
+  | want, .float t b => by simp only [litExpr]; exact .float
 
 theorem litExprs_sound (locals : List LocalTy) :
     ∀ (wants : Option (List SrcType)) (es : List SrcExpr), LitExprs locals wants es (litExprs locals wants es)

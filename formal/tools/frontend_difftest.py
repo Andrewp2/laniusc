@@ -1028,6 +1028,8 @@ partial def serType : SrcType → String
   | .isize => ".isize"
   | .char => ".char"
   | .sint u => s!"(.sint {serTy u})"
+  | .float .f32 => "(.float .f32)"
+  | .float .f64 => "(.float .f64)"
 
 partial def serExpr : SrcExpr → String
   | .int k => s!"(.int {k.toNat})"
@@ -1041,6 +1043,8 @@ partial def serExpr : SrcExpr → String
   | .cast t e => s!"(.cast {serType t} {serExpr e})"
   | .null => ".null"
   | .char c => s!"(.char {c.toNat})"
+  | .float .f32 x => s!"(.float .f32 {x.toNat})"
+  | .float .f64 x => s!"(.float .f64 {x.toNat})"
 
 def serExprs (es : List SrcExpr) : String := bracket (es.map serExpr)
 

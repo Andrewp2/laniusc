@@ -45,6 +45,7 @@ def exprTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : SrcExpr) : Op
     | .cast t x => srcTy t
     | .null => some Ty.tyPtr
     | .char code => none
+    | .float ft bits => none
 
 def exprsTys (fuel : Nat) (env : FrontEnv) (scope : List Local) (es : List SrcExpr) : Option (List Ty) :=
   match es with

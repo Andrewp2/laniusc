@@ -158,6 +158,7 @@ def wideInner (t : SrcType) (x : SrcExpr) : Option (BitVec 64) :=
     | .cast s y => none
     | .null => none
     | .char code => none
+    | .float ft bits => none
   else
     none
 /-- The literal a wide marker holds, if e is one. -/
@@ -174,6 +175,7 @@ def wideValue (e : SrcExpr) : Option (BitVec 64) :=
   | .cast t x => wideInner t x
   | .null => none
   | .char code => none
+  | .float ft bits => none
 def hasWide (v : Option (BitVec 64)) : Bool :=
   match v with
   | none => false
@@ -192,6 +194,7 @@ def wideRead (e : SrcExpr) : Bool :=
   | .cast t x => hasWide (wideInner t x)
   | .null => false
   | .char code => false
+  | .float ft bits => false
 def wideReadOf (v : Option SrcExpr) : Bool :=
   match v with
   | none => false
@@ -354,5 +357,6 @@ def bareInt (e : SrcExpr) : Bool :=
   | .cast t x => unitTy t
   | .null => false
   | .char code => false
+  | .float ft bits => false
 
 end Lanius.Mini

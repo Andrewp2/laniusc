@@ -191,6 +191,13 @@ theorem negate_defined {inner t : Typed} {w : Value} {x : BitVec 64} (lowered : 
     (holds : inner.ty.Holds w x) : ∃ r, Semantics.evalUnaryValue .x86_64 .negate w = .ok r := by
   simp only [lowerNegateTyped] at lowered
   split at lowered
+  · rename_i isFloat
+    cases hty : inner.ty <;> simp [hty, SrcType.isFloatAny] at isFloat
+    rename_i ft
+    rw [hty] at holds
+    obtain ⟨rfl, _⟩ := holds
+    cases ft <;> exact ⟨_, rfl⟩
+  split at lowered
   · rename_i isInt
     cases hty : inner.ty <;> simp [hty, SrcType.isI32] at isInt
     rw [hty] at holds
@@ -1092,6 +1099,7 @@ theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
   | unit => cases values <;> simp [matchVariants, evalArms] at armsOk
   | isize => cases values <;> simp [matchVariants, evalArms] at armsOk
   | char => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | float => cases values <;> simp [matchVariants, evalArms] at armsOk
   | sint => cases values <;> simp [matchVariants, evalArms] at armsOk
 
 end Cases
@@ -1223,6 +1231,7 @@ theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
   case h_9 => simp at ok
   case h_10 => simp at ok
   case h_11 => simp at ok
+  case h_12 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok

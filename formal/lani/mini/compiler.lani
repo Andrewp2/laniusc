@@ -365,6 +365,42 @@ impl FloatTy {
     }
 }
 
+impl FloatTy {
+    pub fn number(self) -> usize {
+        return match (self) {
+            F32 -> 0,
+            F64 -> 1,
+        };
+    }
+}
+
+impl FloatTy {
+    // The largest pattern: 2^32 - 1 for F32, 2^64 - 1 for F64.
+    pub fn mask(self) -> u64 {
+        return match (self) {
+            F32 -> 4294967295,
+            F64 -> 18446744073709551615,
+        };
+    }
+
+    // The sign bit's pattern.
+    pub fn sign_bit(self) -> u64 {
+        return match (self) {
+            F32 -> 2147483648,
+            F64 -> 9223372036854775808,
+        };
+    }
+
+    // The word whose addition of the sign bit flips it: the low 32 bits for
+    // an f32 (the carry out is dropped), all 64 for an f64.
+    pub fn sign_word(self) -> Word {
+        return match (self) {
+            F32 -> S32,
+            F64 -> U64,
+        };
+    }
+}
+
 impl FOp {
     // The bytes after mov rcx, rax; mov rax, [slot]: the operands into
     // xmm0 and xmm1 (8 bytes, 10 for F64), the operation (4; a compare 5),
@@ -1490,6 +1526,9 @@ pub enum SrcType {
     Isize,
     // a char, its 32-bit code in one slot
     Char,
+    // an f32 or f64, its IEEE bit pattern in one slot (an f32's
+    // zero-extended)
+    Float(FloatTy),
     // the signed integer type as wide as kind (i8, i16, i32, i64, isize). A
     // narrow one sits in its slot as an i32 does, its value's 32-bit two's
     // complement zero-extended; a 64-bit one as an isize does.
@@ -1519,6 +1558,8 @@ pub enum SrcExpr {
     Null,
     // a char literal: its code, a Unicode scalar value
     Char(u32),
+    // a float literal: its IEEE bit pattern
+    Float(FloatTy, u64),
 }
 
 // A match arm: the binders of its variant's payload, and its value.
@@ -1677,6 +1718,7 @@ impl SrcType {
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
             Sint(sk) -> false,
         };
     }
@@ -1693,6 +1735,7 @@ impl SrcType {
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
             Sint(sk) -> false,
         };
     }
@@ -1709,6 +1752,7 @@ impl SrcType {
             Unit -> false,
             Isize -> true,
             SrcType::Char -> true,
+            SrcType::Float(ft) -> true,
             Sint(kind) -> true,
         };
     }
@@ -1725,6 +1769,7 @@ impl SrcType {
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
             Sint(sk) -> false,
         };
     }
@@ -1741,6 +1786,7 @@ impl SrcType {
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
             Sint(sk) -> false,
         };
     }
@@ -1757,6 +1803,7 @@ impl SrcType {
             Unit -> true,
             Isize -> false,
             SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
             Sint(sk) -> false,
         };
     }
@@ -1773,6 +1820,7 @@ impl SrcType {
             Unit -> false,
             Isize -> true,
             SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
             Sint(kind) -> false,
         };
     }
@@ -1789,6 +1837,58 @@ impl SrcType {
             Unit -> false,
             Isize -> false,
             SrcType::Char -> true,
+            SrcType::Float(ft) -> false,
+            Sint(kind) -> false,
+        };
+    }
+
+    pub fn is_float(self, t: FloatTy) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> ft.number() == t.number(),
+            Sint(kind) -> false,
+        };
+    }
+
+    pub fn float_ty(self) -> core::option::Option<FloatTy> {
+        return match (self) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, fields) -> None,
+            Enum(id, variants) -> None,
+            Ptr -> None,
+            Slice(element) -> None,
+            Unit -> None,
+            Isize -> None,
+            SrcType::Char -> None,
+            SrcType::Float(ft) -> Some(ft),
+            Sint(kind) -> None,
+        };
+    }
+
+    pub fn is_float_any(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> true,
             Sint(kind) -> false,
         };
     }
@@ -1806,6 +1906,7 @@ impl SrcType {
             Unit -> false,
             Isize -> true,
             SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
             Sint(kind) -> true,
         };
     }
@@ -1822,6 +1923,7 @@ impl SrcType {
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
             Sint(kind) -> true,
         };
     }
@@ -1838,6 +1940,7 @@ impl SrcType {
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
             Sint(other) -> other.code() == kind.code(),
         };
     }
@@ -1855,6 +1958,7 @@ impl SrcType {
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(kind) -> Some(kind),
         };
     }
@@ -1872,6 +1976,7 @@ impl SrcType {
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         };
     }
@@ -1889,6 +1994,7 @@ impl SrcType {
             Unit -> S32,
             Isize -> U64,
             SrcType::Char -> U64,
+            SrcType::Float(ft) -> U64,
             Sint(kind) -> kind.signed_word(),
         };
     }
@@ -1912,6 +2018,7 @@ impl SrcType {
                 Unit -> false,
                 Isize -> false,
                 SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
             },
             Enum(id, variants) -> match (other) {
@@ -1925,6 +2032,7 @@ impl SrcType {
                 Unit -> false,
                 Isize -> false,
                 SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
             },
             Ptr -> other.is_ptr(),
@@ -1939,11 +2047,13 @@ impl SrcType {
                 Unit -> false,
                 Isize -> false,
                 SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
             },
             Unit -> other.is_unit(),
             Isize -> other.is_isize(),
             SrcType::Char -> other.is_char(),
+            SrcType::Float(ft) -> other.is_float(ft),
             Sint(kind) -> other.is_sint(kind),
         };
     }
@@ -1992,6 +2102,7 @@ impl SrcType {
             Unit -> 1,
             Isize -> 1,
             SrcType::Char -> 1,
+            SrcType::Float(ft) -> 1,
             Sint(kind) -> 1,
         };
     }
@@ -2088,7 +2199,76 @@ fn arith_signed_of(operation: BinOp, left: Typed, right: Typed, k: UintTy) -> co
 
 // isize arithmetic is 64-bit arithmetic on the bits, which wraps as Core's
 // two's complement does.
+// IEEE arithmetic on two floats of one format: + - * only (Core's / is a
+// division, eval_division).
+pub fn float_op(operation: BinOp) -> core::option::Option<FArith> {
+    return match (operation) {
+        Add -> Some(FAdd),
+        Sub -> Some(FSub),
+        Mul -> Some(FMul),
+        And -> None,
+        Or -> None,
+        Xor -> None,
+        Shl -> None,
+        Shr -> None,
+        Sar -> None,
+    };
+}
+
+pub fn float_apply(operation: core::option::Option<FArith>, t: FloatTy, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    return match (operation) {
+        None -> None,
+        Some(o) -> Some(Typed { expr: Expr::Fp(Basic(t, o), boxed(left.expr), boxed(right.expr)), ty: SrcType::Float(t) }),
+    };
+}
+
+// extract: inline
+fn float_arith_of(operation: BinOp, left: Typed, right: Typed, t: FloatTy) -> core::option::Option<Typed> {
+    if (right.ty.is_float(t)) {
+        return float_apply(float_op(operation), t, left, right);
+    }
+    return None;
+}
+
+pub fn float_arith(operation: BinOp, left: Typed, right: Typed, kind: core::option::Option<FloatTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(t) -> float_arith_of(operation, left, right, t),
+    };
+}
+
+// IEEE comparisons: > and >= swap the operands, != is == being false. Both
+// operands are pure, so the swap does not reorder anything.
+pub fn float_compare(t: FloatTy, operation: CmpOp, left: Expr, right: Expr) -> Expr {
+    return match (operation) {
+        Eq -> Expr::Fp(FCompare(t, FEq), boxed(left), boxed(right)),
+        Ne -> Compare(U64, Eq, boxed(Expr::Fp(FCompare(t, FEq), boxed(left), boxed(right))), boxed(Lit(0))),
+        Lt -> Expr::Fp(FCompare(t, FLt), boxed(left), boxed(right)),
+        Le -> Expr::Fp(FCompare(t, FLe), boxed(left), boxed(right)),
+        Gt -> Expr::Fp(FCompare(t, FLt), boxed(right), boxed(left)),
+        Ge -> Expr::Fp(FCompare(t, FLe), boxed(right), boxed(left)),
+    };
+}
+
+// extract: inline
+fn float_order_of(operation: CmpOp, left: Typed, right: Typed, t: FloatTy) -> core::option::Option<Typed> {
+    if (right.ty.is_float(t)) {
+        return Some(Typed { expr: float_compare(t, operation, left.expr, right.expr), ty: Bool });
+    }
+    return None;
+}
+
+pub fn float_order(operation: CmpOp, left: Typed, right: Typed, kind: core::option::Option<FloatTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(t) -> float_order_of(operation, left, right, t),
+    };
+}
+
 pub fn arith(operation: BinOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_float_any()) {
+        return float_arith(operation, left, right, left.ty.float_ty());
+    }
     if (left.ty.is_i32() && right.ty.is_i32()) {
         return Some(Typed { expr: Binary(S32, operation, boxed(left.expr), boxed(right.expr)), ty: I32 });
     }
@@ -2171,6 +2351,9 @@ fn order_signed_of(operation: CmpOp, left: Typed, right: Typed, k: UintTy) -> co
 }
 
 pub fn order(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_float_any()) {
+        return float_order(operation, left, right, left.ty.float_ty());
+    }
     if (left.ty.is_i32() && right.ty.is_i32()) {
         return Some(Typed { expr: Compare(S32, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
@@ -2187,6 +2370,9 @@ pub fn order(operation: CmpOp, left: Typed, right: Typed) -> core::option::Optio
 }
 
 pub fn equality(operation: CmpOp, left: Typed, right: Typed) -> core::option::Option<Typed> {
+    if (left.ty.is_float_any()) {
+        return float_order(operation, left, right, left.ty.float_ty());
+    }
     if (left.ty.same(right.ty)) {
         return Some(Typed { expr: Compare(left.ty.word(), operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
     }
@@ -2273,6 +2459,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
         Sint(sk) -> None,
     };
 }
@@ -2292,7 +2479,19 @@ pub fn negate_signed(kind: UintTy, e: Expr) -> Expr {
     return norm(kind, Expr::Neg(boxed(e)));
 }
 
+pub fn negate_float(operand: Typed, kind: core::option::Option<FloatTy>) -> core::option::Option<Typed> {
+    return match (kind) {
+        None -> None,
+        Some(t) -> Some(Typed { expr: Binary(t.sign_word(), Add, boxed(operand.expr), boxed(Lit(t.sign_bit()))), ty: operand.ty }),
+    };
+}
+
+// A float's negation flips its sign bit, NaNs included: it adds the sign
+// bit, dropping the carry.
 pub fn lower_negate_typed(operand: Typed) -> core::option::Option<Typed> {
+    if (operand.ty.is_float_any()) {
+        return negate_float(operand, operand.ty.float_ty());
+    }
     if (operand.ty.is_i32()) {
         return Some(Typed { expr: Expr::Neg(boxed(operand.expr)), ty: I32 });
     }
@@ -2380,6 +2579,7 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         Unit -> None,
         Isize -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
         SrcType::Char -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
+        SrcType::Float(ft) -> None,
         Sint(kind) -> Some(Typed { expr: sint_to_i32(kind, e.expr), ty: I32 }),
     };
 }
@@ -2396,6 +2596,7 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         Unit -> None,
         Isize -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
         SrcType::Char -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
+        SrcType::Float(ft) -> None,
         Sint(source) -> Some(Typed { expr: sint_to_uint(source, kind, e.expr), ty: Uint(kind) }),
     };
 }
@@ -2414,6 +2615,7 @@ pub fn cast_to_isize(e: Typed) -> core::option::Option<Typed> {
         Unit -> None,
         Isize -> Some(e),
         SrcType::Char -> Some(Typed { expr: e.expr, ty: Isize }),
+        SrcType::Float(ft) -> None,
         Sint(source) -> Some(Typed { expr: sint_to_wide(source, e.expr), ty: Isize }),
     };
 }
@@ -2427,10 +2629,59 @@ pub fn cast_to_sint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
             Some(t) -> Some(Typed { expr: t.expr, ty: Sint(kind) }),
         };
     }
-    if (e.ty.is_scalar() && !e.ty.is_bool() && !e.ty.is_ptr()) {
+    if (e.ty.is_scalar() && !e.ty.is_bool() && !e.ty.is_ptr() && !e.ty.is_float_any()) {
         return Some(Typed { expr: norm(kind, e.expr), ty: Sint(kind) });
     }
     return None;
+}
+
+// A cast to a float: i32 and the narrow signed types from their 32-bit
+// value, isize, i64 and the narrow unsigned types from their slot as a signed
+// 64-bit integer (an unsigned one is below 2^32), f32 to f64 exactly, f64 to
+// f32 rounded, a char as its code. u64 and usize (an unsigned 64-bit
+// conversion) are not lowered.
+// None for a 64-bit unsigned kind.
+pub fn if_narrow(kind: UintTy, t: core::option::Option<Typed>) -> core::option::Option<Typed> {
+    if (kind.is_wide()) {
+        return None;
+    }
+    return t;
+}
+
+pub fn int_to_float(t: FloatTy, word: Word, e: Expr) -> core::option::Option<Typed> {
+    return Some(Typed { expr: Expr::Fp(FromInt(t, word), boxed(Lit(0)), boxed(e)), ty: SrcType::Float(t) });
+}
+
+// f32 to f64 widens exactly, f64 to f32 rounds; Core has no cast of a float
+// to its own type.
+pub fn float_to_float(t: FloatTy, source: FloatTy, e: Expr) -> core::option::Option<Typed> {
+    return match (source) {
+        F32 -> match (t) {
+            F32 -> None,
+            F64 -> Some(Typed { expr: Expr::Fp(Widen, boxed(Lit(0)), boxed(e)), ty: SrcType::Float(t) }),
+        },
+        F64 -> match (t) {
+            F32 -> Some(Typed { expr: Expr::Fp(Narrow, boxed(Lit(0)), boxed(e)), ty: SrcType::Float(t) }),
+            F64 -> None,
+        },
+    };
+}
+
+pub fn cast_to_float(t: FloatTy, e: Typed) -> core::option::Option<Typed> {
+    return match (e.ty) {
+        I32 -> int_to_float(t, S32, e.expr),
+        Bool -> None,
+        Uint(kind) -> if_narrow(kind, int_to_float(t, U64, e.expr)),
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> None,
+        Unit -> None,
+        Isize -> int_to_float(t, U64, e.expr),
+        SrcType::Char -> int_to_float(t, U64, e.expr),
+        SrcType::Float(source) -> float_to_float(t, source, e.expr),
+        Sint(kind) -> int_to_float(t, kind.signed_word(), e.expr),
+    };
 }
 
 pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
@@ -2445,6 +2696,7 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         Unit -> None,
         Isize -> cast_to_isize(e),
         SrcType::Char -> None,
+        SrcType::Float(ft) -> cast_to_float(ft, e),
         Sint(kind) -> cast_to_sint(kind, e),
     };
 }
@@ -2454,6 +2706,14 @@ pub fn lower_cast(ty: SrcType, operand: core::option::Option<Typed>) -> core::op
         None -> None,
         Some(e) -> cast_to(ty, e),
     };
+}
+
+// A float literal's pattern fits its format.
+pub fn lower_float(t: FloatTy, bits: u64) -> core::option::Option<Typed> {
+    if (bits <= t.mask()) {
+        return Some(Typed { expr: Lit(bits), ty: SrcType::Float(t) });
+    }
+    return None;
 }
 
 pub fn lower_apply(op: SrcOp, left: core::option::Option<Typed>, right: core::option::Option<Typed>) -> core::option::Option<Typed> {
@@ -2480,6 +2740,7 @@ impl SrcExpr {
             Cast(ty, operand) -> lower_cast(ty, unbox(operand).lower(scope)),
             Null -> Some(Typed { expr: Lit(0), ty: Ptr }),
             SrcExpr::Char(code) -> Some(Typed { expr: Lit(code as u64), ty: SrcType::Char }),
+            SrcExpr::Float(ft, bits) -> lower_float(ft, bits),
         };
     }
 }
@@ -2547,6 +2808,7 @@ pub fn shift_width(ty: SrcType) -> u64 {
         Unit -> 64,
         Isize -> 64,
         SrcType::Char -> 32,
+        SrcType::Float(ft) -> 64,
         Sint(kind) -> kind.bits(),
     };
 }
@@ -2638,6 +2900,7 @@ impl SrcExpr {
             Cast(ty, operand) -> unbox(operand).guard(scope),
             Null -> Lit(1),
             SrcExpr::Char(code) -> Lit(1),
+            SrcExpr::Float(ft, bits) -> Lit(1),
         };
     }
 }
@@ -2760,6 +3023,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
         Sint(sk) -> None,
     };
 }
@@ -2786,6 +3050,7 @@ pub fn lower_copy(scope: List<Binding>, e: SrcExpr, ty: SrcType) -> core::option
         Cast(target, operand) -> None,
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -2839,6 +3104,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
         Sint(sk) -> None,
     };
 }
@@ -2879,6 +3145,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
         Sint(sk) -> None,
     };
 }
@@ -2976,6 +3243,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
         Sint(sk) -> None,
     };
 }
@@ -3081,6 +3349,7 @@ pub fn eval_field_of(scope: List<Binding>, e: SrcExpr, slot: usize, b: Binding, 
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
         Sint(sk) -> None,
     };
 }
@@ -3109,6 +3378,7 @@ pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option:
             Cast(ty, operand) -> None,
             Null -> None,
             SrcExpr::Char(code) -> None,
+            SrcExpr::Float(ft, bits) -> None,
         },
     };
 }
@@ -3228,6 +3498,7 @@ pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
         Sint(sk) -> None,
     };
 }
@@ -3264,6 +3535,7 @@ pub fn eval_struct(ty: SrcType, args: core::option::Option<EvaluatedArgs>) -> co
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         },
     };
@@ -3302,6 +3574,7 @@ pub fn eval_variant(ty: SrcType, variant: usize, slot: usize, args: core::option
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         },
     };
@@ -3468,6 +3741,7 @@ pub fn match_variants(ty: SrcType) -> List<List<SrcType>> {
         Unit -> empty(),
         Isize -> empty(),
         SrcType::Char -> empty(),
+        SrcType::Float(ft) -> empty(),
         Sint(sk) -> empty(),
     };
 }
@@ -3651,6 +3925,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
         Sint(sk) -> None,
     };
 }
@@ -3854,6 +4129,7 @@ pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
         Unit -> None,
         Isize -> Some(M64),
         SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
         Sint(kind) -> usize_width(kind),
     };
 }
@@ -3893,6 +4169,7 @@ pub fn word_type(decls: SrcDecls, ty: SrcType) -> bool {
         Unit -> false,
         Isize -> true,
         SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
         Sint(kind) -> true,
     };
 }
@@ -3925,6 +4202,7 @@ pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
         Unit -> false,
         Isize -> false,
         SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
         Sint(sk) -> false,
     };
 }
@@ -3965,6 +4243,7 @@ pub fn load_type(ty: SrcType, target: usize, base: Expr, offset: usize, body: St
         Unit -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Isize -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         SrcType::Char -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        SrcType::Float(ft) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Sint(kind) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
     };
 }
@@ -4026,6 +4305,7 @@ pub fn store_type(ty: SrcType, values: List<Expr>, first: usize, base: Expr, off
         Unit -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Isize -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         SrcType::Char -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        SrcType::Float(ft) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Sint(kind) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
     };
 }
@@ -4069,6 +4349,7 @@ pub fn within_layout(depth: usize, ty: SrcType) -> bool {
         Unit -> false,
         Isize -> true,
         SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
         Sint(kind) -> true,
     };
 }
@@ -4440,6 +4721,7 @@ pub fn set_field_eval_of(b: Binding, field: usize, slot: usize, v: Evaluated) ->
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
         Sint(sk) -> None,
     };
 }
@@ -4765,6 +5047,7 @@ impl SrcType {
             Unit -> Some(decls),
             Isize -> Some(decls),
             SrcType::Char -> Some(decls),
+            SrcType::Float(ft) -> Some(decls),
             Sint(kind) -> Some(decls),
         };
     }
@@ -5100,15 +5383,6 @@ impl Word {
         return match (self) {
             S32 -> 0,
             U64 -> 1,
-        };
-    }
-}
-
-impl FloatTy {
-    pub fn number(self) -> usize {
-        return match (self) {
-            F32 -> 0,
-            F64 -> 1,
         };
     }
 }

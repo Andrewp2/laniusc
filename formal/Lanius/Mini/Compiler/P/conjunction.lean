@@ -3,8 +3,8 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.arithShiftRight
-import Lanius.Mini.Compiler.P.arithUint
 import Lanius.Mini.Compiler.P.equality
+import Lanius.Mini.Compiler.P.floatApply
 import Lanius.Mini.Compiler.P.lowerShift
 
 public section

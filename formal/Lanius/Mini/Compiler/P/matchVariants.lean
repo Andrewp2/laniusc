@@ -5,6 +5,7 @@ import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
+import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
@@ -30,6 +31,7 @@ def matchVariants (ty : SrcType) : List (List SrcType) :=
   | .unit => []
   | .isize => []
   | .char => []
+  | .float ft => []
   | .sint sk => []
 
 /-- The match is exhaustive, its value takes slots, and its tags fit in 32 bits. -/

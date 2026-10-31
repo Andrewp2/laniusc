@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.Lists_empty
+import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.enumVariants
 import Lanius.Mini.Compiler.P.structFields
@@ -27,6 +28,7 @@ def wordWidth (ty : SrcType) : Option MemWidth :=
   | .unit => none
   | .isize => some MemWidth.m64
   | .char => none
+  | .float ft => none
   | .sint kind => usizeWidth kind
 
 /-- The fields declared for a struct match the type's. -/
@@ -55,6 +57,7 @@ def wordType (decls : SrcDecls) (ty : SrcType) : Bool :=
   | .unit => false
   | .isize => true
   | .char => false
+  | .float ft => false
   | .sint kind => true
 def wordTypes (decls : SrcDecls) (types : List SrcType) : Bool :=
   match types with

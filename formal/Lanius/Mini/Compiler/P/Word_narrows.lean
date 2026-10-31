@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.BinOp_folds
+import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Word_compute
 import Lanius.Mini.Compiler.P.declareProgram
 
@@ -22,11 +23,6 @@ def Word.number (self : Word) : Nat :=
   match self with
   | .s32 => 0
   | .u64 => 1
-
-def FloatTy.number (self : FloatTy) : Nat :=
-  match self with
-  | .f32 => 0
-  | .f64 => 1
 
 def FArith.number (self : FArith) : Nat :=
   match self with

@@ -5,15 +5,17 @@ public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.FArith_opcode
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
+public import Lanius.Mini.Compiler.P.SrcType_size
 public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.UintTy_isWide
 public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.armScope
 public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.evalSame
+public import Lanius.Mini.Compiler.P.floatApply
 public import Lanius.Mini.Compiler.P.lowerCallSig
 public import Lanius.Mini.Compiler.P.lowerLoadType
-public import Lanius.Mini.Compiler.P.norm
 public import Lanius.Mini.Compiler.P.sigs
 
 public section
@@ -38,6 +40,18 @@ namespace Lanius.Mini
       some ({ expr := norm k (Expr.binary Word.s32 operation left.expr right.expr), ty := SrcType.sint k } : Typed)
     else
       none
+
+@[expose] def Inline.floatArithOf (operation : BinOp) (left : Typed) (right : Typed) (t : FloatTy) : Option Typed :=
+  if SrcType.isFloat right.ty t then
+    floatApply (floatOp operation) t left right
+  else
+    none
+
+@[expose] def Inline.floatOrderOf (operation : CmpOp) (left : Typed) (right : Typed) (t : FloatTy) : Option Typed :=
+  if SrcType.isFloat right.ty t then
+    some ({ expr := floatCompare t operation left.expr right.expr, ty := SrcType.bool } : Typed)
+  else
+    none
 
 @[expose] def Inline.orderOf (operation : CmpOp) (left : Typed) (right : Typed) (k : UintTy) : Option Typed :=
   if SrcType.isUint right.ty k then

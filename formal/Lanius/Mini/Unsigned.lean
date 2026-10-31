@@ -22,14 +22,16 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard

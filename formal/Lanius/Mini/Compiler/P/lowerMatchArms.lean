@@ -4,7 +4,7 @@ public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.UintTy_half
+import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
 
@@ -34,6 +34,7 @@ def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : Lis
   | .unit => none
   | .isize => none
   | .char => none
+  | .float ft => none
   | .sint sk => none
 
 def lowerMatch (scope : List Binding) (binding : Option Binding) (enumId : Nat) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=

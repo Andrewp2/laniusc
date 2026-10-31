@@ -24,6 +24,29 @@ def FloatTy.rexSize (self : FloatTy) : Nat :=
   | .f32 => 0
   | .f64 => 1
 
+def FloatTy.number (self : FloatTy) : Nat :=
+  match self with
+  | .f32 => 0
+  | .f64 => 1
+
+/-- The largest pattern: 2^32 - 1 for F32, 2^64 - 1 for F64. -/
+def FloatTy.mask (self : FloatTy) : BitVec 64 :=
+  match self with
+  | .f32 => 4294967295
+  | .f64 => 18446744073709551615
+
+/-- The sign bit's pattern. -/
+def FloatTy.signBit (self : FloatTy) : BitVec 64 :=
+  match self with
+  | .f32 => 2147483648
+  | .f64 => 9223372036854775808
+
+/-- The word whose addition of the sign bit flips it: the low 32 bits for an f32 (the carry out is dropped), all 64 for an f64. -/
+def FloatTy.signWord (self : FloatTy) : Word :=
+  match self with
+  | .f32 => Word.s32
+  | .f64 => Word.u64
+
 /-- The bytes after mov rcx, rax; mov rax, [slot]: the operands into xmm0 and xmm1 (8 bytes, 10 for F64), the operation (4; a compare 5), then the result into eax (4, 5 for F64; a compare's mask 4, then neg eax 2). A conversion reads rcx directly. -/
 def FOp.size (self : FOp) : Nat :=
   match self with

@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.BinOp_folds
+import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Expr_agrees
 import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
