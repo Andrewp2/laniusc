@@ -1151,3 +1151,40 @@ and does not read a method whose body writes the `self` local (a set, a
 field set, a set from a call or an effectful value: `writesLocal`). A write
 to a slice element through `self` goes to the heap, which the copy shares,
 so it is read. `&T` parameters are not read yet.
+
+### The design of writes through references (decided 10-31, F5)
+
+The stdlib has no `&mut` and no `&mut x`; it has 1046 `&self` methods, 200
+of which write `self`, 279 `&T` parameters and 100 functions that return a
+reference. In that order of need:
+
+1. **Core.** Core's places gain `Place.deref reference`: the reference's
+   value names a cell and a projection path, and the place is that path in
+   that cell, so `self.n = v` in a method that writes `self` is
+   `assign set (field (deref (local self)) n) v` and writes the caller's
+   cell. Core still does not dereference a place automatically: the front
+   end writes the `deref`, as the elaborator writes `dereference` for reads.
+2. **Which methods take a reference.** A `&self` method whose body writes
+   `self` (`writesLocal`) takes a reference; one that does not is still read
+   by value, which has the same meaning when nothing writes through it. `&T`
+   parameters follow the same rule.
+3. **Lowering.** Mini Source's `ref ty` is one slot holding an address. A
+   call that passes a reference to a local's place evaluates the other
+   arguments first (Core's reference names the cell, not a copy, so the
+   order of reading is the call's), stores the place's slots into the
+   function's frame block, passes the block's address plus the place's
+   offset, and loads the slots back after the call. Each function takes one
+   frame block at entry (`Frame`), as large as its largest such store, so a
+   loop does not use more frame memory. A reference parameter passes its
+   own address on, plus a field's offset. Reads and writes through a
+   reference are word loads and stores at the address. A reference is only
+   passed as an argument: a function whose result, a struct field or a
+   local's type holds a reference is not read, so no address outlives the
+   activation that took it.
+4. **The correspondence.** `FrameCorr` (`Mini/FrameCorr.lean`) lists the
+   places in frame memory: cell, projection path, type, address. Each
+   place's value is its words (`ty.HoldsAt v (hp.words address) 0`, the
+   slot layout), and its words lie between the frame pointer and the top.
+   Stores below the frame pointer (the bump heap, a callee's own frame) and
+   Core writes to other cells keep it (`FrameCorr.congr`); a store through a
+   reference changes Core's cell at the path and the words together.
