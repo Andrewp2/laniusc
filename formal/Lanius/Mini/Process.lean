@@ -473,7 +473,7 @@ theorem atEntry_premises {binary : Binary} {entry stack heap : Nat} {file input 
   · rw [at_.rip, ofNat_add64]
   · have top : BitVec.ofNat 64 (elfTop binary stack - 8) + 8 = BitVec.ofNat 64 (elfTop binary stack) := by
       rw [show (8 : BitVec 64) = BitVec.ofNat 64 8 from rfl, ofNat_add64]; congr 1; omega
-    refine ⟨at_.cursor, ?_, ?_, fun a aLt => ?_, fun address inHeap below => ?_, at_.io⟩
+    refine ⟨at_.cursor, ?_, rfl, ?_, fun a aLt => ?_, fun address inHeap below => ?_, at_.io⟩
     · rw [at_.heapLimit, toNat_ofNat64 (by omega)]; rfl
     · show heap < 2 ^ 62; omega
     · rw [at_.base, ofNat_add64]; exact at_.zero a aLt

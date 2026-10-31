@@ -48,6 +48,10 @@ abbrev Stmt_fact_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 179 RepFact) x0 v0 → RepNat x1 v1 →
     RepExpr (Lanius.Mini.factValue x0 x1) w
 
+abbrev Stmt_frame_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepNat x1 v1 → RepStmt x2 v2 →
+    RepBool (Lanius.Mini.frameAgrees x0 x1 x2) w
+
 abbrev Stmt_load_byte_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepExpr x1 v1 → RepStmt x2 v2 →
     RepBool (Lanius.Mini.loadByteAgrees x0 x1 x2) w

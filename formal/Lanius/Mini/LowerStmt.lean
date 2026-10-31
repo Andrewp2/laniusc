@@ -295,6 +295,7 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt
   | call found arity counted inner body _ => exact .call found arity counted (Nat.lt_of_lt_of_le inner le) body
   | ret => exact .ret
   | alloc room => exact .alloc room
+  | frame room => exact .frame room
   | loadByte inside => exact .loadByte inside
   | storeByte inside => exact .storeByte inside
   | loadWord inside => exact .loadWord inside
@@ -906,7 +907,8 @@ theorem call_sound {sp : SrcProgram} {mp : Program}
         bodyRun result bound
     obtain ⟨g', -, gOk⟩ := lowerFuncs_get lowered found
     refine ⟨restore_fresh freshDone, keeps.trans (restore_keeps _ _ _), rfl, (lowerFunc_some gOk).2.1, d + 1, rs,
-      hp', holdsRet, len, hcDone, fun target => .call gFound ?_ len (Nat.lt_succ_self d) exec⟩
+      { hp' with fsp := hp.fsp }, holdsRet, len, hcDone.withFsp _,
+      fun target => .call gFound ?_ len (Nat.lt_succ_self d) exec⟩
     rw [← arity, evalAll_length]
   · simp at ok
 
@@ -2863,7 +2865,7 @@ theorem stmt_letLoad (ih : StmtSound sp mp fuel) {id : Nat} {pointer offset : Sr
                 have := b.toNat_lt
                 exact ⟨by rw [Nat.mod_eq_of_lt (by omega)], by rw [Nat.mod_eq_of_lt (by omega)]; exact this⟩))
               hc run bound
-          exact ⟨fresh', keeps, d, out, .seq (.loadByte room) exec, matched⟩
+          exact ⟨fresh', keeps, d, out, .seq (.loadByte (Nat.lt_of_lt_of_le room hc.topped)) exec, matched⟩
         · simp at valueRun
       all_goals simp at valueRun
   all_goals simp at run
@@ -2927,7 +2929,7 @@ theorem stmt_setByte {pointer offset value : SrcExpr}
           have low : lowByte (xv.eval env) = UInt8.ofNat bv := by
             simp only [lowByte, BitVec.toNat_setWidth, hbv]
             rw [Nat.mod_eq_of_lt lt]
-          refine ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeByte room,
+          refine ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeByte (Nat.lt_of_lt_of_le room hc.topped),
             .next (corr.cells_congr rfl fun _ _ => rfl) ?_⟩
           rw [address, low]
           exact hc'
@@ -3331,7 +3333,7 @@ theorem stmt_letIndex_i32 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} 
               simp only [Env.set, if_pos, address, MemWidth.bytes]
               exact i32_load_holds (by simpa using lt32)))
             hc run bound
-        exact ⟨fresh', keeps, d, out, .seq (.loadWord room) exec, matched⟩
+        exact ⟨fresh', keeps, d, out, .seq (.loadWord (Nat.le_trans room hc.topped)) exec, matched⟩
   all_goals simp at run
 
 theorem Corr.readPlace {scope frame st env} (corr : Corr scope frame st env) {id : Nat} {b : Binding}
@@ -3506,7 +3508,7 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
         (Expr.binary Word.u64 BinOp.mul t.expr (Expr.lit 4))).eval env).toNat + MemWidth.m32.bytes ≤
         hp.limit := by
       rw [address]; simp only [MemWidth.bytes]; addr_omega
-    refine ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeWord room,
+    refine ⟨fresh, ⟨fun _ _ => rfl, Nat.le_refl _⟩, 0, _, .storeWord (Nat.le_trans room hc.topped),
       .next (corr.cells_congr rfl fun _ _ => rfl) ?_⟩
     rw [address]
     simp only [MemWidth.bytes]
@@ -3566,7 +3568,7 @@ theorem exec_loadScalar {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Mem
     rw [if_neg (by rw [wordWidth_size hw] at out; omega)]
   · exact (SrcType.holdsAt_scalar (wordWidth_scalar hw)).mpr (by simp only [Env.set, if_pos]; exact holds)
   · have step := Exec.loadWord (prog := mp) (depth := d) (env := env) (heap := hp) (width := w) (target := target)
-      (address := addressBelow base offset) (by rw [addr]; addr_omega)
+      (address := addressBelow base offset) (by have := hc.topped; rw [addr]; addr_omega)
     rw [addr] at step
     exact .seq step exec
 
@@ -3636,7 +3638,7 @@ theorem exec_loadType {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Memor
         rw [addr]
         simp only [MemWidth.bytes]
         addr_omega
-      exact .seq (.loadWord room) (.seq exec2 exec)
+      exact .seq (.loadWord (Nat.le_trans room hc.topped)) (.seq exec2 exec)
 
 theorem exec_loadTypes {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Memory.Heap}
     (hc : HeapCorr heap world hp) (tail : heap.nextAddress ≤ hp.limit) {base : Expr} :
@@ -3845,7 +3847,7 @@ theorem exec_storeScalar {sp : SrcProgram} {mp : Program} {st : State} {env : En
   have addr := addressBelow_eval (offset := offset) fits
   have room : ((addressBelow base offset).eval env).toNat + w.bytes ≤ hp.limit := by rw [addr]; addr_omega
   refine ⟨_, fun {d} => ?_, hc1, next1, (Heap.writeLE_limit _ _ _ _).1⟩
-  have step := Exec.storeWord (prog := mp) (depth := d) (env := env) (heap := hp) (value := e) room
+  have step := Exec.storeWord (prog := mp) (depth := d) (env := env) (heap := hp) (value := e) (Nat.le_trans room hc.topped)
   rw [addr] at step
   exact step
 
@@ -3932,7 +3934,7 @@ theorem exec_storeType {sp : SrcProgram} {mp : Program} {st : State} {env : Env}
       addr_omega
     refine ⟨hp', fun {d} => ?_, hc', by rw [next2, nextT], by rw [lim2, lim]⟩
     have first' := Exec.storeWord (prog := mp) (depth := d) (env := env) (heap := hp) (width := .m32)
-      (value := tag) room
+      (value := tag) (Nat.le_trans room hc.topped)
     rw [addr] at first'
     exact .seq first' exec2
 

@@ -684,7 +684,7 @@ theorem host_write {fd : BitVec 64} {service : Core.HostService}
   obtain ⟨rfl, rfl⟩ := valuesEq
   obtain ⟨sliced, inside⟩ := hcA.loadBytes_slice loaded
   obtain ⟨E', events, exec, keep, wrote, outs⟩ := hostWrite_exec (mp := mp) (d := dA) fd
-    (by rcases which with ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> simp) slot (fun pos => Nat.le_trans (inside pos) limitA) hcA.small
+    (by rcases which with ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> simp) slot (fun pos => Nat.le_trans (inside pos) limitA) hcA.small hcA.topped
   refine ⟨E', _, .seq execA exec, fun j below => (keep j below).trans (sameA j below), ?_, ?_⟩
   · refine .i32 ?_
     rw [wrote, sliced, Heap.slice_length, i32Result_nat, ← low_ofNat]
@@ -801,8 +801,8 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
         rcases which with one | two
         · rw [one]; decide
         · rw [two]; decide
-      obtain ⟨E', H', exec, keep, one, sameBytes, cursor, limit, trace, input⟩ :=
-        hostByte_exec (mp := mp) (d := dA) slot posA which
+      obtain ⟨E', H', exec, keep, one, sameBytes, cursor, limit, top, trace, input⟩ :=
+        hostByte_exec (mp := mp) (d := dA) slot (Nat.lt_of_lt_of_le posA hcA.topped) which
       have byte : UInt8.ofNat ((low (envA (slot + 1))).toInt % 256).toNat = lowByte (envA (slot + 1)) := by
         have := hostByte_low (low (envA (slot + 1)))
         rw [← wb] at this
@@ -933,8 +933,9 @@ theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
       body_sound lowered ih found (hp := hpA) freshA hcA holdsEntry
         (by rw [evalAll_length, slotVars_length, paramsSize_eq]) bodyRun result (by rw [execA.limit_normal]; exact bound')
     refine ⟨restore_fresh freshDone, keepsA.chain (keeps.trans (restore_keeps _ _ _)), localsA, sized,
-      max dA (d + 1), envA.setMany slot rs, hp', .seq (execA.mono (Nat.le_max_left _ _))
-        (Exec.call gFound ?_ len (by omega) exec), fun j below => ?_, setMany_holds holdsRet len envA slot, hcDone⟩
+      max dA (d + 1), envA.setMany slot rs, { hp' with fsp := hpA.fsp }, .seq (execA.mono (Nat.le_max_left _ _))
+        (Exec.call gFound ?_ len (by omega) exec), fun j below => ?_, setMany_holds holdsRet len envA slot,
+        hcDone.withFsp _⟩
     · rw [← arity, evalAll_length]
     · rw [setMany_eq, if_neg (by omega)]
       exact sameA j below
@@ -1556,7 +1557,7 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
       hp1.limit := by
     rw [address]; simp only [MemWidth.bytes]; addr_omega
   have lt32 := hp1.readLE_lt ((env b.slot).toNat + pos * 4) 4
-  refine ⟨fresh1, keeps1, locals1, by simp [SrcType.size], d1, _, hp1, .seq exec1 ((Exec.loadWord room).checkThen pass),
+  refine ⟨fresh1, keeps1, locals1, by simp [SrcType.size], d1, _, hp1, .seq exec1 ((Exec.loadWord (Nat.le_trans room hc1.topped)).checkThen pass),
     fun j lt => by rw [set_below lt, same1 j lt], .i32 ?_, hc1⟩
   simp only [Env.set, if_pos, address, MemWidth.bytes]
   exact i32_load_holds (by simpa using lt32)
@@ -2635,7 +2636,8 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       rw [address]; simp only [MemWidth.bytes]; addr_omega
     refine ⟨fresh2, ((keeps1.chain keeps2).lower le).trans ⟨fun _ _ => rfl, Nat.le_refl _⟩, max d1 d2, _,
       .seq (exec1.mono (Nat.le_max_left _ _))
-        ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (Exec.storeWord room)).checkThen pass),
+        ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (Exec.storeWord (Nat.le_trans room hc2.topped))).checkThen
+          pass),
       .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
         (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun _ _ => rfl) ?_⟩
     rw [address]

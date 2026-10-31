@@ -101,6 +101,15 @@ theorem step_fact_value {prog : SrcProgram} {prims : Prims} {ix_fact_value ix_fa
   simp only [src_fact_value] at h
   faithful [Lanius.Mini.factValue]
 
+theorem proof_frame_agrees {prog : SrcProgram} {prims : Prims} {ix_frame_agrees : Nat} (fn : prog.funcs[ix_frame_agrees]? = some (src_frame_agrees)) (np : prims.isPrim ix_frame_agrees = false) {n : Nat} :
+    Stmt_frame_agrees prog prims ix_frame_agrees n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_frame_agrees] at h
+  faithful [Lanius.Mini.frameAgrees]
+
 theorem proof_load_byte_agrees {prog : SrcProgram} {prims : Prims} {ix_load_byte_agrees ix_Expr_agrees : Nat} (fn : prog.funcs[ix_load_byte_agrees]? = some (src_load_byte_agrees ix_Expr_agrees)) (np : prims.isPrim ix_load_byte_agrees = false)
     (ext_Expr_agrees : Certified (∀ {n : Nat}, Stmt_Expr_agrees prog prims ix_Expr_agrees n)) {n : Nat} :
     Stmt_load_byte_agrees prog prims ix_load_byte_agrees n := by

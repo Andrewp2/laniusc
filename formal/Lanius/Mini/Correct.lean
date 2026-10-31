@@ -306,6 +306,7 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
           State.push64, rspRegister, rbpRegister, r11Register, cursorRegister, this]
         rfl
       limit := heapAt.limit
+      top := heapAt.top
       heap := by
         intro a inside
         have inside' : a < frame.heapLimit := by rw [show frame.heapLimit = heap.limit from heapAt.limit.symm]; exact inside
@@ -373,6 +374,7 @@ theorem function_contract {prog : Program} {binary : Binary} (compiled : compile
       unchanged := exit.unchanged
       cursor := exit.cursor
       limit := exit.limit
+      top := exit.top
       heap := exit.heap
       io := exit.io }
 

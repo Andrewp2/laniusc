@@ -172,6 +172,7 @@ theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (re
     rintro i (inArgs | rfl)
     · exact compileArgs_fits base args 0 argsWithin _ _ i inArgs
     · exact ⟨calleeBound, argSlots_count base args, argSlots_fit base args 0, by omega, positive⟩
+  | frame target bytes => simp [Stmt.within] at within
   | ret values =>
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
     simp only [compileStmt, List.mem_append, List.mem_singleton, Stmt.temps]

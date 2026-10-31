@@ -36,10 +36,6 @@ abbrev Stmt_collected_with (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
   ∀ {x0 : Lanius.Mini.Collected} {x1 : Lanius.Mini.FileDecls} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCollected x0 v0 → RepFileDecls x1 v1 →
     RepCollected (Lanius.Mini.collectedWith x0 x1) w
 
-abbrev Stmt_const_names_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.ConstDecl} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 111 RepConstDecl) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 →
-    (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.constNamesIn x0 x1) w
-
 abbrev Stmt_extern_tree (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
     RepCTree (Lanius.Mini.externTree x0) w
@@ -87,6 +83,10 @@ abbrev Stmt_methods_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 abbrev Stmt_text_lanius_std (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepList 25 RepNat) (Lanius.Mini.textLaniusStd) w
+
+abbrev Stmt_text_read_stdin (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 25 RepNat) (Lanius.Mini.textReadStdin) w
 
 abbrev Stmt_text_write_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

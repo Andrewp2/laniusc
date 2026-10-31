@@ -46,7 +46,7 @@ theorem proof_Func_agrees {prog : SrcProgram} {prims : Prims} {ix_Func_agrees ix
   simp only [src_Func_agrees] at h
   faithful [Lanius.Mini.Func.agrees]
 
-theorem step_Stmt_agrees {prog : SrcProgram} {prims : Prims} {ix_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_Stmt_facts_after ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_Stmt_is_brk ix_Stmt_is_cont ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees ix_sys_agrees : Nat} (fn : prog.funcs[ix_Stmt_agrees]? = some (src_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_agrees ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_Stmt_facts_after ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_Stmt_is_brk ix_Stmt_is_cont ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees ix_sys_agrees)) (np : prims.isPrim ix_Stmt_agrees = false)
+theorem step_Stmt_agrees {prog : SrcProgram} {prims : Prims} {ix_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_Stmt_facts_after ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_Stmt_is_brk ix_Stmt_is_cont ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees ix_sys_agrees ix_frame_agrees : Nat} (fn : prog.funcs[ix_Stmt_agrees]? = some (src_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_agrees ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_Stmt_facts_after ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_Stmt_is_brk ix_Stmt_is_cont ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees ix_sys_agrees ix_frame_agrees)) (np : prims.isPrim ix_Stmt_agrees = false)
     (ext_unbox_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Stmt prog prims ix_unbox_of_mini_selfhost_Stmt n))
     (ext_Expr_subst : Certified (∀ {n : Nat}, Stmt_Expr_subst prog prims ix_Expr_subst n))
     (ext_subst_all : Certified (∀ {n : Nat}, Stmt_subst_all prog prims ix_subst_all n))
@@ -66,7 +66,8 @@ theorem step_Stmt_agrees {prog : SrcProgram} {prims : Prims} {ix_Stmt_agrees ix_
     (ext_load_word_agrees : Certified (∀ {n : Nat}, Stmt_load_word_agrees prog prims ix_load_word_agrees n))
     (ext_store_word_agrees : Certified (∀ {n : Nat}, Stmt_store_word_agrees prog prims ix_store_word_agrees n))
     (ext_divide_agrees : Certified (∀ {n : Nat}, Stmt_divide_agrees prog prims ix_divide_agrees n))
-    (ext_sys_agrees : Certified (∀ {n : Nat}, Stmt_sys_agrees prog prims ix_sys_agrees n)) {n : Nat}
+    (ext_sys_agrees : Certified (∀ {n : Nat}, Stmt_sys_agrees prog prims ix_sys_agrees n))
+    (ext_frame_agrees : Certified (∀ {n : Nat}, Stmt_frame_agrees prog prims ix_frame_agrees n)) {n : Nat}
     (ih_Stmt_agrees : Certified (Stmt_Stmt_agrees prog prims ix_Stmt_agrees n))
     (ih_seq_agrees : Certified (Stmt_seq_agrees prog prims ix_seq_agrees n))
     (ih_dead_agrees : Certified (Stmt_dead_agrees prog prims ix_dead_agrees n))

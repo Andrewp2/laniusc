@@ -57,6 +57,17 @@ structure HeapCorr (h : Memory.Heap) (w : World.State) (hp : Heap) : Prop where
   closed : w.fileHandles = []
   input : w.standardInput = hp.io.input
 
+/-- Frame memory starts at the limit. -/
+theorem HeapCorr.topped {h : Memory.Heap} {w : World.State} {hp : Heap} (_ : HeapCorr h w hp) :
+    hp.limit ≤ hp.top :=
+  hp.limit_le_top
+
+/-- The correspondence does not see the frame pointer. -/
+theorem HeapCorr.withFsp {h : Memory.Heap} {w : World.State} {hp : Heap} (hc : HeapCorr h w hp) (fsp : Nat) :
+    HeapCorr h w { hp with fsp := fsp } :=
+  ⟨hc.cursor, hc.pos, hc.unbounded, hc.small, hc.sized, hc.below, hc.apart, hc.unique, hc.bytes, hc.zero,
+    hc.out, hc.err, hc.closed, hc.input⟩
+
 /-! ## Lists of blocks -/
 
 theorem setByte_length : ∀ (bs : List UInt8) (i : Nat) (v : UInt8), (Memory.setByte bs i v).length = bs.length
@@ -321,10 +332,29 @@ theorem Exec.limit {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stm
   | seqContinued _ ih => exact ih
   | loopBroke _ _ ih => exact ih
   | loopContinued _ _ _ ih1 ih2 => exact ih2.trans ih1
-  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide => rfl
+  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame => rfl
   | storeWord => exact (Heap.writeLE_limit _ _ _ _).1
   | sys ran =>
     exact (Syscall.run_frame ran).1
+
+theorem Exec.top {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt} {out : Outcome}
+    (exec : Exec prog d env heap s out) : out.heap.top = heap.top := by
+  induction exec with
+  | seq _ _ ih1 ih2 => exact ih2.trans ih1
+  | loopNext _ _ _ ih1 ih2 => exact ih2.trans ih1
+  | call _ _ _ _ _ ih => exact ih
+  | seqReturned _ ih => exact ih
+  | ifTrue _ _ ih => exact ih
+  | ifFalse _ _ ih => exact ih
+  | loopReturned _ _ ih => exact ih
+  | seqBroke _ ih => exact ih
+  | seqContinued _ ih => exact ih
+  | loopBroke _ _ ih => exact ih
+  | loopContinued _ _ _ ih1 ih2 => exact ih2.trans ih1
+  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame => rfl
+  | storeWord => exact (Heap.writeLE_top _ _ _ _).1
+  | sys ran =>
+    exact Syscall.run_top ran
 
 /-! ## Lowered heap operations -/
 
