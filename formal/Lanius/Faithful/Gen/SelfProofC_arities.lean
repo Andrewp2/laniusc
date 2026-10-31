@@ -170,6 +170,34 @@ theorem step_compile_funcs {prog : SrcProgram} {prims : Prims} {ix_compile_funcs
   simp only [src_compile_funcs] at h
   faithful [Lanius.Mini.compileFuncs]
 
+theorem proof_fsp_load {prog : SrcProgram} {prims : Prims} {ix_fsp_load ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset : Nat} (fn : prog.funcs[ix_fsp_load]? = some (src_fsp_load ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset)) (np : prims.isPrim ix_fsp_load = false)
+    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
+    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
+    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n))
+    (ext_le32 : Certified (∀ {n : Nat}, Stmt_le32 prog prims ix_le32 n))
+    (ext_slot_offset : Certified (∀ {n : Nat}, Stmt_slot_offset prog prims ix_slot_offset n)) {n : Nat} :
+    Stmt_fsp_load prog prims ix_fsp_load n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fsp_load] at h
+  faithful [Lanius.Mini.fspLoad]
+
+theorem proof_fsp_save {prog : SrcProgram} {prims : Prims} {ix_fsp_save ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset : Nat} (fn : prog.funcs[ix_fsp_save]? = some (src_fsp_save ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_slot_offset)) (np : prims.isPrim ix_fsp_save = false)
+    (ext_concat_of_u8 : Certified (∀ {n : Nat}, Stmt_concat_of_u8 prog prims ix_concat_of_u8 n))
+    (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
+    (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n))
+    (ext_le32 : Certified (∀ {n : Nat}, Stmt_le32 prog prims ix_le32 n))
+    (ext_slot_offset : Certified (∀ {n : Nat}, Stmt_slot_offset prog prims ix_slot_offset n)) {n : Nat} :
+    Stmt_fsp_save prog prims ix_fsp_save n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fsp_save] at h
+  faithful [Lanius.Mini.fspSave]
+
 theorem proof_le32 {prog : SrcProgram} {prims : Prims} {ix_le32 ix_cons_of_u8 ix_single_of_u8 : Nat} (fn : prog.funcs[ix_le32]? = some (src_le32 ix_cons_of_u8 ix_single_of_u8)) (np : prims.isPrim ix_le32 = false)
     (ext_cons_of_u8 : Certified (∀ {n : Nat}, Stmt_cons_of_u8 prog prims ix_cons_of_u8 n))
     (ext_single_of_u8 : Certified (∀ {n : Nat}, Stmt_single_of_u8 prog prims ix_single_of_u8 n)) {n : Nat} :

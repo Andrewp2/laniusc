@@ -307,6 +307,12 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
         rfl
       limit := heapAt.limit
       top := heapAt.top
+      fsp := by
+        have := heapAt.fsp
+        simp only [fspRegister] at this
+        simp [entered, framed, stackChecked, State.branch, State.compare64, prologueState, State.alu64, State.alu, State.immediate32, State.move64,
+          State.push64, rspRegister, rbpRegister, r11Register, fspRegister, this]
+        rfl
       heap := by
         intro a inside
         have inside' : a < frame.heapLimit := by rw [show frame.heapLimit = heap.limit from heapAt.limit.symm]; exact inside

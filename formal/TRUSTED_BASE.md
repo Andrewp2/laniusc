@@ -820,9 +820,10 @@ for a process the trusted part is only this:
   world starting from the same `standardInput` (`startState input`).
   No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
   runtime").
-- The startup code sets rsp, r12 to r15 and calls `entry` (the driver's
-  convention is function 0, `main`), and `mov rdi, rax; mov eax, 60; syscall`
-  follows the call. Its 65 bytes are proved, not trusted. `entry` must take
+- The startup code sets rsp, r12 to r15 and rbx (the frame pointer, at the
+  heap's top) and calls `entry` (the driver's convention is function 0,
+  `main`), and `mov rdi, rax; mov eax, 60; syscall` follows the call. Its 75
+  bytes are proved, not trusted. `entry` must take
   no parameters.
 - `tools/elf_test.py` (gate step `elf`) runs such executables natively:
   exit statuses, a division by zero (SIGFPE) and a stack too small for the
@@ -872,11 +873,17 @@ and a run to a state with no step that is not a fault.
     heap's, has no events yet), so that the output it concludes equal to
     Core's world's is the code's own.
   - `compileProgram_correct` accepts any cursor.
+  - rbx holds the frame pointer `fsp`, an offset from r12 like the cursor
+    (`HeapAt.fsp`). Frame memory, the bytes from `limit` up to the heap's
+    top, is not mapped yet: the heap's top is its limit (`HeapAt.top`), and
+    the startup code sets rbx to the limit.
 - **Registers after the call.**
   - rsp is restored to `rsp + 8` and rbp is restored.
-  - rax, rcx, rdx, rsi, rdi, r11 and r13 may change (the code writes rdx,
-    rsi and rdi only for a `Sys` statement). r13 is callee-saved under SysV, so a
-    SysV caller's stub has to save it. The stubs also save r12, r14 and
+  - rax, rbx, rcx, rdx, rsi, rdi, r11 and r13 may change (the code writes rdx,
+    rsi and rdi only for a `Sys` statement). Each call saves rbx in the
+    caller's first result slot and loads it back after the return, so a
+    callee need not keep it. rbx and r13 are callee-saved under SysV, so a
+    SysV caller's stub has to save them. The stubs also save r12, r14 and
     r15, which they set.
   - RFLAGS is unspecified. DF is never changed, and the code has no string
     instructions.

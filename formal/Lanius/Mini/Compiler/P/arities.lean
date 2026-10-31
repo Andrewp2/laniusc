@@ -48,6 +48,14 @@ def slotLoad (slot : Nat) : List UInt8 :=
 def slotStore (slot : Nat) : List UInt8 :=
   72 :: 137 :: [133] ++ le32 (slotOffset slot)
 
+/-- mov [rbp + disp32], rbx: a call keeps the caller's frame pointer in its first result slot while the callee runs. -/
+def fspSave (slot : Nat) : List UInt8 :=
+  72 :: 137 :: [157] ++ le32 (slotOffset slot)
+
+/-- mov rbx, [rbp + disp32] -/
+def fspLoad (slot : Nat) : List UInt8 :=
+  72 :: 139 :: [157] ++ le32 (slotOffset slot)
+
 /-- mov rcx, rax; mov rax, [slot] -/
 def slotOperands (slot : Nat) : List UInt8 :=
   72 :: 137 :: [193] ++ slotLoad slot

@@ -40,6 +40,18 @@ def slotLoadBytes (slot : Nat) : List UInt8 :=
 def slotStoreBytes (slot : Nat) : List UInt8 :=
   memoryBytes .w64 false 0 rbpRegister (frameDisplacement slot)
 
+/-- rbx holds the frame pointer (`Heap.fsp`) as a heap offset. -/
+def fspRegister : Register := 3
+
+/-- `mov [rbp + disp32], rbx`: a call keeps the caller's frame pointer in its
+first result slot while the callee runs. -/
+def fspSaveBytes (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 false fspRegister rbpRegister (frameDisplacement slot)
+
+/-- `mov rbx, [rbp + disp32]` -/
+def fspLoadBytes (slot : Nat) : List UInt8 :=
+  memoryBytes .w64 true fspRegister rbpRegister (frameDisplacement slot)
+
 /-- `mov rcx, rax` -/
 def accToRcxBytes : List UInt8 := moveBytes .w64 rcxRegister 0
 
@@ -205,8 +217,9 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .cmp word operation slot => cmpBytes word operation slot
   | .jmp target => jumpBytes (relative (pc + 5) target)
   | .jz target => testBytes .w64 0 0 ++ branchBytes 4 (relative (pc + 9) target)
-  | .call callee args target count => copyBytes (argBase place.slots) args 0 ++
-      callBytes (relative (place.body + pc + 14 * args.length + 5) (place.entries.getD callee 0)) ++
+  | .call callee args target count => copyBytes (argBase place.slots) args 0 ++ fspSaveBytes target ++
+      callBytes (relative (place.body + pc + 14 * args.length + 12) (place.entries.getD callee 0)) ++
+      fspLoadBytes target ++
       copyBytes target (slotRange (argBase place.slots) count) 0
   | .ret sources => copyBytes 0 sources 0 ++ epilogueBytes
   | .bump shift => bumpSpec shift
@@ -255,6 +268,16 @@ theorem slotStore_eq (slot : Nat) : slotStore slot = slotStoreBytes slot := by
   rw [slotStore, le32_i32Bytes _ _ (slotOffset_toNat slot)]
   rfl
 
+theorem fspSave_eq (slot : Nat) : fspSave slot = fspSaveBytes slot := by
+  rw [fspSave, le32_i32Bytes _ _ (slotOffset_toNat slot)]
+  rfl
+
+theorem fspLoad_eq (slot : Nat) : fspLoad slot = fspLoadBytes slot := by
+  rw [fspLoad, le32_i32Bytes _ _ (slotOffset_toNat slot)]
+  rfl
+
+
+
 theorem uint8_ofNat_congr {a b : Nat} (same : a % 256 = b % 256) : UInt8.ofNat a = UInt8.ofNat b := by
   rw [← uint8_ofNat_mod a, same, uint8_ofNat_mod]
 
@@ -298,7 +321,7 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
   | cmp word operation slot => exact slotCompare_eq word operation slot
   | jmp target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
   | jz target => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
-  | call callee args target count => rw [Instr.encode, Instr.bytes, le32_eq]; rfl
+  | call callee args target count => rw [Instr.encode, Instr.bytes, le32_eq, fspSave_eq, fspLoad_eq]; rfl
   | ret sources => rfl
   | bump shift => simp only [Instr.encode, Instr.bytes, bumpBytes, le64_eq]; rfl
   | loadAt => rfl
@@ -335,6 +358,16 @@ theorem slotLoadBytes_length (slot : Nat) : (slotLoadBytes slot).length = 7 := b
 
 theorem slotStoreBytes_length (slot : Nat) : (slotStoreBytes slot).length = 7 := by
   simp only [slotStoreBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
+    List.length_map, List.length_range]
+  decide
+
+theorem fspSaveBytes_length (slot : Nat) : (fspSaveBytes slot).length = 7 := by
+  simp only [fspSaveBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
+    List.length_map, List.length_range]
+  decide
+
+theorem fspLoadBytes_length (slot : Nat) : (fspLoadBytes slot).length = 7 := by
+  simp only [fspLoadBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
     List.length_map, List.length_range]
   decide
 
@@ -389,7 +422,7 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
     decide
   | call callee args target count =>
     simp only [Instr.bytes, callBytes, displacementBytes, List.length_append, copyBytes_length,
-      slotRange_length, List.length_cons, List.length_nil, Instr.size]
+      slotRange_length, List.length_cons, List.length_nil, Instr.size, fspSaveBytes_length, fspLoadBytes_length]
   | ret sources =>
     have : epilogueBytes.length = 5 := by decide
     simp only [Instr.bytes, List.length_append, copyBytes_length, Instr.size, this]
