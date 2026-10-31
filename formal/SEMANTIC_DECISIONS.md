@@ -649,14 +649,21 @@ verified compiler's locals are 64-bit slots with no address. The design:
    rbx and rax hold the new frame pointer. `bytes` is below 2^31 (`within`).
    The simulation keeps `fsp ≤ top` (`Rel.fspLe`, `HeapAt.fspLe`), so the
    frame pointer is below 2^62 and rbx's subtraction is exact.
-2. **Addressed bindings.** A local is addressed when the program takes its
-   address: an array local passed where a slice is expected (later `&x`
-   and `&self`). Its slot holds its frame address, and its value lives in
-   frame memory in the raw-slice element layout (`ElementLayout`: an `i32`
-   in 4 bytes, a word type in 8 bytes a word), so a slice of it is the
-   same (pointer, length) pair as a raw slice and the callee runs the code
-   it runs for a raw slice. Element reads and writes of the local itself
-   are loads and stores at its address.
+2. **One slice layout (decided 10-31).** Every slice, safe or raw, has one
+   element layout, laniusc's native one (`stdlib/core/mem.lani`): an `i32`
+   packed at stride +4 from the pointer, a `u8` packed at stride +1, every
+   other scalar as one 8-byte word and a struct or enum as its native words,
+   both running down from the pointer (stride -8 times the element's native
+   words). The verified compiler never reads `[T]` two ways: a function
+   with a `[T]` parameter runs one body whether its argument is a raw slice
+   or a safe one. An array local passed as a slice is therefore stored in
+   that layout wherever it lives, in a heap view (point 5) or in a frame
+   block by F5's call sequence, and its slice is the same (pointer, length)
+   pair as a raw slice of those bytes. So `FrameCorr`'s places carry a
+   layout: word per slot for a reference to a scalar or a struct (F5), the
+   slice layout for an array passed as a slice. Element reads and writes of
+   an addressed local itself are loads and stores at its address in its
+   layout.
 3. **The correspondence.** The simulation relation carries the addressed
    cells (cell, type, address); for each, frame memory at the address holds
    the cell's value in that layout (`FrameCorr`, beside `HeapCorr`). A safe

@@ -15,6 +15,11 @@ they are, never edited.
    has (i32, bool, u8, u16, u32, u64, usize, isize, i8, i16, i64, char, f32,
    f64) or `core::option::Option` of one; others are counted by the type
    that stops them. A float goes in and out as its bit pattern (FLOATS).
+   A result may also be a struct or an enum, `core::result::Result` among
+   them, whose fields and payloads are such types or enums in turn (an
+   error enum with payloads, a struct holding one): the wrapper returns its
+   tag or one scalar leaf, through one helper per level. A type named by an
+   item import (`import core::result::Result;`) is the imported module's.
 2. Each testable target gets a program of its own: a first file, the module
    app::main, holding one wrapper `w` that takes scalar arguments (an
    Option as a flag and a payload), calls the target and returns an i32 (a
@@ -238,7 +243,7 @@ class Module:
                     variants = None
                     break
                 variants.append((vm.group(1), [norm(x) for x in split_top(vm.group(2))] if vm.group(2) else []))
-            if variants:
+            if variants is not None:
                 self.enums[em.group(1)] = ([g.strip() for g in em.group(2).split(',')] if em.group(2) else [], variants)
         self.fns = {}           # name -> fn (top level)
         self.trait_methods = []  # (trait text, impl type, fn)
@@ -331,6 +336,12 @@ def resolve(mods, module, t, subst):
     path, name = base.rsplit('::', 1) if '::' in base else (module, base)
     if path not in mods:
         return None
+    if '::' not in base and name not in mods[path].types and name not in mods[path].aliases:
+        # An item import `import p::Name;` names the type of module p.
+        home = next((i.rsplit('::', 1)[0] for i in mods[path].imports
+                     if i.endswith('::' + name) and i.rsplit('::', 1)[0] in mods), None)
+        if home:
+            path = home
     if name in mods[path].aliases and not targs:
         return resolve(mods, path, mods[path].aliases[name], {})
     if name in mods[path].structs and not targs:
@@ -381,8 +392,11 @@ def flat_enum(ty):
 
 
 def leaf_type(ty):
-    """A type a struct field or a variant payload may have."""
-    return bool(ty) and (ty in SCALARS or (ty.startswith('struct:') and bool(STRUCTS.get(ty))) or flat_enum(ty))
+    """A type a struct field or a variant payload may have: a scalar, a struct
+    or an enum (of such payloads), so a Result's error may be an enum with
+    payloads or a struct holding one."""
+    return bool(ty) and (ty in SCALARS or (ty.startswith('struct:') and bool(STRUCTS.get(ty))) or
+                         (ty.startswith('enum:') and bool(ENUMS.get(ty))))
 
 
 def variant_leaves(ps):
@@ -505,6 +519,8 @@ def results_of(ret):
     """The parts of a result the wrapper can return, one wrapper each."""
     if ret.startswith('struct:') or array_parts(ret):
         return [f'f{j}:{sub}' for j, (_, ty) in enumerate(leaves(ret)) for sub in results_of(ty)]
+    if ret.startswith('enum:') and not ENUMS[ret][1]:
+        return []  # an enum without variants has no value
     if flat_enum(ret):
         return ['tag']
     if ret.startswith('enum:'):
@@ -580,6 +596,45 @@ def scalar_lines(base, part):
     return lines
 
 
+def part_lines(base, part, helpers):
+    """The statements that return part of r, of type base, as an i32: those of
+    scalar_lines, or for a leaf of an enum's payload or of a struct inside a
+    payload, a match or a field read and a helper of its own (appended to
+    helpers) for the leaf's part."""
+    if base.startswith('enum:') and part != 'tag':
+        home, vs = ENUMS[base]
+        at, sub = part[1:].split(':', 1)
+        i, n = (int(x) for x in at.split('_'))
+        j, path, lty = variant_leaves(vs[i][1])[n]
+        name = f'oracle_part{len(helpers) + 1}'
+        helpers.append(None)
+        k = len(helpers) - 1
+        arms = [f'{variant_pattern(home, v, ps, j if q == i else None)} -> '
+                f'{f"{name}(x{path})" if q == i else "0"}' for q, (v, ps) in enumerate(vs)]
+        helpers[k] = ['', f'fn {name}(r: {type_text(lty)}) -> i32 {{'] + part_lines(lty, sub, helpers) + ['}']
+        return [f'    let t: i32 = match (r) {{ {", ".join(arms)} }};', '    return t;']
+    if (base.startswith('struct:') or array_parts(base)) and part.startswith('f'):
+        j, sub = part[1:].split(':', 1)
+        path, lty = leaves(base)[int(j)]
+        name = f'oracle_part{len(helpers) + 1}'
+        helpers.append(None)
+        k = len(helpers) - 1
+        helpers[k] = ['', f'fn {name}(r: {type_text(lty)}) -> i32 {{'] + part_lines(lty, sub, helpers) + ['}']
+        return [f'    let y: {type_text(lty)} = r{path};', f'    let t: i32 = {name}(y);', '    return t;']
+    return scalar_lines(base, part)
+
+
+def all_leaves(ty):
+    """Every scalar leaf type of a result type, through structs and enums."""
+    if ty.startswith('enum:'):
+        return [x for _, ps in ENUMS[ty][1] for p in ps for x in all_leaves(p)]
+    if ty.startswith('struct:') or array_parts(ty):
+        return [x for _, lty in leaves(ty) for x in all_leaves(lty)]
+    if ty.startswith('Option<'):
+        return [ty[7:-1]]
+    return [ty]
+
+
 def wrapper_text(mods, t, part):
     """The first file of a target's program, and the wrapper's scalar parameter types."""
     fn = t.fn
@@ -588,9 +643,7 @@ def wrapper_text(mods, t, part):
         t.ret.startswith('Option<') else {t.module}
     if t.ret not in FLOATS:
         # a float leaf of a struct, enum or Option result is read by to_bits
-        rleaves = [lty for _, ps in ENUMS[t.ret][1] for _, _, lty in variant_leaves(ps)] \
-            if t.ret.startswith('enum:') else [lty for _, lty in leaves(t.ret)] \
-            if t.ret.startswith('struct:') else [t.ret[7:-1]] if t.ret.startswith('Option<') else []
+        rleaves = all_leaves(t.ret)
         imports |= {f'core::{f}' for f in FLOATS if f in rleaves}
     if t.trait:
         imports.add(trait_home(mods, t).rsplit('::', 1)[0])
@@ -653,25 +706,29 @@ def wrapper_text(mods, t, part):
             arms = [f'{variant_pattern(home, v, ps, None)} -> {i}' for i, (v, ps) in enumerate(vs)]
             helper = []
         else:
-            at, part = part[1:].split(':')
+            at, part = part[1:].split(':', 1)
             i, n = (int(x) for x in at.split('_'))
             j, path, base = variant_leaves(vs[i][1])[n]
             arms = [f'{variant_pattern(home, v, ps, j if k == i else None)} -> '
                     f'{f"oracle_part(x{path})" if k == i else "0"}' for k, (v, ps) in enumerate(vs)]
-            helper = ['', f'fn oracle_part(r: {type_text(base)}) -> i32 {{'] + scalar_lines(base, part) + ['}']
+            more = []
+            helper = ['', f'fn oracle_part(r: {type_text(base)}) -> i32 {{'] + part_lines(base, part, more) + ['}']
+            helper += [line for h in more for line in h]
         lines.append(f'    let t: i32 = match (r) {{ {", ".join(arms)} }};')
         lines += ['    return t;', '}'] + helper
         return '\n'.join(lines) + '\n', wparams
     if part.startswith('f'):
         # One scalar leaf of a struct result, returned as a scalar result is.
-        j, part = part[1:].split(':')
+        j, part = part[1:].split(':', 1)
         path, base = leaves(t.ret)[int(j)]
         lines.append(f'    let r0: {ret} = {call};')
         lines.append(f'    let r: {type_text(base)} = r0{path};')
     else:
         lines.append(f'    let r: {ret} = {call};')
-    lines += scalar_lines(base, part)
+    more = []
+    lines += part_lines(base, part, more)
     lines.append('}')
+    lines += [line for h in more for line in h]
     if t.ret == 'Option<bool>' and part == 'val':
         lines += ['', 'fn oracle_flag(b: bool) -> i32 {', '    if (b) {', '        return 1;', '    }', '    return 0;', '}']
     return '\n'.join(lines) + '\n', wparams
