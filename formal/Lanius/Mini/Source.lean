@@ -72,6 +72,7 @@ import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeArray
 import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.lowerBody
 import all Lanius.Mini.Compiler.P.declareFuncs
@@ -96,7 +97,7 @@ import all Lanius.Mini.Compiler.P.Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
 import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
--- import parts: Lanius.Mini.Compiler BinOp.size Code.size DivOp.size Instr.size Piece.size SrcType.isI32 SrcType.isScalar SrcType.isUint SrcType.same SrcType.size arith boolBits checkThen evalArrayIndex pickElement repeatType compileOptimized compileSource declareProgram enumVariants fieldOffset funcsReturn lowerFuncs maxSize offsetOrArith sigs sizes storeEvalThen storeEvalWord structFields
+-- import parts: Lanius.Mini.Compiler BinOp.size Code.size DivOp.size Instr.size Piece.size SrcType.isI32 SrcType.isScalar SrcType.isUint SrcType.same SrcType.size arith boolBits checkThen evalArrayIndex pickElement storeArray putElement repeatType compileOptimized compileSource declareProgram enumVariants fieldOffset funcsReturn lowerFuncs maxSize offsetOrArith sigs sizes storeEvalThen storeEvalWord structFields
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.FArith_opcode
 public import Lanius.Mini.Compiler.P.Lists_empty
@@ -114,6 +115,7 @@ public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerLoadType
 public import Lanius.Mini.Compiler.P.repeatType
 public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.storeArray
 public import Lanius.Mini.Compiler.P.storeEvalWord
 public import Lanius.Mini.Compiler.P.structFields
 public import Lanius.Mini.Compiler.P.wordStride
@@ -584,6 +586,35 @@ theorem evalArrayIndex_some {b : Binding} {slot : Nat} {index : Option Evaluated
         simp only [Option.some.injEq] at h
         exact ⟨e, n, i, hty, rfl, c.1.1.1, c.1.1.2, c.1.2, c.2, h.symm⟩
       · simp at h
+  all_goals simp at h
+
+/-- `array[index] = value` of an array local: the index evaluated into
+`slot`, checked below the length, then the value evaluated into `slot + 1`
+and copied over the element. -/
+theorem storeArray_some {b : Binding} {slot : Nat} {index value : Option Evaluated} {s : Stmt}
+    (h : storeArray b slot index value = some s) :
+    ∃ e n i v, b.ty = .array e n ∧ index = some i ∧ value = some v ∧
+      (i.ty.isI32 || i.ty.isUint .usize) = true ∧ v.ty.same e = true ∧
+      0 < n ∧ n < 2147483648 ∧ 0 < e.size ∧
+      s = .seq i.stmt (checkThen slot (.compare .u64 .lt (.var slot) (.lit (BitVec.ofNat 64 n)))
+        (.seq v.stmt (putElement slot b.slot e.size 0 n))) := by
+  unfold storeArray at h
+  split at h
+  case h_8 e n hty =>
+    simp only [storeArrayElement] at h
+    split at h
+    · simp at h
+    · rename_i i
+      split at h
+      · simp at h
+      · rename_i v
+        simp only [storePick] at h
+        split at h
+        · rename_i c
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+          simp only [Option.some.injEq] at h
+          exact ⟨e, n, i, v, hty, rfl, rfl, c.1.1.1.1, c.1.1.1.2, c.1.1.2, c.1.2, c.2, h.symm⟩
+        · simp at h
   all_goals simp at h
 
 end Lanius.Mini

@@ -9,7 +9,7 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmtC_sigs
-public import Lanius.Faithful.Gen.SelfStmtC_storeEvalWord
+public import Lanius.Faithful.Gen.SelfStmtC_storeArray
 import all Lanius.Faithful.Gen.SelfSrcC_sigs
 import all Lanius.Mini.Compiler.P.sigs
 

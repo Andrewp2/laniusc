@@ -2190,9 +2190,14 @@ theorem setIndex_fails {scope : List Binding} {frame : Nat → Nat} {st : State}
     simp only [execStmt, run, Failing] at this
     exact (trap_within this undefined within).elim
 
-theorem stops_setIndex {slice : Nat} {index value : SrcExpr} : SrcStops sp mp n (.setIndex slice index value) := by
+theorem stops_setIndex {slice : Nat} {index value : SrcExpr}
+    (arrayCase : SrcStops sp mp n (.setIndexEval slice (.ePure index) (.ePure value))) :
+    SrcStops sp mp n (.setIndex slice index value) := by
   intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
-  simp only [SrcStmt.lower] at ok
+  simp only [SrcStmt.lower, lowerSetIndexAny] at ok
+  split at ok
+  case isTrue =>
+    exact arrayCase (ret := ret) (by simp only [SrcStmt.lower, SrcEff.eval]; exact ok) corr fr fresh le hc within fails
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
   simp only [lowerSetIndex] at ok

@@ -4201,12 +4201,16 @@ theorem stmt_letIndex (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {sli
   · exact stmt_letIndex_word ih ok corr fr fresh le hc run bound
 
 theorem stmt_setIndex {slice : Nat} {index value : SrcExpr}
+    (arrayCase : (SrcStmt.setIndexEval slice (.ePure index) (.ePure value)).lower (sigs sp.funcs) sp.decls ret
+      scope next = some stmt → Simulates mp hp ret scope frame base st env stmt c st')
     (ok : (SrcStmt.setIndex slice index value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndex slice index value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
-  simp only [SrcStmt.lower] at ok
+  simp only [SrcStmt.lower, lowerSetIndexAny] at ok
+  split at ok
+  case isTrue => exact arrayCase (by simp only [SrcStmt.lower, SrcEff.eval]; exact ok)
   replace ok := guarded_some ok
   obtain ⟨stmt, ok, rfl⟩ := ok
   simp only [lowerSetIndex] at ok

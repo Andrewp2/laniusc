@@ -388,7 +388,8 @@ still a parse tree of the same tokens. Trusted:
     node `EStruct`/`LetStruct` at the array type, whose meaning is Core's
     array value (section 2). Copies of a pure x have the value Core's
     `[x; n]` gives, which evaluates x once; `a[i]` of an array local is
-    read as `a[i]` of a slice local is (`EffTy.indexArray`);
+    read as `a[i]` of a slice local is (`EffTy.indexArray`), and so is
+    `a[i] = v`, with v read at the element type (`indexElem`, 10-31);
   - a local is the byte offset of its binding (a parameter, `let` or match
     binder) from the start of its function's name (since 10-25, so that an
     edit to one function renumbers the locals of no other);

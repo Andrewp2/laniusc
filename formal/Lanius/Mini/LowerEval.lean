@@ -1226,6 +1226,60 @@ theorem pickElement_exec {mp : Program} {d : Nat} {hp : Heap} {out : Outcome} {s
           simp [Expr.eval, Word.holds, CmpOp.holdsU, ne]
         · exact ih (k + 1) (by omega) (by omega)
 
+theorem fieldsHold_replicate_set {e : SrcType} {v : Value} {env env' : Env} :
+    ∀ {n : Nat} {vs : List Value} {slot pos : Nat}, FieldsHold (List.replicate n e) vs env slot → pos < n →
+      e.HoldsAt v env' (slot + pos * e.size) →
+      (∀ j, j < slot + pos * e.size ∨ slot + pos * e.size + e.size ≤ j → env' j = env j) →
+      FieldsHold (List.replicate n e) (Semantics.setValue vs pos v) env' slot
+  | 0, _, _, _, _, lt, _, _ => by omega
+  | n + 1, _, slot, pos, h, lt, held, away => by
+    rw [List.replicate_succ] at h ⊢
+    cases h with
+    | cons head rest =>
+      cases pos with
+      | zero =>
+        simp only [Semantics.setValue]
+        refine .cons (by simpa using held) (rest.congr fun i _ => ?_)
+        exact away _ (.inr (by simp only [Nat.zero_mul]; omega))
+      | succ pos =>
+        simp only [Semantics.setValue]
+        refine .cons (head.congr fun i below => away _ (.inl ?_)) ?_
+        · rw [Nat.succ_mul]; omega
+        · refine fieldsHold_replicate_set rest (by omega) ?_ ?_
+          · rw [show slot + e.size + pos * e.size = slot + (pos + 1) * e.size by rw [Nat.succ_mul]; omega]
+            exact held
+          · intro j hj
+            exact away j (by rw [Nat.succ_mul]; omega)
+
+theorem putElement_exec {mp : Program} {d : Nat} {hp : Heap} {out : Outcome} {slot base size pos : Nat} {env : Env}
+    (at_ : (env slot).toNat = pos)
+    (exec : Exec mp d (env.setFrom (base + pos * size) (slotVars (slot + 1) size)) hp .skip out) :
+    ∀ (count k : Nat), k ≤ pos → pos < k + count → Exec mp d env hp (putElement slot base size k count) out := by
+  intro count
+  induction count with
+  | zero => intro k le lt; omega
+  | succ count ih =>
+    intro k le lt
+    rw [putElement]
+    split
+    · have : pos = k := by omega
+      subst this
+      exact assignFrom_exec _ _ exec
+    · by_cases eq : pos = k
+      · subst eq
+        refine .ifTrue ?_ (assignFrom_exec _ _ exec)
+        have : env slot = BitVec.ofNat 64 pos := by rw [← at_]; simp
+        simp [Expr.eval, Word.holds, CmpOp.holdsU, this]
+      · refine .ifFalse ?_ ?_
+        · have small := (env slot).isLt
+          have ne : env slot ≠ BitVec.ofNat 64 k := by
+            intro h
+            have := congrArg BitVec.toNat h
+            rw [BitVec.toNat_ofNat, at_, Nat.mod_eq_of_lt (by omega)] at this
+            exact eq this
+          simp [Expr.eval, Word.holds, CmpOp.holdsU, ne]
+        · exact ih (k + 1) (by omega) (by omega)
+
 theorem eval_index_array {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx : Core.Expr}
     {vs : List Value} {v : Value} {st1 : State}
     (base : evalExpr (k + 1) P st (.local slice) = .done (.array vs) st)
@@ -1970,6 +2024,63 @@ theorem field_assign_eff {P : Core.Program} {scope frame st env} (corr : Corr sc
           exact run.2.symm
       all_goals simp at run
 
+/-- Core's `array[idx] = e` on an array local: the index, its bound, then the
+value, then the element replaced. -/
+theorem index_assign_eff {P : Core.Program} {scope frame st env} (corr : Corr scope frame st env)
+    {id : Nat} {b : Binding} (found : lookup scope id = some b) {vs : List Value}
+    (entry : st.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.array vs)⟩)
+    {idx e : Core.Expr} {k : Nat} {u : Value} {st' : State}
+    (views : st.i32ArrayViews = [])
+    (idxGrows : ∀ {v s}, evalExpr (k + 1) P st idx = .done v s → Grows st s)
+    (eGrows : ∀ {s1 v s2}, evalExpr (k + 2) P s1 e = .done v s2 → Grows s1 s2)
+    (run : evalExpr (k + 3) P st (.assign .set (.index (.local id) idx) e) = .done u st') :
+    ∃ iv st1 pos old rv st2, evalExpr (k + 1) P st idx = .done iv st1 ∧ Semantics.integerIndex iv = .ok pos ∧
+      vs[pos]? = some old ∧ evalExpr (k + 2) P st1 e = .done rv st2 ∧ st'.heap = st2.heap ∧
+      (st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.array vs)⟩ →
+        st' = { st2 with cells := Semantics.replaceCell st2.cells (frame b.slot) (.array (Semantics.setValue vs pos rv)) }) := by
+  have base : Semantics.evalPlace (k + 1) P st .read (.local id) =
+      .done { root := frame b.slot, projections := [], value := some (.array vs) } st := by
+    simp [Semantics.evalPlace, corr.cellId, found, entry]
+  rw [evalExpr, Semantics.evalPlace, base] at run
+  simp only at run
+  split at run
+  · rename_i resolved st1 placeRun
+    split at placeRun
+    · rename_i iv afterIndex indexRun
+      have views1 := (idxGrows indexRun views).1
+      split at placeRun
+      · simp at placeRun
+      rename_i pos posOk
+      split at placeRun
+      · rename_i old got
+        simp only [Semantics.Outcome.done.injEq] at placeRun
+        obtain ⟨rfl, rfl⟩ := placeRun
+        split at run
+        · rename_i rv st2 valueRun
+          have views2 := (eGrows valueRun views1).1
+          refine ⟨iv, afterIndex, pos, old, rv, st2, indexRun, posOk, got, valueRun, ?_, fun entry2 => ?_⟩
+          · simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?,
+              Semantics.writeResolvedPlaceNative] at run
+            split at run
+            · rename_i assigned written
+              obtain ⟨cells, rfl⟩ := writeResolvedPlace_cells written
+              rw [sync_ok (st := { st2 with cells }) views2, ite_self] at run
+              simp only [Semantics.Outcome.done.injEq] at run
+              rw [← run.2]
+            · simp at run
+          · have synced := sync_ok
+              (st := { st2 with cells := Semantics.replaceCell st2.cells (frame b.slot) (.array (Semantics.setValue vs pos rv)) })
+              views2
+            simp only [Semantics.evalAssignValue, Semantics.assignOpBinary?,
+              Semantics.writeResolvedPlaceNative, Semantics.writeResolvedPlace, entry2, List.nil_append,
+              Semantics.replaceProjectedValue, got, assignCell_some entry2, synced, ite_self,
+              Semantics.Outcome.done.injEq] at run
+            exact run.2.symm
+        all_goals simp at run
+      · simp at placeRun
+    all_goals simp at placeRun
+  all_goals simp at run
+
 /-- `x.field = value` for a scalar field: the value in `next`, then copied
 to the field's slot. -/
 theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : Nat} {value : SrcEff}
@@ -2114,6 +2225,109 @@ theorem eval_setIndex_eff {P : Core.Program} {k : Nat} {st : State} {slice : Nat
     all_goals simp at placeRun
   all_goals simp at run
 
+/-- `array[index] = value` on an array local: the index in `next`, checked
+below the length, the value in `next + 1`, then copied over the element. -/
+theorem stmt_setIndexEval_array (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat} {index value : SrcEff}
+    {b : Binding} (found : lookup scope slice = some b)
+    (ok : storeArray b next (index.eval (sigs sp.funcs) sp.decls scope next)
+      (value.eval (sigs sp.funcs) sp.decls scope (next + 1)) = some stmt)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp)
+    (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndexEval slice index value).toCore = .done c st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Simulates mp hp ret scope frame base st env stmt c st' := by
+  obtain ⟨e, n, i, w, bty, indexOk, valueOk, kind, wSame, npos, nsmall, esize, rfl⟩ := storeArray_some ok
+  have wty := SrcType.same_eq wSame
+  have bmem := (lookup_mem found).1
+  obtain ⟨v0, entry, holds0⟩ := corr.values b bmem
+  rw [bty] at holds0
+  cases holds0 with
+  | @array _ _ vs _ _ elems =>
+  simp only [SrcStmt.toCore, execStmt] at run
+  split at run
+  · rename_i u st3 assignRun
+    simp only [Semantics.Outcome.done.injEq] at run
+    obtain ⟨rfl, rfl⟩ := run
+    cases fuel with
+    | zero => simp [evalExpr] at assignRun
+    | succ k =>
+    cases k with
+    | zero => simp [evalExpr, Semantics.evalPlace] at assignRun
+    | succ k =>
+    cases k with
+    | zero =>
+      simp only [evalExpr, Semantics.evalPlace] at assignRun
+      repeat' split at assignRun
+      all_goals simp_all [evalExpr]
+    | succ k =>
+    obtain ⟨iv, st1, pos, old, rv, st2, indexRun, posOk, got, valueRun, heapEq, write⟩ :=
+      index_assign_eff corr found entry fresh.2 (fun r => eff_grown r) (fun r => eff_grown r) assignRun
+    have bound2 : st2.heap.nextAddress ≤ hp.limit := by rw [← heapEq]; exact bound
+    have views1 := (eff_grown indexRun fresh.2).1
+    obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+      ihe (k + 1) (by omega) indexOk corr fr fresh hc indexRun
+        (Nat.le_trans ((eff_grown valueRun views1).2) bound2)
+    have limit1 := exec1.limit_normal
+    obtain ⟨fresh2, keeps2, locals2, -, d2, env2, hp2, exec2, same2, holds2, hc2⟩ :=
+      ihe (k + 2) (by omega) valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
+        fresh1 hc1 valueRun (by rw [limit1]; exact bound2)
+    have scalar : i.ty.isScalar = true := by
+      simp only [Bool.or_eq_true] at kind
+      rcases kind with c | c
+      · rw [eq_of_isI32 c]; rfl
+      · rw [eq_of_isUint c]; rfl
+    have posEq1 := index_toNat (t := { expr := .var next, ty := i.ty }) kind (holds_var holds1 scalar) posOk
+    have holdsI := holds_var (holds1.congr (env' := env2) (slot' := next) fun _ below =>
+      same2 _ (by have := SrcType.size_scalar scalar; omega)) scalar
+    have posEq := index_toNat (t := { expr := .var next, ty := i.ty }) kind holdsI posOk
+    simp only [Expr.eval] at posEq posEq1
+    have lt : pos < n := by
+      have := (List.getElem?_eq_some_iff.mp got).1
+      rwa [elems.length, List.length_replicate] at this
+    have room : b.slot + n * e.size ≤ next := by
+      have := fr.slots b bmem
+      rw [bty] at this
+      simpa only [SrcType.size] using this
+    have inside : pos * e.size + e.size ≤ n * e.size := by
+      have := Nat.mul_le_mul_right e.size (Nat.succ_le_of_lt lt)
+      rw [Nat.succ_mul] at this
+      exact this
+    have pass : (Expr.compare .u64 .lt (.var next) (.lit (BitVec.ofNat 64 n))).eval env1 = 1 := by
+      have small : n < 2 ^ 64 := by omega
+      simp [Expr.eval, Word.holds, CmpOp.holdsU, BitVec.ult, posEq1, Nat.mod_eq_of_lt small, lt]
+    have entry2 : st2.cellEntry? (frame b.slot) = some ⟨frame b.slot, some (.array vs)⟩ := by
+      rw [(keeps1.chain keeps2).cells _ (corr.below fresh b bmem)]; exact entry
+    rw [write entry2]
+    rw [wty] at holds2
+    have putExec : Exec mp 0 env2 hp2 (putElement next b.slot e.size 0 n)
+        (.normal (env2.setFrom (b.slot + pos * e.size) (slotVars (next + 1) e.size)) hp2) :=
+      putElement_exec posEq .skip n 0 (Nat.zero_le _) (by omega)
+    have away : ∀ j, j < b.slot + pos * e.size ∨ b.slot + pos * e.size + e.size ≤ j →
+        env2.setFrom (b.slot + pos * e.size) (slotVars (next + 1) e.size) j = env2 j :=
+      fun j h => setFrom_outside _ _ _ j (by rw [slotVars_length]; exact h)
+    have held : e.HoldsAt rv (env2.setFrom (b.slot + pos * e.size) (slotVars (next + 1) e.size))
+        (b.slot + pos * e.size) := holds2.congr fun j below => by
+      rw [setFrom_value _ _ env2 (Insens.copy (.inr (.inr (by omega)))) j _ (slotVars_get _ e.size j below)]
+      simp only [Expr.eval]
+    have holdsA : (SrcType.array e n).HoldsAt (.array vs) env2 b.slot :=
+      (SrcType.HoldsAt.array elems).congr fun j lt => by
+        have : j < n * e.size := by simpa only [SrcType.size] using lt
+        rw [same2 _ (by omega), same1 _ (by omega)]
+    cases holdsA with
+    | @array _ _ _ _ _ elems2 =>
+    refine ⟨assigned_fresh fresh2 _ _, ((keeps1.chain keeps2).lower le).trans (assigned_keeps (fr.above b bmem) _ _),
+      max d1 d2, _,
+      .seq (exec1.mono (Nat.le_max_left _ _))
+        ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (putExec.mono (Nat.zero_le _))).checkThen pass),
+      .next ((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
+        (fun j lt => (same2 j (by omega)).trans (same1 j lt))).assign fr bmem (fun j h => away j ?_) ?_) hc2⟩
+    · rw [bty] at h
+      simp only [SrcType.size] at h
+      omega
+    · rw [bty]
+      exact .array (fieldsHold_replicate_set elems2 lt held away)
+  all_goals simp at run
+
 /-- `slice[index] = value` on a raw `i32` slice: the index in `next`, the
 value in `next + 1`, then the 32-bit store. -/
 theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat} {index value : SrcEff}
@@ -2128,7 +2342,7 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
   · simp at ok
   rename_i b found
   split at ok
-  · simp at ok
+  · exact stmt_setIndexEval_array ihe found ok corr fr fresh le hc run bound
   rename_i element elementOk
   have bty := eq_of_elementOf elementOk
   simp only [storeEvalElement] at ok
@@ -2729,7 +2943,7 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | free => exact stmt_free ok corr fresh hc run
         | letSlice => exact stmt_letSlice here ok corr fr fresh le hc run bound
         | letIndex => exact stmt_letIndex here (fun ok' => stmt_letEval here hereE ok' corr fr fresh le hc run bound) ok corr fr fresh le hc run bound
-        | setIndex => exact stmt_setIndex ok corr fresh hc run bound
+        | setIndex => exact stmt_setIndex (fun ok' => stmt_setIndexEval belowE ok' corr fr fresh le hc run bound) ok corr fresh hc run bound
         | letEval => exact stmt_letEval here hereE ok corr fr fresh le hc run bound
         | setEval => exact stmt_setEval belowE ok corr fr fresh le hc run bound
         | ifEval => exact stmt_ifEval here hereE ok corr fr fresh le hc run bound

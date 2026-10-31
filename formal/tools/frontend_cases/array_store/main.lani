@@ -1,0 +1,20 @@
+fn id(x: i32) -> i32 {
+    return x;
+}
+
+fn fill(n: i32) -> i32 {
+    let q: [i32; 4] = [0; 4];
+    q[0] = n;
+    q[n] = 5;
+    let i: usize = 2;
+    q[i] = q[0] + 1;
+    q[id(3)] = id(n);
+    return q[0] + q[1] + q[2] + q[3];
+}
+
+fn bytes(n: i32) -> u8 {
+    let b: [u8; 3] = [1, 2, 3];
+    b[1] = 9;
+    b[n] = 4;
+    return b[1];
+}

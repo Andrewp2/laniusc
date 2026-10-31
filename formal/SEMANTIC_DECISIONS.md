@@ -601,11 +601,72 @@ Core's array, held by value:
   `let x: T = a[i];` is read as `slice[i]` is (`LetIndex`), and lowered as
   the `let` of the indexed value (`lower_let_index_any`), whose Core
   meaning is the same.
-- Not yet: `a[i] = v` on an array local, an array passed where a slice is
+- `a[i] = v` on an array local, i an `i32` or `usize`, evaluates i into its
+  slot, checks `i <u N`, then evaluates v (Core checks the bound before it
+  evaluates the value, as for a slice) and copies it over element i by the
+  same chain of compares (`putElement`, `storeArray`). With pure operands it
+  is read as `slice[i] = v` is (`SetIndex`) and lowered as the effectful
+  form (`lower_set_index_any`). The front end reads v at the element type
+  (`index_elem`), so `bytes[i] = 48` is a `u8` store.
+- Not yet: an array passed where a slice is
   expected (Core's coercion of `[T; N]` to `[T]`), `for` over an array,
   `==` of arrays, `core::mem::i32_array_data_ptr`, a length that names a
   constant, and arrays of floats (no element layout for float slices yet;
   an array of floats is held by value and should work, but is untested).
+
+### Addressed locals (decided 10-31, F6; being built)
+
+Core names a local's storage in three places the verified compiler does not
+yet have: the coercion of `[T; N]` to `[T]` (Core's `.slice T cell
+projections start length`, so `format_u32(bytes, ..)` fills the caller's
+buffer), `&T` and `&self` (`.reference`, F5: `fn bump(&self)` writes the
+caller's value), and `i32_array_data_ptr` (a pointer to the array). The
+verified compiler's locals are 64-bit slots with no address. The design:
+
+1. **Frame memory in the IR.** The mini heap's bytes from `limit` up to a
+   new `top` are frame memory, handed out downward, one block per
+   activation, by a statement `Frame slot bytes` (the frame pointer `fsp`
+   drops by `bytes`, `slot` gets the new `fsp`; below `limit` there is no
+   run, as for an allocation past the limit). A call gives its callee's
+   frame memory back: the call rule restores the caller's `fsp`. The bump
+   heap below `limit` is unchanged, so Core's heap addresses are still the
+   mini ones and `HeapCorr`'s zero bytes are still those from the cursor
+   up to `limit`. On x86, `fsp` is a register the caller keeps across a
+   call, and the loader maps the region above the heap.
+2. **Addressed bindings.** A local is addressed when the program takes its
+   address: an array local passed where a slice is expected (later `&x`
+   and `&self`). Its slot holds its frame address, and its value lives in
+   frame memory in the raw-slice element layout (`ElementLayout`: an `i32`
+   in 4 bytes, a word type in 8 bytes a word), so a slice of it is the
+   same (pointer, length) pair as a raw slice and the callee runs the code
+   it runs for a raw slice. Element reads and writes of the local itself
+   are loads and stores at its address.
+3. **The correspondence.** The simulation relation carries the addressed
+   cells (cell, type, address); for each, frame memory at the address holds
+   the cell's value in that layout (`FrameCorr`, beside `HeapCorr`). A safe
+   slice `.slice T cell [] start length` is held by (the cell's address plus
+   `start` strides, `length`). A write through the slice changes the cell
+   in Core and the bytes in the mini heap, so both sides stay equal.
+4. **No escapes.** Core keeps every cell; frame memory is reused after the
+   activation returns. The verified compiler therefore coerces a local only
+   where the slice cannot outlive the activation: a direct call argument
+   whose parameter is `[T]`, to a function whose result type contains no
+   slice. Other coercions are rejected.
+5. **`i32_array_data_ptr` uses the heap, not frame memory.** Core maps the
+   array into a fresh heap block at `nextAddress` (`mapI32ArrayView`) and
+   keeps block and cell equal from then on (`syncI32Views*`), and the
+   pointer's value is observable (host calls take it). The verified
+   compiler does the same: it bump-allocates the block, copies the
+   elements, and from then on the array local is addressed at that heap
+   address. The proofs' invariant "Core has no views" (`Grows`) becomes
+   "every view's block holds its cell".
+6. **`str`** is (pointer, length) of read-only bytes in a static region
+   above frame memory, a literal's bytes placed by the loader (Core's
+   `.string` value names no address, so any region outside Core's heap
+   will do).
+
+Order: frame memory in the IR and on x86; addressed array locals passed as
+slices; `i32_array_data_ptr`; `str`.
 
 ## Decisions still required
 
