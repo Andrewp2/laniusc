@@ -638,4 +638,55 @@ theorem HeapCorr.storeBytesAll {h : Memory.Heap} {w : World.State} {hp : Heap} (
   have := HeapCorr.storeBytesFrom bytes 0 corr ok
   rwa [Nat.add_zero, Heap.writeBytes_eq_writeAll] at this
 
+/-! ## The code of `sleep_ms_i32` -/
+
+/-- A sleep changes only the world's clocks, which the mini heap does not
+hold. -/
+theorem HeapCorr.sleep {h : Memory.Heap} {w : World.State} {hp : Heap} (corr : HeapCorr h w hp)
+    (milliseconds : Nat) : HeapCorr h (w.afterSleepMs milliseconds) hp :=
+  corr.retrace rfl rfl rfl corr.out corr.err corr.closed corr.input
+
+/-- The test of `sleep_ms_i32`: a negative count. -/
+theorem hostSleep_cond (E : Env) (slot : Nat) :
+    (Expr.compare .s32 .lt (.var slot) (.lit 0)).eval E ≠ 0 ↔ (low (E slot)).toInt < 0 := by
+  have z : low (0 : BitVec 64) = 0 := by decide
+  simp only [Expr.eval, Word.holds, CmpOp.holds, z]
+  by_cases h : (low (E slot)).slt 0 = true
+  · rw [if_pos h]
+    refine ⟨fun _ => ?_, fun _ => by decide⟩
+    have := BitVec.slt_iff_toInt_lt.mp h
+    rwa [show BitVec.toInt (0 : BitVec 32) = 0 by decide] at this
+  · rw [if_neg h]
+    refine ⟨fun ne => absurd rfl ne, fun lt => absurd (BitVec.slt_iff_toInt_lt.mpr ?_) h⟩
+    rw [show BitVec.toInt (0 : BitVec 32) = 0 by decide]
+    exact lt
+
+/-- `sleep_ms_i32` of a negative count: -1 in `slot`, nothing else done. -/
+theorem hostSleep_neg {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
+    (neg : (low (E slot)).toInt < 0) :
+    Exec mp d E H (hostSleepCode slot) (.normal (E.set slot 4294967295) H) :=
+  .ifTrue ((hostSleep_cond E slot).mpr neg) .assign
+
+/-- `sleep_ms_i32` of a nonnegative count held as an `i32`: the poll, which
+leaves the heap as it was, then 0 in `slot`. -/
+theorem hostSleep_exec {mp : Program} {d : Nat} {E : Env} {H : Heap} (slot : Nat)
+    (nonneg : 0 ≤ (low (E slot)).toInt) (held : E slot = widen (low (E slot))) :
+    Exec mp d E H (hostSleepCode slot) (.normal ((E.set (slot + 1) 0).set slot 0) H) := by
+  have small : (E slot).toNat < 2 ^ 31 := by
+    have lt := (low (E slot)).isLt
+    have nat : (E slot).toNat = (low (E slot)).toNat := by
+      rw [held]
+      simp only [widen, BitVec.toNat_setWidth]
+      omega
+    rw [BitVec.toInt_eq_toNat_cond] at nonneg
+    simp only [show (2 : Nat) ^ 32 = 4294967296 from rfl] at nonneg lt
+    rw [nat]
+    split at nonneg
+    · omega
+    · omega
+  have ran : Syscall.run .poll (Expr.evalAll E [.lit 0, .lit 0, .var slot]) H = some (0, H) := by
+    simp [Expr.evalAll, Expr.eval, Syscall.run, small]
+  refine .ifFalse ?_ (.seq (.sys ran) .assign)
+  exact Decidable.byContradiction fun ne => absurd ((hostSleep_cond E slot).mp ne) (Int.not_lt.mpr nonneg)
+
 end Lanius.Mini

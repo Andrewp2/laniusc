@@ -52,10 +52,6 @@ abbrev Stmt_copy_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Nat} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 →
     (RepList 66 RepU8) (Lanius.Mini.copyBytes x0 x1 x2) w
 
-abbrev Stmt_encode_from (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Place} {x1 : Nat} {x2 : List Lanius.Mini.Instr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepPlace x0 v0 → RepNat x1 v1 → (RepList 53 RepInstr) x2 v2 →
-    (RepList 66 RepU8) (Lanius.Mini.encodeFrom x0 x1 x2) w
-
 abbrev Stmt_epilogue (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepList 66 RepU8) (Lanius.Mini.epilogue) w
@@ -115,5 +111,9 @@ abbrev Stmt_sys_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 abbrev Stmt_syscall_linux_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Syscall} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSyscall x0 v0 →
     RepU8 (Lanius.Mini.syscallLinuxByte x0) w
+
+abbrev Stmt_syscall_rsi_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Syscall} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSyscall x0 v0 →
+    (RepList 66 RepU8) (Lanius.Mini.syscallRsiBytes x0) w
 
 end Lanius.Faithful.SelfCert

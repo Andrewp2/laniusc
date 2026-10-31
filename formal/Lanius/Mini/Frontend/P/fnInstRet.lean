@@ -3,7 +3,6 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.consTreeTail
-import Lanius.Mini.Frontend.P.constNamesIn
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.floatTyped
@@ -16,6 +15,7 @@ import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.typeDeclAt
+import Lanius.Mini.Frontend.P.typeNamesIn
 import Lanius.Mini.Frontend.P.variantIn
 import Lanius.Mini.Frontend.P.wideOf
 

@@ -4,13 +4,13 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Frontend.P.blockArmsOf
 import Lanius.Mini.Frontend.P.callParts
-import Lanius.Mini.Frontend.P.constNamesIn
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.paramGoals
 import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.selfRefOf
 import Lanius.Mini.Frontend.P.shrFirst
+import Lanius.Mini.Frontend.P.typeNamesIn
 import Lanius.Mini.Frontend.P.writesLocal
 
 public section

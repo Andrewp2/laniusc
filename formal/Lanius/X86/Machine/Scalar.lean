@@ -748,7 +748,9 @@ that no signal arrives (TRUSTED_BASE.md section 8):
 - `read` (rax 0) from fd 0 (rdi) of at most `maxTransfer` bytes (rdx) to rsi
   delivers the next of them that standard input holds, as many as asked for
   or all that are left, stores them from rsi on, and returns their count
-  (standard input is a regular file, or a stream that delivers like one). -/
+  (standard input is a regular file, or a stream that delivers like one).
+- `poll` (rax 7) of no fds (rdi 0, rsi 0) with a timeout (rdx) below 2^31
+  milliseconds waits out the timeout and returns 0, changing nothing else. -/
 inductive Kernel (before : State) : State → Prop where
   | write (number : before.registers 0 = 1) (fd : before.registers 7 = 1 ∨ before.registers 7 = 2)
       (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
@@ -760,6 +762,9 @@ inductive Kernel (before : State) : State → Prop where
       Kernel before (before.syscalled (BitVec.ofNat 64 (before.io.input.take (before.registers 2).toNat).length) r11
         (writeBytes before.memory (before.registers 6) (before.io.input.take (before.registers 2).toNat))
         { before.io with input := before.io.input.drop (before.registers 2).toNat })
+  | poll (number : before.registers 0 = 7) (fds : before.registers 7 = 0) (nfds : before.registers 6 = 0)
+      (timeout : (before.registers 2).toNat < 2 ^ 31) (r11 : BitVec 64) :
+      Kernel before (before.syscalled 0 r11 before.memory before.io)
 
 /-- Decoding consumes bytes actually loaded at RIP. Division must use
 `divided`, which also requires nonzero-divisor and quotient-range evidence;

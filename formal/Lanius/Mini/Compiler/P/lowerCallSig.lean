@@ -1,7 +1,6 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.Code_size
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
@@ -10,6 +9,7 @@ import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.conjunction
+import Lanius.Mini.Compiler.P.encodeFrom
 import Lanius.Mini.Compiler.P.lowerApply
 import Lanius.Mini.Compiler.P.repeatType
 
@@ -112,7 +112,7 @@ def evalCallSig (sig : Sig) (callee : Nat) (slot : Nat) (args : EvaluatedArgs) :
   else
     none
 
-/-- Core's host services (roadmap F8) are its functions from id 2^32 on (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr, 2^32 + 3 read_stdin. Their code is system calls.  write_byte(handle, value), handle and value in slot and slot + 1: to handle 1 or 2 the value's low byte goes through the heap's byte 0 (no block's, kept as it was) and returns 1; any other handle returns -1, as Core's does with no file open. -/
+/-- Core's host services (roadmap F8) are its functions from id 2^32 on (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr, 2^32 + 3 read_stdin, 2^32 + 4 sleep_ms_i32. Their code is system calls.  write_byte(handle, value), handle and value in slot and slot + 1: to handle 1 or 2 the value's low byte goes through the heap's byte 0 (no block's, kept as it was) and returns 1; any other handle returns -1, as Core's does with no file open. -/
 def hostByteCode (slot : Nat) : Stmt :=
   let handleOk : Expr := Expr.binary Word.u64 BinOp.or (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit 1)) (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit 2))
   let restore : Stmt := Stmt.seq (Stmt.storeByte (Expr.lit 0) (Expr.var (slot + 2))) (Stmt.assign slot (Expr.lit 1))
@@ -147,6 +147,11 @@ def hostReadCode (slot : Nat) : Stmt :=
   let looped : Stmt := Stmt.seq (Stmt.loop (Expr.compare Word.u64 CmpOp.ne (Expr.var count) (Expr.lit 0)) body) (Stmt.assign slot (Expr.binary Word.s32 BinOp.add (Expr.var total) (Expr.lit 0)))
   Stmt.seq (Stmt.assign total (Expr.lit 0)) looped
 
+/-- sleep_ms_i32(milliseconds), milliseconds in slot: -1 for a negative count; else poll(0, 0, milliseconds), which polls no fd and so returns after the timeout, and 0. -/
+def hostSleepCode (slot : Nat) : Stmt :=
+  let sleep : Stmt := Stmt.seq (Stmt.sys Syscall.poll (slot + 1) (Expr.lit 0 :: Expr.lit 0 :: [Expr.var slot])) (Stmt.assign slot (Expr.lit 0))
+  Stmt.ite (Expr.compare Word.s32 CmpOp.lt (Expr.var slot) (Expr.lit 0)) (Stmt.assign slot (Expr.lit 4294967295)) sleep
+
 def evalHost (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
   if decide (callee = 4294967296) && typesSame args.types (SrcType.i32 :: [SrcType.i32]) then
     some ({ stmt := Stmt.seq args.stmt (hostByteCode slot), ty := SrcType.i32 } : Evaluated)
@@ -160,7 +165,10 @@ def evalHost (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluat
         if decide (callee = 4294967299) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
           some ({ stmt := Stmt.seq args.stmt (hostReadCode slot), ty := SrcType.i32 } : Evaluated)
         else
-          none
+          if decide (callee = 4294967300) && typesSame args.types [SrcType.i32] then
+            some ({ stmt := Stmt.seq args.stmt (hostSleepCode slot), ty := SrcType.i32 } : Evaluated)
+          else
+            none
 
 def evalCall (sig : Option Sig) (callee : Nat) (slot : Nat) (args : Option EvaluatedArgs) : Option Evaluated :=
   match sig with

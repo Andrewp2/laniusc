@@ -605,6 +605,16 @@ theorem two_i32 {tys : List SrcType} {vs : List Value} {env : Env} {slot : Nat} 
       obtain ⟨rfl, wb⟩ := (SrcType.holdsAt_scalar rfl).mp b
       exact ⟨_, _, rfl, wa, wb, rfl, rfl⟩
 
+/-- One `i32` in a slot. -/
+theorem one_i32 {tys : List SrcType} {vs : List Value} {env : Env} {slot : Nat} (holds : FieldsHold tys vs env slot)
+    (tyEq : tys = [.i32]) : vs = [.signed .i32 (low (env slot)).toInt] ∧ env slot = widen (low (env slot)) := by
+  subst tyEq
+  cases holds with
+  | cons a nil =>
+    cases nil
+    obtain ⟨rfl, wa⟩ := (SrcType.holdsAt_scalar rfl).mp a
+    exact ⟨rfl, wa⟩
+
 /-- A pointer and a `usize` in consecutive slots. -/
 theorem ptr_usize {tys : List SrcType} {vs : List Value} {env : Env} {slot : Nat} (holds : FieldsHold tys vs env slot)
     (tyEq : tys = [.ptr, .uint .usize]) :
@@ -633,7 +643,8 @@ theorem evalHost_some {callee slot : Nat} {ea : EvaluatedArgs} {ev : Evaluated} 
     ∃ service code, hostService? callee = some service ∧ ev.stmt = .seq ea.stmt code ∧
       (service = .writeByte ∧ ea.types = [.i32, .i32] ∨
         (service = .writeStdout ∨ service = .writeStderr ∨ service = .readStdin) ∧
-          ea.types = [.ptr, .uint .usize]) := by
+          ea.types = [.ptr, .uint .usize] ∨
+        service = .sleepMsI32 ∧ ea.types = [.i32]) := by
   simp only [evalHost] at ok
   split at ok
   · rename_i checks
@@ -648,21 +659,28 @@ theorem evalHost_some {callee slot : Nat} {ea : EvaluatedArgs} {ev : Evaluated} 
     obtain ⟨rfl, same⟩ := checks
     simp only [Option.some.injEq] at ok
     subst ok
-    exact ⟨.writeStdout, _, by simp [hostService?, hostBase], rfl, .inr ⟨.inl rfl, typesSame_eq _ same⟩⟩
+    exact ⟨.writeStdout, _, by simp [hostService?, hostBase], rfl, .inr (.inl ⟨.inl rfl, typesSame_eq _ same⟩)⟩
   split at ok
   · rename_i _ _ checks
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
     obtain ⟨rfl, same⟩ := checks
     simp only [Option.some.injEq] at ok
     subst ok
-    exact ⟨.writeStderr, _, by simp [hostService?, hostBase], rfl, .inr ⟨.inr (.inl rfl), typesSame_eq _ same⟩⟩
+    exact ⟨.writeStderr, _, by simp [hostService?, hostBase], rfl, .inr (.inl ⟨.inr (.inl rfl), typesSame_eq _ same⟩)⟩
   split at ok
   · rename_i _ _ _ checks
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
     obtain ⟨rfl, same⟩ := checks
     simp only [Option.some.injEq] at ok
     subst ok
-    exact ⟨.readStdin, _, by simp [hostService?, hostBase], rfl, .inr ⟨.inr (.inr rfl), typesSame_eq _ same⟩⟩
+    exact ⟨.readStdin, _, by simp [hostService?, hostBase], rfl, .inr (.inl ⟨.inr (.inr rfl), typesSame_eq _ same⟩)⟩
+  split at ok
+  · rename_i _ _ _ _ checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨rfl, same⟩ := checks
+    simp only [Option.some.injEq] at ok
+    subst ok
+    exact ⟨.sleepMsI32, _, by simp [hostService?, hostBase], rfl, .inr (.inr ⟨rfl, typesSame_eq _ same⟩)⟩
   · simp at ok
 
 /-- `write_stdout` or `write_stderr` after its arguments: the mini loop
@@ -732,7 +750,38 @@ theorem host_read {ea : EvaluatedArgs}
     · show afterArgs.world.standardInput.drop (envA (slot + 1)).toNat = hpA.io.input.drop (envA (slot + 1)).toNat
       rw [input]
 
-/-- A host call of one of the output services. -/
+/-- `sleep_ms_i32` after its argument: -1 for a negative count, else the
+poll and 0; the world's clocks are not the mini heap's. -/
+theorem host_sleep {ea : EvaluatedArgs}
+    {dA : Nat} {envA : Env} {hpA : Heap} {values : List Value} {afterArgs : State} {heap : Memory.Heap}
+    {world : World.State}
+    (execA : Exec mp dA env hp ea.stmt (.normal envA hpA)) (sameA : ∀ j < slot, envA j = env j)
+    (holdsA : FieldsHold ea.types values envA slot) (tyEq : ea.types = [.i32])
+    (hcA : HeapCorr afterArgs.heap afterArgs.world hpA)
+    (called : World.call afterArgs.heap afterArgs.world .sleepMsI32 values = .returned v heap world) :
+    ∃ env' hp', Exec mp dA env hp (.seq ea.stmt (hostSleepCode slot)) (.normal env' hp') ∧
+      (∀ j < slot, env' j = env j) ∧ SrcType.i32.HoldsAt v env' slot ∧ HeapCorr heap world hp' := by
+  obtain ⟨valuesA, held⟩ := one_i32 holdsA tyEq
+  obtain ⟨ms, valuesEq, rfl, result⟩ := call_sleepMsI32_inv called
+  rw [valuesA] at valuesEq
+  simp only [List.cons.injEq, Value.signed.injEq, true_and, and_true] at valuesEq
+  subst valuesEq
+  rcases result with ⟨neg, rfl, rfl⟩ | ⟨nonneg, rfl, rfl⟩
+  · refine ⟨_, hpA, .seq execA (hostSleep_neg slot neg), fun j below => ?_, ?_, hcA.record .sleepMsI32⟩
+    · rw [set_get, if_neg (by omega)]
+      exact sameA j below
+    · refine .i32 ?_
+      rw [set_get, if_pos rfl]
+      exact holds_m1
+  · refine ⟨_, hpA, .seq execA (hostSleep_exec slot nonneg held), fun j below => ?_, ?_,
+      (hcA.record .sleepMsI32).sleep _⟩
+    · rw [set_get, if_neg (by omega), set_get, if_neg (by omega)]
+      exact sameA j below
+    · refine .i32 ?_
+      rw [set_get, if_pos rfl]
+      simp [SrcType.Holds, World.i32Result, World.wrapI32, low, widen]
+
+/-- A host call of one of the host services. -/
 theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} {args : List SrcEff}
     {ea : EvaluatedArgs} (outside : sp.funcs.length ≤ callee)
     (argsOk : evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea) (ok : evalHost callee slot ea = some ev)
@@ -758,7 +807,7 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
       split at hs; · cases hs
       split at hs
       · assumption
-      · cases hs
+      · split at hs <;> cases hs
     subst callee3
     simp only [evalHost] at ok
     split at ok
@@ -775,6 +824,8 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
       subst ok
       exact ⟨freshA, ⟨keepsA.cells, keepsA.next⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
         host_read (afterArgs := afterArgs) execA sameA holdsA (typesSame_eq _ same) hcA limitA called⟩
+    split at ok
+    · rename_i _ _ _ _ checks; simp [hostBase] at checks
     · simp at ok
   have heapEq := hostCall_heap hs reads called
   subst heapEq
@@ -888,6 +939,18 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
     simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
     obtain ⟨rfl, -⟩ := checks
     exact absurd (by simpa [hostService?, hostBase] using hs.symm) reads
+  split at ok
+  · rename_i _ _ _ _ checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨rfl, same⟩ := checks
+    simp only [Option.some.injEq] at ok
+    subst ok
+    have svc : service = .sleepMsI32 := by
+      simp [hostService?, hostBase] at hs
+      exact hs.symm
+    subst svc
+    exact ⟨freshA, ⟨keepsA.cells, keepsA.next⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
+      host_sleep (afterArgs := afterArgs) execA sameA holdsA (typesSame_eq _ same) hcA called⟩
   · simp at ok
 
 theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {k : Nat}

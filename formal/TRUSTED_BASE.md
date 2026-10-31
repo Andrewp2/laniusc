@@ -818,6 +818,21 @@ for a process the trusted part is only this:
   reads"). `Loaded` leaves `input` as the stream the process was given:
   `process_exits` takes it as a premise (`s.io.input = input`), with Core's
   world starting from the same `standardInput` (`startState input`).
+- **The kernel's `poll` with no fds (`Kernel.poll`, roadmap F8, 10-31).**
+  With rax 7, rdi 0 (no array), rsi 0 (no fds) and an rdx below 2^31 (a
+  nonnegative `int` timeout in milliseconds), the call returns 0 in rax,
+  changes no memory and no trace, and leaves rcx, rip, r11 and the other
+  registers and RFLAGS as for `write`. Linux reads the timeout from the low
+  32 bits of rdx; the compiled code passes a nonnegative `i32` held
+  zero-extended, so the whole register is that value. So it is trusted that
+  such a poll only waits (Linux's `do_sys_poll` with `nfds` 0 touches no
+  user memory) and that no signal interrupts it (an interrupted poll
+  returns EINTR, which the model does not have; the stdlib's sleep checks
+  for 0 and would report failure, but the theorems do not cover it). How
+  long it waits is not modeled: the x86 model has no clock. Core's
+  `sleep_ms_i32` is lowered to this `poll` (SEMANTIC_DECISIONS.md, "Host
+  sleep"); Core's world advances its clocks by the count, which no modeled
+  call can observe.
   No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
   runtime").
 - The startup code sets rsp, r12 to r15 and calls `entry` (the driver's

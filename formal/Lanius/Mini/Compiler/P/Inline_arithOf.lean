@@ -1,7 +1,6 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Compiler.P.Code_size
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcExpr_guard
@@ -12,6 +11,7 @@ public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.arithUint
 public import Lanius.Mini.Compiler.P.armScope
 public import Lanius.Mini.Compiler.P.compileModules
+public import Lanius.Mini.Compiler.P.encodeFrom
 public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.floatApply
 public import Lanius.Mini.Compiler.P.lowerCallSig

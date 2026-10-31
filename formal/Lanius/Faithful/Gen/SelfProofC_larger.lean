@@ -7,11 +7,11 @@ public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtC_Code_size
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
+public import Lanius.Faithful.Gen.SelfStmtC_encodeFrom
 public import Lanius.Faithful.Gen.SelfStmtC_larger
 import all Lanius.Faithful.Gen.SelfSrcC_larger
 import all Lanius.Mini.Compiler.P.larger

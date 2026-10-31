@@ -1,7 +1,6 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-public import Lanius.Mini.Compiler.P.Code_size
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Lists_empty
 public import Lanius.Mini.Compiler.P.SrcType_size
@@ -9,6 +8,7 @@ public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.codeSize
 public import Lanius.Mini.Compiler.P.compileArgs
 public import Lanius.Mini.Compiler.P.compileModules
+public import Lanius.Mini.Compiler.P.encodeFrom
 import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.arities

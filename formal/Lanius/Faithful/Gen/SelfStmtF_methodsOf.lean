@@ -88,6 +88,10 @@ abbrev Stmt_text_read_stdin (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepList 25 RepNat) (Lanius.Mini.textReadStdin) w
 
+abbrev Stmt_text_sleep_ms_i32 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 25 RepNat) (Lanius.Mini.textSleepMsI32) w
+
 abbrev Stmt_text_write_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepList 25 RepNat) (Lanius.Mini.textWriteByte) w
@@ -103,10 +107,6 @@ abbrev Stmt_text_write_stdout (prog : SrcProgram) (prims : Prims) (ix n : Nat) :
 abbrev Stmt_type_decls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.TypeDecl} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 205 RepTypeDecl) x0 v0 →
     (RepOption 163 RepDecls) (Lanius.Mini.typeDecls x0) w
-
-abbrev Stmt_type_names_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.TypeDecl} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 103 RepTypeDecl) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 →
-    (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.typeNamesIn x0 x1) w
 
 abbrev Stmt_with_impl (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {x1 : Option (List (List Nat))} {x2 : Lanius.Mini.CTree} {x3 : Option Lanius.Mini.Decls} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepOption 137 (RepList 31 (RepList 25 RepNat))) x1 v1 → RepCTree x2 v2 → (RepOption 163 RepDecls) x3 v3 →

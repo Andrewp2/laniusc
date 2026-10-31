@@ -2,7 +2,6 @@ module
 
 public import Lanius.Mini.Compiler.Types
 public import Lanius.Mini.Compiler.P.BinOp_folds
-public import Lanius.Mini.Compiler.P.Code_size
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.Expr_agrees
 public import Lanius.Mini.Compiler.P.Lists_empty
@@ -16,6 +15,7 @@ public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.declareFuncs
 public import Lanius.Mini.Compiler.P.elementAddress
 public import Lanius.Mini.Compiler.P.elementBase
+public import Lanius.Mini.Compiler.P.encodeFrom
 public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.lowerBody

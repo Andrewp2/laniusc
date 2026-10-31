@@ -14,6 +14,11 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+def encodeFrom (place : Place) (pc : Nat) (code : List Instr) : List UInt8 :=
+  match code with
+  | [] => []
+  | i :: rest => Instr.encode i place pc ++ encodeFrom place (pc + Instr.size i) rest
+
 def Code.size (self : Code) : Nat :=
   24 + codeSize self.instrs
 
