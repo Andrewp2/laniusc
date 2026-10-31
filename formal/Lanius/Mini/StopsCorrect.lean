@@ -29,7 +29,7 @@ theorem division_fault (word : Word) (signed : Bool) (st : State)
       (st.registers 0).setWidth word.width.bits ≠ BitVec.intMin _ ∨
         (st.registers rcxRegister).setWidth word.width.bits ≠ -1))) :
     ∃ st', Det 1 st st' ∧ Fault st' := by
-  obtain ⟨st1, t1, no1, memory1, rip1, kept1, high⟩ := dividend_step word signed st loaded.prefix
+  obtain ⟨st1, t1, no1, io1, memory1, rip1, kept1, high⟩ := dividend_step word signed st loaded.prefix
   have c1 := loaded.next (s' := st1) memory1 rip1
   have rax1 := kept1 0 (by decide)
   have rcx1 := kept1 rcxRegister (by decide)
@@ -173,7 +173,7 @@ theorem bump_fails (rel : Rel frame s m) (fits : frame.Fits) {shift : Nat} (shif
           List.length_append]
         bv_omega]
       exact tail
-    exact (prefix6.trans (Det.pairCons t7 (alu_writes c6.prefix) t7' (Det.refl _))).faults fault.faults
+    exact (prefix6.trans (Det.pairCons t7 (alu_writes c6.prefix) t7' ⟨_, c7.prefix, branch_decodes 2 9⟩ (Det.refl _))).faults fault.faults
   · obtain ⟨t7', rip7'⟩ := branch_step_rip_not_taken s7 s7' 2 9 c7.prefix (by rw [carry]; simpa using wraps) rfl
     have c7' : CodeAt s7'.memory s7'.rip (limitCompareBytes ++ (branchBytes 6 2 ++ (trapBytes ++
         (moveBytes .w64 cursorRegister r11Register ++ moveBytes .w64 0 rcxRegister)))) := by
@@ -205,9 +205,9 @@ theorem bump_fails (rel : Rel frame s m) (fits : frame.Fits) {shift : Nat} (shif
         show s8.rip + 6#64 + 0 = s8.rip + BitVec.ofNat 64 (branchBytes 6 2).length from by
           simp [branchBytes, displacementBytes]]
       exact tail
-    exact (prefix6.trans (Det.pairCons t7 (alu_writes c6.prefix) t7'
+    exact (prefix6.trans (Det.pairCons t7 (alu_writes c6.prefix) t7' ⟨_, c7.prefix, branch_decodes 2 9⟩
       (Det.pairCons t8 (Writes.of (i := .compare64 r11Register limitRegister) (k := 3) c7'.prefix
-        (by decide) rfl) t9 (Det.refl _)))).faults fault.faults
+        (by decide) rfl) t9 ⟨_, c8.prefix, branch_decodes 6 2⟩ (Det.refl _)))).faults fault.faults
 
 /-- Function `callee`, entered as `Contract` enters it, runs `n` steps
 without stopping anywhere but at a fault. -/

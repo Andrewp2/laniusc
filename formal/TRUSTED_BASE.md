@@ -275,9 +275,11 @@ still a parse tree of the same tokens. Trusted:
   `x` on (the matching `>`, counted outside brackets with `>>` closing two,
   comes before a bracket closes or a `;`, with no `||`, `==`, `!=`, `<=` or
   `>=` before it, and is followed by `(`, `::` or `{`), which is laniusc's
-  rule without its 64-token limit; and block statements and a method's type
-  arguments (productions 84 and 298), which the subset does not use and which
-  are ambiguous too (`{ a } - b;`, `x.f < a > (b)`), are not allowed.
+  rule without its 64-token limit; a statement that begins with `{` is a
+  block statement (production 84), never an expression statement (85), as
+  in Rust, since `{ a } - b;` has both trees; and a method's type arguments
+  (production 298), which the subset does not use and which are ambiguous
+  too (`x.f < a > (b)`), are not allowed.
   `grammar_unique` (`Mini/ParseUnique.lean`, standard axioms) proves that at
   most one parse tree for `file` is `Picked` for given tokens, from a
   certificate of first and follow sets (two token kinds deep, `>>` read
@@ -305,7 +307,11 @@ still a parse tree of the same tokens. Trusted:
     without one); `m::x` names `x` of the module `m`, a bare `x` names `x`
     of the current module; `import m;` only adds m's variants to those a
     bare variant name may mean, and traits, type aliases with a `where`
-    clause and extern functions are skipped;
+    clause and extern functions are skipped, except that an `extern
+    "lanius_std" fn` named `write_byte`, `write_stdout` or `write_stderr`
+    (`hostExtern`) is a function whose instance returns the call of that
+    host service on its parameters, `ECall(2^32 + k, params)` (`ReadExtern`;
+    Core's meaning of that id is the host function, section 2);
   - `type A<P..> = T;` is an alias: a type path that names no type
     parameter, primitive or declared type names the alias of that module,
     and means T read in the alias's module with its parameters standing for
@@ -737,8 +743,34 @@ for a process the trusted part is only this:
   arbitrary. `elfFile`'s segment is at 2^32, readable, writable and
   executable, and its `p_memsz` covers the stack and the heap.
 - **`Exits`.** A `syscall` with rax 60 ends the process with status rdi, of
-  which the parent sees the low byte. The x86 model has no `syscall` step,
-  so the theorems' runs stop there (`Exits.stuck`).
+  which the parent sees the low byte. The model's `Kernel` has no exit
+  case, so the theorems' runs stop there (`Exits.stuck`).
+- **The kernel's `write` (`Kernel` in `X86/Machine/Scalar.lean`, roadmap
+  F8).** The x86 model's only other `syscall` step (`Step.syscalled`) is
+  this trusted meaning of Linux's `write`: with rax 1, rdi 1 or 2, and rdx at
+  most `maxTransfer` (2,147,479,552, Linux's `MAX_RW_COUNT`), the call
+  - writes all rdx bytes read from memory at rsi, recorded as the event
+    `.write rdi bytes` appended to the state's trace (`State.io`,
+    `X86/Machine/Io.lean`), and changes no memory;
+  - returns rdx in rax, leaves the next instruction's address in rcx and
+    rip, an unknown value in r11 (where Linux saves RFLAGS), and every other
+    register and RFLAGS as they were.
+
+  So it is trusted that fds 1 and 2 are open for writing when the process
+  starts, that a write to them never fails, blocks forever or is partial
+  (a pipe whose reader has gone raises SIGPIPE, a full disk gives ENOSPC,
+  and a write to a terminal or pipe may in principle return short; none of
+  these is modeled), and that no signal handler runs. Any other rax, fd or
+  count has no step, so a run that reaches it stops, and the theorems say
+  nothing past it. `Loaded` starts the trace empty, and `process_exits`
+  says the trace at the exit is the compiled mini program's write trace,
+  whose bytes on fds 1 and 2 (`outputOf`) are what Core's world gained on
+  its standard output and error. Core's `write_byte`, `write_stdout` and
+  `write_stderr` are lowered to this `write` (SEMANTIC_DECISIONS.md,
+  "Externs and the runtime"); their Core meaning is `World.call`, part of
+  Core's semantics (section 3).
+  No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
+  runtime").
 - The startup code sets rsp, r12 to r15 and calls `entry` (the driver's
   convention is function 0, `main`), and `mov rdi, rax; mov eax, 60; syscall`
   follows the call. Its 65 bytes are proved, not trusted. `entry` must take
@@ -786,11 +818,15 @@ and a run to a state with no step that is not a fault.
     writable, and apart from the stack window, the return address and the
     image.
   - `compileSource_correct` also requires `r13 = 1` and zero bytes from
-    offset 1 up, which a fresh anonymous mapping provides.
+    offset 1 up, which a fresh anonymous mapping provides, and an empty
+    write trace (`silent`: the state's trace, which `HeapAt` makes the mini
+    heap's, has no events yet), so that the output it concludes equal to
+    Core's world's is the code's own.
   - `compileProgram_correct` accepts any cursor.
 - **Registers after the call.**
   - rsp is restored to `rsp + 8` and rbp is restored.
-  - rax, rcx, r11 and r13 may change. r13 is callee-saved under SysV, so a
+  - rax, rcx, rdx, rsi, rdi, r11 and r13 may change (the code writes rdx,
+    rsi and rdi only for a `Sys` statement). r13 is callee-saved under SysV, so a
     SysV caller's stub has to save it. The stubs also save r12, r14 and
     r15, which they set.
   - RFLAGS is unspecified. DF is never changed, and the code has no string

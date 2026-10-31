@@ -6,8 +6,8 @@ import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.moduleOr
-import Lanius.Mini.Frontend.P.noNames
 import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.typePathSpellings

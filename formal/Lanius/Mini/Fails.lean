@@ -147,6 +147,7 @@ theorem Stops.deeper {prog : Program} {d : Nat} {env : Env} {hp : Heap} {s : Stm
   | ifFalse zero _ ih => exact .ifFalse zero (ih le)
   | loopBody nonzero _ ih => exact .loopBody nonzero (ih le)
   | loopNext nonzero body _ ih => exact .loopNext nonzero (body.mono le) (ih le)
+  | loopContinued nonzero body _ ih => exact .loopContinued nonzero (body.mono le) (ih le)
   | call found length lower body => exact .call found length (Nat.lt_of_lt_of_le lower le) body
   | alloc inside over => exact .alloc inside over
   | divide undefined => exact .divide undefined
@@ -246,6 +247,16 @@ theorem Fails.whileBody {c : Core.Expr} {body : Core.Stmt} (fails : Fails sp L s
 theorem Fails.whileNext {c : Core.Expr} {body : Core.Stmt} (fails : Fails sp L st (.whileLoop c body))
     {k : Nat} {st1 : State} (run : evalExpr k sp.toCore st c = .done (.boolean true) st1)
     {k' : Nat} {st2 : State} (next : execStmt k' sp.toCore st1 body = .done .next st2) :
+    Fails sp L st2 (.whileLoop c body) :=
+  failing_after stmt_mono (k := max k k') fun j le => by
+    have := fails (j + 1)
+    simp only [execStmt, value_after run (Nat.le_trans (Nat.le_max_left k k') le),
+      done_after next (Nat.le_trans (Nat.le_max_right k k') le)] at this
+    exact this
+
+theorem Fails.whileContinue {c : Core.Expr} {body : Core.Stmt} (fails : Fails sp L st (.whileLoop c body))
+    {k : Nat} {st1 : State} (run : evalExpr k sp.toCore st c = .done (.boolean true) st1)
+    {k' : Nat} {st2 : State} (next : execStmt k' sp.toCore st1 body = .done .continueLoop st2) :
     Fails sp L st2 (.whileLoop c body) :=
   failing_after stmt_mono (k := max k k') fun j le => by
     have := fails (j + 1)

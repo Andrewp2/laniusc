@@ -94,6 +94,11 @@ inductive Expr where
   | fp : FOp → Expr → Expr → Expr
   deriving DecidableEq, Repr
 
+/-- A Linux system call (roadmap F8). Write: write(fd, the heap address, count), arguments in that order. -/
+inductive Syscall where
+  | write : Syscall
+  deriving DecidableEq, Repr
+
 inductive Stmt where
   | skip : Stmt
   | assign : Nat → Expr → Stmt
@@ -104,6 +109,10 @@ inductive Stmt where
   /-- target, ..., target + count - 1 = callee(args) -/
   | call : Nat → Nat → Nat → (List Expr) → Stmt
   | ret : (List Expr) → Stmt
+  /-- leave the innermost loop -/
+  | brk : Stmt
+  /-- go back to the innermost loop's condition -/
+  | cont : Stmt
   /-- target = the cursor rounded up to a multiple of 2^shift; the cursor moves past size bytes from there -/
   | alloc : Nat → Nat → Expr → Stmt
   /-- target = the byte at address -/
@@ -116,6 +125,8 @@ inductive Stmt where
   | storeWord : MemWidth → Expr → Expr → Stmt
   /-- target = left op right; a zero divisor, or a signed division of the least value by -1, has no run -/
   | divide : Word → DivOp → Nat → Expr → Expr → Stmt
+  /-- target = what the kernel returns for call(args) -/
+  | sys : Syscall → Nat → (List Expr) → Stmt
   deriving DecidableEq, Repr
 
 structure Func where
@@ -167,6 +178,8 @@ inductive Instr where
   | div : Word → DivOp → Nat → Instr
   /-- rax := slot op rax, a float operation through xmm0 and xmm1 -/
   | fp : FOp → Nat → Instr
+  /-- rax := call(slot, slot + 1, slot + 2), through rdi, rsi and rdx -/
+  | sys : Syscall → Nat → Instr
   deriving DecidableEq, Repr
 
 /-- A function's parameter and result counts. -/
@@ -393,6 +406,13 @@ inductive SrcStmt where
   | returnUnit : SrcStmt
   /-- assert(condition): Core traps when it is false -/
   | assert : SrcEff → SrcStmt
+  /-- break; and continue; of the innermost loop -/
+  | break : SrcStmt
+  | continue : SrcStmt
+  /-- MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest): when the enum local scrutinee (Core id enum_id) is the variant, run body, else run rest. A variant with no payload binds nothing (binds is false); one with one field, of type ty, binds a copy of it to binder. -/
+  | matchArm : Nat → Nat → Nat → Bool → Nat → SrcType → SrcStmt → SrcStmt → SrcStmt
+  /-- Unreachable(id, ty): Core binds id, uninitialized, at type ty and returns it, so it traps; ty is the function's result type. -/
+  | unreachable : Nat → SrcType → SrcStmt
   deriving Repr
 
 structure SrcParam where

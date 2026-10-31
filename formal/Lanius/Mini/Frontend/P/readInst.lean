@@ -34,6 +34,7 @@ def effCalls (x : MEff) : List Inst :=
   | .xMatch s ety t bs vs => effCalls s ++ effsCalls vs
   | .xDivide op l r => effCalls l ++ effCalls r
   | .xStride sl => []
+  | .xHost id args => effsCalls args
 def effsCalls (xs : List MEff) : List Inst :=
   match xs with
   | [] => []

@@ -83,14 +83,14 @@ theorem proof_eval_load {prog : SrcProgram} {prims : Prims} {ix_eval_load ix_box
   simp only [src_eval_load] at h
   faithful [Lanius.Mini.evalLoad]
 
-theorem proof_eval_operands {prog : SrcProgram} {prims : Prims} {ix_eval_operands ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_then_check ix_SrcOp_lower ix_SrcType_is_bool ix_short_circuit ix_operand_guard ix_eval_right : Nat} (fn : prog.funcs[ix_eval_operands]? = some (src_eval_operands ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_then_check ix_SrcOp_lower ix_SrcType_is_bool ix_short_circuit ix_operand_guard ix_eval_right)) (np : prims.isPrim ix_eval_operands = false)
+theorem proof_eval_operands {prog : SrcProgram} {prims : Prims} {ix_eval_operands ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_SrcType_is_bool ix_SrcOp_lower ix_short_circuit ix_then_check ix_operand_guard ix_eval_right : Nat} (fn : prog.funcs[ix_eval_operands]? = some (src_eval_operands ix_plus ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_SrcType_is_bool ix_SrcOp_lower ix_short_circuit ix_then_check ix_operand_guard ix_eval_right)) (np : prims.isPrim ix_eval_operands = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
     (ext_SrcType_is_scalar : Certified (∀ {n : Nat}, Stmt_SrcType_is_scalar prog prims ix_SrcType_is_scalar n))
-    (ext_then_check : Certified (∀ {n : Nat}, Stmt_then_check prog prims ix_then_check n))
-    (ext_SrcOp_lower : Certified (∀ {n : Nat}, Stmt_SrcOp_lower prog prims ix_SrcOp_lower n))
     (ext_SrcType_is_bool : Certified (∀ {n : Nat}, Stmt_SrcType_is_bool prog prims ix_SrcType_is_bool n))
+    (ext_SrcOp_lower : Certified (∀ {n : Nat}, Stmt_SrcOp_lower prog prims ix_SrcOp_lower n))
     (ext_short_circuit : Certified (∀ {n : Nat}, Stmt_short_circuit prog prims ix_short_circuit n))
+    (ext_then_check : Certified (∀ {n : Nat}, Stmt_then_check prog prims ix_then_check n))
     (ext_operand_guard : Certified (∀ {n : Nat}, Stmt_operand_guard prog prims ix_operand_guard n))
     (ext_eval_right : Certified (∀ {n : Nat}, Stmt_eval_right prog prims ix_eval_right n)) {n : Nat} :
     Stmt_eval_operands prog prims ix_eval_operands n := by

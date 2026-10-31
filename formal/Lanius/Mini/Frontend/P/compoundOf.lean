@@ -4,12 +4,14 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.compoundEval
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.fieldTyAt
+import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.matchLetHead
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.textSelf
+import Lanius.Mini.Frontend.P.tryLet
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.whileEvalOf
 import Lanius.Mini.Frontend.P.wideOf
@@ -45,6 +47,12 @@ def assignment (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : 
       else
         none
 
+/-- The reading of a range loop (for_of): counter c from a, bound e = n, the loop variable x. -/
+def forRange (c : Nat) (e : Nat) (x : Nat) (t : Ty) (a : SrcExpr) (n : Nat) (body : Option MStmt) : Option MStmt :=
+  match body with
+  | none => none
+  | some b => some (MStmt.mLet c t a (MStmt.mLet e t (SrcExpr.local n) (MStmt.mWhile (SrcExpr.apply SrcOp.less (SrcExpr.local c) (SrcExpr.local e)) (MStmt.mLet x t (SrcExpr.local c) (MStmt.mThen (MStmt.mSet c (SrcExpr.apply SrcOp.plus (SrcExpr.local c) (SrcExpr.int 1))) b)))))
+
 mutual
 /-- A statement list: a let scopes over the statements after it. -/
 def blockOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (list : CTree) : Option MStmt :=
@@ -71,7 +79,7 @@ def stmtFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (re
       match rest with
       | [] => stmtOf (fuel - 1) env scope s
       | next :: more => thenOf (stmtOf (fuel - 1) env scope s) (stmtsOf (fuel - 1) env scope rest)
-/-- `let x: ty = init;` (let_stmt -> Let LetIdent let_type let_init LetSemicolon). -/
+/-- `let x: ty = init;` and `let x = init;` (let_stmt -> Let LetIdent let_type_opt let_init LetSemicolon). -/
 def letFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (rest : List CTree) : Option MStmt :=
   if fuel = 0 then
     none
@@ -82,8 +90,13 @@ def letFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (res
       | none => none
       | some t => letOf (tok.start - env.base) t (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
     else
-      none
-/-- return, if, while, and assignments. -/
+      if decide (nodeProd (kid s 2) = (87)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
+        match untypedHead (fuel - 1) env scope (kid (kid s 3) 1) with
+        | none => none
+        | some u => letBody (tok.start - env.base) u.ty u.head (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := u.ty } : Local) :: scope) rest)
+      else
+        none
+/-- return, break, continue, if, while, for, block statements, and assignments. -/
 def stmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option MStmt :=
   if fuel = 0 then
     none
@@ -96,19 +109,52 @@ def stmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Opti
       if decide (p = (76)) && decide (nodeProd (kid s 1) = (91)) then
         some MStmt.mReturnUnit
       else
-        if decide (p = (77)) && decide (nodeProd (kid s 5) = (78)) then
-          ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (blockOf f env scope (kid (kid (kid s 5) 1) 1))
+        if p = (82) then
+          some MStmt.mBreak
         else
-          if decide (p = (77)) && decide (nodeProd (kid s 5) = (79)) then
-            ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (some MStmt.mNop)
+          if p = (83) then
+            some MStmt.mContinue
           else
-            if p = (80) then
-              whileOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1))
+            if decide (p = (77)) && decide (nodeProd (kid s 5) = (78)) then
+              ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (blockOf f env scope (kid (kid (kid s 5) 1) 1))
             else
-              if p = (85) then
-                assignment f env scope (kid s 0)
+              if decide (p = (77)) && decide (nodeProd (kid s 5) = (79)) then
+                ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (some MStmt.mNop)
               else
-                none
+                if p = (80) then
+                  whileOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1))
+                else
+                  if decide (p = (81)) || decide (p = (84)) then
+                    nestedOf f env scope s
+                  else
+                    if p = (85) then
+                      assignment f env scope (kid s 0)
+                    else
+                      none
+/-- for and block statements. -/
+def nestedOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option MStmt :=
+  if fuel = 0 then
+    none
+  else
+    let f : Nat := fuel - 1
+    if nodeProd s = (81) then
+      let x : Token := kidToken s 1
+      let iter : CTree := kid s 3
+      let bound : CTree := kid (kid (kid iter 1) 1) 0
+      if decide (nodeProd iter = (93)) && decide (nodeProd (kid iter 0) = (96)) && decide (nodeProd (kid iter 1) = (97)) && decide (nodeProd (kid (kid iter 1) 1) = (102)) && decide (nodeProd bound = (99)) && decide (nodeProd (kid bound 1) = (164)) && !(member env.globals x.text) && freshId scope (x.start - env.base) && freshId scope ((kidToken s 0).start - env.base) && freshId scope ((kidToken s 2).start - env.base) then
+        match findLocal scope (kidToken (kid bound 0) 0).text with
+        | none => none
+        | some n =>
+          match intLiteral (kidToken (kid iter 0) 0).text with
+          | none => none
+          | some a => forRange ((kidToken s 0).start - env.base) (x.start - env.base) ((kidToken s 2).start - env.base) n.ty a n.id (blockOf f env (({ name := x.text, id := (kidToken s 2).start - env.base, ty := n.ty } : Local) :: scope) (kid (kid s 4) 1))
+      else
+        none
+    else
+      if nodeProd s = (84) then
+        blockOf f env scope (kid (kid s 0) 1)
+      else
+        none
 end
 
 def consParam (p : MParam) (rest : Option MParams) : Option MParams :=

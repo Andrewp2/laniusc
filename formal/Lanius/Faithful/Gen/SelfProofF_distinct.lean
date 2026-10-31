@@ -88,7 +88,7 @@ theorem step_position {prog : SrcProgram} {prims : Prims} {ix_position ix_unbox_
   simp only [src_position] at h
   faithful [Lanius.Mini.position]
 
-theorem step_same_spellings {prog : SrcProgram} {prims : Prims} {ix_same_spellings ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_same_text : Nat} (fn : prog.funcs[ix_same_spellings]? = some (src_same_spellings ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_same_spellings ix_same_text)) (np : prims.isPrim ix_same_spellings = false)
+theorem step_same_spellings {prog : SrcProgram} {prims : Prims} {ix_same_spellings ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_same_text : Nat} (fn : prog.funcs[ix_same_spellings]? = some (src_same_spellings ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize ix_same_text ix_same_spellings)) (np : prims.isPrim ix_same_spellings = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_usize n))
     (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n)) {n : Nat}
     (ih_same_spellings : Certified (Stmt_same_spellings prog prims ix_same_spellings n)) :

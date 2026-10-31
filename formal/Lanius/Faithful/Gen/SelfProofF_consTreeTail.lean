@@ -22,7 +22,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_noNames
+public import Lanius.Faithful.Gen.SelfStmtF_moduleNamesOk
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
@@ -274,9 +274,9 @@ theorem proof_infer_inst {prog : SrcProgram} {prims : Prims} {ix_infer_inst ix_n
   simp only [src_infer_inst] at h
   faithful [Lanius.Mini.inferInst]
 
-theorem proof_infer_ret {prog : SrcProgram} {prims : Prims} {ix_infer_ret ix_bound_or_none ix_ret_pattern ix_match_ty ix_callee_env ix_inst_from : Nat} (fn : prog.funcs[ix_infer_ret]? = some (src_infer_ret ix_bound_or_none ix_ret_pattern ix_match_ty ix_callee_env ix_inst_from)) (np : prims.isPrim ix_infer_ret = false)
-    (ext_bound_or_none : Certified (∀ {n : Nat}, Stmt_bound_or_none prog prims ix_bound_or_none n))
+theorem proof_infer_ret {prog : SrcProgram} {prims : Prims} {ix_infer_ret ix_ret_pattern ix_bound_or_none ix_match_ty ix_callee_env ix_inst_from : Nat} (fn : prog.funcs[ix_infer_ret]? = some (src_infer_ret ix_ret_pattern ix_bound_or_none ix_match_ty ix_callee_env ix_inst_from)) (np : prims.isPrim ix_infer_ret = false)
     (ext_ret_pattern : Certified (∀ {n : Nat}, Stmt_ret_pattern prog prims ix_ret_pattern n))
+    (ext_bound_or_none : Certified (∀ {n : Nat}, Stmt_bound_or_none prog prims ix_bound_or_none n))
     (ext_match_ty : Certified (∀ {n : Nat}, Stmt_match_ty prog prims ix_match_ty n))
     (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n))
     (ext_inst_from : Certified (∀ {n : Nat}, Stmt_inst_from prog prims ix_inst_from n)) {n : Nat} :

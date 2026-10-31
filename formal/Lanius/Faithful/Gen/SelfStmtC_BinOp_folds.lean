@@ -52,4 +52,8 @@ abbrev Stmt_DivOp_number (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
   ∀ {x0 : Lanius.Mini.DivOp} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepDivOp x0 v0 →
     RepNat (Lanius.Mini.DivOp.number x0) w
 
+abbrev Stmt_Syscall_number (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Syscall} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSyscall x0 v0 →
+    RepNat (Lanius.Mini.Syscall.number x0) w
+
 end Lanius.Faithful.SelfCert

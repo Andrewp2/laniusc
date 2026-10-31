@@ -281,8 +281,15 @@ inductive LitStmt (funcs : List SrcFunc) (ret : SrcType) : List LocalTy → SrcS
       LitEff funcs locals (tyAt (srcFields (tyLocal locals id)) j) x x' →
       LitStmt funcs ret locals (.setFieldEval id j x) (.setFieldEval id j x')
   | returnUnit {locals : List LocalTy} : LitStmt funcs ret locals .returnUnit .returnUnit
+  | «break» {locals : List LocalTy} : LitStmt funcs ret locals .break .break
+  | «continue» {locals : List LocalTy} : LitStmt funcs ret locals .continue .continue
+  | matchArm {locals : List LocalTy} {sc eid k x : Nat} {bs : Bool} {ty : SrcType} {b r b' r' : SrcStmt} :
+      LitStmt funcs ret (withLocal x ty locals) b b' → LitStmt funcs ret locals r r' →
+      LitStmt funcs ret locals (.matchArm sc eid k bs x ty b r) (.matchArm sc eid k bs x ty b' r')
   | «assert» {locals : List LocalTy} {x x' : SrcEff} :
       LitEff funcs locals (some .bool) x x' → LitStmt funcs ret locals (.assert x) (.assert x')
+  | unreachable {locals : List LocalTy} {id : Nat} {ty : SrcType} :
+      LitStmt funcs ret locals (.unreachable id ty) (.unreachable id ty)
 
 theorem litStmt_sound (funcs : List SrcFunc) (ret : SrcType) :
     ∀ (locals : List LocalTy) (s : SrcStmt), LitStmt funcs ret locals s (litStmt funcs ret locals s)
@@ -338,6 +345,11 @@ theorem litStmt_sound (funcs : List SrcFunc) (ret : SrcType) :
     simp only [litStmt]; exact .setIndexEval (litEff_sound _ _ _ _) (litEff_sound _ _ _ _)
   | locals, .setFieldEval id j x => by simp only [litStmt]; exact .setFieldEval (litEff_sound _ _ _ _)
   | locals, .returnUnit => by simp only [litStmt]; exact .returnUnit
+  | locals, .break => by simp only [litStmt]; exact .break
+  | locals, .continue => by simp only [litStmt]; exact .continue
+  | locals, .matchArm sc eid k bs x ty b r => by
+    simp only [litStmt]; exact .matchArm (litStmt_sound funcs ret _ b) (litStmt_sound funcs ret _ r)
+  | locals, .unreachable id ty => by simp only [litStmt]; exact .unreachable
   | locals, .assert x => by simp only [litStmt]; exact .assert (litEff_sound _ _ _ _)
 
 /-! ## Functions and the closed program -/

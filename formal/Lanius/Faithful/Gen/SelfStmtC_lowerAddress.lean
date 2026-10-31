@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lower_address (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Expr} {x1 : Option Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 148 RepExpr) x0 v0 → (RepOption 148 RepExpr) x1 v1 →
-    (RepOption 148 RepExpr) (Lanius.Mini.lowerAddress x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.Expr} {x1 : Option Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 149 RepExpr) x0 v0 → (RepOption 149 RepExpr) x1 v1 →
+    (RepOption 149 RepExpr) (Lanius.Mini.lowerAddress x0 x1) w
 
 abbrev Stmt_lower_free (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 148 RepExpr) x1 v1 → (RepOption 148 RepExpr) x2 v2 →
-    (RepOption 129 RepStmt) (Lanius.Mini.lowerFree x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 149 RepExpr) x1 v1 → (RepOption 149 RepExpr) x2 v2 →
+    (RepOption 130 RepStmt) (Lanius.Mini.lowerFree x0 x1 x2) w
 
 abbrev Stmt_lower_load (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 148 RepExpr) x1 v1 → (RepOption 129 RepStmt) x2 v2 →
-    (RepOption 129 RepStmt) (Lanius.Mini.lowerLoad x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 149 RepExpr) x1 v1 → (RepOption 130 RepStmt) x2 v2 →
+    (RepOption 130 RepStmt) (Lanius.Mini.lowerLoad x0 x1 x2) w
 
 abbrev Stmt_lower_store (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Expr} {x1 : Option Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 148 RepExpr) x0 v0 → (RepOption 148 RepExpr) x1 v1 →
-    (RepOption 129 RepStmt) (Lanius.Mini.lowerStore x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.Expr} {x1 : Option Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 149 RepExpr) x0 v0 → (RepOption 149 RepExpr) x1 v1 →
+    (RepOption 130 RepStmt) (Lanius.Mini.lowerStore x0 x1) w
 
 end Lanius.Faithful.SelfCert

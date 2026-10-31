@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.Code_image
 public import Lanius.Mini.Compiler.P.DivOp_size
 public import Lanius.Mini.Compiler.P.FArith_opcode
 public import Lanius.Mini.Compiler.P.Lists_empty
@@ -9,7 +10,6 @@ public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.codeSize
 public import Lanius.Mini.Compiler.P.compileArgs
 public import Lanius.Mini.Compiler.P.compileModules
-public import Lanius.Mini.Compiler.P.layout
 import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.arities
 import Lanius.Mini.Compiler.P.compileSource
@@ -87,19 +87,19 @@ def elfFile (binary : Binary) (entry : Nat) (stack : Nat) (heap : Nat) : Option 
   else
     none
 
-@[expose] def Inline.seqCode (base : Nat) (pos : Nat) (firstCode : List Instr) (second : Stmt) : List Instr :=
-  firstCode ++ compileStmt base (pos + codeSize firstCode) second
+@[expose] def Inline.seqCode (base : Nat) (pos : Nat) (brk : Nat) (cont : Nat) (firstCode : List Instr) (second : Stmt) : List Instr :=
+  firstCode ++ compileStmt base (pos + codeSize firstCode) brk cont second
 
-@[expose] def Inline.iteCode (base : Nat) (pos : Nat) (conditionCode : List Instr) (thenBranch : Stmt) (elseBranch : Stmt) : List Instr :=
+@[expose] def Inline.iteCode (base : Nat) (pos : Nat) (brk : Nat) (cont : Nat) (conditionCode : List Instr) (thenBranch : Stmt) (elseBranch : Stmt) : List Instr :=
   let thenStart : Nat := pos + codeSize conditionCode + 9
-  let thenCode : List Instr := compileStmt base thenStart thenBranch
+  let thenCode : List Instr := compileStmt base thenStart brk cont thenBranch
   let elseStart : Nat := thenStart + codeSize thenCode + 5
-  let elseCode : List Instr := compileStmt base elseStart elseBranch
+  let elseCode : List Instr := compileStmt base elseStart brk cont elseBranch
   conditionCode ++ [Instr.jz elseStart] ++ thenCode ++ [Instr.jmp (elseStart + codeSize elseCode)] ++ elseCode
 
 @[expose] def Inline.loopCode (base : Nat) (pos : Nat) (conditionCode : List Instr) (body : Stmt) : List Instr :=
   let bodyStart : Nat := pos + codeSize conditionCode + 9
-  let bodyCode : List Instr := compileStmt base bodyStart body
+  let bodyCode : List Instr := compileStmt base bodyStart (pos + codeSize conditionCode) pos body
   conditionCode ++ [Instr.jz (bodyStart + codeSize bodyCode + 5)] ++ bodyCode ++ [Instr.jmp pos]
 
 @[expose] def Inline.link (codes : List Code) : Option Binary :=

@@ -25,6 +25,9 @@ def src_p_let_stmt : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usiz
 /-- mini::selfhost::p_let_type -/
 def src_p_let_type : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000056#64) }
 
+/-- mini::selfhost::p_let_type_none -/
+def src_p_let_type_none : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000057#64) }
+
 /-- mini::selfhost::p_lt_tail -/
 def src_p_lt_tail : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000008a#64) }
 

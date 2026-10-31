@@ -181,6 +181,10 @@ theorem pstmt_mono (le : CallsLe call call') (s : SrcStmt) :
     simp only [pstmt] at h ⊢
     exact bind_mono (fun _ hx => bind_mono (fun _ hy => peff_mono le hy) (fun _ _ hy => hy) hx)
       (fun _ _ hx => hx) h
+  | «break» => intro env d h; simp [pstmt] at h
+  | «continue» => intro env d h; simp [pstmt] at h
+  | matchArm => intro env d h; simp [pstmt] at h
+  | unreachable => intro env d h; simp [pstmt] at h
 
 end
 

@@ -20,10 +20,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-abbrev Stmt_p_char (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pChar) w
-
 abbrev Stmt_p_float (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pFloat) w

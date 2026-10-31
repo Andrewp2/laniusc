@@ -22,22 +22,22 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_arith (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    (RepOption 149 RepTyped) (Lanius.Mini.arith x0 x1 x2) w
+    (RepOption 150 RepTyped) (Lanius.Mini.arith x0 x1 x2) w
 
 abbrev Stmt_float_apply (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.FArith} {x1 : Lanius.Mini.FloatTy} {x2 : Lanius.Mini.Typed} {x3 : Lanius.Mini.Typed} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepOption 236 RepFArith) x0 v0 → RepFloatTy x1 v1 → RepTyped x2 v2 → RepTyped x3 v3 →
-    (RepOption 149 RepTyped) (Lanius.Mini.floatApply x0 x1 x2 x3) w
+  ∀ {x0 : Option Lanius.Mini.FArith} {x1 : Lanius.Mini.FloatTy} {x2 : Lanius.Mini.Typed} {x3 : Lanius.Mini.Typed} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepOption 237 RepFArith) x0 v0 → RepFloatTy x1 v1 → RepTyped x2 v2 → RepTyped x3 v3 →
+    (RepOption 150 RepTyped) (Lanius.Mini.floatApply x0 x1 x2 x3) w
 
 abbrev Stmt_float_arith (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.FloatTy} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 205 RepFloatTy) x3 v3 →
-    (RepOption 149 RepTyped) (Lanius.Mini.floatArith x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.FloatTy} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 206 RepFloatTy) x3 v3 →
+    (RepOption 150 RepTyped) (Lanius.Mini.floatArith x0 x1 x2 x3) w
 
 abbrev Stmt_float_compare (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {x1 : Lanius.Mini.CmpOp} {x2 : Lanius.Mini.Expr} {x3 : Lanius.Mini.Expr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepFloatTy x0 v0 → RepCmpOp x1 v1 → RepExpr x2 v2 → RepExpr x3 v3 →
     RepExpr (Lanius.Mini.floatCompare x0 x1 x2 x3) w
 
 abbrev Stmt_float_order (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CmpOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.FloatTy} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 205 RepFloatTy) x3 v3 →
-    (RepOption 149 RepTyped) (Lanius.Mini.floatOrder x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.CmpOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.FloatTy} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 206 RepFloatTy) x3 v3 →
+    (RepOption 150 RepTyped) (Lanius.Mini.floatOrder x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

@@ -144,6 +144,17 @@ end Lanius.Mini
 
 namespace Lanius.X86.Machine
 
+/-- No instruction `execute` runs touches the process's I/O (only `syscall`,
+a `Kernel` step, does). -/
+theorem execute_io (i : Instruction) (k : Nat) (s : State) : (execute i k s).io = s.io := by
+  cases i <;> rfl
+
+theorem runPlain_io : ∀ (prog : List (List UInt8 × Instruction)) (s : State), (runPlain prog s).io = s.io
+  | [], _ => rfl
+  | (bytes, i) :: rest, s => by
+    simp only [runPlain]
+    rw [runPlain_io rest, execute_io]
+
 theorem runPlain_effect : ∀ (prog : List (List UInt8 × Instruction)) (s : State), Plain prog →
     (runPlain prog s).memory = s.memory ∧
       (runPlain prog s).rip = s.rip + BitVec.ofNat 64 (prog.flatMap Prod.fst).length

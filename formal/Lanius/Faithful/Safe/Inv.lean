@@ -427,15 +427,22 @@ theorem return_trap_inv {e : Core.Expr} (h : execStmt k P st (.returnValue (some
 theorem returnUnit_trap (h : execStmt k P st (.returnValue none) = .trapped r st') : False := by
   cases k <;> simp [execStmt] at h
 
+theorem breakLoop_trap (h : execStmt k P st .breakLoop = .trapped r st') : False := by
+  cases k <;> simp [execStmt] at h
+
+theorem continueLoop_trap (h : execStmt k P st .continueLoop = .trapped r st') : False := by
+  cases k <;> simp [execStmt] at h
+
 end
 
 /-! ## Calls -/
 
-/-- A call of a function of `sp` that trapped: an argument trapped, the
+/-- A call of one of `sp`'s functions that trapped: an argument trapped, the
 callee or its arity is wrong, its body trapped, or its body ended without the
 value the call needs. -/
 theorem call_trap_inv {sp : SrcProgram} {k : Nat} {st st' : State} {r : Lanius.Trap} {callee : Nat}
-    {args : List Core.Expr} (h : evalExpr k sp.toCore st (.call callee args) = .trapped r st') :
+    {args : List Core.Expr} (inside : callee < sp.funcs.length)
+    (h : evalExpr k sp.toCore st (.call callee args) = .trapped r st') :
     ∃ j, k = j + 1 ∧ (evalExprs j sp.toCore st args = .trapped r st' ∨
       ∃ values afterArgs, evalExprs j sp.toCore st args = .done values afterArgs ∧
         ((st' = afterArgs ∧ ∀ f, sp.funcs[callee]? = some f → values.length ≠ f.params.length) ∨
@@ -456,9 +463,7 @@ theorem call_trap_inv {sp : SrcProgram} {k : Nat} {st st' : State} {r : Lanius.T
       refine .inr ⟨values, afterArgs, argsRun, ?_⟩
       rw [SrcProgram.function?_toCore] at h
       cases found : sp.funcs[callee]? with
-      | none =>
-        simp only [found, Option.map_none, Semantics.Outcome.trapped.injEq] at h
-        exact .inl ⟨h.2.symm, fun f e => by cases e⟩
+      | none => exact absurd (List.getElem?_eq_none_iff.mp found) (by omega)
       | some f =>
         simp only [found, Option.map_some, SrcFunc.toCore] at h
         by_cases len : values.length = f.params.length

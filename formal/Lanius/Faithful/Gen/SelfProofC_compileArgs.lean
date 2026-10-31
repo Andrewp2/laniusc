@@ -172,7 +172,7 @@ theorem step_compile_stmt {prog : SrcProgram} {prims : Prims} {ix_compile_stmt i
     (ih_ite_code : Certified (Stmt_ite_code prog prims ix_ite_code n))
     (ih_loop_code : Certified (Stmt_loop_code prog prims ix_loop_code n)) :
     Stmt_compile_stmt prog prims ix_compile_stmt (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
   rw [pcall_succ np fn] at h
   simp only [src_compile_stmt] at h
   faithful [Lanius.Mini.compileStmt]

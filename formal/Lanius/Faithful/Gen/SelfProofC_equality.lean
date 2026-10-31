@@ -27,9 +27,9 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_equality {prog : SrcProgram} {prims : Prims} {ix_equality ix_boxed_of_mini_selfhost_Expr ix_SrcType_same ix_SrcType_is_float_any ix_SrcType_float_ty ix_float_order ix_SrcType_word : Nat} (fn : prog.funcs[ix_equality]? = some (src_equality ix_boxed_of_mini_selfhost_Expr ix_SrcType_same ix_SrcType_is_float_any ix_SrcType_float_ty ix_float_order ix_SrcType_word)) (np : prims.isPrim ix_equality = false)
-    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
+theorem proof_equality {prog : SrcProgram} {prims : Prims} {ix_equality ix_SrcType_same ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_float_any ix_SrcType_float_ty ix_float_order ix_SrcType_word : Nat} (fn : prog.funcs[ix_equality]? = some (src_equality ix_SrcType_same ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_float_any ix_SrcType_float_ty ix_float_order ix_SrcType_word)) (np : prims.isPrim ix_equality = false)
     (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
     (ext_SrcType_is_float_any : Certified (∀ {n : Nat}, Stmt_SrcType_is_float_any prog prims ix_SrcType_is_float_any n))
     (ext_SrcType_float_ty : Certified (∀ {n : Nat}, Stmt_SrcType_float_ty prog prims ix_SrcType_float_ty n))
     (ext_float_order : Certified (∀ {n : Nat}, Stmt_float_order prog prims ix_float_order n))

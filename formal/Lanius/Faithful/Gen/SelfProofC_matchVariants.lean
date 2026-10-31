@@ -71,14 +71,14 @@ theorem proof_eval_match {prog : SrcProgram} {prims : Prims} {ix_eval_match ix_e
   simp only [src_eval_match] at h
   faithful [Lanius.Mini.evalMatch]
 
-theorem proof_eval_match_of {prog : SrcProgram} {prims : Prims} {ix_eval_match_of ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_match_dst ix_match_variants ix_slot_vars ix_SrcType_same ix_length_of_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_eval_match_of]? = some (src_eval_match_of ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_assign_from ix_match_dst ix_match_variants ix_slot_vars ix_SrcType_same ix_length_of_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_eval_match_of = false)
+theorem proof_eval_match_of {prog : SrcProgram} {prims : Prims} {ix_eval_match_of ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same ix_assign_from ix_match_dst ix_match_variants ix_slot_vars ix_length_of_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_eval_match_of]? = some (src_eval_match_of ix_SrcType_size ix_boxed_of_mini_selfhost_Stmt ix_SrcType_same ix_assign_from ix_match_dst ix_match_variants ix_slot_vars ix_length_of_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_eval_match_of = false)
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
     (ext_assign_from : Certified (∀ {n : Nat}, Stmt_assign_from prog prims ix_assign_from n))
     (ext_match_dst : Certified (∀ {n : Nat}, Stmt_match_dst prog prims ix_match_dst n))
     (ext_match_variants : Certified (∀ {n : Nat}, Stmt_match_variants prog prims ix_match_variants n))
     (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n))
-    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
     (ext_length_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_length_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat} :
     Stmt_eval_match_of prog prims ix_eval_match_of n := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6

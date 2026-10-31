@@ -29,7 +29,7 @@ abbrev Stmt_element_base (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     RepExpr (Lanius.Mini.elementBase x0 x1 x2) w
 
 abbrev Stmt_load_cases (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Nat} {x3 : Nat} {x4 : List (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepExpr x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 75 (RepList 71 RepSrcType)) x4 v4 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Nat} {x3 : Nat} {x4 : List (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepExpr x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 76 (RepList 72 RepSrcType)) x4 v4 →
     RepStmt (Lanius.Mini.loadCases x0 x1 x2 x3 x4) w
 
 abbrev Stmt_load_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -37,7 +37,7 @@ abbrev Stmt_load_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepStmt (Lanius.Mini.loadType x0 x1 x2 x3 x4) w
 
 abbrev Stmt_load_types (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcType} {x1 : Nat} {x2 : Lanius.Mini.Expr} {x3 : Nat} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 71 RepSrcType) x0 v0 → RepNat x1 v1 → RepExpr x2 v2 → RepNat x3 v3 → RepStmt x4 v4 →
+  ∀ {x0 : List Lanius.Mini.SrcType} {x1 : Nat} {x2 : Lanius.Mini.Expr} {x3 : Nat} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 72 RepSrcType) x0 v0 → RepNat x1 v1 → RepExpr x2 v2 → RepNat x3 v3 → RepStmt x4 v4 →
     RepStmt (Lanius.Mini.loadTypes x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfCert

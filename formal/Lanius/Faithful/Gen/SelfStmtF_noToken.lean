@@ -30,7 +30,7 @@ abbrev Stmt_kid (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_kids_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
-    (RepList 80 RepCTree) (Lanius.Mini.kidsOf x0) w
+    (RepList 81 RepCTree) (Lanius.Mini.kidsOf x0) w
 
 abbrev Stmt_no_token (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
@@ -41,7 +41,7 @@ abbrev Stmt_starts_with_kind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : 
     RepBool (Lanius.Mini.startsWithKind x0 x1) w
 
 abbrev Stmt_with_kid (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : Option Lanius.Mini.Attached} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepOption 125 RepAttached) x1 v1 →
-    (RepOption 125 RepAttached) (Lanius.Mini.withKid x0 x1) w
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Option Lanius.Mini.Attached} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepOption 126 RepAttached) x1 v1 →
+    (RepOption 126 RepAttached) (Lanius.Mini.withKid x0 x1) w
 
 end Lanius.Faithful.SelfCert

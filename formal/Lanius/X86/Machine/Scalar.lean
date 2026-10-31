@@ -707,6 +707,47 @@ def execute (instruction : Instruction) (size : Nat) (before : State) : State :=
   | .convertInt double wide destination source => before.convertInt double wide destination source size
   | .convertFloat fromDouble destination source => before.convertFloat fromDouble destination source size
 
+/-! ## The kernel (trusted)
+
+`syscall` is not an instruction `decode` knows: what it does is what Linux
+does, stated here for the calls the verified compiler makes
+(TRUSTED_BASE.md section 8). `exit` (rax 60) ends the process
+(`Lanius.Mini.Exits`) and takes no step. -/
+
+/-- The `count` bytes of memory from `address`. -/
+def bytesAt (memory : Memory) (address : Address) : Nat → List UInt8
+  | 0 => []
+  | count + 1 => memory address :: bytesAt memory (address + 1) count
+
+/-- The state after a `syscall` that returned `result`, leaving `memory` and
+`io`: Linux's `syscall` entry and `sysret` leave rcx at the next instruction,
+every other register but r11 and the flags as they were. r11 holds RFLAGS;
+the model leaves it unknown (`r11`). -/
+def State.syscalled (before : State) (result r11 : BitVec 64) (memory : Memory) (io : Io) : State where
+  registers := fun register =>
+    if register = 0 then result
+    else if register = 1 then before.rip + 2
+    else if register = 11 then r11
+    else before.registers register
+  rip := before.rip + 2
+  memory := memory
+  flags := before.flags
+  io := io
+
+/-- What Linux does at a `syscall`, given that the process's standard output
+and standard error are open for writing, that writes to them succeed, and
+that no signal arrives (TRUSTED_BASE.md section 8):
+
+- `write` (rax 1) to fd 1 or 2 (rdi) of at most `maxTransfer` bytes (rdx)
+  from rsi writes all of them, an event on the trace, and returns their
+  count. -/
+inductive Kernel (before : State) : State → Prop where
+  | write (number : before.registers 0 = 1) (fd : before.registers 7 = 1 ∨ before.registers 7 = 2)
+      (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
+      Kernel before (before.syscalled (before.registers 2) r11 before.memory
+        { before.io with trace := before.io.trace ++
+          [.write (before.registers 7).toNat (bytesAt before.memory (before.registers 6) (before.registers 2).toNat)] })
+
 /-- Decoding consumes bytes actually loaded at RIP. Division must use
 `divided`, which also requires nonzero-divisor and quotient-range evidence;
 the total `execute` function alone does not establish a successful ISA step. -/
@@ -773,6 +814,8 @@ inductive Step (before : State) (after : State) : Prop where
       (destination : Register) (displacement : BitVec 32) (size : Nat)
       (decoded : decode bytes = some (.ripRelative destination displacement, size))
       (result : after = before.ripRelative destination displacement size)
+  /-- `syscall` (0F 05): what the kernel does. -/
+  | syscalled (loaded : CodeAt before.memory before.rip [15, 5]) (kernel : Kernel before after)
 
 /-- UD2 raises #UD at its own RIP. This records the architectural fault,
 not a Linux signal handler or an assumed successful instruction transition. -/

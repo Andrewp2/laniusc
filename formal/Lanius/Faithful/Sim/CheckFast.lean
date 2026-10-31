@@ -107,6 +107,10 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setFieldEval _ _ _ => false
   | .returnUnit => true
   | .assert condition => isBoolTy (effTyC calls boxes tenv condition)
+  | .break => false
+  | .continue => false
+  | .matchArm _ _ _ _ _ _ _ _ => false
+  | .unreachable _ _ => false
 
 end
 
@@ -193,6 +197,10 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | setFieldEval => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | returnUnit => intro tenv; rw [stmtOkC, stmtOk] <;> rfl
   | «assert» condition => intro tenv; rw [stmtOkC, stmtOk, effTyC_eq] <;> rfl
+  | «break» => intro tenv; rw [stmtOkC, stmtOk]
+  | «continue» => intro tenv; rw [stmtOkC, stmtOk]
+  | matchArm => intro tenv; rw [stmtOkC, stmtOk]
+  | unreachable => intro tenv; rw [stmtOkC, stmtOk]
 
 end
 

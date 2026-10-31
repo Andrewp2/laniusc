@@ -7,12 +7,12 @@ public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt7
+public import Lanius.Faithful.Gen.SelfStmtC_Code_image
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
 public import Lanius.Faithful.Gen.SelfStmtC_larger
-public import Lanius.Faithful.Gen.SelfStmtC_layout
 import all Lanius.Faithful.Gen.SelfSrcC_larger
 import all Lanius.Mini.Compiler.P.larger
 
@@ -40,7 +40,7 @@ theorem step_ite_code {prog : SrcProgram} {prims : Prims} {ix_ite_code ix_plus i
     (ext_single_of_mini_selfhost_Instr : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_Instr prog prims ix_single_of_mini_selfhost_Instr n)) {n : Nat}
     (ih_compile_stmt : Certified (Stmt_compile_stmt prog prims ix_compile_stmt n)) :
     Stmt_ite_code prog prims ix_ite_code (n + 1) := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6
   rw [pcall_succ np fn] at h
   simp only [src_ite_code] at h
   faithful [Lanius.Mini.Inline.iteCode]
@@ -95,7 +95,7 @@ theorem step_seq_code {prog : SrcProgram} {prims : Prims} {ix_seq_code ix_plus i
     (ext_code_size : Certified (∀ {n : Nat}, Stmt_code_size prog prims ix_code_size n)) {n : Nat}
     (ih_compile_stmt : Certified (Stmt_compile_stmt prog prims ix_compile_stmt n)) :
     Stmt_seq_code prog prims ix_seq_code (n + 1) := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
   rw [pcall_succ np fn] at h
   simp only [src_seq_code] at h
   faithful [Lanius.Mini.Inline.seqCode]

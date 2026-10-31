@@ -203,7 +203,7 @@ theorem read_body {inp : Nat} {W : List (BitVec 32)} (len : W.length < 2 ^ 64) :
       rcases rest2 with ⟨bad, -⟩ | ⟨-, rfl, rfl⟩
       · cases bad
       obtain ⟨j9, f', values, afterArgs, done, cc, -, argsRun, found', lenOk, consBody, consResult, rfl⟩ :=
-        call_inv' consRun
+        call_inv' (inside_of fn_cons_of_i32) consRun
       obtain ⟨j10, iv, sa, more, -, idxRun, moreRun, rfl⟩ := exprs_cons_inv argsRun
       obtain ⟨j11, bv, sb, -, baseRun, idx⟩ := index_inv idxRun
       obtain ⟨rfl, rfl⟩ := local_eval l12 baseRun
@@ -339,7 +339,7 @@ theorem write_one_body {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
     UintTy.toCore, List.map] at run
   obtain ⟨j1, wv, s5, s6, -, wrun, rest5, rfl⟩ := letLocal_inv run
   -- The recursive call writes the rest from `ofs + 1`.
-  obtain ⟨j2, f3, values, afterArgs, done3, c3, -, argsRun, found3, len3, body3, result3, rfl⟩ := call_inv' wrun
+  obtain ⟨j2, f3, values, afterArgs, done3, c3, -, argsRun, found3, len3, body3, result3, rfl⟩ := call_inv' (inside_of fn_write) wrun
   rw [fn_write, Option.some.injEq] at found3
   subst found3
   obtain ⟨_, a1, t1, more1, -, r1, m1, rfl⟩ := exprs_cons_inv argsRun
@@ -531,7 +531,7 @@ theorem write_body {outp room : Nat} (roomLt : room < 2 ^ 31) : ∀ ws, WriteSpe
     have m137 : (s1.bindLocals [(134, Value.signed .i32 x.toInt), (137, bv)]).local? 137 = some bv :=
       local?_bindLocal_self (invE.bindLocal 134 _) 137 bv
     -- `oracle_write_one(out, ofs, x, unbox(rest))`
-    obtain ⟨j5, f4, values, afterArgs, done4, c4, -, argsRun, found4, len4, body4, result4, rfl⟩ := call_inv' body
+    obtain ⟨j5, f4, values, afterArgs, done4, c4, -, argsRun, found4, len4, body4, result4, rfl⟩ := call_inv' (inside_of fn_write_one) body
     rw [fn_write_one, Option.some.injEq] at found4
     subst found4
     obtain ⟨_, a1, t1, more1, -, r1, n1, rfl⟩ := exprs_cons_inv argsRun
@@ -667,7 +667,7 @@ theorem put_body {outp room : Nat} (roomLt : room < 2 ^ 31) {k : Nat} {s complet
       local?_bindLocals_other _ (by simp) l11
     have m153 : (s1.bindLocals [(153, lv)]).local? 153 = some lv := local?_bindLocal_self invE _ _
     obtain ⟨j4, wv, -, crun, castOk⟩ := cast_inv body
-    obtain ⟨j5, f3, values, afterArgs, done3, c3, -, argsRun, found3, len3, body3, result3, rfl⟩ := call_inv' crun
+    obtain ⟨j5, f3, values, afterArgs, done3, c3, -, argsRun, found3, len3, body3, result3, rfl⟩ := call_inv' (inside_of fn_write) crun
     rw [fn_write, Option.some.injEq] at found3
     subst found3
     obtain ⟨_, a1, t1, more1, -, r1, n1, rfl⟩ := exprs_cons_inv argsRun
@@ -703,7 +703,7 @@ theorem driver_faithful {fuel : Nat} {st st' : State} {v : Value} {inp outp room
     (run : evalExpr fuel prog.toCore st (.call 0 [.value (.pointer inp), .value (.signed .i32 W.length),
       .value (.pointer outp), .value (.signed .i32 room)]) = .done v st') :
     Result (compileWords (frontEndWords grammar W)) v st' outp room := by
-  obtain ⟨j0, f0, values, afterArgs, done0, c0, -, argsRun, found0, -, body0, result0, rfl⟩ := call_inv' run
+  obtain ⟨j0, f0, values, afterArgs, done0, c0, -, argsRun, found0, -, body0, result0, rfl⟩ := call_inv' (inside_of fn_w) run
   rw [fn_w, Option.some.injEq] at found0
   subst found0
   obtain ⟨rfl, hst⟩ := values_eval [.pointer inp, .signed .i32 W.length, .pointer outp, .signed .i32 room] argsRun
@@ -757,7 +757,7 @@ theorem driver_faithful {fuel : Nat} {st st' : State} {v : Value} {inp outp room
     local?_bindLocal_self (invE.bindLocal 67 _) _ _
   -- `let read = oracle_read(data, 0, words as usize, empty())`
   obtain ⟨j3, lv, s5, s6, -, readRun, rest3, rfl⟩ := letLocal_inv rest2
-  obtain ⟨j4, fR, valsR, afterR, doneR, cR, -, argsR, foundR, -, bodyR, resultR, rfl⟩ := call_inv' readRun
+  obtain ⟨j4, fR, valsR, afterR, doneR, cR, -, argsR, foundR, -, bodyR, resultR, rfl⟩ := call_inv' (inside_of fn_read) readRun
   rw [fn_read, Option.some.injEq] at foundR
   subst foundR
   obtain ⟨_, a3, t3, more3, -, r3, m3, rfl⟩ := exprs_cons_inv argsR
@@ -771,33 +771,33 @@ theorem driver_faithful {fuel : Nat} {st st' : State} {v : Value} {inp outp room
   subst castOk
   obtain ⟨_, a6, t6, more6, -, r6, m6, rfl⟩ := exprs_cons_inv m5
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv m6
-  obtain ⟨j5, fE, valsE, afterE, doneE, cE, -, argsE, foundE, lenE, bodyE, resultE, rfl⟩ := call_inv' r6
+  obtain ⟨j5, fE, valsE, afterE, doneE, cE, -, argsE, foundE, lenE, bodyE, resultE, rfl⟩ := call_inv' (inside_of fn_empty_of_i32) r6
   rw [fn_empty_of_i32, Option.some.injEq] at foundE
   subst foundE
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsE
   simp only [read_params, show (0#64).toNat = 0 from rfl, Int.toNat_natCast] at bodyR
   -- `return oracle_put(out, compile_words(front_end_words(grammar(), read)))`
   obtain ⟨j6, rv, -, putRun, rfl⟩ := return_inv rest3
-  obtain ⟨j7, fP, valsP, afterP, doneP, cP, -, argsP, foundP, -, bodyP, resultP, rfl⟩ := call_inv' putRun
+  obtain ⟨j7, fP, valsP, afterP, doneP, cP, -, argsP, foundP, -, bodyP, resultP, rfl⟩ := call_inv' (inside_of fn_put) putRun
   rw [fn_put, Option.some.injEq] at foundP
   subst foundP
   obtain ⟨_, b1, u1, moreP, -, q1, n1, rfl⟩ := exprs_cons_inv argsP
   obtain ⟨f1, rfl⟩ := local_inv q1
   obtain ⟨_, b2, u2, moreP2, -, q2, n2, rfl⟩ := exprs_cons_inv n1
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv n2
-  obtain ⟨j8, fC, valsC, afterC, doneC, cC, -, argsC, foundC, lenC, bodyC, resultC, rfl⟩ := call_inv' q2
+  obtain ⟨j8, fC, valsC, afterC, doneC, cC, -, argsC, foundC, lenC, bodyC, resultC, rfl⟩ := call_inv' (inside_of fn_compile_words) q2
   rw [fn_compile_words, Option.some.injEq] at foundC
   subst foundC
   obtain ⟨_, b3, u3, moreC, -, q3, n3, rfl⟩ := exprs_cons_inv argsC
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv n3
-  obtain ⟨j9, fF, valsF, afterF, doneF, cF, -, argsF, foundF, lenF, bodyF, resultF, rfl⟩ := call_inv' q3
+  obtain ⟨j9, fF, valsF, afterF, doneF, cF, -, argsF, foundF, lenF, bodyF, resultF, rfl⟩ := call_inv' (inside_of fn_front_end_words) q3
   rw [fn_front_end_words, Option.some.injEq] at foundF
   subst foundF
   obtain ⟨_, b4, u4, moreF, -, q4, n4, rfl⟩ := exprs_cons_inv argsF
   obtain ⟨_, b5, u5, moreF2, -, q5, n5, rfl⟩ := exprs_cons_inv n4
   obtain ⟨f5, rfl⟩ := local_inv q5
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv n5
-  obtain ⟨j10, fG, valsG, afterG, doneG, cG, -, argsG, foundG, lenG, bodyG, resultG, rfl⟩ := call_inv' q4
+  obtain ⟨j10, fG, valsG, afterG, doneG, cG, -, argsG, foundG, lenG, bodyG, resultG, rfl⟩ := call_inv' (inside_of fn_grammar) q4
   rw [fn_grammar, Option.some.injEq] at foundG
   subst foundG
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsG

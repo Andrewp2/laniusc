@@ -111,9 +111,44 @@ def evalCallSig (sig : Sig) (callee : Nat) (slot : Nat) (args : EvaluatedArgs) :
   else
     none
 
+/-- Core's host services (roadmap F8) are its functions from id 2^32 on (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr. Their code is system calls.  write_byte(handle, value), handle and value in slot and slot + 1: to handle 1 or 2 the value's low byte goes through the heap's byte 0 (no block's, kept as it was) and returns 1; any other handle returns -1, as Core's does with no file open. -/
+def hostByteCode (slot : Nat) : Stmt :=
+  let handleOk : Expr := Expr.binary Word.u64 BinOp.or (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit 1)) (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit 2))
+  let restore : Stmt := Stmt.seq (Stmt.storeByte (Expr.lit 0) (Expr.var (slot + 2))) (Stmt.assign slot (Expr.lit 1))
+  let write : Stmt := Stmt.seq (Stmt.sys Syscall.write (slot + 3) (Expr.var slot :: Expr.lit 0 :: [Expr.lit 1])) restore
+  let store : Stmt := Stmt.seq (Stmt.storeByte (Expr.lit 0) (Expr.var (slot + 1))) write
+  let save : Stmt := Stmt.seq (Stmt.loadByte (slot + 2) (Expr.lit 0)) store
+  Stmt.ite handleOk save (Stmt.assign slot (Expr.lit 4294967295))
+
+/-- write_stdout / write_stderr(pointer, count) to fd, pointer and count in slot and slot + 1: writes of at most Linux's MAX_RW_COUNT bytes until none are left, then the count as i32. -/
+def hostWriteCode (fd : BitVec 64) (slot : Nat) : Stmt :=
+  let count : Nat := slot + 1
+  let chunk : Nat := slot + 3
+  let pick : Stmt := Stmt.ite (Expr.compare Word.u64 CmpOp.lt (Expr.var count) (Expr.lit 2147479552)) (Stmt.assign chunk (Expr.var count)) (Stmt.assign chunk (Expr.lit 2147479552))
+  let advance : Stmt := Stmt.seq (Stmt.assign slot (Expr.binary Word.u64 BinOp.add (Expr.var slot) (Expr.var chunk))) (Stmt.assign count (Expr.binary Word.u64 BinOp.sub (Expr.var count) (Expr.var chunk)))
+  let write : Stmt := Stmt.seq (Stmt.sys Syscall.write (slot + 4) (Expr.lit fd :: Expr.var slot :: [Expr.var chunk])) advance
+  let body : Stmt := Stmt.seq pick write
+  let looped : Stmt := Stmt.seq (Stmt.loop (Expr.compare Word.u64 CmpOp.ne (Expr.var count) (Expr.lit 0)) body) (Stmt.assign slot (Expr.binary Word.s32 BinOp.add (Expr.var (slot + 2)) (Expr.lit 0)))
+  Stmt.seq (Stmt.assign (slot + 2) (Expr.var count)) looped
+
+def evalHost (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
+  if decide (callee = 4294967296) && typesSame args.types (SrcType.i32 :: [SrcType.i32]) then
+    some ({ stmt := Stmt.seq args.stmt (hostByteCode slot), ty := SrcType.i32 } : Evaluated)
+  else
+    if decide (callee = 4294967297) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
+      some ({ stmt := Stmt.seq args.stmt (hostWriteCode 1 slot), ty := SrcType.i32 } : Evaluated)
+    else
+      if decide (callee = 4294967298) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
+        some ({ stmt := Stmt.seq args.stmt (hostWriteCode 2 slot), ty := SrcType.i32 } : Evaluated)
+      else
+        none
+
 def evalCall (sig : Option Sig) (callee : Nat) (slot : Nat) (args : Option EvaluatedArgs) : Option Evaluated :=
   match sig with
-  | none => none
+  | none =>
+    (match args with
+     | none => none
+     | some a => evalHost callee slot a)
   | some s =>
     match args with
     | none => none

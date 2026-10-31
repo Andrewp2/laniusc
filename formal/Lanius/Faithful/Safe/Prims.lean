@@ -342,14 +342,14 @@ theorem panic_safe : SafeS sp.toCore st panicFunc.body.toCore := by
 theorem sizeOf_call_safe {t : SrcType} {callee : Nat} (found : sp.funcs[callee]? = some (sizeOfFunc t))
     (el : wordElement sp.decls t = true) {w : Nat} (hw : NativeLayout.valueWords? sp.toCore t.toCore = some w)
     (pos : 0 < w) (inv : Inv st) : SafeE sp.toCore st (.call callee []) :=
-  safeE_call found safeEs_nil fun {k values s} h => by
+  safeE_call found (by simp [sizeOfFunc, SrcStmt.breaksOut]) safeEs_nil fun {k values s} h => by
     obtain ⟨rfl, hs⟩ := exprs_nil_inv h
     subst s
     exact ⟨rfl, sizeOf_safe el hw pos (Same.start inv _)⟩
 
 theorem panic_call_safe {callee : Nat} (found : sp.funcs[callee]? = some panicFunc) :
     SafeE sp.toCore st (.call callee []) :=
-  safeE_call found safeEs_nil fun {k values s} h => by
+  safeE_call found (by simp [panicFunc, SrcStmt.breaksOut]) safeEs_nil fun {k values s} h => by
     obtain ⟨rfl, hs⟩ := exprs_nil_inv h
     subst s
     exact ⟨rfl, panic_safe⟩
@@ -361,7 +361,7 @@ theorem slice_call_safe {t : SrcType} {callee : Nat} {p : Core.Expr} {a w : Nat}
     (range : st.heap.checkRange a (8 * w) 8 = .ok ()) :
     SafeE sp.toCore st (.call callee [p, .value (.signed .i32 1)]) := by
   have args := knowns_cons storage (knowns_cons (known_value (.signed .i32 1)) knowns_nil)
-  refine safeE_call found args.safeEs fun {k values s} h => ?_
+  refine safeE_call found (by simp [sliceFunc, SrcStmt.breaksOut]) args.safeEs fun {k values s} h => ?_
   obtain ⟨rfl, hs⟩ := args.done h
   subst s
   refine ⟨rfl, ?_⟩

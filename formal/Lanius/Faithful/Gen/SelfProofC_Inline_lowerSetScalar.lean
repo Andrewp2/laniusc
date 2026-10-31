@@ -68,11 +68,11 @@ theorem proof_checked_element {prog : SrcProgram} {prims : Prims} {ix_checked_el
   simp only [src_checked_element] at h
   faithful [Lanius.Mini.Inline.checkedElement]
 
-theorem proof_checked_load {prog : SrcProgram} {prims : Prims} {ix_checked_load ix_SrcType_size ix_boxed_of_mini_selfhost_SrcType ix_word_element ix_SrcType_same ix_load_type ix_element_base : Nat} (fn : prog.funcs[ix_checked_load]? = some (src_checked_load ix_SrcType_size ix_boxed_of_mini_selfhost_SrcType ix_word_element ix_SrcType_same ix_load_type ix_element_base)) (np : prims.isPrim ix_checked_load = false)
+theorem proof_checked_load {prog : SrcProgram} {prims : Prims} {ix_checked_load ix_SrcType_size ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_word_element ix_load_type ix_element_base : Nat} (fn : prog.funcs[ix_checked_load]? = some (src_checked_load ix_SrcType_size ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_word_element ix_load_type ix_element_base)) (np : prims.isPrim ix_checked_load = false)
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_boxed_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_SrcType n))
-    (ext_word_element : Certified (∀ {n : Nat}, Stmt_word_element prog prims ix_word_element n))
     (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
+    (ext_word_element : Certified (∀ {n : Nat}, Stmt_word_element prog prims ix_word_element n))
     (ext_load_type : Certified (∀ {n : Nat}, Stmt_load_type prog prims ix_load_type n))
     (ext_element_base : Certified (∀ {n : Nat}, Stmt_element_base prog prims ix_element_base n)) {n : Nat} :
     Stmt_checked_load prog prims ix_checked_load n := by
@@ -94,9 +94,9 @@ theorem step_compare_agrees {prog : SrcProgram} {prims : Prims} {ix_compare_agre
   simp only [src_compare_agrees] at h
   faithful [Lanius.Mini.Inline.compareAgrees]
 
-theorem proof_declare_enum_in {prog : SrcProgram} {prims : Prims} {ix_declare_enum_in ix_keep_if ix_variants_same ix_cons_of_mini_selfhost_SrcEnumDecl : Nat} (fn : prog.funcs[ix_declare_enum_in]? = some (src_declare_enum_in ix_keep_if ix_variants_same ix_cons_of_mini_selfhost_SrcEnumDecl)) (np : prims.isPrim ix_declare_enum_in = false)
-    (ext_keep_if : Certified (∀ {n : Nat}, Stmt_keep_if prog prims ix_keep_if n))
+theorem proof_declare_enum_in {prog : SrcProgram} {prims : Prims} {ix_declare_enum_in ix_variants_same ix_keep_if ix_cons_of_mini_selfhost_SrcEnumDecl : Nat} (fn : prog.funcs[ix_declare_enum_in]? = some (src_declare_enum_in ix_variants_same ix_keep_if ix_cons_of_mini_selfhost_SrcEnumDecl)) (np : prims.isPrim ix_declare_enum_in = false)
     (ext_variants_same : Certified (∀ {n : Nat}, Stmt_variants_same prog prims ix_variants_same n))
+    (ext_keep_if : Certified (∀ {n : Nat}, Stmt_keep_if prog prims ix_keep_if n))
     (ext_cons_of_mini_selfhost_SrcEnumDecl : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcEnumDecl prog prims ix_cons_of_mini_selfhost_SrcEnumDecl n)) {n : Nat} :
     Stmt_declare_enum_in prog prims ix_declare_enum_in n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
@@ -130,9 +130,9 @@ theorem step_declare_params_after {prog : SrcProgram} {prims : Prims} {ix_declar
   simp only [src_declare_params_after] at h
   faithful [Lanius.Mini.Inline.declareParamsAfter]
 
-theorem proof_declare_struct_in {prog : SrcProgram} {prims : Prims} {ix_declare_struct_in ix_keep_if ix_types_same ix_cons_of_mini_selfhost_SrcStructDecl : Nat} (fn : prog.funcs[ix_declare_struct_in]? = some (src_declare_struct_in ix_keep_if ix_types_same ix_cons_of_mini_selfhost_SrcStructDecl)) (np : prims.isPrim ix_declare_struct_in = false)
-    (ext_keep_if : Certified (∀ {n : Nat}, Stmt_keep_if prog prims ix_keep_if n))
+theorem proof_declare_struct_in {prog : SrcProgram} {prims : Prims} {ix_declare_struct_in ix_types_same ix_keep_if ix_cons_of_mini_selfhost_SrcStructDecl : Nat} (fn : prog.funcs[ix_declare_struct_in]? = some (src_declare_struct_in ix_types_same ix_keep_if ix_cons_of_mini_selfhost_SrcStructDecl)) (np : prims.isPrim ix_declare_struct_in = false)
     (ext_types_same : Certified (∀ {n : Nat}, Stmt_types_same prog prims ix_types_same n))
+    (ext_keep_if : Certified (∀ {n : Nat}, Stmt_keep_if prog prims ix_keep_if n))
     (ext_cons_of_mini_selfhost_SrcStructDecl : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcStructDecl prog prims ix_cons_of_mini_selfhost_SrcStructDecl n)) {n : Nat} :
     Stmt_declare_struct_in prog prims ix_declare_struct_in n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3

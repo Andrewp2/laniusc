@@ -19,11 +19,14 @@ def assignAgrees (index : Nat) (value : Expr) (other : Stmt) : Bool :=
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 end Lanius.Mini

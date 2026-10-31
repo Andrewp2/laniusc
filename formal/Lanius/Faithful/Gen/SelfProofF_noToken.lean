@@ -31,10 +31,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_generic_tail {prog : SrcProgram} {prims : Prims} {ix_generic_tail ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_t_lparen ix_t_lbrace ix_t_colon ix_starts_with_kind : Nat} (fn : prog.funcs[ix_generic_tail]? = some (src_generic_tail ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_t_lparen ix_t_lbrace ix_t_colon ix_starts_with_kind)) (np : prims.isPrim ix_generic_tail = false)
+theorem proof_generic_tail {prog : SrcProgram} {prims : Prims} {ix_generic_tail ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_t_lbrace ix_t_lparen ix_t_colon ix_starts_with_kind : Nat} (fn : prog.funcs[ix_generic_tail]? = some (src_generic_tail ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_t_lbrace ix_t_lparen ix_t_colon ix_starts_with_kind)) (np : prims.isPrim ix_generic_tail = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Token prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Token n))
-    (ext_t_lparen : Certified (∀ {n : Nat}, Stmt_t_lparen prog prims ix_t_lparen n))
     (ext_t_lbrace : Certified (∀ {n : Nat}, Stmt_t_lbrace prog prims ix_t_lbrace n))
+    (ext_t_lparen : Certified (∀ {n : Nat}, Stmt_t_lparen prog prims ix_t_lparen n))
     (ext_t_colon : Certified (∀ {n : Nat}, Stmt_t_colon prog prims ix_t_colon n))
     (ext_starts_with_kind : Certified (∀ {n : Nat}, Stmt_starts_with_kind prog prims ix_starts_with_kind n)) {n : Nat} :
     Stmt_generic_tail prog prims ix_generic_tail n := by

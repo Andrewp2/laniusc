@@ -21,17 +21,18 @@ theorem compileSource_contract_from {sp : SrcProgram} {binary : Binary}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
-    {st final : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap heap)
+    {st final : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     (runs : Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .done v final)
     (fits : final.heap.nextAddress ≤ heap.limit) :
     ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
-      HeapCorr final.heap after ∧
+      HeapCorr final.heap final.world after ∧
       ∀ imageBase window, Contract binary imageBase (binary.stackNeed depth) window f bits heap results after := by
   obtain ⟨_, _, funcs, lowered, compiledProgram⟩ := compileSource_some compiled
   cases fuel with
   | zero => simp [Semantics.evalExpr] at runs
   | succ k =>
-    obtain ⟨func', values, afterArgs, completed, c, argsRun, found', _, bodyRun, result, rfl⟩ := call_inv runs
+    obtain ⟨func', values, afterArgs, completed, c, argsRun, found', _, bodyRun, result, rfl⟩ :=
+      call_inv (List.getElem?_eq_some_iff.mp found).1 runs
     rw [found] at found'
     cases found'
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
@@ -53,7 +54,7 @@ theorem compileSource_outcome_from {sp : SrcProgram} {binary : Binary}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
-    (fresh : st.Fresh) (hc : HeapCorr st.heap heap) (within : st.heap.nextAddress ≤ heap.limit)
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit)
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
     (apart : ∀ index, index < binary.image.length →
@@ -67,7 +68,7 @@ theorem compileSource_outcome_from {sp : SrcProgram} {binary : Binary}
     (∃ fuel v final, Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .done v final ∧
       final.heap.nextAddress ≤ heap.limit ∧
       ∃ results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
-        HeapCorr final.heap after ∧ ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after) ∨
+        HeapCorr final.heap final.world after ∧ ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after) ∨
     ∃ fuel r st', Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)) = .trapped r st' ∧
       undefinedTrap r = true ∧ st'.heap.nextAddress ≤ heap.limit := by
   by_cases fails : ∀ fuel, Failing heap.limit (Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value)))

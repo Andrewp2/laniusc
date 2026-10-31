@@ -31,6 +31,11 @@ inductive Stops (prog : Program) : Nat → Env → Heap → Stmt → Nat → Pro
       condition.eval env ≠ 0 → Exec prog depth env heap body (.normal middle between) →
       Stops prog depth middle between (.loop condition body) n →
       Stops prog depth env heap (.loop condition body) (n + 1)
+  | loopContinued {depth : Nat} {env middle : Env} {heap between : Heap} {condition : Expr} {body : Stmt}
+      {n : Nat} :
+      condition.eval env ≠ 0 → Exec prog depth env heap body (.continued middle between) →
+      Stops prog depth middle between (.loop condition body) n →
+      Stops prog depth env heap (.loop condition body) (n + 1)
   | call {depth inner target count callee : Nat} {env : Env} {heap : Heap} {args : List Expr} {func : Func}
       {n : Nat} :
       prog.funcs[callee]? = some func → args.length = func.params → inner < depth →
@@ -58,6 +63,11 @@ theorem Stops.mono (stops : Stops prog depth env heap stmt n) : ∀ {k}, k ≤ n
     cases k with
     | zero => exact .zero
     | succ k => exact .loopNext nonzero body (ih (by omega))
+  | loopContinued nonzero body _ ih =>
+    intro k small
+    cases k with
+    | zero => exact .zero
+    | succ k => exact .loopContinued nonzero body (ih (by omega))
   | call found length lower _ ih =>
     intro k small
     cases k with
@@ -112,8 +122,17 @@ theorem AStops.star {calls : Calls} {stops : StopCalls} {code : List Instr}
 
 /-- A sub-block that ends normally, then a stop. -/
 theorem AStops.after {calls : Calls} {stops : StopCalls} {code : List Instr} {m : Machine}
-    (first : StmtResult calls code base innerPos innerBlock m (.normal middle between))
+    (first : StmtResult calls code base innerPos innerBlock brk cont m (.normal middle between))
     (rest : ∀ m', Star calls code m m' → m'.pc = innerPos + codeSize innerBlock → Agree base middle m' →
+      m'.heap = between → AStops calls stops code m n) :
+    AStops calls stops code m n := by
+  obtain ⟨m', steps, pc, agree, onHeap⟩ := first
+  exact rest m' steps pc agree onHeap
+
+/-- A sub-block that continues, then a stop. -/
+theorem AStops.afterContinued {calls : Calls} {stops : StopCalls} {code : List Instr} {m : Machine}
+    (first : StmtResult calls code base innerPos innerBlock brk cont m (.continued middle between))
+    (rest : ∀ m', Star calls code m m' → m'.pc = cont → Agree base middle m' →
       m'.heap = between → AStops calls stops code m n) :
     AStops calls stops code m n := by
   obtain ⟨m', steps, pc, agree, onHeap⟩ := first
@@ -133,38 +152,38 @@ theorem SourceStops.downward (prog : Program) (depth : Nat) :
 theorem compileStmt_stops {prog : Program} {base : Nat} {arities : List Arity} {results : Nat}
     {code : List Instr} {depth : Nat} {env : Env} {heap : Heap} {stmt : Stmt} {n : Nat}
     (stops : Stops prog depth env heap stmt n) :
-    ∀ pos m, Block code pos (compileStmt base pos stmt) → m.pc = pos → Agree base env m → m.heap = heap →
-      stmt.within base arities results = true →
+    ∀ pos brk cont m, Block code pos (compileStmt base pos brk cont stmt) → m.pc = pos → Agree base env m →
+      m.heap = heap → stmt.within base arities results = true →
       AStops (SourceCalls prog depth) (SourceStops prog depth) code m n := by
   induction stops with
   | zero => intros; exact .zero
   | seqFirst _ ihFirst =>
-    intro pos m placed pc agree onHeap within
+    intro pos brk cont m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed
-    exact ihFirst pos m placed.left pc agree onHeap within.1
+    exact ihFirst pos brk cont m placed.left pc agree onHeap within.1
   | seqSecond first _ ihSecond =>
-    intro pos m placed pc agree onHeap within
+    intro pos brk cont m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed
     obtain ⟨m', steps, pc', agree', onHeap'⟩ :=
-      compileStmt_correct first pos m placed.left pc agree onHeap within.1
-    exact AStops.star (SourceStops.downward _ _) steps (ihSecond _ m' placed.right pc' agree' onHeap' within.2)
+      compileStmt_correct first pos brk cont m placed.left pc agree onHeap within.1
+    exact AStops.star (SourceStops.downward _ _) steps (ihSecond _ brk cont m' placed.right pc' agree' onHeap' within.2)
   | @ifTrue depth env heap condition thenBranch elseBranch n nonzero _ ihThen =>
-    intro pos m placed pc agree onHeap within
+    intro pos brk cont m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed
     obtain ⟨acc, kept⟩ := compileExpr_correct base condition 0 env m agree within.1.1
     apply AStops.star (SourceStops.downward _ _) (Star.straight _ (pc ▸ placed.left.left.left.left) (compileExpr_straight _ _ _))
     have jz := placed.left.left.left.right.fetch
     apply AStops.star (SourceStops.downward _ _) (.single (.jzNot (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact nonzero)))
-    refine ihThen (pos + codeSize (compileExpr base condition 0) + 9) _ ?_ ?_ ?_
+    refine ihThen (pos + codeSize (compileExpr base condition 0) + 9) brk cont _ ?_ ?_ ?_
       ((Instr.exec_heap _ _).trans onHeap) within.1.2
     · exact placed.left.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · simp only [Instr.exec_pc, pc, Instr.size]
     · exact agree.of_slots fun slot below => kept slot (by omega)
   | @ifFalse depth env heap condition thenBranch elseBranch n zero _ ihElse =>
-    intro pos m placed pc agree onHeap within
+    intro pos brk cont m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed
     obtain ⟨acc, kept⟩ := compileExpr_correct base condition 0 env m agree within.1.1
@@ -172,25 +191,25 @@ theorem compileStmt_stops {prog : Program} {base : Nat} {arities : List Arity} {
     have jz := placed.left.left.left.right.fetch
     apply AStops.star (SourceStops.downward _ _) (.single (.jzTaken (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact zero)))
     refine ihElse (pos + codeSize (compileExpr base condition 0) + 9 +
-      codeSize (compileStmt base (pos + codeSize (compileExpr base condition 0) + 9) thenBranch) + 5)
-      _ ?_ rfl ?_ ((Instr.exec_heap _ _).trans onHeap) within.2
+      codeSize (compileStmt base (pos + codeSize (compileExpr base condition 0) + 9) brk cont thenBranch) + 5)
+      brk cont _ ?_ rfl ?_ ((Instr.exec_heap _ _).trans onHeap) within.2
     · exact placed.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · exact agree.of_slots fun slot below => kept slot (by omega)
   | @loopBody depth env heap condition body n nonzero _ ihBody =>
-    intro pos m placed pc agree onHeap within
+    intro pos brk cont m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt] at placed
     obtain ⟨acc, kept⟩ := compileExpr_correct base condition 0 env m agree within.1
     apply AStops.star (SourceStops.downward _ _) (Star.straight _ (pc ▸ placed.left.left.left) (compileExpr_straight _ _ _))
     have jz := placed.left.left.right.fetch
     apply AStops.star (SourceStops.downward _ _) (.single (.jzNot (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact nonzero)))
-    refine ihBody (pos + codeSize (compileExpr base condition 0) + 9) _ ?_ ?_ ?_
+    refine ihBody (pos + codeSize (compileExpr base condition 0) + 9) (pos + codeSize (compileExpr base condition 0)) pos _ ?_ ?_ ?_
       ((Instr.exec_heap _ _).trans onHeap) within.2
     · exact placed.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega)
     · simp only [Instr.exec_pc, pc, Instr.size]
     · exact agree.of_slots fun slot below => kept slot (by omega)
   | @loopNext depth env middle heap between condition body n nonzero bodyExec _ ihLoop =>
-    intro pos m placed pc agree onHeap within
+    intro pos brk cont m placed pc agree onHeap within
     have loopWithin := within
     simp only [Stmt.within, Bool.and_eq_true] at within
     have placedLoop := placed
@@ -199,7 +218,8 @@ theorem compileStmt_stops {prog : Program} {base : Nat} {arities : List Arity} {
     apply AStops.star (SourceStops.downward _ _) (Star.straight _ (pc ▸ placed.left.left.left) (compileExpr_straight _ _ _))
     have jz := placed.left.left.right.fetch
     apply AStops.star (SourceStops.downward _ _) (.single (.jzNot (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact nonzero)))
-    refine AStops.after (compileStmt_correct bodyExec (pos + codeSize (compileExpr base condition 0) + 9) _
+    refine AStops.after (compileStmt_correct bodyExec (pos + codeSize (compileExpr base condition 0) + 9)
+      (pos + codeSize (compileExpr base condition 0)) pos _
       (placed.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega))
       (by simp only [Instr.exec_pc, pc, Instr.size])
       (agree.of_slots fun slot below => kept slot (by omega)) ((Instr.exec_heap _ _).trans onHeap) within.2) ?_
@@ -207,9 +227,26 @@ theorem compileStmt_stops {prog : Program} {base : Nat} {arities : List Arity} {
     apply AStops.star (SourceStops.downward _ _) steps
     refine .step (.jmp (placed.right.at (by
       rw [pc']; simp only [codeSize_append, codeSize, Instr.size]; omega)).fetch) ?_
-    exact ihLoop pos { m' with pc := pos } placedLoop rfl agree' onHeap' loopWithin
+    exact ihLoop pos brk cont { m' with pc := pos } placedLoop rfl agree' onHeap' loopWithin
+  | @loopContinued depth env middle heap between condition body n nonzero bodyExec _ ihLoop =>
+    intro pos brk cont m placed pc agree onHeap within
+    have loopWithin := within
+    simp only [Stmt.within, Bool.and_eq_true] at within
+    have placedLoop := placed
+    simp only [compileStmt] at placed
+    obtain ⟨acc, kept⟩ := compileExpr_correct base condition 0 env m agree within.1
+    apply AStops.star (SourceStops.downward _ _) (Star.straight _ (pc ▸ placed.left.left.left) (compileExpr_straight _ _ _))
+    have jz := placed.left.left.right.fetch
+    refine .step (.jzNot (by rw [Instr.exec_pc, pc]; exact jz) (by rw [acc]; exact nonzero)) ?_
+    refine AStops.afterContinued (compileStmt_correct bodyExec (pos + codeSize (compileExpr base condition 0) + 9)
+      (pos + codeSize (compileExpr base condition 0)) pos _
+      (placed.left.right.at (by simp only [codeSize_append, codeSize, Instr.size]; omega))
+      (by simp only [Instr.exec_pc, pc, Instr.size])
+      (agree.of_slots fun slot below => kept slot (by omega)) ((Instr.exec_heap _ _).trans onHeap) within.2) ?_
+    intro m' steps pc' agree' onHeap'
+    exact AStops.star (SourceStops.downward _ _) steps (ihLoop pos brk cont m' placedLoop pc' agree' onHeap' loopWithin)
   | @call depth inner target count callee env heap args func n lookup length lower _ _ =>
-    intro pos m placed pc agree onHeap within
+    intro pos brk cont m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
     simp only [compileStmt] at placed
     obtain ⟨values, -⟩ := compileArgs_correct base args 0 env m agree within.2
@@ -218,7 +255,7 @@ theorem compileStmt_stops {prog : Program} {base : Nat} {arities : List Arity} {
     rw [values, Instr.exec_heap, onHeap]
     exact ⟨inner, lower, func, lookup, by rw [evalAll_length, length], by assumption⟩
   | @alloc depth env heap target shift size n inside over =>
-    intro pos m placed pc agree onHeap within
+    intro pos brk cont m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
     simp only [compileStmt] at placed
     obtain ⟨acc, -⟩ := compileExpr_correct base size 0 env m agree within.2
@@ -228,7 +265,7 @@ theorem compileStmt_stops {prog : Program} {base : Nat} {arities : List Arity} {
     exact .bump (by rw [Instr.exec_pc, pc]; exact bumpAt.fetch) (by rw [heapAt]; exact inside)
       (by rw [heapAt, acc]; exact over)
   | @divide depth env heap word operation target left right n undefined =>
-    intro pos m placed pc agree onHeap within
+    intro pos brk cont m placed pc agree onHeap within
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
     simp only [compileStmt] at placed
     obtain ⟨kept, acc, -⟩ := operands_correct base 0 env m agree _ _ _ _
@@ -254,10 +291,10 @@ theorem compileFunc_stops {arities : List Arity} {func : Func} {code : Code}
   generalize initEq : (Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)) = init
   have initStraight : init.all Instr.straight = true := by
     rw [← initEq]; simp only [List.all_cons, zeroLocals_straight]; rfl
-  have initPlaced : Block (init ++ compileStmt func.locals (codeSize init) func.body) m.pc init :=
-    ⟨[], compileStmt func.locals (codeSize init) func.body, by simp, by simp [codeSize, start]⟩
-  have bodyPlaced : Block (init ++ compileStmt func.locals (codeSize init) func.body) (codeSize init)
-      (compileStmt func.locals (codeSize init) func.body) := ⟨init, [], by simp, rfl⟩
+  have initPlaced : Block (init ++ compileStmt func.locals (codeSize init) 0 0 func.body) m.pc init :=
+    ⟨[], compileStmt func.locals (codeSize init) 0 0 func.body, by simp, by simp [codeSize, start]⟩
+  have bodyPlaced : Block (init ++ compileStmt func.locals (codeSize init) 0 0 func.body) (codeSize init)
+      (compileStmt func.locals (codeSize init) 0 0 func.body) := ⟨init, [], by simp, rfl⟩
   have initRun := Star.straight (calls := SourceCalls prog depth) init initPlaced initStraight
   have cleared := zeroLocals_exec func.params (func.locals - func.params) ((Instr.imm 0).step m)
     (by simp [Instr.step, Instr.update])
@@ -271,8 +308,8 @@ theorem compileFunc_stops {arities : List Arity} {func : Func} {code : Code}
     · rw [if_pos (by omega)]
       simp [List.getD, List.getElem?_eq_none (show args.length ≤ index by omega)]
   exact AStops.star (SourceStops.downward prog depth) initRun
-    (compileStmt_stops stops (code := init ++ compileStmt func.locals (codeSize init) func.body)
-      (codeSize init) (Instr.exec init m) bodyPlaced (by rw [Instr.exec_pc, start]; omega) agree
+    (compileStmt_stops stops (code := init ++ compileStmt func.locals (codeSize init) 0 0 func.body)
+      (codeSize init) 0 0 (Instr.exec init m) bodyPlaced (by rw [Instr.exec_pc, start]; omega) agree
       ((Instr.exec_heap _ _).trans onHeap) within)
 
 end Lanius.Mini

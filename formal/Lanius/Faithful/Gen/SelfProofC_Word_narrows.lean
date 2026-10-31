@@ -58,11 +58,11 @@ theorem proof_FCmp_number {prog : SrcProgram} {prims : Prims} {ix_FCmp_number : 
   simp only [src_FCmp_number] at h
   faithful [Lanius.Mini.FCmp.number]
 
-theorem proof_FOp_number {prog : SrcProgram} {prims : Prims} {ix_FOp_number ix_plus ix_times ix_Word_number ix_FloatTy_number ix_FArith_number ix_FCmp_number : Nat} (fn : prog.funcs[ix_FOp_number]? = some (src_FOp_number ix_plus ix_times ix_Word_number ix_FloatTy_number ix_FArith_number ix_FCmp_number)) (np : prims.isPrim ix_FOp_number = false)
+theorem proof_FOp_number {prog : SrcProgram} {prims : Prims} {ix_FOp_number ix_plus ix_times ix_FloatTy_number ix_Word_number ix_FArith_number ix_FCmp_number : Nat} (fn : prog.funcs[ix_FOp_number]? = some (src_FOp_number ix_plus ix_times ix_FloatTy_number ix_Word_number ix_FArith_number ix_FCmp_number)) (np : prims.isPrim ix_FOp_number = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
-    (ext_Word_number : Certified (∀ {n : Nat}, Stmt_Word_number prog prims ix_Word_number n))
     (ext_FloatTy_number : Certified (∀ {n : Nat}, Stmt_FloatTy_number prog prims ix_FloatTy_number n))
+    (ext_Word_number : Certified (∀ {n : Nat}, Stmt_Word_number prog prims ix_Word_number n))
     (ext_FArith_number : Certified (∀ {n : Nat}, Stmt_FArith_number prog prims ix_FArith_number n))
     (ext_FCmp_number : Certified (∀ {n : Nat}, Stmt_FCmp_number prog prims ix_FCmp_number n)) {n : Nat} :
     Stmt_FOp_number prog prims ix_FOp_number n := by

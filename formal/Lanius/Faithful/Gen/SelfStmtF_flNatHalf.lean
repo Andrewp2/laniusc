@@ -25,16 +25,16 @@ abbrev Stmt_fl_bit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepNat (Lanius.Mini.flBit x0) w
 
 abbrev Stmt_fl_log2 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 250 RepBool) x0 v0 →
-    (RepOption 200 RepNat) (Lanius.Mini.flLog2 x0) w
+  ∀ {x0 : List Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 255 RepBool) x0 v0 →
+    (RepOption 201 RepNat) (Lanius.Mini.flLog2 x0) w
 
 abbrev Stmt_fl_log2_up (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 200 RepNat) x1 v1 →
-    (RepOption 200 RepNat) (Lanius.Mini.flLog2Up x0 x1) w
+  ∀ {x0 : Bool} {x1 : Option Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 201 RepNat) x1 v1 →
+    (RepOption 201 RepNat) (Lanius.Mini.flLog2Up x0 x1) w
 
 abbrev Stmt_fl_low_bit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepBool x0 v0 →
-    (RepOption 200 RepNat) (Lanius.Mini.flLowBit x0) w
+    (RepOption 201 RepNat) (Lanius.Mini.flLowBit x0) w
 
 abbrev Stmt_fl_nat_half (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
@@ -46,14 +46,14 @@ abbrev Stmt_fl_nat_odd (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_fl_of_nat (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepNat x1 v1 →
-    (RepList 250 RepBool) (Lanius.Mini.flOfNat x0 x1) w
+    (RepList 255 RepBool) (Lanius.Mini.flOfNat x0 x1) w
 
 abbrev Stmt_fl_pow2 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
     RepNat (Lanius.Mini.flPow2 x0) w
 
 abbrev Stmt_fl_to_nat (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 250 RepBool) x0 v0 →
+  ∀ {x0 : List Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 255 RepBool) x0 v0 →
     RepNat (Lanius.Mini.flToNat x0) w
 
 end Lanius.Faithful.SelfCert

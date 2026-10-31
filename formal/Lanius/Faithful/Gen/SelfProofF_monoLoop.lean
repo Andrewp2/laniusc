@@ -144,10 +144,11 @@ theorem proof_src_enum_id {prog : SrcProgram} {prims : Prims} {ix_src_enum_id : 
   simp only [src_src_enum_id] at h
   faithful [Lanius.Mini.srcEnumId]
 
-theorem step_stmt_tys {prog : SrcProgram} {prims : Prims} {ix_stmt_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MStmt ix_eff_named_tys : Nat} (fn : prog.funcs[ix_stmt_tys]? = some (src_stmt_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_stmt_tys ix_unbox_of_mini_selfhost_MStmt ix_eff_named_tys)) (np : prims.isPrim ix_stmt_tys = false)
+theorem step_stmt_tys {prog : SrcProgram} {prims : Prims} {ix_stmt_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_single_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MStmt ix_eff_named_tys : Nat} (fn : prog.funcs[ix_stmt_tys]? = some (src_stmt_tys ix_empty_of_mini_selfhost_Ty ix_cons_of_mini_selfhost_Ty ix_concat_of_mini_selfhost_Ty ix_stmt_tys ix_single_of_mini_selfhost_Ty ix_unbox_of_mini_selfhost_MStmt ix_eff_named_tys)) (np : prims.isPrim ix_stmt_tys = false)
     (ext_empty_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Ty prog prims ix_empty_of_mini_selfhost_Ty n))
     (ext_cons_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Ty prog prims ix_cons_of_mini_selfhost_Ty n))
     (ext_concat_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_Ty prog prims ix_concat_of_mini_selfhost_Ty n))
+    (ext_single_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_Ty prog prims ix_single_of_mini_selfhost_Ty n))
     (ext_unbox_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MStmt prog prims ix_unbox_of_mini_selfhost_MStmt n))
     (ext_eff_named_tys : Certified (∀ {n : Nat}, Stmt_eff_named_tys prog prims ix_eff_named_tys n)) {n : Nat}
     (ih_stmt_tys : Certified (Stmt_stmt_tys prog prims ix_stmt_tys n)) :

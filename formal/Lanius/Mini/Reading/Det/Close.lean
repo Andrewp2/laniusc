@@ -34,6 +34,7 @@ theorem effClosed_unique : ∀ {x : MEff} {a b : SrcEff}, EffClosed decls fns ty
     rw [effClosed_unique sc sc', lowerR_unique le le', lowerR_unique lt lt', effsClosed_unique vs vs']
   | _, _, _, .divide l r, .divide l' r' => by rw [effClosed_unique l l', effClosed_unique r r']
   | _, _, _, .stride, .stride => rfl
+  | _, _, _, .host as, .host as' => by rw [effsClosed_unique as as']
 termination_by structural _ _ _ h _ => h
 
 theorem effsClosed_unique : ∀ {xs : List MEff} {a b : List SrcEff}, EffsClosed decls fns types xs a →
@@ -78,7 +79,18 @@ theorem stmtClosed_unique : ∀ {m : MStmt} {a b : SrcStmt}, StmtClosed decls fn
   | _, _, _, .setIndexEval i v, .setIndexEval i' v' => by rw [effClosed_unique i i', effClosed_unique v v']
   | _, _, _, .setFieldEval x, .setFieldEval x' => by rw [effClosed_unique x x']
   | _, _, _, .returnUnit, .returnUnit => rfl
+  | _, _, _, .break, .break => rfl
+  | _, _, _, .continue, .continue => rfl
   | _, _, _, .assert x, .assert x' => by rw [effClosed_unique x x']
+  | _, _, _, .matchArmBound le lw b r, .matchArmBound le' lw' b' r' => by
+    rw [lowerR_unique lw lw', stmtClosed_unique b b', stmtClosed_unique r r']
+    cases lowerR_unique le le'
+    rfl
+  | _, _, _, .unreachable lw, .unreachable lw' => by rw [lowerR_unique lw lw']
+  | _, _, _, .matchArmUnbound le b r, .matchArmUnbound le' b' r' => by
+    rw [stmtClosed_unique b b', stmtClosed_unique r r']
+    cases lowerR_unique le le'
+    rfl
 termination_by structural _ _ _ h _ => h
 
 theorem retClosed_unique {r : RetTy} {a b : SrcType} (h₁ : RetClosed decls types r a)
@@ -212,6 +224,10 @@ theorem litStmt_eq {ret : SrcType} : ∀ {locals : List LocalTy} {s s' : SrcStmt
   | _, _, _, .setIndexEval hi hv => by rw [litEff_eq hi, litEff_eq hv]; simp only [litStmt]
   | _, _, _, .setFieldEval h => by rw [litEff_eq h]; simp only [litStmt]
   | _, _, _, .returnUnit => by simp only [litStmt]
+  | _, _, _, .break => by simp only [litStmt]
+  | _, _, _, .continue => by simp only [litStmt]
+  | _, _, _, .matchArm b r => by rw [litStmt_eq b, litStmt_eq r]; simp only [litStmt]
+  | _, _, _, .unreachable => by simp only [litStmt]
   | _, _, _, .assert h => by rw [litEff_eq h]; simp only [litStmt]
 
 theorem litFunc_unique {g a b : SrcFunc} (h₁ : LitFunc funcs g a) (h₂ : LitFunc funcs g b) : a = b := by

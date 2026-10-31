@@ -59,6 +59,9 @@ STEPS = [
      ['lean', 'run_all', 'lani', 'laniusc', 'stdlib'], True),
     ('stdlib-scalars', ['stdlib_oracle.py', '{w}', '--modules', 'core::cmp,core::u64,core::option', '--seed', '{s}'],
      ['run_all', 'laniusc', 'stdlib'], True),
+    # F8: stdlib output through the host externs, stdout and stderr compared.
+    ('stdlib-io', ['stdlib_oracle.py', '{w}', '--modules', 'std::io_byte,std::io_hex,std::io_binary,std::io_hex_wide_u64,std::io_utf8', '--calls', '32', '--seed', '{s}'],
+     ['run_all', 'laniusc', 'stdlib'], True),
     ('self-host', ['self_host.py', '{w}'], ['run_all', 'lani', 'laniusc', 'stdlib'], True),
     # V6: the verified compiler's ELF executables exit with main's result.
     ('elf', ['elf_test.py', '{w}'], ['run_all', 'laniusc', 'stdlib'], True),
@@ -101,7 +104,7 @@ STEPS = [
 
 def inputs():
     """The digest of each kind of input."""
-    lean = run_cache.olean_digest('import Lanius.Mini.FrontLex\nimport Lanius.Mini.MutPilotCorrect\nimport Lanius.Machines.SqliteStatementCorrect\nimport Lanius.Machines.TlsLifecycleCorrect\nimport Lanius.Machines.RunLowering\n')
+    lean = run_cache.olean_digest('import Lanius.Mini.Process\nimport Lanius.Mini.TextCorrect\nimport Lanius.Mini.FrontLex\nimport Lanius.Mini.MutPilotCorrect\nimport Lanius.Machines.SqliteStatementCorrect\nimport Lanius.Machines.TlsLifecycleCorrect\nimport Lanius.Machines.RunLowering\n')
     if lean is None:
         raise SystemExit('the Lean definitions are not built')
     run_all = os.path.join(run_cache.FORMAL, '.lake/build/bin/runAll')
@@ -125,7 +128,7 @@ def build():
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
         run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'Lanius.Mini.FrontLex',
+                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                               'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)

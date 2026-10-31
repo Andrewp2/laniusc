@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_literal_as (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Option Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 202 RepTy) x0 v0 → (RepOption 222 RepSrcExpr) x1 v1 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.literalAs x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Option Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 203 RepTy) x0 v0 → (RepOption 223 RepSrcExpr) x1 v1 →
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.literalAs x0 x1) w
 
 abbrev Stmt_typed_literal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Ty} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → RepSrcExpr x1 v1 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.typedLiteral x0 x1) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.typedLiteral x0 x1) w
 
 end Lanius.Faithful.SelfCert

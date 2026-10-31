@@ -21,15 +21,15 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_SrcExpr_lower (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : List Lanius.Mini.Binding} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcExpr x0 v0 → (RepList 130 RepBinding) x1 v1 →
-    (RepOption 149 RepTyped) (Lanius.Mini.SrcExpr.lower x0 x1) w
+  ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : List Lanius.Mini.Binding} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcExpr x0 v0 → (RepList 131 RepBinding) x1 v1 →
+    (RepOption 150 RepTyped) (Lanius.Mini.SrcExpr.lower x0 x1) w
 
 abbrev Stmt_is_one (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepExpr x0 v0 →
     RepBool (Lanius.Mini.isOne x0) w
 
 abbrev Stmt_lower_apply (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.Typed} {x2 : Option Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → (RepOption 149 RepTyped) x1 v1 → (RepOption 149 RepTyped) x2 v2 →
-    (RepOption 149 RepTyped) (Lanius.Mini.lowerApply x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.Typed} {x2 : Option Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → (RepOption 150 RepTyped) x1 v1 → (RepOption 150 RepTyped) x2 v2 →
+    (RepOption 150 RepTyped) (Lanius.Mini.lowerApply x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

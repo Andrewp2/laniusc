@@ -1,0 +1,48 @@
+fn step(x: i32) -> i32 {
+    return x + 1;
+}
+
+fn sum_odd(n: i32) -> i32 {
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < n) {
+        i = i + 1;
+        if (i % 2 == 0) {
+            continue;
+        }
+        if (total > 1000) {
+            break;
+        }
+        total = total + i;
+    }
+    return total;
+}
+
+fn guarded(n: i32, d: i32) -> i32 {
+    let i: i32 = 0;
+    let hits: i32 = 0;
+    while (i < n / d) {
+        i = i + 1;
+        if (i == 3) {
+            continue;
+        }
+        hits = hits + 1;
+    }
+    return hits;
+}
+
+fn calls(n: i32) -> i32 {
+    let i: i32 = 0;
+    let seen: i32 = 0;
+    while (step(i) <= n) {
+        i = i + 1;
+        if (i == 2) {
+            continue;
+        }
+        if (i == 7) {
+            break;
+        }
+        seen = seen + i;
+    }
+    return seen;
+}

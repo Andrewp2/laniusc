@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_cons_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Ty)} {x1 : Option (List (List Lanius.Mini.Ty))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 203 (RepList 136 RepTy)) x0 v0 → (RepOption 231 (RepList 232 (RepList 136 RepTy))) x1 v1 →
-    (RepOption 231 (RepList 232 (RepList 136 RepTy))) (Lanius.Mini.consTys x0 x1) w
+  ∀ {x0 : Option (List Lanius.Mini.Ty)} {x1 : Option (List (List Lanius.Mini.Ty))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 204 (RepList 137 RepTy)) x0 v0 → (RepOption 232 (RepList 233 (RepList 137 RepTy))) x1 v1 →
+    (RepOption 232 (RepList 233 (RepList 137 RepTy))) (Lanius.Mini.consTys x0 x1) w
 
 abbrev Stmt_field_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → (RepList 136 RepTy) x3 v3 →
-    (RepOption 203 (RepList 136 RepTy)) (Lanius.Mini.fieldTys x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → (RepList 137 RepTy) x3 v3 →
+    (RepOption 204 (RepList 137 RepTy)) (Lanius.Mini.fieldTys x0 x1 x2 x3) w
 
 abbrev Stmt_payload_list (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Lanius.Mini.CTree)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 104 (RepList 80 RepCTree)) x2 v2 →
-    (RepOption 231 (RepList 232 (RepList 136 RepTy))) (Lanius.Mini.payloadList x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List (List Lanius.Mini.CTree)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 105 (RepList 81 RepCTree)) x2 v2 →
+    (RepOption 232 (RepList 233 (RepList 137 RepTy))) (Lanius.Mini.payloadList x0 x1 x2) w
 
 abbrev Stmt_payload_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → (RepList 136 RepTy) x3 v3 →
-    (RepOption 231 (RepList 232 (RepList 136 RepTy))) (Lanius.Mini.payloadTys x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → (RepList 137 RepTy) x3 v3 →
+    (RepOption 232 (RepList 233 (RepList 137 RepTy))) (Lanius.Mini.payloadTys x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

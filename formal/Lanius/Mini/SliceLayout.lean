@@ -209,7 +209,7 @@ theorem isize_load_holds {bits : Nat} (lt : bits < 2 ^ 64) :
   split <;> split <;> omega
 
 /-- Core's read of one word field, in the slot the mini load fills. -/
-theorem readWord_holds {P : Core.Program} {heap : Memory.Heap} {hp : Heap} (hc : HeapCorr heap hp)
+theorem readWord_holds {P : Core.Program} {heap : Memory.Heap} {hp : Heap} (hc : HeapCorr heap world hp)
     {f : SrcType} {w : MemWidth} (hw : wordWidth f = some w) {k a : Nat} {x : Value}
     (h : Semantics.readNativeValue (k + 1) P heap f.toCore a = .ok x) :
     f.Holds x (BitVec.ofNat 64 (hp.readLE a w.bytes)) ∧ a + w.bytes ≤ heap.nextAddress := by

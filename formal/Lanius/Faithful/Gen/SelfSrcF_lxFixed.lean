@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::lx_fixed -/
-def src_lx_fixed (ix_lx_drop : Nat) (ix_lx_take : Nat) (ix_lx_best : Nat) (ix_lx_fixed_at : Nat) : SrcFunc := { params := [{ id := 9, ty := ty213 }, { id := 31, ty := ty20 }, { id := 52, ty := SrcType.uint (UintTy.usize) }], ret := ty214, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_lx_best [SrcEff.ePure (SrcExpr.local 9), SrcEff.eCall ix_lx_take [SrcEff.eCall ix_lx_drop [SrcEff.ePure (SrcExpr.local 31), SrcEff.ePure (SrcExpr.local 52)], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000003#64)]]) ty285 ty214 [[195], []] [SrcEff.eCall ix_lx_fixed_at [SrcEff.ePure (SrcExpr.local 31), SrcEff.ePure (SrcExpr.local 52), SrcEff.ePure (SrcExpr.local 195)], SrcEff.eVariant ty214 1 [SrcEff.ePure (SrcExpr.local 52)]]) }
+def src_lx_fixed (ix_lx_drop : Nat) (ix_lx_take : Nat) (ix_lx_best : Nat) (ix_lx_fixed_at : Nat) : SrcFunc := { params := [{ id := 9, ty := ty214 }, { id := 31, ty := ty20 }, { id := 52, ty := SrcType.uint (UintTy.usize) }], ret := ty215, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_lx_best [SrcEff.ePure (SrcExpr.local 9), SrcEff.eCall ix_lx_take [SrcEff.eCall ix_lx_drop [SrcEff.ePure (SrcExpr.local 31), SrcEff.ePure (SrcExpr.local 52)], SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000003#64)]]) ty286 ty215 [[195], []] [SrcEff.eCall ix_lx_fixed_at [SrcEff.ePure (SrcExpr.local 31), SrcEff.ePure (SrcExpr.local 52), SrcEff.ePure (SrcExpr.local 195)], SrcEff.eVariant ty215 1 [SrcEff.ePure (SrcExpr.local 52)]]) }
 
 end
 

@@ -234,6 +234,10 @@ def litStmt (funcs : List SrcFunc) (ret : SrcType) (locals : List LocalTy) (s : 
   | .setFieldEval id j x => SrcStmt.setFieldEval id j (litEff funcs locals (tyAt (srcFields (tyLocal locals id)) j) x)
   | .returnUnit => SrcStmt.returnUnit
   | .assert x => SrcStmt.assert (litEff funcs locals (some SrcType.bool) x)
+  | .break => SrcStmt.break
+  | .continue => SrcStmt.continue
+  | .matchArm sc en k bs x ty body rest => SrcStmt.matchArm sc en k bs x ty (litStmt funcs ret (withLocal x ty locals) body) (litStmt funcs ret locals rest)
+  | .unreachable id ty => SrcStmt.unreachable id ty
 
 def paramLocals (ps : List SrcParam) : List LocalTy :=
   match ps with

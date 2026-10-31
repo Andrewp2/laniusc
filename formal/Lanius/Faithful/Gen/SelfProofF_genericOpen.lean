@@ -5,8 +5,10 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_genericOpen
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBitAnd
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pWhileStmt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_tLparen
 public import Lanius.Faithful.Gen.SelfStmtF_genericClose
 public import Lanius.Faithful.Gen.SelfStmtF_genericOpen
@@ -53,10 +55,22 @@ theorem proof_generic_path_at {prog : SrcProgram} {prims : Prims} {ix_generic_pa
   simp only [src_generic_path_at] at h
   faithful [Lanius.Mini.genericPathAt]
 
-theorem proof_picks {prog : SrcProgram} {prims : Prims} {ix_picks ix_p_path_ident ix_p_block_stmt ix_p_member_type_args_some ix_generic_path_at ix_p_path_ident_args : Nat} (fn : prog.funcs[ix_picks]? = some (src_picks ix_p_path_ident ix_p_block_stmt ix_p_member_type_args_some ix_generic_path_at ix_p_path_ident_args)) (np : prims.isPrim ix_picks = false)
+theorem proof_opens_block {prog : SrcProgram} {prims : Prims} {ix_opens_block ix_t_lbrace : Nat} (fn : prog.funcs[ix_opens_block]? = some (src_opens_block ix_t_lbrace)) (np : prims.isPrim ix_opens_block = false)
+    (ext_t_lbrace : Certified (∀ {n : Nat}, Stmt_t_lbrace prog prims ix_t_lbrace n)) {n : Nat} :
+    Stmt_opens_block prog prims ix_opens_block n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_opens_block] at h
+  faithful [Lanius.Mini.opensBlock]
+
+theorem proof_picks {prog : SrcProgram} {prims : Prims} {ix_picks ix_p_path_ident ix_p_member_type_args_some ix_p_block_stmt ix_opens_block ix_p_expr_stmt ix_generic_path_at ix_p_path_ident_args : Nat} (fn : prog.funcs[ix_picks]? = some (src_picks ix_p_path_ident ix_p_member_type_args_some ix_p_block_stmt ix_opens_block ix_p_expr_stmt ix_generic_path_at ix_p_path_ident_args)) (np : prims.isPrim ix_picks = false)
     (ext_p_path_ident : Certified (∀ {n : Nat}, Stmt_p_path_ident prog prims ix_p_path_ident n))
-    (ext_p_block_stmt : Certified (∀ {n : Nat}, Stmt_p_block_stmt prog prims ix_p_block_stmt n))
     (ext_p_member_type_args_some : Certified (∀ {n : Nat}, Stmt_p_member_type_args_some prog prims ix_p_member_type_args_some n))
+    (ext_p_block_stmt : Certified (∀ {n : Nat}, Stmt_p_block_stmt prog prims ix_p_block_stmt n))
+    (ext_opens_block : Certified (∀ {n : Nat}, Stmt_opens_block prog prims ix_opens_block n))
+    (ext_p_expr_stmt : Certified (∀ {n : Nat}, Stmt_p_expr_stmt prog prims ix_p_expr_stmt n))
     (ext_generic_path_at : Certified (∀ {n : Nat}, Stmt_generic_path_at prog prims ix_generic_path_at n))
     (ext_p_path_ident_args : Certified (∀ {n : Nat}, Stmt_p_path_ident_args prog prims ix_p_path_ident_args n)) {n : Nat} :
     Stmt_picks prog prims ix_picks n := by

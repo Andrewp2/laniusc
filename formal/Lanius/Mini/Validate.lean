@@ -580,13 +580,52 @@ theorem Stmt.factsAfter_hold {prog : Program} (s : Stmt) :
   | loadWord _ target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
   | storeWord => intro _ _ _ _ _ _ hold run; cases run; exact hold
   | divide _ _ target => intro _ _ _ _ _ _ hold run; cases run; exact kill_hold hold target _
+  | brk => intro _ _ _ _ _ _ _ run; cases run
+  | cont => intro _ _ _ _ _ _ _ run; cases run
+  | sys => intro _ _ _ _ _ _ _ _; exact Facts.Hold.nil _
+
+/-- A statement that cannot jump never breaks or continues. -/
+theorem Exec.stays {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s : Stmt} {outcome : Outcome}
+    (run : Exec prog depth env heap s outcome) (stays : s.jumps = false) :
+    ∀ env' heap', outcome ≠ .broke env' heap' ∧ outcome ≠ .continued env' heap' := by
+  induction run with
+  | seqBroke _ ih | seqContinued _ ih =>
+    simp only [Stmt.jumps, Bool.or_eq_false_iff] at stays
+    intro env' heap'
+    have := ih stays.1 env' heap'
+    simp_all
+  | ifTrue _ _ ih =>
+    simp only [Stmt.jumps, Bool.or_eq_false_iff] at stays
+    exact ih stays.1
+  | ifFalse _ _ ih =>
+    simp only [Stmt.jumps, Bool.or_eq_false_iff] at stays
+    exact ih stays.2
+  | seq _ _ _ ih2 =>
+    simp only [Stmt.jumps, Bool.or_eq_false_iff] at stays
+    exact ih2 stays.2
+  | loopNext _ _ _ _ ih | loopContinued _ _ _ _ ih => exact ih stays
+  | brk | cont => simp [Stmt.jumps] at stays
+  | skip | assign | seqReturned | loopDone | loopReturned | loopBroke | call | ret | alloc | loadByte
+    | storeByte | loadWord | storeWord | divide | sys => intro _ _; simp
 
 /-- Outcomes of runs from environments that differ only at `index`. -/
 def Outcome.Except (index : Nat) : Outcome → Outcome → Prop
   | .normal a heap, .normal b heap' => heap = heap' ∧ Env.Except index a b
   | .normal _ _, .returned _ _ => False
+  | .normal _ _, .broke _ _ => False
+  | .normal _ _, .continued _ _ => False
   | .returned _ _, .normal _ _ => False
   | .returned values heap, .returned values' heap' => values = values' ∧ heap = heap'
+  | .returned _ _, .broke _ _ => False
+  | .returned _ _, .continued _ _ => False
+  | .broke _ _, .normal _ _ => False
+  | .broke _ _, .returned _ _ => False
+  | .broke a heap, .broke b heap' => heap = heap' ∧ Env.Except index a b
+  | .broke _ _, .continued _ _ => False
+  | .continued _ _, .normal _ _ => False
+  | .continued _ _, .returned _ _ => False
+  | .continued _ _, .broke _ _ => False
+  | .continued a heap, .continued b heap' => heap = heap' ∧ Env.Except index a b
 
 /-- A statement that ignores `index` runs alike from environments that differ only there. -/
 theorem Exec.ignores {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s : Stmt} {outcome : Outcome}
@@ -610,16 +649,30 @@ theorem Exec.ignores {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s
       obtain ⟨rfl, e⟩ := rel1
       obtain ⟨o2, r2, rel2⟩ := ih2 p.2 m2 e
       exact ⟨o2, .seq r1 r2, rel2⟩
-    | returned => simp [Outcome.Except] at rel1
+    | returned | broke | continued => simp [Outcome.Except] at rel1
   | seqReturned _ ih =>
     intro p env2 h
     simp only [Stmt.ignores, Bool.and_eq_true] at p
     obtain ⟨o1, r1, rel1⟩ := ih p.1 env2 h
     cases o1 with
-    | normal => simp [Outcome.Except] at rel1
+    | normal | broke | continued => simp [Outcome.Except] at rel1
     | returned v h2 =>
       obtain ⟨rfl, rfl⟩ := rel1
       exact ⟨_, .seqReturned r1, rfl, rfl⟩
+  | seqBroke _ ih =>
+    intro p env2 h
+    simp only [Stmt.ignores, Bool.and_eq_true] at p
+    obtain ⟨o1, r1, rel1⟩ := ih p.1 env2 h
+    cases o1 with
+    | normal | returned | continued => simp [Outcome.Except] at rel1
+    | broke m2 h2 => exact ⟨_, .seqBroke r1, rel1⟩
+  | seqContinued _ ih =>
+    intro p env2 h
+    simp only [Stmt.ignores, Bool.and_eq_true] at p
+    obtain ⟨o1, r1, rel1⟩ := ih p.1 env2 h
+    cases o1 with
+    | normal | returned | broke => simp [Outcome.Except] at rel1
+    | continued m2 h2 => exact ⟨_, .seqContinued r1, rel1⟩
   | @ifTrue depth env heap condition _ _ _ holds _ ih =>
     intro p env2 h
     simp only [Stmt.ignores, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at p
@@ -644,13 +697,34 @@ theorem Exec.ignores {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s
       obtain ⟨rfl, e⟩ := rel1
       obtain ⟨o2, r2, rel2⟩ := ihLoop p m2 e
       exact ⟨o2, .loopNext (by rw [← Expr.eval_except h condition p'.1]; exact holds) r1 r2, rel2⟩
-    | returned => simp [Outcome.Except] at rel1
+    | returned | broke | continued => simp [Outcome.Except] at rel1
+  | @loopBroke depth env middle heap between condition body holds _ ihBody =>
+    intro p env2 h
+    simp only [Stmt.ignores, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at p
+    obtain ⟨o1, r1, rel1⟩ := ihBody p.2 env2 h
+    cases o1 with
+    | normal | returned | continued => simp [Outcome.Except] at rel1
+    | broke m2 h2 =>
+      exact ⟨_, .loopBroke (by rw [← Expr.eval_except h condition p.1]; exact holds) r1, rel1⟩
+  | @loopContinued depth env middle heap between condition body outcome holds _ _ ihBody ihLoop =>
+    intro p env2 h
+    have p' := p
+    simp only [Stmt.ignores, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at p'
+    obtain ⟨o1, r1, rel1⟩ := ihBody p'.2 env2 h
+    cases o1 with
+    | continued m2 h2 =>
+      obtain ⟨rfl, e⟩ := rel1
+      obtain ⟨o2, r2, rel2⟩ := ihLoop p m2 e
+      exact ⟨o2, .loopContinued (by rw [← Expr.eval_except h condition p'.1]; exact holds) r1 r2, rel2⟩
+    | normal | returned | broke => simp [Outcome.Except] at rel1
+  | brk => intro _ env2 h; exact ⟨_, .brk, rfl, h⟩
+  | cont => intro _ env2 h; exact ⟨_, .cont, rfl, h⟩
   | @loopReturned depth env heap after condition body value holds _ ih =>
     intro p env2 h
     simp only [Stmt.ignores, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at p
     obtain ⟨o1, r1, rel1⟩ := ih p.2 env2 h
     cases o1 with
-    | normal => simp [Outcome.Except] at rel1
+    | normal | broke | continued => simp [Outcome.Except] at rel1
     | returned v h2 =>
       obtain ⟨rfl, rfl⟩ := rel1
       exact ⟨_, .loopReturned (by rw [← Expr.eval_except h condition p.1]; exact holds) r1, rfl, rfl⟩
@@ -705,6 +779,10 @@ theorem Exec.ignores {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {s
     have r := Expr.eval_except h right p.2
     rw [l, r] at defined ⊢
     exact ⟨_, .divide defined, rfl, h.set target _⟩
+  | @sys depth env heap after call target args result ran =>
+    intro p env2 h
+    simp only [Stmt.ignores, Bool.not_eq_eq_eq_not, Bool.not_true] at p
+    refine ⟨_, .sys (by rw [← Expr.evalAll_except h args p]; exact ran), rfl, h.set target _⟩
 
 /-- A statement that kills `index` ends the same way whatever `index` holds on entry. -/
 theorem Exec.killed {prog : Program} (s : Stmt) :
@@ -733,23 +811,33 @@ theorem Exec.killed {prog : Program} (s : Stmt) :
     simp only [Stmt.kills, Bool.or_eq_true, Bool.and_eq_true] at k
     cases run with
     | seq r1 r2 =>
-      rcases k with k | ⟨p, k⟩
+      rcases k with k | ⟨⟨p, _⟩, k⟩
       · exact .seq (ih1 k r1 env2 h) r2
       · obtain ⟨o1, r1', rel⟩ := Exec.ignores r1 p env2 h
         cases o1 with
         | normal m2 h2 =>
           obtain ⟨rfl, e⟩ := rel
           exact .seq r1' (ih2 k r2 m2 e)
-        | returned => simp [Outcome.Except] at rel
+        | returned | broke | continued => simp [Outcome.Except] at rel
     | seqReturned r1 =>
-      rcases k with k | ⟨p, _⟩
+      rcases k with k | ⟨⟨p, _⟩, _⟩
       · exact .seqReturned (ih1 k r1 env2 h)
       · obtain ⟨o1, r1', rel⟩ := Exec.ignores r1 p env2 h
         cases o1 with
-        | normal => simp [Outcome.Except] at rel
+        | normal | broke | continued => simp [Outcome.Except] at rel
         | returned v h2 =>
           obtain ⟨rfl, rfl⟩ := rel
           exact .seqReturned r1'
+    | seqBroke r1 =>
+      rcases k with k | ⟨⟨_, stays⟩, _⟩
+      · exact .seqBroke (ih1 k r1 env2 h)
+      · simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at stays
+        exact absurd rfl ((Exec.stays r1 stays _ _).1)
+    | seqContinued r1 =>
+      rcases k with k | ⟨⟨_, stays⟩, _⟩
+      · exact .seqContinued (ih1 k r1 env2 h)
+      · simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at stays
+        exact absurd rfl ((Exec.stays r1 stays _ _).2)
   | ite condition thenBranch elseBranch ihThen ihElse =>
     intro index _ _ _ _ k run env2 h
     simp only [Stmt.kills, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at k
@@ -772,6 +860,9 @@ theorem Exec.killed {prog : Program} (s : Stmt) :
   | loadWord => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | storeWord => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | divide => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | brk => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | cont => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | sys => intro _ _ _ _ _ k; simp [Stmt.kills] at k
 
 /-! ## Statements: what an accepted statement looks like -/
 
@@ -786,6 +877,16 @@ theorem callAgrees_cases {target count callee : Nat} {args : List Expr} {other :
     (h : callAgrees target count callee args other = true) :
     ∃ others, other = .call target count callee others ∧ argsAgree args others = true := by
   cases other <;> simp_all [callAgrees]
+
+theorem sysAgrees_cases {kind : Syscall} {target : Nat} {args : List Expr} {other : Stmt}
+    (h : sysAgrees kind target args other = true) :
+    ∃ others, other = .sys kind target others ∧ argsAgree args others = true := by
+  cases other <;> simp only [sysAgrees, Bool.false_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h
+  rename_i c t a
+  obtain ⟨⟨_, rfl⟩, agree⟩ := h
+  cases kind
+  cases c
+  exact ⟨a, rfl, agree⟩
 
 theorem retAgrees_cases {values : List Expr} {other : Stmt} (h : retAgrees values other = true) :
     ∃ others, other = .ret others ∧ argsAgree values others = true := by
@@ -962,6 +1063,20 @@ theorem Exec.agrees {p q : Program} (ok : funcsAgree p.funcs q.funcs = true) {de
     · exact ih _ _ hold kept
     · cases r1
     · exact .seqReturned (ih _ _ hold hf)
+  | seqBroke r1 ih =>
+    intro facts s' hold h
+    rcases seqAgrees_cases h with ⟨skip, _⟩ | ⟨_, kept⟩ | ⟨index, value, rfl, _, _⟩ | ⟨f, g, rfl, hf, _⟩
+    · cases Exec.skip_inv (ih _ _ hold skip)
+    · exact ih _ _ hold kept
+    · cases r1
+    · exact .seqBroke (ih _ _ hold hf)
+  | seqContinued r1 ih =>
+    intro facts s' hold h
+    rcases seqAgrees_cases h with ⟨skip, _⟩ | ⟨_, kept⟩ | ⟨index, value, rfl, _, _⟩ | ⟨f, g, rfl, hf, _⟩
+    · cases Exec.skip_inv (ih _ _ hold skip)
+    · exact ih _ _ hold kept
+    · cases r1
+    · exact .seqContinued (ih _ _ hold hf)
   | @ifTrue depth env heap condition _ _ _ holds _ ih =>
     intro facts s' hold h
     rcases iteAgrees_cases h with ⟨both, _⟩ | ⟨v, known, ⟨zero, _⟩ | ⟨_, chosen⟩⟩ |
@@ -995,6 +1110,26 @@ theorem Exec.agrees {p q : Program} (ok : funcsAgree p.funcs q.funcs = true) {de
     rcases loopAgrees_cases h with ⟨zero, rfl⟩ | ⟨c, b, rfl, hc, hb⟩
     · exact absurd (Expr.isZero_eval zero env) holds
     · exact .loopReturned (by rw [Expr.agrees_eval _ _ hc env]; exact holds) (ih _ _ (Facts.Hold.nil _) hb)
+  | @loopBroke depth env middle heap between condition body holds _ ih =>
+    intro facts s' _ h
+    rcases loopAgrees_cases h with ⟨zero, rfl⟩ | ⟨c, b, rfl, hc, hb⟩
+    · exact absurd (Expr.isZero_eval zero env) holds
+    · exact .loopBroke (by rw [Expr.agrees_eval _ _ hc env]; exact holds) (ih _ _ (Facts.Hold.nil _) hb)
+  | @loopContinued depth env middle heap between condition body outcome holds _ _ ihBody ihLoop =>
+    intro facts s' _ h
+    rcases loopAgrees_cases h with ⟨zero, rfl⟩ | ⟨c, b, rfl, hc, hb⟩
+    · exact absurd (Expr.isZero_eval zero env) holds
+    · rw [loopAgrees_facts] at h
+      exact .loopContinued (by rw [Expr.agrees_eval _ _ hc env]; exact holds)
+        (ihBody _ _ (Facts.Hold.nil _) hb) (ihLoop _ _ (Facts.Hold.nil _) h)
+  | brk =>
+    intro _ s' _ h
+    cases s' <;> simp [Stmt.agrees, Stmt.isBrk] at h
+    exact .brk
+  | cont =>
+    intro _ s' _ h
+    cases s' <;> simp [Stmt.agrees, Stmt.isCont] at h
+    exact .cont
   | @call depth inner target count callee env heap after args func value found len vlen lt _ ih =>
     intro facts s' hold h
     obtain ⟨others, rfl, same⟩ := callAgrees_cases h
@@ -1050,6 +1185,13 @@ theorem Exec.agrees {p q : Program} (ok : funcsAgree p.funcs q.funcs = true) {de
     have r := (Expr.agrees_eval _ _ sameRight env).trans (Expr.subst_eval hold right)
     rw [← l, ← r] at defined ⊢
     exact .divide defined
+  | @sys depth env heap after call target args result ran =>
+    intro facts s' hold h
+    obtain ⟨others, rfl, same⟩ := sysAgrees_cases h
+    have values := argsAgree_eval same env
+    refine .sys ?_
+    rw [values.1, substAll_eval hold]
+    exact ran
 
 /-- The validator's guarantee: a call that returns in the original program
 returns the same values and heap in the optimized one, at the same depth. -/

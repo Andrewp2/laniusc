@@ -40,6 +40,64 @@ def assigned (facts : List Fact) (index : Nat) (value : Expr) : List Fact :=
   else
     rest
 
+def Stmt.isBrk (self : Stmt) : Bool :=
+  match self with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .brk => true
+  | .cont => false
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+  | .divide w o t l r => false
+  | .sys c t a => false
+
+def Stmt.isCont (self : Stmt) : Bool :=
+  match self with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => false
+  | .ite c t e => false
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .brk => false
+  | .cont => true
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+  | .divide w o t l r => false
+  | .sys c t a => false
+
+/-- A run of this statement may break or continue a loop around it. -/
+def Stmt.jumps (self : Stmt) : Bool :=
+  match self with
+  | .skip => false
+  | .assign i v => false
+  | .seq f s => Stmt.jumps f || Stmt.jumps s
+  | .ite c t e => Stmt.jumps t || Stmt.jumps e
+  | .loop c b => false
+  | .call t n f a => false
+  | .ret v => false
+  | .brk => true
+  | .cont => true
+  | .alloc t sh sz => false
+  | .loadByte t a => false
+  | .storeByte a v => false
+  | .loadWord w t a => false
+  | .storeWord w a v => false
+  | .divide w o t l r => false
+  | .sys c t a => false
+
 def Stmt.isSkip (self : Stmt) : Bool :=
   match self with
   | .skip => true
@@ -49,12 +107,15 @@ def Stmt.isSkip (self : Stmt) : Bool :=
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- The facts that hold after a run of this statement that ends normally, given facts that hold before it. Branches, loops and calls forget them all. -/
 def Stmt.factsAfter (self : Stmt) (facts : List Fact) : List Fact :=
@@ -66,12 +127,15 @@ def Stmt.factsAfter (self : Stmt) (facts : List Fact) : List Fact :=
   | .loop c b => []
   | .call t n f a => []
   | .ret v => []
+  | .brk => []
+  | .cont => []
   | .alloc target sh sz => kill facts target
   | .loadByte target a => kill facts target
   | .storeByte a v => facts
   | .loadWord w target a => kill facts target
   | .storeWord w a v => facts
   | .divide w o target l r => kill facts target
+  | .sys c t a => []
 
 /-- No run of this statement reads slot index: runs from two states that differ only at index end in states that differ only at index. -/
 def Stmt.ignores (self : Stmt) (index : Nat) : Bool :=
@@ -83,11 +147,14 @@ def Stmt.ignores (self : Stmt) (index : Nat) : Bool :=
   | .loop c b => !(Expr.mentions c index) && Stmt.ignores b index
   | .call t n f a => !(mentionsAny a index)
   | .ret v => !(mentionsAny v index)
+  | .brk => true
+  | .cont => true
   | .alloc t sh sz => !(Expr.mentions sz index)
   | .loadByte t a => !(Expr.mentions a index)
   | .storeByte a v => !(Expr.mentions a index) && !(Expr.mentions v index)
   | .loadWord w t a => !(Expr.mentions a index)
   | .storeWord w a v => !(Expr.mentions a index) && !(Expr.mentions v index)
   | .divide w o t l r => !(Expr.mentions l index) && !(Expr.mentions r index)
+  | .sys c t a => !(mentionsAny a index)
 
 end Lanius.Mini

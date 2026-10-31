@@ -56,6 +56,24 @@ theorem step_Stmt_ignores {prog : SrcProgram} {prims : Prims} {ix_Stmt_ignores i
   simp only [src_Stmt_ignores] at h
   faithful [Lanius.Mini.Stmt.ignores]
 
+theorem proof_Stmt_is_brk {prog : SrcProgram} {prims : Prims} {ix_Stmt_is_brk : Nat} (fn : prog.funcs[ix_Stmt_is_brk]? = some (src_Stmt_is_brk)) (np : prims.isPrim ix_Stmt_is_brk = false) {n : Nat} :
+    Stmt_Stmt_is_brk prog prims ix_Stmt_is_brk n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_Stmt_is_brk] at h
+  faithful [Lanius.Mini.Stmt.isBrk]
+
+theorem proof_Stmt_is_cont {prog : SrcProgram} {prims : Prims} {ix_Stmt_is_cont : Nat} (fn : prog.funcs[ix_Stmt_is_cont]? = some (src_Stmt_is_cont)) (np : prims.isPrim ix_Stmt_is_cont = false) {n : Nat} :
+    Stmt_Stmt_is_cont prog prims ix_Stmt_is_cont n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_Stmt_is_cont] at h
+  faithful [Lanius.Mini.Stmt.isCont]
+
 theorem proof_Stmt_is_skip {prog : SrcProgram} {prims : Prims} {ix_Stmt_is_skip : Nat} (fn : prog.funcs[ix_Stmt_is_skip]? = some (src_Stmt_is_skip)) (np : prims.isPrim ix_Stmt_is_skip = false) {n : Nat} :
     Stmt_Stmt_is_skip prog prims ix_Stmt_is_skip n := by
   intro x0 v0 w h r0
@@ -64,6 +82,15 @@ theorem proof_Stmt_is_skip {prog : SrcProgram} {prims : Prims} {ix_Stmt_is_skip 
   rw [pcall_succ np fn] at h
   simp only [src_Stmt_is_skip] at h
   faithful [Lanius.Mini.Stmt.isSkip]
+
+theorem step_Stmt_jumps {prog : SrcProgram} {prims : Prims} {ix_Stmt_jumps ix_unbox_of_mini_selfhost_Stmt : Nat} (fn : prog.funcs[ix_Stmt_jumps]? = some (src_Stmt_jumps ix_unbox_of_mini_selfhost_Stmt ix_Stmt_jumps)) (np : prims.isPrim ix_Stmt_jumps = false)
+    (ext_unbox_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Stmt prog prims ix_unbox_of_mini_selfhost_Stmt n)) {n : Nat}
+    (ih_Stmt_jumps : Certified (Stmt_Stmt_jumps prog prims ix_Stmt_jumps n)) :
+    Stmt_Stmt_jumps prog prims ix_Stmt_jumps (n + 1) := by
+  intro x0 v0 w h r0
+  rw [pcall_succ np fn] at h
+  simp only [src_Stmt_jumps] at h
+  faithful [Lanius.Mini.Stmt.jumps]
 
 theorem proof_assigned {prog : SrcProgram} {prims : Prims} {ix_assigned ix_Expr_subst ix_kill ix_Expr_is_atom ix_Expr_mentions ix_cons_of_mini_selfhost_Fact : Nat} (fn : prog.funcs[ix_assigned]? = some (src_assigned ix_Expr_subst ix_kill ix_Expr_is_atom ix_Expr_mentions ix_cons_of_mini_selfhost_Fact)) (np : prims.isPrim ix_assigned = false)
     (ext_Expr_subst : Certified (∀ {n : Nat}, Stmt_Expr_subst prog prims ix_Expr_subst n))

@@ -26,6 +26,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_setIndexOrEval
 public import Lanius.Faithful.Gen.SelfStmtF_sliceHead
 public import Lanius.Faithful.Gen.SelfStmtF_textSelf
+public import Lanius.Faithful.Gen.SelfStmtF_triedIf
+public import Lanius.Faithful.Gen.SelfStmtF_tryLet
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 public import Lanius.Faithful.Gen.SelfStmtF_xDivideOf
@@ -91,7 +93,7 @@ theorem proof_assign_target {prog : SrcProgram} {prims : Prims} {ix_assign_targe
   simp only [src_assign_target] at h
   faithful [Lanius.Mini.assignTarget]
 
-theorem proof_call_stmt {prog : SrcProgram} {prims : Prims} {ix_call_stmt ix_list_items ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_is_path_call ix_is_path ix_dealloc_path ix_free_of ix_args_of ix_text_assert ix_assert_arg ix_is_method_form ix_discard_of ix_eff_postfix : Nat} (fn : prog.funcs[ix_call_stmt]? = some (src_call_stmt ix_list_items ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_is_path_call ix_is_path ix_dealloc_path ix_free_of ix_args_of ix_text_assert ix_assert_arg ix_is_method_form ix_discard_of ix_eff_postfix)) (np : prims.isPrim ix_call_stmt = false)
+theorem proof_call_stmt {prog : SrcProgram} {prims : Prims} {ix_call_stmt ix_list_items ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_is_path_call ix_is_path ix_dealloc_path ix_free_of ix_args_of ix_text_assert ix_assert_arg ix_is_method_form ix_discard_of ix_eff_postfix ix_is_try_call ix_try_stmt ix_try_call_of : Nat} (fn : prog.funcs[ix_call_stmt]? = some (src_call_stmt ix_list_items ix_kid ix_path_spellings ix_single_of_mini_selfhost_List_usize ix_is_path_call ix_is_path ix_dealloc_path ix_free_of ix_args_of ix_text_assert ix_assert_arg ix_is_method_form ix_discard_of ix_eff_postfix ix_is_try_call ix_try_stmt ix_try_call_of)) (np : prims.isPrim ix_call_stmt = false)
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_path_spellings : Certified (∀ {n : Nat}, Stmt_path_spellings prog prims ix_path_spellings n))
@@ -105,7 +107,10 @@ theorem proof_call_stmt {prog : SrcProgram} {prims : Prims} {ix_call_stmt ix_lis
     (ext_assert_arg : Certified (∀ {n : Nat}, Stmt_assert_arg prog prims ix_assert_arg n))
     (ext_is_method_form : Certified (∀ {n : Nat}, Stmt_is_method_form prog prims ix_is_method_form n))
     (ext_discard_of : Certified (∀ {n : Nat}, Stmt_discard_of prog prims ix_discard_of n))
-    (ext_eff_postfix : Certified (∀ {n : Nat}, Stmt_eff_postfix prog prims ix_eff_postfix n)) {n : Nat} :
+    (ext_eff_postfix : Certified (∀ {n : Nat}, Stmt_eff_postfix prog prims ix_eff_postfix n))
+    (ext_is_try_call : Certified (∀ {n : Nat}, Stmt_is_try_call prog prims ix_is_try_call n))
+    (ext_try_stmt : Certified (∀ {n : Nat}, Stmt_try_stmt prog prims ix_try_stmt n))
+    (ext_try_call_of : Certified (∀ {n : Nat}, Stmt_try_call_of prog prims ix_try_call_of n)) {n : Nat} :
     Stmt_call_stmt prog prims ix_call_stmt n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n

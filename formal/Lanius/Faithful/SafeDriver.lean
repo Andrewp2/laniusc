@@ -80,7 +80,7 @@ theorem read_safe {inp : Nat} {W : List (BitVec 32)} (len : W.length < 2 ^ 64) :
       have m47 := local?_bindLocal_other (id := 146) (by decide) (.unsigned .usize (lo + (hi - lo) / 2)) l47
       have args1 := knowns_cons (known_local (P := prog.toCore) m12) (knowns_cons (known_local m146)
         (knowns_cons (known_local m36) (knowns_cons (known_local m47) knowns_nil)))
-      refine safeS_let (safeE_call fn_read args1.safeEs fun {k values s1} h1 => ?_) fun {k rv s5} recRun => ?_
+      refine safeS_let (safeE_call fn_read (by decide) args1.safeEs fun {k values s1} h1 => ?_) fun {k rv s5} recRun => ?_
       · obtain ⟨rfl, hs1⟩ := args1.done h1
         subst s1
         refine ⟨rfl, ?_⟩
@@ -115,7 +115,7 @@ theorem read_safe {inp : Nat} {W : List (BitVec 32)} (len : W.length < 2 ^ 64) :
         (knowns_cons (known_local (back (by decide) (local?_bindLocal_other (by decide) _ l25)))
           (knowns_cons (known_local (back (by decide) m146))
             (knowns_cons (known_local (local?_bindLocal_self (inv1'.restore _) 191 rv)) knowns_nil)))
-      refine safeS_return (safeE_call fn_read args2.safeEs fun {k values s1} h2 => ?_)
+      refine safeS_return (safeE_call fn_read (by decide) args2.safeEs fun {k values s1} h2 => ?_)
       obtain ⟨rfl, hs1⟩ := args2.done h2
       subst s1
       refine ⟨rfl, ?_⟩
@@ -203,13 +203,13 @@ theorem write_one_safe {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
     (known_value (.unsigned .usize (1#64).toNat)) (v := .unsigned .usize ((ofs + 1) % 2 ^ 64)) rfl
   have args := knowns_cons (known_local (P := prog.toCore) l17) (knowns_cons next
     (knowns_cons (known_local l48) knowns_nil))
-  refine safeS_let (safeE_call fn_write args.safeEs fun {k values s1} h1 => ?_) fun {k rv s5} recRun => ?_
+  refine safeS_let (safeE_call fn_write (by decide) args.safeEs fun {k values s1} h1 => ?_) fun {k rv s5} recRun => ?_
   · obtain ⟨rfl, hs1⟩ := args.done h1
     subst s1
     refine ⟨rfl, ?_⟩
     simp only [write_params]
     exact ih invE (heapE ▸ readable) (heapE ▸ rel) rep
-  obtain ⟨j2, f3, values, afterArgs, done3, c3, -, argsRun, found3, -, body3, result3, rfl⟩ := call_inv' recRun
+  obtain ⟨j2, f3, values, afterArgs, done3, c3, -, argsRun, found3, -, body3, result3, rfl⟩ := call_inv' (inside_of fn_write) recRun
   rw [fn_write, Option.some.injEq] at found3
   subst found3
   obtain ⟨rfl, hA⟩ := args.done argsRun
@@ -318,7 +318,7 @@ theorem write_safe {outp room : Nat} (roomLt : room < 2 ^ 31) : ∀ ws, WriteSaf
         obtain ⟨rfl, hs1⟩ := kU.done h1
         subst s1
         exact ⟨inv2, _, .cons (heapE ▸ rbox) .nil⟩
-    refine safeE_call fn_write_one (safeEs_cons (known_local m13).safeE fun {k v1 s1} h1 => ?_)
+    refine safeE_call fn_write_one (by decide) (safeEs_cons (known_local m13).safeE fun {k v1 s1} h1 => ?_)
       fun {k values s1} h1 => ?_
     · obtain ⟨rfl, hs1⟩ := (known_local m13).done h1
       subst s1
@@ -472,13 +472,13 @@ theorem put_safe {outp room : Nat} (roomLt : room < 2 ^ 31) {s : State} {rv rp :
     have m153 : (E.bindLocals [(153, lv)]).local? 153 = some lv := local?_bindLocal_self invE _ _
     have args := knowns_cons (known_local (P := prog.toCore) m11)
       (knowns_cons (known_value (.unsigned .usize (0#64).toNat)) (knowns_cons (known_local m153) knowns_nil))
-    refine safeE_cast (safeE_call fn_write args.safeEs fun {k values s1} h1 => ?_) fun {k v s1} h1 bound => ?_
+    refine safeE_cast (safeE_call fn_write (by decide) args.safeEs fun {k values s1} h1 => ?_) fun {k v s1} h1 bound => ?_
     · obtain ⟨rfl, hs1⟩ := args.done h1
       subst s1
       refine ⟨rfl, ?_⟩
       simp only [write_params]
       exact write_safe roomLt ws (invE.bindLocals _) (heapE ▸ readable) (heapE ▸ rl) rws
-    · obtain ⟨j5, f3, values, afterArgs, done3, c3, -, argsRun, found3, -, body3, result3, rfl⟩ := call_inv' h1
+    · obtain ⟨j5, f3, values, afterArgs, done3, c3, -, argsRun, found3, -, body3, result3, rfl⟩ := call_inv' (inside_of fn_write) h1
       rw [fn_write, Option.some.injEq] at found3
       subst found3
       obtain ⟨rfl, hA⟩ := args.done argsRun
@@ -503,7 +503,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
   have args0 := knowns_cons (known_value (P := prog.toCore) (st := st) (.pointer inp))
     (knowns_cons (known_value (.signed .i32 W.length)) (knowns_cons (known_value (.pointer outp))
       (knowns_cons (known_value (.signed .i32 room)) knowns_nil)))
-  refine safeE_call fn_w args0.safeEs fun {k values s0} h0 => ?_
+  refine safeE_call fn_w (by decide) args0.safeEs fun {k values s0} h0 => ?_
   obtain ⟨rfl, hs0⟩ := args0.done h0
   subst s0
   refine ⟨rfl, ?_⟩
@@ -563,7 +563,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
       obtain ⟨rfl, rfl⟩ := exprs_nil_inv h
       exact ⟨inv2, [], .nil⟩
   -- `let read = oracle_read(data, 0, words as usize, empty())`
-  refine safeS_let (safeE_call fn_read (safeEs_cons (known_local k67).safeE fun {k v1 s1} h1 => ?_)
+  refine safeS_let (safeE_call fn_read (by decide) (safeEs_cons (known_local k67).safeE fun {k v1 s1} h1 => ?_)
     fun {k values s1} h1 => ?_) fun {k lv s6} readRun => ?_
   · obtain ⟨rfl, hs1⟩ := (known_local k67).done h1
     subst s1
@@ -582,7 +582,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
     obtain ⟨rfl, rfl⟩ := kc.done r5
     obtain ⟨_, a6, t6, more6, -, r6, m6, rfl⟩ := exprs_cons_inv m5
     obtain ⟨rfl, rfl⟩ := exprs_nil_inv m6
-    obtain ⟨j5, fE, valsE, afterE, doneE, cE, -, argsE, foundE, lenE, bodyE, resultE, rfl⟩ := call_inv' r6
+    obtain ⟨j5, fE, valsE, afterE, doneE, cE, -, argsE, foundE, lenE, bodyE, resultE, rfl⟩ := call_inv' (inside_of fn_empty_of_i32) r6
     rw [fn_empty_of_i32, Option.some.injEq] at foundE
     subst foundE
     obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsE
@@ -595,7 +595,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
     exact read_safe (by omega) (W.length - 0) rfl (Nat.zero_le _) (Nat.le_refl _) (invE'.restore _)
       (input.step ((step2.trans stepE').restore _)) rwe (cert_empty_of_i32 hwe)
   -- `return oracle_put(out, compile_words(front_end_words(grammar(), read)))`
-  obtain ⟨j4, fR, valsR, afterR, doneR, cR, -, argsR, foundR, -, bodyR, resultR, rfl⟩ := call_inv' readRun
+  obtain ⟨j4, fR, valsR, afterR, doneR, cR, -, argsR, foundR, -, bodyR, resultR, rfl⟩ := call_inv' (inside_of fn_read) readRun
   rw [fn_read, Option.some.injEq] at foundR
   subst foundR
   obtain ⟨_, a3, t3, more3, -, r3, m3, rfl⟩ := exprs_cons_inv argsR
@@ -606,7 +606,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
   obtain ⟨rfl, rfl⟩ := kc.done r5
   obtain ⟨_, a6, t6, more6, -, r6, m6, rfl⟩ := exprs_cons_inv m5
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv m6
-  obtain ⟨j5, fE, valsE, afterE, doneE, cE, -, argsE, foundE, lenE, bodyE, resultE, rfl⟩ := call_inv' r6
+  obtain ⟨j5, fE, valsE, afterE, doneE, cE, -, argsE, foundE, lenE, bodyE, resultE, rfl⟩ := call_inv' (inside_of fn_empty_of_i32) r6
   rw [fn_empty_of_i32, Option.some.injEq] at foundE
   subst foundE
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsE
@@ -642,7 +642,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
     · simp [TEnv.get?, Ne.symm e] at hx
   have effSafe := safeE_of_eff (e := SrcEff.eCall 6 [SrcEff.eCall 7 [SrcEff.eCall 8 [], SrcEff.ePure (SrcExpr.local 182)]])
     (t := ty3) rfl invR0 envR
-  refine safeS_return (safeE_call fn_put (safeEs_cons (known_local k125').safeE fun {k v1 s1} h1 => ?_)
+  refine safeS_return (safeE_call fn_put (by decide) (safeEs_cons (known_local k125').safeE fun {k v1 s1} h1 => ?_)
     fun {k values s1} h1 => ?_)
   · obtain ⟨rfl, hs1⟩ := (known_local k125').done h1
     subst s1
@@ -651,19 +651,19 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
   obtain ⟨rfl, rfl⟩ := local_eval k125' q1
   obtain ⟨_, b2, u2, moreP2, -, q2, n2, rfl⟩ := exprs_cons_inv n1
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv n2
-  obtain ⟨j8, fC, valsC, afterC, doneC, cC, -, argsC, foundC, lenC, bodyC, resultC, rfl⟩ := call_inv' q2
+  obtain ⟨j8, fC, valsC, afterC, doneC, cC, -, argsC, foundC, lenC, bodyC, resultC, rfl⟩ := call_inv' (inside_of fn_compile_words) q2
   rw [fn_compile_words, Option.some.injEq] at foundC
   subst foundC
   obtain ⟨_, b3, u3, moreC, -, q3, n3, rfl⟩ := exprs_cons_inv argsC
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv n3
-  obtain ⟨j9, fF, valsF, afterF, doneF, cF, -, argsF, foundF, lenF, bodyF, resultF, rfl⟩ := call_inv' q3
+  obtain ⟨j9, fF, valsF, afterF, doneF, cF, -, argsF, foundF, lenF, bodyF, resultF, rfl⟩ := call_inv' (inside_of fn_front_end_words) q3
   rw [fn_front_end_words, Option.some.injEq] at foundF
   subst foundF
   obtain ⟨_, b4, u4, moreF, -, q4, n4, rfl⟩ := exprs_cons_inv argsF
   obtain ⟨_, b5, u5, moreF2, -, q5, n5, rfl⟩ := exprs_cons_inv n4
   obtain ⟨f5, rfl⟩ := local_inv q5
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv n5
-  obtain ⟨j10, fG, valsG, afterG, doneG, cG, -, argsG, foundG, lenG, bodyG, resultG, rfl⟩ := call_inv' q4
+  obtain ⟨j10, fG, valsG, afterG, doneG, cG, -, argsG, foundG, lenG, bodyG, resultG, rfl⟩ := call_inv' (inside_of fn_grammar) q4
   rw [fn_grammar, Option.some.injEq] at foundG
   subst foundG
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsG

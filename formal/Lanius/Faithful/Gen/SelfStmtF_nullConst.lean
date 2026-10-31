@@ -22,15 +22,15 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_neg_sint_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepUintTy x0 v0 → RepSrcExpr x1 v1 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.negSintConst x0 x1) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.negSintConst x0 x1) w
 
 abbrev Stmt_null_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : BitVec 32} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepI32 x0 v0 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.nullConst x0) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.nullConst x0) w
 
 abbrev Stmt_sint_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : BitVec 32} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepUintTy x0 v0 → RepI32 x1 v1 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.sintConst x0 x1) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.sintConst x0 x1) w
 
 abbrev Stmt_sint_fits (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : BitVec 32} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepUintTy x0 v0 → RepI32 x1 v1 →

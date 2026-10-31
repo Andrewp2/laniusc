@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::declare_funcs -/
-def src_declare_funcs (ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : Nat) (ix_declare_funcs_after : Nat) (ix_declare_func : Nat) : SrcFunc := { params := [{ id := 14, ty := ty33 }, { id := 36, ty := ty77 }], ret := ty78, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 14)) ty33 ty78 [[], [157, 163]] [SrcEff.eVariant ty78 0 [SrcEff.ePure (SrcExpr.local 36)], SrcEff.eCall ix_declare_funcs_after [SrcEff.eCall ix_declare_func [SrcEff.ePure (SrcExpr.local 157), SrcEff.ePure (SrcExpr.local 36)], SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc [SrcEff.ePure (SrcExpr.local 163)]]]) }
+def src_declare_funcs (ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc : Nat) (ix_declare_funcs_after : Nat) (ix_declare_func : Nat) : SrcFunc := { params := [{ id := 14, ty := ty33 }, { id := 36, ty := ty78 }], ret := ty79, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 14)) ty33 ty79 [[], [157, 163]] [SrcEff.eVariant ty79 0 [SrcEff.ePure (SrcExpr.local 36)], SrcEff.eCall ix_declare_funcs_after [SrcEff.eCall ix_declare_func [SrcEff.ePure (SrcExpr.local 157), SrcEff.ePure (SrcExpr.local 36)], SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc [SrcEff.ePure (SrcExpr.local 163)]]]) }
 
 end
 

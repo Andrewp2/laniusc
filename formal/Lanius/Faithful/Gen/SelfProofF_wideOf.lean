@@ -140,7 +140,7 @@ theorem proof_dash_text {prog : SrcProgram} {prims : Prims} {ix_dash_text ix_sin
   simp only [src_dash_text] at h
   faithful [Lanius.Mini.dashText]
 
-theorem step_expr_of {prog : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_expr ix_p_assign ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_int_literal ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal : Nat} (fn : prog.funcs[ix_expr_of]? = some (src_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_expr ix_p_assign ix_expr_of ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_int_literal ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal)) (np : prims.isPrim ix_expr_of = false)
+theorem step_expr_of {prog : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_expr ix_p_assign ix_int_literal ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal : Nat} (fn : prog.funcs[ix_expr_of]? = some (src_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_expr ix_p_assign ix_expr_of ix_int_literal ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal)) (np : prims.isPrim ix_expr_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -148,6 +148,7 @@ theorem step_expr_of {prog : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
     (ext_p_expr : Certified (∀ {n : Nat}, Stmt_p_expr prog prims ix_p_expr n))
     (ext_p_assign : Certified (∀ {n : Nat}, Stmt_p_assign prog prims ix_p_assign n))
+    (ext_int_literal : Certified (∀ {n : Nat}, Stmt_int_literal prog prims ix_int_literal n))
     (ext_p_base : Certified (∀ {n : Nat}, Stmt_p_base prog prims ix_p_base n))
     (ext_is_level : Certified (∀ {n : Nat}, Stmt_is_level prog prims ix_is_level n))
     (ext_p_cast : Certified (∀ {n : Nat}, Stmt_p_cast prog prims ix_p_cast n))
@@ -163,7 +164,6 @@ theorem step_expr_of {prog : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix
     (ext_p_self_value : Certified (∀ {n : Nat}, Stmt_p_self_value prog prims ix_p_self_value n))
     (ext_local_expr : Certified (∀ {n : Nat}, Stmt_local_expr prog prims ix_local_expr n))
     (ext_p_int : Certified (∀ {n : Nat}, Stmt_p_int prog prims ix_p_int n))
-    (ext_int_literal : Certified (∀ {n : Nat}, Stmt_int_literal prog prims ix_int_literal n))
     (ext_p_true : Certified (∀ {n : Nat}, Stmt_p_true prog prims ix_p_true n))
     (ext_p_false : Certified (∀ {n : Nat}, Stmt_p_false prog prims ix_p_false n))
     (ext_p_char : Certified (∀ {n : Nat}, Stmt_p_char prog prims ix_p_char n))

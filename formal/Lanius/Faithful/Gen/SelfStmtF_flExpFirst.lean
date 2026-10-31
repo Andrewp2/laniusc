@@ -21,28 +21,28 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_fl_exp_first (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : List Bool} {x2 : Nat} {x3 : Nat} {x4 : Bool} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 25 RepNat) x0 v0 → (RepList 250 RepBool) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepBool x4 v4 →
-    (RepOption 248 RepFlDec) (Lanius.Mini.flExpFirst x0 x1 x2 x3 x4) w
+  ∀ {x0 : List Nat} {x1 : List Bool} {x2 : Nat} {x3 : Nat} {x4 : Bool} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 25 RepNat) x0 v0 → (RepList 255 RepBool) x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepBool x4 v4 →
+    (RepOption 253 RepFlDec) (Lanius.Mini.flExpFirst x0 x1 x2 x3 x4) w
 
 abbrev Stmt_fl_exp_part (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : List Bool} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 250 RepBool) x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
-    (RepOption 248 RepFlDec) (Lanius.Mini.flExpPart x0 x1 x2 x3) w
+  ∀ {x0 : List Nat} {x1 : List Bool} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 255 RepBool) x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
+    (RepOption 253 RepFlDec) (Lanius.Mini.flExpPart x0 x1 x2 x3) w
 
 abbrev Stmt_fl_exp_sign (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : List Bool} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 250 RepBool) x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
-    (RepOption 248 RepFlDec) (Lanius.Mini.flExpSign x0 x1 x2 x3) w
+  ∀ {x0 : List Nat} {x1 : List Bool} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 255 RepBool) x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
+    (RepOption 253 RepFlDec) (Lanius.Mini.flExpSign x0 x1 x2 x3) w
 
 abbrev Stmt_fl_frac_part (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : List Bool} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 250 RepBool) x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
-    (RepOption 248 RepFlDec) (Lanius.Mini.flFracPart x0 x1 x2 x3) w
+  ∀ {x0 : List Nat} {x1 : List Bool} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 255 RepBool) x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
+    (RepOption 253 RepFlDec) (Lanius.Mini.flFracPart x0 x1 x2 x3) w
 
 abbrev Stmt_fl_int_part (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : List Bool} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 25 RepNat) x0 v0 → (RepList 250 RepBool) x1 v1 → RepNat x2 v2 →
-    (RepOption 248 RepFlDec) (Lanius.Mini.flIntPart x0 x1 x2) w
+  ∀ {x0 : List Nat} {x1 : List Bool} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 25 RepNat) x0 v0 → (RepList 255 RepBool) x1 v1 → RepNat x2 v2 →
+    (RepOption 253 RepFlDec) (Lanius.Mini.flIntPart x0 x1 x2) w
 
 abbrev Stmt_float_literal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.floatLiteral x0) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.floatLiteral x0) w
 
 abbrev Stmt_float_marker (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FlDec} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFlDec x0 v0 →
@@ -50,14 +50,14 @@ abbrev Stmt_float_marker (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_float_pick (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFloatTy x0 v0 → RepSrcType x1 v1 → RepSrcExpr x2 v2 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.floatPick x0 x1 x2) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.floatPick x0 x1 x2) w
 
 abbrev Stmt_float_pick_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FloatTy} {x1 : Lanius.Mini.SrcExpr} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFloatTy x0 v0 → RepSrcExpr x1 v1 → RepSrcExpr x2 v2 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.floatPickOf x0 x1 x2) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.floatPickOf x0 x1 x2) w
 
 abbrev Stmt_float_want (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 153 RepSrcType) x0 v0 → RepSrcType x1 v1 → RepSrcExpr x2 v2 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.floatWant x0 x1 x2) w
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 154 RepSrcType) x0 v0 → RepSrcType x1 v1 → RepSrcExpr x2 v2 →
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.floatWant x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

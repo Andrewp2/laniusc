@@ -8,379 +8,363 @@ open Lanius.Mini
 open Lanius.Faithful
 open Lanius.Faithful.Self
 
-/-- mini::selfhost::is_skip -/
-theorem pure600 : PureFunc prog prims outside src600 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::assign_agrees -/
-theorem pure601 : PureFunc prog prims outside src601 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::seq_agrees -/
-theorem pure602 : PureFunc prog prims outside src602 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::dead_agrees -/
-theorem pure603 : PureFunc prog prims outside src603 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::facts_after -/
-theorem pure604 : PureFunc prog prims outside src604 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::ite_agrees -/
-theorem pure605 : PureFunc prog prims outside src605 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::branch_agrees -/
+/-- mini::selfhost::is_var -/
 theorem pure606 : PureFunc prog prims outside src606 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::constant -/
+/-- mini::selfhost::optimize_neg -/
 theorem pure607 : PureFunc prog prims outside src607 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::unknown -/
+/-- mini::selfhost::optimize_binary -/
 theorem pure608 : PureFunc prog prims outside src608 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::is_zero -/
+/-- mini::selfhost::optimize_compare -/
 theorem pure609 : PureFunc prog prims outside src609 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::loop_agrees -/
+/-- mini::selfhost::fact_value -/
 theorem pure610 : PureFunc prog prims outside src610 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::call_agrees -/
+/-- mini::selfhost::opt_facts_after -/
 theorem pure611 : PureFunc prog prims outside src611 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::ret_agrees -/
+/-- mini::selfhost::dead_before -/
 theorem pure612 : PureFunc prog prims outside src612 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::alloc_agrees -/
+/-- mini::selfhost::optimize_seq -/
 theorem pure613 : PureFunc prog prims outside src613 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::load_byte_agrees -/
+/-- mini::selfhost::literal -/
 theorem pure614 : PureFunc prog prims outside src614 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::store_byte_agrees -/
+/-- mini::selfhost::pick_branch -/
 theorem pure615 : PureFunc prog prims outside src615 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::load_word_agrees -/
+/-- mini::selfhost::ite_or_skip -/
 theorem pure616 : PureFunc prog prims outside src616 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::store_word_agrees -/
+/-- mini::selfhost::loop_unless_zero -/
 theorem pure617 : PureFunc prog prims outside src617 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::divide_agrees -/
+/-- mini::selfhost::is_skip -/
 theorem pure618 : PureFunc prog prims outside src618 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::temps -/
+/-- mini::selfhost::assign_agrees -/
 theorem pure619 : PureFunc prog prims outside src619 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::args_temps -/
+/-- mini::selfhost::seq_agrees -/
 theorem pure620 : PureFunc prog prims outside src620 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::within -/
+/-- mini::selfhost::dead_agrees -/
 theorem pure621 : PureFunc prog prims outside src621 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arity_is -/
+/-- mini::selfhost::facts_after -/
 theorem pure622 : PureFunc prog prims outside src622 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::length<mini::selfhost::Expr> -/
+/-- mini::selfhost::ite_agrees -/
 theorem pure623 : PureFunc prog prims outside src623 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::all_within -/
+/-- mini::selfhost::branch_agrees -/
 theorem pure624 : PureFunc prog prims outside src624 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::empty<mini::selfhost::Instr> -/
+/-- mini::selfhost::constant -/
+theorem pure625 : PureFunc prog prims outside src625 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::unknown -/
 theorem pure626 : PureFunc prog prims outside src626 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::compile_expr -/
+/-- mini::selfhost::is_zero -/
+theorem pure627 : PureFunc prog prims outside src627 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::loop_agrees -/
 theorem pure628 : PureFunc prog prims outside src628 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::single<mini::selfhost::Instr> -/
+/-- mini::selfhost::call_agrees -/
 theorem pure629 : PureFunc prog prims outside src629 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::seq_code -/
+/-- mini::selfhost::ret_agrees -/
 theorem pure630 : PureFunc prog prims outside src630 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::ite_code -/
+/-- mini::selfhost::is_brk -/
 theorem pure631 : PureFunc prog prims outside src631 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::loop_code -/
+/-- mini::selfhost::is_cont -/
 theorem pure632 : PureFunc prog prims outside src632 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::compile_args -/
+/-- mini::selfhost::alloc_agrees -/
 theorem pure633 : PureFunc prog prims outside src633 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arg_slots -/
+/-- mini::selfhost::load_byte_agrees -/
 theorem pure634 : PureFunc prog prims outside src634 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::size -/
+/-- mini::selfhost::store_byte_agrees -/
 theorem pure635 : PureFunc prog prims outside src635 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::prologue -/
+/-- mini::selfhost::load_word_agrees -/
+theorem pure636 : PureFunc prog prims outside src636 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::store_word_agrees -/
+theorem pure637 : PureFunc prog prims outside src637 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::divide_agrees -/
+theorem pure638 : PureFunc prog prims outside src638 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::sys_agrees -/
+theorem pure639 : PureFunc prog prims outside src639 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::temps -/
+theorem pure640 : PureFunc prog prims outside src640 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::args_temps -/
 theorem pure641 : PureFunc prog prims outside src641 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::encode_from -/
+/-- mini::selfhost::within -/
 theorem pure642 : PureFunc prog prims outside src642 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::amount_guard -/
+/-- mini::selfhost::arity_is -/
 theorem pure643 : PureFunc prog prims outside src643 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::shift_width -/
+/-- mini::selfhost::length<mini::selfhost::Expr> -/
 theorem pure644 : PureFunc prog prims outside src644 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::mask -/
+/-- mini::selfhost::all_within -/
 theorem pure645 : PureFunc prog prims outside src645 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::lower_scalar_local -/
-theorem pure646 : PureFunc prog prims outside src646 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::lower_field_of -/
+/-- mini::selfhost::empty<mini::selfhost::Instr> -/
 theorem pure647 : PureFunc prog prims outside src647 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::lower -/
-theorem pure648 : PureFunc prog prims outside src648 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::cast_to -/
+/-- mini::selfhost::compile_expr -/
 theorem pure649 : PureFunc prog prims outside src649 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::mask -/
+/-- mini::selfhost::single<mini::selfhost::Instr> -/
 theorem pure650 : PureFunc prog prims outside src650 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::copy_same -/
+/-- mini::selfhost::seq_code -/
 theorem pure651 : PureFunc prog prims outside src651 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::copy_field_of -/
+/-- mini::selfhost::ite_code -/
 theorem pure652 : PureFunc prog prims outside src652 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::lower_append -/
+/-- mini::selfhost::loop_code -/
 theorem pure653 : PureFunc prog prims outside src653 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::is_bool -/
+/-- mini::selfhost::compile_args -/
 theorem pure654 : PureFunc prog prims outside src654 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::is_ptr -/
+/-- mini::selfhost::arg_slots -/
 theorem pure655 : PureFunc prog prims outside src655 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::is_isize -/
+/-- mini::selfhost::size -/
 theorem pure656 : PureFunc prog prims outside src656 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::is_char -/
-theorem pure657 : PureFunc prog prims outside src657 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::is_float -/
-theorem pure658 : PureFunc prog prims outside src658 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::is_sint -/
-theorem pure659 : PureFunc prog prims outside src659 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::lower_tag -/
-theorem pure660 : PureFunc prog prims outside src660 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::length<mini::selfhost::SrcArm> -/
-theorem pure661 : PureFunc prog prims outside src661 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::lower_arms -/
+/-- mini::selfhost::prologue -/
 theorem pure662 : PureFunc prog prims outside src662 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::lower_set_scalar -/
+/-- mini::selfhost::encode_from -/
 theorem pure663 : PureFunc prog prims outside src663 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::offset_after -/
+/-- mini::selfhost::amount_guard -/
 theorem pure664 : PureFunc prog prims outside src664 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::declared_same -/
+/-- mini::selfhost::shift_width -/
 theorem pure665 : PureFunc prog prims outside src665 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::word_types -/
+/-- mini::selfhost::mask -/
 theorem pure666 : PureFunc prog prims outside src666 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::declared_variants -/
+/-- mini::selfhost::lower_scalar_local -/
 theorem pure667 : PureFunc prog prims outside src667 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::word_variants -/
+/-- mini::selfhost::lower_field_of -/
 theorem pure668 : PureFunc prog prims outside src668 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::element_address -/
+/-- mini::selfhost::lower -/
 theorem pure669 : PureFunc prog prims outside src669 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::load_type -/
+/-- mini::selfhost::cast_to -/
 theorem pure670 : PureFunc prog prims outside src670 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::element_base -/
+/-- mini::selfhost::mask -/
 theorem pure671 : PureFunc prog prims outside src671 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::code -/
+/-- mini::selfhost::copy_same -/
 theorem pure672 : PureFunc prog prims outside src672 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::store_element -/
+/-- mini::selfhost::copy_field_of -/
 theorem pure673 : PureFunc prog prims outside src673 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::store_word_element -/
+/-- mini::selfhost::lower_append -/
 theorem pure674 : PureFunc prog prims outside src674 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval_values -/
+/-- mini::selfhost::lower_tag -/
 theorem pure675 : PureFunc prog prims outside src675 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval_field_of -/
+/-- mini::selfhost::length<mini::selfhost::SrcArm> -/
 theorem pure676 : PureFunc prog prims outside src676 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::short_circuit -/
+/-- mini::selfhost::lower_arms -/
 theorem pure677 : PureFunc prog prims outside src677 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::operand_guard -/
+/-- mini::selfhost::lower_set_scalar -/
 theorem pure678 : PureFunc prog prims outside src678 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval_right -/
+/-- mini::selfhost::offset_after -/
 theorem pure679 : PureFunc prog prims outside src679 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::is_float_any -/
+/-- mini::selfhost::declared_same -/
 theorem pure680 : PureFunc prog prims outside src680 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::negate_float -/
+/-- mini::selfhost::word_types -/
 theorem pure681 : PureFunc prog prims outside src681 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::float_ty -/
+/-- mini::selfhost::declared_variants -/
 theorem pure682 : PureFunc prog prims outside src682 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::sint_kind -/
+/-- mini::selfhost::word_variants -/
 theorem pure683 : PureFunc prog prims outside src683 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::negate_signed -/
+/-- mini::selfhost::element_address -/
 theorem pure684 : PureFunc prog prims outside src684 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval_load -/
+/-- mini::selfhost::load_type -/
 theorem pure685 : PureFunc prog prims outside src685 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval_word_element -/
+/-- mini::selfhost::element_base -/
 theorem pure686 : PureFunc prog prims outside src686 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval_payload -/
+/-- mini::selfhost::store_element -/
 theorem pure687 : PureFunc prog prims outside src687 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval_arm -/
+/-- mini::selfhost::store_word_element -/
 theorem pure688 : PureFunc prog prims outside src688 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arm_bind -/
+/-- mini::selfhost::eval_values -/
 theorem pure689 : PureFunc prog prims outside src689 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::signed_div -/
+/-- mini::selfhost::eval_field_of -/
+theorem pure690 : PureFunc prog prims outside src690 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::single<mini::selfhost::SrcType> -/
 theorem pure691 : PureFunc prog prims outside src691 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval_divide_sint -/
+/-- mini::selfhost::host_byte_code -/
 theorem pure692 : PureFunc prog prims outside src692 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::uint_kind -/
+/-- mini::selfhost::host_write_code -/
 theorem pure693 : PureFunc prog prims outside src693 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval_divide_uint -/
+/-- mini::selfhost::short_circuit -/
 theorem pure694 : PureFunc prog prims outside src694 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::eval_word_stride -/
+/-- mini::selfhost::then_check -/
 theorem pure695 : PureFunc prog prims outside src695 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::store_eval_then -/
+/-- mini::selfhost::operand_guard -/
 theorem pure696 : PureFunc prog prims outside src696 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::store_type -/
+/-- mini::selfhost::eval_right -/
 theorem pure697 : PureFunc prog prims outside src697 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::set_scalar_eval -/
+/-- mini::selfhost::is_float_any -/
 theorem pure698 : PureFunc prog prims outside src698 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::negate_float -/
+theorem pure699 : PureFunc prog prims outside src699 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
 def part6 : List SrcFunc := [src600, src601, src602, src603, src604, src605, src606, src607, src608, src609, src610, src611, src612, src613, src614, src615, src616, src617, src618, src619, src620, src621, src622, src623, src624, src625, src626, src627, src628, src629, src630, src631, src632, src633, src634, src635, src636, src637, src638, src639, src640, src641, src642, src643, src644, src645, src646, src647, src648, src649, src650, src651, src652, src653, src654, src655, src656, src657, src658, src659, src660, src661, src662, src663, src664, src665, src666, src667, src668, src669, src670, src671, src672, src673, src674, src675, src676, src677, src678, src679, src680, src681, src682, src683, src684, src685, src686, src687, src688, src689, src690, src691, src692, src693, src694, src695, src696, src697, src698, src699]
 
 theorem chunk6 : FuncsOk prog prims outside 600 part6 :=
-  funcsOk_cons (funcOk_pure pure600) <|
-  funcsOk_cons (funcOk_pure pure601) <|
-  funcsOk_cons (funcOk_pure pure602) <|
-  funcsOk_cons (funcOk_pure pure603) <|
-  funcsOk_cons (funcOk_pure pure604) <|
-  funcsOk_cons (funcOk_pure pure605) <|
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 600 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::FnDecl>>, a prim
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 601 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ConstDecl>>, a prim
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 602 mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::ConstDecl>>, a prim
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 603 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::ImportDecl>>, a prim
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 604 mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::ImportDecl>>, a prim
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 605 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::AliasDecl>>, a prim
   funcsOk_cons (funcOk_pure pure606) <|
   funcsOk_cons (funcOk_pure pure607) <|
   funcsOk_cons (funcOk_pure pure608) <|
@@ -400,9 +384,9 @@ theorem chunk6 : FuncsOk prog prims outside 600 part6 :=
   funcsOk_cons (funcOk_pure pure622) <|
   funcsOk_cons (funcOk_pure pure623) <|
   funcsOk_cons (funcOk_pure pure624) <|
-  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 625 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Instr>>, a prim
+  funcsOk_cons (funcOk_pure pure625) <|
   funcsOk_cons (funcOk_pure pure626) <|
-  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 627 mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Instr>>, a prim
+  funcsOk_cons (funcOk_pure pure627) <|
   funcsOk_cons (funcOk_pure pure628) <|
   funcsOk_cons (funcOk_pure pure629) <|
   funcsOk_cons (funcOk_pure pure630) <|
@@ -411,19 +395,19 @@ theorem chunk6 : FuncsOk prog prims outside 600 part6 :=
   funcsOk_cons (funcOk_pure pure633) <|
   funcsOk_cons (funcOk_pure pure634) <|
   funcsOk_cons (funcOk_pure pure635) <|
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 636 core::mem::size_of<mini::selfhost::List<mini::selfhost::Code>>, outside
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 637 core::mem::typed_slice_from_storage<mini::selfhost::List<mini::selfhost::Code>>, outside
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 638 core::mem::size_of<mini::selfhost::List<mini::selfhost::Arity>>, outside
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 639 core::mem::typed_slice_from_storage<mini::selfhost::List<mini::selfhost::Arity>>, outside
-  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 640 mini::selfhost::boxed<mini::selfhost::List<u8>>, a prim
+  funcsOk_cons (funcOk_pure pure636) <|
+  funcsOk_cons (funcOk_pure pure637) <|
+  funcsOk_cons (funcOk_pure pure638) <|
+  funcsOk_cons (funcOk_pure pure639) <|
+  funcsOk_cons (funcOk_pure pure640) <|
   funcsOk_cons (funcOk_pure pure641) <|
   funcsOk_cons (funcOk_pure pure642) <|
   funcsOk_cons (funcOk_pure pure643) <|
   funcsOk_cons (funcOk_pure pure644) <|
   funcsOk_cons (funcOk_pure pure645) <|
-  funcsOk_cons (funcOk_pure pure646) <|
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 646 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Instr>>, a prim
   funcsOk_cons (funcOk_pure pure647) <|
-  funcsOk_cons (funcOk_pure pure648) <|
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 648 mini::selfhost::unbox<mini::selfhost::List<mini::selfhost::Instr>>, a prim
   funcsOk_cons (funcOk_pure pure649) <|
   funcsOk_cons (funcOk_pure pure650) <|
   funcsOk_cons (funcOk_pure pure651) <|
@@ -432,11 +416,11 @@ theorem chunk6 : FuncsOk prog prims outside 600 part6 :=
   funcsOk_cons (funcOk_pure pure654) <|
   funcsOk_cons (funcOk_pure pure655) <|
   funcsOk_cons (funcOk_pure pure656) <|
-  funcsOk_cons (funcOk_pure pure657) <|
-  funcsOk_cons (funcOk_pure pure658) <|
-  funcsOk_cons (funcOk_pure pure659) <|
-  funcsOk_cons (funcOk_pure pure660) <|
-  funcsOk_cons (funcOk_pure pure661) <|
+  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 657 core::mem::size_of<mini::selfhost::List<mini::selfhost::Code>>, outside
+  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 658 core::mem::typed_slice_from_storage<mini::selfhost::List<mini::selfhost::Code>>, outside
+  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 659 core::mem::size_of<mini::selfhost::List<mini::selfhost::Arity>>, outside
+  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 660 core::mem::typed_slice_from_storage<mini::selfhost::List<mini::selfhost::Arity>>, outside
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 661 mini::selfhost::boxed<mini::selfhost::List<u8>>, a prim
   funcsOk_cons (funcOk_pure pure662) <|
   funcsOk_cons (funcOk_pure pure663) <|
   funcsOk_cons (funcOk_pure pure664) <|
@@ -465,7 +449,7 @@ theorem chunk6 : FuncsOk prog prims outside 600 part6 :=
   funcsOk_cons (funcOk_pure pure687) <|
   funcsOk_cons (funcOk_pure pure688) <|
   funcsOk_cons (funcOk_pure pure689) <|
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 690 core::mem::typed_slice_from_storage<mini::selfhost::List<mini::selfhost::List<usize>>>, outside
+  funcsOk_cons (funcOk_pure pure690) <|
   funcsOk_cons (funcOk_pure pure691) <|
   funcsOk_cons (funcOk_pure pure692) <|
   funcsOk_cons (funcOk_pure pure693) <|
@@ -474,7 +458,7 @@ theorem chunk6 : FuncsOk prog prims outside 600 part6 :=
   funcsOk_cons (funcOk_pure pure696) <|
   funcsOk_cons (funcOk_pure pure697) <|
   funcsOk_cons (funcOk_pure pure698) <|
-  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 699 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::SrcStructDecl>>, a prim
+  funcsOk_cons (funcOk_pure pure699) <|
   funcsOk_nil
 
 end Lanius.Faithful.SelfPure

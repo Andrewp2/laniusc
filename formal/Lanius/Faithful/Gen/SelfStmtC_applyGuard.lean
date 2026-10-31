@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_apply_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.Typed} {x2 : Option Lanius.Mini.Typed} {x3 : Lanius.Mini.Expr} {x4 : Lanius.Mini.Expr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepSrcOp x0 v0 → (RepOption 149 RepTyped) x1 v1 → (RepOption 149 RepTyped) x2 v2 → RepExpr x3 v3 → RepExpr x4 v4 →
+  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.Typed} {x2 : Option Lanius.Mini.Typed} {x3 : Lanius.Mini.Expr} {x4 : Lanius.Mini.Expr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepSrcOp x0 v0 → (RepOption 150 RepTyped) x1 v1 → (RepOption 150 RepTyped) x2 v2 → RepExpr x3 v3 → RepExpr x4 v4 →
     RepExpr (Lanius.Mini.applyGuard x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfCert

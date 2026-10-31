@@ -38,11 +38,14 @@ def Stmt.extent (self : Stmt) : Nat :=
   | .loop condition body => max (Expr.extent condition) (Stmt.extent body)
   | .call target count callee args => max (target + count) (argsExtent args)
   | .ret values => argsExtent values
+  | .brk => 0
+  | .cont => 0
   | .alloc target shift size => max (target + 1) (Expr.extent size)
   | .loadByte target address => max (target + 1) (Expr.extent address)
   | .storeByte address value => max (Expr.extent address) (Expr.extent value)
   | .loadWord width target address => max (target + 1) (Expr.extent address)
   | .storeWord width address value => max (Expr.extent address) (Expr.extent value)
   | .divide word operation target left right => max (target + 1) (max (Expr.extent left) (Expr.extent right))
+  | .sys kind target args => max (target + 1) (argsExtent args)
 
 end Lanius.Mini

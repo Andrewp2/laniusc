@@ -22,10 +22,10 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_Expr_constant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepExpr x0 v0 →
-    (RepOption 196 RepU64) (Lanius.Mini.Expr.constant x0) w
+    (RepOption 197 RepU64) (Lanius.Mini.Expr.constant x0) w
 
 abbrev Stmt_Expr_is_constant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Expr} {x1 : Option (BitVec 64)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepExpr x0 v0 → (RepOption 196 RepU64) x1 v1 →
+  ∀ {x0 : Lanius.Mini.Expr} {x1 : Option (BitVec 64)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepExpr x0 v0 → (RepOption 197 RepU64) x1 v1 →
     RepBool (Lanius.Mini.Expr.isConstant x0 x1) w
 
 abbrev Stmt_Expr_is_var (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -41,15 +41,15 @@ abbrev Stmt_Expr_unit_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     RepBool (Lanius.Mini.Expr.unitOf x0 x1 x2) w
 
 abbrev Stmt_binary_constant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.BinOp} {x2 : Option (BitVec 64)} {x3 : Option (BitVec 64)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepWord x0 v0 → RepBinOp x1 v1 → (RepOption 196 RepU64) x2 v2 → (RepOption 196 RepU64) x3 v3 →
-    (RepOption 196 RepU64) (Lanius.Mini.binaryConstant x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.BinOp} {x2 : Option (BitVec 64)} {x3 : Option (BitVec 64)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepWord x0 v0 → RepBinOp x1 v1 → (RepOption 197 RepU64) x2 v2 → (RepOption 197 RepU64) x3 v3 →
+    (RepOption 197 RepU64) (Lanius.Mini.binaryConstant x0 x1 x2 x3) w
 
 abbrev Stmt_compare_constant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.CmpOp} {x2 : Option (BitVec 64)} {x3 : Option (BitVec 64)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepWord x0 v0 → RepCmpOp x1 v1 → (RepOption 196 RepU64) x2 v2 → (RepOption 196 RepU64) x3 v3 →
-    (RepOption 196 RepU64) (Lanius.Mini.compareConstant x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.CmpOp} {x2 : Option (BitVec 64)} {x3 : Option (BitVec 64)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepWord x0 v0 → RepCmpOp x1 v1 → (RepOption 197 RepU64) x2 v2 → (RepOption 197 RepU64) x3 v3 →
+    (RepOption 197 RepU64) (Lanius.Mini.compareConstant x0 x1 x2 x3) w
 
 abbrev Stmt_constant_is (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (BitVec 64)} {x1 : BitVec 64} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 196 RepU64) x0 v0 → RepU64 x1 v1 →
+  ∀ {x0 : Option (BitVec 64)} {x1 : BitVec 64} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 197 RepU64) x0 v0 → RepU64 x1 v1 →
     RepBool (Lanius.Mini.constantIs x0 x1) w
 
 end Lanius.Faithful.SelfCert

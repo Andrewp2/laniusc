@@ -15,6 +15,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pExprStmt : Nat :=
   85
 
+@[expose] def Inline.pExternAbi : Nat :=
+  32
+
 @[expose] def Inline.pExternFn : Nat :=
   15
 
@@ -26,6 +29,12 @@ namespace Lanius.Mini
 
 @[expose] def Inline.pFn : Nat :=
   11
+
+@[expose] def Inline.pForIterRangeFromStart : Nat :=
+  93
+
+@[expose] def Inline.pForStmt : Nat :=
+  81
 
 @[expose] def Inline.pGeTail : Nat :=
   141

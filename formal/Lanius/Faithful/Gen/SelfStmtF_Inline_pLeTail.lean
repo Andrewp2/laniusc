@@ -36,6 +36,10 @@ abbrev Stmt_p_let_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pLetType) w
 
+abbrev Stmt_p_let_type_none (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pLetTypeNone) w
+
 abbrev Stmt_p_lt_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pLtTail) w

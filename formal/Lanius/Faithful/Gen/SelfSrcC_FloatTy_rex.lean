@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::rex -/
-def src_FloatTy_rex (ix_empty_of_u8 : Nat) (ix_single_of_u8 : Nat) : SrcFunc := { params := [{ id := 4, ty := ty8 }], ret := ty66, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 4)) ty8 ty66 [[], []] [SrcEff.eCall ix_empty_of_u8 [], SrcEff.eCall ix_single_of_u8 [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint8) 0x0000000000000048#64)]]) }
+def src_FloatTy_rex (ix_empty_of_u8 : Nat) (ix_single_of_u8 : Nat) : SrcFunc := { params := [{ id := 4, ty := ty8 }], ret := ty67, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 4)) ty8 ty67 [[], []] [SrcEff.eCall ix_empty_of_u8 [], SrcEff.eCall ix_single_of_u8 [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint8) 0x0000000000000048#64)]]) }
 
 /-- mini::selfhost::scalar_prefix -/
 def src_FloatTy_scalar_prefix : SrcFunc := { params := [{ id := 14, ty := ty8 }], ret := SrcType.uint (UintTy.uint8), body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 14)) ty8 (SrcType.uint (UintTy.uint8)) [[], []] [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint8) 0x00000000000000f3#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.uint8) 0x00000000000000f2#64)]) }

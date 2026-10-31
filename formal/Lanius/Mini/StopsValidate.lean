@@ -39,7 +39,7 @@ theorem Stops.ignores {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {
     | normal m2 h2 =>
       obtain ⟨rfl, e⟩ := rel1
       exact .seqSecond r1 (ih p.2 m2 e)
-    | returned => simp [Outcome.Except] at rel1
+    | returned | broke | continued => simp [Outcome.Except] at rel1
   | @ifTrue depth env heap condition _ _ _ holds _ ih =>
     intro p env2 h
     simp only [Stmt.ignores, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at p
@@ -61,7 +61,17 @@ theorem Stops.ignores {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {
     | normal m2 h2 =>
       obtain ⟨rfl, e⟩ := rel1
       exact .loopNext (by rw [← Expr.eval_except h condition p'.1]; exact holds) r1 (ih p m2 e)
-    | returned => simp [Outcome.Except] at rel1
+    | returned | broke | continued => simp [Outcome.Except] at rel1
+  | @loopContinued depth env middle heap between condition body _ holds bodyRun _ ih =>
+    intro p env2 h
+    have p' := p
+    simp only [Stmt.ignores, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at p'
+    obtain ⟨o1, r1, rel1⟩ := Exec.ignores bodyRun p'.2 env2 h
+    cases o1 with
+    | continued m2 h2 =>
+      obtain ⟨rfl, e⟩ := rel1
+      exact .loopContinued (by rw [← Expr.eval_except h condition p'.1]; exact holds) r1 (ih p m2 e)
+    | normal | returned | broke => simp [Outcome.Except] at rel1
   | @call depth inner target count callee env heap args func _ found len lt body _ =>
     intro p env2 h
     simp only [Stmt.ignores, Bool.not_eq_eq_eq_not, Bool.not_true] at p
@@ -95,18 +105,18 @@ theorem Stops.killed {prog : Program} (s : Stmt) :
     cases stops with
     | zero => exact .zero
     | seqFirst r1 =>
-      rcases k with k | ⟨p, _⟩
+      rcases k with k | ⟨⟨p, _⟩, _⟩
       · exact .seqFirst (ih1 k r1 env2 h)
       · exact .seqFirst (r1.ignores p env2 h)
     | seqSecond r1 r2 =>
-      rcases k with k | ⟨p, k⟩
+      rcases k with k | ⟨⟨p, _⟩, k⟩
       · exact .seqSecond (Exec.killed _ k r1 env2 h) r2
       · obtain ⟨o1, r1', rel⟩ := Exec.ignores r1 p env2 h
         cases o1 with
         | normal m2 h2 =>
           obtain ⟨rfl, e⟩ := rel
           exact .seqSecond r1' (ih2 k r2 m2 e)
-        | returned => simp [Outcome.Except] at rel
+        | returned | broke | continued => simp [Outcome.Except] at rel
   | ite condition thenBranch elseBranch ihThen ihElse =>
     intro index _ _ _ _ k stops env2 h
     simp only [Stmt.kills, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at k
@@ -128,6 +138,9 @@ theorem Stops.killed {prog : Program} (s : Stmt) :
   | loadWord => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | storeWord => intro _ _ _ _ _ k; simp [Stmt.kills] at k
   | divide => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | brk => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | cont => intro _ _ _ _ _ k; simp [Stmt.kills] at k
+  | sys => intro _ _ _ _ _ k; simp [Stmt.kills] at k
 
 /-- Every stop of an original statement from an environment where `facts`
 hold is a stop of the statement the validator accepted, for the same `n`. -/
@@ -184,6 +197,13 @@ theorem Stops.agrees {p q : Program} (ok : funcsAgree p.funcs q.funcs = true) {d
     · exact absurd (Expr.isZero_eval zero env) holds
     · rw [loopAgrees_facts] at h
       exact .loopNext (by rw [Expr.agrees_eval _ _ hc env]; exact holds)
+        (Exec.agrees ok bodyRun _ _ (Facts.Hold.nil _) hb) (ih _ _ (Facts.Hold.nil _) h)
+  | @loopContinued depth env middle heap between condition body _ holds bodyRun _ ih =>
+    intro facts s' _ h
+    rcases loopAgrees_cases h with ⟨zero, rfl⟩ | ⟨c, b, rfl, hc, hb⟩
+    · exact absurd (Expr.isZero_eval zero env) holds
+    · rw [loopAgrees_facts] at h
+      exact .loopContinued (by rw [Expr.agrees_eval _ _ hc env]; exact holds)
         (Exec.agrees ok bodyRun _ _ (Facts.Hold.nil _) hb) (ih _ _ (Facts.Hold.nil _) h)
   | @call depth inner target count callee env heap args func _ found len lt _ ih =>
     intro facts s' hold h

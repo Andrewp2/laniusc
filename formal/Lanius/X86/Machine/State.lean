@@ -1,4 +1,5 @@
 import Lanius.X86.Word
+import Lanius.X86.Machine.Io
 
 namespace Lanius.X86.Machine
 
@@ -8,7 +9,9 @@ abbrev Memory := Address → UInt8
 
 /-- Exception-free 64-bit user-mode state. Memory is the architectural byte
 view. Mapping/protection, canonical-address checks, asynchronous events, and
-CET remain explicit environmental obligations, not modeled ISA guarantees. -/
+CET remain explicit environmental obligations, not modeled ISA guarantees.
+`io` is what the process has done to and has still to read from its
+environment; only `syscall` (`Kernel`) changes it. -/
 structure State where
   registers : Register → BitVec 64
   rip : Address
@@ -16,6 +19,7 @@ structure State where
   flags : BitVec 64
   /-- The low 64 bits of xmm0-xmm15 (`Sse.lean`: no instruction modeled reads the high 64). -/
   xmm : Fin 16 → BitVec 64 := fun _ => 0
+  io : Io := {}
 
 theorem offset_ne (address : Address) (left right : Nat)
     (leftBound : left < 2 ^ 64) (rightBound : right < 2 ^ 64) (different : left ≠ right) :

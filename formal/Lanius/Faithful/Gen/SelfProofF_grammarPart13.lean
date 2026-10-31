@@ -57,11 +57,12 @@ theorem step_attach_term {prog : SrcProgram} {prims : Prims} {ix_attach_term ix_
   simp only [src_attach_term] at h
   faithful [Lanius.Mini.Inline.attachTerm]
 
-theorem step_generic_close_at {prog : SrcProgram} {prims : Prims} {ix_generic_close_at ix_plus ix_minus ix_t_shr ix_t_gt ix_t_lt ix_generic_close ix_t_oror ix_t_eqeq ix_t_not_equal ix_t_le ix_t_ge ix_t_lparen ix_t_lbracket ix_t_lbrace ix_t_rparen ix_t_rbracket ix_t_rbrace ix_t_semicolon ix_generic_tail : Nat} (fn : prog.funcs[ix_generic_close_at]? = some (src_generic_close_at ix_plus ix_minus ix_t_shr ix_t_gt ix_t_lt ix_generic_close ix_t_oror ix_t_eqeq ix_t_not_equal ix_t_le ix_t_ge ix_t_lparen ix_t_lbracket ix_t_lbrace ix_t_rparen ix_t_rbracket ix_t_rbrace ix_t_semicolon ix_generic_tail)) (np : prims.isPrim ix_generic_close_at = false)
+theorem step_generic_close_at {prog : SrcProgram} {prims : Prims} {ix_generic_close_at ix_plus ix_minus ix_t_shr ix_t_gt ix_t_lbrace ix_t_lt ix_generic_close ix_t_oror ix_t_eqeq ix_t_not_equal ix_t_le ix_t_ge ix_t_lparen ix_t_lbracket ix_t_rparen ix_t_rbracket ix_t_rbrace ix_t_semicolon ix_generic_tail : Nat} (fn : prog.funcs[ix_generic_close_at]? = some (src_generic_close_at ix_plus ix_minus ix_t_shr ix_t_gt ix_t_lbrace ix_t_lt ix_generic_close ix_t_oror ix_t_eqeq ix_t_not_equal ix_t_le ix_t_ge ix_t_lparen ix_t_lbracket ix_t_rparen ix_t_rbracket ix_t_rbrace ix_t_semicolon ix_generic_tail)) (np : prims.isPrim ix_generic_close_at = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_t_shr : Certified (∀ {n : Nat}, Stmt_t_shr prog prims ix_t_shr n))
     (ext_t_gt : Certified (∀ {n : Nat}, Stmt_t_gt prog prims ix_t_gt n))
+    (ext_t_lbrace : Certified (∀ {n : Nat}, Stmt_t_lbrace prog prims ix_t_lbrace n))
     (ext_t_lt : Certified (∀ {n : Nat}, Stmt_t_lt prog prims ix_t_lt n))
     (ext_t_oror : Certified (∀ {n : Nat}, Stmt_t_oror prog prims ix_t_oror n))
     (ext_t_eqeq : Certified (∀ {n : Nat}, Stmt_t_eqeq prog prims ix_t_eqeq n))
@@ -70,7 +71,6 @@ theorem step_generic_close_at {prog : SrcProgram} {prims : Prims} {ix_generic_cl
     (ext_t_ge : Certified (∀ {n : Nat}, Stmt_t_ge prog prims ix_t_ge n))
     (ext_t_lparen : Certified (∀ {n : Nat}, Stmt_t_lparen prog prims ix_t_lparen n))
     (ext_t_lbracket : Certified (∀ {n : Nat}, Stmt_t_lbracket prog prims ix_t_lbracket n))
-    (ext_t_lbrace : Certified (∀ {n : Nat}, Stmt_t_lbrace prog prims ix_t_lbrace n))
     (ext_t_rparen : Certified (∀ {n : Nat}, Stmt_t_rparen prog prims ix_t_rparen n))
     (ext_t_rbracket : Certified (∀ {n : Nat}, Stmt_t_rbracket prog prims ix_t_rbracket n))
     (ext_t_rbrace : Certified (∀ {n : Nat}, Stmt_t_rbrace prog prims ix_t_rbrace n))

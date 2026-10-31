@@ -1,0 +1,28 @@
+fn sum_to(n: i32) {
+    let total: i32 = 0;
+    let c: i32 = 0;
+    let e: i32 = n;
+    while (c < e) {
+        let i: i32 = c;
+        c = c + 1;
+        if (i == 3) {
+            continue;
+        }
+        if (i > 50) {
+            break;
+        }
+        total = total + i;
+    }
+}
+
+fn count(n: u32) {
+    let hits: u32 = 0;
+    let c: u32 = 2;
+    let e: u32 = n;
+    while (c < e) {
+        let k: u32 = c;
+        c = c + 1;
+        n = n - 1;
+        hits = hits + k;
+    }
+}

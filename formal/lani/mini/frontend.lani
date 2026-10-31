@@ -264,6 +264,12 @@ pub enum SrcStmt {
     SetFieldEval(usize, usize, SrcEff),
     ReturnUnit,
     Assert(SrcEff),
+    Break,
+    Continue,
+    MatchArm(usize, usize, usize, bool, usize, SrcType, Box<SrcStmt>, Box<SrcStmt>),
+    // Unreachable(id, ty): Core binds id, uninitialized, at type ty and
+    // returns it, so it traps; ty is the function's result type.
+    Unreachable(usize, SrcType),
 }
 
 pub struct SrcParam {
@@ -441,14 +447,29 @@ pub fn generic_path_at(tokens: List<Token>) -> bool {
     };
 }
 
+// Whether the tokens begin with `{`.
+pub fn opens_block(tokens: List<Token>) -> bool {
+    return match (tokens) {
+        Nil -> false,
+        Cons(t, rest) -> t.kind == t_lbrace(),
+    };
+}
+
 // Whether the validator accepts production prod for a node whose tokens
-// begin with `tokens`: not a block statement or a method's type arguments
-// (the subset has neither, and each makes the grammar ambiguous, as in
-// `{ a } - b;` and `x.f < a > (b)`), and a path segment `x` or `x<...>` only
-// as generic_path_at says.
+// begin with `tokens`: not a method's type arguments (the subset has none,
+// and they make the grammar ambiguous, as in `x.f < a > (b)`); a statement
+// that begins with `{` is a block statement, never an expression statement
+// (as in Rust: `{ a } - b;` is a block, then `-b;`); and a path segment `x`
+// or `x<...>` only as generic_path_at says.
 pub fn picks(prod: usize, tokens: List<Token>) -> bool {
-    if (prod == p_block_stmt() || prod == p_member_type_args_some()) {
+    if (prod == p_member_type_args_some()) {
         return false;
+    }
+    if (prod == p_block_stmt()) {
+        return opens_block(tokens);
+    }
+    if (prod == p_expr_stmt()) {
+        return !opens_block(tokens);
     }
     if (prod == p_path_ident()) {
         return !generic_path_at(tokens);
@@ -1359,9 +1380,60 @@ pub fn alias_decls(home: List<List<usize>>, name: List<usize>, params: core::opt
     };
 }
 
-// The declarations an item makes. Imports, extern functions, traits and
-// type aliases with a where clause make none; a use of one is rejected when
-// it is read.
+// "lanius_std", its quotes included: the ABI of the host services.
+pub fn text_lanius_std() -> List<usize> {
+    let t: List<usize> = cons(34, cons(108, cons(97, cons(110, cons(105, cons(117, cons(115, cons(95, cons(115, cons(116, cons(100, single(34))))))))))));
+    return t;
+}
+
+// write_byte
+pub fn text_write_byte() -> List<usize> {
+    let t: List<usize> = cons(119, cons(114, cons(105, cons(116, cons(101, cons(95, cons(98, cons(121, cons(116, single(101))))))))));
+    return t;
+}
+
+// write_stdout
+pub fn text_write_stdout() -> List<usize> {
+    let t: List<usize> = cons(119, cons(114, cons(105, cons(116, cons(101, cons(95, cons(115, cons(116, cons(100, cons(111, cons(117, single(116))))))))))));
+    return t;
+}
+
+// write_stderr
+pub fn text_write_stderr() -> List<usize> {
+    let t: List<usize> = cons(119, cons(114, cons(105, cons(116, cons(101, cons(95, cons(115, cons(116, cons(100, cons(101, cons(114, single(114))))))))))));
+    return t;
+}
+
+// The Core function id of the host service an `extern "lanius_std" fn` of
+// this name stands for (hostFuncs in SrcProgram.toCore), 0 for none.
+pub fn host_id(name: List<usize>) -> usize {
+    if (same_text(name, text_write_byte())) {
+        return 4294967296;
+    }
+    if (same_text(name, text_write_stdout())) {
+        return 4294967297;
+    }
+    if (same_text(name, text_write_stderr())) {
+        return 4294967298;
+    }
+    return 0;
+}
+
+// An `extern "lanius_std" fn` naming a host service, without a where clause.
+pub fn host_extern(b: CTree) -> bool {
+    return node_prod(kid(b, 1)) == p_extern_abi() && same_text(kid_token(kid(b, 1), 0).text, text_lanius_std()) && host_id(kid_token(b, 3).text) != 0 && node_prod(kid(b, 9)) == p_where_none();
+}
+
+// An extern's node with its kids where a fn's are (name 1, type parameters
+// 2, parameters 4, return type 6), so its signature reads as a fn's.
+pub fn extern_tree(b: CTree) -> CTree {
+    return Node(p_extern_fn(), boxed(cons(kid(b, 0), cons(kid(b, 3), cons(kid(b, 4), cons(kid(b, 5), cons(kid(b, 6), cons(kid(b, 7), cons(kid(b, 8), cons(kid(b, 9), single(kid(b, 10))))))))))));
+}
+
+// The declarations an item makes. An extern function of a host service
+// (host_extern) is a function whose instance calls the service (see
+// extern_func). Imports, other extern functions, traits and type aliases
+// with a where clause make none; a use of one is rejected when it is read.
 pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::option::Option<Decls> {
     let b: CTree = item_body(item);
     let p: usize = node_prod(b);
@@ -1386,6 +1458,9 @@ pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::op
     if (p == p_type_alias() && node_prod(kid(b, 3)) == p_where_none()) {
         // A `distinct` alias (kid 5) runs as its target type.
         return alias_decls(home, kid_token(b, 1).text, type_params(fuel, kid(b, 2)), kid(b, 6));
+    }
+    if (p == p_extern_fn() && host_extern(b)) {
+        return fns_decls(cons_fn_decl(fn_decl_of(home, extern_tree(b), false, empty(), b, type_params(fuel, kid(b, 4))), Some(empty())));
     }
     if (p == p_module() || p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
         return Some(no_decls());
@@ -4738,6 +4813,9 @@ pub enum MEff {
     XDivide(SrcDivOp, Box<MEff>, Box<MEff>),
     // slice_stride(x) of a slice local x
     XStride(usize),
+    // a call of the host service with this Core function id (see
+    // extern_func): only an extern's instance has one
+    XHost(usize, Box<List<MEff>>),
 }
 
 // The expression, when it is pure.
@@ -4755,6 +4833,7 @@ pub fn pure_part(x: MEff) -> core::option::Option<SrcExpr> {
         XMatch(s, ety, t, bs, vs) -> None,
         XDivide(op, l, r) -> None,
         XStride(sl) -> None,
+        XHost(id, args) -> None,
     };
 }
 
@@ -4934,6 +5013,7 @@ pub fn bare_eff(x: MEff) -> bool {
         XMatch(s, ety, t, bs, vs) -> false,
         XDivide(op, l, r) -> bare_eff(unbox(l)) && bare_eff(unbox(r)),
         XStride(sl) -> false,
+        XHost(id, args) -> false,
     };
 }
 
@@ -4954,6 +5034,7 @@ pub fn eff_ty(fuel: usize, env: FrontEnv, scope: List<Local>, x: MEff) -> core::
         XMatch(s, ety, t, bs, vs) -> Some(t),
         XDivide(op, l, r) -> pick_ty(bare_eff(unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(r))),
         XStride(sl) -> Some(TyIsize),
+        XHost(id, args) -> Some(TyI32),
     };
 }
 
@@ -5073,6 +5154,13 @@ pub enum MStmt {
     MSetFieldEval(usize, usize, MEff),
     MReturnUnit,
     MAssert(MEff),
+    MBreak,
+    MContinue,
+    // MMatchArm(scrutinee, its type, variant, binds, binder, binder type,
+    // body, rest): SrcStmt's MatchArm; without a binder the type is unused.
+    MMatchArm(usize, Ty, usize, bool, usize, Ty, Box<MStmt>, Box<MStmt>),
+    // SrcStmt's Unreachable
+    MUnreachable(usize, Ty),
 }
 
 // A call: the function instance and the arguments.
@@ -5083,6 +5171,21 @@ pub struct Called {
 
 // What a let binds: a value, a call, a variant, a struct literal, a match,
 // an allocation, a raw view, a slice element, or an effectful expression.
+// `op?` with op a `core::result::Result` or `core::option::Option`: the
+// scrutinee local, its type, the call that binds it (none when op is a
+// local), the success payload's type, the failure arm's binder, whether the
+// failure variant has a payload and its type, and the function's result type.
+pub struct Tried {
+    scrutinee: usize,
+    sty: Ty,
+    call: core::option::Option<MEff>,
+    ok_ty: Ty,
+    binder: usize,
+    binds: bool,
+    err_ty: Ty,
+    ret: Ty,
+}
+
 pub enum LetHead {
     Plain(SrcExpr),
     CallOf(Called),
@@ -5097,6 +5200,8 @@ pub enum LetHead {
     // slice[index], the slice a local
     IndexOf(usize, SrcExpr),
     EvalOf(MEff),
+    // op?
+    TryOf(Tried),
 }
 
 pub fn cons_expr_tail(e: SrcExpr, tail: core::option::Option<List<SrcExpr>>) -> core::option::Option<List<SrcExpr>> {
@@ -5187,6 +5292,79 @@ pub fn is_path_call(pf: CTree) -> bool {
     let primary: CTree = kid(pf, 0);
     let tail: CTree = kid(pf, 1);
     return node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_call() && node_prod(kid(tail, 3)) == p_postfix_end();
+}
+
+// core
+pub fn text_core() -> List<usize> {
+    let t: List<usize> = cons(99, cons(111, cons(114, single(101))));
+    return t;
+}
+
+// result
+pub fn text_result() -> List<usize> {
+    let t: List<usize> = cons(114, cons(101, cons(115, cons(117, cons(108, single(116))))));
+    return t;
+}
+
+// Result
+pub fn text_result_ty() -> List<usize> {
+    let t: List<usize> = cons(82, cons(101, cons(115, cons(117, cons(108, single(116))))));
+    return t;
+}
+
+// Ok
+pub fn text_ok() -> List<usize> {
+    let t: List<usize> = cons(79, single(107));
+    return t;
+}
+
+// Err
+pub fn text_err() -> List<usize> {
+    let t: List<usize> = cons(69, cons(114, single(114)));
+    return t;
+}
+
+// option
+pub fn text_option() -> List<usize> {
+    let t: List<usize> = cons(111, cons(112, cons(116, cons(105, cons(111, single(110))))));
+    return t;
+}
+
+// Option
+pub fn text_option_ty() -> List<usize> {
+    let t: List<usize> = cons(79, cons(112, cons(116, cons(105, cons(111, single(110))))));
+    return t;
+}
+
+// Some
+pub fn text_some() -> List<usize> {
+    let t: List<usize> = cons(83, cons(111, cons(109, single(101))));
+    return t;
+}
+
+// None
+pub fn text_none() -> List<usize> {
+    let t: List<usize> = cons(78, cons(111, cons(110, single(101))));
+    return t;
+}
+
+// A postfix `path(args)?` (no further postfix).
+pub fn is_try_call(pf: CTree) -> bool {
+    let primary: CTree = kid(pf, 0);
+    let tail: CTree = kid(pf, 1);
+    return node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain() && node_prod(tail) == p_postfix_call() && node_prod(kid(tail, 3)) == p_postfix_try() && node_prod(kid(kid(tail, 3), 1)) == p_postfix_end();
+}
+
+// A postfix `x?` (no further postfix).
+pub fn is_try_local(pf: CTree) -> bool {
+    let tail: CTree = kid(pf, 1);
+    return node_prod(tail) == p_postfix_try() && node_prod(kid(tail, 1)) == p_postfix_end();
+}
+
+// core::result::Result { Ok, Err } or core::option::Option { Some, None }.
+pub fn is_try_enum(t: TypeDecl) -> bool {
+    return t.is_enum && ((same_spellings(t.home, cons(text_core(), single(text_result()))) && same_text(t.name, text_result_ty()) && same_spellings(t.variants, cons(text_ok(), single(text_err()))))
+        || (same_spellings(t.home, cons(text_core(), single(text_option()))) && same_text(t.name, text_option_ty()) && same_spellings(t.variants, cons(text_some(), single(text_none())))));
 }
 
 // ---------------------------------------------------------------- let heads
@@ -5825,6 +6003,7 @@ pub fn call_parts(x: MEff) -> core::option::Option<Called> {
         XMatch(sc, ety, t, bs, vs) -> None,
         XDivide(op, l, r) -> None,
         XStride(sl) -> None,
+        XHost(id, args) -> None,
     };
 }
 
@@ -5997,6 +6176,7 @@ pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
         XMatch(sc, ety, mt, bs, vs) -> x,
         XDivide(op, l, r) -> x,
         XStride(sl) -> x,
+        XHost(id, args) -> x,
     };
 }
 
@@ -6645,6 +6825,7 @@ pub fn eval_let_head(ty: Ty, x: MEff) -> LetHead {
         XMatch(sc, ety, rt, binders, values) -> match_let_head(x, eff_local(unbox(sc)), ety, pure_arms(binders, unbox(values))),
         XDivide(op, l, r) -> EvalOf(x),
         XStride(sl) -> EvalOf(x),
+        XHost(id, args) -> EvalOf(x),
     };
 }
 
@@ -6655,12 +6836,274 @@ pub fn eval_head(ty: Ty, x: core::option::Option<MEff>) -> core::option::Option<
     };
 }
 
-// The head of `let x: ty = init;`: an allocation or a raw view, or else what
-// its value reads as.
+pub fn single_ty(ts: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
+    return match (ts) {
+        None -> None,
+        Some(l) -> match (l) {
+            Nil -> None,
+            Cons(t, rest) -> match (unbox(rest)) {
+                Nil -> Some(t),
+                Cons(u, more) -> None,
+            },
+        },
+    };
+}
+
+pub fn if_same_tys(ok: bool, ts: List<Ty>) -> core::option::Option<List<Ty>> {
+    if (ok) {
+        return Some(ts);
+    }
+    return None;
+}
+
+// The failure variant's payload, at most one type: whether there is one,
+// and it (else the scrutinee's type, unused).
+pub fn tried_err(r: usize, call: core::option::Option<MEff>, sty: Ty, ok: core::option::Option<Ty>, w: usize, rt: Ty, err: core::option::Option<List<Ty>>) -> core::option::Option<Tried> {
+    return match (ok) {
+        None -> None,
+        Some(okt) -> match (err) {
+            None -> None,
+            Some(es) -> match (es) {
+                Nil -> Some(Tried { scrutinee: r, sty: sty, call: call, ok_ty: okt, binder: w, binds: false, err_ty: sty, ret: rt }),
+                Cons(e, more) -> match (unbox(more)) {
+                    Nil -> Some(Tried { scrutinee: r, sty: sty, call: call, ok_ty: okt, binder: w, binds: true, err_ty: e, ret: rt }),
+                    Cons(f, others) -> None,
+                },
+            },
+        },
+    };
+}
+
+// The payloads of the operand's enum (ps) and the result's (qs): the
+// failure variant's must be the same.
+pub fn tried_shape(r: usize, call: core::option::Option<MEff>, sty: Ty, w: usize, rt: Ty, ps: core::option::Option<List<List<Ty>>>, qs: core::option::Option<List<List<Ty>>>) -> core::option::Option<Tried> {
+    return match (ps) {
+        None -> None,
+        Some(p) -> match (qs) {
+            None -> None,
+            Some(q) -> match (get(p, 1)) {
+                None -> None,
+                Some(e) -> match (get(q, 1)) {
+                    None -> None,
+                    Some(f) -> tried_err(r, call, sty, single_ty(get(p, 0)), w, rt, if_same_tys(same_tys(e, f), e)),
+                },
+            },
+        },
+    };
+}
+
+pub fn tried_if(ok: bool, r: usize, call: core::option::Option<MEff>, sty: Ty, w: usize, rt: Ty, ps: core::option::Option<List<List<Ty>>>, qs: core::option::Option<List<List<Ty>>>) -> core::option::Option<Tried> {
+    if (ok) {
+        return tried_shape(r, call, sty, w, rt, ps, qs);
+    }
+    return None;
+}
+
+// The operand's type is a Result or Option, and the function returns the
+// same enum.
+pub fn tried_of(fuel: usize, env: FrontEnv, r: usize, call: core::option::Option<MEff>, sty: core::option::Option<Ty>, w: usize) -> core::option::Option<Tried> {
+    return match (sty) {
+        None -> None,
+        Some(st) -> match (named_parts(st)) {
+            None -> None,
+            Some(n) -> match (env.ret) {
+                None -> None,
+                Some(rt) -> match (named_parts(rt)) {
+                    None -> None,
+                    Some(m) -> match (get(env.decls.types, n.decl)) {
+                        None -> None,
+                        Some(t) -> tried_if(n.decl == m.decl && is_try_enum(t), r, call, st, w, rt, payload_tys(fuel, env.decls, n.decl, n.args), payload_tys(fuel, env.decls, m.decl, m.args)),
+                    },
+                },
+            },
+        },
+    };
+}
+
+pub fn tried_call(fuel: usize, env: FrontEnv, scope: List<Local>, r: usize, w: usize, x: core::option::Option<MEff>) -> core::option::Option<Tried> {
+    return match (x) {
+        None -> None,
+        Some(e) -> tried_of(fuel, env, r, Some(e), eff_ty(fuel, env, scope, e), w),
+    };
+}
+
+// `path(args)?`: the call's value is bound to a local numbered by the `(`,
+// the failure binder is numbered by the `?`.
+pub fn try_call_of(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) -> core::option::Option<Tried> {
+    let tail: CTree = kid(pf, 1);
+    let r: usize = minus(kid_token(tail, 0).start, env.base);
+    let w: usize = minus(kid_token(kid(tail, 3), 0).start, env.base);
+    if (fresh_id(scope, r) && fresh_id(scope, w) && r != w) {
+        return tried_call(fuel, env, scope, r, w, eff_path_call(fuel, env, scope, None, kid(kid(pf, 0), 0), kid(tail, 1)));
+    }
+    return None;
+}
+
+pub fn tried_local(fuel: usize, env: FrontEnv, l: core::option::Option<Local>, w: usize) -> core::option::Option<Tried> {
+    return match (l) {
+        None -> None,
+        Some(x) -> tried_of(fuel, env, x.id, None, Some(x.ty), w),
+    };
+}
+
+// `x?`: the failure binder is numbered by the `?`.
+pub fn try_local_of(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) -> core::option::Option<Tried> {
+    let w: usize = minus(kid_token(kid(pf, 1), 0).start, env.base);
+    if (fresh_id(scope, w)) {
+        return tried_local(fuel, env, local_of(env, scope, kid(pf, 0)), w);
+    }
+    return None;
+}
+
+pub fn try_head(t: core::option::Option<Tried>) -> core::option::Option<LetHead> {
+    return match (t) {
+        None -> None,
+        Some(x) -> Some(TryOf(x)),
+    };
+}
+
+pub fn try_postfix(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) -> core::option::Option<Tried> {
+    if (is_try_call(pf)) {
+        return try_call_of(fuel, env, scope, pf);
+    }
+    if (is_try_local(pf)) {
+        return try_local_of(fuel, env, scope, pf);
+    }
+    return None;
+}
+
+// A let's `op?`.
+pub fn try_of_init(fuel: usize, env: FrontEnv, scope: List<Local>, init: CTree) -> core::option::Option<Tried> {
+    return match (peel(fuel, init)) {
+        None -> None,
+        Some(pf) -> try_postfix(fuel, env, scope, pf),
+    };
+}
+
+// The head of `let x: ty = op?;`.
+pub fn try_let_head(fuel: usize, env: FrontEnv, scope: List<Local>, init: CTree) -> core::option::Option<LetHead> {
+    return try_head(try_of_init(fuel, env, scope, init));
+}
+
+pub fn try_payload(binds: bool, w: usize) -> List<MEff> {
+    if (binds) {
+        return single(XPure(Local(w)));
+    }
+    return empty();
+}
+
+// The failure arm returns the failure variant (its payload the binder's
+// value), else rest runs; the call, if any, binds the scrutinee first.
+pub fn try_rest(t: Tried, rest: MStmt) -> MStmt {
+    return match (t.call) {
+        None -> MMatchArm(t.scrutinee, t.sty, 1, t.binds, t.binder, t.err_ty, boxed(MReturnEval(XVariant(t.ret, 1, boxed(try_payload(t.binds, t.binder))))), boxed(rest)),
+        Some(x) -> MLetEval(t.scrutinee, t.sty, x, boxed(MMatchArm(t.scrutinee, t.sty, 1, t.binds, t.binder, t.err_ty, boxed(MReturnEval(XVariant(t.ret, 1, boxed(try_payload(t.binds, t.binder))))), boxed(rest)))),
+    };
+}
+
+// `let x: ty = op?; body`: the success arm binds x to the payload. It is
+// the last variant, so what follows it never runs, and is Unreachable (a
+// statement every path of which returns).
+pub fn try_let(ok: bool, id: usize, ty: Ty, t: Tried, body: MStmt) -> core::option::Option<MStmt> {
+    if (ok) {
+        return Some(try_rest(t, MMatchArm(t.scrutinee, t.sty, 0, true, id, ty, boxed(body), boxed(MUnreachable(t.binder, t.ret)))));
+    }
+    return None;
+}
+
+pub fn try_stmt(t: core::option::Option<Tried>) -> core::option::Option<MStmt> {
+    return match (t) {
+        None -> None,
+        Some(x) -> Some(try_rest(x, MNop)),
+    };
+}
+
+// What `let x = init;` binds, and at which type.
+pub struct Untyped {
+    ty: Ty,
+    head: LetHead,
+}
+
+// An untyped let's value has a type of its own only when no literal
+// decides it: a call (a host call too), a cast, an element, a struct, a
+// `!`, a stride, or a local or field.
+pub fn pure_inferred(e: SrcExpr) -> bool {
+    return match (e) {
+        Int(v) -> false,
+        Boolean(b) -> false,
+        Unsigned(u, v) -> false,
+        Local(id) -> true,
+        Field(id, j) -> true,
+        Negate(a) -> false,
+        Not(a) -> true,
+        Apply(op, a, b) -> false,
+        Cast(t, a) -> true,
+        Null -> false,
+        SrcExpr::Char(c) -> false,
+        SrcExpr::Float(ft, bits) -> false,
+    };
+}
+
+pub fn inferred(x: MEff) -> bool {
+    return match (x) {
+        XPure(e) -> pure_inferred(e),
+        XCall(inst, args) -> true,
+        XApply(op, l, r) -> false,
+        XNeg(a) -> false,
+        XNot(a) -> true,
+        XCast(t, a) -> true,
+        XIndex(s, i) -> true,
+        XStruct(t, fs) -> true,
+        XVariant(t, k, ps) -> false,
+        XMatch(s, ety, t, bs, vs) -> false,
+        XDivide(op, l, r) -> false,
+        XStride(sl) -> true,
+        XHost(id, args) -> true,
+    };
+}
+
+pub fn untyped_if(ok: bool, t: Ty, h: LetHead) -> core::option::Option<Untyped> {
+    if (ok) {
+        return Some(Untyped { ty: t, head: h });
+    }
+    return None;
+}
+
+pub fn untyped_eval(fuel: usize, env: FrontEnv, scope: List<Local>, x: core::option::Option<MEff>) -> core::option::Option<Untyped> {
+    return match (x) {
+        None -> None,
+        Some(e) -> match (eff_ty(fuel, env, scope, e)) {
+            None -> None,
+            Some(t) -> untyped_if(inferred(e), t, eval_let_head(t, e)),
+        },
+    };
+}
+
+pub fn untyped_try(t: core::option::Option<Tried>) -> core::option::Option<Untyped> {
+    return match (t) {
+        None -> None,
+        Some(x) -> Some(Untyped { ty: x.ok_ty, head: TryOf(x) }),
+    };
+}
+
+// `let x = init;`: `op?` binds the success payload's type; else the value's
+// own type (laniusc's local inference reads only the initializer).
+pub fn untyped_head(fuel: usize, env: FrontEnv, scope: List<Local>, init: CTree) -> core::option::Option<Untyped> {
+    return match (try_of_init(fuel, env, scope, init)) {
+        Some(t) -> untyped_try(Some(t)),
+        None -> untyped_eval(fuel, env, scope, eff_of(fuel, env, scope, None, init)),
+    };
+}
+
+// The head of `let x: ty = init;`: an allocation or a raw view, `op?`, or
+// else what its value reads as.
 pub fn let_head_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, ty: Ty, init: CTree) -> core::option::Option<LetHead> {
     return match (let_head(fuel, env, scope, init)) {
         Some(h) -> Some(h),
-        None -> eval_head(ty, eff_of(fuel, env, scope, Some(ty), init)),
+        None -> match (try_let_head(fuel, env, scope, init)) {
+            Some(t) -> Some(t),
+            None -> eval_head(ty, eff_of(fuel, env, scope, Some(ty), init)),
+        },
     };
 }
 
@@ -6719,6 +7162,7 @@ pub fn let_stmt(id: usize, ty: Ty, head: LetHead, body: MStmt) -> core::option::
         SliceOf(pointer, length) -> slice_let(slice_elem(ty), id, pointer, length, body),
         IndexOf(slice, index) -> Some(MLetIndex(id, ty, slice, index, boxed(body))),
         EvalOf(x) -> Some(MLetEval(id, ty, x, boxed(body))),
+        TryOf(t) -> try_let(same_ty(ty, t.ok_ty), id, ty, t, body),
     };
 }
 
@@ -6757,6 +7201,7 @@ pub fn slice_returned(id: usize, el: Ty, h: core::option::Option<LetHead>) -> co
             SliceOf(pointer, length) -> Some(MLetSlice(id, el, pointer, length, boxed(MReturn(Local(id))))),
             IndexOf(slice, index) -> None,
             EvalOf(x) -> None,
+            TryOf(t) -> None,
         },
     };
 }
@@ -6961,6 +7406,9 @@ pub fn call_stmt(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) -> c
     if (is_path_call(pf) || is_method_form(pf)) {
         return discard_of(eff_postfix(fuel, env, scope, None, pf));
     }
+    if (is_try_call(pf)) {
+        return try_stmt(try_call_of(fuel, env, scope, pf));
+    }
     return None;
 }
 
@@ -7065,6 +7513,15 @@ pub fn assignment(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> c
     return None;
 }
 
+// The reading of a range loop (for_of): counter c from a, bound e = n,
+// the loop variable x.
+pub fn for_range(c: usize, e: usize, x: usize, t: Ty, a: SrcExpr, n: usize, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(MLet(c, t, a, boxed(MLet(e, t, Local(n), boxed(MWhile(Apply(Less, boxed(Local(c)), boxed(Local(e))), boxed(MLet(x, t, Local(c), boxed(MThen(boxed(MSet(c, Apply(Plus, boxed(Local(c)), boxed(Int(1))))), boxed(b))))))))))),
+    };
+}
+
 // extract: mutual begin
 // A statement list: a let scopes over the statements after it.
 pub fn block_of(fuel: usize, env: FrontEnv, scope: List<Local>, list: CTree) -> core::option::Option<MStmt> {
@@ -7100,7 +7557,8 @@ pub fn stmt_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest
     };
 }
 
-// `let x: ty = init;` (let_stmt -> Let LetIdent let_type let_init LetSemicolon).
+// `let x: ty = init;` and `let x = init;` (let_stmt -> Let LetIdent
+// let_type_opt let_init LetSemicolon).
 pub fn let_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
@@ -7112,10 +7570,16 @@ pub fn let_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest:
             Some(t) -> let_of(minus(tok.start, env.base), t, let_head_or_eval(minus(fuel, 1), env, scope, t, kid(kid(s, 3), 1)), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), rest)),
         };
     }
+    if (node_prod(kid(s, 2)) == p_let_type_none() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base))) {
+        return match (untyped_head(minus(fuel, 1), env, scope, kid(kid(s, 3), 1))) {
+            None -> None,
+            Some(u) -> let_body(minus(tok.start, env.base), u.ty, u.head, stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: u.ty }, scope), rest)),
+        };
+    }
     return None;
 }
 
-// return, if, while, and assignments.
+// return, break, continue, if, while, for, block statements, and assignments.
 pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
@@ -7128,6 +7592,12 @@ pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core
     if (p == p_return_stmt() && node_prod(kid(s, 1)) == p_return_void()) {
         return Some(MReturnUnit);
     }
+    if (p == p_break_stmt()) {
+        return Some(MBreak);
+    }
+    if (p == p_continue_stmt()) {
+        return Some(MContinue);
+    }
     if (p == p_if_stmt() && node_prod(kid(s, 5)) == p_else_stmt()) {
         return if_or_eval(f, env, scope, kid(s, 2), block_of(f, env, scope, kid(kid(s, 4), 1)), block_of(f, env, scope, kid(kid(kid(s, 5), 1), 1)));
     }
@@ -7137,12 +7607,53 @@ pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core
     if (p == p_while_stmt()) {
         return while_or_eval(f, env, scope, kid(s, 2), block_of(f, env, scope, kid(kid(s, 4), 1)));
     }
+    if (p == p_for_stmt() || p == p_block_stmt()) {
+        return nested_of(f, env, scope, s);
+    }
     if (p == p_expr_stmt()) {
         return assignment(f, env, scope, kid(s, 0));
     }
     return None;
 }
+
+// for and block statements.
+pub fn nested_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    if (node_prod(s) == p_for_stmt()) {
+        return for_of(f, env, scope, s);
+    }
+    if (node_prod(s) == p_block_stmt()) {
+        return block_of(f, env, scope, kid(kid(s, 0), 1));
+    }
+    return None;
+}
 // extract: mutual end
+
+// `for x in a..n { body }`, a an integer literal and n a local (for_stmt ->
+// For Ident In for_iterable block), read as `let c = a; let e = n; while (c
+// < e) { let x = c; c = c + 1; body }`: n is read once, and a `continue` in
+// body moves to the next value. The hidden c and e are numbered by the `for`
+// token and x's token, and x by the `in` token, so that the locals are
+// numbered in the order the desugared text declares them.
+// extract: inline
+fn for_of(ffuel: usize, fenv: FrontEnv, fscope: List<Local>, fs: CTree) -> core::option::Option<MStmt> {
+    let x: Token = kid_token(fs, 1);
+    let iter: CTree = kid(fs, 3);
+    let bound: CTree = kid(kid(kid(iter, 1), 1), 0);
+    if (node_prod(iter) == p_for_iter_range_from_start() && node_prod(kid(iter, 0)) == p_range_start_int() && node_prod(kid(iter, 1)) == p_range_exclusive() && node_prod(kid(kid(iter, 1), 1)) == p_range_bound() && node_prod(bound) == p_range_bound_name() && node_prod(kid(bound, 1)) == p_postfix_end() && !member(fenv.globals, x.text) && fresh_id(fscope, minus(x.start, fenv.base)) && fresh_id(fscope, minus(kid_token(fs, 0).start, fenv.base)) && fresh_id(fscope, minus(kid_token(fs, 2).start, fenv.base))) {
+        return match (find_local(fscope, kid_token(kid(bound, 0), 0).text)) {
+            None -> None,
+            Some(n) -> match (int_literal(kid_token(kid(iter, 0), 0).text)) {
+                None -> None,
+                Some(a) -> for_range(minus(kid_token(fs, 0).start, fenv.base), minus(x.start, fenv.base), minus(kid_token(fs, 2).start, fenv.base), n.ty, a, n.id, block_of(ffuel, fenv, cons(Local { name: x.text, id: minus(kid_token(fs, 2).start, fenv.base), ty: n.ty }, fscope), kid(kid(fs, 4), 1))),
+            },
+        };
+    }
+    return None;
+}
 
 // ---------------------------------------------------------------- functions
 
@@ -7313,7 +7824,37 @@ pub fn diverge_func(g: core::option::Option<MFunc>, inst: Inst) -> core::option:
     };
 }
 
+pub fn extern_body(params: core::option::Option<MParams>, ret: core::option::Option<RetTy>, id: usize) -> core::option::Option<MFunc> {
+    return match (params) {
+        None -> None,
+        Some(ps) -> match (ret) {
+            None -> None,
+            Some(r) -> Some(MFunc { params: ps.params, ret: r, body: MReturnEval(XHost(id, boxed(param_effs(ps.params)))) }),
+        },
+    };
+}
+
+// An extern function's instance, without type parameters: its parameters,
+// its result, and the body `return host(params);`, the call of its host
+// service (XHost). The compiler checks that the parameter and result types
+// are the service's.
+pub fn extern_func(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
+    let names: List<List<usize>> = concat(fd.impl_params, fd.params);
+    let f: CTree = fd.tree;
+    let env: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None, base: kid_token(f, 1).start };
+    if (length(names) == 0 && length(args) == 0) {
+        return match (list_items(fuel, kid(f, 4))) {
+            None -> None,
+            Some(items) -> extern_body(params_of(fuel, env, fd, empty(), items), result_of(fuel, env, kid(f, 6)), host_id(fd.name)),
+        };
+    }
+    return None;
+}
+
 pub fn read_decl_inst(fuel: usize, decls: Decls, fd: FnDecl, inst: Inst) -> core::option::Option<MFunc> {
+    if (node_prod(fd.tree) == p_extern_fn()) {
+        return extern_func(fuel, decls, fd, inst.args);
+    }
     if (diverges(fd, inst)) {
         return diverge_func(read_fn(fuel, decls, fd, init_tys(inst.args)), inst);
     }
@@ -7346,6 +7887,7 @@ pub fn eff_calls(x: MEff) -> List<Inst> {
         XMatch(s, ety, t, bs, vs) -> concat(eff_calls(unbox(s)), effs_calls(unbox(vs))),
         XDivide(op, l, r) -> concat(eff_calls(unbox(l)), eff_calls(unbox(r))),
         XStride(sl) -> empty(),
+        XHost(id, args) -> effs_calls(unbox(args)),
     };
 }
 
@@ -7374,6 +7916,7 @@ pub fn eff_named_tys(x: MEff) -> List<Ty> {
         XMatch(s, ety, t, bs, vs) -> concat(eff_named_tys(unbox(s)), cons(ety, cons(t, effs_named_tys(unbox(vs))))),
         XDivide(op, l, r) -> concat(eff_named_tys(unbox(l)), eff_named_tys(unbox(r))),
         XStride(sl) -> empty(),
+        XHost(id, args) -> effs_named_tys(unbox(args)),
     };
 }
 
@@ -7416,6 +7959,10 @@ pub fn stmt_calls(m: MStmt) -> List<Inst> {
         MSetFieldEval(id, j, x) -> eff_calls(x),
         MReturnUnit -> empty(),
         MAssert(x) -> eff_calls(x),
+        MBreak -> empty(),
+        MContinue -> empty(),
+        MMatchArm(sc, sty, k, bs, x, ty, body, rest) -> concat(stmt_calls(unbox(body)), stmt_calls(unbox(rest))),
+        MUnreachable(id, ty) -> empty(),
     };
 }
 
@@ -7478,6 +8025,10 @@ pub fn stmt_tys(m: MStmt) -> List<Ty> {
         MSetFieldEval(id, j, x) -> eff_named_tys(x),
         MReturnUnit -> empty(),
         MAssert(x) -> eff_named_tys(x),
+        MBreak -> empty(),
+        MContinue -> empty(),
+        MMatchArm(sc, sty, k, bs, x, ty, body, rest) -> cons(sty, cons(ty, concat(stmt_tys(unbox(body)), stmt_tys(unbox(rest))))),
+        MUnreachable(id, ty) -> single(ty),
     };
 }
 
@@ -7677,6 +8228,37 @@ pub fn let_enum_closed(id: usize, ty: core::option::Option<SrcType>, k: usize, e
     };
 }
 
+pub fn unreachable_closed(id: usize, ty: core::option::Option<SrcType>) -> core::option::Option<SrcStmt> {
+    return match (ty) {
+        None -> None,
+        Some(t) -> Some(Unreachable(id, t)),
+    };
+}
+
+// A match arm's binder type: none binds, the unit type.
+pub fn arm_ty_closed(binds: bool, ty: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
+    if (binds) {
+        return ty;
+    }
+    return Some(Unit);
+}
+
+pub fn match_arm_closed(sc: usize, e: core::option::Option<usize>, k: usize, binds: bool, x: usize, ty: core::option::Option<SrcType>, body: core::option::Option<SrcStmt>, rest: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
+    return match (e) {
+        None -> None,
+        Some(id) -> match (ty) {
+            None -> None,
+            Some(t) -> match (body) {
+                None -> None,
+                Some(b) -> match (rest) {
+                    None -> None,
+                    Some(r) -> Some(MatchArm(sc, id, k, binds, x, t, boxed(b), boxed(r))),
+                },
+            },
+        },
+    };
+}
+
 pub fn let_match_closed(id: usize, ty: core::option::Option<SrcType>, s: usize, e: core::option::Option<usize>, arms: List<SrcArm>, body: core::option::Option<SrcStmt>) -> core::option::Option<SrcStmt> {
     return match (ty) {
         None -> None,
@@ -7872,6 +8454,7 @@ pub fn close_eff(fuel: usize, t: Tables, x: MEff) -> core::option::Option<SrcEff
         XMatch(s, ety, ty, bs, vs) -> e_match_closed(close_eff(fuel, t, unbox(s)), close_ty(fuel, t, ety), close_ty(fuel, t, ty), bs, close_effs(fuel, t, unbox(vs))),
         XDivide(op, l, r) -> e_divide_closed(op, close_eff(fuel, t, unbox(l)), close_eff(fuel, t, unbox(r))),
         XStride(sl) -> Some(EStride(sl)),
+        XHost(id, args) -> e_call_closed(Some(id), close_effs(fuel, t, unbox(args))),
     };
 }
 
@@ -7996,6 +8579,10 @@ pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcS
         MSetFieldEval(id, j, x) -> set_field_eval_closed(id, j, close_eff(fuel, t, x)),
         MReturnUnit -> Some(ReturnUnit),
         MAssert(x) -> assert_closed(close_eff(fuel, t, x)),
+        MBreak -> Some(Break),
+        MContinue -> Some(Continue),
+        MUnreachable(id, ty) -> unreachable_closed(id, close_ty(fuel, t, ty)),
+        MMatchArm(sc, sty, k, bs, x, ty, body, rest) -> match_arm_closed(sc, src_enum_id(close_ty(fuel, t, sty)), k, bs, x, arm_ty_closed(bs, close_ty(fuel, t, ty)), close_stmt(fuel, t, unbox(body)), close_stmt(fuel, t, unbox(rest))),
     };
 }
 
@@ -8623,6 +9210,10 @@ pub fn lit_stmt(funcs: List<SrcFunc>, ret: SrcType, locals: List<LocalTy>, s: Sr
         SetFieldEval(id, j, x) -> SetFieldEval(id, j, lit_eff(funcs, locals, ty_at(src_fields(ty_local(locals, id)), j), x)),
         ReturnUnit -> ReturnUnit,
         Assert(x) -> Assert(lit_eff(funcs, locals, Some(Bool), x)),
+        Break -> Break,
+        Continue -> Continue,
+        MatchArm(sc, en, k, bs, x, ty, body, rest) -> MatchArm(sc, en, k, bs, x, ty, boxed(lit_stmt(funcs, ret, with_local(x, ty, locals), unbox(body))), boxed(lit_stmt(funcs, ret, locals, unbox(rest)))),
+        Unreachable(id, ty) -> Unreachable(id, ty),
     };
 }
 
@@ -8733,6 +9324,10 @@ pub fn wide_left_stmt(s: SrcStmt) -> bool {
         SetFieldEval(id, j, x) -> wide_left_eff(x),
         ReturnUnit -> false,
         Assert(x) -> wide_left_eff(x),
+        Break -> false,
+        Continue -> false,
+        MatchArm(sc, en, k, bs, x, ty, body, rest) -> wide_left_stmt(unbox(body)) || wide_left_stmt(unbox(rest)),
+        Unreachable(id, ty) -> false,
     };
 }
 
@@ -10462,6 +11057,11 @@ fn p_bor_tail() -> usize {
 }
 
 // extract: inline
+fn p_break_stmt() -> usize {
+    return 82;
+}
+
+// extract: inline
 fn p_cast() -> usize {
     return 307;
 }
@@ -10487,6 +11087,11 @@ fn p_cast_type_path_ident() -> usize {
 }
 
 // extract: inline
+fn p_char() -> usize {
+    return 178;
+}
+
+// extract: inline
 fn p_compare() -> usize {
     return 137;
 }
@@ -10494,6 +11099,11 @@ fn p_compare() -> usize {
 // extract: inline
 fn p_const() -> usize {
     return 208;
+}
+
+// extract: inline
+fn p_continue_stmt() -> usize {
+    return 83;
 }
 
 // extract: inline
@@ -10627,6 +11237,11 @@ fn p_expr_stmt() -> usize {
 }
 
 // extract: inline
+fn p_extern_abi() -> usize {
+    return 32;
+}
+
+// extract: inline
 fn p_extern_fn() -> usize {
     return 15;
 }
@@ -10644,6 +11259,16 @@ fn p_file() -> usize {
 // extract: inline
 fn p_fn() -> usize {
     return 11;
+}
+
+// extract: inline
+fn p_for_iter_range_from_start() -> usize {
+    return 93;
+}
+
+// extract: inline
+fn p_for_stmt() -> usize {
+    return 81;
 }
 
 // extract: inline
@@ -10732,11 +11357,6 @@ fn p_int() -> usize {
 }
 
 // extract: inline
-fn p_char() -> usize {
-    return 178;
-}
-
-// extract: inline
 fn p_float() -> usize {
     return 176;
 }
@@ -10774,6 +11394,11 @@ fn p_let_stmt() -> usize {
 // extract: inline
 fn p_let_type() -> usize {
     return 86;
+}
+
+// extract: inline
+fn p_let_type_none() -> usize {
+    return 87;
 }
 
 // extract: inline
@@ -11007,6 +11632,11 @@ fn p_postfix_end() -> usize {
 }
 
 // extract: inline
+fn p_postfix_try() -> usize {
+    return 318;
+}
+
+// extract: inline
 fn p_postfix_index() -> usize {
     return 162;
 }
@@ -11014,6 +11644,26 @@ fn p_postfix_index() -> usize {
 // extract: inline
 fn p_postfix_member() -> usize {
     return 163;
+}
+
+// extract: inline
+fn p_range_bound() -> usize {
+    return 102;
+}
+
+// extract: inline
+fn p_range_bound_name() -> usize {
+    return 99;
+}
+
+// extract: inline
+fn p_range_exclusive() -> usize {
+    return 97;
+}
+
+// extract: inline
+fn p_range_start_int() -> usize {
+    return 96;
 }
 
 // extract: inline

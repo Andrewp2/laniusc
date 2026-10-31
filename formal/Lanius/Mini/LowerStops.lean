@@ -25,7 +25,7 @@ def SrcStops (sp : SrcProgram) (mp : Program) (n : Nat) (s : SrcStmt) : Prop :=
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
     s.lower (sigs sp.funcs) sp.decls ret scope next = some stmt →
     Corr scope frame st env → Layout scope frame base next → st.Fresh → base ≤ st.nextCell →
-    HeapCorr st.heap hp → st.heap.nextAddress ≤ hp.limit →
+    HeapCorr st.heap st.world hp → st.heap.nextAddress ≤ hp.limit →
     Fails sp hp.limit st s.toCore → ∃ d, Stops mp d env hp stmt n
 
 abbrev StmtStops (sp : SrcProgram) (mp : Program) (n : Nat) : Prop := ∀ s, SrcStops sp mp n s
@@ -50,6 +50,43 @@ theorem Stops.checked {prog : Program} {env : Env} {hp : Heap} {s : Stmt} {n slo
   · exact ⟨0, Stops.check fun h => absurd zero h⟩
   · obtain ⟨d, stops⟩ := pass zero
     exact ⟨d, Stops.check fun _ => stops⟩
+
+/-- A lowered `while` whose check fails at the top of an iteration stops. -/
+theorem Stops.whileLoop_checked {prog : Program} {env : Env} {hp : Heap} {slot n : Nat} {g c : Expr} {b : Stmt}
+    (pass : g.eval env ≠ 0 → ∃ d, Stops prog d env hp (Lanius.Mini.whileLoop slot g c b) n) :
+    ∃ d, Stops prog d env hp (Lanius.Mini.whileLoop slot g c b) n := by
+  by_cases zero : g.eval env = 0
+  · unfold Lanius.Mini.whileLoop
+    split
+    · rename_i one
+      rw [isOne_eval one] at zero
+      exact absurd zero (by decide)
+    · exact ⟨0, .loopBody (Expr.lit_one_ne env) (Stops.check fun h => absurd zero h)⟩
+  · exact pass zero
+
+theorem Stops.whileLoop_body {prog : Program} {d : Nat} {env : Env} {hp : Heap} {slot n : Nat} {g c : Expr}
+    {b : Stmt} (nonzero : c.eval env ≠ 0) (stops : Stops prog d env hp b n) :
+    Stops prog d env hp (Lanius.Mini.whileLoop slot g c b) n := by
+  unfold Lanius.Mini.whileLoop
+  split
+  · exact .loopBody nonzero stops
+  · exact .loopBody (Expr.lit_one_ne env) (Stops.check fun _ => .ifTrue nonzero stops)
+
+theorem Stops.whileLoop_next {prog : Program} {d : Nat} {env env' : Env} {hp hp' : Heap} {slot n : Nat}
+    {g c : Expr} {b : Stmt} (one : g.eval env = 1) (nonzero : c.eval env ≠ 0)
+    (body : Exec prog d env hp b (.normal env' hp') ∨ Exec prog d env hp b (.continued env' hp'))
+    (rest : Stops prog d env' hp' (Lanius.Mini.whileLoop slot g c b) n) :
+    Stops prog d env hp (Lanius.Mini.whileLoop slot g c b) (n + 1) := by
+  unfold Lanius.Mini.whileLoop at rest ⊢
+  by_cases isOne : Lanius.Mini.isOne g = true
+  · simp only [isOne, if_true] at rest ⊢
+    rcases body with body | body
+    · exact .loopNext nonzero body rest
+    · exact .loopContinued nonzero body rest
+  · simp only [isOne, Bool.false_eq_true, if_false] at rest ⊢
+    rcases body with body | body
+    · exact .loopNext (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one) rest
+    · exact .loopContinued (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one) rest
 
 /-- A statement, then a check that fails. -/
 theorem Stops.thenCheck {prog : Program} {d : Nat} {env env' : Env} {hp hp' : Heap} {s : Stmt} {n slot : Nat}
@@ -93,6 +130,18 @@ theorem NoNext.letLocal {id : Nat} {ty : Core.Ty} {init : Core.Expr} {body : Cor
       obtain ⟨rfl, -⟩ := run
       exact ih hb
     all_goals simp at run
+
+theorem NoNext.letUninitialized {id : Nat} {ty : Core.Ty} {body : Core.Stmt} (ih : NoNext P body) :
+    NoNext P (.letUninitialized id ty body) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    cases hb : execStmt fuel P (st.bindUninitialized id) body <;>
+      simp [hb, Semantics.restoreOutcomeLocals] at run
+    obtain ⟨rfl, -⟩ := run
+    exact ih hb
 
 theorem NoNext.sequence {a b : Core.Stmt} (h : NoNext P a ∨ NoNext P b) : NoNext P (.sequence a b) := by
   intro fuel st c st' run
@@ -180,6 +229,192 @@ theorem returns_noNext : ∀ (s : SrcStmt), s.returns = true → NoNext P s.toCo
   | .setFieldEval _ _ _, h => by simp [SrcStmt.returns] at h
   | .returnUnit, _ => NoNext.returnValue
   | .assert _, h => by simp [SrcStmt.returns] at h
+  | .break, h => by simp [SrcStmt.returns] at h
+  | .continue, h => by simp [SrcStmt.returns] at h
+  | .unreachable _ _, _ => NoNext.letUninitialized NoNext.returnValue
+  | .matchArm _ _ _ _ _ ty body rest, h => by
+    simp only [SrcStmt.returns, Bool.and_eq_true] at h
+    simp only [SrcStmt.toCore]
+    refine NoNext.ite ?_ (returns_noNext rest h.2)
+    split
+    · exact NoNext.letLocal (returns_noNext body h.1)
+    · exact returns_noNext body h.1
+
+/-- A run that completes does not break or continue out of the statement. -/
+abbrev NoEscape (P : Core.Program) (s : Core.Stmt) : Prop :=
+  ∀ {fuel : Nat} {st : State} {c : Completion} {st' : State}, execStmt fuel P st s = .done c st' →
+    c ≠ .breakLoop ∧ c ≠ .continueLoop
+
+theorem NoEscape.letLocal {id : Nat} {ty : Core.Ty} {init : Core.Expr} {body : Core.Stmt} (ih : NoEscape P body) :
+    NoEscape P (.letLocal id ty init body) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    split at run
+    · rename_i v st1 _
+      cases hb : execStmt fuel P (st1.bindLocal id v) body <;>
+        simp [hb, Semantics.restoreOutcomeLocals] at run
+      obtain ⟨rfl, -⟩ := run
+      exact ih hb
+    all_goals simp at run
+
+theorem NoEscape.letUninitialized {id : Nat} {ty : Core.Ty} {body : Core.Stmt} (ih : NoEscape P body) :
+    NoEscape P (.letUninitialized id ty body) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    cases hb : execStmt fuel P (st.bindUninitialized id) body <;>
+      simp [hb, Semantics.restoreOutcomeLocals] at run
+    obtain ⟨rfl, -⟩ := run
+    exact ih hb
+
+theorem NoEscape.sequence {a b : Core.Stmt} (ha : NoEscape P a) (hb : NoEscape P b) :
+    NoEscape P (.sequence a b) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    split at run
+    · exact hb run
+    · rename_i completion st1 notNext firstRun
+      simp only [Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, -⟩ := run
+      exact ha firstRun
+    all_goals simp at run
+
+theorem NoEscape.ite {cond : Core.Expr} {a b : Core.Stmt} (ha : NoEscape P a) (hb : NoEscape P b) :
+    NoEscape P (.ifThenElse cond a b) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    split at run
+    · exact ha run
+    · exact hb run
+    all_goals simp at run
+
+theorem NoEscape.expression {e : Core.Expr} : NoEscape P (.expression e) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    split at run
+    · simp only [Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, -⟩ := run
+      simp
+    all_goals simp at run
+
+theorem NoEscape.returnValue {value : Option Core.Expr} : NoEscape P (.returnValue value) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    cases value with
+    | none =>
+      simp only [execStmt, Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, -⟩ := run
+      simp
+    | some e =>
+      simp only [execStmt] at run
+      split at run
+      · simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, -⟩ := run
+        simp
+      all_goals simp at run
+
+theorem NoEscape.skip : NoEscape P .skip := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt, Semantics.Outcome.done.injEq] at run
+    obtain ⟨rfl, -⟩ := run
+    simp
+
+/-- A loop ends a break and runs again on a continue. -/
+theorem NoEscape.whileLoop {cond : Core.Expr} {body : Core.Stmt} : NoEscape P (.whileLoop cond body) := by
+  intro fuel
+  induction fuel with
+  | zero => intro st c st' run; simp [execStmt] at run
+  | succ fuel ih =>
+    intro st c st' run
+    simp only [execStmt] at run
+    split at run
+    · simp only [Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, -⟩ := run
+      simp
+    · split at run
+      · cases fuel with
+        | zero => simp [execStmt] at run
+        | succ f => exact ih run
+      · cases fuel with
+        | zero => simp [execStmt] at run
+        | succ f => exact ih run
+      · simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, -⟩ := run
+        simp
+      · simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, -⟩ := run
+        simp
+      all_goals simp at run
+    all_goals simp at run
+
+/-- A statement with no break or continue outside its loops does not
+complete with one. -/
+theorem breaksOut_noEscape : ∀ (s : SrcStmt), s.breaksOut = false → NoEscape P s.toCore
+  | .nop, _ => NoEscape.skip
+  | .let _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letStruct _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letCall _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letEnum _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letMatch _ _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .set _ _, _ => NoEscape.expression
+  | .setField _ _ _, _ => NoEscape.expression
+  | .setCall _ _ _, _ => NoEscape.expression
+  | .then first second, h => by
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at h
+    exact NoEscape.sequence (breaksOut_noEscape first h.1) (breaksOut_noEscape second h.2)
+  | .if _ thenBranch elseBranch, h => by
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at h
+    exact NoEscape.ite (breaksOut_noEscape thenBranch h.1) (breaksOut_noEscape elseBranch h.2)
+  | .while _ _, _ => NoEscape.whileLoop
+  | .return _, _ => NoEscape.returnValue
+  | .letAlloc _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letLoad _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .setByte _ _ _, _ => NoEscape.expression
+  | .free _ _ _, _ => NoEscape.expression
+  | .letSlice _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letIndex _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .setIndex _ _ _, _ => NoEscape.expression
+  | .letEval _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .setEval _ _, _ => NoEscape.expression
+  | .ifEval _ thenBranch elseBranch, h => by
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at h
+    exact NoEscape.ite (breaksOut_noEscape thenBranch h.1) (breaksOut_noEscape elseBranch h.2)
+  | .whileEval _ _, _ => NoEscape.whileLoop
+  | .returnEval _, _ => NoEscape.returnValue
+  | .discard _, _ => NoEscape.expression
+  | .setIndexEval _ _ _, _ => NoEscape.expression
+  | .setFieldEval _ _ _, _ => NoEscape.expression
+  | .returnUnit, _ => NoEscape.returnValue
+  | .assert _, _ => NoEscape.expression
+  | .break, h => by simp [SrcStmt.breaksOut] at h
+  | .continue, h => by simp [SrcStmt.breaksOut] at h
+  | .unreachable _ _, _ => NoEscape.letUninitialized NoEscape.returnValue
+  | .matchArm _ _ _ _ _ ty body rest, h => by
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at h
+    simp only [SrcStmt.toCore]
+    refine NoEscape.ite ?_ (breaksOut_noEscape rest h.2)
+    split
+    · exact NoEscape.letLocal (breaksOut_noEscape body h.1)
+    · exact breaksOut_noEscape body h.1
 
 end Returns
 
@@ -243,7 +478,7 @@ theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
       Layout (paramScope f.params 0 []) frame st.nextCell (paramsSize f.params) ∧
       (calleeState f values st).Fresh ∧ Keeps st.nextCell ({ st with locals := [] } : State) (calleeState f values st) := by
   obtain ⟨g, gFound, gOk⟩ := lowerFuncs_get lowered found
-  obtain ⟨gParams, _, valid, b, bodyOk, tail⟩ := lowerFunc_some gOk
+  obtain ⟨gParams, _, valid, inside, b, bodyOk, tail⟩ := lowerFunc_some gOk
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
     (Nat.le_refl _) fresh ⟨rfl, fun _ mem => by simp at mem⟩
@@ -255,15 +490,15 @@ theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
 /-- How a callee's body that completes within the limit completes. -/
 theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) {callee : Nat} {f : SrcFunc} (found : sp.funcs[callee]? = some f)
-    {hp : Heap} {st : State} (fresh : st.Fresh) (hc : HeapCorr st.heap hp) {values : List Value}
+    {hp : Heap} {st : State} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold (paramTypes f.params) values (Func.entry bits) 0)
     {j : Nat} {c : Completion} {completed : State}
     (run : execStmt j sp.toCore (calleeState f values st) f.body.toCore = .done c completed)
     (bound : completed.heap.nextAddress ≤ hp.limit) :
     (c = .next ∧ f.ret = .unit) ∨ (∃ v, c = .returned (some v)) ∨ (c = .returned none ∧ f.ret = .unit) := by
   obtain ⟨g, b, frame, -, -, bodyOk, -, corr, fr, fresh0, keeps0⟩ := callee_frame lowered found fresh holds
-  have hc0 : HeapCorr (calleeState f values st).heap hp := by
-    rw [(bindLocals_same _ _).1]
+  have hc0 : HeapCorr (calleeState f values st).heap (calleeState f values st).world hp := by
+    rw [(bindLocals_same _ _).1, bindLocals_world]
     exact hc
   obtain ⟨-, -, _, _, _, matched⟩ := stmt_sound lowered j (hp := hp) bodyOk corr fr fresh0 keeps0.next hc0 run bound
   cases matched with
@@ -280,21 +515,27 @@ theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
     cases v with
     | some w => exact .inr (.inl ⟨w, rfl⟩)
     | none => exact .inr (.inr ⟨rfl, holdsRet⟩)
+  | broke =>
+    obtain ⟨_, _, gOk⟩ := lowerFuncs_get lowered found
+    exact absurd rfl (breaksOut_noEscape f.body (lowerFunc_some gOk).2.2.2.1 run).1
+  | continued =>
+    obtain ⟨_, _, gOk⟩ := lowerFuncs_get lowered found
+    exact absurd rfl (breaksOut_noEscape f.body (lowerFunc_some gOk).2.2.2.1 run).2
 
 /-- The callee of a call that fails stops, one tick fewer. -/
 theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n)
     {callee : Nat} {args : List Core.Expr} {st afterArgs : State} {k : Nat} {values : List Value}
     (argsRun : evalExprs k sp.toCore st args = .done values afterArgs) {f : SrcFunc}
-    (found : sp.funcs[callee]? = some f) {hp : Heap} (fresh : afterArgs.Fresh) (hc : HeapCorr afterArgs.heap hp)
+    (found : sp.funcs[callee]? = some f) {hp : Heap} (fresh : afterArgs.Fresh) (hc : HeapCorr afterArgs.heap afterArgs.world hp)
     (within : afterArgs.heap.nextAddress ≤ hp.limit) {bits : List (BitVec 64)}
     (holds : FieldsHold (paramTypes f.params) values (Func.entry bits) 0) (bitsLen : bits.length = paramsSize f.params)
     (fails : EFails sp hp.limit st (.call callee args)) :
     ∃ d g, mp.funcs[callee]? = some g ∧ bits.length = g.params ∧ Stops mp d (Func.entry bits) hp g.body n := by
   obtain ⟨g, b, frame, gFound, gParams, bodyOk, tail, corr, fr, fresh0, keeps0⟩ :=
     callee_frame lowered found fresh holds
-  have hc0 : HeapCorr (calleeState f values afterArgs).heap hp := by
-    rw [(bindLocals_same _ _).1]
+  have hc0 : HeapCorr (calleeState f values afterArgs).heap (calleeState f values afterArgs).world hp := by
+    rw [(bindLocals_same _ _).1, bindLocals_world]
     exact hc
   have len : values.length = f.params.length := by rw [holds.length, paramTypes_length]
   have bodyFails := fails.callBody argsRun found len fun run bound =>
@@ -329,7 +570,7 @@ theorem lowerCall_found {callee : Nat} {scope : List Binding} {args : List SrcEx
 /-- A call that fails and whose guard holds stops, one tick more than its callee. -/
 theorem call_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {scope frame st env}
-    (corr : Corr scope frame st env) (fresh : st.Fresh) {hp : Heap} (hc : HeapCorr st.heap hp)
+    (corr : Corr scope frame st env) (fresh : st.Fresh) {hp : Heap} (hc : HeapCorr st.heap st.world hp)
     (within : st.heap.nextAddress ≤ hp.limit) {callee : Nat} {args : List SrcExpr} {ty : SrcType}
     {es : List Expr} (ok : lowerCall (sigs sp.funcs) scope callee args ty = some es)
     (g : (guardAll scope args).eval env ≠ 0)
@@ -768,7 +1009,7 @@ theorem let_stops {body : SrcStmt} (ih : SrcStops sp mp n body) {ret : SrcType} 
     {frame base st env} (corr : Corr scope frame st env) (fr : Layout scope frame base next)
     (fresh : st.Fresh) (le : base ≤ st.nextCell) (sized : 0 < ty.size) {v : Value} {env' : Env}
     (agree : ScopeAgree scope env env') (holds : ty.HoldsAt v env' next)
-    (hc : HeapCorr st.heap hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit (st.bindLocal id v) body.toCore) :
     ∃ d, Stops mp d env' hp bstmt n :=
   ih (hp := hp) bodyOk (corr.push fr fresh agree holds) (fr.push (corr.below fresh) le id sized)
@@ -804,7 +1045,7 @@ theorem stops_then (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
       obtain ⟨d2, stops2⟩ := ih2 secondOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) hc1
         (by rw [limit]; exact bound1) (by rw [limit]; exact fails.seqSecond run1)
       exact ⟨_, Stops.after exec1 stops2⟩
-    | returned =>
+    | returned | broke | continued =>
       have := fails (k + 1)
       simp only [execStmt, run1] at this
       exact absurd bound1 (Nat.not_le.mpr this)
@@ -848,10 +1089,7 @@ theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
     SrcStops sp mp (n + 1) (.while condition body) := by
   intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
   have whileOk := ok
-  simp only [SrcStmt.lower] at ok
-  replace ok := guarded_some ok
-  obtain ⟨stmt, ok, rfl⟩ := ok
-  simp only [lowerWhile] at ok
+  simp only [SrcStmt.lower, lowerWhile] at ok
   split at ok
   · simp at ok
   rename_i x condOk
@@ -860,8 +1098,9 @@ theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
   rename_i bstmt bodyOk
   simp only [Option.some.injEq] at ok
   subst ok
-  refine Stops.checked fun g => ?_
+  refine Stops.whileLoop_checked fun g => ?_
   obtain ⟨k, w, condRun⟩ := lowerAs_progress corr (SrcProgram.target_toCore sp) condOk g
+  have one := lowerAs_guard corr (SrcProgram.target_toCore sp) condOk condRun
   obtain ⟨-, y, rfl, bits⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) condOk condRun
   simp only [SrcStmt.toCore] at fails
   cases y with
@@ -878,20 +1117,26 @@ theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
       cases matched1 with
       | @next env1 hp1 corr1 hc1 =>
         have limit := exec1.limit_normal
-        by_cases pass : (condition.guard scope).eval env1 = 0
-        · exact ⟨d1, .loopBody condTrue (Stops.thenCheck exec1 pass)⟩
-        · obtain ⟨d2, stops2⟩ := prev (.while condition body) whileOk corr1 fr fresh1
-            (Nat.le_trans le keeps1.next) hc1 (by rw [limit]; exact bound1)
-            (by rw [limit]; exact fails.whileNext condRun run1)
-          exact ⟨max d1 d2, .loopNext condTrue ((exec1.thenCheck pass).mono (Nat.le_max_left _ _))
-            ((stops2.checkThen_inv pass).deeper (Nat.le_max_right _ _))⟩
-      | returned =>
+        obtain ⟨d2, stops2⟩ := prev (.while condition body) whileOk corr1 fr fresh1
+          (Nat.le_trans le keeps1.next) hc1 (by rw [limit]; exact bound1)
+          (by rw [limit]; exact fails.whileNext condRun run1)
+        exact ⟨max d1 d2, Stops.whileLoop_next one condTrue (.inl (exec1.mono (Nat.le_max_left _ _)))
+          (stops2.deeper (Nat.le_max_right _ _))⟩
+      | @continued env1 hp1 corr1 hc1 =>
+        have limit := exec1.limit
+        simp only [Outcome.heap] at limit
+        obtain ⟨d2, stops2⟩ := prev (.while condition body) whileOk corr1 fr fresh1
+          (Nat.le_trans le keeps1.next) hc1 (by rw [limit]; exact bound1)
+          (by rw [limit]; exact fails.whileContinue condRun run1)
+        exact ⟨max d1 d2, Stops.whileLoop_next one condTrue (.inr (exec1.mono (Nat.le_max_left _ _)))
+          (stops2.deeper (Nat.le_max_right _ _))⟩
+      | returned | broke =>
         have := fails (max k k' + 1)
         simp only [execStmt, value_after condRun (Nat.le_max_left k k'),
           done_after run1 (Nat.le_max_right k k')] at this
         exact absurd bound1 (Nat.not_le.mpr this)
     · obtain ⟨d, stops⟩ := ih bodyOk corr fr fresh le hc within (fails.whileBody condRun done)
-      exact ⟨d, .loopBody condTrue stops.thenCheck_first⟩
+      exact ⟨d, Stops.whileLoop_body condTrue stops⟩
 
 theorem stops_let {id : Nat} {ty : SrcType} {value : SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp n body) :
     SrcStops sp mp n (.let id ty value body) := by
@@ -1269,12 +1514,128 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
         clear room (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload armsRun
     have corr1 := corr.keeps fresh keeps1 locals1
     have heap1 := (matchArms_same arms eid 0 armsRun).1
-    have hc1 : HeapCorr st1.heap hp := by rw [heap1]; exact hc
+    have hc1 : HeapCorr st1.heap st1.world hp := by rw [heap1, matchArms_world arms eid 0 armsRun]; exact hc
     simp only [SrcStmt.toCore] at fails
     obtain ⟨d, stops⟩ := let_stops ih bodyOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) sized
       (env' := env.setFrom next xs) (fr.agree fun j below => setFrom_outside xs next env j (.inl below))
       (flat.store insens) hc1 (by rw [heap1]; exact within) (fails.letBody matchRun)
     exact ⟨_, Stops.after (mexec 0) stops⟩
+
+
+/-- `Unreachable`: `1 / 0`, which has no step. -/
+theorem stops_unreachable {id : Nat} {ty : SrcType} : SrcStops sp mp n (.unreachable id ty) := by
+  intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
+  obtain ⟨-, rfl⟩ := unreachable_lower_inv ok
+  exact ⟨0, .divide (by simp [Expr.eval, Word.divides, DivOp.defined])⟩
+
+theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {ty : SrcType} {body rest : SrcStmt}
+    (ih1 : SrcStops sp mp n body) (ih2 : SrcStops sp mp n rest) :
+    SrcStops sp mp n (.matchArm scrutinee enumId variant binds binder ty body rest) := by
+  intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
+  obtain ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, few, payloadOk, bodyOk, restOk, rfl⟩ :=
+    matchArm_lower_inv ok
+  have bmem := (lookup_mem found).1
+  have variantLt : variant < variants.length := (List.getElem?_eq_some_iff.mp fieldsFound).1
+  have fieldsMem : fields ∈ variants := List.mem_of_getElem? fieldsFound
+  have room : b.slot + 1 + sizes fields ≤ next := by
+    have bound := sizes_le_maxSize_of_mem fieldsMem
+    have := fr.slots b bmem
+    rw [hty] at this
+    simp only [SrcType.size] at this
+    omega
+  have clear : ∀ b' ∈ scope, b'.slot < b.slot + 1 ∨ b.slot + 1 + sizes fields ≤ b'.slot := by
+    intro b' mem'
+    have bound := sizes_le_maxSize_of_mem fieldsMem
+    by_cases same : b' = b
+    · subst same
+      omega
+    · rcases fr.apart b' mem' b bmem same with h | h
+      · have := fr.sized b' mem'
+        omega
+      · rw [hty] at h
+        simp only [SrcType.size] at h
+        omega
+  have shape := armPayload_shape payloadOk
+  obtain ⟨w, entry, holdsW⟩ := corr.values b bmem
+  have localRun : ∀ k, evalExpr (k + 1) sp.toCore st (.local scrutinee) = .done w st := fun k => by
+    simp only [evalExpr, corr.cellId, found, Option.map_some, entry]
+  rw [hty] at holdsW
+  cases holdsW with
+  | @enum _ _ kv fs pvs _ _ fsFound tag payload =>
+  have kvLt : kv < variants.length := (List.getElem?_eq_some_iff.mp fsFound).1
+  have fits : variant = kv →
+      (Semantics.matchPatterns (if binds then [.wildcard] else []) pvs).isSome = true := by
+    intro hk
+    subst hk
+    have same : fs = fields := by simpa [fsFound] using fieldsFound
+    subst same
+    rcases shape with ⟨u, rfl, _⟩ | ⟨u, _, s', scopeOk, _⟩
+    · cases payload
+      simp [u, Semantics.matchPatterns]
+    · obtain ⟨_, _, _, _, blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+      rcases pvs with _ | ⟨pv, _ | ⟨pv', more⟩⟩
+      · simp at blen
+      · simp [u, Semantics.matchPatterns, Semantics.matchPattern]
+      · simp at blen
+  simp only [SrcStmt.toCore] at fails
+  generalize hpats : (if binds then [Core.Pattern.wildcard] else []) = pats at fails fits
+  generalize hthen : (if binds then .letLocal binder ty.toCore
+    (.matchValue (.local scrutinee) [(.enumVariant enumId variant [.bind binder], .local binder)]) body.toCore
+    else body.toCore) = T
+    at fails
+  have noBinds : ∀ bs, Semantics.matchPatterns pats pvs = some bs → bs = [] := by
+    intro bs m
+    rw [← hpats] at m
+    split at m <;> rcases pvs with _ | ⟨v, _ | ⟨v', more⟩⟩ <;>
+      simp [Semantics.matchPatterns, Semantics.matchPattern] at m <;> simp_all
+  have differ : variant ≠ kv → BitVec.ofNat 64 kv ≠ BitVec.ofNat 64 variant := fun hk =>
+    ofNat_ne (Nat.lt_trans kvLt (by omega)) (Nat.lt_trans variantLt (by omega)) (Ne.symm hk)
+  obtain ⟨r, testRun⟩ := armTest_done localRun noBinds (variant := variant) 0
+  obtain ⟨-, picked, either⟩ := armTest_run localRun noBinds testRun
+  rcases either with rfl | rfl
+  · have branch := fails.ifBranch testRun
+    simp only [↓reduceIte] at branch
+    obtain ⟨rfl, _⟩ := picked.mp rfl
+    have same : fs = fields := by simpa [fsFound] using fieldsFound
+    subst same
+    have test : (Expr.compare Word.u64 CmpOp.eq (Expr.var b.slot) (Expr.lit (BitVec.ofNat 64 variant))).eval env ≠ 0 := by
+      simp [Expr.eval, Word.holds, CmpOp.holdsU, tag]
+    rcases shape with ⟨u, rfl, rfl⟩ | ⟨u, sized, s', scopeOk, valueOk⟩
+    · simp only [u, Bool.false_eq_true, ↓reduceIte] at hthen
+      subst hthen
+      simp only [armBodyScope, u, Bool.not_false, ↓reduceIte] at bodyOk
+      obtain ⟨d, stops⟩ := ih1 bodyOk corr (fr.mono (Nat.le_add_right _ _)) fresh le hc within branch
+      exact ⟨d, .ifTrue test stops⟩
+    · simp only [u, ↓reduceIte] at hthen
+      subst hthen
+      simp only [armBodyScope, u, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at bodyOk
+      obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+      obtain ⟨pv, rfl⟩ : ∃ pv, pvs = [pv] := by
+        rcases pvs with _ | ⟨pv, _ | ⟨pv', more⟩⟩
+        · simp at blen
+        · exact ⟨pv, rfl⟩
+        · simp at blen
+      obtain ⟨k, v', bindRun⟩ := lowerValue_progress corr' (SrcProgram.target_toCore sp) valueOk
+        (by simp [SrcExpr.guard, Expr.eval])
+      obtain ⟨-, flat, vshape⟩ := lowerValue_sound corr' (SrcProgram.target_toCore sp) valueOk bindRun
+      have initRun := armBind_run localRun (binder := binder) bindRun
+      have fails' := branch.letBody initRun
+      have slots' := armScope_slots [binder] scopeOk fr.slots room
+      have insens : Insens vs next := Insens.below fun x mem => vshape.below slots' x mem
+      have keeps1 := keeps'.trans (restore_keeps st.nextCell st _)
+      have corr1 := corr.keeps fresh keeps1 rfl
+      obtain ⟨d, stops⟩ := let_stops ih1 bodyOk corr1 fr (restore_fresh fresh') (Nat.le_trans le keeps1.next)
+        sized (env' := env.setFrom next vs) (fr.agree fun j below => setFrom_outside vs next env j (.inl below))
+        (flat.store insens) (by rw [restore_heap, (bindLocals_same _ st).1]; exact hc)
+        (by rw [restore_heap, (bindLocals_same _ st).1]; exact within) fails'
+      exact ⟨d, .ifTrue test (Stops.assignFrom vs next stops)⟩
+  · have branch := fails.ifBranch testRun
+    simp only [Bool.false_eq_true, ↓reduceIte] at branch
+    have hk : variant ≠ kv := fun hk => by
+      have := picked.mpr ⟨hk, fits hk⟩
+      simp at this
+    obtain ⟨d, stops⟩ := ih2 restOk corr fr fresh le hc within branch
+    exact ⟨d, .ifFalse (by simp [Expr.eval, Word.holds, CmpOp.holdsU, tag, differ hk]) stops⟩
 
 
 theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp n body) :
@@ -1568,7 +1929,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
     (ok : lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
   simp only [lowerLoadWord] at ok
@@ -1675,7 +2036,7 @@ theorem stops_letIndex_word {id : Nat} {ty : SrcType} {slice : Nat} {index : Src
     (ok : lowerLoadType sp.decls next (lookup scope slice) ty (lowerIndex scope index)
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
     (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
     ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
   unfold lowerLoadType at ok

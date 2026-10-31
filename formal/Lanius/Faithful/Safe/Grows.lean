@@ -324,6 +324,36 @@ theorem matchValue_trap_grows {scrutinee id : Nat} {arms : List SrcArm}
     have := matchArms_trap_same arms id 0 armsRun
     exact Grows.same this.1 this.2
 
+/-- Trapped arms whose bodies leave the state as it was leave the heap as it was. -/
+theorem pureArms_trap_same {value : Value} : ∀ (arms : List (Core.Pattern × Core.Expr)),
+    (∀ a ∈ arms, ∀ {k : Nat} {st : State} {r : Lanius.Trap} {st' : State},
+      evalExpr k P st a.2 = .trapped r st' → st' = st) →
+    ∀ {k : Nat} {st : State} {r : Lanius.Trap} {st' : State},
+      evalMatchArms k P st value arms = .trapped r st' → st'.heap = st.heap ∧ st'.i32ArrayViews = st.i32ArrayViews
+  | [], _, k, st, r, st', run => by
+    obtain ⟨-, rfl⟩ := arms_nil_trap run
+    exact ⟨rfl, rfl⟩
+  | (pat, body) :: rest, pure, k, st, r, st', run => by
+    obtain ⟨i, -, ⟨-, restRun⟩ | ⟨bs, s2, -, armRun, rfl⟩⟩ := arms_cons_trap_inv run
+    · exact pureArms_trap_same rest (fun a mem => pure a (List.mem_cons_of_mem _ mem)) restRun
+    · have := pure (pat, body) (List.mem_cons_self ..) armRun
+      subst this
+      exact bindLocals_same bs st
+
+theorem matchPure_trap_grows {scrutinee : Nat} {arms : List (Core.Pattern × Core.Expr)}
+    (pure : ∀ a ∈ arms, ∀ {k : Nat} {st : State} {r : Lanius.Trap} {st' : State},
+      evalExpr k P st a.2 = .trapped r st' → st' = st)
+    (run : evalExpr k P st (.matchValue (.local scrutinee) arms) = .trapped r st') : Grows st st' := by
+  obtain ⟨j, -, srun | ⟨sv, s1, srun, armsRun⟩⟩ := matchValue_trap_inv run
+  · rw [local_trap_state srun]; exact Grows.refl _
+  · have := eval_local_state srun
+    subst this
+    have := pureArms_trap_same arms pure armsRun
+    exact Grows.same this.1 this.2
+
+theorem value_no_trap {x : Value} (run : evalExpr k P st (.value x) = .trapped r st') : False := by
+  cases k <;> simp [evalExpr] at run
+
 theorem sliceFrom_trap_grows {element : SrcType} {pointer length : SrcExpr}
     (run : evalExpr k P st (element.sliceFrom pointer.toCore length.toCore) = .trapped r st') :
     Grows st st' := by
@@ -607,7 +637,21 @@ theorem call_trap_grows {k : Nat} (ih : GrowsBelow sp k) (ihT : GrowsBelowT sp k
     (argsDone : ∀ {j vs s}, j < k → evalExprs j sp.toCore st args = .done vs s → Grows st s)
     (argsTrap : ∀ {j r s}, j < k → evalExprs j sp.toCore st args = .trapped r s → Grows st s)
     (run : evalExpr k sp.toCore st (.call callee args) = .trapped r st') : Grows st st' := by
-  obtain ⟨j, rfl, h⟩ := call_trap_inv run
+  by_cases inside : callee < sp.funcs.length
+  case neg =>
+    cases k with
+    | zero => simp [evalExpr] at run
+    | succ j =>
+      cases argsRun : evalExprs j sp.toCore st args with
+      | done values afterArgs =>
+        exact (argsDone (Nat.lt_succ_self j) argsRun).trans (host_trap_grows (by omega) argsRun run)
+      | trapped r' s =>
+        simp only [evalExpr, argsRun, Semantics.Outcome.trapped.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact argsTrap (Nat.lt_succ_self j) argsRun
+      | exited c s => simp [evalExpr, argsRun] at run
+      | outOfFuel => simp [evalExpr, argsRun] at run
+  obtain ⟨j, rfl, h⟩ := call_trap_inv inside run
   rcases h with argsRun | ⟨values, afterArgs, argsRun, h⟩
   · exact argsTrap (Nat.lt_succ_self j) argsRun
   cases h with
@@ -975,6 +1019,58 @@ theorem grows_trap_step {fuel : Nat} (ih : GrowsBelow sp fuel) (ihT : GrowsBelow
       obtain rfl : f = j := Nat.succ.inj hj
       exact effT f (Nat.le_refl _) vrun
     | returnUnit => exact (returnUnit_trap run).elim
+    | «break» => exact (breakLoop_trap run).elim
+    | «continue» => exact (continueLoop_trap run).elim
+    | unreachable id ty =>
+      rw [unreachable_trapped run]
+      exact Grows.same rfl rfl
+    | matchArm scrutinee enumId variant binds binder ty body rest =>
+      have testD : ∀ a ∈ [(Core.Pattern.enumVariant enumId variant (if binds then [.wildcard] else []),
+          Core.Expr.value (.boolean true)), (Core.Pattern.wildcard, Core.Expr.value (.boolean false))],
+          ∀ {k : Nat} {st : State} {v : Value} {st' : State}, evalExpr k sp.toCore st a.2 = .done v st' → st' = st := by
+        intro a mem
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at mem
+        rcases mem with rfl | rfl
+        · exact value_state _
+        · exact value_state _
+      have testT : ∀ a ∈ [(Core.Pattern.enumVariant enumId variant (if binds then [.wildcard] else []),
+          Core.Expr.value (.boolean true)), (Core.Pattern.wildcard, Core.Expr.value (.boolean false))],
+          ∀ {k : Nat} {st : State} {r : Lanius.Trap} {st' : State},
+            evalExpr k sp.toCore st a.2 = .trapped r st' → st' = st := by
+        intro a mem
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at mem
+        rcases mem with rfl | rfl
+        · exact fun r => (value_no_trap r).elim
+        · exact fun r => (value_no_trap r).elim
+      obtain ⟨j, hj, crun | ⟨v, crun, -⟩ | ⟨x, s1, crun, brun⟩⟩ := if_trap_inv run
+      all_goals obtain rfl : f = j := Nat.succ.inj hj
+      · exact matchPure_trap_grows testT crun
+      · exact matchPure_grows testD crun
+      · refine (matchPure_grows testD crun).trans ?_
+        cases x
+        · exact belowT (s := rest) brun
+        · simp only [↓reduceIte] at brun
+          split at brun
+          · cases f with
+            | zero => simp [execStmt] at brun
+            | succ g =>
+              have bindD : ∀ a ∈ [(Core.Pattern.enumVariant enumId variant [.bind binder], Core.Expr.local binder)],
+                  ∀ {k : Nat} {st : State} {v : Value} {st' : State},
+                    evalExpr k sp.toCore st a.2 = .done v st' → st' = st := by
+                intro a mem
+                simp only [List.mem_cons, List.not_mem_nil, or_false] at mem
+                subst mem
+                exact fun r => eval_local_state r
+              have bindT : ∀ a ∈ [(Core.Pattern.enumVariant enumId variant [.bind binder], Core.Expr.local binder)],
+                  ∀ {k : Nat} {st : State} {r : Lanius.Trap} {st' : State},
+                    evalExpr k sp.toCore st a.2 = .trapped r st' → st' = st := by
+                intro a mem
+                simp only [List.mem_cons, List.not_mem_nil, or_false] at mem
+                subst mem
+                exact fun r => local_trap_state r
+              exact letLocal_trap_grows (fun r => matchPure_grows bindD r) (fun r => matchPure_trap_grows bindT r)
+                (fun r => ihfT g (Nat.lt_succ_self g) (s := body) r) brun
+          · exact belowT (s := body) brun
 
 /-- Every subset statement Core runs until it traps grows the heap. -/
 theorem grows_trap (sp : SrcProgram) : ∀ fuel, GrowsBelowT sp fuel

@@ -10,7 +10,7 @@ import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.layout
+import all Lanius.Mini.Compiler.P.Code_image
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -40,7 +40,8 @@ import all Lanius.Mini.Compiler.P.copyBinding
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
@@ -133,11 +134,28 @@ theorem find_coreFuncs (funcs : List SrcFunc) (off i : Nat) (le : off ≤ i) :
       rw [this]
       simp
 
+theorem hostFuncs_find (i : Nat) :
+    hostFuncs.find? (fun function => function.id == i) = (hostService? i).map (hostFunc i) := by
+  unfold hostFuncs hostService?
+  by_cases a : i = hostBase
+  · subst a
+    simp [hostFunc]
+  · by_cases b : i = hostBase + 1
+    · subst b
+      simp [hostFunc, hostBase]
+    · by_cases c : i = hostBase + 2
+      · subst c
+        simp [hostFunc, hostBase]
+      · simp [hostFunc, a, b, c, Ne.symm a, Ne.symm b, Ne.symm c]
+
+/-- A function of the program, or else a host function. -/
 theorem SrcProgram.function?_toCore (sp : SrcProgram) (i : Nat) :
-    sp.toCore.function? i = (sp.funcs[i]?).map (SrcFunc.toCore i) := by
-  simp only [Core.Program.function?, SrcProgram.toCore]
-  rw [find_coreFuncs _ 0 i (Nat.zero_le _)]
-  rfl
+    sp.toCore.function? i = match sp.funcs[i]? with
+      | some f => some (f.toCore i)
+      | none => (hostService? i).map (hostFunc i) := by
+  simp only [Core.Program.function?, SrcProgram.toCore, List.find?_append]
+  rw [find_coreFuncs _ 0 i (Nat.zero_le _), hostFuncs_find, Nat.sub_zero]
+  cases sp.funcs[i]? <;> rfl
 
 
 theorem bindParameters_eq (params : List SrcParam) (values : List Value)
@@ -147,9 +165,9 @@ theorem bindParameters_eq (params : List SrcParam) (values : List Value)
   simp [Semantics.bindParameters, len, paramBindings]
 
 
-/-- What a Core call that returned did. -/
+/-- What a Core call of one of the program's functions that returned did. -/
 theorem call_inv {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {args : List Core.Expr}
-    {v : Value} {st' : State}
+    {v : Value} {st' : State} (inside : callee < sp.funcs.length)
     (run : evalExpr (fuel + 1) sp.toCore st (.call callee args) = .done v st') :
     ∃ f values afterArgs completed c, evalExprs fuel sp.toCore st args = .done values afterArgs ∧
       sp.funcs[callee]? = some f ∧ values.length = f.params.length ∧
@@ -161,9 +179,9 @@ theorem call_inv {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {arg
   · rename_i values afterArgs argsRun
     rw [SrcProgram.function?_toCore] at run
     cases found : sp.funcs[callee]? with
-    | none => simp [found] at run
+    | none => exact absurd (List.getElem?_eq_none_iff.mp found) (by omega)
     | some f =>
-      simp only [found, Option.map_some, SrcFunc.toCore] at run
+      simp only [found, SrcFunc.toCore] at run
       by_cases len : values.length = f.params.length
       · rw [bindParameters_eq _ _ len] at run
         simp only at run
@@ -215,6 +233,10 @@ theorem bindLocals_same : ∀ (bs : List (Nat × Value)) (st : State),
     (st.bindLocals bs).heap = st.heap ∧ (st.bindLocals bs).i32ArrayViews = st.i32ArrayViews
   | [], _ => ⟨rfl, rfl⟩
   | b :: bs, st => bindLocals_same bs (st.bindLocal b.1 b.2)
+
+theorem bindLocals_world : ∀ (bs : List (Nat × Value)) (st : State), (st.bindLocals bs).world = st.world
+  | [], _ => rfl
+  | b :: bs, st => bindLocals_world bs (st.bindLocal b.1 b.2)
 
 theorem memAlignUp_ge (a k : Nat) (pos : 0 < k) : a ≤ Memory.alignUp a k := by
   simp only [Memory.alignUp]
@@ -512,6 +534,58 @@ theorem syncFrom_ok {st : State} (views : st.i32ArrayViews = []) :
     Semantics.syncI32ViewsFromHeap st = .ok st := by
   simp [Semantics.syncI32ViewsFromHeap, views, Semantics.syncI32ViewsFromHeapFrom]
 
+/-- A host call from `st` whose arguments left no views: Core's world call
+returned `v`, and the state is `st` with the call's heap and world. -/
+def HostReturns (st : State) (service : Core.HostService) (values : List Value) (v : Value) (st' : State) :
+    Prop :=
+  st.i32ArrayViews = [] → ∃ heap world, World.call st.heap st.world service values = .returned v heap world ∧
+    st' = { st with heap, world }
+
+/-- What a Core call that returned did: one of the program's functions ran,
+or a host function did. -/
+theorem call_cases {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {args : List Core.Expr}
+    {v : Value} {st' : State}
+    (run : evalExpr (fuel + 1) sp.toCore st (.call callee args) = .done v st') :
+    ∃ values afterArgs, evalExprs fuel sp.toCore st args = .done values afterArgs ∧
+      ((callee < sp.funcs.length ∧ ∃ f completed c, sp.funcs[callee]? = some f ∧ values.length = f.params.length ∧
+        execStmt fuel sp.toCore (({ afterArgs with locals := [] } : State).bindLocals
+          (paramBindings f.params values)) f.body.toCore = .done c completed ∧ CallResult f.ret c v ∧
+        st' = restoreLocals afterArgs completed) ∨
+       (sp.funcs.length ≤ callee ∧ ∃ service, hostService? callee = some service ∧
+        HostReturns afterArgs service values v st')) := by
+  by_cases inside : callee < sp.funcs.length
+  · obtain ⟨f, values, afterArgs, completed, c, a, b, d, e, g, i⟩ := call_inv inside run
+    exact ⟨values, afterArgs, a, .inl ⟨inside, f, completed, c, b, d, e, g, i⟩⟩
+  · simp only [evalExpr] at run
+    split at run
+    · rename_i values afterArgs argsRun
+      refine ⟨values, afterArgs, argsRun, .inr ⟨by omega, ?_⟩⟩
+      rw [SrcProgram.function?_toCore, List.getElem?_eq_none (by omega)] at run
+      cases hs : hostService? callee with
+      | none => simp [hs] at run
+      | some service =>
+        refine ⟨service, rfl, fun views => ?_⟩
+        simp only [hs, Option.map_some, hostFunc] at run
+        split at run
+        · simp at run
+        rotate_left
+        · rename_i same _
+          simp at same
+        · rw [sync_ok views] at run
+          simp only at run
+          cases called : World.call afterArgs.heap afterArgs.world service values with
+          | returned value heap world =>
+            rw [called] at run
+            simp only [Semantics.worldCallOutcome, syncFrom_ok (st := { afterArgs with heap, world }) views,
+              Semantics.Outcome.done.injEq] at run
+            obtain ⟨rfl, rfl⟩ := run
+            exact ⟨heap, world, rfl, rfl⟩
+          | exited => rw [called] at run; simp [Semantics.worldCallOutcome] at run; split at run <;> simp at run
+          | unavailable => rw [called] at run; simp [Semantics.worldCallOutcome] at run
+          | trapped => rw [called] at run; simp [Semantics.worldCallOutcome] at run
+          | typeMismatch => rw [called] at run; simp [Semantics.worldCallOutcome] at run
+    all_goals simp at run
+
 theorem eval_value_state {P : Core.Program} {k : Nat} {st : State} {x v : Value} {st' : State}
     (run : evalExpr k P st (.value x) = .done v st') : st' = st := by
   cases k with
@@ -715,10 +789,272 @@ theorem matchArms_same {P : Core.Program} {value : Value} :
         | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
         | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
 
+theorem matchArms_world {P : Core.Program} {value : Value} :
+    ∀ (arms : List SrcArm) (id j : Nat) {k : Nat} {st : State} {v : Value} {st' : State},
+      Semantics.evalMatchArms k P st value (coreArms id j arms) = .done v st' →
+      st'.world = st.world
+  | [], _, _, k, st, v, st', run => by
+    cases k <;> simp [coreArms, Semantics.evalMatchArms] at run
+  | arm :: rest, id, j, k, st, v, st', run => by
+    cases k with
+    | zero => simp [Semantics.evalMatchArms] at run
+    | succ k =>
+      simp only [coreArms, Semantics.evalMatchArms] at run
+      split at run
+      · exact matchArms_world rest id (j + 1) run
+      · rename_i bindings _
+        cases armRun : evalExpr k P (st.bindLocals bindings) arm.value.toCore with
+        | done w completed =>
+          simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          have := arm.value.eval_state armRun
+          subst this
+          exact bindLocals_world bindings st
+        | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at run
+        | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
+        | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
+
 /-- Every statement with less fuel grows. -/
 def GrowsBelow (sp : SrcProgram) (fuel : Nat) : Prop :=
   ∀ m < fuel, ∀ {st : State} {s : SrcStmt} {c : Completion} {st' : State},
     execStmt m sp.toCore st s.toCore = .done c st' → Grows st st'
+
+/-! ## Host calls -/
+
+set_option maxHeartbeats 400000 in
+/-- What `write_stdout` or `write_stderr` did when it returned. -/
+theorem call_writeOut_inv {service : Core.HostService} (which : service = .writeStdout ∨ service = .writeStderr)
+    {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value} {heap' : Memory.Heap}
+    {world' : World.State} (h : World.call heap world service values = .returned v heap' world') :
+    ∃ p n bytes, values = [.pointer p, .unsigned .usize n] ∧ heap.loadBytes p n = .ok bytes ∧
+      v = World.i32Result bytes.length ∧ heap' = heap ∧
+      world' = (if service = .writeStdout then
+        { World.record world service with standardOutput := (World.record world service).standardOutput ++ bytes }
+      else { World.record world service with standardError := (World.record world service).standardError ++ bytes }) := by
+  rcases which with rfl | rfl <;>
+  · match values, h with
+    | [], h => simp [World.call, World.callSimple] at h
+    | [a], h => cases a <;> simp [World.call, World.callSimple] at h
+    | a :: b :: c :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+    | [a, b], h =>
+      cases a with
+      | pointer p =>
+        cases b with
+        | unsigned k n =>
+          cases k
+          all_goals simp only [World.call, World.callSimple] at h
+          all_goals first
+            | (split at h
+               · simp at h
+               · rename_i bytes loaded
+                 simp only [World.EffectResult.returned.injEq] at h
+                 obtain ⟨rfl, rfl, rfl⟩ := h
+                 exact ⟨p, n, bytes, rfl, loaded, rfl, rfl, by simp⟩)
+            | simp at h
+        | _ => simp [World.call, World.callSimple] at h
+      | _ => simp [World.call, World.callSimple] at h
+
+/-- What `write_byte` did when it returned. -/
+theorem call_writeByte_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .writeByte values = .returned v heap' world') :
+    ∃ handle value, values = [.signed .i32 handle, .signed .i32 value] ∧ heap' = heap ∧
+      ((World.writeBytes (World.record world .writeByte) handle [UInt8.ofNat (value % 256).toNat] = some world' ∧
+          v = World.i32Result 1) ∨
+        (World.writeBytes (World.record world .writeByte) handle [UInt8.ofNat (value % 256).toNat] = none ∧
+          ((World.writeFileBytes (World.record world .writeByte) handle [UInt8.ofNat (value % 256).toNat] =
+              some world' ∧ v = World.i32Result 1) ∨
+            (World.writeFileBytes (World.record world .writeByte) handle [UInt8.ofNat (value % 256).toNat] = none ∧
+              v = World.i32Result (-1) ∧ world' = World.record world .writeByte)))) := by
+  match values, h with
+  | [], h => simp [World.call, World.callSimple] at h
+  | [a], h => cases a <;> simp [World.call, World.callSimple] at h
+  | a :: b :: c :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+  | [a, b], h =>
+    cases a with
+    | signed k handle =>
+      cases b with
+      | signed k' value =>
+        cases k <;> cases k'
+        all_goals simp only [World.call, World.callSimple] at h
+        all_goals first
+          | (refine ⟨handle, value, rfl, ?_⟩
+             cases wb : World.writeBytes (World.record world .writeByte) handle [UInt8.ofNat (value % 256).toNat] with
+             | some w =>
+               simp only [wb, World.EffectResult.returned.injEq] at h
+               obtain ⟨rfl, rfl, rfl⟩ := h
+               exact ⟨rfl, .inl ⟨rfl, rfl⟩⟩
+             | none =>
+               simp only [wb] at h
+               cases wf : World.writeFileBytes (World.record world .writeByte) handle [UInt8.ofNat (value % 256).toNat] with
+               | some w =>
+                 simp only [wf, World.EffectResult.returned.injEq] at h
+                 obtain ⟨rfl, rfl, rfl⟩ := h
+                 exact ⟨rfl, .inr ⟨rfl, .inl ⟨rfl, rfl⟩⟩⟩
+               | none =>
+                 simp only [wf, World.EffectResult.returned.injEq] at h
+                 obtain ⟨rfl, rfl, rfl⟩ := h
+                 exact ⟨rfl, .inr ⟨rfl, .inr ⟨rfl, rfl, rfl⟩⟩⟩)
+          | simp at h
+      | _ => simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+
+/-- The host functions leave Core's heap as it was. -/
+theorem hostCall_heap {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
+    {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value} {heap' : Memory.Heap}
+    {world' : World.State} (h : World.call heap world service values = .returned v heap' world') : heap' = heap := by
+  unfold hostService? at hs
+  split at hs
+  · cases hs
+    obtain ⟨_, _, _, same, _⟩ := call_writeByte_inv h
+    exact same
+  split at hs
+  · cases hs
+    obtain ⟨_, _, _, _, _, _, same, _⟩ := call_writeOut_inv (.inl rfl) h
+    exact same
+  split at hs
+  · cases hs
+    obtain ⟨_, _, _, _, _, _, same, _⟩ := call_writeOut_inv (.inr rfl) h
+    exact same
+  · cases hs
+
+theorem host_grows {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
+    {st : State} {values : List Value} {v : Value} {st' : State} (returns : HostReturns st service values v st') :
+    Grows st st' := fun views => by
+  obtain ⟨heap, world, called, rfl⟩ := returns views
+  rw [hostCall_heap hs called]
+  exact ⟨views, Nat.le_refl _⟩
+
+theorem numberedParams_length : ∀ (n : Nat) (tys : List Core.Ty), (numberedParams n tys).length = tys.length
+  | _, [] => rfl
+  | n, _ :: rest => by simp [numberedParams, numberedParams_length (n + 1) rest]
+
+/-- A host call whose arguments evaluated, to two values, and left no views:
+Core's world call's outcome. -/
+theorem host_call_eval {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {args : List Core.Expr}
+    {values : List Value} {afterArgs : State} {service : Core.HostService}
+    (outside : sp.funcs.length ≤ callee) (hs : hostService? callee = some service) (len : values.length = 2)
+    (argsRun : evalExprs fuel sp.toCore st args = .done values afterArgs) (views : afterArgs.i32ArrayViews = []) :
+    evalExpr (fuel + 1) sp.toCore st (.call callee args) =
+      Semantics.worldCallOutcome callee afterArgs (World.call afterArgs.heap afterArgs.world service values) := by
+  have two : service.parameterTypes.length = 2 := by
+    unfold hostService? at hs
+    split at hs
+    · cases hs; rfl
+    split at hs
+    · cases hs; rfl
+    split at hs
+    · cases hs; rfl
+    · cases hs
+  have bound : Semantics.bindParameters (numberedParams 0 service.parameterTypes) values =
+      some (((numberedParams 0 service.parameterTypes).zip values).map fun pair => (pair.1.1, pair.2)) := by
+    rw [Semantics.bindParameters, numberedParams_length, two, len]
+    rfl
+  simp only [evalExpr, argsRun]
+  rw [SrcProgram.function?_toCore, List.getElem?_eq_none outside, hs]
+  simp only [Option.map_some, hostFunc, bound, sync_ok views]
+
+theorem worldCall_returned {id : Nat} {st : State} {v : Value} {heap : Memory.Heap} {world : World.State}
+    (views : st.i32ArrayViews = []) :
+    Semantics.worldCallOutcome id st (.returned v heap world) = .done v { st with heap, world } := by
+  simp only [Semantics.worldCallOutcome, syncFrom_ok (st := { st with heap, world }) views]
+
+/-- `write_byte` on two `i32`s returns. -/
+theorem writeByte_returns (heap : Memory.Heap) (world : World.State) (a b : Int) :
+    ∃ v world', World.call heap world .writeByte [.signed .i32 a, .signed .i32 b] = .returned v heap world' := by
+  cases wb : World.writeBytes (World.record world .writeByte) a [UInt8.ofNat (b % 256).toNat] with
+  | some w => exact ⟨_, _, by simp [World.call, World.callSimple, wb] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
+  | none =>
+    cases wf : World.writeFileBytes (World.record world .writeByte) a [UInt8.ofNat (b % 256).toNat] with
+    | some w => exact ⟨_, _, by simp [World.call, World.callSimple, wb, wf] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
+    | none => exact ⟨_, _, by simp [World.call, World.callSimple, wb, wf] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
+
+/-- `write_stdout` or `write_stderr` on a pointer and a count returns, or
+traps as the heap's load of the bytes does. -/
+theorem writeOut_outcome {service : Core.HostService} (which : service = .writeStdout ∨ service = .writeStderr)
+    (heap : Memory.Heap) (world : World.State) (p n : Nat) :
+    (∃ v world', World.call heap world service [.pointer p, .unsigned .usize n] = .returned v heap world') ∨
+    (∃ r world', World.call heap world service [.pointer p, .unsigned .usize n] = .trapped r heap world' ∧
+      heap.loadBytes p n = .error r) := by
+  rcases which with rfl | rfl <;>
+  · cases lb : heap.loadBytes p n with
+    | error r => exact .inr ⟨r, _, by simp [World.call, World.callSimple, lb] <;> rfl, rfl⟩
+    | ok bytes => exact .inl ⟨_, _, by simp [World.call, World.callSimple, lb] <;> exact ⟨rfl, rfl⟩⟩
+
+/-- The heap a world call's result carries. -/
+def resultHeap : World.EffectResult → Memory.Heap
+  | .returned _ h _ => h
+  | .exited _ h _ => h
+  | .unavailable _ h _ => h
+  | .trapped _ h _ => h
+  | .typeMismatch h _ => h
+
+theorem hostCall_resultHeap {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
+    (heap : Memory.Heap) (world : World.State) (values : List Value) :
+    resultHeap (World.call heap world service values) = heap := by
+  have three : service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr := by
+    unfold hostService? at hs
+    split at hs
+    · cases hs; exact .inl rfl
+    split at hs
+    · cases hs; exact .inr (.inl rfl)
+    split at hs
+    · cases hs; exact .inr (.inr rfl)
+    · cases hs
+  rcases three with rfl | rfl | rfl <;>
+  · simp only [World.call]
+    repeat' split
+    all_goals first | rfl | contradiction | simp_all
+
+/-- A host call that trapped after its arguments: the heap as it was. -/
+theorem host_trap_grows {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {args : List Core.Expr}
+    {values : List Value} {afterArgs : State} {r : Lanius.Trap} {st' : State}
+    (outside : sp.funcs.length ≤ callee) (argsRun : evalExprs fuel sp.toCore st args = .done values afterArgs)
+    (run : evalExpr (fuel + 1) sp.toCore st (.call callee args) = .trapped r st') : Grows afterArgs st' := by
+  intro views
+  simp only [evalExpr, argsRun] at run
+  rw [SrcProgram.function?_toCore, List.getElem?_eq_none outside] at run
+  cases hs : hostService? callee with
+  | none =>
+    simp only [hs, Option.map_none, Semantics.Outcome.trapped.injEq] at run
+    rw [← run.2]
+    exact ⟨views, Nat.le_refl _⟩
+  | some service =>
+    simp only [hs, Option.map_some, hostFunc, sync_ok views] at run
+    split at run
+    · simp only [Semantics.Outcome.trapped.injEq] at run
+      rw [← run.2]
+      exact ⟨views, Nat.le_refl _⟩
+    all_goals try (rename_i same _; simp at same; done)
+    have hh := hostCall_resultHeap hs afterArgs.heap afterArgs.world values
+    generalize World.call afterArgs.heap afterArgs.world service values = res at run hh
+    cases res with
+    | returned v h w =>
+      simp only [resultHeap] at hh
+      subst hh
+      simp [Semantics.worldCallOutcome, syncFrom_ok (st := { afterArgs with heap := afterArgs.heap, world := w }) views] at run
+    | exited c h w =>
+      simp only [resultHeap] at hh
+      subst hh
+      simp [Semantics.worldCallOutcome, syncFrom_ok (st := { afterArgs with heap := afterArgs.heap, world := w }) views] at run
+    | unavailable s h w =>
+      simp only [resultHeap] at hh
+      subst hh
+      simp only [Semantics.worldCallOutcome, Semantics.Outcome.trapped.injEq] at run
+      rw [← run.2]
+      exact ⟨views, Nat.le_refl _⟩
+    | trapped t h w =>
+      simp only [resultHeap] at hh
+      subst hh
+      simp only [Semantics.worldCallOutcome, Semantics.Outcome.trapped.injEq] at run
+      rw [← run.2]
+      exact ⟨views, Nat.le_refl _⟩
+    | typeMismatch h w =>
+      simp only [resultHeap] at hh
+      subst hh
+      simp only [Semantics.worldCallOutcome, Semantics.Outcome.trapped.injEq] at run
+      rw [← run.2]
+      exact ⟨views, Nat.le_refl _⟩
 
 theorem call_grows {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp k) {st : State} {callee : Nat}
     {args : List SrcExpr} {v : Value} {st' : State}
@@ -727,11 +1063,15 @@ theorem call_grows {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp k) {st : Stat
   cases k with
   | zero => simp [evalExpr] at run
   | succ k =>
-    obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv run
-    have := evalExprs_state args argsRun
-    subst this
-    have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
-    exact ((Grows.same entry.1 entry.2).trans (ih k (Nat.lt_succ_self k) bodyRun)).trans (Grows.same rfl rfl)
+    obtain ⟨values, afterArgs, argsRun, ⟨-, f, completed, c, found, _, bodyRun, result, rfl⟩ |
+      ⟨-, service, hs, returns⟩⟩ := call_cases run
+    · have := evalExprs_state args argsRun
+      subst this
+      have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
+      exact ((Grows.same entry.1 entry.2).trans (ih k (Nat.lt_succ_self k) bodyRun)).trans (Grows.same rfl rfl)
+    · have := evalExprs_state args argsRun
+      subst this
+      exact host_grows hs returns
 
 theorem alloc_grows {P : Core.Program} {k : Nat} {st : State} {size : SrcExpr} {shift : Nat}
     {v : Value} {st' : State}
@@ -874,6 +1214,54 @@ theorem matchValue_grows {P : Core.Program} {k : Nat} {st : State} {scrutinee id
       have := matchArms_same arms id 0 run
       exact Grows.same this.1 this.2
     all_goals simp at run
+
+/-- Arms whose bodies leave the state as it was leave the heap as it was. -/
+theorem pureArms_same {P : Core.Program} {value : Value} : ∀ (arms : List (Core.Pattern × Core.Expr)),
+    (∀ a ∈ arms, ∀ {k : Nat} {st : State} {v : Value} {st' : State}, evalExpr k P st a.2 = .done v st' → st' = st) →
+    ∀ {k : Nat} {st : State} {v : Value} {st' : State},
+      Semantics.evalMatchArms k P st value arms = .done v st' →
+      st'.heap = st.heap ∧ st'.i32ArrayViews = st.i32ArrayViews
+  | [], _, k, st, v, st', run => by cases k <;> simp [Semantics.evalMatchArms] at run
+  | (pat, body) :: rest, pure, k, st, v, st', run => by
+    cases k with
+    | zero => simp [Semantics.evalMatchArms] at run
+    | succ k =>
+      simp only [Semantics.evalMatchArms] at run
+      split at run
+      · exact pureArms_same rest (fun a mem => pure a (List.mem_cons_of_mem _ mem)) run
+      · rename_i bindings _
+        cases armRun : evalExpr k P (st.bindLocals bindings) body with
+        | done w completed =>
+          simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          have := pure (pat, body) (List.mem_cons_self ..) armRun
+          subst this
+          exact bindLocals_same bindings st
+        | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at run
+        | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
+        | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
+
+theorem matchPure_grows {P : Core.Program} {k : Nat} {st : State} {scrutinee : Nat}
+    {arms : List (Core.Pattern × Core.Expr)}
+    (pure : ∀ a ∈ arms, ∀ {k : Nat} {st : State} {v : Value} {st' : State}, evalExpr k P st a.2 = .done v st' → st' = st)
+    {v : Value} {st' : State} (run : evalExpr k P st (.matchValue (.local scrutinee) arms) = .done v st') :
+    Grows st st' := by
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    simp only [evalExpr] at run
+    split at run
+    · rename_i w next scrutineeRun
+      have := eval_local_state scrutineeRun
+      subst this
+      have := pureArms_same arms pure run
+      exact Grows.same this.1 this.2
+    all_goals simp at run
+
+theorem value_state {P : Core.Program} (x : Value) {k : Nat} {st : State} {v : Value} {st' : State}
+    (run : evalExpr k P st (.value x) = .done v st') : st' = st := by
+  cases k <;> simp [evalExpr] at run
+  exact run.2.symm
 
 /-- Making a raw slice leaves the state as it was. -/
 theorem sliceFrom_grows {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
@@ -1090,10 +1478,12 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
     subst this
     exact Grows.refl _
   | eCall callee args =>
-    obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv run
-    have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
-    exact ((effs_grows args ihe argsRun).trans ((Grows.same entry.1 entry.2).trans
-      (ih k (Nat.lt_succ_self k) bodyRun))).trans (Grows.same rfl rfl)
+    obtain ⟨values, afterArgs, argsRun, ⟨-, f, completed, c, found, _, bodyRun, result, rfl⟩ |
+      ⟨-, service, hs, returns⟩⟩ := call_cases run
+    · have entry := bindLocals_same (paramBindings f.params values) { afterArgs with locals := [] }
+      exact ((effs_grows args ihe argsRun).trans ((Grows.same entry.1 entry.2).trans
+        (ih k (Nat.lt_succ_self k) bodyRun))).trans (Grows.same rfl rfl)
+    · exact (effs_grows args ihe argsRun).trans (host_grows hs returns)
   | eApply op left right =>
     cases op
     case logicalAnd | logicalOr =>
@@ -1183,6 +1573,70 @@ theorem eff_grows {sp : SrcProgram} : ∀ k, GrowsBelow sp k → EffGrows sp k
     · exact eff_grows k (fun j lt' => ih j (Nat.lt_succ_of_lt lt')) m (Nat.le_of_lt_succ lt) run
     · exact eff_grows_step ih (eff_grows k (fun j lt' => ih j (Nat.lt_succ_of_lt lt'))) run
 
+/-- `Unreachable`'s Core code finishes only when the cell it binds was
+already there with a value: then its state is the caller's, the binding
+dropped. (In a fresh state the read traps, `uninitializedLocal`.) -/
+theorem unreachable_done {P : Core.Program} {fuel : Nat} {st : State} {id : Nat} {ty : SrcType}
+    {c : Completion} {st' : State}
+    (run : execStmt fuel P st (SrcStmt.unreachable id ty).toCore = .done c st') :
+    st' = Semantics.restoreLocals st (st.bindUninitialized id) ∧ (st.cellEntry? st.nextCell).isSome = true ∧
+      ∃ v, c = .returned (some v) := by
+  rcases fuel with _ | _ | _ | k
+  · simp [execStmt] at run
+  · simp [SrcStmt.toCore, execStmt, Semantics.restoreOutcomeLocals] at run
+  · simp [SrcStmt.toCore, execStmt, evalExpr, Semantics.restoreOutcomeLocals] at run
+  simp only [SrcStmt.toCore, execStmt, evalExpr] at run
+  have cid : (st.bindUninitialized id).cellId? id = some st.nextCell := by
+    simp [State.bindUninitialized, State.bindCell, State.cellId?]
+  rw [cid] at run
+  simp only at run
+  cases hfind : st.cells.find? (fun cell => cell.id == st.nextCell) with
+  | none =>
+    have hent : (st.bindUninitialized id).cellEntry? st.nextCell = some ⟨st.nextCell, none⟩ := by
+      simp [State.cellEntry?, State.bindUninitialized, State.bindCell, List.find?_append, hfind]
+    rw [hent] at run
+    simp [Semantics.restoreOutcomeLocals] at run
+  | some e =>
+    have hent : (st.bindUninitialized id).cellEntry? st.nextCell = some e := by
+      simp [State.cellEntry?, State.bindUninitialized, State.bindCell, List.find?_append, hfind]
+    rw [hent] at run
+    rcases e with ⟨eid, _ | v⟩
+    · simp [Semantics.restoreOutcomeLocals] at run
+    · simp only [Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, rfl⟩ := run
+      exact ⟨rfl, by simp [State.cellEntry?, hfind], v, rfl⟩
+
+/-- When `Unreachable`'s Core code traps, its state is the caller's with the
+uninitialized binding dropped. -/
+theorem unreachable_trapped {P : Core.Program} {fuel : Nat} {st : State} {id : Nat} {ty : SrcType}
+    {r : Lanius.Trap} {st' : State}
+    (run : execStmt fuel P st (SrcStmt.unreachable id ty).toCore = .trapped r st') :
+    st' = Semantics.restoreLocals st (st.bindUninitialized id) := by
+  rcases fuel with _ | _ | _ | k
+  · simp [execStmt] at run
+  · simp [SrcStmt.toCore, execStmt, Semantics.restoreOutcomeLocals] at run
+  · simp [SrcStmt.toCore, execStmt, evalExpr, Semantics.restoreOutcomeLocals] at run
+  simp only [SrcStmt.toCore, execStmt, evalExpr] at run
+  have cid : (st.bindUninitialized id).cellId? id = some st.nextCell := by
+    simp [State.bindUninitialized, State.bindCell, State.cellId?]
+  rw [cid] at run
+  simp only at run
+  cases hfind : st.cells.find? (fun cell => cell.id == st.nextCell) with
+  | none =>
+    have hent : (st.bindUninitialized id).cellEntry? st.nextCell = some ⟨st.nextCell, none⟩ := by
+      simp [State.cellEntry?, State.bindUninitialized, State.bindCell, List.find?_append, hfind]
+    rw [hent] at run
+    simp only [Semantics.restoreOutcomeLocals, Semantics.Outcome.trapped.injEq] at run
+    exact run.2.symm
+  | some e =>
+    have hent : (st.bindUninitialized id).cellEntry? st.nextCell = some e := by
+      simp [State.cellEntry?, State.bindUninitialized, State.bindCell, List.find?_append, hfind]
+    rw [hent] at run
+    rcases e with ⟨eid, _ | v⟩
+    · simp only [Semantics.restoreOutcomeLocals, Semantics.Outcome.trapped.injEq] at run
+      exact run.2.symm
+    · simp [Semantics.restoreOutcomeLocals] at run
+
 theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st : State} {s : SrcStmt}
     {c : Completion} {st' : State} (run : execStmt fuel sp.toCore st s.toCore = .done c st') :
     Grows st st' := by
@@ -1233,6 +1687,48 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
       split at run
       · rename_i v next valueRun
         exact (matchValue_grows valueRun).trans (let_grows (fun r => below (s := body) r) run)
+      all_goals simp at run
+    | unreachable id ty =>
+      obtain ⟨rfl, -⟩ := unreachable_done run
+      exact Grows.same rfl rfl
+    | matchArm scrutinee enumId variant binds binder ty body rest =>
+      simp only [SrcStmt.toCore] at run
+      generalize hpats : (if binds then [Core.Pattern.wildcard] else []) = pats at run
+      generalize hthen : (if binds then .letLocal binder ty.toCore (.matchValue (.local scrutinee)
+        [(.enumVariant enumId variant [.bind binder], .local binder)]) body.toCore else body.toCore) = T at run
+      simp only [execStmt] at run
+      have testPure : ∀ a ∈ [(Core.Pattern.enumVariant enumId variant pats, Core.Expr.value (.boolean true)),
+          (Core.Pattern.wildcard, Core.Expr.value (.boolean false))],
+          ∀ {k : Nat} {st : State} {v : Value} {st' : State}, evalExpr k sp.toCore st a.2 = .done v st' → st' = st := by
+        intro a mem
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at mem
+        rcases mem with rfl | rfl
+        · exact value_state _
+        · exact value_state _
+      split at run
+      · rename_i next testRun
+        refine (matchPure_grows testPure testRun).trans ?_
+        rw [← hthen] at run
+        split at run
+        · cases f with
+          | zero => simp [execStmt] at run
+          | succ g =>
+            simp only [execStmt] at run
+            split at run
+            · rename_i v n2 initRun
+              have bindPure : ∀ a ∈ [(Core.Pattern.enumVariant enumId variant [.bind binder], Core.Expr.local binder)],
+                  ∀ {k : Nat} {st : State} {v : Value} {st' : State},
+                    evalExpr k sp.toCore st a.2 = .done v st' → st' = st := by
+                intro a mem
+                simp only [List.mem_cons, List.not_mem_nil, or_false] at mem
+                subst mem
+                exact fun r => eval_local_state r
+              exact (matchPure_grows bindPure initRun).trans
+                (let_grows (fun r => ihf g (Nat.lt_succ_self g) (s := body) r) run)
+            all_goals simp at run
+        · exact below (s := body) run
+      · rename_i next testRun
+        exact (matchPure_grows testPure testRun).trans (below (s := rest) run)
       all_goals simp at run
     | set id value =>
       simp only [SrcStmt.toCore, execStmt] at run
@@ -1502,6 +1998,10 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
             all_goals simp_all
           all_goals simp at assertRun
       all_goals simp at run
+    | «break» | «continue» =>
+      simp only [SrcStmt.toCore, execStmt, Semantics.Outcome.done.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      exact Grows.refl _
 
 /-- Every subset statement Core completes grows the heap. -/
 theorem grows (sp : SrcProgram) : ∀ fuel, GrowsBelow sp fuel

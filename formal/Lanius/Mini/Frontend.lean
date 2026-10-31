@@ -14,7 +14,7 @@ public import Lanius.Mini.Frontend.P.pathRef
 public import Lanius.Mini.Frontend.P.typePathSpellings
 public import Lanius.Mini.Frontend.P.moduleOr
 public import Lanius.Mini.Frontend.P.typeDecls
-public import Lanius.Mini.Frontend.P.noNames
+public import Lanius.Mini.Frontend.P.moduleNamesOk
 public import Lanius.Mini.Frontend.P.rootInsts
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.variantOfDecl
@@ -59,12 +59,18 @@ public import Lanius.Mini.Frontend.P.ifEff
 public import Lanius.Mini.Frontend.P.structHead
 public import Lanius.Mini.Frontend.P.variantLetHead
 public import Lanius.Mini.Frontend.P.matchLetHead
+public import Lanius.Mini.Frontend.P.triedErr
+public import Lanius.Mini.Frontend.P.triedIf
+public import Lanius.Mini.Frontend.P.tryLocalOf
+public import Lanius.Mini.Frontend.P.tryLetHead
+public import Lanius.Mini.Frontend.P.tryLet
 public import Lanius.Mini.Frontend.P.whileEvalOf
 public import Lanius.Mini.Frontend.P.setIndexOrEval
 public import Lanius.Mini.Frontend.P.fieldTyAt
 public import Lanius.Mini.Frontend.P.compoundEval
 public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.readFn
+public import Lanius.Mini.Frontend.P.externBody
 public import Lanius.Mini.Frontend.P.readDeclInst
 public import Lanius.Mini.Frontend.P.readInst
 public import Lanius.Mini.Frontend.P.effNamedTys
@@ -107,6 +113,7 @@ public import Lanius.Mini.Frontend.P.Inline_pAddTail
 public import Lanius.Mini.Frontend.P.Inline_pAndTail
 public import Lanius.Mini.Frontend.P.Inline_pArgsMore
 public import Lanius.Mini.Frontend.P.Inline_pBitAnd
+public import Lanius.Mini.Frontend.P.Inline_pContractsNone
 public import Lanius.Mini.Frontend.P.Inline_pElseStmt
 public import Lanius.Mini.Frontend.P.Inline_pEnumTypeParam
 public import Lanius.Mini.Frontend.P.Inline_pExpr
@@ -138,6 +145,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 127 parts, `.P0` on, in source order, whose bodies
+The definitions are in 134 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

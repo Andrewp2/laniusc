@@ -7,6 +7,7 @@ import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.compileModules
+import Lanius.Mini.Compiler.P.lowerApply
 import Lanius.Mini.Compiler.P.lowerCallSig
 
 public section
@@ -45,13 +46,19 @@ def lowerIf (condition : Option Expr) (thenBranch : Option Stmt) (elseBranch : O
       | none => none
       | some e => some (Stmt.ite c t e)
 
-/-- The body checks the condition's guard g before Core evaluates it again. -/
+/-- The body checks the condition's guard g before Core evaluates it again. A loop whose condition c needs the check g tests g, then c, at the top of every iteration, so a continue reaches both. -/
+def whileLoop (slot : Nat) (g : Expr) (c : Expr) (b : Stmt) : Stmt :=
+  if isOne g then
+    Stmt.loop c b
+  else
+    Stmt.loop (Expr.lit 1) (checkThen slot g (Stmt.ite c b Stmt.brk))
+
 def lowerWhile (slot : Nat) (g : Expr) (condition : Option Expr) (body : Option Stmt) : Option Stmt :=
   match condition with
   | none => none
   | some c =>
     match body with
     | none => none
-    | some b => some (Stmt.loop c (thenCheck slot g b))
+    | some b => some (whileLoop slot g c b)
 
 end Lanius.Mini

@@ -1,6 +1,8 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.externBody
+import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.readFn
 
@@ -12,9 +14,12 @@ set_option linter.unusedVariables false
 namespace Lanius.Mini
 
 def readDeclInst (fuel : Nat) (decls : Decls) (fd : FnDecl) (inst : Inst) : Option MFunc :=
-  if diverges fd inst then
-    divergeFunc (readFn fuel decls fd (initTys inst.args)) inst
+  if nodeProd fd.tree = (15) then
+    externFunc fuel decls fd inst.args
   else
-    readFn fuel decls fd inst.args
+    if diverges fd inst then
+      divergeFunc (readFn fuel decls fd (initTys inst.args)) inst
+    else
+      readFn fuel decls fd inst.args
 
 end Lanius.Mini

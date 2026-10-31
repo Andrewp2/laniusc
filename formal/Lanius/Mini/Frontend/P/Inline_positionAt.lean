@@ -5,8 +5,8 @@ public import Lanius.Mini.Frontend.P.distinct
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.isEmptyUsize
+public import Lanius.Mini.Frontend.P.moduleNamesOk
 public import Lanius.Mini.Frontend.P.moduleOr
-public import Lanius.Mini.Frontend.P.noNames
 public import Lanius.Mini.Frontend.P.noToken
 public import Lanius.Mini.Frontend.P.noTrees
 public import Lanius.Mini.Frontend.P.rootInsts

@@ -1,6 +1,8 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.distinct
+import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noToken
 
@@ -16,6 +18,66 @@ def isPathCall (pf : CTree) : Bool :=
   let primary : CTree := kid pf 0
   let tail : CTree := kid pf 1
   decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (161)) && decide (nodeProd (kid tail 3) = (164))
+
+/-- core -/
+def textCore : List Nat :=
+  let t : List Nat := 99 :: 111 :: 114 :: [101]
+  t
+
+/-- result -/
+def textResult : List Nat :=
+  let t : List Nat := 114 :: 101 :: 115 :: 117 :: 108 :: [116]
+  t
+
+/-- Result -/
+def textResultTy : List Nat :=
+  let t : List Nat := 82 :: 101 :: 115 :: 117 :: 108 :: [116]
+  t
+
+/-- Ok -/
+def textOk : List Nat :=
+  let t : List Nat := 79 :: [107]
+  t
+
+/-- Err -/
+def textErr : List Nat :=
+  let t : List Nat := 69 :: 114 :: [114]
+  t
+
+/-- option -/
+def textOption : List Nat :=
+  let t : List Nat := 111 :: 112 :: 116 :: 105 :: 111 :: [110]
+  t
+
+/-- Option -/
+def textOptionTy : List Nat :=
+  let t : List Nat := 79 :: 112 :: 116 :: 105 :: 111 :: [110]
+  t
+
+/-- Some -/
+def textSome : List Nat :=
+  let t : List Nat := 83 :: 111 :: 109 :: [101]
+  t
+
+/-- None -/
+def textNone : List Nat :=
+  let t : List Nat := 78 :: 111 :: 110 :: [101]
+  t
+
+/-- A postfix `path(args)?` (no further postfix). -/
+def isTryCall (pf : CTree) : Bool :=
+  let primary : CTree := kid pf 0
+  let tail : CTree := kid pf 1
+  decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274)) && decide (nodeProd tail = (161)) && decide (nodeProd (kid tail 3) = (318)) && decide (nodeProd (kid (kid tail 3) 1) = (164))
+
+/-- A postfix `x?` (no further postfix). -/
+def isTryLocal (pf : CTree) : Bool :=
+  let tail : CTree := kid pf 1
+  decide (nodeProd tail = (318)) && decide (nodeProd (kid tail 1) = (164))
+
+/-- core::result::Result { Ok, Err } or core::option::Option { Some, None }. -/
+def isTryEnum (t : TypeDecl) : Bool :=
+  t.isEnum && (sameSpellings t.home (textCore :: [textResult]) && sameText t.name textResultTy && sameSpellings t.variants (textOk :: [textErr]) || sameSpellings t.home (textCore :: [textOption]) && sameText t.name textOptionTy && sameSpellings t.variants (textSome :: [textNone]))
 
 /-- The shift of an alignment 2^shift, counting up from 2^s = p. -/
 def shiftOfU64 (fuel : Nat) (k : BitVec 64) (s : Nat) (p : Nat) : Option Nat :=

@@ -25,7 +25,7 @@ abbrev Stmt_Expr_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     RepBool (Lanius.Mini.Expr.agrees x0 x1) w
 
 abbrev Stmt_args_agree (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Expr} {x1 : List Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 90 RepExpr) x0 v0 → (RepList 90 RepExpr) x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Expr} {x1 : List Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 91 RepExpr) x0 v0 → (RepList 91 RepExpr) x1 v1 →
     RepBool (Lanius.Mini.argsAgree x0 x1) w
 
 end Lanius.Faithful.SelfCert

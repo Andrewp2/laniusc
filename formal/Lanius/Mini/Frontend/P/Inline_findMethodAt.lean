@@ -1,13 +1,16 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail
 public import Lanius.Mini.Frontend.P.effNamedTys
 public import Lanius.Mini.Frontend.P.findConst
+public import Lanius.Mini.Frontend.P.floatTyped
 public import Lanius.Mini.Frontend.P.freshId
 public import Lanius.Mini.Frontend.P.hasKids
+public import Lanius.Mini.Frontend.P.intLiteral
 public import Lanius.Mini.Frontend.P.isEmptyUsize
 public import Lanius.Mini.Frontend.P.lxBlockEnd
 public import Lanius.Mini.Frontend.P.lxSpaceEnd
@@ -42,6 +45,21 @@ namespace Lanius.Mini
   let tok : Token := kidToken (kid path 0) 0
   if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
     consBinder (tok.start - env.base) (bindersOf env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) pats payload)
+  else
+    none
+
+/-- `for x in a..n { body }`, a an integer literal and n a local (for_stmt -> For Ident In for_iterable block), read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`: n is read once, and a `continue` in body moves to the next value. The hidden c and e are numbered by the `for` token and x's token, and x by the `in` token, so that the locals are numbered in the order the desugared text declares them. -/
+@[expose] def Inline.forOf (ffuel : Nat) (fenv : FrontEnv) (fscope : List Local) (fs : CTree) : Option MStmt :=
+  let x : Token := kidToken fs 1
+  let iter : CTree := kid fs 3
+  let bound : CTree := kid (kid (kid iter 1) 1) 0
+  if decide (nodeProd iter = (93)) && decide (nodeProd (kid iter 0) = (96)) && decide (nodeProd (kid iter 1) = (97)) && decide (nodeProd (kid (kid iter 1) 1) = (102)) && decide (nodeProd bound = (99)) && decide (nodeProd (kid bound 1) = (164)) && !(member fenv.globals x.text) && freshId fscope (x.start - fenv.base) && freshId fscope ((kidToken fs 0).start - fenv.base) && freshId fscope ((kidToken fs 2).start - fenv.base) then
+    match findLocal fscope (kidToken (kid bound 0) 0).text with
+    | none => none
+    | some n =>
+      match intLiteral (kidToken (kid iter 0) 0).text with
+      | none => none
+      | some a => forRange ((kidToken fs 0).start - fenv.base) (x.start - fenv.base) ((kidToken fs 2).start - fenv.base) n.ty a n.id (blockOf ffuel fenv (({ name := x.text, id := (kidToken fs 2).start - fenv.base, ty := n.ty } : Local) :: fscope) (kid (kid fs 4) 1))
   else
     none
 

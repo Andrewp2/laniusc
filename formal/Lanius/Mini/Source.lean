@@ -12,7 +12,7 @@ import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.layout
+import all Lanius.Mini.Compiler.P.Code_image
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -42,7 +42,8 @@ import all Lanius.Mini.Compiler.P.copyBinding
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
@@ -134,12 +135,12 @@ def SrcProgram.decls (prog : SrcProgram) : SrcDecls :=
   | none => { structs := [], enums := [] }
   | some decls => decls
 
-/-- Functions numbered by position, and one struct or enum declaration per
-type id the program's types name. -/
+/-- Functions numbered by position, then the host functions (`hostFuncs`),
+and one struct or enum declaration per type id the program's types name. -/
 def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
   structures := prog.decls.structs.map SrcStructDecl.toCore
   enumerations := prog.decls.enums.map SrcEnumDecl.toCore
-  functions := coreFuncs 0 prog.funcs
+  functions := coreFuncs 0 prog.funcs ++ hostFuncs
 
 /-- What `compileSource` checks before it optimizes and compiles the lowered
 functions. -/

@@ -8,7 +8,6 @@ import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.moduleOr
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
-import Lanius.Mini.Frontend.P.shrFirst
 import Lanius.Mini.Frontend.P.textSelf
 
 public section
@@ -28,7 +27,48 @@ def aliasDecls (home : List (List Nat)) (name : List Nat) (params : Option (List
   | none => none
   | some ps => some ({ types := [], fns := [], consts := [], imports := [], aliases := [({ home := home, name := name, params := ps, ty := ty } : AliasDecl)] } : Decls)
 
-/-- The declarations an item makes. Imports, extern functions, traits and type aliases with a where clause make none; a use of one is rejected when it is read. -/
+/-- "lanius_std", its quotes included: the ABI of the host services. -/
+def textLaniusStd : List Nat :=
+  let t : List Nat := 34 :: 108 :: 97 :: 110 :: 105 :: 117 :: 115 :: 95 :: 115 :: 116 :: 100 :: [34]
+  t
+
+/-- write_byte -/
+def textWriteByte : List Nat :=
+  let t : List Nat := 119 :: 114 :: 105 :: 116 :: 101 :: 95 :: 98 :: 121 :: 116 :: [101]
+  t
+
+/-- write_stdout -/
+def textWriteStdout : List Nat :=
+  let t : List Nat := 119 :: 114 :: 105 :: 116 :: 101 :: 95 :: 115 :: 116 :: 100 :: 111 :: 117 :: [116]
+  t
+
+/-- write_stderr -/
+def textWriteStderr : List Nat :=
+  let t : List Nat := 119 :: 114 :: 105 :: 116 :: 101 :: 95 :: 115 :: 116 :: 100 :: 101 :: 114 :: [114]
+  t
+
+/-- The Core function id of the host service an `extern "lanius_std" fn` of this name stands for (hostFuncs in SrcProgram.toCore), 0 for none. -/
+def hostId (name : List Nat) : Nat :=
+  if sameText name textWriteByte then
+    4294967296
+  else
+    if sameText name textWriteStdout then
+      4294967297
+    else
+      if sameText name textWriteStderr then
+        4294967298
+      else
+        0
+
+/-- An `extern "lanius_std" fn` naming a host service, without a where clause. -/
+def hostExtern (b : CTree) : Bool :=
+  decide (nodeProd (kid b 1) = (32)) && sameText (kidToken (kid b 1) 0).text textLaniusStd && decide (hostId (kidToken b 3).text ≠ 0) && decide (nodeProd (kid b 9) = (36))
+
+/-- An extern's node with its kids where a fn's are (name 1, type parameters 2, parameters 4, return type 6), so its signature reads as a fn's. -/
+def externTree (b : CTree) : CTree :=
+  CTree.node (15) (kid b 0 :: kid b 3 :: kid b 4 :: kid b 5 :: kid b 6 :: kid b 7 :: kid b 8 :: kid b 9 :: [kid b 10])
+
+/-- The declarations an item makes. An extern function of a host service (host_extern) is a function whose instance calls the service (see extern_func). Imports, other extern functions, traits and type aliases with a where clause make none; a use of one is rejected when it is read. -/
 def itemDecls (fuel : Nat) (home : List (List Nat)) (item : CTree) : Option Decls :=
   let b : CTree := itemBody item
   let p : Nat := nodeProd b
@@ -53,10 +93,13 @@ def itemDecls (fuel : Nat) (home : List (List Nat)) (item : CTree) : Option Decl
               if decide (p = (16)) && decide (nodeProd (kid b 3) = (36)) then
                 aliasDecls home (kidToken b 1).text (typeParams fuel (kid b 2)) (kid b 6)
               else
-                if decide (p = (46)) || decide (p = (43)) || decide (p = (15)) || decide (p = (25)) || decide (p = (16)) then
-                  some noDecls
+                if decide (p = (15)) && hostExtern b then
+                  fnsDecls (consFnDecl (fnDeclOf home (externTree b) false [] b (typeParams fuel (kid b 4))) (some []))
                 else
-                  none
+                  if decide (p = (46)) || decide (p = (43)) || decide (p = (15)) || decide (p = (25)) || decide (p = (16)) then
+                    some noDecls
+                  else
+                    none
 
 def collect (fuel : Nat) (home : List (List Nat)) (items : List CTree) (acc : Decls) : Option Decls :=
   match items with
@@ -158,38 +201,5 @@ def enumsNamedOk (types : List TypeDecl) (m : List (List Nat)) (values : List (L
   match types with
   | [] => true
   | t :: rest => enumNamedOk t m values && enumsNamedOk rest m values
-
-/-- A module's functions, types and constants have distinct names. Variants are scoped by their enum: an enum's variants are distinct, and no variant is spelled like a function or constant of the module (a variant may share a name with a type, or with another enum's variant; a bare use of such a variant must then be unambiguous, see bare_variant). -/
-def moduleNamesOk (decls : Decls) (m : List (List Nat)) : Bool :=
-  distinct (fnNamesIn decls.fns m ++ (typeOnlyNamesIn decls.types m ++ (aliasNamesIn decls.aliases m ++ constNamesIn decls.consts m))) && enumsNamedOk decls.types m (fnNamesIn decls.fns m ++ constNamesIn decls.consts m)
-
-/-- The spellings a local may not take: the module's types, type aliases, variants and constants. A local may be spelled like a function, since a function is only ever named by a call or a path. -/
-def moduleGlobals (decls : Decls) (m : List (List Nat)) : List (List Nat) :=
-  typeNamesIn decls.types m ++ (aliasNamesIn decls.aliases m ++ constNamesIn decls.consts m)
-
-def isNoneType (t : Option SrcType) : Bool :=
-  match t with
-  | none => true
-  | some x => false
-
-/-- No declared type is spelled like a primitive type. -/
-def noPrimitive (types : List TypeDecl) : Bool :=
-  match types with
-  | [] => true
-  | t :: rest => isNoneType (primitive t.name) && noPrimitive rest
-
-def noPrimitiveAlias (aliases : List AliasDecl) : Bool :=
-  match aliases with
-  | [] => true
-  | a :: rest => isNoneType (primitive a.name) && noPrimitiveAlias rest
-
-def modulesDistinctNames (decls : Decls) (modules : List (List (List Nat))) : Bool :=
-  match modules with
-  | [] => true
-  | m :: rest => moduleNamesOk decls m && modulesDistinctNames decls rest
-
-/-- The files are distinct modules, and each module's names are distinct. -/
-def wellNamed (c : Collected) : Bool :=
-  distinctModules c.modules && modulesDistinctNames c.decls c.modules && noPrimitive c.decls.types && noPrimitiveAlias c.decls.aliases
 
 end Lanius.Mini

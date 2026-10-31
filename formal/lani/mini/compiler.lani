@@ -231,6 +231,10 @@ pub enum Expr {
     Fp(FOp, Box<Expr>, Box<Expr>),
 }
 
+// A Linux system call (roadmap F8). Write: write(fd, the heap address,
+// count), arguments in that order.
+pub enum Syscall { Write, }
+
 pub enum Stmt {
     Skip,
     Assign(usize, Expr),
@@ -241,6 +245,10 @@ pub enum Stmt {
     // target, ..., target + count - 1 = callee(args)
     Call(usize, usize, usize, List<Expr>),
     Ret(List<Expr>),
+    // leave the innermost loop
+    Brk,
+    // go back to the innermost loop's condition
+    Cont,
     // target = the cursor rounded up to a multiple of 2^shift; the cursor
     // moves past size bytes from there
     Alloc(usize, usize, Expr),
@@ -255,6 +263,8 @@ pub enum Stmt {
     // target = left op right; a zero divisor, or a signed division of the
     // least value by -1, has no run
     Divide(Word, DivOp, usize, Expr, Expr),
+    // target = what the kernel returns for call(args)
+    Sys(Syscall, usize, List<Expr>),
 }
 
 pub struct Func {
@@ -311,6 +321,8 @@ pub enum Instr {
     Div(Word, DivOp, usize),
     // rax := slot op rax, a float operation through xmm0 and xmm1
     Fp(FOp, usize),
+    // rax := call(slot, slot + 1, slot + 2), through rdi, rsi and rdx
+    Sys(Syscall, usize),
 }
 
 impl BinOp {
@@ -437,6 +449,7 @@ impl Instr {
             StoreWordAt(width, slot) -> plus(16, width.prefix()),
             Div(word, operation, slot) -> plus(plus(18, word.prefix()), operation.size(word)),
             Instr::Fp(operation, slot) -> plus(10, operation.size()),
+            Instr::Sys(kind, slot) -> 34,
         };
     }
 }
@@ -478,43 +491,48 @@ pub fn arg_slots(base: usize, args: List<Expr>, k: usize) -> List<usize> {
 }
 
 // Statement code is placed at offset pos, so jumps are absolute offsets
-// within the function.
-pub fn compile_stmt(base: usize, pos: usize, s: Stmt) -> List<Instr> {
+// within the function. A break jumps to brk with the accumulator 0 (the
+// innermost loop's exit test, which then leaves it); a continue jumps to
+// cont (its condition).
+pub fn compile_stmt(base: usize, pos: usize, brk: usize, cont: usize, s: Stmt) -> List<Instr> {
     return match (s) {
         Skip -> empty(),
         Assign(index, value) -> concat(compile_expr(base, value, 0), single(Store(index))),
-        Seq(first, second) -> seq_code(base, pos, compile_stmt(base, pos, unbox(first)), unbox(second)),
-        Ite(condition, then_branch, else_branch) -> ite_code(base, pos, compile_expr(base, condition, 0), unbox(then_branch), unbox(else_branch)),
+        Seq(first, second) -> seq_code(base, pos, brk, cont, compile_stmt(base, pos, brk, cont, unbox(first)), unbox(second)),
+        Ite(condition, then_branch, else_branch) -> ite_code(base, pos, brk, cont, compile_expr(base, condition, 0), unbox(then_branch), unbox(else_branch)),
         Loop(condition, body) -> loop_code(base, pos, compile_expr(base, condition, 0), unbox(body)),
         Stmt::Call(target, count, callee, args) -> concat(compile_args(base, args, 0), single(Instr::Call(callee, arg_slots(base, args, 0), target, count))),
         Stmt::Ret(values) -> concat(compile_args(base, values, 0), single(Instr::Ret(arg_slots(base, values, 0)))),
+        Brk -> cons(Imm(0), single(Jmp(brk))),
+        Cont -> single(Jmp(cont)),
         Alloc(target, shift, size) -> concat(compile_expr(base, size, 0), cons(Bump(shift), single(Store(target)))),
         LoadByte(target, address) -> concat(compile_expr(base, address, 0), cons(LoadAt, single(Store(target)))),
         StoreByte(address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreAt(base)))),
         LoadWord(width, target, address) -> concat(compile_expr(base, address, 0), cons(LoadWordAt(width), single(Store(target)))),
         StoreWord(width, address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreWordAt(width, base)))),
         Divide(word, operation, target, left, right) -> concat(concat(concat(compile_expr(base, left, 0), single(Store(base))), compile_expr(base, right, 1)), cons(Div(word, operation, base), single(Store(target)))),
+        Stmt::Sys(kind, target, args) -> concat(compile_args(base, args, 0), cons(Instr::Sys(kind, base), single(Store(target)))),
     };
 }
 
 // extract: inline
-fn seq_code(base: usize, pos: usize, first_code: List<Instr>, second: Stmt) -> List<Instr> {
-    return concat(first_code, compile_stmt(base, plus(pos, code_size(first_code)), second));
+fn seq_code(base: usize, pos: usize, brk: usize, cont: usize, first_code: List<Instr>, second: Stmt) -> List<Instr> {
+    return concat(first_code, compile_stmt(base, plus(pos, code_size(first_code)), brk, cont, second));
 }
 
 // extract: inline
-fn ite_code(base: usize, pos: usize, condition_code: List<Instr>, then_branch: Stmt, else_branch: Stmt) -> List<Instr> {
+fn ite_code(base: usize, pos: usize, brk: usize, cont: usize, condition_code: List<Instr>, then_branch: Stmt, else_branch: Stmt) -> List<Instr> {
     let then_start: usize = plus(plus(pos, code_size(condition_code)), 9);
-    let then_code: List<Instr> = compile_stmt(base, then_start, then_branch);
+    let then_code: List<Instr> = compile_stmt(base, then_start, brk, cont, then_branch);
     let else_start: usize = plus(plus(then_start, code_size(then_code)), 5);
-    let else_code: List<Instr> = compile_stmt(base, else_start, else_branch);
+    let else_code: List<Instr> = compile_stmt(base, else_start, brk, cont, else_branch);
     return concat(concat(concat(concat(condition_code, single(Jz(else_start))), then_code), single(Jmp(plus(else_start, code_size(else_code))))), else_code);
 }
 
 // extract: inline
 fn loop_code(base: usize, pos: usize, condition_code: List<Instr>, body: Stmt) -> List<Instr> {
     let body_start: usize = plus(plus(pos, code_size(condition_code)), 9);
-    let body_code: List<Instr> = compile_stmt(base, body_start, body);
+    let body_code: List<Instr> = compile_stmt(base, body_start, plus(pos, code_size(condition_code)), pos, body);
     return concat(concat(concat(condition_code, single(Jz(plus(plus(body_start, code_size(body_code)), 5)))), body_code), single(Jmp(pos)));
 }
 
@@ -585,12 +603,15 @@ impl Stmt {
             Loop(condition, body) -> condition.within(locals) && unbox(body).within(locals, arities, results),
             Stmt::Call(target, count, callee, args) -> locals >= plus(target, count) && count > 0 && arity_is(arities, callee, length(args), count) && all_within(locals, args),
             Stmt::Ret(values) -> (length(values) == results) && all_within(locals, values),
+            Brk -> true,
+            Cont -> true,
             Alloc(target, shift, size) -> locals > target && 32 > shift && size.within(locals),
             LoadByte(target, address) -> locals > target && address.within(locals),
             StoreByte(address, value) -> address.within(locals) && value.within(locals),
             LoadWord(width, target, address) -> locals > target && address.within(locals),
             StoreWord(width, address, value) -> address.within(locals) && value.within(locals),
             Divide(word, operation, target, left, right) -> locals > target && left.within(locals) && right.within(locals),
+            Stmt::Sys(kind, target, args) -> locals > target && (length(args) == 3) && all_within(locals, args),
         };
     }
 
@@ -603,12 +624,15 @@ impl Stmt {
             Loop(condition, body) -> max_of(condition.temps(), unbox(body).temps()),
             Stmt::Call(target, count, callee, args) -> args_temps(args, 0),
             Stmt::Ret(values) -> args_temps(values, 0),
+            Brk -> 0,
+            Cont -> 0,
             Alloc(target, shift, size) -> size.temps(),
             LoadByte(target, address) -> address.temps(),
             StoreByte(address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
             LoadWord(width, target, address) -> address.temps(),
             StoreWord(width, address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
             Divide(word, operation, target, left, right) -> max_of(left.temps(), plus(right.temps(), 1)),
+            Stmt::Sys(kind, target, args) -> args_temps(args, 0),
         };
     }
 }
@@ -637,7 +661,7 @@ pub fn compile_func(arities: List<Arity>, func: Func) -> core::option::Option<Co
     let slots: usize = plus(func.locals, func.body.temps());
     if (func.locals >= func.params && func.results > 0 && func.locals >= func.results && func.body.within(func.locals, arities, func.results) && frame_limit() >= slots) {
         let init: List<Instr> = cons(Imm(0), zero_locals(func.params, minus(func.locals, func.params)));
-        return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), func.body)) });
+        return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), 0, 0, func.body)) });
     }
     return None;
 }
@@ -922,6 +946,16 @@ pub fn store_word_bytes(width: MemWidth, slot: usize) -> List<u8> {
     return concat(concat(cons(72, cons(139, single(141))), le32(slot_offset(slot))), cons(76, cons(1, cons(225, concat(width.rex(), cons(137, cons(129, cons(0, cons(0, cons(0, single(0)))))))))));
 }
 
+// mov rdi, [rbp + disp32] (the fd); mov rsi, [rbp + disp32]; add rsi, r12
+// (the heap address); mov rdx, [rbp + disp32] (the count); mov eax, 1;
+// syscall; mov r11, rcx (the kernel leaves RFLAGS in r11)
+pub fn sys_bytes(kind: Syscall, slot: usize) -> List<u8> {
+    let fd: List<u8> = concat(cons(72, cons(139, single(189))), le32(slot_offset(slot)));
+    let address: List<u8> = concat(concat(cons(72, cons(139, single(181))), le32(slot_offset(plus(slot, 1)))), cons(76, cons(1, single(230))));
+    let count: List<u8> = concat(cons(72, cons(139, single(149))), le32(slot_offset(plus(slot, 2))));
+    return concat(concat(fd, address), concat(count, cons(184, cons(1, cons(0, cons(0, cons(0, cons(15, cons(5, cons(73, cons(137, single(203))))))))))));
+}
+
 // mov rsp, rbp; pop rbp; ret
 pub fn epilogue() -> List<u8> {
     return cons(72, cons(137, cons(236, cons(93, single(195)))));
@@ -1000,6 +1034,7 @@ impl Instr {
             StoreWordAt(width, slot) -> store_word_bytes(width, slot),
             Div(word, operation, slot) -> operation.bytes(word, slot),
             Instr::Fp(operation, slot) -> operation.bytes(slot),
+            Instr::Sys(kind, slot) -> sys_bytes(kind, slot),
         };
     }
 }
@@ -1145,12 +1180,15 @@ impl Stmt {
             Loop(condition, body) -> Stmt::Loop(condition, boxed(unbox(body).rename(table, missing))),
             Stmt::Call(target, count, callee, args) -> Stmt::Call(target, count, get_or(table, callee, missing), args),
             Stmt::Ret(values) -> Stmt::Ret(values),
+            Brk -> Brk,
+            Cont -> Cont,
             Alloc(target, shift, size) -> Stmt::Alloc(target, shift, size),
             LoadByte(target, address) -> Stmt::LoadByte(target, address),
             StoreByte(address, value) -> Stmt::StoreByte(address, value),
             LoadWord(width, target, address) -> Stmt::LoadWord(width, target, address),
             StoreWord(width, address, value) -> Stmt::StoreWord(width, address, value),
             Divide(word, operation, target, left, right) -> Stmt::Divide(word, operation, target, left, right),
+            Stmt::Sys(kind, target, args) -> Stmt::Sys(kind, target, args),
         };
     }
 }
@@ -1241,6 +1279,7 @@ impl Instr {
             StoreWordAt(width, slot) -> single(Piece::Bytes(self.encode(place, pc))),
             Div(word, operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
             Instr::Fp(operation, slot) -> single(Piece::Bytes(self.encode(place, pc))),
+            Instr::Sys(kind, slot) -> single(Piece::Bytes(self.encode(place, pc))),
         };
     }
 }
@@ -1650,6 +1689,17 @@ pub enum SrcStmt {
     ReturnUnit,
     // assert(condition): Core traps when it is false
     Assert(SrcEff),
+    // break; and continue; of the innermost loop
+    Break,
+    Continue,
+    // MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest):
+    // when the enum local scrutinee (Core id enum_id) is the variant, run
+    // body, else run rest. A variant with no payload binds nothing (binds is
+    // false); one with one field, of type ty, binds a copy of it to binder.
+    MatchArm(usize, usize, usize, bool, usize, SrcType, Box<SrcStmt>, Box<SrcStmt>),
+    // Unreachable(id, ty): Core binds id, uninitialized, at type ty and
+    // returns it, so it traps; ty is the function's result type.
+    Unreachable(usize, SrcType),
 }
 
 pub struct SrcParam {
@@ -3223,6 +3273,83 @@ pub fn lower_arms(scope: List<Binding>, slot: usize, target: usize, ty: SrcType,
     };
 }
 
+// The scope of a match arm statement's body: the binder at next, if it binds.
+pub fn arm_body_scope(binds: bool, binder: usize, ty: SrcType, next: usize, scope: List<Binding>) -> List<Binding> {
+    if (!binds) {
+        return scope;
+    }
+    return cons(Binding { id: binder, slot: next, ty: ty }, scope);
+}
+
+pub fn unit_payload(unit: bool) -> core::option::Option<List<Expr>> {
+    if (unit) {
+        return Some(empty());
+    }
+    return None;
+}
+
+pub fn field_payload(bound: bool, values: core::option::Option<List<Expr>>) -> core::option::Option<List<Expr>> {
+    if (bound) {
+        return values;
+    }
+    return None;
+}
+
+// The payload a match arm statement copies to its binder: nothing for a
+// variant with no payload, else its one field, read in the arm's scope from
+// the slots after the tag. A bound field takes slots.
+pub fn arm_payload(scope: List<Binding>, slot: usize, fields: List<SrcType>, binds: bool, binder: usize, ty: SrcType) -> core::option::Option<List<Expr>> {
+    return match (fields) {
+        Nil -> unit_payload(!binds),
+        Cons(f, more) -> field_payload(binds && (ty.size() > 0), lower_arm_value(arm_scope(cons(binder, empty()), fields, plus(slot, 1), scope), Local(binder), ty)),
+    };
+}
+
+// If the tag at slot is the variant, copy the payload to next and run body;
+// else run rest. Tags are 32-bit.
+pub fn lower_arm_stmt(slot: usize, ok: bool, variant: usize, values: core::option::Option<List<Expr>>, next: usize, body: core::option::Option<Stmt>, rest: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (!ok) {
+        return None;
+    }
+    return match (values) {
+        None -> None,
+        Some(vs) -> match (body) {
+            None -> None,
+            Some(b) -> match (rest) {
+                None -> None,
+                Some(r) -> Some(Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(variant as u64))), boxed(assign_from(next, vs, b)), boxed(r))),
+            },
+        },
+    };
+}
+
+pub fn lower_arm_found(scope: List<Binding>, slot: usize, ok: bool, variant: usize, found: core::option::Option<List<SrcType>>, binds: bool, binder: usize, ty: SrcType, next: usize, body: core::option::Option<Stmt>, rest: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (found) {
+        None -> None,
+        Some(fields) -> lower_arm_stmt(slot, ok, variant, arm_payload(scope, slot, fields, binds, binder, ty), next, body, rest),
+    };
+}
+
+pub fn lower_match_arm(scope: List<Binding>, binding: core::option::Option<Binding>, enum_id: usize, variant: usize, binds: bool, binder: usize, ty: SrcType, next: usize, body: core::option::Option<Stmt>, rest: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (b.ty) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, types) -> None,
+            Enum(id, variants) -> lower_arm_found(scope, b.slot, (id == enum_id) && (length(unbox(variants)) < 4294967296), variant, get(unbox(variants), variant), binds, binder, ty, next, body, rest),
+            Ptr -> None,
+            Slice(element) -> None,
+            Unit -> None,
+            Isize -> None,
+            SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
+            Sint(sk) -> None,
+        },
+    };
+}
+
 // The match is exhaustive, its value takes slots, and its tags fit in 32 bits.
 pub fn lower_match_arms(scope: List<Binding>, slot: usize, same: bool, variants: List<List<SrcType>>, arms: List<SrcArm>, ty: SrcType, target: usize) -> core::option::Option<Stmt> {
     if (same && (ty.size() > 0) && (length(arms) == length(variants)) && (length(variants) < 4294967296)) {
@@ -3390,9 +3517,57 @@ pub fn eval_call_sig(sig: Sig, callee: usize, slot: usize, args: EvaluatedArgs) 
     return None;
 }
 
+// Core's host services (roadmap F8) are its functions from id 2^32 on
+// (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is
+// write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr. Their code is
+// system calls.
+//
+// write_byte(handle, value), handle and value in slot and slot + 1: to handle
+// 1 or 2 the value's low byte goes through the heap's byte 0 (no block's,
+// kept as it was) and returns 1; any other handle returns -1, as Core's does
+// with no file open.
+pub fn host_byte_code(slot: usize) -> Stmt {
+    let handle_ok: Expr = Binary(U64, Or, boxed(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(1)))), boxed(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(2)))));
+    let restore: Stmt = Seq(boxed(Stmt::StoreByte(Lit(0), Var(plus(slot, 2)))), boxed(Assign(slot, Lit(1))));
+    let write: Stmt = Seq(boxed(Stmt::Sys(Write, plus(slot, 3), cons(Var(slot), cons(Lit(0), single(Lit(1)))))), boxed(restore));
+    let store: Stmt = Seq(boxed(Stmt::StoreByte(Lit(0), Var(plus(slot, 1)))), boxed(write));
+    let save: Stmt = Seq(boxed(Stmt::LoadByte(plus(slot, 2), Lit(0))), boxed(store));
+    return Stmt::Ite(handle_ok, boxed(save), boxed(Assign(slot, Lit(4294967295))));
+}
+
+// write_stdout / write_stderr(pointer, count) to fd, pointer and count in slot
+// and slot + 1: writes of at most Linux's MAX_RW_COUNT bytes until none are
+// left, then the count as i32.
+pub fn host_write_code(fd: u64, slot: usize) -> Stmt {
+    let count: usize = plus(slot, 1);
+    let chunk: usize = plus(slot, 3);
+    let pick: Stmt = Stmt::Ite(Compare(U64, Lt, boxed(Var(count)), boxed(Lit(2147479552))), boxed(Assign(chunk, Var(count))), boxed(Assign(chunk, Lit(2147479552))));
+    let advance: Stmt = Seq(boxed(Assign(slot, Binary(U64, Add, boxed(Var(slot)), boxed(Var(chunk))))), boxed(Assign(count, Binary(U64, Sub, boxed(Var(count)), boxed(Var(chunk))))));
+    let write: Stmt = Seq(boxed(Stmt::Sys(Write, plus(slot, 4), cons(Lit(fd), cons(Var(slot), single(Var(chunk)))))), boxed(advance));
+    let body: Stmt = Seq(boxed(pick), boxed(write));
+    let looped: Stmt = Seq(boxed(Stmt::Loop(Compare(U64, Ne, boxed(Var(count)), boxed(Lit(0))), boxed(body))), boxed(Assign(slot, Binary(S32, Add, boxed(Var(plus(slot, 2))), boxed(Lit(0))))));
+    return Seq(boxed(Assign(plus(slot, 2), Var(count))), boxed(looped));
+}
+
+pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
+    if ((callee == 4294967296) && types_same(args.types, cons(I32, single(I32)))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_byte_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967297) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_write_code(1, slot))), ty: I32 });
+    }
+    if ((callee == 4294967298) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_write_code(2, slot))), ty: I32 });
+    }
+    return None;
+}
+
 pub fn eval_call(sig: core::option::Option<Sig>, callee: usize, slot: usize, args: core::option::Option<EvaluatedArgs>) -> core::option::Option<Evaluated> {
     return match (sig) {
-        None -> None,
+        None -> match (args) {
+            None -> None,
+            Some(a) -> eval_host(callee, slot, a),
+        },
         Some(s) -> match (args) {
             None -> None,
             Some(a) -> eval_call_sig(s, callee, slot, a),
@@ -3837,7 +4012,7 @@ pub fn lower_while_eval(slot: usize, condition: core::option::Option<Evaluated>,
         None -> None,
         Some(c) -> match (body) {
             None -> None,
-            Some(b) -> eval_same(c, Bool, Seq(boxed(c.stmt), boxed(Loop(Var(slot), boxed(Seq(boxed(b), boxed(c.stmt))))))),
+            Some(b) -> eval_same(c, Bool, Loop(Lit(1), boxed(Seq(boxed(c.stmt), boxed(Ite(Var(slot), boxed(b), boxed(Brk))))))),
         },
     };
 }
@@ -3975,12 +4150,21 @@ pub fn lower_if(condition: core::option::Option<Expr>, then_branch: core::option
 }
 
 // The body checks the condition's guard g before Core evaluates it again.
+// A loop whose condition c needs the check g tests g, then c, at the top of
+// every iteration, so a continue reaches both.
+pub fn while_loop(slot: usize, g: Expr, c: Expr, b: Stmt) -> Stmt {
+    if (is_one(g)) {
+        return Loop(c, boxed(b));
+    }
+    return Loop(Lit(1), boxed(check_then(slot, g, Ite(c, boxed(b), boxed(Brk)))));
+}
+
 pub fn lower_while(slot: usize, g: Expr, condition: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (condition) {
         None -> None,
         Some(c) -> match (body) {
             None -> None,
-            Some(b) -> Some(Loop(c, boxed(then_check(slot, g, b)))),
+            Some(b) -> Some(while_loop(slot, g, c, b)),
         },
     };
 }
@@ -4747,6 +4931,16 @@ pub fn lower_return_unit(ret: SrcType) -> core::option::Option<Stmt> {
 // assert(condition): the condition's code, then 1 / condition into the same
 // slot, which has no run when the condition is false (on x86 the division
 // traps, as Core does), so a failed assert or a panic stops the program.
+// Unreachable at the function's result type: 1 / 0 into the slot, which
+// has no run (on x86 the division traps), as Core traps reading the
+// uninitialized local.
+pub fn lower_unreachable(same: bool, slot: usize) -> core::option::Option<Stmt> {
+    if (same) {
+        return Some(Stmt::Divide(U64, UDiv, slot, Lit(1), Lit(0)));
+    }
+    return None;
+}
+
 pub fn lower_assert(condition: core::option::Option<Evaluated>, slot: usize) -> core::option::Option<Stmt> {
     return match (condition) {
         None -> None,
@@ -4778,7 +4972,7 @@ impl SrcStmt {
             SetCall(id, callee, args) -> guarded(next, guard_all(scope, args), lower_set_call(sigs, scope, lookup(scope, id), callee, args)),
             Then(first, second) -> lower_then(unbox(first).lower(sigs, decls, ret, scope, next), unbox(second).lower(sigs, decls, ret, scope, next)),
             If(condition, then_branch, else_branch) -> guarded(next, condition.guard(scope), lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next))),
-            While(condition, body) -> guarded(next, condition.guard(scope), lower_while(next, condition.guard(scope), lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next))),
+            While(condition, body) -> lower_while(next, condition.guard(scope), lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next)),
             Return(value) -> guarded(next, value.guard(scope), lower_return(lower_value(scope, value, ret))),
             LetAlloc(id, size, shift, body) -> guarded(next, size.guard(scope), lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr }, scope), plus(next, 1)))),
             LetLoad(id, pointer, offset, body) -> guarded(next, guard_and(pointer.guard(scope), offset.guard(scope)), lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1)))),
@@ -4797,6 +4991,51 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> lower_set_field_eval(next, lookup(scope, id), field, value.eval(sigs, decls, scope, next)),
             ReturnUnit -> lower_return_unit(ret),
             Assert(condition) -> lower_assert(condition.eval(sigs, decls, scope, next), next),
+            Break -> Some(Brk),
+            Continue -> Some(Cont),
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
+            Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
+        };
+    }
+
+    // A break or continue outside every loop of the statement: Core's
+    // typing rejects one outside every loop of the function.
+    pub fn breaks_out(self) -> bool {
+        return match (self) {
+            Nop -> false,
+            Let(id, ty, value, body) -> unbox(body).breaks_out(),
+            LetStruct(id, ty, fields, body) -> unbox(body).breaks_out(),
+            LetCall(id, ty, callee, args, body) -> unbox(body).breaks_out(),
+            LetEnum(id, ty, variant, payload, body) -> unbox(body).breaks_out(),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> unbox(body).breaks_out(),
+            Set(id, value) -> false,
+            SetField(id, index, value) -> false,
+            SetCall(id, callee, args) -> false,
+            Then(first, second) -> unbox(first).breaks_out() || unbox(second).breaks_out(),
+            If(condition, then_branch, else_branch) -> unbox(then_branch).breaks_out() || unbox(else_branch).breaks_out(),
+            While(condition, body) -> false,
+            Return(value) -> false,
+            LetAlloc(id, size, shift, body) -> unbox(body).breaks_out(),
+            LetLoad(id, pointer, offset, body) -> unbox(body).breaks_out(),
+            SetByte(pointer, offset, value) -> false,
+            Free(pointer, size, shift) -> false,
+            LetSlice(id, element, pointer, length, body) -> unbox(body).breaks_out(),
+            LetIndex(id, ty, slice, index, body) -> unbox(body).breaks_out(),
+            SetIndex(slice, index, value) -> false,
+            LetEval(id, ty, value, body) -> unbox(body).breaks_out(),
+            SetEval(id, value) -> false,
+            IfEval(condition, then_branch, else_branch) -> unbox(then_branch).breaks_out() || unbox(else_branch).breaks_out(),
+            WhileEval(condition, body) -> false,
+            ReturnEval(value) -> false,
+            Discard(value) -> false,
+            SetIndexEval(slice, index, value) -> false,
+            SetFieldEval(id, field, value) -> false,
+            ReturnUnit -> false,
+            Assert(condition) -> false,
+            Break -> true,
+            Continue -> true,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).breaks_out() || unbox(rest).breaks_out(),
+            Unreachable(id, ty) -> false,
         };
     }
 
@@ -4833,6 +5072,10 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> 0,
             ReturnUnit -> 0,
             Assert(condition) -> 0,
+            Break -> 0,
+            Continue -> 0,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(plus(unbox(body).depth(), ty.size()), unbox(rest).depth()),
+            Unreachable(id, ty) -> 1,
         };
     }
 }
@@ -4908,12 +5151,15 @@ impl Stmt {
             Loop(condition, body) -> max_of(condition.extent(), unbox(body).extent()),
             Stmt::Call(target, count, callee, args) -> max_of(plus(target, count), args_extent(args)),
             Stmt::Ret(values) -> args_extent(values),
+            Brk -> 0,
+            Cont -> 0,
             Alloc(target, shift, size) -> max_of(plus(target, 1), size.extent()),
             LoadByte(target, address) -> max_of(plus(target, 1), address.extent()),
             StoreByte(address, value) -> max_of(address.extent(), value.extent()),
             LoadWord(width, target, address) -> max_of(plus(target, 1), address.extent()),
             StoreWord(width, address, value) -> max_of(address.extent(), value.extent()),
             Stmt::Divide(word, operation, target, left, right) -> max_of(plus(target, 1), max_of(left.extent(), right.extent())),
+            Stmt::Sys(kind, target, args) -> max_of(plus(target, 1), args_extent(args)),
         };
     }
 }
@@ -4940,7 +5186,7 @@ pub fn unit_tail(ret: SrcType, body: core::option::Option<Stmt>) -> core::option
 // type's slots, so it has at least that many locals.
 pub fn lower_func(sigs: List<Sig>, decls: SrcDecls, func: SrcFunc) -> core::option::Option<Func> {
     let count: usize = params_size(func.params);
-    if ((func.ret.size() > 0) && params_valid(func.params)) {
+    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out()) {
         return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, func.body.lower(sigs, decls, func.ret, param_scope(func.params, 0, empty()), count)));
     }
     return None;
@@ -5110,6 +5356,10 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> declare_types(value.types(), decls),
             ReturnUnit -> Some(decls),
             Assert(condition) -> declare_types(condition.types(), decls),
+            Break -> Some(decls),
+            Continue -> Some(decls),
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> declare_in(declare_in(ty.declare(decls), unbox(body)), unbox(rest)),
+            Unreachable(id, ty) -> ty.declare(decls),
         };
     }
 
@@ -5147,6 +5397,10 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> false,
             ReturnUnit -> true,
             Assert(condition) -> false,
+            Break -> false,
+            Continue -> false,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).returns() && unbox(rest).returns(),
+            Unreachable(id, ty) -> true,
         };
     }
 }
@@ -5317,6 +5571,14 @@ impl DivOp {
             SRem -> 1,
             UDiv -> 2,
             URem -> 3,
+        };
+    }
+}
+
+impl Syscall {
+    pub fn number(self) -> usize {
+        return match (self) {
+            Write -> 0,
         };
     }
 }
@@ -5638,12 +5900,15 @@ pub fn assign_agrees(index: usize, value: Expr, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -5656,12 +5921,15 @@ pub fn call_agrees(target: usize, count: usize, callee: usize, args: List<Expr>,
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> (target == t) && (count == n) && (callee == f) && args_agree(args, a),
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -5674,12 +5942,15 @@ pub fn ret_agrees(values: List<Expr>, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> args_agree(values, v),
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -5692,12 +5963,15 @@ pub fn alloc_agrees(target: usize, shift: usize, size: Expr, other: Stmt) -> boo
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> (target == t) && (shift == sh) && size.agrees(sz),
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -5710,12 +5984,15 @@ pub fn load_byte_agrees(target: usize, address: Expr, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> (target == t) && address.agrees(a),
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -5728,12 +6005,15 @@ pub fn store_byte_agrees(address: Expr, value: Expr, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> address.agrees(a) && value.agrees(v),
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -5746,12 +6026,15 @@ pub fn load_word_agrees(width: MemWidth, target: usize, address: Expr, other: St
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> (width.bytes() == w.bytes()) && (target == t) && address.agrees(a),
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -5764,12 +6047,15 @@ pub fn store_word_agrees(width: MemWidth, address: Expr, value: Expr, other: Stm
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> (width.bytes() == w.bytes()) && address.agrees(a) && value.agrees(v),
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -5782,12 +6068,36 @@ pub fn divide_agrees(word: Word, operation: DivOp, target: usize, left: Expr, ri
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> (word.number() == w.number()) && (operation.number() == o.number()) && (target == t) && left.agrees(l) && right.agrees(r),
+        Stmt::Sys(c, t, a) -> false,
+    };
+}
+
+pub fn sys_agrees(kind: Syscall, target: usize, args: List<Expr>, other: Stmt) -> bool {
+    return match (other) {
+        Skip -> false,
+        Assign(i, v) -> false,
+        Seq(f, s) -> false,
+        Ite(c, t, e) -> false,
+        Loop(c, b) -> false,
+        Stmt::Call(t, n, f, a) -> false,
+        Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
+        Alloc(t, sh, sz) -> false,
+        LoadByte(t, a) -> false,
+        StoreByte(a, v) -> false,
+        LoadWord(w, t, a) -> false,
+        StoreWord(w, a, v) -> false,
+        Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> (kind.number() == c.number()) && (target == t) && args_agree(args, a),
     };
 }
 
@@ -5894,6 +6204,70 @@ pub fn assigned(facts: List<Fact>, index: usize, value: Expr) -> List<Fact> {
 }
 
 impl Stmt {
+    pub fn is_brk(self) -> bool {
+        return match (self) {
+            Skip -> false,
+            Assign(i, v) -> false,
+            Seq(f, s) -> false,
+            Ite(c, t, e) -> false,
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Brk -> true,
+            Cont -> false,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
+        };
+    }
+
+    pub fn is_cont(self) -> bool {
+        return match (self) {
+            Skip -> false,
+            Assign(i, v) -> false,
+            Seq(f, s) -> false,
+            Ite(c, t, e) -> false,
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Brk -> false,
+            Cont -> true,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
+        };
+    }
+
+    // A run of this statement may break or continue a loop around it.
+    pub fn jumps(self) -> bool {
+        return match (self) {
+            Skip -> false,
+            Assign(i, v) -> false,
+            Seq(f, s) -> unbox(f).jumps() || unbox(s).jumps(),
+            Ite(c, t, e) -> unbox(t).jumps() || unbox(e).jumps(),
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Brk -> true,
+            Cont -> true,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
+        };
+    }
+
     pub fn is_skip(self) -> bool {
         return match (self) {
             Skip -> true,
@@ -5903,12 +6277,15 @@ impl Stmt {
             Loop(c, b) -> false,
             Stmt::Call(t, n, f, a) -> false,
             Stmt::Ret(v) -> false,
+            Brk -> false,
+            Cont -> false,
             Alloc(t, sh, sz) -> false,
             LoadByte(t, a) -> false,
             StoreByte(a, v) -> false,
             LoadWord(w, t, a) -> false,
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
         };
     }
 
@@ -5924,12 +6301,15 @@ impl Stmt {
             Loop(c, b) -> empty(),
             Stmt::Call(t, n, f, a) -> empty(),
             Stmt::Ret(v) -> empty(),
+            Brk -> empty(),
+            Cont -> empty(),
             Alloc(target, sh, sz) -> kill(facts, target),
             LoadByte(target, a) -> kill(facts, target),
             StoreByte(a, v) -> facts,
             LoadWord(w, target, a) -> kill(facts, target),
             StoreWord(w, a, v) -> facts,
             Divide(w, o, target, l, r) -> kill(facts, target),
+            Stmt::Sys(c, t, a) -> empty(),
         };
     }
 
@@ -5944,32 +6324,40 @@ impl Stmt {
             Loop(c, b) -> !c.mentions(index) && unbox(b).ignores(index),
             Stmt::Call(t, n, f, a) -> !mentions_any(a, index),
             Stmt::Ret(v) -> !mentions_any(v, index),
+            Brk -> true,
+            Cont -> true,
             Alloc(t, sh, sz) -> !sz.mentions(index),
             LoadByte(t, a) -> !a.mentions(index),
             StoreByte(a, v) -> !a.mentions(index) && !v.mentions(index),
             LoadWord(w, t, a) -> !a.mentions(index),
             StoreWord(w, a, v) -> !a.mentions(index) && !v.mentions(index),
             Divide(w, o, t, l, r) -> !l.mentions(index) && !r.mentions(index),
+            Stmt::Sys(c, t, a) -> !mentions_any(a, index),
         };
     }
 
     // Every run of this statement writes slot index before reading it, or
-    // returns without reading it: the value index holds on entry is dead.
+    // returns without reading it: the value index holds on entry is dead. A
+    // statement before the write must not break or continue, as a loop's
+    // code after it may read index.
     pub fn kills(self, index: usize) -> bool {
         return match (self) {
             Skip -> false,
             Assign(i, v) -> (i == index) && !v.mentions(index),
-            Seq(f, s) -> unbox(f).kills(index) || (unbox(f).ignores(index) && unbox(s).kills(index)),
+            Seq(f, s) -> unbox(f).kills(index) || (unbox(f).ignores(index) && !unbox(f).jumps() && unbox(s).kills(index)),
             Ite(c, t, e) -> !c.mentions(index) && unbox(t).kills(index) && unbox(e).kills(index),
             Loop(c, b) -> false,
             Stmt::Call(t, n, f, a) -> false,
             Stmt::Ret(v) -> !mentions_any(v, index),
+            Brk -> false,
+            Cont -> false,
             Alloc(t, sh, sz) -> false,
             LoadByte(t, a) -> false,
             StoreByte(a, v) -> false,
             LoadWord(w, t, a) -> false,
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
         };
     }
 
@@ -5992,12 +6380,15 @@ impl Stmt {
             Loop(condition, body) -> (condition.is_zero() && other.is_skip()) || loop_agrees(condition, unbox(body), other),
             Stmt::Call(target, count, callee, args) -> call_agrees(target, count, callee, subst_all(args, facts), other),
             Stmt::Ret(values) -> ret_agrees(subst_all(values, facts), other),
+            Brk -> other.is_brk(),
+            Cont -> other.is_cont(),
             Alloc(target, shift, size) -> alloc_agrees(target, shift, size.subst(facts), other),
             LoadByte(target, address) -> load_byte_agrees(target, address.subst(facts), other),
             StoreByte(address, value) -> store_byte_agrees(address.subst(facts), value.subst(facts), other),
             LoadWord(width, target, address) -> load_word_agrees(width, target, address.subst(facts), other),
             StoreWord(width, address, value) -> store_word_agrees(width, address.subst(facts), value.subst(facts), other),
             Divide(word, operation, target, left, right) -> divide_agrees(word, operation, target, left.subst(facts), right.subst(facts), other),
+            Stmt::Sys(kind, target, args) -> sys_agrees(kind, target, subst_all(args, facts), other),
         };
     }
 }
@@ -6013,12 +6404,15 @@ fn dead_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> boo
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -6032,12 +6426,15 @@ fn seq_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> bool
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -6068,12 +6465,15 @@ fn ite_agrees(test: Expr, then_branch: Stmt, else_branch: Stmt, facts: List<Fact
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -6088,12 +6488,15 @@ fn loop_agrees(condition: Expr, body: Stmt, other: Stmt) -> bool {
         Loop(c, b) -> condition.agrees(c) && body.agrees(empty(), unbox(b)),
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
         LoadWord(w, t, a) -> false,
         StoreWord(w, a, v) -> false,
         Divide(w, o, t, l, r) -> false,
+        Stmt::Sys(c, t, a) -> false,
     };
 }
 
@@ -6198,12 +6601,15 @@ pub fn opt_facts_after(s: Stmt, facts: List<Fact>) -> List<Fact> {
         Loop(c, b) -> empty(),
         Stmt::Call(t, n, f, a) -> empty(),
         Stmt::Ret(v) -> empty(),
+        Brk -> empty(),
+        Cont -> empty(),
         Alloc(target, sh, sz) -> opt_kill(facts, target),
         LoadByte(target, a) -> opt_kill(facts, target),
         StoreByte(a, v) -> facts,
         LoadWord(w, target, a) -> opt_kill(facts, target),
         StoreWord(w, a, v) -> facts,
         Divide(w, o, target, l, r) -> opt_kill(facts, target),
+        Stmt::Sys(c, t, a) -> empty(),
     };
 }
 
@@ -6363,12 +6769,15 @@ impl Stmt {
             Loop(c, b) -> false,
             Stmt::Call(t, n, f, a) -> false,
             Stmt::Ret(v) -> false,
+            Brk -> false,
+            Cont -> false,
             Alloc(t, sh, sz) -> false,
             LoadByte(t, a) -> false,
             StoreByte(a, v) -> false,
             LoadWord(w, t, a) -> false,
             StoreWord(w, a, v) -> false,
             Divide(w, o, t, l, r) -> false,
+            Stmt::Sys(c, t, a) -> false,
         };
     }
 
@@ -6382,12 +6791,15 @@ impl Stmt {
             Loop(condition, body) -> optimize_loop(condition.optimize(), unbox(body).optimize(empty())),
             Stmt::Call(target, count, callee, args) -> Stmt::Call(target, count, callee, optimize_all(subst_all(args, facts))),
             Stmt::Ret(values) -> Stmt::Ret(optimize_all(subst_all(values, facts))),
+            Brk -> Brk,
+            Cont -> Cont,
             Alloc(target, shift, size) -> Alloc(target, shift, size.subst(facts).optimize()),
             LoadByte(target, address) -> LoadByte(target, address.subst(facts).optimize()),
             StoreByte(address, value) -> StoreByte(address.subst(facts).optimize(), value.subst(facts).optimize()),
             LoadWord(width, target, address) -> LoadWord(width, target, address.subst(facts).optimize()),
             StoreWord(width, address, value) -> StoreWord(width, address.subst(facts).optimize(), value.subst(facts).optimize()),
             Divide(word, operation, target, left, right) -> Divide(word, operation, target, left.subst(facts).optimize(), right.subst(facts).optimize()),
+            Stmt::Sys(kind, target, args) -> Stmt::Sys(kind, target, optimize_all(subst_all(args, facts))),
         };
     }
 }

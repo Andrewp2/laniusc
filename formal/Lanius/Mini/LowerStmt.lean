@@ -286,6 +286,12 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt
   | loopDone c => exact .loopDone c
   | loopNext c _ _ ih1 ih2 => exact .loopNext c (ih1 le) (ih2 le)
   | loopReturned c _ ih => exact .loopReturned c (ih le)
+  | seqBroke _ ih => exact .seqBroke (ih le)
+  | seqContinued _ ih => exact .seqContinued (ih le)
+  | loopBroke c _ ih => exact .loopBroke c (ih le)
+  | loopContinued c _ _ ih1 ih2 => exact .loopContinued c (ih1 le) (ih2 le)
+  | brk => exact .brk
+  | cont => exact .cont
   | call found arity counted inner body _ => exact .call found arity counted (Nat.lt_of_lt_of_le inner le) body
   | ret => exact .ret
   | alloc room => exact .alloc room
@@ -294,6 +300,7 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt
   | loadWord inside => exact .loadWord inside
   | storeWord inside => exact .storeWord inside
   | divide defined => exact .divide defined
+  | sys ran => exact .sys ran
 
 /-! ## Programs -/
 
@@ -302,6 +309,23 @@ theorem sigs_get (funcs : List SrcFunc) (i : Nat) :
   induction funcs generalizing i with
   | nil => simp [sigs]
   | cons head rest ih => cases i <;> simp [sigs, ih]
+
+/-- A callee with a signature is one of the program's functions. -/
+theorem sigs_inside {funcs : List SrcFunc} {i : Nat} {s : Sig} (found : (sigs funcs)[i]? = some s) :
+    i < funcs.length := by
+  rw [sigs_get] at found
+  cases f : funcs[i]? with
+  | none => simp [f] at found
+  | some _ => exact (List.getElem?_eq_some_iff.mp f).1
+
+theorem lowerCall_inside {funcs : List SrcFunc} {scope : List Binding} {callee : Nat} {args : List SrcExpr}
+    {ty : SrcType} {es : List Expr} (ok : lowerCall (sigs funcs) scope callee args ty = some es) :
+    callee < funcs.length := by
+  simp only [lowerCall] at ok
+  split at ok
+  · simp at ok
+  · rename_i found
+    exact sigs_inside found
 
 theorem lowerFuncs_get {sg : List Sig} {ds : SrcDecls} {funcs : List SrcFunc} {lowered : List Func}
     (ok : lowerFuncs sg ds funcs = some lowered) {i : Nat} {f : SrcFunc} (found : funcs[i]? = some f) :
@@ -328,7 +352,7 @@ theorem lowerFuncs_get {sg : List Sig} {ds : SrcDecls} {funcs : List SrcFunc} {l
       exact ih restOk found
 
 theorem lowerFunc_some {sg : List Sig} {ds : SrcDecls} {f : SrcFunc} {g : Func} (ok : lowerFunc sg ds f = some g) :
-    g.params = paramsSize f.params ∧ 0 < f.ret.size ∧ paramsValid f.params = true ∧
+    g.params = paramsSize f.params ∧ 0 < f.ret.size ∧ paramsValid f.params = true ∧ f.body.breaksOut = false ∧
       ∃ b, f.body.lower sg ds f.ret (paramScope f.params 0 []) (paramsSize f.params) = some b ∧
         unitTail f.ret (some b) = some g.body := by
   simp only [lowerFunc] at ok
@@ -346,8 +370,8 @@ theorem lowerFunc_some {sg : List Sig} {ds : SrcDecls} {f : SrcFunc} {g : Func} 
     · split at bodyOk
       · simp at bodyOk
       rename_i b lowered
-      exact ⟨rfl, checks.1, checks.2, b, lowered, by simp only [unitTail, bodyOk, ‹f.ret.isUnit = true›, if_true]⟩
-    · exact ⟨rfl, checks.1, checks.2, body, bodyOk, by simp only [unitTail, if_neg (by assumption)]⟩
+      exact ⟨rfl, checks.1.1, checks.1.2, by simpa using checks.2, b, lowered, by simp only [unitTail, bodyOk, ‹f.ret.isUnit = true›, if_true]⟩
+    · exact ⟨rfl, checks.1.1, checks.1.2, by simpa using checks.2, body, bodyOk, by simp only [unitTail, if_neg (by assumption)]⟩
   · simp at ok
 
 theorem paramTypes_length (params : List SrcParam) : (paramTypes params).length = params.length := by
@@ -752,11 +776,15 @@ the scope still in correspondence, or both return represented values, and
 the heaps agree. -/
 inductive Matches (ret : SrcType) (scope : List Binding) (frame : Nat → Nat) (st : State) :
     Completion → Outcome → Prop where
-  | next {env : Env} {hp : Heap} : Corr scope frame st env → HeapCorr st.heap hp →
+  | next {env : Env} {hp : Heap} : Corr scope frame st env → HeapCorr st.heap st.world hp →
       Matches ret scope frame st .next (.normal env hp)
   | returned {v : Option Value} {bits : List (BitVec 64)} {hp : Heap} :
-      RetHolds ret v bits → bits.length = ret.size → HeapCorr st.heap hp →
+      RetHolds ret v bits → bits.length = ret.size → HeapCorr st.heap st.world hp →
       Matches ret scope frame st (.returned v) (.returned bits hp)
+  | broke {env : Env} {hp : Heap} : Corr scope frame st env → HeapCorr st.heap st.world hp →
+      Matches ret scope frame st .breakLoop (.broke env hp)
+  | continued {env : Env} {hp : Heap} : Corr scope frame st env → HeapCorr st.heap st.world hp →
+      Matches ret scope frame st .continueLoop (.continued env hp)
 
 /-- Core went from `st` to `st'` with completion `c`; the mini statement has a
 derivation from `env` and `hp` with a matching outcome. -/
@@ -780,7 +808,7 @@ def StmtSound (sp : SrcProgram) (mp : Program) (fuel : Nat) : Prop :=
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env} {c : Completion} {st' : State},
     s.lower (sigs sp.funcs) sp.decls ret scope next = some stmt →
     Corr scope frame st env → Layout scope frame base next → st.Fresh → base ≤ st.nextCell →
-    HeapCorr st.heap hp → execStmt fuel sp.toCore st s.toCore = .done c st' →
+    HeapCorr st.heap st.world hp → execStmt fuel sp.toCore st s.toCore = .done c st' →
     st'.heap.nextAddress ≤ hp.limit →
     Simulates mp hp ret scope frame base st env stmt c st'
 
@@ -790,7 +818,7 @@ theorem SrcProgram.target_toCore (sp : SrcProgram) : sp.toCore.target = .x86_64 
 theorem body_sound {sp : SrcProgram} {mp : Program}
     (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {fuel : Nat}
     (ih : StmtSound sp mp fuel) {callee : Nat} {f : SrcFunc} (found : sp.funcs[callee]? = some f)
-    {hp : Heap} {st : State} (fresh : st.Fresh) (hc : HeapCorr st.heap hp) {values : List Value}
+    {hp : Heap} {st : State} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) {values : List Value}
     {bits : List (BitVec 64)} (holds : FieldsHold (paramTypes f.params) values (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize f.params) {v : Value} {c : Completion} {completed : State}
     (run : execStmt fuel sp.toCore (({ st with locals := [] } : State).bindLocals
@@ -799,17 +827,17 @@ theorem body_sound {sp : SrcProgram} {mp : Program}
     (bound : completed.heap.nextAddress ≤ hp.limit) :
     completed.Fresh ∧ Keeps st.nextCell st completed ∧
       ∃ d rs hp', mp.Returns d callee bits hp rs hp' ∧ f.ret.HoldsAt v (Func.entry rs) 0 ∧
-        rs.length = f.ret.size ∧ HeapCorr completed.heap hp' := by
+        rs.length = f.ret.size ∧ HeapCorr completed.heap completed.world hp' := by
   obtain ⟨g, gFound, gOk⟩ := lowerFuncs_get lowered found
-  obtain ⟨gParams, _, valid, b, bodyOk, tail⟩ := lowerFunc_some gOk
+  obtain ⟨gParams, _, valid, inside, b, bodyOk, tail⟩ := lowerFunc_some gOk
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
     (Nat.le_refl _) fresh ⟨rfl, fun _ mem => by simp at mem⟩
     ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem, fun _ mem => by simp at mem,
       fun _ mem => by simp at mem, fun _ mem => by simp at mem⟩
   rw [Nat.zero_add] at fr
-  have hc0 : HeapCorr (({ st with locals := [] } : State).bindLocals (paramBindings f.params values)).heap hp := by
-    rw [(bindLocals_same _ _).1]
+  have hc0 : HeapCorr (({ st with locals := [] } : State).bindLocals (paramBindings f.params values)).heap (({ st with locals := [] } : State).bindLocals (paramBindings f.params values)).world hp := by
+    rw [(bindLocals_same _ _).1, bindLocals_world]
     exact hc
   obtain ⟨freshDone, keepsDone, d, out, exec, agree⟩ :=
     ih (hp := hp) bodyOk corr fr fresh0 keeps0.next hc0 run bound
@@ -859,14 +887,14 @@ they were, and the mini call stores slots representing the result. -/
 theorem call_sound {sp : SrcProgram} {mp : Program}
     (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {fuel : Nat}
     (ih : StmtSound sp mp fuel) {hp : Heap} {scope frame st env} (corr : Corr scope frame st env)
-    (fresh : st.Fresh) (hc : HeapCorr st.heap hp) {callee : Nat} {args : List SrcExpr} {ty : SrcType}
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp) {callee : Nat} {args : List SrcExpr} {ty : SrcType}
     {es : List Expr} (ok : lowerCall (sigs sp.funcs) scope callee args ty = some es) {v : Value} {st' : State}
     (run : evalExpr (fuel + 1) sp.toCore st (.call callee (args.map SrcExpr.toCore)) = .done v st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     st'.Fresh ∧ Keeps st.nextCell st st' ∧ st'.locals = st.locals ∧ 0 < ty.size ∧
-      ∃ d rs hp', ty.HoldsAt v (Func.entry rs) 0 ∧ rs.length = ty.size ∧ HeapCorr st'.heap hp' ∧
+      ∃ d rs hp', ty.HoldsAt v (Func.entry rs) 0 ∧ rs.length = ty.size ∧ HeapCorr st'.heap st'.world hp' ∧
         ∀ target, Exec mp d env hp (.call target ty.size callee es) (.normal (env.setMany target rs) hp') := by
-  obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv run
+  obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv (lowerCall_inside ok) run
   simp only [lowerCall, sigs_get, found, Option.map_some, lowerCallSig] at ok
   split at ok
   · rename_i same
@@ -888,7 +916,7 @@ theorem lowerCall_guard {sp : SrcProgram} {scope frame st env} (corr : Corr scop
     (ok : lowerCall (sigs sp.funcs) scope callee args ty = some es) {fuel : Nat} {v : Value} {st' : State}
     (run : evalExpr (fuel + 1) sp.toCore st (.call callee (args.map SrcExpr.toCore)) = .done v st') :
     (guardAll scope args).eval env = 1 := by
-  obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv run
+  obtain ⟨f, values, afterArgs, completed, c, argsRun, found, _, bodyRun, result, rfl⟩ := call_inv (lowerCall_inside ok) run
   simp only [lowerCall, sigs_get, found, Option.map_some, lowerCallSig] at ok
   split at ok
   · exact lowerArgs_guard corr (SrcProgram.target_toCore sp) ok argsRun
@@ -1475,7 +1503,7 @@ theorem let_tail {sp : SrcProgram} {mp : Program} {fuel : Nat} (ih : StmtSound s
     {frame base st env} (corr : Corr scope frame st env) (fr : Layout scope frame base next)
     (fresh : st.Fresh) (le : base ≤ st.nextCell) (sized : 0 < ty.size) {v : Value} {env' : Env}
     (agree : ScopeAgree scope env env') (holds : ty.HoldsAt v env' next)
-    (hc : HeapCorr st.heap hp) {c : Completion} {st' : State}
+    (hc : HeapCorr st.heap st.world hp) {c : Completion} {st' : State}
     (run : Semantics.restoreOutcomeLocals st
       (execStmt fuel sp.toCore (st.bindLocal id v) body.toCore) = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
@@ -1495,6 +1523,8 @@ theorem let_tail {sp : SrcProgram} {mp : Program} {fuel : Nat} (ih : StmtSound s
     cases matched with
     | next corr'' hc'' => exact .next (corr''.pop fr corr.locals rfl) hc''
     | returned holdsRet len hc'' => exact .returned holdsRet len hc''
+    | broke corr'' hc'' => exact .broke (corr''.pop fr corr.locals rfl) hc''
+    | continued corr'' hc'' => exact .continued (corr''.pop fr corr.locals rfl) hc''
   | trapped => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
   | exited => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
   | outOfFuel => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
@@ -1746,7 +1776,7 @@ variable {sp : SrcProgram} {mp : Program} {fuel : Nat} {ret : SrcType} {scope : 
 
 theorem stmt_nop (ok : SrcStmt.nop.lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fresh : st.Fresh)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st SrcStmt.nop.toCore = .done c st')
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st SrcStmt.nop.toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower, Option.some.injEq] at ok
@@ -1759,7 +1789,7 @@ theorem stmt_let (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {value : 
     {body : SrcStmt} (ok : (SrcStmt.let id ty value body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.let id ty value body).toCore = .done c st')
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.let id ty value body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -1791,7 +1821,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
     (ok : (SrcStmt.letStruct id ty fields body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letStruct id ty fields body).toCore = .done c st')
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letStruct id ty fields body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -1856,7 +1886,7 @@ theorem stmt_letCall (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
     (ok : (SrcStmt.letCall id ty callee args body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letCall id ty callee args body).toCore =
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letCall id ty callee args body).toCore =
       .done c st') (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -1896,7 +1926,7 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
     (ok : (SrcStmt.letEnum id ty variant payload body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letEnum id ty variant payload body).toCore =
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letEnum id ty variant payload body).toCore =
       .done c st') (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -1979,7 +2009,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
       some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letMatch id ty scrutinee enumId arms body).toCore =
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letMatch id ty scrutinee enumId arms body).toCore =
       .done c st') (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower, lowerThen] at ok
@@ -2057,7 +2087,8 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
           lowerArms_sound (mp := mp) (SrcProgram.target_toCore sp) corr fresh fr.slots arms matchOk len
             clear room (Nat.zero_le _) (by simpa using fsFound) kvBound tag payload matchRun
         have corr1 := corr.keeps fresh keeps1 locals1
-        have hc1 : HeapCorr st1.heap hp := by rw [(matchArms_same arms eid 0 matchRun).1]; exact hc
+        have hc1 : HeapCorr st1.heap st1.world hp := by
+          rw [(matchArms_same arms eid 0 matchRun).1, matchArms_world arms eid 0 matchRun]; exact hc
         obtain ⟨fresh', keeps', d, out, exec, matched⟩ :=
           let_tail ih (hp := hp) bodyOk corr1 fr fresh1 (Nat.le_trans le keeps1.next)
             sized (env' := env.setFrom next xs)
@@ -2066,10 +2097,248 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
         exact ⟨fresh', (keeps1.lower le).trans keeps', d, out, .seq (mexec d) exec, matched⟩
   all_goals simp at run
 
+theorem restore_heap (caller st : State) : (Semantics.restoreLocals caller st).heap = st.heap := rfl
+
+theorem restore_world (caller st : State) : (Semantics.restoreLocals caller st).world = st.world := rfl
+
+theorem restore_bindNil (st : State) : Semantics.restoreLocals st (st.bindLocals []) = st := rfl
+
+/-- The tag test of a match arm statement binds nothing, and is true just
+when the scrutinee is the variant and its payload fits the patterns. -/
+theorem armTest_run {P : Core.Program} {st : State} {sc e kv variant : Nat} {vs : List Value}
+    {pats : List Core.Pattern}
+    (localRun : ∀ k, evalExpr (k + 1) P st (.local sc) = .done (.enumeration e kv vs) st)
+    (noBinds : ∀ bs, Semantics.matchPatterns pats vs = some bs → bs = [])
+    {fuel : Nat} {r : Value} {st1 : State}
+    (run : evalExpr fuel P st (.matchValue (.local sc)
+      [(.enumVariant e variant pats, .value (.boolean true)), (.wildcard, .value (.boolean false))]) =
+      .done r st1) :
+    st1 = st ∧ (r = .boolean true ↔ variant = kv ∧ (Semantics.matchPatterns pats vs).isSome = true) ∧
+      (r = .boolean true ∨ r = .boolean false) := by
+  rcases fuel with _ | _ | j
+  · simp [evalExpr] at run
+  · simp [evalExpr] at run
+  · have lr := localRun j
+    simp only [evalExpr] at lr run
+    rw [lr] at run
+    simp only [Semantics.evalMatchArms, Semantics.matchPattern, beq_self_eq_true, Bool.true_and] at run
+    have otherwise : Semantics.evalMatchArms j P st (.enumeration e kv vs)
+        [(.wildcard, .value (.boolean false))] = .done r st1 → st1 = st ∧ r = .boolean false := by
+      intro arms
+      rcases j with _ | _ | i
+      · simp [Semantics.evalMatchArms] at arms
+      · simp [Semantics.evalMatchArms, Semantics.matchPattern, evalExpr, Semantics.restoreOutcomeLocals] at arms
+      · simp only [Semantics.evalMatchArms, Semantics.matchPattern, evalExpr, Semantics.restoreOutcomeLocals,
+          Semantics.Outcome.done.injEq] at arms
+        exact ⟨arms.2.symm.trans (restore_bindNil st), arms.1.symm⟩
+    by_cases hk : variant = kv
+    · subst hk
+      simp only [beq_self_eq_true, ↓reduceIte] at run
+      cases m : Semantics.matchPatterns pats vs with
+      | none =>
+        rw [m] at run
+        obtain ⟨rfl, rfl⟩ := otherwise run
+        simp
+      | some bs =>
+        rw [m] at run
+        obtain rfl := noBinds bs m
+        rcases j with _ | j
+        · simp [evalExpr, Semantics.restoreOutcomeLocals] at run
+        · simp only [evalExpr, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+          obtain ⟨rfl, rfl⟩ := run
+          exact ⟨restore_bindNil st, by simp, .inl rfl⟩
+    · have ne : (variant == kv) = false := by simpa using hk
+      simp only [ne, Bool.false_eq_true, ↓reduceIte] at run
+      obtain ⟨rfl, rfl⟩ := otherwise run
+      simp [hk]
+
+/-- The tag test of a match arm statement completes. -/
+theorem armTest_done {P : Core.Program} {st : State} {sc e kv variant : Nat} {vs : List Value}
+    {pats : List Core.Pattern}
+    (localRun : ∀ k, evalExpr (k + 1) P st (.local sc) = .done (.enumeration e kv vs) st)
+    (noBinds : ∀ bs, Semantics.matchPatterns pats vs = some bs → bs = []) (j : Nat) :
+    ∃ r, evalExpr (j + 1 + 1 + 1 + 1) P st (.matchValue (.local sc)
+      [(.enumVariant e variant pats, .value (.boolean true)), (.wildcard, .value (.boolean false))]) =
+      .done r st := by
+  have lr := localRun (j + 1 + 1)
+  simp only [evalExpr] at lr ⊢
+  simp only [lr]
+  simp only [Semantics.evalMatchArms, Semantics.matchPattern, beq_self_eq_true, Bool.true_and]
+  by_cases hk : variant = kv
+  · subst hk
+    simp only [beq_self_eq_true, ↓reduceIte]
+    cases m : Semantics.matchPatterns pats vs with
+    | none =>
+      simp only [Semantics.evalMatchArms, Semantics.matchPattern, evalExpr, Semantics.restoreOutcomeLocals]
+      exact ⟨_, rfl⟩
+    | some bs =>
+      obtain rfl := noBinds bs m
+      simp only [evalExpr, Semantics.restoreOutcomeLocals]
+      exact ⟨_, rfl⟩
+  · have ne : (variant == kv) = false := by simpa using hk
+    simp only [ne, Bool.false_eq_true, ↓reduceIte, Semantics.evalMatchArms, Semantics.matchPattern, evalExpr,
+      Semantics.restoreOutcomeLocals]
+    exact ⟨_, rfl⟩
+
+/-- The copy of a match arm statement's payload, from the binder's value. -/
+theorem armBind_run {P : Core.Program} {st : State} {sc e variant binder : Nat} {pv : Value}
+    (localRun : ∀ k, evalExpr (k + 1) P st (.local sc) = .done (.enumeration e variant [pv]) st)
+    {k : Nat} {v : Value} {st3 : State}
+    (bindRun : evalExpr k P (st.bindLocals [(binder, pv)]) (.local binder) = .done v st3) :
+    evalExpr (k + 1 + 1) P st (.matchValue (.local sc) [(.enumVariant e variant [.bind binder], .local binder)]) =
+      .done v (Semantics.restoreLocals st st3) := by
+  have lr := localRun k
+  simp only [evalExpr] at lr ⊢
+  simp only [lr]
+  simp only [Semantics.evalMatchArms, Semantics.matchPattern, beq_self_eq_true, Bool.and_self, ↓reduceIte,
+    Semantics.matchPatterns, List.append_nil, bindRun, Semantics.restoreOutcomeLocals]
+
+theorem stmt_matchArm (below : ∀ m ≤ fuel, StmtSound sp mp m) {scrutinee enumId variant binder : Nat}
+    {binds : Bool} {ty : SrcType} {body rest : SrcStmt}
+    (ok : (SrcStmt.matchArm scrutinee enumId variant binds binder ty body rest).lower (sigs sp.funcs) sp.decls ret
+      scope next = some stmt)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell)
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st
+      (SrcStmt.matchArm scrutinee enumId variant binds binder ty body rest).toCore = .done c st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Simulates mp hp ret scope frame base st env stmt c st' := by
+  obtain ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, few, payloadOk, bodyOk, restOk, rfl⟩ :=
+    matchArm_lower_inv ok
+  have bmem := (lookup_mem found).1
+  have variantLt : variant < variants.length := (List.getElem?_eq_some_iff.mp fieldsFound).1
+  have fieldsMem : fields ∈ variants := List.mem_of_getElem? fieldsFound
+  have room : b.slot + 1 + sizes fields ≤ next := by
+    have bound := sizes_le_maxSize_of_mem fieldsMem
+    have := fr.slots b bmem
+    rw [hty] at this
+    simp only [SrcType.size] at this
+    omega
+  have clear : ∀ b' ∈ scope, b'.slot < b.slot + 1 ∨ b.slot + 1 + sizes fields ≤ b'.slot := by
+    intro b' mem'
+    have bound := sizes_le_maxSize_of_mem fieldsMem
+    by_cases same : b' = b
+    · subst same
+      omega
+    · rcases fr.apart b' mem' b bmem same with h | h
+      · have := fr.sized b' mem'
+        omega
+      · rw [hty] at h
+        simp only [SrcType.size] at h
+        omega
+  have shape := armPayload_shape payloadOk
+  obtain ⟨w, entry, holdsW⟩ := corr.values b bmem
+  have localRun : ∀ k, evalExpr (k + 1) sp.toCore st (.local scrutinee) = .done w st := fun k => by
+    simp only [evalExpr, corr.cellId, found, Option.map_some, entry]
+  rw [hty] at holdsW
+  cases holdsW with
+  | @enum _ _ kv fs pvs _ _ fsFound tag payload =>
+  have kvLt : kv < variants.length := (List.getElem?_eq_some_iff.mp fsFound).1
+  -- When the tag is the variant, the payload fits the test's patterns.
+  have fits : variant = kv → (Semantics.matchPatterns (if binds then [.wildcard] else []) pvs).isSome = true := by
+    intro hk
+    subst hk
+    have same : fs = fields := by simpa [fsFound] using fieldsFound
+    subst same
+    rcases shape with ⟨u, rfl, _⟩ | ⟨u, _, s', scopeOk, _⟩
+    · cases payload
+      simp [u, Semantics.matchPatterns]
+    · obtain ⟨_, _, _, _, blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+      rcases pvs with _ | ⟨pv, _ | ⟨pv', more⟩⟩
+      · simp at blen
+      · simp [u, Semantics.matchPatterns, Semantics.matchPattern]
+      · simp at blen
+  simp only [SrcStmt.toCore] at run
+  generalize hpats : (if binds then [Core.Pattern.wildcard] else []) = pats at run fits
+  generalize hthen : (if binds then .letLocal binder ty.toCore (.matchValue (.local scrutinee) [(.enumVariant enumId variant [.bind binder], .local binder)]) body.toCore else body.toCore) = T at run
+  have noBinds : ∀ bs, Semantics.matchPatterns pats pvs = some bs → bs = [] := by
+    intro bs m
+    rw [← hpats] at m
+    split at m <;> rcases pvs with _ | ⟨v, _ | ⟨v', more⟩⟩ <;>
+      simp [Semantics.matchPatterns, Semantics.matchPattern] at m <;> simp_all
+  have differ : variant ≠ kv → BitVec.ofNat 64 kv ≠ BitVec.ofNat 64 variant := fun hk =>
+    ofNat_ne (Nat.lt_trans kvLt (by omega)) (Nat.lt_trans variantLt (by omega)) (Ne.symm hk)
+  simp only [execStmt] at run
+  split at run
+  · -- the variant: bind the payload and run the body
+    rename_i st1 testRun
+    obtain ⟨hst, picked, _⟩ := armTest_run localRun noBinds testRun
+    subst st1
+    obtain ⟨rfl, _⟩ := picked.mp rfl
+    have same : fs = fields := by simpa [fsFound] using fieldsFound
+    subst same
+    have test : (Expr.compare Word.u64 CmpOp.eq (Expr.var b.slot) (Expr.lit (BitVec.ofNat 64 variant))).eval env ≠ 0 := by
+      simp [Expr.eval, Word.holds, CmpOp.holdsU, tag]
+    rcases shape with ⟨u, rfl, rfl⟩ | ⟨u, sized, s', scopeOk, valueOk⟩
+    · simp only [u, Bool.false_eq_true, ↓reduceIte] at hthen
+      subst hthen
+      simp only [armBodyScope, u, Bool.not_false, ↓reduceIte] at bodyOk
+      obtain ⟨fresh', keeps, d, out, exec, matched⟩ :=
+        below fuel (Nat.le_refl _) (hp := hp) bodyOk corr (fr.mono (Nat.le_add_right _ _)) fresh le hc run bound
+      exact ⟨fresh', keeps, d, out, .ifTrue test exec, matched⟩
+    · simp only [u, ↓reduceIte] at hthen
+      subst hthen
+      simp only [armBodyScope, u, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at bodyOk
+      obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+      have mb : Semantics.matchPatterns [.bind binder] pvs = some ([binder].zip pvs) :=
+        matchBinds [binder] pvs blen
+      rcases fuel with _ | f1
+      · simp [execStmt] at run
+      simp only [execStmt] at run
+      split at run
+      · rename_i v st2 initRun
+        rcases f1 with _ | _ | f3
+        · simp [evalExpr] at initRun
+        · simp [evalExpr] at initRun
+        have lr := localRun f3
+        simp only [evalExpr] at lr initRun
+        rw [lr] at initRun
+        simp only [Semantics.evalMatchArms, Semantics.matchPattern, beq_self_eq_true, Bool.and_self,
+          ↓reduceIte, mb] at initRun
+        cases armRun : evalExpr f3 sp.toCore (st.bindLocals ([binder].zip pvs)) (SrcExpr.local binder).toCore with
+        | done v' st3 =>
+          simp only [SrcExpr.toCore] at armRun
+          simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at initRun
+          obtain ⟨rfl, rfl⟩ := initRun
+          obtain ⟨rfl, flat, vshape⟩ := lowerValue_sound corr' (SrcProgram.target_toCore sp) valueOk armRun
+          have slots' := armScope_slots [binder] scopeOk fr.slots room
+          have insens : Insens vs next := Insens.below fun x mem => vshape.below slots' x mem
+          have keeps1 := keeps'.trans (restore_keeps st.nextCell st _)
+          have corr1 := corr.keeps fresh keeps1 rfl
+          obtain ⟨fresh'', keeps'', d, out, exec, matched⟩ :=
+            let_tail (below _ (Nat.le_succ _)) (hp := hp) bodyOk corr1 fr (restore_fresh fresh')
+              (Nat.le_trans le keeps1.next) sized (env' := env.setFrom next vs)
+              (fr.agree fun j below => setFrom_outside vs next env j (.inl below))
+              (flat.store insens) (by rw [restore_heap, restore_world, (bindLocals_same _ st).1, bindLocals_world]; exact hc) run bound
+          exact ⟨fresh'', (keeps1.lower le).trans keeps'', d, out,
+            .ifTrue test (assignFrom_exec vs next exec), matched⟩
+        | trapped =>
+          simp only [SrcExpr.toCore] at armRun
+          simp [armRun, Semantics.restoreOutcomeLocals] at initRun
+        | exited =>
+          simp only [SrcExpr.toCore] at armRun
+          simp [armRun, Semantics.restoreOutcomeLocals] at initRun
+        | outOfFuel =>
+          simp only [SrcExpr.toCore] at armRun
+          simp [armRun, Semantics.restoreOutcomeLocals] at initRun
+      all_goals simp at run
+  · -- another variant: run the rest
+    rename_i st1 testRun
+    obtain ⟨hst, picked, _⟩ := armTest_run localRun noBinds testRun
+    subst st1
+    have hk : variant ≠ kv := fun hk => by
+      have := picked.mpr ⟨hk, fits hk⟩
+      simp at this
+    obtain ⟨fresh', keeps, d, out, exec, matched⟩ :=
+      below fuel (Nat.le_refl _) (hp := hp) restOk corr fr fresh le hc run bound
+    exact ⟨fresh', keeps, d, out, .ifFalse (by simp [Expr.eval, Word.holds, CmpOp.holdsU, tag, differ hk]) exec,
+      matched⟩
+  all_goals simp at run
+
 theorem stmt_set {id : Nat} {value : SrcExpr}
     (ok : (SrcStmt.set id value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.set id value).toCore = .done c st')
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.set id value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -2108,7 +2377,7 @@ theorem stmt_set {id : Nat} {value : SrcExpr}
 theorem stmt_setField {id index : Nat} {value : SrcExpr}
     (ok : (SrcStmt.setField id index value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setField id index value).toCore = .done c st')
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setField id index value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -2180,7 +2449,7 @@ theorem stmt_setCall (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
     (ok : (SrcStmt.setCall id callee args).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setCall id callee args).toCore = .done c st')
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setCall id callee args).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -2224,7 +2493,7 @@ theorem stmt_then (ih : StmtSound sp mp fuel) {first second : SrcStmt}
     (ok : (SrcStmt.then first second).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.then first second).toCore = .done c st')
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.then first second).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower, lowerThen] at ok
@@ -2256,13 +2525,15 @@ theorem stmt_then (ih : StmtSound sp mp fuel) {first second : SrcStmt}
     cases matched1 with
     | next => exact absurd rfl notNext
     | returned holds len hc1 => exact ⟨fresh1, keeps1, d1, _, .seqReturned exec1, .returned holds len hc1⟩
+    | broke corr1 hc1 => exact ⟨fresh1, keeps1, d1, _, .seqBroke exec1, .broke corr1 hc1⟩
+    | continued corr1 hc1 => exact ⟨fresh1, keeps1, d1, _, .seqContinued exec1, .continued corr1 hc1⟩
   all_goals simp at run
 
 theorem stmt_if (ih : StmtSound sp mp fuel) {condition : SrcExpr} {thenBranch elseBranch : SrcStmt}
     (ok : (SrcStmt.if condition thenBranch elseBranch).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.if condition thenBranch elseBranch).toCore =
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.if condition thenBranch elseBranch).toCore =
       .done c st') (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -2303,14 +2574,11 @@ theorem stmt_while (ih : StmtSound sp mp fuel) {condition : SrcExpr} {body : Src
     (ok : (SrcStmt.while condition body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
     (le : base ≤ st.nextCell)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.while condition body).toCore = .done c st')
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.while condition body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   have whileOk := ok
-  simp only [SrcStmt.lower] at ok
-  replace ok := guarded_some ok
-  obtain ⟨stmt, ok, rfl⟩ := ok
-  simp only [lowerWhile] at ok
+  simp only [SrcStmt.lower, lowerWhile] at ok
   split at ok
   · simp at ok
   rename_i x condOk
@@ -2322,17 +2590,17 @@ theorem stmt_while (ih : StmtSound sp mp fuel) {condition : SrcExpr} {body : Src
   simp only [SrcStmt.toCore, execStmt] at run
   split at run
   · rename_i mid condRun
+    have one := lowerAs_guard corr (SrcProgram.target_toCore sp) condOk condRun
     obtain ⟨rfl, y, hy, bits⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) condOk condRun
     cases hy
     simp only [Semantics.Outcome.done.injEq] at run
-    refine Simulates.checked (lowerAs_guard corr (SrcProgram.target_toCore sp) condOk condRun) ?_
     obtain ⟨rfl, rfl⟩ := run
-    exact ⟨fresh, Keeps.refl _ _, 0, _, .loopDone (by rw [bits]; decide), .next corr hc⟩
+    exact ⟨fresh, Keeps.refl _ _, 0, _, Exec.whileLoop_done one (by rw [bits]; decide), .next corr hc⟩
   · rename_i mid condRun
+    have one := lowerAs_guard corr (SrcProgram.target_toCore sp) condOk condRun
     obtain ⟨rfl, y, hy, bits⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) condOk condRun
     cases hy
     have condTrue : x.eval env ≠ 0 := by rw [bits]; decide
-    refine Simulates.checked (lowerAs_guard corr (SrcProgram.target_toCore sp) condOk condRun) ?_
     split at run
     · rename_i completed bodyRun
       obtain ⟨fresh1, keeps1, d1, out1, exec1, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun
@@ -2342,26 +2610,33 @@ theorem stmt_while (ih : StmtSound sp mp fuel) {condition : SrcExpr} {body : Src
         obtain ⟨fresh2, keeps2, d2, out2, exec2, matched2⟩ :=
           ih whileOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) hc1 run
             (by rw [exec1.limit_normal]; exact bound)
-        obtain ⟨pass, exec2⟩ := exec2.checkThen_inv
         exact ⟨fresh2, keeps1.trans keeps2, max d1 d2, out2,
-          .loopNext condTrue ((exec1.thenCheck pass).mono (Nat.le_max_left _ _)) (exec2.mono (Nat.le_max_right _ _)),
+          Exec.whileLoop_next one condTrue (.inl (exec1.mono (Nat.le_max_left _ _))) (exec2.mono (Nat.le_max_right _ _)),
           matched2⟩
     · rename_i completed bodyRun
-      obtain ⟨_, _, _, _, _, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun
+      obtain ⟨fresh1, keeps1, d1, out1, exec1, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun
         (stmt_bound (execStmt_grows bodyRun fresh.2).1 (s := .while condition body) run bound)
-      cases matched1
+      cases matched1 with
+      | continued corr1 hc1 =>
+        obtain ⟨fresh2, keeps2, d2, out2, exec2, matched2⟩ :=
+          ih whileOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) hc1 run
+            (by have limit := exec1.limit; simp only [Outcome.heap] at limit; rw [limit]; exact bound)
+        exact ⟨fresh2, keeps1.trans keeps2, max d1 d2, out2,
+          Exec.whileLoop_next one condTrue (.inr (exec1.mono (Nat.le_max_left _ _))) (exec2.mono (Nat.le_max_right _ _)),
+          matched2⟩
     · rename_i completed bodyRun
       simp only [Semantics.Outcome.done.injEq] at run
-      obtain ⟨-, rfl⟩ := run
-      obtain ⟨_, _, _, _, _, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun bound
-      cases matched1
+      obtain ⟨rfl, rfl⟩ := run
+      obtain ⟨fresh1, keeps1, d1, out1, exec1, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun bound
+      cases matched1 with
+      | broke corr1 hc1 => exact ⟨fresh1, keeps1, d1, _, Exec.whileLoop_broke one condTrue exec1, .next corr1 hc1⟩
     · rename_i value completed bodyRun
       simp only [Semantics.Outcome.done.injEq] at run
       obtain ⟨rfl, rfl⟩ := run
       obtain ⟨fresh1, keeps1, d1, out1, exec1, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun bound
       cases matched1 with
       | returned holds len hc1 =>
-        exact ⟨fresh1, keeps1, d1, _, .loopReturned condTrue exec1.thenCheck_returned, .returned holds len hc1⟩
+        exact ⟨fresh1, keeps1, d1, _, Exec.whileLoop_returned one condTrue exec1, .returned holds len hc1⟩
     all_goals simp at run
   · rename_i w mid notFalse notTrue condRun
     obtain ⟨rfl, y, rfl, _⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) condOk condRun
@@ -2371,7 +2646,7 @@ theorem stmt_while (ih : StmtSound sp mp fuel) {condition : SrcExpr} {body : Src
 theorem stmt_return {value : SrcExpr}
     (ok : (SrcStmt.return value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fresh : st.Fresh)
-    (hc : HeapCorr st.heap hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.return value).toCore = .done c st')
+    (hc : HeapCorr st.heap st.world hp) (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.return value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -2396,7 +2671,7 @@ theorem stmt_return {value : SrcExpr}
 theorem stmt_letAlloc (ih : StmtSound sp mp fuel) {id shift : Nat} {size : SrcExpr} {body : SrcStmt}
     (ok : (SrcStmt.letAlloc id size shift body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letAlloc id size shift body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
@@ -2493,7 +2768,7 @@ theorem address_sound {P : Core.Program} (target : P.target = .x86_64) {k : Nat}
 theorem stmt_letLoad (ih : StmtSound sp mp fuel) {id : Nat} {pointer offset : SrcExpr} {body : SrcStmt}
     (ok : (SrcStmt.letLoad id pointer offset body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letLoad id pointer offset body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
@@ -2556,7 +2831,7 @@ theorem stmt_letLoad (ih : StmtSound sp mp fuel) {id : Nat} {pointer offset : Sr
 
 theorem stmt_setByte {pointer offset value : SrcExpr}
     (ok : (SrcStmt.setByte pointer offset value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
-    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setByte pointer offset value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
@@ -2622,7 +2897,7 @@ theorem stmt_setByte {pointer offset value : SrcExpr}
 
 theorem stmt_free {pointer size : SrcExpr} {shift : Nat}
     (ok : (SrcStmt.free pointer size shift).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
-    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.free pointer size shift).toCore = .done c st') :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   simp only [SrcStmt.lower] at ok
@@ -2678,7 +2953,7 @@ the heap as it was. -/
 theorem mapRawI32Slice_inv {st : State} {a : Nat} {n : Int} {v : Value} {st1 : State}
     (run : Semantics.mapRawI32Slice st a n = .done v st1) :
     ∃ len heap, v = .rawSlice (.scalar (.signed .i32)) a len ∧ st1 = { st with heap } ∧
-      (∀ hp, HeapCorr st.heap hp → HeapCorr heap hp) ∧ len = n.toNat ∧ 0 ≤ n := by
+      (∀ hp, HeapCorr st.heap st.world hp → HeapCorr heap st.world hp) ∧ len = n.toNat ∧ 0 ≤ n := by
   simp only [Semantics.mapRawI32Slice] at run
   split at run
   · simp at run
@@ -2697,7 +2972,7 @@ theorem mapRawNominalSlice_inv {P : Core.Program} {st : State} {element : Core.T
     {v : Value} {st1 : State}
     (run : Semantics.mapRawNominalSlice P st element a n = .done v st1) :
     ∃ len heap, v = .rawSlice element a len ∧ st1 = { st with heap } ∧
-      (∀ hp, HeapCorr st.heap hp → HeapCorr heap hp) ∧ len = n.toNat ∧ 0 ≤ n := by
+      (∀ hp, HeapCorr st.heap st.world hp → HeapCorr heap st.world hp) ∧ len = n.toNat ∧ 0 ≤ n := by
   unfold Semantics.mapRawNominalSlice at run
   split at run
   · simp at run
@@ -2740,7 +3015,7 @@ theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcTy
     ∃ a afterPointer n afterLength len heap, evalExpr k P st p = .done (.pointer a) afterPointer ∧
       evalExpr k P afterPointer l = .done (.signed .i32 n) afterLength ∧
       v = .rawSlice element.toCore a len ∧ st1 = { afterLength with heap } ∧
-      (∀ hp, HeapCorr afterLength.heap hp → HeapCorr heap hp) ∧ len = n.toNat ∧ 0 ≤ n := by
+      (∀ hp, HeapCorr afterLength.heap afterLength.world hp → HeapCorr heap afterLength.world hp) ∧ len = n.toNat ∧ 0 ≤ n := by
   rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
   all_goals
     simp only [SrcType.sliceFrom, evalExpr] at run
@@ -2760,7 +3035,7 @@ theorem stmt_letSlice (ih : StmtSound sp mp fuel) {id : Nat} {element : SrcType}
     {pointer length : SrcExpr} {body : SrcStmt}
     (ok : (SrcStmt.letSlice id element pointer length body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letSlice id element pointer length body).toCore =
       .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
@@ -2918,7 +3193,7 @@ theorem stmt_letIndex_i32 (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} 
     (ok : lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letIndex id ty slice index body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env
@@ -3108,7 +3383,7 @@ theorem stmt_setIndex_i32 {slice : Nat} {index value : SrcExpr} {b : Binding} {e
         match lowerAs scope value element with
         | none => none
         | some v => some (Stmt.storeWord MemWidth.m32 a v)) = some stmt)
-    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndex slice index value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env
@@ -3233,7 +3508,7 @@ theorem addressBelow_eval {env : Env} {base : Expr} {offset : Nat} (fits : offse
 
 /-- A word scalar's load from `base - offset` into `target`. -/
 theorem exec_loadScalar {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Memory.Heap}
-    (hc : HeapCorr heap hp) (tail : heap.nextAddress ≤ hp.limit) {base : Expr}
+    (hc : HeapCorr heap world hp) (tail : heap.nextAddress ≤ hp.limit) {base : Expr}
     {t : SrcType} {w : MemWidth} (hw : wordWidth t = some w) {target offset : Nat} {env : Env} {v : Value}
     (fits : offset ≤ (base.eval env).toNat)
     (read : ∃ k, Semantics.readNativeValue k sp.toCore heap t.toCore ((base.eval env).toNat - offset) = .ok v) :
@@ -3260,7 +3535,7 @@ mutual
 /-- Loading a value of a word type, which Core reads at `base - offset`,
 into the slots from `target`: the slots from `target` hold it after. -/
 theorem exec_loadType {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Memory.Heap}
-    (hc : HeapCorr heap hp) (tail : heap.nextAddress ≤ hp.limit) {base : Expr} :
+    (hc : HeapCorr heap world hp) (tail : heap.nextAddress ≤ hp.limit) {base : Expr} :
     ∀ (t : SrcType), wordType sp.decls t = true → ∀ {target offset : Nat} {env : Env} {v : Value},
       base.Below target → offset ≤ (base.eval env).toNat →
       (∃ k, Semantics.readNativeValue k sp.toCore heap t.toCore ((base.eval env).toNat - offset) = .ok v) →
@@ -3325,7 +3600,7 @@ theorem exec_loadType {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Memor
       exact .seq (.loadWord room) (.seq exec2 exec)
 
 theorem exec_loadTypes {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Memory.Heap}
-    (hc : HeapCorr heap hp) (tail : heap.nextAddress ≤ hp.limit) {base : Expr} :
+    (hc : HeapCorr heap world hp) (tail : heap.nextAddress ≤ hp.limit) {base : Expr} :
     ∀ (fs : List SrcType), wordTypes sp.decls fs = true →
       ∀ {target offset : Nat} {env : Env} {vals : List Value}, base.Below target →
         FieldReads sp.toCore heap (base.eval env).toNat fs vals offset →
@@ -3351,7 +3626,7 @@ theorem exec_loadTypes {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Memo
       exact exec1 (exec2 e)
 
 theorem exec_loadCases {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Memory.Heap}
-    (hc : HeapCorr heap hp) (tail : heap.nextAddress ≤ hp.limit) {base : Expr} :
+    (hc : HeapCorr heap world hp) (tail : heap.nextAddress ≤ hp.limit) {base : Expr} :
     ∀ (vs : List (List SrcType)), wordVariants sp.decls vs = true →
       ∀ {k m target offset : Nat} {env : Env} {fs : List SrcType} {vals : List Value}, vs[m]? = some fs →
         env target = BitVec.ofNat 64 (k + m) → k + m < 2 ^ 64 → base.Below target →
@@ -3390,7 +3665,7 @@ end
 /-- Loading a struct or enum element of a raw slice from `target` on gives
 the value Core reads. -/
 theorem loadElement_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : State}
-    (hc : HeapCorr st.heap hp) (tail : st.heap.nextAddress ≤ hp.limit)
+    (hc : HeapCorr st.heap st.world hp) (tail : st.heap.nextAddress ≤ hp.limit)
     {element : SrcType} (hel : wordElement sp.decls element = true)
     {env : Env} {bslot target : Nat} {i : Expr} {len pos : Nat} {v : Value}
     (posEq : (i.eval env).toNat = pos) (below : (elementBase bslot element.size i).Below target)
@@ -3420,10 +3695,10 @@ theorem isize_word_bits (bits : BitVec 64) : Int.toNat (bits.toInt % 2 ^ 64) = b
 
 /-- A word field's store: Core writes the bytes the mini `storeWord` does. -/
 theorem writeWord_corr {P : Core.Program} {st : State} {heap heap' : Memory.Heap} {hp : Heap}
-    (hc : HeapCorr heap hp) {f : SrcType} {w : MemWidth} (hw : wordWidth f = some w) {k a : Nat}
+    (hc : HeapCorr heap world hp) {f : SrcType} {w : MemWidth} (hw : wordWidth f = some w) {k a : Nat}
     {x : Value} {bits : BitVec 64} (holds : f.Holds x bits)
     (h : Semantics.writeNativeValue (k + 1) P st heap f.toCore a x = .ok heap') :
-    HeapCorr heap' (hp.writeLE a bits.toNat w.bytes) ∧ a + w.bytes ≤ heap.nextAddress ∧
+    HeapCorr heap' world (hp.writeLE a bits.toNat w.bytes) ∧ a + w.bytes ≤ heap.nextAddress ∧
       heap'.nextAddress = heap.nextAddress := by
   rcases wordWidth_cases hw with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨kind, rfl, hk⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨kind, rfl, hk⟩
   · obtain ⟨rfl, bitsV⟩ := holds
@@ -3513,8 +3788,8 @@ theorem exec_storeScalar {sp : SrcProgram} {mp : Program} {st : State} {env : En
     (holds : t.HoldsAt v (Func.entry (Expr.evalAll env values)) first) (fits : offset ≤ (base.eval env).toNat)
     (wrote : ∃ k, Semantics.writeNativeValue k sp.toCore st heap t.toCore ((base.eval env).toNat - offset) v =
       .ok heap')
-    (hc : HeapCorr heap hp) (bound : heap.nextAddress ≤ hp.limit) :
-    ∃ hp', (∀ {d : Nat}, Exec mp d env hp s (.normal env hp')) ∧ HeapCorr heap' hp' ∧
+    (hc : HeapCorr heap world hp) (bound : heap.nextAddress ≤ hp.limit) :
+    ∃ hp', (∀ {d : Nat}, Exec mp d env hp s (.normal env hp')) ∧ HeapCorr heap' world hp' ∧
       heap'.nextAddress = heap.nextAddress ∧ hp'.limit = hp.limit := by
   cases hv : values[first]? with
   | none => simp [storeOne, hv] at ok
@@ -3546,8 +3821,8 @@ theorem exec_storeType {sp : SrcProgram} {mp : Program} {st : State} {env : Env}
         offset ≤ (base.eval env).toNat →
         (∃ k, Semantics.writeNativeValue k sp.toCore st heap t.toCore ((base.eval env).toNat - offset) v =
           .ok heap') →
-        HeapCorr heap hp → heap.nextAddress ≤ hp.limit →
-        ∃ hp', (∀ {d : Nat}, Exec mp d env hp s (.normal env hp')) ∧ HeapCorr heap' hp' ∧
+        HeapCorr heap world hp → heap.nextAddress ≤ hp.limit →
+        ∃ hp', (∀ {d : Nat}, Exec mp d env hp s (.normal env hp')) ∧ HeapCorr heap' world hp' ∧
           heap'.nextAddress = heap.nextAddress ∧ hp'.limit = hp.limit
   | .i32, ok, _, _, _, _, _, _, _, sOk, holds, fits, wrote, hc, bound =>
     exec_storeScalar (wordType_scalar ok rfl) sOk holds fits wrote hc bound
@@ -3604,7 +3879,7 @@ theorem exec_storeType {sp : SrcProgram} {mp : Program} {st : State} {env : Env}
     have insideT := insideT (by simp [Semantics.encodeNatLE])
     have nextT := storeBytes_next tagStored
     simp only [Semantics.encodeNatLE, List.length_map, List.length_range, Nat.add_zero] at insideT
-    have hcT' : HeapCorr tagged
+    have hcT' : HeapCorr tagged world
         (hp.writeLE ((base.eval env).toNat - offset) (tag.eval env).toNat MemWidth.m32.bytes) := by
       rw [writeLE_eq_writeBytes, tagNat]
       simpa [MemWidth.bytes] using hcT
@@ -3629,8 +3904,8 @@ theorem exec_storeTypes {sp : SrcProgram} {mp : Program} {st : State} {env : Env
         storeTypes fs values first base offset = some s →
         FieldsHold fs vals (Func.entry (Expr.evalAll env values)) first →
         FieldWrites sp.toCore st (base.eval env).toNat fs vals offset heap heap' →
-        HeapCorr heap hp → heap.nextAddress ≤ hp.limit →
-        ∃ hp', (∀ {d : Nat}, Exec mp d env hp s (.normal env hp')) ∧ HeapCorr heap' hp' ∧
+        HeapCorr heap world hp → heap.nextAddress ≤ hp.limit →
+        ∃ hp', (∀ {d : Nat}, Exec mp d env hp s (.normal env hp')) ∧ HeapCorr heap' world hp' ∧
           heap'.nextAddress = heap.nextAddress ∧ hp'.limit = hp.limit
   | [], _, first, offset, s, vals, heap, heap', hp, sOk, _, writes, hc, _ => by
     simp only [storeTypes, Option.some.injEq] at sOk
@@ -3666,8 +3941,8 @@ theorem exec_storeCases {sp : SrcProgram} {mp : Program} {st : State} {env : Env
         tag.eval env = BitVec.ofNat 64 (k + m) → k + m < 2 ^ 64 →
         FieldsHold fs vals (Func.entry (Expr.evalAll env values)) first →
         FieldWrites sp.toCore st (base.eval env).toNat fs vals offset heap heap' →
-        HeapCorr heap hp → heap.nextAddress ≤ hp.limit →
-        ∃ hp', (∀ {d : Nat}, Exec mp d env hp s (.normal env hp')) ∧ HeapCorr heap' hp' ∧
+        HeapCorr heap world hp → heap.nextAddress ≤ hp.limit →
+        ∃ hp', (∀ {d : Nat}, Exec mp d env hp s (.normal env hp')) ∧ HeapCorr heap' world hp' ∧
           heap'.nextAddress = heap.nextAddress ∧ hp'.limit = hp.limit
   | [], _, _, _, _, _, _, _, _, _, _, _, _, _, found, _, _, _, _, _, _ => by simp at found
   | fs0 :: rest, ok, tag, k, m, first, offset, s, fs, vals, heap, heap', hp, sOk, found, tagv, bound, fh, writes,
@@ -3710,7 +3985,7 @@ end
 /-- Storing a struct or enum element of a raw slice, its slots given by
 `vs`, writes the bytes Core does. -/
 theorem storeElement_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : State}
-    (hc : HeapCorr st.heap hp) {element : SrcType} (hel : wordElement sp.decls element = true)
+    (hc : HeapCorr st.heap st.world hp) {element : SrcType} (hel : wordElement sp.decls element = true)
     {env : Env} {bslot : Nat} {i : Expr} {pos at_ : Nat} {right : Value} {vs : List Expr} {s : Stmt}
     {heap : Memory.Heap} (posEq : (i.eval env).toNat = pos)
     (located : Semantics.rawSliceElementAddress? sp.toCore element.toCore (env bslot).toNat pos = .ok at_)
@@ -3718,7 +3993,7 @@ theorem storeElement_sound {sp : SrcProgram} {mp : Program} {hp : Heap} {st : St
       .ok heap)
     (flat : FlatValue element right env vs) (ok : storeType element vs 0 (elementBase bslot element.size i) 0 = some s)
     (bound : heap.nextAddress ≤ hp.limit) :
-    ∃ hp', Exec mp 0 env hp s (.normal env hp') ∧ HeapCorr heap hp' := by
+    ∃ hp', Exec mp 0 env hp s (.normal env hp') ∧ HeapCorr heap st.world hp' := by
   obtain ⟨rfl, fits, small⟩ := rawSliceElementAddress_word hel located
   have baseEval : ((elementBase bslot element.size i).eval env).toNat =
       (env bslot).toNat - pos * (8 * element.size) :=
@@ -3734,7 +4009,7 @@ theorem stmt_letIndex_word (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType}
     (ok : lowerLoadType sp.decls next (lookup scope slice) ty (lowerIndex scope index)
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letIndex id ty slice index body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env
@@ -3808,7 +4083,7 @@ theorem stmt_setIndex_word {slice : Nat} {index value : SrcExpr} {b : Binding} {
     (found : lookup scope slice = some b) (hElt : elementOf b.ty = some element)
     (hel : wordElement sp.decls element = true)
     (ok : storeWordElement b element (lowerIndex scope index) scope value = some stmt)
-    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndex slice index value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env
@@ -3870,7 +4145,7 @@ theorem stmt_letIndex (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {sli
     {index : SrcExpr} {body : SrcStmt}
     (ok : (SrcStmt.letIndex id ty slice index body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
     (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
-    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap hp)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.letIndex id ty slice index body).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
@@ -3884,7 +4159,7 @@ theorem stmt_letIndex (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {sli
 
 theorem stmt_setIndex {slice : Nat} {index value : SrcExpr}
     (ok : (SrcStmt.setIndex slice index value).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
-    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.setIndex slice index value).toCore = .done c st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by

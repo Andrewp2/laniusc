@@ -38,12 +38,15 @@ namespace Lanius.Mini
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 @[expose] def Inline.seqAgrees (first : Stmt) (second : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
   match other with
@@ -54,12 +57,15 @@ namespace Lanius.Mini
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- A condition the facts do not make a constant. -/
 @[expose] def Inline.unknown (known : Option (BitVec 64)) : Bool :=
@@ -81,12 +87,15 @@ namespace Lanius.Mini
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- A loop's body runs from states the facts may not describe: no facts. -/
 @[expose] def Inline.loopAgrees (condition : Expr) (body : Stmt) (other : Stmt) : Bool :=
@@ -98,12 +107,15 @@ namespace Lanius.Mini
   | .loop c b => Expr.agrees condition c && Stmt.agrees body [] b
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
   | .loadWord w t a => false
   | .storeWord w a v => false
   | .divide w o t l r => false
+  | .sys c t a => false
 
 /-- The second statement is optimized with the facts after the first; a store to a slot the optimized rest kills is dropped. -/
 @[expose] def Inline.optimizeSequence (first : Stmt) (second : Stmt) (facts : List Fact) : Stmt :=

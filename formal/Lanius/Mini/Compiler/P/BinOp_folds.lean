@@ -82,6 +82,10 @@ def DivOp.number (self : DivOp) : Nat :=
   | .uDiv => 2
   | .uRem => 3
 
+def Syscall.number (self : Syscall) : Nat :=
+  match self with
+  | .write => 0
+
 /-- Unsigned comparison. -/
 def CmpOp.test (self : CmpOp) (a : BitVec 64) (b : BitVec 64) : Bool :=
   match self with

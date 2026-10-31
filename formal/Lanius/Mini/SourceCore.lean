@@ -225,6 +225,20 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .setFieldEval id index value => .expression (.assign .set (.field (.local id) index) value.toCore)
   | .returnUnit => .returnValue none
   | .assert condition => .expression (.intrinsic .assert condition.toCore)
+  | .break => .breakLoop
+  | .continue => .continueLoop
+  | .matchArm scrutinee enumId variant binds binder ty body rest =>
+      .ifThenElse
+        (.matchValue (.local scrutinee)
+          [(.enumVariant enumId variant (if binds then [.wildcard] else []), .value (.boolean true)),
+           (.wildcard, .value (.boolean false))])
+        (if binds then
+          .letLocal binder ty.toCore
+            (.matchValue (.local scrutinee) [(.enumVariant enumId variant [.bind binder], .local binder)])
+            body.toCore
+        else body.toCore)
+        rest.toCore
+  | .unreachable id ty => .letUninitialized id ty.toCore (.returnValue (some (.local id)))
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id
@@ -236,6 +250,40 @@ def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
 def coreFuncs : Nat → List SrcFunc → List Core.Function
   | _, [] => []
   | id, func :: rest => func.toCore id :: coreFuncs (id + 1) rest
+
+/-! ## Host services (roadmap F8)
+
+Core's host services that the verified compiler lowers to system calls are
+Core functions without a body (`ExternalBehavior.host`), from function id
+`hostBase` = 2^32 on, past every program's own functions. A source program
+calls them like its own functions (an `extern` declaration is a function of
+the program whose body returns the host function's result). -/
+
+def hostBase : Nat := 4294967296
+
+/-- The host service at function id `id`. -/
+def hostService? (id : Nat) : Option Core.HostService :=
+  if id = hostBase then some .writeByte
+  else if id = hostBase + 1 then some .writeStdout
+  else if id = hostBase + 2 then some .writeStderr
+  else none
+
+/-- Parameters numbered from `n`. -/
+def numberedParams : Nat → List Core.Ty → List (Nat × Core.Ty)
+  | _, [] => []
+  | n, ty :: rest => (n, ty) :: numberedParams (n + 1) rest
+
+/-- The host function `id` for `service`: its parameters have the service's
+types, numbered from 0. -/
+def hostFunc (id : Nat) (service : Core.HostService) : Core.Function where
+  id := id
+  parameters := numberedParams 0 service.parameterTypes
+  returnType := service.returnType
+  body := none
+  external := some (.host service)
+
+def hostFuncs : List Core.Function :=
+  [hostFunc hostBase .writeByte, hostFunc (hostBase + 1) .writeStdout, hostFunc (hostBase + 2) .writeStderr]
 
 def SrcStructDecl.toCore (decl : SrcStructDecl) : Core.StructDecl where
   id := decl.id

@@ -90,8 +90,17 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
   | letCall id ty callee args body ih =>
     intro k tenv env st c st' le run ok inv rel bound
     obtain ⟨j, v, s1, s2, rfl, vrun, brun, rfl⟩ := letLocal_inv run
+    have inside : callee < sp.funcs.length := by
+      simp only [stmtOk] at ok
+      split at ok
+      · rename_i t ht
+        simp only [Option.bind_eq_some_iff] at ht
+        obtain ⟨ts, hts, hc⟩ := ht
+        obtain ⟨-, f', found', -, -⟩ := callTy_some hc
+        exact inside_of found'
+      · simp at ok
     obtain ⟨i, f, values, afterArgs, completed, cc, rfl, argsRun, found, len, bodyRun, result, rfl⟩ :=
-      call_inv' vrun
+      call_inv' inside vrun
     have e := evalExprs_state args argsRun
     subst afterArgs
     simp only [stmtOk] at ok
@@ -257,6 +266,10 @@ theorem stmt_sim (calls : ∀ i < N, FuncSim sp prims outside i) (ret : SrcType)
     exact ⟨.next, by simp [pstmt, hp], trivial, ran⟩
   | setIndexEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | setFieldEval => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | «break» => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | «continue» => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | matchArm => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
+  | unreachable => intro k tenv env st c st' le run ok; simp [stmtOk] at ok
   | returnUnit =>
     intro k tenv env st c st' le run ok inv rel bound
     simp only [SrcStmt.toCore] at run

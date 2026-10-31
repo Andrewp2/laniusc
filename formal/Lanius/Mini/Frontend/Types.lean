@@ -229,6 +229,8 @@ inductive MEff where
   | xDivide : SrcDivOp → MEff → MEff → MEff
   /-- slice_stride(x) of a slice local x -/
   | xStride : Nat → MEff
+  /-- a call of the host service with this Core function id (see extern_func): only an extern's instance has one -/
+  | xHost : Nat → (List MEff) → MEff
   deriving Repr
 
 /-- An arm of a match expression: its binders, its value and the value's type. -/
@@ -271,6 +273,12 @@ inductive MStmt where
   | mSetFieldEval : Nat → Nat → MEff → MStmt
   | mReturnUnit : MStmt
   | mAssert : MEff → MStmt
+  | mBreak : MStmt
+  | mContinue : MStmt
+  /-- MMatchArm(scrutinee, its type, variant, binds, binder, binder type, body, rest): SrcStmt's MatchArm; without a binder the type is unused. -/
+  | mMatchArm : Nat → Ty → Nat → Bool → Nat → Ty → MStmt → MStmt → MStmt
+  /-- SrcStmt's Unreachable -/
+  | mUnreachable : Nat → Ty → MStmt
   deriving Repr
 
 /-- A call: the function instance and the arguments. -/
@@ -279,7 +287,18 @@ structure Called where
   args : List SrcExpr
   deriving Repr
 
-/-- What a let binds: a value, a call, a variant, a struct literal, a match, an allocation, a raw view, a slice element, or an effectful expression. -/
+/-- What a let binds: a value, a call, a variant, a struct literal, a match, an allocation, a raw view, a slice element, or an effectful expression. `op?` with op a `core::result::Result` or `core::option::Option`: the scrutinee local, its type, the call that binds it (none when op is a local), the success payload's type, the failure arm's binder, whether the failure variant has a payload and its type, and the function's result type. -/
+structure Tried where
+  scrutinee : Nat
+  sty : Ty
+  call : Option MEff
+  okTy : Ty
+  binder : Nat
+  binds : Bool
+  errTy : Ty
+  ret : Ty
+  deriving Repr
+
 inductive LetHead where
   | plain : SrcExpr → LetHead
   | callOf : Called → LetHead
@@ -294,6 +313,8 @@ inductive LetHead where
   /-- slice[index], the slice a local -/
   | indexOf : Nat → SrcExpr → LetHead
   | evalOf : MEff → LetHead
+  /-- op? -/
+  | tryOf : Tried → LetHead
   deriving Repr
 
 /-- Binder ids, and the scope with the binders in it. -/
@@ -312,6 +333,12 @@ structure VariantTy where
 structure ArgsBound where
   args : List MEff
   binds : List Bind
+  deriving Repr
+
+/-- What `let x = init;` binds, and at which type. -/
+structure Untyped where
+  ty : Ty
+  head : LetHead
   deriving Repr
 
 structure MParam where

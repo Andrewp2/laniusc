@@ -36,12 +36,15 @@ def Stmt.rename (self : Stmt) (table : List Nat) (missing : Nat) : Stmt :=
   | .loop condition body => Stmt.loop condition (Stmt.rename body table missing)
   | .call target count callee args => Stmt.call target count (table.getD callee missing) args
   | .ret values => Stmt.ret values
+  | .brk => Stmt.brk
+  | .cont => Stmt.cont
   | .alloc target shift size => Stmt.alloc target shift size
   | .loadByte target address => Stmt.loadByte target address
   | .storeByte address value => Stmt.storeByte address value
   | .loadWord width target address => Stmt.loadWord width target address
   | .storeWord width address value => Stmt.storeWord width address value
   | .divide word operation target left right => Stmt.divide word operation target left right
+  | .sys kind target args => Stmt.sys kind target args
 
 def renameFuncs (table : List Nat) (missing : Nat) (funcs : List Func) : List Func :=
   match funcs with

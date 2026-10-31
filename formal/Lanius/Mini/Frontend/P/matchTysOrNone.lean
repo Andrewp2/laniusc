@@ -21,8 +21,8 @@ import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isFnPath
 import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.joinInsts
+import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.moduleOr
-import Lanius.Mini.Frontend.P.noNames
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.pathRef
@@ -87,6 +87,7 @@ def divergeEff (decls : Decls) (t : Ty) (x : MEff) : MEff :=
   | .xMatch sc ety mt bs vs => x
   | .xDivide op l r => x
   | .xStride sl => x
+  | .xHost id args => x
 
 /-- A match arm's value: a call of a `-> !` function (`None -> panic()`) is its instance at the match's type. -/
 def divergeArm (decls : Decls) (expected : Option Ty) (x : Option MEff) : Option MEff :=

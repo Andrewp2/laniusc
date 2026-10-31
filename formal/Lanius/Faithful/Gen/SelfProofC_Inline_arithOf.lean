@@ -74,10 +74,10 @@ theorem step_arm_bind {prog : SrcProgram} {prims : Prims} {ix_arm_bind ix_plus i
   simp only [src_arm_bind] at h
   faithful [Lanius.Mini.Inline.armBind]
 
-theorem proof_copy_same {prog : SrcProgram} {prims : Prims} {ix_copy_same ix_SrcType_size ix_slot_vars ix_SrcType_same : Nat} (fn : prog.funcs[ix_copy_same]? = some (src_copy_same ix_SrcType_size ix_slot_vars ix_SrcType_same)) (np : prims.isPrim ix_copy_same = false)
+theorem proof_copy_same {prog : SrcProgram} {prims : Prims} {ix_copy_same ix_SrcType_size ix_SrcType_same ix_slot_vars : Nat} (fn : prog.funcs[ix_copy_same]? = some (src_copy_same ix_SrcType_size ix_SrcType_same ix_slot_vars)) (np : prims.isPrim ix_copy_same = false)
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
-    (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n))
-    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n)) {n : Nat} :
+    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
+    (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n)) {n : Nat} :
     Stmt_copy_same prog prims ix_copy_same n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
@@ -86,10 +86,10 @@ theorem proof_copy_same {prog : SrcProgram} {prims : Prims} {ix_copy_same ix_Src
   simp only [src_copy_same] at h
   faithful [Lanius.Mini.Inline.copySame]
 
-theorem proof_copy_slots {prog : SrcProgram} {prims : Prims} {ix_copy_slots ix_SrcType_size ix_slot_vars ix_SrcType_same : Nat} (fn : prog.funcs[ix_copy_slots]? = some (src_copy_slots ix_SrcType_size ix_slot_vars ix_SrcType_same)) (np : prims.isPrim ix_copy_slots = false)
+theorem proof_copy_slots {prog : SrcProgram} {prims : Prims} {ix_copy_slots ix_SrcType_size ix_SrcType_same ix_slot_vars : Nat} (fn : prog.funcs[ix_copy_slots]? = some (src_copy_slots ix_SrcType_size ix_SrcType_same ix_slot_vars)) (np : prims.isPrim ix_copy_slots = false)
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
-    (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n))
-    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n)) {n : Nat} :
+    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
+    (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n)) {n : Nat} :
     Stmt_copy_slots prog prims ix_copy_slots n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n

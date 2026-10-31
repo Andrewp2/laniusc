@@ -168,6 +168,51 @@ theorem proof_p_postfix_member {prog : SrcProgram} {prims : Prims} {ix_p_postfix
   simp only [src_p_postfix_member] at h
   faithful [Lanius.Mini.Inline.pPostfixMember]
 
+theorem proof_p_postfix_try {prog : SrcProgram} {prims : Prims} {ix_p_postfix_try : Nat} (fn : prog.funcs[ix_p_postfix_try]? = some (src_p_postfix_try)) (np : prims.isPrim ix_p_postfix_try = false) {n : Nat} :
+    Stmt_p_postfix_try prog prims ix_p_postfix_try n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_postfix_try] at h
+  faithful [Lanius.Mini.Inline.pPostfixTry]
+
+theorem proof_p_range_bound {prog : SrcProgram} {prims : Prims} {ix_p_range_bound : Nat} (fn : prog.funcs[ix_p_range_bound]? = some (src_p_range_bound)) (np : prims.isPrim ix_p_range_bound = false) {n : Nat} :
+    Stmt_p_range_bound prog prims ix_p_range_bound n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_range_bound] at h
+  faithful [Lanius.Mini.Inline.pRangeBound]
+
+theorem proof_p_range_bound_name {prog : SrcProgram} {prims : Prims} {ix_p_range_bound_name : Nat} (fn : prog.funcs[ix_p_range_bound_name]? = some (src_p_range_bound_name)) (np : prims.isPrim ix_p_range_bound_name = false) {n : Nat} :
+    Stmt_p_range_bound_name prog prims ix_p_range_bound_name n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_range_bound_name] at h
+  faithful [Lanius.Mini.Inline.pRangeBoundName]
+
+theorem proof_p_range_exclusive {prog : SrcProgram} {prims : Prims} {ix_p_range_exclusive : Nat} (fn : prog.funcs[ix_p_range_exclusive]? = some (src_p_range_exclusive)) (np : prims.isPrim ix_p_range_exclusive = false) {n : Nat} :
+    Stmt_p_range_exclusive prog prims ix_p_range_exclusive n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_range_exclusive] at h
+  faithful [Lanius.Mini.Inline.pRangeExclusive]
+
+theorem proof_p_range_start_int {prog : SrcProgram} {prims : Prims} {ix_p_range_start_int : Nat} (fn : prog.funcs[ix_p_range_start_int]? = some (src_p_range_start_int)) (np : prims.isPrim ix_p_range_start_int = false) {n : Nat} :
+    Stmt_p_range_start_int prog prims ix_p_range_start_int n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_range_start_int] at h
+  faithful [Lanius.Mini.Inline.pRangeStartInt]
+
 theorem proof_p_ret_type {prog : SrcProgram} {prims : Prims} {ix_p_ret_type : Nat} (fn : prog.funcs[ix_p_ret_type]? = some (src_p_ret_type)) (np : prims.isPrim ix_p_ret_type = false) {n : Nat} :
     Stmt_p_ret_type prog prims ix_p_ret_type n := by
   intro w h

@@ -22,34 +22,37 @@ def argSlots (base : Nat) (args : List Expr) (k : Nat) : List Nat :=
   | [] => []
   | arg :: rest => (base + k) :: argSlots base rest (k + 1)
 
-/-- Statement code is placed at offset pos, so jumps are absolute offsets within the function. -/
-def compileStmt (base : Nat) (pos : Nat) (s : Stmt) : List Instr :=
+/-- Statement code is placed at offset pos, so jumps are absolute offsets within the function. A break jumps to brk with the accumulator 0 (the innermost loop's exit test, which then leaves it); a continue jumps to cont (its condition). -/
+def compileStmt (base : Nat) (pos : Nat) (brk : Nat) (cont : Nat) (s : Stmt) : List Instr :=
   match s with
   | .skip => []
   | .assign index value => compileExpr base value 0 ++ [Instr.store index]
   | .seq first second =>
-    (let firstCode : List Instr := compileStmt base pos first
-     firstCode ++ compileStmt base (pos + codeSize firstCode) second)
+    (let firstCode : List Instr := compileStmt base pos brk cont first
+     firstCode ++ compileStmt base (pos + codeSize firstCode) brk cont second)
   | .ite condition thenBranch elseBranch =>
     (let conditionCode : List Instr := compileExpr base condition 0
      let thenStart : Nat := pos + codeSize conditionCode + 9
-     let thenCode : List Instr := compileStmt base thenStart thenBranch
+     let thenCode : List Instr := compileStmt base thenStart brk cont thenBranch
      let elseStart : Nat := thenStart + codeSize thenCode + 5
-     let elseCode : List Instr := compileStmt base elseStart elseBranch
+     let elseCode : List Instr := compileStmt base elseStart brk cont elseBranch
      conditionCode ++ [Instr.jz elseStart] ++ thenCode ++ [Instr.jmp (elseStart + codeSize elseCode)] ++ elseCode)
   | .loop condition body =>
     (let conditionCode : List Instr := compileExpr base condition 0
      let bodyStart : Nat := pos + codeSize conditionCode + 9
-     let bodyCode : List Instr := compileStmt base bodyStart body
+     let bodyCode : List Instr := compileStmt base bodyStart (pos + codeSize conditionCode) pos body
      conditionCode ++ [Instr.jz (bodyStart + codeSize bodyCode + 5)] ++ bodyCode ++ [Instr.jmp pos])
   | .call target count callee args => compileArgs base args 0 ++ [Instr.call callee (argSlots base args 0) target count]
   | .ret values => compileArgs base values 0 ++ [Instr.ret (argSlots base values 0)]
+  | .brk => Instr.imm 0 :: [Instr.jmp brk]
+  | .cont => [Instr.jmp cont]
   | .alloc target shift size => compileExpr base size 0 ++ Instr.bump shift :: [Instr.store target]
   | .loadByte target address => compileExpr base address 0 ++ Instr.loadAt :: [Instr.store target]
   | .storeByte address value => compileExpr base address 0 ++ [Instr.store base] ++ (compileExpr base value 1 ++ [Instr.storeAt base])
   | .loadWord width target address => compileExpr base address 0 ++ Instr.loadWordAt width :: [Instr.store target]
   | .storeWord width address value => compileExpr base address 0 ++ [Instr.store base] ++ (compileExpr base value 1 ++ [Instr.storeWordAt width base])
   | .divide word operation target left right => compileExpr base left 0 ++ [Instr.store base] ++ compileExpr base right 1 ++ Instr.div word operation base :: [Instr.store target]
+  | .sys kind target args => compileArgs base args 0 ++ Instr.sys kind base :: [Instr.store target]
 
 def Expr.within (self : Expr) (locals : Nat) : Bool :=
   match self with
@@ -96,12 +99,15 @@ def Stmt.within (self : Stmt) (locals : Nat) (arities : List Arity) (results : N
   | .loop condition body => Expr.within condition locals && Stmt.within body locals arities results
   | .call target count callee args => decide (target + count ≤ locals) && decide (0 < count) && arityIs arities callee args.length count && allWithin locals args
   | .ret values => decide (values.length = results) && allWithin locals values
+  | .brk => true
+  | .cont => true
   | .alloc target shift size => decide (target < locals) && decide (shift < 32) && Expr.within size locals
   | .loadByte target address => decide (target < locals) && Expr.within address locals
   | .storeByte address value => Expr.within address locals && Expr.within value locals
   | .loadWord width target address => decide (target < locals) && Expr.within address locals
   | .storeWord width address value => Expr.within address locals && Expr.within value locals
   | .divide word operation target left right => decide (target < locals) && Expr.within left locals && Expr.within right locals
+  | .sys kind target args => decide (target < locals) && decide (args.length = 3) && allWithin locals args
 
 def Stmt.temps (self : Stmt) : Nat :=
   match self with
@@ -112,12 +118,15 @@ def Stmt.temps (self : Stmt) : Nat :=
   | .loop condition body => max (Expr.temps condition) (Stmt.temps body)
   | .call target count callee args => argsTemps args 0
   | .ret values => argsTemps values 0
+  | .brk => 0
+  | .cont => 0
   | .alloc target shift size => Expr.temps size
   | .loadByte target address => Expr.temps address
   | .storeByte address value => max (Expr.temps address) (Expr.temps value + 1)
   | .loadWord width target address => Expr.temps address
   | .storeWord width address value => max (Expr.temps address) (Expr.temps value + 1)
   | .divide word operation target left right => max (Expr.temps left) (Expr.temps right + 1)
+  | .sys kind target args => argsTemps args 0
 
 /-- Zero the non-parameter locals first, ..., first + count - 1. -/
 def zeroLocals (first : Nat) (count : Nat) : List Instr :=
@@ -135,7 +144,7 @@ def compileFunc (arities : List Arity) (func : Func) : Option Code :=
   let slots : Nat := func.locals + Stmt.temps func.body
   if decide (func.params ≤ func.locals) && decide (0 < func.results) && decide (func.results ≤ func.locals) && Stmt.within func.body func.locals arities func.results && decide (slots ≤ frameLimit) then
     let init : List Instr := Instr.imm 0 :: zeroLocals func.params (func.locals - func.params)
-    some ({ slots := slots, instrs := init ++ compileStmt func.locals (codeSize init) func.body } : Code)
+    some ({ slots := slots, instrs := init ++ compileStmt func.locals (codeSize init) 0 0 func.body } : Code)
   else
     none
 

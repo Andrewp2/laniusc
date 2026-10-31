@@ -25,12 +25,12 @@ abbrev Stmt_diverges (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.diverges x0 x1) w
 
 abbrev Stmt_init_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 136 RepTy) x0 v0 →
-    (RepList 136 RepTy) (Lanius.Mini.initTys x0) w
+  ∀ {x0 : List Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 137 RepTy) x0 v0 →
+    (RepList 137 RepTy) (Lanius.Mini.initTys x0) w
 
 abbrev Stmt_last_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 136 RepTy) x0 v0 →
-    (RepOption 202 RepTy) (Lanius.Mini.lastTy x0) w
+  ∀ {x0 : List Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 137 RepTy) x0 v0 →
+    (RepOption 203 RepTy) (Lanius.Mini.lastTy x0) w
 
 abbrev Stmt_never_ret (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FnDecl} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFnDecl x0 v0 →
@@ -38,6 +38,6 @@ abbrev Stmt_never_ret (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_projection_ret (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Inst} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepInst x2 v2 →
-    (RepOption 202 RepTy) (Lanius.Mini.projectionRet x0 x1 x2) w
+    (RepOption 203 RepTy) (Lanius.Mini.projectionRet x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

@@ -22,6 +22,6 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_eval_divide_sint (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcDivOp} {x1 : Nat} {x2 : Lanius.Mini.Evaluated} {x3 : Lanius.Mini.Evaluated} {x4 : Lanius.Mini.UintTy} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepSrcDivOp x0 v0 → RepNat x1 v1 → RepEvaluated x2 v2 → RepEvaluated x3 v3 → RepUintTy x4 v4 →
-    (RepOption 151 RepEvaluated) (Lanius.Mini.evalDivideSint x0 x1 x2 x3 x4) w
+    (RepOption 152 RepEvaluated) (Lanius.Mini.evalDivideSint x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfCert

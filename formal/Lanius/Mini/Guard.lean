@@ -11,7 +11,7 @@ import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.layout
+import all Lanius.Mini.Compiler.P.Code_image
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -41,7 +41,8 @@ import all Lanius.Mini.Compiler.P.copyBinding
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
@@ -418,6 +419,52 @@ theorem Exec.checkThen {prog : Program} {d : Nat} {env : Env} {hp : Heap} {s : S
   · exact exec
   · exact .ifTrue (by rw [one]; decide) exec
 
+/-! A lowered `while`: `whileLoop slot g c b` checks `g`, then tests `c`, each iteration. -/
+
+theorem Expr.lit_one_ne (env : Env) : (Expr.lit 1).eval env ≠ 0 := by simp [Expr.eval]
+
+theorem Exec.whileLoop_done {prog : Program} {d : Nat} {env : Env} {hp : Heap} {slot : Nat} {g c : Expr}
+    {b : Stmt} (one : g.eval env = 1) (zero : c.eval env = 0) :
+    Exec prog d env hp (Lanius.Mini.whileLoop slot g c b) (.normal env hp) := by
+  unfold Lanius.Mini.whileLoop
+  split
+  · exact .loopDone zero
+  · exact .loopBroke (Expr.lit_one_ne env) ((Exec.ifFalse zero .brk).checkThen one)
+
+theorem Exec.whileLoop_next {prog : Program} {d : Nat} {env env' : Env} {hp hp' : Heap} {slot : Nat}
+    {g c : Expr} {b : Stmt} {out : Outcome} (one : g.eval env = 1) (nonzero : c.eval env ≠ 0)
+    (body : Exec prog d env hp b (.normal env' hp') ∨ Exec prog d env hp b (.continued env' hp'))
+    (rest : Exec prog d env' hp' (Lanius.Mini.whileLoop slot g c b) out) :
+    Exec prog d env hp (Lanius.Mini.whileLoop slot g c b) out := by
+  unfold Lanius.Mini.whileLoop at rest ⊢
+  by_cases isOne : Lanius.Mini.isOne g = true
+  · simp only [isOne, if_true] at rest ⊢
+    rcases body with body | body
+    · exact .loopNext nonzero body rest
+    · exact .loopContinued nonzero body rest
+  · simp only [isOne, Bool.false_eq_true, if_false] at rest ⊢
+    rcases body with body | body
+    · exact .loopNext (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one) rest
+    · exact .loopContinued (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one) rest
+
+theorem Exec.whileLoop_broke {prog : Program} {d : Nat} {env env' : Env} {hp hp' : Heap} {slot : Nat}
+    {g c : Expr} {b : Stmt} (one : g.eval env = 1) (nonzero : c.eval env ≠ 0)
+    (body : Exec prog d env hp b (.broke env' hp')) :
+    Exec prog d env hp (Lanius.Mini.whileLoop slot g c b) (.normal env' hp') := by
+  unfold Lanius.Mini.whileLoop
+  split
+  · exact .loopBroke nonzero body
+  · exact .loopBroke (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one)
+
+theorem Exec.whileLoop_returned {prog : Program} {d : Nat} {env : Env} {hp hp' : Heap} {slot : Nat}
+    {g c : Expr} {b : Stmt} {values : List (BitVec 64)} (one : g.eval env = 1) (nonzero : c.eval env ≠ 0)
+    (body : Exec prog d env hp b (.returned values hp')) :
+    Exec prog d env hp (Lanius.Mini.whileLoop slot g c b) (.returned values hp') := by
+  unfold Lanius.Mini.whileLoop
+  split
+  · exact .loopReturned nonzero body
+  · exact .loopReturned (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one)
+
 theorem Exec.thenCheck {prog : Program} {d : Nat} {env env' : Env} {hp hp' : Heap} {s : Stmt}
     {slot : Nat} {g : Expr} (exec : Exec prog d env hp s (.normal env' hp')) (pass : g.eval env' ≠ 0) :
     Exec prog d env hp (Lanius.Mini.thenCheck slot g s) (.normal env' hp') := by
@@ -454,5 +501,95 @@ theorem Exec.thenCheck_returned {prog : Program} {d : Nat} {env : Env} {hp hp' :
   split
   · exact exec
   · exact .seqReturned exec
+
+/-- A match arm statement's payload: nothing for a variant with no payload,
+else one field that takes slots, which the binder copies. -/
+theorem armPayload_shape {scope : List Binding} {slot : Nat} {fields : List SrcType} {binds : Bool}
+    {binder : Nat} {ty : SrcType} {vs : List Expr} (h : armPayload scope slot fields binds binder ty = some vs) :
+    (binds = false ∧ fields = [] ∧ vs = []) ∨
+      (binds = true ∧ 0 < ty.size ∧ ∃ s', armScope [binder] fields (slot + 1) scope = some s' ∧
+        lowerValue s' (.local binder) ty = some vs) := by
+  cases fields with
+  | nil =>
+    simp only [armPayload, unitPayload] at h
+    split at h
+    · rename_i u
+      simp only [Option.some.injEq] at h
+      exact .inl ⟨by simpa using u, rfl, h.symm⟩
+    · simp at h
+  | cons f more =>
+    simp only [armPayload, fieldPayload] at h
+    split at h
+    · rename_i cnd
+      simp only [lowerArmValue] at h
+      split at h
+      · simp at h
+      rename_i s' scopeOk
+      have cnd' : binds = true ∧ 0 < ty.size := by simpa using cnd
+      exact .inr ⟨cnd'.1, cnd'.2, s', scopeOk, h⟩
+    · simp at h
+
+/-- What lowering a match arm statement checks, and what it emits. -/
+theorem matchArm_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {scope : List Binding}
+    {next scrutinee enumId variant binder : Nat} {binds : Bool} {ty : SrcType} {body rest : SrcStmt}
+    {stmt : Stmt} (ok : (SrcStmt.matchArm scrutinee enumId variant binds binder ty body rest).lower sigs decls ret scope next =
+      some stmt) :
+    ∃ b variants fields vs bstmt rstmt, lookup scope scrutinee = some b ∧ b.ty = .enum enumId variants ∧
+      variants[variant]? = some fields ∧ variants.length < 4294967296 ∧
+      armPayload scope b.slot fields binds binder ty = some vs ∧
+      body.lower sigs decls ret (armBodyScope binds binder ty next scope) (next + ty.size) = some bstmt ∧
+      rest.lower sigs decls ret scope next = some rstmt ∧
+      stmt = .ite (.compare .u64 .eq (.var b.slot) (.lit (BitVec.ofNat 64 variant)))
+        (assignFrom next vs bstmt) rstmt := by
+  simp only [SrcStmt.lower, lowerMatchArm] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  split at ok
+  · simp at ok
+  · simp at ok
+  · simp at ok
+  · simp at ok
+  case h_6 => simp at ok
+  case h_7 => simp at ok
+  case h_8 => simp at ok
+  case h_9 => simp at ok
+  case h_10 => simp at ok
+  case h_11 => simp at ok
+  case h_12 => simp at ok
+  rename_i eid variants hty
+  simp only [lowerArmFound] at ok
+  split at ok
+  · simp at ok
+  rename_i fields fieldsFound
+  simp only [lowerArmStmt] at ok
+  split at ok
+  · simp at ok
+  rename_i cond
+  split at ok
+  · simp at ok
+  rename_i vs payloadOk
+  split at ok
+  · simp at ok
+  rename_i bstmt bodyOk
+  split at ok
+  · simp at ok
+  rename_i rstmt restOk
+  simp only [Option.some.injEq] at ok
+  have cond' : eid = enumId ∧ variants.length < 4294967296 := by simpa using cond
+  obtain ⟨rfl, few⟩ := cond'
+  exact ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, few, payloadOk, bodyOk, restOk, ok.symm⟩
+
+/-- What lowering `Unreachable` checks, and what it emits. -/
+theorem unreachable_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {scope : List Binding}
+    {next id : Nat} {ty : SrcType} {stmt : Stmt}
+    (ok : (SrcStmt.unreachable id ty).lower sigs decls ret scope next = some stmt) :
+    ty.same ret = true ∧ stmt = .divide .u64 .uDiv next (.lit 1) (.lit 0) := by
+  simp only [SrcStmt.lower, lowerUnreachable] at ok
+  split at ok
+  · rename_i same
+    simp only [Option.some.injEq] at ok
+    exact ⟨same, ok.symm⟩
+  · simp at ok
 
 end Lanius.Mini

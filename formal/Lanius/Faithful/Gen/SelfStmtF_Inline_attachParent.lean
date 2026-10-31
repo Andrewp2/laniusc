@@ -22,18 +22,18 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_attach_leaf (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : Lanius.Mini.Token} {x4 : List Lanius.Mini.Token} {x5 : List Lanius.Mini.Sym} {x6 : Nat} {x7 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some w → (RepList 35 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepToken x3 v3 → (RepList 45 RepToken) x4 v4 → (RepList 37 RepSym) x5 v5 → RepNat x6 v6 → RepCursor x7 v7 →
-    (RepOption 125 RepAttached) (Lanius.Mini.Inline.attachLeaf x0 x1 x2 x3 x4 x5 x6 x7) w
+    (RepOption 126 RepAttached) (Lanius.Mini.Inline.attachLeaf x0 x1 x2 x3 x4 x5 x6 x7) w
 
 abbrev Stmt_attach_nonterm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : List Lanius.Mini.Sym} {x4 : Nat} {x5 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 35 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepList 37 RepSym) x3 v3 → RepNat x4 v4 → RepCursor x5 v5 →
-    (RepOption 125 RepAttached) (Lanius.Mini.Inline.attachNonterm x0 x1 x2 x3 x4 x5) w
+    (RepOption 126 RepAttached) (Lanius.Mini.Inline.attachNonterm x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_attach_parent (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : List Nat} {x5 : List Lanius.Mini.Sym} {x6 : Nat} {x7 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some w → (RepList 35 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 25 RepNat) x4 v4 → (RepList 37 RepSym) x5 v5 → RepNat x6 v6 → RepCursor x7 v7 →
-    (RepOption 125 RepAttached) (Lanius.Mini.Inline.attachParent x0 x1 x2 x3 x4 x5 x6 x7) w
+    (RepOption 126 RepAttached) (Lanius.Mini.Inline.attachParent x0 x1 x2 x3 x4 x5 x6 x7) w
 
 abbrev Stmt_attach_sym (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Lanius.Mini.Sym} {x3 : List Lanius.Mini.Sym} {x4 : Nat} {x5 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 35 RepRule) x0 v0 → RepNat x1 v1 → RepSym x2 v2 → (RepList 37 RepSym) x3 v3 → RepNat x4 v4 → RepCursor x5 v5 →
-    (RepOption 125 RepAttached) (Lanius.Mini.Inline.attachSym x0 x1 x2 x3 x4 x5) w
+    (RepOption 126 RepAttached) (Lanius.Mini.Inline.attachSym x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfCert

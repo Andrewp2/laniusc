@@ -21,51 +21,51 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_cons_inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Inst} {x1 : Option (List Lanius.Mini.Inst)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepInst x0 v0 → (RepOption 189 (RepList 134 RepInst)) x1 v1 →
-    (RepOption 189 (RepList 134 RepInst)) (Lanius.Mini.consInst x0 x1) w
+  ∀ {x0 : Lanius.Mini.Inst} {x1 : Option (List Lanius.Mini.Inst)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepInst x0 v0 → (RepOption 190 (RepList 135 RepInst)) x1 v1 →
+    (RepOption 190 (RepList 135 RepInst)) (Lanius.Mini.consInst x0 x1) w
 
 abbrev Stmt_decimal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
-    (RepOption 200 RepNat) (Lanius.Mini.decimal x0 x1) w
+    (RepOption 201 RepNat) (Lanius.Mini.decimal x0 x1) w
 
 abbrev Stmt_decl_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Bool} {x3 : Nat} {x4 : List Lanius.Mini.Ty} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepBool x2 v2 → RepNat x3 v3 → (RepList 136 RepTy) x4 v4 →
-    (RepOption 189 (RepList 134 RepInst)) (Lanius.Mini.declInsts x0 x1 x2 x3 x4) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Bool} {x3 : Nat} {x4 : List Lanius.Mini.Ty} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepBool x2 v2 → RepNat x3 v3 → (RepList 137 RepTy) x4 v4 →
+    (RepOption 190 (RepList 135 RepInst)) (Lanius.Mini.declInsts x0 x1 x2 x3 x4) w
 
 abbrev Stmt_is_level (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
     RepBool (Lanius.Mini.isLevel x0) w
 
 abbrev Stmt_join_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Inst)} {x1 : Option (List Lanius.Mini.Inst)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 189 (RepList 134 RepInst)) x0 v0 → (RepOption 189 (RepList 134 RepInst)) x1 v1 →
-    (RepOption 189 (RepList 134 RepInst)) (Lanius.Mini.joinInsts x0 x1) w
+  ∀ {x0 : Option (List Lanius.Mini.Inst)} {x1 : Option (List Lanius.Mini.Inst)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 190 (RepList 135 RepInst)) x0 v0 → (RepOption 190 (RepList 135 RepInst)) x1 v1 →
+    (RepOption 190 (RepList 135 RepInst)) (Lanius.Mini.joinInsts x0 x1) w
 
 abbrev Stmt_named_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → (RepList 136 RepTy) x3 v3 →
-    (RepOption 189 (RepList 134 RepInst)) (Lanius.Mini.namedInsts x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Nat} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepNat x2 v2 → (RepList 137 RepTy) x3 v3 →
+    (RepOption 190 (RepList 135 RepInst)) (Lanius.Mini.namedInsts x0 x1 x2 x3) w
 
 abbrev Stmt_negated (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 222 RepSrcExpr) x0 v0 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.negated x0) w
+  ∀ {x0 : Option Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 223 RepSrcExpr) x0 v0 →
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.negated x0) w
 
 abbrev Stmt_notted (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 222 RepSrcExpr) x0 v0 →
-    (RepOption 222 RepSrcExpr) (Lanius.Mini.notted x0) w
+  ∀ {x0 : Option Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 223 RepSrcExpr) x0 v0 →
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.notted x0) w
 
 abbrev Stmt_tail_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepOption 252 RepSrcOp) (Lanius.Mini.tailOp x0) w
+    (RepOption 257 RepSrcOp) (Lanius.Mini.tailOp x0) w
 
 abbrev Stmt_ty_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepTy x2 v2 →
-    (RepOption 189 (RepList 134 RepInst)) (Lanius.Mini.tyInsts x0 x1 x2) w
+    (RepOption 190 (RepList 135 RepInst)) (Lanius.Mini.tyInsts x0 x1 x2) w
 
 abbrev Stmt_tys_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepOption 203 (RepList 136 RepTy)) x2 v2 →
-    (RepOption 189 (RepList 134 RepInst)) (Lanius.Mini.tysInsts x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepOption 204 (RepList 137 RepTy)) x2 v2 →
+    (RepOption 190 (RepList 135 RepInst)) (Lanius.Mini.tysInsts x0 x1 x2) w
 
 abbrev Stmt_wide_decimal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
-    (RepOption 200 RepNat) (Lanius.Mini.wideDecimal x0 x1) w
+    (RepOption 201 RepNat) (Lanius.Mini.wideDecimal x0 x1) w
 
 end Lanius.Faithful.SelfCert

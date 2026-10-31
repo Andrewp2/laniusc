@@ -13,9 +13,6 @@ open Lanius.Mini
 
 noncomputable section
 
-/-- mini::selfhost::p_char -/
-def src_p_char : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000b2#64) }
-
 /-- mini::selfhost::p_float -/
 def src_p_float : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000b0#64) }
 

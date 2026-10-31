@@ -62,6 +62,10 @@ def stmtTys (m : MStmt) : List Ty :=
   | .mSetFieldEval id j x => effNamedTys x
   | .mReturnUnit => []
   | .mAssert x => effNamedTys x
+  | .mBreak => []
+  | .mContinue => []
+  | .mMatchArm sc sty k bs x ty body rest => sty :: ty :: (stmtTys body ++ stmtTys rest)
+  | .mUnreachable id ty => [ty]
 
 def paramTys (ps : List MParam) : List Ty :=
   match ps with

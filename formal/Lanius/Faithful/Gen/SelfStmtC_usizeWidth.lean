@@ -22,6 +22,6 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_usize_width (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepUintTy x0 v0 →
-    (RepOption 217 RepMemWidth) (Lanius.Mini.usizeWidth x0) w
+    (RepOption 218 RepMemWidth) (Lanius.Mini.usizeWidth x0) w
 
 end Lanius.Faithful.SelfCert

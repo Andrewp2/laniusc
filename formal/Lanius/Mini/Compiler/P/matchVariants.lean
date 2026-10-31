@@ -106,7 +106,7 @@ def lowerWhileEval (slot : Nat) (condition : Option Evaluated) (body : Option St
   | some c =>
     match body with
     | none => none
-    | some b => evalSame c SrcType.bool (Stmt.seq c.stmt (Stmt.loop (Expr.var slot) (Stmt.seq b c.stmt)))
+    | some b => evalSame c SrcType.bool (Stmt.loop (Expr.lit 1) (Stmt.seq c.stmt (Stmt.ite (Expr.var slot) b Stmt.brk)))
 
 def lowerReturnEval (slot : Nat) (ret : SrcType) (value : Option Evaluated) : Option Stmt :=
   match value with

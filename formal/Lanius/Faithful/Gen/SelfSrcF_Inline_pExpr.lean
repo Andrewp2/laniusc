@@ -19,6 +19,9 @@ def src_p_expr : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), 
 /-- mini::selfhost::p_expr_stmt -/
 def src_p_expr_stmt : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000055#64) }
 
+/-- mini::selfhost::p_extern_abi -/
+def src_p_extern_abi : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000020#64) }
+
 /-- mini::selfhost::p_extern_fn -/
 def src_p_extern_fn : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000000f#64) }
 
@@ -30,6 +33,12 @@ def src_p_file : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), 
 
 /-- mini::selfhost::p_fn -/
 def src_p_fn : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000000b#64) }
+
+/-- mini::selfhost::p_for_iter_range_from_start -/
+def src_p_for_iter_range_from_start : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000005d#64) }
+
+/-- mini::selfhost::p_for_stmt -/
+def src_p_for_stmt : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000051#64) }
 
 /-- mini::selfhost::p_ge_tail -/
 def src_p_ge_tail : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000008d#64) }

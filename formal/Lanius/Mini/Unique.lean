@@ -443,7 +443,11 @@ def commonPrefix : List Sym → List Sym → Nat
   | a :: r, b :: s => if a = b then commonPrefix r s + 1 else 0
 
 /-- The productions `picks` never allows. -/
-def ruledOut (p : Nat) : Bool := p == 84 || p == 298
+def ruledOut (p : Nat) : Bool := p == 298
+
+/-- The pairs of productions `picks` tells apart: a path segment with or
+without type arguments, and a block or expression statement. -/
+def pickedPair (p q : Nat) : Bool := (p == 48 && q == 49) || (p == 84 && q == 85)
 
 namespace Cert
 
@@ -451,7 +455,7 @@ def ruleOK (C : Cert) (p : Nat) (r : Rule) : Bool :=
   ruledOut p || (Kinds2.sub (C.seqFirst r.rhs) (C.firstOf r.lhs) && C.itemsOK r.lhs r.rhs)
 
 def pairOK (C : Cert) (p : Nat) (r : Rule) (q : Nat) (r' : Rule) : Bool :=
-  ruledOut p || ruledOut q || r.lhs != r'.lhs || (p == 48 && q == 49) ||
+  ruledOut p || ruledOut q || r.lhs != r'.lhs || pickedPair p q ||
     Kinds2.apart (C.lookahead r.lhs (commonPrefix r.rhs r'.rhs) r.rhs)
       (C.lookahead r.lhs (commonPrefix r.rhs r'.rhs) r'.rhs)
 
@@ -511,18 +515,23 @@ theorem pairsAll_get {f : Nat → Rule → Nat → Rule → Bool} :
 theorem picks_ruledOut {p : Nat} {tokens : List Token} (h : picks p tokens = true) : ruledOut p = false := by
   unfold picks at h
   unfold ruledOut
-  by_cases e : p = 84
+  by_cases e : p = 298
   · subst e; simp at h
-  · by_cases e' : p = 298
-    · subst e'; simp at h
-    · simp [e, e']
+  · simp [e]
 
-theorem picks_path {tokens : List Token} (h₁ : picks 48 tokens = true) (h₂ : picks 49 tokens = true) : False := by
-  unfold picks at h₁ h₂
-  simp only [show ¬(48 = 84) by decide, show ¬(48 = 298) by decide, show ¬(49 = 84) by decide,
-    show ¬(49 = 298) by decide, show ¬(49 = 48) by decide, decide_false, Bool.or_false, Bool.false_eq_true,
-    if_false, if_true] at h₁ h₂
-  simp [h₂] at h₁
+theorem picks_pair {p q : Nat} {tokens : List Token} (pair : pickedPair p q = true) (h₁ : picks p tokens = true)
+    (h₂ : picks q tokens = true) : False := by
+  simp only [pickedPair, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at pair
+  rcases pair with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+  · unfold picks at h₁ h₂
+    simp only [show ¬(48 = 84) by decide, show ¬(48 = 85) by decide, show ¬(48 = 298) by decide,
+      show ¬(49 = 84) by decide, show ¬(49 = 85) by decide, show ¬(49 = 298) by decide,
+      show ¬(49 = 48) by decide, if_false, if_true] at h₁ h₂
+    simp [h₂] at h₁
+  · unfold picks at h₁ h₂
+    simp only [show ¬(84 = 298) by decide, show ¬(85 = 298) by decide, show ¬(85 = 84) by decide,
+      if_false, if_true] at h₁ h₂
+    simp [h₁] at h₂
 
 theorem commonPrefix_symm : ∀ (r s : List Sym), commonPrefix r s = commonPrefix s r
   | [], [] => rfl
@@ -786,22 +795,18 @@ theorem treeU_succ (ok : certOK g C = true) {n : Nat} (hT : TreeU g C n) : TreeU
             · have pair := pairsAll_get (pairs_ok ok) found₁ found₂ lt
               simp only [Nat.zero_add, pairOK, picks_ruledOut hp₁, picks_ruledOut hp₂, lhs₁, lhs₂,
                 bne_self_eq_false, Bool.false_or] at pair
-              by_cases rule : q₁ = 48 ∧ q₂ = 49
-              · obtain ⟨rfl, rfl⟩ := rule
-                exact picks_path hp₁ hp₂
-              · have : (q₁ == 48 && q₂ == 49) = false := by
-                  simpa [Bool.and_eq_true, beq_iff_eq] using rule
-                rw [this, Bool.false_or] at pair
+              cases rule : pickedPair q₁ q₂ with
+              | true => exact picks_pair rule hp₁ hp₂
+              | false =>
+                rw [rule, Bool.false_or] at pair
                 exact apart_false ok hT (.inl pair) (by omega) ks₁ ks₂ pk₁ pk₂ rd₁ rd₂ kf₁ kf₂ fa₁ fa₂
             · have pair := pairsAll_get (pairs_ok ok) found₂ found₁ lt
               simp only [Nat.zero_add, pairOK, picks_ruledOut hp₁, picks_ruledOut hp₂, lhs₁, lhs₂,
                 bne_self_eq_false, Bool.false_or] at pair
-              by_cases rule : q₂ = 48 ∧ q₁ = 49
-              · obtain ⟨rfl, rfl⟩ := rule
-                exact picks_path hp₂ hp₁
-              · have : (q₂ == 48 && q₁ == 49) = false := by
-                  simpa [Bool.and_eq_true, beq_iff_eq] using rule
-                rw [this, Bool.false_or, commonPrefix_symm] at pair
+              cases rule : pickedPair q₂ q₁ with
+              | true => exact picks_pair rule hp₂ hp₁
+              | false =>
+                rw [rule, Bool.false_or, commonPrefix_symm] at pair
                 exact apart_false ok hT (.inr pair) (by omega) ks₁ ks₂ pk₁ pk₂ rd₁ rd₂ kf₁ kf₂ fa₁ fa₂
 
 theorem treeU_all (ok : certOK g C = true) : ∀ n, TreeU g C n

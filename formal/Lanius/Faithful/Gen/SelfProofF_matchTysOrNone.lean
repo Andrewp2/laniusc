@@ -36,8 +36,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_isFnPath
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
+public import Lanius.Faithful.Gen.SelfStmtF_moduleNamesOk
 public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
-public import Lanius.Faithful.Gen.SelfStmtF_noNames
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_pathRef
@@ -88,12 +88,12 @@ theorem proof_diverge_arm {prog : SrcProgram} {prims : Prims} {ix_diverge_arm ix
   simp only [src_diverge_arm] at h
   faithful [Lanius.Mini.divergeArm]
 
-theorem proof_diverge_call {prog : SrcProgram} {prims : Prims} {ix_diverge_call ix_length_of_mini_selfhost_List_usize ix_get_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_List_usize ix_never_ret ix_length_of_mini_selfhost_Ty ix_diverge_checked : Nat} (fn : prog.funcs[ix_diverge_call]? = some (src_diverge_call ix_length_of_mini_selfhost_List_usize ix_get_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_List_usize ix_never_ret ix_length_of_mini_selfhost_Ty ix_diverge_checked)) (np : prims.isPrim ix_diverge_call = false)
+theorem proof_diverge_call {prog : SrcProgram} {prims : Prims} {ix_diverge_call ix_length_of_mini_selfhost_List_usize ix_get_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_Ty ix_never_ret ix_diverge_checked : Nat} (fn : prog.funcs[ix_diverge_call]? = some (src_diverge_call ix_length_of_mini_selfhost_List_usize ix_get_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_Ty ix_never_ret ix_diverge_checked)) (np : prims.isPrim ix_diverge_call = false)
     (ext_length_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_usize prog prims ix_length_of_mini_selfhost_List_usize n))
     (ext_get_of_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_FnDecl prog prims ix_get_of_mini_selfhost_FnDecl n))
     (ext_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize n))
-    (ext_never_ret : Certified (∀ {n : Nat}, Stmt_never_ret prog prims ix_never_ret n))
     (ext_length_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_Ty prog prims ix_length_of_mini_selfhost_Ty n))
+    (ext_never_ret : Certified (∀ {n : Nat}, Stmt_never_ret prog prims ix_never_ret n))
     (ext_diverge_checked : Certified (∀ {n : Nat}, Stmt_diverge_checked prog prims ix_diverge_checked n)) {n : Nat} :
     Stmt_diverge_call prog prims ix_diverge_call n := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
@@ -539,20 +539,20 @@ theorem step_eff_primary {prog : SrcProgram} {prims : Prims} {ix_eff_primary ix_
   simp only [src_eff_primary] at h
   faithful [Lanius.Mini.effPrimary]
 
-theorem step_eff_step {prog : SrcProgram} {prims : Prims} {ix_eff_step ix_minus ix_node_prod ix_list_items ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_eff_of ix_p_postfix_member ix_p_member_type_args_none ix_p_postfix_index ix_p_postfix_call ix_x_index_of ix_eff_chain ix_eff_found ix_single_of_mini_selfhost_MEff ix_eff_ty ix_step_expected ix_method_of_ty ix_field_of_ty ix_eff_slice_local : Nat} (fn : prog.funcs[ix_eff_step]? = some (src_eff_step ix_minus ix_node_prod ix_list_items ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_eff_of ix_p_postfix_member ix_p_member_type_args_none ix_p_postfix_index ix_p_postfix_call ix_x_index_of ix_eff_chain ix_eff_found ix_single_of_mini_selfhost_MEff ix_eff_ty ix_step_expected ix_method_of_ty ix_field_of_ty ix_eff_slice_local)) (np : prims.isPrim ix_eff_step = false)
+theorem step_eff_step {prog : SrcProgram} {prims : Prims} {ix_eff_step ix_minus ix_node_prod ix_list_items ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_eff_of ix_eff_ty ix_p_postfix_member ix_p_member_type_args_none ix_p_postfix_index ix_p_postfix_call ix_x_index_of ix_eff_chain ix_eff_found ix_single_of_mini_selfhost_MEff ix_step_expected ix_method_of_ty ix_field_of_ty ix_eff_slice_local : Nat} (fn : prog.funcs[ix_eff_step]? = some (src_eff_step ix_minus ix_node_prod ix_list_items ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_eff_of ix_eff_ty ix_p_postfix_member ix_p_member_type_args_none ix_p_postfix_index ix_p_postfix_call ix_x_index_of ix_eff_chain ix_eff_found ix_single_of_mini_selfhost_MEff ix_step_expected ix_method_of_ty ix_field_of_ty ix_eff_slice_local)) (np : prims.isPrim ix_eff_step = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_text_Token_of_mini_selfhost_Token prog prims ix_field_text_Token_of_mini_selfhost_Token n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
+    (ext_eff_ty : Certified (∀ {n : Nat}, Stmt_eff_ty prog prims ix_eff_ty n))
     (ext_p_postfix_member : Certified (∀ {n : Nat}, Stmt_p_postfix_member prog prims ix_p_postfix_member n))
     (ext_p_member_type_args_none : Certified (∀ {n : Nat}, Stmt_p_member_type_args_none prog prims ix_p_member_type_args_none n))
     (ext_p_postfix_index : Certified (∀ {n : Nat}, Stmt_p_postfix_index prog prims ix_p_postfix_index n))
     (ext_p_postfix_call : Certified (∀ {n : Nat}, Stmt_p_postfix_call prog prims ix_p_postfix_call n))
     (ext_x_index_of : Certified (∀ {n : Nat}, Stmt_x_index_of prog prims ix_x_index_of n))
     (ext_single_of_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_MEff prog prims ix_single_of_mini_selfhost_MEff n))
-    (ext_eff_ty : Certified (∀ {n : Nat}, Stmt_eff_ty prog prims ix_eff_ty n))
     (ext_step_expected : Certified (∀ {n : Nat}, Stmt_step_expected prog prims ix_step_expected n))
     (ext_method_of_ty : Certified (∀ {n : Nat}, Stmt_method_of_ty prog prims ix_method_of_ty n))
     (ext_field_of_ty : Certified (∀ {n : Nat}, Stmt_field_of_ty prog prims ix_field_of_ty n))

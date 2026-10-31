@@ -153,4 +153,15 @@ theorem proof_store_word_agrees {prog : SrcProgram} {prims : Prims} {ix_store_wo
   simp only [src_store_word_agrees] at h
   faithful [Lanius.Mini.storeWordAgrees]
 
+theorem proof_sys_agrees {prog : SrcProgram} {prims : Prims} {ix_sys_agrees ix_args_agree ix_Syscall_number : Nat} (fn : prog.funcs[ix_sys_agrees]? = some (src_sys_agrees ix_args_agree ix_Syscall_number)) (np : prims.isPrim ix_sys_agrees = false)
+    (ext_args_agree : Certified (∀ {n : Nat}, Stmt_args_agree prog prims ix_args_agree n))
+    (ext_Syscall_number : Certified (∀ {n : Nat}, Stmt_Syscall_number prog prims ix_Syscall_number n)) {n : Nat} :
+    Stmt_sys_agrees prog prims ix_sys_agrees n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_sys_agrees] at h
+  faithful [Lanius.Mini.sysAgrees]
+
 end Lanius.Faithful.SelfCert

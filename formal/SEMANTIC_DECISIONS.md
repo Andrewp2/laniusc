@@ -481,10 +481,14 @@ closes or a `;`, no `||`, `==`, `!=`, `<=` or `>=` comes before it, and `(`,
 `::` or `{` follows it; otherwise `<` is a comparison. This is laniusc's rule
 (`shaders/parser/tokens/to/angle_kinds.slang`) without its limit of 64
 argument tokens; the verified compiler's validator checks it (`picks`).
-Block statements and a method's type arguments (`x.f<T>(..)`) are outside
-the verified compiler's subset, since they are ambiguous in the same way
-(`{ a } - b;`, `x.f < a > (b)`). With these, every token sequence has at
-most one parse tree (V4, `Mini/ParseUnique.lean`).
+A method's type arguments (`x.f<T>(..)`) are outside the verified
+compiler's subset, since they are ambiguous in the same way (`x.f < a >
+(b)`). A statement that begins with `{` is a block statement, never an
+expression statement (decided 10-30, F4), as in Rust: `{ a } - b;` is the
+block `{ a }` and then `-b;`. Its lets scope over the block only
+(`StmtR.block`). With these, every token sequence has at most one parse
+tree (V4, `Mini/ParseUnique.lean`; `pickedPair` in `Mini/Unique.lean` lists
+the two pairs of productions `picks` tells apart).
 
 ### The process (decided 10-29)
 
@@ -662,3 +666,164 @@ The relation is deterministic (`reading_unique`, F1): `compileText_correct`
 and the process theorems say that the program is the texts' one reading
 (`TextReading`, on `Reading.Reading`, unique by `textReading_unique`). That
 `build` finds a reading whenever there is one is a later step.
+
+## `break` and `continue` (decided 10-30, F4)
+
+Core's `breakLoop` and `continueLoop` leave or restart the nearest
+`whileLoop`, and the Mini IR's `Brk` and `Cont` do the same for `Loop`.
+`Brk` compiles to `Imm 0; Jmp brk`, where `brk` is the loop's `Jz`, so the
+loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
+(`compileStmt_correct` takes both targets).
+
+- A function body with a `break` or `continue` outside any loop is
+  rejected by `lower_func` (`breaks_out`). The front end reads it; the
+  `reject_loose_break` case (marker `compile_rejects`) checks that
+  `compileSource` rejects it. Lowered code thus never runs a loose
+  `Brk` (`breaksOut_noEscape`).
+- `continue` must re-test the condition. A while loop whose condition needs
+  a check (a division, a call) lowers as `Loop(1, check; if c { body }
+  else { Brk })`, so the check runs on every iteration, including after a
+  `continue`; a condition that needs none lowers as `Loop(c, body)`. A
+  `while` whose condition has effects lowers the same way:
+  `Loop(1, c.stmt; if c { body } else { Brk })`.
+
+## Externs and the runtime (decided 10-30, F8)
+
+- **The runtime is the kernel, called directly.** The verified compiler
+  links no C runtime and no `lanius_std` library: a host service is lowered
+  to inline `syscall` code. The mini IR's `Stmt.sys kind target args`
+  (`Instr.sys kind slot`, `Mini/Semantics.lean`) is one system call; its
+  arguments are evaluated into three consecutive frame slots, and the
+  result lands in `target`. Only `Syscall.write` exists so far.
+- **`Syscall.write` at the mini level.** `[fd, address, count]` with fd 1 or
+  2, count at most `maxTransfer`, and `address + count` within the heap
+  limit; it appends `.write fd (heap bytes address..address+count)` to
+  `Heap.io` and returns count. Anything else has no mini step, so a run
+  that reaches it does not return. The address is a heap offset;
+  the code adds r12 (`sysSpec`, `Mini/Bytes.lean`: `mov rdi,[slot]; mov
+  rsi,[slot+1]; add rsi,r12; mov rdx,[slot+2]; mov eax,1; syscall; mov
+  r11,rcx`, 34 bytes). The last move only makes r11 deterministic, so a
+  `Det` run exists (r11 is scratch anyway).
+- **rdx, rsi and rdi are scratch** (`Scratch`, `Mini/Simulation.lean`),
+  like rax, rcx and r11. Callers that keep them across a compiled call must
+  save them.
+- **The trace.** The x86 state has `io : Io`, a list of events; the mini
+  heap has the same field. The simulation relation (`Rel`, `HeapAt`,
+  `Returned`, `Frame.Exit`) says they are equal, and `process_exits` says
+  the process trace at the exit is the compiled program's trace. Core's
+  side is `World.State.standardOutput`/`standardError`; the link from
+  Core's `write_byte`/`write_stdout` services to `.write` events (one event
+  per call, the bytes Core appends) is the next part of F8.
+- **Not yet modeled (deferred).** `read`/`read_stdin` (input is an
+  environment input, so the trace needs read events and the theorem a
+  premise "given the same input"), `getrandom`/`secure_u32`, process
+  arguments and environment variables (the loader would have to place
+  `argv`/`envp`, now arbitrary memory), time (`clock_gettime`, `nanosleep`),
+  files, sockets and processes, the general `syscall6`, the allocator
+  externs (the verified compiler's `alloc` is the mini bump allocator over
+  a heap the startup code provides, not `mmap`), and writes longer than
+  `MAX_RW_COUNT` (Core would have to loop; a short write is not modeled).
+
+## `for` over a range (decided 10-30, F4)
+
+`for x in a..n { body }`, with `a` an integer literal and `n` a local, is
+read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`
+(`for_of`, `StmtR.forRange`), so that:
+
+- `n` is read once, before the loop, as Rust evaluates a range once;
+  assigning `n` in the body does not change the iterations;
+- `x` is a fresh local each iteration, and `c` moves on before the body, so a
+  `continue` goes to the next value; `c + 1` cannot overflow, as `c < e`;
+- `x`, `c` and `e` have `n`'s type, and the literal `a` takes it.
+
+This agrees with Core's own `forRange` (`Semantics.lean`), which evaluates
+the bound once, on `i32`, the one type Core's loop takes.
+
+`c` and `e` are hidden locals: they have no name in scope, and they are
+numbered by the `for` token and `x`'s token, and `x` by the `in` token, so the
+locals are numbered in the order the desugared text declares them and the
+front end's cases can write the desugaring as the expected reading.
+
+## Match arm statements (decided 10-31, F4)
+
+The source statement `MatchArm(scrutinee, enum_id, variant, binds, binder,
+ty, body, rest)` runs `body` when the enum local `scrutinee` is `variant`,
+and `rest` otherwise. A match statement, and `?`, are read as a chain of
+these, so the statement type has no list of arms and no nested inductive. In
+Core (`SrcStmt.toCore`) it is, when `binds`,
+
+    if (match scrutinee { enum_id::variant(_) => true, _ => false }) {
+        let binder: ty = match scrutinee { enum_id::variant(binder) => binder };
+        body
+    } else { rest }
+
+and without `binds` the test's pattern has no fields and `body` runs as it
+is. So that:
+
+- a variant with no payload binds nothing (`binds` false); a variant with a
+  payload has exactly one field, of type `ty`, which takes slots, and
+  `binder` is a copy of it, not an alias, as in Core's `let`;
+- `binds` is a flag, not read off `ty`: `Ok(())` has one field of type unit,
+  which takes a slot, while `None` has none;
+- the lowering tests the tag word against `variant` and copies the field to
+  the next free slots (`lower_match_arm`); a tag never needs more than 32
+  bits, as for `let match`.
+
+## Unreachable statements (decided 10-31, F4)
+
+`Unreachable(id, ty)` is a branch that never runs, such as the last branch
+of the MatchArm chain a `let x: T = op?;` reads as. Its Core meaning
+(`SrcStmt.toCore`) is `let id: ty; return id;` (`letUninitialized` of the
+`returnValue` of the local), so that:
+
+- Core's `DefinitelyReturns` holds by `letUninitialized` and `returnValue`,
+  and a chain ending in it counts as returning without a match rule;
+- the read of `id` traps with `uninitializedLocal`, a defined trap, so a
+  run that reaches it is a run the compiled code must stop on;
+- `ty` is the function's result type: the lowering requires `ty = ret`,
+  which makes the `return` type-check, and emits `1 / 0` into the next slot
+  (`lower_unreachable`), which has no mini step and traps on x86, as
+  `assert`'s failing division does. It binds no slot beyond that one
+  (depth 1).
+## `?` (decided 10-31, F4)
+
+The front end reads `let x: T = op?;`, `op?;` and their Option forms as
+statements, not as an expression: Core has no early return inside an
+expression. `op` is a local or a call `path(args)` with no further postfix.
+Its type must be `core::result::Result<T, E>` (variants `Ok`, `Err`) or
+`core::option::Option<T>` (`Some`, `None`). The function's result must be the
+same enum with exactly the same failure payload (`Result<U, E>`, any `U`), as
+laniusc requires (docs/language-ergonomics.md). There is no conversion.
+
+`let x: T = f(a)?; body` reads as
+
+    let r = f(a);
+    MatchArm(r, variant 1 (Err(w) or None) -> return Err(w) or return None,
+      else MatchArm(r, variant 0 (Ok(x) or Some(x)) -> body,
+        else Unreachable))
+
+and `f(a)?;` as the same failure arm followed by nothing. For a local
+operand, `r` is the local and there is no call.
+
+- The ids: `r` is numbered by the call's `(` token, the failure binder `w`
+  by the `?` token, and `x` by its name. Like every local, each is a token
+  offset and is distinct from the other locals in scope.
+- `T` must be the success payload's type: the reader does not convert.
+- The success arm's `else` never runs, since the enum has two variants.
+  Core's `DefinitelyReturns` has no rule for `match`, though, so that branch
+  is `Unreachable(w, U)`. In Core that binds `w` uninitialized at the result
+  type and returns it, which traps, and it counts as returning.
+- Not read yet: `?` in an assignment (`x = f(a)?;`), after a method call
+  or field (`a.b()?`), or nested inside a larger expression.
+
+## Untyped lets (decided 10-31, F4)
+
+`let x = init;` binds `x` at `init`'s own type, as laniusc's local inference
+does: from the initializer alone, never from later uses. For `op?` that is
+the success payload's type. Otherwise `init` is read as an effectful
+expression with no expected type. Its type must be one no literal decides:
+a call (a method call included), a cast, an element, a struct literal, a
+`!`, `slice_stride`, or a local or field (`inferred`). A bare literal, an
+arithmetic expression, a variant and a `match` are not read untyped. Their
+type depends on a default for literals that the reader does not pick. The
+`let` then reads as the typed `let x: T = init;` would.

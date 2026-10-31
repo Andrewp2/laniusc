@@ -1099,7 +1099,11 @@ partial def serStmt : SrcStmt → String
   | .setIndexEval sl i v => s!"(.setIndexEval {sl} {serEff i} {serEff v})"
   | .setFieldEval n f x => s!"(.setFieldEval {n} {f} {serEff x})"
   | .returnUnit => ".returnUnit"
+  | .break => ".break"
+  | .continue => ".continue"
   | .assert x => s!"(.assert {serEff x})"
+  | .matchArm sc e k b x t body r => s!"(.matchArm {sc} {e} {k} {b} {x} {serType t} {serStmt body} {serStmt r})"
+  | .unreachable n t => s!"(.unreachable {n} {serType t})"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
 
@@ -1202,6 +1206,7 @@ partial def bindersOf : SrcStmt → List Nat
   | .whileEval x b => effBinders x ++ bindersOf b
   | .setIndexEval _ i v => effBinders i ++ effBinders v
   | .setFieldEval _ _ x | .assert x => effBinders x
+  | .matchArm _ _ _ b x _ body r => (if b then [x] else []) ++ bindersOf body ++ bindersOf r
   | _ => []
 
 partial def renExpr (f : Nat → Nat) : SrcExpr → SrcExpr
@@ -1258,6 +1263,10 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .setIndexEval sl i v => .setIndexEval (f sl) (renEff f i) (renEff f v)
   | .setFieldEval n k x => .setFieldEval (f n) k (renEff f x)
   | .returnUnit => .returnUnit
+  | .break => .break
+  | .continue => .continue
+  | .matchArm sc e k b x t body r => .matchArm (f sc) e k b (f x) t (renStmt f body) (renStmt f r)
+  | .unreachable n t => .unreachable (f n) t
   | .assert x => .assert (renEff f x)
 
 def canonFunc (fn : SrcFunc) : SrcFunc :=
@@ -1294,7 +1303,9 @@ def run_cases(args, cases_dir):
     """Hand-written cases. A case directory holds the files of one program
     (main.lani first, then the others in name order) and either want.lani,
     a single-file monomorphic copy that must read as the same program up to
-    local names, or a file named reject, when the program must be rejected."""
+    local names, expect.out, the program it must read as, written out (for a
+    reading no source spelling has, such as `?`), or a file named reject,
+    when the program must be rejected."""
     workdir = os.path.abspath(args.workdir)
     os.makedirs(workdir, exist_ok=True)
     lean = [LEAN_HEAD]
@@ -1356,10 +1367,17 @@ def run_cases(args, cases_dir):
             if not os.path.exists(compiled) or open(compiled).read() != 'compiles\n':
                 problems += 1
                 print(f'{case}: compileSource rejects the program read')
+        if os.path.exists(os.path.join(cases_dir, case, 'compile_rejects')):
+            # the front end reads the program but compileSource must reject it
+            compiled = os.path.join(out_dir, 'got.out.compile')
+            if not os.path.exists(compiled) or open(compiled).read() != 'rejected\n':
+                problems += 1
+                print(f'{case}: compileSource accepts the program read')
         if reject:
             ok = got == 'rejected\n'
         else:
-            want = open(os.path.join(out_dir, 'want.out')).read()
+            expect = os.path.join(cases_dir, case, 'expect.out')
+            want = open(expect if os.path.exists(expect) else os.path.join(out_dir, 'want.out')).read()
             ok = got != 'rejected\n' and got == want
         if not ok:
             problems += 1

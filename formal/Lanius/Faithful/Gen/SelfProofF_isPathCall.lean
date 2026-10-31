@@ -5,12 +5,17 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt1
+public import Lanius.Faithful.Gen.SelfStmt2
+public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
+public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pIdentPlain
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
+public import Lanius.Faithful.Gen.SelfStmtF_distinct
+public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
@@ -80,6 +85,57 @@ theorem proof_is_path_call {prog : SrcProgram} {prims : Prims} {ix_is_path_call 
   simp only [src_is_path_call] at h
   faithful [Lanius.Mini.isPathCall]
 
+theorem proof_is_try_call {prog : SrcProgram} {prims : Prims} {ix_is_try_call ix_node_prod ix_kid ix_p_postfix_end ix_p_ident ix_p_ident_plain ix_p_postfix_call ix_p_postfix_try : Nat} (fn : prog.funcs[ix_is_try_call]? = some (src_is_try_call ix_node_prod ix_kid ix_p_postfix_end ix_p_ident ix_p_ident_plain ix_p_postfix_call ix_p_postfix_try)) (np : prims.isPrim ix_is_try_call = false)
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
+    (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
+    (ext_p_ident_plain : Certified (∀ {n : Nat}, Stmt_p_ident_plain prog prims ix_p_ident_plain n))
+    (ext_p_postfix_call : Certified (∀ {n : Nat}, Stmt_p_postfix_call prog prims ix_p_postfix_call n))
+    (ext_p_postfix_try : Certified (∀ {n : Nat}, Stmt_p_postfix_try prog prims ix_p_postfix_try n)) {n : Nat} :
+    Stmt_is_try_call prog prims ix_is_try_call n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_try_call] at h
+  faithful [Lanius.Mini.isTryCall]
+
+theorem proof_is_try_enum {prog : SrcProgram} {prims : Prims} {ix_is_try_enum ix_single_of_mini_selfhost_List_usize ix_same_text ix_same_spellings ix_cons_of_mini_selfhost_List_usize ix_text_core ix_text_result ix_text_result_ty ix_text_ok ix_text_err ix_text_option ix_text_option_ty ix_text_some ix_text_none : Nat} (fn : prog.funcs[ix_is_try_enum]? = some (src_is_try_enum ix_single_of_mini_selfhost_List_usize ix_same_text ix_same_spellings ix_cons_of_mini_selfhost_List_usize ix_text_core ix_text_result ix_text_result_ty ix_text_ok ix_text_err ix_text_option ix_text_option_ty ix_text_some ix_text_none)) (np : prims.isPrim ix_is_try_enum = false)
+    (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))
+    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))
+    (ext_cons_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_List_usize prog prims ix_cons_of_mini_selfhost_List_usize n))
+    (ext_text_core : Certified (∀ {n : Nat}, Stmt_text_core prog prims ix_text_core n))
+    (ext_text_result : Certified (∀ {n : Nat}, Stmt_text_result prog prims ix_text_result n))
+    (ext_text_result_ty : Certified (∀ {n : Nat}, Stmt_text_result_ty prog prims ix_text_result_ty n))
+    (ext_text_ok : Certified (∀ {n : Nat}, Stmt_text_ok prog prims ix_text_ok n))
+    (ext_text_err : Certified (∀ {n : Nat}, Stmt_text_err prog prims ix_text_err n))
+    (ext_text_option : Certified (∀ {n : Nat}, Stmt_text_option prog prims ix_text_option n))
+    (ext_text_option_ty : Certified (∀ {n : Nat}, Stmt_text_option_ty prog prims ix_text_option_ty n))
+    (ext_text_some : Certified (∀ {n : Nat}, Stmt_text_some prog prims ix_text_some n))
+    (ext_text_none : Certified (∀ {n : Nat}, Stmt_text_none prog prims ix_text_none n)) {n : Nat} :
+    Stmt_is_try_enum prog prims ix_is_try_enum n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_try_enum] at h
+  faithful [Lanius.Mini.isTryEnum]
+
+theorem proof_is_try_local {prog : SrcProgram} {prims : Prims} {ix_is_try_local ix_node_prod ix_kid ix_p_postfix_end ix_p_postfix_try : Nat} (fn : prog.funcs[ix_is_try_local]? = some (src_is_try_local ix_node_prod ix_kid ix_p_postfix_end ix_p_postfix_try)) (np : prims.isPrim ix_is_try_local = false)
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))
+    (ext_p_postfix_try : Certified (∀ {n : Nat}, Stmt_p_postfix_try prog prims ix_p_postfix_try n)) {n : Nat} :
+    Stmt_is_try_local prog prims ix_is_try_local n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_try_local] at h
+  faithful [Lanius.Mini.isTryLocal]
+
 theorem proof_is_usize {prog : SrcProgram} {prims : Prims} {ix_is_usize : Nat} (fn : prog.funcs[ix_is_usize]? = some (src_is_usize)) (np : prims.isPrim ix_is_usize = false) {n : Nat} :
     Stmt_is_usize prog prims ix_is_usize n := by
   intro x0 v0 w h r0
@@ -122,5 +178,104 @@ theorem step_shift_of_u64 {prog : SrcProgram} {prims : Prims} {ix_shift_of_u64 i
   rw [pcall_succ np fn] at h
   simp only [src_shift_of_u64] at h
   faithful [Lanius.Mini.shiftOfU64]
+
+theorem proof_text_core {prog : SrcProgram} {prims : Prims} {ix_text_core ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_core]? = some (src_text_core ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_core = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_core prog prims ix_text_core n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_core] at h
+  faithful [Lanius.Mini.textCore]
+
+theorem proof_text_err {prog : SrcProgram} {prims : Prims} {ix_text_err ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_err]? = some (src_text_err ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_err = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_err prog prims ix_text_err n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_err] at h
+  faithful [Lanius.Mini.textErr]
+
+theorem proof_text_none {prog : SrcProgram} {prims : Prims} {ix_text_none ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_none]? = some (src_text_none ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_none = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_none prog prims ix_text_none n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_none] at h
+  faithful [Lanius.Mini.textNone]
+
+theorem proof_text_ok {prog : SrcProgram} {prims : Prims} {ix_text_ok ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_ok]? = some (src_text_ok ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_ok = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_ok prog prims ix_text_ok n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_ok] at h
+  faithful [Lanius.Mini.textOk]
+
+theorem proof_text_option {prog : SrcProgram} {prims : Prims} {ix_text_option ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_option]? = some (src_text_option ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_option = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_option prog prims ix_text_option n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_option] at h
+  faithful [Lanius.Mini.textOption]
+
+theorem proof_text_option_ty {prog : SrcProgram} {prims : Prims} {ix_text_option_ty ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_option_ty]? = some (src_text_option_ty ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_option_ty = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_option_ty prog prims ix_text_option_ty n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_option_ty] at h
+  faithful [Lanius.Mini.textOptionTy]
+
+theorem proof_text_result {prog : SrcProgram} {prims : Prims} {ix_text_result ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_result]? = some (src_text_result ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_result = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_result prog prims ix_text_result n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_result] at h
+  faithful [Lanius.Mini.textResult]
+
+theorem proof_text_result_ty {prog : SrcProgram} {prims : Prims} {ix_text_result_ty ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_result_ty]? = some (src_text_result_ty ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_result_ty = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_result_ty prog prims ix_text_result_ty n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_result_ty] at h
+  faithful [Lanius.Mini.textResultTy]
+
+theorem proof_text_some {prog : SrcProgram} {prims : Prims} {ix_text_some ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_some]? = some (src_text_some ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_text_some = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_some prog prims ix_text_some n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_some] at h
+  faithful [Lanius.Mini.textSome]
 
 end Lanius.Faithful.SelfCert
