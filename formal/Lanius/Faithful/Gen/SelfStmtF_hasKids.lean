@@ -29,20 +29,20 @@ abbrev Stmt_is_link (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.isLink x0) w
 
 abbrev Stmt_items_cons (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepCTree x1 v1 → (RepList 76 RepCTree) x2 v2 →
-    (RepOption 75 (RepList 76 RepCTree)) (Lanius.Mini.itemsCons x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepCTree x1 v1 → (RepList 80 RepCTree) x2 v2 →
+    (RepOption 79 (RepList 80 RepCTree)) (Lanius.Mini.itemsCons x0 x1 x2) w
 
 abbrev Stmt_items_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 76 RepCTree) x1 v1 →
-    (RepOption 75 (RepList 76 RepCTree)) (Lanius.Mini.itemsIn x0 x1) w
+  ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 80 RepCTree) x1 v1 →
+    (RepOption 79 (RepList 80 RepCTree)) (Lanius.Mini.itemsIn x0 x1) w
 
 abbrev Stmt_join_items (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.CTree)} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 75 (RepList 76 RepCTree)) x0 v0 → (RepOption 75 (RepList 76 RepCTree)) x1 v1 →
-    (RepOption 75 (RepList 76 RepCTree)) (Lanius.Mini.joinItems x0 x1) w
+  ∀ {x0 : Option (List Lanius.Mini.CTree)} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 79 (RepList 80 RepCTree)) x0 v0 → (RepOption 79 (RepList 80 RepCTree)) x1 v1 →
+    (RepOption 79 (RepList 80 RepCTree)) (Lanius.Mini.joinItems x0 x1) w
 
 abbrev Stmt_join_second (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.CTree} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 76 RepCTree) x0 v0 → (RepOption 75 (RepList 76 RepCTree)) x1 v1 →
-    (RepOption 75 (RepList 76 RepCTree)) (Lanius.Mini.joinSecond x0 x1) w
+  ∀ {x0 : List Lanius.Mini.CTree} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 80 RepCTree) x0 v0 → (RepOption 79 (RepList 80 RepCTree)) x1 v1 →
+    (RepOption 79 (RepList 80 RepCTree)) (Lanius.Mini.joinSecond x0 x1) w
 
 abbrev Stmt_kid_token (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → RepNat x1 v1 →
@@ -54,10 +54,10 @@ abbrev Stmt_leaf_token (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_list_items (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepCTree x1 v1 →
-    (RepOption 75 (RepList 76 RepCTree)) (Lanius.Mini.listItems x0 x1) w
+    (RepOption 79 (RepList 80 RepCTree)) (Lanius.Mini.listItems x0 x1) w
 
 abbrev Stmt_same_text (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → (RepList 24 RepNat) x1 v1 →
+  ∀ {x0 : List Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → (RepList 25 RepNat) x1 v1 →
     RepBool (Lanius.Mini.sameText x0 x1) w
 
 end Lanius.Faithful.SelfCert

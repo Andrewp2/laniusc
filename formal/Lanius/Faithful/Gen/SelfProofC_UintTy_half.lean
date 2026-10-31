@@ -3,14 +3,13 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_UintTy_half
-public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
+public import Lanius.Faithful.Gen.SelfStmtC_DivOp_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_isWide
-public import Lanius.Faithful.Gen.SelfStmtC_UintTy_mask
 public import Lanius.Faithful.Gen.SelfStmtC_larger
 public import Lanius.Faithful.Gen.SelfStmtC_render
 import all Lanius.Faithful.Gen.SelfSrcC_UintTy_half
@@ -33,6 +32,15 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_SrcType_float_ty {prog : SrcProgram} {prims : Prims} {ix_SrcType_float_ty : Nat} (fn : prog.funcs[ix_SrcType_float_ty]? = some (src_SrcType_float_ty)) (np : prims.isPrim ix_SrcType_float_ty = false) {n : Nat} :
+    Stmt_SrcType_float_ty prog prims ix_SrcType_float_ty n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_SrcType_float_ty] at h
+  faithful [Lanius.Mini.SrcType.floatTy]
+
 theorem proof_SrcType_is_bool {prog : SrcProgram} {prims : Prims} {ix_SrcType_is_bool : Nat} (fn : prog.funcs[ix_SrcType_is_bool]? = some (src_SrcType_is_bool)) (np : prims.isPrim ix_SrcType_is_bool = false) {n : Nat} :
     Stmt_SrcType_is_bool prog prims ix_SrcType_is_bool n := by
   intro x0 v0 w h r0
@@ -50,6 +58,25 @@ theorem proof_SrcType_is_char {prog : SrcProgram} {prims : Prims} {ix_SrcType_is
   rw [pcall_succ np fn] at h
   simp only [src_SrcType_is_char] at h
   faithful [Lanius.Mini.SrcType.isChar]
+
+theorem proof_SrcType_is_float {prog : SrcProgram} {prims : Prims} {ix_SrcType_is_float ix_FloatTy_number : Nat} (fn : prog.funcs[ix_SrcType_is_float]? = some (src_SrcType_is_float ix_FloatTy_number)) (np : prims.isPrim ix_SrcType_is_float = false)
+    (ext_FloatTy_number : Certified (∀ {n : Nat}, Stmt_FloatTy_number prog prims ix_FloatTy_number n)) {n : Nat} :
+    Stmt_SrcType_is_float prog prims ix_SrcType_is_float n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_SrcType_is_float] at h
+  faithful [Lanius.Mini.SrcType.isFloat]
+
+theorem proof_SrcType_is_float_any {prog : SrcProgram} {prims : Prims} {ix_SrcType_is_float_any : Nat} (fn : prog.funcs[ix_SrcType_is_float_any]? = some (src_SrcType_is_float_any)) (np : prims.isPrim ix_SrcType_is_float_any = false) {n : Nat} :
+    Stmt_SrcType_is_float_any prog prims ix_SrcType_is_float_any n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_SrcType_is_float_any] at h
+  faithful [Lanius.Mini.SrcType.isFloatAny]
 
 theorem proof_SrcType_is_i32 {prog : SrcProgram} {prims : Prims} {ix_SrcType_is_i32 : Nat} (fn : prog.funcs[ix_SrcType_is_i32]? = some (src_SrcType_is_i32)) (np : prims.isPrim ix_SrcType_is_i32 = false) {n : Nat} :
     Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n := by
@@ -134,7 +161,7 @@ theorem proof_SrcType_is_unit {prog : SrcProgram} {prims : Prims} {ix_SrcType_is
   simp only [src_SrcType_is_unit] at h
   faithful [Lanius.Mini.SrcType.isUnit]
 
-theorem step_SrcType_same {prog : SrcProgram} {prims : Prims} {ix_SrcType_same ix_SrcType_is_unit ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_SrcType_is_i32 ix_SrcType_is_uint ix_types_same ix_variants_same ix_SrcType_is_bool ix_SrcType_is_ptr ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_sint : Nat} (fn : prog.funcs[ix_SrcType_same]? = some (src_SrcType_same ix_SrcType_is_unit ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_SrcType_is_i32 ix_SrcType_same ix_SrcType_is_uint ix_types_same ix_variants_same ix_SrcType_is_bool ix_SrcType_is_ptr ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_sint)) (np : prims.isPrim ix_SrcType_same = false)
+theorem step_SrcType_same {prog : SrcProgram} {prims : Prims} {ix_SrcType_same ix_SrcType_is_unit ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_SrcType_is_i32 ix_SrcType_is_uint ix_types_same ix_variants_same ix_SrcType_is_bool ix_SrcType_is_ptr ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_float ix_SrcType_is_sint : Nat} (fn : prog.funcs[ix_SrcType_same]? = some (src_SrcType_same ix_SrcType_is_unit ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_SrcType_is_i32 ix_SrcType_same ix_SrcType_is_uint ix_types_same ix_variants_same ix_SrcType_is_bool ix_SrcType_is_ptr ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_float ix_SrcType_is_sint)) (np : prims.isPrim ix_SrcType_same = false)
     (ext_SrcType_is_unit : Certified (∀ {n : Nat}, Stmt_SrcType_is_unit prog prims ix_SrcType_is_unit n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
@@ -145,6 +172,7 @@ theorem step_SrcType_same {prog : SrcProgram} {prims : Prims} {ix_SrcType_same i
     (ext_SrcType_is_ptr : Certified (∀ {n : Nat}, Stmt_SrcType_is_ptr prog prims ix_SrcType_is_ptr n))
     (ext_SrcType_is_isize : Certified (∀ {n : Nat}, Stmt_SrcType_is_isize prog prims ix_SrcType_is_isize n))
     (ext_SrcType_is_char : Certified (∀ {n : Nat}, Stmt_SrcType_is_char prog prims ix_SrcType_is_char n))
+    (ext_SrcType_is_float : Certified (∀ {n : Nat}, Stmt_SrcType_is_float prog prims ix_SrcType_is_float n))
     (ext_SrcType_is_sint : Certified (∀ {n : Nat}, Stmt_SrcType_is_sint prog prims ix_SrcType_is_sint n)) {n : Nat}
     (ih_SrcType_same : Certified (Stmt_SrcType_same prog prims ix_SrcType_same n))
     (ih_types_same : Certified (Stmt_types_same prog prims ix_types_same n))
@@ -163,18 +191,6 @@ theorem proof_SrcType_sint_kind {prog : SrcProgram} {prims : Prims} {ix_SrcType_
   rw [pcall_succ np fn] at h
   simp only [src_SrcType_sint_kind] at h
   faithful [Lanius.Mini.SrcType.sintKind]
-
-theorem step_SrcType_size {prog : SrcProgram} {prims : Prims} {ix_SrcType_size ix_plus ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_max_size ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_SrcType_size]? = some (src_SrcType_size ix_plus ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_max_size ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_SrcType_size = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}
-    (ih_sizes : Certified (Stmt_sizes prog prims ix_sizes n))
-    (ih_max_size : Certified (Stmt_max_size prog prims ix_max_size n)) :
-    Stmt_SrcType_size prog prims ix_SrcType_size (n + 1) := by
-  intro x0 v0 w h r0
-  rw [pcall_succ np fn] at h
-  simp only [src_SrcType_size] at h
-  faithful [Lanius.Mini.SrcType.size]
 
 theorem proof_SrcType_uint_kind {prog : SrcProgram} {prims : Prims} {ix_SrcType_uint_kind : Nat} (fn : prog.funcs[ix_SrcType_uint_kind]? = some (src_SrcType_uint_kind)) (np : prims.isPrim ix_SrcType_uint_kind = false) {n : Nat} :
     Stmt_SrcType_uint_kind prog prims ix_SrcType_uint_kind n := by
@@ -232,15 +248,6 @@ theorem proof_bool_bits {prog : SrcProgram} {prims : Prims} {ix_bool_bits : Nat}
   simp only [src_bool_bits] at h
   faithful [Lanius.Mini.boolBits]
 
-theorem step_field_offset {prog : SrcProgram} {prims : Prims} {ix_field_offset ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_offset_after : Nat} (fn : prog.funcs[ix_field_offset]? = some (src_field_offset ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_offset_after)) (np : prims.isPrim ix_field_offset = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}
-    (ih_offset_after : Certified (Stmt_offset_after prog prims ix_offset_after n)) :
-    Stmt_field_offset prog prims ix_field_offset (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_field_offset] at h
-  faithful [Lanius.Mini.fieldOffset]
-
 theorem step_lookup {prog : SrcProgram} {prims : Prims} {ix_lookup ix_lookup_at ix_unbox_of_mini_selfhost_List_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_lookup]? = some (src_lookup ix_lookup_at ix_unbox_of_mini_selfhost_List_mini_selfhost_Binding)) (np : prims.isPrim ix_lookup = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Binding : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Binding prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Binding n)) {n : Nat}
     (ih_lookup_at : Certified (Stmt_lookup_at prog prims ix_lookup_at n)) :
@@ -249,28 +256,6 @@ theorem step_lookup {prog : SrcProgram} {prims : Prims} {ix_lookup ix_lookup_at 
   rw [pcall_succ np fn] at h
   simp only [src_lookup] at h
   faithful [Lanius.Mini.lookup]
-
-theorem step_max_size {prog : SrcProgram} {prims : Prims} {ix_max_size ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_max_of : Nat} (fn : prog.funcs[ix_max_size]? = some (src_max_size ix_sizes ix_max_size ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_max_of)) (np : prims.isPrim ix_max_size = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
-    (ext_max_of : Certified (∀ {n : Nat}, Stmt_max_of prog prims ix_max_of n)) {n : Nat}
-    (ih_sizes : Certified (Stmt_sizes prog prims ix_sizes n))
-    (ih_max_size : Certified (Stmt_max_size prog prims ix_max_size n)) :
-    Stmt_max_size prog prims ix_max_size (n + 1) := by
-  intro x0 v0 w h r0
-  rw [pcall_succ np fn] at h
-  simp only [src_max_size] at h
-  faithful [Lanius.Mini.maxSize]
-
-theorem step_sizes {prog : SrcProgram} {prims : Prims} {ix_sizes ix_plus ix_SrcType_size ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_sizes]? = some (src_sizes ix_plus ix_SrcType_size ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_sizes = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}
-    (ih_SrcType_size : Certified (Stmt_SrcType_size prog prims ix_SrcType_size n))
-    (ih_sizes : Certified (Stmt_sizes prog prims ix_sizes n)) :
-    Stmt_sizes prog prims ix_sizes (n + 1) := by
-  intro x0 v0 w h r0
-  rw [pcall_succ np fn] at h
-  simp only [src_sizes] at h
-  faithful [Lanius.Mini.sizes]
 
 theorem step_types_same {prog : SrcProgram} {prims : Prims} {ix_types_same ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_SrcType_same : Nat} (fn : prog.funcs[ix_types_same]? = some (src_types_same ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_SrcType_same ix_types_same)) (np : prims.isPrim ix_types_same = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}
@@ -291,17 +276,5 @@ theorem step_variants_same {prog : SrcProgram} {prims : Prims} {ix_variants_same
   rw [pcall_succ np fn] at h
   simp only [src_variants_same] at h
   faithful [Lanius.Mini.variantsSame]
-
-theorem proof_wrap {prog : SrcProgram} {prims : Prims} {ix_wrap ix_boxed_of_mini_selfhost_Expr ix_UintTy_mask ix_UintTy_is_wide : Nat} (fn : prog.funcs[ix_wrap]? = some (src_wrap ix_boxed_of_mini_selfhost_Expr ix_UintTy_mask ix_UintTy_is_wide)) (np : prims.isPrim ix_wrap = false)
-    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
-    (ext_UintTy_mask : Certified (∀ {n : Nat}, Stmt_UintTy_mask prog prims ix_UintTy_mask n))
-    (ext_UintTy_is_wide : Certified (∀ {n : Nat}, Stmt_UintTy_is_wide prog prims ix_UintTy_is_wide n)) {n : Nat} :
-    Stmt_wrap prog prims ix_wrap n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_wrap] at h
-  faithful [Lanius.Mini.wrap]
 
 end Lanius.Faithful.SelfCert

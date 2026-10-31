@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_no_names (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 30 (RepList 24 RepNat)) x0 v0 →
+  ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 →
     RepBool (Lanius.Mini.noNames x0) w
 
 end Lanius.Faithful.SelfCert

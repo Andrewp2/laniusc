@@ -20,6 +20,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+abbrev Stmt_SrcType_float_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
+    (RepOption 205 RepFloatTy) (Lanius.Mini.SrcType.floatTy x0) w
+
 abbrev Stmt_SrcType_is_bool (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
     RepBool (Lanius.Mini.SrcType.isBool x0) w
@@ -27,6 +31,14 @@ abbrev Stmt_SrcType_is_bool (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
 abbrev Stmt_SrcType_is_char (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
     RepBool (Lanius.Mini.SrcType.isChar x0) w
+
+abbrev Stmt_SrcType_is_float (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Lanius.Mini.FloatTy} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → RepFloatTy x1 v1 →
+    RepBool (Lanius.Mini.SrcType.isFloat x0 x1) w
+
+abbrev Stmt_SrcType_is_float_any (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
+    RepBool (Lanius.Mini.SrcType.isFloatAny x0) w
 
 abbrev Stmt_SrcType_is_i32 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
@@ -70,15 +82,11 @@ abbrev Stmt_SrcType_same (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_SrcType_sint_kind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
-    (RepOption 194 RepUintTy) (Lanius.Mini.SrcType.sintKind x0) w
-
-abbrev Stmt_SrcType_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
-    RepNat (Lanius.Mini.SrcType.size x0) w
+    (RepOption 198 RepUintTy) (Lanius.Mini.SrcType.sintKind x0) w
 
 abbrev Stmt_SrcType_uint_kind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
-    (RepOption 194 RepUintTy) (Lanius.Mini.SrcType.uintKind x0) w
+    (RepOption 198 RepUintTy) (Lanius.Mini.SrcType.uintKind x0) w
 
 abbrev Stmt_SrcType_word (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
@@ -100,32 +108,16 @@ abbrev Stmt_bool_bits (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepBool x0 v0 →
     RepU64 (Lanius.Mini.boolBits x0) w
 
-abbrev Stmt_field_offset (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcType} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 67 RepSrcType) x0 v0 → RepNat x1 v1 →
-    RepNat (Lanius.Mini.fieldOffset x0 x1) w
-
 abbrev Stmt_lookup (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 126 RepBinding) x0 v0 → RepNat x1 v1 →
-    (RepOption 143 RepBinding) (Lanius.Mini.lookup x0 x1) w
-
-abbrev Stmt_max_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Lanius.Mini.SrcType)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 71 (RepList 67 RepSrcType)) x0 v0 →
-    RepNat (Lanius.Mini.maxSize x0) w
-
-abbrev Stmt_sizes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 67 RepSrcType) x0 v0 →
-    RepNat (Lanius.Mini.sizes x0) w
+  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 130 RepBinding) x0 v0 → RepNat x1 v1 →
+    (RepOption 147 RepBinding) (Lanius.Mini.lookup x0 x1) w
 
 abbrev Stmt_types_same (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcType} {x1 : List Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 67 RepSrcType) x0 v0 → (RepList 67 RepSrcType) x1 v1 →
+  ∀ {x0 : List Lanius.Mini.SrcType} {x1 : List Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 71 RepSrcType) x0 v0 → (RepList 71 RepSrcType) x1 v1 →
     RepBool (Lanius.Mini.typesSame x0 x1) w
 
 abbrev Stmt_variants_same (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Lanius.Mini.SrcType)} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 71 (RepList 67 RepSrcType)) x0 v0 → (RepList 71 (RepList 67 RepSrcType)) x1 v1 →
+  ∀ {x0 : List (List Lanius.Mini.SrcType)} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 75 (RepList 71 RepSrcType)) x0 v0 → (RepList 75 (RepList 71 RepSrcType)) x1 v1 →
     RepBool (Lanius.Mini.variantsSame x0 x1) w
-
-abbrev Stmt_wrap (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.UintTy} {x1 : Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepUintTy x0 v0 → RepExpr x1 v1 →
-    RepExpr (Lanius.Mini.wrap x0 x1) w
 
 end Lanius.Faithful.SelfCert

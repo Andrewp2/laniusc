@@ -66,6 +66,7 @@ theorem sty_signed {t : SrcType} {ty : Core.SignedIntTy} {a : Int} (h : STy t (.
   | ptr => exact h.elim
   | slice => exact h.elim
   | char => exact h.elim
+  | float => exact h.elim
   | sint => exact h.elim
 
 theorem sty_unsigned {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy t (.unsigned ty a)) :
@@ -84,6 +85,7 @@ theorem sty_unsigned {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy 
   | ptr => exact h.elim
   | slice => exact h.elim
   | char => exact h.elim
+  | float => exact h.elim
   | sint => exact h.elim
 
 theorem sty_wrapU {t : SrcType} {ty : Core.UnsignedIntTy} {a : Nat} (h : STy t (.unsigned ty a)) (x : Nat) :
@@ -110,6 +112,7 @@ theorem sty_cases {t : SrcType} {v : Value} (h : STy t v) :
   | ptr => exact h.elim
   | slice => exact h.elim
   | char => exact h.elim
+  | float => exact h.elim
   | sint => exact h.elim
 
 /-! ## Binary operators -/
@@ -332,8 +335,10 @@ theorem cast_flat {tgt : Core.Target} {d : Core.ScalarTy} {l v : Value} (h : eva
 
 theorem cast_sty {ty t : SrcType} {lv v : Value} (hl : STy t lv) (num : numTy ty = true)
     (h : evalScalarCast .x86_64 ty.toScalar lv = .ok v) : STy ty v := by
+  have notFloat : ∀ ft, ty ≠ .float ft := by rintro ft rfl; simp [numTy] at num
   rcases sty_cases hl with ⟨b, rfl⟩ | ⟨sty, a, rfl⟩ | ⟨uty, a, rfl⟩ | rfl <;>
     cases ty <;> simp only [SrcType.toScalar, evalScalarCast, Except.ok.injEq, reduceCtorEq] at h
+  all_goals try exact absurd rfl (notFloat _)
   all_goals subst h
   all_goals first
     | exact ⟨_, rfl, wrap_i32 _⟩

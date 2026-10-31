@@ -7,13 +7,14 @@ public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
+public import Lanius.Faithful.Gen.SelfStmtC_DivOp_size
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_isWide
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_mask
 public import Lanius.Faithful.Gen.SelfStmtC_conjunction
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
-public import Lanius.Faithful.Gen.SelfStmtC_norm
 import all Lanius.Faithful.Gen.SelfSrcC_lowerLocal
 import all Lanius.Mini.Compiler.P.lowerLocal
 
@@ -100,10 +101,13 @@ theorem proof_lower_negate {prog : SrcProgram} {prims : Prims} {ix_lower_negate 
   simp only [src_lower_negate] at h
   faithful [Lanius.Mini.lowerNegate]
 
-theorem proof_lower_negate_typed {prog : SrcProgram} {prims : Prims} {ix_lower_negate_typed ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_negate_signed : Nat} (fn : prog.funcs[ix_lower_negate_typed]? = some (src_lower_negate_typed ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_negate_signed)) (np : prims.isPrim ix_lower_negate_typed = false)
+theorem proof_lower_negate_typed {prog : SrcProgram} {prims : Prims} {ix_lower_negate_typed ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_is_float_any ix_negate_float ix_SrcType_float_ty ix_SrcType_sint_kind ix_negate_signed : Nat} (fn : prog.funcs[ix_lower_negate_typed]? = some (src_lower_negate_typed ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_is_float_any ix_negate_float ix_SrcType_float_ty ix_SrcType_sint_kind ix_negate_signed)) (np : prims.isPrim ix_lower_negate_typed = false)
     (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
     (ext_SrcType_is_isize : Certified (∀ {n : Nat}, Stmt_SrcType_is_isize prog prims ix_SrcType_is_isize n))
+    (ext_SrcType_is_float_any : Certified (∀ {n : Nat}, Stmt_SrcType_is_float_any prog prims ix_SrcType_is_float_any n))
+    (ext_negate_float : Certified (∀ {n : Nat}, Stmt_negate_float prog prims ix_negate_float n))
+    (ext_SrcType_float_ty : Certified (∀ {n : Nat}, Stmt_SrcType_float_ty prog prims ix_SrcType_float_ty n))
     (ext_SrcType_sint_kind : Certified (∀ {n : Nat}, Stmt_SrcType_sint_kind prog prims ix_SrcType_sint_kind n))
     (ext_negate_signed : Certified (∀ {n : Nat}, Stmt_negate_signed prog prims ix_negate_signed n)) {n : Nat} :
     Stmt_lower_negate_typed prog prims ix_lower_negate_typed n := by
@@ -144,6 +148,18 @@ theorem proof_lower_unsigned {prog : SrcProgram} {prims : Prims} {ix_lower_unsig
   rw [pcall_succ np fn] at h
   simp only [src_lower_unsigned] at h
   faithful [Lanius.Mini.lowerUnsigned]
+
+theorem proof_negate_float {prog : SrcProgram} {prims : Prims} {ix_negate_float ix_boxed_of_mini_selfhost_Expr ix_FloatTy_sign_word ix_FloatTy_sign_bit : Nat} (fn : prog.funcs[ix_negate_float]? = some (src_negate_float ix_boxed_of_mini_selfhost_Expr ix_FloatTy_sign_word ix_FloatTy_sign_bit)) (np : prims.isPrim ix_negate_float = false)
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
+    (ext_FloatTy_sign_word : Certified (∀ {n : Nat}, Stmt_FloatTy_sign_word prog prims ix_FloatTy_sign_word n))
+    (ext_FloatTy_sign_bit : Certified (∀ {n : Nat}, Stmt_FloatTy_sign_bit prog prims ix_FloatTy_sign_bit n)) {n : Nat} :
+    Stmt_negate_float prog prims ix_negate_float n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_negate_float] at h
+  faithful [Lanius.Mini.negateFloat]
 
 theorem proof_negate_signed {prog : SrcProgram} {prims : Prims} {ix_negate_signed ix_boxed_of_mini_selfhost_Expr ix_UintTy_is_wide ix_norm : Nat} (fn : prog.funcs[ix_negate_signed]? = some (src_negate_signed ix_boxed_of_mini_selfhost_Expr ix_UintTy_is_wide ix_norm)) (np : prims.isPrim ix_negate_signed = false)
     (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))

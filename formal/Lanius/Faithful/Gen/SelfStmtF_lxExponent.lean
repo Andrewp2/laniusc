@@ -21,35 +21,35 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lx_after_fraction (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
     RepNumScan (Lanius.Mini.lxAfterFraction x0 x1) w
 
 abbrev Stmt_lx_base_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepOption 196 RepNat) (Lanius.Mini.lxBaseOf x0) w
+    (RepOption 200 RepNat) (Lanius.Mini.lxBaseOf x0) w
 
 abbrev Stmt_lx_exponent (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
     RepNumScan (Lanius.Mini.lxExponent x0 x1) w
 
 abbrev Stmt_lx_finish_decimal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
     RepNumScan (Lanius.Mini.lxFinishDecimal x0 x1) w
 
 abbrev Stmt_lx_fraction (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
     RepNumScan (Lanius.Mini.lxFraction x0 x1) w
 
 abbrev Stmt_lx_fraction_digits (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Lanius.Mini.Scan} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepScan x1 v1 →
+  ∀ {x0 : List Nat} {x1 : Lanius.Mini.Scan} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepScan x1 v1 →
     RepNumScan (Lanius.Mini.lxFractionDigits x0 x1) w
 
 abbrev Stmt_lx_number (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
     RepNumScan (Lanius.Mini.lxNumber x0 x1) w
 
 abbrev Stmt_lx_prefixed_base (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
-    (RepOption 196 RepNat) (Lanius.Mini.lxPrefixedBase x0 x1) w
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
+    (RepOption 200 RepNat) (Lanius.Mini.lxPrefixedBase x0 x1) w
 
 end Lanius.Faithful.SelfCert

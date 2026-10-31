@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::width_of -/
-def src_width_of (ix_word_width : Nat) : SrcFunc := { params := [{ id := 9, ty := ty8 }], ret := ty53, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_word_width [SrcEff.ePure (SrcExpr.local 9)]) ty259 ty53 [[106], []] [SrcEff.ePure (SrcExpr.local 106), SrcEff.eVariant ty53 1 []]) }
+def src_width_of (ix_word_width : Nat) : SrcFunc := { params := [{ id := 9, ty := ty9 }], ret := ty54, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_word_width [SrcEff.ePure (SrcExpr.local 9)]) ty264 ty54 [[106], []] [SrcEff.ePure (SrcExpr.local 106), SrcEff.eVariant ty54 1 []]) }
 
 end
 

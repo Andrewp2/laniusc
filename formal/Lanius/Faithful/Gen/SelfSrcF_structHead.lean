@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::struct_head -/
-def src_struct_head : SrcFunc := { params := [{ id := 12, ty := SrcType.bool }, { id := 22, ty := ty182 }, { id := 31, ty := ty293 }], ret := ty288, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 12) (SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 31)) ty293 ty288 [[183], []] [SrcEff.eVariant ty288 3 [SrcEff.ePure (SrcExpr.local 183)], SrcEff.eVariant ty288 8 [SrcEff.ePure (SrcExpr.local 22)]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty288 8 [SrcEff.ePure (SrcExpr.local 22)])) }
+def src_struct_head : SrcFunc := { params := [{ id := 12, ty := SrcType.bool }, { id := 22, ty := ty186 }, { id := 31, ty := ty299 }], ret := ty294, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 12) (SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 31)) ty299 ty294 [[183], []] [SrcEff.eVariant ty294 3 [SrcEff.ePure (SrcExpr.local 183)], SrcEff.eVariant ty294 8 [SrcEff.ePure (SrcExpr.local 22)]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty294 8 [SrcEff.ePure (SrcExpr.local 22)])) }
 
 end
 

@@ -3,7 +3,10 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_Word_narrows
+public import Lanius.Faithful.Gen.SelfStmt1
+public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmtC_BinOp_folds
+public import Lanius.Faithful.Gen.SelfStmtC_DivOp_size
 public import Lanius.Faithful.Gen.SelfStmtC_Word_compute
 public import Lanius.Faithful.Gen.SelfStmtC_Word_narrows
 public import Lanius.Faithful.Gen.SelfStmtC_declareProgram
@@ -36,6 +39,39 @@ theorem proof_Expr_narrow {prog : SrcProgram} {prims : Prims} {ix_Expr_narrow ix
   rw [pcall_succ np fn] at h
   simp only [src_Expr_narrow] at h
   faithful [Lanius.Mini.Expr.narrow]
+
+theorem proof_FArith_number {prog : SrcProgram} {prims : Prims} {ix_FArith_number : Nat} (fn : prog.funcs[ix_FArith_number]? = some (src_FArith_number)) (np : prims.isPrim ix_FArith_number = false) {n : Nat} :
+    Stmt_FArith_number prog prims ix_FArith_number n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_FArith_number] at h
+  faithful [Lanius.Mini.FArith.number]
+
+theorem proof_FCmp_number {prog : SrcProgram} {prims : Prims} {ix_FCmp_number : Nat} (fn : prog.funcs[ix_FCmp_number]? = some (src_FCmp_number)) (np : prims.isPrim ix_FCmp_number = false) {n : Nat} :
+    Stmt_FCmp_number prog prims ix_FCmp_number n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_FCmp_number] at h
+  faithful [Lanius.Mini.FCmp.number]
+
+theorem proof_FOp_number {prog : SrcProgram} {prims : Prims} {ix_FOp_number ix_plus ix_times ix_Word_number ix_FloatTy_number ix_FArith_number ix_FCmp_number : Nat} (fn : prog.funcs[ix_FOp_number]? = some (src_FOp_number ix_plus ix_times ix_Word_number ix_FloatTy_number ix_FArith_number ix_FCmp_number)) (np : prims.isPrim ix_FOp_number = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
+    (ext_Word_number : Certified (∀ {n : Nat}, Stmt_Word_number prog prims ix_Word_number n))
+    (ext_FloatTy_number : Certified (∀ {n : Nat}, Stmt_FloatTy_number prog prims ix_FloatTy_number n))
+    (ext_FArith_number : Certified (∀ {n : Nat}, Stmt_FArith_number prog prims ix_FArith_number n))
+    (ext_FCmp_number : Certified (∀ {n : Nat}, Stmt_FCmp_number prog prims ix_FCmp_number n)) {n : Nat} :
+    Stmt_FOp_number prog prims ix_FOp_number n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_FOp_number] at h
+  faithful [Lanius.Mini.FOp.number]
 
 theorem proof_Word_keeps {prog : SrcProgram} {prims : Prims} {ix_Word_keeps ix_Expr_narrow : Nat} (fn : prog.funcs[ix_Word_keeps]? = some (src_Word_keeps ix_Expr_narrow)) (np : prims.isPrim ix_Word_keeps = false)
     (ext_Expr_narrow : Certified (∀ {n : Nat}, Stmt_Expr_narrow prog prims ix_Expr_narrow n)) {n : Nat} :

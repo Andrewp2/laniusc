@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_arm_scope (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : List Lanius.Mini.SrcType} {x2 : Nat} {x3 : List Lanius.Mini.Binding} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 24 RepNat) x0 v0 → (RepList 67 RepSrcType) x1 v1 → RepNat x2 v2 → (RepList 126 RepBinding) x3 v3 →
-    (RepOption 195 (RepList 126 RepBinding)) (Lanius.Mini.armScope x0 x1 x2 x3) w
+  ∀ {x0 : List Nat} {x1 : List Lanius.Mini.SrcType} {x2 : Nat} {x3 : List Lanius.Mini.Binding} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 71 RepSrcType) x1 v1 → RepNat x2 v2 → (RepList 130 RepBinding) x3 v3 →
+    (RepOption 199 (RepList 130 RepBinding)) (Lanius.Mini.armScope x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

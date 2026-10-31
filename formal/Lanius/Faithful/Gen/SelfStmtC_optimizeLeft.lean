@@ -29,8 +29,8 @@ abbrev Stmt_ite_or_skip (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     RepStmt (Lanius.Mini.iteOrSkip x0 x1 x2) w
 
 abbrev Stmt_optimize_all (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 86 RepExpr) x0 v0 →
-    (RepList 86 RepExpr) (Lanius.Mini.optimizeAll x0) w
+  ∀ {x0 : List Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 90 RepExpr) x0 v0 →
+    (RepList 90 RepExpr) (Lanius.Mini.optimizeAll x0) w
 
 abbrev Stmt_optimize_assign (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepExpr x1 v1 →

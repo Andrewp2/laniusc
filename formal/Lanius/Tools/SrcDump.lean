@@ -72,6 +72,8 @@ def srcTyName : SrcType → String
   | .unit => "unit"
   | .isize => "isize"
   | .char => "char"
+  | .float .f32 => "f32"
+  | .float .f64 => "f64"
   | .slice _ => "slice"
   | .struct id _ => s!"#{id}"
   | .enum id _ => s!"#{id}"
@@ -187,6 +189,8 @@ partial def typeText : SrcType → StateM Table String
   | .unit => pure ".unit"
   | .isize => pure ".isize"
   | .char => pure ".char"
+  | .float .f32 => pure "(.float .f32)"
+  | .float .f64 => pure "(.float .f64)"
   | .sint k => pure s!"(.sint {uintText k})"
   | .slice e => do named s!".slice {← typeText e}"
   | .struct id fs => do

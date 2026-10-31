@@ -18,8 +18,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
+public import Lanius.Faithful.Gen.SelfStmtF_isFnPath
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
-public import Lanius.Faithful.Gen.SelfStmtF_isSomeIndex
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees

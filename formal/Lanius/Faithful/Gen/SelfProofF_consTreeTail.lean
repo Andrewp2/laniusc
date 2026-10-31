@@ -330,11 +330,12 @@ theorem proof_param_patterns {prog : SrcProgram} {prims : Prims} {ix_param_patte
   simp only [src_param_patterns] at h
   faithful [Lanius.Mini.paramPatterns]
 
-theorem proof_pattern_of {prog : SrcProgram} {prims : Prims} {ix_pattern_of ix_node_prod ix_kid ix_p_param_named ix_p_param_self ix_p_self_param_plain ix_p_self_param_typed : Nat} (fn : prog.funcs[ix_pattern_of]? = some (src_pattern_of ix_node_prod ix_kid ix_p_param_named ix_p_param_self ix_p_self_param_plain ix_p_self_param_typed)) (np : prims.isPrim ix_pattern_of = false)
+theorem proof_pattern_of {prog : SrcProgram} {prims : Prims} {ix_pattern_of ix_node_prod ix_kid ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_p_self_param_plain ix_p_self_param_typed : Nat} (fn : prog.funcs[ix_pattern_of]? = some (src_pattern_of ix_node_prod ix_kid ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_p_self_param_plain ix_p_self_param_typed)) (np : prims.isPrim ix_pattern_of = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_p_param_named : Certified (∀ {n : Nat}, Stmt_p_param_named prog prims ix_p_param_named n))
     (ext_p_param_self : Certified (∀ {n : Nat}, Stmt_p_param_self prog prims ix_p_param_self n))
+    (ext_p_param_self_ref : Certified (∀ {n : Nat}, Stmt_p_param_self_ref prog prims ix_p_param_self_ref n))
     (ext_p_self_param_plain : Certified (∀ {n : Nat}, Stmt_p_self_param_plain prog prims ix_p_self_param_plain n))
     (ext_p_self_param_typed : Certified (∀ {n : Nat}, Stmt_p_self_param_typed prog prims ix_p_self_param_typed n)) {n : Nat} :
     Stmt_pattern_of prog prims ix_pattern_of n := by

@@ -28,7 +28,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_Expr_agrees {prog : SrcProgram} {prims : Prims} {ix_Expr_agrees ix_unbox_of_mini_selfhost_Expr ix_Expr_is_var ix_Expr_constant ix_Expr_is_constant ix_neg_agrees ix_binary_agrees ix_unit_agrees ix_compare_agrees : Nat} (fn : prog.funcs[ix_Expr_agrees]? = some (src_Expr_agrees ix_unbox_of_mini_selfhost_Expr ix_Expr_is_var ix_Expr_constant ix_Expr_is_constant ix_neg_agrees ix_binary_agrees ix_unit_agrees ix_compare_agrees)) (np : prims.isPrim ix_Expr_agrees = false)
+theorem step_Expr_agrees {prog : SrcProgram} {prims : Prims} {ix_Expr_agrees ix_unbox_of_mini_selfhost_Expr ix_Expr_is_var ix_Expr_constant ix_Expr_is_constant ix_neg_agrees ix_binary_agrees ix_unit_agrees ix_compare_agrees ix_fp_agrees : Nat} (fn : prog.funcs[ix_Expr_agrees]? = some (src_Expr_agrees ix_unbox_of_mini_selfhost_Expr ix_Expr_is_var ix_Expr_constant ix_Expr_is_constant ix_neg_agrees ix_binary_agrees ix_unit_agrees ix_compare_agrees ix_fp_agrees)) (np : prims.isPrim ix_Expr_agrees = false)
     (ext_unbox_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Expr prog prims ix_unbox_of_mini_selfhost_Expr n))
     (ext_Expr_is_var : Certified (∀ {n : Nat}, Stmt_Expr_is_var prog prims ix_Expr_is_var n))
     (ext_Expr_constant : Certified (∀ {n : Nat}, Stmt_Expr_constant prog prims ix_Expr_constant n))
@@ -36,7 +36,8 @@ theorem step_Expr_agrees {prog : SrcProgram} {prims : Prims} {ix_Expr_agrees ix_
     (ih_neg_agrees : Certified (Stmt_neg_agrees prog prims ix_neg_agrees n))
     (ih_binary_agrees : Certified (Stmt_binary_agrees prog prims ix_binary_agrees n))
     (ih_unit_agrees : Certified (Stmt_unit_agrees prog prims ix_unit_agrees n))
-    (ih_compare_agrees : Certified (Stmt_compare_agrees prog prims ix_compare_agrees n)) :
+    (ih_compare_agrees : Certified (Stmt_compare_agrees prog prims ix_compare_agrees n))
+    (ih_fp_agrees : Certified (Stmt_fp_agrees prog prims ix_fp_agrees n)) :
     Stmt_Expr_agrees prog prims ix_Expr_agrees (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1
   rw [pcall_succ np fn] at h

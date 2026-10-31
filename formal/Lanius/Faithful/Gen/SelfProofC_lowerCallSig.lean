@@ -8,11 +8,12 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
 public import Lanius.Faithful.Gen.SelfStmtC_copyBinding
+public import Lanius.Faithful.Gen.SelfStmtC_lowerApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
-public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_lowerCallSig
 import all Lanius.Mini.Compiler.P.lowerCallSig
 

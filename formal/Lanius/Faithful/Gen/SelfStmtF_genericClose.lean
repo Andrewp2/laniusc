@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_generic_close (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Token} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 44 RepToken) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
+  ∀ {x0 : List Lanius.Mini.Token} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 45 RepToken) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
     RepBool (Lanius.Mini.genericClose x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

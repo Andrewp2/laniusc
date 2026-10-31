@@ -5,9 +5,9 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_compileOr
 public import Lanius.Faithful.Gen.SelfStmtC_Stmt_kills
 public import Lanius.Faithful.Gen.SelfStmtC_compileOr
+public import Lanius.Faithful.Gen.SelfStmtC_layout
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 public import Lanius.Faithful.Gen.SelfStmtC_optimizeIte
-public import Lanius.Faithful.Gen.SelfStmtC_pow2
 public import Lanius.Faithful.Gen.SelfStmtC_sigs
 import all Lanius.Faithful.Gen.SelfSrcC_compileOr
 import all Lanius.Mini.Compiler.P.compileOr

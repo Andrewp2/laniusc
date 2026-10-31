@@ -8,14 +8,16 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_isWide
 public import Lanius.Faithful.Gen.SelfStmtC_arithShiftRight
+public import Lanius.Faithful.Gen.SelfStmtC_arithUint
 public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_evalSame
+public import Lanius.Faithful.Gen.SelfStmtC_floatApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLoadType
-public import Lanius.Faithful.Gen.SelfStmtC_norm
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_arithOf
 
@@ -116,6 +118,29 @@ theorem proof_eval_sized {prog : SrcProgram} {prims : Prims} {ix_eval_sized ix_S
   rw [pcall_succ np fn] at h
   simp only [src_eval_sized] at h
   faithful [Lanius.Mini.Inline.evalSized]
+
+theorem proof_float_arith_of {prog : SrcProgram} {prims : Prims} {ix_float_arith_of ix_SrcType_is_float ix_float_apply ix_float_op : Nat} (fn : prog.funcs[ix_float_arith_of]? = some (src_float_arith_of ix_SrcType_is_float ix_float_apply ix_float_op)) (np : prims.isPrim ix_float_arith_of = false)
+    (ext_SrcType_is_float : Certified (∀ {n : Nat}, Stmt_SrcType_is_float prog prims ix_SrcType_is_float n))
+    (ext_float_apply : Certified (∀ {n : Nat}, Stmt_float_apply prog prims ix_float_apply n))
+    (ext_float_op : Certified (∀ {n : Nat}, Stmt_float_op prog prims ix_float_op n)) {n : Nat} :
+    Stmt_float_arith_of prog prims ix_float_arith_of n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_float_arith_of] at h
+  faithful [Lanius.Mini.Inline.floatArithOf]
+
+theorem proof_float_order_of {prog : SrcProgram} {prims : Prims} {ix_float_order_of ix_SrcType_is_float ix_float_compare : Nat} (fn : prog.funcs[ix_float_order_of]? = some (src_float_order_of ix_SrcType_is_float ix_float_compare)) (np : prims.isPrim ix_float_order_of = false)
+    (ext_SrcType_is_float : Certified (∀ {n : Nat}, Stmt_SrcType_is_float prog prims ix_SrcType_is_float n))
+    (ext_float_compare : Certified (∀ {n : Nat}, Stmt_float_compare prog prims ix_float_compare n)) {n : Nat} :
+    Stmt_float_order_of prog prims ix_float_order_of n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_float_order_of] at h
+  faithful [Lanius.Mini.Inline.floatOrderOf]
 
 theorem proof_lower_scalar_slot {prog : SrcProgram} {prims : Prims} {ix_lower_scalar_slot ix_SrcType_is_scalar : Nat} (fn : prog.funcs[ix_lower_scalar_slot]? = some (src_lower_scalar_slot ix_SrcType_is_scalar)) (np : prims.isPrim ix_lower_scalar_slot = false)
     (ext_SrcType_is_scalar : Certified (∀ {n : Nat}, Stmt_SrcType_is_scalar prog prims ix_SrcType_is_scalar n)) {n : Nat} :

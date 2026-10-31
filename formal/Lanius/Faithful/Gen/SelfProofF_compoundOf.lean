@@ -14,6 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pElseStmt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pIdentPlain
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pRetVoid
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
@@ -149,6 +150,18 @@ theorem step_let_first {prog : SrcProgram} {prims : Prims} {ix_let_first ix_minu
   rw [pcall_succ np fn] at h
   simp only [src_let_first] at h
   faithful [Lanius.Mini.letFirst]
+
+theorem proof_param_token {prog : SrcProgram} {prims : Prims} {ix_param_token ix_node_prod ix_kid_token ix_p_param_self_ref : Nat} (fn : prog.funcs[ix_param_token]? = some (src_param_token ix_node_prod ix_kid_token ix_p_param_self_ref)) (np : prims.isPrim ix_param_token = false)
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
+    (ext_p_param_self_ref : Certified (∀ {n : Nat}, Stmt_p_param_self_ref prog prims ix_p_param_self_ref n)) {n : Nat} :
+    Stmt_param_token prog prims ix_param_token n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_param_token] at h
+  faithful [Lanius.Mini.paramToken]
 
 theorem step_params_of {prog : SrcProgram} {prims : Prims} {ix_params_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_MParam ix_param_of : Nat} (fn : prog.funcs[ix_params_of]? = some (src_params_of ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_MParam ix_param_of)) (np : prims.isPrim ix_params_of = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))

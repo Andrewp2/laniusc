@@ -21,27 +21,27 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lx_drop (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
-    (RepList 24 RepNat) (Lanius.Mini.lxDrop x0 x1) w
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
+    (RepList 25 RepNat) (Lanius.Mini.lxDrop x0 x1) w
 
 abbrev Stmt_lx_ident_end (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
     RepNat (Lanius.Mini.lxIdentEnd x0 x1) w
 
 abbrev Stmt_lx_ident_run (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
     RepNat (Lanius.Mini.lxIdentRun x0) w
 
 abbrev Stmt_lx_is_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 196 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : Option Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 200 RepNat) x0 v0 → RepNat x1 v1 →
     RepBool (Lanius.Mini.lxIsByte x0 x1) w
 
 abbrev Stmt_lx_line_run (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
     RepNat (Lanius.Mini.lxLineRun x0) w
 
 abbrev Stmt_lx_space_run (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
     RepNat (Lanius.Mini.lxSpaceRun x0) w
 
 abbrev Stmt_lx_symbol_start (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -49,7 +49,7 @@ abbrev Stmt_lx_symbol_start (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     RepBool (Lanius.Mini.lxSymbolStart x0) w
 
 abbrev Stmt_lx_take (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
-    (RepList 24 RepNat) (Lanius.Mini.lxTake x0 x1) w
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
+    (RepList 25 RepNat) (Lanius.Mini.lxTake x0 x1) w
 
 end Lanius.Faithful.SelfCert

@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::no_names -/
-def src_no_names : SrcFunc := { params := [{ id := 9, ty := ty26 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 9)) ty26 (SrcType.bool) [[], [106, 109]] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
+def src_no_names : SrcFunc := { params := [{ id := 9, ty := ty27 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 9)) ty27 (SrcType.bool) [[], [106, 109]] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
 
 end
 

@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_eval_cast (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Nat} {x2 : Option Lanius.Mini.Evaluated} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcType x0 v0 → RepNat x1 v1 → (RepOption 147 RepEvaluated) x2 v2 →
-    (RepOption 147 RepEvaluated) (Lanius.Mini.evalCast x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Nat} {x2 : Option Lanius.Mini.Evaluated} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcType x0 v0 → RepNat x1 v1 → (RepOption 151 RepEvaluated) x2 v2 →
+    (RepOption 151 RepEvaluated) (Lanius.Mini.evalCast x0 x1 x2) w
 
 abbrev Stmt_eval_not (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Evaluated} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 147 RepEvaluated) x1 v1 →
-    (RepOption 147 RepEvaluated) (Lanius.Mini.evalNot x0 x1) w
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.Evaluated} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 151 RepEvaluated) x1 v1 →
+    (RepOption 151 RepEvaluated) (Lanius.Mini.evalNot x0 x1) w
 
 end Lanius.Faithful.SelfCert

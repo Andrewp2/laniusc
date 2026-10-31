@@ -205,10 +205,33 @@ theorem proof_inst_ret {prog : SrcProgram} {prims : Prims} {ix_inst_ret ix_get_o
   simp only [src_inst_ret] at h
   faithful [Lanius.Mini.instRet]
 
-theorem proof_is_type_param {prog : SrcProgram} {prims : Prims} {ix_is_type_param ix_is_none_type ix_primitive ix_member : Nat} (fn : prog.funcs[ix_is_type_param]? = some (src_is_type_param ix_is_none_type ix_primitive ix_member)) (np : prims.isPrim ix_is_type_param = false)
+theorem proof_is_some_index {prog : SrcProgram} {prims : Prims} {ix_is_some_index : Nat} (fn : prog.funcs[ix_is_some_index]? = some (src_is_some_index)) (np : prims.isPrim ix_is_some_index = false) {n : Nat} :
+    Stmt_is_some_index prog prims ix_is_some_index n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_some_index] at h
+  faithful [Lanius.Mini.isSomeIndex]
+
+theorem proof_is_struct_at {prog : SrcProgram} {prims : Prims} {ix_is_struct_at ix_field_types_Decls_of_mini_selfhost_Decls ix_get_of_mini_selfhost_TypeDecl : Nat} (fn : prog.funcs[ix_is_struct_at]? = some (src_is_struct_at ix_field_types_Decls_of_mini_selfhost_Decls ix_get_of_mini_selfhost_TypeDecl)) (np : prims.isPrim ix_is_struct_at = false)
+    (ext_field_types_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_types_Decls_of_mini_selfhost_Decls prog prims ix_field_types_Decls_of_mini_selfhost_Decls n))
+    (ext_get_of_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_TypeDecl prog prims ix_get_of_mini_selfhost_TypeDecl n)) {n : Nat} :
+    Stmt_is_struct_at prog prims ix_is_struct_at n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_is_struct_at] at h
+  faithful [Lanius.Mini.isStructAt]
+
+theorem proof_is_type_param {prog : SrcProgram} {prims : Prims} {ix_is_type_param ix_single_of_mini_selfhost_List_usize ix_is_none_type ix_primitive ix_member ix_type_decl_at ix_is_struct_at : Nat} (fn : prog.funcs[ix_is_type_param]? = some (src_is_type_param ix_single_of_mini_selfhost_List_usize ix_is_none_type ix_primitive ix_member ix_type_decl_at ix_is_struct_at)) (np : prims.isPrim ix_is_type_param = false)
+    (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))
     (ext_is_none_type : Certified (∀ {n : Nat}, Stmt_is_none_type prog prims ix_is_none_type n))
     (ext_primitive : Certified (∀ {n : Nat}, Stmt_primitive prog prims ix_primitive n))
-    (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n)) {n : Nat} :
+    (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n))
+    (ext_type_decl_at : Certified (∀ {n : Nat}, Stmt_type_decl_at prog prims ix_type_decl_at n))
+    (ext_is_struct_at : Certified (∀ {n : Nat}, Stmt_is_struct_at prog prims ix_is_struct_at n)) {n : Nat} :
     Stmt_is_type_param prog prims ix_is_type_param n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
@@ -217,9 +240,10 @@ theorem proof_is_type_param {prog : SrcProgram} {prims : Prims} {ix_is_type_para
   simp only [src_is_type_param] at h
   faithful [Lanius.Mini.isTypeParam]
 
-theorem proof_owner_ty {prog : SrcProgram} {prims : Prims} {ix_owner_ty ix_param_ty ix_prim_ty : Nat} (fn : prog.funcs[ix_owner_ty]? = some (src_owner_ty ix_param_ty ix_prim_ty)) (np : prims.isPrim ix_owner_ty = false)
+theorem proof_owner_ty {prog : SrcProgram} {prims : Prims} {ix_owner_ty ix_single_of_mini_selfhost_List_usize ix_param_ty ix_prim_or_named : Nat} (fn : prog.funcs[ix_owner_ty]? = some (src_owner_ty ix_single_of_mini_selfhost_List_usize ix_param_ty ix_prim_or_named)) (np : prims.isPrim ix_owner_ty = false)
+    (ext_single_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n))
     (ext_param_ty : Certified (∀ {n : Nat}, Stmt_param_ty prog prims ix_param_ty n))
-    (ext_prim_ty : Certified (∀ {n : Nat}, Stmt_prim_ty prog prims ix_prim_ty n)) {n : Nat} :
+    (ext_prim_or_named : Certified (∀ {n : Nat}, Stmt_prim_or_named prog prims ix_prim_or_named n)) {n : Nat} :
     Stmt_owner_ty prog prims ix_owner_ty n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n

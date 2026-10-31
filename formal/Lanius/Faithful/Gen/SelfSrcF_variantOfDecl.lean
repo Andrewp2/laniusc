@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::variant_of_decl -/
-def src_variant_of_decl (ix_position : Nat) : SrcFunc := { params := [{ id := 16, ty := ty103 }, { id := 29, ty := SrcType.uint (UintTy.usize) }, { id := 39, ty := ty19 }], ret := ty301, body := SrcStmt.then (SrcStmt.if (SrcExpr.field 16 3) (SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_position [SrcEff.ePure (SrcExpr.field 16 6), SrcEff.ePure (SrcExpr.local 39), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64)]) ty229 ty301 [[214], []] [SrcEff.eVariant ty301 0 [SrcEff.eStruct ty300 [SrcEff.ePure (SrcExpr.local 29), SrcEff.ePure (SrcExpr.local 214)]], SrcEff.eVariant ty301 1 []])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty301 1 [])) }
+def src_variant_of_decl (ix_position : Nat) : SrcFunc := { params := [{ id := 16, ty := ty107 }, { id := 29, ty := SrcType.uint (UintTy.usize) }, { id := 39, ty := ty20 }], ret := ty307, body := SrcStmt.then (SrcStmt.if (SrcExpr.field 16 3) (SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_position [SrcEff.ePure (SrcExpr.field 16 6), SrcEff.ePure (SrcExpr.local 39), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64)]) ty233 ty307 [[214], []] [SrcEff.eVariant ty307 0 [SrcEff.eStruct ty306 [SrcEff.ePure (SrcExpr.local 29), SrcEff.ePure (SrcExpr.local 214)]], SrcEff.eVariant ty307 1 []])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty307 1 [])) }
 
 end
 

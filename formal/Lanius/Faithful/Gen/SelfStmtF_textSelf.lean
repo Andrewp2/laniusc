@@ -21,63 +21,63 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_member (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 24 RepNat) x1 v1 →
+  ∀ {x0 : List (List Nat)} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 25 RepNat) x1 v1 →
     RepBool (Lanius.Mini.member x0 x1) w
 
 abbrev Stmt_primitive (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →
-    (RepOption 149 RepSrcType) (Lanius.Mini.primitive x0) w
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
+    (RepOption 153 RepSrcType) (Lanius.Mini.primitive x0) w
 
 abbrev Stmt_spelled0 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
     RepBool (Lanius.Mini.spelled0 x0) w
 
 abbrev Stmt_spelled1 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
     RepBool (Lanius.Mini.spelled1 x0 x1) w
 
 abbrev Stmt_spelled2 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
+  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
     RepBool (Lanius.Mini.spelled2 x0 x1 x2) w
 
 abbrev Stmt_spelled3 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
+  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
     RepBool (Lanius.Mini.spelled3 x0 x1 x2 x3) w
 
 abbrev Stmt_spelled4 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepNat x4 v4 →
+  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepNat x4 v4 →
     RepBool (Lanius.Mini.spelled4 x0 x1 x2 x3 x4) w
 
 abbrev Stmt_spelled5 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Nat} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepNat x4 v4 → RepNat x5 v5 →
+  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Nat} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepNat x4 v4 → RepNat x5 v5 →
     RepBool (Lanius.Mini.spelled5 x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_text_alloc (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 24 RepNat) (Lanius.Mini.textAlloc) w
+    (RepList 25 RepNat) (Lanius.Mini.textAlloc) w
 
 abbrev Stmt_text_allocator (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 24 RepNat) (Lanius.Mini.textAllocator) w
+    (RepList 25 RepNat) (Lanius.Mini.textAllocator) w
 
 abbrev Stmt_text_assert (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 24 RepNat) (Lanius.Mini.textAssert) w
+    (RepList 25 RepNat) (Lanius.Mini.textAssert) w
 
 abbrev Stmt_text_dealloc (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 24 RepNat) (Lanius.Mini.textDealloc) w
+    (RepList 25 RepNat) (Lanius.Mini.textDealloc) w
 
 abbrev Stmt_text_self (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 24 RepNat) (Lanius.Mini.textSelf) w
+    (RepList 25 RepNat) (Lanius.Mini.textSelf) w
 
 abbrev Stmt_text_slice_from_raw_parts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 24 RepNat) (Lanius.Mini.textSliceFromRawParts) w
+    (RepList 25 RepNat) (Lanius.Mini.textSliceFromRawParts) w
 
 abbrev Stmt_text_slice_stride (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 24 RepNat) (Lanius.Mini.textSliceStride) w
+    (RepList 25 RepNat) (Lanius.Mini.textSliceStride) w
 
 end Lanius.Faithful.SelfCert

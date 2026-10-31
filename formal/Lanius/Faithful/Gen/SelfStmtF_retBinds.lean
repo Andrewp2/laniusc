@@ -21,15 +21,15 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_arg_expected (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List (List Nat)} {x4 : Lanius.Mini.CTree} {x5 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 30 (RepList 24 RepNat)) x3 v3 → RepCTree x4 v4 → (RepList 250 RepBind) x5 v5 →
-    (RepOption 198 RepTy) (Lanius.Mini.argExpected x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List (List Nat)} {x4 : Lanius.Mini.CTree} {x5 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 31 (RepList 25 RepNat)) x3 v3 → RepCTree x4 v4 → (RepList 256 RepBind) x5 v5 →
+    (RepOption 202 RepTy) (Lanius.Mini.argExpected x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_bind_arg (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.FnDecl} {x4 : List (List Nat)} {x5 : Lanius.Mini.CTree} {x6 : Lanius.Mini.MEff} {x7 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 220 RepLocal) x2 v2 → RepFnDecl x3 v3 → (RepList 30 (RepList 24 RepNat)) x4 v4 → RepCTree x5 v5 → RepMEff x6 v6 → (RepList 250 RepBind) x7 v7 →
-    (RepOption 266 (RepList 250 RepBind)) (Lanius.Mini.bindArg x0 x1 x2 x3 x4 x5 x6 x7) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.FnDecl} {x4 : List (List Nat)} {x5 : Lanius.Mini.CTree} {x6 : Lanius.Mini.MEff} {x7 : List Lanius.Mini.Bind} {v0 v1 v2 v3 v4 v5 v6 v7 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 225 RepLocal) x2 v2 → RepFnDecl x3 v3 → (RepList 31 (RepList 25 RepNat)) x4 v4 → RepCTree x5 v5 → RepMEff x6 v6 → (RepList 256 RepBind) x7 v7 →
+    (RepOption 272 (RepList 256 RepBind)) (Lanius.Mini.bindArg x0 x1 x2 x3 x4 x5 x6 x7) w
 
 abbrev Stmt_ret_binds (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List (List Nat)} {x4 : List Lanius.Mini.Bind} {x5 : Option Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 30 (RepList 24 RepNat)) x3 v3 → (RepList 250 RepBind) x4 v4 → (RepOption 198 RepTy) x5 v5 →
-    (RepOption 266 (RepList 250 RepBind)) (Lanius.Mini.retBinds x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List (List Nat)} {x4 : List Lanius.Mini.Bind} {x5 : Option Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 31 (RepList 25 RepNat)) x3 v3 → (RepList 256 RepBind) x4 v4 → (RepOption 202 RepTy) x5 v5 →
+    (RepOption 272 (RepList 256 RepBind)) (Lanius.Mini.retBinds x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfCert

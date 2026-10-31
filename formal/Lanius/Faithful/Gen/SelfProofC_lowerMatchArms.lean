@@ -6,7 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcC_lowerMatchArms
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
 public import Lanius.Faithful.Gen.SelfStmtC_lowerMatchArms
 import all Lanius.Faithful.Gen.SelfSrcC_lowerMatchArms

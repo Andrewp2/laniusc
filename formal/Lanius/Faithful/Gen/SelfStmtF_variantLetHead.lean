@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_pure_arms (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : List Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 217 RepMEff) x1 v1 →
-    (RepOption 241 (RepList 22 RepSrcArm)) (Lanius.Mini.pureArms x0 x1) w
+  ∀ {x0 : List (List Nat)} {x1 : List Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 222 RepMEff) x1 v1 →
+    (RepOption 247 (RepList 23 RepSrcArm)) (Lanius.Mini.pureArms x0 x1) w
 
 abbrev Stmt_variant_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Lanius.Mini.MEff} {x2 : Nat} {x3 : Option (List Lanius.Mini.SrcExpr)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBool x0 v0 → RepMEff x1 v1 → RepNat x2 v2 → (RepOption 239 (RepList 20 RepSrcExpr)) x3 v3 →
+  ∀ {x0 : Bool} {x1 : Lanius.Mini.MEff} {x2 : Nat} {x3 : Option (List Lanius.Mini.SrcExpr)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBool x0 v0 → RepMEff x1 v1 → RepNat x2 v2 → (RepOption 245 (RepList 21 RepSrcExpr)) x3 v3 →
     RepLetHead (Lanius.Mini.variantLetHead x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

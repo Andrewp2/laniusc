@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::null_at -/
-def src_null_at : SrcFunc := { params := [{ id := 8, ty := SrcType.i32 }, { id := 16, ty := ty14 }], ret := ty14, body := SrcStmt.then (SrcStmt.if (SrcExpr.apply (SrcOp.equal) (SrcExpr.cast (SrcType.uint (UintTy.uint32)) (SrcExpr.local 8)) (SrcExpr.unsigned (UintTy.uint32) 0x0000000000000000#64)) (SrcStmt.returnEval (SrcEff.eVariant ty14 9 [])) (SrcStmt.nop)) (SrcStmt.return (SrcExpr.local 16)) }
+def src_null_at : SrcFunc := { params := [{ id := 8, ty := SrcType.i32 }, { id := 16, ty := ty15 }], ret := ty15, body := SrcStmt.then (SrcStmt.if (SrcExpr.apply (SrcOp.equal) (SrcExpr.cast (SrcType.uint (UintTy.uint32)) (SrcExpr.local 8)) (SrcExpr.unsigned (UintTy.uint32) 0x0000000000000000#64)) (SrcStmt.returnEval (SrcEff.eVariant ty15 9 [])) (SrcStmt.nop)) (SrcStmt.return (SrcExpr.local 16)) }
 
 end
 

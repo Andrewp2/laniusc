@@ -196,14 +196,15 @@ theorem step_mono_next {prog : SrcProgram} {prims : Prims} {ix_mono_next ix_plus
   simp only [src_mono_next] at h
   faithful [Lanius.Mini.Inline.monoNext]
 
-theorem step_param_of {prog : SrcProgram} {prims : Prims} {ix_param_of ix_minus ix_node_prod ix_kid_token ix_member ix_params_of ix_ty_of ix_p_param_named ix_p_param_self ix_fresh_id ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local : Nat} (fn : prog.funcs[ix_param_of]? = some (src_param_of ix_minus ix_node_prod ix_kid_token ix_member ix_params_of ix_ty_of ix_p_param_named ix_p_param_self ix_fresh_id ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local)) (np : prims.isPrim ix_param_of = false)
+theorem step_param_of {prog : SrcProgram} {prims : Prims} {ix_param_of ix_minus ix_node_prod ix_member ix_params_of ix_ty_of ix_param_token ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_fresh_id ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local : Nat} (fn : prog.funcs[ix_param_of]? = some (src_param_of ix_minus ix_node_prod ix_member ix_params_of ix_ty_of ix_param_token ix_p_param_named ix_p_param_self ix_p_param_self_ref ix_fresh_id ix_pattern_of ix_cons_param ix_cons_of_mini_selfhost_Local)) (np : prims.isPrim ix_param_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
-    (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
     (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n))
     (ext_ty_of : Certified (∀ {n : Nat}, Stmt_ty_of prog prims ix_ty_of n))
+    (ext_param_token : Certified (∀ {n : Nat}, Stmt_param_token prog prims ix_param_token n))
     (ext_p_param_named : Certified (∀ {n : Nat}, Stmt_p_param_named prog prims ix_p_param_named n))
     (ext_p_param_self : Certified (∀ {n : Nat}, Stmt_p_param_self prog prims ix_p_param_self n))
+    (ext_p_param_self_ref : Certified (∀ {n : Nat}, Stmt_p_param_self_ref prog prims ix_p_param_self_ref n))
     (ext_fresh_id : Certified (∀ {n : Nat}, Stmt_fresh_id prog prims ix_fresh_id n))
     (ext_pattern_of : Certified (∀ {n : Nat}, Stmt_pattern_of prog prims ix_pattern_of n))
     (ext_cons_param : Certified (∀ {n : Nat}, Stmt_cons_param prog prims ix_cons_param n))

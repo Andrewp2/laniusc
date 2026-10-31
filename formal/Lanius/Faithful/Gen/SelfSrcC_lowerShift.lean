@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::lower_shift -/
-def src_lower_shift (ix_arith : Nat) (ix_SrcType_is_integer : Nat) : SrcFunc := { params := [{ id := 12, ty := ty51 }, { id := 30, ty := ty163 }, { id := 43, ty := ty163 }], ret := ty164, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eApply (SrcOp.logicalAnd) (SrcEff.eCall ix_SrcType_is_integer [SrcEff.ePure (SrcExpr.field 30 1)]) (SrcEff.eCall ix_SrcType_is_integer [SrcEff.ePure (SrcExpr.field 43 1)])) (SrcStmt.returnEval (SrcEff.eCall ix_arith [SrcEff.ePure (SrcExpr.local 12), SrcEff.ePure (SrcExpr.local 30), SrcEff.eStruct ty163 [SrcEff.ePure (SrcExpr.field 43 0), SrcEff.ePure (SrcExpr.field 30 1)]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty164 1 [])) }
+def src_lower_shift (ix_arith : Nat) (ix_SrcType_is_integer : Nat) : SrcFunc := { params := [{ id := 12, ty := ty52 }, { id := 30, ty := ty167 }, { id := 43, ty := ty167 }], ret := ty168, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eApply (SrcOp.logicalAnd) (SrcEff.eCall ix_SrcType_is_integer [SrcEff.ePure (SrcExpr.field 30 1)]) (SrcEff.eCall ix_SrcType_is_integer [SrcEff.ePure (SrcExpr.field 43 1)])) (SrcStmt.returnEval (SrcEff.eCall ix_arith [SrcEff.ePure (SrcExpr.local 12), SrcEff.ePure (SrcExpr.local 30), SrcEff.eStruct ty167 [SrcEff.ePure (SrcExpr.field 43 0), SrcEff.ePure (SrcExpr.field 30 1)]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty168 1 [])) }
 
 end
 

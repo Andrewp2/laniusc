@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::unit_ty -/
-def src_unit_ty : SrcFunc := { params := [{ id := 8, ty := ty8 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 8)) ty8 (SrcType.bool) [[], [], [111], [139, 143], [174, 178], [], [234], [], [], [], [329]] [SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false)]) }
+def src_unit_ty : SrcFunc := { params := [{ id := 8, ty := ty9 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 8)) ty9 (SrcType.bool) [[], [], [111], [139, 143], [174, 178], [], [234], [], [], [], [348], [375]] [SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.boolean false)]) }
 
 end
 

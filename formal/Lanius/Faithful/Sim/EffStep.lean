@@ -186,6 +186,7 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     | unit => simp at hm
     | isize => simp at hm
     | char => simp at hm
+    | float => simp at hm
     | sint => simp at hm
   | eDivide op l r =>
     simp only [SrcEff.toCore] at run

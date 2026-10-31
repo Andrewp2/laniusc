@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_let_closed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcExpr} {x3 : Option Lanius.Mini.SrcStmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepOption 149 RepSrcType) x1 v1 → RepSrcExpr x2 v2 → (RepOption 206 RepSrcStmt) x3 v3 →
-    (RepOption 206 RepSrcStmt) (Lanius.Mini.letClosed x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcExpr} {x3 : Option Lanius.Mini.SrcStmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepOption 153 RepSrcType) x1 v1 → RepSrcExpr x2 v2 → (RepOption 211 RepSrcStmt) x3 v3 →
+    (RepOption 211 RepSrcStmt) (Lanius.Mini.letClosed x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

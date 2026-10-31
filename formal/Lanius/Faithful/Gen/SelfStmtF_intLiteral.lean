@@ -21,43 +21,43 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_char_body (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →
-    (RepOption 237 RepSrcExpr) (Lanius.Mini.charBody x0) w
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
+    (RepOption 243 RepSrcExpr) (Lanius.Mini.charBody x0) w
 
 abbrev Stmt_char_close (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 24 RepNat) x1 v1 →
-    (RepOption 237 RepSrcExpr) (Lanius.Mini.charClose x0 x1) w
+  ∀ {x0 : Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 →
+    (RepOption 243 RepSrcExpr) (Lanius.Mini.charClose x0 x1) w
 
 abbrev Stmt_char_close_opt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 196 RepNat) x0 v0 → (RepList 24 RepNat) x1 v1 →
-    (RepOption 237 RepSrcExpr) (Lanius.Mini.charCloseOpt x0 x1) w
+  ∀ {x0 : Option Nat} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 200 RepNat) x0 v0 → (RepList 25 RepNat) x1 v1 →
+    (RepOption 243 RepSrcExpr) (Lanius.Mini.charCloseOpt x0 x1) w
 
 abbrev Stmt_char_literal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →
-    (RepOption 237 RepSrcExpr) (Lanius.Mini.charLiteral x0) w
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
+    (RepOption 243 RepSrcExpr) (Lanius.Mini.charLiteral x0) w
 
 abbrev Stmt_char_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepNat x4 v4 →
-    (RepOption 237 RepSrcExpr) (Lanius.Mini.charTail x0 x1 x2 x3 x4) w
+  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepNat x4 v4 →
+    (RepOption 243 RepSrcExpr) (Lanius.Mini.charTail x0 x1 x2 x3 x4) w
 
 abbrev Stmt_escaped_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepOption 196 RepNat) (Lanius.Mini.escapedByte x0) w
+    (RepOption 200 RepNat) (Lanius.Mini.escapedByte x0) w
 
 abbrev Stmt_find_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Local} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 220 RepLocal) x0 v0 → (RepList 24 RepNat) x1 v1 →
-    (RepOption 238 RepLocal) (Lanius.Mini.findLocal x0 x1) w
+  ∀ {x0 : List Lanius.Mini.Local} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 225 RepLocal) x0 v0 → (RepList 25 RepNat) x1 v1 →
+    (RepOption 244 RepLocal) (Lanius.Mini.findLocal x0 x1) w
 
 abbrev Stmt_find_local_id (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Local} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 220 RepLocal) x0 v0 → RepNat x1 v1 →
-    (RepOption 238 RepLocal) (Lanius.Mini.findLocalId x0 x1) w
+  ∀ {x0 : List Lanius.Mini.Local} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 225 RepLocal) x0 v0 → RepNat x1 v1 →
+    (RepOption 244 RepLocal) (Lanius.Mini.findLocalId x0 x1) w
 
 abbrev Stmt_int_literal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →
-    (RepOption 237 RepSrcExpr) (Lanius.Mini.intLiteral x0) w
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
+    (RepOption 243 RepSrcExpr) (Lanius.Mini.intLiteral x0) w
 
 abbrev Stmt_local_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.Local} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → (RepList 220 RepLocal) x1 v1 → RepCTree x2 v2 →
-    (RepOption 238 RepLocal) (Lanius.Mini.localOf x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : List Lanius.Mini.Local} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → (RepList 225 RepLocal) x1 v1 → RepCTree x2 v2 →
+    (RepOption 244 RepLocal) (Lanius.Mini.localOf x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

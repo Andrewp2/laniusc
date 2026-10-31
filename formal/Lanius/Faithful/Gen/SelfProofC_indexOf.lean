@@ -6,7 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcC_indexOf
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_indexOf
-public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
+public import Lanius.Faithful.Gen.SelfStmtC_lowerApply
 import all Lanius.Faithful.Gen.SelfSrcC_indexOf
 import all Lanius.Mini.Compiler.P.indexOf
 

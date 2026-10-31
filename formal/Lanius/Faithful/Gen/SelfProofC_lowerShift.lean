@@ -4,7 +4,7 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_lowerShift
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
-public import Lanius.Faithful.Gen.SelfStmtC_arithUint
+public import Lanius.Faithful.Gen.SelfStmtC_floatApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerShift
 import all Lanius.Faithful.Gen.SelfSrcC_lowerShift
 import all Lanius.Mini.Compiler.P.lowerShift

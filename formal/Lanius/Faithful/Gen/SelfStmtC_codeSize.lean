@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_code_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Instr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 52 RepInstr) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.Instr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 53 RepInstr) x0 v0 →
     RepNat (Lanius.Mini.codeSize x0) w
 
 abbrev Stmt_compile_expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepExpr x1 v1 → RepNat x2 v2 →
-    (RepList 52 RepInstr) (Lanius.Mini.compileExpr x0 x1 x2) w
+    (RepList 53 RepInstr) (Lanius.Mini.compileExpr x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

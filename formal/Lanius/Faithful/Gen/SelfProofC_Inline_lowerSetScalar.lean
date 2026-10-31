@@ -4,7 +4,6 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmt0
-public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
@@ -13,11 +12,10 @@ public import Lanius.Faithful.Gen.SelfStmtC_BinOp_folds
 public import Lanius.Faithful.Gen.SelfStmtC_Expr_agrees
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
-public import Lanius.Faithful.Gen.SelfStmtC_Stmt_kills
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_Word_narrows
 public import Lanius.Faithful.Gen.SelfStmtC_binaryConstant
-public import Lanius.Faithful.Gen.SelfStmtC_callAgrees
 public import Lanius.Faithful.Gen.SelfStmtC_declareFuncs
 public import Lanius.Faithful.Gen.SelfStmtC_elementAddress
 public import Lanius.Faithful.Gen.SelfStmtC_elementBase
@@ -26,7 +24,6 @@ public import Lanius.Faithful.Gen.SelfStmtC_evalSame
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetValues
 public import Lanius.Faithful.Gen.SelfStmtC_structFields
-public import Lanius.Faithful.Gen.SelfStmtC_substAll
 public import Lanius.Faithful.Gen.SelfStmtC_wordElement
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_lowerSetScalar
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
@@ -96,16 +93,6 @@ theorem step_compare_agrees {prog : SrcProgram} {prims : Prims} {ix_compare_agre
   rw [pcall_succ np fn] at h
   simp only [src_compare_agrees] at h
   faithful [Lanius.Mini.Inline.compareAgrees]
-
-theorem step_dead_agrees {prog : SrcProgram} {prims : Prims} {ix_dead_agrees ix_Stmt_agrees ix_Stmt_kills ix_assigned : Nat} (fn : prog.funcs[ix_dead_agrees]? = some (src_dead_agrees ix_Stmt_agrees ix_Stmt_kills ix_assigned)) (np : prims.isPrim ix_dead_agrees = false)
-    (ext_Stmt_kills : Certified (∀ {n : Nat}, Stmt_Stmt_kills prog prims ix_Stmt_kills n))
-    (ext_assigned : Certified (∀ {n : Nat}, Stmt_assigned prog prims ix_assigned n)) {n : Nat}
-    (ih_Stmt_agrees : Certified (Stmt_Stmt_agrees prog prims ix_Stmt_agrees n)) :
-    Stmt_dead_agrees prog prims ix_dead_agrees (n + 1) := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rw [pcall_succ np fn] at h
-  simp only [src_dead_agrees] at h
-  faithful [Lanius.Mini.Inline.deadAgrees]
 
 theorem proof_declare_enum_in {prog : SrcProgram} {prims : Prims} {ix_declare_enum_in ix_keep_if ix_variants_same ix_cons_of_mini_selfhost_SrcEnumDecl : Nat} (fn : prog.funcs[ix_declare_enum_in]? = some (src_declare_enum_in ix_keep_if ix_variants_same ix_cons_of_mini_selfhost_SrcEnumDecl)) (np : prims.isPrim ix_declare_enum_in = false)
     (ext_keep_if : Certified (∀ {n : Nat}, Stmt_keep_if prog prims ix_keep_if n))
@@ -190,24 +177,15 @@ theorem step_enum_variants_at {prog : SrcProgram} {prims : Prims} {ix_enum_varia
   simp only [src_enum_variants_at] at h
   faithful [Lanius.Mini.Inline.enumVariantsAt]
 
-theorem step_fact_or {prog : SrcProgram} {prims : Prims} {ix_fact_or ix_fact_value : Nat} (fn : prog.funcs[ix_fact_or]? = some (src_fact_or ix_fact_value)) (np : prims.isPrim ix_fact_or = false) {n : Nat}
-    (ih_fact_value : Certified (Stmt_fact_value prog prims ix_fact_value n)) :
-    Stmt_fact_or prog prims ix_fact_or (n + 1) := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+theorem step_fp_agrees {prog : SrcProgram} {prims : Prims} {ix_fp_agrees ix_unbox_of_mini_selfhost_Expr ix_Expr_agrees ix_FOp_number : Nat} (fn : prog.funcs[ix_fp_agrees]? = some (src_fp_agrees ix_unbox_of_mini_selfhost_Expr ix_Expr_agrees ix_FOp_number)) (np : prims.isPrim ix_fp_agrees = false)
+    (ext_unbox_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Expr prog prims ix_unbox_of_mini_selfhost_Expr n))
+    (ext_FOp_number : Certified (∀ {n : Nat}, Stmt_FOp_number prog prims ix_FOp_number n)) {n : Nat}
+    (ih_Expr_agrees : Certified (Stmt_Expr_agrees prog prims ix_Expr_agrees n)) :
+    Stmt_fp_agrees prog prims ix_fp_agrees (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rw [pcall_succ np fn] at h
-  simp only [src_fact_or] at h
-  faithful [Lanius.Mini.Inline.factOr]
-
-theorem proof_kept {prog : SrcProgram} {prims : Prims} {ix_kept ix_Expr_mentions ix_cons_of_mini_selfhost_Fact : Nat} (fn : prog.funcs[ix_kept]? = some (src_kept ix_Expr_mentions ix_cons_of_mini_selfhost_Fact)) (np : prims.isPrim ix_kept = false)
-    (ext_Expr_mentions : Certified (∀ {n : Nat}, Stmt_Expr_mentions prog prims ix_Expr_mentions n))
-    (ext_cons_of_mini_selfhost_Fact : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Fact prog prims ix_cons_of_mini_selfhost_Fact n)) {n : Nat} :
-    Stmt_kept prog prims ix_kept n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_kept] at h
-  faithful [Lanius.Mini.Inline.kept]
+  simp only [src_fp_agrees] at h
+  faithful [Lanius.Mini.Inline.fpAgrees]
 
 theorem proof_lower_set_scalar {prog : SrcProgram} {prims : Prims} {ix_lower_set_scalar ix_lower_as ix_SrcType_is_scalar ix_lower_set_value : Nat} (fn : prog.funcs[ix_lower_set_scalar]? = some (src_lower_set_scalar ix_lower_as ix_SrcType_is_scalar ix_lower_set_value)) (np : prims.isPrim ix_lower_set_scalar = false)
     (ext_lower_as : Certified (∀ {n : Nat}, Stmt_lower_as prog prims ix_lower_as n))
@@ -229,16 +207,6 @@ theorem step_neg_agrees {prog : SrcProgram} {prims : Prims} {ix_neg_agrees ix_un
   rw [pcall_succ np fn] at h
   simp only [src_neg_agrees] at h
   faithful [Lanius.Mini.Inline.negAgrees]
-
-theorem step_seq_agrees {prog : SrcProgram} {prims : Prims} {ix_seq_agrees ix_unbox_of_mini_selfhost_Stmt ix_Stmt_agrees ix_Stmt_facts_after : Nat} (fn : prog.funcs[ix_seq_agrees]? = some (src_seq_agrees ix_unbox_of_mini_selfhost_Stmt ix_Stmt_agrees ix_Stmt_facts_after)) (np : prims.isPrim ix_seq_agrees = false)
-    (ext_unbox_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Stmt prog prims ix_unbox_of_mini_selfhost_Stmt n))
-    (ext_Stmt_facts_after : Certified (∀ {n : Nat}, Stmt_Stmt_facts_after prog prims ix_Stmt_facts_after n)) {n : Nat}
-    (ih_Stmt_agrees : Certified (Stmt_Stmt_agrees prog prims ix_Stmt_agrees n)) :
-    Stmt_seq_agrees prog prims ix_seq_agrees (n + 1) := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rw [pcall_succ np fn] at h
-  simp only [src_seq_agrees] at h
-  faithful [Lanius.Mini.Inline.seqAgrees]
 
 theorem proof_set_scalar_eval {prog : SrcProgram} {prims : Prims} {ix_set_scalar_eval ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_eval_same : Nat} (fn : prog.funcs[ix_set_scalar_eval]? = some (src_set_scalar_eval ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_scalar ix_eval_same)) (np : prims.isPrim ix_set_scalar_eval = false)
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
@@ -281,14 +249,5 @@ theorem step_unit_agrees {prog : SrcProgram} {prims : Prims} {ix_unit_agrees ix_
   rw [pcall_succ np fn] at h
   simp only [src_unit_agrees] at h
   faithful [Lanius.Mini.Inline.unitAgrees]
-
-theorem proof_unknown {prog : SrcProgram} {prims : Prims} {ix_unknown : Nat} (fn : prog.funcs[ix_unknown]? = some (src_unknown)) (np : prims.isPrim ix_unknown = false) {n : Nat} :
-    Stmt_unknown prog prims ix_unknown n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_unknown] at h
-  faithful [Lanius.Mini.Inline.unknown]
 
 end Lanius.Faithful.SelfCert

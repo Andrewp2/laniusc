@@ -64,6 +64,10 @@ abbrev Stmt_p_param_self (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pParamSelf) w
 
+abbrev Stmt_p_param_self_ref (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pParamSelfRef) w
+
 abbrev Stmt_p_params_after_comma_more (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pParamsAfterCommaMore) w

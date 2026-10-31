@@ -44,7 +44,7 @@ theorem front_end_words_faithful {fuel : Nat} {st st' : State} {a b v p q : Valu
     {g : List Rule} {ws : List (BitVec 32)}
     (inv : Inv st) (bound : st'.heap.nextAddress ≤ 2 ^ 64)
     (rel : VRels prog.toCore boxes st.heap ((src_front_end_words 13 14).params.map SrcParam.ty) [a, b] [p, q])
-    (repG : (RepList 34 RepRule) g p) (repW : (RepList 0 RepI32) ws q)
+    (repG : (RepList 35 RepRule) g p) (repW : (RepList 0 RepI32) ws q)
     (run : evalExpr fuel prog.toCore st (.call 7 [.value a, .value b]) = .done v st') :
     ∃ w, pcall prog prims fuel 7 [p, q] = some w ∧ VRel prog.toCore boxes st'.heap (src_front_end_words 13 14).ret v w ∧
       (RepOption 3 RepSrcProgram) (frontEndWords g ws) w ∧ Inv st' ∧ Step st st' := by
@@ -59,7 +59,7 @@ theorem grammar_faithful {fuel : Nat} {st st' : State} {v : Value}
     (run : evalExpr fuel prog.toCore st (.call 8 []) = .done v st') :
     ∃ w, pcall prog prims fuel 8 [] = some w ∧ VRel prog.toCore boxes st'.heap
         (src_grammar 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32).ret v w ∧
-      (RepList 34 RepRule) grammar w ∧ Inv st' ∧ Step st st' := by
+      (RepList 35 RepRule) grammar w ∧ Inv st' ∧ Step st st' := by
   obtain ⟨w, hw, rw, inv', step⟩ :=
     call_sim (args := []) (ps := []) SelfPure.selfPure SelfPure.selfPrims fn_grammar
       (by decide +kernel) inv bound .nil run

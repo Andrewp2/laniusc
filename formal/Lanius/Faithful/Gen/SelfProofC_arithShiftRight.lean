@@ -7,7 +7,7 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_arithShiftRight
-public import Lanius.Faithful.Gen.SelfStmtC_arithUint
+public import Lanius.Faithful.Gen.SelfStmtC_floatApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerShift
 import all Lanius.Faithful.Gen.SelfSrcC_arithShiftRight
 import all Lanius.Mini.Compiler.P.arithShiftRight
@@ -55,14 +55,17 @@ theorem proof_offset_or_arith {prog : SrcProgram} {prims : Prims} {ix_offset_or_
   simp only [src_offset_or_arith] at h
   faithful [Lanius.Mini.offsetOrArith]
 
-theorem proof_order {prog : SrcProgram} {prims : Prims} {ix_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_sign_key ix_order_sint ix_order_uint : Nat} (fn : prog.funcs[ix_order]? = some (src_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_sign_key ix_order_sint ix_order_uint)) (np : prims.isPrim ix_order = false)
+theorem proof_order {prog : SrcProgram} {prims : Prims} {ix_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_float_any ix_SrcType_float_ty ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_float_order ix_sign_key ix_order_sint ix_order_uint : Nat} (fn : prog.funcs[ix_order]? = some (src_order ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_is_char ix_SrcType_is_float_any ix_SrcType_float_ty ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_float_order ix_sign_key ix_order_sint ix_order_uint)) (np : prims.isPrim ix_order = false)
     (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
     (ext_SrcType_is_isize : Certified (∀ {n : Nat}, Stmt_SrcType_is_isize prog prims ix_SrcType_is_isize n))
     (ext_SrcType_is_char : Certified (∀ {n : Nat}, Stmt_SrcType_is_char prog prims ix_SrcType_is_char n))
+    (ext_SrcType_is_float_any : Certified (∀ {n : Nat}, Stmt_SrcType_is_float_any prog prims ix_SrcType_is_float_any n))
+    (ext_SrcType_float_ty : Certified (∀ {n : Nat}, Stmt_SrcType_float_ty prog prims ix_SrcType_float_ty n))
     (ext_SrcType_sint_kind : Certified (∀ {n : Nat}, Stmt_SrcType_sint_kind prog prims ix_SrcType_sint_kind n))
     (ext_SrcType_uint_kind : Certified (∀ {n : Nat}, Stmt_SrcType_uint_kind prog prims ix_SrcType_uint_kind n))
     (ext_SrcType_is_sint_any : Certified (∀ {n : Nat}, Stmt_SrcType_is_sint_any prog prims ix_SrcType_is_sint_any n))
+    (ext_float_order : Certified (∀ {n : Nat}, Stmt_float_order prog prims ix_float_order n))
     (ext_sign_key : Certified (∀ {n : Nat}, Stmt_sign_key prog prims ix_sign_key n))
     (ext_order_sint : Certified (∀ {n : Nat}, Stmt_order_sint prog prims ix_order_sint n))
     (ext_order_uint : Certified (∀ {n : Nat}, Stmt_order_uint prog prims ix_order_uint n)) {n : Nat} :

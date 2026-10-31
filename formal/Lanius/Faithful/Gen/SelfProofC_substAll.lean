@@ -10,7 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
+public import Lanius.Faithful.Gen.SelfStmtC_Inline_factOr
 public import Lanius.Faithful.Gen.SelfStmtC_callAgrees
 public import Lanius.Faithful.Gen.SelfStmtC_substAll
 import all Lanius.Faithful.Gen.SelfSrcC_substAll
