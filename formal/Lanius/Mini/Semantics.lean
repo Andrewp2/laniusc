@@ -12,7 +12,7 @@ import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
 import all Lanius.Mini.Compiler.P.FloatTy_rex
 import all Lanius.Mini.Compiler.P.FArith_opcode
-import all Lanius.Mini.Compiler.P.Code_image
+import all Lanius.Mini.Compiler.P.Code_size
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -301,10 +301,18 @@ def Heap.slice (heap : Heap) (address : Nat) : Nat → List UInt8
   | 0 => []
   | count + 1 => heap.bytes address :: heap.slice (address + 1) count
 
+/-- The heap with `bytes` stored from `address` on. -/
+def Heap.writeAll (heap : Heap) (address : Nat) (bytes : List UInt8) : Heap :=
+  { heap with bytes := fun other =>
+      if address ≤ other ∧ other - address < bytes.length then bytes.getD (other - address) 0 else heap.bytes other }
+
 /-- A system call's meaning on the heap: what the kernel does
 (`Lanius.X86.Machine.Kernel`), with addresses heap offsets. `write(fd,
 address, count)` to fd 1 or 2 of at most `maxTransfer` bytes inside the heap
-appends them to the trace and returns the count; no other call returns. -/
+appends them to the trace and returns the count. `read(0, address, count)`
+of at most `maxTransfer` bytes takes the next `count` bytes of the input, or
+all that are left, stores them from `address` on (inside the heap), and
+returns how many. No other call returns. -/
 def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 × Heap)
   | .write, [fd, address, count], heap =>
     if (fd = 1 ∨ fd = 2) ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
@@ -312,20 +320,32 @@ def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 ×
       some (count, { heap with io := { heap.io with trace := heap.io.trace ++
         [.write fd.toNat (heap.slice address.toNat count.toNat)] } })
     else none
+  | .read, [fd, address, count], heap =>
+    if fd = 0 ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
+        (heap.io.input.take count.toNat = [] ∨
+          address.toNat + (heap.io.input.take count.toNat).length ≤ heap.limit) then
+      some (BitVec.ofNat 64 (heap.io.input.take count.toNat).length,
+        { heap.writeAll address.toNat (heap.io.input.take count.toNat) with
+          io := { heap.io with input := heap.io.input.drop count.toNat } })
+    else none
   | .write, [], _ => none
   | .write, [_], _ => none
   | .write, [_, _], _ => none
   | .write, _ :: _ :: _ :: _ :: _, _ => none
+  | .read, [], _ => none
+  | .read, [_], _ => none
+  | .read, [_, _], _ => none
+  | .read, _ :: _ :: _ :: _ :: _, _ => none
 
-/-- A system call changes only the trace. -/
-theorem Syscall.run_heap {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}
-    (ran : call.run args heap = some (result, after)) : after = { heap with io := after.io } := by
-  cases call
+/-- A system call keeps the heap's limit and cursor. -/
+theorem Syscall.run_frame {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}
+    (ran : call.run args heap = some (result, after)) : after.limit = heap.limit ∧ after.cursor = heap.cursor := by
+  cases call <;>
   match args, ran with
   | [fd, address, count], ran =>
     rw [Syscall.run] at ran
     split at ran
-    · cases ran; rfl
+    · cases ran; exact ⟨rfl, rfl⟩
     · cases ran
   | [], ran => simp [Syscall.run] at ran
   | [_], ran => simp [Syscall.run] at ran

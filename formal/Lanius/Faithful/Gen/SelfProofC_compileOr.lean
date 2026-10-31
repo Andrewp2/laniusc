@@ -3,7 +3,7 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_compileOr
-public import Lanius.Faithful.Gen.SelfStmtC_Code_image
+public import Lanius.Faithful.Gen.SelfStmtC_Code_size
 public import Lanius.Faithful.Gen.SelfStmtC_Stmt_kills
 public import Lanius.Faithful.Gen.SelfStmtC_compileOr
 public import Lanius.Faithful.Gen.SelfStmtC_lowerBody

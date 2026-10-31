@@ -1417,6 +1417,14 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           subst h
           rw [typesSame_toCore same] at typedArgs
           exact ExprHasType.call _ (sigsOk.2 _ .writeStderr hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i _ _ _ checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .readStdin hsig (by simp [hostService?, hostBase])) typedArgs
         · simp at h
     · rename_i sig hsig
       split at h
@@ -3062,7 +3070,10 @@ theorem hostFuncs_find (i : Nat) :
     · by_cases c : i = hostBase + 2
       · subst c
         simp [hostFunc, hostBase]
-      · simp [hostFunc, a, b, c, Ne.symm a, Ne.symm b, Ne.symm c]
+      · by_cases d : i = hostBase + 3
+        · subst d
+          simp [hostFunc, hostBase]
+        · simp [hostFunc, a, b, c, d, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d]
 
 theorem sigsOk_program (sp : SrcProgram) : SigsOk sp.toCore (sigs sp.funcs) := by
   constructor
@@ -3101,7 +3112,7 @@ theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
   rcases hf with hf | hf
   case inr =>
     simp only [hostFuncs, List.mem_cons, List.not_mem_nil, or_false] at hf
-    rcases hf with rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
+    rcases hf with rfl | rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
   obtain ⟨i, func, mem, rfl⟩ := mem_coreFuncs (n := 0) (funcs := sp.funcs) hf
   obtain ⟨c, hc⟩ := lowerFuncs_each lowered func mem
   obtain ⟨inside, out, hout⟩ := lowerFunc_body hc

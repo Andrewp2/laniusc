@@ -43,11 +43,17 @@ theorem evalExprs_values {P : Core.Program} {st : Semantics.State} :
           exact ⟨rfl, rfl⟩
         all_goals simp at run
 
-/-- Core's empty heap and world, and a mini heap whose cursor is 1, whose
-bytes from 1 up are zero, and whose trace is empty. -/
+/-- Core's starting state for a process whose standard input holds `input`:
+an empty heap, no cells, and a world with nothing else in it. -/
+def startState (input : List UInt8) : Semantics.State := { world := { standardInput := input } }
+
+theorem startState_fresh (input : List UInt8) : (startState input).Fresh := ⟨fun _ mem => by simp [startState] at mem, rfl⟩
+
+/-- Core's starting state for the mini heap's input, and a mini heap whose
+cursor is 1, whose bytes from 1 up are zero, and whose trace is empty. -/
 theorem HeapCorr.empty {heap : Heap} (start : heap.cursor = 1) (zero : ∀ a, 1 ≤ a → heap.bytes a = 0)
     (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = []) :
-    HeapCorr ({} : Semantics.State).heap ({} : Semantics.State).world heap :=
+    HeapCorr (startState heap.io.input).heap (startState heap.io.input).world heap :=
   { cursor := start, pos := Nat.le_refl _, unbounded := rfl, small
     sized := fun _ mem => by cases mem
     below := fun _ mem => by cases mem
@@ -57,7 +63,8 @@ theorem HeapCorr.empty {heap : Heap} (start : heap.cursor = 1) (zero : ∀ a, 1 
     zero
     out := by rw [silent]; rfl
     err := by rw [silent]; rfl
-    closed := rfl }
+    closed := rfl
+    input := rfl }
 
 /-- `compileSource_correct` from any Core state whose cells are fresh and
 whose heap the mini heap represents (`HeapCorr`), not just the empty one:
@@ -102,7 +109,8 @@ theorem compileSource_correct_from {sp : SrcProgram} {binary : Binary}
         compileOptimized_correct compiledProgram returns s imageBase window enough bounded loaded apart
           imageHeap entry params heapAt stack⟩
 
-/-- Core runs `f(args)` from the empty state to `v`, ending with its heap's
+/-- Core runs `f(args)` from the empty state whose standard input is the
+mini heap's (`startState`) to `v`, ending with its heap's
 next free address at `final.heap.nextAddress`, and `bits` lay the arguments
 out by parameter type (a struct one slot per field). Then the compiled `f`,
 entered by a near call with `bits` in its parameter slots and a `heap` whose
@@ -119,7 +127,8 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State} {heap : Heap} (start : heap.cursor = 1)
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
-    (runs : Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final)
+    (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io.input) (.call f (args.map Core.Expr.value)) =
+      .done v final)
     (fits : final.heap.nextAddress ≤ heap.limit) :
     ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       after.cursor = final.heap.nextAddress ∧ final.world.standardOutput = outputOf 1 after.io.trace ∧
@@ -136,7 +145,7 @@ theorem compileSource_correct {sp : SrcProgram} {binary : Binary}
         HeapAt window s heap → StackAt binary.guard window s →
         ∃ n s', Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after := by
   obtain ⟨depth, results, after, holds, len, hc, run⟩ := compileSource_correct_from compiled found typed bitsLen
-    (st := {}) ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small silent) runs fits
+    (st := startState heap.io.input) (startState_fresh _) (HeapCorr.empty start zero small silent) runs fits
   exact ⟨depth, results, after, holds, len, hc.cursor, hc.out, hc.err, run⟩
 
 end Lanius.Mini

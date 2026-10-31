@@ -747,15 +747,48 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   side is `World.State.standardOutput`/`standardError`; the link from
   Core's `write_byte`/`write_stdout` services to `.write` events (one event
   per call, the bytes Core appends) is the next part of F8.
-- **Not yet modeled (deferred).** `read`/`read_stdin` (input is an
-  environment input, so the trace needs read events and the theorem a
-  premise "given the same input"), `getrandom`/`secure_u32`, process
+- **Not yet modeled (deferred).** `getrandom`/`secure_u32`, process
   arguments and environment variables (the loader would have to place
   `argv`/`envp`, now arbitrary memory), time (`clock_gettime`, `nanosleep`),
   files, sockets and processes, the general `syscall6`, the allocator
   externs (the verified compiler's `alloc` is the mini bump allocator over
   a heap the startup code provides, not `mmap`), and writes longer than
   `MAX_RW_COUNT` (Core would have to loop; a short write is not modeled).
+
+## Host reads (decided 10-31, F8)
+
+- **Standard input is a stream given before the run.** The x86 state's
+  `Io` and the mini heap's carry `input`, the bytes not yet read; Core's is
+  `World.State.standardInput`. `HeapCorr` says Core's is the mini heap's
+  (`input`), and the top theorems start Core from `startState input` (an
+  empty heap, the world holding only `input`): `compileSource_correct` from
+  the mini heap's input, `process_exits` and `textProcess_exits` from any
+  `input`, for every loaded state whose input it is (`Loaded` leaves the
+  stream as it is, the trace empty). Reads are not events in the trace:
+  the input a run consumed is what it was given minus what is left, so the
+  trace stays the list of writes.
+- **`Syscall.read` at the mini level.** `[0, address, count]` with count at
+  most `maxTransfer` delivers `input.take count` at `address` (`writeAll`)
+  and drops count bytes, returning how many came; the delivered range must
+  lie in the heap (nothing is checked when no byte comes). The x86 code is
+  `sysSpec` with `mov eax, 0` (`Syscall.linux`), the kernel's `read`
+  (TRUSTED_BASE.md section 8).
+- **`read_stdin(ptr, len)` (host id 2^32 + 3).** Core's meaning
+  (`World.call .readStdin`): store `standardInput.take len` from `ptr`
+  (trapping where Core's store traps), drop that many, return the count as
+  `i32` (wrapped, as Core's `i32Result` is). The front end reads the
+  stdlib's `extern "lanius_std" fn read_stdin` as the host call
+  (`hostExtern`, case `host_read`). The verified compiler lowers it to a
+  loop (`host_read_code`): a chunk of at most `maxTransfer` bytes, read;
+  pointer, count and total moved past what came; and the loop ends when a
+  read comes back short, since the input is then used up. Proved against
+  Core (`hostRead_exec`, `LowerEval.host_read`): the stored bytes are
+  Core's, the input left is Core's, and the result is Core's count.
+- **The oracle gives each reading call its own input.** The stdlib oracle
+  gives every call of a program whose stdlib files call `read_stdin` fixed
+  random bytes (by seed, program and call) as a regular file on fd 0, to
+  the verified compiler's image and to laniusc's harness (one call per
+  run); other calls read `/dev/null`.
 
 ## `for` over a range (decided 10-30, F4)
 

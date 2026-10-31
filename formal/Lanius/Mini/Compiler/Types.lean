@@ -94,9 +94,10 @@ inductive Expr where
   | fp : FOp → Expr → Expr → Expr
   deriving DecidableEq, Repr
 
-/-- A Linux system call (roadmap F8). Write: write(fd, the heap address, count), arguments in that order. -/
+/-- A Linux system call (roadmap F8). Write: write(fd, the heap address, count), arguments in that order; Read: read(fd, the heap address, count). -/
 inductive Syscall where
   | write : Syscall
+  | read : Syscall
   deriving DecidableEq, Repr
 
 inductive Stmt where

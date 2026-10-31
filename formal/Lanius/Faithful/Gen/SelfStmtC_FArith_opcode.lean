@@ -20,10 +20,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-abbrev Stmt_Code_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Code} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCode x0 v0 →
-    RepNat (Lanius.Mini.Code.size x0) w
-
 abbrev Stmt_FArith_opcode (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FArith} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepFArith x0 v0 →
     RepU8 (Lanius.Mini.FArith.opcode x0) w
@@ -115,5 +111,9 @@ abbrev Stmt_store_word_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : 
 abbrev Stmt_sys_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Syscall} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSyscall x0 v0 → RepNat x1 v1 →
     (RepList 66 RepU8) (Lanius.Mini.sysBytes x0 x1) w
+
+abbrev Stmt_syscall_linux_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Syscall} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSyscall x0 v0 →
+    RepU8 (Lanius.Mini.syscallLinuxByte x0) w
 
 end Lanius.Faithful.SelfCert

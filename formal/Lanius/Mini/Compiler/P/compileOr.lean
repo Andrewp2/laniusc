@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.Code_image
+import Lanius.Mini.Compiler.P.Code_size
 import Lanius.Mini.Compiler.P.Stmt_kills
 import Lanius.Mini.Compiler.P.lowerBody
 import Lanius.Mini.Compiler.P.optimizeIte
