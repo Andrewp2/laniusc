@@ -207,6 +207,19 @@ class Module:
         # Non-generic structs: their fields' names and types, in order.
         self.structs = {name: [tuple(x.strip() for x in f.split(':', 1)) for f in body.split(',') if ':' in f]
                         for name, body in re.findall(r'^\s*(?:pub\s+)?struct\s+(\w+)\s*\{([^}]*)\}', clean, re.M)}
+        # Enums: their type parameters and variants, each with its payload types.
+        self.enums = {}
+        for em in re.finditer(r'^\s*(?:pub\s+)?enum\s+(\w+)\s*(?:<([^>{]*)>)?\s*\{', clean, re.M):
+            body = clean[em.end():matching(clean, em.end() - 1, '{', '}') - 1]
+            variants = []
+            for v in split_top(body):
+                vm = re.match(r'^(\w+)\s*(?:\((.*)\))?$', v, re.S)
+                if not vm:
+                    variants = None
+                    break
+                variants.append((vm.group(1), [norm(x) for x in split_top(vm.group(2))] if vm.group(2) else []))
+            if variants:
+                self.enums[em.group(1)] = ([g.strip() for g in em.group(2).split(',')] if em.group(2) else [], variants)
         self.fns = {}           # name -> fn (top level)
         self.trait_methods = []  # (trait text, impl type, fn)
         self.paths = set(re.findall(r'\b([a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)+)::', clean))
@@ -284,18 +297,21 @@ def resolve(mods, module, t, subst):
     m = re.match(r'^(?:core::option::)?Option<(.*)>$', t)
     if m:
         inner = resolve(mods, module, m.group(1), subst)
-        return f'Option<{inner}>' if inner else None
-    if '::' in t:
-        path, name = t.rsplit('::', 1)
-        if path in mods and name in mods[path].aliases:
-            return resolve(mods, path, mods[path].aliases[name], {})
-        if path in mods and name in mods[path].structs:
-            return resolve_struct(mods, path, name)
+        if inner in SCALARS:
+            return f'Option<{inner}>'
+        return resolve_enum(mods, 'core::option', 'Option', [inner]) if inner else None
+    m = re.match(r'^([\w:]+)<(.*)>$', t)
+    base, targs = (m.group(1), split_top(m.group(2))) if m else (t, [])
+    path, name = base.rsplit('::', 1) if '::' in base else (module, base)
+    if path not in mods:
         return None
-    if module in mods and t in mods[module].aliases:
-        return resolve(mods, module, mods[module].aliases[t], {})
-    if module in mods and t in mods[module].structs:
-        return resolve_struct(mods, module, t)
+    if name in mods[path].aliases and not targs:
+        return resolve(mods, path, mods[path].aliases[name], {})
+    if name in mods[path].structs and not targs:
+        return resolve_struct(mods, path, name)
+    if name in mods[path].enums:
+        args = [resolve(mods, module, a, subst) for a in targs]
+        return resolve_enum(mods, path, name, args) if all(args) else None
     return None
 
 
@@ -309,10 +325,43 @@ def resolve_struct(mods, module, name):
     if key not in STRUCTS:
         STRUCTS[key] = None  # a struct that contains itself is not testable
         fields = [(f, resolve(mods, module, ty, {})) for f, ty in mods[module].structs[name]]
-        if fields and all(ty and (ty in SCALARS or (ty.startswith('struct:') and STRUCTS.get(ty)))
-                          for _, ty in fields):
+        if fields and all(leaf_type(ty) for _, ty in fields):
             STRUCTS[key] = fields
     return key if STRUCTS[key] else None
+
+
+# An enum a target returns: its variants, each with its payload types (each
+# a scalar or a struct), by its resolved name `enum:` and the type as written.
+ENUMS = {}
+
+
+def resolve_enum(mods, module, name, args):
+    params, variants = mods[module].enums[name]
+    if len(params) != len(args):
+        return None
+    key = f'enum:{module}::{name}' + (f'<{", ".join(written(a) for a in args)}>' if args else '')
+    if key not in ENUMS:
+        ENUMS[key] = None
+        subst = dict(zip(params, args))
+        vs = [(v, [resolve(mods, module, p, subst) for p in ps]) for v, ps in variants]
+        if all(leaf_type(ty) for _, ps in vs for ty in ps):
+            ENUMS[key] = (f'{module}::{name}', vs)
+    return key if ENUMS[key] else None
+
+
+def flat_enum(ty):
+    """An enum none of whose variants has a payload: a leaf, read by its tag."""
+    return ty.startswith('enum:') and bool(ENUMS.get(ty)) and all(not ps for _, ps in ENUMS[ty][1])
+
+
+def leaf_type(ty):
+    """A type a struct field or a variant payload may have."""
+    return bool(ty) and (ty in SCALARS or (ty.startswith('struct:') and bool(STRUCTS.get(ty))) or flat_enum(ty))
+
+
+def variant_leaves(ps):
+    """A variant's payload leaves: (payload index, field path, scalar type)."""
+    return [(j, path, lty) for j, p in enumerate(ps) for path, lty in leaves(p)]
 
 
 def leaves(ty, path=''):
@@ -323,7 +372,10 @@ def leaves(ty, path=''):
 
 
 def type_text(ty):
-    return ty[len('struct:'):] if ty.startswith('struct:') else ty
+    for prefix in ('struct:', 'enum:'):
+        if ty.startswith(prefix):
+            return ty[len(prefix):]
+    return ty
 
 
 def struct_value(ty, names):
@@ -334,14 +386,19 @@ def struct_value(ty, names):
 
 
 def struct_modules(ty):
+    if ty.startswith('enum:'):
+        home, vs = ENUMS[ty]
+        return {home.rsplit('::', 1)[0]} | {m for _, ps in vs for p in ps for m in struct_modules(p)}
     if not ty.startswith('struct:'):
         return set()
     return {type_text(ty).rsplit('::', 1)[0]} | {m for _, fty in STRUCTS[ty] for m in struct_modules(fty)}
 
 
 def testable(t):
-    if t in SCALARS or (t or '').startswith('struct:'):
+    if t in SCALARS:
         return True
+    if (t or '').startswith('struct:'):
+        return all(lty in SCALARS for _, lty in leaves(t))
     m = re.match(r'^Option<(.*)>$', t or '')
     return bool(m) and m.group(1) in SCALARS
 
@@ -391,7 +448,7 @@ def targets(mods, wanted):
         bad = [ty for (p, ty), (_, orig) in zip(params, fn['params']) if not testable(ty)]
         if ret in ('unit', '!'):
             t.why = 'result ' + fn['ret']
-        elif not testable(ret):
+        elif not (testable(ret) or (ret or '').startswith('enum:')):
             t.why = 'type ' + fn['ret']
         elif bad or any(not testable(ty) for _, ty in params):
             t.why = 'type ' + next(orig for (p, ty), (_, orig) in zip(params, fn['params']) if not testable(ty))
@@ -413,6 +470,11 @@ def results_of(ret):
     """The parts of a result the wrapper can return, one wrapper each."""
     if ret.startswith('struct:'):
         return [f'f{j}:{sub}' for j, (_, ty) in enumerate(leaves(ret)) for sub in results_of(ty)]
+    if flat_enum(ret):
+        return ['tag']
+    if ret.startswith('enum:'):
+        return ['tag'] + [f'e{i}_{n}:{sub}' for i, (_, ps) in enumerate(ENUMS[ret][1])
+                          for n, (_, _, lty) in enumerate(variant_leaves(ps)) for sub in results_of(lty)]
     if ret in WIDE:
         return ['lo', 'hi']
     if ret.startswith('Option<'):
@@ -435,6 +497,45 @@ def written(ty):
     if ty.startswith('Option<'):
         return f'core::option::Option<{ty[7:-1]}>'
     return type_text(ty)
+
+
+def variant_pattern(home, v, ps, bind):
+    """A match pattern for variant v, binding payload `bind` as x."""
+    if not ps:
+        return f'{home}::{v}'
+    return f'{home}::{v}(' + ', '.join('x' if j == bind else '_' for j in range(len(ps))) + ')'
+
+
+def scalar_lines(base, part):
+    """The wrapper's statements that return part of its result r as an i32."""
+    lines = []
+    if base.startswith('enum:'):
+        home, vs = ENUMS[base]
+        arms = [f'{variant_pattern(home, v, ps, None)} -> {i}' for i, (v, ps) in enumerate(vs)]
+        return [f'    let t: i32 = match (r) {{ {", ".join(arms)} }};', '    return t;']
+    if part == 'all':
+        if base == 'bool':
+            lines += ['    if (r) {', '        return 1;', '    }', '    return 0;']
+        else:
+            lines.append(f'    return {"r" if base == "i32" else "(r as i32)"};')
+    elif part in ('lo', 'hi'):
+        if part == 'lo':
+            lines.append('    return (r as i32);')
+        else:
+            lines += [f'    let high: {base} = (65536 as {base}) * (65536 as {base});',
+                      '    let top: ' + base + ' = r / high;', '    return (top as i32);']
+    else:
+        inner = base[7:-1]
+        if part == 'tag':
+            lines.append('    let t: i32 = match (r) { Some(x) -> 1, None -> 0 };')
+        else:
+            conv = 'x' if inner == 'i32' else '(x as i32)'
+            if inner == 'bool':
+                lines.append('    let t: i32 = match (r) { Some(x) -> oracle_flag(x), None -> 0 };')
+            else:
+                lines.append(f'    let t: i32 = match (r) {{ Some(x) -> {conv}, None -> 0 }};')
+        lines.append('    return t;')
+    return lines
 
 
 def wrapper_text(mods, t, part):
@@ -486,36 +587,33 @@ def wrapper_text(mods, t, part):
     lines.append(f'fn w({sig}) -> i32 {{')
     lines += setup
     base = t.ret
+    if t.ret.startswith('enum:'):
+        # The tag (the variant's index) or one leaf of one variant's payload,
+        # read by a match and returned as a scalar result is.
+        home, vs = ENUMS[t.ret]
+        lines.append(f'    let r: {ret} = {call};')
+        if part == 'tag':
+            arms = [f'{variant_pattern(home, v, ps, None)} -> {i}' for i, (v, ps) in enumerate(vs)]
+            helper = []
+        else:
+            at, part = part[1:].split(':')
+            i, n = (int(x) for x in at.split('_'))
+            j, path, base = variant_leaves(vs[i][1])[n]
+            arms = [f'{variant_pattern(home, v, ps, j if k == i else None)} -> '
+                    f'{f"oracle_part(x{path})" if k == i else "0"}' for k, (v, ps) in enumerate(vs)]
+            helper = ['', f'fn oracle_part(r: {type_text(base)}) -> i32 {{'] + scalar_lines(base, part) + ['}']
+        lines.append(f'    let t: i32 = match (r) {{ {", ".join(arms)} }};')
+        lines += ['    return t;', '}'] + helper
+        return '\n'.join(lines) + '\n', wparams
     if part.startswith('f'):
         # One scalar leaf of a struct result, returned as a scalar result is.
         j, part = part[1:].split(':')
         path, base = leaves(t.ret)[int(j)]
         lines.append(f'    let r0: {ret} = {call};')
-        lines.append(f'    let r: {base} = r0{path};')
+        lines.append(f'    let r: {type_text(base)} = r0{path};')
     else:
         lines.append(f'    let r: {ret} = {call};')
-    if part == 'all':
-        if base == 'bool':
-            lines += ['    if (r) {', '        return 1;', '    }', '    return 0;']
-        else:
-            lines.append(f'    return {"r" if base == "i32" else "(r as i32)"};')
-    elif part in ('lo', 'hi'):
-        if part == 'lo':
-            lines.append('    return (r as i32);')
-        else:
-            lines += [f'    let high: {base} = (65536 as {base}) * (65536 as {base});',
-                      '    let top: ' + base + ' = r / high;', '    return (top as i32);']
-    else:
-        inner = base[7:-1]
-        if part == 'tag':
-            lines.append('    let t: i32 = match (r) { Some(x) -> 1, None -> 0 };')
-        else:
-            conv = 'x' if inner == 'i32' else '(x as i32)'
-            if inner == 'bool':
-                lines.append('    let t: i32 = match (r) { Some(x) -> oracle_flag(x), None -> 0 };')
-            else:
-                lines.append(f'    let t: i32 = match (r) {{ Some(x) -> {conv}, None -> 0 }};')
-        lines.append('    return t;')
+    lines += scalar_lines(base, part)
     lines.append('}')
     if t.ret == 'Option<bool>' and part == 'val':
         lines += ['', 'fn oracle_flag(b: bool) -> i32 {', '    if (b) {', '        return 1;', '    }', '    return 0;', '}']
@@ -1048,7 +1146,7 @@ def harness_text(chunk, start):
     for j, p in enumerate(chunk):
         text = open(p['base'] + '.lani').read()
         body = '\n'.join(line for line in text.split('\n') if not line.startswith(('module ', 'import ')))
-        for name in ('oracle_helper', 'oracle_flag', 'OracleSizeW'):
+        for name in ('oracle_helper', 'oracle_flag', 'oracle_part', 'OracleSizeW'):
             body = re.sub(rf'\b{name}\b', f'{name}{start + j}', body)
         body = re.sub(r'\bfn w\(', f'fn w{start + j}(', body)
         out.append(body)
