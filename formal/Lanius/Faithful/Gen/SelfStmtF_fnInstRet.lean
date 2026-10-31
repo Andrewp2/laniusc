@@ -69,7 +69,7 @@ abbrev Stmt_head_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 199 RepTy) (Lanius.Mini.headTy x0) w
 
 abbrev Stmt_index_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Local} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 237 RepLocal) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.Local} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 239 RepLocal) x0 v0 →
     (RepOption 199 RepTy) (Lanius.Mini.indexTy x0) w
 
 abbrev Stmt_inst_ret (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -102,6 +102,6 @@ abbrev Stmt_tail_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_x_match_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.Ty} {x3 : Option (List Lanius.Mini.EffArm)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepMEff x0 v0 → RepTy x1 v1 → (RepOption 199 RepTy) x2 v2 → (RepOption 258 (RepList 259 RepEffArm)) x3 v3 →
-    (RepOption 239 RepMEff) (Lanius.Mini.xMatchOf x0 x1 x2 x3) w
+    (RepOption 237 RepMEff) (Lanius.Mini.xMatchOf x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

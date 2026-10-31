@@ -951,8 +951,9 @@ def constructs(mods, module, fn):
         out.append('self or reference')
     if re.search(r'"', body):
         out.append('string literal')
-    if re.search(r'\b(for|loop|break|continue)\b', body):
-        out.append('for/loop/break/continue')
+    fors = re.findall(r'\bfor\s+\w+\s+in\s+[^{]*\{', body)
+    if any(not re.fullmatch(r'for\s+\w+\s+in\s+\d+\s*\.\.\s*[a-z_]\w*\s*\{', f) for f in fors):
+        out.append('for other than literal..local')
     big = [int(x) for x in re.findall(r'(?<![\w.])(\d+)(?![\w.])', body) if int(x) >= 2 ** 64]
     if big:
         out.append(f'literal {big[0]} >= 2^64')

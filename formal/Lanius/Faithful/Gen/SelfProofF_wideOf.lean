@@ -136,15 +136,15 @@ theorem proof_dash_text {prog : SrcProgram} {prims : Prims} {ix_dash_text ix_sin
   simp only [src_dash_text] at h
   faithful [Lanius.Mini.dashText]
 
-theorem step_expr_of {prog : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_int_literal ix_p_expr ix_p_assign ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_p_true ix_p_false ix_p_char ix_char_literal : Nat} (fn : prog.funcs[ix_expr_of]? = some (src_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_int_literal ix_p_expr ix_p_assign ix_expr_of ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_p_true ix_p_false ix_p_char ix_char_literal)) (np : prims.isPrim ix_expr_of = false)
+theorem step_expr_of {prog : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_expr ix_p_assign ix_int_literal ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_p_true ix_p_false ix_p_char ix_char_literal : Nat} (fn : prog.funcs[ix_expr_of]? = some (src_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_expr ix_p_assign ix_expr_of ix_int_literal ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_p_true ix_p_false ix_p_char ix_char_literal)) (np : prims.isPrim ix_expr_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_field_text_Token_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_field_text_Token_of_mini_selfhost_Token prog prims ix_field_text_Token_of_mini_selfhost_Token n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
-    (ext_int_literal : Certified (∀ {n : Nat}, Stmt_int_literal prog prims ix_int_literal n))
     (ext_p_expr : Certified (∀ {n : Nat}, Stmt_p_expr prog prims ix_p_expr n))
     (ext_p_assign : Certified (∀ {n : Nat}, Stmt_p_assign prog prims ix_p_assign n))
+    (ext_int_literal : Certified (∀ {n : Nat}, Stmt_int_literal prog prims ix_int_literal n))
     (ext_p_base : Certified (∀ {n : Nat}, Stmt_p_base prog prims ix_p_base n))
     (ext_is_level : Certified (∀ {n : Nat}, Stmt_is_level prog prims ix_is_level n))
     (ext_p_cast : Certified (∀ {n : Nat}, Stmt_p_cast prog prims ix_p_cast n))
@@ -278,7 +278,7 @@ theorem step_peel {prog : SrcProgram} {prims : Prims} {ix_peel ix_minus ix_node_
   simp only [src_peel] at h
   faithful [Lanius.Mini.peel]
 
-theorem step_postfix_value {prog : SrcProgram} {prims : Prims} {ix_postfix_value ix_minus ix_node_prod ix_p_postfix_end ix_expr_of ix_p_postfix_member ix_member_of : Nat} (fn : prog.funcs[ix_postfix_value]? = some (src_postfix_value ix_minus ix_node_prod ix_p_postfix_end ix_expr_of ix_p_postfix_member ix_member_of)) (np : prims.isPrim ix_postfix_value = false)
+theorem step_postfix_value {prog : SrcProgram} {prims : Prims} {ix_postfix_value ix_minus ix_node_prod ix_expr_of ix_p_postfix_end ix_p_postfix_member ix_member_of : Nat} (fn : prog.funcs[ix_postfix_value]? = some (src_postfix_value ix_minus ix_node_prod ix_expr_of ix_p_postfix_end ix_p_postfix_member ix_member_of)) (np : prims.isPrim ix_postfix_value = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n))

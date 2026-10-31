@@ -28,6 +28,10 @@ abbrev Stmt_generic_path_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
   ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 44 RepToken) x0 v0 →
     RepBool (Lanius.Mini.genericPathAt x0) w
 
+abbrev Stmt_opens_block (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 44 RepToken) x0 v0 →
+    RepBool (Lanius.Mini.opensBlock x0) w
+
 abbrev Stmt_picks (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.Token} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 44 RepToken) x1 v1 →
     RepBool (Lanius.Mini.picks x0 x1) w

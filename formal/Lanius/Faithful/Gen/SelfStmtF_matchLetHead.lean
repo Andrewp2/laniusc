@@ -29,7 +29,7 @@ abbrev Stmt_call_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepLetHead (Lanius.Mini.callLetHead x0 x1) w
 
 abbrev Stmt_eval_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Ty} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → (RepOption 239 RepMEff) x1 v1 →
+  ∀ {x0 : Lanius.Mini.Ty} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTy x0 v0 → (RepOption 237 RepMEff) x1 v1 →
     (RepOption 234 RepLetHead) (Lanius.Mini.evalHead x0 x1) w
 
 abbrev Stmt_eval_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -37,7 +37,7 @@ abbrev Stmt_eval_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepLetHead (Lanius.Mini.evalLetHead x0 x1) w
 
 abbrev Stmt_if_eval_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option Lanius.Mini.MStmt} {x2 : Option Lanius.Mini.MStmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 239 RepMEff) x0 v0 → (RepOption 230 RepMStmt) x1 v1 → (RepOption 230 RepMStmt) x2 v2 →
+  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option Lanius.Mini.MStmt} {x2 : Option Lanius.Mini.MStmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 237 RepMEff) x0 v0 → (RepOption 230 RepMStmt) x1 v1 → (RepOption 230 RepMStmt) x2 v2 →
     (RepOption 230 RepMStmt) (Lanius.Mini.ifEvalOf x0 x1 x2) w
 
 abbrev Stmt_if_or_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -73,7 +73,7 @@ abbrev Stmt_match_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     RepLetHead (Lanius.Mini.matchLetHead x0 x1 x2 x3) w
 
 abbrev Stmt_return_eval_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 239 RepMEff) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 237 RepMEff) x0 v0 →
     (RepOption 230 RepMStmt) (Lanius.Mini.returnEvalOf x0) w
 
 abbrev Stmt_return_or_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

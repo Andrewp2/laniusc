@@ -232,9 +232,11 @@ still a parse tree of the same tokens. Trusted:
   `x` on (the matching `>`, counted outside brackets with `>>` closing two,
   comes before a bracket closes or a `;`, with no `||`, `==`, `!=`, `<=` or
   `>=` before it, and is followed by `(`, `::` or `{`), which is laniusc's
-  rule without its 64-token limit; and block statements and a method's type
-  arguments (productions 84 and 298), which the subset does not use and which
-  are ambiguous too (`{ a } - b;`, `x.f < a > (b)`), are not allowed.
+  rule without its 64-token limit; a statement that begins with `{` is a
+  block statement (production 84), never an expression statement (85), as
+  in Rust, since `{ a } - b;` has both trees; and a method's type arguments
+  (production 298), which the subset does not use and which are ambiguous
+  too (`x.f < a > (b)`), are not allowed.
   `grammar_unique` (`Mini/ParseUnique.lean`, standard axioms) proves that at
   most one parse tree for `file` is `Picked` for given tokens, from a
   certificate of first and follow sets (two token kinds deep, `>>` read

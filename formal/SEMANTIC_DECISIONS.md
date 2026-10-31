@@ -478,10 +478,14 @@ closes or a `;`, no `||`, `==`, `!=`, `<=` or `>=` comes before it, and `(`,
 `::` or `{` follows it; otherwise `<` is a comparison. This is laniusc's rule
 (`shaders/parser/tokens/to/angle_kinds.slang`) without its limit of 64
 argument tokens; the verified compiler's validator checks it (`picks`).
-Block statements and a method's type arguments (`x.f<T>(..)`) are outside
-the verified compiler's subset, since they are ambiguous in the same way
-(`{ a } - b;`, `x.f < a > (b)`). With these, every token sequence has at
-most one parse tree (V4, `Mini/ParseUnique.lean`).
+A method's type arguments (`x.f<T>(..)`) are outside the verified
+compiler's subset, since they are ambiguous in the same way (`x.f < a >
+(b)`). A statement that begins with `{` is a block statement, never an
+expression statement (decided 10-30, F4), as in Rust: `{ a } - b;` is the
+block `{ a }` and then `-b;`. Its lets scope over the block only
+(`StmtR.block`). With these, every token sequence has at most one parse
+tree (V4, `Mini/ParseUnique.lean`; `pickedPair` in `Mini/Unique.lean` lists
+the two pairs of productions `picks` tells apart).
 
 ### The process (decided 10-29)
 

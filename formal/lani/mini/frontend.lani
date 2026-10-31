@@ -434,14 +434,29 @@ pub fn generic_path_at(tokens: List<Token>) -> bool {
     };
 }
 
+// Whether the tokens begin with `{`.
+pub fn opens_block(tokens: List<Token>) -> bool {
+    return match (tokens) {
+        Nil -> false,
+        Cons(t, rest) -> t.kind == t_lbrace(),
+    };
+}
+
 // Whether the validator accepts production prod for a node whose tokens
-// begin with `tokens`: not a block statement or a method's type arguments
-// (the subset has neither, and each makes the grammar ambiguous, as in
-// `{ a } - b;` and `x.f < a > (b)`), and a path segment `x` or `x<...>` only
-// as generic_path_at says.
+// begin with `tokens`: not a method's type arguments (the subset has none,
+// and they make the grammar ambiguous, as in `x.f < a > (b)`); a statement
+// that begins with `{` is a block statement, never an expression statement
+// (as in Rust: `{ a } - b;` is a block, then `-b;`); and a path segment `x`
+// or `x<...>` only as generic_path_at says.
 pub fn picks(prod: usize, tokens: List<Token>) -> bool {
-    if (prod == p_block_stmt() || prod == p_member_type_args_some()) {
+    if (prod == p_member_type_args_some()) {
         return false;
+    }
+    if (prod == p_block_stmt()) {
+        return opens_block(tokens);
+    }
+    if (prod == p_expr_stmt()) {
+        return !opens_block(tokens);
     }
     if (prod == p_path_ident()) {
         return !generic_path_at(tokens);
@@ -6547,7 +6562,7 @@ pub fn let_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest:
     return None;
 }
 
-// return, if, while, and assignments.
+// return, break, continue, if, while, for, block statements, and assignments.
 pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
@@ -6575,11 +6590,26 @@ pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core
     if (p == p_while_stmt()) {
         return while_or_eval(f, env, scope, kid(s, 2), block_of(f, env, scope, kid(kid(s, 4), 1)));
     }
-    if (p == p_for_stmt()) {
-        return for_of(f, env, scope, s);
+    if (p == p_for_stmt() || p == p_block_stmt()) {
+        return nested_of(f, env, scope, s);
     }
     if (p == p_expr_stmt()) {
         return assignment(f, env, scope, kid(s, 0));
+    }
+    return None;
+}
+
+// for and block statements.
+pub fn nested_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    if (node_prod(s) == p_for_stmt()) {
+        return for_of(f, env, scope, s);
+    }
+    if (node_prod(s) == p_block_stmt()) {
+        return block_of(f, env, scope, kid(kid(s, 0), 1));
     }
     return None;
 }

@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_set_eval_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 239 RepMEff) x1 v1 →
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 237 RepMEff) x1 v1 →
     (RepOption 230 RepMStmt) (Lanius.Mini.setEvalOf x0 x1) w
 
 abbrev Stmt_set_index_eval_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.MEff} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 239 RepMEff) x1 v1 → (RepOption 239 RepMEff) x2 v2 →
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.MEff} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 237 RepMEff) x1 v1 → (RepOption 237 RepMEff) x2 v2 →
     (RepOption 230 RepMStmt) (Lanius.Mini.setIndexEvalOf x0 x1 x2) w
 
 abbrev Stmt_set_or_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -33,7 +33,7 @@ abbrev Stmt_set_or_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 230 RepMStmt) (Lanius.Mini.setOrEval x0 x1 x2 x3 x4) w
 
 abbrev Stmt_while_eval_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option Lanius.Mini.MStmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 239 RepMEff) x0 v0 → (RepOption 230 RepMStmt) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option Lanius.Mini.MStmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 237 RepMEff) x0 v0 → (RepOption 230 RepMStmt) x1 v1 →
     (RepOption 230 RepMStmt) (Lanius.Mini.whileEvalOf x0 x1) w
 
 abbrev Stmt_while_or_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

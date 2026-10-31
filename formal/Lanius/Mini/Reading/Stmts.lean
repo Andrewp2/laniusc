@@ -532,6 +532,9 @@ inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
       forRange ((kidToken s 0).start - env.base) ((kidToken s 1).start - env.base) ((kidToken s 2).start - env.base)
         n.ty a n.id (some body) = some m →
       StmtR env scope s m
+  /-- `{ ... }`: its lets scope over the block only. -/
+  | block {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s = pBlockStmt →
+      BlockR env scope (kid (kid s 0) 1) m → StmtR env scope s m
 end
 
 def StmtSound (fuel : Nat) : Prop :=
@@ -540,11 +543,12 @@ def StmtSound (fuel : Nat) : Prop :=
   (∀ {env scope s rest m}, stmtFirst fuel env scope s rest = some m → StmtsR env scope (s :: rest) m) ∧
   (∀ {env scope s rest m}, nodeProd s = pLetStmt → letFirst fuel env scope s rest = some m →
     StmtsR env scope (s :: rest) m) ∧
-  (∀ {env scope s m}, stmtOf fuel env scope s = some m → StmtR env scope s m)
+  (∀ {env scope s m}, stmtOf fuel env scope s = some m → StmtR env scope s m) ∧
+  (∀ {env scope s m}, nestedOf fuel env scope s = some m → StmtR env scope s m)
 
 theorem stmtSound : ∀ fuel, StmtSound fuel
   | 0 => by
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     all_goals intros
     all_goals rename_i h
     · rw [blockOf.eq_def] at h; simp at h
@@ -552,9 +556,10 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
     · rw [stmtFirst.eq_def] at h; simp at h
     · rw [letFirst.eq_def] at h; simp at h
     · rw [stmtOf.eq_def] at h; simp at h
+    · rw [nestedOf.eq_def] at h; simp at h
   | f + 1 => by
-    obtain ⟨ihBlock, ihStmts, ihFirst, ihLet, ihStmt⟩ := stmtSound f
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    obtain ⟨ihBlock, ihStmts, ihFirst, ihLet, ihStmt, ihNested⟩ := stmtSound f
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro env scope list m h
       rw [blockOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
@@ -663,7 +668,16 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
         obtain ⟨body, hb, wr⟩ := whileOrEval_sound h
         exact .while pw (ihBlock hb) wr
       split at h
-      · rename_i _ _ _ _ _ _ _ pf
+      · exact ihNested h
+      split at h
+      · rename_i _ _ _ _ _ _ _ _ pa
+        exact .assign pa (assignment_sound h)
+      cases h
+    · intro env scope s m h
+      rw [nestedOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      split at h
+      · rename_i pf
         try dsimp only at h
         split at h
         · rename_i c
@@ -691,8 +705,8 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
                 cases ng
         · cases h
       split at h
-      · rename_i _ _ _ _ _ _ _ _ pa
-        exact .assign pa (assignment_sound h)
+      · rename_i _ pb
+        exact .block pb (ihBlock h)
       cases h
 
 theorem blockOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {list : CTree} {m : MStmt}

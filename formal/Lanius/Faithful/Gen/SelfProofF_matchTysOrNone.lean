@@ -505,7 +505,7 @@ theorem step_eff_path_call {prog : SrcProgram} {prims : Prims} {ix_eff_path_call
   simp only [src_eff_path_call] at h
   faithful [Lanius.Mini.effPathCall]
 
-theorem step_eff_postfix {prog : SrcProgram} {prims : Prims} {ix_eff_postfix ix_minus ix_node_prod ix_kid ix_eff_of ix_p_postfix_end ix_eff_node ix_local_of ix_p_postfix_index ix_is_path_call ix_is_method_form ix_p_ident ix_p_ident_plain ix_p_postfix_call ix_eff_path_call ix_eff_method ix_x_index_of ix_eff_chain ix_eff_primary : Nat} (fn : prog.funcs[ix_eff_postfix]? = some (src_eff_postfix ix_minus ix_node_prod ix_kid ix_eff_of ix_p_postfix_end ix_eff_node ix_local_of ix_p_postfix_index ix_is_path_call ix_is_method_form ix_p_ident ix_p_ident_plain ix_p_postfix_call ix_eff_path_call ix_eff_method ix_x_index_of ix_eff_chain ix_eff_primary)) (np : prims.isPrim ix_eff_postfix = false)
+theorem step_eff_postfix {prog : SrcProgram} {prims : Prims} {ix_eff_postfix ix_minus ix_node_prod ix_kid ix_eff_of ix_eff_node ix_p_postfix_end ix_local_of ix_p_postfix_index ix_is_path_call ix_is_method_form ix_p_ident ix_p_ident_plain ix_p_postfix_call ix_eff_path_call ix_eff_method ix_x_index_of ix_eff_chain ix_eff_primary : Nat} (fn : prog.funcs[ix_eff_postfix]? = some (src_eff_postfix ix_minus ix_node_prod ix_kid ix_eff_of ix_eff_node ix_p_postfix_end ix_local_of ix_p_postfix_index ix_is_path_call ix_is_method_form ix_p_ident ix_p_ident_plain ix_p_postfix_call ix_eff_path_call ix_eff_method ix_x_index_of ix_eff_chain ix_eff_primary)) (np : prims.isPrim ix_eff_postfix = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
