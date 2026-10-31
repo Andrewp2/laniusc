@@ -361,7 +361,9 @@ theorem Instr.pieces_size (own : Nat) (place : Place) (pc : Nat) (i : Instr) :
   | call callee args target count =>
     simp only [Instr.pieces, callPieces]
     split
-    · simp [piecesSize, Piece.size, copyBytes_length, slotRange_length, Instr.size]; omega
+    · simp [piecesSize, Piece.size, copyBytes_length, slotRange_length, Instr.size, fspSave_eq, fspLoad_eq,
+        fspSaveBytes_length, fspLoadBytes_length]
+      omega
     · simp [piecesSize, Piece.size, Instr.encode_length]
   | _ => simp [Instr.pieces, piecesSize, Piece.size, Instr.encode_length]
 
@@ -396,10 +398,11 @@ theorem Instr.pieces_render {table : List Nat} {missing own : Nat} {targets entr
       simp only [render, Piece.render, Piece.size, List.length_append, copyBytes_length, List.length_cons,
         List.length_nil, List.append_nil, importCalls callee imported, List.append_assoc, List.cons_append,
         List.nil_append]
-      rw [show pos + body + pc + (14 * args.length + (0 + 1)) + 4 = pos + body + pc + 14 * args.length + 5 by omega]
+      rw [show pos + body + pc + (14 * args.length + ((fspSave target).length + (0 + 1))) + 4 =
+        pos + body + pc + 14 * args.length + 12 by rw [fspSave_eq, fspSaveBytes_length]; omega]
     · rename_i local_
       simp only [render, Piece.render, List.append_nil, ownCalls callee (by omega)]
-      rw [show pos + body + pc + 14 * args.length + 5 = pos + (body + pc + 14 * args.length + 5) by omega,
+      rw [show pos + body + pc + 14 * args.length + 12 = pos + (body + pc + 14 * args.length + 12) by omega,
         relative_shift]
   | _ => simp [Instr.pieces, render, Piece.render, Instr.rename, Instr.encode]
 

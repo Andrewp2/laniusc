@@ -72,7 +72,7 @@ def linkProgram (ms : List Module) : Option Program :=
 /-- A call to callee from body offset pc. A callee at or past own is an import, so its rel32 field is a hole. -/
 def callPieces (own : Nat) (place : Place) (pc : Nat) (callee : Nat) (args : List Nat) (target : Nat) (count : Nat) : List Piece :=
   if own ≤ callee then
-    Piece.bytes (copyBytes (argBase place.slots) args 0 ++ [232]) :: Piece.rel (callee - own) :: [Piece.bytes (copyBytes target (slotRange (argBase place.slots) count) 0)]
+    Piece.bytes (copyBytes (argBase place.slots) args 0 ++ fspSave target ++ [232]) :: Piece.rel (callee - own) :: [Piece.bytes (fspLoad target ++ copyBytes target (slotRange (argBase place.slots) count) 0)]
   else
     let call : Instr := Instr.call callee args target count
     [Piece.bytes (Instr.encode call place pc)]

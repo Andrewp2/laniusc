@@ -82,7 +82,7 @@ theorem proof_FOp_opcode_bytes {prog : SrcProgram} {prims : Prims} {ix_FOp_opcod
   simp only [src_FOp_opcode_bytes] at h
   faithful [Lanius.Mini.FOp.opcodeBytes]
 
-theorem proof_Instr_encode {prog : SrcProgram} {prims : Prims} {ix_Instr_encode ix_length_of_usize ix_plus ix_times ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_le64 ix_slot_load ix_slot_store ix_BinOp_bytes ix_slot_compare ix_relative ix_copy_bytes ix_arg_base ix_get_or_of_usize ix_slot_range ix_epilogue ix_bump_bytes ix_load_at_bytes ix_store_at_bytes ix_load_word_bytes ix_store_word_bytes ix_DivOp_bytes ix_FOp_bytes ix_sys_bytes : Nat} (fn : prog.funcs[ix_Instr_encode]? = some (src_Instr_encode ix_length_of_usize ix_plus ix_times ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_le64 ix_slot_load ix_slot_store ix_BinOp_bytes ix_slot_compare ix_relative ix_copy_bytes ix_arg_base ix_get_or_of_usize ix_slot_range ix_epilogue ix_bump_bytes ix_load_at_bytes ix_store_at_bytes ix_load_word_bytes ix_store_word_bytes ix_DivOp_bytes ix_FOp_bytes ix_sys_bytes)) (np : prims.isPrim ix_Instr_encode = false)
+theorem proof_Instr_encode {prog : SrcProgram} {prims : Prims} {ix_Instr_encode ix_length_of_usize ix_plus ix_times ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_le64 ix_slot_load ix_slot_store ix_BinOp_bytes ix_slot_compare ix_relative ix_copy_bytes ix_arg_base ix_fsp_save ix_get_or_of_usize ix_fsp_load ix_slot_range ix_epilogue ix_bump_bytes ix_load_at_bytes ix_store_at_bytes ix_load_word_bytes ix_store_word_bytes ix_DivOp_bytes ix_FOp_bytes ix_sys_bytes : Nat} (fn : prog.funcs[ix_Instr_encode]? = some (src_Instr_encode ix_length_of_usize ix_plus ix_times ix_concat_of_u8 ix_cons_of_u8 ix_single_of_u8 ix_le32 ix_le64 ix_slot_load ix_slot_store ix_BinOp_bytes ix_slot_compare ix_relative ix_copy_bytes ix_arg_base ix_fsp_save ix_get_or_of_usize ix_fsp_load ix_slot_range ix_epilogue ix_bump_bytes ix_load_at_bytes ix_store_at_bytes ix_load_word_bytes ix_store_word_bytes ix_DivOp_bytes ix_FOp_bytes ix_sys_bytes)) (np : prims.isPrim ix_Instr_encode = false)
     (ext_length_of_usize : Certified (∀ {n : Nat}, Stmt_length_of_usize prog prims ix_length_of_usize n))
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
@@ -98,7 +98,9 @@ theorem proof_Instr_encode {prog : SrcProgram} {prims : Prims} {ix_Instr_encode 
     (ext_relative : Certified (∀ {n : Nat}, Stmt_relative prog prims ix_relative n))
     (ext_copy_bytes : Certified (∀ {n : Nat}, Stmt_copy_bytes prog prims ix_copy_bytes n))
     (ext_arg_base : Certified (∀ {n : Nat}, Stmt_arg_base prog prims ix_arg_base n))
+    (ext_fsp_save : Certified (∀ {n : Nat}, Stmt_fsp_save prog prims ix_fsp_save n))
     (ext_get_or_of_usize : Certified (∀ {n : Nat}, Stmt_get_or_of_usize prog prims ix_get_or_of_usize n))
+    (ext_fsp_load : Certified (∀ {n : Nat}, Stmt_fsp_load prog prims ix_fsp_load n))
     (ext_slot_range : Certified (∀ {n : Nat}, Stmt_slot_range prog prims ix_slot_range n))
     (ext_epilogue : Certified (∀ {n : Nat}, Stmt_epilogue prog prims ix_epilogue n))
     (ext_bump_bytes : Certified (∀ {n : Nat}, Stmt_bump_bytes prog prims ix_bump_bytes n))

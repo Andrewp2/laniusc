@@ -108,6 +108,9 @@ def compiler_forms():
         form('mov rax, [rbp+disp32]', [0x48, 0x8B, 0x85], 'disp32', 'mem', base=RBP, width=8),
         form('mov rcx, [rbp+disp32]', [0x48, 0x8B, 0x8D], 'disp32', 'mem', base=RBP, width=8),
         form('mov [rbp+disp32], rax', [0x48, 0x89, 0x85], 'disp32', 'mem', base=RBP, width=8),
+        # The frame pointer in rbx, saved and loaded around each call.
+        form('mov [rbp+disp32], rbx', [0x48, 0x89, 0x9D], 'disp32', 'mem', base=RBP, width=8),
+        form('mov rbx, [rbp+disp32]', [0x48, 0x8B, 0x9D], 'disp32', 'mem', base=RBP, width=8),
         form('movzx eax, byte [rax+disp32]', [0x0F, 0xB6, 0x80], 'disp32', 'mem', base=RAX, width=1),
         form('mov [rcx+disp32], al', [0x88, 0x81], 'disp32', 'mem', base=RCX, width=1),
         form('mov eax, [rax+disp32]', [0x8B, 0x80], 'disp32', 'mem', base=RAX, width=4),
