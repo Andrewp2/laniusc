@@ -63,9 +63,9 @@ theorem proof_wide_i32 {prog : SrcProgram} {prims : Prims} {ix_wide_i32 : Nat} (
   simp only [src_wide_i32] at h
   faithful [Lanius.Mini.wideI32]
 
-theorem proof_wide_isize {prog : SrcProgram} {prims : Prims} {ix_wide_isize ix_plus ix_minus ix_boxed_of_mini_selfhost_SrcExpr : Nat} (fn : prog.funcs[ix_wide_isize]? = some (src_wide_isize ix_plus ix_minus ix_boxed_of_mini_selfhost_SrcExpr)) (np : prims.isPrim ix_wide_isize = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem proof_wide_isize {prog : SrcProgram} {prims : Prims} {ix_wide_isize ix_minus ix_plus ix_boxed_of_mini_selfhost_SrcExpr : Nat} (fn : prog.funcs[ix_wide_isize]? = some (src_wide_isize ix_minus ix_plus ix_boxed_of_mini_selfhost_SrcExpr)) (np : prims.isPrim ix_wide_isize = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n)) {n : Nat} :
     Stmt_wide_isize prog prims ix_wide_isize n := by
   intro x0 x1 v0 v1 w h r0 r1
@@ -75,9 +75,9 @@ theorem proof_wide_isize {prog : SrcProgram} {prims : Prims} {ix_wide_isize ix_p
   simp only [src_wide_isize] at h
   faithful [Lanius.Mini.wideIsize]
 
-theorem proof_wide_sint {prog : SrcProgram} {prims : Prims} {ix_wide_sint ix_plus ix_minus ix_boxed_of_mini_selfhost_SrcExpr ix_sint_wide : Nat} (fn : prog.funcs[ix_wide_sint]? = some (src_wide_sint ix_plus ix_minus ix_boxed_of_mini_selfhost_SrcExpr ix_sint_wide)) (np : prims.isPrim ix_wide_sint = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem proof_wide_sint {prog : SrcProgram} {prims : Prims} {ix_wide_sint ix_minus ix_plus ix_boxed_of_mini_selfhost_SrcExpr ix_sint_wide : Nat} (fn : prog.funcs[ix_wide_sint]? = some (src_wide_sint ix_minus ix_plus ix_boxed_of_mini_selfhost_SrcExpr ix_sint_wide)) (np : prims.isPrim ix_wide_sint = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n))
     (ext_sint_wide : Certified (∀ {n : Nat}, Stmt_sint_wide prog prims ix_sint_wide n)) {n : Nat} :
     Stmt_wide_sint prog prims ix_wide_sint n := by

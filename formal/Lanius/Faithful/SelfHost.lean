@@ -23,8 +23,10 @@ From these, and with no other assumption than `selfCompiler_outcome`'s:
 2. the fixpoint: `B`'s machine code for `w`, entered with the words of
    `self` and `room` words of output view, faults (every run that stops,
    stops at a fault: out of stack, heap or output room), or returns,
-   deterministically, the length of `B`'s own words, with those words in
-   the output view: `B` compiles its own source text to `B`.
+   deterministically, the length of `B`'s own words (`binaryWords`: the
+   entry count, the entries, the image's length, then its bytes four to a
+   word, little-endian, the last word zero-padded), with those words in the
+   output view: `B` compiles its own source text to `B`.
 
 `selfHost_outcome` is the same for any other files: the self-built
 verified compiler, built from its own text, gives `compileText`'s answer

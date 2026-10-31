@@ -3,12 +3,11 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_compileSource
+public import Lanius.Faithful.Gen.SelfStmt0
+public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt2
-public import Lanius.Faithful.Gen.SelfStmt3
-public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
-public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtC_compileOr
 public import Lanius.Faithful.Gen.SelfStmtC_compileSource
 public import Lanius.Faithful.Gen.SelfStmtC_declareProgram
@@ -32,32 +31,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_binary_words {prog : SrcProgram} {prims : Prims} {ix_binary_words ix_cons_of_i32 ix_concat_of_i32 ix_length_of_usize ix_usize_words ix_length_of_u8 ix_byte_words : Nat} (fn : prog.funcs[ix_binary_words]? = some (src_binary_words ix_cons_of_i32 ix_concat_of_i32 ix_length_of_usize ix_usize_words ix_length_of_u8 ix_byte_words)) (np : prims.isPrim ix_binary_words = false)
-    (ext_cons_of_i32 : Certified (∀ {n : Nat}, Stmt_cons_of_i32 prog prims ix_cons_of_i32 n))
-    (ext_concat_of_i32 : Certified (∀ {n : Nat}, Stmt_concat_of_i32 prog prims ix_concat_of_i32 n))
-    (ext_length_of_usize : Certified (∀ {n : Nat}, Stmt_length_of_usize prog prims ix_length_of_usize n))
-    (ext_usize_words : Certified (∀ {n : Nat}, Stmt_usize_words prog prims ix_usize_words n))
-    (ext_length_of_u8 : Certified (∀ {n : Nat}, Stmt_length_of_u8 prog prims ix_length_of_u8 n))
-    (ext_byte_words : Certified (∀ {n : Nat}, Stmt_byte_words prog prims ix_byte_words n)) {n : Nat} :
-    Stmt_binary_words prog prims ix_binary_words n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_binary_words] at h
-  faithful [Lanius.Mini.binaryWords]
-
-theorem step_byte_words {prog : SrcProgram} {prims : Prims} {ix_byte_words ix_empty_of_i32 ix_cons_of_i32 ix_unbox_of_mini_selfhost_List_u8 : Nat} (fn : prog.funcs[ix_byte_words]? = some (src_byte_words ix_empty_of_i32 ix_cons_of_i32 ix_byte_words ix_unbox_of_mini_selfhost_List_u8)) (np : prims.isPrim ix_byte_words = false)
-    (ext_empty_of_i32 : Certified (∀ {n : Nat}, Stmt_empty_of_i32 prog prims ix_empty_of_i32 n))
-    (ext_cons_of_i32 : Certified (∀ {n : Nat}, Stmt_cons_of_i32 prog prims ix_cons_of_i32 n))
-    (ext_unbox_of_mini_selfhost_List_u8 : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_u8 prog prims ix_unbox_of_mini_selfhost_List_u8 n)) {n : Nat}
-    (ih_byte_words : Certified (Stmt_byte_words prog prims ix_byte_words n)) :
-    Stmt_byte_words prog prims ix_byte_words (n + 1) := by
-  intro x0 v0 w h r0
-  rw [pcall_succ np fn] at h
-  simp only [src_byte_words] at h
-  faithful [Lanius.Mini.byteWords]
-
 theorem proof_compile_source {prog : SrcProgram} {prims : Prims} {ix_compile_source ix_funcs_return ix_compile_declared ix_declare_program : Nat} (fn : prog.funcs[ix_compile_source]? = some (src_compile_source ix_funcs_return ix_compile_declared ix_declare_program)) (np : prims.isPrim ix_compile_source = false)
     (ext_funcs_return : Certified (∀ {n : Nat}, Stmt_funcs_return prog prims ix_funcs_return n))
     (ext_compile_declared : Certified (∀ {n : Nat}, Stmt_compile_declared prog prims ix_compile_declared n))
@@ -70,16 +43,36 @@ theorem proof_compile_source {prog : SrcProgram} {prims : Prims} {ix_compile_sou
   simp only [src_compile_source] at h
   faithful [Lanius.Mini.compileSource]
 
-theorem proof_compile_words {prog : SrcProgram} {prims : Prims} {ix_compile_words ix_binary_words ix_compile_source : Nat} (fn : prog.funcs[ix_compile_words]? = some (src_compile_words ix_binary_words ix_compile_source)) (np : prims.isPrim ix_compile_words = false)
-    (ext_binary_words : Certified (∀ {n : Nat}, Stmt_binary_words prog prims ix_binary_words n))
-    (ext_compile_source : Certified (∀ {n : Nat}, Stmt_compile_source prog prims ix_compile_source n)) {n : Nat} :
-    Stmt_compile_words prog prims ix_compile_words n := by
-  intro x0 v0 w h r0
+theorem proof_pack_word {prog : SrcProgram} {prims : Prims} {ix_pack_word : Nat} (fn : prog.funcs[ix_pack_word]? = some (src_pack_word)) (np : prims.isPrim ix_pack_word = false) {n : Nat} :
+    Stmt_pack_word prog prims ix_pack_word n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_compile_words] at h
-  faithful [Lanius.Mini.compileWords]
+  simp only [src_pack_word] at h
+  faithful [Lanius.Mini.packWord]
+
+theorem proof_round_cons {prog : SrcProgram} {prims : Prims} {ix_round_cons ix_cons_of_i32 ix_plus : Nat} (fn : prog.funcs[ix_round_cons]? = some (src_round_cons ix_cons_of_i32 ix_plus)) (np : prims.isPrim ix_round_cons = false)
+    (ext_cons_of_i32 : Certified (∀ {n : Nat}, Stmt_cons_of_i32 prog prims ix_cons_of_i32 n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat} :
+    Stmt_round_cons prog prims ix_round_cons n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_round_cons] at h
+  faithful [Lanius.Mini.roundCons]
+
+theorem proof_round_end {prog : SrcProgram} {prims : Prims} {ix_round_end ix_empty_of_i32 ix_empty_of_u8 : Nat} (fn : prog.funcs[ix_round_end]? = some (src_round_end ix_empty_of_i32 ix_empty_of_u8)) (np : prims.isPrim ix_round_end = false)
+    (ext_empty_of_i32 : Certified (∀ {n : Nat}, Stmt_empty_of_i32 prog prims ix_empty_of_i32 n))
+    (ext_empty_of_u8 : Certified (∀ {n : Nat}, Stmt_empty_of_u8 prog prims ix_empty_of_u8 n)) {n : Nat} :
+    Stmt_round_end prog prims ix_round_end n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_round_end] at h
+  faithful [Lanius.Mini.roundEnd]
 
 theorem step_usize_words {prog : SrcProgram} {prims : Prims} {ix_usize_words ix_empty_of_i32 ix_cons_of_i32 ix_unbox_of_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_usize_words]? = some (src_usize_words ix_empty_of_i32 ix_cons_of_i32 ix_usize_words ix_unbox_of_mini_selfhost_List_usize)) (np : prims.isPrim ix_usize_words = false)
     (ext_empty_of_i32 : Certified (∀ {n : Nat}, Stmt_empty_of_i32 prog prims ix_empty_of_i32 n))

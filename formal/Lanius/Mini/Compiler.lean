@@ -9,6 +9,7 @@ public import Lanius.Mini.Compiler.P.arities
 public import Lanius.Mini.Compiler.P.FloatTy_rex
 public import Lanius.Mini.Compiler.P.FArith_opcode
 public import Lanius.Mini.Compiler.P.loadAtBytes
+public import Lanius.Mini.Compiler.P.linkedSize
 public import Lanius.Mini.Compiler.P.moduleExports
 public import Lanius.Mini.Compiler.P.importOk
 public import Lanius.Mini.Compiler.P.importsOk
@@ -81,13 +82,16 @@ public import Lanius.Mini.Compiler.P.Expr_agrees
 public import Lanius.Mini.Compiler.P.assignAgrees
 public import Lanius.Mini.Compiler.P.callAgrees
 public import Lanius.Mini.Compiler.P.substAll
+public import Lanius.Mini.Compiler.P.extentAfter
+public import Lanius.Mini.Compiler.P.killShared
+public import Lanius.Mini.Compiler.P.longer
 public import Lanius.Mini.Compiler.P.Stmt_kills
-public import Lanius.Mini.Compiler.P.optKill
 public import Lanius.Mini.Compiler.P.optimizeNeg
 public import Lanius.Mini.Compiler.P.optimizeLeft
 public import Lanius.Mini.Compiler.P.optimizeIte
 public import Lanius.Mini.Compiler.P.compileOr
 public import Lanius.Mini.Compiler.P.compileSource
+public import Lanius.Mini.Compiler.P.packRound
 public import Lanius.Mini.Compiler.P.larger
 public import Lanius.Mini.Compiler.P.Inline_arithOf
 public import Lanius.Mini.Compiler.P.Inline_lowerSetScalar
@@ -102,6 +106,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 91 parts, `.P0` on, in source order, whose bodies
+The definitions are in 95 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

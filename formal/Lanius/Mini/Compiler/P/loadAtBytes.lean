@@ -134,19 +134,20 @@ def linkFrom (entries : List Nat) (start : Nat) (codes : List Code) : List UInt8
   | [] => []
   | code :: rest => Code.image code start entries ++ linkFrom entries (start + Code.size code) rest
 
+/-- The bytes of code followed by tail. -/
+def encodeOnto (place : Place) (pc : Nat) (code : List Instr) (tail : List UInt8) : List UInt8 :=
+  match code with
+  | [] => tail
+  | i :: rest => Instr.encode i place pc ++ encodeOnto place (pc + Instr.size i) rest tail
+
+/-- link_from's bytes, each function's built in front of the rest instead of concatenated onto it: concat copies its first list, and the heap of the self-built verified compiler is never freed (roadmap F12). -/
+def linkOnto (entries : List Nat) (start : Nat) (codes : List Code) : List UInt8 :=
+  match codes with
+  | [] => []
+  | code :: rest => prologue code.slots ++ encodeOnto ({ body := start + 24, slots := code.slots, entries := entries } : Place) 0 code.instrs (linkOnto entries (start + Code.size code) rest)
+
 /-- Images are small enough for every rel32 displacement. -/
 def imageLimit : Nat :=
   1073741824
-
-def compileProgram (prog : Program) : Option Binary :=
-  match compileFuncs (arities prog.funcs) prog.funcs with
-  | none => none
-  | some codes =>
-    let entries : List Nat := layout 0 codes
-    let image : List UInt8 := linkFrom entries 0 codes
-    if image.length ≤ imageLimit then
-      some ({ codes := codes, entries := entries, image := image } : Binary)
-    else
-      none
 
 end Lanius.Mini

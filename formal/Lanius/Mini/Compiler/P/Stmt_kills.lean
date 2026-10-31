@@ -6,7 +6,7 @@ import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.assignAgrees
 import Lanius.Mini.Compiler.P.binaryConstant
 import Lanius.Mini.Compiler.P.callAgrees
-import Lanius.Mini.Compiler.P.sigs
+import Lanius.Mini.Compiler.P.longer
 import Lanius.Mini.Compiler.P.substAll
 
 public section
@@ -154,34 +154,13 @@ def funcsAgree (funcs : List Func) (others : List Func) : Bool :=
 def validate (original : Program) (optimized : Program) : Bool :=
   funcsAgree original.funcs optimized.funcs
 
-def factDies (fact : Fact) (index : Nat) : Bool :=
-  decide (fact.slot = index) || Expr.mentions fact.value index
-
-def extentAfter (dies : Bool) (k : Nat) (extent : Nat) : Nat :=
-  if dies then
-    k
-  else
-    extent
-
-/-- How many of the facts, counted from the front, reach the last one that dies (0 when none does); k facts come before these. -/
-def dyingExtent (facts : List Fact) (index : Nat) (k : Nat) (extent : Nat) : Nat :=
-  match facts with
-  | [] => extent
-  | fact :: rest => dyingExtent rest index (k + 1) (extentAfter (factDies fact index) (k + 1) extent)
-
-def killPrefixAt (fact : Fact) (index : Nat) (tail : List Fact) : List Fact :=
-  if factDies fact index then
-    tail
-  else
-    fact :: tail
-
-/-- The first n facts filtered as kill does, followed by the rest unchanged. -/
-def killPrefix (facts : List Fact) (index : Nat) (n : Nat) : List Fact :=
-  if n = 0 then
-    facts
-  else
-    match facts with
-    | [] => []
-    | fact :: rest => killPrefixAt fact index (killPrefix rest index (n - 1))
+def Expr.literal (self : Expr) : Option (BitVec 64) :=
+  match self with
+  | .lit value => some value
+  | .var index => none
+  | .neg operand => none
+  | .binary word operation left right => none
+  | .compare word operation left right => none
+  | .fp operation left right => none
 
 end Lanius.Mini

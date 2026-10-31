@@ -1160,14 +1160,14 @@ source files `self`, if the front end reads them as `prog` (the program the
 certificates are about) and the verified compiler makes `B` of them, then
 `prog` is their one reading, and `B`'s code for the driver `w`, given the
 words of `self`, faults or returns `B`'s own words (entry count, entries,
-image length, image). The native compiler, run on its own text, is the
+image length, then the image's bytes four to a word). The native compiler, run on its own text, is the
 compilation of what that text means, and gives itself back.
 
 - The two facts about `self` stay premises, computed by Lean's compiled
   code and checked by the gate (TRUSTED_BASE.md section 5, "The self-built
   verified compiler"). The kernel cannot evaluate the front end on the 8
   files (795 KB, 1.4 million productions) or `compileSource` on `prog`
-  (2,209 functions, a 15 MB image): Lean's compiled code takes 12 s for
+  (2,221 functions, a 15 MB image): Lean's compiled code takes 12 s for
   both, the kernel's evaluator is orders of magnitude slower and keeps every
   intermediate term. The premises are about source text and the binary on
   disk, so they are exactly what `srcDump` and `runAll` compute; V7's
@@ -1190,20 +1190,41 @@ compilation of what that text means, and gives itself back.
   the files from standard input with F8's `read_stdin` and writing the
   executable to standard output) would put the driver under
   `process_exits`; it needs a driver proved for byte I/O, and the
-  run's 12 GiB of heap and 5 GiB of stack in an ELF's zero fill.
-- The fixpoint's time (10-31): the gate step takes 264 s of its 300 s, the
-  native run 218 s (106 s on 10-29, at 1,823 functions and an 11 MB
-  image). Sampled by rip (`target/claude-work/f12/prof.py`): the first
-  ~135 s are CPU (front end, then the optimizer's validator facts:
-  `boxed`/`unbox` of `List<Fact>`, `fact_value`, `kill`); the last ~80 s are
-  paging, with 3 s of CPU: the heap reaches 12 GiB and the stack 5 GiB
-  under the 4 GiB memory cap, and the walks over the 15 million image
-  bytes and output words (`length<u8>`, `byte_words`, `oracle_write`)
-  recurse 15 million calls deep (none is a tail call: `oracle_write`
-  writes a word after it has read the rest, so that its writes cannot
-  change a list still to be read). What would make it faster: fewer such
-  walks (`binaryWords` counts the image and then copies it into words), a
-  smaller frame for them, or less heap for the validator's facts.
+  run's 5.2 GiB of heap and its stack in an ELF's zero fill.
+- The fixpoint's time (10-31): the gate step took 264 s of its 300 s (the
+  native run 218 s; 106 s on 10-29, at 1,823 functions and an 11 MB
+  image), and after the changes below about 140 s (the native run about
+  112 s, at 2,221 functions and a 15 MB image). The
+  bump allocator never frees, so heap is time: allocation was 12 GiB and
+  is 5.2 GiB (sampled by rip and heap cursor,
+  `target/claude-work/f12/prof.py`). The changes, all to the verified
+  compiler, with its proofs kept:
+  - The driver's output packs the image four bytes to a word
+    (`pack_rounds`, rounds of 4096 words on fuel, so no walk is 15 million
+    calls deep), 3.8 million words instead of 15 million, and `link`
+    checks the image limit against the functions' sizes (`linked_size`,
+    `linkFrom_length`) instead of counting the image.
+  - The validator's facts: a write keeps the part of the fact list after
+    the last fact it kills (`kill_shared`; `kill_tail` checks that nothing
+    after that point dies, so `dying_extent` only decides where sharing
+    starts and the proof, `mem_killPrefix`, does not depend on it), and a
+    list past 31 facts is cut to its 15 newest (`trim_facts`), so a list
+    holds at most 32. The optimizer uses the validator's `facts_after`;
+    its own copies are gone. With the packed output this took the heap
+    from 12 to 5.6 GiB; the facts no longer show in the profile.
+  - `link` builds each function's bytes in front of the rest
+    (`link_onto`, equal to `link_from` by `linkOnto_eq`) instead of
+    concatenating whole function images: 5.6 to 5.2 GiB.
+
+  The peak resident set is still at the 4 GiB cap, since 5.2 GiB is
+  allocated. What is left is in each list step: `unbox` copies the node
+  out of its box (for a `List<FnDecl>` node, the whole `FnDecl`), and it
+  and `boxed` build slice headers through `typed_slice_from_storage`. The
+  front end takes 2.3 GiB (`find_fn` walking `decls.fns`, `concat<FnDecl>`),
+  lowering's `concat<Instr>` about 0.7 GiB, and encoding about 1.3 GiB
+  (each byte is a cons cell made by `encode` and copied once by `concat`).
+  Lowering `unbox` without the copy, or a table for the front end's
+  lookups, would take most of it.
 
 ### The design of writes through references (decided 10-31, F5)
 

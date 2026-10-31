@@ -639,7 +639,7 @@ program's files `self` (the driver `w` and the module closure of
 tree, laid out as `self_host.py` and `faithful_current.py` lay them out) as
 premises. Each is computed by Lean's compiled code (item 2 above), because
 the kernel cannot evaluate the front end on 795 KB of text or `compileSource`
-on a program whose image is 15,049,168 bytes:
+on a program whose image is about 15 MB (15,077,456 bytes on 10-31):
 
 - **`read : sourceProgramFiles self = some prog`.** `lake exe srcDump`
   (`Lanius/Tools/SrcDump.lean`) runs the front end on the files and prints
@@ -651,10 +651,10 @@ on a program whose image is 15,049,168 bytes:
   `self-current` step (`faithful_current.py`), which regenerates `Gen/`
   from the current sources and fails unless it is what is checked in, so
   `prog` is never stale; and by the certificates and the prim tests, which
-  hold of the 1,945 functions of `prog` reachable from the driver's roots
+  hold of the 1,951 functions of `prog` reachable from the driver's roots
   (each certificate proves the function's Core run computes its
   extraction), so a reachable function printed with another meaning fails
-  to check. The other 264 functions (`elf_file`, test helpers) change the
+  to check. The other 270 functions (`elf_file`, test helpers) change the
   image's bytes but no run of `w`, so for them the printing is trusted as
   stated.
 - **`compiled : compileText self = some B`.** `lake exe runAll` (manifest

@@ -491,4 +491,11 @@ structure Fact where
   value : Expr
   deriving DecidableEq, Repr
 
+/-- Packed words, the number of bytes they hold, and the bytes after them. -/
+structure Round where
+  words : List (BitVec 32)
+  count : Nat
+  rest : List UInt8
+  deriving DecidableEq, Repr
+
 end Lanius.Mini

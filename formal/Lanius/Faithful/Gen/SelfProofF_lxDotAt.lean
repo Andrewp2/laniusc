@@ -111,9 +111,9 @@ theorem proof_lx_prepend {prog : SrcProgram} {prims : Prims} {ix_lx_prepend ix_c
   simp only [src_lx_prepend] at h
   faithful [Lanius.Mini.lxPrepend]
 
-theorem step_lx_raw {prog : SrcProgram} {prims : Prims} {ix_lx_raw ix_plus ix_minus ix_empty_of_mini_selfhost_RawTok ix_lx_one_at ix_lx_prepend ix_lx_shift ix_lx_drop : Nat} (fn : prog.funcs[ix_lx_raw]? = some (src_lx_raw ix_plus ix_minus ix_lx_raw ix_empty_of_mini_selfhost_RawTok ix_lx_one_at ix_lx_prepend ix_lx_shift ix_lx_drop)) (np : prims.isPrim ix_lx_raw = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+theorem step_lx_raw {prog : SrcProgram} {prims : Prims} {ix_lx_raw ix_minus ix_plus ix_empty_of_mini_selfhost_RawTok ix_lx_one_at ix_lx_prepend ix_lx_shift ix_lx_drop : Nat} (fn : prog.funcs[ix_lx_raw]? = some (src_lx_raw ix_minus ix_plus ix_lx_raw ix_empty_of_mini_selfhost_RawTok ix_lx_one_at ix_lx_prepend ix_lx_shift ix_lx_drop)) (np : prims.isPrim ix_lx_raw = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_empty_of_mini_selfhost_RawTok : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_RawTok prog prims ix_empty_of_mini_selfhost_RawTok n))
     (ext_lx_one_at : Certified (∀ {n : Nat}, Stmt_lx_one_at prog prims ix_lx_one_at n))
     (ext_lx_prepend : Certified (∀ {n : Nat}, Stmt_lx_prepend prog prims ix_lx_prepend n))
