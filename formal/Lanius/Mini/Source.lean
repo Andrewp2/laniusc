@@ -129,12 +129,12 @@ def SrcProgram.decls (prog : SrcProgram) : SrcDecls :=
   | none => { structs := [], enums := [] }
   | some decls => decls
 
-/-- Functions numbered by position, and one struct or enum declaration per
-type id the program's types name. -/
+/-- Functions numbered by position, then the host functions (`hostFuncs`),
+and one struct or enum declaration per type id the program's types name. -/
 def SrcProgram.toCore (prog : SrcProgram) : Core.Program where
   structures := prog.decls.structs.map SrcStructDecl.toCore
   enumerations := prog.decls.enums.map SrcEnumDecl.toCore
-  functions := coreFuncs 0 prog.funcs
+  functions := coreFuncs 0 prog.funcs ++ hostFuncs
 
 /-- What `compileSource` checks before it optimizes and compiles the lowered
 functions. -/

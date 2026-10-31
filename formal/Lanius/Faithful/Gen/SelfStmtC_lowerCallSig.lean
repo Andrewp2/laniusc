@@ -48,6 +48,10 @@ abbrev Stmt_eval_field_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
   ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcExpr} {x2 : Nat} {x3 : Option Lanius.Mini.SrcType} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 127 RepBinding) x0 v0 → RepSrcExpr x1 v1 → RepNat x2 v2 → (RepOption 150 RepSrcType) x3 v3 →
     (RepOption 148 RepEvaluated) (Lanius.Mini.evalFieldType x0 x1 x2 x3) w
 
+abbrev Stmt_eval_host (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.EvaluatedArgs} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepNat x1 v1 → RepEvaluatedArgs x2 v2 →
+    (RepOption 148 RepEvaluated) (Lanius.Mini.evalHost x0 x1 x2) w
+
 abbrev Stmt_eval_pure (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcExpr} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 127 RepBinding) x0 v0 → RepSrcExpr x1 v1 → RepNat x2 v2 →
     (RepOption 148 RepEvaluated) (Lanius.Mini.evalPure x0 x1 x2) w
@@ -55,6 +59,14 @@ abbrev Stmt_eval_pure (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 abbrev Stmt_eval_values (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : Option (List Lanius.Mini.Expr)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepSrcType x1 v1 → (RepOption 142 (RepList 87 RepExpr)) x2 v2 →
     (RepOption 148 RepEvaluated) (Lanius.Mini.evalValues x0 x1 x2) w
+
+abbrev Stmt_host_byte_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
+    RepStmt (Lanius.Mini.hostByteCode x0) w
+
+abbrev Stmt_host_write_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : BitVec 64} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepU64 x0 v0 → RepNat x1 v1 →
+    RepStmt (Lanius.Mini.hostWriteCode x0 x1) w
 
 abbrev Stmt_lower_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Sig} {x1 : List Lanius.Mini.Binding} {x2 : Nat} {x3 : List Lanius.Mini.SrcExpr} {x4 : Lanius.Mini.SrcType} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 91 RepSig) x0 v0 → (RepList 127 RepBinding) x1 v1 → RepNat x2 v2 → (RepList 20 RepSrcExpr) x3 v3 → RepSrcType x4 v4 →

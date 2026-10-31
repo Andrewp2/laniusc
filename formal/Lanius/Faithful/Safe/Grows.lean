@@ -607,7 +607,21 @@ theorem call_trap_grows {k : Nat} (ih : GrowsBelow sp k) (ihT : GrowsBelowT sp k
     (argsDone : ∀ {j vs s}, j < k → evalExprs j sp.toCore st args = .done vs s → Grows st s)
     (argsTrap : ∀ {j r s}, j < k → evalExprs j sp.toCore st args = .trapped r s → Grows st s)
     (run : evalExpr k sp.toCore st (.call callee args) = .trapped r st') : Grows st st' := by
-  obtain ⟨j, rfl, h⟩ := call_trap_inv run
+  by_cases inside : callee < sp.funcs.length
+  case neg =>
+    cases k with
+    | zero => simp [evalExpr] at run
+    | succ j =>
+      cases argsRun : evalExprs j sp.toCore st args with
+      | done values afterArgs =>
+        exact (argsDone (Nat.lt_succ_self j) argsRun).trans (host_trap_grows (by omega) argsRun run)
+      | trapped r' s =>
+        simp only [evalExpr, argsRun, Semantics.Outcome.trapped.injEq] at run
+        obtain ⟨-, rfl⟩ := run
+        exact argsTrap (Nat.lt_succ_self j) argsRun
+      | exited c s => simp [evalExpr, argsRun] at run
+      | outOfFuel => simp [evalExpr, argsRun] at run
+  obtain ⟨j, rfl, h⟩ := call_trap_inv inside run
   rcases h with argsRun | ⟨values, afterArgs, argsRun, h⟩
   · exact argsTrap (Nat.lt_succ_self j) argsRun
   cases h with

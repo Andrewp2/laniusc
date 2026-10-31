@@ -198,7 +198,7 @@ theorem call_pure {sp : SrcProgram} {k : Nat} {st st' : State} {callee : Nat} {a
     ∃ j completed c, execStmt j sp.toCore (({ st with locals := [] } : State).bindLocals
       (paramBindings f.params vals)) f.body.toCore = .done c completed ∧ CallResult f.ret c v ∧
       st' = restoreLocals st completed := by
-  obtain ⟨j, f', values, afterArgs, completed, c, -, argsRun, found', -, body, result, rfl⟩ := call_inv' h
+  obtain ⟨j, f', values, afterArgs, completed, c, -, argsRun, found', -, body, result, rfl⟩ := call_inv' (inside_of found) h
   obtain ⟨rfl, rfl⟩ := pure argsRun
   rw [found, Option.some.injEq] at found'
   subst found'

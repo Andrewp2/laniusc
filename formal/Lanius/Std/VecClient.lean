@@ -103,20 +103,20 @@ theorem compiled_of_pure {sp : SrcProgram} {binary : Binary} (compiled : compile
     {f : Nat} {func : SrcFunc} (found : sp.funcs[f]? = some func) {args : List Value}
     {bits : List (BitVec 64)} (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
-    (fresh : st.Fresh) (hc : HeapCorr st.heap heap) (fits : st.heap.nextAddress ≤ heap.limit) {w : Value}
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (fits : st.heap.nextAddress ≤ heap.limit) {w : Value}
     (core : ∃ after, Semantics.RunsExpr sp.toCore st (.call f (args.map Core.Expr.value)) w after ∧
       Semantics.PureFrame st after) :
     ∃ depth results after, func.ret.HoldsAt w (Func.entry results) 0 ∧ results.length = func.ret.size ∧
-      HeapCorr st.heap after ∧ MachineReturns binary depth f bits heap results after := by
+      HeapCorr st.heap st.world after ∧ MachineReturns binary depth f bits heap results after := by
   obtain ⟨final, ⟨threshold, stable, _⟩, frame⟩ := core
   have heapEq : final.heap = st.heap := frame.heap
   have result := compileSource_correct_from compiled found typed bitsLen fresh hc (stable threshold (Nat.le_refl _))
     (by rw [heapEq]; exact fits)
-  rw [heapEq] at result
+  rw [heapEq, frame.world] at result
   exact result
 
 /-- The heap invariants the verified compiler keeps give `HeapBlocksDisjoint`. -/
-theorem HeapCorr.blocksDisjoint {h : Memory.Heap} {hp : Heap} (hc : HeapCorr h hp) : Memory.HeapBlocksDisjoint h := by
+theorem HeapCorr.blocksDisjoint {h : Memory.Heap} {hp : Heap} (hc : HeapCorr h world hp) : Memory.HeapBlocksDisjoint h := by
   intro l lm r rm ne
   unfold Memory.BlockIntervalsDisjoint
   rcases Nat.lt_trichotomy l.base r.base with lt | eq | gt
@@ -133,14 +133,14 @@ theorem vec_client_correct {sp : SrcProgram} {binary : Binary} (compiled : compi
     (found : sp.funcs[f]? = some (lastOrZeroSrc ids)) {v : Value} {bits : List (BitVec 64)}
     (typed : FieldsHold (paramTypes (lastOrZeroSrc ids).params) [v] (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize (lastOrZeroSrc ids).params)
-    {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap heap)
+    {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     {xs : List Value} (rep : VecRep sp.toCore i32Ty 4 ids.vec st.heap v xs)
     (fits : st.heap.nextAddress ≤ heap.limit) :
     ∃ depth results after, SrcType.i32.HoldsAt (xs.getLast?.getD (.signed .i32 0)) (Func.entry results) 0 ∧
-      results.length = SrcType.i32.size ∧ HeapCorr st.heap after ∧
+      results.length = SrcType.i32.size ∧ HeapCorr st.heap st.world after ∧
       MachineReturns binary depth f bits heap results after := by
   have coreFound : sp.toCore.function? f = some ((lastOrZeroSrc ids).toCore f) := by
-    rw [SrcProgram.function?_toCore, found]; rfl
+    rw [SrcProgram.function?_toCore, found]
   exact compiled_of_pure compiled found typed bitsLen fresh hc fits (lastOrZero_core inst coreFound fresh.1 rep)
 
 end compiled
@@ -222,11 +222,11 @@ theorem vecClientSrc_correct {binary : Binary} (compiled : compileSource vecClie
     {v : Value} {bits : List (BitVec 64)}
     (typed : FieldsHold (paramTypes (lastOrZeroSrc transcriptionIds).params) [v] (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize (lastOrZeroSrc transcriptionIds).params)
-    {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap heap)
+    {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     {xs : List Value} (rep : VecRep vecClientSrc.toCore i32Ty 4 0 st.heap v xs)
     (fits : st.heap.nextAddress ≤ heap.limit) :
     ∃ depth results after, SrcType.i32.HoldsAt (xs.getLast?.getD (.signed .i32 0)) (Func.entry results) 0 ∧
-      results.length = SrcType.i32.size ∧ HeapCorr st.heap after ∧
+      results.length = SrcType.i32.size ∧ HeapCorr st.heap st.world after ∧
       MachineReturns binary depth 12 bits heap results after :=
   vec_client_correct compiled vecClientSrc_instance (f := 12) rfl typed bitsLen fresh hc rep fits
 

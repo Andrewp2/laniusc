@@ -37,7 +37,7 @@ theorem call_sim (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims)
     (run : evalExpr fuel sp.toCore st (.call c (args.map .value)) = .done v st') :
     ∃ w, pcall sp prims fuel c ps = some w ∧ VRel sp.toCore (boxElem sp prims) st'.heap f.ret v w ∧
       Inv st' ∧ Step st st' := by
-  obtain ⟨j, f', values, afterArgs, completed, compl, rfl, argsRun, found', len, body, result, rfl⟩ := call_inv' run
+  obtain ⟨j, f', values, afterArgs, completed, compl, rfl, argsRun, found', len, body, result, rfl⟩ := call_inv' (inside_of found) run
   obtain ⟨rfl, rfl⟩ := values_eval args argsRun
   rw [found, Option.some.injEq] at found'
   subst found'

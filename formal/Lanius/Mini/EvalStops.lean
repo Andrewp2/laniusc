@@ -20,7 +20,7 @@ def EffStops (sp : SrcProgram) (mp : Program) (n : Nat) (e : SrcEff) : Prop :=
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env},
     e.eval (sigs sp.funcs) sp.decls scope slot = some ev →
     Corr scope frame st env → Layout scope frame base slot → st.Fresh →
-    HeapCorr st.heap hp → st.heap.nextAddress ≤ hp.limit →
+    HeapCorr st.heap st.world hp → st.heap.nextAddress ≤ hp.limit →
     EFails sp hp.limit st e.toCore → ∃ d, Stops mp d env hp ev.stmt n
 
 /-! ## Core's traps pass outward -/
@@ -328,7 +328,7 @@ theorem eff_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
     {hp : Heap} {scope : List Binding} {slot : Nat} {ev : Evaluated} {frame : Nat → Nat} {base : Nat}
     {st : State} {env : Env}
     (ok : e.eval (sigs sp.funcs) sp.decls scope slot = some ev) (corr : Corr scope frame st env)
-    (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
     (propagate : ∀ j reason s, evalExpr j sp.toCore st e.toCore = .trapped reason s →
       ∃ j' s', whole j' = .trapped reason s' ∧ s'.heap.nextAddress = s.heap.nextAddress) :
@@ -345,7 +345,7 @@ theorem args_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     ∀ {hp : Heap} {scope : List Binding} {slot : Nat} {ea : EvaluatedArgs} {frame : Nat → Nat} {base : Nat}
       {st : State} {env : Env},
     evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea → Corr scope frame st env →
-    Layout scope frame base slot → st.Fresh → HeapCorr st.heap hp → st.heap.nextAddress ≤ hp.limit →
+    Layout scope frame base slot → st.Fresh → HeapCorr st.heap st.world hp → st.heap.nextAddress ≤ hp.limit →
     (∀ j, Failing hp.limit (evalExprs j sp.toCore st (SrcEff.toCoreList args))) →
     ∃ d, Stops mp d env hp ea.stmt n
   | [], _, hp, scope, slot, ea, frame, base, st, env, ok, corr, fr, fresh, hc, within, fails => by
@@ -388,14 +388,14 @@ theorem args_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     {hp : Heap} {scope : List Binding} {slot : Nat} {ea : EvaluatedArgs} {frame : Nat → Nat} {base : Nat}
     {st : State} {env : Env}
     (ok : evalArgs (sigs sp.funcs) sp.decls scope args slot = some ea) (corr : Corr scope frame st env)
-    (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (within : st.heap.nextAddress ≤ hp.limit) (fails : ∀ j, Failing hp.limit (whole j))
     (propagate : ∀ j reason s, evalExprs j sp.toCore st (SrcEff.toCoreList args) = .trapped reason s →
       ∃ j' s', whole j' = .trapped reason s' ∧ s'.heap.nextAddress = s.heap.nextAddress) :
     (∃ d, Stops mp d env hp ea.stmt n) ∨ ∃ k vs st1, evalExprs k sp.toCore st (SrcEff.toCoreList args) = .done vs st1 ∧
       st1.heap.nextAddress ≤ hp.limit ∧ st1.Fresh ∧ Keeps st.nextCell st st1 ∧ st1.locals = st.locals ∧
       ∃ d env' hp', Exec mp d env hp ea.stmt (.normal env' hp') ∧ (∀ j < slot, env' j = env j) ∧
-        FieldsHold ea.types vs env' slot ∧ HeapCorr st1.heap hp' := by
+        FieldsHold ea.types vs env' slot ∧ HeapCorr st1.heap st1.world hp' := by
   by_cases done : Completes hp.limit fun k => evalExprs k sp.toCore st (SrcEff.toCoreList args)
   · obtain ⟨k, vs, st1, run, bound⟩ := done
     exact .inr ⟨k, vs, st1, run, bound,
@@ -411,7 +411,7 @@ theorem pair_split (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     {le re : Evaluated} {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (leOk : l.eval (sigs sp.funcs) sp.decls scope slot = some le)
     (reOk : r.eval (sigs sp.funcs) sp.decls scope (slot + 1) = some re) (corr : Corr scope frame st env)
-    (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (fr : Layout scope frame base slot) (fresh : st.Fresh) (hc : HeapCorr st.heap st.world hp)
     (within : st.heap.nextAddress ≤ hp.limit) (fails : EFails sp hp.limit st (.binary cop l.toCore r.toCore))
     (rest : Stmt) :
     (∃ d, Stops mp d env hp (.seq le.stmt (.seq re.stmt rest)) n) ∨
@@ -900,13 +900,65 @@ theorem eff_variant (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
     · exact (fails.not_done (enum_done run) bound).elim
   all_goals simp at ok
 
+theorem loadBytesFrom_undefined {heap : Memory.Heap} {p : Nat} {r : Lanius.Trap} :
+    ∀ (n o : Nat), Memory.loadBytesFrom heap p o n = .error r → undefinedTrap r = true
+  | 0, _, h => by simp [Memory.loadBytesFrom] at h
+  | n + 1, o, h => by
+    simp only [Memory.loadBytesFrom] at h
+    split at h
+    · rename_i reason loaded
+      cases h
+      exact loadByte_undefined loaded
+    · split at h
+      · rename_i reason rest
+        cases h
+        exact loadBytesFrom_undefined n (o + 1) rest
+      · cases h
+
+/-- A heap load's traps are raw memory errors. -/
+theorem loadBytes_undefined {heap : Memory.Heap} {p n : Nat} {r : Lanius.Trap}
+    (h : heap.loadBytes p n = .error r) : undefinedTrap r = true :=
+  loadBytesFrom_undefined n 0 h
+
 theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {callee : Nat} {args : List SrcEff}
     (each : ∀ e ∈ args, EffStops sp mp (n + 1) e) : EffStops sp mp (n + 1) (.eCall callee args) := by
   intro hp scope slot ev frame base st env ok corr fr fresh hc within fails
   simp only [SrcEff.eval, evalCall, sigs_get] at ok
   cases found : sp.funcs[callee]? with
-  | none => simp [found] at ok
+  | none =>
+    simp only [found, Option.map_none] at ok
+    split at ok
+    · simp at ok
+    rename_i ea argsOk
+    have outside : sp.funcs.length ≤ callee := List.getElem?_eq_none_iff.mp found
+    obtain ⟨service, code, hs, stmtEq, shape⟩ := evalHost_some ok
+    simp only [SrcEff.toCore] at fails
+    rcases args_split lowered each argsOk corr fr fresh hc within fails (fun j r s h => ⟨j + 1, s, call_trap h, rfl⟩) with
+      ⟨d, stops⟩ | ⟨k, vs, st1, argsRun, bound, fresh1, keeps1, locals1, d1, env1, hp1, exec1, same1, holdsA, hc1⟩
+    · rw [stmtEq]
+      exact ⟨d, .seqFirst stops⟩
+    exfalso
+    have len : vs.length = 2 := by
+      rw [holdsA.length]
+      rcases shape with ⟨-, tys⟩ | ⟨-, tys⟩ <;> rw [tys] <;> rfl
+    have outcome := fails (k + 1)
+    rw [host_call_eval outside hs len argsRun fresh1.2] at outcome
+    rcases shape with ⟨rfl, tys⟩ | ⟨which, tys⟩
+    · obtain ⟨_, _, valuesA, -⟩ := two_i32 holdsA tys
+      subst valuesA
+      obtain ⟨v, world', called⟩ := writeByte_returns st1.heap st1.world (low (env1 slot)).toInt
+        (low (env1 (slot + 1))).toInt
+      rw [called, worldCall_returned fresh1.2] at outcome
+      exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome bound)
+    · have valuesA := ptr_usize holdsA tys
+      subst valuesA
+      rcases writeOut_outcome which st1.heap st1.world (env1 slot).toNat (env1 (slot + 1)).toNat with
+        ⟨v, world', called⟩ | ⟨r, world', called, loaded⟩
+      · rw [called, worldCall_returned fresh1.2] at outcome
+        exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome bound)
+      · rw [called] at outcome
+        exact trap_within outcome (loadBytes_undefined loaded) bound
   | some f =>
   simp only [found, Option.map_some] at ok
   split at ok
@@ -942,7 +994,7 @@ theorem arms_stops {dst eid : Nat} {ty : SrcType} {scope : List Binding} {slot :
       {stmt : Stmt} {fs : List SrcType} {vs : List Value} {hp : Heap} {frame : Nat → Nat} {st : State}
       {env : Env},
       (∀ e ∈ values, EffStops sp mp n e) → Corr scope frame st env → Layout scope frame 0 slot → st.Fresh →
-      HeapCorr st.heap hp → st.heap.nextAddress ≤ hp.limit →
+      HeapCorr st.heap st.world hp → st.heap.nextAddress ≤ hp.limit →
       evalArms (sigs sp.funcs) sp.decls scope slot dst ty j variants binders values = some stmt →
       values.length = variants.length → binders.length = variants.length →
       (∀ fs ∈ variants, slot + 1 + sizes fs ≤ dst) → j ≤ kv → variants[kv - j]? = some fs → kv < 2 ^ 64 →
@@ -989,8 +1041,8 @@ theorem arms_stops {dst eid : Nat} {ty : SrcType} {scope : List Binding} {slot :
         simp only [SrcEff.coreArms, Semantics.evalMatchArms, Semantics.matchPattern, beq_self_eq_true,
           Bool.and_self, ↓reduceIte, matchBinds _ _ blen'] at this
         exact (failing_restore _ _).mp this
-      have hc' : HeapCorr (st.bindLocals (bs.zip vs)).heap hp := by
-        rw [(bindLocals_same _ st).1]
+      have hc' : HeapCorr (st.bindLocals (bs.zip vs)).heap (st.bindLocals (bs.zip vs)).world hp := by
+        rw [(bindLocals_same _ st).1, bindLocals_world]
         exact hc
       have within' : (st.bindLocals (bs.zip vs)).heap.nextAddress ≤ hp.limit := by
         rw [(bindLocals_same _ st).1]
@@ -1305,7 +1357,7 @@ theorem loop_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     (bodyOk : body.lower (sigs sp.funcs) sp.decls ret scope next = some bstmt) (isBool : cv.ty = .bool)
     (fr : Layout scope frame base next) :
     ∀ j ≤ m, ∀ {hp : Heap} {st0 : State} {env0 : Env},
-      Corr scope frame st0 env0 → st0.Fresh → base ≤ st0.nextCell → HeapCorr st0.heap hp →
+      Corr scope frame st0 env0 → st0.Fresh → base ≤ st0.nextCell → HeapCorr st0.heap st0.world hp →
       st0.heap.nextAddress ≤ hp.limit → Fails sp hp.limit st0 (.whileLoop c.toCore body.toCore) →
       ∃ d, Stops mp d env0 hp (.loop (.lit 1) (.seq cv.stmt (.ite (.var next) bstmt .brk))) j := by
   intro j

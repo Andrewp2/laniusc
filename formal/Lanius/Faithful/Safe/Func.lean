@@ -87,7 +87,7 @@ theorem safeE_call_pure (fs : ∀ m, FuncSafe sp prims outside m) {c : Nat} {f :
     SafeE sp.toCore st (.call c args) := by
   intro k r s h bound
   obtain ⟨j, -, ha | ⟨values, after, hargs, ⟨-, arity⟩ | ⟨f', completed, found', -, rfl, hb⟩⟩⟩ :=
-    call_trap_inv h
+    call_trap_inv (inside_of found) h
   · exact sa _ _ _ ha bound
   · obtain ⟨-, ps, rs⟩ := rels hargs
     exact (arity f found (VRels.length_params rs)).elim

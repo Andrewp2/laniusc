@@ -264,6 +264,18 @@ semantics:
   never frees). The theorem's premise bounds Core's final `nextAddress` by the
   mini limit; `execStmt_grows` (Core's `nextAddress` never decreases) carries
   that bound back to every allocation.
+- The world (`HeapCorr`, `WorldTrace`, roadmap F8): `HeapCorr h w hp` also
+  says Core's standard output and error are the bytes the mini trace writes
+  to fds 1 and 2 (`outputOf`), and that no file is open. Core's host
+  services `write_byte`, `write_stdout` and `write_stderr` are functions
+  2^32, 2^32 + 1 and 2^32 + 2 of `sp.toCore` (`hostFuncs`); an effectful call
+  of one lowers to inline code (`eval_host`): `write_byte` borrows heap byte
+  0 (no Core block's) for a one-byte `Sys write`, the others loop over
+  chunks of at most `maxTransfer`. `eval_host` in `LowerEval` runs that code
+  against Core's `World.call` (`hostByte_exec`, `hostWrite_exec`), and
+  `eff_call` in `EvalStops` shows the call never fails within the limit. The
+  top theorems conclude that Core's final output equals `outputOf` of the
+  returned heap's trace.
 - Raw slices (`LowerStmt`, `HeapCorr`): a slice is its address in one slot.
   Its length lives only in Core, which checks every index against it; the
   theorem covers runs that return, so the lowered code needs no bounds test.

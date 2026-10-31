@@ -18,7 +18,30 @@ open Lanius.Semantics (State evalExpr evalExprs)
 /-- `omega` through `Address`, which it does not unfold. -/
 macro "addr_omega" : tactic => `(tactic| ((try simp only [Lanius.Address] at *) <;> omega))
 
-structure HeapCorr (h : Memory.Heap) (hp : Heap) : Prop where
+/-- The bytes a trace wrote to `fd`, in order. -/
+def outputOf (fd : Nat) : List Lanius.X86.Machine.Event → List UInt8
+  | [] => []
+  | .write target bytes :: rest =>
+      (if target = fd then bytes else []) ++ outputOf fd rest
+
+theorem outputOf_append (fd : Nat) (first second : List Lanius.X86.Machine.Event) :
+    outputOf fd (first ++ second) = outputOf fd first ++ outputOf fd second := by
+  induction first with
+  | nil => rfl
+  | cons event rest ih =>
+      cases event with
+      | write target bytes =>
+          simp only [List.cons_append, outputOf, ih, List.append_assoc]
+
+theorem outputOf_write (fd target : Nat) (bytes : List UInt8) :
+    outputOf fd [.write target bytes] = if target = fd then bytes else [] := by
+  simp only [outputOf, List.append_nil]
+
+/-- Core's heap `h` and world `w`, and the mini heap `hp` with its trace. The
+world's standard output and error are what the trace wrote to fds 1 and 2
+(roadmap F8), and no file is open, so a `write_byte` to another handle
+returns -1. -/
+structure HeapCorr (h : Memory.Heap) (w : World.State) (hp : Heap) : Prop where
   cursor : hp.cursor = h.nextAddress
   pos : 1 ≤ h.nextAddress
   unbounded : h.remaining = none
@@ -29,6 +52,9 @@ structure HeapCorr (h : Memory.Heap) (hp : Heap) : Prop where
   unique : ∀ b ∈ h.blocks, ∀ b' ∈ h.blocks, b.base = b'.base → b = b'
   bytes : ∀ b ∈ h.blocks, b.live = true → ∀ i (lt : i < b.bytes.length), hp.bytes (b.base + i) = b.bytes[i]
   zero : ∀ a, h.nextAddress ≤ a → hp.bytes a = 0
+  out : w.standardOutput = outputOf 1 hp.io.trace
+  err : w.standardError = outputOf 2 hp.io.trace
+  closed : w.fileHandles = []
 
 /-! ## Lists of blocks -/
 
@@ -77,7 +103,7 @@ theorem containing {h : Memory.Heap} {a : Nat} {b : Block} (found : h.containing
 
 /-! ## Operations -/
 
-theorem HeapCorr.load {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p o : Nat} {v : UInt8}
+theorem HeapCorr.load {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {p o : Nat} {v : UInt8}
     (ok : h.loadByte p o = .ok v) : hp.bytes (p + o) = v ∧ p + o < h.nextAddress := by
   simp only [Memory.Heap.loadByte] at ok
   split at ok
@@ -95,9 +121,9 @@ theorem HeapCorr.load {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p o 
   refine ⟨?_, by have := corr.below b mem; addr_omega⟩
   rw [show p + o = b.base + (p + o - b.base) by addr_omega, corr.bytes b mem live _ inside, got]
 
-theorem HeapCorr.store {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p o : Nat} {v : UInt8}
+theorem HeapCorr.store {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {p o : Nat} {v : UInt8}
     {h' : Memory.Heap} (ok : h.storeByte p o v = .ok h') :
-    p + o < h.nextAddress ∧ HeapCorr h' (hp.write (p + o) v) := by
+    p + o < h.nextAddress ∧ HeapCorr h' w (hp.write (p + o) v) := by
   simp only [Memory.Heap.storeByte] at ok
   split at ok
   · split at ok <;> (try split at ok) <;> simp at ok
@@ -112,7 +138,7 @@ theorem HeapCorr.store {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p o
   have cases : ∀ b ∈ Memory.replaceBlock h.blocks { blk with bytes := Memory.setByte blk.bytes (p + o - blk.base) v },
       (b = { blk with bytes := Memory.setByte blk.bytes (p + o - blk.base) v }) ∨ (b ∈ h.blocks ∧ b.base ≠ blk.base) :=
     fun b m => mem_replaceBlock m
-  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err, corr.closed⟩
   · intro b m
     rcases cases b m with rfl | ⟨m', -⟩
     · simp only [setByte_length]
@@ -158,8 +184,8 @@ theorem HeapCorr.store {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p o
     rw [if_neg (by addr_omega)]
     exact corr.zero a above
 
-theorem HeapCorr.dealloc {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p s a : Nat}
-    {h' : Memory.Heap} (ok : h.deallocate p s a = .ok h') : HeapCorr h' hp := by
+theorem HeapCorr.dealloc {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {p s a : Nat}
+    {h' : Memory.Heap} (ok : h.deallocate p s a = .ok h') : HeapCorr h' w hp := by
   simp only [Memory.Heap.deallocate] at ok
   split at ok
   · simp only [Except.ok.injEq] at ok
@@ -181,7 +207,7 @@ theorem HeapCorr.dealloc {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p
       (b = { blk with live := false }) ∨ (b ∈ h.blocks ∧ b.base ≠ blk.base) :=
     fun b m => mem_replaceBlock m
   refine ⟨corr.cursor, corr.pos, by simp [Memory.refundBudget, corr.unbounded], corr.small, ?_, ?_, ?_, ?_, ?_,
-    corr.zero⟩
+    corr.zero, corr.out, corr.err, corr.closed⟩
   · intro b m
     rcases cases b m with rfl | ⟨m', -⟩
     · exact corr.sized blk mem
@@ -212,10 +238,10 @@ theorem validAlignment_pow (shift : Nat) : Memory.validAlignment (2 ^ shift) = t
 
 theorem alignUp_eq (n shift : Nat) : alignUp n shift = Memory.alignUp n (2 ^ shift) := rfl
 
-theorem HeapCorr.allocate {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {n shift p : Nat}
+theorem HeapCorr.allocate {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {n shift p : Nat}
     {h' : Memory.Heap} (ok : h.allocate n (2 ^ shift) = .allocated p h') :
     p = alignUp hp.cursor shift ∧ h'.nextAddress = alignUp hp.cursor shift + max n 1 ∧
-      HeapCorr h' { hp with cursor := alignUp hp.cursor shift + max n 1 } := by
+      HeapCorr h' w { hp with cursor := alignUp hp.cursor shift + max n 1 } := by
   simp only [Memory.Heap.allocate, validAlignment_pow, Bool.not_true, Bool.false_eq_true, ite_false,
     corr.unbounded, Memory.consumeBudget, Memory.AllocationResult.allocated.injEq] at ok
   obtain ⟨rfl, rfl⟩ := ok
@@ -224,7 +250,7 @@ theorem HeapCorr.allocate {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {
   have ge : hp.cursor ≤ alignUp hp.cursor shift := by
     rw [alignUp_eq]
     exact memAlignUp_ge _ _ (Nat.two_pow_pos _)
-  refine ⟨rfl, rfl, rfl, by addr_omega, rfl, corr.small, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨rfl, rfl, rfl, by addr_omega, rfl, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err, corr.closed⟩
   · intro b m
     simp only [List.mem_append, List.mem_singleton] at m
     rcases m with m | rfl
@@ -344,17 +370,17 @@ theorem evalExprs_cons {P : Core.Program} {fuel : Nat} {st : State} {e : Core.Ex
 /-! ## Several bytes -/
 
 /-- A block replaced by one with the same place, bytes and liveness. -/
-theorem HeapCorr.replace {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {blk r : Block}
+theorem HeapCorr.replace {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {blk r : Block}
     (mem : blk ∈ h.blocks) (base : r.base = blk.base) (size : r.size = blk.size)
     (bytes : r.bytes = blk.bytes) (live : r.live = blk.live) :
-    HeapCorr { h with blocks := Memory.replaceBlock h.blocks r } hp := by
+    HeapCorr { h with blocks := Memory.replaceBlock h.blocks r } w hp := by
   obtain ⟨rb, rs, ra, rby, rl, ro⟩ := r
   simp only at base size bytes live
   subst base size bytes live
   have cases : ∀ b ∈ Memory.replaceBlock h.blocks ⟨blk.base, blk.size, ra, blk.bytes, blk.live, ro⟩,
       b = ⟨blk.base, blk.size, ra, blk.bytes, blk.live, ro⟩ ∨ (b ∈ h.blocks ∧ b.base ≠ blk.base) :=
     fun b m => mem_replaceBlock m
-  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, corr.zero⟩
+  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, corr.zero, corr.out, corr.err, corr.closed⟩
   · intro b m
     rcases cases b m with rfl | ⟨m', -⟩
     · exact corr.sized blk mem
@@ -382,7 +408,7 @@ theorem HeapCorr.replace {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {b
 
 /-- Core's `count` bytes from `p + o`, little-endian, are the mini heap's,
 and lie below the cursor. -/
-theorem HeapCorr.loadBytesFrom {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {p : Nat} :
+theorem HeapCorr.loadBytesFrom {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {p : Nat} :
     ∀ (count o : Nat) {bytes : List UInt8}, Memory.loadBytesFrom h p o count = .ok bytes →
       Semantics.decodeNatLE bytes = hp.readLE (p + o) count ∧ (0 < count → p + o + count ≤ h.nextAddress)
   | 0, o, bytes, ok => by
@@ -407,7 +433,7 @@ theorem HeapCorr.loadBytesFrom {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h 
           · subst zero; omega
           · have := restBelow pos; omega
 
-theorem HeapCorr.loadNatLE {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {a count n : Nat}
+theorem HeapCorr.loadNatLE {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {a count n : Nat}
     (ok : Semantics.loadNatLE h a count = .ok n) :
     n = hp.readLE a count ∧ (0 < count → a + count ≤ h.nextAddress) := by
   simp only [Semantics.loadNatLE, Memory.Heap.loadBytes] at ok
@@ -423,8 +449,8 @@ def Heap.writeBytes (hp : Heap) (address : Nat) : List UInt8 → Heap
   | b :: rest => (hp.write address b).writeBytes (address + 1) rest
 
 theorem HeapCorr.storeBytesFrom {p : Nat} : ∀ (bytes : List UInt8) {h : Memory.Heap} {hp : Heap} (o : Nat)
-    {h' : Memory.Heap}, HeapCorr h hp → Memory.storeBytesFrom h p o bytes = .ok h' →
-      HeapCorr h' (hp.writeBytes (p + o) bytes) ∧ (bytes ≠ [] → p + o + bytes.length ≤ h.nextAddress)
+    {h' : Memory.Heap}, HeapCorr h w hp → Memory.storeBytesFrom h p o bytes = .ok h' →
+      HeapCorr h' w (hp.writeBytes (p + o) bytes) ∧ (bytes ≠ [] → p + o + bytes.length ≤ h.nextAddress)
   | [], h, hp, o, h', corr, ok => by
     simp only [Memory.storeBytesFrom, Except.ok.injEq] at ok
     subst ok
@@ -471,11 +497,11 @@ theorem i32Bytes_eq (number : Int) :
   intro i _
   rw [Nat.pow_mul]
 
-theorem HeapCorr.allocated {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) (n shift : Nat)
+theorem HeapCorr.allocated {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) (n shift : Nat)
     {h' : Memory.Heap} (ok : h.allocate n (2 ^ shift) = .exhausted h') : False := by
   simp [Memory.Heap.allocate, validAlignment_pow, corr.unbounded, Memory.consumeBudget] at ok
 
-theorem HeapCorr.untrapped {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) (n shift : Nat)
+theorem HeapCorr.untrapped {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) (n shift : Nat)
     {r} {h' : Memory.Heap} (ok : h.allocate n (2 ^ shift) = .trapped r h') : False := by
   simp [Memory.Heap.allocate, validAlignment_pow, corr.unbounded, Memory.consumeBudget] at ok
 

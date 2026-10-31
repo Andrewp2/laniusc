@@ -74,7 +74,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
       obtain ⟨ts, hts, hc⟩ := ht
       obtain ⟨notOut, f, found, rfl, rfl⟩ := callTy_some hc
       obtain ⟨j, rfl, vrun | ⟨v, s1, s2, vrun, brun, rfl⟩⟩ := letLocal_trap_inv run
-      · obtain ⟨i, rfl, h⟩ := call_trap_inv vrun
+      · obtain ⟨i, rfl, h⟩ := call_trap_inv (inside_of found) vrun
         rcases h with argsRun | ⟨values, afterArgs, argsRun, h⟩
         · exact (exprs_safe target tenv env args argsRun hts rel).2
         have e := evalExprs_state args argsRun
@@ -88,7 +88,7 @@ theorem stmt_safe (calls : ∀ m, FuncSim sp prims outside m) (funcs : ∀ i < N
           subst found'
           exact call_body_safe (completed := completed) (funcs i (by omega)) notOut found len inv bound rs body
       · obtain ⟨i, f', values, afterArgs, completed, cc, rfl, argsRun, found', len, bodyRun, result, rfl⟩ :=
-          call_inv' vrun
+          call_inv' (inside_of found) vrun
         have e := evalExprs_state args argsRun
         subst afterArgs
         rw [found, Option.some.injEq] at found'

@@ -34,7 +34,12 @@ theorem eff_step (le : k + 1 ≤ N) (calls : FuncSim sp prims outside k) (eff : 
     exact ⟨p, hp, r, .refl inv⟩
   | eCall callee args =>
     simp only [SrcEff.toCore] at run
-    obtain ⟨j, f, values, afterArgs, completed, c, hj, argsRun, found, len, bodyRun, result, rfl⟩ := call_inv' run
+    have inside : callee < sp.funcs.length := by
+      simp only [effTy, Option.bind_eq_some_iff] at ht
+      obtain ⟨ts, hts, hc⟩ := ht
+      obtain ⟨-, f', found', -, -⟩ := callTy_some hc
+      exact inside_of found'
+    obtain ⟨j, f, values, afterArgs, completed, c, hj, argsRun, found, len, bodyRun, result, rfl⟩ := call_inv' inside run
     obtain rfl : j = k := by omega
     simp only [effTy, Option.bind_eq_some_iff] at ht
     obtain ⟨ts, hts, hc⟩ := ht

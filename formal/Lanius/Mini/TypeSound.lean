@@ -807,8 +807,10 @@ theorem lowerArgs_typed {P : Core.Program} (target : P.target = Core.Target.x86_
 
 /-- Each signature is its function's Core signature. -/
 def SigsOk (P : Core.Program) (sigs : List Sig) : Prop :=
-  ∀ callee sig, sigs[callee]? = some sig → ∃ f, P.function? callee = some f ∧
-    f.parameters.map Prod.snd = sig.params.map SrcType.toCore ∧ f.returnType = sig.ret.toCore
+  (∀ callee sig, sigs[callee]? = some sig → ∃ f, P.function? callee = some f ∧
+    f.parameters.map Prod.snd = sig.params.map SrcType.toCore ∧ f.returnType = sig.ret.toCore) ∧
+  ∀ callee service, sigs[callee]? = none → hostService? callee = some service →
+    P.function? callee = some (hostFunc callee service)
 
 theorem lowerCall_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {sigs : List Sig} (sigsOk : SigsOk P sigs) {scope : List Binding} {ctx : Typing.Context}
@@ -822,7 +824,7 @@ theorem lowerCall_typed {P : Core.Program} (target : P.target = Core.Target.x86_
     unfold lowerCallSig at h
     split at h
     · rename_i same
-      obtain ⟨f, found, params, ret⟩ := sigsOk callee sig hsig
+      obtain ⟨f, found, params, ret⟩ := sigsOk.1 callee sig hsig
       have call := ExprHasType.call f found (by rw [params]; exact lowerArgs_typed target ok _ _ h)
       rw [ret, same_toCore same] at call
       exact call
@@ -1239,7 +1241,37 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
   | .eCall callee args, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalCall] at h
     split at h
-    · simp at h
+    · rename_i hsig
+      split at h
+      · simp at h
+      · rename_i ea hea
+        have typedArgs := evalArgs_typed target sigsOk args ok (by simpa [SrcEff.types] using dd) hea
+        simp only [evalHost] at h
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .writeByte hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i _ checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .writeStdout hsig (by simp [hostService?, hostBase])) typedArgs
+        split at h
+        · rename_i _ _ checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          obtain ⟨rfl, same⟩ := checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore same] at typedArgs
+          exact ExprHasType.call _ (sigsOk.2 _ .writeStderr hsig (by simp [hostService?, hostBase])) typedArgs
+        · simp at h
     · rename_i sig hsig
       split at h
       · simp at h
@@ -1250,7 +1282,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
           simp only [Option.some.injEq] at h
           subst h
-          obtain ⟨f, found, params, ret⟩ := sigsOk callee sig hsig
+          obtain ⟨f, found, params, ret⟩ := sigsOk.1 callee sig hsig
           have typedArgs := evalArgs_typed target sigsOk args ok (by simpa [SrcEff.types] using dd) hea
           rw [typesSame_toCore checks.1, ← params] at typedArgs
           have call := ExprHasType.call f found typedArgs
@@ -2756,18 +2788,39 @@ theorem funcsReturn_each : ∀ {funcs : List SrcFunc}, funcsReturn funcs = true 
     · exact h.1
     · exact funcsReturn_each h.2 g mem
 
+theorem hostFuncs_find (i : Nat) :
+    hostFuncs.find? (fun function => function.id == i) = (hostService? i).map (hostFunc i) := by
+  unfold hostFuncs hostService?
+  by_cases a : i = hostBase
+  · subst a
+    simp [hostFunc]
+  · by_cases b : i = hostBase + 1
+    · subst b
+      simp [hostFunc, hostBase]
+    · by_cases c : i = hostBase + 2
+      · subst c
+        simp [hostFunc, hostBase]
+      · simp [hostFunc, a, b, c, Ne.symm a, Ne.symm b, Ne.symm c]
+
 theorem sigsOk_program (sp : SrcProgram) : SigsOk sp.toCore (sigs sp.funcs) := by
-  intro callee sig found
-  rw [sigs_getElem] at found
-  cases hf : sp.funcs[callee]? with
-  | none => simp [hf] at found
-  | some func =>
-    simp only [hf, Option.map_some, Option.some.injEq] at found
-    subst found
-    refine ⟨func.toCore callee, ?_, paramTypes_toCore func.params, rfl⟩
-    have := find_coreFuncs sp.funcs 0 callee
-    simp only [Nat.zero_add, hf, Option.map_some] at this
-    exact this
+  constructor
+  · intro callee sig found
+    rw [sigs_getElem] at found
+    cases hf : sp.funcs[callee]? with
+    | none => simp [hf] at found
+    | some func =>
+      simp only [hf, Option.map_some, Option.some.injEq] at found
+      subst found
+      refine ⟨func.toCore callee, ?_, paramTypes_toCore func.params, rfl⟩
+      have := find_coreFuncs sp.funcs 0 callee
+      simp only [Nat.zero_add, hf, Option.map_some] at this
+      simp only [Core.Program.function?, SrcProgram.toCore, List.find?_append, this, Option.some_or]
+  · intro callee service none hs
+    rw [sigs_getElem] at none
+    have this := find_coreFuncs sp.funcs 0 callee
+    simp only [Nat.zero_add, Option.map_eq_none_iff.mp none, Option.map_none] at this
+    simp only [Core.Program.function?, SrcProgram.toCore, List.find?_append, this, Option.none_or,
+      hostFuncs_find, hs, Option.map_some]
 
 end TypeSound
 
@@ -2782,6 +2835,11 @@ theorem lowerFuncs_wellTyped {sp : SrcProgram} {funcs : List Func}
     Typing.ProgramWellTyped sp.toCore := by
   refine ⟨fun c hc => by simp [SrcProgram.toCore] at hc, ?_⟩
   intro f hf
+  simp only [SrcProgram.toCore, List.mem_append] at hf
+  rcases hf with hf | hf
+  case inr =>
+    simp only [hostFuncs, List.mem_cons, List.not_mem_nil, or_false] at hf
+    rcases hf with rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
   obtain ⟨i, func, mem, rfl⟩ := mem_coreFuncs (n := 0) (funcs := sp.funcs) hf
   obtain ⟨c, hc⟩ := lowerFuncs_each lowered func mem
   obtain ⟨inside, out, hout⟩ := lowerFunc_body hc
@@ -2839,7 +2897,7 @@ theorem idClash_rejected : compileSource idClash = none := rfl
 theorem noReturn_not_wellTyped (structs : List Core.StructDecl) (enums : List Core.EnumDecl) :
     ¬ Typing.ProgramWellTyped (noReturn.toCoreWith structs enums) := by
   intro ⟨_, funcs⟩
-  have h := funcs _ (List.mem_singleton_self _)
+  have h := funcs _ (List.mem_cons_self ..)
   simp only [Typing.FunctionWellTyped, noReturn, SrcFunc.toCore, SrcType.toCore, SrcStmt.toCore,
     reduceCtorEq, false_or] at h
   cases h.2.2
@@ -2847,7 +2905,7 @@ theorem noReturn_not_wellTyped (structs : List Core.StructDecl) (enums : List Co
 theorem idClash_not_wellTyped (structs : List Core.StructDecl) (enums : List Core.EnumDecl) :
     ¬ Typing.ProgramWellTyped (idClash.toCoreWith structs enums) := by
   intro ⟨_, funcs⟩
-  have h := funcs _ (List.mem_singleton_self _)
+  have h := funcs _ (List.mem_cons_self ..)
   simp only [Typing.FunctionWellTyped, idClash, SrcFunc.toCore, SrcStmt.toCore, SrcType.toCore,
     SrcType.typeId, List.map_cons, List.map_nil] at h
   obtain ⟨_, typed, _⟩ := h

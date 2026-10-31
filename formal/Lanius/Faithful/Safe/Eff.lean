@@ -225,7 +225,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     simp only [effTy, Option.bind_eq_some_iff] at ht
     obtain ⟨ts, hts, hc⟩ := ht
     obtain ⟨notOut, f, found, rfl, rfl⟩ := callTy_some hc
-    obtain ⟨j, hj, h⟩ := call_trap_inv run
+    obtain ⟨j, hj, h⟩ := call_trap_inv (inside_of found) run
     obtain rfl : k = j := Nat.succ.inj hj
     rcases h with argsRun | ⟨values, afterArgs, argsRun, h⟩
     · exact effs argsRun hts inv rel bound

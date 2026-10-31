@@ -135,6 +135,10 @@ abbrev Stmt_single_of_mini_selfhost_MFunc (prog : SrcProgram) (prims : Prims) (i
   ∀ {x0 : Lanius.Mini.MFunc} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepMFunc x0 v0 →
     (RepList 159 RepMFunc) ([x0]) w
 
+abbrev Stmt_single_of_mini_selfhost_SrcType (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
+    (RepList 68 RepSrcType) ([x0]) w
+
 abbrev Stmt_single_of_mini_selfhost_Sym (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Sym} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSym x0 v0 →
     (RepList 36 RepSym) ([x0]) w

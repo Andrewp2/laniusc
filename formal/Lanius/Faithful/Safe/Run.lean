@@ -463,7 +463,7 @@ theorem safeE_call {sp : SrcProgram} {st : State} {callee : Nat} {args : List Co
     SafeE sp.toCore st (.call callee args) := by
   intro k r s h bound
   obtain ⟨j, -, ha | ⟨values, after, hargs, ⟨-, arity⟩ | ⟨f', completed, found', -, rfl, hb | ⟨c, done, bad⟩⟩⟩⟩ :=
-    call_trap_inv h
+    call_trap_inv (inside_of found) h
   · exact sa _ _ _ ha bound
   · exact (arity f found (body hargs).1).elim
   · rw [found, Option.some.injEq] at found'

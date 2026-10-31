@@ -209,7 +209,7 @@ theorem write_one_safe {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
     refine ⟨rfl, ?_⟩
     simp only [write_params]
     exact ih invE (heapE ▸ readable) (heapE ▸ rel) rep
-  obtain ⟨j2, f3, values, afterArgs, done3, c3, -, argsRun, found3, -, body3, result3, rfl⟩ := call_inv' recRun
+  obtain ⟨j2, f3, values, afterArgs, done3, c3, -, argsRun, found3, -, body3, result3, rfl⟩ := call_inv' (inside_of fn_write) recRun
   rw [fn_write, Option.some.injEq] at found3
   subst found3
   obtain ⟨rfl, hA⟩ := args.done argsRun
@@ -478,7 +478,7 @@ theorem put_safe {outp room : Nat} (roomLt : room < 2 ^ 31) {s : State} {rv rp :
       refine ⟨rfl, ?_⟩
       simp only [write_params]
       exact write_safe roomLt ws (invE.bindLocals _) (heapE ▸ readable) (heapE ▸ rl) rws
-    · obtain ⟨j5, f3, values, afterArgs, done3, c3, -, argsRun, found3, -, body3, result3, rfl⟩ := call_inv' h1
+    · obtain ⟨j5, f3, values, afterArgs, done3, c3, -, argsRun, found3, -, body3, result3, rfl⟩ := call_inv' (inside_of fn_write) h1
       rw [fn_write, Option.some.injEq] at found3
       subst found3
       obtain ⟨rfl, hA⟩ := args.done argsRun
@@ -582,7 +582,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
     obtain ⟨rfl, rfl⟩ := kc.done r5
     obtain ⟨_, a6, t6, more6, -, r6, m6, rfl⟩ := exprs_cons_inv m5
     obtain ⟨rfl, rfl⟩ := exprs_nil_inv m6
-    obtain ⟨j5, fE, valsE, afterE, doneE, cE, -, argsE, foundE, lenE, bodyE, resultE, rfl⟩ := call_inv' r6
+    obtain ⟨j5, fE, valsE, afterE, doneE, cE, -, argsE, foundE, lenE, bodyE, resultE, rfl⟩ := call_inv' (inside_of fn_empty_of_i32) r6
     rw [fn_empty_of_i32, Option.some.injEq] at foundE
     subst foundE
     obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsE
@@ -595,7 +595,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
     exact read_safe (by omega) (W.length - 0) rfl (Nat.zero_le _) (Nat.le_refl _) (invE'.restore _)
       (input.step ((step2.trans stepE').restore _)) rwe (cert_empty_of_i32 hwe)
   -- `return oracle_put(out, compile_words(front_end_words(grammar(), read)))`
-  obtain ⟨j4, fR, valsR, afterR, doneR, cR, -, argsR, foundR, -, bodyR, resultR, rfl⟩ := call_inv' readRun
+  obtain ⟨j4, fR, valsR, afterR, doneR, cR, -, argsR, foundR, -, bodyR, resultR, rfl⟩ := call_inv' (inside_of fn_read) readRun
   rw [fn_read, Option.some.injEq] at foundR
   subst foundR
   obtain ⟨_, a3, t3, more3, -, r3, m3, rfl⟩ := exprs_cons_inv argsR
@@ -606,7 +606,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
   obtain ⟨rfl, rfl⟩ := kc.done r5
   obtain ⟨_, a6, t6, more6, -, r6, m6, rfl⟩ := exprs_cons_inv m5
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv m6
-  obtain ⟨j5, fE, valsE, afterE, doneE, cE, -, argsE, foundE, lenE, bodyE, resultE, rfl⟩ := call_inv' r6
+  obtain ⟨j5, fE, valsE, afterE, doneE, cE, -, argsE, foundE, lenE, bodyE, resultE, rfl⟩ := call_inv' (inside_of fn_empty_of_i32) r6
   rw [fn_empty_of_i32, Option.some.injEq] at foundE
   subst foundE
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsE
@@ -651,19 +651,19 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
   obtain ⟨rfl, rfl⟩ := local_eval k125' q1
   obtain ⟨_, b2, u2, moreP2, -, q2, n2, rfl⟩ := exprs_cons_inv n1
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv n2
-  obtain ⟨j8, fC, valsC, afterC, doneC, cC, -, argsC, foundC, lenC, bodyC, resultC, rfl⟩ := call_inv' q2
+  obtain ⟨j8, fC, valsC, afterC, doneC, cC, -, argsC, foundC, lenC, bodyC, resultC, rfl⟩ := call_inv' (inside_of fn_compile_words) q2
   rw [fn_compile_words, Option.some.injEq] at foundC
   subst foundC
   obtain ⟨_, b3, u3, moreC, -, q3, n3, rfl⟩ := exprs_cons_inv argsC
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv n3
-  obtain ⟨j9, fF, valsF, afterF, doneF, cF, -, argsF, foundF, lenF, bodyF, resultF, rfl⟩ := call_inv' q3
+  obtain ⟨j9, fF, valsF, afterF, doneF, cF, -, argsF, foundF, lenF, bodyF, resultF, rfl⟩ := call_inv' (inside_of fn_front_end_words) q3
   rw [fn_front_end_words, Option.some.injEq] at foundF
   subst foundF
   obtain ⟨_, b4, u4, moreF, -, q4, n4, rfl⟩ := exprs_cons_inv argsF
   obtain ⟨_, b5, u5, moreF2, -, q5, n5, rfl⟩ := exprs_cons_inv n4
   obtain ⟨f5, rfl⟩ := local_inv q5
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv n5
-  obtain ⟨j10, fG, valsG, afterG, doneG, cG, -, argsG, foundG, lenG, bodyG, resultG, rfl⟩ := call_inv' q4
+  obtain ⟨j10, fG, valsG, afterG, doneG, cG, -, argsG, foundG, lenG, bodyG, resultG, rfl⟩ := call_inv' (inside_of fn_grammar) q4
   rw [fn_grammar, Option.some.injEq] at foundG
   subst foundG
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv argsG

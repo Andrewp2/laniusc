@@ -87,14 +87,14 @@ theorem set_client_correct {sp : SrcProgram} {binary : Binary} (compiled : compi
     {v x : Value} {bits : List (BitVec 64)}
     (typed : FieldsHold (paramTypes (setHasSrc sid ids.vec sc).params) [.structure sid [v], x] (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize (setHasSrc sid ids.vec sc).params)
-    {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap heap)
+    {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     {xs : List Value} (rep : VecRep sp.toCore i32Ty 4 ids.vec st.heap v xs) (itemIn : x ∈ vals)
     (sub : ∀ z ∈ xs, z ∈ vals) (fits : st.heap.nextAddress ≤ heap.limit) :
     ∃ depth results after, SrcType.bool.HoldsAt (.boolean (xs.any (eqv · x))) (Func.entry results) 0 ∧
-      results.length = SrcType.bool.size ∧ HeapCorr st.heap after ∧
+      results.length = SrcType.bool.size ∧ HeapCorr st.heap st.world after ∧
       MachineReturns binary depth f bits heap results after := by
   have coreFound : sp.toCore.function? f = some ((setHasSrc sid ids.vec sc).toCore f) := by
-    rw [SrcProgram.function?_toCore, found]; rfl
+    rw [SrcProgram.function?_toCore, found]
   exact compiled_of_pure compiled found typed bitsLen fresh hc fits
     (setHas_core inst coreFound scFound vcFound indexFound eqSpec fresh.1 rep itemIn sub)
 
@@ -112,7 +112,7 @@ theorem map_client_correct {sp : SrcProgram} {binary : Binary} (compiled : compi
       [.structure mid [.structure ids.vec [.pointer p, .signed .i32 (kvs.map (entryOf eid)).length,
         .signed .i32 cap]], key] (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize (mapLookupSrc mid ids.vec go).params)
-    {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap heap)
+    {st : Semantics.State} {heap : Heap} (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap)
     (rep : VecRep sp.toCore T size ids.vec st.heap
       (.structure ids.vec [.pointer p, .signed .i32 (kvs.map (entryOf eid)).length, .signed .i32 cap])
       (kvs.map (entryOf eid)))
@@ -120,10 +120,10 @@ theorem map_client_correct {sp : SrcProgram} {binary : Binary} (compiled : compi
     ∃ depth results after,
       SrcType.i32.HoldsAt (((kvs.find? (fun e => eqv e.1 key)).map Prod.snd).getD (.signed .i32 0))
         (Func.entry results) 0 ∧
-      results.length = SrcType.i32.size ∧ HeapCorr st.heap after ∧
+      results.length = SrcType.i32.size ∧ HeapCorr st.heap st.world after ∧
       MachineReturns binary depth f bits heap results after := by
   have coreFound : sp.toCore.function? f = some ((mapLookupSrc mid ids.vec go).toCore f) := by
-    rw [SrcProgram.function?_toCore, found]; rfl
+    rw [SrcProgram.function?_toCore, found]
   exact compiled_of_pure compiled found typed bitsLen fresh hc fits
     (mapLookup_core inst kind coreFound fndFound goFound eqSpec fresh.1 rep keyIn sub (Lanius.Std.HeapCorr.blocksDisjoint hc))
 

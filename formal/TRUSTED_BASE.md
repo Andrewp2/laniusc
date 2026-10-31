@@ -676,7 +676,12 @@ for a process the trusted part is only this:
   these is modeled), and that no signal handler runs. Any other rax, fd or
   count has no step, so a run that reaches it stops, and the theorems say
   nothing past it. `Loaded` starts the trace empty, and `process_exits`
-  says the trace at the exit is the compiled mini program's write trace.
+  says the trace at the exit is the compiled mini program's write trace,
+  whose bytes on fds 1 and 2 (`outputOf`) are what Core's world gained on
+  its standard output and error. Core's `write_byte`, `write_stdout` and
+  `write_stderr` are lowered to this `write` (SEMANTIC_DECISIONS.md,
+  "Externs and the runtime"); their Core meaning is `World.call`, part of
+  Core's semantics (section 3).
   No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
   runtime").
 - The startup code sets rsp, r12 to r15 and calls `entry` (the driver's
@@ -726,7 +731,10 @@ and a run to a state with no step that is not a fault.
     writable, and apart from the stack window, the return address and the
     image.
   - `compileSource_correct` also requires `r13 = 1` and zero bytes from
-    offset 1 up, which a fresh anonymous mapping provides.
+    offset 1 up, which a fresh anonymous mapping provides, and an empty
+    write trace (`silent`: the state's trace, which `HeapAt` makes the mini
+    heap's, has no events yet), so that the output it concludes equal to
+    Core's world's is the code's own.
   - `compileProgram_correct` accepts any cursor.
 - **Registers after the call.**
   - rsp is restored to `rsp + 8` and rbp is restored.

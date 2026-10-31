@@ -168,7 +168,7 @@ theorem start_range_output (pos : 0 < room) :
 theorem start_fresh : (selfStart W room).Fresh := ⟨fun _ mem => by simp [selfStart] at mem, rfl⟩
 
 theorem start_corr (nonempty : 0 < W.length) {limit : Nat} (small : limit < 2 ^ 62) :
-    HeapCorr (selfStart W room).heap (selfHeap W room limit) where
+    HeapCorr (selfStart W room).heap (selfStart W room).world (selfHeap W room limit) where
   cursor := rfl
   pos := by simp [selfStart, selfNext]
   unbounded := rfl
@@ -208,6 +208,9 @@ theorem start_corr (nonempty : 0 < W.length) {limit : Nat} (small : limit < 2 ^ 
     intro h
     simp only [selfStart, selfNext, selfOutput, selfInput] at ge h
     addr_omega
+  out := rfl
+  err := rfl
+  closed := rfl
 
 theorem args_hold (wordsLt : W.length < 2 ^ 31) (roomLt : room < 2 ^ 31) :
     FieldsHold (paramTypes (src_app_main_w 1 2 5 6 7 8).params) (selfArgs W room) (Func.entry (selfBits W room)) 0 := by
@@ -234,7 +237,7 @@ end
 little-endian word at the same heap offset. -/
 theorem written_memory {st : Semantics.State} {after : Heap} {memory : Memory} {base : BitVec 64}
     {outp room : Nat} {ws : List (BitVec 32)} (written : Written st outp room 0 ws)
-    (corr : HeapCorr st.heap after) (within : st.heap.nextAddress ≤ after.limit)
+    (corr : HeapCorr st.heap st.world after) (within : st.heap.nextAddress ≤ after.limit)
     (agree : ∀ a, a < after.limit → memory (base + BitVec.ofNat 64 a) = after.bytes a) :
     ∀ i (lt : i < ws.length), memLE memory (base + BitVec.ofNat 64 (outp + 4 * i)) 4 = (ws[i]).toNat := by
   intro i lt

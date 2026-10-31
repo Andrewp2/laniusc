@@ -31,7 +31,7 @@ theorem compileSource_stops_from {sp : SrcProgram} {binary : Binary}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {st : Semantics.State} {heap : Heap}
-    (fresh : st.Fresh) (hc : HeapCorr st.heap heap) (within : st.heap.nextAddress ≤ heap.limit)
+    (fresh : st.Fresh) (hc : HeapCorr st.heap st.world heap) (within : st.heap.nextAddress ≤ heap.limit)
     (fails : ∀ fuel, Failing heap.limit (Semantics.evalExpr fuel sp.toCore st (.call f (args.map Core.Expr.value))))
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
@@ -60,7 +60,8 @@ theorem compileSource_stops {sp : SrcProgram} {binary : Binary}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {heap : Heap} (start : heap.cursor = 1)
-    (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (room : 1 ≤ heap.limit)
+    (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
+    (room : 1 ≤ heap.limit)
     (fails : ∀ fuel, Failing heap.limit (Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value))))
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
@@ -71,7 +72,7 @@ theorem compileSource_stops {sp : SrcProgram} {binary : Binary}
     (params : ∀ k (bound : k < bits.length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = bits[k])
     (heapAt : HeapAt window s heap) (stack : StackAt binary.guard window s) : Faults s := by
-  have hc := HeapCorr.empty start zero small
+  have hc := HeapCorr.empty start zero small silent
   exact compileSource_stops_from compiled found typed bitsLen (st := {}) ⟨fun _ mem => by simp at mem, rfl⟩ hc
     (by rw [← hc.cursor, start]; exact room) fails s imageBase window bounded loaded apart imageHeap entry params
     heapAt stack
@@ -103,7 +104,8 @@ theorem compileSource_behaviour {sp : SrcProgram} {binary : Binary}
     (found : sp.funcs[f]? = some func) {args : List Value} {bits : List (BitVec 64)}
     (typed : FieldsHold (paramTypes func.params) args (Func.entry bits) 0)
     (bitsLen : bits.length = paramsSize func.params) {heap : Heap} (start : heap.cursor = 1)
-    (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (room : 1 ≤ heap.limit)
+    (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
+    (room : 1 ≤ heap.limit)
     (s : State) (imageBase : BitVec 64) (window : Nat) (bounded : window ≤ 2 ^ 62)
     (loaded : CodeAt s.memory imageBase binary.image)
     (apart : ∀ index, index < binary.image.length →
@@ -120,7 +122,7 @@ theorem compileSource_behaviour {sp : SrcProgram} {binary : Binary}
       undefinedTrap r = true ∧ st.heap.nextAddress ≤ heap.limit := by
   by_cases fails : ∀ fuel, Failing heap.limit
       (Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)))
-  · exact (clean (compileSource_stops compiled found typed bitsLen start zero small room fails s imageBase window
+  · exact (clean (compileSource_stops compiled found typed bitsLen start zero small silent room fails s imageBase window
       bounded loaded apart imageHeap entry params heapAt stack m s u (DataEq.refl s) run stuck)).elim
   · obtain ⟨fuel, notFailing⟩ := Classical.not_forall.mp fails
     rcases not_failing notFailing with ⟨v, final, done, fits⟩ | ⟨r, st, trapped, undefined, within⟩
