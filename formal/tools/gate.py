@@ -82,6 +82,8 @@ STEPS = [
      ['lean', 'extended', 'laniusc', 'stdlib'], True),
     # F2: the extractor in Lanius, run on laniusc's trees, writes the checked-in extraction.
     ('extract', ['lani_extract.py', '--check', '--work', '{w}'], ['extract', 'lani', 'extended', 'laniusc', 'stdlib'], True),
+    # F12: Gen/'s self program is the front end's reading of the current self source text.
+    ('self-current', ['faithful_current.py', '{w}'], ['extract', 'lean', 'lani', 'laniusc', 'stdlib'], True),
     # The full tier: larger counts and the rest.
     ('mini-200', ['mini_difftest.py', '{w}', '--count', '200', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], False),
     ('oracle-300', ['oracle_difftest.py', '{w}', '--count', '300', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'],

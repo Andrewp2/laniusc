@@ -87,7 +87,7 @@ reading.
 | F9 | Floats: `f32`, `f64`, Core's IEEE operations on bits, SSE in the x86 model, tested against the CPU | done (10-31), except what needs F6. Core's IEEE operations on bits (10-30): `Lanius/IEEE.lean` specifies binary32 and binary64 arithmetic, comparisons, negation, conversions, decimal literals and float to integer casts on exact integers, with x86 SSE's NaN rules; Core uses it in place of Lean's `Float`, and gained the float to integer casts (Rust's saturating `as`). Gate step `float` tests it, compiled, against this CPU's SSE instructions and libc's `strtof`/`strtod`: 79,214 cases, 0 differ. The x86 model holds the low 64 bits of the xmm registers and the scalar SSE instructions (`Machine/Sse.lean`, trusted base section 6); gate step `x86-model` runs every emitted form, the 28 SSE ones included, against the CPU: 10,603 cases, 0 disagree. The verified compiler has `SrcType.float`: `+ - *`, `== != < <= > >=`, negation, casts from the integer types and between the floats, through `Instr.fp`, proved through every layer and Faithful (SEMANTIC_DECISIONS, "Floats in the verified compiler"). The front end reads `f32`, `f64` and float literals, rounded by `ofDecimal` (`flDecimal_eq`). The stdlib oracle passes and returns floats as bits: on `core::f32`, `core::f64`, `core::float_order`, 104 targets, 14 compiled, 112 calls agree with laniusc, 0 disagreements. The other 90 need arrays (F6): `to_bits`/`from_bits` go through `[i32; 2]` storage, and Core has no native layout for a float yet. Not lowered yet: float `/` and `%` (Core's `eval_division`), float to integer casts, `u64`/`usize` to float, float slices. |
 | F10 | Contracts: `requires` and `ensures` as Core's contract traps, lowered to checks | `requires` done 10-31 (asserts before the body; case requires_fn). No `ensures` in the grammar |
 | F11 | Coverage: the verified compiler reads and compiles every stdlib and `extended/` module and laniusc's test programs; the stdlib oracle at every target, no disagreements | started 10-31: item imports (`import p::item;`, SEMANTIC_DECISIONS "Item imports"; cases item_imports, reject_item_import); impls with where clauses (F7). The front end's rejection diagnostic (`srcDump`) names the failing file, item and production. Full stdlib after both (10-31, three shards): 2,733 of 2,916 testable compiled (was 2,611 of 2,741), 24,388 calls agree, no disagreements. The oracle lists a wrapper that laniusc itself fails to build (LNC0057, code generation; `std::resolve::default_limits`, which reaches `extern "C"` functions) as not compared |
-| F12 | The full compiler self-hosts: V7's `selfCompiler_outcome` and the fixpoint for it; it moves to `verified_compiler/`, replacing the earlier attempt | |
+| F12 | The full compiler self-hosts: V7's `selfCompiler_outcome` and the fixpoint for it; it moves to `verified_compiler/`, replacing the earlier attempt | in progress. Done (10-31): `selfHost_fixpoint` (`Faithful/SelfHost.lean`, standard axioms): for source files `self` that the front end reads as the self program `prog` (`read`) and `B` with `compileText self = some B` (`compiled`), `prog` is the files' one reading (`TextReading`, unique), and `B`'s code for `w`, entered with the words of `self` (premises as in V7), faults or returns deterministically `B`'s own words (entry count, entries, image length, image) in its output view. `selfHost_outcome`: V7 for any files with those two premises in place of `compileSource prog = some B` (`compileSource_of_text`). The two premises are what `srcDump` and `runAll` compute, in Lean's compiled code, as the kernel cannot run the front end on the self text (8 files, 795 KB) or `compileSource` on `prog` (2,209 functions, a 15 MB image) (TRUSTED_BASE.md section 5, "The self-built verified compiler"; SEMANTIC_DECISIONS.md, "The fixpoint"). New gate step `self-current` (`faithful_current.py`, quick tier, 27 s): `Gen/`'s `prog` is the reading of the current sources, regenerated and compared file by file. `self-host-fixpoint` passes for the current compiler: the self-built verified compiler (2,209 functions, 15,049,168 bytes) on its own text returns runAll's 15,051,379 words, its own image byte for byte. What V7 covered: the compiler at each certificate regeneration, so the current one; the self program is the driver, `compiler.lani`, `frontend.lani` and the six stdlib modules they import; from source text and laniusc's trees to the binary's words end to end. Not in it, by decision: the extractor (not on the path from text to image; the certificates check its output for the self program) and the ELF writer (`elf_file`, which no root of `w` reaches; V6 covers `elfFile` in Lean). Left: the fixpoint takes 264 s of the gate's 300 (the native run 218 s, 106 s on 10-29): its last ~80 s are paging, as the heap reaches 12 GiB and the stack 5 GiB under the 4 GiB cap, from 15-million-deep walks over the image and output words; the next features will push it past the limit unless those walks get cheaper. The move to `verified_compiler/` (plan below) |
 | F13 | The trusted base again: every unproved assumption listed, specification only | |
 
 Order: F1, F2, then F3-F10 by how many stdlib targets each unlocks, F11
@@ -174,3 +174,74 @@ heap or of stack is a fault too.
   undefined trap. Standard axioms. The gate's `traps` step runs checked
   traps, stack and heap exhaustion natively (each faults) and a loop that
   never ends (it runs on).
+
+### F12: the move to `verified_compiler/` (plan, 10-31; do last)
+
+Not done yet: other agents are editing paths under `formal/`, and the move
+rewrites the header of every generated module, so it rebuilds `LaniusMini`
+and every certificate (a cold build). Do it in one commit when no other
+agent is building.
+
+What is in `verified_compiler/` now (the earlier attempt, before the mini
+compiler; 750 files, 7 MB): a Lanius compiler of its own, `src/compiler.lani`
+and `src/extractor.lani` with `backend/` (20 files), `lowering/` (34), `ir/`
+(9), `x86/` (4), `runtime/` (5), `driver/`, `test_support/` and `verified/`
+(46: its lexer, parser, surface tree and Lean emission); `tests/` (562: Lanius
+regressions, Lean checks, x86 and resolution cases, shell scripts);
+`tools/backend.lani`; `data/grammar.json`; its notes (`NOTES.md` 532 KB,
+`VERIFICATION.md` 222 KB, `METATHEORY.md` 69 KB, `MEMORY.md` 16 KB) and
+`backend-sources.txt`, `source-closure.txt`. Nothing the top theorems import
+reads it: their import closure (1,173 modules from `SelfHost`, `Process` and
+`FrontLex`) has no `include_str` of it, only a comment in
+`X86/Machine/FrameSlots.lean`. What does read it:
+
+- the default `Lanius` library: `Lanius/Compiler/FrontendArtifact.lean`,
+  `FrontendArtifactCheck.lean`, `Compiler/Lexer/Artifact.lean` and
+  `Lanius/Extraction/CurrentSourceClosure.lean` `include_str` files of
+  `src/verified/` (310 in the last), and the modules that import them
+  (`FrontendArtifactBoundary`, `FrontendTypingCertificate`,
+  `FrontendCanonicalHelpers`, `FrontendRawLexer`, `Lexer/ArtifactQuoted`,
+  `Lexer/ArtifactScanners`, `Lexer/Predicate`, `Lexer/BlockCommentStep`,
+  the `checkCurrentSourceClosure` exe);
+- laniusc's cargo tests: `tests/codegen_x86.rs` takes 28 programs from
+  `verified_compiler/tests/` with `include_str!`;
+- `tools/vc_bench.py`, `tools/vc_run.py`, `tools/generate_project_workload.py`
+  (benchmarks of laniusc on the old compiler's source);
+- links and mentions in `formal/PROOF_ARCHITECTURE.md`,
+  `docs/stdlib-foundation.md`, `docs/compiler-semantic-contracts.md` and a
+  fixture comment.
+
+What replaces it: the verified compiler's three Lanius sources, at
+`verified_compiler/src/mini/` so that their module paths (`mini::compiler`,
+`mini::frontend`, `mini::extract`) and laniusc's `--source-root` layout stay
+as they are:
+
+| from | to |
+|---|---|
+| `formal/lani/mini/compiler.lani` | `verified_compiler/src/mini/compiler.lani` |
+| `formal/lani/mini/frontend.lani` | `verified_compiler/src/mini/frontend.lani` |
+| `formal/lani/mini/extract.lani` | `verified_compiler/src/mini/extract.lani` |
+| `formal/lani/mini/mut_pilot.lani` | stays (the `&mut` pilot, extracted by extract.py) |
+
+The proofs, the generated Lean, the tools and the documents stay in
+`formal/` (the Lake package). Steps, in one commit:
+
+1. Remove the earlier attempt: `git rm -r verified_compiler/` (history
+   keeps it). Move the 28 cargo test programs to
+   `tests/fixtures/verified_compiler_legacy/` and point `codegen_x86.rs` at
+   them. Remove the `Lanius` library modules listed above from the tree and
+   from `Lanius.lean` (they check the old attempt's lexer artifact, which
+   nothing else uses), and `tools/vc_bench.py`, `tools/vc_run.py` and the
+   old-source default of `generate_project_workload.py`; drop the links.
+2. `git mv` the three sources to `verified_compiler/src/mini/`.
+3. Paths: `lani_extract.py` (`PROGRAMS`), `extract.lani`'s
+   `// extract: external begin ... from` lines, `self_host.py`
+   (`selfhost_text`), `self_compile.py` (the copy and `--source-root`),
+   `mini_difftest.py` (`--source-root`), `fn_difftest.py` (`SOURCE`), the
+   usage lines of `grammar_table.py` and `text_consts.py`, and `gate.py`'s
+   `lani` input (the digest of both directories); the paths in
+   `MINI_COMPILER.md`, this file, `TRUSTED_BASE.md`, `SEMANTIC_DECISIONS.md`
+   and `docs/library-*.md`.
+4. Regenerate: `lani_extract.py` (every generated module's header names
+   the new path), the self probe, `LaniusMini`, the certificate pipeline,
+   then the gate's quick tier, `self-current` and `self-host-fixpoint`.
