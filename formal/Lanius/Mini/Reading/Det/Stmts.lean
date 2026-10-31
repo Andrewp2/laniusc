@@ -142,6 +142,159 @@ theorem letHead_noEff {env : FrontEnv} {scope : List Local} {E : Option Ty} {ini
     | alloc ps _ _ => exact peel_noEff pe ⟨p0, p01, p1, p13⟩ ps (by simp [builtinPaths]) (by decide) k
     | slice ps _ => exact peel_noEff pe ⟨p0, p01, p1, p13⟩ ps (by simp [builtinPaths]) (by decide) k
 
+/-! ## `?` -/
+
+theorem peel_noExprTry : ∀ {env : FrontEnv} {scope : List Local} {c pf : CTree} {e : SrcExpr},
+    Peel c pf → (nodeProd (kid pf 1) = pPostfixCall ∨ nodeProd (kid pf 1) = pPostfixTry) → ExprR env scope c e → False
+  | _, _, _, _, _, .wrap _ p, pc, h => by
+    cases h with
+    | wrap _ r => exact peel_noExprTry p pc r
+    | _ => expr_clash
+  | _, _, _, _, _, .bare _ _ p, pc, h => by
+    cases h with
+    | assign _ _ r => exact peel_noExprTry p pc r
+    | level _ r _ => exact peel_noExprTry p pc r
+    | cast _ r _ => exact peel_noExprTry p pc r
+    | _ => expr_clash
+  | _, _, _, _, _, .here _, _, h => by
+    cases h with
+    | _ => expr_clash
+
+theorem effChain_noTry {env : FrontEnv} {scope : List Local} {E : Option Ty} {a : MEff} {tail : CTree} {x : MEff}
+    (t : nodeProd tail = pPostfixTry) (h : EffChain env scope E a tail x) : False := by
+  cases h <;> prod_clash
+
+theorem tryTail {pf : CTree} (tf : TryCallForm pf ∨ nodeProd (kid pf 1) = pPostfixTry) :
+    nodeProd (kid pf 1) = pPostfixCall ∨ nodeProd (kid pf 1) = pPostfixTry :=
+  tf.elim (fun t => .inl t.2.2.1) .inr
+
+/-- `op?` is never an effectful expression: no rule reads a `?`. -/
+theorem peel_noEffTry : ∀ {env : FrontEnv} {scope : List Local} {E : Option Ty} {c pf : CTree} {x : MEff},
+    Peel c pf → (TryCallForm pf ∨ nodeProd (kid pf 1) = pPostfixTry) → EffR env scope E c x → False
+  | _, _, _, _, _, _, .wrap w p, tf, h => by
+    cases h with
+    | pure r => exact peel_noExprTry (.wrap w p) (tryTail tf) r
+    | wrap _ k => exact peel_noEffTry p tf k
+    | _ => eff_clash
+  | _, _, _, _, _, _, .bare w kn p, tf, h => by
+    cases h with
+    | pure r => exact peel_noExprTry (.bare w kn p) (tryTail tf) r
+    | bare _ _ k => exact peel_noEffTry p tf k
+    | level _ kn' _ _ => exact kn' kn
+    | cast _ kn' _ _ => exact kn' kn
+    | _ => eff_clash
+  | _, _, _, _, _, _, .here pp, tf, h => by
+    cases h with
+    | pure r => exact peel_noExprTry (.here pp) (tryTail tf) r
+    | callChain _ _ _ _ _ _ ch =>
+      rcases tf with ⟨_, _, _, t, _⟩ | t
+      · exact effChain_noTry t ch
+      · prod_clash
+    | chainLocal _ cf _ ch =>
+      rcases tf with ⟨p0, p01, p1, _, _⟩ | t
+      · exact cf.2.2.2 ⟨p0, p01, p1⟩
+      · exact effChain_noTry t ch
+    | chain _ cf _ ch =>
+      rcases tf with ⟨p0, p01, p1, _, _⟩ | t
+      · exact cf.2.2.2 ⟨p0, p01, p1⟩
+      · exact effChain_noTry t ch
+    | _ => rcases tf with ⟨_, _, _, _, _⟩ | _ <;> eff_clash
+
+theorem triedR_unique {env : FrontEnv} {r : Nat} {call : Option MEff} {st : Ty} {w : Nat} {a b : Tried}
+    (h₁ : TriedR env r call st w a) (h₂ : TriedR env r call st w b) : a = b := by
+  cases h₁ with
+  | mk hn hr hm _ _ _ hp hq hs => cases h₂ with
+    | mk hn' hr' hm' _ _ _ hp' hq' hs' =>
+      rw [hn] at hn'
+      cases hn'
+      rw [hr] at hr'
+      cases hr'
+      rw [hm] at hm'
+      cases hm'
+      cases payloadTys_unique hp hp'
+      cases payloadTys_unique hq hq'
+      rw [hs] at hs'
+      exact Option.some.inj hs'
+
+theorem tryCallR_unique {env : FrontEnv} {scope : List Local} {pf : CTree} {a b : Tried} (nd : IdsFresh scope)
+    (vn : VariantsNodup env.decls) (h₁ : TryCallR env scope pf a) (h₂ : TryCallR env scope pf b) : a = b := by
+  cases h₁ with
+  | mk _ _ _ _ pc ty tr => cases h₂ with
+    | mk _ _ _ _ pc' ty' tr' =>
+      cases effPathCall_unique pc nd vn pc'
+      cases effTy_unique ty ty'
+      exact triedR_unique tr tr'
+
+theorem tryR_unique {env : FrontEnv} {scope : List Local} {init : CTree} {a b : Tried} (nd : IdsFresh scope)
+    (vn : VariantsNodup env.decls) (h₁ : TryR env scope init a) (h₂ : TryR env scope init b) : a = b := by
+  cases h₁ with
+  | call p c => cases h₂ with
+    | call p' c' =>
+      cases peel_unique p p'
+      exact tryCallR_unique nd vn c c'
+    | «local» p' l' =>
+      cases peel_unique p p'
+      cases c with
+      | mk f _ _ _ _ _ _ => cases l' with
+        | mk t _ _ _ _ =>
+          obtain ⟨_, _, f1, _⟩ := f
+          prod_clash
+  | «local» p l => cases h₂ with
+    | call p' c' =>
+      cases peel_unique p p'
+      cases c' with
+      | mk f _ _ _ _ _ _ => cases l with
+        | mk t _ _ _ _ =>
+          obtain ⟨_, _, f1, _⟩ := f
+          prod_clash
+    | «local» p' l' =>
+      cases peel_unique p p'
+      cases l with
+      | mk _ _ _ lo tr => cases l' with
+        | mk _ _ _ lo' tr' =>
+          cases localOf_unique lo lo'
+          exact triedR_unique tr tr'
+
+theorem tryR_noHead {env : FrontEnv} {scope : List Local} {init : CTree} {tr : Tried} {hd : LetHead}
+    (t : TryR env scope init tr) (l : LetHeadR env scope init hd) : False := by
+  cases l with
+  | callPath pe _ _ p1 p13 _ =>
+    cases t with
+    | call p c =>
+      cases peel_unique pe p
+      cases c with
+      | mk f _ _ _ _ _ _ =>
+        obtain ⟨_, _, _, f3, _⟩ := f
+        prod_clash
+    | «local» p l =>
+      cases peel_unique pe p
+      cases l with
+      | mk t _ _ _ _ => prod_clash
+
+theorem tryR_noEff {env : FrontEnv} {scope : List Local} {E : Option Ty} {init : CTree} {tr : Tried} {x : MEff}
+    (t : TryR env scope init tr) (k : EffR env scope E init x) : False := by
+  cases t with
+  | call p c => cases c with
+    | mk f _ _ _ _ _ _ => exact peel_noEffTry p (.inl f) k
+  | «local» p l => cases l with
+    | mk t _ _ _ _ => exact peel_noEffTry p (.inr t) k
+
+theorem untypedR_unique {env : FrontEnv} {scope : List Local} {init : CTree} {t t' : Ty} {a b : LetHead}
+    (nd : IdsFresh scope) (vn : VariantsNodup env.decls) (h₁ : UntypedR env scope init t a)
+    (h₂ : UntypedR env scope init t' b) : t = t' ∧ a = b := by
+  cases h₁ with
+  | «try» k => cases h₂ with
+    | «try» k' =>
+      cases tryR_unique nd vn k k'
+      exact ⟨rfl, rfl⟩
+    | eval e _ _ => exact (tryR_noEff k e).elim
+  | eval e _ ty => cases h₂ with
+    | «try» k' => exact (tryR_noEff k' e).elim
+    | eval e' _ ty' =>
+      cases effR_unique e nd vn e'
+      cases effTy_unique ty ty'
+      exact ⟨rfl, rfl⟩
+
 /-! ## Statements -/
 
 section
@@ -153,9 +306,15 @@ theorem letInitR_unique {ty : Ty} {init : CTree} {a b : LetHead} (nd : IdsFresh 
   cases h₁ with
   | head l => cases h₂ with
     | head l' => exact letHeadR_unique l l'
+    | «try» t => exact (tryR_noHead t l).elim
     | eval k _ => exact (letHead_noEff l k).elim
+  | «try» t => cases h₂ with
+    | head l' => exact (tryR_noHead t l').elim
+    | «try» t' => rw [tryR_unique nd vn t t']
+    | eval k _ => exact (tryR_noEff t k).elim
   | eval k e => cases h₂ with
     | head l' => exact (letHead_noEff l' k).elim
+    | «try» t' => exact (tryR_noEff t' k).elim
     | eval k' e' =>
       rw [effR_unique k nd vn k', e'] at e
       exact (Option.some.inj e).symm
@@ -249,16 +408,46 @@ theorem callStmtR_unique {pf : CTree} {a b : MStmt} (pp : nodeProd pf = pPostfix
       rw [shiftOf_unique sh sh']
     | assert _ ps' _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
     | discard _ k => exact (peel_noEff (.here pp) cf ps (by simp [builtinPaths]) (by decide) k).elim
+    | «try» c => cases c with
+      | mk f _ _ _ _ _ _ =>
+        obtain ⟨_, _, _, f3, _⟩ := f
+        obtain ⟨_, _, _, c3⟩ := cf
+        prod_clash
   | assert cf ps it k => cases h₂ with
     | free _ ps' _ _ => exact absurd (pathSpellings_unique ps ps') (by decide)
     | assert _ _ it' k' =>
       cases items_unique it it'
       rw [effR_unique k nd vn k']
     | discard _ k' => exact (peel_noEff (.here pp) cf ps (by simp [builtinPaths]) (by decide) k').elim
-  | discard _ k => cases h₂ with
+    | «try» c => cases c with
+      | mk f _ _ _ _ _ _ =>
+        obtain ⟨_, _, _, f3, _⟩ := f
+        obtain ⟨_, _, _, c3⟩ := cf
+        prod_clash
+  | discard d k => cases h₂ with
     | free cf ps _ _ => exact (peel_noEff (.here pp) cf ps (by simp [builtinPaths]) (by decide) k).elim
     | assert cf ps _ _ => exact (peel_noEff (.here pp) cf ps (by simp [builtinPaths]) (by decide) k).elim
     | discard _ k' => rw [effR_unique k nd vn k']
+    | «try» c => cases c with
+      | mk f _ _ _ _ _ _ =>
+        obtain ⟨_, _, f1, f3, _⟩ := f
+        rcases d with ⟨_, _, _, d3⟩ | ⟨_, d1, _⟩ <;> prod_clash
+  | «try» c => cases h₂ with
+    | free cf _ _ _ => cases c with
+      | mk f _ _ _ _ _ _ =>
+        obtain ⟨_, _, _, f3, _⟩ := f
+        obtain ⟨_, _, _, c3⟩ := cf
+        prod_clash
+    | assert cf _ _ _ => cases c with
+      | mk f _ _ _ _ _ _ =>
+        obtain ⟨_, _, _, f3, _⟩ := f
+        obtain ⟨_, _, _, c3⟩ := cf
+        prod_clash
+    | discard d _ => cases c with
+      | mk f _ _ _ _ _ _ =>
+        obtain ⟨_, _, f1, f3, _⟩ := f
+        rcases d with ⟨_, _, _, d3⟩ | ⟨_, d1, _⟩ <;> prod_clash
+    | «try» c' => rw [tryCallR_unique nd vn c c']
 
 theorem assignR_unique {e : CTree} {a b : MStmt} (nd : IdsFresh scope) (vn : VariantsNodup env.decls)
     (h₁ : AssignR env scope e a) (h₂ : AssignR env scope e b) : a = b := by
@@ -301,12 +490,24 @@ termination_by structural _ _ _ h _ _ _ _ => h
 theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt}, StmtsR env scope items a →
     IdsFresh scope → VariantsNodup env.decls → ∀ {b : MStmt}, StmtsR env scope items b → a = b
   | _, _, _, .nil, _, _, _, h₂ => by cases h₂; rfl
-  | _, _, _, .let ps _ _ _ fr ty li body ls, nd, vn, _, h₂ => by
+  | _, _, _, .let ps lt _ _ fr ty li body ls, nd, vn, _, h₂ => by
     have ih := fun {y} k' => stmtsR_unique body (idsFresh_cons nd fr) vn (b := y) k'
     cases h₂ with
     | «let» _ _ _ _ _ ty' li' body' ls' =>
       cases tyR_unique ty ty'
       cases letInitR_unique nd vn li li'
+      cases ih body'
+      rw [ls'] at ls
+      exact (Option.some.inj ls).symm
+    | letUntyped _ lt' _ _ _ _ _ _ => prod_clash
+    | last np _ => exact absurd ps np
+    | seq np _ _ => exact absurd ps np
+  | _, _, _, .letUntyped ps lt _ _ fr un body ls, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => stmtsR_unique body (idsFresh_cons nd fr) vn (b := y) k'
+    cases h₂ with
+    | «let» _ lt' _ _ _ _ _ _ _ => prod_clash
+    | letUntyped _ _ _ _ _ un' body' ls' =>
+      obtain ⟨rfl, rfl⟩ := untypedR_unique nd vn un un'
       cases ih body'
       rw [ls'] at ls
       exact (Option.some.inj ls).symm
@@ -316,12 +517,14 @@ theorem stmtsR_unique : ∀ {scope : List Local} {items : List CTree} {a : MStmt
     have ih := fun {y} k' => stmtR_unique s nd vn (b := y) k'
     cases h₂ with
     | «let» ps _ _ _ _ _ _ _ _ => exact absurd ps np
+    | letUntyped ps _ _ _ _ _ _ _ => exact absurd ps np
     | last _ s' => exact ih s'
   | _, _, _, .seq np s rest, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => stmtR_unique s nd vn (b := y) k'
     have ih2 := fun {y} k' => stmtsR_unique rest nd vn (b := y) k'
     cases h₂ with
     | «let» ps _ _ _ _ _ _ _ _ => exact absurd ps np
+    | letUntyped ps _ _ _ _ _ _ _ => exact absurd ps np
     | seq _ s' rest' => rw [ih1 s', ih2 rest']
 termination_by structural _ _ _ h _ _ _ _ => h
 

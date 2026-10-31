@@ -1,0 +1,37 @@
+module app::main;
+
+// Untyped lets: calls, a local, a field, a cast and a negation of a bool.
+// want.lani writes each type.
+enum R { Good(i32), Bad(i32) }
+
+struct P { a: i32, b: bool }
+
+fn half(n: i32) -> R {
+    if (n < 0) {
+        return Bad(n);
+    }
+    return Good(n + 1);
+}
+
+fn make(n: i32) -> P {
+    return P { a: n, b: n > 3 };
+}
+
+fn step(n: i32) -> R {
+    let p = make(n);
+    let a = p.a;
+    let flag = !p.b;
+    let r = half(a);
+    let d = a;
+    let e = (d as u8);
+    if (flag) {
+        return Good(d);
+    }
+    return Good((e as i32) + a);
+}
+
+fn top(n: i32) -> i32 {
+    let s = step(n);
+    let x: i32 = match (s) { Good(v) -> v, Bad(e) -> 0 - e };
+    return x;
+}

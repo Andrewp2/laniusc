@@ -16,6 +16,8 @@ import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.setIndexOrEval
 import Lanius.Mini.Frontend.P.sliceHead
 import Lanius.Mini.Frontend.P.textSelf
+import Lanius.Mini.Frontend.P.triedIf
+import Lanius.Mini.Frontend.P.tryLet
 import Lanius.Mini.Frontend.P.whileEvalOf
 import Lanius.Mini.Frontend.P.wideOf
 import Lanius.Mini.Frontend.P.xDivideOf
@@ -115,7 +117,10 @@ def callStmt (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) : O
       if isPathCall pf || isMethodForm pf then
         discardOf (effPostfix fuel env scope none pf)
       else
-        none
+        if isTryCall pf then
+          tryStmt (tryCallOf fuel env scope pf)
+        else
+          none
 
 /-- The operator of a compound assignment `+=`, `-=`, `*=`, `&=`, `|=`, `^=`, `<<=`, `>>=`. -/
 def compoundOp (p : Nat) : Option SrcOp :=

@@ -1,0 +1,35 @@
+module app::main;
+
+enum R { Good(i32), Bad(i32) }
+
+struct P { a: i32, b: bool }
+
+fn half(n: i32) -> R {
+    if (n < 0) {
+        return Bad(n);
+    }
+    return Good(n + 1);
+}
+
+fn make(n: i32) -> P {
+    return P { a: n, b: n > 3 };
+}
+
+fn step(n: i32) -> R {
+    let p: P = make(n);
+    let a: i32 = p.a;
+    let flag: bool = !p.b;
+    let r: R = half(a);
+    let d: i32 = a;
+    let e: u8 = (d as u8);
+    if (flag) {
+        return Good(d);
+    }
+    return Good((e as i32) + a);
+}
+
+fn top(n: i32) -> i32 {
+    let s: R = step(n);
+    let x: i32 = match (s) { Good(v) -> v, Bad(e) -> 0 - e };
+    return x;
+}

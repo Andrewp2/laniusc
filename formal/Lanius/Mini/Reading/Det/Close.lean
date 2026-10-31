@@ -82,6 +82,15 @@ theorem stmtClosed_unique : ∀ {m : MStmt} {a b : SrcStmt}, StmtClosed decls fn
   | _, _, _, .break, .break => rfl
   | _, _, _, .continue, .continue => rfl
   | _, _, _, .assert x, .assert x' => by rw [effClosed_unique x x']
+  | _, _, _, .matchArmBound le lw b r, .matchArmBound le' lw' b' r' => by
+    rw [lowerR_unique lw lw', stmtClosed_unique b b', stmtClosed_unique r r']
+    cases lowerR_unique le le'
+    rfl
+  | _, _, _, .unreachable lw, .unreachable lw' => by rw [lowerR_unique lw lw']
+  | _, _, _, .matchArmUnbound le b r, .matchArmUnbound le' b' r' => by
+    rw [stmtClosed_unique b b', stmtClosed_unique r r']
+    cases lowerR_unique le le'
+    rfl
 termination_by structural _ _ _ h _ => h
 
 theorem retClosed_unique {r : RetTy} {a b : SrcType} (h₁ : RetClosed decls types r a)

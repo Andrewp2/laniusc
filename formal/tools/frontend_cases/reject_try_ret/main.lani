@@ -1,0 +1,13 @@
+module app::main;
+
+// `?` in a function that does not return a Result.
+import core::result;
+
+fn half(n: i32) -> core::result::Result<i32, i32> {
+    return Ok(n);
+}
+
+fn top(n: i32) -> i32 {
+    let a: i32 = half(n)?;
+    return a;
+}

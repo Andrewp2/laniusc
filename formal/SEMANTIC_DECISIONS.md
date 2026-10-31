@@ -736,3 +736,45 @@ of the MatchArm chain a `let x: T = op?;` reads as. Its Core meaning
   (`lower_unreachable`), which has no mini step and traps on x86, as
   `assert`'s failing division does. It binds no slot beyond that one
   (depth 1).
+## `?` (decided 10-31, F4)
+
+The front end reads `let x: T = op?;`, `op?;` and their Option forms as
+statements, not as an expression: Core has no early return inside an
+expression. `op` is a local or a call `path(args)` with no further postfix.
+Its type must be `core::result::Result<T, E>` (variants `Ok`, `Err`) or
+`core::option::Option<T>` (`Some`, `None`). The function's result must be the
+same enum with exactly the same failure payload (`Result<U, E>`, any `U`), as
+laniusc requires (docs/language-ergonomics.md). There is no conversion.
+
+`let x: T = f(a)?; body` reads as
+
+    let r = f(a);
+    MatchArm(r, variant 1 (Err(w) or None) -> return Err(w) or return None,
+      else MatchArm(r, variant 0 (Ok(x) or Some(x)) -> body,
+        else Unreachable))
+
+and `f(a)?;` as the same failure arm followed by nothing. For a local
+operand, `r` is the local and there is no call.
+
+- The ids: `r` is numbered by the call's `(` token, the failure binder `w`
+  by the `?` token, and `x` by its name. Like every local, each is a token
+  offset and is distinct from the other locals in scope.
+- `T` must be the success payload's type: the reader does not convert.
+- The success arm's `else` never runs, since the enum has two variants.
+  Core's `DefinitelyReturns` has no rule for `match`, though, so that branch
+  is `Unreachable(w, U)`. In Core that binds `w` uninitialized at the result
+  type and returns it, which traps, and it counts as returning.
+- Not read yet: `?` in an assignment (`x = f(a)?;`), after a method call
+  or field (`a.b()?`), or nested inside a larger expression.
+
+## Untyped lets (decided 10-31, F4)
+
+`let x = init;` binds `x` at `init`'s own type, as laniusc's local inference
+does: from the initializer alone, never from later uses. For `op?` that is
+the success payload's type. Otherwise `init` is read as an effectful
+expression with no expected type. Its type must be one no literal decides:
+a call (a method call included), a cast, an element, a struct literal, a
+`!`, `slice_stride`, or a local or field (`inferred`). A bare literal, an
+arithmetic expression, a variant and a `match` are not read untyped. Their
+type depends on a default for literals that the reader does not pick. The
+`let` then reads as the typed `let x: T = init;` would.

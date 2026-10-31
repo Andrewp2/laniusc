@@ -51,6 +51,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pPostfixEnd : Nat :=
   164
 
+@[expose] def Inline.pPostfixTry : Nat :=
+  318
+
 @[expose] def Inline.pPostfixIndex : Nat :=
   162
 

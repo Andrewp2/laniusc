@@ -1299,7 +1299,9 @@ def run_cases(args, cases_dir):
     """Hand-written cases. A case directory holds the files of one program
     (main.lani first, then the others in name order) and either want.lani,
     a single-file monomorphic copy that must read as the same program up to
-    local names, or a file named reject, when the program must be rejected."""
+    local names, expect.out, the program it must read as, written out (for a
+    reading no source spelling has, such as `?`), or a file named reject,
+    when the program must be rejected."""
     workdir = os.path.abspath(args.workdir)
     os.makedirs(workdir, exist_ok=True)
     lean = [LEAN_HEAD]
@@ -1370,7 +1372,8 @@ def run_cases(args, cases_dir):
         if reject:
             ok = got == 'rejected\n'
         else:
-            want = open(os.path.join(out_dir, 'want.out')).read()
+            expect = os.path.join(cases_dir, case, 'expect.out')
+            want = open(expect if os.path.exists(expect) else os.path.join(out_dir, 'want.out')).read()
             ok = got != 'rejected\n' and got == want
         if not ok:
             problems += 1

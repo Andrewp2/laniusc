@@ -63,9 +63,196 @@ theorem effPostfix_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {exp
     EffR env scope expected pf x :=
   (effSound fuel).2.2.2.1 pp h
 
-/-- What a let binds: a let head, or else an effectful expression. -/
+theorem effPathCall_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Option Ty}
+    {path args : CTree} {x : MEff} (h : effPathCall fuel env scope expected path args = some x) :
+    EffPathCall env scope expected path args x :=
+  (effSound fuel).2.2.2.2.2.2.2.2.2.2.2.1 h
+
+/-- `path(args)?` with no further postfix, the path a plain name. -/
+def TryCallForm (pf : CTree) : Prop :=
+  nodeProd (kid pf 0) = pIdent ∧ nodeProd (kid (kid pf 0) 1) = pIdentPlain ∧ nodeProd (kid pf 1) = pPostfixCall ∧
+    nodeProd (kid (kid pf 1) 3) = pPostfixTry ∧ nodeProd (kid (kid (kid pf 1) 3) 1) = pPostfixEnd
+
+theorem isTryCall_sound {pf : CTree} (h : isTryCall pf = true) : TryCallForm pf := by
+  simpa [isTryCall, TryCallForm, and_assoc] using h
+
+/-- `op?`: op's type st is a `core::result::Result` or `core::option::Option`
+and the function returns the same enum with the same failure payload. -/
+inductive TriedR (env : FrontEnv) (r : Nat) (call : Option MEff) (st : Ty) (w : Nat) : Tried → Prop
+  | mk {n m : Inst} {rt : Ty} {t : TypeDecl} {ps qs : List (List Ty)} {tr : Tried} :
+      namedParts st = some n → env.ret = some rt → namedParts rt = some m → env.decls.types[n.decl]? = some t →
+      n.decl = m.decl → isTryEnum t = true → PayloadTys env.decls n.decl n.args ps →
+      PayloadTys env.decls m.decl m.args qs → triedShape r call st w rt (some ps) (some qs) = some tr →
+      TriedR env r call st w tr
+
+/-- `path(args)?`: the call's value is bound to a local numbered by the `(`,
+the failure binder is numbered by the `?`. -/
+inductive TryCallR (env : FrontEnv) (scope : List Local) (pf : CTree) : Tried → Prop
+  | mk {x : MEff} {st : Ty} {tr : Tried} : TryCallForm pf →
+      FreshId scope ((kidToken (kid pf 1) 0).start - env.base) →
+      FreshId scope ((kidToken (kid (kid pf 1) 3) 0).start - env.base) →
+      (kidToken (kid pf 1) 0).start - env.base ≠ (kidToken (kid (kid pf 1) 3) 0).start - env.base →
+      EffPathCall env scope none (kid (kid pf 0) 0) (kid (kid pf 1) 1) x → EffTy env.decls scope x st →
+      TriedR env ((kidToken (kid pf 1) 0).start - env.base) (some x) st
+        ((kidToken (kid (kid pf 1) 3) 0).start - env.base) tr →
+      TryCallR env scope pf tr
+
+/-- `x?`: the failure binder is numbered by the `?`. -/
+inductive TryLocalR (env : FrontEnv) (scope : List Local) (pf : CTree) : Tried → Prop
+  | mk {l : Local} {tr : Tried} : nodeProd (kid pf 1) = pPostfixTry → nodeProd (kid (kid pf 1) 1) = pPostfixEnd →
+      FreshId scope ((kidToken (kid pf 1) 0).start - env.base) → LocalOf scope (kid pf 0) l →
+      TriedR env l.id none l.ty ((kidToken (kid pf 1) 0).start - env.base) tr → TryLocalR env scope pf tr
+
+/-- A let's `op?`. -/
+inductive TryR (env : FrontEnv) (scope : List Local) (init : CTree) : Tried → Prop
+  | call {pf : CTree} {tr : Tried} : Peel init pf → TryCallR env scope pf tr → TryR env scope init tr
+  | «local» {pf : CTree} {tr : Tried} : Peel init pf → TryLocalR env scope pf tr → TryR env scope init tr
+
+theorem triedOf_sound {fuel : Nat} {env : FrontEnv} {r : Nat} {call : Option MEff} {sty : Option Ty} {w : Nat}
+    {tr : Tried} (h : triedOf fuel env r call sty w = some tr) : ∃ st, sty = some st ∧ TriedR env r call st w tr := by
+  unfold triedOf at h
+  cases sty with
+  | none => cases h
+  | some st =>
+    simp only at h
+    cases hn : namedParts st with
+    | none => rw [hn] at h; cases h
+    | some n =>
+      rw [hn] at h
+      simp only at h
+      cases hr : env.ret with
+      | none => rw [hr] at h; cases h
+      | some rt =>
+        rw [hr] at h
+        simp only at h
+        cases hm : namedParts rt with
+        | none => rw [hm] at h; cases h
+        | some m =>
+          rw [hm] at h
+          simp only at h
+          cases ht : env.decls.types[n.decl]? with
+          | none => rw [ht] at h; cases h
+          | some t =>
+            rw [ht] at h
+            simp only [triedIf] at h
+            split at h
+            · rename_i c
+              simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+              cases hp : payloadTys fuel env.decls n.decl n.args with
+              | none => rw [hp] at h; simp [triedShape] at h
+              | some ps =>
+                cases hq : payloadTys fuel env.decls m.decl m.args with
+                | none => rw [hp, hq] at h; simp [triedShape] at h
+                | some qs =>
+                  rw [hp, hq] at h
+                  exact ⟨st, rfl, .mk hn hr hm ht c.1 c.2 (payloadTys_sound hp) (payloadTys_sound hq) h⟩
+            · cases h
+
+theorem tryCallOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {pf : CTree} {tr : Tried}
+    (c : TryCallForm pf) (h : tryCallOf fuel env scope pf = some tr) : TryCallR env scope pf tr := by
+  unfold tryCallOf at h
+  simp only at h
+  split at h
+  · rename_i k
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at k
+    obtain ⟨⟨f1, f2⟩, ne⟩ := k
+    cases hx : effPathCall fuel env scope none (kid (kid pf 0) 0) (kid (kid pf 1) 1) with
+    | none => rw [hx] at h; simp [triedCall] at h
+    | some x =>
+      rw [hx] at h
+      simp only [triedCall] at h
+      cases hty : effTy fuel env scope x with
+      | none => rw [hty] at h; simp [triedOf] at h
+      | some st =>
+        rw [hty] at h
+        obtain ⟨st', hst, tr'⟩ := triedOf_sound h
+        cases hst
+        exact .mk c ((freshId_iff _ _).1 f1) ((freshId_iff _ _).1 f2) ne (effPathCall_sound hx) (effTy_sound hty) tr'
+  · cases h
+
+theorem tryLocalOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {pf : CTree} {tr : Tried}
+    (c : isTryLocal pf = true) (h : tryLocalOf fuel env scope pf = some tr) : TryLocalR env scope pf tr := by
+  simp only [isTryLocal, Bool.and_eq_true, decide_eq_true_eq] at c
+  unfold tryLocalOf at h
+  simp only at h
+  split at h
+  · rename_i fw
+    cases hl : localOf env scope (kid pf 0) with
+    | none => rw [hl] at h; simp [triedLocal] at h
+    | some l =>
+      rw [hl] at h
+      simp only [triedLocal] at h
+      obtain ⟨st, hst, tr'⟩ := triedOf_sound h
+      cases hst
+      exact .mk c.1 c.2 ((freshId_iff _ _).1 fw) (localOf_sound hl) tr'
+  · cases h
+
+theorem tryOfInit_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {init : CTree} {tr : Tried}
+    (h : tryOfInit fuel env scope init = some tr) : TryR env scope init tr := by
+  unfold tryOfInit at h
+  cases hp : peel fuel init with
+  | none => rw [hp] at h; cases h
+  | some pf =>
+    rw [hp] at h
+    simp only [tryPostfix] at h
+    split at h
+    · rename_i c
+      exact .call (peel_sound hp) (tryCallOf_sound (isTryCall_sound c) h)
+    · split at h
+      · rename_i _ c
+        exact .local (peel_sound hp) (tryLocalOf_sound c h)
+      · cases h
+
+theorem tryLetHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {init : CTree} {hd : LetHead}
+    (h : tryLetHead fuel env scope init = some hd) : ∃ tr, hd = .tryOf tr ∧ TryR env scope init tr := by
+  unfold tryLetHead at h
+  cases ht : tryOfInit fuel env scope init with
+  | none => rw [ht] at h; simp [tryHead] at h
+  | some tr =>
+    rw [ht] at h
+    simp only [tryHead, Option.some.injEq] at h
+    exact ⟨tr, h.symm, tryOfInit_sound ht⟩
+
+/-- `let x = init;`: `op?` at its success payload's type, or else a value
+with a type of its own (`inferred`). -/
+inductive UntypedR (env : FrontEnv) (scope : List Local) (init : CTree) : Ty → LetHead → Prop
+  | try {tr : Tried} : TryR env scope init tr → UntypedR env scope init tr.okTy (.tryOf tr)
+  | eval {x : MEff} {t : Ty} : EffR env scope none init x → inferred x = true → EffTy env.decls scope x t →
+      UntypedR env scope init t (evalLetHead t x)
+
+theorem untypedHead_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {init : CTree} {u : Untyped}
+    (h : untypedHead fuel env scope init = some u) : UntypedR env scope init u.ty u.head := by
+  unfold untypedHead at h
+  cases ht : tryOfInit fuel env scope init with
+  | some tr =>
+    rw [ht] at h
+    simp only [untypedTry, Option.some.injEq] at h
+    subst h
+    exact .try (tryOfInit_sound ht)
+  | none =>
+    rw [ht] at h
+    simp only at h
+    cases he : effOf fuel env scope none init with
+    | none => rw [he] at h; simp [untypedEval] at h
+    | some x =>
+      rw [he] at h
+      simp only [untypedEval] at h
+      cases hty : effTy fuel env scope x with
+      | none => rw [hty] at h; simp at h
+      | some t =>
+        rw [hty] at h
+        simp only [untypedIf] at h
+        split at h
+        · rename_i c
+          simp only [Option.some.injEq] at h
+          subst h
+          exact .eval (effOf_sound he) c (effTy_sound hty)
+        · cases h
+
+/-- What a let binds: a let head, `op?`, or else an effectful expression. -/
 inductive LetInitR (env : FrontEnv) (scope : List Local) (ty : Ty) (init : CTree) : LetHead → Prop
   | head {hd : LetHead} : LetHeadR env scope init hd → LetInitR env scope ty init hd
+  | try {tr : Tried} : TryR env scope init tr → LetInitR env scope ty init (.tryOf tr)
   | eval {x : MEff} {hd : LetHead} : EffR env scope (some ty) init x → evalHead ty (some x) = some hd →
       LetInitR env scope ty init hd
 
@@ -81,11 +268,21 @@ theorem letHeadOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {
   | none =>
     rw [hl] at h
     simp only at h
-    cases he : effOf fuel env scope (some ty) init with
-    | none => rw [he] at h; simp [evalHead] at h
-    | some x =>
-      rw [he] at h
-      exact .eval (effOf_sound he) h
+    cases ht : tryLetHead fuel env scope init with
+    | some t =>
+      rw [ht] at h
+      simp only [Option.some.injEq] at h
+      subst h
+      obtain ⟨tr, rfl, k⟩ := tryLetHead_sound ht
+      exact .try k
+    | none =>
+      rw [ht] at h
+      simp only at h
+      cases he : effOf fuel env scope (some ty) init with
+      | none => rw [he] at h; simp [evalHead] at h
+      | some x =>
+        rw [he] at h
+        exact .eval (effOf_sound he) h
 
 /-- `return e;`: a raw slice in a function returning a slice (a slice local
 numbered by the value's first token, then its return), or else the value,
@@ -138,6 +335,7 @@ theorem returnOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {e
             | allocOf _ _ => cases hs
             | indexOf _ _ => cases hs
             | evalOf _ => cases hs
+            | tryOf _ => cases hs
   | none =>
     rw [hs] at h
     simp only at h
@@ -360,6 +558,7 @@ inductive CallStmtR (env : FrontEnv) (scope : List Local) (pf : CTree) : MStmt �
       Items (kid (kid pf 1) 1) [c] → EffR env scope (some .tyBool) c x → CallStmtR env scope pf (.mAssert x)
   | discard {x : MEff} : (PathCallForm pf ∨ MethodForm pf) → EffR env scope none pf x →
       CallStmtR env scope pf (.mDiscard x)
+  | try {tr : Tried} : TryCallR env scope pf tr → CallStmtR env scope pf (tryRest tr .mNop)
 
 theorem freeOf_sound {es : List SrcExpr} {m : MStmt} (h : freeOf (some es) = some m) :
     ∃ pointer size align k, es = [pointer, size, align] ∧ ShiftOf align k ∧ m = .mFree pointer size k := by
@@ -425,6 +624,15 @@ theorem callStmt_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {pf : 
       rcases c with c | c
       · exact .inl (isPathCall_sound c)
       · exact .inr (isMethodForm_sound c)
+  split at h
+  · rename_i _ _ _ c
+    cases ht : tryCallOf fuel env scope pf with
+    | none => rw [ht] at h; simp [tryStmt] at h
+    | some tr =>
+      rw [ht] at h
+      simp only [tryStmt, Option.some.injEq] at h
+      subst h
+      exact .try (tryCallOf_sound (isTryCall_sound c) ht)
   cases h
 
 /-- An expression statement: `target = value;`, `target op= value;`, or a
@@ -491,6 +699,13 @@ inductive StmtsR (env : FrontEnv) : List Local → List CTree → MStmt → Prop
       (kidToken s 1).text ∉ env.globals → FreshId scope ((kidToken s 1).start - env.base) →
       TyR env (kid (kid s 2) 1) t →
       LetInitR env scope t (kid (kid s 3) 1) hd →
+      StmtsR env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } :: scope) rest body →
+      letStmt ((kidToken s 1).start - env.base) t hd body = some m → StmtsR env scope (s :: rest) m
+  /-- `let x = init;`, x at init's own type. -/
+  | letUntyped {scope : List Local} {s : CTree} {rest : List CTree} {t : Ty} {hd : LetHead} {body m : MStmt} :
+      nodeProd s = pLetStmt → nodeProd (kid s 2) = pLetTypeNone → nodeProd (kid s 3) = pLetInit →
+      (kidToken s 1).text ∉ env.globals → FreshId scope ((kidToken s 1).start - env.base) →
+      UntypedR env scope (kid (kid s 3) 1) t hd →
       StmtsR env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } :: scope) rest body →
       letStmt ((kidToken s 1).start - env.base) t hd body = some m → StmtsR env scope (s :: rest) m
   | last {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s ≠ pLetStmt → StmtR env scope s m →
@@ -627,7 +842,25 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
                 (ihStmts hb) h
               rw [(member_iff _ _).2 mem] at ng
               cases ng
-      · cases h
+      · split at h
+        · rename_i _ c
+          simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
+          obtain ⟨⟨⟨lt, li⟩, ng⟩, fr⟩ := c
+          cases hu : untypedHead f env scope (kid (kid s 3) 1) with
+          | none => rw [hu] at h; cases h
+          | some u =>
+            rw [hu] at h
+            simp only [letBody] at h
+            cases hb : stmtsOf f env
+                ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := u.ty } :: scope) rest with
+            | none => rw [hb] at h; cases h
+            | some body =>
+              rw [hb] at h
+              refine .letUntyped pl lt li (fun mem => ?_) ((freshId_iff _ _).1 fr) (untypedHead_sound hu)
+                (ihStmts hb) h
+              rw [(member_iff _ _).2 mem] at ng
+              cases ng
+        · cases h
     · intro env scope s m h
       rw [stmtOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h

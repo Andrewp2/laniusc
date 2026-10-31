@@ -8,9 +8,9 @@ import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.matchLetHead
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.textSelf
+import Lanius.Mini.Frontend.P.tryLet
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.whileEvalOf
 import Lanius.Mini.Frontend.P.wideOf
@@ -78,7 +78,7 @@ def stmtFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (re
       match rest with
       | [] => stmtOf (fuel - 1) env scope s
       | next :: more => thenOf (stmtOf (fuel - 1) env scope s) (stmtsOf (fuel - 1) env scope rest)
-/-- `let x: ty = init;` (let_stmt -> Let LetIdent let_type let_init LetSemicolon). -/
+/-- `let x: ty = init;` and `let x = init;` (let_stmt -> Let LetIdent let_type_opt let_init LetSemicolon). -/
 def letFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (rest : List CTree) : Option MStmt :=
   if fuel = 0 then
     none
@@ -89,7 +89,12 @@ def letFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (res
       | none => none
       | some t => letOf (tok.start - env.base) t (letHeadOrEval (fuel - 1) env scope t (kid (kid s 3) 1)) (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) rest)
     else
-      none
+      if decide (nodeProd (kid s 2) = (87)) && decide (nodeProd (kid s 3) = (88)) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
+        match untypedHead (fuel - 1) env scope (kid (kid s 3) 1) with
+        | none => none
+        | some u => letBody (tok.start - env.base) u.ty u.head (stmtsOf (fuel - 1) env (({ name := tok.text, id := tok.start - env.base, ty := u.ty } : Local) :: scope) rest)
+      else
+        none
 /-- return, break, continue, if, while, for, block statements, and assignments. -/
 def stmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option MStmt :=
   if fuel = 0 then

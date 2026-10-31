@@ -53,6 +53,11 @@ public import Lanius.Mini.Frontend.P.ifEff
 public import Lanius.Mini.Frontend.P.structHead
 public import Lanius.Mini.Frontend.P.variantLetHead
 public import Lanius.Mini.Frontend.P.matchLetHead
+public import Lanius.Mini.Frontend.P.triedErr
+public import Lanius.Mini.Frontend.P.triedIf
+public import Lanius.Mini.Frontend.P.tryLocalOf
+public import Lanius.Mini.Frontend.P.tryLetHead
+public import Lanius.Mini.Frontend.P.tryLet
 public import Lanius.Mini.Frontend.P.whileEvalOf
 public import Lanius.Mini.Frontend.P.setIndexOrEval
 public import Lanius.Mini.Frontend.P.fieldTyAt
@@ -134,6 +139,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 123 parts, `.P0` on, in source order, whose bodies
+The definitions are in 128 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

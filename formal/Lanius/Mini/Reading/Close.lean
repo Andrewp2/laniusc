@@ -258,6 +258,17 @@ inductive StmtClosed (decls : Decls) (fns types : List Inst) : MStmt → SrcStmt
   | «continue» : StmtClosed decls fns types .mContinue .continue
   | «assert» {x : MEff} {a : SrcEff} :
       EffClosed decls fns types x a → StmtClosed decls fns types (.mAssert x) (.assert a)
+  | matchArmBound {sc : Nat} {sty : Ty} {e : Nat} {sss : List (List SrcType)} {k x : Nat} {ty : Ty} {s : SrcType}
+      {b r : MStmt} {c d : SrcStmt} :
+      LowerR decls types sty (.enum e sss) → LowerR decls types ty s → StmtClosed decls fns types b c →
+      StmtClosed decls fns types r d →
+      StmtClosed decls fns types (.mMatchArm sc sty k true x ty b r) (.matchArm sc e k true x s c d)
+  | unreachable {id : Nat} {ty : Ty} {s : SrcType} :
+      LowerR decls types ty s → StmtClosed decls fns types (.mUnreachable id ty) (.unreachable id s)
+  | matchArmUnbound {sc : Nat} {sty : Ty} {e : Nat} {sss : List (List SrcType)} {k x : Nat} {ty : Ty}
+      {b r : MStmt} {c d : SrcStmt} :
+      LowerR decls types sty (.enum e sss) → StmtClosed decls fns types b c → StmtClosed decls fns types r d →
+      StmtClosed decls fns types (.mMatchArm sc sty k false x ty b r) (.matchArm sc e k false x .unit c d)
 
 theorem closeStmt_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     ∀ (m : MStmt) (s : SrcStmt), closeStmt fuel t m = some s → StmtClosed t.decls t.fns t.types m s
@@ -380,6 +391,27 @@ theorem closeStmt_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     cases hx : closeEff fuel t x <;> simp [hx, assertClosed] at h
     subst h
     exact .assert (closeEff_sound ok _ _ hx)
+  | .mUnreachable id ty, s, h => by
+    simp only [closeStmt] at h
+    cases ht : closeTy fuel t ty <;> simp [ht, unreachableClosed] at h
+    subst h
+    exact .unreachable (closeTy_sound ok ht)
+  | .mMatchArm sc sty k true x ty b r, s, h => by
+    simp only [closeStmt] at h
+    cases he : srcEnumId (closeTy fuel t sty) <;> cases ht : closeTy fuel t ty <;>
+      cases hb : closeStmt fuel t b <;> cases hr : closeStmt fuel t r <;>
+      simp [he, ht, hb, hr, armTyClosed, matchArmClosed] at h
+    subst h
+    obtain ⟨sss, hs⟩ := srcEnumId_some he
+    exact .matchArmBound (closeTy_sound ok hs) (closeTy_sound ok ht) (closeStmt_sound ok _ _ hb)
+      (closeStmt_sound ok _ _ hr)
+  | .mMatchArm sc sty k false x ty b r, s, h => by
+    simp only [closeStmt] at h
+    cases he : srcEnumId (closeTy fuel t sty) <;> cases hb : closeStmt fuel t b <;>
+      cases hr : closeStmt fuel t r <;> simp [he, hb, hr, armTyClosed, matchArmClosed] at h
+    subst h
+    obtain ⟨sss, hs⟩ := srcEnumId_some he
+    exact .matchArmUnbound (closeTy_sound ok hs) (closeStmt_sound ok _ _ hb) (closeStmt_sound ok _ _ hr)
 
 /-! ## Functions -/
 

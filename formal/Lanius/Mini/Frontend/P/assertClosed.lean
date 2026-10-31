@@ -61,6 +61,8 @@ def closeStmt (fuel : Nat) (t : Tables) (m : MStmt) : Option SrcStmt :=
   | .mAssert x => assertClosed (closeEff fuel t x)
   | .mBreak => some SrcStmt.break
   | .mContinue => some SrcStmt.continue
+  | .mUnreachable id ty => unreachableClosed id (closeTy fuel t ty)
+  | .mMatchArm sc sty k bs x ty body rest => matchArmClosed sc (srcEnumId (closeTy fuel t sty)) k bs x (armTyClosed bs (closeTy fuel t ty)) (closeStmt fuel t body) (closeStmt fuel t rest)
 
 def consSrcParam (id : Nat) (ty : Option SrcType) (rest : Option (List SrcParam)) : Option (List SrcParam) :=
   match ty with
