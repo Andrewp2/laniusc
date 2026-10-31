@@ -22,12 +22,12 @@ open Lanius.Mini
 /-- The scalar types `==` compares as Core does on the pure side. -/
 def scalarTy : SrcType → Bool
   | .i32 | .bool | .uint _ | .isize | .unit => true
-  | .struct _ _ | .enum _ _ | .ptr | .slice _ | .char | .float _ | .sint _ => false
+  | .struct _ _ | .enum _ _ | .ptr | .slice _ | .char | .float _ | .sint _ | .array _ _ => false
 
 /-- The number types: Core's arithmetic, comparisons and casts take them. -/
 def numTy : SrcType → Bool
   | .i32 | .uint _ | .isize => true
-  | .bool | .struct _ _ | .enum _ _ | .ptr | .slice _ | .unit | .char | .float _ | .sint _ => false
+  | .bool | .struct _ _ | .enum _ _ | .ptr | .slice _ | .unit | .char | .float _ | .sint _ | .array _ _ => false
 
 /-- The type of `left op right`, on operands of one type: comparisons of
 numbers and `==` of scalars give `bool`, `&&` and `||` take `bool`s, and
@@ -96,13 +96,13 @@ theorem isBoolTy_some {o : Option SrcType} (h : isBoolTy o = true) : o = some .b
 /-- Field `index` of a struct that is not a box. -/
 def fieldTy (boxes : Boxes) : SrcType → Nat → Option SrcType
   | .struct id fs, index => if (boxes id).isNone then fs[index]? else none
-  | .i32, _ | .bool, _ | .uint _, _ | .enum _ _, _ | .ptr, _ | .slice _, _ | .unit, _ | .isize, _ | .char, _ | .float _, _ | .sint _, _ => none
+  | .i32, _ | .bool, _ | .uint _, _ | .enum _ _, _ | .ptr, _ | .slice _, _ | .unit, _ | .isize, _ | .char, _ | .float _, _ | .sint _, _ | .array _ _, _ => none
 
 /-- A struct literal of type `ty` from fields of types `ts`. -/
 def structTy (boxes : Boxes) (ty : SrcType) (ts : List SrcType) : Option SrcType :=
   match ty with
   | .struct id fs => if (boxes id).isNone && typesSame ts fs then some ty else none
-  | .i32 | .bool | .uint _ | .enum _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ => none
+  | .i32 | .bool | .uint _ | .enum _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ => none
 
 /-- Variant `k` of the enum type `ty` from a payload of types `ts`. -/
 def variantTy (ty : SrcType) (k : Nat) (ts : List SrcType) : Option SrcType :=
@@ -111,7 +111,7 @@ def variantTy (ty : SrcType) (k : Nat) (ts : List SrcType) : Option SrcType :=
     match variants[k]? with
     | some fs => if typesSame ts fs then some ty else none
     | none => none
-  | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ => none
+  | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ => none
 
 /-- A call of `callee` on arguments of types `ts`, a function not `outside`
 the pure fragment. -/
@@ -158,7 +158,7 @@ def effTy (tenv : TEnv) : SrcEff → Option SrcType
     (effTy tenv scrutinee).bind fun st =>
       match ety with
       | .enum _ variants => if st.same ety && armsOk tenv rty variants binders values then some rty else none
-      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ => none
+      | .i32 | .bool | .uint _ | .struct _ _ | .ptr | .slice _ | .unit | .isize | .char | .float _ | .sint _ | .array _ _ => none
   | .eDivide _ left right => (effTy tenv left).bind fun l => (effTy tenv right).bind (divTy l)
   | .eStride _ => none
 

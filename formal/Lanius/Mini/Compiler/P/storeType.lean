@@ -33,6 +33,7 @@ def storeType (ty : SrcType) (values : List Expr) (first : Nat) (base : Expr) (o
      | some tag => lowerThen (some (Stmt.storeWord MemWidth.m32 (addressBelow base offset) tag)) (storeCases tag values (first + 1) base (offset + 8) 0 variants))
   | .ptr => storeOne (widthOf ty) (addressBelow base offset) values[first]?
   | .slice element => storeOne (widthOf ty) (addressBelow base offset) values[first]?
+  | .array arrayElement arrayLength => none
   | .unit => storeOne (widthOf ty) (addressBelow base offset) values[first]?
   | .isize => storeOne (widthOf ty) (addressBelow base offset) values[first]?
   | .char => storeOne (widthOf ty) (addressBelow base offset) values[first]?
@@ -66,6 +67,7 @@ def withinLayout (depth : Nat) (ty : SrcType) : Bool :=
     | .enum id variants => withinPayloads (depth + 1) variants
     | .ptr => true
     | .slice element => false
+    | .array arrayElement arrayLength => false
     | .unit => false
     | .isize => true
     | .char => false

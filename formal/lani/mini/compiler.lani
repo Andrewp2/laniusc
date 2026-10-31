@@ -1559,6 +1559,9 @@ pub enum SrcType {
     Ptr,
     // Core's raw slice of this element type: one slot, its address
     Slice(Box<SrcType>),
+    // Core's array [element; length]: its elements one after another, laid
+    // out as a struct of length fields of the element type
+    Array(Box<SrcType>, usize),
     // the unit type: one slot whose bits do not matter
     Unit,
     // a signed 64-bit integer, its two's complement bits in one slot
@@ -1621,9 +1624,9 @@ pub enum SrcEff {
     ENeg(Box<SrcEff>),
     ENot(Box<SrcEff>),
     ECast(SrcType, Box<SrcEff>),
-    // slice[index] of a slice local
+    // slice[index] of a slice local, or array[index] of an array local
     EIndex(usize, Box<SrcEff>),
-    // a struct of type ty
+    // a struct of type ty, or an array of type ty (its elements)
     EStruct(SrcType, Box<List<SrcEff>>),
     // variant(payload) of the enum type ty
     EVariant(SrcType, usize, Box<List<SrcEff>>),
@@ -1765,6 +1768,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
@@ -1782,6 +1786,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
@@ -1799,6 +1804,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> true,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> true,
             SrcType::Char -> true,
@@ -1816,6 +1822,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
@@ -1833,6 +1840,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> true,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
@@ -1850,6 +1858,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> true,
             Isize -> false,
             SrcType::Char -> false,
@@ -1867,6 +1876,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> true,
             SrcType::Char -> false,
@@ -1884,6 +1894,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
             SrcType::Char -> true,
@@ -1901,6 +1912,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
@@ -1918,6 +1930,7 @@ impl SrcType {
             Enum(id, variants) -> None,
             Ptr -> None,
             Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
@@ -1935,6 +1948,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
@@ -1953,6 +1967,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> true,
             SrcType::Char -> false,
@@ -1970,6 +1985,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
@@ -1987,6 +2003,7 @@ impl SrcType {
             Enum(id, variants) -> false,
             Ptr -> false,
             Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> false,
             Unit -> false,
             Isize -> false,
             SrcType::Char -> false,
@@ -2005,6 +2022,7 @@ impl SrcType {
             Enum(id, variants) -> None,
             Ptr -> None,
             Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
@@ -2023,6 +2041,7 @@ impl SrcType {
             Enum(id, variants) -> None,
             Ptr -> None,
             Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
@@ -2041,6 +2060,7 @@ impl SrcType {
             Enum(id, variants) -> S32,
             Ptr -> U64,
             Slice(element) -> U64,
+            SrcType::Array(array_element, array_length) -> S32,
             Unit -> S32,
             Isize -> U64,
             SrcType::Char -> U64,
@@ -2065,6 +2085,7 @@ impl SrcType {
                 Enum(other_id, other_variants) -> false,
                 Ptr -> false,
                 Slice(other_element) -> false,
+                SrcType::Array(array_element, array_length) -> false,
                 Unit -> false,
                 Isize -> false,
                 SrcType::Char -> false,
@@ -2079,6 +2100,7 @@ impl SrcType {
                 Enum(other_id, other_variants) -> (id == other_id) && variants_same(unbox(variants), unbox(other_variants)),
                 Ptr -> false,
                 Slice(other_element) -> false,
+                SrcType::Array(array_element, array_length) -> false,
                 Unit -> false,
                 Isize -> false,
                 SrcType::Char -> false,
@@ -2094,6 +2116,22 @@ impl SrcType {
                 Enum(other_id, other_variants) -> false,
                 Ptr -> false,
                 Slice(other_element) -> unbox(element).same(unbox(other_element)),
+                SrcType::Array(array_element, array_length) -> false,
+                Unit -> false,
+                Isize -> false,
+                SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
+                Sint(other_sk) -> false,
+            },
+            SrcType::Array(array_element, array_length) -> match (other) {
+                I32 -> false,
+                Bool -> false,
+                Uint(other_kind) -> false,
+                Struct(other_id, other_fields) -> false,
+                Enum(other_id, other_variants) -> false,
+                Ptr -> false,
+                Slice(other_element) -> false,
+                SrcType::Array(other_element, other_length) -> (array_length == other_length) && unbox(array_element).same(unbox(other_element)),
                 Unit -> false,
                 Isize -> false,
                 SrcType::Char -> false,
@@ -2149,6 +2187,7 @@ impl SrcType {
             Enum(id, variants) -> plus(1, max_size(unbox(variants))),
             Ptr -> 1,
             Slice(element) -> 2,
+            SrcType::Array(array_element, array_length) -> times(array_length, unbox(array_element).size()),
             Unit -> 1,
             Isize -> 1,
             SrcType::Char -> 1,
@@ -2506,6 +2545,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
@@ -2626,6 +2666,7 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
         SrcType::Char -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
@@ -2643,6 +2684,7 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
         SrcType::Char -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
@@ -2662,6 +2704,7 @@ pub fn cast_to_isize(e: Typed) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> Some(e),
         SrcType::Char -> Some(Typed { expr: e.expr, ty: Isize }),
@@ -2726,6 +2769,7 @@ pub fn cast_to_float(t: FloatTy, e: Typed) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> int_to_float(t, U64, e.expr),
         SrcType::Char -> int_to_float(t, U64, e.expr),
@@ -2743,6 +2787,7 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> cast_to_isize(e),
         SrcType::Char -> None,
@@ -2855,6 +2900,7 @@ pub fn shift_width(ty: SrcType) -> u64 {
         Enum(id, variants) -> 64,
         Ptr -> 64,
         Slice(element) -> 64,
+        SrcType::Array(array_element, array_length) -> 64,
         Unit -> 64,
         Isize -> 64,
         SrcType::Char -> 32,
@@ -3031,6 +3077,15 @@ pub fn slot_vars(slot: usize, count: usize) -> List<Expr> {
     return cons(Var(slot), slot_vars(plus(slot, 1), minus(count, 1)));
 }
 
+// count copies of ty: an array's element types, which it takes slots as a
+// struct of count fields of type ty does
+pub fn repeat_type(ty: SrcType, count: usize) -> List<SrcType> {
+    if (count == 0) {
+        return empty();
+    }
+    return cons(ty, repeat_type(ty, minus(count, 1)));
+}
+
 pub fn copy_binding(binding: core::option::Option<Binding>, ty: SrcType) -> core::option::Option<List<Expr>> {
     return match (binding) {
         None -> None,
@@ -3070,6 +3125,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
@@ -3151,6 +3207,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> lower_struct_fields(scope, fields, repeat_type(unbox(array_element), array_length)),
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
@@ -3192,6 +3249,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         Enum(id, variants) -> lower_tagged(scope, unbox(variants), variant, payload),
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
@@ -3341,6 +3399,7 @@ pub fn lower_match_arm(scope: List<Binding>, binding: core::option::Option<Bindi
             Enum(id, variants) -> lower_arm_found(scope, b.slot, (id == enum_id) && (length(unbox(variants)) < 4294967296), variant, get(unbox(variants), variant), binds, binder, ty, next, body, rest),
             Ptr -> None,
             Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
@@ -3367,6 +3426,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         Enum(id, variants) -> lower_match_arms(scope, b.slot, id == enum_id, unbox(variants), arms, ty, target),
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
@@ -3473,6 +3533,7 @@ pub fn eval_field_of(scope: List<Binding>, e: SrcExpr, slot: usize, b: Binding, 
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
@@ -3670,6 +3731,7 @@ pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> Some(unbox(element)),
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
@@ -3707,6 +3769,7 @@ pub fn eval_struct(ty: SrcType, args: core::option::Option<EvaluatedArgs>) -> co
             Enum(id, variants) -> None,
             Ptr -> None,
             Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> eval_struct_of(ty, repeat_type(unbox(array_element), array_length), a),
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
@@ -3746,6 +3809,7 @@ pub fn eval_variant(ty: SrcType, variant: usize, slot: usize, args: core::option
             Enum(id, variants) -> eval_tagged(ty, unbox(variants), variant, slot, a),
             Ptr -> None,
             Slice(element) -> None,
+            SrcType::Array(array_element, array_length) -> None,
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
@@ -3913,6 +3977,7 @@ pub fn match_variants(ty: SrcType) -> List<List<SrcType>> {
         Enum(id, variants) -> unbox(variants),
         Ptr -> empty(),
         Slice(element) -> empty(),
+        SrcType::Array(array_element, array_length) -> empty(),
         Unit -> empty(),
         Isize -> empty(),
         SrcType::Char -> empty(),
@@ -4097,6 +4162,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
@@ -4310,6 +4376,7 @@ pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
         Enum(id, variants) -> None,
         Ptr -> Some(M64),
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> Some(M64),
         SrcType::Char -> None,
@@ -4350,6 +4417,7 @@ pub fn word_type(decls: SrcDecls, ty: SrcType) -> bool {
         Enum(id, variants) -> declared_variants(enum_variants(decls.enums, id), unbox(variants)) && length(unbox(variants)) > 0 && 4294967296 > length(unbox(variants)) && word_variants(decls, unbox(variants)),
         Ptr -> true,
         Slice(element) -> false,
+        SrcType::Array(array_element, array_length) -> false,
         Unit -> false,
         Isize -> true,
         SrcType::Char -> false,
@@ -4383,6 +4451,7 @@ pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
         Enum(id, variants) -> word_type(decls, element),
         Ptr -> false,
         Slice(inner) -> false,
+        SrcType::Array(array_element, array_length) -> false,
         Unit -> false,
         Isize -> false,
         SrcType::Char -> false,
@@ -4424,6 +4493,7 @@ pub fn load_type(ty: SrcType, target: usize, base: Expr, offset: usize, body: St
         Enum(id, variants) -> Seq(boxed(LoadWord(M32, target, address_below(base, offset))), boxed(Seq(boxed(load_cases(target, base, offset, 0, unbox(variants))), boxed(body)))),
         Ptr -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Slice(element) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        SrcType::Array(array_element, array_length) -> body,
         Unit -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Isize -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         SrcType::Char -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
@@ -4486,6 +4556,7 @@ pub fn store_type(ty: SrcType, values: List<Expr>, first: usize, base: Expr, off
         },
         Ptr -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Slice(element) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Isize -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         SrcType::Char -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
@@ -4530,6 +4601,7 @@ pub fn within_layout(depth: usize, ty: SrcType) -> bool {
         Enum(id, variants) -> within_payloads(plus(depth, 1), unbox(variants)),
         Ptr -> true,
         Slice(element) -> false,
+        SrcType::Array(array_element, array_length) -> false,
         Unit -> false,
         Isize -> true,
         SrcType::Char -> false,
@@ -4740,14 +4812,91 @@ pub fn eval_element(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, 
     };
 }
 
+// The copy of element k of the array whose elements, size slots each, start
+// at slot base, k the index in slot: it tests the index against k, k + 1,
+// ..., count elements from k, the last one untested.
+pub fn pick_element(slot: usize, base: usize, size: usize, k: usize, count: usize) -> Stmt {
+    let copy: Stmt = assign_from(slot, slot_vars(plus(base, times(k, size)), size), Skip);
+    if (count < 2) {
+        return copy;
+    }
+    return Stmt::Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(k as u64))), boxed(copy), boxed(pick_element(slot, base, size, plus(k, 1), minus(count, 1))));
+}
+
+// array[index] of an array local whose elements start at slot base: the
+// index in slot, checked below the length (an i32 index below 0 is a word of
+// at least 2^31), then the element it picks copied over it.
+pub fn eval_pick(base: usize, element: SrcType, count: usize, slot: usize, i: Evaluated) -> core::option::Option<Evaluated> {
+    if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && (0 < count) && (count < 2147483648) && (0 < element.size())) {
+        return Some(Evaluated { stmt: Seq(boxed(i.stmt), boxed(check_then(slot, Compare(U64, Lt, boxed(Var(slot)), boxed(Lit(count as u64))), pick_element(slot, base, element.size(), 0, count)))), ty: element });
+    }
+    return None;
+}
+
+pub fn eval_array_element(base: usize, element: SrcType, count: usize, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (index) {
+        None -> None,
+        Some(i) -> eval_pick(base, element, count, slot, i),
+    };
+}
+
+pub fn eval_array_index(b: Binding, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
+    return match (b.ty) {
+        I32 -> None,
+        Bool -> None,
+        Uint(kind) -> None,
+        Struct(id, fields) -> None,
+        Enum(id, variants) -> None,
+        Ptr -> None,
+        Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> eval_array_element(b.slot, unbox(array_element), array_length, slot, index),
+        Unit -> None,
+        Isize -> None,
+        SrcType::Char -> None,
+        SrcType::Float(ft) -> None,
+        Sint(sk) -> None,
+    };
+}
+
 pub fn eval_index(decls: SrcDecls, scope: List<Binding>, slice: usize, slot: usize, index: core::option::Option<Evaluated>) -> core::option::Option<Evaluated> {
     return match (lookup(scope, slice)) {
         None -> None,
         Some(b) -> match (element_of(b.ty)) {
-            None -> None,
+            None -> eval_array_index(b, slot, index),
             Some(element) -> eval_element(decls, b, element, slot, index),
         },
     };
+}
+
+// Whether the local id is an array.
+pub fn is_array_local(binding: core::option::Option<Binding>) -> bool {
+    return match (binding) {
+        None -> false,
+        Some(b) -> match (b.ty) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            SrcType::Array(array_element, array_length) -> true,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> false,
+            SrcType::Float(ft) -> false,
+            Sint(sk) -> false,
+        },
+    };
+}
+
+// let id: ty = local[index]; then body: an array's element as the let of
+// the effectful array[index] (LetEval of EIndex), a raw slice's loaded.
+pub fn lower_let_index_any(decls: SrcDecls, scope: List<Binding>, next: usize, ty: SrcType, slice: usize, index: SrcExpr, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (is_array_local(lookup(scope, slice))) {
+        return lower_let_eval(ty, eval_index(decls, scope, slice, next, eval_pure(scope, index, next)), body);
+    }
+    return guarded(next, guard_and(index.guard(scope), index_guard(scope, slice, index)), lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), body));
 }
 
 // A raw slice's stride as isize bits: element i + 1 of an i32 slice starts 4
@@ -4902,6 +5051,7 @@ pub fn set_field_eval_of(b: Binding, field: usize, slot: usize, v: Evaluated) ->
         Enum(id, variants) -> None,
         Ptr -> None,
         Slice(element) -> None,
+        SrcType::Array(array_element, array_length) -> None,
         Unit -> None,
         Isize -> None,
         SrcType::Char -> None,
@@ -4979,7 +5129,7 @@ impl SrcStmt {
             SetByte(pointer, offset, value) -> guarded(next, guard_and(pointer.guard(scope), guard_and(offset.guard(scope), value.guard(scope))), lower_store(lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), lower_as(scope, value, Uint(Uint8)))),
             Free(pointer, size, shift) -> guarded(next, guard_and(pointer.guard(scope), size.guard(scope)), lower_free(shift, lower_as(scope, pointer, Ptr), lower_as(scope, size, Uint(Usize)))),
             LetSlice(id, element, pointer, length, body) -> guarded(next, guard_and(pointer.guard(scope), length.guard(scope)), lower_let(next, lower_slice(decls, element, lower_as(scope, pointer, Ptr), lower_as(scope, length, I32)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Slice(boxed(element)) }, scope), plus(next, 2)))),
-            LetIndex(id, ty, slice, index, body) -> guarded(next, guard_and(index.guard(scope), index_guard(scope, slice, index)), lower_let_index(decls, next, lookup(scope, slice), ty, lower_index(scope, index), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size())))),
+            LetIndex(id, ty, slice, index, body) -> lower_let_index_any(decls, scope, next, ty, slice, index, unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetIndex(slice, index, value) -> guarded(next, guard_and(guard_and(index.guard(scope), index_guard(scope, slice, index)), value.guard(scope)), lower_set_index(decls, lookup(scope, slice), lower_index(scope, index), scope, value)),
             LetEval(id, ty, value, body) -> lower_let_eval(ty, value.eval(sigs, decls, scope, next), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: ty }, scope), plus(next, ty.size()))),
             SetEval(id, value) -> lower_set_eval(next, lookup(scope, id), value.eval(sigs, decls, scope, next)),
@@ -5290,6 +5440,7 @@ impl SrcType {
             Enum(id, variants) -> declare_enum(id, unbox(variants), declare_variants(unbox(variants), decls)),
             Ptr -> Some(decls),
             Slice(element) -> unbox(element).declare(decls),
+            SrcType::Array(array_element, array_length) -> unbox(array_element).declare(decls),
             Unit -> Some(decls),
             Isize -> Some(decls),
             SrcType::Char -> Some(decls),

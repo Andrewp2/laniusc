@@ -14,13 +14,13 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::checked_bound -/
-def src_checked_bound : SrcFunc := { params := [{ id := 14, ty := SrcType.bool }, { id := 24, ty := ty340 }], ret := ty340, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 14) (SrcStmt.return (SrcExpr.local 24)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty340 1 [])) }
+def src_checked_bound : SrcFunc := { params := [{ id := 14, ty := SrcType.bool }, { id := 24, ty := ty342 }], ret := ty342, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 14) (SrcStmt.return (SrcExpr.local 24)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty342 1 [])) }
 
 /-- mini::selfhost::checked_eff -/
 def src_checked_eff : SrcFunc := { params := [{ id := 12, ty := SrcType.bool }, { id := 22, ty := ty296 }], ret := ty296, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 12) (SrcStmt.return (SrcExpr.local 22)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty296 1 [])) }
 
 /-- mini::selfhost::checked_effs -/
-def src_checked_effs : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }, { id := 23, ty := ty330 }], ret := ty330, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.return (SrcExpr.local 23)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty330 1 [])) }
+def src_checked_effs : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }, { id := 23, ty := ty327 }], ret := ty327, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.return (SrcExpr.local 23)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty327 1 [])) }
 
 /-- mini::selfhost::checked_stmt -/
 def src_checked_stmt : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }, { id := 23, ty := ty288 }], ret := ty288, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.return (SrcExpr.local 23)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty288 1 [])) }

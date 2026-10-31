@@ -9,8 +9,8 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_lowerSetScalar
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_assignFrom
-public import Lanius.Faithful.Gen.SelfStmtC_copyBinding
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetValues
+public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 import all Lanius.Faithful.Gen.SelfSrcC_lowerSetValues
 import all Lanius.Mini.Compiler.P.lowerSetValues
 

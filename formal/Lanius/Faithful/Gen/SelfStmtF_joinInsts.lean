@@ -24,10 +24,6 @@ abbrev Stmt_cons_inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Inst} {x1 : Option (List Lanius.Mini.Inst)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepInst x0 v0 → (RepOption 190 (RepList 135 RepInst)) x1 v1 →
     (RepOption 190 (RepList 135 RepInst)) (Lanius.Mini.consInst x0 x1) w
 
-abbrev Stmt_decimal (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
-    (RepOption 201 RepNat) (Lanius.Mini.decimal x0 x1) w
-
 abbrev Stmt_decl_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Bool} {x3 : Nat} {x4 : List Lanius.Mini.Ty} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepBool x2 v2 → RepNat x3 v3 → (RepList 137 RepTy) x4 v4 →
     (RepOption 190 (RepList 135 RepInst)) (Lanius.Mini.declInsts x0 x1 x2 x3 x4) w
@@ -54,7 +50,7 @@ abbrev Stmt_notted (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_tail_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepOption 264 RepSrcOp) (Lanius.Mini.tailOp x0) w
+    (RepOption 266 RepSrcOp) (Lanius.Mini.tailOp x0) w
 
 abbrev Stmt_ty_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepTy x2 v2 →

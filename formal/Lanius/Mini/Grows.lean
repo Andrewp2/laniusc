@@ -36,7 +36,7 @@ import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
-import all Lanius.Mini.Compiler.P.copyBinding
+import all Lanius.Mini.Compiler.P.repeatType
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
@@ -68,6 +68,7 @@ import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.elementAddress
 import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord
 import all Lanius.Mini.Compiler.P.sigs
 import all Lanius.Mini.Compiler.P.lowerBody
@@ -1171,19 +1172,19 @@ theorem dealloc_grows {P : Core.Program} {k : Nat} {st : State} {pointer size : 
       · simp at run
     all_goals simp at run
 
-theorem structValue_state {P : Core.Program} {k : Nat} {st : State} {id : Nat} {es : List SrcExpr}
-    {v : Value} {st' : State} (run : evalExpr k P st (.structValue id (es.map SrcExpr.toCore)) = .done v st') :
+theorem structValue_state {P : Core.Program} {k : Nat} {st : State} {ty : SrcType} {es : List SrcExpr}
+    {v : Value} {st' : State} (run : evalExpr k P st (ty.literal (es.map SrcExpr.toCore)) = .done v st') :
     st' = st := by
   cases k with
-  | zero => simp [evalExpr] at run
+  | zero => cases ty <;> simp [SrcType.literal, evalExpr] at run
   | succ k =>
-    simp only [evalExpr] at run
-    split at run
-    · rename_i vs next argsRun
-      simp only [Semantics.Outcome.done.injEq] at run
-      rw [← run.2]
-      exact evalExprs_state es argsRun
-    all_goals simp at run
+    cases ty <;> simp only [SrcType.literal, evalExpr] at run <;> split at run <;>
+      first
+      | (rename_i vs next argsRun
+         simp only [Semantics.Outcome.done.injEq] at run
+         rw [← run.2]
+         exact evalExprs_state es argsRun)
+      | simp at run
 
 theorem enumValue_state {P : Core.Program} {k : Nat} {st : State} {id variant : Nat} {es : List SrcExpr}
     {v : Value} {st' : State}
@@ -1546,7 +1547,16 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
         | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.2]; exact Grows.refl _)
         | simp at run
     all_goals simp at run
-  | eStruct ty fields | eVariant ty variant fields =>
+  | eStruct ty fields =>
+    simp only [SrcEff.toCore] at run
+    cases ty <;> simp only [SrcType.literal, evalExpr] at run <;> split at run <;>
+      first
+      | (rename_i vs next argsRun
+         simp only [Semantics.Outcome.done.injEq] at run
+         rw [← run.2]
+         exact effs_grows fields ihe argsRun)
+      | simp at run
+  | eVariant ty variant fields =>
     simp only [SrcEff.toCore, evalExpr] at run
     split at run
     · rename_i vs next argsRun

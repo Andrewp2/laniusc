@@ -24,6 +24,7 @@ def isizeTy (t : SrcType) : Bool :=
   | .enum id variants => false
   | .ptr => false
   | .slice e => false
+  | .array e arrayLength => false
   | .unit => false
   | .isize => true
   | .char => false

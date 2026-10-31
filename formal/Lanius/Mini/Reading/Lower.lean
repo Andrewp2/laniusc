@@ -33,6 +33,7 @@ inductive LowerR (decls : Decls) (table : List Inst) : Ty → SrcType → Prop
   | float {ft : FloatTy} : LowerR decls table (.tyFloat ft) (.float ft)
   | sint {k : UintTy} : LowerR decls table (.tySint k) (.sint k)
   | slice {e : Ty} {s : SrcType} : LowerR decls table e s → LowerR decls table (.tySlice e) (.slice s)
+  | array {e : Ty} {n : Nat} {s : SrcType} : LowerR decls table e s → LowerR decls table (.tyArray e n) (.array s n)
   | struct {d : Nat} {args : List Ty} {t : TypeDecl} {k : Nat} {tys : List Ty} {ss : List SrcType} :
       decls.types[d]? = some t → t.isEnum = false → FirstWith table (· = ⟨d, args⟩) k ⟨d, args⟩ →
       FieldTys decls d args tys → LowerList decls table tys ss → LowerR decls table (.tyNamed d args) (.struct k ss)
@@ -63,6 +64,7 @@ inductive TyInsts (decls : Decls) : Ty → List Inst → Prop
   | float {ft : FloatTy} : TyInsts decls (.tyFloat ft) []
   | sint {k : UintTy} : TyInsts decls (.tySint k) []
   | slice {e : Ty} {xs : List Inst} : TyInsts decls e xs → TyInsts decls (.tySlice e) xs
+  | array {e : Ty} {n : Nat} {xs : List Inst} : TyInsts decls e xs → TyInsts decls (.tyArray e n) xs
   | struct {d : Nat} {args : List Ty} {t : TypeDecl} {tys : List Ty} {xs : List Inst} :
       decls.types[d]? = some t → t.isEnum = false → FieldTys decls d args tys → TysInsts decls tys xs →
       TyInsts decls (.tyNamed d args) (⟨d, args⟩ :: xs)
@@ -96,6 +98,7 @@ theorem sameTy_iff : ∀ (a b : Ty), sameTy a b = true ↔ a = b
   | .tyChar, b => by cases b <;> simp [sameTy]
   | .tyFloat f, b => by cases b <;> simp [sameTy, sameFloat, floatCode_inj]
   | .tySlice x, b => by cases b <;> simp [sameTy, sameTy_iff x]
+  | .tyArray x n, b => by cases b <;> simp [sameTy, sameTy_iff x, and_comm]
   | .tyNamed d args, b => by cases b <;> simp [sameTy, sameTys_iff args]
   | .tySint u, b => by cases b <;> simp [sameTy, uintCode_inj]
 theorem sameTys_iff : ∀ (a b : List Ty), sameTys a b = true ↔ a = b
@@ -198,6 +201,14 @@ theorem lowerSound : ∀ fuel, LowerSound fuel
           rw [he, Option.some.injEq] at h
           subst h
           exact .slice (ty_ih he)
+      | tyArray e n =>
+        simp only [arrayType] at h
+        cases he : lowerTy f decls table e with
+        | none => rw [he] at h; cases h
+        | some se =>
+          rw [he, Option.some.injEq] at h
+          subst h
+          exact .array (ty_ih he)
       | tyNamed d args => exact named_ih h
     · intro decls table d args s h
       rw [lowerNamed.eq_def] at h
@@ -339,6 +350,7 @@ theorem instsSound : ∀ fuel, InstsSound fuel
       | tyFloat ft => cases h; exact .float
       | tySint k => cases h; exact .sint
       | tySlice e => exact .slice (ty_ih h)
+      | tyArray e n => exact .array (ty_ih h)
       | tyNamed d args =>
         simp only [consInst] at h
         cases hn : namedInsts f decls d args with

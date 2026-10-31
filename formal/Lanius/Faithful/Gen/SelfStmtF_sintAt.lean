@@ -32,6 +32,10 @@ abbrev Stmt_payload_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Option (List (List Lanius.Mini.SrcType))} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 183 (RepList 76 (RepList 72 RepSrcType))) x0 v0 → RepNat x1 v1 →
     (RepOption 182 (RepList 72 RepSrcType)) (Lanius.Mini.payloadAt x0 x1) w
 
+abbrev Stmt_repeat_src (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → RepNat x1 v1 →
+    (RepList 72 RepSrcType) (Lanius.Mini.repeatSrc x0 x1) w
+
 abbrev Stmt_sint_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : BitVec 32} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepUintTy x0 v0 → RepI32 x1 v1 → RepSrcExpr x2 v2 →
     RepSrcExpr (Lanius.Mini.sintAt x0 x1 x2) w

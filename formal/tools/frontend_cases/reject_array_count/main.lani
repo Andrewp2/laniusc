@@ -1,0 +1,4 @@
+fn run(n: i32) -> i32 {
+    let q: [i32; 3] = [n, 2];
+    return q[0];
+}

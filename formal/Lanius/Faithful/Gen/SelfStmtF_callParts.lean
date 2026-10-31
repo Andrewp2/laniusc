@@ -42,7 +42,7 @@ abbrev Stmt_field_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_method_of_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option Lanius.Mini.Ty} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 203 RepTy) x2 v2 → (RepList 25 RepNat) x3 v3 →
-    (RepOption 270 RepFound) (Lanius.Mini.methodOfTy x0 x1 x2 x3) w
+    (RepOption 273 RepFound) (Lanius.Mini.methodOfTy x0 x1 x2 x3) w
 
 abbrev Stmt_projection (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {x1 : Lanius.Mini.Ty} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepDecls x0 v0 → RepTy x1 v1 → RepNat x2 v2 →

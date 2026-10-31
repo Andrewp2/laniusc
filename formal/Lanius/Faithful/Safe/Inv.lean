@@ -233,6 +233,21 @@ theorem structValue_trap_inv {id : Nat} {es : List Core.Expr} (h : evalExpr k P 
       exact ⟨j, rfl, run⟩
     all_goals simp at h
 
+/-- A literal (a struct value, or an array value at an array type) traps
+where its fields do. -/
+theorem literal_trap_inv {ty : SrcType} {es : List Core.Expr} (h : evalExpr k P st (ty.literal es) = .trapped r st') :
+    ∃ j, k = j + 1 ∧ evalExprs j P st es = .trapped r st' := by
+  cases k with
+  | zero => cases ty <;> simp [SrcType.literal, evalExpr] at h
+  | succ j =>
+    cases ty <;> simp only [SrcType.literal, evalExpr] at h <;> split at h <;>
+      first
+      | (rename_i reason s1 run
+         simp only [Semantics.Outcome.trapped.injEq] at h
+         obtain ⟨rfl, rfl⟩ := h
+         exact ⟨j, rfl, run⟩)
+      | simp at h
+
 theorem enumValue_trap_inv {id variant : Nat} {es : List Core.Expr}
     (h : evalExpr k P st (.enumValue id variant es) = .trapped r st') :
     ∃ j, k = j + 1 ∧ evalExprs j P st es = .trapped r st' := by

@@ -46,7 +46,7 @@ abbrev Stmt_compound_field_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat)
 
 abbrev Stmt_compound_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepOption 264 RepSrcOp) (Lanius.Mini.compoundOp x0) w
+    (RepOption 266 RepSrcOp) (Lanius.Mini.compoundOp x0) w
 
 abbrev Stmt_discard_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 246 RepMEff) x0 v0 →

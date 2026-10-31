@@ -162,6 +162,18 @@ theorem declAt_noDeclAt {env : FrontEnv} {ss : List Name} {d : Nat} (h : DeclAt 
 mutual
 theorem tyR_unique : ∀ {env : FrontEnv} {t : CTree} {a b : Ty}, TyR env t a → TyR env t b → a = b
   | _, _, _, _, .slice _ _ e, .slice _ _ e' => by rw [tyR_unique e e']
+  | _, _, _, _, .slice _ q _, .array _ q' _ _ => by rw [q] at q'; cases q'
+  | _, _, _, _, .array _ q _ _, .slice _ q' _ => by rw [q] at q'; cases q'
+  | _, _, _, _, .array _ _ e l, .array _ _ e' l' => by
+    rw [tyR_unique e e', Option.some.inj (l.2.2.symm.trans l'.2.2)]
+  | _, _, _, _, .array p .., .bare p' .. => by rw [p] at p'; cases p'
+  | _, _, _, _, .array p .., .bareAlias p' .. => by rw [p] at p'; cases p'
+  | _, _, _, _, .array p .., .applied p' .. => by rw [p] at p'; cases p'
+  | _, _, _, _, .array p .., .appliedAlias p' .. => by rw [p] at p'; cases p'
+  | _, _, _, _, .bare p .., .array p' .. => by rw [p] at p'; cases p'
+  | _, _, _, _, .bareAlias p .., .array p' .. => by rw [p] at p'; cases p'
+  | _, _, _, _, .applied p .., .array p' .. => by rw [p] at p'; cases p'
+  | _, _, _, _, .appliedAlias p .., .array p' .. => by rw [p] at p'; cases p'
   | _, _, _, _, .slice p _ _, .bare p' .. => by rw [p] at p'; cases p'
   | _, _, _, _, .slice p _ _, .bareAlias p' .. => by rw [p] at p'; cases p'
   | _, _, _, _, .slice p _ _, .applied p' .. => by rw [p] at p'; cases p'

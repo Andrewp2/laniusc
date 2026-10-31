@@ -39,6 +39,7 @@ def lowerFieldOf (b : Binding) (field : Nat) : Option Typed :=
   | .enum id variants => none
   | .ptr => none
   | .slice element => none
+  | .array arrayElement arrayLength => none
   | .unit => none
   | .isize => none
   | .char => none

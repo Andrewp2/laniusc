@@ -12,7 +12,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_lxFilterAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pAddTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pAndTail
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArgsMore
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArrayMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBitAnd
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pEnumTypeParam
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
@@ -54,15 +54,6 @@ theorem proof_cons_inst {prog : SrcProgram} {prims : Prims} {ix_cons_inst ix_con
   rw [pcall_succ np fn] at h
   simp only [src_cons_inst] at h
   faithful [Lanius.Mini.consInst]
-
-theorem step_decimal {prog : SrcProgram} {prims : Prims} {ix_decimal ix_unbox_of_mini_selfhost_List_usize ix_decimal_digit : Nat} (fn : prog.funcs[ix_decimal]? = some (src_decimal ix_unbox_of_mini_selfhost_List_usize ix_decimal_digit)) (np : prims.isPrim ix_decimal = false)
-    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n)) {n : Nat}
-    (ih_decimal_digit : Certified (Stmt_decimal_digit prog prims ix_decimal_digit n)) :
-    Stmt_decimal prog prims ix_decimal (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_decimal] at h
-  faithful [Lanius.Mini.decimal]
 
 theorem step_decl_insts {prog : SrcProgram} {prims : Prims} {ix_decl_insts ix_minus ix_field_tys ix_payload_tys ix_tys_insts ix_flat_payloads : Nat} (fn : prog.funcs[ix_decl_insts]? = some (src_decl_insts ix_minus ix_field_tys ix_payload_tys ix_tys_insts ix_flat_payloads)) (np : prims.isPrim ix_decl_insts = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))

@@ -3,13 +3,13 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.consTys
+import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isPathCall
-import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.noToken
-import Lanius.Mini.Frontend.P.pickTy
+import Lanius.Mini.Frontend.P.repeatEff
 import Lanius.Mini.Frontend.P.triedErr
 
 public section

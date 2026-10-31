@@ -169,6 +169,9 @@ pub enum SrcType {
     Ptr,
     // Core's raw slice of this element type: one slot, its address
     Slice(Box<SrcType>),
+    // Core's array [element; length]: its elements one after another, laid
+    // out as a struct of length fields of the element type
+    Array(Box<SrcType>, usize),
     // the unit type: one slot whose bits do not matter
     Unit,
     // a signed 64-bit integer, its two's complement bits in one slot
@@ -662,7 +665,9 @@ pub fn is_link(p: usize) -> bool {
         || p == p_enum_type_params_some() || p == p_enum_type_params_more() || p == p_enum_type_params_after_comma_more()
         || p == p_type_args_some() || p == p_type_args_more() || p == p_type_args_after_comma_more()
         || p == p_path_type_args_more() || p == p_path_type_args_after_comma_more()
-        || p == p_impl_methods_some() || p == p_impl_methods_more();
+        || p == p_impl_methods_some() || p == p_impl_methods_more()
+        || p == p_array_some() || p == p_array_more() || p == p_array_end()
+        || p == p_array_after_comma_more() || p == p_array_after_comma_trailing();
 }
 
 pub fn join_second(a: List<CTree>, second: core::option::Option<List<CTree>>) -> core::option::Option<List<CTree>> {
@@ -1084,6 +1089,8 @@ pub enum Ty {
     TySlice(Box<Ty>),
     TyNamed(usize, Box<List<Ty>>),
     TySint(UintTy),
+    // [element; length]
+    TyArray(Box<Ty>, usize),
 }
 
 // A declaration at type arguments: a type instance (the declaration is a
@@ -1850,6 +1857,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyChar -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
         },
@@ -1862,6 +1870,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyChar -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
         },
@@ -1874,6 +1883,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyChar -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
         },
@@ -1886,6 +1896,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyChar -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
         },
@@ -1898,6 +1909,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyChar -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
         },
@@ -1910,6 +1922,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyChar -> true,
             TyFloat(g) -> false,
             TySlice(f) -> false,
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
         },
@@ -1922,6 +1935,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyChar -> false,
             TyFloat(g) -> same_float(f, g),
             TySlice(f) -> false,
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
         },
@@ -1934,6 +1948,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyChar -> false,
             TyFloat(g) -> false,
             TySlice(f) -> same_ty(unbox(x), unbox(f)),
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
         },
@@ -1946,6 +1961,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyChar -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> (d == e) && same_tys(unbox(args), unbox(bs)),
             TySint(v) -> false,
         },
@@ -1958,8 +1974,22 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyChar -> false,
             TyFloat(g) -> false,
             TySlice(f) -> false,
+            TyArray(f, n) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> uint_code(u) == uint_code(v),
+        },
+        TyArray(x, n) -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TyIsize -> false,
+            TyChar -> false,
+            TyFloat(g) -> false,
+            TySlice(f) -> false,
+            TyArray(f, m) -> (n == m) && same_ty(unbox(x), unbox(f)),
+            TyNamed(e, bs) -> false,
+            TySint(v) -> false,
         },
     };
 }
@@ -2143,6 +2173,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         Enum(id, variants) -> None,
         Ptr -> Some(TyPtr),
         Slice(e) -> None,
+        SrcType::Array(e, array_length) -> None,
         Unit -> None,
         Isize -> Some(TyIsize),
         SrcType::Char -> Some(TyChar),
@@ -2161,6 +2192,7 @@ pub fn scalar_src(t: Ty) -> core::option::Option<SrcType> {
         TyChar -> Some(SrcType::Char),
         TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> None,
+        TyArray(e, n) -> None,
         TyNamed(d, args) -> None,
         TySint(k) -> Some(Sint(k)),
     };
@@ -2251,6 +2283,44 @@ pub fn slice_ty(element: core::option::Option<Ty>) -> core::option::Option<Ty> {
     };
 }
 
+// [element; length]
+pub fn array_ty(element: core::option::Option<Ty>, length: core::option::Option<usize>) -> core::option::Option<Ty> {
+    return match (element) {
+        None -> None,
+        Some(e) -> match (length) {
+            None -> None,
+            Some(n) -> Some(TyArray(boxed(e), n)),
+        },
+    };
+}
+
+// The value of a decimal literal below 2^31.
+pub fn decimal(text: List<usize>, acc: usize) -> core::option::Option<usize> {
+    if (acc > 2147483647) {
+        return None;
+    }
+    return match (text) {
+        Nil -> Some(acc),
+        Cons(b, rest) -> decimal_digit(b, unbox(rest), acc),
+    };
+}
+
+// extract: inline
+fn decimal_digit(db: usize, drest: List<usize>, dacc: usize) -> core::option::Option<usize> {
+    if (db >= 48 && 57 >= db) {
+        return decimal(drest, plus(times(dacc, 10), minus(db, 48)));
+    }
+    return None;
+}
+
+// An array length written as a decimal integer literal
+pub fn array_len(l: CTree) -> core::option::Option<usize> {
+    if (node_prod(l) == p_type_array_len_constant() && node_prod(kid(l, 0)) == p_generic_argument_integer()) {
+        return decimal(kid_token(kid(l, 0), 0).text, 0);
+    }
+    return None;
+}
+
 pub fn cons_ty_tail(t: Ty, tail: core::option::Option<List<Ty>>) -> core::option::Option<List<Ty>> {
     return match (tail) {
         None -> None,
@@ -2276,6 +2346,9 @@ pub fn ty_of(fuel: usize, env: FrontEnv, t: CTree) -> core::option::Option<Ty> {
     let path: CTree = kid(t, 0);
     if (node_prod(t) == p_type_array() && node_prod(kid(t, 2)) == p_type_slice_tail()) {
         return slice_ty(ty_of(f, env, kid(t, 1)));
+    }
+    if (node_prod(t) == p_type_array() && node_prod(kid(t, 2)) == p_type_array_tail()) {
+        return array_ty(ty_of(f, env, kid(t, 1)), array_len(kid(kid(t, 2), 1)));
     }
     if (node_prod(t) == p_type_ident() && node_prod(kid(t, 1)) == p_type_args_none()) {
         return bare_or_alias(f, env, type_path_spellings(f, kid(path, 0), kid(path, 1)));
@@ -2464,6 +2537,13 @@ pub fn slice_type(element: core::option::Option<SrcType>) -> core::option::Optio
     };
 }
 
+pub fn array_type(element: core::option::Option<SrcType>, length: usize) -> core::option::Option<SrcType> {
+    return match (element) {
+        None -> None,
+        Some(e) -> Some(SrcType::Array(boxed(e), length)),
+    };
+}
+
 pub fn struct_src(id: core::option::Option<usize>, fields: core::option::Option<List<SrcType>>) -> core::option::Option<SrcType> {
     return match (id) {
         None -> None,
@@ -2500,6 +2580,7 @@ pub fn lower_ty(fuel: usize, decls: Decls, table: List<Inst>, t: Ty) -> core::op
         TyChar -> Some(SrcType::Char),
         TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> slice_type(lower_ty(minus(fuel, 1), decls, table, unbox(e))),
+        TyArray(e, n) -> array_type(lower_ty(minus(fuel, 1), decls, table, unbox(e)), n),
         TyNamed(d, args) -> lower_named(minus(fuel, 1), decls, table, d, unbox(args)),
         TySint(k) -> Some(Sint(k)),
     };
@@ -2585,6 +2666,7 @@ pub fn ty_insts(fuel: usize, decls: Decls, t: Ty) -> core::option::Option<List<I
         TyChar -> Some(empty()),
         TyFloat(ft) -> Some(empty()),
         TySlice(e) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
+        TyArray(e, n) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
         TyNamed(d, args) -> cons_inst(Inst { decl: d, args: unbox(args) }, named_insts(minus(fuel, 1), decls, d, unbox(args))),
         TySint(k) -> Some(empty()),
     };
@@ -2699,25 +2781,6 @@ pub fn notted(e: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr>
     };
 }
 
-// The value of a decimal literal below 2^31.
-pub fn decimal(text: List<usize>, acc: usize) -> core::option::Option<usize> {
-    if (acc > 2147483647) {
-        return None;
-    }
-    return match (text) {
-        Nil -> Some(acc),
-        Cons(b, rest) -> decimal_digit(b, unbox(rest), acc),
-    };
-}
-
-// extract: inline
-fn decimal_digit(db: usize, drest: List<usize>, dacc: usize) -> core::option::Option<usize> {
-    if (db >= 48 && 57 >= db) {
-        return decimal(drest, plus(times(dacc, 10), minus(db, 48)));
-    }
-    return None;
-}
-
 // extract: inline
 fn int_in_range(iv: usize) -> core::option::Option<SrcExpr> {
     if (2147483647 >= iv) {
@@ -2754,6 +2817,7 @@ pub fn unit_ty(t: SrcType) -> bool {
         Enum(id, variants) -> false,
         Ptr -> false,
         Slice(e) -> false,
+        SrcType::Array(e, array_length) -> false,
         Unit -> true,
         Isize -> false,
         SrcType::Char -> false,
@@ -3368,6 +3432,7 @@ pub fn float_want(want: core::option::Option<SrcType>, t: SrcType, x: SrcExpr) -
             Enum(id, variants) -> float_pick(F32, t, x),
             Ptr -> float_pick(F32, t, x),
             Slice(e) -> float_pick(F32, t, x),
+            SrcType::Array(e, array_length) -> float_pick(F32, t, x),
             Unit -> float_pick(F32, t, x),
             Isize -> float_pick(F32, t, x),
             SrcType::Char -> float_pick(F32, t, x),
@@ -3388,6 +3453,7 @@ pub fn float_typed(t: Ty, s: SrcType, x: SrcExpr) -> core::option::Option<SrcExp
         TyChar -> None,
         TyFloat(ft) -> float_pick(ft, s, x),
         TySlice(y) -> None,
+        TyArray(y, n) -> None,
         TyNamed(d, args) -> None,
         TySint(u) -> None,
     };
@@ -3505,6 +3571,7 @@ pub fn field_index(env: FrontEnv, t: Ty, name: List<usize>) -> core::option::Opt
         TyChar -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
+        TyArray(e, n) -> None,
         TyNamed(d, args) -> field_in(get(env.decls.types, d), name),
         TySint(k) -> None,
     };
@@ -3691,6 +3758,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyChar -> None,
             TyFloat(ft) -> None,
             TySlice(x) -> None,
+            TyArray(x, n) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> sint_const(u, k),
         },
@@ -3703,6 +3771,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyChar -> None,
             TyFloat(ft) -> None,
             TySlice(x) -> None,
+            TyArray(x, n) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> None,
         },
@@ -3718,6 +3787,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyChar -> None,
             TyFloat(ft) -> negated_float(ft, unbox(x)),
             TySlice(y) -> None,
+            TyArray(y, n) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> neg_sint_const(u, unbox(x)),
         },
@@ -3734,6 +3804,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyChar -> Some(e),
             TyFloat(ft) -> None,
             TySlice(x) -> None,
+            TyArray(x, n) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> None,
         },
@@ -3816,6 +3887,7 @@ pub fn wide_of(ty: Ty, negative: bool, n: usize) -> core::option::Option<SrcExpr
         TyChar -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
+        TyArray(e, n) -> None,
         TyNamed(d, args) -> None,
         TySint(u) -> wide_sint(u, negative, n),
     };
@@ -4178,6 +4250,7 @@ pub fn struct_field_tys(fuel: usize, decls: Decls, t: Ty) -> core::option::Optio
         TyChar -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
+        TyArray(e, n) -> None,
         TyNamed(d, args) -> field_tys(fuel, decls, d, unbox(args)),
         TySint(k) -> None,
     };
@@ -4327,9 +4400,73 @@ pub fn slice_elem(t: Ty) -> core::option::Option<Ty> {
         TyChar -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> Some(unbox(e)),
+        TyArray(e, n) -> None,
         TyNamed(d, args) -> None,
         TySint(k) -> None,
     };
+}
+
+// The element type of a slice or an array: the type of x[i].
+pub fn index_elem(t: Ty) -> core::option::Option<Ty> {
+    return match (t) {
+        TyI32 -> None,
+        TyBool -> None,
+        TyUint(k) -> None,
+        TyPtr -> None,
+        TyIsize -> None,
+        TyChar -> None,
+        TyFloat(ft) -> None,
+        TySlice(e) -> Some(unbox(e)),
+        TyArray(e, n) -> Some(unbox(e)),
+        TyNamed(d, args) -> None,
+        TySint(k) -> None,
+    };
+}
+
+// An array type, its element type and its length.
+pub struct ArrayParts {
+    ty: Ty,
+    element: Ty,
+    count: usize,
+}
+
+pub fn array_parts(t: Ty) -> core::option::Option<ArrayParts> {
+    return match (t) {
+        TyI32 -> None,
+        TyBool -> None,
+        TyUint(k) -> None,
+        TyPtr -> None,
+        TyIsize -> None,
+        TyChar -> None,
+        TyFloat(ft) -> None,
+        TySlice(e) -> None,
+        TyArray(e, n) -> Some(ArrayParts { ty: t, element: unbox(e), count: n }),
+        TyNamed(d, args) -> None,
+        TySint(k) -> None,
+    };
+}
+
+pub fn expected_array(expected: core::option::Option<Ty>) -> core::option::Option<ArrayParts> {
+    return match (expected) {
+        None -> None,
+        Some(t) -> array_parts(t),
+    };
+}
+
+// count copies of t
+pub fn repeat_ty(t: Ty, count: usize) -> List<Ty> {
+    if (count == 0) {
+        return empty();
+    }
+    return cons(t, repeat_ty(t, minus(count, 1)));
+}
+
+// count copies of x
+pub fn repeat_eff(x: MEff, count: usize) -> List<MEff> {
+    if (count == 0) {
+        return empty();
+    }
+    return cons(x, repeat_eff(x, minus(count, 1)));
 }
 
 pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
@@ -4342,6 +4479,7 @@ pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
         TyChar -> None,
         TyFloat(ft) -> None,
         TySlice(e) -> None,
+        TyArray(e, n) -> None,
         TyNamed(d, args) -> Some(Inst { decl: d, args: unbox(args) }),
         TySint(k) -> None,
     };
@@ -4993,7 +5131,7 @@ pub fn inst_ret(fuel: usize, decls: Decls, inst: Inst) -> core::option::Option<T
 pub fn index_ty(l: core::option::Option<Local>) -> core::option::Option<Ty> {
     return match (l) {
         None -> None,
-        Some(x) -> slice_elem(x.ty),
+        Some(x) -> index_elem(x.ty),
     };
 }
 
@@ -5395,6 +5533,7 @@ pub fn is_usize(t: SrcType) -> bool {
         Enum(id, variants) -> false,
         Ptr -> false,
         Slice(e) -> false,
+        SrcType::Array(e, array_length) -> false,
         Unit -> false,
         Isize -> false,
         SrcType::Char -> false,
@@ -6180,6 +6319,28 @@ pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
     };
 }
 
+// The literal's elements, count of them.
+pub fn array_of(a: ArrayParts, values: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
+    return match (values) {
+        None -> None,
+        Some(vs) -> checked_eff(length(vs) == a.count, Some(XStruct(a.ty, boxed(vs)))),
+    };
+}
+
+// [x; n]: n copies of the pure element x.
+pub fn array_repeat_of(a: ArrayParts, written: core::option::Option<usize>, value: core::option::Option<MEff>) -> core::option::Option<MEff> {
+    return match (written) {
+        None -> None,
+        Some(n) -> match (value) {
+            None -> None,
+            Some(x) -> match (pure_part(x)) {
+                None -> None,
+                Some(e) -> checked_eff(n == a.count, Some(XStruct(a.ty, boxed(repeat_eff(XPure(e), a.count))))),
+            },
+        },
+    };
+}
+
 // A match arm's value: a call of a `-> !` function (`None -> panic()`) is
 // its instance at the match's type.
 pub fn diverge_arm(decls: Decls, expected: core::option::Option<Ty>, x: core::option::Option<MEff>) -> core::option::Option<MEff> {
@@ -6243,7 +6404,32 @@ pub fn eff_node(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::
     if (p == p_match_expr()) {
         return eff_match(f, env, scope, expected, c);
     }
+    if (p == p_array_lit()) {
+        return eff_array(f, env, scope, expected, kid(c, 1));
+    }
     return None;
+}
+
+// An array literal of the expected type [element; n]: n elements
+// [a, b, ...], or [x; n] of a pure element x, which stands for n copies of x.
+pub fn eff_array(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, elems: CTree) -> core::option::Option<MEff> {
+    if (fuel == 0) {
+        return None;
+    }
+    let f: usize = minus(fuel, 1);
+    if (node_prod(elems) == p_array_some() && node_prod(kid(elems, 1)) == p_array_repeat()) {
+        return match (expected_array(expected)) {
+            None -> None,
+            Some(a) -> array_repeat_of(a, decimal(kid_token(kid(kid(elems, 1), 1), 0).text, 0), eff_of(f, env, scope, Some(a.element), kid(elems, 0))),
+        };
+    }
+    return match (expected_array(expected)) {
+        None -> None,
+        Some(a) -> match (list_items(f, elems)) {
+            None -> None,
+            Some(items) -> array_of(a, eff_list(f, env, scope, Some(repeat_ty(a.element, a.count)), items)),
+        },
+    };
 }
 
 // acc op operand op operand ...
@@ -7131,6 +7317,7 @@ pub fn is_ptr_ty(t: Ty) -> bool {
         TyChar -> false,
         TyFloat(ft) -> false,
         TySlice(e) -> false,
+        TyArray(e, n) -> false,
         TyNamed(d, args) -> false,
         TySint(k) -> false,
     };
@@ -8444,6 +8631,7 @@ pub fn ty_known(table: List<Inst>, t: Ty) -> bool {
         TyChar -> true,
         TyFloat(ft) -> true,
         TySlice(e) -> ty_known(table, unbox(e)),
+        TyArray(e, n) -> ty_known(table, unbox(e)),
         TyNamed(d, args) -> inst_member(table, Inst { decl: d, args: unbox(args) }),
         TySint(k) -> true,
     };
@@ -8515,6 +8703,7 @@ pub fn close_ty(fuel: usize, t: Tables, ty: Ty) -> core::option::Option<SrcType>
         TyChar -> Some(SrcType::Char),
         TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> slice_type(close_ty(minus(fuel, 1), t, unbox(e))),
+        TyArray(e, n) -> array_type(close_ty(minus(fuel, 1), t, unbox(e)), n),
         TyNamed(d, args) -> close_named(fuel, t, d, unbox(args), inst_index(t.types, Inst { decl: d, args: unbox(args) }, 0)),
         TySint(k) -> Some(Sint(k)),
     };
@@ -8531,6 +8720,7 @@ pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usi
             Enum(id, variants) -> Some(id),
             Ptr -> None,
             Slice(e) -> None,
+            SrcType::Array(e, array_length) -> None,
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
@@ -9029,6 +9219,7 @@ pub fn isize_ty(t: SrcType) -> bool {
         Enum(id, variants) -> false,
         Ptr -> false,
         Slice(e) -> false,
+        SrcType::Array(e, array_length) -> false,
         Unit -> false,
         Isize -> true,
         SrcType::Char -> false,
@@ -9064,6 +9255,7 @@ pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
         Enum(id, variants) -> e,
         Ptr -> null_at(k, e),
         Slice(el) -> e,
+        SrcType::Array(el, array_length) -> e,
         Unit -> e,
         Isize -> Cast(Isize, boxed(e)),
         SrcType::Char -> e,
@@ -9095,6 +9287,14 @@ fn ty_local_at(tl: LocalTy, trest: List<LocalTy>, tid: usize) -> core::option::O
     return ty_local(trest, tid);
 }
 
+// count copies of t: an array literal's element types
+pub fn repeat_src(t: SrcType, count: usize) -> List<SrcType> {
+    if (count == 0) {
+        return empty();
+    }
+    return cons(t, repeat_src(t, minus(count, 1)));
+}
+
 pub fn src_fields(t: core::option::Option<SrcType>) -> core::option::Option<List<SrcType>> {
     return match (t) {
         None -> None,
@@ -9106,6 +9306,7 @@ pub fn src_fields(t: core::option::Option<SrcType>) -> core::option::Option<List
             Enum(id, variants) -> None,
             Ptr -> None,
             Slice(e) -> None,
+            SrcType::Array(e, array_length) -> Some(repeat_src(unbox(e), array_length)),
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
@@ -9126,6 +9327,7 @@ pub fn src_variants(t: core::option::Option<SrcType>) -> core::option::Option<Li
             Enum(id, variants) -> Some(unbox(variants)),
             Ptr -> None,
             Slice(e) -> None,
+            SrcType::Array(e, array_length) -> None,
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
@@ -9146,6 +9348,7 @@ pub fn src_element(t: core::option::Option<SrcType>) -> core::option::Option<Src
             Enum(id, variants) -> None,
             Ptr -> None,
             Slice(e) -> Some(unbox(e)),
+            SrcType::Array(e, array_length) -> Some(unbox(e)),
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
@@ -9298,6 +9501,7 @@ pub fn wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> SrcEx
             Enum(id, variants) -> e,
             Ptr -> e,
             Slice(el) -> e,
+            SrcType::Array(el, array_length) -> e,
             Unit -> e,
             Isize -> wide_isize_at(n, e),
             SrcType::Char -> e,
@@ -9343,6 +9547,7 @@ pub fn neg_wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> S
             Enum(id, variants) -> e,
             Ptr -> e,
             Slice(el) -> e,
+            SrcType::Array(el, array_length) -> e,
             Unit -> e,
             Isize -> neg_wide_isize(n, e),
             SrcType::Char -> e,
@@ -9389,6 +9594,7 @@ pub fn neg_least(want: core::option::Option<SrcType>, x: SrcExpr, d: SrcExpr) ->
             Enum(id, variants) -> d,
             Ptr -> d,
             Slice(el) -> d,
+            SrcType::Array(el, array_length) -> d,
             Unit -> d,
             Isize -> d,
             SrcType::Char -> d,
@@ -11312,6 +11518,46 @@ fn p_args_some() -> usize {
 }
 
 // extract: inline
+fn p_arm_block() -> usize {
+    return 326;
+}
+
+// extract: inline
+fn p_array_after_comma_more() -> usize {
+    return 183;
+}
+
+// extract: inline
+fn p_array_after_comma_trailing() -> usize {
+    return 184;
+}
+
+// extract: inline
+fn p_array_end() -> usize {
+    return 182;
+}
+
+// extract: inline
+fn p_array_lit() -> usize {
+    return 171;
+}
+
+// extract: inline
+fn p_array_more() -> usize {
+    return 181;
+}
+
+// extract: inline
+fn p_array_repeat() -> usize {
+    return 316;
+}
+
+// extract: inline
+fn p_array_some() -> usize {
+    return 180;
+}
+
+// extract: inline
 fn p_assign() -> usize {
     return 105;
 }
@@ -11612,6 +11858,11 @@ fn p_file() -> usize {
 }
 
 // extract: inline
+fn p_float() -> usize {
+    return 176;
+}
+
+// extract: inline
 fn p_fn() -> usize {
     return 11;
 }
@@ -11629,6 +11880,11 @@ fn p_for_stmt() -> usize {
 // extract: inline
 fn p_ge_tail() -> usize {
     return 141;
+}
+
+// extract: inline
+fn p_generic_argument_integer() -> usize {
+    return 296;
 }
 
 // extract: inline
@@ -11712,11 +11968,6 @@ fn p_int() -> usize {
 }
 
 // extract: inline
-fn p_float() -> usize {
-    return 176;
-}
-
-// extract: inline
 fn p_item_pub() -> usize {
     return 3;
 }
@@ -11749,11 +12000,6 @@ fn p_let_stmt() -> usize {
 // extract: inline
 fn p_let_type() -> usize {
     return 86;
-}
-
-// extract: inline
-fn p_arm_block() -> usize {
-    return 326;
 }
 
 // extract: inline
@@ -11992,11 +12238,6 @@ fn p_postfix_end() -> usize {
 }
 
 // extract: inline
-fn p_postfix_try() -> usize {
-    return 318;
-}
-
-// extract: inline
 fn p_postfix_index() -> usize {
     return 162;
 }
@@ -12004,6 +12245,11 @@ fn p_postfix_index() -> usize {
 // extract: inline
 fn p_postfix_member() -> usize {
     return 163;
+}
+
+// extract: inline
+fn p_postfix_try() -> usize {
+    return 318;
 }
 
 // extract: inline
@@ -12204,6 +12450,16 @@ fn p_type_args_some() -> usize {
 // extract: inline
 fn p_type_array() -> usize {
     return 70;
+}
+
+// extract: inline
+fn p_type_array_len_constant() -> usize {
+    return 291;
+}
+
+// extract: inline
+fn p_type_array_tail() -> usize {
+    return 283;
 }
 
 // extract: inline

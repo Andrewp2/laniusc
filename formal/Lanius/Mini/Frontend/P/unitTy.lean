@@ -18,6 +18,7 @@ def unitTy (t : SrcType) : Bool :=
   | .enum id variants => false
   | .ptr => false
   | .slice e => false
+  | .array e arrayLength => false
   | .unit => true
   | .isize => false
   | .char => false

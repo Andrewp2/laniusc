@@ -306,6 +306,12 @@ def resolve(mods, module, t, subst):
         return subst[t]
     if t in SCALARS or t in ('unit', '!'):
         return t
+    m = re.match(r'^\[\s*(.+?)\s*;\s*(\d+)\s*\]$', t)
+    if m:
+        # An array of scalars, by its written type `[T; N]`: its leaves are
+        # its elements.
+        inner = resolve(mods, module, m.group(1), subst)
+        return f'[{inner}; {int(m.group(2))}]' if inner in SCALARS and int(m.group(2)) > 0 else None
     m = re.match(r'^(?:core::option::)?Option<(.*)>$', t)
     if m:
         inner = resolve(mods, module, m.group(1), subst)
@@ -376,8 +382,17 @@ def variant_leaves(ps):
     return [(j, path, lty) for j, p in enumerate(ps) for path, lty in leaves(p)]
 
 
+def array_parts(ty):
+    """An array type's element type and length, or None."""
+    m = re.match(r'^\[(.+); (\d+)\]$', ty or '')
+    return (m.group(1), int(m.group(2))) if m else None
+
+
 def leaves(ty, path=''):
     """A type's scalar leaves: (field path, scalar type)."""
+    if array_parts(ty):
+        inner, n = array_parts(ty)
+        return [(f'{path}[{i}]', inner) for i in range(n)]
     if ty.startswith('struct:'):
         return [leaf for f, fty in STRUCTS[ty] for leaf in leaves(fty, f'{path}.{f}')]
     return [(path, ty)]
@@ -409,7 +424,7 @@ def struct_modules(ty):
 def testable(t):
     if t in SCALARS:
         return True
-    if (t or '').startswith('struct:'):
+    if (t or '').startswith('struct:') or array_parts(t):
         return all(lty in SCALARS for _, lty in leaves(t))
     m = re.match(r'^Option<(.*)>$', t or '')
     return bool(m) and m.group(1) in SCALARS
@@ -480,7 +495,7 @@ def arg_words(ty):
 
 def results_of(ret):
     """The parts of a result the wrapper can return, one wrapper each."""
-    if ret.startswith('struct:'):
+    if ret.startswith('struct:') or array_parts(ret):
         return [f'f{j}:{sub}' for j, (_, ty) in enumerate(leaves(ret)) for sub in results_of(ty)]
     if flat_enum(ret):
         return ['tag']
@@ -587,6 +602,11 @@ def wrapper_text(mods, t, part):
             names = [f'a{k}_{j}' for j in range(len(leaves(ty)))]
             wparams += [(n, lty) for n, (_, lty) in zip(names, leaves(ty))]
             setup.append(f'    let s{k}: {type_text(ty)} = {struct_value(ty, iter(names))};')
+            args.append(f's{k}')
+        elif array_parts(ty):
+            names = [f'a{k}_{j}' for j in range(len(leaves(ty)))]
+            wparams += [(n, lty) for n, (_, lty) in zip(names, leaves(ty))]
+            setup.append(f'    let s{k}: {ty} = [{", ".join(names)}];')
             args.append(f's{k}')
         else:
             wparams.append((f'a{k}', ty))

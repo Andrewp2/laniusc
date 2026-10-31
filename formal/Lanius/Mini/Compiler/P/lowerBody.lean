@@ -95,6 +95,7 @@ def SrcType.declare (self : SrcType) (decls : SrcDecls) : Option SrcDecls :=
   | .enum id variants => declareEnum id variants (declareVariants variants decls)
   | .ptr => some decls
   | .slice element => SrcType.declare element decls
+  | .array arrayElement arrayLength => SrcType.declare arrayElement decls
   | .unit => some decls
   | .isize => some decls
   | .char => some decls

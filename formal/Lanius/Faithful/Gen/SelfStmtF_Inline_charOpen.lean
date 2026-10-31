@@ -25,7 +25,7 @@ abbrev Stmt_char_open (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 223 RepSrcExpr) (Lanius.Mini.Inline.charOpen x0 x1) w
 
 abbrev Stmt_find_bind_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Bind} {x1 : List Lanius.Mini.Bind} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBind x0 v0 → (RepList 272 RepBind) x1 v1 → (RepList 25 RepNat) x2 v2 →
+  ∀ {x0 : Lanius.Mini.Bind} {x1 : List Lanius.Mini.Bind} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBind x0 v0 → (RepList 275 RepBind) x1 v1 → (RepList 25 RepNat) x2 v2 →
     (RepOption 203 RepTy) (Lanius.Mini.Inline.findBindAt x0 x1 x2) w
 
 abbrev Stmt_find_local_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

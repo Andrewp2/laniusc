@@ -78,6 +78,15 @@ theorem proof_p_file {prog : SrcProgram} {prims : Prims} {ix_p_file : Nat} (fn :
   simp only [src_p_file] at h
   faithful [Lanius.Mini.Inline.pFile]
 
+theorem proof_p_float {prog : SrcProgram} {prims : Prims} {ix_p_float : Nat} (fn : prog.funcs[ix_p_float]? = some (src_p_float)) (np : prims.isPrim ix_p_float = false) {n : Nat} :
+    Stmt_p_float prog prims ix_p_float n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_float] at h
+  faithful [Lanius.Mini.Inline.pFloat]
+
 theorem proof_p_fn {prog : SrcProgram} {prims : Prims} {ix_p_fn : Nat} (fn : prog.funcs[ix_p_fn]? = some (src_p_fn)) (np : prims.isPrim ix_p_fn = false) {n : Nat} :
     Stmt_p_fn prog prims ix_p_fn n := by
   intro w h
@@ -113,6 +122,15 @@ theorem proof_p_ge_tail {prog : SrcProgram} {prims : Prims} {ix_p_ge_tail : Nat}
   rw [pcall_succ np fn] at h
   simp only [src_p_ge_tail] at h
   faithful [Lanius.Mini.Inline.pGeTail]
+
+theorem proof_p_generic_argument_integer {prog : SrcProgram} {prims : Prims} {ix_p_generic_argument_integer : Nat} (fn : prog.funcs[ix_p_generic_argument_integer]? = some (src_p_generic_argument_integer)) (np : prims.isPrim ix_p_generic_argument_integer = false) {n : Nat} :
+    Stmt_p_generic_argument_integer prog prims ix_p_generic_argument_integer n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_generic_argument_integer] at h
+  faithful [Lanius.Mini.Inline.pGenericArgumentInteger]
 
 theorem proof_p_generic_argument_type {prog : SrcProgram} {prims : Prims} {ix_p_generic_argument_type : Nat} (fn : prog.funcs[ix_p_generic_argument_type]? = some (src_p_generic_argument_type)) (np : prims.isPrim ix_p_generic_argument_type = false) {n : Nat} :
     Stmt_p_generic_argument_type prog prims ix_p_generic_argument_type n := by

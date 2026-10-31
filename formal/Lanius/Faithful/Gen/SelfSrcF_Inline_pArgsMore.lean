@@ -22,50 +22,11 @@ def src_p_args_none : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usi
 /-- mini::selfhost::p_args_some -/
 def src_p_args_some : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000a6#64) }
 
-/-- mini::selfhost::p_assign -/
-def src_p_assign : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000069#64) }
+/-- mini::selfhost::p_arm_block -/
+def src_p_arm_block : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000146#64) }
 
-/-- mini::selfhost::p_assign_add -/
-def src_p_assign_add : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000006b#64) }
-
-/-- mini::selfhost::p_assign_band -/
-def src_p_assign_band : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000073#64) }
-
-/-- mini::selfhost::p_assign_bor -/
-def src_p_assign_bor : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000074#64) }
-
-/-- mini::selfhost::p_assign_div -/
-def src_p_assign_div : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000006e#64) }
-
-/-- mini::selfhost::p_assign_end -/
-def src_p_assign_end : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000075#64) }
-
-/-- mini::selfhost::p_assign_mod -/
-def src_p_assign_mod : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000006f#64) }
-
-/-- mini::selfhost::p_assign_mul -/
-def src_p_assign_mul : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000006d#64) }
-
-/-- mini::selfhost::p_assign_set -/
-def src_p_assign_set : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000006a#64) }
-
-/-- mini::selfhost::p_assign_shl -/
-def src_p_assign_shl : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000071#64) }
-
-/-- mini::selfhost::p_assign_shr -/
-def src_p_assign_shr : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000072#64) }
-
-/-- mini::selfhost::p_assign_sub -/
-def src_p_assign_sub : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000006c#64) }
-
-/-- mini::selfhost::p_assign_xor -/
-def src_p_assign_xor : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000070#64) }
-
-/-- mini::selfhost::p_band_tail -/
-def src_p_band_tail : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000083#64) }
-
-/-- mini::selfhost::p_base -/
-def src_p_base : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000009f#64) }
+/-- mini::selfhost::p_array_after_comma_more -/
+def src_p_array_after_comma_more : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000b7#64) }
 
 end
 

@@ -14,6 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_conjunction
 public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
+public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 public import Lanius.Faithful.Gen.SelfStmtC_shortCircuit
 import all Lanius.Faithful.Gen.SelfSrcC_shortCircuit
 import all Lanius.Mini.Compiler.P.shortCircuit
@@ -123,8 +124,10 @@ theorem proof_eval_right {prog : SrcProgram} {prims : Prims} {ix_eval_right ix_p
   simp only [src_eval_right] at h
   faithful [Lanius.Mini.evalRight]
 
-theorem proof_eval_struct {prog : SrcProgram} {prims : Prims} {ix_eval_struct ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_eval_struct_of : Nat} (fn : prog.funcs[ix_eval_struct]? = some (src_eval_struct ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_eval_struct_of)) (np : prims.isPrim ix_eval_struct = false)
+theorem proof_eval_struct {prog : SrcProgram} {prims : Prims} {ix_eval_struct ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_repeat_type ix_eval_struct_of : Nat} (fn : prog.funcs[ix_eval_struct]? = some (src_eval_struct ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_repeat_type ix_eval_struct_of)) (np : prims.isPrim ix_eval_struct = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
+    (ext_unbox_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_SrcType n))
+    (ext_repeat_type : Certified (∀ {n : Nat}, Stmt_repeat_type prog prims ix_repeat_type n))
     (ext_eval_struct_of : Certified (∀ {n : Nat}, Stmt_eval_struct_of prog prims ix_eval_struct_of n)) {n : Nat} :
     Stmt_eval_struct prog prims ix_eval_struct n := by
   intro x0 x1 v0 v1 w h r0 r1

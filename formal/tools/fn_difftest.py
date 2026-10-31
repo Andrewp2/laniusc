@@ -80,6 +80,11 @@ class Types:
             ctors = self.ex.enums[n]['ctors']
             leaves = [c for c in ctors if not any(p.strip_box().name == n for p in c[1])]
             ctor, payload, _ = rng.choice(leaves if depth <= 0 else ctors)
+            if n == 'SrcType' and ctor == 'Array':
+                # A short array: a random length would make the functions
+                # that walk an array's slots (its size is length * element
+                # size) run for minutes.
+                return ('enum', n, ctor, [self.gen(payload[0], rng, depth - 1), ('nat', rng.choice([0, 1, 2, 3, 5]))])
             return ('enum', n, ctor, [self.gen(p, rng, depth - 1) for p in payload])
         if n in self.ex.structs:
             fields = self.ex.structs[n]['fields']
@@ -403,7 +408,10 @@ def main():
     exclusive = set()  # struct types passed to a `&mut` parameter
     for label, lean_head, params, ret, call in chosen:
         for _ in range(args.per_fn):
-            values = [ty.gen(pt.value(), rng, 3) for _, pt in params]
+            # A `count` is how many copies a function makes (an array's
+            # elements): kept short, as an array's length is.
+            values = [('nat', rng.choice([0, 1, 2, 3, 5, 12])) if name == 'count' and pt.value().strip_box().name == 'usize'
+                      else ty.gen(pt.value(), rng, 3) for name, pt in params]
             lean_args = [ty.lean(v) for v in values]
             lean_term = f'({" ".join([lean_head] + lean_args)})'
             lets = [f'    let a{i}: {ty.lani_type(pt.value())} = {ty.lani(v, pt.value())};'

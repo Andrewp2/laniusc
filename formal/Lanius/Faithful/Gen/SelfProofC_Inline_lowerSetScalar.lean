@@ -68,13 +68,13 @@ theorem proof_checked_element {prog : SrcProgram} {prims : Prims} {ix_checked_el
   simp only [src_checked_element] at h
   faithful [Lanius.Mini.Inline.checkedElement]
 
-theorem proof_checked_load {prog : SrcProgram} {prims : Prims} {ix_checked_load ix_SrcType_size ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_word_element ix_load_type ix_element_base : Nat} (fn : prog.funcs[ix_checked_load]? = some (src_checked_load ix_SrcType_size ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_word_element ix_load_type ix_element_base)) (np : prims.isPrim ix_checked_load = false)
+theorem proof_checked_load {prog : SrcProgram} {prims : Prims} {ix_checked_load ix_SrcType_size ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_word_element ix_element_base ix_load_type : Nat} (fn : prog.funcs[ix_checked_load]? = some (src_checked_load ix_SrcType_size ix_boxed_of_mini_selfhost_SrcType ix_SrcType_same ix_word_element ix_element_base ix_load_type)) (np : prims.isPrim ix_checked_load = false)
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_boxed_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcType prog prims ix_boxed_of_mini_selfhost_SrcType n))
     (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
     (ext_word_element : Certified (∀ {n : Nat}, Stmt_word_element prog prims ix_word_element n))
-    (ext_load_type : Certified (∀ {n : Nat}, Stmt_load_type prog prims ix_load_type n))
-    (ext_element_base : Certified (∀ {n : Nat}, Stmt_element_base prog prims ix_element_base n)) {n : Nat} :
+    (ext_element_base : Certified (∀ {n : Nat}, Stmt_element_base prog prims ix_element_base n))
+    (ext_load_type : Certified (∀ {n : Nat}, Stmt_load_type prog prims ix_load_type n)) {n : Nat} :
     Stmt_checked_load prog prims ix_checked_load n := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
   rcases n with _ | n

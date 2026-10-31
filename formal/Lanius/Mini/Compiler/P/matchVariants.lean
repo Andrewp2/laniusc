@@ -28,6 +28,7 @@ def matchVariants (ty : SrcType) : List (List SrcType) :=
   | .enum id variants => variants
   | .ptr => []
   | .slice element => []
+  | .array arrayElement arrayLength => []
   | .unit => []
   | .isize => []
   | .char => []

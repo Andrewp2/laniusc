@@ -268,6 +268,8 @@ inductive SrcType where
   | ptr : SrcType
   /-- Core's raw slice of this element type: one slot, its address -/
   | slice : SrcType → SrcType
+  /-- Core's array [element; length]: its elements one after another, laid out as a struct of length fields of the element type -/
+  | array : SrcType → Nat → SrcType
   /-- the unit type: one slot whose bits do not matter -/
   | unit : SrcType
   /-- a signed 64-bit integer, its two's complement bits in one slot -/
@@ -341,9 +343,9 @@ inductive SrcEff where
   | eNeg : SrcEff → SrcEff
   | eNot : SrcEff → SrcEff
   | eCast : SrcType → SrcEff → SrcEff
-  /-- slice[index] of a slice local -/
+  /-- slice[index] of a slice local, or array[index] of an array local -/
   | eIndex : Nat → SrcEff → SrcEff
-  /-- a struct of type ty -/
+  /-- a struct of type ty, or an array of type ty (its elements) -/
   | eStruct : SrcType → (List SrcEff) → SrcEff
   /-- variant(payload) of the enum type ty -/
   | eVariant : SrcType → Nat → (List SrcEff) → SrcEff

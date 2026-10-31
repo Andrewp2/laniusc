@@ -10,7 +10,7 @@ import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.joinInsts
 import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.noToken
-import Lanius.Mini.Frontend.P.pickTy
+import Lanius.Mini.Frontend.P.repeatEff
 import Lanius.Mini.Frontend.P.scalarOf
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.xDivideOf

@@ -42,6 +42,8 @@ inductive TypeDeclared (P : Core.Program) : SrcType → Prop where
       (found : P.enumeration? id = some ⟨id, variants.map (List.map SrcType.toCore)⟩)
       (inner : ∀ fs ∈ variants, ∀ f ∈ fs, TypeDeclared P f) : TypeDeclared P (.enum id variants)
   | slice {element : SrcType} (inner : TypeDeclared P element) : TypeDeclared P (.slice element)
+  | array {element : SrcType} {length : Nat} (inner : TypeDeclared P element) :
+      TypeDeclared P (.array element length)
   | unit : TypeDeclared P .unit
   | isize : TypeDeclared P .isize
   | char : TypeDeclared P .char
@@ -197,6 +199,9 @@ theorem same_toCore : ∀ {a b : SrcType}, a.same b = true → a.toCore = b.toCo
   | .slice element, b, h => by
     cases b <;> simp only [SrcType.same, Bool.false_eq_true] at h
     simp only [SrcType.toCore, same_toCore h]
+  | .array element n, b, h => by
+    cases b <;> simp only [SrcType.same, Bool.and_eq_true, decide_eq_true_eq, Bool.false_eq_true] at h
+    simp only [SrcType.toCore, h.1, same_toCore h.2]
   | .unit, b, h => by
     cases b <;> simp_all [SrcType.same, SrcType.isUnit]
   | .isize, b, h => by
@@ -250,6 +255,7 @@ theorem equalityTy {ty : SrcType} (scalar : ty.isScalar = true) : Typing.Equalit
   | struct => simp [SrcType.isScalar] at scalar
   | enum => simp [SrcType.isScalar] at scalar
   | slice => simp [SrcType.isScalar] at scalar
+  | array => simp [SrcType.isScalar] at scalar
   | unit => simp [SrcType.isScalar] at scalar
   | isize => exact .signed _
   | char => exact .character
@@ -410,6 +416,7 @@ theorem shiftTy_of {ty : SrcType} (int : ty.isInteger = true) : Typing.ShiftTy t
   | enum => simp [SrcType.isInteger] at int
   | ptr => simp [SrcType.isInteger] at int
   | slice => simp [SrcType.isInteger] at int
+  | array => simp [SrcType.isInteger] at int
 
 /-- A shift by an amount of any integer type keeps its left operand's type. -/
 theorem lowerShift_typed {op : BinOp} {cop : Core.BinaryOp} {l r t : Typed}
@@ -816,6 +823,7 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       | enum => simp [castTo] at h
       | ptr => simp [castTo] at h
       | slice => simp [castTo] at h
+      | array => simp [castTo] at h
       | char => simp [castTo] at h
       | unit => simp [castTo] at h
       | float ft =>
@@ -939,17 +947,40 @@ theorem lowerCall_typed {P : Core.Program} (target : P.target = Core.Target.x86_
 
 /-! ## Struct and enum values -/
 
+theorem exprsHaveTypes_length {P : Core.Program} {ctx : Typing.Context} :
+    ∀ {es : List Core.Expr} {ts : List Core.Ty}, ExprsHaveTypes P ctx es ts → ts.length = es.length
+  | _, _, .nil => rfl
+  | _, _, .cons _ tail => by simp [exprsHaveTypes_length tail]
+
+/-- Core's array literal of `n` elements of `e`'s type, from expressions of
+those types. -/
+theorem array_typed {P : Core.Program} {ctx : Typing.Context} {e : SrcType} {n : Nat} {es : List Core.Expr}
+    (typed : ExprsHaveTypes P ctx es ((List.replicate n e).map SrcType.toCore)) :
+    ExprHasType P ctx ((SrcType.array e n).literal es) (SrcType.array e n).toCore := by
+  have len := exprsHaveTypes_length typed
+  simp only [List.length_map, List.length_replicate] at len
+  subst len
+  rw [List.map_replicate] at typed
+  exact .array typed
+
 theorem lowerLiteral_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {ty : SrcType}
     (declared : TypeDeclared P ty) {fields : List SrcExpr} {xs : List Expr}
     (h : lowerLiteral scope ty fields = some xs) :
-    ExprHasType P ctx (.structValue ty.typeId (fields.map SrcExpr.toCore)) ty.toCore := by
+    ExprHasType P ctx (ty.literal (fields.map SrcExpr.toCore)) ty.toCore := by
   cases ty with
   | struct sid types =>
     simp only [lowerLiteral, lowerStructFields] at h
     split at h
     · simp at h
     · exact .structValue _ (declared_struct declared).1 (lowerArgs_typed target ok _ _ h)
+  | array e n =>
+    simp only [lowerLiteral, lowerStructFields] at h
+    split at h
+    · simp at h
+    · have typed := lowerArgs_typed target ok _ _ h
+      rw [repeatType_eq] at typed
+      exact array_typed typed
   | i32 => simp [lowerLiteral] at h
   | bool => simp [lowerLiteral] at h
   | uint => simp [lowerLiteral] at h
@@ -988,6 +1019,7 @@ theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target
   | struct => simp [lowerEnumValue] at h
   | ptr => simp [lowerEnumValue] at h
   | slice => simp [lowerEnumValue] at h
+  | array => simp [lowerEnumValue] at h
   | unit => simp [lowerEnumValue] at h
   | isize => simp [lowerEnumValue] at h
   | char => simp [lowerEnumValue] at h
@@ -1094,6 +1126,7 @@ theorem lowerMatch_typed {P : Core.Program} (target : P.target = Core.Target.x86
     · simp at h
     · simp at h
     · simp at h
+    · simp at h
 
 /-! ## Statements -/
 
@@ -1120,7 +1153,7 @@ theorem wordElement_kind {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = t
   cases e with
   | struct id fields => exact .inl ⟨id, fields, rfl⟩
   | enum id variants => exact .inr ⟨id, variants, rfl⟩
-  | i32 | bool | uint | ptr | slice | unit | isize | char | float | sint => simp [wordElement] at h
+  | i32 | bool | uint | ptr | slice | array | unit | isize | char | float | sint => simp [wordElement] at h
 
 theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} {xs : List Expr}
     (h : lowerSlice ds element p l = some xs) :
@@ -1275,6 +1308,7 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
   | enum => simp [castTo] at h
   | ptr => simp [castTo] at h
   | slice => simp [castTo] at h
+  | array => simp [castTo] at h
   | char => simp [castTo] at h
   | float ft => exact castToFloat_typed inner h
   | unit => simp [castTo] at h
@@ -1525,7 +1559,16 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
     · simp at h
     · rename_i b found
       split at h
-      · simp at h
+      · obtain ⟨e, n, i, bty, hi, cond, -, -, -, rfl⟩ := evalArrayIndex_some h
+        have typedIndex := SrcEff.eval_typed target sigsOk index ok (by simpa [SrcEff.types] using dd) hi
+        have inCtx := (ok slice b found).1
+        rw [bty] at inCtx
+        have integer : Typing.IntegerTy i.ty.toCore := by
+          simp only [Bool.or_eq_true] at cond
+          rcases cond with c | c
+          · rw [eq_i32 c]; exact .signed _
+          · rw [eq_uint c]; exact .unsigned _
+        exact .indexArray (.local inCtx) typedIndex integer
       · rename_i element he
         simp only [evalElement] at h
         split at h
@@ -1582,6 +1625,16 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           rw [typesSame_toCore checks.1] at typedArgs
           exact .structValue _ (declared_struct declared).1 typedArgs
         · simp at h
+      | array e n =>
+        simp only [evalStructOf] at h
+        split at h
+        · rename_i checks
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+          simp only [Option.some.injEq] at h
+          subst h
+          rw [typesSame_toCore checks.1, repeatType_eq] at typedArgs
+          exact array_typed typedArgs
+        · simp at h
       | i32 => simp at h
       | bool => simp at h
       | uint => simp at h
@@ -1622,6 +1675,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | struct => simp at h
       | ptr => simp at h
       | slice => simp at h
+      | array => simp at h
       | unit => simp at h
       | isize => simp at h
       | char => simp at h
@@ -1657,6 +1711,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           | struct => cases values <;> simp [matchVariants, evalArms] at ha
           | ptr => cases values <;> simp [matchVariants, evalArms] at ha
           | slice => cases values <;> simp [matchVariants, evalArms] at ha
+          | array => cases values <;> simp [matchVariants, evalArms] at ha
           | unit => cases values <;> simp [matchVariants, evalArms] at ha
           | isize => cases values <;> simp [matchVariants, evalArms] at ha
           | char => cases values <;> simp [matchVariants, evalArms] at ha
@@ -2076,7 +2131,24 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
               d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
   | .letIndex id ty slice index body, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.Declared] at d
-    simp only [SrcStmt.lower] at h
+    simp only [SrcStmt.lower, lowerLetIndexAny] at h
+    split at h
+    case isTrue =>
+      simp only [lowerLetEval] at h
+      split at h
+      · simp at h
+      · rename_i v hv
+        split at h
+        · simp at h
+        · rename_i b hb
+          simp only [evalSame] at h
+          split at h
+          · rename_i same
+            have typed := SrcEff.eval_typed target sigsOk (sigs := sigs) (decls := decls) (.eIndex slice (.ePure index)) ok
+              (by simp [SrcEff.types]) (by simp only [SrcEff.eval]; exact hv)
+            rw [same_toCore same] at typed
+            exact .letLocal typed (SrcStmt.lower_typed target sigsOk body (ok.cons d.1) d.2 (fun e => bo (by simp [SrcStmt.breaksOut, e])) hb)
+          · simp at h
     obtain ⟨_, h, -⟩ := guarded_some h
     simp only [lowerLetIndex] at h
     split at h
@@ -2644,6 +2716,10 @@ theorem SrcType.declare_sound : ∀ (ty : SrcType) {d d' : SrcDecls}, ty.declare
     simp only [SrcType.declare] at h
     obtain ⟨ext, declared⟩ := SrcType.declare_sound element h
     exact ⟨ext, fun extD agrees => .slice (declared extD agrees)⟩
+  | .array element _, d, d', h => by
+    simp only [SrcType.declare] at h
+    obtain ⟨ext, declared⟩ := SrcType.declare_sound element h
+    exact ⟨ext, fun extD agrees => .array (declared extD agrees)⟩
   | .unit, _, _, h => by
     simp only [SrcType.declare, Option.some.injEq] at h
     subst h

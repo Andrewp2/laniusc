@@ -1176,6 +1176,123 @@ theorem eval_stride {k slice : Nat} (ok : evalStride sp.decls scope slice slot =
     rw [stride_word_bits (by simpa [NativeLayout.maxWords] using small)]
     rfl
 
+theorem fieldsHold_replicate_get {e : SrcType} : ∀ {n : Nat} {vs : List Value} {env : Env} {slot pos : Nat}
+    {v : Value}, FieldsHold (List.replicate n e) vs env slot → vs[pos]? = some v →
+      e.HoldsAt v env (slot + pos * e.size)
+  | 0, _, _, _, _, _, h, found => by
+    cases h
+    simp at found
+  | n + 1, _, _, slot, pos, _, h, found => by
+    rw [List.replicate_succ] at h
+    cases h with
+    | cons head rest =>
+      cases pos with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at found
+        subst found
+        simpa using head
+      | succ pos =>
+        simp only [List.getElem?_cons_succ] at found
+        have := fieldsHold_replicate_get rest found
+        rw [show slot + (pos + 1) * e.size = slot + e.size + pos * e.size by rw [Nat.succ_mul]; omega]
+        exact this
+
+theorem pickElement_exec {mp : Program} {d : Nat} {hp : Heap} {out : Outcome} {slot base size pos : Nat} {env : Env}
+    (at_ : (env slot).toNat = pos)
+    (exec : Exec mp d (env.setFrom slot (slotVars (base + pos * size) size)) hp .skip out) :
+    ∀ (count k : Nat), k ≤ pos → pos < k + count → Exec mp d env hp (pickElement slot base size k count) out := by
+  intro count
+  induction count with
+  | zero => intro k le lt; omega
+  | succ count ih =>
+    intro k le lt
+    rw [pickElement]
+    split
+    · have : pos = k := by omega
+      subst this
+      exact assignFrom_exec _ slot exec
+    · by_cases eq : pos = k
+      · subst eq
+        refine .ifTrue ?_ (assignFrom_exec _ slot exec)
+        have : env slot = BitVec.ofNat 64 pos := by rw [← at_]; simp
+        simp [Expr.eval, Word.holds, CmpOp.holdsU, this]
+      · refine .ifFalse ?_ ?_
+        · have small := (env slot).isLt
+          have ne : env slot ≠ BitVec.ofNat 64 k := by
+            intro h
+            have := congrArg BitVec.toNat h
+            rw [BitVec.toNat_ofNat, at_, Nat.mod_eq_of_lt (by omega)] at this
+            exact eq this
+          simp [Expr.eval, Word.holds, CmpOp.holdsU, ne]
+        · exact ih (k + 1) (by omega) (by omega)
+
+theorem eval_index_array {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx : Core.Expr}
+    {vs : List Value} {v : Value} {st1 : State}
+    (base : evalExpr (k + 1) P st (.local slice) = .done (.array vs) st)
+    (run : evalExpr (k + 2) P st (.index (.local slice) idx) = .done v st1) :
+    ∃ iv pos, evalExpr (k + 1) P st idx = .done iv st1 ∧ Semantics.integerIndex iv = .ok pos ∧
+      vs[pos]? = some v := by
+  simp only [evalExpr] at run base
+  rw [base] at run
+  simp only at run
+  split at run
+  · rename_i iv afterIndex indexRun
+    split at run
+    · simp at run
+    · rename_i pos posOk
+      split at run
+      · rename_i value read
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        exact ⟨iv, pos, indexRun, posOk, read⟩
+      · simp at run
+  all_goals simp at run
+
+/-- `array[index]` of an array local: the index in `slot`, checked below
+the length, then the element it picks copied over it. -/
+theorem eval_arrayIndex {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {index : SrcEff} {b : Binding}
+    (found : lookup scope slice = some b)
+    (ok : evalArrayIndex b slot (index.eval (sigs sp.funcs) sp.decls scope slot) = some ev)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
+    (hc : HeapCorr st.heap st.world hp)
+    (run : evalExpr (k + 2) sp.toCore st (.index (.local slice) index.toCore) = .done v st')
+    (bound : st'.heap.nextAddress ≤ hp.limit) :
+    Evaluates mp hp slot st env ev v st' := by
+  obtain ⟨e, n, i, bty, indexOk, kind, -, nsmall, esize, rfl⟩ := evalArrayIndex_some ok
+  obtain ⟨w, localRun, holdsW⟩ := corr.local found k sp.toCore
+  rw [bty] at holdsW
+  cases holdsW with
+  | @array _ _ vs _ _ elems =>
+  obtain ⟨iv, pos, indexRun, posOk, read⟩ := eval_index_array localRun run
+  obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
+    ihe indexOk corr fr fresh hc indexRun bound
+  have scalar : i.ty.isScalar = true := by
+    cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+  have posEq := index_toNat (t := { expr := .var slot, ty := i.ty }) kind (holds_var holds1 scalar) posOk
+  simp only [Expr.eval] at posEq
+  have lt : pos < n := by
+    have := (List.getElem?_eq_some_iff.mp read).1
+    rwa [elems.length, List.length_replicate] at this
+  have held := fieldsHold_replicate_get elems read
+  have room : b.slot + n * e.size ≤ slot := by
+    have := fr.slots b (lookup_mem found).1
+    rw [bty] at this
+    simpa only [SrcType.size] using this
+  have inside : pos * e.size + e.size ≤ n * e.size := by
+    have := Nat.mul_le_mul_right e.size (Nat.succ_le_of_lt lt)
+    rw [Nat.succ_mul] at this
+    exact this
+  have pass : (Expr.compare .u64 .lt (.var slot) (.lit (BitVec.ofNat 64 n))).eval env1 = 1 := by
+    have small : n < 2 ^ 64 := by omega
+    simp [Expr.eval, Word.holds, CmpOp.holdsU, BitVec.ult, posEq, Nat.mod_eq_of_lt small, lt]
+  refine ⟨fresh1, keeps1, locals1, esize, d1, env1.setFrom slot (slotVars (b.slot + pos * e.size) e.size), hp1,
+    .seq exec1 ((pickElement_exec posEq .skip n 0 (Nat.zero_le _) (by omega)).checkThen pass),
+    fun j lt => by rw [setFrom_outside _ _ _ j (.inl lt), same1 j lt], ?_, hc1⟩
+  refine held.congr fun j below => ?_
+  rw [setFrom_value _ slot env1 (Insens.copy (.inr (.inl (by omega)))) j _ (slotVars_get _ e.size j below)]
+  simp only [Expr.eval]
+  exact same1 _ (by omega)
+
 /-- `slice[index]` of a raw slice of `i32`: the index in `slot`, then the
 element loaded over it. -/
 theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {index : SrcEff}
@@ -1190,7 +1307,7 @@ theorem eval_index {k : Nat} (ihe : EvalSound sp mp (k + 1)) {slice : Nat} {inde
   · simp at ok
   rename_i b found
   split at ok
-  · simp at ok
+  · exact eval_arrayIndex ihe found ok corr fr fresh hc run bound
   rename_i element elementOk
   have bty := eq_of_elementOf elementOk
   simp only [evalElement] at ok
@@ -1309,7 +1426,7 @@ theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType
     (ok : evalStruct ty (evalArgs (sigs sp.funcs) sp.decls scope fields slot) = some ev)
     (corr : Corr scope frame st env) (fr : Layout scope frame base slot) (fresh : st.Fresh)
     (hc : HeapCorr st.heap st.world hp)
-    (run : evalExpr (k + 1) sp.toCore st (.structValue ty.typeId (SrcEff.toCoreList fields)) = .done v st')
+    (run : evalExpr (k + 1) sp.toCore st (ty.literal (SrcEff.toCoreList fields)) = .done v st')
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Evaluates mp hp slot st env ev v st' := by
   simp only [evalStruct] at ok
@@ -1324,7 +1441,7 @@ theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType
       simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
       simp only [Option.some.injEq] at ok
       subst ok
-      simp only [SrcType.typeId, evalExpr] at run
+      simp only [SrcType.literal, evalExpr] at run
       split at run
       · rename_i vs st2 argsRun
         simp only [Semantics.Outcome.done.injEq] at run
@@ -1334,6 +1451,27 @@ theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType
         rw [typesSame_eq _ checks.1] at holds
         exact ⟨fresh', keeps, locals, by simp only [SrcType.size]; exact checks.2, d, env', hp', exec, same,
           .struct holds, hc'⟩
+      all_goals simp at run
+    · simp at ok
+  | array e n =>
+    simp only [evalStructOf] at ok
+    split at ok
+    · rename_i checks
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+      simp only [Option.some.injEq] at ok
+      subst ok
+      simp only [SrcType.literal, evalExpr] at run
+      split at run
+      · rename_i vs st2 argsRun
+        simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, rfl⟩ := run
+        obtain ⟨fresh', keeps, locals, d, env', hp', exec, same, holds, hc'⟩ :=
+          evalArgs_sound fields ihe argsOk corr fr fresh hc argsRun bound
+        rw [typesSame_eq _ checks.1, repeatType_eq] at holds
+        have pos := checks.2
+        rw [repeatType_eq, sizes_replicate] at pos
+        exact ⟨fresh', keeps, locals, by simp only [SrcType.size]; exact pos, d, env', hp', exec, same,
+          .array holds, hc'⟩
       all_goals simp at run
     · simp at ok
   | i32 => simp at ok
@@ -1393,6 +1531,7 @@ theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcTyp
   | struct => simp at ok
   | ptr => simp at ok
   | slice => simp at ok
+  | array => simp at ok
   | unit => simp at ok
   | isize => simp at ok
   | char => simp at ok
@@ -1613,6 +1752,7 @@ theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee :
       | struct => cases values <;> simp [matchVariants, evalArms] at armsOk
       | ptr => cases values <;> simp [matchVariants, evalArms] at armsOk
       | slice => cases values <;> simp [matchVariants, evalArms] at armsOk
+      | array => cases values <;> simp [matchVariants, evalArms] at armsOk
       | unit => cases values <;> simp [matchVariants, evalArms] at armsOk
       | isize => cases values <;> simp [matchVariants, evalArms] at armsOk
       | char => cases values <;> simp [matchVariants, evalArms] at armsOk
@@ -1859,6 +1999,7 @@ theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : 
   case h_10 => simp at ok
   case h_11 => simp at ok
   case h_12 => simp at ok
+  case h_13 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok
@@ -2587,7 +2728,7 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | setByte => exact stmt_setByte ok corr fresh hc run bound
         | free => exact stmt_free ok corr fresh hc run
         | letSlice => exact stmt_letSlice here ok corr fr fresh le hc run bound
-        | letIndex => exact stmt_letIndex here ok corr fr fresh le hc run bound
+        | letIndex => exact stmt_letIndex here (fun ok' => stmt_letEval here hereE ok' corr fr fresh le hc run bound) ok corr fr fresh le hc run bound
         | setIndex => exact stmt_setIndex ok corr fresh hc run bound
         | letEval => exact stmt_letEval here hereE ok corr fr fresh le hc run bound
         | setEval => exact stmt_setEval belowE ok corr fr fresh le hc run bound

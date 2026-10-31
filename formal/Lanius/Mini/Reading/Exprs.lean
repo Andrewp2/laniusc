@@ -698,6 +698,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyFloat ft => cases h
     | tyBool => cases h
     | tySlice _ => cases h
+    | tyArray _ _ => cases h
     | tyNamed _ _ => cases h
     | tySint u =>
       simp only [typedLiteral, sintConst] at h
@@ -716,6 +717,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyChar => cases h
     | tyFloat ft => cases h
     | tySlice _ => cases h
+    | tyArray _ _ => cases h
     | tyNamed _ _ => cases h
     | tySint _ => cases h
   | negate x =>
@@ -756,6 +758,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyUint _ => cases h
     | tyPtr => cases h
     | tySlice _ => cases h
+    | tyArray _ _ => cases h
     | tyNamed _ _ => cases h
     | tySint u =>
       cases x
@@ -785,6 +788,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyIsize => cases h
     | tyChar => cases h
     | tySlice _ => cases h
+    | tyArray _ _ => cases h
     | tyNamed _ _ => cases h
     | tySint _ => cases h
   | null => cases h
@@ -855,6 +859,7 @@ theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wid
   | tyFloat ft => cases h
   | tyPtr => cases h
   | tySlice _ => cases h
+  | tyArray _ _ => cases h
   | tyNamed _ _ => cases h
   | tySint u =>
     simp only [wideOf, wideSint] at h
@@ -1025,6 +1030,7 @@ theorem memberOf_sound {env : FrontEnv} {scope : List Local} {primary tail : CTr
         | tyChar => rw [ht] at hf; cases hf
         | tyFloat ft => rw [ht] at hf; cases hf
         | tySlice _ => rw [ht] at hf; cases hf
+        | tyArray _ _ => rw [ht] at hf; cases hf
         | tySint _ => rw [ht] at hf; cases hf
   · rw [if_neg (by simpa using c)] at h; cases h
 

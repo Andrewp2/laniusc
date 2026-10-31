@@ -78,8 +78,8 @@ the statement, so a reader has to agree that each one says what is intended:
 
 | definition | file | says |
 |---|---|---|
-| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position |
-| `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address |
+| `SrcProgram.toCore` and the `toCore` of each construct | `Mini/Source.lean` | which Core program a source program *is*: each construct is the Core construct of the same name (`Null` is Core's literal `.pointer 0`), and functions are numbered by position. A literal (`EStruct`, `LetStruct`) means `SrcType.literal`: Core's array value `.array T vs` at an array type `[T; N]` (added 10-31, F6), and a struct value otherwise |
+| `FieldsHold`, `SrcType.HoldsAt` | `Mini/Source.lean` | how a Core value sits in 64-bit slots: an `i32` is zero-extended, a `bool` is 1/0, a struct is its fields in order, an enum is a tag then its payload, a pointer is its address, an array `[T; N]` is its N elements in order, as a struct of N fields of type T (`HoldsAt.array`, added 10-31) |
 | `Returned`, `HeapAt`, `StackAt`, `Contract`, `Scratch`, `InHeap` | `Mini/Simulation.lean` | the calling convention and what "returns" means (below) |
 | `Below`, `Binary.stackNeed`, `Binary.guard` | `Mini/Frame.lean`, `Mini/Bytes.lean` | the stack window |
 | `Det`, `Live`, `Faults`, `Fault` | `Mini/StepDet.lean`, `X86/Machine/Scalar.lean` | every run agrees but for flags and does not stop early; a run that stops, stops at an architectural fault (`ud2`, `#DE`) |
@@ -378,6 +378,17 @@ still a parse tree of the same tokens. Trusted:
     bignum rounding equals `Lanius.IEEE.Format.ofDecimal`, so the rounding
     is not trusted; only `ofDecimal` itself is (section 3). A constant of a
     float type is its literal, or the negation of its literal;
+  - `[T; N]` (added 10-31, F6) is `SrcType.array T N`, Core's array type,
+    when N is written as a decimal integer literal (`ArrayLen`; a constant
+    name as the length is not read). An array literal is read only where an
+    array type is expected (a `let`'s type, a parameter, a field):
+    `[a, b, ..]` must have exactly N elements, each read at T, and `[x; n]`
+    needs a pure x and n written as the decimal N; it is read as N copies
+    of x (`EffR.array`, `EffR.arrayRepeat`). Both are the struct literal
+    node `EStruct`/`LetStruct` at the array type, whose meaning is Core's
+    array value (section 2). Copies of a pure x have the value Core's
+    `[x; n]` gives, which evaluates x once; `a[i]` of an array local is
+    read as `a[i]` of a slice local is (`EffTy.indexArray`);
   - a local is the byte offset of its binding (a parameter, `let` or match
     binder) from the start of its function's name (since 10-25, so that an
     edit to one function renumbers the locals of no other);

@@ -40,6 +40,7 @@ def tyInsts (fuel : Nat) (decls : Decls) (t : Ty) : Option (List Inst) :=
     | .tyChar => some []
     | .tyFloat ft => some []
     | .tySlice e => tyInsts (fuel - 1) decls e
+    | .tyArray e n => tyInsts (fuel - 1) decls e
     | .tyNamed d args => consInst ({ decl := d, args := args } : Inst) (namedInsts (fuel - 1) decls d args)
     | .tySint k => some []
 def namedInsts (fuel : Nat) (decls : Decls) (d : Nat) (args : List Ty) : Option (List Inst) :=
@@ -134,19 +135,6 @@ def notted (e : Option SrcExpr) : Option SrcExpr :=
   match e with
   | none => none
   | some x => some (SrcExpr.not x)
-
-/-- The value of a decimal literal below 2^31. -/
-def decimal (text : List Nat) (acc : Nat) : Option Nat :=
-  if 2147483647 < acc then
-    none
-  else
-    match text with
-    | [] => some acc
-    | b :: rest =>
-      if decide (48 ≤ b) && decide (b ≤ 57) then
-        decimal rest (acc * 10 + (b - 48))
-      else
-        none
 
 /-- Decimal digits, below 2^64. -/
 def wideDecimal (text : List Nat) (acc : Nat) : Option Nat :=

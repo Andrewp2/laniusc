@@ -65,6 +65,17 @@ theorem proof_payload_at {prog : SrcProgram} {prims : Prims} {ix_payload_at ix_g
   simp only [src_payload_at] at h
   faithful [Lanius.Mini.payloadAt]
 
+theorem step_repeat_src {prog : SrcProgram} {prims : Prims} {ix_repeat_src ix_minus ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_repeat_src]? = some (src_repeat_src ix_minus ix_empty_of_mini_selfhost_SrcType ix_cons_of_mini_selfhost_SrcType ix_repeat_src)) (np : prims.isPrim ix_repeat_src = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_empty_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SrcType prog prims ix_empty_of_mini_selfhost_SrcType n))
+    (ext_cons_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcType prog prims ix_cons_of_mini_selfhost_SrcType n)) {n : Nat}
+    (ih_repeat_src : Certified (Stmt_repeat_src prog prims ix_repeat_src n)) :
+    Stmt_repeat_src prog prims ix_repeat_src (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_repeat_src] at h
+  faithful [Lanius.Mini.repeatSrc]
+
 theorem proof_sint_at {prog : SrcProgram} {prims : Prims} {ix_sint_at ix_boxed_of_mini_selfhost_SrcExpr ix_sint_fits : Nat} (fn : prog.funcs[ix_sint_at]? = some (src_sint_at ix_boxed_of_mini_selfhost_SrcExpr ix_sint_fits)) (np : prims.isPrim ix_sint_at = false)
     (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n))
     (ext_sint_fits : Certified (∀ {n : Nat}, Stmt_sint_fits prog prims ix_sint_fits n)) {n : Nat} :
@@ -86,8 +97,10 @@ theorem proof_src_element {prog : SrcProgram} {prims : Prims} {ix_src_element ix
   simp only [src_src_element] at h
   faithful [Lanius.Mini.srcElement]
 
-theorem proof_src_fields {prog : SrcProgram} {prims : Prims} {ix_src_fields ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_src_fields]? = some (src_src_fields ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_src_fields = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat} :
+theorem proof_src_fields {prog : SrcProgram} {prims : Prims} {ix_src_fields ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_repeat_src : Nat} (fn : prog.funcs[ix_src_fields]? = some (src_src_fields ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType ix_repeat_src)) (np : prims.isPrim ix_src_fields = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
+    (ext_unbox_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_SrcType n))
+    (ext_repeat_src : Certified (∀ {n : Nat}, Stmt_repeat_src prog prims ix_repeat_src n)) {n : Nat} :
     Stmt_src_fields prog prims ix_src_fields n := by
   intro x0 v0 w h r0
   rcases n with _ | n

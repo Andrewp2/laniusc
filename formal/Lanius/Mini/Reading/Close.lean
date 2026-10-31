@@ -53,6 +53,11 @@ theorem closeTy_sound {t : Tables} (ok : LoweredOk t) :
       cases he : closeTy f t e with
       | none => rw [he] at h; cases h
       | some x => rw [he] at h; cases h; exact .slice (closeTy_sound ok he)
+    | tyArray e n =>
+      simp only [arrayType] at h
+      cases he : closeTy f t e with
+      | none => rw [he] at h; cases h
+      | some x => rw [he] at h; cases h; exact .array (closeTy_sound ok he)
     | tyNamed d args =>
       simp only [closeNamed, Nat.add_sub_cancel] at h
       cases hi : instIndex t.types ⟨d, args⟩ 0 with

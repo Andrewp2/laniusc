@@ -31,6 +31,9 @@ def src_p_false : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize),
 /-- mini::selfhost::p_file -/
 def src_p_file : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64) }
 
+/-- mini::selfhost::p_float -/
+def src_p_float : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000b0#64) }
+
 /-- mini::selfhost::p_fn -/
 def src_p_fn : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000000b#64) }
 
@@ -42,6 +45,9 @@ def src_p_for_stmt : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usiz
 
 /-- mini::selfhost::p_ge_tail -/
 def src_p_ge_tail : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000008d#64) }
+
+/-- mini::selfhost::p_generic_argument_integer -/
+def src_p_generic_argument_integer : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000128#64) }
 
 /-- mini::selfhost::p_generic_argument_type -/
 def src_p_generic_argument_type : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000126#64) }

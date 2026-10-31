@@ -140,6 +140,7 @@ theorem structTy_some {boxes : Boxes} {ty t : SrcType} {ts : List SrcType} (h : 
   | char => simp [structTy] at h
   | float => simp [structTy] at h
   | sint => simp [structTy] at h
+  | array => simp [structTy] at h
 
 theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : variantTy ty k ts = some t) :
     ∃ id variants, ty = .enum id variants ∧ variants[k]? = some ts ∧ t = ty := by
@@ -166,6 +167,7 @@ theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : varia
   | char => simp [variantTy] at h
   | float => simp [variantTy] at h
   | sint => simp [variantTy] at h
+  | array => simp [variantTy] at h
 
 /-- A state between two that grow is below the later one's cursor. -/
 theorem Grows.bound {a b c : State} (first : Grows a b) (second : Grows b c) (views : a.i32ArrayViews = [])

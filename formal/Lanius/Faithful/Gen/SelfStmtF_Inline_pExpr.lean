@@ -44,6 +44,10 @@ abbrev Stmt_p_file (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pFile) w
 
+abbrev Stmt_p_float (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pFloat) w
+
 abbrev Stmt_p_fn (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pFn) w
@@ -59,6 +63,10 @@ abbrev Stmt_p_for_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 abbrev Stmt_p_ge_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pGeTail) w
+
+abbrev Stmt_p_generic_argument_integer (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pGenericArgumentInteger) w
 
 abbrev Stmt_p_generic_argument_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

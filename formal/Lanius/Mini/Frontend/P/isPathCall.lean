@@ -104,6 +104,7 @@ def isUsize (t : SrcType) : Bool :=
   | .enum id variants => false
   | .ptr => false
   | .slice e => false
+  | .array e arrayLength => false
   | .unit => false
   | .isize => false
   | .char => false

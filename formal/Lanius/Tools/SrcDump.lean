@@ -55,6 +55,7 @@ partial def tyName (decls : Decls) : Ty → String
   | .tyFloat .f64 => "f64"
   | .tySint k => sintName k
   | .tySlice e => s!"[{tyName decls e}]"
+  | .tyArray e n => s!"[{tyName decls e}; {n}]"
   | .tyNamed d args =>
     let name := match decls.types[d]? with
       | none => s!"?{d}"
@@ -77,6 +78,7 @@ def srcTyName : SrcType → String
   | .float .f32 => "f32"
   | .float .f64 => "f64"
   | .slice _ => "slice"
+  | .array _ n => s!"array{n}"
   | .struct id _ => s!"#{id}"
   | .enum id _ => s!"#{id}"
   | .sint k => sintName k
@@ -197,6 +199,7 @@ partial def typeText : SrcType → StateM Table String
   | .float .f64 => pure "(.float .f64)"
   | .sint k => pure s!"(.sint {uintText k})"
   | .slice e => do named s!".slice {← typeText e}"
+  | .array e n => do named s!"(.array {← typeText e} {n})"
   | .struct id fs => do
     let ts ← fs.mapM typeText
     named s!".struct {id} [{", ".intercalate ts}]"

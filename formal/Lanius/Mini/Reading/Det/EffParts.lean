@@ -68,6 +68,18 @@ theorem effTy_unique {decls : Decls} {scope : List Local} :
       rw [localWithId_unique lw lw', e'] at e
       cases e
       rfl
+    | indexArray lw' e' =>
+      rw [localWithId_unique lw lw', e'] at e
+      cases e
+  | _, _, _, .indexArray lw e, h₂ => by
+    cases h₂ with
+    | index lw' e' =>
+      rw [localWithId_unique lw lw', e'] at e
+      cases e
+    | indexArray lw' e' =>
+      rw [localWithId_unique lw lw', e'] at e
+      cases e
+      rfl
   | _, _, _, .struct, h₂ => by cases h₂; rfl
   | _, _, _, .variant, h₂ => by cases h₂; rfl
   | _, _, _, .match, h₂ => by cases h₂; rfl

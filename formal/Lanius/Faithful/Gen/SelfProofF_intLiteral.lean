@@ -11,6 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_charOpen
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
+public import Lanius.Faithful.Gen.SelfStmtF_typeDeclAt
 public import Lanius.Faithful.Gen.SelfStmtF_wideMarker
 import all Lanius.Faithful.Gen.SelfSrcF_intLiteral
 import all Lanius.Mini.Frontend.P.intLiteral

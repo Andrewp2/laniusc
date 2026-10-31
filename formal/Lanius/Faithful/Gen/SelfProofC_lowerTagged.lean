@@ -6,8 +6,8 @@ public import Lanius.Faithful.Gen.SelfSrcC_lowerTagged
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
-public import Lanius.Faithful.Gen.SelfStmtC_copyBinding
 public import Lanius.Faithful.Gen.SelfStmtC_lowerTagged
+public import Lanius.Faithful.Gen.SelfStmtC_repeatType
 import all Lanius.Faithful.Gen.SelfSrcC_lowerTagged
 import all Lanius.Mini.Compiler.P.lowerTagged
 

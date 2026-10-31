@@ -112,6 +112,7 @@ def floatWant (want : Option SrcType) (t : SrcType) (x : SrcExpr) : Option SrcEx
     | .enum id variants => floatPick FloatTy.f32 t x
     | .ptr => floatPick FloatTy.f32 t x
     | .slice e => floatPick FloatTy.f32 t x
+    | .array e arrayLength => floatPick FloatTy.f32 t x
     | .unit => floatPick FloatTy.f32 t x
     | .isize => floatPick FloatTy.f32 t x
     | .char => floatPick FloatTy.f32 t x

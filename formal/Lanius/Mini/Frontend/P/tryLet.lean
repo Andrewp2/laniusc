@@ -2,11 +2,11 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.armsOf
+import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.ifEff
 import Lanius.Mini.Frontend.P.matchLetHead
-import Lanius.Mini.Frontend.P.matchTysOrNone
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.shrFirst
 import Lanius.Mini.Frontend.P.treeTokens
@@ -118,6 +118,7 @@ def isPtrTy (t : Ty) : Bool :=
   | .tyChar => false
   | .tyFloat ft => false
   | .tySlice e => false
+  | .tyArray e n => false
   | .tyNamed d args => false
   | .tySint k => false
 

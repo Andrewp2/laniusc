@@ -294,6 +294,11 @@ theorem structValue_trap_state {id : Nat} {es : List SrcExpr}
   obtain ⟨j, -, argsRun⟩ := structValue_trap_inv run
   exact exprs_trap_state es argsRun
 
+theorem literal_trap_state {ty : SrcType} {es : List SrcExpr}
+    (run : evalExpr k P st (ty.literal (es.map SrcExpr.toCore)) = .trapped r st') : st' = st := by
+  obtain ⟨j, -, argsRun⟩ := literal_trap_inv run
+  exact exprs_trap_state es argsRun
+
 theorem enumValue_trap_state {id variant : Nat} {es : List SrcExpr}
     (run : evalExpr k P st (.enumValue id variant (es.map SrcExpr.toCore)) = .trapped r st') : st' = st := by
   obtain ⟨j, -, argsRun⟩ := enumValue_trap_inv run
@@ -778,7 +783,7 @@ theorem eff_trap_step {k : Nat} (ih : GrowsBelow sp (k + 1)) (ihT : GrowsBelowT 
     exact Grows.refl _
   | eStruct ty fields =>
     simp only [SrcEff.toCore] at run
-    obtain ⟨j, hj, argsRun⟩ := structValue_trap_inv run
+    obtain ⟨j, hj, argsRun⟩ := literal_trap_inv run
     obtain rfl : k = j := Nat.succ.inj hj
     exact effs_trap_grows fields ihe iheT argsRun
   | eVariant ty variant fields =>
@@ -831,8 +836,9 @@ theorem grows_trap_step {fuel : Nat} (ih : GrowsBelow sp fuel) (ihT : GrowsBelow
     | «let» id ty value body =>
       exact letLocal_trap_grows (fun r => pureD r) (fun r => pureT r) (fun r => belowT (s := body) r) run
     | letStruct id ty fields body =>
-      exact letLocal_trap_grows (fun r => by rw [structValue_state r]; exact Grows.refl _)
-        (fun r => by rw [structValue_trap_state r]; exact Grows.refl _) (fun r => belowT (s := body) r) run
+      exact letLocal_trap_grows (fun r => by rw [structValue_state (ty := ty) (es := fields) r]; exact Grows.refl _)
+        (fun r => by rw [literal_trap_state (ty := ty) (es := fields) r]; exact Grows.refl _)
+        (fun r => belowT (s := body) r) run
     | letCall id ty callee args body =>
       exact letLocal_trap_grows (fun r => call_grows ihf r) (fun r => srcCall_trap_grows ihf ihfT r)
         (fun r => belowT (s := body) r) run

@@ -574,6 +574,39 @@ Float literals in the front end:
   99999 (with 10^400 already past every finite pattern, this only keeps the
   front end's powers small).
 
+### Arrays in the verified compiler (decided 10-31, F6)
+
+`[T; N]` is a source type of the verified compiler (`SrcType.array T N`),
+Core's array, held by value:
+
+- An array takes N times T's slots, its elements one after another, as a
+  struct of N fields of type T would (`HoldsAt.array`, `repeatType`). So a
+  local, parameter, result or field of an array type is lowered as such a
+  struct is: copies, calls and results move N * size(T) words.
+- A literal `[a, b, ..]` or `[x; N]` is the struct literal node `EStruct`
+  (or `LetStruct`) at the array type, and its Core meaning is the array
+  value of its elements (`SrcType.literal`, a change to the trusted
+  `toCore`). The front end reads it only where an array type is expected,
+  with exactly N elements; `[x; N]` needs a pure x and is read as N copies
+  of x, which is the value Core's `[x; N]` (x evaluated once) has. The
+  length must be written as a decimal literal, in the type and in `[x; N]`.
+- `a[i]` of an array local, i an `i32` or `usize`, evaluates i into its
+  slot, checks `i <u N` (a negative `i32` index is past N as an unsigned
+  word), and then copies element i over the slot by a chain of compares of
+  i with 0 .. N-1 (`pickElement`). Core traps with `arrayBounds` where the
+  check fails; the mini program stops at the check, as at every other trap.
+  The chain is N copies of the element in the code, so an index of a long
+  array is long code; a scaled address is later work (it needs the
+  array's base address, which a frame slot has but the IR does not name).
+  `let x: T = a[i];` is read as `slice[i]` is (`LetIndex`), and lowered as
+  the `let` of the indexed value (`lower_let_index_any`), whose Core
+  meaning is the same.
+- Not yet: `a[i] = v` on an array local, an array passed where a slice is
+  expected (Core's coercion of `[T; N]` to `[T]`), `for` over an array,
+  `==` of arrays, `core::mem::i32_array_data_ptr`, a length that names a
+  constant, and arrays of floats (no element layout for float slices yet;
+  an array of floats is held by value and should work, but is untested).
+
 ## Decisions still required
 
 - Which NaN payload details are observable through future bit-conversion APIs.

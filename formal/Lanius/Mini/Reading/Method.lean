@@ -222,6 +222,7 @@ theorem fitSound : ∀ fuel, FitSound fuel
             | tyChar => cases ha
             | tyFloat ft => cases ha
             | tySint _ => cases ha
+            | tyArray _ _ => cases ha
             | tySlice _ => cases ha
           · rcases m with ⟨n, ip, _⟩ | ⟨_, pr, _⟩ | ⟨_, _, d, args, rfl, da, ma⟩
             · exact np n ip

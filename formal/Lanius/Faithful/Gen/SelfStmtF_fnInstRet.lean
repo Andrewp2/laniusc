@@ -25,11 +25,11 @@ abbrev Stmt_args_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 257 (RepList 21 RepSrcExpr)) (Lanius.Mini.argsOf x0 x1 x2 x3) w
 
 abbrev Stmt_arm_binders (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.EffArm} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 280 RepEffArm) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.EffArm} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 282 RepEffArm) x0 v0 →
     (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.armBinders x0) w
 
 abbrev Stmt_arm_values (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.EffArm} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 280 RepEffArm) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.EffArm} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 282 RepEffArm) x0 v0 →
     (RepList 224 RepMEff) (Lanius.Mini.armValues x0) w
 
 abbrev Stmt_bare_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -37,8 +37,8 @@ abbrev Stmt_bare_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.bareEff x0) w
 
 abbrev Stmt_cons_eff_arm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.EffArm} {x1 : Option (List Lanius.Mini.EffArm)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 287 RepEffArm) x0 v0 → (RepOption 279 (RepList 280 RepEffArm)) x1 v1 →
-    (RepOption 279 (RepList 280 RepEffArm)) (Lanius.Mini.consEffArm x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.EffArm} {x1 : Option (List Lanius.Mini.EffArm)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 289 RepEffArm) x0 v0 → (RepOption 281 (RepList 282 RepEffArm)) x1 v1 →
+    (RepOption 281 (RepList 282 RepEffArm)) (Lanius.Mini.consEffArm x0 x1) w
 
 abbrev Stmt_cons_expr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.SrcExpr} {x1 : Option (List Lanius.Mini.SrcExpr)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 223 RepSrcExpr) x0 v0 → (RepOption 257 (RepList 21 RepSrcExpr)) x1 v1 →
@@ -93,7 +93,7 @@ abbrev Stmt_owner_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 203 RepTy) (Lanius.Mini.ownerTy x0 x1) w
 
 abbrev Stmt_result_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Ty} {x1 : List Lanius.Mini.EffArm} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 203 RepTy) x0 v0 → (RepList 280 RepEffArm) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.Ty} {x1 : List Lanius.Mini.EffArm} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 203 RepTy) x0 v0 → (RepList 282 RepEffArm) x1 v1 →
     (RepOption 203 RepTy) (Lanius.Mini.resultTy x0 x1) w
 
 abbrev Stmt_tail_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -101,7 +101,7 @@ abbrev Stmt_tail_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 204 (RepList 137 RepTy)) (Lanius.Mini.tailTys x0) w
 
 abbrev Stmt_x_match_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.Ty} {x3 : Option (List Lanius.Mini.EffArm)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepMEff x0 v0 → RepTy x1 v1 → (RepOption 203 RepTy) x2 v2 → (RepOption 279 (RepList 280 RepEffArm)) x3 v3 →
+  ∀ {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.Ty} {x2 : Option Lanius.Mini.Ty} {x3 : Option (List Lanius.Mini.EffArm)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepMEff x0 v0 → RepTy x1 v1 → (RepOption 203 RepTy) x2 v2 → (RepOption 281 (RepList 282 RepEffArm)) x3 v3 →
     (RepOption 246 RepMEff) (Lanius.Mini.xMatchOf x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

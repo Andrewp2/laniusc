@@ -55,6 +55,7 @@ def SrcType.toCore : SrcType → Core.Ty
   | .enum id _ => .enumeration id
   | .ptr => .scalar .rawPtr
   | .slice element => .slice element.toCore
+  | .array element length => .array element.toCore length
   | .unit => .unit
   | .isize => .scalar (.signed .isize)
   | .char => .scalar .char
@@ -70,11 +71,29 @@ def SrcType.typeId : SrcType → Nat
   | .enum id _ => id
   | .ptr => 0
   | .slice _ => 0
+  | .array _ _ => 0
   | .unit => 0
   | .isize => 0
   | .char => 0
   | .float _ => 0
   | .sint _ => 0
+
+/-- Core's literal of this type from its fields' expressions: an array's
+elements, or a struct's fields (no other type has a literal of this form). -/
+def SrcType.literal : SrcType → List Core.Expr → Core.Expr
+  | .i32, xs => .structValue 0 xs
+  | .bool, xs => .structValue 0 xs
+  | .uint _, xs => .structValue 0 xs
+  | .struct id _, xs => .structValue id xs
+  | .enum id _, xs => .structValue id xs
+  | .ptr, xs => .structValue 0 xs
+  | .slice _, xs => .structValue 0 xs
+  | .array element _, xs => .array element.toCore xs
+  | .unit, xs => .structValue 0 xs
+  | .isize, xs => .structValue 0 xs
+  | .char, xs => .structValue 0 xs
+  | .float _, xs => .structValue 0 xs
+  | .sint _, xs => .structValue 0 xs
 
 /-- The Core type a cast to this type names. Lowering only casts to `i32`
 and the unsigned types. -/
@@ -86,6 +105,7 @@ def SrcType.toScalar : SrcType → Core.ScalarTy
   | .enum _ _ => .bool
   | .ptr => .rawPtr
   | .slice _ => .bool
+  | .array _ _ => .bool
   | .unit => .bool
   | .isize => .signed .isize
   | .char => .char
@@ -102,6 +122,7 @@ def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
   | .enum id _, pointer, length => .typedSliceFromRawParts (.enumeration id) pointer length
   | .ptr, pointer, length => .typedSliceFromRawParts (.scalar .rawPtr) pointer length
   | .slice element, pointer, length => .typedSliceFromRawParts (.slice element.toCore) pointer length
+  | .array element n, pointer, length => .typedSliceFromRawParts (.array element.toCore n) pointer length
   | .unit, pointer, length => .typedSliceFromRawParts .unit pointer length
   | .isize, pointer, length => .typedSliceFromRawParts (.scalar (.signed .isize)) pointer length
   | .char, pointer, length => .typedSliceFromRawParts (.scalar .char) pointer length
@@ -161,7 +182,7 @@ def SrcEff.toCore : SrcEff → Core.Expr
   | .eNot operand => .unary .logicalNot operand.toCore
   | .eCast ty operand => .cast ty.toScalar operand.toCore
   | .eIndex slice index => .index (.local slice) index.toCore
-  | .eStruct ty fields => .structValue ty.typeId (SrcEff.toCoreList fields)
+  | .eStruct ty fields => ty.literal (SrcEff.toCoreList fields)
   | .eVariant ty variant payload => .enumValue ty.typeId variant (SrcEff.toCoreList payload)
   | .eMatch scrutinee ety _ binders values =>
       .matchValue scrutinee.toCore (SrcEff.coreArms ety.typeId 0 binders values)
@@ -184,7 +205,7 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .nop => .skip
   | .let id ty value body => .letLocal id ty.toCore value.toCore body.toCore
   | .letStruct id ty fields body =>
-      .letLocal id ty.toCore (.structValue ty.typeId (fields.map SrcExpr.toCore)) body.toCore
+      .letLocal id ty.toCore (ty.literal (fields.map SrcExpr.toCore)) body.toCore
   | .letCall id ty callee args body =>
       .letLocal id ty.toCore (.call callee (args.map SrcExpr.toCore)) body.toCore
   | .letEnum id ty variant payload body =>

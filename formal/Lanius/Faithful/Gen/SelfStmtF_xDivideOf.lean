@@ -21,8 +21,8 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_cons_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option (List Lanius.Mini.MEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 246 RepMEff) x0 v0 → (RepOption 275 (RepList 224 RepMEff)) x1 v1 →
-    (RepOption 275 (RepList 224 RepMEff)) (Lanius.Mini.consEff x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.MEff} {x1 : Option (List Lanius.Mini.MEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 246 RepMEff) x0 v0 → (RepOption 272 (RepList 224 RepMEff)) x1 v1 →
+    (RepOption 272 (RepList 224 RepMEff)) (Lanius.Mini.consEff x0 x1) w
 
 abbrev Stmt_x_call_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Inst} {x1 : List Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 175 RepInst) x0 v0 → (RepList 224 RepMEff) x1 v1 →

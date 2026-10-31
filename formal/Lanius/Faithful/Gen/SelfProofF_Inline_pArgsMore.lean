@@ -51,139 +51,22 @@ theorem proof_p_args_some {prog : SrcProgram} {prims : Prims} {ix_p_args_some : 
   simp only [src_p_args_some] at h
   faithful [Lanius.Mini.Inline.pArgsSome]
 
-theorem proof_p_assign {prog : SrcProgram} {prims : Prims} {ix_p_assign : Nat} (fn : prog.funcs[ix_p_assign]? = some (src_p_assign)) (np : prims.isPrim ix_p_assign = false) {n : Nat} :
-    Stmt_p_assign prog prims ix_p_assign n := by
+theorem proof_p_arm_block {prog : SrcProgram} {prims : Prims} {ix_p_arm_block : Nat} (fn : prog.funcs[ix_p_arm_block]? = some (src_p_arm_block)) (np : prims.isPrim ix_p_arm_block = false) {n : Nat} :
+    Stmt_p_arm_block prog prims ix_p_arm_block n := by
   intro w h
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_p_assign] at h
-  faithful [Lanius.Mini.Inline.pAssign]
+  simp only [src_p_arm_block] at h
+  faithful [Lanius.Mini.Inline.pArmBlock]
 
-theorem proof_p_assign_add {prog : SrcProgram} {prims : Prims} {ix_p_assign_add : Nat} (fn : prog.funcs[ix_p_assign_add]? = some (src_p_assign_add)) (np : prims.isPrim ix_p_assign_add = false) {n : Nat} :
-    Stmt_p_assign_add prog prims ix_p_assign_add n := by
+theorem proof_p_array_after_comma_more {prog : SrcProgram} {prims : Prims} {ix_p_array_after_comma_more : Nat} (fn : prog.funcs[ix_p_array_after_comma_more]? = some (src_p_array_after_comma_more)) (np : prims.isPrim ix_p_array_after_comma_more = false) {n : Nat} :
+    Stmt_p_array_after_comma_more prog prims ix_p_array_after_comma_more n := by
   intro w h
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_p_assign_add] at h
-  faithful [Lanius.Mini.Inline.pAssignAdd]
-
-theorem proof_p_assign_band {prog : SrcProgram} {prims : Prims} {ix_p_assign_band : Nat} (fn : prog.funcs[ix_p_assign_band]? = some (src_p_assign_band)) (np : prims.isPrim ix_p_assign_band = false) {n : Nat} :
-    Stmt_p_assign_band prog prims ix_p_assign_band n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_band] at h
-  faithful [Lanius.Mini.Inline.pAssignBand]
-
-theorem proof_p_assign_bor {prog : SrcProgram} {prims : Prims} {ix_p_assign_bor : Nat} (fn : prog.funcs[ix_p_assign_bor]? = some (src_p_assign_bor)) (np : prims.isPrim ix_p_assign_bor = false) {n : Nat} :
-    Stmt_p_assign_bor prog prims ix_p_assign_bor n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_bor] at h
-  faithful [Lanius.Mini.Inline.pAssignBor]
-
-theorem proof_p_assign_div {prog : SrcProgram} {prims : Prims} {ix_p_assign_div : Nat} (fn : prog.funcs[ix_p_assign_div]? = some (src_p_assign_div)) (np : prims.isPrim ix_p_assign_div = false) {n : Nat} :
-    Stmt_p_assign_div prog prims ix_p_assign_div n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_div] at h
-  faithful [Lanius.Mini.Inline.pAssignDiv]
-
-theorem proof_p_assign_end {prog : SrcProgram} {prims : Prims} {ix_p_assign_end : Nat} (fn : prog.funcs[ix_p_assign_end]? = some (src_p_assign_end)) (np : prims.isPrim ix_p_assign_end = false) {n : Nat} :
-    Stmt_p_assign_end prog prims ix_p_assign_end n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_end] at h
-  faithful [Lanius.Mini.Inline.pAssignEnd]
-
-theorem proof_p_assign_mod {prog : SrcProgram} {prims : Prims} {ix_p_assign_mod : Nat} (fn : prog.funcs[ix_p_assign_mod]? = some (src_p_assign_mod)) (np : prims.isPrim ix_p_assign_mod = false) {n : Nat} :
-    Stmt_p_assign_mod prog prims ix_p_assign_mod n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_mod] at h
-  faithful [Lanius.Mini.Inline.pAssignMod]
-
-theorem proof_p_assign_mul {prog : SrcProgram} {prims : Prims} {ix_p_assign_mul : Nat} (fn : prog.funcs[ix_p_assign_mul]? = some (src_p_assign_mul)) (np : prims.isPrim ix_p_assign_mul = false) {n : Nat} :
-    Stmt_p_assign_mul prog prims ix_p_assign_mul n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_mul] at h
-  faithful [Lanius.Mini.Inline.pAssignMul]
-
-theorem proof_p_assign_set {prog : SrcProgram} {prims : Prims} {ix_p_assign_set : Nat} (fn : prog.funcs[ix_p_assign_set]? = some (src_p_assign_set)) (np : prims.isPrim ix_p_assign_set = false) {n : Nat} :
-    Stmt_p_assign_set prog prims ix_p_assign_set n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_set] at h
-  faithful [Lanius.Mini.Inline.pAssignSet]
-
-theorem proof_p_assign_shl {prog : SrcProgram} {prims : Prims} {ix_p_assign_shl : Nat} (fn : prog.funcs[ix_p_assign_shl]? = some (src_p_assign_shl)) (np : prims.isPrim ix_p_assign_shl = false) {n : Nat} :
-    Stmt_p_assign_shl prog prims ix_p_assign_shl n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_shl] at h
-  faithful [Lanius.Mini.Inline.pAssignShl]
-
-theorem proof_p_assign_shr {prog : SrcProgram} {prims : Prims} {ix_p_assign_shr : Nat} (fn : prog.funcs[ix_p_assign_shr]? = some (src_p_assign_shr)) (np : prims.isPrim ix_p_assign_shr = false) {n : Nat} :
-    Stmt_p_assign_shr prog prims ix_p_assign_shr n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_shr] at h
-  faithful [Lanius.Mini.Inline.pAssignShr]
-
-theorem proof_p_assign_sub {prog : SrcProgram} {prims : Prims} {ix_p_assign_sub : Nat} (fn : prog.funcs[ix_p_assign_sub]? = some (src_p_assign_sub)) (np : prims.isPrim ix_p_assign_sub = false) {n : Nat} :
-    Stmt_p_assign_sub prog prims ix_p_assign_sub n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_sub] at h
-  faithful [Lanius.Mini.Inline.pAssignSub]
-
-theorem proof_p_assign_xor {prog : SrcProgram} {prims : Prims} {ix_p_assign_xor : Nat} (fn : prog.funcs[ix_p_assign_xor]? = some (src_p_assign_xor)) (np : prims.isPrim ix_p_assign_xor = false) {n : Nat} :
-    Stmt_p_assign_xor prog prims ix_p_assign_xor n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_assign_xor] at h
-  faithful [Lanius.Mini.Inline.pAssignXor]
-
-theorem proof_p_band_tail {prog : SrcProgram} {prims : Prims} {ix_p_band_tail : Nat} (fn : prog.funcs[ix_p_band_tail]? = some (src_p_band_tail)) (np : prims.isPrim ix_p_band_tail = false) {n : Nat} :
-    Stmt_p_band_tail prog prims ix_p_band_tail n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_band_tail] at h
-  faithful [Lanius.Mini.Inline.pBandTail]
-
-theorem proof_p_base {prog : SrcProgram} {prims : Prims} {ix_p_base : Nat} (fn : prog.funcs[ix_p_base]? = some (src_p_base)) (np : prims.isPrim ix_p_base = false) {n : Nat} :
-    Stmt_p_base prog prims ix_p_base n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_base] at h
-  faithful [Lanius.Mini.Inline.pBase]
+  simp only [src_p_array_after_comma_more] at h
+  faithful [Lanius.Mini.Inline.pArrayAfterCommaMore]
 
 end Lanius.Faithful.SelfCert

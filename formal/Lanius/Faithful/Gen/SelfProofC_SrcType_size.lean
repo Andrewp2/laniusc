@@ -4,6 +4,7 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmt1
+public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
@@ -31,10 +32,13 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_SrcType_size {prog : SrcProgram} {prims : Prims} {ix_SrcType_size ix_plus ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_max_size ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_SrcType_size]? = some (src_SrcType_size ix_plus ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_max_size ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_SrcType_size = false)
+theorem step_SrcType_size {prog : SrcProgram} {prims : Prims} {ix_SrcType_size ix_plus ix_times ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_max_size ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_SrcType_size]? = some (src_SrcType_size ix_plus ix_times ix_SrcType_size ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_max_size ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_SrcType)) (np : prims.isPrim ix_SrcType_size = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat}
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
+    (ext_unbox_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_SrcType n)) {n : Nat}
+    (ih_SrcType_size : Certified (Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ih_sizes : Certified (Stmt_sizes prog prims ix_sizes n))
     (ih_max_size : Certified (Stmt_max_size prog prims ix_max_size n)) :
     Stmt_SrcType_size prog prims ix_SrcType_size (n + 1) := by

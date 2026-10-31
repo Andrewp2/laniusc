@@ -44,6 +44,11 @@ def sliceType (element : Option SrcType) : Option SrcType :=
   | none => none
   | some e => some (SrcType.slice e)
 
+def arrayType (element : Option SrcType) (length : Nat) : Option SrcType :=
+  match element with
+  | none => none
+  | some e => some (SrcType.array e length)
+
 def structSrc (id : Option Nat) (fields : Option (List SrcType)) : Option SrcType :=
   match id with
   | none => none
