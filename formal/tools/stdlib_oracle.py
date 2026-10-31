@@ -12,8 +12,9 @@ they are, never edited.
    (`pub impl Ord<i32> for i32 { pub fn lt(..) }`), is a target. A target is
    testable when its parameter and result types, after the module's type
    aliases and with every type parameter at i32, are scalars the front pass
-   has (i32, bool, u8, u16, u32, u64, usize, isize) or `core::option::Option` of
-   one; others are counted by the type that stops them.
+   has (i32, bool, u8, u16, u32, u64, usize, isize, i8, i16, i64, char, f32,
+   f64) or `core::option::Option` of one; others are counted by the type
+   that stops them. A float goes in and out as its bit pattern (FLOATS).
 2. Each testable target gets a program of its own: a first file, the module
    app::main, holding one wrapper `w` that takes scalar arguments (an
    Option as a flag and a payload), calls the target and returns an i32 (a
