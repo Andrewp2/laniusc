@@ -89,6 +89,11 @@ theorem typeParams_unique {t : CTree} {a b : List Name} (h₁ : TypeParams t a) 
   rw [items_unique it₁ it₂] at p₁
   exact paramSpellings_unique p₁ p₂
 
+theorem freeParams_unique {t : CTree} {a b : List Name} (h₁ : FreeParams t a) (h₂ : FreeParams t b) : a = b := by
+  obtain ⟨i₁, it₁, _, p₁⟩ := h₁
+  obtain ⟨i₂, it₂, _, p₂⟩ := h₂
+  exact typeParams_unique ⟨i₁, it₁, p₁⟩ ⟨i₂, it₂, p₂⟩
+
 /-! ## Type declarations -/
 
 theorem variantPayload_unique {v : CTree} {a b : List CTree} (h₁ : VariantPayload v a) (h₂ : VariantPayload v b) :
@@ -105,12 +110,12 @@ theorem typeDeclR_unique {home : ModPath} {s : CTree} {a b : TypeDecl}
     (h₁ : TypeDeclR home s a) (h₂ : TypeDeclR home s b) : a = b := by
   cases h₁ with
   | struct e _ p f _ => cases h₂ with
-    | struct _ _ p' f' _ => rw [typeParams_unique p p', items_unique f f']
+    | struct _ _ p' f' _ => rw [freeParams_unique p p', items_unique f f']
     | enum e' => rw [e] at e'; cases e'
   | enum e _ p v pays => cases h₂ with
     | struct e' => rw [e] at e'; cases e'
     | enum _ _ p' v' pays' =>
-      rw [typeParams_unique p p']
+      rw [freeParams_unique p p']
       have ev := items_unique v v'
       subst ev
       rw [listRel_unique (R := VariantPayload) (fun _ _ _ x y => variantPayload_unique x y) pays pays']

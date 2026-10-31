@@ -216,4 +216,12 @@ abbrev pTypeArrayTail : Nat := 283
 abbrev pTypeArrayLenConstant : Nat := 291
 abbrev pGenericArgumentInteger : Nat := 296
 
+abbrev pWhereSome : Nat := 37
+abbrev pTypeParamBound : Nat := 236
+abbrev pTypeParamBoundNone : Nat := 237
+abbrev pBoundTypeIdent : Nat := 241
+abbrev pBoundTypePathIdent : Nat := 244
+abbrev pBoundTypePathMore : Nat := 245
+abbrev pBoundTypePathEnd : Nat := 246
+
 end Lanius.Mini.Prod

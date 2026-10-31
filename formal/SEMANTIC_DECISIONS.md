@@ -1015,13 +1015,79 @@ all compile now (432 calls agree with laniusc).
 
 ## Impls with where clauses (decided 10-31, F7)
 
-An `impl` block with a `where` clause is read as the same block without it,
-as a function's `where` clause already was: bounds are not checked yet (F7),
-so a method is found by its type alone. The clause can only reject programs
-in laniusc, never change what an accepted one does, so the reading of a
-program laniusc accepts is unchanged. Unlocks the 51 such impls in 15
-stdlib and `extended/` files, among them `core::iter` and
+An `impl` block with a `where` clause is read as the same block, its
+methods found by type alone (the one impl whose type matches, as before).
+Since the bounds are checked (next section), the clause now also requires
+its bounds of each method instance, at the impl's arguments. Unlocks the 51
+such impls in 15 stdlib and `extended/` files, among them `core::iter` and
 `core::clone_values`, which most of the stdlib reaches (case impl_where).
+
+## Trait bounds (decided 10-31, F7)
+
+A bound `T: Tr<A, ..>`, written on a type parameter (`<T: Tr<A> >`, `+`
+for several) or in a `where` clause, requires that the type T stands for
+has an impl of the trait `Tr` at the arguments `A, ..` (`Implements`,
+`Reading/Bounds.lean`). The front end checks it after monomorphization, on
+each function instance, and rejects the program when a bound fails, as
+laniusc does ("no matching impl satisfies this call"):
+
+- **Which bounds.** A function instance's own type parameters' bounds and
+  where clause, and for a method also its impl's type parameters' bounds
+  and where clause (`FnBound`), read where the function's signature is
+  read: its module, its type parameters (the impl's, then its own)
+  standing for the instance's arguments. A where clause's predicate must
+  name one of those type parameters, else the instance is not read.
+- **What a trait is.** A trait is its module and spelling, by the bound's
+  path resolved as a type path is (`Resolves`: a bare name is the item it
+  is imported as by `import p::Tr;`, else the current module's; `p::Tr` is
+  module p's), and its type arguments, each read as a type. A trait's
+  declaration is not looked up: an impl and a bound name the same trait
+  when their paths resolve alike. The `&Tr` bound form is not read.
+- **What satisfies a bound.** `impl<P..> Tr'<B..> for S where ..` (a trait
+  impl, recorded in `Decls.impls`) satisfies `t: Tr<A..>` when, with its
+  parameters P.. standing for some types, `Tr'<B..>` reads as `Tr<A..>`
+  and `S` reads as `t`, and its own bounds and where clause hold there, by
+  the same rule (so `Boxed<Boxed<i32>>: Hash` needs `Boxed<i32>: Hash`,
+  then `i32: Hash`). The relation is inductive, so a bound holds only
+  through a finite chain of impls. The builder finds P.. by matching S
+  against t and then B.. against A.., checks the reading as above, and
+  tries the impls in order; it has fuel, so a cycle of impls rejects.
+  Bounds are a condition on which programs are read, not on what a read
+  program means: `Implements` has no output, and `reading_unique` is
+  unchanged. Overlapping impls are not an issue for the same reason.
+- **No implicit impls.** No type has an impl it does not declare: a
+  primitive type satisfies `core::clone::Destroy<bool>` only through the
+  stdlib's `impl core::clone::Destroy<bool> for bool`, as in laniusc.
+- **Structs, enums and aliases** with a bound on a type parameter are not
+  read (`FreeParams`), as those with a `where` clause already were: such
+  bounds would have to be checked at each type instance. None is in the
+  stdlib.
+
+Cases trait_bounds (compiles), reject_bound, reject_impl_bound and
+reject_method_bound. laniusc rejects the three reject cases too.
+
+## Static calls on enums and qualified paths (decided 10-31, F7)
+
+`front::m(args)` calls the method `m` of the one impl whose type matches
+the type that `front` names (`TypeOwner`, `EffNamed.static`), when `front`
+is a type parameter or a primitive type, or names, as a type path resolved
+like any other (`DeclAt`: the current module's type, an item imported by
+`import p::S;`, or `p::S`), a struct, or an enum with no variant spelled
+`m`. The receiver type is `front` read as a type without arguments
+(`BareTy`), so a generic struct or enum as `front` is not read. Before
+F7 only a one-segment struct of the current module (or an imported one)
+was a type owner.
+
+- `E::V(args)` with V a variant of E still names the variant: a variant
+  wins over a method of the same spelling. `E::m(args)` with m no variant
+  of E is a method call, where it used to be read as the variant m of a
+  module E's enums (module paths and type paths rarely share a spelling).
+- A type path beats a module path: when `p::S` is both a type S of
+  module p and a module with a function m, `p::S::m(args)` is S's method.
+  The same precedence already held for one segment.
+- laniusc reads such a path only for an associated function, one that does
+  not take `self` (`Color::next(c)` with `fn next(c: Color)`); the front
+  end reads either (cases enum_methods, qualified_methods).
 
 ## Writes through `&self` (decided 10-31, F5)
 

@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::file_lexed -/
-def src_file_lexed : SrcFunc := { params := [{ id := 11, ty := ty174 }, { id := 54, ty := ty20 }, { id := 74, ty := ty104 }], ret := ty81, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty174 ty81 [[192], []] [SrcEff.eVariant ty81 0 [SrcEff.eStruct ty80 [SrcEff.eStruct ty45 [SrcEff.ePure (SrcExpr.local 192), SrcEff.ePure (SrcExpr.local 54), SrcEff.ePure (SrcExpr.field 74 0)], SrcEff.ePure (SrcExpr.field 74 1)]], SrcEff.eVariant ty81 1 []]) }
+def src_file_lexed : SrcFunc := { params := [{ id := 11, ty := ty177 }, { id := 54, ty := ty20 }, { id := 74, ty := ty104 }], ret := ty81, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 11)) ty177 ty81 [[192], []] [SrcEff.eVariant ty81 0 [SrcEff.eStruct ty80 [SrcEff.eStruct ty45 [SrcEff.ePure (SrcExpr.local 192), SrcEff.ePure (SrcExpr.local 54), SrcEff.ePure (SrcExpr.field 74 0)], SrcEff.ePure (SrcExpr.field 74 1)]], SrcEff.eVariant ty81 1 []]) }
 
 /-- mini::selfhost::files_after -/
 def src_files_after (ix_cons_of_mini_selfhost_FileInput : Nat) : SrcFunc := { params := [{ id := 12, ty := ty45 }, { id := 29, ty := ty49 }], ret := ty49, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 29)) ty49 ty49 [[166], []] [SrcEff.eVariant ty49 0 [SrcEff.eStruct ty48 [SrcEff.eCall ix_cons_of_mini_selfhost_FileInput [SrcEff.ePure (SrcExpr.local 12), SrcEff.ePure (SrcExpr.field 166 0)], SrcEff.ePure (SrcExpr.field 166 1)]], SrcEff.eVariant ty49 1 []]) }

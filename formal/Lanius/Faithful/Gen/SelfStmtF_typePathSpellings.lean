@@ -22,14 +22,14 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_split_last (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 →
-    (RepOption 238 RepSplit) (Lanius.Mini.splitLast x0) w
+    (RepOption 246 RepSplit) (Lanius.Mini.splitLast x0) w
 
 abbrev Stmt_split_more (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Option Lanius.Mini.Split} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → (RepOption 238 RepSplit) x1 v1 →
-    (RepOption 238 RepSplit) (Lanius.Mini.splitMore x0 x1) w
+  ∀ {x0 : List Nat} {x1 : Option Lanius.Mini.Split} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → (RepOption 246 RepSplit) x1 v1 →
+    (RepOption 246 RepSplit) (Lanius.Mini.splitMore x0 x1) w
 
 abbrev Stmt_type_path_spellings (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepCTree x1 v1 → RepCTree x2 v2 →
-    (RepOption 134 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.typePathSpellings x0 x1 x2) w
+    (RepOption 137 (RepList 31 (RepList 25 RepNat))) (Lanius.Mini.typePathSpellings x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

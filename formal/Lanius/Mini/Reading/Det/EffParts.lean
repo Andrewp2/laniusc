@@ -110,30 +110,6 @@ theorem pathRefR_unique : ∀ {segment tail : CTree} {a b : PathRef},
   | _, _, _, _, .more p _ _, .args p' _ _ => by prod_clash
   | _, _, _, _, .more _ _ r, .more _ _ r' => by rw [pathRefR_unique r r']
 
-theorem typeOwner_unique {env : FrontEnv} {front : ModPath} {a b : Name} (h₁ : TypeOwner env front a)
-    (h₂ : TypeOwner env front b) : a = b := by
-  have e := h₁.1.symm.trans h₂.1
-  cases e
-  rfl
-
-theorem ownerTy_unique {env : FrontEnv} {n : Name} {a b : Ty} (h₁ : OwnerTy env n a) (h₂ : OwnerTy env n b) :
-    a = b := by
-  rcases h₁ with p | ⟨np, l⟩ | ⟨np, l, d, at', -, rfl⟩ <;>
-    rcases h₂ with p' | ⟨np', l'⟩ | ⟨np', l', d', at'', -, rfl⟩
-  · exact paramTy_unique p p'
-  · exact (paramTy_noParam p np').elim
-  · exact (paramTy_noParam p np').elim
-  · exact (paramTy_noParam p' np).elim
-  · rw [l] at l'
-    cases l'
-    rfl
-  · rw [l] at l'
-    cases l'
-  · exact (paramTy_noParam p' np).elim
-  · rw [l] at l'
-    cases l'
-  · rw [declAt_unique at' at'']
-
 theorem bareVariant_unique {d : Decls} {m : ModPath} {name : Name} {a b : VariantAt}
     (h₁ : BareVariant d m name a) (h₂ : BareVariant d m name b) : a = b := by
   cases h₁ with

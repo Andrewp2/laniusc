@@ -3,12 +3,17 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.consTreeTail
-import Lanius.Mini.Frontend.P.enumsNamedOk
+import Lanius.Mini.Frontend.P.constNamesIn
+import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.itemOf
+import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.projectionRet
+import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.variantIn
@@ -157,28 +162,34 @@ def isSomeIndex (k : Option Nat) : Bool :=
   | none => false
   | some x => true
 
-/-- A struct's declaration (an enum's path names its variants). -/
-def isStructAt (env : FrontEnv) (k : Option Nat) : Bool :=
+/-- A declared type that owns the function spelled name: a struct, or an enum with no variant so spelled (`E::V(..)` names the variant). -/
+def isOwnerAt (env : FrontEnv) (k : Option Nat) (name : List Nat) : Bool :=
   match k with
   | none => false
   | some d =>
     match env.decls.types[d]? with
     | none => false
-    | some t => !t.isEnum
+    | some t => !t.isEnum || !(member t.variants name)
 
-/-- A path's one-segment prefix that names a type: a type parameter, a primitive type or a struct of the current module (`T::m`, `i32::hash`, `Date::lt`). -/
-def isTypeParam (env : FrontEnv) (owner : Option (List Nat)) : Bool :=
+/-- A one-segment prefix naming a type parameter or a primitive type. -/
+def isScalarOwner (env : FrontEnv) (owner : Option (List Nat)) : Bool :=
   match owner with
   | none => false
-  | some n => member env.names n || !(isNoneType (primitive n)) || isStructAt env (typeDeclAt env [n])
+  | some n => member env.names n || !(isNoneType (primitive n))
 
-/-- A type of the current module stands for itself with no type arguments. -/
-def ownerTy (env : FrontEnv) (owner : Option (List Nat)) : Option Ty :=
-  match owner with
-  | none => none
-  | some n =>
-    match paramTy env n with
-    | some t => some t
-    | none => primOrNamed env [n] n
+/-- A path's prefix that names a type, for the function spelled name: a type parameter or a primitive type (one segment), or a struct or an enum the prefix names as a type path, resolved like any other (`T::m`, `i32::hash`, `Date::lt`, `Color::next`, `p::Date::lt`). -/
+def isTypeOwner (env : FrontEnv) (front : List (List Nat)) (name : List Nat) : Bool :=
+  isScalarOwner env (singleName front) || isOwnerAt env (typeDeclAt env front) name
+
+/-- A path naming a function: `T::m` for a type T, or a free function of the path's module. -/
+def isFnPath (env : FrontEnv) (s : Split) : Bool :=
+  isTypeOwner env s.home s.name || isSomeIndex (findFn env.decls.fns (pathModule env s.home s.name) s.name 0)
+
+/-- A postfix `recv.m(args)` (recv a local, no further postfix). -/
+def isMethodForm (pf : CTree) : Bool :=
+  let primary : CTree := kid pf 0
+  let tail : CTree := kid pf 1
+  let call : CTree := kid tail 3
+  (decide (nodeProd primary = (174)) || decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274))) && decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd call = (161)) && decide (nodeProd (kid call 3) = (164))
 
 end Lanius.Mini

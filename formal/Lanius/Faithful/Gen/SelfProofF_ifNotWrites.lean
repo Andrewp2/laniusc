@@ -15,8 +15,10 @@ public import Lanius.Faithful.Gen.SelfStmtF_enumsNamedOk
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_ifNotWrites
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
+public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
 public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
 public import Lanius.Faithful.Gen.SelfStmtF_selfRefOf
+public import Lanius.Faithful.Gen.SelfStmtF_typeOnlyNamesIn
 public import Lanius.Faithful.Gen.SelfStmtF_writesLocal
 import all Lanius.Faithful.Gen.SelfSrcF_ifNotWrites
 import all Lanius.Mini.Frontend.P.ifNotWrites
@@ -84,7 +86,7 @@ theorem proof_projection_func {prog : SrcProgram} {prims : Prims} {ix_projection
   simp only [src_projection_func] at h
   faithful [Lanius.Mini.projectionFunc]
 
-theorem proof_read_fn {prog : SrcProgram} {prims : Prims} {ix_read_fn ix_list_items ix_kid ix_length_of_mini_selfhost_List_usize ix_kid_token ix_concat_of_mini_selfhost_List_usize ix_module_globals ix_field_start_Token_of_mini_selfhost_Token ix_length_of_mini_selfhost_Ty ix_params_of ix_empty_of_mini_selfhost_Local ix_result_of ix_ret_expected ix_ref_checked ix_func_params ix_self_ref_id : Nat} (fn : prog.funcs[ix_read_fn]? = some (src_read_fn ix_list_items ix_kid ix_length_of_mini_selfhost_List_usize ix_kid_token ix_concat_of_mini_selfhost_List_usize ix_module_globals ix_field_start_Token_of_mini_selfhost_Token ix_length_of_mini_selfhost_Ty ix_params_of ix_empty_of_mini_selfhost_Local ix_result_of ix_ret_expected ix_ref_checked ix_func_params ix_self_ref_id)) (np : prims.isPrim ix_read_fn = false)
+theorem proof_read_fn {prog : SrcProgram} {prims : Prims} {ix_read_fn ix_list_items ix_kid ix_length_of_mini_selfhost_List_usize ix_kid_token ix_concat_of_mini_selfhost_List_usize ix_module_globals ix_field_start_Token_of_mini_selfhost_Token ix_length_of_mini_selfhost_Ty ix_params_of ix_empty_of_mini_selfhost_Local ix_result_of ix_ret_expected ix_fn_bounds_ok ix_ref_checked ix_func_params ix_self_ref_id : Nat} (fn : prog.funcs[ix_read_fn]? = some (src_read_fn ix_list_items ix_kid ix_length_of_mini_selfhost_List_usize ix_kid_token ix_concat_of_mini_selfhost_List_usize ix_module_globals ix_field_start_Token_of_mini_selfhost_Token ix_length_of_mini_selfhost_Ty ix_params_of ix_empty_of_mini_selfhost_Local ix_result_of ix_ret_expected ix_fn_bounds_ok ix_ref_checked ix_func_params ix_self_ref_id)) (np : prims.isPrim ix_read_fn = false)
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
     (ext_length_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_usize prog prims ix_length_of_mini_selfhost_List_usize n))
@@ -97,6 +99,7 @@ theorem proof_read_fn {prog : SrcProgram} {prims : Prims} {ix_read_fn ix_list_it
     (ext_empty_of_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Local prog prims ix_empty_of_mini_selfhost_Local n))
     (ext_result_of : Certified (∀ {n : Nat}, Stmt_result_of prog prims ix_result_of n))
     (ext_ret_expected : Certified (∀ {n : Nat}, Stmt_ret_expected prog prims ix_ret_expected n))
+    (ext_fn_bounds_ok : Certified (∀ {n : Nat}, Stmt_fn_bounds_ok prog prims ix_fn_bounds_ok n))
     (ext_ref_checked : Certified (∀ {n : Nat}, Stmt_ref_checked prog prims ix_ref_checked n))
     (ext_func_params : Certified (∀ {n : Nat}, Stmt_func_params prog prims ix_func_params n))
     (ext_self_ref_id : Certified (∀ {n : Nat}, Stmt_self_ref_id prog prims ix_self_ref_id n)) {n : Nat} :

@@ -1,0 +1,28 @@
+// Wrap<bool> matches the impl's type, but the impl's where clause needs
+// bool: Show<bool>, which has no impl: rejected.
+trait Show<T> {
+    fn show(v: T) -> i32;
+}
+
+struct Wrap<T> { v: T }
+
+impl Show<i32> for i32 {
+    fn show(v: i32) -> i32 {
+        return v;
+    }
+}
+
+impl<T> Show<Wrap<T>> for Wrap<T> where T: Show<T> {
+    fn show(w: Wrap<T>) -> i32 {
+        return 1;
+    }
+}
+
+fn need<T>(x: T) -> i32 where T: Show<T> {
+    return 0;
+}
+
+fn top(b: bool) -> i32 {
+    let w: Wrap<bool> = Wrap { v: b };
+    return need(w);
+}

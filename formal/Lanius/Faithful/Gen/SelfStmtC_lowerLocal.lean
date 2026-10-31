@@ -25,44 +25,44 @@ abbrev Stmt_from_i32 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepExpr (Lanius.Mini.fromI32 x0 x1) w
 
 abbrev Stmt_lower_field (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Binding} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 148 RepBinding) x0 v0 → RepNat x1 v1 →
-    (RepOption 150 RepTyped) (Lanius.Mini.lowerField x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.Binding} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 151 RepBinding) x0 v0 → RepNat x1 v1 →
+    (RepOption 153 RepTyped) (Lanius.Mini.lowerField x0 x1) w
 
 abbrev Stmt_lower_field_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 154 RepSrcType) x1 v1 →
-    (RepOption 150 RepTyped) (Lanius.Mini.lowerFieldAt x0 x1) w
+  ∀ {x0 : Nat} {x1 : Option Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepOption 157 RepSrcType) x1 v1 →
+    (RepOption 153 RepTyped) (Lanius.Mini.lowerFieldAt x0 x1) w
 
 abbrev Stmt_lower_field_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Binding} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBinding x0 v0 → RepNat x1 v1 →
-    (RepOption 150 RepTyped) (Lanius.Mini.lowerFieldOf x0 x1) w
+    (RepOption 153 RepTyped) (Lanius.Mini.lowerFieldOf x0 x1) w
 
 abbrev Stmt_lower_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Binding} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 148 RepBinding) x0 v0 →
-    (RepOption 150 RepTyped) (Lanius.Mini.lowerLocal x0) w
+  ∀ {x0 : Option Lanius.Mini.Binding} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 151 RepBinding) x0 v0 →
+    (RepOption 153 RepTyped) (Lanius.Mini.lowerLocal x0) w
 
 abbrev Stmt_lower_negate (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 150 RepTyped) x0 v0 →
-    (RepOption 150 RepTyped) (Lanius.Mini.lowerNegate x0) w
+  ∀ {x0 : Option Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 153 RepTyped) x0 v0 →
+    (RepOption 153 RepTyped) (Lanius.Mini.lowerNegate x0) w
 
 abbrev Stmt_lower_negate_typed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepTyped x0 v0 →
-    (RepOption 150 RepTyped) (Lanius.Mini.lowerNegateTyped x0) w
+    (RepOption 153 RepTyped) (Lanius.Mini.lowerNegateTyped x0) w
 
 abbrev Stmt_lower_not (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 150 RepTyped) x0 v0 →
-    (RepOption 150 RepTyped) (Lanius.Mini.lowerNot x0) w
+  ∀ {x0 : Option Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 153 RepTyped) x0 v0 →
+    (RepOption 153 RepTyped) (Lanius.Mini.lowerNot x0) w
 
 abbrev Stmt_lower_not_typed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepTyped x0 v0 →
-    (RepOption 150 RepTyped) (Lanius.Mini.lowerNotTyped x0) w
+    (RepOption 153 RepTyped) (Lanius.Mini.lowerNotTyped x0) w
 
 abbrev Stmt_lower_unsigned (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : BitVec 64} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepUintTy x0 v0 → RepU64 x1 v1 →
-    (RepOption 150 RepTyped) (Lanius.Mini.lowerUnsigned x0 x1) w
+    (RepOption 153 RepTyped) (Lanius.Mini.lowerUnsigned x0 x1) w
 
 abbrev Stmt_negate_float (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Typed} {x1 : Option Lanius.Mini.FloatTy} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTyped x0 v0 → (RepOption 206 RepFloatTy) x1 v1 →
-    (RepOption 150 RepTyped) (Lanius.Mini.negateFloat x0 x1) w
+  ∀ {x0 : Lanius.Mini.Typed} {x1 : Option Lanius.Mini.FloatTy} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTyped x0 v0 → (RepOption 209 RepFloatTy) x1 v1 →
+    (RepOption 153 RepTyped) (Lanius.Mini.negateFloat x0 x1) w
 
 abbrev Stmt_negate_signed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepUintTy x0 v0 → RepExpr x1 v1 →

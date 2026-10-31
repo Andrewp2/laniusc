@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::is_match_stmt -/
-def src_is_match_stmt (ix_match_primary : Nat) : SrcFunc := { params := [{ id := 14, ty := SrcType.uint (UintTy.usize) }, { id := 27, ty := ty83 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_match_primary [SrcEff.ePure (SrcExpr.local 14), SrcEff.ePure (SrcExpr.local 27)]) ty132 (SrcType.bool) [[127], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
+def src_is_match_stmt (ix_match_primary : Nat) : SrcFunc := { params := [{ id := 14, ty := SrcType.uint (UintTy.usize) }, { id := 27, ty := ty83 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.eCall ix_match_primary [SrcEff.ePure (SrcExpr.local 14), SrcEff.ePure (SrcExpr.local 27)]) ty135 (SrcType.bool) [[127], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
 
 end
 

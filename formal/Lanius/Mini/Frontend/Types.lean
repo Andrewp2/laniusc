@@ -94,7 +94,7 @@ structure TypeDecl where
   payloads : List (List CTree)
   deriving Repr
 
-/-- A function or an impl method: its module, spelling, the impl's type parameters and type as written (a method), its own type parameters, and its fn_item or impl_fn_item node. -/
+/-- A function or an impl method: its module, spelling, the impl's type parameters and type as written (a method), its own type parameters, its fn_item or impl_fn_item node, and a method's impl node (whose type parameters and where clause bound the method's instances too). -/
 structure FnDecl where
   home : List (List Nat)
   name : List Nat
@@ -103,6 +103,7 @@ structure FnDecl where
   selfType : CTree
   params : List (List Nat)
   tree : CTree
+  implTree : CTree
   deriving Repr
 
 /-- `const name: ty = value;` -/
@@ -127,6 +128,13 @@ structure AliasDecl where
   ty : CTree
   deriving Repr
 
+/-- `impl<params> Trait<..> for T where ..` (impl_trait), its node. -/
+structure ImplDecl where
+  home : List (List Nat)
+  params : List (List Nat)
+  tree : CTree
+  deriving Repr
+
 /-- The declarations of all the files, in file order. -/
 structure Decls where
   types : List TypeDecl
@@ -134,6 +142,7 @@ structure Decls where
   consts : List ConstDecl
   imports : List ImportDecl
   aliases : List AliasDecl
+  impls : List ImplDecl
   deriving Repr
 
 /-- A struct's fields: spellings and type expressions. -/
@@ -207,6 +216,19 @@ structure ArrayParts where
   ty : Ty
   element : Ty
   count : Nat
+  deriving Repr
+
+/-- A trait as a bound or an impl names it: its module and spelling, resolved like a type path's, and its type arguments. -/
+structure TraitRef where
+  home : List (List Nat)
+  name : List Nat
+  args : List Ty
+  deriving Repr
+
+/-- A bound to check: the type ty has an impl of the trait. -/
+structure BoundGoal where
+  traitRef : TraitRef
+  ty : Ty
   deriving Repr
 
 /-- Whether a type expression matches an actual type, as match_ty decides it, with a mismatch told apart from running out of fuel: a method's impl is passed over only when its type does not match. -/

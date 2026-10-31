@@ -376,22 +376,20 @@ theorem effNamed_unique : ∀ {scope : List Local} {expected : Option Ty} {front
     have ih1 := fun {y} k' => effInfer_unique inf nd vn (y := y) k'
     cases h₂ with
     | static to' _ ot' mfor' fd' inf' =>
-      have e := typeOwner_unique to to'
-      subst e
-      have e := ownerTy_unique ot ot'
+      have e := bareTy_unique ot ot'
       subst e
       have e := methodFor_unique mfor mfor'
       subst e
       rw [fd] at fd'
       cases fd'
       exact ih1 inf'
-    | infer nt _ _ _ _ => exact (nt ⟨_, to, te⟩).elim
-    | explicit nt _ _ _ _ _ _ => exact (nt ⟨_, to, te⟩).elim
-    | variant nf _ _ _ => exact (nf (.inl ⟨_, to⟩)).elim
+    | infer nt _ _ _ _ => exact (nt ⟨to, te⟩).elim
+    | explicit nt _ _ _ _ _ _ => exact (nt ⟨to, te⟩).elim
+    | variant nf _ _ _ => exact (nf (.inl to)).elim
   | _, _, _, _, _, _, _, .infer nt fnm fd te inf, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effInfer_unique inf nd vn (y := y) k'
     cases h₂ with
-    | static to te' _ _ _ _ => exact (nt ⟨_, to, te'⟩).elim
+    | static to te' _ _ _ _ => exact (nt ⟨to, te'⟩).elim
     | infer _ fnm' fd' _ inf' =>
       have e := fnNamed_unique fnm fnm'
       subst e
@@ -403,7 +401,7 @@ theorem effNamed_unique : ∀ {scope : List Local} {expected : Option Ty} {front
   | _, _, _, _, _, _, _, .explicit nt fnm fd tne ei pe el, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effList_unique el nd vn (ys := y) k'
     cases h₂ with
-    | static to te _ _ _ _ => exact (nt ⟨_, to, te⟩).elim
+    | static to te _ _ _ _ => exact (nt ⟨to, te⟩).elim
     | infer _ _ _ te _ => exact absurd te tne
     | explicit _ fnm' fd' _ ei' pe' el' =>
       have e := fnNamed_unique fnm fnm'
@@ -419,7 +417,7 @@ theorem effNamed_unique : ∀ {scope : List Local} {expected : Option Ty} {front
   | _, _, _, _, _, _, _, .variant nf te vb ev, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effVariant_unique ev nd vn (y := y) k'
     cases h₂ with
-    | static to _ _ _ _ _ => exact (nf (.inl ⟨_, to⟩)).elim
+    | static to _ _ _ _ _ => exact (nf (.inl to)).elim
     | infer _ fnm _ _ _ => exact (nf (.inr ⟨_, fnm⟩)).elim
     | explicit _ fnm _ _ _ _ _ => exact (nf (.inr ⟨_, fnm⟩)).elim
     | variant _ _ vb' ev' =>

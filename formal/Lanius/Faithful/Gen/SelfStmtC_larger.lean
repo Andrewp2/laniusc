@@ -29,8 +29,8 @@ abbrev Stmt_link (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 49 RepBinary) (Lanius.Mini.Inline.link x0) w
 
 abbrev Stmt_lookup_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Binding} {x1 : List Lanius.Mini.Binding} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinding x0 v0 → (RepList 131 RepBinding) x1 v1 → RepNat x2 v2 →
-    (RepOption 148 RepBinding) (Lanius.Mini.Inline.lookupAt x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.Binding} {x1 : List Lanius.Mini.Binding} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinding x0 v0 → (RepList 134 RepBinding) x1 v1 → RepNat x2 v2 →
+    (RepOption 151 RepBinding) (Lanius.Mini.Inline.lookupAt x0 x1 x2) w
 
 abbrev Stmt_loop_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : List Lanius.Mini.Instr} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 53 RepInstr) x2 v2 → RepStmt x3 v3 →

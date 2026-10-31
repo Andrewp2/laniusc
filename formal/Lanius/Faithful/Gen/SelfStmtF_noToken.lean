@@ -41,7 +41,7 @@ abbrev Stmt_starts_with_kind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : 
     RepBool (Lanius.Mini.startsWithKind x0 x1) w
 
 abbrev Stmt_with_kid (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : Option Lanius.Mini.Attached} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepOption 126 RepAttached) x1 v1 →
-    (RepOption 126 RepAttached) (Lanius.Mini.withKid x0 x1) w
+  ∀ {x0 : Lanius.Mini.CTree} {x1 : Option Lanius.Mini.Attached} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepOption 129 RepAttached) x1 v1 →
+    (RepOption 129 RepAttached) (Lanius.Mini.withKid x0 x1) w
 
 end Lanius.Faithful.SelfCert

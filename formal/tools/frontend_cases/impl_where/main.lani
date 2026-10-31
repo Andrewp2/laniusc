@@ -1,5 +1,5 @@
-// An impl with a where clause: its methods are read as without it (bounds
-// are not checked yet, F7).
+// An impl with a where clause: its methods are read, and the clause is
+// checked of each method instance (F7: Boxed<i32> needs i32: Hash<i32>).
 trait Hash<T> {
     fn hash(value: T) -> u32;
 }
