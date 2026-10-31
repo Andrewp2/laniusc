@@ -612,7 +612,7 @@ def execute (instruction : Instruction) (size : Nat) (before : State) : State :=
 
 `syscall` is not an instruction `decode` knows: what it does is what Linux
 does, stated here for the calls the verified compiler makes
-(TRUSTED_BASE.md section 9). `exit` (rax 60) ends the process
+(TRUSTED_BASE.md section 8). `exit` (rax 60) ends the process
 (`Lanius.Mini.Exits`) and takes no step. -/
 
 /-- The `count` bytes of memory from `address`. -/
@@ -637,7 +637,7 @@ def State.syscalled (before : State) (result r11 : BitVec 64) (memory : Memory) 
 
 /-- What Linux does at a `syscall`, given that the process's standard output
 and standard error are open for writing, that writes to them succeed, and
-that no signal arrives (TRUSTED_BASE.md section 9):
+that no signal arrives (TRUSTED_BASE.md section 8):
 
 - `write` (rax 1) to fd 1 or 2 (rdi) of at most `maxTransfer` bytes (rdx)
   from rsi writes all of them, an event on the trace, and returns their

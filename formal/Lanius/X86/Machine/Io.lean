@@ -5,7 +5,7 @@ module
 namespace Lanius.X86.Machine
 
 /-- One thing a process did to or saw of its environment through the kernel
-(roadmap F8; what each `syscall` does is trusted, TRUSTED_BASE.md section 9). -/
+(roadmap F8; what each `syscall` does is trusted, TRUSTED_BASE.md section 8). -/
 inductive Event where
   /-- `write(fd, buffer, count)` wrote these bytes to `fd`. -/
   | write (fd : Nat) (bytes : List UInt8)
