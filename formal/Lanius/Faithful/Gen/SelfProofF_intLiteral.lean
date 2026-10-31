@@ -3,19 +3,14 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_intLiteral
-public import Lanius.Faithful.Gen.SelfStmt4
+public import Lanius.Faithful.Gen.SelfStmt2
+public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt6
+public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_charOpen
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pIdentPlain
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pSelfValue
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
-public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
-public import Lanius.Faithful.Gen.SelfStmtF_noToken
-public import Lanius.Faithful.Gen.SelfStmtF_noTrees
-public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_wideMarker
 import all Lanius.Faithful.Gen.SelfSrcF_intLiteral
 import all Lanius.Mini.Frontend.P.intLiteral
@@ -98,23 +93,112 @@ theorem proof_escaped_byte {prog : SrcProgram} {prims : Prims} {ix_escaped_byte 
   simp only [src_escaped_byte] at h
   faithful [Lanius.Mini.escapedByte]
 
-theorem step_find_local {prog : SrcProgram} {prims : Prims} {ix_find_local ix_unbox_of_mini_selfhost_List_mini_selfhost_Local ix_find_local_at : Nat} (fn : prog.funcs[ix_find_local]? = some (src_find_local ix_unbox_of_mini_selfhost_List_mini_selfhost_Local ix_find_local_at)) (np : prims.isPrim ix_find_local = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Local prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Local n)) {n : Nat}
-    (ih_find_local_at : Certified (Stmt_find_local_at prog prims ix_find_local_at n)) :
-    Stmt_find_local prog prims ix_find_local (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
+theorem step_fl_add {prog : SrcProgram} {prims : Prims} {ix_fl_add ix_empty_of_bool ix_unbox_of_mini_selfhost_List_bool ix_fl_carry_out ix_cons_of_bool ix_fl_xor ix_fl_carry : Nat} (fn : prog.funcs[ix_fl_add]? = some (src_fl_add ix_empty_of_bool ix_fl_add ix_unbox_of_mini_selfhost_List_bool ix_fl_carry_out ix_cons_of_bool ix_fl_xor ix_fl_carry)) (np : prims.isPrim ix_fl_add = false)
+    (ext_empty_of_bool : Certified (∀ {n : Nat}, Stmt_empty_of_bool prog prims ix_empty_of_bool n))
+    (ext_unbox_of_mini_selfhost_List_bool : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_bool prog prims ix_unbox_of_mini_selfhost_List_bool n))
+    (ext_fl_carry_out : Certified (∀ {n : Nat}, Stmt_fl_carry_out prog prims ix_fl_carry_out n))
+    (ext_cons_of_bool : Certified (∀ {n : Nat}, Stmt_cons_of_bool prog prims ix_cons_of_bool n))
+    (ext_fl_xor : Certified (∀ {n : Nat}, Stmt_fl_xor prog prims ix_fl_xor n))
+    (ext_fl_carry : Certified (∀ {n : Nat}, Stmt_fl_carry prog prims ix_fl_carry n)) {n : Nat}
+    (ih_fl_add : Certified (Stmt_fl_add prog prims ix_fl_add n)) :
+    Stmt_fl_add prog prims ix_fl_add (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rw [pcall_succ np fn] at h
-  simp only [src_find_local] at h
-  faithful [Lanius.Mini.findLocal]
+  simp only [src_fl_add] at h
+  faithful [Lanius.Mini.flAdd]
 
-theorem step_find_local_id {prog : SrcProgram} {prims : Prims} {ix_find_local_id ix_unbox_of_mini_selfhost_List_mini_selfhost_Local ix_find_local_id_at : Nat} (fn : prog.funcs[ix_find_local_id]? = some (src_find_local_id ix_unbox_of_mini_selfhost_List_mini_selfhost_Local ix_find_local_id_at)) (np : prims.isPrim ix_find_local_id = false)
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Local prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Local n)) {n : Nat}
-    (ih_find_local_id_at : Certified (Stmt_find_local_id_at prog prims ix_find_local_id_at n)) :
-    Stmt_find_local_id prog prims ix_find_local_id (n + 1) := by
+theorem proof_fl_borrow_bit {prog : SrcProgram} {prims : Prims} {ix_fl_borrow_bit : Nat} (fn : prog.funcs[ix_fl_borrow_bit]? = some (src_fl_borrow_bit)) (np : prims.isPrim ix_fl_borrow_bit = false) {n : Nat} :
+    Stmt_fl_borrow_bit prog prims ix_fl_borrow_bit n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_borrow_bit] at h
+  faithful [Lanius.Mini.flBorrowBit]
+
+theorem proof_fl_carry {prog : SrcProgram} {prims : Prims} {ix_fl_carry : Nat} (fn : prog.funcs[ix_fl_carry]? = some (src_fl_carry)) (np : prims.isPrim ix_fl_carry = false) {n : Nat} :
+    Stmt_fl_carry prog prims ix_fl_carry n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_carry] at h
+  faithful [Lanius.Mini.flCarry]
+
+theorem proof_fl_carry_out {prog : SrcProgram} {prims : Prims} {ix_fl_carry_out ix_empty_of_bool ix_single_of_bool : Nat} (fn : prog.funcs[ix_fl_carry_out]? = some (src_fl_carry_out ix_empty_of_bool ix_single_of_bool)) (np : prims.isPrim ix_fl_carry_out = false)
+    (ext_empty_of_bool : Certified (∀ {n : Nat}, Stmt_empty_of_bool prog prims ix_empty_of_bool n))
+    (ext_single_of_bool : Certified (∀ {n : Nat}, Stmt_single_of_bool prog prims ix_single_of_bool n)) {n : Nat} :
+    Stmt_fl_carry_out prog prims ix_fl_carry_out n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_carry_out] at h
+  faithful [Lanius.Mini.flCarryOut]
+
+theorem step_fl_less {prog : SrcProgram} {prims : Prims} {ix_fl_less ix_empty_of_bool ix_unbox_of_mini_selfhost_List_bool ix_fl_borrow_bit : Nat} (fn : prog.funcs[ix_fl_less]? = some (src_fl_less ix_empty_of_bool ix_unbox_of_mini_selfhost_List_bool ix_fl_less ix_fl_borrow_bit)) (np : prims.isPrim ix_fl_less = false)
+    (ext_empty_of_bool : Certified (∀ {n : Nat}, Stmt_empty_of_bool prog prims ix_empty_of_bool n))
+    (ext_unbox_of_mini_selfhost_List_bool : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_bool prog prims ix_unbox_of_mini_selfhost_List_bool n))
+    (ext_fl_borrow_bit : Certified (∀ {n : Nat}, Stmt_fl_borrow_bit prog prims ix_fl_borrow_bit n)) {n : Nat}
+    (ih_fl_less : Certified (Stmt_fl_less prog prims ix_fl_less n)) :
+    Stmt_fl_less prog prims ix_fl_less (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_less] at h
+  faithful [Lanius.Mini.flLess]
+
+theorem proof_fl_mul10 {prog : SrcProgram} {prims : Prims} {ix_fl_mul10 ix_fl_add ix_cons_of_bool : Nat} (fn : prog.funcs[ix_fl_mul10]? = some (src_fl_mul10 ix_fl_add ix_cons_of_bool)) (np : prims.isPrim ix_fl_mul10 = false)
+    (ext_fl_add : Certified (∀ {n : Nat}, Stmt_fl_add prog prims ix_fl_add n))
+    (ext_cons_of_bool : Certified (∀ {n : Nat}, Stmt_cons_of_bool prog prims ix_cons_of_bool n)) {n : Nat} :
+    Stmt_fl_mul10 prog prims ix_fl_mul10 n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_mul10] at h
+  faithful [Lanius.Mini.flMul10]
+
+theorem step_fl_shl {prog : SrcProgram} {prims : Prims} {ix_fl_shl ix_minus ix_cons_of_bool : Nat} (fn : prog.funcs[ix_fl_shl]? = some (src_fl_shl ix_minus ix_cons_of_bool ix_fl_shl)) (np : prims.isPrim ix_fl_shl = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_cons_of_bool : Certified (∀ {n : Nat}, Stmt_cons_of_bool prog prims ix_cons_of_bool n)) {n : Nat}
+    (ih_fl_shl : Certified (Stmt_fl_shl prog prims ix_fl_shl n)) :
+    Stmt_fl_shl prog prims ix_fl_shl (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1
   rw [pcall_succ np fn] at h
-  simp only [src_find_local_id] at h
-  faithful [Lanius.Mini.findLocalId]
+  simp only [src_fl_shl] at h
+  faithful [Lanius.Mini.flShl]
+
+theorem step_fl_sub {prog : SrcProgram} {prims : Prims} {ix_fl_sub ix_empty_of_bool ix_unbox_of_mini_selfhost_List_bool ix_cons_of_bool ix_fl_xor ix_fl_borrow_bit : Nat} (fn : prog.funcs[ix_fl_sub]? = some (src_fl_sub ix_empty_of_bool ix_unbox_of_mini_selfhost_List_bool ix_cons_of_bool ix_fl_xor ix_fl_borrow_bit ix_fl_sub)) (np : prims.isPrim ix_fl_sub = false)
+    (ext_empty_of_bool : Certified (∀ {n : Nat}, Stmt_empty_of_bool prog prims ix_empty_of_bool n))
+    (ext_unbox_of_mini_selfhost_List_bool : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_bool prog prims ix_unbox_of_mini_selfhost_List_bool n))
+    (ext_cons_of_bool : Certified (∀ {n : Nat}, Stmt_cons_of_bool prog prims ix_cons_of_bool n))
+    (ext_fl_xor : Certified (∀ {n : Nat}, Stmt_fl_xor prog prims ix_fl_xor n))
+    (ext_fl_borrow_bit : Certified (∀ {n : Nat}, Stmt_fl_borrow_bit prog prims ix_fl_borrow_bit n)) {n : Nat}
+    (ih_fl_sub : Certified (Stmt_fl_sub prog prims ix_fl_sub n)) :
+    Stmt_fl_sub prog prims ix_fl_sub (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_sub] at h
+  faithful [Lanius.Mini.flSub]
+
+theorem step_fl_times10 {prog : SrcProgram} {prims : Prims} {ix_fl_times10 ix_minus ix_fl_mul10 : Nat} (fn : prog.funcs[ix_fl_times10]? = some (src_fl_times10 ix_minus ix_fl_mul10 ix_fl_times10)) (np : prims.isPrim ix_fl_times10 = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_fl_mul10 : Certified (∀ {n : Nat}, Stmt_fl_mul10 prog prims ix_fl_mul10 n)) {n : Nat}
+    (ih_fl_times10 : Certified (Stmt_fl_times10 prog prims ix_fl_times10 n)) :
+    Stmt_fl_times10 prog prims ix_fl_times10 (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_times10] at h
+  faithful [Lanius.Mini.flTimes10]
+
+theorem proof_fl_xor {prog : SrcProgram} {prims : Prims} {ix_fl_xor : Nat} (fn : prog.funcs[ix_fl_xor]? = some (src_fl_xor)) (np : prims.isPrim ix_fl_xor = false) {n : Nat} :
+    Stmt_fl_xor prog prims ix_fl_xor n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_xor] at h
+  faithful [Lanius.Mini.flXor]
 
 theorem proof_int_literal {prog : SrcProgram} {prims : Prims} {ix_int_literal ix_decimal ix_int_in_range ix_wide_marker ix_wide_decimal : Nat} (fn : prog.funcs[ix_int_literal]? = some (src_int_literal ix_decimal ix_int_in_range ix_wide_marker ix_wide_decimal)) (np : prims.isPrim ix_int_literal = false)
     (ext_decimal : Certified (∀ {n : Nat}, Stmt_decimal prog prims ix_decimal n))
@@ -128,22 +212,5 @@ theorem proof_int_literal {prog : SrcProgram} {prims : Prims} {ix_int_literal ix
   rw [pcall_succ np fn] at h
   simp only [src_int_literal] at h
   faithful [Lanius.Mini.intLiteral]
-
-theorem proof_local_of {prog : SrcProgram} {prims : Prims} {ix_local_of ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_ident_plain ix_path_name ix_find_local ix_text_self : Nat} (fn : prog.funcs[ix_local_of]? = some (src_local_of ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_ident_plain ix_path_name ix_find_local ix_text_self)) (np : prims.isPrim ix_local_of = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
-    (ext_p_self_value : Certified (∀ {n : Nat}, Stmt_p_self_value prog prims ix_p_self_value n))
-    (ext_p_ident_plain : Certified (∀ {n : Nat}, Stmt_p_ident_plain prog prims ix_p_ident_plain n))
-    (ext_path_name : Certified (∀ {n : Nat}, Stmt_path_name prog prims ix_path_name n))
-    (ext_find_local : Certified (∀ {n : Nat}, Stmt_find_local prog prims ix_find_local n))
-    (ext_text_self : Certified (∀ {n : Nat}, Stmt_text_self prog prims ix_text_self n)) {n : Nat} :
-    Stmt_local_of prog prims ix_local_of n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_local_of] at h
-  faithful [Lanius.Mini.localOf]
 
 end Lanius.Faithful.SelfCert

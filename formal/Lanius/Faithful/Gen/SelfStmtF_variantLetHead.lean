@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_pure_arms (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List (List Nat)} {x1 : List Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 222 RepMEff) x1 v1 →
+  ∀ {x0 : List (List Nat)} {x1 : List Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 31 (RepList 25 RepNat)) x0 v0 → (RepList 223 RepMEff) x1 v1 →
     (RepOption 247 (RepList 23 RepSrcArm)) (Lanius.Mini.pureArms x0 x1) w
 
 abbrev Stmt_variant_let_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -21,24 +21,24 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_apply_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Lanius.Mini.SrcExpr} {x2 : Option Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → RepSrcExpr x1 v1 → (RepOption 243 RepSrcExpr) x2 v2 →
-    (RepOption 243 RepSrcExpr) (Lanius.Mini.applyOf x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Lanius.Mini.SrcExpr} {x2 : Option Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → RepSrcExpr x1 v1 → (RepOption 222 RepSrcExpr) x2 v2 →
+    (RepOption 222 RepSrcExpr) (Lanius.Mini.applyOf x0 x1 x2) w
 
 abbrev Stmt_cast_into (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 153 RepSrcType) x0 v0 → (RepOption 243 RepSrcExpr) x1 v1 →
-    (RepOption 243 RepSrcExpr) (Lanius.Mini.castInto x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 153 RepSrcType) x0 v0 → (RepOption 222 RepSrcExpr) x1 v1 →
+    (RepOption 222 RepSrcExpr) (Lanius.Mini.castInto x0 x1) w
 
 abbrev Stmt_cast_type_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepCTree x2 v2 →
     (RepOption 153 RepSrcType) (Lanius.Mini.castTypeOf x0 x1 x2) w
 
 abbrev Stmt_cast_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → (RepOption 243 RepSrcExpr) x1 v1 →
-    (RepOption 243 RepSrcExpr) (Lanius.Mini.castValue x0 x1) w
+  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → (RepOption 222 RepSrcExpr) x1 v1 →
+    (RepOption 222 RepSrcExpr) (Lanius.Mini.castValue x0 x1) w
 
 abbrev Stmt_casts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option Lanius.Mini.SrcExpr} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 243 RepSrcExpr) x2 v2 → RepCTree x3 v3 →
-    (RepOption 243 RepSrcExpr) (Lanius.Mini.casts x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option Lanius.Mini.SrcExpr} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 222 RepSrcExpr) x2 v2 → RepCTree x3 v3 →
+    (RepOption 222 RepSrcExpr) (Lanius.Mini.casts x0 x1 x2 x3) w
 
 abbrev Stmt_named_scalar (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 25 RepNat) x2 v2 →
@@ -46,7 +46,7 @@ abbrev Stmt_named_scalar (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_negated_int (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcExpr x0 v0 → RepSrcExpr x1 v1 →
-    (RepOption 243 RepSrcExpr) (Lanius.Mini.negatedInt x0 x1) w
+    (RepOption 222 RepSrcExpr) (Lanius.Mini.negatedInt x0 x1) w
 
 abbrev Stmt_scalar_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 202 RepTy) x0 v0 →
@@ -54,7 +54,7 @@ abbrev Stmt_scalar_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 
 abbrev Stmt_uint_in_range (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : BitVec 64} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepUintTy x0 v0 → RepU64 x1 v1 →
-    (RepOption 243 RepSrcExpr) (Lanius.Mini.uintInRange x0 x1) w
+    (RepOption 222 RepSrcExpr) (Lanius.Mini.uintInRange x0 x1) w
 
 abbrev Stmt_uint_mask (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepUintTy x0 v0 →

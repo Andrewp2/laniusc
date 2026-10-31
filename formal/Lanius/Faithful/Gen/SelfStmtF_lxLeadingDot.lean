@@ -22,11 +22,11 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lx_best (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 183 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 →
-    (RepOption 233 RepSymRule) (Lanius.Mini.lxBest x0 x1) w
+    (RepOption 234 RepSymRule) (Lanius.Mini.lxBest x0 x1) w
 
 abbrev Stmt_lx_best_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SymRule} {x1 : Option Lanius.Mini.SymRule} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSymRule x0 v0 → (RepOption 233 RepSymRule) x1 v1 → (RepList 25 RepNat) x2 v2 →
-    (RepOption 233 RepSymRule) (Lanius.Mini.lxBestAt x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.SymRule} {x1 : Option Lanius.Mini.SymRule} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSymRule x0 v0 → (RepOption 234 RepSymRule) x1 v1 → (RepList 25 RepNat) x2 v2 →
+    (RepOption 234 RepSymRule) (Lanius.Mini.lxBestAt x0 x1 x2) w
 
 abbrev Stmt_lx_delimited (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.Scan} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepNat x1 v1 → RepScan x2 v2 →

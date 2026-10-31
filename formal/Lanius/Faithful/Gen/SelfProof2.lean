@@ -30,6 +30,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_boxed_of_mini_selfhost_List_bool {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_bool : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_bool = true) {n : Nat} :
+    Stmt_boxed_of_mini_selfhost_List_bool prog prims ix_boxed_of_mini_selfhost_List_bool n :=
+  fun h r => prim_cert np h r
+
 theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl = true) {n : Nat} :
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_AliasDecl n :=
   fun h r => prim_cert np h r
@@ -285,6 +289,16 @@ theorem step_length_of_mini_selfhost_Expr {prog : SrcProgram} {prims : Prims} {i
   simp only [src_length_of_mini_selfhost_Expr] at h
   faithful []
 
+theorem proof_single_of_bool {prog : SrcProgram} {prims : Prims} {ix_single_of_bool ix_boxed_of_mini_selfhost_List_bool : Nat} (fn : prog.funcs[ix_single_of_bool]? = some (src_single_of_bool ix_boxed_of_mini_selfhost_List_bool)) (np : prims.isPrim ix_single_of_bool = false)
+    (ext_boxed_of_mini_selfhost_List_bool : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_bool prog prims ix_boxed_of_mini_selfhost_List_bool n)) {n : Nat} :
+    Stmt_single_of_bool prog prims ix_single_of_bool n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_single_of_bool] at h
+  faithful []
+
 theorem proof_single_of_mini_selfhost_List_usize {prog : SrcProgram} {prims : Prims} {ix_single_of_mini_selfhost_List_usize ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize : Nat} (fn : prog.funcs[ix_single_of_mini_selfhost_List_usize]? = some (src_single_of_mini_selfhost_List_usize ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize)) (np : prims.isPrim ix_single_of_mini_selfhost_List_usize = false)
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_List_usize prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_List_usize n)) {n : Nat} :
     Stmt_single_of_mini_selfhost_List_usize prog prims ix_single_of_mini_selfhost_List_usize n := by
@@ -304,6 +318,10 @@ theorem proof_single_of_mini_selfhost_MEff {prog : SrcProgram} {prims : Prims} {
   rw [pcall_succ np fn] at h
   simp only [src_single_of_mini_selfhost_MEff] at h
   faithful []
+
+theorem proof_unbox_of_mini_selfhost_List_bool {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_bool : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_bool = true) {n : Nat} :
+    Stmt_unbox_of_mini_selfhost_List_bool prog prims ix_unbox_of_mini_selfhost_List_bool n :=
+  fun h r => prim_cert np h r
 
 theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_CTree {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree = true) {n : Nat} :
     Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n :=

@@ -26,7 +26,7 @@ abbrev Stmt_diverge_func (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_param_effs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.MParam} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 164 RepMParam) x0 v0 →
-    (RepList 222 RepMEff) (Lanius.Mini.paramEffs x0) w
+    (RepList 223 RepMEff) (Lanius.Mini.paramEffs x0) w
 
 abbrev Stmt_projection_func (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option Lanius.Mini.Ty} {x1 : Lanius.Mini.Inst} {x2 : Lanius.Mini.Decls} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 202 RepTy) x0 v0 → RepInst x1 v1 → RepDecls x2 v2 →

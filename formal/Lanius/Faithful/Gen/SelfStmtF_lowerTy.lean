@@ -37,7 +37,7 @@ abbrev Stmt_lower_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 181 (RepList 71 RepSrcType)) (Lanius.Mini.lowerTys x0 x1 x2 x3) w
 
 abbrev Stmt_lower_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 134 RepInst) x2 v2 → (RepOption 230 (RepList 231 (RepList 136 RepTy))) x3 v3 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : List Lanius.Mini.Inst} {x3 : Option (List (List Lanius.Mini.Ty))} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → (RepList 134 RepInst) x2 v2 → (RepOption 231 (RepList 232 (RepList 136 RepTy))) x3 v3 →
     (RepOption 182 (RepList 75 (RepList 71 RepSrcType))) (Lanius.Mini.lowerVariants x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

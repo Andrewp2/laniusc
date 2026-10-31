@@ -22,6 +22,6 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_variant_of_decl (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.TypeDecl} {x1 : Nat} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepTypeDecl x0 v0 → RepNat x1 v1 → (RepList 25 RepNat) x2 v2 →
-    (RepOption 252 RepVariantAt) (Lanius.Mini.variantOfDecl x0 x1 x2) w
+    (RepOption 256 RepVariantAt) (Lanius.Mini.variantOfDecl x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

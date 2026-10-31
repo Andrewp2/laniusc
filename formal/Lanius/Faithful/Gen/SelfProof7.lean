@@ -86,6 +86,16 @@ theorem step_concat_of_u8 {prog : SrcProgram} {prims : Prims} {ix_concat_of_u8 i
   simp only [src_concat_of_u8] at h
   faithful []
 
+theorem proof_cons_of_bool {prog : SrcProgram} {prims : Prims} {ix_cons_of_bool ix_boxed_of_mini_selfhost_List_bool : Nat} (fn : prog.funcs[ix_cons_of_bool]? = some (src_cons_of_bool ix_boxed_of_mini_selfhost_List_bool)) (np : prims.isPrim ix_cons_of_bool = false)
+    (ext_boxed_of_mini_selfhost_List_bool : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_bool prog prims ix_boxed_of_mini_selfhost_List_bool n)) {n : Nat} :
+    Stmt_cons_of_bool prog prims ix_cons_of_bool n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_cons_of_bool] at h
+  faithful []
+
 theorem proof_cons_of_mini_selfhost_Bind {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_Bind ix_boxed_of_mini_selfhost_List_mini_selfhost_Bind : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_Bind]? = some (src_cons_of_mini_selfhost_Bind ix_boxed_of_mini_selfhost_List_mini_selfhost_Bind)) (np : prims.isPrim ix_cons_of_mini_selfhost_Bind = false)
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_Bind : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Bind prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Bind n)) {n : Nat} :
     Stmt_cons_of_mini_selfhost_Bind prog prims ix_cons_of_mini_selfhost_Bind n := by

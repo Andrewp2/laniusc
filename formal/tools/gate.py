@@ -41,6 +41,8 @@ T = 'formal/tools/'
 STEPS = [
     # F9: the IEEE specification against this CPU's SSE unit.
     ('float', ['float_test.py', '{w}', '--count', '2000', '--seed', '{s}'], ['float_test'], True),
+    # Step 14 and F9: the x86 model's decode and execute against this CPU, every emitted form.
+    ('x86-model', ['x86_model_test.py', '{w}', '--per-form', '100', '--seed', '{s}'], ['lean'], True),
     ('mini', ['mini_difftest.py', '{w}', '--count', '40', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], True),
     ('oracle', ['oracle_difftest.py', '{w}', '--count', '40', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], True),
     ('optimize', ['optimize_test.py', '{w}', '--count', '60', '--seed', '{s}'], ['lean'], True),

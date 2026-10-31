@@ -175,6 +175,18 @@ structure FrontEnv where
   base : Nat
   deriving Repr
 
+structure FlDiv where
+  q : List Bool
+  r : List Bool
+  deriving DecidableEq, Repr
+
+/-- A float literal's digits and exponent. -/
+structure FlDec where
+  m : List Bool
+  neg : Bool
+  mag : Nat
+  deriving DecidableEq, Repr
+
 /-- A local in scope: its spelling, its id and its type. -/
 structure Local where
   name : List Nat

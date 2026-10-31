@@ -27,6 +27,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pChar : Nat :=
   178
 
+@[expose] def Inline.pFloat : Nat :=
+  176
+
 @[expose] def Inline.pItemPub : Nat :=
   3
 

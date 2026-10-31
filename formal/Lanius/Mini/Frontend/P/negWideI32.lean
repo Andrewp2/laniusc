@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.firstSrc
+import Lanius.Mini.Frontend.P.flExpFirst
 import Lanius.Mini.Frontend.P.nullConst
 import Lanius.Mini.Frontend.P.sintAt
 import Lanius.Mini.Frontend.P.unitTy
@@ -123,7 +124,10 @@ def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcE
   | .apply op a b => SrcExpr.apply op (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) a) (litExpr locals (amountWant op want (knownExpr locals a) (knownExpr locals b)) b)
   | .cast t x =>
     (match wideValue e with
-     | none => SrcExpr.cast t (litExpr locals none x)
+     | none =>
+       (match floatWant want t x with
+        | none => SrcExpr.cast t (litExpr locals none x)
+        | some y => y)
      | some n => wideAt want n e)
   | .null => e
   | .char code => e

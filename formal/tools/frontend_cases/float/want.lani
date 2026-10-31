@@ -15,3 +15,15 @@ fn mix(a: f32, b: f32, c: f64, n: i32) -> f64 {
 fn twice(x: f64) -> f64 {
     return mix(1 as f32, 2 as f32, x, 3) + mix(1 as f32, 2 as f32, x, 3);
 }
+
+fn lits(x: f64, y: f32) -> f64 {
+    let a: f32 = 1.;
+    let b: f64 = x * 1e-1 + 22250738585072014E-324;
+    if (x < 0.325 || y > 340282346638528860000000000000000000000.0) {
+        return -1500.0;
+    }
+    if (y == -0e0) {
+        return 1e+400;
+    }
+    return b - (5e-1 as f64) + (a as f64) - 1e-7;
+}

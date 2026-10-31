@@ -5,6 +5,7 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_typedLiteral
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt6
+public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
 public import Lanius.Faithful.Gen.SelfStmtF_nullConst
 public import Lanius.Faithful.Gen.SelfStmtF_scalarOf
 public import Lanius.Faithful.Gen.SelfStmtF_typedLiteral
@@ -38,14 +39,16 @@ theorem proof_literal_as {prog : SrcProgram} {prims : Prims} {ix_literal_as ix_t
   simp only [src_literal_as] at h
   faithful [Lanius.Mini.literalAs]
 
-theorem proof_typed_literal {prog : SrcProgram} {prims : Prims} {ix_typed_literal ix_unbox_of_mini_selfhost_SrcExpr ix_boxed_of_mini_selfhost_SrcExpr ix_uint_in_range ix_null_const ix_sint_const ix_negated_int ix_neg_sint_const : Nat} (fn : prog.funcs[ix_typed_literal]? = some (src_typed_literal ix_unbox_of_mini_selfhost_SrcExpr ix_boxed_of_mini_selfhost_SrcExpr ix_uint_in_range ix_null_const ix_sint_const ix_negated_int ix_neg_sint_const)) (np : prims.isPrim ix_typed_literal = false)
+theorem proof_typed_literal {prog : SrcProgram} {prims : Prims} {ix_typed_literal ix_unbox_of_mini_selfhost_SrcExpr ix_boxed_of_mini_selfhost_SrcExpr ix_uint_in_range ix_null_const ix_sint_const ix_negated_int ix_negated_float ix_neg_sint_const ix_float_typed : Nat} (fn : prog.funcs[ix_typed_literal]? = some (src_typed_literal ix_unbox_of_mini_selfhost_SrcExpr ix_boxed_of_mini_selfhost_SrcExpr ix_uint_in_range ix_null_const ix_sint_const ix_negated_int ix_negated_float ix_neg_sint_const ix_float_typed)) (np : prims.isPrim ix_typed_literal = false)
     (ext_unbox_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_SrcExpr n))
     (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n))
     (ext_uint_in_range : Certified (∀ {n : Nat}, Stmt_uint_in_range prog prims ix_uint_in_range n))
     (ext_null_const : Certified (∀ {n : Nat}, Stmt_null_const prog prims ix_null_const n))
     (ext_sint_const : Certified (∀ {n : Nat}, Stmt_sint_const prog prims ix_sint_const n))
     (ext_negated_int : Certified (∀ {n : Nat}, Stmt_negated_int prog prims ix_negated_int n))
-    (ext_neg_sint_const : Certified (∀ {n : Nat}, Stmt_neg_sint_const prog prims ix_neg_sint_const n)) {n : Nat} :
+    (ext_negated_float : Certified (∀ {n : Nat}, Stmt_negated_float prog prims ix_negated_float n))
+    (ext_neg_sint_const : Certified (∀ {n : Nat}, Stmt_neg_sint_const prog prims ix_neg_sint_const n))
+    (ext_float_typed : Certified (∀ {n : Nat}, Stmt_float_typed prog prims ix_float_typed n)) {n : Nat} :
     Stmt_typed_literal prog prims ix_typed_literal n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n

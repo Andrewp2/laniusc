@@ -61,8 +61,8 @@ abbrev Stmt_cons_ty_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     (RepOption 203 (RepList 136 RepTy)) (Lanius.Mini.consTyTail x0 x1) w
 
 abbrev Stmt_cons_tys_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Ty} {x1 : Option (List (List Lanius.Mini.Ty))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 136 RepTy) x0 v0 → (RepOption 230 (RepList 231 (RepList 136 RepTy))) x1 v1 →
-    (RepOption 230 (RepList 231 (RepList 136 RepTy))) (Lanius.Mini.consTysTail x0 x1) w
+  ∀ {x0 : List Lanius.Mini.Ty} {x1 : Option (List (List Lanius.Mini.Ty))} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 136 RepTy) x0 v0 → (RepOption 231 (RepList 232 (RepList 136 RepTy))) x1 v1 →
+    (RepOption 231 (RepList 232 (RepList 136 RepTy))) (Lanius.Mini.consTysTail x0 x1) w
 
 abbrev Stmt_named_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Nat} {x2 : Option (List Lanius.Mini.Ty)} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFrontEnv x0 v0 → RepNat x1 v1 → (RepOption 203 (RepList 136 RepTy)) x2 v2 →

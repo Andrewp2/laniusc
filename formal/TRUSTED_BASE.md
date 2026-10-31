@@ -360,6 +360,18 @@ still a parse tree of the same tokens. Trusted:
     `\x` for other `x`, a malformed encoding as code 0). A constant of type
     `char` is its literal. `char` is the primitive type `SrcType.char`,
     held as its code (`UInt32`), which Core's `Value.character` is;
+  - `f32` and `f64` (added 10-31, F9) are `SrcType.float .f32/.f64`, held
+    as their IEEE bit patterns as Core's `.f32Bits`/`.f64Bits` are. A float
+    literal (`floatParts`, `Reading/Exprs.lean`) is decimal digits with an
+    optional `.` and fraction and an optional `e`/`E` exponent with a sign,
+    read as the exact `m * 10^e`; underscores are rejected, and so is an
+    exponent of more than 99999 (only so that the powers stay small). Its
+    value is `ofDecimal` of `m` and `e` at the expected type when that is a
+    float type, and at `f32` (Core's `literalDefaultType`) otherwise.
+    `flDecimal_eq` (`Reading/FloatBits.lean`) proves that the front end's
+    bignum rounding equals `Lanius.IEEE.Format.ofDecimal`, so the rounding
+    is not trusted; only `ofDecimal` itself is (section 3). A constant of a
+    float type is its literal, or the negation of its literal;
   - a local is the byte offset of its binding (a parameter, `let` or match
     binder) from the start of its function's name (since 10-25, so that an
     edit to one function renumbers the locals of no other);
@@ -603,7 +615,9 @@ total before it); nothing else depends on them.
   - `Machine/Flags.lean` and `Machine/Alu.lean`: flag results and condition
     codes;
   - `Machine/Memory.lean`: little-endian reads and writes;
-  - `Control/Decode.lean`, `Register.lean` (REX) and `Word.lean`.
+  - `Control/Decode.lean`, `Register.lean` (REX) and `Word.lean`;
+  - `Machine/Sse.lean` (added 10-30, F9): the low 64 bits of xmm0-xmm15
+    (`State.xmm`) and the scalar SSE instructions the compiler emits.
 
   These were written by hand from the Intel SDM. Here is what the model does
   not contain, so each of the following is assumed:
@@ -619,6 +633,30 @@ total before it); nothing else depends on them.
   - **Not modeled at all.** Segment bases, CET shadow stacks (the compiled code
     pairs every `call` with a `ret`), and the CPU being in 64-bit mode with
     default operand sizes.
+  - **SSE (F9).** The meaning of each SSE instruction is `Lanius.IEEE`'s
+    operation on the bits (section 3); that the CPU computes it is trusted:
+    - `movd xmm, r32` and `movq xmm, r64` (66 [REX.W] 0F 6E /r) put the
+      zero-extended register in the low 64 bits; `movd r32, xmm` writes the
+      low 32 bits zero-extended, `movq r64, xmm` the low 64 (66 [REX.W] 0F
+      7E /r);
+    - `addss subss mulss divss` (F3 0F 58/5C/59/5E /r) replace the
+      destination's low 32 bits by binary32 `add sub mul div` of the two low
+      32-bit fields (destination first) and keep bits 32-63; the `sd` forms
+      (F2) replace all 64 low bits by the binary64 operation;
+    - `cmpss`/`cmpsd` (F3/F2 0F C2 /r ib) with predicates 0 (EQ_OQ), 1
+      (LT_OS) and 2 (LE_OS) write all ones in the low 32 (single) or 64
+      (double) bits when `eq`, `lt` or `le` holds, else zeros (false on a
+      NaN); only these three predicates decode;
+    - `cvtsi2ss`/`cvtsi2sd` (F3/F2 [REX.W] 0F 2A /r) round the signed 32-
+      or 64-bit register (`ofInt`); `cvtss2sd` (F3 0F 5A) widens and
+      `cvtsd2ss` (F2 0F 5A) rounds (`convert`);
+    - the high 64 bits of each xmm register are not modeled: no modeled
+      instruction reads them into the low half, so they cannot change a
+      result;
+    - MXCSR is not modeled. It is assumed to hold Linux's default at exec,
+      0x1F80 (round to nearest, every exception masked, no flush to zero,
+      no denormals as zero), which no compiled code changes; its sticky
+      exception flags are set by the CPU and never read.
 - **Encoders are proved, not trusted.** The literal bytes in `Compiler.lean`
   are proved equal to the `X86/Machine` encoders (`Instr.encode_eq`,
   `prologue_eq`). Those encoders are proved to decode to the intended
@@ -772,7 +810,7 @@ python3 -I formal/tools/x86_model_test.py target/claude-work/step14/seed2 --per-
 ```
 
 **The forms.** The tool tests every instruction form the mini compiler emits
-(on 10-29, 60 emitted encodings split into 79 forms). The Lean side prints
+(on 10-31, 80 emitted encodings split into 107 forms, 28 of them SSE). The Lean side prints
 `Instr.encode` for every `Instr` constructor (every `BinOp` and `CmpOp` at
 both words), plus `prologue` and `epilogue`. The tool splits those bytes into
 the form table and fails on any byte it cannot place, so a new emitted form
@@ -788,7 +826,16 @@ cannot go untested. The forms are:
 - three `cmp`s and `test`;
 - ten `setcc`s and `movzx`;
 - `jmp`, `je`, `jb`, `jbe` and `call` (rel32);
-- `push` and `pop rbp`, `ret`, and `ud2`.
+- `push` and `pop rbp`, `ret`, and `ud2`;
+- (F9) `movd`/`movq` of xmm0 and xmm1 from and to rax and rcx, `addss`
+  ... `divsd xmm0, xmm1`, `cmpss`/`cmpsd xmm0, xmm1` with predicates 0, 1
+  and 2, `cvtsi2ss`/`cvtsi2sd xmm0` from ecx and rcx, `cvtss2sd` and
+  `cvtsd2ss xmm0, xmm0`. Their cases also load xmm0 and xmm1 (random float
+  patterns in the low 64 bits: zeros, infinities, NaNs with payloads,
+  subnormals, near operands; random high bits) and MXCSR's default
+  0x1F80, and compare the low 64 bits of both registers afterwards. The
+  gate runs this test as the quick step `x86-model` (100 cases a form). On
+  10-31 (AMD Ryzen 9 5900HX): 10,603 cases, 2,800 of them SSE, 0 disagree.
 
 **Each case.** The tool draws random registers (with special values and
 equal operands mixed in), random status flags and DF, a random 256-byte

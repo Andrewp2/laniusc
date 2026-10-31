@@ -29,12 +29,12 @@ abbrev Stmt_eff_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 200 RepNat) (Lanius.Mini.effLocal x0) w
 
 abbrev Stmt_eff_slice_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Local} {x1 : Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 225 RepLocal) x0 v0 → RepMEff x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Local} {x1 : Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 226 RepLocal) x0 v0 → RepMEff x1 v1 →
     (RepOption 244 RepLocal) (Lanius.Mini.effSliceLocal x0 x1) w
 
 abbrev Stmt_field_of_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.FrontEnv} {x1 : Lanius.Mini.MEff} {x2 : Option Lanius.Mini.Ty} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepFrontEnv x0 v0 → RepMEff x1 v1 → (RepOption 202 RepTy) x2 v2 → (RepList 25 RepNat) x3 v3 →
-    (RepOption 242 RepMEff) (Lanius.Mini.fieldOfTy x0 x1 x2 x3) w
+    (RepOption 243 RepMEff) (Lanius.Mini.fieldOfTy x0 x1 x2 x3) w
 
 abbrev Stmt_field_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {x1 : Lanius.Mini.MEff} {x2 : Lanius.Mini.Ty} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepDecls x0 v0 → RepMEff x1 v1 → RepTy x2 v2 → RepNat x3 v3 →
@@ -42,7 +42,7 @@ abbrev Stmt_field_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_method_of_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option Lanius.Mini.Ty} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 202 RepTy) x2 v2 → (RepList 25 RepNat) x3 v3 →
-    (RepOption 254 RepFound) (Lanius.Mini.methodOfTy x0 x1 x2 x3) w
+    (RepOption 258 RepFound) (Lanius.Mini.methodOfTy x0 x1 x2 x3) w
 
 abbrev Stmt_projection (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Decls} {x1 : Lanius.Mini.Ty} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepDecls x0 v0 → RepTy x1 v1 → RepNat x2 v2 →

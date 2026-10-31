@@ -25,7 +25,7 @@ abbrev Stmt_arith (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 149 RepTyped) (Lanius.Mini.arith x0 x1 x2) w
 
 abbrev Stmt_float_apply (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.FArith} {x1 : Lanius.Mini.FloatTy} {x2 : Lanius.Mini.Typed} {x3 : Lanius.Mini.Typed} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepOption 235 RepFArith) x0 v0 → RepFloatTy x1 v1 → RepTyped x2 v2 → RepTyped x3 v3 →
+  ∀ {x0 : Option Lanius.Mini.FArith} {x1 : Lanius.Mini.FloatTy} {x2 : Lanius.Mini.Typed} {x3 : Lanius.Mini.Typed} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepOption 236 RepFArith) x0 v0 → RepFloatTy x1 v1 → RepTyped x2 v2 → RepTyped x3 v3 →
     (RepOption 149 RepTyped) (Lanius.Mini.floatApply x0 x1 x2 x3) w
 
 abbrev Stmt_float_arith (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

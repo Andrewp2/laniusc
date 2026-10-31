@@ -30,6 +30,6 @@ abbrev Stmt_arith_uint (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_float_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepBinOp x0 v0 →
-    (RepOption 235 RepFArith) (Lanius.Mini.floatOp x0) w
+    (RepOption 236 RepFArith) (Lanius.Mini.floatOp x0) w
 
 end Lanius.Faithful.SelfCert

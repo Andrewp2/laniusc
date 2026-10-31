@@ -3,6 +3,8 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.consTys
 import Lanius.Mini.Frontend.P.findConst
+import Lanius.Mini.Frontend.P.flExpFirst
+import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral
@@ -119,7 +121,10 @@ def exprOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) : Opti
                               if p = (178) then
                                 charLiteral (kidToken c 0).text
                               else
-                                none
+                                if p = (176) then
+                                  floatLiteral (kidToken c 0).text
+                                else
+                                  none
 /-- A name: a local, or else a constant, whose literal value it is. -/
 def identExpr (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) : Option SrcExpr :=
   if fuel = 0 then

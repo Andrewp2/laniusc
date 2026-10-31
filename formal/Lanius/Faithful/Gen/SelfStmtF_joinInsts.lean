@@ -45,16 +45,16 @@ abbrev Stmt_named_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 189 (RepList 134 RepInst)) (Lanius.Mini.namedInsts x0 x1 x2 x3) w
 
 abbrev Stmt_negated (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 243 RepSrcExpr) x0 v0 →
-    (RepOption 243 RepSrcExpr) (Lanius.Mini.negated x0) w
+  ∀ {x0 : Option Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 222 RepSrcExpr) x0 v0 →
+    (RepOption 222 RepSrcExpr) (Lanius.Mini.negated x0) w
 
 abbrev Stmt_notted (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 243 RepSrcExpr) x0 v0 →
-    (RepOption 243 RepSrcExpr) (Lanius.Mini.notted x0) w
+  ∀ {x0 : Option Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 222 RepSrcExpr) x0 v0 →
+    (RepOption 222 RepSrcExpr) (Lanius.Mini.notted x0) w
 
 abbrev Stmt_tail_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
-    (RepOption 248 RepSrcOp) (Lanius.Mini.tailOp x0) w
+    (RepOption 252 RepSrcOp) (Lanius.Mini.tailOp x0) w
 
 abbrev Stmt_ty_insts (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Ty} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepTy x2 v2 →

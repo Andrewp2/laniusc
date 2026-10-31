@@ -25,7 +25,7 @@ abbrev Stmt_eff_calls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepList 134 RepInst) (Lanius.Mini.effCalls x0) w
 
 abbrev Stmt_effs_calls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 222 RepMEff) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 223 RepMEff) x0 v0 →
     (RepList 134 RepInst) (Lanius.Mini.effsCalls x0) w
 
 abbrev Stmt_read_inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

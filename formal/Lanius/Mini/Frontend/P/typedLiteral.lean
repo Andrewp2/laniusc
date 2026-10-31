@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.nullConst
 import Lanius.Mini.Frontend.P.scalarOf
 
@@ -49,13 +50,13 @@ def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
      | .tyPtr => none
      | .tyIsize => negatedInt x (SrcExpr.negate (SrcExpr.cast SrcType.isize x))
      | .tyChar => none
-     | .tyFloat ft => none
+     | .tyFloat ft => negatedFloat ft x
      | .tySlice y => none
      | .tyNamed d args => none
      | .tySint u => negSintConst u x)
   | .not x => none
   | .apply op a b => none
-  | .cast s x => none
+  | .cast s x => floatTyped t s x
   | .null => none
   | .char code =>
     (match t with

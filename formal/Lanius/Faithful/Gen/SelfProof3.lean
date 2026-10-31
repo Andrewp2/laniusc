@@ -126,6 +126,15 @@ theorem proof_cons_of_mini_selfhost_Sym {prog : SrcProgram} {prims : Prims} {ix_
   simp only [src_cons_of_mini_selfhost_Sym] at h
   faithful []
 
+theorem proof_empty_of_bool {prog : SrcProgram} {prims : Prims} {ix_empty_of_bool : Nat} (fn : prog.funcs[ix_empty_of_bool]? = some (src_empty_of_bool)) (np : prims.isPrim ix_empty_of_bool = false) {n : Nat} :
+    Stmt_empty_of_bool prog prims ix_empty_of_bool n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_empty_of_bool] at h
+  faithful []
+
 theorem proof_empty_of_core_option_Option_mini_selfhost_SrcType {prog : SrcProgram} {prims : Prims} {ix_empty_of_core_option_Option_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_empty_of_core_option_Option_mini_selfhost_SrcType]? = some (src_empty_of_core_option_Option_mini_selfhost_SrcType)) (np : prims.isPrim ix_empty_of_core_option_Option_mini_selfhost_SrcType = false) {n : Nat} :
     Stmt_empty_of_core_option_Option_mini_selfhost_SrcType prog prims ix_empty_of_core_option_Option_mini_selfhost_SrcType n := by
   intro w h

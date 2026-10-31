@@ -11,6 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_firstSrc
+public import Lanius.Faithful.Gen.SelfStmtF_flExpFirst
 public import Lanius.Faithful.Gen.SelfStmtF_negWideI32
 public import Lanius.Faithful.Gen.SelfStmtF_nullConst
 public import Lanius.Faithful.Gen.SelfStmtF_sintAt
@@ -150,7 +151,7 @@ theorem step_lit_effs {prog : SrcProgram} {prims : Prims} {ix_lit_effs ix_unbox_
   simp only [src_lit_effs] at h
   faithful [Lanius.Mini.litEffs]
 
-theorem step_lit_expr {prog : SrcProgram} {prims : Prims} {ix_lit_expr ix_unbox_of_mini_selfhost_SrcExpr ix_int_at ix_wide_value ix_neg_wide_at ix_neg_least ix_boxed_of_mini_selfhost_SrcExpr ix_operand_want ix_known_expr ix_amount_want ix_wide_at : Nat} (fn : prog.funcs[ix_lit_expr]? = some (src_lit_expr ix_unbox_of_mini_selfhost_SrcExpr ix_lit_expr ix_int_at ix_wide_value ix_neg_wide_at ix_neg_least ix_boxed_of_mini_selfhost_SrcExpr ix_operand_want ix_known_expr ix_amount_want ix_wide_at)) (np : prims.isPrim ix_lit_expr = false)
+theorem step_lit_expr {prog : SrcProgram} {prims : Prims} {ix_lit_expr ix_unbox_of_mini_selfhost_SrcExpr ix_int_at ix_wide_value ix_neg_wide_at ix_neg_least ix_boxed_of_mini_selfhost_SrcExpr ix_operand_want ix_known_expr ix_amount_want ix_wide_at ix_float_want : Nat} (fn : prog.funcs[ix_lit_expr]? = some (src_lit_expr ix_unbox_of_mini_selfhost_SrcExpr ix_lit_expr ix_int_at ix_wide_value ix_neg_wide_at ix_neg_least ix_boxed_of_mini_selfhost_SrcExpr ix_operand_want ix_known_expr ix_amount_want ix_wide_at ix_float_want)) (np : prims.isPrim ix_lit_expr = false)
     (ext_unbox_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_SrcExpr n))
     (ext_int_at : Certified (∀ {n : Nat}, Stmt_int_at prog prims ix_int_at n))
     (ext_wide_value : Certified (∀ {n : Nat}, Stmt_wide_value prog prims ix_wide_value n))
@@ -160,7 +161,8 @@ theorem step_lit_expr {prog : SrcProgram} {prims : Prims} {ix_lit_expr ix_unbox_
     (ext_operand_want : Certified (∀ {n : Nat}, Stmt_operand_want prog prims ix_operand_want n))
     (ext_known_expr : Certified (∀ {n : Nat}, Stmt_known_expr prog prims ix_known_expr n))
     (ext_amount_want : Certified (∀ {n : Nat}, Stmt_amount_want prog prims ix_amount_want n))
-    (ext_wide_at : Certified (∀ {n : Nat}, Stmt_wide_at prog prims ix_wide_at n)) {n : Nat}
+    (ext_wide_at : Certified (∀ {n : Nat}, Stmt_wide_at prog prims ix_wide_at n))
+    (ext_float_want : Certified (∀ {n : Nat}, Stmt_float_want prog prims ix_float_want n)) {n : Nat}
     (ih_lit_expr : Certified (Stmt_lit_expr prog prims ix_lit_expr n)) :
     Stmt_lit_expr prog prims ix_lit_expr (n + 1) := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2

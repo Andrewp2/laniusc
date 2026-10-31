@@ -256,6 +256,13 @@ theorem exprR_unique : ∀ {env : FrontEnv} {scope : List Local} {c : CTree} {a 
     | «false» _ =>
       rfl
     | _ => expr_clash
+  | _, _, _, _, _, .float _ l, h₂ => by
+    cases h₂ with
+    | «float» _ l' =>
+      rw [l] at l'
+      cases l'
+      rfl
+    | _ => expr_clash
 
 theorem fold_unique : ∀ {env : FrontEnv} {scope : List Local} {acc : SrcExpr} {tail : CTree} {a b : SrcExpr},
     Fold env scope acc tail a → Fold env scope acc tail b → a = b
