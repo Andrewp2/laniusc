@@ -231,6 +231,7 @@ theorem store_spec : ∀ n, StoreAt sp boxes n
       | i32 => exact NativeStoreSpec.sty s notUnit
       | bool => exact NativeStoreSpec.sty s notUnit
       | uint _ => exact NativeStoreSpec.sty s notUnit
+      | char => exact s.elim
       | sint _ => exact s.elim
       | isize => exact NativeStoreSpec.sty s notUnit
       | unit => exact absurd rfl notUnit

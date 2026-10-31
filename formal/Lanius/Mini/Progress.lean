@@ -253,6 +253,14 @@ theorem order_defined {op : CmpOp} {cop : Core.BinaryOp}
     rw [htl] at holdsl
     rw [htr] at holdsr
     exact sint_defined (by rcases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> simp) holdsl holdsr
+  split at lowered
+  · rename_i types
+    cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isChar] at types
+    rw [htl] at holdsl
+    rw [htr] at holdsr
+    obtain ⟨rfl, sl⟩ := holdsl
+    obtain ⟨rfl, sr⟩ := holdsr
+    exact ⟨_, eval_char_order sl sr h⟩
   · obtain ⟨k, hk, htr, rfl⟩ := orderUint_some lowered
     rw [SrcType.eq_of_uintKind hk] at holdsl
     rw [htr] at holdsr
@@ -295,6 +303,11 @@ theorem equality_defined {op : CmpOp} {cop : Core.BinaryOp}
       rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
       · exact ⟨_, eval_isize_eq _ _⟩
       · exact ⟨_, eval_isize_ne _ _⟩
+    · obtain ⟨rfl, sl⟩ := holdsl
+      obtain ⟨rfl, sr⟩ := holdsr
+      rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+      · exact ⟨_, eval_char_eq sl sr⟩
+      · exact ⟨_, eval_char_ne sl sr⟩
     · rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
       · exact sint_defined (by simp) holdsl holdsr
       · exact sint_defined (by simp) holdsl holdsr
@@ -438,6 +451,7 @@ theorem SrcExpr.progress (e : SrcExpr) {scope : List Binding} {frame : Nat → N
   | int x => intro _ _ _; exact ⟨1, _, by simp only [SrcExpr.toCore, evalExpr] <;> rfl⟩
   | boolean x => intro _ _ _; exact ⟨1, _, by simp only [SrcExpr.toCore, evalExpr] <;> rfl⟩
   | null => intro _ _ _; exact ⟨1, _, by simp only [SrcExpr.toCore, evalExpr] <;> rfl⟩
+  | char c => intro _ _ _; exact ⟨1, _, by simp only [SrcExpr.toCore, evalExpr] <;> rfl⟩
   | unsigned kind value => intro _ _ _; exact ⟨1, _, by simp only [SrcExpr.toCore, evalExpr] <;> rfl⟩
   | «local» id =>
     intro t lowered _

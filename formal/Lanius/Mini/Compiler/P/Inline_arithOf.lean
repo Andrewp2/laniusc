@@ -12,6 +12,7 @@ public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.evalSame
 public import Lanius.Mini.Compiler.P.lowerCallSig
 public import Lanius.Mini.Compiler.P.lowerLoadType
+public import Lanius.Mini.Compiler.P.norm
 public import Lanius.Mini.Compiler.P.pow2
 public import Lanius.Mini.Compiler.P.sigs
 

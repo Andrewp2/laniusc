@@ -77,6 +77,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => false
+  | .char => false
   | .sint sk => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
@@ -90,6 +91,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => false
+  | .char => false
   | .sint sk => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
@@ -103,6 +105,7 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => true
+  | .char => true
   | .sint kind => true
 
 def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
@@ -116,6 +119,7 @@ def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => false
+  | .char => false
   | .sint sk => false
 
 def SrcType.isPtr (self : SrcType) : Bool :=
@@ -129,6 +133,7 @@ def SrcType.isPtr (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => false
+  | .char => false
   | .sint sk => false
 
 def SrcType.isUnit (self : SrcType) : Bool :=
@@ -142,6 +147,7 @@ def SrcType.isUnit (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => true
   | .isize => false
+  | .char => false
   | .sint sk => false
 
 def SrcType.isIsize (self : SrcType) : Bool :=
@@ -155,6 +161,21 @@ def SrcType.isIsize (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => true
+  | .char => false
+  | .sint kind => false
+
+def SrcType.isChar (self : SrcType) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .uint kind => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice element => false
+  | .unit => false
+  | .isize => false
+  | .char => true
   | .sint kind => false
 
 /-- An integer type: a shift takes an amount of any of them. -/
@@ -169,6 +190,7 @@ def SrcType.isInteger (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => true
+  | .char => false
   | .sint kind => true
 
 def SrcType.isSintAny (self : SrcType) : Bool :=
@@ -182,6 +204,7 @@ def SrcType.isSintAny (self : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => false
+  | .char => false
   | .sint kind => true
 
 def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
@@ -195,6 +218,7 @@ def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => false
+  | .char => false
   | .sint other => decide (UintTy.code other = UintTy.code kind)
 
 /-- The width of the signed type this is, if it is one of Sint. -/
@@ -209,6 +233,7 @@ def SrcType.sintKind (self : SrcType) : Option UintTy :=
   | .slice element => none
   | .unit => none
   | .isize => none
+  | .char => none
   | .sint kind => some kind
 
 /-- The unsigned type this is, if it is one. -/
@@ -223,6 +248,7 @@ def SrcType.uintKind (self : SrcType) : Option UintTy :=
   | .slice element => none
   | .unit => none
   | .isize => none
+  | .char => none
   | .sint sk => none
 
 /-- How a comparison of two values of this type reads their slots. -/
@@ -237,6 +263,7 @@ def SrcType.word (self : SrcType) : Word :=
   | .slice element => Word.u64
   | .unit => Word.s32
   | .isize => Word.u64
+  | .char => Word.u64
   | .sint kind => UintTy.signedWord kind
 
 mutual
@@ -256,6 +283,7 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .slice otherElement => false
      | .unit => false
      | .isize => false
+     | .char => false
      | .sint otherSk => false)
   | .enum id variants =>
     (match other with
@@ -268,6 +296,7 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .slice otherElement => false
      | .unit => false
      | .isize => false
+     | .char => false
      | .sint otherSk => false)
   | .ptr => SrcType.isPtr other
   | .slice element =>
@@ -281,9 +310,11 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .slice otherElement => SrcType.same element otherElement
      | .unit => false
      | .isize => false
+     | .char => false
      | .sint otherSk => false)
   | .unit => SrcType.isUnit other
   | .isize => SrcType.isIsize other
+  | .char => SrcType.isChar other
   | .sint kind => SrcType.isSint other kind
 def typesSame (types : List SrcType) (others : List SrcType) : Bool :=
   match types with
@@ -320,6 +351,7 @@ def SrcType.size (self : SrcType) : Nat :=
   | .slice element => 2
   | .unit => 1
   | .isize => 1
+  | .char => 1
   | .sint kind => 1
 def sizes (types : List SrcType) : Nat :=
   match types with
@@ -348,9 +380,5 @@ def wrap (kind : UintTy) (e : Expr) : Expr :=
     e
   else
     Expr.binary Word.u64 BinOp.and e (Expr.lit (UintTy.mask kind))
-
-/-- The low bits of e as wide as kind, sign-extended to 32 bits: a narrow signed value's slot from any bits with the same low bits. The shift left drops the bits above the width and the arithmetic shift back copies the sign bit down. -/
-def norm (kind : UintTy) (e : Expr) : Expr :=
-  Expr.binary Word.s32 BinOp.sar (Expr.binary Word.s32 BinOp.shl e (Expr.lit (UintTy.spare kind))) (Expr.lit (UintTy.spare kind))
 
 end Lanius.Mini

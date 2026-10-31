@@ -26,6 +26,7 @@ def wordWidth (ty : SrcType) : Option MemWidth :=
   | .slice element => none
   | .unit => none
   | .isize => some MemWidth.m64
+  | .char => none
   | .sint kind => usizeWidth kind
 
 /-- The fields declared for a struct match the type's. -/
@@ -53,6 +54,7 @@ def wordType (decls : SrcDecls) (ty : SrcType) : Bool :=
   | .slice element => false
   | .unit => false
   | .isize => true
+  | .char => false
   | .sint kind => true
 def wordTypes (decls : SrcDecls) (types : List SrcType) : Bool :=
   match types with

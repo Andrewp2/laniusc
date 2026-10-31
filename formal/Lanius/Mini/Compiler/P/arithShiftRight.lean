@@ -62,6 +62,9 @@ def order (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
       if SrcType.isSintAny left.ty then
         orderSint operation left right (SrcType.sintKind left.ty)
       else
-        orderUint operation left right (SrcType.uintKind left.ty)
+        if SrcType.isChar left.ty && SrcType.isChar right.ty then
+          some ({ expr := Expr.compare Word.u64 operation left.expr right.expr, ty := SrcType.bool } : Typed)
+        else
+          orderUint operation left right (SrcType.uintKind left.ty)
 
 end Lanius.Mini

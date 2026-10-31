@@ -44,6 +44,7 @@ def copyFieldOf (b : Binding) (index : Nat) (ty : SrcType) : Option (List Expr) 
   | .slice element => none
   | .unit => none
   | .isize => none
+  | .char => none
   | .sint sk => none
 
 /-- A field of type ty of a struct local, slot by slot. It takes slots. -/
@@ -65,6 +66,7 @@ def lowerCopy (scope : List Binding) (e : SrcExpr) (ty : SrcType) : Option (List
   | .apply op left right => none
   | .cast target operand => none
   | .null => none
+  | .char code => none
 
 def lowerSingle (value : Option Expr) : Option (List Expr) :=
   match value with
@@ -108,6 +110,7 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
   | .slice element => none
   | .unit => none
   | .isize => none
+  | .char => none
   | .sint sk => none
 
 def lowerTag (variant : Nat) (payload : Option (List Expr)) : Option (List Expr) :=

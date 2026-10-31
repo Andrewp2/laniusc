@@ -87,5 +87,6 @@ def negatedInt (x : SrcExpr) (e : SrcExpr) : Option SrcExpr :=
   | .apply op a b => none
   | .cast t y => none
   | .null => none
+  | .char code => none
 
 end Lanius.Mini

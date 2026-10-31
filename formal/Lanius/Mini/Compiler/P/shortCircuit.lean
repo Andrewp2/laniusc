@@ -93,6 +93,7 @@ def elementOf (ty : SrcType) : Option SrcType :=
   | .slice element => some element
   | .unit => none
   | .isize => none
+  | .char => none
   | .sint sk => none
 
 /-- The index in slot, then the element it picks loaded over it. -/
@@ -123,6 +124,7 @@ def evalStruct (ty : SrcType) (args : Option EvaluatedArgs) : Option Evaluated :
     | .slice element => none
     | .unit => none
     | .isize => none
+    | .char => none
     | .sint sk => none
 
 /-- The payload, evaluated from slot + 1, then the tag in slot. -/
@@ -155,6 +157,7 @@ def evalVariant (ty : SrcType) (variant : Nat) (slot : Nat) (args : Option Evalu
     | .slice element => none
     | .unit => none
     | .isize => none
+    | .char => none
     | .sint sk => none
 
 def signedDiv (op : SrcDivOp) : DivOp :=

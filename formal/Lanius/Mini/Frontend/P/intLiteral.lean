@@ -25,6 +25,104 @@ def intLiteral (text : List Nat) : Option SrcExpr :=
     else
       none
 
+/-- The closing quote, last. -/
+def charClose (code : Nat) (rest : List Nat) : Option SrcExpr :=
+  match rest with
+  | [] => none
+  | q :: more =>
+    if q = 39 then
+      match more with
+      | [] => some (SrcExpr.char (BitVec.ofNat 32 code))
+      | b :: more => none
+    else
+      none
+
+def charCloseOpt (code : Option Nat) (rest : List Nat) : Option SrcExpr :=
+  match code with
+  | none => none
+  | some c => charClose c rest
+
+/-- The byte an escape \e stands for. -/
+def escapedByte (e : Nat) : Option Nat :=
+  if e = 110 then
+    some 10
+  else
+    if e = 114 then
+      some 13
+    else
+      if e = 116 then
+        some 9
+      else
+        if e = 48 then
+          some 0
+        else
+          if decide (e = 39) || decide (e = 34) || decide (e = 92) then
+            some e
+          else
+            none
+
+/-- The continuation bytes of a UTF-8 encoding: the next in lo..hi, then `more` more in 128..191, each adding its low six bits to code. -/
+def charTail (text : List Nat) (more : Nat) (code : Nat) (lo : Nat) (hi : Nat) : Option SrcExpr :=
+  match text with
+  | [] => none
+  | b :: rest =>
+    if decide (lo ≤ b) && decide (b ≤ hi) then
+      let next : Nat := code * 64 + (b - 128)
+      if more = 0 then
+        charClose next rest
+      else
+        charTail rest (more - 1) next 128 191
+    else
+      none
+
+def charBody (text : List Nat) : Option SrcExpr :=
+  match text with
+  | [] => none
+  | b :: rest =>
+    if b = 92 then
+      match rest with
+      | [] => none
+      | e :: rest => charCloseOpt (escapedByte e) rest
+    else
+      if decide (b = 39) || decide (b = 10) then
+        none
+      else
+        if b < 128 then
+          charClose b rest
+        else
+          if decide (194 ≤ b) && decide (b ≤ 223) then
+            charTail rest 0 (b - 192) 128 191
+          else
+            if b = 224 then
+              charTail rest 1 0 160 191
+            else
+              if b = 237 then
+                charTail rest 1 13 128 159
+              else
+                if decide (225 ≤ b) && decide (b ≤ 239) then
+                  charTail rest 1 (b - 224) 128 191
+                else
+                  if b = 240 then
+                    charTail rest 2 0 144 191
+                  else
+                    if b = 244 then
+                      charTail rest 2 4 128 143
+                    else
+                      if decide (241 ≤ b) && decide (b ≤ 243) then
+                        charTail rest 2 (b - 240) 128 191
+                      else
+                        none
+
+/-- A char literal's text, its quotes included: one byte below 128 other than the quote, the backslash and newline; an escape \n \r \t \0 \' \" \\; or the well-formed UTF-8 encoding of one Unicode scalar, two to four bytes. laniusc's parse_char_token decodes these the same way (it also takes forms this rejects). -/
+def charLiteral (text : List Nat) : Option SrcExpr :=
+  match text with
+  | [] => none
+  | q :: rest =>
+    if q = 39 then
+      charBody rest
+    else
+      none
+
 /-- The innermost local spelled name. -/
 def findLocal (scope : List Local) (name : List Nat) : Option Local :=
   match scope with

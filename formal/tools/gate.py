@@ -46,7 +46,9 @@ STEPS = [
     ('traps', ['trap_test.py', '{w}'], ['lean'], True),
     ('frontend-cases', ['frontend_difftest.py', '{w}', '--cases', T + 'frontend_cases'], ['lean', 'laniusc', 'stdlib'],
      True),
-    ('fn', ['fn_difftest.py', '{w}', '--per-fn', '5', '--seed', '{s}'], ['lean', 'lani', 'laniusc', 'stdlib'], True),
+    # Two shards: laniusc runs out of GPU resources on the whole harness.
+    ('fn', ['fn_difftest.py', '{w}', '--per-fn', '5', '--seed', '{s}', '--shard', '0/2'], ['lean', 'lani', 'laniusc', 'stdlib'], True),
+    ('fn-2', ['fn_difftest.py', '{w}', '--per-fn', '5', '--seed', '{s}', '--shard', '1/2'], ['lean', 'lani', 'laniusc', 'stdlib'], True),
     ('self-compile-encode', ['self_compile.py', '{w}', '--count', '40', '--seed', '{s}'],
      ['lean', 'run_all', 'lani', 'laniusc', 'stdlib'], True),
     ('self-compile-program', ['self_compile.py', '{w}', '--stage', 'program', '--count', '40', '--seed', '{s}'],

@@ -152,6 +152,7 @@ theorem expr_safe (target : P.target = .x86_64) (tenv : TEnv) (env : Env) (e : S
   | null =>
     intro k st r st' t run ht rel
     simp [exprTy] at ht
+  | char code => intro k st r st' t run; exact (value_trap run).elim
 
 theorem exprs_safe (target : P.target = .x86_64) (tenv : TEnv) (env : Env) :
     ∀ (es : List SrcExpr) {k : Nat} {st : State} {r : Lanius.Trap} {st' : State} {ts : List SrcType},

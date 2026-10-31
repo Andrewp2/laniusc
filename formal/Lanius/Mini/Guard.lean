@@ -21,6 +21,7 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.norm
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
@@ -266,6 +267,7 @@ theorem SrcExpr.guard_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
   | int x => intro t fuel v st' _ _; rfl
   | boolean x => intro t fuel v st' _ _; rfl
   | null => intro t fuel v st' _ _; rfl
+  | char c => intro t fuel v st' _ _; rfl
   | unsigned kind value => intro t fuel v st' _ _; rfl
   | «local» id => intro t fuel v st' _ _; rfl
   | field id index => intro t fuel v st' _ _; rfl

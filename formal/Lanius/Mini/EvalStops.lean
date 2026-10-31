@@ -1091,6 +1091,7 @@ theorem eff_match (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some
   | slice => cases values <;> simp [matchVariants, evalArms] at armsOk
   | unit => cases values <;> simp [matchVariants, evalArms] at armsOk
   | isize => cases values <;> simp [matchVariants, evalArms] at armsOk
+  | char => cases values <;> simp [matchVariants, evalArms] at armsOk
   | sint => cases values <;> simp [matchVariants, evalArms] at armsOk
 
 end Cases
@@ -1221,6 +1222,7 @@ theorem stops_setFieldEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.fun
   case h_8 => simp at ok
   case h_9 => simp at ok
   case h_10 => simp at ok
+  case h_11 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok

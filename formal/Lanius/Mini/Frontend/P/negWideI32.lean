@@ -48,6 +48,7 @@ def negWideAt (want : Option SrcType) (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
     | .slice el => e
     | .unit => e
     | .isize => negWideIsize n e
+    | .char => e
     | .sint sk => negWideSint sk n e
 
 def leastCast (u : UintTy) (k : BitVec 32) (d : SrcExpr) : SrcExpr :=
@@ -68,6 +69,7 @@ def negLeastAt (u : UintTy) (x : SrcExpr) (d : SrcExpr) : SrcExpr :=
   | .apply op a b => d
   | .cast t y => d
   | .null => d
+  | .char code => d
 
 /-- `-k` at a narrow signed type whose least value is -k, which k alone is not in the range of: the cast of the i32 literal -k. -/
 def negLeast (want : Option SrcType) (x : SrcExpr) (d : SrcExpr) : SrcExpr :=
@@ -84,6 +86,7 @@ def negLeast (want : Option SrcType) (x : SrcExpr) (d : SrcExpr) : SrcExpr :=
     | .slice el => d
     | .unit => d
     | .isize => d
+    | .char => d
     | .sint sk => negLeastAt sk x d
 
 /-- An expression's type when it does not rest on literals. -/
@@ -99,6 +102,7 @@ def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
   | .apply op a b => knownApply op (knownExpr locals a) (knownExpr locals b)
   | .cast t x => knownCast t
   | .null => some SrcType.ptr
+  | .char code => some SrcType.char
 
 def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcExpr :=
   match e with
@@ -118,6 +122,7 @@ def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcE
      | none => SrcExpr.cast t (litExpr locals none x)
      | some n => wideAt want n e)
   | .null => e
+  | .char code => e
 
 def litExprs (locals : List LocalTy) (wants : Option (List SrcType)) (es : List SrcExpr) : List SrcExpr :=
   match es with
@@ -245,6 +250,7 @@ def wideLeft (e : SrcExpr) : Bool :=
   | .apply op a b => wideLeft a || wideLeft b
   | .cast t x => unitTy t || wideLeft x
   | .null => false
+  | .char code => false
 
 def wideLeftExprs (es : List SrcExpr) : Bool :=
   match es with

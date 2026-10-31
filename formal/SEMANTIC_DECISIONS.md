@@ -513,6 +513,16 @@ most 4096 words) and payload size (under 4096 words), and
 accepts has Core words, its mini size. A typed program now reaches
 `typeMismatch` only by reading an invalid bit pattern from raw memory.
 
+### Char literals (decided 10-30)
+
+The front end reads a char literal only when its text is the UTF-8
+encoding of one Unicode scalar value (not the quote, backslash or newline)
+or one of the escapes `\n \r \t \0 \' \" \\`, between quotes
+(`Reading.CharLiteral`). laniusc reads more (`'ab'` as `'a'`, `'\q'` as
+`'q'`, a malformed encoding as code 0); those texts are rejected rather
+than given laniusc's reading, since a program that relies on them is
+almost certainly wrong. Where both read a literal they give the same code.
+
 ## Decisions still required
 
 - Which NaN payload details are observable through future bit-conversion APIs.

@@ -161,10 +161,19 @@ pub enum SrcType {
     Uint(UintTy),
     Struct(usize, Box<List<SrcType>>),
     Enum(usize, Box<List<List<SrcType>>>),
+    // a raw pointer into the heap
     Ptr,
+    // Core's raw slice of this element type: one slot, its address
     Slice(Box<SrcType>),
+    // the unit type: one slot whose bits do not matter
     Unit,
+    // a signed 64-bit integer, its two's complement bits in one slot
     Isize,
+    // a char, its 32-bit code in one slot
+    Char,
+    // the signed integer type as wide as kind (i8, i16, i32, i64, isize). A
+    // narrow one sits in its slot as an i32 does, its value's 32-bit two's
+    // complement zero-extended; a 64-bit one as an isize does.
     Sint(UintTy),
 }
 
@@ -177,14 +186,20 @@ pub enum SrcOp {
 pub enum SrcExpr {
     Int(i32),
     Boolean(bool),
+    // a literal of an unsigned type
     Unsigned(UintTy, u64),
     Local(usize),
+    // field of a struct local
     Field(usize, usize),
     Negate(Box<SrcExpr>),
     Not(Box<SrcExpr>),
     Apply(SrcOp, Box<SrcExpr>, Box<SrcExpr>),
+    // between i32 and the unsigned types, wrapping like Core
     Cast(SrcType, Box<SrcExpr>),
+    // the null pointer, Core's pointer 0
     Null,
+    // a char literal: its code, a Unicode scalar value
+    Char(u32),
 }
 
 pub struct SrcArm {
@@ -779,7 +794,7 @@ pub fn spelled5(name: List<usize>, a: usize, b: usize, c: usize, d: usize, e: us
     };
 }
 
-// i32, bool, u8, u16, u32, u64, usize, ptr, isize, i8, i16, i64
+// i32, bool, u8, u16, u32, u64, usize, ptr, isize, i8, i16, i64, char
 pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     if (spelled3(name, 105, 51, 50)) {
         return Some(I32);
@@ -816,6 +831,9 @@ pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     }
     if (spelled3(name, 105, 54, 52)) {
         return Some(Sint(Uint64));
+    }
+    if (spelled4(name, 99, 104, 97, 114)) {
+        return Some(SrcType::Char);
     }
     return None;
 }
@@ -1024,6 +1042,7 @@ pub enum Ty {
     TyUint(UintTy),
     TyPtr,
     TyIsize,
+    TyChar,
     TySlice(Box<Ty>),
     TyNamed(usize, Box<List<Ty>>),
     TySint(UintTy),
@@ -1725,6 +1744,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyUint(v) -> false,
             TyPtr -> false,
             TyIsize -> false,
+            TyChar -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1735,6 +1755,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyUint(v) -> false,
             TyPtr -> false,
             TyIsize -> false,
+            TyChar -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1745,6 +1766,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyUint(v) -> uint_code(u) == uint_code(v),
             TyPtr -> false,
             TyIsize -> false,
+            TyChar -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1755,6 +1777,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyUint(v) -> false,
             TyPtr -> true,
             TyIsize -> false,
+            TyChar -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1765,6 +1788,18 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyUint(v) -> false,
             TyPtr -> false,
             TyIsize -> true,
+            TyChar -> false,
+            TySlice(f) -> false,
+            TyNamed(e, bs) -> false,
+            TySint(v) -> false,
+        },
+        TyChar -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TyIsize -> false,
+            TyChar -> true,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1775,6 +1810,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyUint(v) -> false,
             TyPtr -> false,
             TyIsize -> false,
+            TyChar -> false,
             TySlice(f) -> same_ty(unbox(x), unbox(f)),
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1785,6 +1821,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyUint(v) -> false,
             TyPtr -> false,
             TyIsize -> false,
+            TyChar -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> (d == e) && same_tys(unbox(args), unbox(bs)),
             TySint(v) -> false,
@@ -1795,6 +1832,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyUint(v) -> false,
             TyPtr -> false,
             TyIsize -> false,
+            TyChar -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> uint_code(u) == uint_code(v),
@@ -1983,6 +2021,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         Slice(e) -> None,
         Unit -> None,
         Isize -> Some(TyIsize),
+        SrcType::Char -> Some(TyChar),
         Sint(sk) -> Some(TySint(sk)),
     };
 }
@@ -1994,6 +2033,7 @@ pub fn scalar_src(t: Ty) -> core::option::Option<SrcType> {
         TyUint(k) -> Some(Uint(k)),
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
+        TyChar -> Some(SrcType::Char),
         TySlice(e) -> None,
         TyNamed(d, args) -> None,
         TySint(k) -> Some(Sint(k)),
@@ -2331,6 +2371,7 @@ pub fn lower_ty(fuel: usize, decls: Decls, table: List<Inst>, t: Ty) -> core::op
         TyUint(k) -> Some(Uint(k)),
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
+        TyChar -> Some(SrcType::Char),
         TySlice(e) -> slice_type(lower_ty(minus(fuel, 1), decls, table, unbox(e))),
         TyNamed(d, args) -> lower_named(minus(fuel, 1), decls, table, d, unbox(args)),
         TySint(k) -> Some(Sint(k)),
@@ -2414,6 +2455,7 @@ pub fn ty_insts(fuel: usize, decls: Decls, t: Ty) -> core::option::Option<List<I
         TyUint(k) -> Some(empty()),
         TyPtr -> Some(empty()),
         TyIsize -> Some(empty()),
+        TyChar -> Some(empty()),
         TySlice(e) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
         TyNamed(d, args) -> cons_inst(Inst { decl: d, args: unbox(args) }, named_insts(minus(fuel, 1), decls, d, unbox(args))),
         TySint(k) -> Some(empty()),
@@ -2586,6 +2628,7 @@ pub fn unit_ty(t: SrcType) -> bool {
         Slice(e) -> false,
         Unit -> true,
         Isize -> false,
+        SrcType::Char -> false,
         Sint(sk) -> false,
     };
 }
@@ -2604,6 +2647,143 @@ pub fn int_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
     return match (decimal(text, 0)) {
         None -> wide_marker(wide_decimal(text, 0)),
         Some(v) -> int_in_range(v),
+    };
+}
+
+// extract: inline
+fn char_end(ecode: usize, eq: usize, emore: List<usize>) -> core::option::Option<SrcExpr> {
+    if (eq == 39) {
+        return match (emore) {
+            Nil -> Some(SrcExpr::Char((ecode as i32) as u32)),
+            Cons(b, more) -> None,
+        };
+    }
+    return None;
+}
+
+// The closing quote, last.
+pub fn char_close(code: usize, rest: List<usize>) -> core::option::Option<SrcExpr> {
+    return match (rest) {
+        Nil -> None,
+        Cons(q, more) -> char_end(code, q, unbox(more)),
+    };
+}
+
+pub fn char_close_opt(code: core::option::Option<usize>, rest: List<usize>) -> core::option::Option<SrcExpr> {
+    return match (code) {
+        None -> None,
+        Some(c) -> char_close(c, rest),
+    };
+}
+
+// The byte an escape \e stands for.
+pub fn escaped_byte(e: usize) -> core::option::Option<usize> {
+    if (e == 110) {
+        return Some(10);
+    }
+    if (e == 114) {
+        return Some(13);
+    }
+    if (e == 116) {
+        return Some(9);
+    }
+    if (e == 48) {
+        return Some(0);
+    }
+    if (e == 39 || e == 34 || e == 92) {
+        return Some(e);
+    }
+    return None;
+}
+
+// extract: inline
+fn char_escape(etext: List<usize>) -> core::option::Option<SrcExpr> {
+    return match (etext) {
+        Nil -> None,
+        Cons(e, rest) -> char_close_opt(escaped_byte(e), unbox(rest)),
+    };
+}
+
+// extract: inline
+fn char_tail_at(tb: usize, trest: List<usize>, tmore: usize, tcode: usize, tlo: usize, thi: usize) -> core::option::Option<SrcExpr> {
+    if (tb >= tlo && thi >= tb) {
+        let next: usize = plus(times(tcode, 64), minus(tb, 128));
+        if (tmore == 0) {
+            return char_close(next, trest);
+        }
+        return char_tail(trest, minus(tmore, 1), next, 128, 191);
+    }
+    return None;
+}
+
+// The continuation bytes of a UTF-8 encoding: the next in lo..hi, then
+// `more` more in 128..191, each adding its low six bits to code.
+pub fn char_tail(text: List<usize>, more: usize, code: usize, lo: usize, hi: usize) -> core::option::Option<SrcExpr> {
+    return match (text) {
+        Nil -> None,
+        Cons(b, rest) -> char_tail_at(b, unbox(rest), more, code, lo, hi),
+    };
+}
+
+// extract: inline
+fn char_first(fb: usize, frest: List<usize>) -> core::option::Option<SrcExpr> {
+    if (fb == 92) {
+        return char_escape(frest);
+    }
+    if (fb == 39 || fb == 10) {
+        return None;
+    }
+    if (128 > fb) {
+        return char_close(fb, frest);
+    }
+    if (fb >= 194 && 223 >= fb) {
+        return char_tail(frest, 0, minus(fb, 192), 128, 191);
+    }
+    if (fb == 224) {
+        return char_tail(frest, 1, 0, 160, 191);
+    }
+    if (fb == 237) {
+        return char_tail(frest, 1, 13, 128, 159);
+    }
+    if (fb >= 225 && 239 >= fb) {
+        return char_tail(frest, 1, minus(fb, 224), 128, 191);
+    }
+    if (fb == 240) {
+        return char_tail(frest, 2, 0, 144, 191);
+    }
+    if (fb == 244) {
+        return char_tail(frest, 2, 4, 128, 143);
+    }
+    if (fb >= 241 && 243 >= fb) {
+        return char_tail(frest, 2, minus(fb, 240), 128, 191);
+    }
+    return None;
+}
+
+pub fn char_body(text: List<usize>) -> core::option::Option<SrcExpr> {
+    return match (text) {
+        Nil -> None,
+        Cons(b, rest) -> char_first(b, unbox(rest)),
+    };
+}
+
+// extract: inline
+fn char_open(oq: usize, orest: List<usize>) -> core::option::Option<SrcExpr> {
+    if (oq == 39) {
+        return char_body(orest);
+    }
+    return None;
+}
+
+// A char literal's text, its quotes included: one byte below 128 other than
+// the quote, the backslash and newline; an escape \n \r \t \0 \' \" \\; or
+// the well-formed UTF-8 encoding of one Unicode scalar, two to four bytes.
+// laniusc's parse_char_token decodes these the same way (it also takes
+// forms this rejects).
+pub fn char_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
+    return match (text) {
+        Nil -> None,
+        Cons(q, rest) -> char_open(q, unbox(rest)),
     };
 }
 
@@ -2691,6 +2871,7 @@ pub fn field_index(env: FrontEnv, t: Ty, name: List<usize>) -> core::option::Opt
         TyUint(k) -> None,
         TyPtr -> None,
         TyIsize -> None,
+        TyChar -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> field_in(get(env.decls.types, d), name),
         TySint(k) -> None,
@@ -2803,6 +2984,7 @@ pub fn negated_int(x: SrcExpr, e: SrcExpr) -> core::option::Option<SrcExpr> {
         Apply(op, a, b) -> None,
         Cast(t, y) -> None,
         Null -> None,
+        SrcExpr::Char(code) -> None,
     };
 }
 
@@ -2858,6 +3040,7 @@ pub fn neg_sint_const(u: UintTy, x: SrcExpr) -> core::option::Option<SrcExpr> {
         Apply(op, a, b) -> None,
         Cast(t, y) -> None,
         Null -> None,
+        SrcExpr::Char(code) -> None,
     };
 }
 
@@ -2871,6 +3054,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyUint(u) -> uint_in_range(u, (k as u32) as u64),
             TyPtr -> null_const(k),
             TyIsize -> Some(Cast(Isize, boxed(e))),
+            TyChar -> None,
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> sint_const(u, k),
@@ -2881,6 +3065,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyUint(u) -> None,
             TyPtr -> None,
             TyIsize -> None,
+            TyChar -> None,
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> None,
@@ -2894,6 +3079,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyUint(u) -> None,
             TyPtr -> None,
             TyIsize -> negated_int(unbox(x), Negate(boxed(Cast(Isize, x)))),
+            TyChar -> None,
             TySlice(y) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> neg_sint_const(u, unbox(x)),
@@ -2902,6 +3088,17 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
         Apply(op, a, b) -> None,
         Cast(s, x) -> None,
         Null -> None,
+        SrcExpr::Char(code) -> match (t) {
+            TyI32 -> None,
+            TyBool -> None,
+            TyUint(u) -> None,
+            TyPtr -> None,
+            TyIsize -> None,
+            TyChar -> Some(e),
+            TySlice(x) -> None,
+            TyNamed(d, args) -> None,
+            TySint(u) -> None,
+        },
     };
 }
 
@@ -2977,6 +3174,7 @@ pub fn wide_of(ty: Ty, negative: bool, n: usize) -> core::option::Option<SrcExpr
         TyUint(u) -> wide_uint(u, negative, n),
         TyPtr -> None,
         TyIsize -> wide_isize(negative, n),
+        TyChar -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> None,
         TySint(u) -> wide_sint(u, negative, n),
@@ -3067,6 +3265,9 @@ pub fn expr_of(fuel: usize, env: FrontEnv, scope: List<Local>, c: CTree) -> core
     if (p == p_false()) {
         return Some(Boolean(false));
     }
+    if (p == p_char()) {
+        return char_literal(kid_token(c, 0).text);
+    }
     return None;
 }
 
@@ -3114,6 +3315,7 @@ pub fn wide_inner(t: SrcType, x: SrcExpr) -> core::option::Option<u64> {
             Apply(op, a, b) -> None,
             Cast(s, y) -> None,
             Null -> None,
+            SrcExpr::Char(code) -> None,
         };
     }
     return None;
@@ -3132,6 +3334,7 @@ pub fn wide_value(e: SrcExpr) -> core::option::Option<u64> {
         Apply(op, a, b) -> None,
         Cast(t, x) -> wide_inner(t, unbox(x)),
         Null -> None,
+        SrcExpr::Char(code) -> None,
     };
 }
 
@@ -3155,6 +3358,7 @@ pub fn wide_read(e: SrcExpr) -> bool {
         Apply(op, a, b) -> false,
         Cast(t, x) -> has_wide(wide_inner(t, unbox(x))),
         Null -> false,
+        SrcExpr::Char(code) -> false,
     };
 }
 
@@ -3304,6 +3508,7 @@ pub fn struct_field_tys(fuel: usize, decls: Decls, t: Ty) -> core::option::Optio
         TyUint(k) -> None,
         TyPtr -> None,
         TyIsize -> None,
+        TyChar -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> field_tys(fuel, decls, d, unbox(args)),
         TySint(k) -> None,
@@ -3335,6 +3540,7 @@ pub fn bare_int(e: SrcExpr) -> bool {
         Apply(op, a, b) -> !gives_bool(op) && bare_int(unbox(a)) && bare_int(unbox(b)),
         Cast(t, x) -> unit_ty(t),
         Null -> false,
+        SrcExpr::Char(code) -> false,
     };
 }
 
@@ -3361,6 +3567,7 @@ pub fn expr_ty(fuel: usize, env: FrontEnv, scope: List<Local>, e: SrcExpr) -> co
         Apply(op, a, b) -> apply_ty(op, pick_ty(bare_int(unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(a)), expr_ty(minus(fuel, 1), env, scope, unbox(b)))),
         Cast(t, x) -> src_ty(t),
         Null -> Some(TyPtr),
+        SrcExpr::Char(code) -> None,
     };
 }
 
@@ -3447,6 +3654,7 @@ pub fn slice_elem(t: Ty) -> core::option::Option<Ty> {
         TyUint(k) -> None,
         TyPtr -> None,
         TyIsize -> None,
+        TyChar -> None,
         TySlice(e) -> Some(unbox(e)),
         TyNamed(d, args) -> None,
         TySint(k) -> None,
@@ -3460,6 +3668,7 @@ pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
         TyUint(k) -> None,
         TyPtr -> None,
         TyIsize -> None,
+        TyChar -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> Some(Inst { decl: d, args: unbox(args) }),
         TySint(k) -> None,
@@ -4396,6 +4605,7 @@ pub fn is_usize(t: SrcType) -> bool {
         Slice(e) -> false,
         Unit -> false,
         Isize -> false,
+        SrcType::Char -> false,
         Sint(sk) -> false,
     };
 }
@@ -4413,6 +4623,7 @@ pub fn literal_shift(e: SrcExpr) -> core::option::Option<usize> {
         Apply(op, a, b) -> None,
         Cast(t, x) -> None,
         Null -> None,
+        SrcExpr::Char(code) -> None,
     };
 }
 
@@ -4437,6 +4648,7 @@ pub fn shift_of(e: SrcExpr) -> core::option::Option<usize> {
         Apply(op, a, b) -> None,
         Cast(t, x) -> cast_shift(is_usize(t), unbox(x)),
         Null -> None,
+        SrcExpr::Char(code) -> None,
     };
 }
 
@@ -5012,6 +5224,7 @@ pub fn pure_local(e: SrcExpr) -> core::option::Option<usize> {
         Apply(op, a, b) -> None,
         Cast(t, a) -> None,
         Null -> None,
+        SrcExpr::Char(code) -> None,
     };
 }
 
@@ -5854,6 +6067,7 @@ pub fn is_ptr_ty(t: Ty) -> bool {
         TyUint(k) -> false,
         TyPtr -> true,
         TyIsize -> false,
+        TyChar -> false,
         TySlice(e) -> false,
         TyNamed(d, args) -> false,
         TySint(k) -> false,
@@ -6693,6 +6907,7 @@ pub fn ty_known(table: List<Inst>, t: Ty) -> bool {
         TyUint(k) -> true,
         TyPtr -> true,
         TyIsize -> true,
+        TyChar -> true,
         TySlice(e) -> ty_known(table, unbox(e)),
         TyNamed(d, args) -> inst_member(table, Inst { decl: d, args: unbox(args) }),
         TySint(k) -> true,
@@ -6762,6 +6977,7 @@ pub fn close_ty(fuel: usize, t: Tables, ty: Ty) -> core::option::Option<SrcType>
         TyUint(k) -> Some(Uint(k)),
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
+        TyChar -> Some(SrcType::Char),
         TySlice(e) -> slice_type(close_ty(minus(fuel, 1), t, unbox(e))),
         TyNamed(d, args) -> close_named(fuel, t, d, unbox(args), inst_index(t.types, Inst { decl: d, args: unbox(args) }, 0)),
         TySint(k) -> Some(Sint(k)),
@@ -6781,6 +6997,7 @@ pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usi
             Slice(e) -> None,
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
             Sint(sk) -> None,
         },
     };
@@ -7241,6 +7458,7 @@ pub fn isize_ty(t: SrcType) -> bool {
         Slice(e) -> false,
         Unit -> false,
         Isize -> true,
+        SrcType::Char -> false,
         Sint(sk) -> false,
     };
 }
@@ -7274,6 +7492,7 @@ pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
         Slice(el) -> e,
         Unit -> e,
         Isize -> Cast(Isize, boxed(e)),
+        SrcType::Char -> e,
         Sint(sk) -> sint_at(sk, k, e),
     };
 }
@@ -7314,6 +7533,7 @@ pub fn src_fields(t: core::option::Option<SrcType>) -> core::option::Option<List
             Slice(e) -> None,
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
             Sint(sk) -> None,
         },
     };
@@ -7332,6 +7552,7 @@ pub fn src_variants(t: core::option::Option<SrcType>) -> core::option::Option<Li
             Slice(e) -> None,
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
             Sint(sk) -> None,
         },
     };
@@ -7350,6 +7571,7 @@ pub fn src_element(t: core::option::Option<SrcType>) -> core::option::Option<Src
             Slice(e) -> Some(unbox(e)),
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
             Sint(sk) -> None,
         },
     };
@@ -7485,6 +7707,7 @@ pub fn wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> SrcEx
             Slice(el) -> e,
             Unit -> e,
             Isize -> wide_isize_at(n, e),
+            SrcType::Char -> e,
             Sint(sk) -> wide_sint_at(sk, n, e),
         },
     };
@@ -7528,6 +7751,7 @@ pub fn neg_wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> S
             Slice(el) -> e,
             Unit -> e,
             Isize -> neg_wide_isize(n, e),
+            SrcType::Char -> e,
             Sint(sk) -> neg_wide_sint(sk, n, e),
         },
     };
@@ -7552,6 +7776,7 @@ pub fn neg_least_at(u: UintTy, x: SrcExpr, d: SrcExpr) -> SrcExpr {
         Apply(op, a, b) -> d,
         Cast(t, y) -> d,
         Null -> d,
+        SrcExpr::Char(code) -> d,
     };
 }
 
@@ -7570,6 +7795,7 @@ pub fn neg_least(want: core::option::Option<SrcType>, x: SrcExpr, d: SrcExpr) ->
             Slice(el) -> d,
             Unit -> d,
             Isize -> d,
+            SrcType::Char -> d,
             Sint(sk) -> neg_least_at(sk, x, d),
         },
     };
@@ -7588,6 +7814,7 @@ pub fn known_expr(locals: List<LocalTy>, e: SrcExpr) -> core::option::Option<Src
         Apply(op, a, b) -> known_apply(op, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))),
         Cast(t, x) -> known_cast(t),
         Null -> Some(Ptr),
+        SrcExpr::Char(code) -> Some(SrcType::Char),
     };
 }
 
@@ -7610,6 +7837,7 @@ pub fn lit_expr(locals: List<LocalTy>, want: core::option::Option<SrcType>, e: S
         },
 
         Null -> e,
+        SrcExpr::Char(code) -> e,
     };
 }
 
@@ -7768,6 +7996,7 @@ pub fn wide_left(e: SrcExpr) -> bool {
         Apply(op, a, b) -> wide_left(unbox(a)) || wide_left(unbox(b)),
         Cast(t, x) -> unit_ty(t) || wide_left(unbox(x)),
         Null -> false,
+        SrcExpr::Char(code) -> false,
     };
 }
 
@@ -9839,6 +10068,11 @@ fn p_import_path() -> usize {
 // extract: inline
 fn p_int() -> usize {
     return 175;
+}
+
+// extract: inline
+fn p_char() -> usize {
+    return 178;
 }
 
 // extract: inline

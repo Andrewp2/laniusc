@@ -50,6 +50,19 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import oracle_difftest as oracle  # noqa: E402
+
+
+def inputs_digest(workdir):
+    """A digest of the files a check reads (the run cache keys on the check's
+    text, which names these files but not their contents)."""
+    import hashlib
+    h = hashlib.sha256()
+    for root, _, names in sorted(os.walk(workdir)):
+        for name in sorted(names):
+            if name.endswith(('.lani', '.prods', '.parents')):
+                path = os.path.join(root, name)
+                h.update(path.encode() + b'\0' + open(path, 'rb').read() + b'\0')
+    return h.hexdigest()
 import run_cache  # noqa: E402
 oracle.EFFECTS = False  # set in main: effectful expressions, except with --generic
 oracle.NESTED = False  # nested struct fields: the oracle's, not yet the front end tests'
@@ -1013,6 +1026,7 @@ partial def serType : SrcType → String
   | .slice t => s!"(.slice {serType t})"
   | .unit => ".unit"
   | .isize => ".isize"
+  | .char => ".char"
   | .sint u => s!"(.sint {serTy u})"
 
 partial def serExpr : SrcExpr → String
@@ -1026,6 +1040,7 @@ partial def serExpr : SrcExpr → String
   | .apply o a b => s!"(.apply .{serOp o} {serExpr a} {serExpr b})"
   | .cast t e => s!"(.cast {serType t} {serExpr e})"
   | .null => ".null"
+  | .char c => s!"(.char {c.toNat})"
 
 def serExprs (es : List SrcExpr) : String := bracket (es.map serExpr)
 
@@ -1304,6 +1319,7 @@ def run_cases(args, cases_dir):
             lean.append(f'#eval checkFiles [{", ".join(chr(34) + b + chr(34) for b in bases)}] "{out}"')
         checks.append((case, out_dir, os.path.exists(os.path.join(src, 'reject'))))
     lean_path = os.path.join(workdir, 'cases_check.lean')
+    lean.append(f'-- inputs {inputs_digest(workdir)}')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
     run = run_cache.run_lean(lean_path)
     if run.returncode != 0:
@@ -1426,6 +1442,7 @@ def main():
         moved_total += sum(1 for m in chunk.module.values() if m == 'lib')
         consts_total += sum(len(v) for v in chunk.consts.values())
     lean_path = os.path.join(workdir, 'frontend_check.lean')
+    lean.append(f'-- inputs {inputs_digest(workdir)}')
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
     run = run_cache.run_lean(lean_path)
     if run.returncode != 0:

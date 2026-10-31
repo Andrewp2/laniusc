@@ -33,6 +33,7 @@ def lowerMatchOn (scope : List Binding) (b : Binding) (enumId : Nat) (arms : Lis
   | .slice element => none
   | .unit => none
   | .isize => none
+  | .char => none
   | .sint sk => none
 
 def lowerMatch (scope : List Binding) (binding : Option Binding) (enumId : Nat) (arms : List SrcArm) (ty : SrcType) (target : Nat) : Option Stmt :=

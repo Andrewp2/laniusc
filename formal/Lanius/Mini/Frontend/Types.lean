@@ -66,6 +66,7 @@ inductive Ty where
   | tyUint : UintTy → Ty
   | tyPtr : Ty
   | tyIsize : Ty
+  | tyChar : Ty
   | tySlice : Ty → Ty
   | tyNamed : Nat → (List Ty) → Ty
   | tySint : UintTy → Ty

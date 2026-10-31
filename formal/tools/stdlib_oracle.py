@@ -62,7 +62,7 @@ import run_cache  # noqa: E402
 
 STDLIB = 'stdlib'
 HEAVY = 'target/claude-work/bin/heavy'
-SCALARS = ('i32', 'bool', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize', 'i8', 'i16', 'i64')
+SCALARS = ('i32', 'bool', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize', 'i8', 'i16', 'i64', 'char')
 WIDE = ('u64', 'usize', 'isize', 'i64')
 
 
@@ -682,9 +682,27 @@ SMALL = [0, 1, 2, 3, 5, 7, 10, 31, 32, 63, 64, 100, 255, 256]
 SIGNED_BITS = {'i8': 8, 'i16': 16}
 
 
+# Char arguments: edges of the UTF-8 lengths and the surrogate gap, and the
+# escapes; no other control characters (a literal would hold the raw byte).
+CHAR_EDGES = [0, 9, 10, 13, 32, 34, 39, 48, 65, 92, 97, 126, 128, 255, 0x7ff, 0x800, 0xd7ff, 0xe000,
+              0xfffd, 0xffff, 0x10000, 0x10ffff]
+
+
+def gen_char(rng):
+    if rng.random() < 0.4:
+        return rng.choice(CHAR_EDGES)
+    while True:
+        v = rng.choice([rng.randrange(32, 127), rng.randrange(128, 0x800), rng.randrange(0x800, 0x10000),
+                        rng.randrange(0x10000, 0x110000)])
+        if not 0xd800 <= v < 0xe000:
+            return v
+
+
 def gen_arg(rng, ty):
     if ty == 'bool':
         return int(rng.random() < 0.5)
+    if ty == 'char':
+        return gen_char(rng)
     if rng.random() < 0.3:
         v = rng.choice([v for v in SMALL if (ty not in oracle.UINT_BITS or v < 2 ** oracle.UINT_BITS[ty])
                         and (ty not in SIGNED_BITS or v < 2 ** (SIGNED_BITS[ty] - 1))])
@@ -704,7 +722,12 @@ def gen_arg(rng, ty):
     return rng.randrange(1 << bits)
 
 
+CHAR_ESCAPES = {0: '\\0', 9: '\\t', 10: '\\n', 13: '\\r', 39: "\\'", 92: '\\\\'}
+
+
 def lani_arg(value, ty):
+    if ty == 'char':
+        return "'" + CHAR_ESCAPES.get(value, chr(value)) + "'"
     if ty == 'i32':
         return oracle.lani_expr(('int', value))
     if ty in SIGNED_BITS:
@@ -718,7 +741,7 @@ def lani_arg(value, ty):
 
 # ---------------------------------------------------------------- reasons
 
-UNREAD_TYPES = ('char', 'f32', 'f64', 'str')
+UNREAD_TYPES = ('f32', 'f64', 'str')
 
 
 def constructs(mods, module, fn):
@@ -742,8 +765,6 @@ def constructs(mods, module, fn):
         out.append('self or reference')
     if re.search(r'"', body):
         out.append('string literal')
-    if re.search(r"'(\\.|[^'\\])'", body):
-        out.append('char literal')
     if re.search(r'\b(for|loop|break|continue)\b', body):
         out.append('for/loop/break/continue')
     big = [int(x) for x in re.findall(r'(?<![\w.])(\d+)(?![\w.])', body) if int(x) >= 2 ** 64]

@@ -54,6 +54,7 @@ theorem fieldTyAt_sound {fuel : Nat} {decls : Decls} {t : Ty} {j : Nat} :
   | tyUint _ => cases h
   | tyPtr => cases h
   | tyIsize => cases h
+  | tyChar => cases h
   | tySint _ => cases h
   | tySlice _ => cases h
 

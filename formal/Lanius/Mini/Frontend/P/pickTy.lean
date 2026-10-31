@@ -44,6 +44,7 @@ def exprTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : SrcExpr) : Op
     | .apply op a b => applyTy op (pickTy (bareInt a) (exprTy (fuel - 1) env scope a) (exprTy (fuel - 1) env scope b))
     | .cast t x => srcTy t
     | .null => some Ty.tyPtr
+    | .char code => none
 
 def exprsTys (fuel : Nat) (env : FrontEnv) (scope : List Local) (es : List SrcExpr) : Option (List Ty) :=
   match es with
@@ -102,6 +103,7 @@ def sliceElem (t : Ty) : Option Ty :=
   | .tyUint k => none
   | .tyPtr => none
   | .tyIsize => none
+  | .tyChar => none
   | .tySlice e => some e
   | .tyNamed d args => none
   | .tySint k => none
@@ -113,6 +115,7 @@ def namedParts (t : Ty) : Option Inst :=
   | .tyUint k => none
   | .tyPtr => none
   | .tyIsize => none
+  | .tyChar => none
   | .tySlice e => none
   | .tyNamed d args => some ({ decl := d, args := args } : Inst)
   | .tySint k => none

@@ -48,6 +48,7 @@ def shiftWidth (ty : SrcType) : BitVec 64 :=
   | .slice element => 64
   | .unit => 64
   | .isize => 64
+  | .char => 32
   | .sint kind => UintTy.bits kind
 
 /-- A literal amount below width. -/

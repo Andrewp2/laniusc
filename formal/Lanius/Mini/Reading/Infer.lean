@@ -89,6 +89,7 @@ theorem exprTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {e
           | tyUint _ => rw [hty] at hs; cases hs
           | tyPtr => rw [hty] at hs; cases hs
           | tyIsize => rw [hty] at hs; cases hs
+          | tyChar => rw [hty] at hs; cases hs
           | tySint _ => rw [hty] at hs; cases hs
           | tySlice _ => rw [hty] at hs; cases hs
     | negate x => exact .negate (exprTy_sound h)
@@ -109,6 +110,7 @@ theorem exprTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {e
           exact .left g' (by simpa using ba) (exprTy_sound h)
     | cast s x => exact .cast (srcTy_sound h)
     | null => cases h; exact .null
+    | char c => cases h
 
 theorem exprsTys_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} :
     ∀ {es : List SrcExpr} {ts : List Ty}, exprsTys fuel env scope es = some ts → ListRel (ExprTy env.decls scope) es ts
@@ -320,6 +322,7 @@ theorem matchSound : ∀ fuel, MatchSound fuel
         | tyUint _ => cases h
         | tyPtr => cases h
         | tyIsize => cases h
+        | tyChar => cases h
         | tySint _ => cases h
         | tyNamed _ _ => cases h
       rw [if_neg (by simpa using sl)] at h
@@ -375,6 +378,7 @@ theorem matchSound : ∀ fuel, MatchSound fuel
           | tyUint _ => cases ha
           | tyPtr => cases ha
           | tyIsize => cases ha
+          | tyChar => cases ha
           | tySint _ => cases ha
           | tySlice _ => cases ha
     · intro env names dOpt items aOpt b b' h

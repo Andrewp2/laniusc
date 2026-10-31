@@ -15,6 +15,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_armScope
 public import Lanius.Faithful.Gen.SelfStmtC_evalSame
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLoadType
+public import Lanius.Faithful.Gen.SelfStmtC_norm
 import all Lanius.Faithful.Gen.SelfSrcC_Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_arithOf
 

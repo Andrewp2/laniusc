@@ -50,6 +50,7 @@ partial def tyName (decls : Decls) : Ty → String
   | .tyUint k => uintName k
   | .tyPtr => "ptr"
   | .tyIsize => "isize"
+  | .tyChar => "char"
   | .tySint k => sintName k
   | .tySlice e => s!"[{tyName decls e}]"
   | .tyNamed d args =>
@@ -70,6 +71,7 @@ def srcTyName : SrcType → String
   | .ptr => "ptr"
   | .unit => "unit"
   | .isize => "isize"
+  | .char => "char"
   | .slice _ => "slice"
   | .struct id _ => s!"#{id}"
   | .enum id _ => s!"#{id}"
@@ -184,6 +186,7 @@ partial def typeText : SrcType → StateM Table String
   | .ptr => pure ".ptr"
   | .unit => pure ".unit"
   | .isize => pure ".isize"
+  | .char => pure ".char"
   | .sint k => pure s!"(.sint {uintText k})"
   | .slice e => do named s!".slice {← typeText e}"
   | .struct id fs => do

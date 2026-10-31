@@ -49,6 +49,7 @@ def lowerSetFieldOf (b : Binding) (field : Nat) (scope : List Binding) (value : 
   | .slice element => none
   | .unit => none
   | .isize => none
+  | .char => none
   | .sint sk => none
 
 def lowerSetField (binding : Option Binding) (field : Nat) (scope : List Binding) (value : SrcExpr) : Option Stmt :=

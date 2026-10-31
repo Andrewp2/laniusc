@@ -1111,6 +1111,7 @@ theorem eval_struct {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcType
   | slice => simp at ok
   | unit => simp at ok
   | isize => simp at ok
+  | char => simp at ok
   | sint => simp at ok
 
 /-- An enum literal: its payload from `slot + 1`, then its tag in `slot`. -/
@@ -1160,6 +1161,7 @@ theorem eval_variant {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {ty : SrcTyp
   | slice => simp at ok
   | unit => simp at ok
   | isize => simp at ok
+  | char => simp at ok
   | sint => simp at ok
 
 /-- Binding an arm's payload above the scope keeps the layout. -/
@@ -1378,6 +1380,7 @@ theorem eval_match {k : Nat} (ihe : ∀ m ≤ k, EvalSound sp mp m) {scrutinee :
       | slice => cases values <;> simp [matchVariants, evalArms] at armsOk
       | unit => cases values <;> simp [matchVariants, evalArms] at armsOk
       | isize => cases values <;> simp [matchVariants, evalArms] at armsOk
+      | char => cases values <;> simp [matchVariants, evalArms] at armsOk
       | sint => cases values <;> simp [matchVariants, evalArms] at armsOk
     all_goals simp at run
   · simp at ok
@@ -1615,6 +1618,7 @@ theorem stmt_setFieldEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {id index : 
   case h_8 => simp at ok
   case h_9 => simp at ok
   case h_10 => simp at ok
+  case h_11 => simp at ok
   rename_i sid types hty
   simp only [setFieldEvalAt] at ok
   split at ok

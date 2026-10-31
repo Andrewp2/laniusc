@@ -40,6 +40,7 @@ def fieldIndex (env : FrontEnv) (t : Ty) (name : List Nat) : Option Nat :=
   | .tyUint k => none
   | .tyPtr => none
   | .tyIsize => none
+  | .tyChar => none
   | .tySlice e => none
   | .tyNamed d args => fieldIn env.decls.types[d]? name
   | .tySint k => none

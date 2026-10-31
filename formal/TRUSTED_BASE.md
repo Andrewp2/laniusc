@@ -308,6 +308,15 @@ still a parse tree of the same tokens. Trusted:
     type's literal of that value (`Int` of -2^31 for `i32`, `Unsigned` up to
     the type's largest value, the cast of the `u64` literal of its bits for
     `isize`);
+  - a char literal (`CharLiteral`, added 10-30) is the code of the one
+    Unicode scalar value (`ScalarValue`: below 0x110000, not a surrogate)
+    whose UTF-8 encoding (`utf8Encode`) its text holds between the quotes,
+    other than the quote, backslash and newline, or of one of the escapes
+    `\n \r \t \0 \' \" \\` (`Escape`). laniusc's `parse_char_token` decodes
+    these the same way; it also takes texts this reading rejects (`'ab'`,
+    `\x` for other `x`, a malformed encoding as code 0). A constant of type
+    `char` is its literal. `char` is the primitive type `SrcType.char`,
+    held as its code (`UInt32`), which Core's `Value.character` is;
   - a local is the byte offset of its binding (a parameter, `let` or match
     binder) from the start of its function's name (since 10-25, so that an
     edit to one function renumbers the locals of no other);

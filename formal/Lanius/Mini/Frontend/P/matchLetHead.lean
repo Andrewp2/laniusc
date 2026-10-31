@@ -82,6 +82,7 @@ def isPtrTy (t : Ty) : Bool :=
   | .tyUint k => false
   | .tyPtr => true
   | .tyIsize => false
+  | .tyChar => false
   | .tySlice e => false
   | .tyNamed d args => false
   | .tySint k => false

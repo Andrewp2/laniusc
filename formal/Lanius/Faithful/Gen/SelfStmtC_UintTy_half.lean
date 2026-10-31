@@ -24,6 +24,10 @@ abbrev Stmt_SrcType_is_bool (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
     RepBool (Lanius.Mini.SrcType.isBool x0) w
 
+abbrev Stmt_SrcType_is_char (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
+    RepBool (Lanius.Mini.SrcType.isChar x0) w
+
 abbrev Stmt_SrcType_is_i32 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
     RepBool (Lanius.Mini.SrcType.isI32 x0) w
@@ -107,10 +111,6 @@ abbrev Stmt_lookup (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 abbrev Stmt_max_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Lanius.Mini.SrcType)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 71 (RepList 67 RepSrcType)) x0 v0 →
     RepNat (Lanius.Mini.maxSize x0) w
-
-abbrev Stmt_norm (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.UintTy} {x1 : Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepUintTy x0 v0 → RepExpr x1 v1 →
-    RepExpr (Lanius.Mini.norm x0 x1) w
 
 abbrev Stmt_sizes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 67 RepSrcType) x0 v0 →

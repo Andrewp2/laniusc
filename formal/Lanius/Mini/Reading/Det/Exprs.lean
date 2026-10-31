@@ -98,6 +98,55 @@ theorem intLiteral_unique {text : List Nat} {a b : SrcExpr} (h₁ : IntLiteral t
     | small _ lt => omega
     | wide => rfl
 
+/-- Reads back `utf8Encode`. -/
+def utf8Decode (l : List Nat) : Nat :=
+  let x := fun i => l.getD i 0 - 128
+  if l.length = 1 then l.getD 0 0
+  else if l.length = 2 then (l.getD 0 0 - 192) * 64 + x 1
+  else if l.length = 3 then ((l.getD 0 0 - 224) * 64 + x 1) * 64 + x 2
+  else (((l.getD 0 0 - 240) * 64 + x 1) * 64 + x 2) * 64 + x 3
+
+theorem utf8Decode_encode {c : Nat} (h : c < 1114112) : utf8Decode (utf8Encode c) = c := by
+  by_cases h1 : c < 128
+  · rw [utf8Encode, if_pos h1]; simp [utf8Decode]
+  by_cases h2 : c < 2048
+  · rw [utf8Encode, if_neg h1, if_pos h2]; simp only [utf8Decode, List.length, List.getD_cons_zero, List.getD_cons_succ, Nat.zero_add, Nat.reduceAdd, Nat.reduceEqDiff, if_true, if_false]; omega
+  by_cases h3 : c < 65536
+  · rw [utf8Encode, if_neg h1, if_neg h2, if_pos h3]; simp only [utf8Decode, List.length, List.getD_cons_zero, List.getD_cons_succ, Nat.zero_add, Nat.reduceAdd, Nat.reduceEqDiff, if_true, if_false]; omega
+  · rw [utf8Encode, if_neg h1, if_neg h2, if_neg h3]; simp only [utf8Decode, List.length, List.getD_cons_zero, List.getD_cons_succ, Nat.zero_add, Nat.reduceAdd, Nat.reduceEqDiff, if_true, if_false]; omega
+
+theorem utf8Encode_not_escape {c e : Nat} (h : utf8Encode c ++ [39] = [92, e, 39]) : False := by
+  by_cases h1 : c < 128
+  · rw [utf8Encode, if_pos h1] at h; simp at h
+  by_cases h2 : c < 2048
+  · rw [utf8Encode, if_neg h1, if_pos h2] at h; simp only [List.cons_append, List.cons.injEq] at h; omega
+  by_cases h3 : c < 65536
+  · rw [utf8Encode, if_neg h1, if_neg h2, if_pos h3] at h; simp at h
+  · rw [utf8Encode, if_neg h1, if_neg h2, if_neg h3] at h; simp at h
+
+theorem escape_unique {e a b : Nat} (h₁ : Escape e a) (h₂ : Escape e b) : a = b := by
+  cases h₁ <;> cases h₂ <;> rfl
+
+theorem charLiteral_cases {text : List Nat} {n : Nat} (h : CharLiteral text n) :
+    (text = 39 :: utf8Encode n ++ [39] ∧ n < 1114112) ∨ ∃ e, text = [39, 92, e, 39] ∧ Escape e n := by
+  cases h with
+  | plain s _ _ _ => exact .inl ⟨rfl, s.1⟩
+  | escape e => exact .inr ⟨_, rfl, e⟩
+
+theorem charLiteral_unique {text : List Nat} {a b : Nat} (h₁ : CharLiteral text a) (h₂ : CharLiteral text b) :
+    a = b := by
+  rcases charLiteral_cases h₁ with ⟨ta, sa⟩ | ⟨e, ta, ea⟩ <;>
+    rcases charLiteral_cases h₂ with ⟨tb, sb⟩ | ⟨e', tb, eb⟩ <;> rw [ta] at tb
+  · simp only [List.cons.injEq, List.append_cancel_right_eq, true_and] at tb
+    rw [← utf8Decode_encode sa, ← utf8Decode_encode sb, tb]
+  · simp only [List.cons_append, List.cons.injEq, true_and] at tb
+    exact (utf8Encode_not_escape tb).elim
+  · simp only [List.cons_append, List.cons.injEq, true_and] at tb
+    exact (utf8Encode_not_escape tb.symm).elim
+  · simp only [List.cons.injEq, true_and, and_true] at tb
+    subst tb
+    exact escape_unique ea eb
+
 theorem typedLiteral_unique {t : Ty} {v a b : SrcExpr} (h₁ : TypedLiteral t v a) (h₂ : TypedLiteral t v b) :
     a = b := by
   cases h₁ <;> cases h₂ <;> rfl
@@ -196,6 +245,11 @@ theorem exprR_unique : ∀ {env : FrontEnv} {scope : List Local} {c : CTree} {a 
     cases h₂ with
     | «true» _ =>
       rfl
+    | _ => expr_clash
+  | _, _, _, _, _, .char _ l, h₂ => by
+    cases h₂ with
+    | «char» _ l' =>
+      rw [charLiteral_unique l l']
     | _ => expr_clash
   | _, _, _, _, _, .false _, h₂ => by
     cases h₂ with

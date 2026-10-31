@@ -221,6 +221,8 @@ inductive SrcType where
   | unit : SrcType
   /-- a signed 64-bit integer, its two's complement bits in one slot -/
   | isize : SrcType
+  /-- a char, its 32-bit code in one slot -/
+  | char : SrcType
   /-- the signed integer type as wide as kind (i8, i16, i32, i64, isize). A narrow one sits in its slot as an i32 does, its value's 32-bit two's complement zero-extended; a 64-bit one as an isize does. -/
   | sint : UintTy → SrcType
   deriving Repr
@@ -259,6 +261,8 @@ inductive SrcExpr where
   | cast : SrcType → SrcExpr → SrcExpr
   /-- the null pointer, Core's pointer 0 -/
   | null : SrcExpr
+  /-- a char literal: its code, a Unicode scalar value -/
+  | char : (BitVec 32) → SrcExpr
   deriving Repr
 
 /-- A match arm: the binders of its variant's payload, and its value. -/

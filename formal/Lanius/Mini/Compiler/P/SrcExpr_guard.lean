@@ -27,6 +27,7 @@ def SrcExpr.guard (self : SrcExpr) (scope : List Binding) : Expr :=
   | .apply op left right => applyGuard op (SrcExpr.lower left scope) (SrcExpr.lower right scope) (SrcExpr.guard left scope) (SrcExpr.guard right scope)
   | .cast ty operand => SrcExpr.guard operand scope
   | .null => Expr.lit 1
+  | .char code => Expr.lit 1
 
 /-- The guards of expressions Core evaluates one after another. -/
 def guardAll (scope : List Binding) (es : List SrcExpr) : Expr :=

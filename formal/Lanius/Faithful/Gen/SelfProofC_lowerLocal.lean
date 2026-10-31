@@ -13,6 +13,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_UintTy_isWide
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_mask
 public import Lanius.Faithful.Gen.SelfStmtC_conjunction
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
+public import Lanius.Faithful.Gen.SelfStmtC_norm
 import all Lanius.Faithful.Gen.SelfSrcC_lowerLocal
 import all Lanius.Mini.Compiler.P.lowerLocal
 

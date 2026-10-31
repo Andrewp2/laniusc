@@ -128,6 +128,252 @@ theorem intLiteral_sound {text : List Nat} {e : SrcExpr} (h : intLiteral text = 
       rw [decimal_complete text 0 ds (by unfold digitsValue at lt; omega)] at hd
       cases hd
 
+/-! ## Char literals -/
+
+/-- The UTF-8 encoding of a code point. -/
+def utf8Encode (c : Nat) : List Nat :=
+  if c < 128 then [c]
+  else if c < 2048 then [192 + c / 64, 128 + c % 64]
+  else if c < 65536 then [224 + c / 4096, 128 + c / 64 % 64, 128 + c % 64]
+  else [240 + c / 262144, 128 + c / 4096 % 64, 128 + c / 64 % 64, 128 + c % 64]
+
+/-- A Unicode scalar value: a code point that is not a surrogate. -/
+def ScalarValue (c : Nat) : Prop := c < 1114112 ∧ ¬(55296 ≤ c ∧ c < 57344)
+
+/-- The escapes `\n \r \t \0 \' \" \\`: the byte after the backslash and
+the code it stands for. -/
+inductive Escape : Nat → Nat → Prop
+  | newline : Escape 110 10
+  | ret : Escape 114 13
+  | tab : Escape 116 9
+  | zero : Escape 48 0
+  | quote : Escape 39 39
+  | dquote : Escape 34 34
+  | backslash : Escape 92 92
+
+/-- A char literal's text, its quotes included, and its code: the UTF-8
+encoding of a scalar value other than the quote, backslash and newline, or
+an escape. -/
+inductive CharLiteral : List Nat → Nat → Prop
+  | plain {c : Nat} : ScalarValue c → c ≠ 39 → c ≠ 92 → c ≠ 10 → CharLiteral (39 :: utf8Encode c ++ [39]) c
+  | escape {e c : Nat} : Escape e c → CharLiteral [39, 92, e, 39] c
+
+theorem charClose_some {code : Nat} {rest : List Nat} {e : SrcExpr} (h : charClose code rest = some e) :
+    rest = [39] ∧ e = .char (BitVec.ofNat 32 code) := by
+  cases rest with
+  | nil => cases h
+  | cons q more =>
+    simp only [charClose] at h
+    by_cases hq : q = 39
+    · subst hq
+      cases more with
+      | nil => simp only [if_pos, Option.some.injEq] at h; exact ⟨rfl, h.symm⟩
+      | cons _ _ => simp at h
+    · rw [if_neg hq] at h; cases h
+
+theorem charTail0 {rest : List Nat} {code lo hi : Nat} {e : SrcExpr} (h : charTail rest 0 code lo hi = some e) :
+    ∃ b, rest = [b, 39] ∧ lo ≤ b ∧ b ≤ hi ∧ e = .char (BitVec.ofNat 32 (code * 64 + (b - 128))) := by
+  unfold charTail at h
+  split at h
+  · cases h
+  · rename_i b rest
+    split at h
+    · rename_i range
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at range
+      simp only [if_pos] at h
+      obtain ⟨rfl, rfl⟩ := charClose_some h
+      exact ⟨b, rfl, range.1, range.2, rfl⟩
+    · cases h
+
+theorem charTail1 {rest : List Nat} {code lo hi : Nat} {e : SrcExpr} (h : charTail rest 1 code lo hi = some e) :
+    ∃ b c, rest = [b, c, 39] ∧ lo ≤ b ∧ b ≤ hi ∧ 128 ≤ c ∧ c ≤ 191 ∧
+      e = .char (BitVec.ofNat 32 ((code * 64 + (b - 128)) * 64 + (c - 128))) := by
+  unfold charTail at h
+  split at h
+  · cases h
+  · rename_i b rest
+    split at h
+    · rename_i range
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at range
+      simp only [Nat.one_ne_zero, if_false, Nat.sub_self] at h
+      obtain ⟨c, rfl, lc, hc, rfl⟩ := charTail0 h
+      exact ⟨b, c, rfl, range.1, range.2, lc, hc, rfl⟩
+    · cases h
+
+theorem charTail2 {rest : List Nat} {code lo hi : Nat} {e : SrcExpr} (h : charTail rest 2 code lo hi = some e) :
+    ∃ b c d, rest = [b, c, d, 39] ∧ lo ≤ b ∧ b ≤ hi ∧ 128 ≤ c ∧ c ≤ 191 ∧ 128 ≤ d ∧ d ≤ 191 ∧
+      e = .char (BitVec.ofNat 32 (((code * 64 + (b - 128)) * 64 + (c - 128)) * 64 + (d - 128))) := by
+  unfold charTail at h
+  split at h
+  · cases h
+  · rename_i b rest
+    split at h
+    · rename_i range
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at range
+      simp only [show (2 : Nat) ≠ 0 from by decide, if_false, show (2 : Nat) - 1 = 1 from rfl] at h
+      obtain ⟨c, d, rfl, lc, hc, ld, hd, rfl⟩ := charTail1 h
+      exact ⟨b, c, d, rfl, range.1, range.2, lc, hc, ld, hd, rfl⟩
+    · cases h
+
+theorem escapedByte_some {e c : Nat} (h : escapedByte e = some c) : Escape e c := by
+  unfold escapedByte at h
+  by_cases h1 : e = 110
+  · subst h1; cases h; exact .newline
+  rw [if_neg h1] at h
+  by_cases h2 : e = 114
+  · subst h2; cases h; exact .ret
+  rw [if_neg h2] at h
+  by_cases h3 : e = 116
+  · subst h3; cases h; exact .tab
+  rw [if_neg h3] at h
+  by_cases h4 : e = 48
+  · subst h4; cases h; exact .zero
+  rw [if_neg h4] at h
+  split at h
+  · rename_i q
+    simp only [Bool.or_eq_true, decide_eq_true_eq] at q
+    simp only [Option.some.injEq] at h
+    subst h
+    rcases q with (rfl | rfl) | rfl
+    · exact .quote
+    · exact .dquote
+    · exact .backslash
+  · cases h
+
+theorem exists_char {P : Nat → Prop} {n : Nat} (p : P n) :
+    ∃ m, P m ∧ SrcExpr.char (BitVec.ofNat 32 n) = .char (BitVec.ofNat 32 m) := ⟨n, p, rfl⟩
+
+theorem charLiteral_sound {text : List Nat} {e : SrcExpr} (h : charLiteral text = some e) :
+    ∃ n, CharLiteral text n ∧ e = .char (BitVec.ofNat 32 n) := by
+  unfold charLiteral at h
+  split at h
+  · cases h
+  rename_i q rest
+  split at h
+  rotate_left
+  · cases h
+  rename_i hq
+  subst hq
+  unfold charBody at h
+  split at h
+  · cases h
+  rename_i b rest
+  by_cases bs : b = 92
+  · subst bs
+    rw [if_pos rfl] at h
+    split at h
+    · cases h
+    rename_i x rest
+    simp only [charCloseOpt] at h
+    split at h
+    · cases h
+    rename_i c hc
+    obtain ⟨rfl, rfl⟩ := charClose_some h
+    exact ⟨c, .escape (escapedByte_some hc), rfl⟩
+  rw [if_neg bs] at h
+  split at h
+  · cases h
+  rename_i nq
+  simp only [Bool.or_eq_true, decide_eq_true_eq, not_or] at nq
+  by_cases ascii : b < 128
+  · rw [if_pos ascii] at h
+    obtain ⟨rfl, rfl⟩ := charClose_some h
+    refine ⟨b, ?_, rfl⟩
+    have := CharLiteral.plain (c := b) ⟨by omega, by omega⟩ nq.1 bs nq.2
+    simpa [utf8Encode, ascii] using this
+  rw [if_neg ascii] at h
+  have plain : ∀ {c : Nat} {rest : List Nat}, ScalarValue c → 128 ≤ c → b :: rest = utf8Encode c ++ [39] →
+      CharLiteral (39 :: b :: rest) c := by
+    intro c rest sv big enc
+    have := CharLiteral.plain sv (by omega) (by omega) (by omega)
+    rw [List.cons_append, ← enc] at this
+    exact this
+  split at h
+  · rename_i r
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at r
+    obtain ⟨x, rfl, lx, hx, rfl⟩ := charTail0 h
+    apply exists_char
+    apply plain
+    · exact ⟨by omega, by omega⟩
+    · omega
+    simp only [utf8Encode]
+    rw [if_neg (by omega), if_pos (by omega)]
+    simp only [List.cons_append, List.nil_append, List.cons.injEq, and_true]
+    omega
+  split at h
+  · rename_i r
+    subst r
+    obtain ⟨x, y, rfl, lx, hx, ly, hy, rfl⟩ := charTail1 h
+    apply exists_char
+    apply plain
+    · exact ⟨by omega, by omega⟩
+    · omega
+    simp only [utf8Encode]
+    rw [if_neg (by omega), if_neg (by omega), if_pos (by omega)]
+    simp only [List.cons_append, List.nil_append, List.cons.injEq, and_true]
+    omega
+  split at h
+  · rename_i r
+    subst r
+    obtain ⟨x, y, rfl, lx, hx, ly, hy, rfl⟩ := charTail1 h
+    apply exists_char
+    apply plain
+    · exact ⟨by omega, by omega⟩
+    · omega
+    simp only [utf8Encode]
+    rw [if_neg (by omega), if_neg (by omega), if_pos (by omega)]
+    simp only [List.cons_append, List.nil_append, List.cons.injEq, and_true]
+    omega
+  split at h
+  · rename_i r
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at r
+    obtain ⟨x, y, rfl, lx, hx, ly, hy, rfl⟩ := charTail1 h
+    apply exists_char
+    apply plain
+    · exact ⟨by omega, by omega⟩
+    · omega
+    simp only [utf8Encode]
+    rw [if_neg (by omega), if_neg (by omega), if_pos (by omega)]
+    simp only [List.cons_append, List.nil_append, List.cons.injEq, and_true]
+    omega
+  split at h
+  · rename_i r
+    subst r
+    obtain ⟨x, y, z, rfl, lx, hx, ly, hy, lz, hz, rfl⟩ := charTail2 h
+    apply exists_char
+    apply plain
+    · exact ⟨by omega, by omega⟩
+    · omega
+    simp only [utf8Encode]
+    rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+    simp only [List.cons_append, List.nil_append, List.cons.injEq, and_true]
+    omega
+  split at h
+  · rename_i r
+    subst r
+    obtain ⟨x, y, z, rfl, lx, hx, ly, hy, lz, hz, rfl⟩ := charTail2 h
+    apply exists_char
+    apply plain
+    · exact ⟨by omega, by omega⟩
+    · omega
+    simp only [utf8Encode]
+    rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+    simp only [List.cons_append, List.nil_append, List.cons.injEq, and_true]
+    omega
+  split at h
+  · rename_i r
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at r
+    obtain ⟨x, y, z, rfl, lx, hx, ly, hy, lz, hz, rfl⟩ := charTail2 h
+    apply exists_char
+    apply plain
+    · exact ⟨by omega, by omega⟩
+    · omega
+    simp only [utf8Encode]
+    rw [if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+    simp only [List.cons_append, List.nil_append, List.cons.injEq, and_true]
+    omega
+  · cases h
+
 /-! ## Typed literals -/
 
 /-- The width of an unsigned type. -/
@@ -176,6 +422,7 @@ inductive TypedLiteral : Ty → SrcExpr → SrcExpr → Prop
   | sint {u : UintTy} {k : BitVec 32} : SintFits u k → TypedLiteral (.tySint u) (.int k) (.cast (.sint u) (.int k))
   | negSint {u : UintTy} {k : BitVec 32} : SintFits u (0 - k) →
       TypedLiteral (.tySint u) (.negate (.int k)) (.cast (.sint u) (.int (0 - k)))
+  | char {c : BitVec 32} : TypedLiteral .tyChar (.char c) (.char c)
 
 theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some e) : TypedLiteral t v e := by
   cases v with
@@ -195,6 +442,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
         exact .null
       · rw [if_neg z] at h; cases h
     | tyIsize => cases h; exact .isize
+    | tyChar => cases h
     | tyBool => cases h
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
@@ -212,6 +460,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyUint _ => cases h
     | tyPtr => cases h
     | tyIsize => cases h
+    | tyChar => cases h
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
     | tySint _ => cases h
@@ -226,6 +475,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
       subst h
       exact .negIsize
     | tyBool => cases h
+    | tyChar => cases h
     | tyUint _ => cases h
     | tyPtr => cases h
     | tySlice _ => cases h
@@ -247,6 +497,10 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
   | apply _ _ _ => cases h
   | cast _ _ => cases h
   | null => cases h
+  | char c =>
+    cases t <;> simp only [typedLiteral, reduceCtorEq, Option.some.injEq] at h
+    subst h
+    exact .char
 
 /-- A wide literal `n` (or `-n`, `negative`) as a literal of a type:
 `-2^31` of `i32`, `n` of an unsigned type when it fits, and for `isize`
@@ -305,6 +559,7 @@ theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wid
         exact .isizeNeg (by omega)
       · rw [if_neg (by cases negative <;> simp_all)] at h; cases h
   | tyBool => cases h
+  | tyChar => cases h
   | tyPtr => cases h
   | tySlice _ => cases h
   | tyNamed _ _ => cases h
@@ -474,6 +729,7 @@ theorem memberOf_sound {env : FrontEnv} {scope : List Local} {primary tail : CTr
         | tyUint _ => rw [ht] at hf; cases hf
         | tyPtr => rw [ht] at hf; cases hf
         | tyIsize => rw [ht] at hf; cases hf
+        | tyChar => rw [ht] at hf; cases hf
         | tySlice _ => rw [ht] at hf; cases hf
         | tySint _ => rw [ht] at hf; cases hf
   · rw [if_neg (by simpa using c)] at h; cases h
@@ -487,6 +743,7 @@ inductive ScalarTy : Ty → SrcType → Prop
   | uint {k : UintTy} : ScalarTy (.tyUint k) (.uint k)
   | ptr : ScalarTy .tyPtr .ptr
   | isize : ScalarTy .tyIsize .isize
+  | char : ScalarTy .tyChar .char
   | sint {k : UintTy} : ScalarTy (.tySint k) (.sint k)
 
 theorem scalarSrc_sound {t : Ty} {s : SrcType} (h : scalarSrc t = some s) : ScalarTy t s := by
@@ -640,6 +897,8 @@ inductive ExprR : FrontEnv → List Local → CTree → SrcExpr → Prop
       nodeProd c = pSelfValue → LocalOf scope c l → ExprR env scope c (.local l.id)
   | int {env : FrontEnv} {scope : List Local} {c : CTree} {e : SrcExpr} :
       nodeProd c = pInt → IntLiteral (kidToken c 0).text e → ExprR env scope c e
+  | char {env : FrontEnv} {scope : List Local} {c : CTree} {n : Nat} :
+      nodeProd c = pChar → CharLiteral (kidToken c 0).text n → ExprR env scope c (.char (BitVec.ofNat 32 n))
   | true {env : FrontEnv} {scope : List Local} {c : CTree} : nodeProd c = pTrue → ExprR env scope c (.boolean true)
   | false {env : FrontEnv} {scope : List Local} {c : CTree} : nodeProd c = pFalse → ExprR env scope c (.boolean false)
 
@@ -793,6 +1052,11 @@ theorem exprSound : ∀ fuel, ExprSound fuel
         subst h
         exact .false fa
       rw [if_neg fa] at h
+      by_cases ch : nodeProd c = pChar
+      · rw [if_pos ch] at h
+        obtain ⟨n, lit, rfl⟩ := charLiteral_sound h
+        exact .char ch lit
+      rw [if_neg ch] at h
       cases h
     · intro env scope c e h
       rw [identExpr.eq_def] at h

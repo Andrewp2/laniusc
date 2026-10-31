@@ -88,6 +88,7 @@ def setFieldEvalOf (b : Binding) (field : Nat) (slot : Nat) (v : Evaluated) : Op
   | .slice element => none
   | .unit => none
   | .isize => none
+  | .char => none
   | .sint sk => none
 
 def lowerSetFieldEval (slot : Nat) (binding : Option Binding) (field : Nat) (value : Option Evaluated) : Option Stmt :=

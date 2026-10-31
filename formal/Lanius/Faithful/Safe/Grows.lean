@@ -42,7 +42,7 @@ theorem local_trap_state {id : Nat} (run : evalExpr k P st (.local id) = .trappe
 theorem _root_.Lanius.Mini.SrcExpr.trap_state (e : SrcExpr) :
     ∀ {k : Nat} {st : State} {r : Lanius.Trap} {st' : State}, evalExpr k P st e.toCore = .trapped r st' → st' = st := by
   induction e with
-  | int _ | boolean _ | unsigned _ _ | null =>
+  | int _ | boolean _ | unsigned _ _ | null | char _ =>
     intro k st r st' run
     exact (value_trap run).elim
   | «local» id => intro k st r st' run; exact local_trap_state run

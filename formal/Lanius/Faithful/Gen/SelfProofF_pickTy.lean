@@ -10,10 +10,10 @@ public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_charOpen
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeSliceTail
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
 public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids

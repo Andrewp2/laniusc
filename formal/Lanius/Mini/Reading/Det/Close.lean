@@ -131,6 +131,7 @@ theorem litExpr_eq : ∀ {want : Option SrcType} {e e' : SrcExpr}, LitExpr local
   | _, _, _, .cast hw h => by rw [litExpr_eq h]; simp only [litExpr, hw]
   | _, _, _, .wide hw => by simp only [litExpr, hw]
   | _, _, _, .null => by simp only [litExpr]
+  | _, _, _, .char => by simp only [litExpr]
 
 theorem litExprs_eq : ∀ {wants : Option (List SrcType)} {es es' : List SrcExpr}, LitExprs locals wants es es' →
     es' = litExprs locals wants es

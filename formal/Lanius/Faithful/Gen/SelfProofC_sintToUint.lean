@@ -8,6 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_isWide
 public import Lanius.Faithful.Gen.SelfStmtC_conjunction
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
+public import Lanius.Faithful.Gen.SelfStmtC_norm
 public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_sintToUint
 import all Lanius.Mini.Compiler.P.sintToUint

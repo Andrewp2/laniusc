@@ -20,6 +20,7 @@ def unitTy (t : SrcType) : Bool :=
   | .slice e => false
   | .unit => true
   | .isize => false
+  | .char => false
   | .sint sk => false
 
 end Lanius.Mini

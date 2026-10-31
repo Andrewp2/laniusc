@@ -48,6 +48,7 @@ def SrcType.toCore : SrcType → Core.Ty
   | .slice element => .slice element.toCore
   | .unit => .unit
   | .isize => .scalar (.signed .isize)
+  | .char => .scalar .char
   | .sint kind => .scalar (.signed kind.toSigned)
 
 /-- The Core type id of a struct or enum type. -/
@@ -61,6 +62,7 @@ def SrcType.typeId : SrcType → Nat
   | .slice _ => 0
   | .unit => 0
   | .isize => 0
+  | .char => 0
   | .sint _ => 0
 
 /-- The Core type a cast to this type names. Lowering only casts to `i32`
@@ -75,6 +77,7 @@ def SrcType.toScalar : SrcType → Core.ScalarTy
   | .slice _ => .bool
   | .unit => .bool
   | .isize => .signed .isize
+  | .char => .char
   | .sint kind => .signed kind.toSigned
 
 /-- Core's raw slice of this element type from a pointer and a length:
@@ -89,6 +92,7 @@ def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
   | .slice element, pointer, length => .typedSliceFromRawParts (.slice element.toCore) pointer length
   | .unit, pointer, length => .typedSliceFromRawParts .unit pointer length
   | .isize, pointer, length => .typedSliceFromRawParts (.scalar (.signed .isize)) pointer length
+  | .char, pointer, length => .typedSliceFromRawParts (.scalar .char) pointer length
   | .sint kind, pointer, length => .typedSliceFromRawParts (.scalar (.signed kind.toSigned)) pointer length
 
 def SrcDivOp.toCore : SrcDivOp → Core.BinaryOp
@@ -124,6 +128,7 @@ def SrcExpr.toCore : SrcExpr → Core.Expr
   | .apply op left right => .binary op.toCore left.toCore right.toCore
   | .cast ty operand => .cast ty.toScalar operand.toCore
   | .null => .value (.pointer 0)
+  | .char code => .value (.character (UInt32.ofNat code.toNat))
 
 /-- Match arms from variant `k`: arm `k` matches variant `k` of enum type
 `id`, binding its payload. -/

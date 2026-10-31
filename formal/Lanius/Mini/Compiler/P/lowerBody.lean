@@ -96,6 +96,7 @@ def SrcType.declare (self : SrcType) (decls : SrcDecls) : Option SrcDecls :=
   | .slice element => SrcType.declare element decls
   | .unit => some decls
   | .isize => some decls
+  | .char => some decls
   | .sint kind => some decls
 def declareTypes (types : List SrcType) (decls : SrcDecls) : Option SrcDecls :=
   match types with

@@ -21,6 +21,7 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.norm
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
@@ -89,9 +90,9 @@ import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
 import all Lanius.Mini.Compiler.P.Inline_branchAgrees
 -- end import all
 -- import parts: Lanius.Mini.Compiler norm castTo arithSint orderSint signKey
-public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.arithShiftRight
 public import Lanius.Mini.Compiler.P.arithUint
+public import Lanius.Mini.Compiler.P.norm
 public import Lanius.Mini.Compiler.P.sintToUint
 -- end import parts
 
@@ -492,6 +493,12 @@ theorem narrow_cast_holds {k : UintTy} (narrow : k.isWide = false) {ty : SrcType
     simp only [evalScalarCast, Except.ok.injEq] at casted
     subst casted
     exact narrow_of_wrap narrow (toInt64_emod_width narrow b)
+  | char =>
+    obtain ⟨rfl, small⟩ := holds
+    simp only [evalScalarCast, Except.ok.injEq] at casted
+    subst casted
+    apply narrow_of_wrap narrow
+    simp [Nat.mod_eq_of_lt small]
   | sint k' =>
     simp only [SrcType.Holds] at holds
     by_cases wide' : k'.isWide = true

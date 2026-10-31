@@ -525,6 +525,7 @@ theorem fieldIndex_sound {env : FrontEnv} {t : Ty} {name : Name} {j : Nat} (h : 
   | tyUint _ => cases h
   | tyPtr => cases h
   | tyIsize => cases h
+  | tyChar => cases h
   | tySint _ => cases h
   | tySlice _ => cases h
 

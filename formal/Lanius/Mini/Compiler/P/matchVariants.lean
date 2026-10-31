@@ -29,6 +29,7 @@ def matchVariants (ty : SrcType) : List (List SrcType) :=
   | .slice element => []
   | .unit => []
   | .isize => []
+  | .char => []
   | .sint sk => []
 
 /-- The match is exhaustive, its value takes slots, and its tags fit in 32 bits. -/

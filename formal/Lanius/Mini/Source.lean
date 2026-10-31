@@ -22,6 +22,7 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.norm
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
@@ -249,7 +250,7 @@ def UintTy.SintHolds : UintTy → Value → BitVec 64 → Prop
 /-- `ty.Holds value bits`: one slot holding `bits` represents the Core `value`
 of scalar type `ty`. An `i32` is its bits zero-extended; booleans are 1 and 0;
 an unsigned value is the slot's number, below its type's bound; a pointer is
-its address. -/
+its address; a char is its code. -/
 def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .i32, value, bits => value = .signed .i32 (low bits).toInt ∧ bits = widen (low bits)
   | .bool, value, bits => ∃ b, value = .boolean b ∧ bits = boolBits b
@@ -260,6 +261,7 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .slice _, _, _ => False
   | .unit, _, _ => False
   | .isize, value, bits => value = .signed .isize bits.toInt
+  | .char, value, bits => value = .character (UInt32.ofNat bits.toNat) ∧ bits.toNat < 2 ^ 32
   | .sint kind, value, bits => kind.SintHolds value bits
 
 mutual
@@ -291,6 +293,8 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
   | unit {env : Env} {slot : Nat} : SrcType.HoldsAt .unit .unit env slot
   | isize {value : Value} {env : Env} {slot : Nat} :
       SrcType.isize.Holds value (env slot) → SrcType.HoldsAt .isize value env slot
+  | char {value : Value} {env : Env} {slot : Nat} :
+      SrcType.char.Holds value (env slot) → SrcType.HoldsAt .char value env slot
   | sint {kind : UintTy} {value : Value} {env : Env} {slot : Nat} :
       (SrcType.sint kind).Holds value (env slot) → SrcType.HoldsAt (.sint kind) value env slot
 
@@ -314,6 +318,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | slice => simp [SrcType.isScalar] at scalar
   | unit => simp [SrcType.isScalar] at scalar
   | isize => exact ⟨fun | .isize h => h, .isize⟩
+  | char => exact ⟨fun | .char h => h, .char⟩
   | sint => exact ⟨fun | .sint h => h, .sint⟩
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold fs vs env slot → vs.length = fs.length
@@ -377,6 +382,10 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .isize (by rw [this]; exact holds)
+  | .char, _, _, _, .char holds, _, _, agree => by
+    have := agree 0 (by simp [SrcType.size])
+    simp only [Nat.add_zero] at this
+    exact .char (by rw [this]; exact holds)
   | .sint _, _, _, _, .sint holds, _, _, agree => by
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this

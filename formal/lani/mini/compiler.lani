@@ -1352,6 +1352,8 @@ pub enum SrcType {
     Unit,
     // a signed 64-bit integer, its two's complement bits in one slot
     Isize,
+    // a char, its 32-bit code in one slot
+    Char,
     // the signed integer type as wide as kind (i8, i16, i32, i64, isize). A
     // narrow one sits in its slot as an i32 does, its value's 32-bit two's
     // complement zero-extended; a 64-bit one as an isize does.
@@ -1379,6 +1381,8 @@ pub enum SrcExpr {
     Cast(SrcType, Box<SrcExpr>),
     // the null pointer, Core's pointer 0
     Null,
+    // a char literal: its code, a Unicode scalar value
+    Char(u32),
 }
 
 // A match arm: the binders of its variant's payload, and its value.
@@ -1536,6 +1540,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> false,
+            SrcType::Char -> false,
             Sint(sk) -> false,
         };
     }
@@ -1551,6 +1556,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> false,
+            SrcType::Char -> false,
             Sint(sk) -> false,
         };
     }
@@ -1566,6 +1572,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> true,
+            SrcType::Char -> true,
             Sint(kind) -> true,
         };
     }
@@ -1581,6 +1588,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> false,
+            SrcType::Char -> false,
             Sint(sk) -> false,
         };
     }
@@ -1596,6 +1604,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> false,
+            SrcType::Char -> false,
             Sint(sk) -> false,
         };
     }
@@ -1611,6 +1620,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> true,
             Isize -> false,
+            SrcType::Char -> false,
             Sint(sk) -> false,
         };
     }
@@ -1626,6 +1636,23 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> true,
+            SrcType::Char -> false,
+            Sint(kind) -> false,
+        };
+    }
+
+    pub fn is_char(self) -> bool {
+        return match (self) {
+            I32 -> false,
+            Bool -> false,
+            Uint(kind) -> false,
+            Struct(id, fields) -> false,
+            Enum(id, variants) -> false,
+            Ptr -> false,
+            Slice(element) -> false,
+            Unit -> false,
+            Isize -> false,
+            SrcType::Char -> true,
             Sint(kind) -> false,
         };
     }
@@ -1642,6 +1669,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> true,
+            SrcType::Char -> false,
             Sint(kind) -> true,
         };
     }
@@ -1657,6 +1685,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> false,
+            SrcType::Char -> false,
             Sint(kind) -> true,
         };
     }
@@ -1672,6 +1701,7 @@ impl SrcType {
             Slice(element) -> false,
             Unit -> false,
             Isize -> false,
+            SrcType::Char -> false,
             Sint(other) -> other.code() == kind.code(),
         };
     }
@@ -1688,6 +1718,7 @@ impl SrcType {
             Slice(element) -> None,
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
             Sint(kind) -> Some(kind),
         };
     }
@@ -1704,6 +1735,7 @@ impl SrcType {
             Slice(element) -> None,
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
             Sint(sk) -> None,
         };
     }
@@ -1720,6 +1752,7 @@ impl SrcType {
             Slice(element) -> U64,
             Unit -> S32,
             Isize -> U64,
+            SrcType::Char -> U64,
             Sint(kind) -> kind.signed_word(),
         };
     }
@@ -1742,6 +1775,7 @@ impl SrcType {
                 Slice(other_element) -> false,
                 Unit -> false,
                 Isize -> false,
+                SrcType::Char -> false,
                 Sint(other_sk) -> false,
             },
             Enum(id, variants) -> match (other) {
@@ -1754,6 +1788,7 @@ impl SrcType {
                 Slice(other_element) -> false,
                 Unit -> false,
                 Isize -> false,
+                SrcType::Char -> false,
                 Sint(other_sk) -> false,
             },
             Ptr -> other.is_ptr(),
@@ -1767,10 +1802,12 @@ impl SrcType {
                 Slice(other_element) -> unbox(element).same(unbox(other_element)),
                 Unit -> false,
                 Isize -> false,
+                SrcType::Char -> false,
                 Sint(other_sk) -> false,
             },
             Unit -> other.is_unit(),
             Isize -> other.is_isize(),
+            SrcType::Char -> other.is_char(),
             Sint(kind) -> other.is_sint(kind),
         };
     }
@@ -1818,6 +1855,7 @@ impl SrcType {
             Slice(element) -> 2,
             Unit -> 1,
             Isize -> 1,
+            SrcType::Char -> 1,
             Sint(kind) -> 1,
         };
     }
@@ -2006,6 +2044,9 @@ pub fn order(operation: CmpOp, left: Typed, right: Typed) -> core::option::Optio
     if (left.ty.is_sint_any()) {
         return order_sint(operation, left, right, left.ty.sint_kind());
     }
+    if (left.ty.is_char() && right.ty.is_char()) {
+        return Some(Typed { expr: Compare(U64, operation, boxed(left.expr), boxed(right.expr)), ty: Bool });
+    }
     return order_uint(operation, left, right, left.ty.uint_kind());
 }
 
@@ -2095,6 +2136,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
         Sint(sk) -> None,
     };
 }
@@ -2201,6 +2243,7 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
+        SrcType::Char -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
         Sint(kind) -> Some(Typed { expr: sint_to_i32(kind, e.expr), ty: I32 }),
     };
 }
@@ -2216,6 +2259,7 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
+        SrcType::Char -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
         Sint(source) -> Some(Typed { expr: sint_to_uint(source, kind, e.expr), ty: Uint(kind) }),
     };
 }
@@ -2233,6 +2277,7 @@ pub fn cast_to_isize(e: Typed) -> core::option::Option<Typed> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> Some(e),
+        SrcType::Char -> Some(Typed { expr: e.expr, ty: Isize }),
         Sint(source) -> Some(Typed { expr: sint_to_wide(source, e.expr), ty: Isize }),
     };
 }
@@ -2263,6 +2308,7 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> cast_to_isize(e),
+        SrcType::Char -> None,
         Sint(kind) -> cast_to_sint(kind, e),
     };
 }
@@ -2297,6 +2343,7 @@ impl SrcExpr {
             Apply(op, left, right) -> lower_apply(op, unbox(left).lower(scope), unbox(right).lower(scope)),
             Cast(ty, operand) -> lower_cast(ty, unbox(operand).lower(scope)),
             Null -> Some(Typed { expr: Lit(0), ty: Ptr }),
+            SrcExpr::Char(code) -> Some(Typed { expr: Lit(code as u64), ty: SrcType::Char }),
         };
     }
 }
@@ -2362,6 +2409,7 @@ pub fn shift_width(ty: SrcType) -> u64 {
         Slice(element) -> 64,
         Unit -> 64,
         Isize -> 64,
+        SrcType::Char -> 32,
         Sint(kind) -> kind.bits(),
     };
 }
@@ -2451,6 +2499,7 @@ impl SrcExpr {
             Apply(op, left, right) -> apply_guard(op, unbox(left).lower(scope), unbox(right).lower(scope), unbox(left).guard(scope), unbox(right).guard(scope)),
             Cast(ty, operand) -> unbox(operand).guard(scope),
             Null -> Lit(1),
+            SrcExpr::Char(code) -> Lit(1),
         };
     }
 }
@@ -2572,6 +2621,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
         Sint(sk) -> None,
     };
 }
@@ -2597,6 +2647,7 @@ pub fn lower_copy(scope: List<Binding>, e: SrcExpr, ty: SrcType) -> core::option
         Apply(op, left, right) -> None,
         Cast(target, operand) -> None,
         Null -> None,
+        SrcExpr::Char(code) -> None,
     };
 }
 
@@ -2649,6 +2700,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
         Sint(sk) -> None,
     };
 }
@@ -2688,6 +2740,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
         Sint(sk) -> None,
     };
 }
@@ -2784,6 +2837,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
         Sint(sk) -> None,
     };
 }
@@ -2888,6 +2942,7 @@ pub fn eval_field_of(scope: List<Binding>, e: SrcExpr, slot: usize, b: Binding, 
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
         Sint(sk) -> None,
     };
 }
@@ -2915,6 +2970,7 @@ pub fn eval_pure(scope: List<Binding>, e: SrcExpr, slot: usize) -> core::option:
             Apply(op, left, right) -> None,
             Cast(ty, operand) -> None,
             Null -> None,
+            SrcExpr::Char(code) -> None,
         },
     };
 }
@@ -3033,6 +3089,7 @@ pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
         Slice(element) -> Some(unbox(element)),
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
         Sint(sk) -> None,
     };
 }
@@ -3068,6 +3125,7 @@ pub fn eval_struct(ty: SrcType, args: core::option::Option<EvaluatedArgs>) -> co
             Slice(element) -> None,
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
             Sint(sk) -> None,
         },
     };
@@ -3105,6 +3163,7 @@ pub fn eval_variant(ty: SrcType, variant: usize, slot: usize, args: core::option
             Slice(element) -> None,
             Unit -> None,
             Isize -> None,
+            SrcType::Char -> None,
             Sint(sk) -> None,
         },
     };
@@ -3270,6 +3329,7 @@ pub fn match_variants(ty: SrcType) -> List<List<SrcType>> {
         Slice(element) -> empty(),
         Unit -> empty(),
         Isize -> empty(),
+        SrcType::Char -> empty(),
         Sint(sk) -> empty(),
     };
 }
@@ -3452,6 +3512,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
         Sint(sk) -> None,
     };
 }
@@ -3654,6 +3715,7 @@ pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
         Slice(element) -> None,
         Unit -> None,
         Isize -> Some(M64),
+        SrcType::Char -> None,
         Sint(kind) -> usize_width(kind),
     };
 }
@@ -3692,6 +3754,7 @@ pub fn word_type(decls: SrcDecls, ty: SrcType) -> bool {
         Slice(element) -> false,
         Unit -> false,
         Isize -> true,
+        SrcType::Char -> false,
         Sint(kind) -> true,
     };
 }
@@ -3723,6 +3786,7 @@ pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
         Slice(inner) -> false,
         Unit -> false,
         Isize -> false,
+        SrcType::Char -> false,
         Sint(sk) -> false,
     };
 }
@@ -3762,6 +3826,7 @@ pub fn load_type(ty: SrcType, target: usize, base: Expr, offset: usize, body: St
         Slice(element) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Unit -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Isize -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        SrcType::Char -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Sint(kind) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
     };
 }
@@ -3822,6 +3887,7 @@ pub fn store_type(ty: SrcType, values: List<Expr>, first: usize, base: Expr, off
         Slice(element) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Unit -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Isize -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        SrcType::Char -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Sint(kind) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
     };
 }
@@ -3864,6 +3930,7 @@ pub fn within_layout(depth: usize, ty: SrcType) -> bool {
         Slice(element) -> false,
         Unit -> false,
         Isize -> true,
+        SrcType::Char -> false,
         Sint(kind) -> true,
     };
 }
@@ -4234,6 +4301,7 @@ pub fn set_field_eval_of(b: Binding, field: usize, slot: usize, v: Evaluated) ->
         Slice(element) -> None,
         Unit -> None,
         Isize -> None,
+        SrcType::Char -> None,
         Sint(sk) -> None,
     };
 }
@@ -4557,6 +4625,7 @@ impl SrcType {
             Slice(element) -> unbox(element).declare(decls),
             Unit -> Some(decls),
             Isize -> Some(decls),
+            SrcType::Char -> Some(decls),
             Sint(kind) -> Some(decls),
         };
     }

@@ -4,6 +4,8 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmt4
+public import Lanius.Faithful.Gen.SelfStmt6
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_charOpen
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pIdentPlain
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pSelfValue
@@ -34,6 +36,67 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
+
+theorem proof_char_body {prog : SrcProgram} {prims : Prims} {ix_char_body ix_unbox_of_mini_selfhost_List_usize ix_char_first : Nat} (fn : prog.funcs[ix_char_body]? = some (src_char_body ix_unbox_of_mini_selfhost_List_usize ix_char_first)) (np : prims.isPrim ix_char_body = false)
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+    (ext_char_first : Certified (∀ {n : Nat}, Stmt_char_first prog prims ix_char_first n)) {n : Nat} :
+    Stmt_char_body prog prims ix_char_body n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_char_body] at h
+  faithful [Lanius.Mini.charBody]
+
+theorem proof_char_close {prog : SrcProgram} {prims : Prims} {ix_char_close ix_unbox_of_mini_selfhost_List_usize ix_char_end : Nat} (fn : prog.funcs[ix_char_close]? = some (src_char_close ix_unbox_of_mini_selfhost_List_usize ix_char_end)) (np : prims.isPrim ix_char_close = false)
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+    (ext_char_end : Certified (∀ {n : Nat}, Stmt_char_end prog prims ix_char_end n)) {n : Nat} :
+    Stmt_char_close prog prims ix_char_close n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_char_close] at h
+  faithful [Lanius.Mini.charClose]
+
+theorem proof_char_close_opt {prog : SrcProgram} {prims : Prims} {ix_char_close_opt ix_char_close : Nat} (fn : prog.funcs[ix_char_close_opt]? = some (src_char_close_opt ix_char_close)) (np : prims.isPrim ix_char_close_opt = false)
+    (ext_char_close : Certified (∀ {n : Nat}, Stmt_char_close prog prims ix_char_close n)) {n : Nat} :
+    Stmt_char_close_opt prog prims ix_char_close_opt n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_char_close_opt] at h
+  faithful [Lanius.Mini.charCloseOpt]
+
+theorem proof_char_literal {prog : SrcProgram} {prims : Prims} {ix_char_literal ix_unbox_of_mini_selfhost_List_usize ix_char_open : Nat} (fn : prog.funcs[ix_char_literal]? = some (src_char_literal ix_unbox_of_mini_selfhost_List_usize ix_char_open)) (np : prims.isPrim ix_char_literal = false)
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+    (ext_char_open : Certified (∀ {n : Nat}, Stmt_char_open prog prims ix_char_open n)) {n : Nat} :
+    Stmt_char_literal prog prims ix_char_literal n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_char_literal] at h
+  faithful [Lanius.Mini.charLiteral]
+
+theorem step_char_tail {prog : SrcProgram} {prims : Prims} {ix_char_tail ix_unbox_of_mini_selfhost_List_usize ix_char_tail_at : Nat} (fn : prog.funcs[ix_char_tail]? = some (src_char_tail ix_unbox_of_mini_selfhost_List_usize ix_char_tail_at)) (np : prims.isPrim ix_char_tail = false)
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n)) {n : Nat}
+    (ih_char_tail_at : Certified (Stmt_char_tail_at prog prims ix_char_tail_at n)) :
+    Stmt_char_tail prog prims ix_char_tail (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_char_tail] at h
+  faithful [Lanius.Mini.charTail]
+
+theorem proof_escaped_byte {prog : SrcProgram} {prims : Prims} {ix_escaped_byte : Nat} (fn : prog.funcs[ix_escaped_byte]? = some (src_escaped_byte)) (np : prims.isPrim ix_escaped_byte = false) {n : Nat} :
+    Stmt_escaped_byte prog prims ix_escaped_byte n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_escaped_byte] at h
+  faithful [Lanius.Mini.escapedByte]
 
 theorem step_find_local {prog : SrcProgram} {prims : Prims} {ix_find_local ix_unbox_of_mini_selfhost_List_mini_selfhost_Local ix_find_local_at : Nat} (fn : prog.funcs[ix_find_local]? = some (src_find_local ix_unbox_of_mini_selfhost_List_mini_selfhost_Local ix_find_local_at)) (np : prims.isPrim ix_find_local = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Local : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Local prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Local n)) {n : Nat}

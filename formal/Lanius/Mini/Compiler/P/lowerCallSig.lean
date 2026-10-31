@@ -76,6 +76,7 @@ def evalFieldOf (scope : List Binding) (e : SrcExpr) (slot : Nat) (b : Binding) 
   | .slice element => none
   | .unit => none
   | .isize => none
+  | .char => none
   | .sint sk => none
 
 /-- A struct local's field of any type (a scalar field lowers as an expression first), copied slot by slot. -/
@@ -99,6 +100,7 @@ def evalPure (scope : List Binding) (e : SrcExpr) (slot : Nat) : Option Evaluate
     | .apply op left right => none
     | .cast ty operand => none
     | .null => none
+    | .char code => none
 
 def evalCallSig (sig : Sig) (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
   if typesSame args.types sig.params && decide (0 < SrcType.size sig.ret) then

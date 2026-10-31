@@ -20,6 +20,7 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.norm
 import all Lanius.Mini.Compiler.P.arithUint
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
@@ -436,5 +437,48 @@ theorem stride_word_bits {w : Nat} (small : w ≤ 4096) :
   · rw [Nat.mod_eq_of_lt (by omega)]
     rw [if_neg (by omega)]
     omega
+
+/-! ### Chars: a slot holds the code, below `2 ^ 32` -/
+
+section Chars
+
+open Semantics
+
+theorem char_code {a : BitVec 64} (h : a.toNat < 2 ^ 32) : (UInt32.ofNat a.toNat).toNat = a.toNat := by
+  simp [Nat.mod_eq_of_lt h]
+
+theorem eval_char_order {a b : BitVec 64} (ha : a.toNat < 2 ^ 32) (hb : b.toNat < 2 ^ 32) {cop : Core.BinaryOp}
+    {op : CmpOp}
+    (h : (cop = .less ∧ op = .lt) ∨ (cop = .lessEqual ∧ op = .le) ∨
+      (cop = .greater ∧ op = .gt) ∨ (cop = .greaterEqual ∧ op = .ge)) :
+    evalBinaryValue .x86_64 cop (.character (UInt32.ofNat a.toNat)) (.character (UInt32.ofNat b.toNat)) =
+      .ok (.boolean (op.holdsU a b)) := by
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    simp [evalBinaryValue, evalCharBinary, char_code ha, char_code hb, CmpOp.holdsU, BitVec.ult,
+      BitVec.ule]
+
+theorem char_beq {a b : BitVec 64} (ha : a.toNat < 2 ^ 32) (hb : b.toNat < 2 ^ 32) :
+    (UInt32.ofNat a.toNat == UInt32.ofNat b.toNat) = (a == b) := by
+  rw [Bool.eq_iff_iff]
+  simp only [beq_iff_eq]
+  constructor
+  · intro e
+    have := congrArg UInt32.toNat e
+    rw [char_code ha, char_code hb] at this
+    exact BitVec.eq_of_toNat_eq this
+  · intro e
+    rw [e]
+
+theorem eval_char_eq {a b : BitVec 64} (ha : a.toNat < 2 ^ 32) (hb : b.toNat < 2 ^ 32) :
+    evalBinaryValue .x86_64 .equal (.character (UInt32.ofNat a.toNat)) (.character (UInt32.ofNat b.toNat)) =
+      .ok (.boolean (CmpOp.eq.holdsU a b)) := by
+  simp only [evalBinaryValue, scalarEqual, char_beq ha hb, CmpOp.holdsU]
+
+theorem eval_char_ne {a b : BitVec 64} (ha : a.toNat < 2 ^ 32) (hb : b.toNat < 2 ^ 32) :
+    evalBinaryValue .x86_64 .notEqual (.character (UInt32.ofNat a.toNat)) (.character (UInt32.ofNat b.toNat)) =
+      .ok (.boolean (CmpOp.ne.holdsU a b)) := by
+  simp only [evalBinaryValue, scalarEqual, char_beq ha hb, CmpOp.holdsU, bne]
+
+end Chars
 
 end Lanius.Mini

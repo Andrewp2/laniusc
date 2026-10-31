@@ -239,6 +239,10 @@ theorem pure_agree : ∀ {env : FrontEnv} {scope : List Local} {c : CTree} {e : 
     cases h₂ with
     | pure p => rw [exprR_unique p h₁]
     | _ => expr_clash
+  | _, _, _, _, h₁@(.char pc cl), _, _, _, h₂ => by
+    cases h₂ with
+    | pure p => rw [exprR_unique p h₁]
+    | _ => expr_clash
 
 theorem fold_agree : ∀ {env : FrontEnv} {scope : List Local} {a : SrcExpr} {tail : CTree} {e : SrcExpr},
     Fold env scope a tail e → IdsFresh scope → ∀ {x : MEff}, EffFold env scope (.xPure a) tail x → x = .xPure e
