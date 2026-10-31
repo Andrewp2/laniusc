@@ -30,6 +30,16 @@ on but do not prove:
   `w` never traps undefinedly (`driver_safe`, V7b). That the native
   self-built compiler's bytes are `compileSource prog` is computed by
   `lake exe runAll` (section 5, the Lean build), not by the kernel.
+- `Lanius.Faithful.SelfHost.selfHost_fixpoint`
+  (`Lanius/Faithful/SelfHost.lean`, F12). For source files `self` the
+  front end reads as `prog` (`read`) and `B` with `compileText self =
+  some B` (`compiled`): `prog` is the files' one reading, and `B`'s code
+  for `w`, given the words of `self`, faults or returns `B`'s own words:
+  the verified compiler compiles its own text to itself.
+  `selfHost_outcome` is V7 with the same two premises in place of
+  `compileSource prog = some B`. Both premises are computed by Lean's
+  compiled code on the self program's files, not by the kernel (section 5,
+  "The self-built verified compiler").
 - `Lanius.Mini.compileProgram_correct` (`Lanius/Mini/Correct.lean`). The same
   for a mini IR program against the mini big-step semantics.
 - `Lanius.Mini.compileProgram_stops` (`Lanius/Mini/StopsCorrect.lean`, V2c).
@@ -610,6 +620,50 @@ compiler that someone actually runs is one of these two:
    runtime are trusted: GMP `Nat`, and the `@[extern]` and `implemented_by`
    implementations of `BitVec`, `UInt8` and `List`. The kernel does not see
    any of this code.
+
+### The self-built verified compiler (F12)
+
+`selfHost_fixpoint` and `selfHost_outcome` take two facts about the self
+program's files `self` (the driver `w` and the module closure of
+`mini::selfhost`: 8 files, about 795 KB of text, each with laniusc's parse
+tree, laid out as `self_host.py` and `faithful_current.py` lay them out) as
+premises. Each is computed by Lean's compiled code (item 2 above), because
+the kernel cannot evaluate the front end on 795 KB of text or `compileSource`
+on a program whose image is 15,049,168 bytes:
+
+- **`read : sourceProgramFiles self = some prog`.** `lake exe srcDump`
+  (`Lanius/Tools/SrcDump.lean`) runs the front end on the files and prints
+  its program with `repr`, named types shared (`faithful_dump.py` names
+  them), and `faithful_certs.py` splits the text into `Gen/SelfSrc*` and
+  `Gen/SelfProg` as a chain of named tails. Trusted: the front end's
+  compiled code, `repr` and these text transformations print a term that
+  elaborates to the value the front end computed. Checked by the gate's
+  `self-current` step (`faithful_current.py`), which regenerates `Gen/`
+  from the current sources and fails unless it is what is checked in, so
+  `prog` is never stale; and by the certificates and the prim tests, which
+  hold of the 1,945 functions of `prog` reachable from the driver's roots
+  (each certificate proves the function's Core run computes its
+  extraction), so a reachable function printed with another meaning fails
+  to check. The other 264 functions (`elf_file`, test helpers) change the
+  image's bytes but no run of `w`, so for them the printing is trusted as
+  stated.
+- **`compiled : compileText self = some B`.** `lake exe runAll` (manifest
+  line `compile self ...`) computes it and writes `B` as the self-built
+  compiler's image and entries. Trusted: Lean's compiled code for
+  `compileText`. Checked by the gate's `self-host-fixpoint` step: `B` run
+  natively on `self` returns exactly runAll's words for `self`, whose image
+  is `B`'s own image byte for byte, so an error in Lean's compiled code
+  would have to be one that `B` itself reproduces.
+
+The native run's x86 state is set up by `self_host.py`'s ctypes stub
+(`Native`), which lays the heap out as `selfHeap` says; its premises are the
+caller's obligations of section 8 (stack window, image placement, the
+argument slots), tested and not proved.
+
+To shrink it: kernel evaluation of the front end and of `compileSource`
+(CakeML's in-logic bootstrap) needs a kernel that can run a 795 KB front
+end and a 15 MB code generator; a per-function split of `compileSource`
+(each function's code checked in its own module) would be the first step.
 
 ### `&mut` pilot
 
