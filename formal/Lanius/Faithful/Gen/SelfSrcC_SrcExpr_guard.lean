@@ -44,7 +44,7 @@ def src_slot_vars (ix_plus : Nat) (ix_minus : Nat) (ix_slot_vars : Nat) (ix_empt
 def src_then_check (ix_boxed_of_mini_selfhost_Stmt : Nat) (ix_is_one : Nat) (ix_trap : Nat) : SrcFunc := { params := [{ id := 11, ty := SrcType.uint (UintTy.usize) }, { id := 24, ty := ty86 }, { id := 33, ty := ty90 }], ret := ty90, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eCall ix_is_one [SrcEff.ePure (SrcExpr.local 24)]) (SrcStmt.return (SrcExpr.local 33)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty90 2 [SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.ePure (SrcExpr.local 33)], SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.eVariant ty90 3 [SrcEff.ePure (SrcExpr.local 24), SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.eVariant ty90 0 []], SrcEff.eCall ix_boxed_of_mini_selfhost_Stmt [SrcEff.eCall ix_trap [SrcEff.ePure (SrcExpr.local 11)]]]]])) }
 
 /-- mini::selfhost::trap -/
-def src_trap : SrcFunc := { params := [{ id := 5, ty := SrcType.uint (UintTy.usize) }], ret := ty90, body := SrcStmt.returnEval (SrcEff.eVariant ty90 12 [SrcEff.eVariant ty50 1 [], SrcEff.eVariant ty54 2 [], SrcEff.ePure (SrcExpr.local 5), SrcEff.eVariant ty86 0 [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x0000000000000001#64)], SrcEff.eVariant ty86 0 [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x0000000000000000#64)]]) }
+def src_trap : SrcFunc := { params := [{ id := 5, ty := SrcType.uint (UintTy.usize) }], ret := ty90, body := SrcStmt.returnEval (SrcEff.eVariant ty90 14 [SrcEff.eVariant ty50 1 [], SrcEff.eVariant ty54 2 [], SrcEff.ePure (SrcExpr.local 5), SrcEff.eVariant ty86 0 [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x0000000000000001#64)], SrcEff.eVariant ty86 0 [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x0000000000000000#64)]]) }
 
 end
 

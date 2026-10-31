@@ -2083,6 +2083,8 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
           cases exec3' with
           | seq execC execLoop => exact .seq exec1' (.loopNext condTrue (.seq exec2' execC) execLoop)
           | seqReturned execC => exact .seq exec1' (.loopReturned condTrue (.seq exec2' execC))
+          | seqBroke _ => cases matched3
+          | seqContinued _ => cases matched3
       · rename_i completed bodyRun
         obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
           ihe condOk corr fr fresh hc condRun

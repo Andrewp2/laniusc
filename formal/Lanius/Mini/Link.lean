@@ -78,9 +78,10 @@ theorem compileArgs_rename (table : List Nat) (missing base : Nat) (args : List 
   | nil => rfl
   | cons arg rest ih => simp [compileArgs, ih, compileExpr_rename, Instr.rename]
 
-theorem compileStmt_rename (table : List Nat) (missing base : Nat) (s : Stmt) (pos : Nat) :
-    compileStmt base pos (s.rename table missing) = (compileStmt base pos s).map (Instr.rename table missing) := by
-  induction s generalizing pos <;>
+theorem compileStmt_rename (table : List Nat) (missing base : Nat) (s : Stmt) (pos brk cont : Nat) :
+    compileStmt base pos brk cont (s.rename table missing) =
+      (compileStmt base pos brk cont s).map (Instr.rename table missing) := by
+  induction s generalizing pos brk cont <;>
     simp_all [Stmt.rename, compileStmt, compileExpr_rename, compileArgs_rename, codeSize_rename, Instr.rename]
 
 theorem Stmt.temps_rename (table : List Nat) (missing : Nat) (s : Stmt) :

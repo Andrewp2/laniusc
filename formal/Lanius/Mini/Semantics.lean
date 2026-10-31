@@ -242,6 +242,10 @@ theorem Heap.readLE_lt (heap : Heap) : ∀ (address count : Nat), heap.readLE ad
 inductive Outcome where
   | normal (env : Env) (heap : Heap)
   | returned (values : List (BitVec 64)) (heap : Heap)
+  /-- left the innermost loop (`brk`) -/
+  | broke (env : Env) (heap : Heap)
+  /-- went back to the innermost loop's condition (`cont`) -/
+  | continued (env : Env) (heap : Heap)
 
 /-- `Exec prog depth env heap stmt outcome`: running `stmt` from `env` and
 `heap` ends in `outcome`, with calls nested fewer than `depth` deep. -/
@@ -255,6 +259,12 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
   | seqReturned {depth : Nat} {env : Env} {heap after : Heap} {first second : Stmt} {value : List (BitVec 64)} :
       Exec prog depth env heap first (.returned value after) →
       Exec prog depth env heap (.seq first second) (.returned value after)
+  | seqBroke {depth : Nat} {env middle : Env} {heap between : Heap} {first second : Stmt} :
+      Exec prog depth env heap first (.broke middle between) →
+      Exec prog depth env heap (.seq first second) (.broke middle between)
+  | seqContinued {depth : Nat} {env middle : Env} {heap between : Heap} {first second : Stmt} :
+      Exec prog depth env heap first (.continued middle between) →
+      Exec prog depth env heap (.seq first second) (.continued middle between)
   | ifTrue {depth : Nat} {env : Env} {heap : Heap} {condition : Expr} {thenBranch elseBranch : Stmt}
       {outcome : Outcome} :
       condition.eval env ≠ 0 → Exec prog depth env heap thenBranch outcome →
@@ -274,6 +284,16 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
       {value : List (BitVec 64)} :
       condition.eval env ≠ 0 → Exec prog depth env heap body (.returned value after) →
       Exec prog depth env heap (.loop condition body) (.returned value after)
+  | loopBroke {depth : Nat} {env middle : Env} {heap between : Heap} {condition : Expr} {body : Stmt} :
+      condition.eval env ≠ 0 → Exec prog depth env heap body (.broke middle between) →
+      Exec prog depth env heap (.loop condition body) (.normal middle between)
+  | loopContinued {depth : Nat} {env middle : Env} {heap between : Heap} {condition : Expr} {body : Stmt}
+      {outcome : Outcome} :
+      condition.eval env ≠ 0 → Exec prog depth env heap body (.continued middle between) →
+      Exec prog depth middle between (.loop condition body) outcome →
+      Exec prog depth env heap (.loop condition body) outcome
+  | brk {depth : Nat} {env : Env} {heap : Heap} : Exec prog depth env heap .brk (.broke env heap)
+  | cont {depth : Nat} {env : Env} {heap : Heap} : Exec prog depth env heap .cont (.continued env heap)
   | call {depth inner target count callee : Nat} {env : Env} {heap after : Heap} {args : List Expr}
       {func : Func} {value : List (BitVec 64)} :
       prog.funcs[callee]? = some func → args.length = func.params → value.length = count → inner < depth →

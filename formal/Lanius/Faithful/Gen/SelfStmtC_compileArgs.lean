@@ -61,8 +61,8 @@ abbrev Stmt_compile_func (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     (RepOption 140 RepCode) (Lanius.Mini.compileFunc x0 x1) w
 
 abbrev Stmt_compile_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepNat x1 v1 → RepStmt x2 v2 →
-    (RepList 52 RepInstr) (Lanius.Mini.compileStmt x0 x1 x2) w
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepStmt x4 v4 →
+    (RepList 52 RepInstr) (Lanius.Mini.compileStmt x0 x1 x2 x3 x4) w
 
 abbrev Stmt_frame_limit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

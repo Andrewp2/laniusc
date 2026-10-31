@@ -16,16 +16,18 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-/-- Every run of this statement writes slot index before reading it, or returns without reading it: the value index holds on entry is dead. -/
+/-- Every run of this statement writes slot index before reading it, or returns without reading it: the value index holds on entry is dead. A statement before the write must not break or continue, as a loop's code after it may read index. -/
 def Stmt.kills (self : Stmt) (index : Nat) : Bool :=
   match self with
   | .skip => false
   | .assign i v => decide (i = index) && !(Expr.mentions v index)
-  | .seq f s => Stmt.kills f index || Stmt.ignores f index && Stmt.kills s index
+  | .seq f s => Stmt.kills f index || Stmt.ignores f index && !(Stmt.jumps f) && Stmt.kills s index
   | .ite c t e => !(Expr.mentions c index) && Stmt.kills t index && Stmt.kills e index
   | .loop c b => false
   | .call t n f a => false
   | .ret v => !(mentionsAny v index)
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
@@ -47,6 +49,8 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .loop c b => false
      | .call t n f a => false
      | .ret v => false
+     | .brk => false
+     | .cont => false
      | .alloc t sh sz => false
      | .loadByte t a => false
      | .storeByte a v => false
@@ -60,6 +64,8 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .loop c b => false
      | .call t n f a => false
      | .ret v => false
+     | .brk => false
+     | .cont => false
      | .alloc t sh sz => false
      | .loadByte t a => false
      | .storeByte a v => false
@@ -76,6 +82,8 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .loop c b => false
      | .call t n f a => false
      | .ret v => false
+     | .brk => false
+     | .cont => false
      | .alloc t sh sz => false
      | .loadByte t a => false
      | .storeByte a v => false
@@ -97,6 +105,8 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .loop c b => Expr.agrees condition c && Stmt.agrees body [] b
      | .call t n f a => false
      | .ret v => false
+     | .brk => false
+     | .cont => false
      | .alloc t sh sz => false
      | .loadByte t a => false
      | .storeByte a v => false
@@ -105,6 +115,8 @@ def Stmt.agrees (self : Stmt) (facts : List Fact) (other : Stmt) : Bool :=
      | .divide w o t l r => false)
   | .call target count callee args => callAgrees target count callee (substAll args facts) other
   | .ret values => retAgrees (substAll values facts) other
+  | .brk => Stmt.isBrk other
+  | .cont => Stmt.isCont other
   | .alloc target shift size => allocAgrees target shift (Expr.subst size facts) other
   | .loadByte target address => loadByteAgrees target (Expr.subst address facts) other
   | .storeByte address value => storeByteAgrees (Expr.subst address facts) (Expr.subst value facts) other

@@ -68,6 +68,10 @@ inductive Stmt where
   /-- target, ..., target + count - 1 = callee(args) -/
   | call : Nat → Nat → Nat → (List Expr) → Stmt
   | ret : (List Expr) → Stmt
+  /-- leave the innermost loop -/
+  | brk : Stmt
+  /-- go back to the innermost loop's condition -/
+  | cont : Stmt
   /-- target = the cursor rounded up to a multiple of 2^shift; the cursor moves past size bytes from there -/
   | alloc : Nat → Nat → Expr → Stmt
   /-- target = the byte at address -/

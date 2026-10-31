@@ -47,7 +47,7 @@ theorem proof_Func_agrees {prog : SrcProgram} {prims : Prims} {ix_Func_agrees ix
   simp only [src_Func_agrees] at h
   faithful [Lanius.Mini.Func.agrees]
 
-theorem step_Stmt_agrees {prog : SrcProgram} {prims : Prims} {ix_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_Stmt_facts_after ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees : Nat} (fn : prog.funcs[ix_Stmt_agrees]? = some (src_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_agrees ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_Stmt_facts_after ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees)) (np : prims.isPrim ix_Stmt_agrees = false)
+theorem step_Stmt_agrees {prog : SrcProgram} {prims : Prims} {ix_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_Stmt_facts_after ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_Stmt_is_brk ix_Stmt_is_cont ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees : Nat} (fn : prog.funcs[ix_Stmt_agrees]? = some (src_Stmt_agrees ix_unbox_of_mini_selfhost_Stmt ix_Expr_subst ix_subst_all ix_Stmt_agrees ix_Stmt_is_skip ix_assign_agrees ix_seq_agrees ix_dead_agrees ix_Stmt_facts_after ix_ite_agrees ix_branch_agrees ix_Expr_constant ix_unknown ix_Expr_is_zero ix_loop_agrees ix_call_agrees ix_ret_agrees ix_Stmt_is_brk ix_Stmt_is_cont ix_alloc_agrees ix_load_byte_agrees ix_store_byte_agrees ix_load_word_agrees ix_store_word_agrees ix_divide_agrees)) (np : prims.isPrim ix_Stmt_agrees = false)
     (ext_unbox_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Stmt prog prims ix_unbox_of_mini_selfhost_Stmt n))
     (ext_Expr_subst : Certified (∀ {n : Nat}, Stmt_Expr_subst prog prims ix_Expr_subst n))
     (ext_subst_all : Certified (∀ {n : Nat}, Stmt_subst_all prog prims ix_subst_all n))
@@ -59,6 +59,8 @@ theorem step_Stmt_agrees {prog : SrcProgram} {prims : Prims} {ix_Stmt_agrees ix_
     (ext_Expr_is_zero : Certified (∀ {n : Nat}, Stmt_Expr_is_zero prog prims ix_Expr_is_zero n))
     (ext_call_agrees : Certified (∀ {n : Nat}, Stmt_call_agrees prog prims ix_call_agrees n))
     (ext_ret_agrees : Certified (∀ {n : Nat}, Stmt_ret_agrees prog prims ix_ret_agrees n))
+    (ext_Stmt_is_brk : Certified (∀ {n : Nat}, Stmt_Stmt_is_brk prog prims ix_Stmt_is_brk n))
+    (ext_Stmt_is_cont : Certified (∀ {n : Nat}, Stmt_Stmt_is_cont prog prims ix_Stmt_is_cont n))
     (ext_alloc_agrees : Certified (∀ {n : Nat}, Stmt_alloc_agrees prog prims ix_alloc_agrees n))
     (ext_load_byte_agrees : Certified (∀ {n : Nat}, Stmt_load_byte_agrees prog prims ix_load_byte_agrees n))
     (ext_store_byte_agrees : Certified (∀ {n : Nat}, Stmt_store_byte_agrees prog prims ix_store_byte_agrees n))
@@ -77,10 +79,11 @@ theorem step_Stmt_agrees {prog : SrcProgram} {prims : Prims} {ix_Stmt_agrees ix_
   simp only [src_Stmt_agrees] at h
   faithful [Lanius.Mini.Stmt.agrees]
 
-theorem step_Stmt_kills {prog : SrcProgram} {prims : Prims} {ix_Stmt_kills ix_unbox_of_mini_selfhost_Stmt ix_Expr_mentions ix_Stmt_ignores ix_mentions_any : Nat} (fn : prog.funcs[ix_Stmt_kills]? = some (src_Stmt_kills ix_unbox_of_mini_selfhost_Stmt ix_Stmt_kills ix_Expr_mentions ix_Stmt_ignores ix_mentions_any)) (np : prims.isPrim ix_Stmt_kills = false)
+theorem step_Stmt_kills {prog : SrcProgram} {prims : Prims} {ix_Stmt_kills ix_unbox_of_mini_selfhost_Stmt ix_Expr_mentions ix_Stmt_ignores ix_Stmt_jumps ix_mentions_any : Nat} (fn : prog.funcs[ix_Stmt_kills]? = some (src_Stmt_kills ix_unbox_of_mini_selfhost_Stmt ix_Stmt_kills ix_Expr_mentions ix_Stmt_ignores ix_Stmt_jumps ix_mentions_any)) (np : prims.isPrim ix_Stmt_kills = false)
     (ext_unbox_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Stmt prog prims ix_unbox_of_mini_selfhost_Stmt n))
     (ext_Expr_mentions : Certified (∀ {n : Nat}, Stmt_Expr_mentions prog prims ix_Expr_mentions n))
     (ext_Stmt_ignores : Certified (∀ {n : Nat}, Stmt_Stmt_ignores prog prims ix_Stmt_ignores n))
+    (ext_Stmt_jumps : Certified (∀ {n : Nat}, Stmt_Stmt_jumps prog prims ix_Stmt_jumps n))
     (ext_mentions_any : Certified (∀ {n : Nat}, Stmt_mentions_any prog prims ix_mentions_any n)) {n : Nat}
     (ih_Stmt_kills : Certified (Stmt_Stmt_kills prog prims ix_Stmt_kills n)) :
     Stmt_Stmt_kills prog prims ix_Stmt_kills (n + 1) := by

@@ -117,10 +117,11 @@ theorem argSlots_ge (base : Nat) (args : List Expr) (k : Nat) :
     · have := ih (k + 1) slot inRest; omega
 
 theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (resultsFit : results ≤ base)
-    (stmt : Stmt) (pos : Nat) (within : stmt.within base arities results = true) :
-    ∀ i ∈ compileStmt base pos stmt,
-      i.Fits (base + stmt.temps) (pos + codeSize (compileStmt base pos stmt)) arities.length := by
-  induction stmt generalizing pos with
+    (stmt : Stmt) (pos brk cont : Nat) (brkFit : brk ≤ pos) (contFit : cont ≤ pos)
+    (within : stmt.within base arities results = true) :
+    ∀ i ∈ compileStmt base pos brk cont stmt,
+      i.Fits (base + stmt.temps) (pos + codeSize (compileStmt base pos brk cont stmt)) arities.length := by
+  induction stmt generalizing pos brk cont with
   | skip => simp [compileStmt]
   | assign index value =>
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
@@ -132,8 +133,8 @@ theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (re
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt, List.mem_append, Stmt.temps, codeSize_append]
     rintro i (inFirst | inSecond)
-    · exact (ihFirst pos within.1 i inFirst).mono (by omega) (by omega)
-    · exact (ihSecond _ within.2 i inSecond).mono (by omega) (by omega)
+    · exact (ihFirst pos brk cont brkFit contFit within.1 i inFirst).mono (by omega) (by omega)
+    · exact (ihSecond _ brk cont (by omega) (by omega) within.2 i inSecond).mono (by omega) (by omega)
   | ite condition thenBranch elseBranch ihThen ihElse =>
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt, List.mem_append, List.mem_singleton, Stmt.temps, codeSize_append, codeSize,
@@ -141,9 +142,9 @@ theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (re
     rintro i ((((inCondition | rfl) | inThen) | rfl) | inElse)
     · exact (compileExpr_fits base condition 0 within.1.1 _ _ i inCondition).mono (by omega) (Nat.le_refl _)
     · simp only [Instr.Fits]; omega
-    · exact (ihThen _ within.1.2 i inThen).mono (by omega) (by omega)
+    · exact (ihThen _ brk cont (by omega) (by omega) within.1.2 i inThen).mono (by omega) (by omega)
     · simp only [Instr.Fits]; omega
-    · exact (ihElse _ within.2 i inElse).mono (by omega) (by omega)
+    · exact (ihElse _ brk cont (by omega) (by omega) within.2 i inElse).mono (by omega) (by omega)
   | loop condition body ihBody =>
     simp only [Stmt.within, Bool.and_eq_true] at within
     simp only [compileStmt, List.mem_append, List.mem_singleton, Stmt.temps, codeSize_append, codeSize,
@@ -151,7 +152,7 @@ theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (re
     rintro i (((inCondition | rfl) | inBody) | rfl)
     · exact (compileExpr_fits base condition 0 within.1 _ _ i inCondition).mono (by omega) (Nat.le_refl _)
     · simp only [Instr.Fits]; omega
-    · exact (ihBody _ within.2 i inBody).mono (by omega) (by omega)
+    · exact (ihBody _ _ _ (by omega) (by omega) within.2 i inBody).mono (by omega) (by omega)
     · simp only [Instr.Fits]; omega
   | call target count callee args =>
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq, arityIs_eq] at within
@@ -171,6 +172,15 @@ theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (re
       have := argSlots_ge base values 0 slot mem
       rw [argSlots_length]
       omega
+  | brk =>
+    simp only [compileStmt, List.mem_cons, List.not_mem_nil, or_false]
+    rintro i (rfl | rfl)
+    · trivial
+    · simp only [Instr.Fits]; omega
+  | cont =>
+    simp only [compileStmt, List.mem_singleton]
+    rintro i rfl
+    simp only [Instr.Fits]; omega
   | alloc target shift size =>
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
     simp only [compileStmt, List.mem_append, List.mem_cons, List.not_mem_nil, or_false, Stmt.temps]
@@ -238,7 +248,7 @@ theorem compileFunc_fits {arities : List Arity} {func : Func} {code : Code}
   rintro i ((rfl | inInit) | inBody)
   · trivial
   · exact (zeroLocals_fits _ _ _ _ i inInit).mono (by omega) (Nat.le_refl _)
-  · exact (compileStmt_fits _ _ resultsFit _ _ within i inBody).mono (Nat.le_refl _)
+  · exact (compileStmt_fits _ _ resultsFit _ _ 0 0 (by omega) (by omega) within i inBody).mono (Nat.le_refl _)
       (by rw [codeSize_append]; omega)
 
 end Lanius.Mini

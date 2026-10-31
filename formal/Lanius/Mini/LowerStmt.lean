@@ -286,6 +286,12 @@ theorem Exec.mono {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt
   | loopDone c => exact .loopDone c
   | loopNext c _ _ ih1 ih2 => exact .loopNext c (ih1 le) (ih2 le)
   | loopReturned c _ ih => exact .loopReturned c (ih le)
+  | seqBroke _ ih => exact .seqBroke (ih le)
+  | seqContinued _ ih => exact .seqContinued (ih le)
+  | loopBroke c _ ih => exact .loopBroke c (ih le)
+  | loopContinued c _ _ ih1 ih2 => exact .loopContinued c (ih1 le) (ih2 le)
+  | brk => exact .brk
+  | cont => exact .cont
   | call found arity counted inner body _ => exact .call found arity counted (Nat.lt_of_lt_of_le inner le) body
   | ret => exact .ret
   | alloc room => exact .alloc room

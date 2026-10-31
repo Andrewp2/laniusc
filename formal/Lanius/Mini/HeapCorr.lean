@@ -277,6 +277,8 @@ theorem HeapCorr.allocate {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h hp) {
 def Outcome.heap : Outcome → Heap
   | .normal _ heap => heap
   | .returned _ heap => heap
+  | .broke _ heap => heap
+  | .continued _ heap => heap
 
 theorem Exec.limit {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt} {out : Outcome}
     (exec : Exec prog d env heap s out) : out.heap.limit = heap.limit := by
@@ -288,7 +290,11 @@ theorem Exec.limit {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stm
   | ifTrue _ _ ih => exact ih
   | ifFalse _ _ ih => exact ih
   | loopReturned _ _ ih => exact ih
-  | skip | assign | loopDone | ret | alloc | loadByte | storeByte | loadWord | divide => rfl
+  | seqBroke _ ih => exact ih
+  | seqContinued _ ih => exact ih
+  | loopBroke _ _ ih => exact ih
+  | loopContinued _ _ _ ih1 ih2 => exact ih2.trans ih1
+  | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide => rfl
   | storeWord => exact (Heap.writeLE_limit _ _ _ _).1
 
 /-! ## Lowered heap operations -/

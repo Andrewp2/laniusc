@@ -23,6 +23,8 @@ def callAgrees (target : Nat) (count : Nat) (callee : Nat) (args : List Expr) (o
   | .loop c b => false
   | .call t n f a => decide (target = t) && decide (count = n) && decide (callee = f) && argsAgree args a
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
@@ -39,6 +41,8 @@ def retAgrees (values : List Expr) (other : Stmt) : Bool :=
   | .loop c b => false
   | .call t n f a => false
   | .ret v => argsAgree values v
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
@@ -55,6 +59,8 @@ def allocAgrees (target : Nat) (shift : Nat) (size : Expr) (other : Stmt) : Bool
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => decide (target = t) && decide (shift = sh) && Expr.agrees size sz
   | .loadByte t a => false
   | .storeByte a v => false
@@ -71,6 +77,8 @@ def loadByteAgrees (target : Nat) (address : Expr) (other : Stmt) : Bool :=
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => decide (target = t) && Expr.agrees address a
   | .storeByte a v => false
@@ -87,6 +95,8 @@ def storeByteAgrees (address : Expr) (value : Expr) (other : Stmt) : Bool :=
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => Expr.agrees address a && Expr.agrees value v
@@ -103,6 +113,8 @@ def loadWordAgrees (width : MemWidth) (target : Nat) (address : Expr) (other : S
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
@@ -119,6 +131,8 @@ def storeWordAgrees (width : MemWidth) (address : Expr) (value : Expr) (other : 
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false
@@ -135,6 +149,8 @@ def divideAgrees (word : Word) (operation : DivOp) (target : Nat) (left : Expr) 
   | .loop c b => false
   | .call t n f a => false
   | .ret v => false
+  | .brk => false
+  | .cont => false
   | .alloc t sh sz => false
   | .loadByte t a => false
   | .storeByte a v => false

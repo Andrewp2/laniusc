@@ -147,6 +147,7 @@ theorem Stops.deeper {prog : Program} {d : Nat} {env : Env} {hp : Heap} {s : Stm
   | ifFalse zero _ ih => exact .ifFalse zero (ih le)
   | loopBody nonzero _ ih => exact .loopBody nonzero (ih le)
   | loopNext nonzero body _ ih => exact .loopNext nonzero (body.mono le) (ih le)
+  | loopContinued nonzero body _ ih => exact .loopContinued nonzero (body.mono le) (ih le)
   | call found length lower body => exact .call found length (Nat.lt_of_lt_of_le lower le) body
   | alloc inside over => exact .alloc inside over
   | divide undefined => exact .divide undefined

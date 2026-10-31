@@ -214,6 +214,10 @@ pub enum Stmt {
     // target, ..., target + count - 1 = callee(args)
     Call(usize, usize, usize, List<Expr>),
     Ret(List<Expr>),
+    // leave the innermost loop
+    Brk,
+    // go back to the innermost loop's condition
+    Cont,
     // target = the cursor rounded up to a multiple of 2^shift; the cursor
     // moves past size bytes from there
     Alloc(usize, usize, Expr),
@@ -384,16 +388,20 @@ pub fn arg_slots(base: usize, args: List<Expr>, k: usize) -> List<usize> {
 }
 
 // Statement code is placed at offset pos, so jumps are absolute offsets
-// within the function.
-pub fn compile_stmt(base: usize, pos: usize, s: Stmt) -> List<Instr> {
+// within the function. A break jumps to brk with the accumulator 0 (the
+// innermost loop's exit test, which then leaves it); a continue jumps to
+// cont (its condition).
+pub fn compile_stmt(base: usize, pos: usize, brk: usize, cont: usize, s: Stmt) -> List<Instr> {
     return match (s) {
         Skip -> empty(),
         Assign(index, value) -> concat(compile_expr(base, value, 0), single(Store(index))),
-        Seq(first, second) -> seq_code(base, pos, compile_stmt(base, pos, unbox(first)), unbox(second)),
-        Ite(condition, then_branch, else_branch) -> ite_code(base, pos, compile_expr(base, condition, 0), unbox(then_branch), unbox(else_branch)),
+        Seq(first, second) -> seq_code(base, pos, brk, cont, compile_stmt(base, pos, brk, cont, unbox(first)), unbox(second)),
+        Ite(condition, then_branch, else_branch) -> ite_code(base, pos, brk, cont, compile_expr(base, condition, 0), unbox(then_branch), unbox(else_branch)),
         Loop(condition, body) -> loop_code(base, pos, compile_expr(base, condition, 0), unbox(body)),
         Stmt::Call(target, count, callee, args) -> concat(compile_args(base, args, 0), single(Instr::Call(callee, arg_slots(base, args, 0), target, count))),
         Stmt::Ret(values) -> concat(compile_args(base, values, 0), single(Instr::Ret(arg_slots(base, values, 0)))),
+        Brk -> cons(Imm(0), single(Jmp(brk))),
+        Cont -> single(Jmp(cont)),
         Alloc(target, shift, size) -> concat(compile_expr(base, size, 0), cons(Bump(shift), single(Store(target)))),
         LoadByte(target, address) -> concat(compile_expr(base, address, 0), cons(LoadAt, single(Store(target)))),
         StoreByte(address, value) -> concat(concat(compile_expr(base, address, 0), single(Store(base))), concat(compile_expr(base, value, 1), single(StoreAt(base)))),
@@ -404,23 +412,23 @@ pub fn compile_stmt(base: usize, pos: usize, s: Stmt) -> List<Instr> {
 }
 
 // extract: inline
-fn seq_code(base: usize, pos: usize, first_code: List<Instr>, second: Stmt) -> List<Instr> {
-    return concat(first_code, compile_stmt(base, plus(pos, code_size(first_code)), second));
+fn seq_code(base: usize, pos: usize, brk: usize, cont: usize, first_code: List<Instr>, second: Stmt) -> List<Instr> {
+    return concat(first_code, compile_stmt(base, plus(pos, code_size(first_code)), brk, cont, second));
 }
 
 // extract: inline
-fn ite_code(base: usize, pos: usize, condition_code: List<Instr>, then_branch: Stmt, else_branch: Stmt) -> List<Instr> {
+fn ite_code(base: usize, pos: usize, brk: usize, cont: usize, condition_code: List<Instr>, then_branch: Stmt, else_branch: Stmt) -> List<Instr> {
     let then_start: usize = plus(plus(pos, code_size(condition_code)), 9);
-    let then_code: List<Instr> = compile_stmt(base, then_start, then_branch);
+    let then_code: List<Instr> = compile_stmt(base, then_start, brk, cont, then_branch);
     let else_start: usize = plus(plus(then_start, code_size(then_code)), 5);
-    let else_code: List<Instr> = compile_stmt(base, else_start, else_branch);
+    let else_code: List<Instr> = compile_stmt(base, else_start, brk, cont, else_branch);
     return concat(concat(concat(concat(condition_code, single(Jz(else_start))), then_code), single(Jmp(plus(else_start, code_size(else_code))))), else_code);
 }
 
 // extract: inline
 fn loop_code(base: usize, pos: usize, condition_code: List<Instr>, body: Stmt) -> List<Instr> {
     let body_start: usize = plus(plus(pos, code_size(condition_code)), 9);
-    let body_code: List<Instr> = compile_stmt(base, body_start, body);
+    let body_code: List<Instr> = compile_stmt(base, body_start, plus(pos, code_size(condition_code)), pos, body);
     return concat(concat(concat(condition_code, single(Jz(plus(plus(body_start, code_size(body_code)), 5)))), body_code), single(Jmp(pos)));
 }
 
@@ -489,6 +497,8 @@ impl Stmt {
             Loop(condition, body) -> condition.within(locals) && unbox(body).within(locals, arities, results),
             Stmt::Call(target, count, callee, args) -> locals >= plus(target, count) && count > 0 && arity_is(arities, callee, length(args), count) && all_within(locals, args),
             Stmt::Ret(values) -> (length(values) == results) && all_within(locals, values),
+            Brk -> true,
+            Cont -> true,
             Alloc(target, shift, size) -> locals > target && 32 > shift && size.within(locals),
             LoadByte(target, address) -> locals > target && address.within(locals),
             StoreByte(address, value) -> address.within(locals) && value.within(locals),
@@ -507,6 +517,8 @@ impl Stmt {
             Loop(condition, body) -> max_of(condition.temps(), unbox(body).temps()),
             Stmt::Call(target, count, callee, args) -> args_temps(args, 0),
             Stmt::Ret(values) -> args_temps(values, 0),
+            Brk -> 0,
+            Cont -> 0,
             Alloc(target, shift, size) -> size.temps(),
             LoadByte(target, address) -> address.temps(),
             StoreByte(address, value) -> max_of(address.temps(), plus(value.temps(), 1)),
@@ -541,7 +553,7 @@ pub fn compile_func(arities: List<Arity>, func: Func) -> core::option::Option<Co
     let slots: usize = plus(func.locals, func.body.temps());
     if (func.locals >= func.params && func.results > 0 && func.locals >= func.results && func.body.within(func.locals, arities, func.results) && frame_limit() >= slots) {
         let init: List<Instr> = cons(Imm(0), zero_locals(func.params, minus(func.locals, func.params)));
-        return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), func.body)) });
+        return Some(Code { slots: slots, instrs: concat(init, compile_stmt(func.locals, code_size(init), 0, 0, func.body)) });
     }
     return None;
 }
@@ -974,6 +986,8 @@ impl Stmt {
             Loop(condition, body) -> Stmt::Loop(condition, boxed(unbox(body).rename(table, missing))),
             Stmt::Call(target, count, callee, args) -> Stmt::Call(target, count, get_or(table, callee, missing), args),
             Stmt::Ret(values) -> Stmt::Ret(values),
+            Brk -> Brk,
+            Cont -> Cont,
             Alloc(target, shift, size) -> Stmt::Alloc(target, shift, size),
             LoadByte(target, address) -> Stmt::LoadByte(target, address),
             StoreByte(address, value) -> Stmt::StoreByte(address, value),
@@ -4487,6 +4501,8 @@ impl Stmt {
             Loop(condition, body) -> max_of(condition.extent(), unbox(body).extent()),
             Stmt::Call(target, count, callee, args) -> max_of(plus(target, count), args_extent(args)),
             Stmt::Ret(values) -> args_extent(values),
+            Brk -> 0,
+            Cont -> 0,
             Alloc(target, shift, size) -> max_of(plus(target, 1), size.extent()),
             LoadByte(target, address) -> max_of(plus(target, 1), address.extent()),
             StoreByte(address, value) -> max_of(address.extent(), value.extent()),
@@ -5162,6 +5178,8 @@ pub fn assign_agrees(index: usize, value: Expr, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5180,6 +5198,8 @@ pub fn call_agrees(target: usize, count: usize, callee: usize, args: List<Expr>,
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> (target == t) && (count == n) && (callee == f) && args_agree(args, a),
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5198,6 +5218,8 @@ pub fn ret_agrees(values: List<Expr>, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> args_agree(values, v),
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5216,6 +5238,8 @@ pub fn alloc_agrees(target: usize, shift: usize, size: Expr, other: Stmt) -> boo
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> (target == t) && (shift == sh) && size.agrees(sz),
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5234,6 +5258,8 @@ pub fn load_byte_agrees(target: usize, address: Expr, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> (target == t) && address.agrees(a),
         StoreByte(a, v) -> false,
@@ -5252,6 +5278,8 @@ pub fn store_byte_agrees(address: Expr, value: Expr, other: Stmt) -> bool {
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> address.agrees(a) && value.agrees(v),
@@ -5270,6 +5298,8 @@ pub fn load_word_agrees(width: MemWidth, target: usize, address: Expr, other: St
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5288,6 +5318,8 @@ pub fn store_word_agrees(width: MemWidth, address: Expr, value: Expr, other: Stm
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5306,6 +5338,8 @@ pub fn divide_agrees(word: Word, operation: DivOp, target: usize, left: Expr, ri
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5415,6 +5449,67 @@ pub fn assigned(facts: List<Fact>, index: usize, value: Expr) -> List<Fact> {
 }
 
 impl Stmt {
+    pub fn is_brk(self) -> bool {
+        return match (self) {
+            Skip -> false,
+            Assign(i, v) -> false,
+            Seq(f, s) -> false,
+            Ite(c, t, e) -> false,
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Brk -> true,
+            Cont -> false,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
+        };
+    }
+
+    pub fn is_cont(self) -> bool {
+        return match (self) {
+            Skip -> false,
+            Assign(i, v) -> false,
+            Seq(f, s) -> false,
+            Ite(c, t, e) -> false,
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Brk -> false,
+            Cont -> true,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
+        };
+    }
+
+    // A run of this statement may break or continue a loop around it.
+    pub fn jumps(self) -> bool {
+        return match (self) {
+            Skip -> false,
+            Assign(i, v) -> false,
+            Seq(f, s) -> unbox(f).jumps() || unbox(s).jumps(),
+            Ite(c, t, e) -> unbox(t).jumps() || unbox(e).jumps(),
+            Loop(c, b) -> false,
+            Stmt::Call(t, n, f, a) -> false,
+            Stmt::Ret(v) -> false,
+            Brk -> true,
+            Cont -> true,
+            Alloc(t, sh, sz) -> false,
+            LoadByte(t, a) -> false,
+            StoreByte(a, v) -> false,
+            LoadWord(w, t, a) -> false,
+            StoreWord(w, a, v) -> false,
+            Divide(w, o, t, l, r) -> false,
+        };
+    }
+
     pub fn is_skip(self) -> bool {
         return match (self) {
             Skip -> true,
@@ -5424,6 +5519,8 @@ impl Stmt {
             Loop(c, b) -> false,
             Stmt::Call(t, n, f, a) -> false,
             Stmt::Ret(v) -> false,
+            Brk -> false,
+            Cont -> false,
             Alloc(t, sh, sz) -> false,
             LoadByte(t, a) -> false,
             StoreByte(a, v) -> false,
@@ -5445,6 +5542,8 @@ impl Stmt {
             Loop(c, b) -> empty(),
             Stmt::Call(t, n, f, a) -> empty(),
             Stmt::Ret(v) -> empty(),
+            Brk -> empty(),
+            Cont -> empty(),
             Alloc(target, sh, sz) -> kill(facts, target),
             LoadByte(target, a) -> kill(facts, target),
             StoreByte(a, v) -> facts,
@@ -5465,6 +5564,8 @@ impl Stmt {
             Loop(c, b) -> !c.mentions(index) && unbox(b).ignores(index),
             Stmt::Call(t, n, f, a) -> !mentions_any(a, index),
             Stmt::Ret(v) -> !mentions_any(v, index),
+            Brk -> true,
+            Cont -> true,
             Alloc(t, sh, sz) -> !sz.mentions(index),
             LoadByte(t, a) -> !a.mentions(index),
             StoreByte(a, v) -> !a.mentions(index) && !v.mentions(index),
@@ -5475,16 +5576,20 @@ impl Stmt {
     }
 
     // Every run of this statement writes slot index before reading it, or
-    // returns without reading it: the value index holds on entry is dead.
+    // returns without reading it: the value index holds on entry is dead. A
+    // statement before the write must not break or continue, as a loop's
+    // code after it may read index.
     pub fn kills(self, index: usize) -> bool {
         return match (self) {
             Skip -> false,
             Assign(i, v) -> (i == index) && !v.mentions(index),
-            Seq(f, s) -> unbox(f).kills(index) || (unbox(f).ignores(index) && unbox(s).kills(index)),
+            Seq(f, s) -> unbox(f).kills(index) || (unbox(f).ignores(index) && !unbox(f).jumps() && unbox(s).kills(index)),
             Ite(c, t, e) -> !c.mentions(index) && unbox(t).kills(index) && unbox(e).kills(index),
             Loop(c, b) -> false,
             Stmt::Call(t, n, f, a) -> false,
             Stmt::Ret(v) -> !mentions_any(v, index),
+            Brk -> false,
+            Cont -> false,
             Alloc(t, sh, sz) -> false,
             LoadByte(t, a) -> false,
             StoreByte(a, v) -> false,
@@ -5513,6 +5618,8 @@ impl Stmt {
             Loop(condition, body) -> (condition.is_zero() && other.is_skip()) || loop_agrees(condition, unbox(body), other),
             Stmt::Call(target, count, callee, args) -> call_agrees(target, count, callee, subst_all(args, facts), other),
             Stmt::Ret(values) -> ret_agrees(subst_all(values, facts), other),
+            Brk -> other.is_brk(),
+            Cont -> other.is_cont(),
             Alloc(target, shift, size) -> alloc_agrees(target, shift, size.subst(facts), other),
             LoadByte(target, address) -> load_byte_agrees(target, address.subst(facts), other),
             StoreByte(address, value) -> store_byte_agrees(address.subst(facts), value.subst(facts), other),
@@ -5534,6 +5641,8 @@ fn dead_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> boo
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5553,6 +5662,8 @@ fn seq_agrees(first: Stmt, second: Stmt, facts: List<Fact>, other: Stmt) -> bool
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5589,6 +5700,8 @@ fn ite_agrees(test: Expr, then_branch: Stmt, else_branch: Stmt, facts: List<Fact
         Loop(c, b) -> false,
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5609,6 +5722,8 @@ fn loop_agrees(condition: Expr, body: Stmt, other: Stmt) -> bool {
         Loop(c, b) -> condition.agrees(c) && body.agrees(empty(), unbox(b)),
         Stmt::Call(t, n, f, a) -> false,
         Stmt::Ret(v) -> false,
+        Brk -> false,
+        Cont -> false,
         Alloc(t, sh, sz) -> false,
         LoadByte(t, a) -> false,
         StoreByte(a, v) -> false,
@@ -5719,6 +5834,8 @@ pub fn opt_facts_after(s: Stmt, facts: List<Fact>) -> List<Fact> {
         Loop(c, b) -> empty(),
         Stmt::Call(t, n, f, a) -> empty(),
         Stmt::Ret(v) -> empty(),
+        Brk -> empty(),
+        Cont -> empty(),
         Alloc(target, sh, sz) -> opt_kill(facts, target),
         LoadByte(target, a) -> opt_kill(facts, target),
         StoreByte(a, v) -> facts,
@@ -5882,6 +5999,8 @@ impl Stmt {
             Loop(c, b) -> false,
             Stmt::Call(t, n, f, a) -> false,
             Stmt::Ret(v) -> false,
+            Brk -> false,
+            Cont -> false,
             Alloc(t, sh, sz) -> false,
             LoadByte(t, a) -> false,
             StoreByte(a, v) -> false,
@@ -5901,6 +6020,8 @@ impl Stmt {
             Loop(condition, body) -> optimize_loop(condition.optimize(), unbox(body).optimize(empty())),
             Stmt::Call(target, count, callee, args) -> Stmt::Call(target, count, callee, optimize_all(subst_all(args, facts))),
             Stmt::Ret(values) -> Stmt::Ret(optimize_all(subst_all(values, facts))),
+            Brk -> Brk,
+            Cont -> Cont,
             Alloc(target, shift, size) -> Alloc(target, shift, size.subst(facts).optimize()),
             LoadByte(target, address) -> LoadByte(target, address.subst(facts).optimize()),
             StoreByte(address, value) -> StoreByte(address.subst(facts).optimize(), value.subst(facts).optimize()),

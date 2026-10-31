@@ -28,9 +28,21 @@ abbrev Stmt_Stmt_ignores (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
   ∀ {x0 : Lanius.Mini.Stmt} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepStmt x0 v0 → RepNat x1 v1 →
     RepBool (Lanius.Mini.Stmt.ignores x0 x1) w
 
+abbrev Stmt_Stmt_is_brk (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Stmt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepStmt x0 v0 →
+    RepBool (Lanius.Mini.Stmt.isBrk x0) w
+
+abbrev Stmt_Stmt_is_cont (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Stmt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepStmt x0 v0 →
+    RepBool (Lanius.Mini.Stmt.isCont x0) w
+
 abbrev Stmt_Stmt_is_skip (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Stmt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepStmt x0 v0 →
     RepBool (Lanius.Mini.Stmt.isSkip x0) w
+
+abbrev Stmt_Stmt_jumps (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Stmt} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepStmt x0 v0 →
+    RepBool (Lanius.Mini.Stmt.jumps x0) w
 
 abbrev Stmt_assigned (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {x2 : Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 171 RepFact) x0 v0 → RepNat x1 v1 → RepExpr x2 v2 →
