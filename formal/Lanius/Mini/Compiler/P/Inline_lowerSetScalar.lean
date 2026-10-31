@@ -15,9 +15,9 @@ public import Lanius.Mini.Compiler.P.compileModules
 public import Lanius.Mini.Compiler.P.declareFuncs
 public import Lanius.Mini.Compiler.P.elementAddress
 public import Lanius.Mini.Compiler.P.elementBase
-public import Lanius.Mini.Compiler.P.encodeFrom
 public import Lanius.Mini.Compiler.P.enumVariants
 public import Lanius.Mini.Compiler.P.evalSame
+public import Lanius.Mini.Compiler.P.loadAtBytes
 public import Lanius.Mini.Compiler.P.lowerBody
 public import Lanius.Mini.Compiler.P.lowerSetValues
 public import Lanius.Mini.Compiler.P.structFields

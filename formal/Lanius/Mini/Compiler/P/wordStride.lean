@@ -9,10 +9,10 @@ import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.armScope
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.consArgs
-import Lanius.Mini.Compiler.P.encodeFrom
 import Lanius.Mini.Compiler.P.evalDivide
 import Lanius.Mini.Compiler.P.evalNot
 import Lanius.Mini.Compiler.P.evalSame
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.lowerLoadType
 import Lanius.Mini.Compiler.P.matchDst

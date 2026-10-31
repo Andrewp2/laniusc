@@ -66,7 +66,7 @@ def Instr.size (self : Instr) : Nat :=
   | .cmp word operation slot => 18 + Word.prefix word
   | .jmp target => 5
   | .jz target => 9
-  | .call callee args target count => 14 * args.length + 5 + 14 * count
+  | .call callee args target count => 14 * args.length + 19 + 14 * count
   | .ret sources => 14 * sources.length + 5
   | .bump shift => 58
   | .loadAt => 10
@@ -76,5 +76,6 @@ def Instr.size (self : Instr) : Nat :=
   | .div word operation slot => 18 + Word.prefix word + DivOp.size operation word
   | .fp operation slot => 10 + FOp.size operation
   | .sys kind slot => 34
+  | .frame bytes => 39
 
 end Lanius.Mini

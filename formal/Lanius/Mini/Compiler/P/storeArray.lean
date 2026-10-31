@@ -11,10 +11,10 @@ import Lanius.Mini.Compiler.P.armBodyScope
 import Lanius.Mini.Compiler.P.armPayload
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.conjunction
-import Lanius.Mini.Compiler.P.encodeFrom
 import Lanius.Mini.Compiler.P.evalSame
 import Lanius.Mini.Compiler.P.guardAnd
 import Lanius.Mini.Compiler.P.indexOf
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerAddress
 import Lanius.Mini.Compiler.P.lowerApply
 import Lanius.Mini.Compiler.P.lowerCallSig

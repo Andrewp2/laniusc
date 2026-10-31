@@ -10,9 +10,9 @@ import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.elementAddress
 import Lanius.Mini.Compiler.P.elementBase
-import Lanius.Mini.Compiler.P.encodeFrom
 import Lanius.Mini.Compiler.P.guardAnd
 import Lanius.Mini.Compiler.P.indexOf
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.shortCircuit

@@ -7,8 +7,8 @@ import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.conjunction
-import Lanius.Mini.Compiler.P.encodeFrom
 import Lanius.Mini.Compiler.P.enumVariants
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerApply
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Compiler.P.sigs

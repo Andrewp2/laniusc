@@ -8,8 +8,8 @@ import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
-import Lanius.Mini.Compiler.P.encodeFrom
 import Lanius.Mini.Compiler.P.evalSame
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.matchDst
 
 public section

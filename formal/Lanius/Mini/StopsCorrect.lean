@@ -209,6 +209,112 @@ theorem bump_fails (rel : Rel frame s m) (fits : frame.Fits) {shift : Nat} (shif
       (Det.pairCons t8 (Writes.of (i := .compare64 r11Register limitRegister) (k := 3) c7'.prefix
         (by decide) rfl) t9 ⟨_, c8.prefix, branch_decodes 6 2⟩ (Det.refl _)))).faults fault.faults
 
+/-- `frame` past the limit: the frame pointer is below `bytes` and `jb`
+jumps to the `ud2`, or the new frame pointer is below the limit and `jae`
+falls through to it. -/
+theorem frame_fails (rel : Rel frame s m) (fits : frame.Fits) {bytes : Nat} (bytesSmall : bytes < 2 ^ 31)
+    (loaded : CodeAt s.memory s.rip (frameSpec bytes)) (over : m.heap.fsp < m.heap.limit + bytes) : Faults s := by
+  have atFsp := rel.fsp
+  have atLimit := rel.limitNat
+  have fspSmall : m.heap.fsp < 2 ^ 62 := by
+    have le := rel.fspLe
+    rw [rel.top, rel.limit] at le
+    have := fits.heapSmall
+    omega
+  generalize m.heap.fsp = fsp at atFsp over fspSmall
+  generalize m.heap.limit = limit at atLimit over
+  have c0 := loaded
+  simp only [frameSpec] at c0
+  let s1 := s.immediate64 r11Register
+    (BitVec.ofNat 64 ((lowHalf (BitVec.ofNat 64 bytes)).toNat + 4294967296 * (highHalf (BitVec.ofNat 64 bytes)).toNat))
+    (r11Bytes (BitVec.ofNat 64 bytes)).length
+  have t1 : Lanius.X86.Machine.Step s s1 := immediate_step s s1 .w64 r11Register _ _ c0.prefix rfl
+  have c1 := c0.next (s' := s1) rfl rfl
+  let s2 := s1.move64 0 fspRegister (moveBytes .w64 0 fspRegister).length
+  have t2 : Lanius.X86.Machine.Step s1 s2 := move_step s1 s2 .w64 _ _ c1.prefix rfl
+  have c2 := c1.next (s' := s2) rfl rfl
+  let s3 := s2.alu64 .subtract 0 r11Register false (aluBytes .w64 .subtract 0 r11Register).length
+  have t3 : Lanius.X86.Machine.Step s2 s3 := alu_step .w64 s2 s3 .subtract _ _ c2.prefix false rfl
+  have c3 := c2.next (s' := s3) rfl rfl
+  have r11v : s2.registers r11Register = BitVec.ofNat 64 bytes := by
+    simp [s2, s1, State.move64, State.immediate64, lowHalf_highHalf, r11Register]
+  have raxv : s2.registers 0 = BitVec.ofNat 64 fsp := by
+    have : s1.registers fspRegister = s.registers fspRegister := by
+      simp [s1, State.immediate64, fspRegister, r11Register]
+    simp only [s2, State.move64, if_pos, this, atFsp]
+  have limit3 : s3.registers limitRegister = s.registers limitRegister := by
+    simp [s3, s2, s1, State.alu64, State.alu, State.immediate64, State.move64, r11Register, limitRegister]
+  have carry : condition s3.flags 2 = decide (fsp < bytes) := by
+    show condition (subtractFlags s2.flags ((s2.registers 0).setWidth 64) ((s2.registers r11Register).setWidth 64))
+      2 = _
+    rw [compare_below, BitVec.setWidth_eq, BitVec.setWidth_eq, raxv, r11v]
+    simp only [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (show fsp < 2 ^ 64 by omega),
+      Nat.mod_eq_of_lt (show bytes < 2 ^ 64 by omega)]
+  have prefix2 : Det 2 s s2 :=
+    Det.cons t1 (immediate_noRead c0.prefix) (Det.cons t2 (move_noRead c1.prefix) (Det.refl _))
+  let s3' := s3.branch 2 12 6
+  by_cases borrow : fsp < bytes
+  · obtain ⟨t3', rip3'⟩ := branch_step_rip s3 s3' 2 12 c3.prefix (by rw [carry]; simpa using borrow) rfl
+    have fault : Fault s3' := by
+      refine .ud2 ?_
+      have tail := c3.suffix.suffix.suffix.suffix.prefix
+      rw [show s3'.memory = s3.memory from rfl, rip3',
+        show ((12 : BitVec 32).signExtend 64) = BitVec.ofNat 64 12 from by decide,
+        show s3.rip + BitVec.ofNat 64 6 + BitVec.ofNat 64 12 = s3.rip + BitVec.ofNat 64 (branchBytes 2 12).length +
+          BitVec.ofNat 64 (moveBytes .w64 r11Register 0).length + BitVec.ofNat 64 limitCompareBytes.length +
+          BitVec.ofNat 64 (branchBytes 3 2).length from by
+        simp only [branchBytes, displacementBytes, limitCompareBytes, List.length_cons, List.length_nil,
+          List.length_append, show (moveBytes .w64 r11Register 0).length = 3 from rfl]
+        bv_omega]
+      exact tail
+    exact (prefix2.trans (Det.pairCons t3 (alu_writes c2.prefix) t3' ⟨_, c3.prefix, branch_decodes 2 12⟩
+      (Det.refl _))).faults fault.faults
+  · obtain ⟨t3', rip3'⟩ := branch_step_rip_not_taken s3 s3' 2 12 c3.prefix (by rw [carry]; simpa using borrow) rfl
+    have c3' : CodeAt s3'.memory s3'.rip (moveBytes .w64 r11Register 0 ++ (limitCompareBytes ++
+        (branchBytes 3 2 ++ (trapBytes ++ moveBytes .w64 fspRegister 0)))) := by
+      have tail := c3.suffix
+      rw [show s3'.memory = s3.memory from rfl, rip3',
+        show s3.rip + 6#64 + 0 = s3.rip + BitVec.ofNat 64 (branchBytes 2 12).length from by
+          simp [branchBytes, displacementBytes]]
+      exact tail
+    let s4 := s3'.move64 r11Register 0 (moveBytes .w64 r11Register 0).length
+    have t4 : Lanius.X86.Machine.Step s3' s4 := move_step s3' s4 .w64 _ _ c3'.prefix rfl
+    have c4 := c3'.next (s' := s4) rfl rfl
+    let s5 := s4.compare64 r11Register limitRegister limitCompareBytes.length
+    have t5 : Lanius.X86.Machine.Step s4 s5 :=
+      Lanius.X86.Machine.Step.decoded limitCompareBytes c4.prefix (.compare64 r11Register limitRegister) 3
+        (by decide) rfl rfl
+    have c5 := c4.next (s' := s5) rfl rfl
+    have diff : BitVec.ofNat 64 fsp - BitVec.ofNat 64 bytes = BitVec.ofNat 64 (fsp - bytes) := by
+      apply BitVec.eq_of_toNat_eq
+      simp only [BitVec.toNat_sub, BitVec.toNat_ofNat]
+      omega
+    have r11v4 : s4.registers r11Register = BitVec.ofNat 64 (fsp - bytes) := by
+      simp only [s4, State.move64, if_pos]
+      simp only [s3', s3, State.branch, State.alu64, State.alu, Alu.result, BitVec.setWidth_eq, if_pos, raxv, r11v]
+      exact diff
+    have limit4 : s4.registers limitRegister = s.registers limitRegister := by
+      simp only [s4, State.move64, if_neg (show limitRegister ≠ r11Register by decide)]
+      exact limit3
+    have notTaken : condition s5.flags 3 = false := by
+      show condition (subtractFlags s4.flags (s4.registers r11Register) (s4.registers limitRegister)) 3 = false
+      rw [compare_aboveEqual, r11v4, limit4]
+      simp only [BitVec.toNat_ofNat, atLimit, Bool.not_eq_false', decide_eq_true_eq]
+      omega
+    let s5' := s5.branch 3 2 6
+    obtain ⟨t5', rip5'⟩ := branch_step_rip_not_taken s5 s5' 3 2 c5.prefix notTaken rfl
+    have fault : Fault s5' := by
+      refine .ud2 ?_
+      have tail := c5.suffix.prefix
+      rw [show s5'.memory = s5.memory from rfl, rip5',
+        show s5.rip + 6#64 + 0 = s5.rip + BitVec.ofNat 64 (branchBytes 3 2).length from by
+          simp [branchBytes, displacementBytes]]
+      exact tail
+    exact (prefix2.trans (Det.pairCons t3 (alu_writes c2.prefix) t3' ⟨_, c3.prefix, branch_decodes 2 12⟩
+      (Det.cons t4 (move_noRead c3'.prefix)
+        (Det.pairCons t5 (Writes.of (i := .compare64 r11Register limitRegister) (k := 3) c4.prefix
+          (by decide) rfl) t5' ⟨_, c5.prefix, branch_decodes 3 2⟩ (Det.refl _))))).faults fault.faults
+
 /-- Function `callee`, entered as `Contract` enters it, runs `n` steps
 without stopping anywhere but at a fault. -/
 def StopsContract (binary : Binary) (imageBase : BitVec 64) (window callee : Nat) (args : List (BitVec 64))
@@ -266,6 +372,10 @@ theorem body_stops (body : Body frame binary imageBase place instrs) (fits : fra
     intro s rel
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
     exact (div_fails _ _ rel (body.fits _ (fetch_mem fetched)) loaded undefined).within _
+  | frame fetched over =>
+    intro s rel
+    obtain ⟨loaded, -⟩ := body.fetch rel fetched
+    exact (frame_fails rel fits (body.fits _ (fetch_mem fetched)) loaded over).within _
 
 /-- One compiled function stops only at faults for as long as its source
 body does, given contracts for its calls. -/

@@ -9,7 +9,7 @@ import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.elementBase
-import Lanius.Mini.Compiler.P.encodeFrom
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.storeType
 import Lanius.Mini.Compiler.P.wordElement
 import Lanius.Mini.Compiler.P.wordStride

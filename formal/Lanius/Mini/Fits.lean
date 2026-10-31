@@ -11,6 +11,7 @@ def Instr.Fits (slots bound funcs : Nat) : Instr → Prop
   | .load slot | .store slot | .op _ _ slot | .cmp _ _ slot | .storeAt slot | .storeWordAt _ slot | .div _ _ slot
   | .fp _ slot => slot < slots
   | .bump shift => shift < 32
+  | .frame bytes => bytes < 2 ^ 31
   | .jmp target | .jz target => target ≤ bound
   | .call callee args target count => callee < funcs ∧ args.length ≤ slots ∧ (∀ slot ∈ args, slot < slots) ∧
       target + count ≤ slots ∧ 0 < count
@@ -22,7 +23,7 @@ theorem Instr.Fits.mono {i : Instr} {slots slots' bound bound' funcs : Nat} (fit
   cases i with
   | imm | neg | loadAt | loadWordAt => trivial
   | load | store | op | cmp | storeAt | storeWordAt | div | fp => simp only [Instr.Fits] at fits ⊢; omega
-  | bump => exact fits
+  | bump | frame => exact fits
   | jmp | jz => simp only [Instr.Fits] at fits ⊢; omega
   | call callee args target count =>
     exact ⟨fits.1, by have := fits.2.1; omega, fun slot inArgs => by have := fits.2.2.1 slot inArgs; omega,
@@ -172,7 +173,13 @@ theorem compileStmt_fits (base : Nat) (arities : List Arity) {results : Nat} (re
     rintro i (inArgs | rfl)
     · exact compileArgs_fits base args 0 argsWithin _ _ i inArgs
     · exact ⟨calleeBound, argSlots_count base args, argSlots_fit base args 0, by omega, positive⟩
-  | frame target bytes => simp [Stmt.within] at within
+  | frame target bytes =>
+    simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
+    simp only [compileStmt, List.mem_cons, List.not_mem_nil, or_false, Stmt.temps]
+    rintro i (rfl | rfl)
+    · exact within.2
+    · show target < base + 0
+      omega
   | ret values =>
     simp only [Stmt.within, Bool.and_eq_true, decide_eq_true_eq] at within
     simp only [compileStmt, List.mem_append, List.mem_singleton, Stmt.temps]
