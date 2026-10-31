@@ -307,6 +307,14 @@ theorem proof_times {prog : SrcProgram} {prims : Prims} {ix_times ix_core_panic_
   simp only [src_times] at h
   faithful []
 
+theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal = true) {n : Nat} :
+    Stmt_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_BoundGoal n :=
+  fun h r => prim_cert np h r
+
+theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_ImplDecl {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_mini_selfhost_ImplDecl : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_ImplDecl = true) {n : Nat} :
+    Stmt_unbox_of_mini_selfhost_List_mini_selfhost_ImplDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_ImplDecl n :=
+  fun h r => prim_cert np h r
+
 theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_Local {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_mini_selfhost_Local : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_Local = true) {n : Nat} :
     Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Local prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Local n :=
   fun h r => prim_cert np h r

@@ -13,8 +13,8 @@ public import Lanius.Mini.Frontend.P.noTrees
 public import Lanius.Mini.Frontend.P.pathRef
 public import Lanius.Mini.Frontend.P.typePathSpellings
 public import Lanius.Mini.Frontend.P.moduleOr
-public import Lanius.Mini.Frontend.P.typeDecls
-public import Lanius.Mini.Frontend.P.moduleNamesOk
+public import Lanius.Mini.Frontend.P.methodsOf
+public import Lanius.Mini.Frontend.P.typeOnlyNamesIn
 public import Lanius.Mini.Frontend.P.rootInsts
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.itemOf
@@ -43,10 +43,10 @@ public import Lanius.Mini.Frontend.P.wideOf
 public import Lanius.Mini.Frontend.P.pickTy
 public import Lanius.Mini.Frontend.P.repeatEff
 public import Lanius.Mini.Frontend.P.consTreeTail
-public import Lanius.Mini.Frontend.P.xDivideOf
+public import Lanius.Mini.Frontend.P.paramGoals
+public import Lanius.Mini.Frontend.P.purePart
 public import Lanius.Mini.Frontend.P.projectionRet
 public import Lanius.Mini.Frontend.P.fnInstRet
-public import Lanius.Mini.Frontend.P.isFnPath
 public import Lanius.Mini.Frontend.P.isPathCall
 public import Lanius.Mini.Frontend.P.sliceHead
 public import Lanius.Mini.Frontend.P.consBinder
@@ -142,7 +142,7 @@ public import Lanius.Mini.Frontend.P.Inline_pStructFieldsMore
 public import Lanius.Mini.Frontend.P.Inline_pTypeArgsNone
 public import Lanius.Mini.Frontend.P.Inline_pTypePathIdent
 public import Lanius.Mini.Frontend.P.Inline_pTypeSliceTail
-public import Lanius.Mini.Frontend.P.Inline_pWhileStmt
+public import Lanius.Mini.Frontend.P.Inline_pBoundTypeArgsAfterCommaMore
 public import Lanius.Mini.Frontend.P.Inline_tLparen
 public import Lanius.Mini.Frontend.P.Inline_tRparen
 

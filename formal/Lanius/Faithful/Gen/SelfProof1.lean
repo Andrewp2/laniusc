@@ -101,6 +101,16 @@ theorem proof_cons_of_mini_selfhost_Fact {prog : SrcProgram} {prims : Prims} {ix
   simp only [src_cons_of_mini_selfhost_Fact] at h
   faithful []
 
+theorem proof_cons_of_mini_selfhost_ImplDecl {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_ImplDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_ImplDecl]? = some (src_cons_of_mini_selfhost_ImplDecl ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl)) (np : prims.isPrim ix_cons_of_mini_selfhost_ImplDecl = false)
+    (ext_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_ImplDecl n)) {n : Nat} :
+    Stmt_cons_of_mini_selfhost_ImplDecl prog prims ix_cons_of_mini_selfhost_ImplDecl n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_cons_of_mini_selfhost_ImplDecl] at h
+  faithful []
+
 theorem proof_cons_of_mini_selfhost_MEff {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_MEff ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_MEff]? = some (src_cons_of_mini_selfhost_MEff ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff)) (np : prims.isPrim ix_cons_of_mini_selfhost_MEff = false)
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_MEff : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_MEff prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_MEff n)) {n : Nat} :
     Stmt_cons_of_mini_selfhost_MEff prog prims ix_cons_of_mini_selfhost_MEff n := by

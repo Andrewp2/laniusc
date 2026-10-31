@@ -22,17 +22,17 @@ def moduleOr (current : List (List Nat)) (m : List (List Nat)) : List (List Nat)
   | n :: rest => m
 
 def noDecls : Decls :=
-  ({ types := [], fns := [], consts := [], imports := [], aliases := [] } : Decls)
+  ({ types := [], fns := [], consts := [], imports := [], aliases := [], impls := [] } : Decls)
 
 def joinDecls (a : Decls) (b : Option Decls) : Option Decls :=
   match b with
   | none => none
-  | some d => some ({ types := a.types ++ d.types, fns := a.fns ++ d.fns, consts := a.consts ++ d.consts, imports := a.imports ++ d.imports, aliases := a.aliases ++ d.aliases } : Decls)
+  | some d => some ({ types := a.types ++ d.types, fns := a.fns ++ d.fns, consts := a.consts ++ d.consts, imports := a.imports ++ d.imports, aliases := a.aliases ++ d.aliases, impls := a.impls ++ d.impls } : Decls)
 
 def importDecls (home : List (List Nat)) (target : Option (List (List Nat))) : Option Decls :=
   match target with
   | none => none
-  | some t => some ({ types := [], fns := [], consts := [], imports := [({ home := home, target := t } : ImportDecl)], aliases := [] } : Decls)
+  | some t => some ({ types := [], fns := [], consts := [], imports := [({ home := home, target := t } : ImportDecl)], aliases := [], impls := [] } : Decls)
 
 /-- The item an item node holds, `pub` or not. -/
 def itemBody (item : CTree) : CTree :=
@@ -68,6 +68,24 @@ def typeParams (fuel : Nat) (t : CTree) : Option (List (List Nat)) :=
   match listItems fuel t with
   | none => none
   | some items => paramSpellings items
+
+/-- Type parameters without bounds (`T`, not `T: Tr`). -/
+def unbounded (items : List CTree) : Bool :=
+  match items with
+  | [] => true
+  | p :: rest => decide (nodeProd (kid p 1) = (237)) && unbounded rest
+
+def ifUnbounded (ok : Bool) (ps : Option (List (List Nat))) : Option (List (List Nat)) :=
+  if ok then
+    ps
+  else
+    none
+
+/-- The type parameters of a struct, enum or alias, which take no bounds: a bound there is not checked, so it is not read. -/
+def freeParams (fuel : Nat) (t : CTree) : Option (List (List Nat)) :=
+  match listItems fuel t with
+  | none => none
+  | some items => ifUnbounded (unbounded items) (paramSpellings items)
 
 def consField (f : CTree) (rest : Fields) : Fields :=
   ({ names := (kidToken f 0).text :: rest.names, types := kid f 2 :: rest.types } : Fields)
@@ -125,19 +143,19 @@ def enumDeclOf (home : List (List Nat)) (name : List Nat) (params : Option (List
 /-- A struct_item or enum_item: no where clause. -/
 def typeDecl (fuel : Nat) (home : List (List Nat)) (s : CTree) : Option TypeDecl :=
   if decide (nodeProd s = (258)) && decide (nodeProd (kid s 3) = (36)) then
-    structDeclOf home (kidToken s 1).text (typeParams fuel (kid s 2)) (listItems fuel (kid s 5))
+    structDeclOf home (kidToken s 1).text (freeParams fuel (kid s 2)) (listItems fuel (kid s 5))
   else
     if decide (nodeProd s = (210)) && decide (nodeProd (kid s 3) = (36)) then
       match listItems fuel (kid s 5) with
       | none => none
-      | some items => enumDeclOf home (kidToken s 1).text (typeParams fuel (kid s 2)) (variantsOf fuel items)
+      | some items => enumDeclOf home (kidToken s 1).text (freeParams fuel (kid s 2)) (variantsOf fuel items)
     else
       none
 
-def fnDeclOf (home : List (List Nat)) (f : CTree) (inImpl : Bool) (implParams : List (List Nat)) (selfType : CTree) (params : Option (List (List Nat))) : Option FnDecl :=
+def fnDeclOf (home : List (List Nat)) (f : CTree) (inImpl : Bool) (implParams : List (List Nat)) (selfType : CTree) (implTree : CTree) (params : Option (List (List Nat))) : Option FnDecl :=
   match params with
   | none => none
-  | some ps => some ({ home := home, name := (kidToken f 1).text, inImpl := inImpl, implParams := implParams, selfType := selfType, params := ps, tree := f } : FnDecl)
+  | some ps => some ({ home := home, name := (kidToken f 1).text, inImpl := inImpl, implParams := implParams, selfType := selfType, params := ps, tree := f, implTree := implTree } : FnDecl)
 
 def consFnDecl (f : Option FnDecl) (rest : Option (List FnDecl)) : Option (List FnDecl) :=
   match f with
@@ -147,34 +165,15 @@ def consFnDecl (f : Option FnDecl) (rest : Option (List FnDecl)) : Option (List 
     | none => none
     | some ds => some (d :: ds)
 
-def methodDecl (fuel : Nat) (home : List (List Nat)) (implParams : List (List Nat)) (selfType : CTree) (m : CTree) : Option FnDecl :=
+def methodDecl (fuel : Nat) (home : List (List Nat)) (implParams : List (List Nat)) (selfType : CTree) (implTree : CTree) (m : CTree) : Option FnDecl :=
   let f : CTree := kid m 0
   let g : CTree := kid m 1
   if decide (nodeProd m = (21)) && decide (nodeProd f = (13)) then
-    fnDeclOf home f true implParams selfType (typeParams fuel (kid f 2))
+    fnDeclOf home f true implParams selfType implTree (typeParams fuel (kid f 2))
   else
     if decide (nodeProd m = (22)) && decide (nodeProd g = (13)) then
-      fnDeclOf home g true implParams selfType (typeParams fuel (kid g 2))
+      fnDeclOf home g true implParams selfType implTree (typeParams fuel (kid g 2))
     else
       none
-
-/-- The methods of an impl block: impl_method items holding impl_fn_items. -/
-def methodsOf (fuel : Nat) (home : List (List Nat)) (implParams : List (List Nat)) (selfType : CTree) (items : List CTree) : Option (List FnDecl) :=
-  match items with
-  | [] => some []
-  | m :: rest => consFnDecl (methodDecl fuel home implParams selfType m) (methodsOf fuel home implParams selfType rest)
-
-def fnsDecls (fns : Option (List FnDecl)) : Option Decls :=
-  match fns with
-  | none => none
-  | some fs => some ({ types := [], fns := fs, consts := [], imports := [], aliases := [] } : Decls)
-
-def implMethods (fuel : Nat) (home : List (List Nat)) (params : Option (List (List Nat))) (selfType : CTree) (list : CTree) : Option Decls :=
-  match params with
-  | none => none
-  | some ps =>
-    match listItems fuel list with
-    | none => none
-    | some items => fnsDecls (methodsOf fuel home ps selfType items)
 
 end Lanius.Mini

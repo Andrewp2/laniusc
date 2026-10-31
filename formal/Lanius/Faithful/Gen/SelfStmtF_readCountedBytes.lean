@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_file_lexed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Token)} {x1 : List Nat} {x2 : Lanius.Mini.NumsRead} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 155 (RepList 45 RepToken)) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNumsRead x2 v2 →
+  ∀ {x0 : Option (List Lanius.Mini.Token)} {x1 : List Nat} {x2 : Lanius.Mini.NumsRead} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 158 (RepList 45 RepToken)) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNumsRead x2 v2 →
     (RepOption 78 RepFileRead) (Lanius.Mini.fileLexed x0 x1 x2) w
 
 abbrev Stmt_files_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

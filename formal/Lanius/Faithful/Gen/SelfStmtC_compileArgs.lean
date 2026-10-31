@@ -33,7 +33,7 @@ abbrev Stmt_Stmt_temps (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     RepNat (Lanius.Mini.Stmt.temps x0) w
 
 abbrev Stmt_Stmt_within (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : Nat} {x2 : List Lanius.Mini.Arity} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepStmt x0 v0 → RepNat x1 v1 → (RepList 142 RepArity) x2 v2 → RepNat x3 v3 →
+  ∀ {x0 : Lanius.Mini.Stmt} {x1 : Nat} {x2 : List Lanius.Mini.Arity} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepStmt x0 v0 → RepNat x1 v1 → (RepList 145 RepArity) x2 v2 → RepNat x3 v3 →
     RepBool (Lanius.Mini.Stmt.within x0 x1 x2 x3) w
 
 abbrev Stmt_all_within (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -49,7 +49,7 @@ abbrev Stmt_args_temps (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     RepNat (Lanius.Mini.argsTemps x0 x1) w
 
 abbrev Stmt_arity_is (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Arity} {x1 : Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 142 RepArity) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
+  ∀ {x0 : List Lanius.Mini.Arity} {x1 : Nat} {x2 : Nat} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 145 RepArity) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 →
     RepBool (Lanius.Mini.arityIs x0 x1 x2 x3) w
 
 abbrev Stmt_compile_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -57,8 +57,8 @@ abbrev Stmt_compile_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     (RepList 53 RepInstr) (Lanius.Mini.compileArgs x0 x1 x2) w
 
 abbrev Stmt_compile_func (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Arity} {x1 : Lanius.Mini.Func} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 142 RepArity) x0 v0 → RepFunc x1 v1 →
-    (RepOption 145 RepCode) (Lanius.Mini.compileFunc x0 x1) w
+  ∀ {x0 : List Lanius.Mini.Arity} {x1 : Lanius.Mini.Func} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 145 RepArity) x0 v0 → RepFunc x1 v1 →
+    (RepOption 148 RepCode) (Lanius.Mini.compileFunc x0 x1) w
 
 abbrev Stmt_compile_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepStmt x4 v4 →

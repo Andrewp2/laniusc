@@ -127,7 +127,7 @@ theorem step_match_same_decl {prog : SrcProgram} {prims : Prims} {ix_match_same_
   simp only [src_match_same_decl] at h
   faithful [Lanius.Mini.matchSameDecl]
 
-theorem step_match_ty {prog : SrcProgram} {prims : Prims} {ix_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_match_path : Nat} (fn : prog.funcs[ix_match_ty]? = some (src_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_match_ty ix_match_path)) (np : prims.isPrim ix_match_ty = false)
+theorem step_match_ty {prog : SrcProgram} {prims : Prims} {ix_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_slice_elem ix_match_path : Nat} (fn : prog.funcs[ix_match_ty]? = some (src_match_ty ix_minus ix_node_prod ix_list_items ix_kid ix_p_type_array ix_p_type_slice_tail ix_p_type_ident ix_type_path_spellings ix_match_ty ix_slice_elem ix_match_path)) (np : prims.isPrim ix_match_ty = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))

@@ -5,11 +5,11 @@ import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.sliceHead
 import Lanius.Mini.Frontend.P.textSelf
+import Lanius.Mini.Frontend.P.typeOnlyNamesIn
 import Lanius.Mini.Frontend.P.typePathSpellings
 
 public section

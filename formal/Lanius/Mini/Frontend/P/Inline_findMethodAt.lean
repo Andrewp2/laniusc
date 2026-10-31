@@ -19,6 +19,7 @@ public import Lanius.Mini.Frontend.P.lxSymbolStart
 public import Lanius.Mini.Frontend.P.monoLoop
 public import Lanius.Mini.Frontend.P.noToken
 public import Lanius.Mini.Frontend.P.noTrees
+public import Lanius.Mini.Frontend.P.paramGoals
 public import Lanius.Mini.Frontend.P.sintAt
 public import Lanius.Mini.Frontend.P.sliceHead
 public import Lanius.Mini.Frontend.P.textSelf

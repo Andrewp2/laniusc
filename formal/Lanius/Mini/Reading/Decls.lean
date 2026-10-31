@@ -203,6 +203,29 @@ theorem typeParams_sound {fuel : Nat} {t : CTree} {ps : List Name} (h : typePara
     rw [hi] at h
     exact ⟨items, listItems_sound hi, paramSpellings_sound h⟩
 
+/-- The type parameters of a struct, enum or alias: none has a bound
+(`T: Tr`), as such bounds are not checked. -/
+def FreeParams (t : CTree) (ps : List Name) : Prop :=
+  ∃ items, Items t items ∧ (∀ p ∈ items, nodeProd (kid p 1) = pTypeParamBoundNone) ∧ ParamSpellings items ps
+
+theorem unbounded_iff : ∀ (items : List CTree),
+    unbounded items = true ↔ ∀ p ∈ items, nodeProd (kid p 1) = pTypeParamBoundNone
+  | [] => by simp [unbounded]
+  | p :: rest => by simp [unbounded, unbounded_iff rest]
+
+theorem freeParams_sound {fuel : Nat} {t : CTree} {ps : List Name} (h : freeParams fuel t = some ps) :
+    FreeParams t ps := by
+  simp only [freeParams] at h
+  cases hi : listItems fuel t with
+  | none => rw [hi] at h; cases h
+  | some items =>
+    rw [hi] at h
+    simp only [ifUnbounded] at h
+    split at h
+    · rename_i u
+      exact ⟨items, listItems_sound hi, (unbounded_iff items).1 u, paramSpellings_sound h⟩
+    · cases h
+
 /-! ## Type declarations -/
 
 /-- A struct's fields: each `field` item's spelling and type expression. -/
@@ -224,15 +247,15 @@ def enumDeclAt (home : ModPath) (s : CTree) (ps : List Name) (vs : List CTree) (
   { home := home, name := (kidToken s 1).text, params := ps, isEnum := true,
     fields := [], fieldTypes := [], variants := vs.map (fun v => (kidToken v 0).text), payloads := pays }
 
-/-- What a `struct_item` or `enum_item` without a where clause declares;
-a struct's field spellings are distinct. -/
+/-- What a `struct_item` or `enum_item` without a where clause or bounds
+declares; a struct's field spellings are distinct. -/
 inductive TypeDeclR (home : ModPath) : CTree → TypeDecl → Prop
   | struct {s : CTree} {ps : List Name} {fs : List CTree} :
-      nodeProd s = pStruct → nodeProd (kid s 3) = pWhereNone → TypeParams (kid s 2) ps → Items (kid s 5) fs →
+      nodeProd s = pStruct → nodeProd (kid s 3) = pWhereNone → FreeParams (kid s 2) ps → Items (kid s 5) fs →
       (fieldNames fs).Nodup →
       TypeDeclR home s (structDeclAt home s ps fs)
   | enum {s : CTree} {ps : List Name} {vs : List CTree} {pays : List (List CTree)} :
-      nodeProd s = pEnum → nodeProd (kid s 3) = pWhereNone → TypeParams (kid s 2) ps → Items (kid s 5) vs →
+      nodeProd s = pEnum → nodeProd (kid s 3) = pWhereNone → FreeParams (kid s 2) ps → Items (kid s 5) vs →
       ListRel VariantPayload vs pays →
       TypeDeclR home s (enumDeclAt home s ps vs pays)
 
@@ -274,7 +297,7 @@ theorem typeDecl_sound {fuel : Nat} {home : ModPath} {s : CTree} {t : TypeDecl}
   by_cases st : nodeProd s = pStruct ∧ nodeProd (kid s 3) = pWhereNone
   · rw [if_pos (by simpa using st)] at h
     simp only [structDeclOf] at h
-    cases hp : typeParams fuel (kid s 2) with
+    cases hp : freeParams fuel (kid s 2) with
     | none => rw [hp] at h; cases h
     | some ps =>
       rw [hp] at h
@@ -287,7 +310,7 @@ theorem typeDecl_sound {fuel : Nat} {home : ModPath} {s : CTree} {t : TypeDecl}
         · rename_i nd
           rw [Option.some.injEq] at h
           subst h
-          exact .struct st.1 st.2 (typeParams_sound hp) (listItems_sound hi) ((distinct_iff _).1 nd)
+          exact .struct st.1 st.2 (freeParams_sound hp) (listItems_sound hi) ((distinct_iff _).1 nd)
         · cases h
   · rw [if_neg (by simpa using st)] at h
     by_cases en : nodeProd s = pEnum ∧ nodeProd (kid s 3) = pWhereNone
@@ -297,7 +320,7 @@ theorem typeDecl_sound {fuel : Nat} {home : ModPath} {s : CTree} {t : TypeDecl}
       | some items =>
         rw [hi] at h
         simp only [enumDeclOf] at h
-        cases hp : typeParams fuel (kid s 2) with
+        cases hp : freeParams fuel (kid s 2) with
         | none => rw [hp] at h; cases h
         | some ps =>
           rw [hp] at h
@@ -308,38 +331,42 @@ theorem typeDecl_sound {fuel : Nat} {home : ModPath} {s : CTree} {t : TypeDecl}
             subst h
             obtain ⟨names, pays⟩ := variantsOf_sound hv
             rw [names]
-            exact .enum en.1 en.2 (typeParams_sound hp) (listItems_sound hi) pays
+            exact .enum en.1 en.2 (freeParams_sound hp) (listItems_sound hi) pays
     · rw [if_neg (by simpa using en)] at h
       cases h
 
 /-! ## Functions and methods -/
 
-/-- A function's declaration: `f` is its `fn_item` or `impl_fn_item`. -/
-def fnDeclAt (home : ModPath) (f : CTree) (inImpl : Bool) (implParams : List Name) (selfType : CTree)
+/-- A function's declaration: `f` is its `fn_item` or `impl_fn_item`, and
+`implTree` a method's impl node. -/
+def fnDeclAt (home : ModPath) (f : CTree) (inImpl : Bool) (implParams : List Name) (selfType implTree : CTree)
     (ps : List Name) : FnDecl :=
   { home := home, name := (kidToken f 1).text, inImpl := inImpl, implParams := implParams, selfType := selfType,
-    params := ps, tree := f }
+    params := ps, tree := f, implTree := implTree }
 
 /-- An `impl_method` item, `pub` or not, holding an `impl_fn_item`. -/
-inductive MethodDecl (home : ModPath) (implParams : List Name) (selfType : CTree) : CTree → FnDecl → Prop
+inductive MethodDecl (home : ModPath) (implParams : List Name) (selfType implTree : CTree) : CTree → FnDecl → Prop
   | plain {m : CTree} {ps : List Name} : nodeProd m = pImplMethod → nodeProd (kid m 0) = pImplFn →
-      TypeParams (kid (kid m 0) 2) ps → MethodDecl home implParams selfType m (fnDeclAt home (kid m 0) true implParams selfType ps)
+      TypeParams (kid (kid m 0) 2) ps →
+      MethodDecl home implParams selfType implTree m (fnDeclAt home (kid m 0) true implParams selfType implTree ps)
   | pub {m : CTree} {ps : List Name} : nodeProd m = pImplMethodPub → nodeProd (kid m 1) = pImplFn →
-      TypeParams (kid (kid m 1) 2) ps → MethodDecl home implParams selfType m (fnDeclAt home (kid m 1) true implParams selfType ps)
+      TypeParams (kid (kid m 1) 2) ps →
+      MethodDecl home implParams selfType implTree m (fnDeclAt home (kid m 1) true implParams selfType implTree ps)
 
-theorem methodsOf_sound : ∀ {fuel : Nat} {home : ModPath} {ips : List Name} {selfType : CTree} {items : List CTree}
-    {fs : List FnDecl}, methodsOf fuel home ips selfType items = some fs → ListRel (MethodDecl home ips selfType) items fs
-  | _, _, _, _, [], fs, h => by
+theorem methodsOf_sound : ∀ {fuel : Nat} {home : ModPath} {ips : List Name} {selfType implTree : CTree}
+    {items : List CTree} {fs : List FnDecl}, methodsOf fuel home ips selfType implTree items = some fs →
+    ListRel (MethodDecl home ips selfType implTree) items fs
+  | _, _, _, _, _, [], fs, h => by
     simp only [methodsOf, Option.some.injEq] at h
     subst h
     exact .nil
-  | fuel, home, ips, selfType, m :: rest, fs, h => by
+  | fuel, home, ips, selfType, implTree, m :: rest, fs, h => by
     simp only [methodsOf, consFnDecl] at h
-    cases hm : methodDecl fuel home ips selfType m with
+    cases hm : methodDecl fuel home ips selfType implTree m with
     | none => rw [hm] at h; cases h
     | some d =>
       rw [hm] at h
-      cases hr : methodsOf fuel home ips selfType rest with
+      cases hr : methodsOf fuel home ips selfType implTree rest with
       | none => rw [hr] at h; cases h
       | some ds =>
         rw [hr, Option.some.injEq] at h
@@ -378,7 +405,7 @@ def aliasDeclAt (home : ModPath) (b : CTree) (ps : List Name) : AliasDecl :=
 
 def _root_.Lanius.Mini.Decls.append (a b : Decls) : Decls :=
   { types := a.types ++ b.types, fns := a.fns ++ b.fns, consts := a.consts ++ b.consts,
-    imports := a.imports ++ b.imports, aliases := a.aliases ++ b.aliases }
+    imports := a.imports ++ b.imports, aliases := a.aliases ++ b.aliases, impls := a.impls ++ b.impls }
 
 def onlyTypes (ts : List TypeDecl) : Decls := { noDecls with types := ts }
 def onlyFns (fs : List FnDecl) : Decls := { noDecls with fns := fs }
@@ -388,8 +415,9 @@ def onlyAliases (as : List AliasDecl) : Decls := { noDecls with aliases := as }
 
 /-- What an item (`b` is the item it holds, `pub` or not) declares in the
 module `home`: a struct or enum, a function, a constant, the methods of an
-impl block without a where clause, an import, a type alias without a
-where clause, or an `extern "lanius_std" fn` of a host service (`hostExtern`;
+impl block (and a trait impl itself, for the bounds), an import, a type
+alias without a where clause or bounds, or an `extern "lanius_std" fn` of a
+host service (`hostExtern`;
 its tree rearranged by `externTree` to a function's shape). A `module`
 item, another `extern fn`, a trait, an import of another form and an alias
 with a where clause declare nothing. -/
@@ -397,27 +425,28 @@ inductive ItemDecls (home : ModPath) : CTree → Decls → Prop
   | type {item : CTree} {t : TypeDecl} : (nodeProd (itemBody item) = pStruct ∨ nodeProd (itemBody item) = pEnum) →
       TypeDeclR home (itemBody item) t → ItemDecls home item (onlyTypes [t])
   | fn {item : CTree} {ps : List Name} : nodeProd (itemBody item) = pFn → TypeParams (kid (itemBody item) 2) ps →
-      ItemDecls home item (onlyFns [fnDeclAt home (itemBody item) false [] (itemBody item) ps])
+      ItemDecls home item (onlyFns [fnDeclAt home (itemBody item) false [] (itemBody item) (itemBody item) ps])
   | const {item : CTree} : nodeProd (itemBody item) = pConst →
       ItemDecls home item (onlyConsts [constDeclAt home (itemBody item)])
   | implInherent {item : CTree} {ps : List Name} {ms : List CTree} {fs : List FnDecl} :
       nodeProd (itemBody item) = pImplInherent →
       TypeParams (kid (itemBody item) 1) ps → Items (kid (itemBody item) 5) ms →
-      ListRel (MethodDecl home ps (kid (itemBody item) 2)) ms fs → ItemDecls home item (onlyFns fs)
+      ListRel (MethodDecl home ps (kid (itemBody item) 2) (itemBody item)) ms fs → ItemDecls home item (onlyFns fs)
   | implTrait {item : CTree} {ps : List Name} {ms : List CTree} {fs : List FnDecl} :
       nodeProd (itemBody item) = pImplTrait →
       TypeParams (kid (itemBody item) 1) ps → Items (kid (itemBody item) 7) ms →
-      ListRel (MethodDecl home ps (kid (itemBody item) 4)) ms fs → ItemDecls home item (onlyFns fs)
+      ListRel (MethodDecl home ps (kid (itemBody item) 4) (itemBody item)) ms fs →
+      ItemDecls home item { onlyFns fs with impls := [{ home := home, params := ps, tree := itemBody item }] }
   | imports {item : CTree} {target : ModPath} : nodeProd (itemBody item) = pImport →
       nodeProd (kid (itemBody item) 1) = pImportPath →
       PathSpellings (kid (kid (kid (itemBody item) 1) 0) 0) (kid (kid (kid (itemBody item) 1) 0) 1) target →
       ItemDecls home item (onlyImports [({ home := home, target := target } : ImportDecl)])
   | alias {item : CTree} {ps : List Name} : nodeProd (itemBody item) = pTypeAlias →
-      nodeProd (kid (itemBody item) 3) = pWhereNone → TypeParams (kid (itemBody item) 2) ps →
+      nodeProd (kid (itemBody item) 3) = pWhereNone → FreeParams (kid (itemBody item) 2) ps →
       ItemDecls home item (onlyAliases [aliasDeclAt home (itemBody item) ps])
   | host {item : CTree} {ps : List Name} : nodeProd (itemBody item) = pExternFn →
       hostExtern (itemBody item) = true → TypeParams (kid (itemBody item) 4) ps →
-      ItemDecls home item (onlyFns [fnDeclAt home (externTree (itemBody item)) false [] (itemBody item) ps])
+      ItemDecls home item (onlyFns [fnDeclAt home (externTree (itemBody item)) false [] (itemBody item) (itemBody item) ps])
   | none {item : CTree} : (nodeProd (itemBody item) = pModule ∨
         (nodeProd (itemBody item) = pImport ∧ nodeProd (kid (itemBody item) 1) ≠ pImportPath) ∨
         (nodeProd (itemBody item) = pExternFn ∧ hostExtern (itemBody item) = false) ∨
@@ -425,9 +454,11 @@ inductive ItemDecls (home : ModPath) : CTree → Decls → Prop
         (nodeProd (itemBody item) = pTypeAlias ∧ nodeProd (kid (itemBody item) 3) ≠ pWhereNone)) →
       ItemDecls home item noDecls
 
-theorem implMethods_sound {fuel : Nat} {home : ModPath} {params : Option (List Name)} {selfType list : CTree}
-    {d : Decls} {t : CTree} (hps : typeParams fuel t = params) (h : implMethods fuel home params selfType list = some d) :
-    ∃ ps ms fs, TypeParams t ps ∧ Items list ms ∧ ListRel (MethodDecl home ps selfType) ms fs ∧ d = onlyFns fs := by
+theorem implMethods_sound {fuel : Nat} {home : ModPath} {params : Option (List Name)} {selfType implTree list : CTree}
+    {d : Decls} {t : CTree} (hps : typeParams fuel t = params)
+    (h : implMethods fuel home params selfType implTree list = some d) :
+    ∃ ps ms fs, typeParams fuel t = some ps ∧ TypeParams t ps ∧ Items list ms ∧
+      ListRel (MethodDecl home ps selfType implTree) ms fs ∧ d = onlyFns fs := by
   simp only [implMethods] at h
   cases params with
   | none => cases h
@@ -437,11 +468,11 @@ theorem implMethods_sound {fuel : Nat} {home : ModPath} {params : Option (List N
     | some items =>
       rw [hi] at h
       simp only [fnsDecls] at h
-      cases hm : methodsOf fuel home ps selfType items with
+      cases hm : methodsOf fuel home ps selfType implTree items with
       | none => rw [hm] at h; cases h
       | some fs =>
         rw [hm, Option.some.injEq] at h
-        exact ⟨ps, items, fs, typeParams_sound hps, listItems_sound hi, methodsOf_sound hm, h.symm⟩
+        exact ⟨ps, items, fs, hps, typeParams_sound hps, listItems_sound hi, methodsOf_sound hm, h.symm⟩
 
 theorem itemDecls_sound {fuel : Nat} {home : ModPath} {item : CTree} {d : Decls}
     (h : itemDecls fuel home item = some d) : ItemDecls home item d := by
@@ -473,13 +504,26 @@ theorem itemDecls_sound {fuel : Nat} {home : ModPath} {item : CTree} {d : Decls}
   rw [if_neg cn] at h
   by_cases ii : nodeProd (itemBody item) = pImplInherent
   · rw [if_pos (by simpa using ii)] at h
-    obtain ⟨ps, ms, fs, tp, items, rel, rfl⟩ := implMethods_sound rfl h
+    obtain ⟨ps, ms, fs, -, tp, items, rel, rfl⟩ := implMethods_sound rfl h
     exact .implInherent ii tp items rel
   rw [if_neg (by simpa using ii)] at h
   by_cases it : nodeProd (itemBody item) = pImplTrait
   · rw [if_pos (by simpa using it)] at h
-    obtain ⟨ps, ms, fs, tp, items, rel, rfl⟩ := implMethods_sound rfl h
-    exact .implTrait it tp items rel
+    simp only [withImpl] at h
+    cases hp : typeParams fuel (kid (itemBody item) 1) with
+    | none => rw [hp] at h; cases h
+    | some ps =>
+      rw [hp] at h
+      simp only at h
+      cases hm : implMethods fuel home (some ps) (kid (itemBody item) 4) (itemBody item) (kid (itemBody item) 7) with
+      | none => rw [hm] at h; cases h
+      | some d =>
+        rw [hm, Option.some.injEq] at h
+        subst h
+        obtain ⟨ps', ms, fs, e, tp, items, rel, rfl⟩ := implMethods_sound hp hm
+        rw [hp, Option.some.injEq] at e
+        subst e
+        exact .implTrait it tp items rel
   rw [if_neg (by simpa using it)] at h
   by_cases im : nodeProd (itemBody item) = pImport ∧ nodeProd (kid (itemBody item) 1) = pImportPath
   · rw [if_pos (by simpa using im)] at h
@@ -494,12 +538,12 @@ theorem itemDecls_sound {fuel : Nat} {home : ModPath} {item : CTree} {d : Decls}
   by_cases al : nodeProd (itemBody item) = pTypeAlias ∧ nodeProd (kid (itemBody item) 3) = pWhereNone
   · rw [if_pos (by simpa using al)] at h
     simp only [aliasDecls] at h
-    cases hp : typeParams fuel (kid (itemBody item) 2) with
+    cases hp : freeParams fuel (kid (itemBody item) 2) with
     | none => rw [hp] at h; cases h
     | some ps =>
       rw [hp, Option.some.injEq] at h
       subst h
-      exact .alias al.1 al.2 (typeParams_sound hp)
+      exact .alias al.1 al.2 (freeParams_sound hp)
   rw [if_neg (by simpa using al)] at h
   by_cases ex : nodeProd (itemBody item) = pExternFn ∧ hostExtern (itemBody item) = true
   · rw [if_pos (by simpa using ex)] at h

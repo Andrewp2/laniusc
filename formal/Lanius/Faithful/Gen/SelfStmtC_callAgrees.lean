@@ -29,7 +29,7 @@ abbrev Stmt_Expr_mentions (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepBool (Lanius.Mini.Expr.mentions x0 x1) w
 
 abbrev Stmt_Expr_subst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Expr} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepExpr x0 v0 → (RepList 176 RepFact) x1 v1 →
+  ∀ {x0 : Lanius.Mini.Expr} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepExpr x0 v0 → (RepList 179 RepFact) x1 v1 →
     RepExpr (Lanius.Mini.Expr.subst x0 x1) w
 
 abbrev Stmt_alloc_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -45,7 +45,7 @@ abbrev Stmt_divide_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepBool (Lanius.Mini.divideAgrees x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_fact_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 176 RepFact) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Fact} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 179 RepFact) x0 v0 → RepNat x1 v1 →
     RepExpr (Lanius.Mini.factValue x0 x1) w
 
 abbrev Stmt_load_byte_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -119,13 +119,13 @@ theorem proof_let_of {prog : SrcProgram} {prims : Prims} {ix_let_of ix_let_body 
   simp only [src_let_of] at h
   faithful [Lanius.Mini.letOf]
 
-theorem proof_let_stmt {prog : SrcProgram} {prims : Prims} {ix_let_stmt ix_boxed_of_mini_selfhost_MStmt ix_same_ty ix_alloc_let ix_is_ptr_ty ix_slice_let ix_slice_elem ix_try_let : Nat} (fn : prog.funcs[ix_let_stmt]? = some (src_let_stmt ix_boxed_of_mini_selfhost_MStmt ix_same_ty ix_alloc_let ix_is_ptr_ty ix_slice_let ix_slice_elem ix_try_let)) (np : prims.isPrim ix_let_stmt = false)
+theorem proof_let_stmt {prog : SrcProgram} {prims : Prims} {ix_let_stmt ix_boxed_of_mini_selfhost_MStmt ix_same_ty ix_slice_elem ix_alloc_let ix_is_ptr_ty ix_slice_let ix_try_let : Nat} (fn : prog.funcs[ix_let_stmt]? = some (src_let_stmt ix_boxed_of_mini_selfhost_MStmt ix_same_ty ix_slice_elem ix_alloc_let ix_is_ptr_ty ix_slice_let ix_try_let)) (np : prims.isPrim ix_let_stmt = false)
     (ext_boxed_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_MStmt prog prims ix_boxed_of_mini_selfhost_MStmt n))
     (ext_same_ty : Certified (∀ {n : Nat}, Stmt_same_ty prog prims ix_same_ty n))
+    (ext_slice_elem : Certified (∀ {n : Nat}, Stmt_slice_elem prog prims ix_slice_elem n))
     (ext_alloc_let : Certified (∀ {n : Nat}, Stmt_alloc_let prog prims ix_alloc_let n))
     (ext_is_ptr_ty : Certified (∀ {n : Nat}, Stmt_is_ptr_ty prog prims ix_is_ptr_ty n))
     (ext_slice_let : Certified (∀ {n : Nat}, Stmt_slice_let prog prims ix_slice_let n))
-    (ext_slice_elem : Certified (∀ {n : Nat}, Stmt_slice_elem prog prims ix_slice_elem n))
     (ext_try_let : Certified (∀ {n : Nat}, Stmt_try_let prog prims ix_try_let n)) {n : Nat} :
     Stmt_let_stmt prog prims ix_let_stmt n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
@@ -166,11 +166,11 @@ theorem proof_return_or_eval {prog : SrcProgram} {prims : Prims} {ix_return_or_e
   simp only [src_return_or_eval] at h
   faithful [Lanius.Mini.returnOrEval]
 
-theorem proof_return_slice {prog : SrcProgram} {prims : Prims} {ix_return_slice ix_minus ix_let_head ix_tree_tokens ix_slice_elem ix_slice_returned : Nat} (fn : prog.funcs[ix_return_slice]? = some (src_return_slice ix_minus ix_let_head ix_tree_tokens ix_slice_elem ix_slice_returned)) (np : prims.isPrim ix_return_slice = false)
+theorem proof_return_slice {prog : SrcProgram} {prims : Prims} {ix_return_slice ix_minus ix_let_head ix_slice_elem ix_tree_tokens ix_slice_returned : Nat} (fn : prog.funcs[ix_return_slice]? = some (src_return_slice ix_minus ix_let_head ix_slice_elem ix_tree_tokens ix_slice_returned)) (np : prims.isPrim ix_return_slice = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_let_head : Certified (∀ {n : Nat}, Stmt_let_head prog prims ix_let_head n))
-    (ext_tree_tokens : Certified (∀ {n : Nat}, Stmt_tree_tokens prog prims ix_tree_tokens n))
     (ext_slice_elem : Certified (∀ {n : Nat}, Stmt_slice_elem prog prims ix_slice_elem n))
+    (ext_tree_tokens : Certified (∀ {n : Nat}, Stmt_tree_tokens prog prims ix_tree_tokens n))
     (ext_slice_returned : Certified (∀ {n : Nat}, Stmt_slice_returned prog prims ix_slice_returned n)) {n : Nat} :
     Stmt_return_slice prog prims ix_return_slice n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3

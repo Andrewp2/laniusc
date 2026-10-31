@@ -5,11 +5,12 @@ import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Frontend.P.blockArmsOf
 import Lanius.Mini.Frontend.P.callParts
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.noToken
+import Lanius.Mini.Frontend.P.paramGoals
 import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.selfRefOf
 import Lanius.Mini.Frontend.P.shrFirst
+import Lanius.Mini.Frontend.P.typeOnlyNamesIn
 import Lanius.Mini.Frontend.P.writesLocal
 
 public section
@@ -47,7 +48,7 @@ def readFn (fuel : Nat) (decls : Decls) (fd : FnDecl) (args : List Ty) : Option 
   let tenv : FrontEnv := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := none, base := (kidToken f 1).start } : FrontEnv)
   let rt : Option RetTy := resultOf fuel tenv (kid f 6)
   let env : FrontEnv := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := retExpected rt, base := (kidToken f 1).start } : FrontEnv)
-  if names.length = args.length then
+  if decide (names.length = args.length) && fnBoundsOk fuel decls fd tenv then
     match listItems fuel (kid f 4) with
     | none => none
     | some items => refChecked (funcParams fuel env (paramsOf fuel env fd [] items) rt (kid f 8) (kid (kid f 9) 1)) (selfRefId env items)

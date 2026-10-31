@@ -1,0 +1,33 @@
+module util::geo;
+
+pub struct Point { x: i32, y: i32 }
+
+pub enum Dir {
+    Left,
+    Right,
+}
+
+pub impl Point {
+    pub fn norm(p: Point) -> i32 {
+        let r: i32 = p.x * p.x + p.y * p.y;
+        return r;
+    }
+}
+
+pub impl Dir {
+    pub fn turn(d: Dir) -> Dir {
+        let r: Dir = match (d) {
+            Left -> Dir::Right,
+            Right -> Dir::Left,
+        };
+        return r;
+    }
+
+    pub fn code(d: Dir) -> i32 {
+        let r: i32 = match (d) {
+            Left -> 1,
+            Right -> 2,
+        };
+        return r;
+    }
+}

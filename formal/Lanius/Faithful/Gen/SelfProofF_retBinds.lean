@@ -41,10 +41,10 @@ theorem proof_arg_expected {prog : SrcProgram} {prims : Prims} {ix_arg_expected 
   simp only [src_arg_expected] at h
   faithful [Lanius.Mini.argExpected]
 
-theorem proof_bind_arg {prog : SrcProgram} {prims : Prims} {ix_bind_arg ix_eff_ty ix_bare_eff ix_match_ty ix_callee_env : Nat} (fn : prog.funcs[ix_bind_arg]? = some (src_bind_arg ix_eff_ty ix_bare_eff ix_match_ty ix_callee_env)) (np : prims.isPrim ix_bind_arg = false)
+theorem proof_bind_arg {prog : SrcProgram} {prims : Prims} {ix_bind_arg ix_match_ty ix_eff_ty ix_bare_eff ix_callee_env : Nat} (fn : prog.funcs[ix_bind_arg]? = some (src_bind_arg ix_match_ty ix_eff_ty ix_bare_eff ix_callee_env)) (np : prims.isPrim ix_bind_arg = false)
+    (ext_match_ty : Certified (∀ {n : Nat}, Stmt_match_ty prog prims ix_match_ty n))
     (ext_eff_ty : Certified (∀ {n : Nat}, Stmt_eff_ty prog prims ix_eff_ty n))
     (ext_bare_eff : Certified (∀ {n : Nat}, Stmt_bare_eff prog prims ix_bare_eff n))
-    (ext_match_ty : Certified (∀ {n : Nat}, Stmt_match_ty prog prims ix_match_ty n))
     (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n)) {n : Nat} :
     Stmt_bind_arg prog prims ix_bind_arg n := by
   intro x0 x1 x2 x3 x4 x5 x6 x7 v0 v1 v2 v3 v4 v5 v6 v7 w h r0 r1 r2 r3 r4 r5 r6 r7
@@ -54,9 +54,9 @@ theorem proof_bind_arg {prog : SrcProgram} {prims : Prims} {ix_bind_arg ix_eff_t
   simp only [src_bind_arg] at h
   faithful [Lanius.Mini.bindArg]
 
-theorem proof_ret_binds {prog : SrcProgram} {prims : Prims} {ix_ret_binds ix_ret_pattern ix_match_ty ix_callee_env : Nat} (fn : prog.funcs[ix_ret_binds]? = some (src_ret_binds ix_ret_pattern ix_match_ty ix_callee_env)) (np : prims.isPrim ix_ret_binds = false)
-    (ext_ret_pattern : Certified (∀ {n : Nat}, Stmt_ret_pattern prog prims ix_ret_pattern n))
+theorem proof_ret_binds {prog : SrcProgram} {prims : Prims} {ix_ret_binds ix_match_ty ix_ret_pattern ix_callee_env : Nat} (fn : prog.funcs[ix_ret_binds]? = some (src_ret_binds ix_match_ty ix_ret_pattern ix_callee_env)) (np : prims.isPrim ix_ret_binds = false)
     (ext_match_ty : Certified (∀ {n : Nat}, Stmt_match_ty prog prims ix_match_ty n))
+    (ext_ret_pattern : Certified (∀ {n : Nat}, Stmt_ret_pattern prog prims ix_ret_pattern n))
     (ext_callee_env : Certified (∀ {n : Nat}, Stmt_callee_env prog prims ix_callee_env n)) {n : Nat} :
     Stmt_ret_binds prog prims ix_ret_binds n := by
   intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5

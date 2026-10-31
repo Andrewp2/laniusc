@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::self_ref_of -/
-def src_self_ref_of (ix_minus : Nat) (ix_node_prod : Nat) (ix_kid_token : Nat) (ix_field_start_Token_of_mini_selfhost_Token : Nat) (ix_p_param_self_ref : Nat) : SrcFunc := { params := [{ id := 12, ty := ty261 }, { id := 27, ty := ty83 }], ret := ty234, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eApply (SrcOp.equal) (SrcEff.eCall ix_node_prod [SrcEff.ePure (SrcExpr.local 27)]) (SrcEff.eCall ix_p_param_self_ref [])) (SrcStmt.returnEval (SrcEff.eVariant ty234 0 [SrcEff.eCall ix_minus [SrcEff.eCall ix_field_start_Token_of_mini_selfhost_Token [SrcEff.eCall ix_kid_token [SrcEff.ePure (SrcExpr.local 27), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)]], SrcEff.ePure (SrcExpr.field 12 6)]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty234 1 [])) }
+def src_self_ref_of (ix_minus : Nat) (ix_node_prod : Nat) (ix_kid_token : Nat) (ix_field_start_Token_of_mini_selfhost_Token : Nat) (ix_p_param_self_ref : Nat) : SrcFunc := { params := [{ id := 12, ty := ty265 }, { id := 27, ty := ty83 }], ret := ty237, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eApply (SrcOp.equal) (SrcEff.eCall ix_node_prod [SrcEff.ePure (SrcExpr.local 27)]) (SrcEff.eCall ix_p_param_self_ref [])) (SrcStmt.returnEval (SrcEff.eVariant ty237 0 [SrcEff.eCall ix_minus [SrcEff.eCall ix_field_start_Token_of_mini_selfhost_Token [SrcEff.eCall ix_kid_token [SrcEff.ePure (SrcExpr.local 27), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)]], SrcEff.ePure (SrcExpr.field 12 6)]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty237 1 [])) }
 
 end
 

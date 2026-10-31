@@ -9,7 +9,7 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_attachParent
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pWhileStmt
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBoundTypeArgsAfterCommaMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_tLparen
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_tRparen
 public import Lanius.Faithful.Gen.SelfStmtF_frontEndWords

@@ -25,11 +25,11 @@ abbrev Stmt_at_least_one (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     RepExpr (Lanius.Mini.atLeastOne x0) w
 
 abbrev Stmt_lower_alloc (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepOption 149 RepExpr) x2 v2 → (RepOption 130 RepStmt) x3 v3 →
-    (RepOption 130 RepStmt) (Lanius.Mini.lowerAlloc x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepOption 152 RepExpr) x2 v2 → (RepOption 133 RepStmt) x3 v3 →
+    (RepOption 133 RepStmt) (Lanius.Mini.lowerAlloc x0 x1 x2 x3) w
 
 abbrev Stmt_lower_return (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Expr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 146 (RepList 91 RepExpr)) x0 v0 →
-    (RepOption 130 RepStmt) (Lanius.Mini.lowerReturn x0) w
+  ∀ {x0 : Option (List Lanius.Mini.Expr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 149 (RepList 91 RepExpr)) x0 v0 →
+    (RepOption 133 RepStmt) (Lanius.Mini.lowerReturn x0) w
 
 end Lanius.Faithful.SelfCert

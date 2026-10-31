@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_left_true (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 150 RepTyped) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 153 RepTyped) x0 v0 →
     RepExpr (Lanius.Mini.leftTrue x0) w
 
 end Lanius.Faithful.SelfCert

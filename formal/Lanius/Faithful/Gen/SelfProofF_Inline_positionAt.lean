@@ -14,12 +14,12 @@ public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_moduleNamesOk
+public import Lanius.Faithful.Gen.SelfStmtF_methodsOf
 public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
-public import Lanius.Faithful.Gen.SelfStmtF_typeDecls
+public import Lanius.Faithful.Gen.SelfStmtF_typeOnlyNamesIn
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_positionAt
 import all Lanius.Mini.Frontend.P.Inline_positionAt
 

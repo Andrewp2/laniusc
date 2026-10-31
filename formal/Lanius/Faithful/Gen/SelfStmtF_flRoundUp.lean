@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_fl_decimal_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Bool} {x3 : Bool} {x4 : Nat} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 245 RepBool) x2 v2 → RepBool x3 v3 → RepNat x4 v4 → RepNat x5 v5 →
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Bool} {x3 : Bool} {x4 : Nat} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 253 RepBool) x2 v2 → RepBool x3 v3 → RepNat x4 v4 → RepNat x5 v5 →
     RepNat (Lanius.Mini.flDecimalAt x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_fl_ratio_ok (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Bool} {x3 : List Bool} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 245 RepBool) x2 v2 → (RepList 245 RepBool) x3 v3 →
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Bool} {x3 : List Bool} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 253 RepBool) x2 v2 → (RepList 253 RepBool) x3 v3 →
     RepBool (Lanius.Mini.flRatioOk x0 x1 x2 x3) w
 
 abbrev Stmt_fl_round (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Bool} {x3 : List Bool} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 245 RepBool) x2 v2 → (RepList 245 RepBool) x3 v3 →
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : List Bool} {x3 : List Bool} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → (RepList 253 RepBool) x2 v2 → (RepList 253 RepBool) x3 v3 →
     RepNat (Lanius.Mini.flRound x0 x1 x2 x3) w
 
 abbrev Stmt_fl_round_up (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : List Bool} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 245 RepBool) x1 v1 →
-    (RepList 245 RepBool) (Lanius.Mini.flRoundUp x0 x1) w
+  ∀ {x0 : Bool} {x1 : List Bool} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 253 RepBool) x1 v1 →
+    (RepList 253 RepBool) (Lanius.Mini.flRoundUp x0 x1) w
 
 end Lanius.Faithful.SelfCert
