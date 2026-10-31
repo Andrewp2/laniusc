@@ -308,6 +308,10 @@ mutual
     | local (id : VarId)
     | field (base : Place) (field : FieldId)
     | index (base : Place) (index : Expr)
+    /-- The place a reference names: its cell at its projection path. A
+        write through a `&self` or `&T` reference is an assignment to it
+        (SEMANTIC_DECISIONS, "The design of writes through references"). -/
+    | deref (reference : Expr)
 end
 
 mutual
@@ -369,6 +373,7 @@ mutual
     | .local a0, .local b0 => a0 == b0
     | .field a0 a1, .field b0 b1 => Place.beq a0 b0 && a1 == b1
     | .index a0 a1, .index b0 b1 => Place.beq a0 b0 && Expr.beq a1 b1
+    | .deref a0, .deref b0 => Expr.beq a0 b0
     | _, _ => false
   termination_by structural a
 

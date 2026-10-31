@@ -1796,6 +1796,16 @@ mutual
         | .trapped reason next => .trapped reason next
         | .exited code exitedState => .exited code exitedState
         | .outOfFuel => .outOfFuel
+    | fuel + 1, program, state, _, .deref reference =>
+        match evalExpr fuel program state reference with
+        | .done (.reference _ cell projections) next =>
+            match readCellProjection next cell projections with
+            | .ok value => .done { root := cell, projections := projections, value := some value } next
+            | .error reason => .trapped reason next
+        | .done _ next => .trapped .typeMismatch next
+        | .trapped reason next => .trapped reason next
+        | .exited code exitedState => .exited code exitedState
+        | .outOfFuel => .outOfFuel
 
   def execForValues : Nat → Program → State → VarId → List Value → Stmt →
       Outcome Completion

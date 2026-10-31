@@ -122,6 +122,16 @@ output is kept only when the proved validator accepts it. Nor are
   that the language itself lends (`mapBorrowed`) still make borrowed blocks.
   This is the meaning `Vec` needs: its buffer is one block and its
   elements are a view of a prefix of it.
+- **Writes through references (added 10-31, F5).** Core's places gain
+  `Place.deref reference` (`Lanius/Core.lean`): `evalPlace` evaluates the
+  reference, and the place is its cell at its projection path, with the
+  value there read (`readCellProjection`). An assignment to it, or to a
+  field or element of it, writes the referenced cell, as an assignment to
+  a local's field does. Before this, Core had no write through a
+  reference ("Assignment places do not acquire this automatic
+  dereference", SEMANTIC_DECISIONS), so laniusc's `&self` methods that
+  write `self` had no Core meaning. Core's type checker
+  (`checkPlaceAnyFuel`) has no rule for it yet and rejects it.
 - **Shift amounts (changed 10-30).** A shift of a signed or unsigned
   integer may take an amount of another such type (`x << n` with `x: i64`,
   `n: u32`), as laniusc allows: typing `BinaryOpHasType.shiftLeftBy` and

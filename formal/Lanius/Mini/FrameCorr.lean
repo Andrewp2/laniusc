@@ -70,6 +70,63 @@ theorem SrcType.HoldsAt.words_congr {ty : SrcType} {v : Value} {hp hp' : Heap} {
     ty.HoldsAt v (hp'.words address) 0 :=
   holds.congr (Heap.words_congr same)
 
+/-! ## Storing slots as words -/
+
+/-- `count` slots of `env` from `slot`, stored as 8-byte words from `address`:
+what a call does before it passes a place's address. -/
+def Heap.storeSlots (hp : Heap) (address : Nat) (env : Env) (slot : Nat) : Nat → Heap
+  | 0 => hp
+  | count + 1 => (hp.writeLE address (env slot).toNat 8).storeSlots (address + 8) env (slot + 1) count
+
+theorem Heap.storeSlots_bytes_outside : ∀ (hp : Heap) (address : Nat) (env : Env) (slot count a : Nat),
+    (a < address ∨ address + 8 * count ≤ a) → (hp.storeSlots address env slot count).bytes a = hp.bytes a
+  | _, _, _, _, 0, _, _ => rfl
+  | hp, address, env, slot, count + 1, a, outside => by
+    simp only [Heap.storeSlots]
+    rw [Heap.storeSlots_bytes_outside _ _ _ _ _ _ (by omega), Heap.writeLE_bytes_outside _ _ _ _ _ (by omega)]
+
+theorem Heap.storeSlots_top : ∀ (hp : Heap) (address : Nat) (env : Env) (slot count : Nat),
+    (hp.storeSlots address env slot count).top = hp.top ∧ (hp.storeSlots address env slot count).fsp = hp.fsp ∧
+      (hp.storeSlots address env slot count).limit = hp.limit ∧
+      (hp.storeSlots address env slot count).cursor = hp.cursor ∧
+      (hp.storeSlots address env slot count).io = hp.io
+  | _, _, _, _, 0 => ⟨rfl, rfl, rfl, rfl, rfl⟩
+  | hp, address, env, slot, count + 1 => by
+    simp only [Heap.storeSlots]
+    obtain ⟨t, f, l, c, i⟩ := Heap.storeSlots_top (hp.writeLE address (env slot).toNat 8) (address + 8) env (slot + 1) count
+    rw [t, f, l, c, i, (Heap.writeLE_top _ _ _ _).1, (Heap.writeLE_top _ _ _ _).2, (Heap.writeLE_limit _ _ _ _).1,
+      (Heap.writeLE_limit _ _ _ _).2, Heap.writeLE_io]
+    exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- The stored words are the slots. -/
+theorem Heap.storeSlots_words : ∀ (hp : Heap) (address : Nat) (env : Env) (slot count i : Nat), i < count →
+    (hp.storeSlots address env slot count).words address i = env (slot + i)
+  | _, _, _, _, 0, _, lt => absurd lt (Nat.not_lt_zero _)
+  | hp, address, env, slot, count + 1, 0, _ => by
+    simp only [Heap.words, Heap.storeSlots, Nat.mul_zero, Nat.add_zero]
+    rw [Heap.readLE_congr (hp := hp.writeLE address (env slot).toNat 8)
+      (fun a _ hi => Heap.storeSlots_bytes_outside _ _ _ _ _ _ (.inl hi)), Heap.readLE_writeLE]
+    apply BitVec.eq_of_toNat_eq
+    simp only [BitVec.toNat_ofNat]
+    have := (env slot).isLt
+    rw [Nat.mod_eq_of_lt (show (env slot).toNat < 256 ^ 8 by simpa using this), Nat.mod_eq_of_lt this]
+  | hp, address, env, slot, count + 1, i + 1, lt => by
+    have := Heap.storeSlots_words (hp.writeLE address (env slot).toNat 8) (address + 8) env (slot + 1) count i (by omega)
+    simp only [Heap.words, Heap.storeSlots] at this ⊢
+    rw [show address + 8 * (i + 1) = address + 8 + 8 * i by omega, this, Nat.add_right_comm, Nat.add_assoc]
+
+/-- A value in slots, stored as words, is represented by the words. -/
+theorem SrcType.HoldsAt.storeSlots {ty : SrcType} {v : Value} {env : Env} {slot : Nat}
+    (holds : ty.HoldsAt v env slot) (hp : Heap) (address : Nat) :
+    ty.HoldsAt v ((hp.storeSlots address env slot ty.size).words address) 0 :=
+  holds.congr fun i lt => by rw [Nat.zero_add, Heap.storeSlots_words _ _ _ _ _ _ lt]
+
+/-- A value in words, loaded into slots, is represented by the slots. -/
+theorem SrcType.HoldsAt.loadSlots {ty : SrcType} {v : Value} {hp : Heap} {address : Nat}
+    (holds : ty.HoldsAt v (hp.words address) 0) {env : Env} {slot : Nat}
+    (loaded : ∀ i < ty.size, env (slot + i) = hp.words address i) : ty.HoldsAt v env slot :=
+  holds.congr fun i lt => by rw [Nat.zero_add]; exact loaded i lt
+
 /-! ## The correspondence -/
 
 /-- A place a reference names, held in frame memory: Core's cell `cell` at
