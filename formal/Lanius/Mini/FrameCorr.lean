@@ -129,27 +129,50 @@ theorem SrcType.HoldsAt.loadSlots {ty : SrcType} {v : Value} {hp : Heap} {addres
 
 /-! ## The correspondence -/
 
+/-- How a place's value sits in its bytes: a slot per 8-byte word (the
+referent of a reference), or laniusc's native element layout (an array local
+passed as a slice: i32 at stride 4, u8 at stride 1, other scalars as words,
+structs as laniusc lays them out; SEMANTIC_DECISIONS, "Addressed locals"),
+which the slice passing defines. -/
+inductive PlaceLayout where
+  | words
+  | slice
+deriving DecidableEq
+
 /-- A place a reference names, held in frame memory: Core's cell `cell` at
-the projection path `projections` holds a value of `ty`, whose slots are the
-words from `address`. -/
+the projection path `projections` holds a value of `ty`, laid out by `layout`
+from `address`. -/
 structure Addressed where
   cell : Nat
   projections : List ValueProjection
   ty : SrcType
   address : Nat
+  layout : PlaceLayout := .words
 
-/-- The bytes a place's words take. -/
-def Addressed.Covers (x : Addressed) (a : Nat) : Prop := x.address ≤ a ∧ a < x.address + 8 * x.ty.size
+/-- The bytes a place takes from its address: a word per slot. A slice
+layout's extent comes with the slice passing; until then no slice place holds
+(`Addressed.Holds`). -/
+def Addressed.extent (x : Addressed) : Nat :=
+  match x.layout with
+  | .words => 8 * x.ty.size
+  | .slice => 8 * x.ty.size
 
-/-- Core's value at the place is represented by its words. -/
+/-- The bytes a place takes. -/
+def Addressed.Covers (x : Addressed) (a : Nat) : Prop := x.address ≤ a ∧ a < x.address + x.extent
+
+/-- Core's value at the place is represented by its bytes: by its words, a
+slot each, in the word layout. -/
 def Addressed.Holds (st : State) (hp : Heap) (x : Addressed) : Prop :=
-  ∃ v, Semantics.readCellProjection st x.cell x.projections = .ok v ∧ x.ty.HoldsAt v (hp.words x.address) 0
+  match x.layout with
+  | .words => ∃ v, Semantics.readCellProjection st x.cell x.projections = .ok v ∧
+      x.ty.HoldsAt v (hp.words x.address) 0
+  | .slice => False
 
 /-- The addressed places of the activations: each one's value is represented
 by its words, which lie between the frame pointer and the heap's top. -/
 structure FrameCorr (places : List Addressed) (st : State) (hp : Heap) : Prop where
   holds : ∀ x ∈ places, x.Holds st hp
-  inside : ∀ x ∈ places, hp.fsp ≤ x.address ∧ x.address + 8 * x.ty.size ≤ hp.top
+  inside : ∀ x ∈ places, hp.fsp ≤ x.address ∧ x.address + x.extent ≤ hp.top
 
 theorem FrameCorr.nil (st : State) (hp : Heap) : FrameCorr [] st hp :=
   ⟨fun _ mem => by simp at mem, fun _ mem => by simp at mem⟩
@@ -163,8 +186,11 @@ theorem FrameCorr.congr {places : List Addressed} {st st' : State} {hp hp' : Hea
     (fsp : hp'.fsp ≤ hp.fsp) (top : hp'.top = hp.top) :
     FrameCorr places st' hp' := by
   refine ⟨fun x mem => ?_, fun x mem => ?_⟩
-  · obtain ⟨v, read, holds⟩ := fc.holds x mem
-    refine ⟨v, ?_, holds.words_congr fun a lo hi => bytes x mem a ⟨lo, hi⟩⟩
+  · have held := fc.holds x mem
+    unfold Addressed.Holds at held ⊢
+    cases hl : x.layout <;> simp only [hl] at held ⊢
+    obtain ⟨v, read, holds⟩ := held
+    refine ⟨v, ?_, holds.words_congr fun a lo hi => bytes x mem a ⟨lo, by simpa [Addressed.extent, hl] using hi⟩⟩
     simp only [Semantics.readCellProjection, cells x mem] at read ⊢
     exact read
   · have := fc.inside x mem
