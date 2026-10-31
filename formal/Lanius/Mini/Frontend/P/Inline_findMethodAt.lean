@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Frontend.P.armBlockOf
 public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail

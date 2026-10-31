@@ -21,6 +21,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pLetType : Nat :=
   86
 
+@[expose] def Inline.pArmBlock : Nat :=
+  326
+
 @[expose] def Inline.pLetTypeNone : Nat :=
   87
 

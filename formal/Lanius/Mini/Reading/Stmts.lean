@@ -695,6 +695,160 @@ theorem assignment_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {e :
       exact .call c.1 c.2.1 c.2.2 kn pe (callStmt_sound (peel_postfix pe) h)
   cases h
 
+/-! ## Match statements -/
+
+/-- `match (s) { arms };`: the statement's match. -/
+inductive MatchPrimary (e : CTree) : CTree → Prop
+  | mk {pf : CTree} : nodeProd e = pExpr → nodeProd (kid e 0) = pAssign → nodeProd (kid (kid e 0) 1) = pAssignEnd →
+      kidsOf (kid (kid e 0) 1) = [] → Peel (kid (kid e 0) 0) pf → nodeProd (kid pf 0) = pMatchExpr →
+      nodeProd (kid pf 1) = pPostfixEnd → MatchPrimary e (kid pf 0)
+
+theorem matchPrimary_sound {fuel : Nat} {e m : CTree} (h : matchPrimary fuel e = some m) : MatchPrimary e m := by
+  unfold matchPrimary at h
+  simp only at h
+  split at h
+  · rename_i c
+    simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true', and_assoc] at c
+    obtain ⟨pe, pa, pn, hk⟩ := c
+    have kn : kidsOf (kid (kid e 0) 1) = [] :=
+      Classical.byContradiction fun hne => by rw [(hasKids_iff _).2 hne] at hk; cases hk
+    cases hp : peel fuel (kid (kid e 0) 0) with
+    | none => rw [hp] at h; cases h
+    | some pf =>
+      rw [hp] at h
+      simp only [matchOfPostfix] at h
+      split at h
+      · rename_i c
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        simp only [Option.some.injEq] at h
+        subst h
+        exact .mk pe pa pn kn (peel_sound hp) c.1 c.2
+      · cases h
+  · cases h
+
+/-- The scrutinee, read like a match expression's, of an enum type; the
+function has a result. -/
+inductive MatchStmtR (env : FrontEnv) (scope : List Local) (m : CTree) : MatchStmt → Prop
+  | mk {x : MEff} {ety : Ty} {n : Inst} {t : TypeDecl} {ps : List (List Ty)} {rt : Ty} {h : MatchStmt} :
+      EffR env scope none (kid m 2) x → EffTy env.decls scope x ety → namedParts ety = some n →
+      env.decls.types[n.decl]? = some t → t.isEnum = true → PayloadTys env.decls n.decl n.args ps →
+      env.ret = some rt →
+      matchStmtHead scope ((kidToken m 0).start - env.base) ((kidToken m 6).start - env.base) x ety t
+        (zipVariants t.variants ps) rt = some h → MatchStmtR env scope m h
+
+theorem matchStmtParts_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {m : CTree} {h : MatchStmt}
+    (hh : matchStmtParts fuel env scope m = some h) : MatchStmtR env scope m h := by
+  unfold matchStmtParts matchStmtOn at hh
+  cases hx : effOf fuel env scope none (kid m 2) with
+  | none => rw [hx] at hh; cases hh
+  | some x =>
+    rw [hx] at hh
+    simp only at hh
+    cases he : effTy fuel env scope x with
+    | none => rw [he] at hh; cases hh
+    | some ety =>
+      rw [he] at hh
+      simp only at hh
+      cases hn : namedParts ety with
+      | none => rw [hn] at hh; cases hh
+      | some n =>
+        rw [hn] at hh
+        simp only at hh
+        cases ht : env.decls.types[n.decl]? with
+        | none => rw [ht] at hh; cases hh
+        | some t =>
+          rw [ht] at hh
+          simp only [matchStmtEnum] at hh
+          split at hh
+          · rename_i en
+            cases hp : payloadTys fuel env.decls n.decl n.args with
+            | none => rw [hp] at hh; cases hh
+            | some ps =>
+              rw [hp] at hh
+              simp only at hh
+              cases hr : env.ret with
+              | none => rw [hr] at hh; cases hh
+              | some rt =>
+                rw [hr] at hh
+                exact .mk (effOf_sound hx) (effTy_sound he) hn ht en (payloadTys_sound hp) hr hh
+          · cases hh
+
+/-- The arms in variant order: as many as variants, each a written arm. -/
+def MatchArmsOrder (h : MatchStmt) (m : CTree) (os : List CTree) : Prop :=
+  ∃ arms, Items (kid m 5) arms ∧ arms.length = h.variants.length ∧ ∀ a ∈ os, a ∈ arms
+
+theorem matchStmtArms_sound {fuel : Nat} {h : MatchStmt} {m : CTree} {os : List CTree}
+    (hh : matchStmtArms fuel h m = some os) : MatchArmsOrder h m os := by
+  unfold matchStmtArms at hh
+  cases hi : listItems fuel (kid m 5) with
+  | none => rw [hi] at hh; cases hh
+  | some arms =>
+    rw [hi] at hh
+    simp only at hh
+    unfold armsInOrder at hh
+    split at hh
+    · rename_i len
+      exact ⟨arms, listItems_sound hi, by simpa using len, armsByVariant_mem hh⟩
+    · cases hh
+
+/-- An arm's pattern names variant v: `V` binds nothing, `V(b, ...)` its
+payload's plain name binders. -/
+inductive ArmBindR (env : FrontEnv) (scope : List Local) (owner : TypeDecl) (v : VariantTy) (arm : CTree) :
+    Bound → Prop
+  | plain {ss : List Name} : nodeProd (kid arm 0) = pPatternIdent →
+      PathSpellings (kid (kid (kid arm 0) 0) 0) (kid (kid (kid arm 0) 0) 1) ss → ArmNamed ss owner v.name →
+      nodeProd (kid (kid arm 0) 1) = pPatternPlain → ArmBindR env scope owner v arm { ids := [], scope := scope }
+  | payload {ss : List Name} {pats : List CTree} {b : Bound} : nodeProd (kid arm 0) = pPatternIdent →
+      PathSpellings (kid (kid (kid arm 0) 0) 0) (kid (kid (kid arm 0) 0) 1) ss → ArmNamed ss owner v.name →
+      nodeProd (kid (kid arm 0) 1) ≠ pPatternPlain → Items (kid (kid (kid arm 0) 1) 1) pats →
+      BindersR env scope pats v.payload b → ArmBindR env scope owner v arm b
+
+theorem armBind_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {owner : TypeDecl} {v : VariantTy}
+    {arm : CTree} {b : Bound} (h : armBind fuel env scope owner v arm = some b) : ArmBindR env scope owner v arm b := by
+  unfold armBind at h
+  simp only at h
+  split at h
+  · rename_i c
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+    obtain ⟨pi, an⟩ := c
+    cases hs : pathSpellings fuel (kid (kid (kid arm 0) 0) 0) (kid (kid (kid arm 0) 0) 1) with
+    | none => rw [hs] at an; simp [armNamed] at an
+    | some ss =>
+      rw [hs] at an
+      split at h
+      · rename_i pl
+        simp only [Option.some.injEq] at h
+        subst h
+        exact .plain pi (pathSpellings_sound hs) (armNamed_sound an) pl
+      · rename_i pl
+        cases hl : listItems fuel (kid (kid (kid arm 0) 1) 1) with
+        | none => rw [hl] at h; cases h
+        | some pats =>
+          rw [hl] at h
+          exact .payload pi (pathSpellings_sound hs) (armNamed_sound an) pl (listItems_sound hl) (bindersOf_sound h)
+  · cases h
+
+/-- A block arm `pattern -> { statements }`: its statement list. -/
+inductive ArmBlockR (arm : CTree) : CTree → Prop
+  | mk {pf : CTree} : Peel (kid arm 2) pf → nodeProd (kid pf 0) = pArmBlock → nodeProd (kid pf 1) = pPostfixEnd →
+      ArmBlockR arm (kid (kid (kid pf 0) 0) 1)
+
+theorem armBlockList_sound {fuel : Nat} {arm list : CTree} (h : armBlockList fuel arm = some list) :
+    ArmBlockR arm list := by
+  unfold armBlockList at h
+  cases hp : peel fuel (kid arm 2) with
+  | none => rw [hp] at h; cases h
+  | some pf =>
+    rw [hp] at h
+    simp only [armBlockOf] at h
+    split at h
+    · rename_i c
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+      simp only [Option.some.injEq] at h
+      subst h
+      exact .mk (peel_sound hp) c.1 c.2
+    · cases h
+
 /-! ## Statement lists -/
 
 mutual
@@ -762,6 +916,20 @@ inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
   /-- `{ ... }`: its lets scope over the block only. -/
   | block {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s = pBlockStmt →
       BlockR env scope (kid (kid s 0) 1) m → StmtR env scope s m
+  /-- `match (s) { arms };`, every arm a block: arm k runs if the scrutinee
+  is variant k, else the next is tried; after the last, Unreachable. -/
+  | «match» {scope : List Local} {s m : CTree} {h : MatchStmt} {os : List CTree} {c mm : MStmt} :
+      nodeProd s = pExprStmt → MatchPrimary (kid s 0) m → MatchStmtR env scope m h → MatchArmsOrder h m os →
+      ArmsStmtR env scope h 0 h.variants os c → matchStmtValue h (some c) = some mm → StmtR env scope s mm
+
+/-- A match statement's arms from variant k on. -/
+inductive ArmsStmtR (env : FrontEnv) : List Local → MatchStmt → Nat → List VariantTy → List CTree → MStmt → Prop
+  | nil {scope : List Local} {h : MatchStmt} {k : Nat} : ArmsStmtR env scope h k [] [] (.mUnreachable h.closer h.ret)
+  | cons {scope : List Local} {h : MatchStmt} {k : Nat} {v : VariantTy} {vs : List VariantTy} {a : CTree}
+      {as : List CTree} {b : Bound} {list : CTree} {body r m : MStmt} :
+      ArmBindR env scope h.owner v a b → ArmBlockR a list → BlockR env b.scope list body →
+      ArmsStmtR env scope h (k + 1) vs as r → armBinder h k b.ids v.payload body r = some m →
+      ArmsStmtR env scope h k (v :: vs) (a :: as) m
 end
 
 def StmtSound (fuel : Nat) : Prop :=
@@ -771,11 +939,18 @@ def StmtSound (fuel : Nat) : Prop :=
   (∀ {env scope s rest m}, nodeProd s = pLetStmt → letFirst fuel env scope s rest = some m →
     StmtsR env scope (s :: rest) m) ∧
   (∀ {env scope s m}, stmtOf fuel env scope s = some m → StmtR env scope s m) ∧
-  (∀ {env scope s m}, nestedOf fuel env scope s = some m → StmtR env scope s m)
+  (∀ {env scope s m}, nestedOf fuel env scope s = some m → StmtR env scope s m) ∧
+  (∀ {env scope e mm}, matchStmtOf fuel env scope e = some mm → ∃ m h os c, MatchPrimary e m ∧
+    MatchStmtR env scope m h ∧ MatchArmsOrder h m os ∧ ArmsStmtR env scope h 0 h.variants os c ∧
+    matchStmtValue h (some c) = some mm) ∧
+  (∀ {env scope h k vs arms c}, matchArmsOf fuel env scope h k vs arms = some c → ArmsStmtR env scope h k vs arms c) ∧
+  (∀ {env scope h k v a rest m}, matchArmOf fuel env scope h k v a rest = some m → ∃ b list body r,
+    rest = some r ∧ ArmBindR env scope h.owner v a b ∧ ArmBlockR a list ∧ BlockR env b.scope list body ∧
+    armBinder h k b.ids v.payload body r = some m)
 
 theorem stmtSound : ∀ fuel, StmtSound fuel
   | 0 => by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     all_goals intros
     all_goals rename_i h
     · rw [blockOf.eq_def] at h; simp at h
@@ -784,9 +959,12 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
     · rw [letFirst.eq_def] at h; simp at h
     · rw [stmtOf.eq_def] at h; simp at h
     · rw [nestedOf.eq_def] at h; simp at h
+    · rw [matchStmtOf.eq_def] at h; simp at h
+    · rw [matchArmsOf.eq_def] at h; simp at h
+    · rw [matchArmOf.eq_def] at h; simp at h
   | f + 1 => by
-    obtain ⟨ihBlock, ihStmts, ihFirst, ihLet, ihStmt, ihNested⟩ := stmtSound f
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+    obtain ⟨ihBlock, ihStmts, ihFirst, ihLet, ihStmt, ihNested, ihMatch, ihArms, ihArm⟩ := stmtSound f
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro env scope list m h
       rw [blockOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
@@ -915,7 +1093,12 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
       split at h
       · exact ihNested h
       split at h
-      · rename_i _ _ _ _ _ _ _ _ pa
+      · rename_i _ _ _ _ _ _ _ _ c
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        obtain ⟨m, h', os, c', mp, mr, mo, ar, mv⟩ := ihMatch h
+        exact .match c.1 mp mr mo ar mv
+      split at h
+      · rename_i _ _ _ _ _ _ _ _ _ pa
         exact .assign pa (assignment_sound h)
       cases h
     · intro env scope s m h
@@ -953,6 +1136,70 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
       · rename_i _ pb
         exact .block pb (ihBlock h)
       cases h
+    · intro env scope e mm h
+      rw [matchStmtOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases hm : matchPrimary (f + 1) e with
+      | none => rw [hm] at h; cases h
+      | some m =>
+        rw [hm] at h
+        simp only at h
+        cases hp : matchStmtParts (f + 1) env scope m with
+        | none => rw [hp] at h; cases h
+        | some hd =>
+          rw [hp] at h
+          simp only at h
+          cases ho : matchStmtArms (f + 1) hd m with
+          | none => rw [ho] at h; cases h
+          | some os =>
+            rw [ho] at h
+            simp only at h
+            cases hc : matchArmsOf f env scope hd 0 hd.variants os with
+            | none => rw [hc] at h; simp [matchStmtValue] at h
+            | some c =>
+              rw [hc] at h
+              exact ⟨m, hd, os, c, matchPrimary_sound hm, matchStmtParts_sound hp, matchStmtArms_sound ho,
+                ihArms hc, h⟩
+    · intro env scope hd k vs arms c h
+      rw [matchArmsOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases vs with
+      | nil =>
+        cases arms with
+        | nil =>
+          simp only [Option.some.injEq] at h
+          subst h
+          exact .nil
+        | cons _ _ => simp at h
+      | cons v rest =>
+        cases arms with
+        | nil => simp at h
+        | cons a more =>
+          simp only at h
+          obtain ⟨b, list, body, r, hr, ab, al, bb, hb⟩ := ihArm h
+          exact .cons ab al bb (ihArms hr) hb
+    · intro env scope hd k v a rest m h
+      rw [matchArmOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases hb : armBind (f + 1) env scope hd.owner v a with
+      | none => rw [hb] at h; cases h
+      | some b =>
+        rw [hb] at h
+        simp only at h
+        cases hl : armBlockList (f + 1) a with
+        | none => rw [hl] at h; cases h
+        | some list =>
+          rw [hl] at h
+          simp only [armStmt] at h
+          cases hx : blockOf f env b.scope list with
+          | none => rw [hx] at h; cases h
+          | some body =>
+            rw [hx] at h
+            simp only at h
+            cases rest with
+            | none => cases h
+            | some r =>
+              exact ⟨b, list, body, r, rfl, armBind_sound hb, armBlockList_sound hl, ihBlock hx, h⟩
 
 theorem blockOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {list : CTree} {m : MStmt}
     (h : blockOf fuel env scope list = some m) : BlockR env scope list m :=

@@ -107,6 +107,7 @@ abbrev pLetInit : Nat := 88
 abbrev pLetStmt : Nat := 75
 abbrev pLetType : Nat := 86
 abbrev pLetTypeNone : Nat := 87
+abbrev pArmBlock : Nat := 326
 abbrev pLtTail : Nat := 138
 abbrev pMatchArmsAfterCommaMore : Nat := 193
 abbrev pMatchArmsAfterCommaTrailing : Nat := 194

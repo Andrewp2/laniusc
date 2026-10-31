@@ -327,6 +327,17 @@ structure Untyped where
   head : LetHead
   deriving Repr
 
+/-- A match statement's scrutinee (a local, or else a value bound to a local numbered by the `match`), its enum and variants, and the local numbered by its `}` that the Unreachable after the last arm binds. -/
+structure MatchStmt where
+  scrutinee : Nat
+  sty : Ty
+  value : Option MEff
+  owner : TypeDecl
+  variants : List VariantTy
+  closer : Nat
+  ret : Ty
+  deriving Repr
+
 structure MParam where
   id : Nat
   ty : Ty

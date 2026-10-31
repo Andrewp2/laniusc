@@ -1,0 +1,1 @@
+{ params := [{ id := 0, ty := (.enum 0 [[], []]) }], ret := .i32, body := (.matchArm 0 0 0 false 2 .unit (.return (.int 1)) (.matchArm 0 0 1 false 2 .unit (.let 1 .i32 (.int 2) .nop) (.unreachable 2 .i32))) }

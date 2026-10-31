@@ -772,6 +772,32 @@ operand, `r` is the local and there is no call.
 - Not read yet: `?` after a method call or field (`a.b()?`), on a field or
   element target, or nested inside a larger expression.
 
+## Match statements with block arms (decided 10-31, F4)
+
+The front end reads `match (s) { arms };`, with every arm a block
+(`pattern -> { statements }`), as a chain of `MatchArm`s in variant order:
+arm k runs its block if the scrutinee is variant k, else the next arm is
+tried. After the last arm comes `Unreachable(c, R)`, with `c` numbered by
+the match's `}` and `R` the function's result type.
+
+- The scrutinee is read like a match expression's. If it reads as a local,
+  the chain matches that local. Otherwise its value is bound first
+  (`MLetEval`) to a local numbered by the `match` token.
+- The arms are taken in variant order (`arms_in_order`), with each variant
+  named by exactly one arm, as for a match expression.
+- A pattern `V` binds nothing. Its binder id is unused: it is `c`, and its
+  type is the scrutinee's. A pattern `V(x)` binds x to the payload's one
+  value. A variant whose payload has more than one value is not read.
+- laniusc rejects a block arm whose end is reachable (LNC0006), so no arm
+  falls through and the match's own end is never reached. The chain's
+  meaning does not depend on that: if a block did fall through, the
+  statements after the match would run. compileSource rejects such a match
+  when it ends a function with a result, since not every path returns
+  (case `match_block_open`).
+- Not read yet: a match with both block and expression arms (`let x =
+  match (s) { Ok(v) -> v, Err(e) -> { return ...; } }`), which needs a
+  local bound before the match and set in the expression arms.
+
 ## Untyped lets (decided 10-31, F4)
 
 `let x = init;` binds `x` at `init`'s own type, as laniusc's local inference

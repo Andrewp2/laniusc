@@ -6956,6 +6956,169 @@ pub fn for_range(c: usize, e: usize, x: usize, t: Ty, a: SrcExpr, n: usize, body
     };
 }
 
+// A match statement's scrutinee (a local, or else a value bound to a local
+// numbered by the `match`), its enum and variants, and the local numbered by
+// its `}` that the Unreachable after the last arm binds.
+pub struct MatchStmt {
+    scrutinee: usize,
+    sty: Ty,
+    value: core::option::Option<MEff>,
+    owner: TypeDecl,
+    variants: List<VariantTy>,
+    closer: usize,
+    ret: Ty,
+}
+
+pub fn match_of_postfix(pf: CTree) -> core::option::Option<CTree> {
+    if (node_prod(kid(pf, 0)) == p_match_expr() && node_prod(kid(pf, 1)) == p_postfix_end()) {
+        return Some(kid(pf, 0));
+    }
+    return None;
+}
+
+// The match of a statement `match (s) { arms };`.
+pub fn match_primary(fuel: usize, e: CTree) -> core::option::Option<CTree> {
+    let a: CTree = kid(e, 0);
+    if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && node_prod(kid(a, 1)) == p_assign_end() && !has_kids(kid(a, 1))) {
+        return match (peel(fuel, kid(a, 0))) {
+            None -> None,
+            Some(pf) -> match_of_postfix(pf),
+        };
+    }
+    return None;
+}
+
+pub fn is_match_stmt(fuel: usize, e: CTree) -> bool {
+    return match (match_primary(fuel, e)) {
+        None -> false,
+        Some(m) -> true,
+    };
+}
+
+pub fn match_stmt_if(ok: bool, h: MatchStmt) -> core::option::Option<MatchStmt> {
+    if (ok) {
+        return Some(h);
+    }
+    return None;
+}
+
+pub fn match_stmt_head(scope: List<Local>, id: usize, closer: usize, x: MEff, ety: Ty, t: TypeDecl, vs: List<VariantTy>, rt: Ty) -> core::option::Option<MatchStmt> {
+    return match (eff_local(x)) {
+        Some(l) -> match_stmt_if(fresh_id(scope, closer), MatchStmt { scrutinee: l, sty: ety, value: None, owner: t, variants: vs, closer: closer, ret: rt }),
+        None -> match_stmt_if(fresh_id(scope, id) && fresh_id(scope, closer) && id != closer, MatchStmt { scrutinee: id, sty: ety, value: Some(x), owner: t, variants: vs, closer: closer, ret: rt }),
+    };
+}
+
+pub fn match_stmt_enum(env: FrontEnv, scope: List<Local>, m: CTree, x: MEff, ety: Ty, t: TypeDecl, payloads: core::option::Option<List<List<Ty>>>) -> core::option::Option<MatchStmt> {
+    if (t.is_enum) {
+        return match (payloads) {
+            None -> None,
+            Some(ps) -> match (env.ret) {
+                None -> None,
+                Some(rt) -> match_stmt_head(scope, minus(kid_token(m, 0).start, env.base), minus(kid_token(m, 6).start, env.base), x, ety, t, zip_variants(t.variants, ps), rt),
+            },
+        };
+    }
+    return None;
+}
+
+pub fn match_stmt_on(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree, s: core::option::Option<MEff>) -> core::option::Option<MatchStmt> {
+    return match (s) {
+        None -> None,
+        Some(x) -> match (eff_ty(fuel, env, scope, x)) {
+            None -> None,
+            Some(ety) -> match (named_parts(ety)) {
+                None -> None,
+                Some(n) -> match (get(env.decls.types, n.decl)) {
+                    None -> None,
+                    Some(t) -> match_stmt_enum(env, scope, m, x, ety, t, payload_tys(fuel, env.decls, n.decl, n.args)),
+                },
+            },
+        },
+    };
+}
+
+// The scrutinee is read like a match expression's.
+pub fn match_stmt_parts(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree) -> core::option::Option<MatchStmt> {
+    return match_stmt_on(fuel, env, scope, m, eff_of(fuel, env, scope, None, kid(m, 2)));
+}
+
+// The arms in variant order.
+pub fn match_stmt_arms(fuel: usize, h: MatchStmt, m: CTree) -> core::option::Option<List<CTree>> {
+    return match (list_items(fuel, kid(m, 5))) {
+        None -> None,
+        Some(arms) -> arms_in_order(fuel, h.owner, h.variants, arms),
+    };
+}
+
+// An arm's pattern: `V`, or `V(b, ...)` with plain name binders.
+pub fn arm_bind(fuel: usize, env: FrontEnv, scope: List<Local>, owner: TypeDecl, v: VariantTy, arm: CTree) -> core::option::Option<Bound> {
+    let pattern: CTree = kid(arm, 0);
+    let ptail: CTree = kid(pattern, 1);
+    let path: CTree = kid(pattern, 0);
+    if (node_prod(pattern) == p_pattern_ident() && arm_named(path_spellings(fuel, kid(path, 0), kid(path, 1)), owner, v.name)) {
+        if (node_prod(ptail) == p_pattern_plain()) {
+            return Some(Bound { ids: empty(), scope: scope });
+        }
+        return match (list_items(fuel, kid(ptail, 1))) {
+            None -> None,
+            Some(pats) -> binders_of(env, scope, pats, v.payload),
+        };
+    }
+    return None;
+}
+
+pub fn arm_block_of(pf: CTree) -> core::option::Option<CTree> {
+    if (node_prod(kid(pf, 0)) == p_arm_block() && node_prod(kid(pf, 1)) == p_postfix_end()) {
+        return Some(kid(kid(kid(pf, 0), 0), 1));
+    }
+    return None;
+}
+
+// A block arm's statement list (`pattern -> { statements }`).
+pub fn arm_block_list(fuel: usize, arm: CTree) -> core::option::Option<CTree> {
+    return match (peel(fuel, kid(arm, 2))) {
+        None -> None,
+        Some(pf) -> arm_block_of(pf),
+    };
+}
+
+// Arm k: it binds its payload value when its pattern names one (a payload
+// of one value), else nothing (the binder is unused).
+pub fn arm_binder(h: MatchStmt, k: usize, ids: List<usize>, payload: List<Ty>, body: MStmt, rest: MStmt) -> core::option::Option<MStmt> {
+    return match (ids) {
+        Nil -> Some(MMatchArm(h.scrutinee, h.sty, k, false, h.closer, h.sty, boxed(body), boxed(rest))),
+        Cons(i, more) -> match (unbox(more)) {
+            Nil -> match (payload) {
+                Nil -> None,
+                Cons(t, ts) -> Some(MMatchArm(h.scrutinee, h.sty, k, true, i, t, boxed(body), boxed(rest))),
+            },
+            Cons(j, others) -> None,
+        },
+    };
+}
+
+pub fn arm_stmt(h: MatchStmt, k: usize, b: Bound, v: VariantTy, body: core::option::Option<MStmt>, rest: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (body) {
+        None -> None,
+        Some(x) -> match (rest) {
+            None -> None,
+            Some(r) -> arm_binder(h, k, b.ids, v.payload, x, r),
+        },
+    };
+}
+
+// The scrutinee's value, if it is not a local, is bound first.
+pub fn match_stmt_value(h: MatchStmt, chain: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (chain) {
+        None -> None,
+        Some(c) -> match (h.value) {
+            None -> Some(c),
+            Some(x) -> Some(MLetEval(h.scrutinee, h.sty, x, boxed(c))),
+        },
+    };
+}
+
 // extract: mutual begin
 // A statement list: a let scopes over the statements after it.
 pub fn block_of(fuel: usize, env: FrontEnv, scope: List<Local>, list: CTree) -> core::option::Option<MStmt> {
@@ -7044,6 +7207,9 @@ pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core
     if (p == p_for_stmt() || p == p_block_stmt()) {
         return nested_of(f, env, scope, s);
     }
+    if (p == p_expr_stmt() && is_match_stmt(f, kid(s, 0))) {
+        return match_stmt_of(f, env, scope, kid(s, 0));
+    }
     if (p == p_expr_stmt()) {
         return assignment(f, env, scope, kid(s, 0));
     }
@@ -7063,6 +7229,55 @@ pub fn nested_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> co
         return block_of(f, env, scope, kid(kid(s, 0), 1));
     }
     return None;
+}
+
+// `match (s) { arms };` with every arm a block: arm k (variant k) runs its
+// block, else the next arm is tried; after the last, Unreachable. Every
+// block arm leaves the match (laniusc rejects one whose end is reachable),
+// so the match's own end is never reached either.
+pub fn match_stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (match_primary(fuel, e)) {
+        None -> None,
+        Some(m) -> match (match_stmt_parts(fuel, env, scope, m)) {
+            None -> None,
+            Some(h) -> match (match_stmt_arms(fuel, h, m)) {
+                None -> None,
+                Some(os) -> match_stmt_value(h, match_arms_of(minus(fuel, 1), env, scope, h, 0, h.variants, os)),
+            },
+        },
+    };
+}
+
+pub fn match_arms_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt, k: usize, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (variants) {
+        Nil -> match (arms) {
+            Nil -> Some(MUnreachable(h.closer, h.ret)),
+            Cons(a, more) -> None,
+        },
+        Cons(v, rest) -> match (arms) {
+            Nil -> None,
+            Cons(a, more) -> match_arm_of(minus(fuel, 1), env, scope, h, k, v, a, match_arms_of(minus(fuel, 1), env, scope, h, plus(k, 1), unbox(rest), unbox(more))),
+        },
+    };
+}
+
+pub fn match_arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt, k: usize, v: VariantTy, a: CTree, rest: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (arm_bind(fuel, env, scope, h.owner, v, a)) {
+        None -> None,
+        Some(b) -> match (arm_block_list(fuel, a)) {
+            None -> None,
+            Some(list) -> arm_stmt(h, k, b, v, block_of(minus(fuel, 1), env, b.scope, list), rest),
+        },
+    };
 }
 // extract: mutual end
 
@@ -10805,6 +11020,11 @@ fn p_let_stmt() -> usize {
 // extract: inline
 fn p_let_type() -> usize {
     return 86;
+}
+
+// extract: inline
+fn p_arm_block() -> usize {
+    return 326;
 }
 
 // extract: inline
