@@ -29,7 +29,7 @@ abbrev Stmt_tried_if (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 248 RepTried) (Lanius.Mini.triedIf x0 x1 x2 x3 x4 x5 x6 x7) w
 
 abbrev Stmt_tried_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option Lanius.Mini.Local} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 249 RepLocal) x2 v2 → RepNat x3 v3 →
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Option Lanius.Mini.Local} {x3 : Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepOption 254 RepLocal) x2 v2 → RepNat x3 v3 →
     (RepOption 248 RepTried) (Lanius.Mini.triedLocal x0 x1 x2 x3) w
 
 abbrev Stmt_tried_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

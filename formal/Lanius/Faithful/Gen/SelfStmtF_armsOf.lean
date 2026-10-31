@@ -21,23 +21,23 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_checked_bound (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.ArgsBound} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 279 RepArgsBound) x1 v1 →
-    (RepOption 279 RepArgsBound) (Lanius.Mini.checkedBound x0 x1) w
+  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.ArgsBound} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 283 RepArgsBound) x1 v1 →
+    (RepOption 283 RepArgsBound) (Lanius.Mini.checkedBound x0 x1) w
 
 abbrev Stmt_checked_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 246 RepMEff) x1 v1 →
     (RepOption 246 RepMEff) (Lanius.Mini.checkedEff x0 x1) w
 
 abbrev Stmt_checked_effs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Option (List Lanius.Mini.MEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 268 (RepList 224 RepMEff)) x1 v1 →
-    (RepOption 268 (RepList 224 RepMEff)) (Lanius.Mini.checkedEffs x0 x1) w
+  ∀ {x0 : Bool} {x1 : Option (List Lanius.Mini.MEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 275 (RepList 224 RepMEff)) x1 v1 →
+    (RepOption 275 (RepList 224 RepMEff)) (Lanius.Mini.checkedEffs x0 x1) w
 
 abbrev Stmt_checked_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option Lanius.Mini.MStmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 236 RepMStmt) x1 v1 →
     (RepOption 236 RepMStmt) (Lanius.Mini.checkedStmt x0 x1) w
 
 abbrev Stmt_has_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Local} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 249 RepLocal) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.Local} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 254 RepLocal) x0 v0 →
     RepBool (Lanius.Mini.hasLocal x0) w
 
 abbrev Stmt_has_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

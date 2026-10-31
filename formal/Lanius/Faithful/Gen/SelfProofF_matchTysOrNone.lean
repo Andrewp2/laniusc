@@ -157,7 +157,7 @@ theorem step_eff_args_bound {prog : SrcProgram} {prims : Prims} {ix_eff_args_bou
   simp only [src_eff_args_bound] at h
   faithful [Lanius.Mini.effArgsBound]
 
-theorem step_eff_arm {prog : SrcProgram} {prims : Prims} {ix_eff_arm ix_minus ix_node_prod ix_list_items ix_kid ix_empty_of_usize ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_eff_arm_bound ix_binders_of : Nat} (fn : prog.funcs[ix_eff_arm]? = some (src_eff_arm ix_minus ix_node_prod ix_list_items ix_kid ix_empty_of_usize ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_eff_arm_bound ix_binders_of)) (np : prims.isPrim ix_eff_arm = false)
+theorem step_eff_arm {prog : SrcProgram} {prims : Prims} {ix_eff_arm ix_minus ix_node_prod ix_list_items ix_kid ix_empty_of_usize ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_eff_arm_bound : Nat} (fn : prog.funcs[ix_eff_arm]? = some (src_eff_arm ix_minus ix_node_prod ix_list_items ix_kid ix_empty_of_usize ix_path_spellings ix_p_pattern_ident ix_arm_named ix_p_pattern_plain ix_binders_of ix_eff_arm_bound)) (np : prims.isPrim ix_eff_arm = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
@@ -186,12 +186,12 @@ theorem step_eff_arm_bound {prog : SrcProgram} {prims : Prims} {ix_eff_arm_bound
   simp only [src_eff_arm_bound] at h
   faithful [Lanius.Mini.effArmBound]
 
-theorem step_eff_arms {prog : SrcProgram} {prims : Prims} {ix_eff_arms ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_empty_of_mini_selfhost_EffArm ix_cons_eff_arm ix_eff_arm ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Nat} (fn : prog.funcs[ix_eff_arms]? = some (src_eff_arms ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_eff_arms ix_empty_of_mini_selfhost_EffArm ix_cons_eff_arm ix_eff_arm ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy)) (np : prims.isPrim ix_eff_arms = false)
+theorem step_eff_arms {prog : SrcProgram} {prims : Prims} {ix_eff_arms ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_empty_of_mini_selfhost_EffArm ix_cons_eff_arm ix_eff_arm : Nat} (fn : prog.funcs[ix_eff_arms]? = some (src_eff_arms ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_eff_arms ix_empty_of_mini_selfhost_EffArm ix_cons_eff_arm ix_eff_arm)) (np : prims.isPrim ix_eff_arms = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy n))
     (ext_empty_of_mini_selfhost_EffArm : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_EffArm prog prims ix_empty_of_mini_selfhost_EffArm n))
-    (ext_cons_eff_arm : Certified (∀ {n : Nat}, Stmt_cons_eff_arm prog prims ix_cons_eff_arm n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy n)) {n : Nat}
+    (ext_cons_eff_arm : Certified (∀ {n : Nat}, Stmt_cons_eff_arm prog prims ix_cons_eff_arm n)) {n : Nat}
     (ih_eff_arms : Certified (Stmt_eff_arms prog prims ix_eff_arms n))
     (ih_eff_arm : Certified (Stmt_eff_arm prog prims ix_eff_arm n)) :
     Stmt_eff_arms prog prims ix_eff_arms (n + 1) := by
@@ -387,12 +387,12 @@ theorem step_eff_match {prog : SrcProgram} {prims : Prims} {ix_eff_match ix_minu
   simp only [src_eff_match] at h
   faithful [Lanius.Mini.effMatch]
 
-theorem step_eff_match_enum {prog : SrcProgram} {prims : Prims} {ix_eff_match_enum ix_minus ix_list_items ix_kid ix_x_match_of ix_eff_arms_ordered ix_zip_variants : Nat} (fn : prog.funcs[ix_eff_match_enum]? = some (src_eff_match_enum ix_minus ix_list_items ix_kid ix_x_match_of ix_eff_arms_ordered ix_zip_variants)) (np : prims.isPrim ix_eff_match_enum = false)
+theorem step_eff_match_enum {prog : SrcProgram} {prims : Prims} {ix_eff_match_enum ix_minus ix_list_items ix_kid ix_zip_variants ix_x_match_of ix_eff_arms_ordered : Nat} (fn : prog.funcs[ix_eff_match_enum]? = some (src_eff_match_enum ix_minus ix_list_items ix_kid ix_zip_variants ix_x_match_of ix_eff_arms_ordered)) (np : prims.isPrim ix_eff_match_enum = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_x_match_of : Certified (∀ {n : Nat}, Stmt_x_match_of prog prims ix_x_match_of n))
-    (ext_zip_variants : Certified (∀ {n : Nat}, Stmt_zip_variants prog prims ix_zip_variants n)) {n : Nat}
+    (ext_zip_variants : Certified (∀ {n : Nat}, Stmt_zip_variants prog prims ix_zip_variants n))
+    (ext_x_match_of : Certified (∀ {n : Nat}, Stmt_x_match_of prog prims ix_x_match_of n)) {n : Nat}
     (ih_eff_arms_ordered : Certified (Stmt_eff_arms_ordered prog prims ix_eff_arms_ordered n)) :
     Stmt_eff_match_enum prog prims ix_eff_match_enum (n + 1) := by
   intro x0 x1 x2 x3 x4 x5 x6 x7 x8 v0 v1 v2 v3 v4 v5 v6 v7 v8 w h r0 r1 r2 r3 r4 r5 r6 r7 r8

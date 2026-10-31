@@ -57,7 +57,7 @@ abbrev Stmt_same_names (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
     RepBool (Lanius.Mini.sameNames x0 x1) w
 
 abbrev Stmt_slice_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 250 (RepList 21 RepSrcExpr)) x0 v0 →
+  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 257 (RepList 21 RepSrcExpr)) x0 v0 →
     (RepOption 247 RepLetHead) (Lanius.Mini.sliceHead x0) w
 
 end Lanius.Faithful.SelfCert

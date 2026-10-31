@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_alloc_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 250 (RepList 21 RepSrcExpr)) x0 v0 →
+  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 257 (RepList 21 RepSrcExpr)) x0 v0 →
     (RepOption 247 RepLetHead) (Lanius.Mini.allocHead x0) w
 
 abbrev Stmt_alloc_shifted (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

@@ -7634,7 +7634,7 @@ pub fn match_stmt_arms(fuel: usize, h: MatchStmt, m: CTree) -> core::option::Opt
 }
 
 // An arm's pattern: `V`, or `V(b, ...)` with plain name binders.
-pub fn arm_bind(fuel: usize, env: FrontEnv, scope: List<Local>, owner: TypeDecl, v: VariantTy, arm: CTree) -> core::option::Option<Bound> {
+pub fn arm_binding(fuel: usize, env: FrontEnv, scope: List<Local>, owner: TypeDecl, v: VariantTy, arm: CTree) -> core::option::Option<Bound> {
     let pattern: CTree = kid(arm, 0);
     let ptail: CTree = kid(pattern, 1);
     let path: CTree = kid(pattern, 0);
@@ -7688,6 +7688,12 @@ pub fn arm_stmt(h: MatchStmt, k: usize, b: Bound, v: VariantTy, body: core::opti
             Some(r) -> arm_binder(h, k, b.ids, v.payload, x, r),
         },
     };
+}
+
+// A binding's scope (the self front end does not read `b.scope` for an
+// outer arm's binder b inside a nested match arm).
+pub fn bound_scope(b: Bound) -> List<Local> {
+    return b.scope;
 }
 
 // The scrutinee's value, if it is not a local, is bound first.
@@ -7853,11 +7859,11 @@ pub fn match_arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt
     if (fuel == 0) {
         return None;
     }
-    return match (arm_bind(fuel, env, scope, h.owner, v, a)) {
+    return match (arm_binding(fuel, env, scope, h.owner, v, a)) {
         None -> None,
         Some(b) -> match (arm_block_list(fuel, a)) {
             None -> None,
-            Some(list) -> arm_stmt(h, k, b, v, block_of(minus(fuel, 1), env, b.scope, list), rest),
+            Some(list) -> arm_stmt(h, k, b, v, block_of(minus(fuel, 1), env, bound_scope(b), list), rest),
         },
     };
 }

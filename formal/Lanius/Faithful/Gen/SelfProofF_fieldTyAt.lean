@@ -86,7 +86,7 @@ theorem proof_assign_target {prog : SrcProgram} {prims : Prims} {ix_assign_targe
     (ext_p_postfix_index : Certified (∀ {n : Nat}, Stmt_p_postfix_index prog prims ix_p_postfix_index n))
     (ext_set_index_or_eval : Certified (∀ {n : Nat}, Stmt_set_index_or_eval prog prims ix_set_index_or_eval n)) {n : Nat} :
     Stmt_assign_target prog prims ix_assign_target n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h

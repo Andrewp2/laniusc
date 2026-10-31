@@ -30,7 +30,7 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_arms_by_variant {prog : SrcProgram} {prims : Prims} {ix_arms_by_variant ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_naming ix_cons_tree_tail : Nat} (fn : prog.funcs[ix_arms_by_variant]? = some (src_arms_by_variant ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_arms_by_variant ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_naming ix_cons_tree_tail)) (np : prims.isPrim ix_arms_by_variant = false)
+theorem step_arms_by_variant {prog : SrcProgram} {prims : Prims} {ix_arms_by_variant ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_naming ix_cons_tree_tail : Nat} (fn : prog.funcs[ix_arms_by_variant]? = some (src_arms_by_variant ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_arms_by_variant ix_arms_naming ix_cons_tree_tail)) (np : prims.isPrim ix_arms_by_variant = false)
     (ext_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_CTree prog prims ix_empty_of_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy n))

@@ -271,6 +271,44 @@ def markFunc (f : SrcFunc) : StateM Table SrcFunc := do
   return { params := ← f.params.mapM fun p => return { p with ty := ← mark p.ty },
            ret := ← mark f.ret, body := ← markStmt f.body }
 
+/-- Why `describe` rejects the files: the step that fails, or the first
+function instance the front end cannot read. -/
+def diagnose (files : List FileInput) : String := Id.run do
+  let some roots := validateFiles grammar files | return "the files do not parse"
+  let fuel := filesFuel files
+  match roots with
+  | [] => return "no files"
+  | first :: rest =>
+    let some f := fileDecls fuel first | return "the first file's declarations"
+    let some c := collectFiles fuel rest ({ decls := f.decls, modules := [f.home] } : Collected)
+      | return "another file's declarations"
+    let name (inst : Inst) := match c.decls.fns[inst.decl]? with
+      | none => "a projection"
+      | some d => s!"{path d.home}::{text d.name}"
+    let mut table := rootInsts f.decls.fns 0
+    let mut funcs : List MFunc := []
+    let mut i := 0
+    for _ in [0:fuel] do
+      match table[i]? with
+      | none => break
+      | some inst =>
+        match readInst fuel c.decls inst with
+        | none => return s!"the front end cannot read {name inst}"
+        | some mf =>
+          table := addInsts table (Lanius.Mini.stmtCalls mf.body)
+          funcs := funcs ++ [mf]
+          i := i + 1
+    if !wellNamed c then return "two declarations share a name (wellNamed)"
+    let seeds := seedInsts f.decls.types 0
+    let some ts := typeTableMore fuel c.decls (typeTable fuel c.decls seeds (seedTys seeds)) (funcsTys funcs)
+      | return "the type table fails"
+    let t : Tables := { decls := c.decls, fns := table, types := ts, lowered := loweredAll fuel c.decls ts ts }
+    for (inst, mf) in table.zip funcs do
+      if (closeParams fuel t mf.params).isNone then return s!"{name inst}'s parameters do not close"
+      if (closeRet fuel t mf.ret).isNone then return s!"{name inst}'s result does not close"
+      if (closeStmt fuel t mf.body).isNone then return s!"{name inst}'s body does not close"
+    return "every function closes; an untyped literal is rejected (untypedRejected)"
+
 end Lanius.Tools.SrcDump
 
 open Lanius.Tools.SrcDump in
@@ -283,13 +321,13 @@ def main (args : List String) : IO UInt32 := do
     match ← loadFile b with
     | none => IO.eprintln s!"{b} does not lex"; return 1
     | some f => files := files ++ [f]
-  let some lines := describe files | IO.eprintln "the front end rejects the files"; return 1
+  let some lines := describe files | IO.eprintln s!"the front end rejects the files: {diagnose files}"; return 1
   let names := (lines.filter (fun (l : String) => l.startsWith "fn ")).map fun (l : String) =>
     match l.splitOn " " with
     | [_, _, name, self, args] =>
       (if self == "-" then name else s!"{self}::{name}") ++ (if args == "-" then "" else s!"<{args}>")
     | _ => l
-  let some p := frontEndFiles grammar files | IO.eprintln "the front end rejects the files"; return 1
+  let some p := frontEndFiles grammar files | IO.eprintln s!"the front end rejects the files: {diagnose files}"; return 1
   IO.FS.writeFile (out ++ ".meta") ("\n".intercalate (lines ++ ((List.range p.funcs.length).zip p.funcs).map (fun (i, f) => sigLine i f)) ++ "\n")
   let (funcs, table) := (p.funcs.mapM markFunc).run {}
   let h ← IO.FS.Handle.mk out .write

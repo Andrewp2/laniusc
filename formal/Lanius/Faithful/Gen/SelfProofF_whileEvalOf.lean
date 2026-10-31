@@ -3,9 +3,14 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_whileEvalOf
+public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_callParts
+public import Lanius.Faithful.Gen.SelfStmtF_findConst
+public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_ifEff
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
+public import Lanius.Faithful.Gen.SelfStmtF_tryLetHead
+public import Lanius.Faithful.Gen.SelfStmtF_tryLocalOf
 public import Lanius.Faithful.Gen.SelfStmtF_whileEvalOf
 import all Lanius.Faithful.Gen.SelfSrcF_whileEvalOf
 import all Lanius.Mini.Frontend.P.whileEvalOf
@@ -48,16 +53,41 @@ theorem proof_set_index_eval_of {prog : SrcProgram} {prims : Prims} {ix_set_inde
   simp only [src_set_index_eval_of] at h
   faithful [Lanius.Mini.setIndexEvalOf]
 
-theorem proof_set_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_or_eval ix_eff_of ix_set_eval_of : Nat} (fn : prog.funcs[ix_set_or_eval]? = some (src_set_or_eval ix_eff_of ix_set_eval_of)) (np : prims.isPrim ix_set_or_eval = false)
-    (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n))
-    (ext_set_eval_of : Certified (∀ {n : Nat}, Stmt_set_eval_of prog prims ix_set_eval_of n)) {n : Nat} :
+theorem proof_set_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_or_eval ix_try_of_init ix_set_try_or_eval : Nat} (fn : prog.funcs[ix_set_or_eval]? = some (src_set_or_eval ix_try_of_init ix_set_try_or_eval)) (np : prims.isPrim ix_set_or_eval = false)
+    (ext_try_of_init : Certified (∀ {n : Nat}, Stmt_try_of_init prog prims ix_try_of_init n))
+    (ext_set_try_or_eval : Certified (∀ {n : Nat}, Stmt_set_try_or_eval prog prims ix_set_try_or_eval n)) {n : Nat} :
     Stmt_set_or_eval prog prims ix_set_or_eval n := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_set_or_eval] at h
   faithful [Lanius.Mini.setOrEval]
+
+theorem proof_set_try_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_try_or_eval ix_fresh_id ix_same_ty ix_eff_of ix_set_eval_of ix_try_set : Nat} (fn : prog.funcs[ix_set_try_or_eval]? = some (src_set_try_or_eval ix_fresh_id ix_same_ty ix_eff_of ix_set_eval_of ix_try_set)) (np : prims.isPrim ix_set_try_or_eval = false)
+    (ext_fresh_id : Certified (∀ {n : Nat}, Stmt_fresh_id prog prims ix_fresh_id n))
+    (ext_same_ty : Certified (∀ {n : Nat}, Stmt_same_ty prog prims ix_same_ty n))
+    (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n))
+    (ext_set_eval_of : Certified (∀ {n : Nat}, Stmt_set_eval_of prog prims ix_set_eval_of n))
+    (ext_try_set : Certified (∀ {n : Nat}, Stmt_try_set prog prims ix_try_set n)) {n : Nat} :
+    Stmt_set_try_or_eval prog prims ix_set_try_or_eval n := by
+  intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_set_try_or_eval] at h
+  faithful [Lanius.Mini.setTryOrEval]
+
+theorem proof_try_set {prog : SrcProgram} {prims : Prims} {ix_try_set ix_boxed_of_mini_selfhost_MStmt ix_try_rest : Nat} (fn : prog.funcs[ix_try_set]? = some (src_try_set ix_boxed_of_mini_selfhost_MStmt ix_try_rest)) (np : prims.isPrim ix_try_set = false)
+    (ext_boxed_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_MStmt prog prims ix_boxed_of_mini_selfhost_MStmt n))
+    (ext_try_rest : Certified (∀ {n : Nat}, Stmt_try_rest prog prims ix_try_rest n)) {n : Nat} :
+    Stmt_try_set prog prims ix_try_set n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_try_set] at h
+  faithful [Lanius.Mini.trySet]
 
 theorem proof_while_eval_of {prog : SrcProgram} {prims : Prims} {ix_while_eval_of ix_while_eff : Nat} (fn : prog.funcs[ix_while_eval_of]? = some (src_while_eval_of ix_while_eff)) (np : prims.isPrim ix_while_eval_of = false)
     (ext_while_eff : Certified (∀ {n : Nat}, Stmt_while_eff prog prims ix_while_eff n)) {n : Nat} :

@@ -805,8 +805,8 @@ inductive ArmBindR (env : FrontEnv) (scope : List Local) (owner : TypeDecl) (v :
       BindersR env scope pats v.payload b → ArmBindR env scope owner v arm b
 
 theorem armBind_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {owner : TypeDecl} {v : VariantTy}
-    {arm : CTree} {b : Bound} (h : armBind fuel env scope owner v arm = some b) : ArmBindR env scope owner v arm b := by
-  unfold armBind at h
+    {arm : CTree} {b : Bound} (h : armBinding fuel env scope owner v arm = some b) : ArmBindR env scope owner v arm b := by
+  unfold armBinding at h
   simp only at h
   split at h
   · rename_i c
@@ -1182,7 +1182,7 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
     · intro env scope hd k v a rest m h
       rw [matchArmOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
-      cases hb : armBind (f + 1) env scope hd.owner v a with
+      cases hb : armBinding (f + 1) env scope hd.owner v a with
       | none => rw [hb] at h; cases h
       | some b =>
         rw [hb] at h
@@ -1191,7 +1191,7 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
         | none => rw [hl] at h; cases h
         | some list =>
           rw [hl] at h
-          simp only [armStmt] at h
+          simp only [armStmt, boundScope] at h
           cases hx : blockOf f env b.scope list with
           | none => rw [hx] at h; cases h
           | some body =>

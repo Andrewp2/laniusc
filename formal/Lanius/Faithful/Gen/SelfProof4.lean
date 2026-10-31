@@ -237,7 +237,7 @@ theorem step_length_of_mini_selfhost_CTree {prog : SrcProgram} {prims : Prims} {
   simp only [src_length_of_mini_selfhost_CTree] at h
   faithful []
 
-theorem step_length_of_mini_selfhost_VariantTy {prog : SrcProgram} {prims : Prims} {ix_length_of_mini_selfhost_VariantTy ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Nat} (fn : prog.funcs[ix_length_of_mini_selfhost_VariantTy]? = some (src_length_of_mini_selfhost_VariantTy ix_plus ix_length_of_mini_selfhost_VariantTy ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy)) (np : prims.isPrim ix_length_of_mini_selfhost_VariantTy = false)
+theorem step_length_of_mini_selfhost_VariantTy {prog : SrcProgram} {prims : Prims} {ix_length_of_mini_selfhost_VariantTy ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Nat} (fn : prog.funcs[ix_length_of_mini_selfhost_VariantTy]? = some (src_length_of_mini_selfhost_VariantTy ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy ix_length_of_mini_selfhost_VariantTy)) (np : prims.isPrim ix_length_of_mini_selfhost_VariantTy = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_VariantTy n)) {n : Nat}
     (ih_length_of_mini_selfhost_VariantTy : Certified (Stmt_length_of_mini_selfhost_VariantTy prog prims ix_length_of_mini_selfhost_VariantTy n)) :
