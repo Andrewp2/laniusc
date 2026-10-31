@@ -15,6 +15,28 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+def collectedWith (c : Collected) (f : FileDecls) : Collected :=
+  ({ decls := ({ types := c.decls.types ++ f.decls.types, fns := c.decls.fns ++ f.decls.fns, consts := c.decls.consts ++ f.decls.consts, imports := c.decls.imports ++ f.decls.imports, aliases := c.decls.aliases ++ f.decls.aliases, impls := c.decls.impls ++ f.decls.impls } : Decls), modules := c.modules ++ [f.home] } : Collected)
+
+def collectFiles (fuel : Nat) (roots : List CTree) (acc : Collected) : Option Collected :=
+  match roots with
+  | [] => some acc
+  | root :: rest =>
+    let ffile : Option FileDecls := fileDecls fuel root
+    match ffile with
+    | none => none
+    | some f => collectFiles fuel rest (collectedWith acc f)
+
+/-- The spellings a module gives its items: free functions, types, variants and constants. A local cannot be spelled like one, so a use has one reading. -/
+def fnNamesIn (fns : List FnDecl) (m : List (List Nat)) : List (List Nat) :=
+  match fns with
+  | [] => []
+  | f :: rest =>
+    if !f.inImpl && sameSpellings f.home m then
+      f.name :: fnNamesIn rest m
+    else
+      fnNamesIn rest m
+
 def typeNamesIn (types : List TypeDecl) (m : List (List Nat)) : List (List Nat) :=
   match types with
   | [] => []

@@ -155,10 +155,11 @@ Lean definition or judgment.
   files, and open handles are explicit semantic state. Randomness is consumed
   from an initial entropy stream, so a concrete execution remains reproducible.
 - Exhausting either secure entropy stream traps as `entropyExhausted`; it is not
-  misclassified as an unknown external function. A successful nonnegative
-  millisecond sleep advances monotonic and system clocks with nanosecond carry
-  and advances the whole-second compatibility clock. A negative sleep returns
-  `-1` without advancing time.
+  misclassified as an unknown external function. The monotonic and system
+  clocks are streams of readings (10-31, "Clock readings and secure bytes");
+  reading past one's end traps as `clockExhausted`. A successful nonnegative
+  millisecond sleep advances only the whole-second compatibility clock. A
+  negative sleep returns `-1` without advancing time.
 - Process exit is a terminal execution outcome distinct from both return and
   trap, and propagates through every enclosing expression, statement, and call.
 - Generic type and const parameters are substituted before core execution.
@@ -811,7 +812,8 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   to inline `syscall` code. The mini IR's `Stmt.sys kind target args`
   (`Instr.sys kind slot`, `Mini/Semantics.lean`) is one system call; its
   arguments are evaluated into three consecutive frame slots, and the
-  result lands in `target`. `Syscall.write`, `Syscall.read` and `Syscall.poll` exist.
+  result lands in `target`. `Syscall.write`, `Syscall.read`, `Syscall.poll`,
+  `Syscall.clock` and `Syscall.random` exist.
 - **`Syscall.write` at the mini level.** `[fd, address, count]` with fd 1 or
   2, count at most `maxTransfer`, and `address + count` within the heap
   limit; it appends `.write fd (heap bytes address..address+count)` to
@@ -831,11 +833,10 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   side is `World.State.standardOutput`/`standardError`; the link from
   Core's `write_byte`/`write_stdout` services to `.write` events (one event
   per call, the bytes Core appends) is the next part of F8.
-- **Not yet modeled (deferred).** `getrandom`/`secure_u32`, process
+- **Not yet modeled (deferred).** Process
   arguments and environment variables (the loader would have to place
-  `argv`/`envp`, now arbitrary memory), clock reads (`clock_gettime`; sleeping is done, "Host sleep"),
-  files, sockets and processes, the general `syscall6`, the allocator
-  externs (the verified compiler's `alloc` is the mini bump allocator over
+  `argv`/`envp`, now arbitrary memory), files, sockets and processes, the
+  general `syscall6`, the allocator externs (the verified compiler's `alloc` is the mini bump allocator over
   a heap the startup code provides, not `mmap`), and writes longer than
   `MAX_RW_COUNT` (Core would have to loop; a short write is not modeled).
 
@@ -878,7 +879,9 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
 
 - **`sleep_ms_i32(ms)` (host id 2^32 + 4) is `poll(NULL, 0, ms)`.** Core's
   meaning (`World.call .sleepMsI32`): -1 for a negative count; else 0, with
-  the world's clocks advanced by `ms` (`afterSleepMs`). laniusc's runtime
+  the whole-second compatibility clock advanced by `ms` (`afterSleepMs`; the
+  monotonic and system clocks are streams of readings, which a sleep does
+  not change). laniusc's runtime
   calls `nanosleep` with a timespec on the stack; the verified compiler
   calls `poll` with no fds instead (rax 7), which waits the same
   milliseconds and needs no memory, so neither the frame nor the heap
@@ -892,16 +895,62 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   `add rsi, r12` (`Syscall.rsiBytes`, same length, so every `Sys` is still
   34 bytes) and `mov eax, 7`; the kernel's `poll` is in TRUSTED_BASE.md
   section 8.
-- **The clocks are not observed.** Neither the mini heap nor the x86 model
-  has a clock, and `HeapCorr` does not mention Core's clocks
-  (`HeapCorr.sleep`), so the proof (`LowerEval.host_sleep`) is about the
-  result and the rest of the world only. Reading a clock
-  (`monotonic_read`, `system_read`) would need Core's clock to be a stream
-  of readings given before the run, like standard input, and is not done.
+- **The sleep is not observed.** `HeapCorr` does not mention the
+  compatibility clock (`HeapCorr.sleep`), so the proof
+  (`LowerEval.host_sleep`) is about the result and the rest of the world
+  only; the clocks a program can read are streams of readings ("Clock
+  readings and secure bytes").
 - **The oracle sleeps briefly.** A stdlib function's `milliseconds: i32`
   parameter gets small or negative counts (`SLEEP_MS`), so that calls end
   well inside the two-second timeout; gate step `stdlib-time` compares
   `std::time_checked::sleep_nonnegative_ms` with laniusc.
+
+## Clock readings and secure bytes (decided 10-31, F8)
+
+- **Streams fixed before the run, like standard input.** Core's world holds
+  `monotonicReadings` and `systemReadings`, the (seconds, nanoseconds)
+  readings the monotonic and the system clock give, one a read, and
+  `secureByteStream`, the secure random bytes; the process side (`Io`,
+  which the x86 state and the mini heap hold) has the same streams
+  (`monotonic`, `realtime`, `entropy`), and `HeapCorr` says they are equal
+  (`Streams`). The top theorems start Core from `startState io`, the
+  streams of the mini heap's or the loaded process's `io`, so they hold for
+  every reading and random byte the kernel could give. A sleep does not
+  move the readings: a real clock moves on its own, and a stream says what
+  it was each time it was read.
+- **`monotonic_read(ptr, len)` and `system_read(ptr, len)`.** -1 when `len`
+  is below 16; else the next reading of that clock as a 16-byte timespec
+  (`timespecBytes`, two little-endian 64-bit words) stored from `ptr`
+  (trapping where Core's store traps), the reading dropped, and 0. No
+  readings left traps as `clockExhausted`.
+- **`fill_secure_bytes(ptr, len)`** stores the next `len` secure bytes, drops
+  them, and returns `len`; fewer than `len` left traps as
+  `entropyExhausted` (Core's existing meaning).
+- **Reading past a stream's end is not specified.** The kernel's clocks and
+  random source do not run out, so a Core run that exhausts a stream is a
+  run the given streams do not describe: `clockExhausted` and
+  `entropyExhausted` are undefined traps (`undefinedTrap`), on which the
+  stop theorems promise nothing, as for raw memory errors.
+- **Host ids.** `monotonic_read`, `system_read` and `fill_secure_bytes` are
+  host functions 2^32 + 5, + 6 and + 7 (`hostFuncs`); the front end reads
+  their `extern "lanius_std"` declarations as those host calls (case
+  `host_clock`, which `compileSource` compiles).
+- **Lowering.** A clock read is `host_clock_code`: -1 when `len` is below
+  16, else `clock_gettime(clock, ptr)` (clock 1 for the monotonic clock, 0
+  for the system clock; `Syscall.clock`, rax 228, `add rsi, r12`) and 0.
+  `fill_secure_bytes` is `host_random_code`: `getrandom(ptr, chunk, 0)` of
+  chunks of at most 256 bytes until none are left to ask for, then `len`
+  as `i32` (`Syscall.random`, rax 318, `add rdi, r12`: the first argument
+  is the address). At the mini level `Syscall.clock` with clock 0 or 1, a
+  reading left and 16 bytes inside the heap stores the reading
+  (`timespecLE`, the same bytes as Core's `timespecBytes`) and drops it;
+  `Syscall.random` with flags 0, a count of at most 256 and no more than
+  the secure bytes left, inside the heap, stores and drops them. Proved
+  against `World.call` (`LowerEval.host_monotonicRead`, `host_systemRead`,
+  `host_fillSecureBytes`) and through the simulation (`clock_simulates`,
+  `random_simulates`); the kernel calls are in TRUSTED_BASE.md section 8.
+  The stdlib's callers pass a pointer the oracle cannot give, so there is
+  no oracle step for them.
 
 ## `for` over a range (decided 10-30, F4)
 

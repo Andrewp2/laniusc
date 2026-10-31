@@ -8,7 +8,7 @@ public import Lanius.Mini.Compiler.P.UintTy_half
 public import Lanius.Mini.Compiler.P.codeSize
 public import Lanius.Mini.Compiler.P.compileArgs
 public import Lanius.Mini.Compiler.P.compileModules
-public import Lanius.Mini.Compiler.P.linkedSize
+public import Lanius.Mini.Compiler.P.imageLimit
 public import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.arities

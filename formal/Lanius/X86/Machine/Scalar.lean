@@ -750,7 +750,15 @@ that no signal arrives (TRUSTED_BASE.md section 8):
   or all that are left, stores them from rsi on, and returns their count
   (standard input is a regular file, or a stream that delivers like one).
 - `poll` (rax 7) of no fds (rdi 0, rsi 0) with a timeout (rdx) below 2^31
-  milliseconds waits out the timeout and returns 0, changing nothing else. -/
+  milliseconds waits out the timeout and returns 0, changing nothing else.
+- `clock_gettime` (rax 228) of `CLOCK_REALTIME` or `CLOCK_MONOTONIC` (rdi 0
+  or 1) stores that clock's next reading as a `struct timespec` (16 bytes)
+  from rsi on and returns 0 (the clocks' readings are streams fixed before
+  the run, as standard input is).
+- `getrandom` (rax 318) of at most 256 bytes (rsi) with no flags (rdx 0)
+  stores the next that many secure random bytes from rdi on and returns
+  their count: Linux returns all of a request of at most 256 bytes, and a
+  signal does not interrupt it. -/
 inductive Kernel (before : State) : State → Prop where
   | write (number : before.registers 0 = 1) (fd : before.registers 7 = 1 ∨ before.registers 7 = 2)
       (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
@@ -765,6 +773,16 @@ inductive Kernel (before : State) : State → Prop where
   | poll (number : before.registers 0 = 7) (fds : before.registers 7 = 0) (nfds : before.registers 6 = 0)
       (timeout : (before.registers 2).toNat < 2 ^ 31) (r11 : BitVec 64) :
       Kernel before (before.syscalled 0 r11 before.memory before.io)
+  | clock (number : before.registers 0 = 228) (which : before.registers 7 = 0 ∨ before.registers 7 = 1)
+      (reading : Int × Nat) (next : (before.io.readings (before.registers 7)).head? = some reading) (r11 : BitVec 64) :
+      Kernel before (before.syscalled 0 r11 (writeBytes before.memory (before.registers 6) (timespecLE reading))
+        (before.io.afterReading (before.registers 7)))
+  | getrandom (number : before.registers 0 = 318) (flags : before.registers 2 = 0)
+      (count : (before.registers 6).toNat ≤ 256) (enough : (before.registers 6).toNat ≤ before.io.entropy.length)
+      (r11 : BitVec 64) :
+      Kernel before (before.syscalled (before.registers 6) r11
+        (writeBytes before.memory (before.registers 7) (before.io.entropy.take (before.registers 6).toNat))
+        { before.io with entropy := before.io.entropy.drop (before.registers 6).toNat })
 
 /-- Decoding consumes bytes actually loaded at RIP. Division must use
 `divided`, which also requires nonzero-divisor and quotient-range evidence;

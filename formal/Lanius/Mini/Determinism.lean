@@ -89,7 +89,7 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State} {heap : Heap} (start : heap.cursor = 1)
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
-    (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io.input) (.call f (args.map Core.Expr.value)) =
+    (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io) (.call f (args.map Core.Expr.value)) =
       .done v final)
     (fits : final.heap.nextAddress ≤ heap.limit) :
     ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧

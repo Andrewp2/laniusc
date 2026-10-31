@@ -13,6 +13,10 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+/-- Images are small enough for every rel32 displacement. -/
+def imageLimit : Nat :=
+  1073741824
+
 /-- The size of functions laid out back to back: the image's length, found without a walk over the image. -/
 def linkedSize (codes : List Code) : Nat :=
   match codes with

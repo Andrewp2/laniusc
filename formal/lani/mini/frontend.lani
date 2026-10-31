@@ -1474,6 +1474,24 @@ pub fn text_sleep_ms_i32() -> List<usize> {
     return t;
 }
 
+// monotonic_read
+pub fn text_monotonic_read() -> List<usize> {
+    let t: List<usize> = cons(109, cons(111, cons(110, cons(111, cons(116, cons(111, cons(110, cons(105, cons(99, cons(95, cons(114, cons(101, cons(97, single(100))))))))))))));
+    return t;
+}
+
+// system_read
+pub fn text_system_read() -> List<usize> {
+    let t: List<usize> = cons(115, cons(121, cons(115, cons(116, cons(101, cons(109, cons(95, cons(114, cons(101, cons(97, single(100)))))))))));
+    return t;
+}
+
+// fill_secure_bytes
+pub fn text_fill_secure_bytes() -> List<usize> {
+    let t: List<usize> = cons(102, cons(105, cons(108, cons(108, cons(95, cons(115, cons(101, cons(99, cons(117, cons(114, cons(101, cons(95, cons(98, cons(121, cons(116, cons(101, single(115)))))))))))))))));
+    return t;
+}
+
 // The Core function id of the host service an `extern "lanius_std" fn` of
 // this name stands for (hostFuncs in SrcProgram.toCore), 0 for none.
 pub fn host_id(name: List<usize>) -> usize {
@@ -1491,6 +1509,15 @@ pub fn host_id(name: List<usize>) -> usize {
     }
     if (same_text(name, text_sleep_ms_i32())) {
         return 4294967300;
+    }
+    if (same_text(name, text_monotonic_read())) {
+        return 4294967301;
+    }
+    if (same_text(name, text_system_read())) {
+        return 4294967302;
+    }
+    if (same_text(name, text_fill_secure_bytes())) {
+        return 4294967303;
     }
     return 0;
 }

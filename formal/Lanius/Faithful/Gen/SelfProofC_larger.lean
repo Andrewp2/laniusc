@@ -10,8 +10,8 @@ public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_codeSize
 public import Lanius.Faithful.Gen.SelfStmtC_compileArgs
+public import Lanius.Faithful.Gen.SelfStmtC_imageLimit
 public import Lanius.Faithful.Gen.SelfStmtC_larger
-public import Lanius.Faithful.Gen.SelfStmtC_linkedSize
 public import Lanius.Faithful.Gen.SelfStmtC_loadAtBytes
 import all Lanius.Faithful.Gen.SelfSrcC_larger
 import all Lanius.Mini.Compiler.P.larger

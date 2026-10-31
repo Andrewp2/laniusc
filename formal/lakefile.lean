@@ -5,6 +5,10 @@ open Lake DSL
 package «lanius-formal» where
   version := v!"0.1.0"
   leanOptions := #[⟨`experimental.module, true⟩]
+  -- Share build outputs between worktrees: a module whose inputs match one
+  -- built anywhere is restored from Lake's cache instead of rebuilt.
+  enableArtifactCache := true
+  restoreAllArtifacts := true
 
 @[default_target]
 lean_lib Lanius

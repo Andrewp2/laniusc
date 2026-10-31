@@ -28,14 +28,6 @@ abbrev Stmt_collect (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List (List Nat)} {x2 : List Lanius.Mini.CTree} {x3 : Lanius.Mini.Decls} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 82 RepCTree) x2 v2 → RepDecls x3 v3 →
     (RepOption 164 RepDecls) (Lanius.Mini.collect x0 x1 x2 x3) w
 
-abbrev Stmt_collect_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {x2 : Lanius.Mini.Collected} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 82 RepCTree) x1 v1 → RepCollected x2 v2 →
-    (RepOption 132 RepCollected) (Lanius.Mini.collectFiles x0 x1 x2) w
-
-abbrev Stmt_collected_with (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Collected} {x1 : Lanius.Mini.FileDecls} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCollected x0 v0 → RepFileDecls x1 v1 →
-    RepCollected (Lanius.Mini.collectedWith x0 x1) w
-
 abbrev Stmt_extern_tree (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
     RepCTree (Lanius.Mini.externTree x0) w
@@ -51,10 +43,6 @@ abbrev Stmt_file_decls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 abbrev Stmt_file_items (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Option (List (List Nat))} {x2 : List Lanius.Mini.CTree} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepOption 138 (RepList 31 (RepList 25 RepNat))) x1 v1 → (RepList 82 RepCTree) x2 v2 →
     (RepOption 101 RepFileDecls) (Lanius.Mini.fileItems x0 x1 x2) w
-
-abbrev Stmt_fn_names_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.FnDecl} {x1 : List (List Nat)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 109 RepFnDecl) x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 →
-    (RepList 31 (RepList 25 RepNat)) (Lanius.Mini.fnNamesIn x0 x1) w
 
 abbrev Stmt_fns_decls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Option (List Lanius.Mini.FnDecl)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 193 (RepList 109 RepFnDecl)) x0 v0 →
@@ -80,9 +68,17 @@ abbrev Stmt_methods_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Nat} {x1 : List (List Nat)} {x2 : List (List Nat)} {x3 : Lanius.Mini.CTree} {x4 : Lanius.Mini.CTree} {x5 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → (RepList 31 (RepList 25 RepNat)) x1 v1 → (RepList 31 (RepList 25 RepNat)) x2 v2 → RepCTree x3 v3 → RepCTree x4 v4 → (RepList 82 RepCTree) x5 v5 →
     (RepOption 193 (RepList 109 RepFnDecl)) (Lanius.Mini.methodsOf x0 x1 x2 x3 x4 x5) w
 
+abbrev Stmt_text_fill_secure_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 25 RepNat) (Lanius.Mini.textFillSecureBytes) w
+
 abbrev Stmt_text_lanius_std (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepList 25 RepNat) (Lanius.Mini.textLaniusStd) w
+
+abbrev Stmt_text_monotonic_read (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 25 RepNat) (Lanius.Mini.textMonotonicRead) w
 
 abbrev Stmt_text_read_stdin (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
@@ -91,6 +87,10 @@ abbrev Stmt_text_read_stdin (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
 abbrev Stmt_text_sleep_ms_i32 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     (RepList 25 RepNat) (Lanius.Mini.textSleepMsI32) w
+
+abbrev Stmt_text_system_read (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    (RepList 25 RepNat) (Lanius.Mini.textSystemRead) w
 
 abbrev Stmt_text_write_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

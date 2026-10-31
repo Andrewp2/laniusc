@@ -39,7 +39,7 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `ce06ceef2652d58e` (4,194 constants). This covers Core's
+definitions `0c187d1f00ec73fe` (4,230 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). `trusted_check.py` writes each
 constant's own hash to its work directory's `definitions.txt`, to find which
@@ -49,13 +49,14 @@ one changed.
 
 #### `Lanius.Mini.process_exits`
 
-statement `000000004b242043`. If `compileSource sp = some binary`,
+statement `000000006f650e63`. If `compileSource sp = some binary`,
 `elfFile binary entry stack heap = some file`, and function `entry` of `sp`
-has no parameters: whenever Core runs `entry()` from `startState input` to
+has no parameters: whenever Core runs `entry()` from `startState given` to
 a value `v` with the heap ending within `heap` bytes, then Core's final
 standard output and error are what a write trace puts on fds 1 and 2
 (`outputOf`), and from every state Linux may leave for `file` (`Loaded`)
-with `input` as its standard input, either some run reaches `exit`
+whose streams are `given` (standard input, the clocks' readings and the
+secure bytes, `s.io = given`), either some run reaches `exit`
 (`Exits`) with that trace and the last of `v`'s slots as the status, every
 run of that length agreeing but for flags (`Det`), or the stack is too
 small for the call's depth and the process faults. Rests on sections 3, 6,
@@ -63,7 +64,7 @@ small for the call's depth and the process faults. Rests on sections 3, 6,
 
 #### `Lanius.Mini.process_behaviour`
 
-statement `00000000ec6e7482`. Same premises, for any run from a `Loaded`
+statement `0000000025d83224`. Same premises, for any run from a `Loaded`
 state to a state with no step that is not a fault: Core's run of `entry()`
 finishes within the heap and the run is at `exit` with the last result
 slot, or Core's run reaches an undefined trap (`undefinedTrap`) within the
@@ -71,28 +72,28 @@ heap. Rests on the same sections.
 
 #### `Lanius.Mini.textProcess_exits`
 
-statement `00000000d30895fb`. `process_exits` from source text: if
+statement `00000000c0c13d4b`. `process_exits` from source text: if
 `compileText files = some binary` and `elfFile` gives `file`, the files'
 texts have a reading `sp` (`TextReading`, section 4), the only one, and
 `process_exits`'s conclusion holds of `sp`. Adds section 4.
 
 #### `Lanius.Mini.textProcess_behaviour`
 
-statement `0000000008c4cd34`. `process_behaviour` from source text, as
+statement `000000002cdd1cd1`. `process_behaviour` from source text, as
 `textProcess_exits` is `process_exits`.
 
 ### Source text (`Lanius/Mini/TextCorrect.lean`)
 
 #### `Lanius.Mini.compileText_correct`
 
-statement `00000000e59443cb`. If `compileText files = some binary`, the
+statement `0000000023824272`. If `compileText files = some binary`, the
 files' texts have exactly one reading `sp`, and `compileSource_correct`'s
 conclusion holds of `sp` and `binary`, from the start state of the mini
-heap's input. Rests on sections 3, 4, 6 and 8.
+heap's streams (standard input, the clocks' readings, the secure bytes). Rests on sections 3, 4, 6 and 8.
 
 #### `Lanius.Mini.compileText_behaviour`
 
-statement `00000000a900a226`. If `compileText files = some binary`, the
+statement `000000003d3267c8`. If `compileText files = some binary`, the
 texts have one reading `sp`, and `compileSource_behaviour`'s conclusion
 holds of it.
 
@@ -105,10 +106,11 @@ Rests on section 4 only.
 
 #### `Lanius.Mini.compileSource_correct`
 
-statement `00000000aa3c5fa5`. If `compileSource sp = some binary`, `f` is a
+statement `000000009c74f811`. If `compileSource sp = some binary`, `f` is a
 function of `sp`, and `args` are values of its parameter types held in
 slots `bits` (`FieldsHold`), and Core runs `f(args)` from the start state
-(`startState`) to `v` with the heap ending within the limit: there are a
+(`startState` of the heap's streams: standard input, the clocks' readings
+and the secure bytes) to `v` with the heap ending within the limit: there are a
 depth and result slots representing `v` (`HoldsAt`), with Core's final
 standard output and error those of the mini heap's trace, such that from
 every x86 state meeting the caller's obligations, with a stack window of at
@@ -125,7 +127,7 @@ live cells (`State.Fresh`) whose heap and world the mini heap represents
 
 #### `Lanius.Mini.compileSource_stops`
 
-statement `000000005d978563`. Same premises on the compiler and the
+statement `000000006f45523e`. Same premises on the compiler and the
 arguments, a fresh heap of limit at least 1 and the caller's obligations
 (any window up to 2^62): if every fuel of Core's run of `f(args)` fails
 (`Failing`: runs out, traps with a defined trap, or ends past the heap
@@ -133,13 +135,13 @@ limit), then every run of the code that stops, stops at a fault (`Faults`).
 
 #### `Lanius.Mini.compileSource_behaviour`
 
-statement `000000006f6cc661`. Same premises: a run to a state with no step
+statement `0000000066f9c1d3`. Same premises: a run to a state with no step
 that is not a fault comes from a Core run of `f(args)` that finished within
 the heap limit, or reached an undefined trap within it.
 
 #### `Lanius.Mini.compileSource_deterministic`
 
-statement `00000000f12a1932`. `compileSource_correct` (without the output
+statement `000000009882455b`. `compileSource_correct` (without the output
 conjuncts) with: every run of the same length ends `DataEq` to the
 returning one (registers, `rip` and memory equal; section 7).
 
@@ -891,9 +893,21 @@ obligation on the x86 state below from what Linux does. Trusted about Linux:
   model assumes the call does not fault, and the verified compiler's
   buffers are inside its heap, whose end is below 2^62 (`HeapAt`). Core's
   `read_stdin` is lowered to this `read` (SEMANTIC_DECISIONS.md, "Host
-  reads"). `Loaded` leaves `input` as the stream the process was given:
-  `process_exits` takes it as a premise (`s.io.input = input`), with Core's
-  world starting from the same `standardInput` (`startState input`).
+  reads"). `Loaded` leaves `io` as the process was given it:
+  `process_exits` takes it as a premise (`s.io = given`), with Core's world
+  starting from the same streams (`startState given`).
+- **The clocks' readings and the secure bytes are streams.** The
+  state's `io` also holds `monotonic` and `realtime`, the readings
+  (seconds, nanoseconds) the two clocks will give, one a read, and
+  `entropy`, the random bytes `getrandom` will deliver. They are fixed
+  when the process starts, like `input`, so a run's behaviour is a
+  function of them; what Linux's clocks and random source actually give is
+  some such stream, and the theorems hold for every one. Core's world
+  starts from the same streams (`startState`: `monotonicReadings`,
+  `systemReadings`, `secureByteStream`), and a Core run that reads past
+  their end traps (`clockExhausted`, `entropyExhausted`), a trap the
+  theorems say nothing about (`undefinedTrap`), since the kernel's streams
+  do not end. `clock_gettime` and `getrandom` read them (below).
 - **The kernel's `poll` with no fds (`Kernel.poll`, roadmap F8).**
   With rax 7, rdi 0 (no array), rsi 0 (no fds) and an rdx below 2^31 (a
   nonnegative `int` timeout in milliseconds), the call returns 0 in rax,
@@ -907,8 +921,36 @@ obligation on the x86 state below from what Linux does. Trusted about Linux:
   for 0 and would report failure, but the theorems do not cover it). How
   long it waits is not modeled: the x86 model has no clock. Core's
   `sleep_ms_i32` is lowered to this `poll` (SEMANTIC_DECISIONS.md, "Host
-  sleep"); Core's world advances its clocks by the count, which no modeled
-  call can observe.
+  sleep"); Core's world advances only its whole-second compatibility clock
+  by the count, which no modeled call reads.
+- **The kernel's `clock_gettime` (`Kernel.clock`, roadmap F8, 10-31).**
+  With rax 228 and rdi 0 (`CLOCK_REALTIME`) or 1 (`CLOCK_MONOTONIC`), the
+  call stores the next reading of that clock's stream (`Io.readings`:
+  `monotonic` for 1, `realtime` for 0) from rsi on as a `struct timespec`,
+  16 bytes, `tv_sec` then `tv_nsec`, each a little-endian 64-bit word
+  (`timespecLE`), drops the reading (`Io.afterReading`), returns 0 in rax,
+  and leaves rcx, rip, r11, the other registers and RFLAGS as for `write`.
+  The compiled code passes a heap address with 16 bytes inside the heap
+  (`add rsi, r12`). So it is trusted that `clock_gettime` of these two
+  clocks into writable memory always succeeds (Linux returns EFAULT only
+  for an address it cannot write, and EINVAL only for other clocks), that
+  the seconds and nanoseconds it gives are some stream of readings fixed
+  for the run (the code makes the system call itself, not the vDSO
+  call). When the stream has no
+  reading left the model has no step: such runs are outside the theorems,
+  as Core's `clockExhausted` is.
+- **The kernel's `getrandom` (`Kernel.getrandom`, roadmap F8, 10-31).**
+  With rax 318, rsi (the count) at most 256, rdx 0 (no flags) and at
+  least that many bytes left in `entropy`, the call stores the next count
+  of them from rdi on, drops them, returns the count in rax, and leaves
+  the other registers as for `write`. The compiled code asks for at most
+  256 bytes at a time, to a heap address inside the heap (`add rdi,
+  r12`). So it is trusted that such a `getrandom` returns every byte asked
+  for and is not interrupted (Linux's documented guarantee for requests of
+  at most 256 bytes once the entropy pool is initialized; before that the
+  call blocks, which the model does not see), that it never fails on
+  writable memory, and that the bytes it gives are some stream fixed for
+  the run.
   No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
   runtime").
 - The startup code sets rsp, r12 to r15, r10 (the heap's top) and rbx (the

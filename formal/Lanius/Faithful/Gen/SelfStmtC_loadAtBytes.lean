@@ -48,10 +48,6 @@ abbrev Stmt_frame_size (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
     RepNat (Lanius.Mini.frameSize x0) w
 
-abbrev Stmt_image_limit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.imageLimit) w
-
 abbrev Stmt_layout (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.Code} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 51 RepCode) x1 v1 →
     (RepList 25 RepNat) (Lanius.Mini.layout x0 x1) w
@@ -99,6 +95,10 @@ abbrev Stmt_sys_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
 abbrev Stmt_syscall_linux_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Syscall} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSyscall x0 v0 →
     RepU8 (Lanius.Mini.syscallLinuxByte x0) w
+
+abbrev Stmt_syscall_linux_high (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Syscall} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSyscall x0 v0 →
+    RepU8 (Lanius.Mini.syscallLinuxHigh x0) w
 
 abbrev Stmt_syscall_rsi_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Syscall} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSyscall x0 v0 →
