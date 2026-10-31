@@ -1,0 +1,17 @@
+struct V { x: f32, y: f64 }
+
+fn mix(a: f32, b: f32, c: f64, n: i32) -> f64 {
+    let s: f32 = a * b - (n as f32);
+    let v: V = V { x: s, y: c };
+    if (a < b || a >= b && a != b) {
+        v.y = v.y + (s as f64);
+    }
+    if (c <= c || c > -c) {
+        return -c;
+    }
+    return v.y * ((v.x as f64) - ((v.y as f32) as f64));
+}
+
+fn twice(x: f64) -> f64 {
+    return mix(1 as f32, 2 as f32, x, 3) + mix(1 as f32, 2 as f32, x, 3);
+}

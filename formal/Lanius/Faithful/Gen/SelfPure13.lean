@@ -324,27 +324,27 @@ theorem pure1391 : PureFunc prog prims outside src1391 = true :=
 theorem pure1392 : PureFunc prog prims outside src1392 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::single_name -/
-theorem pure1394 : PureFunc prog prims outside src1394 = true :=
+/-- mini::selfhost::same_float -/
+theorem pure1393 : PureFunc prog prims outside src1393 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::param_ty -/
+/-- mini::selfhost::single_name -/
 theorem pure1395 : PureFunc prog prims outside src1395 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::prim_or_named -/
+/-- mini::selfhost::param_ty -/
 theorem pure1396 : PureFunc prog prims outside src1396 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::named_of -/
+/-- mini::selfhost::prim_or_named -/
 theorem pure1397 : PureFunc prog prims outside src1397 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::split_last -/
+/-- mini::selfhost::named_of -/
 theorem pure1398 : PureFunc prog prims outside src1398 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::find_alias -/
+/-- mini::selfhost::split_last -/
 theorem pure1399 : PureFunc prog prims outside src1399 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
@@ -444,8 +444,8 @@ theorem chunk13 : FuncsOk prog prims outside 1300 part13 :=
   funcsOk_cons (funcOk_pure pure1390) <|
   funcsOk_cons (funcOk_pure pure1391) <|
   funcsOk_cons (funcOk_pure pure1392) <|
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1393 core::mem::size_of<mini::selfhost::Ty>, outside
-  funcsOk_cons (funcOk_pure pure1394) <|
+  funcsOk_cons (funcOk_pure pure1393) <|
+  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1394 core::mem::size_of<mini::selfhost::Ty>, outside
   funcsOk_cons (funcOk_pure pure1395) <|
   funcsOk_cons (funcOk_pure pure1396) <|
   funcsOk_cons (funcOk_pure pure1397) <|

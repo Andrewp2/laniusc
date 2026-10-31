@@ -99,6 +99,15 @@ theorem step_find_const {prog : SrcProgram} {prims : Prims} {ix_find_const ix_un
   simp only [src_find_const] at h
   faithful [Lanius.Mini.findConst]
 
+theorem proof_float_code {prog : SrcProgram} {prims : Prims} {ix_float_code : Nat} (fn : prog.funcs[ix_float_code]? = some (src_float_code)) (np : prims.isPrim ix_float_code = false) {n : Nat} :
+    Stmt_float_code prog prims ix_float_code n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_float_code] at h
+  faithful [Lanius.Mini.floatCode]
+
 theorem step_imported_variants {prog : SrcProgram} {prims : Prims} {ix_imported_variants ix_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_VariantAt ix_imported_variants_at : Nat} (fn : prog.funcs[ix_imported_variants]? = some (src_imported_variants ix_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl ix_empty_of_mini_selfhost_VariantAt ix_imported_variants_at)) (np : prims.isPrim ix_imported_variants = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_ImportDecl n))
     (ext_empty_of_mini_selfhost_VariantAt : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_VariantAt prog prims ix_empty_of_mini_selfhost_VariantAt n)) {n : Nat}
@@ -138,6 +147,16 @@ theorem proof_only_variant {prog : SrcProgram} {prims : Prims} {ix_only_variant 
   simp only [src_only_variant] at h
   faithful [Lanius.Mini.onlyVariant]
 
+theorem proof_same_float {prog : SrcProgram} {prims : Prims} {ix_same_float ix_float_code : Nat} (fn : prog.funcs[ix_same_float]? = some (src_same_float ix_float_code)) (np : prims.isPrim ix_same_float = false)
+    (ext_float_code : Certified (∀ {n : Nat}, Stmt_float_code prog prims ix_float_code n)) {n : Nat} :
+    Stmt_same_float prog prims ix_same_float n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_same_float] at h
+  faithful [Lanius.Mini.sameFloat]
+
 theorem proof_same_inst {prog : SrcProgram} {prims : Prims} {ix_same_inst ix_same_tys : Nat} (fn : prog.funcs[ix_same_inst]? = some (src_same_inst ix_same_tys)) (np : prims.isPrim ix_same_inst = false)
     (ext_same_tys : Certified (∀ {n : Nat}, Stmt_same_tys prog prims ix_same_tys n)) {n : Nat} :
     Stmt_same_inst prog prims ix_same_inst n := by
@@ -148,10 +167,11 @@ theorem proof_same_inst {prog : SrcProgram} {prims : Prims} {ix_same_inst ix_sam
   simp only [src_same_inst] at h
   faithful [Lanius.Mini.sameInst]
 
-theorem step_same_ty {prog : SrcProgram} {prims : Prims} {ix_same_ty ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_same_tys ix_uint_code : Nat} (fn : prog.funcs[ix_same_ty]? = some (src_same_ty ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_same_tys ix_same_ty ix_uint_code)) (np : prims.isPrim ix_same_ty = false)
+theorem step_same_ty {prog : SrcProgram} {prims : Prims} {ix_same_ty ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_same_tys ix_uint_code ix_same_float : Nat} (fn : prog.funcs[ix_same_ty]? = some (src_same_ty ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty ix_unbox_of_mini_selfhost_Ty ix_same_tys ix_same_ty ix_uint_code ix_same_float)) (np : prims.isPrim ix_same_ty = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Ty n))
     (ext_unbox_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Ty prog prims ix_unbox_of_mini_selfhost_Ty n))
-    (ext_uint_code : Certified (∀ {n : Nat}, Stmt_uint_code prog prims ix_uint_code n)) {n : Nat}
+    (ext_uint_code : Certified (∀ {n : Nat}, Stmt_uint_code prog prims ix_uint_code n))
+    (ext_same_float : Certified (∀ {n : Nat}, Stmt_same_float prog prims ix_same_float n)) {n : Nat}
     (ih_same_tys : Certified (Stmt_same_tys prog prims ix_same_tys n))
     (ih_same_ty : Certified (Stmt_same_ty prog prims ix_same_ty n)) :
     Stmt_same_ty prog prims ix_same_ty (n + 1) := by

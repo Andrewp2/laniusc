@@ -67,6 +67,8 @@ inductive Ty where
   | tyPtr : Ty
   | tyIsize : Ty
   | tyChar : Ty
+  /-- f32 or f64 -/
+  | tyFloat : FloatTy → Ty
   | tySlice : Ty → Ty
   | tyNamed : Nat → (List Ty) → Ty
   | tySint : UintTy → Ty

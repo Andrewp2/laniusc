@@ -51,6 +51,8 @@ partial def tyName (decls : Decls) : Ty → String
   | .tyPtr => "ptr"
   | .tyIsize => "isize"
   | .tyChar => "char"
+  | .tyFloat .f32 => "f32"
+  | .tyFloat .f64 => "f64"
   | .tySint k => sintName k
   | .tySlice e => s!"[{tyName decls e}]"
   | .tyNamed d args =>

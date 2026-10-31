@@ -27,6 +27,7 @@ def lowerTy (fuel : Nat) (decls : Decls) (table : List Inst) (t : Ty) : Option S
     | .tyPtr => some SrcType.ptr
     | .tyIsize => some SrcType.isize
     | .tyChar => some SrcType.char
+    | .tyFloat ft => some (SrcType.float ft)
     | .tySlice e => sliceType (lowerTy (fuel - 1) decls table e)
     | .tyNamed d args => lowerNamed (fuel - 1) decls table d args
     | .tySint k => some (SrcType.sint k)

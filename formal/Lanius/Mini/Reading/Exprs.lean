@@ -443,6 +443,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
       · rw [if_neg z] at h; cases h
     | tyIsize => cases h; exact .isize
     | tyChar => cases h
+    | tyFloat ft => cases h
     | tyBool => cases h
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
@@ -461,6 +462,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyPtr => cases h
     | tyIsize => cases h
     | tyChar => cases h
+    | tyFloat ft => cases h
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
     | tySint _ => cases h
@@ -476,6 +478,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
       exact .negIsize
     | tyBool => cases h
     | tyChar => cases h
+    | tyFloat ft => cases h
     | tyUint _ => cases h
     | tyPtr => cases h
     | tySlice _ => cases h
@@ -561,6 +564,7 @@ theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wid
       · rw [if_neg (by cases negative <;> simp_all)] at h; cases h
   | tyBool => cases h
   | tyChar => cases h
+  | tyFloat ft => cases h
   | tyPtr => cases h
   | tySlice _ => cases h
   | tyNamed _ _ => cases h
@@ -731,6 +735,7 @@ theorem memberOf_sound {env : FrontEnv} {scope : List Local} {primary tail : CTr
         | tyPtr => rw [ht] at hf; cases hf
         | tyIsize => rw [ht] at hf; cases hf
         | tyChar => rw [ht] at hf; cases hf
+        | tyFloat ft => rw [ht] at hf; cases hf
         | tySlice _ => rw [ht] at hf; cases hf
         | tySint _ => rw [ht] at hf; cases hf
   · rw [if_neg (by simpa using c)] at h; cases h
@@ -745,6 +750,7 @@ inductive ScalarTy : Ty → SrcType → Prop
   | ptr : ScalarTy .tyPtr .ptr
   | isize : ScalarTy .tyIsize .isize
   | char : ScalarTy .tyChar .char
+  | float {ft : FloatTy} : ScalarTy (.tyFloat ft) (.float ft)
   | sint {k : UintTy} : ScalarTy (.tySint k) (.sint k)
 
 theorem scalarSrc_sound {t : Ty} {s : SrcType} (h : scalarSrc t = some s) : ScalarTy t s := by

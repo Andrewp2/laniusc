@@ -103,6 +103,7 @@ def tyKnown (table : List Inst) (t : Ty) : Bool :=
   | .tyPtr => true
   | .tyIsize => true
   | .tyChar => true
+  | .tyFloat ft => true
   | .tySlice e => tyKnown table e
   | .tyNamed d args => instMember table ({ decl := d, args := args } : Inst)
   | .tySint k => true
@@ -145,6 +146,7 @@ def closeTy (fuel : Nat) (t : Tables) (ty : Ty) : Option SrcType :=
     | .tyPtr => some SrcType.ptr
     | .tyIsize => some SrcType.isize
     | .tyChar => some SrcType.char
+    | .tyFloat ft => some (SrcType.float ft)
     | .tySlice e => sliceType (closeTy (fuel - 1) t e)
     | .tyNamed d args => closeNamed fuel t d args (instIndex t.types ({ decl := d, args := args } : Inst) 0)
     | .tySint k => some (SrcType.sint k)

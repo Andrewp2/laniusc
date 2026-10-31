@@ -105,6 +105,7 @@ def sliceElem (t : Ty) : Option Ty :=
   | .tyPtr => none
   | .tyIsize => none
   | .tyChar => none
+  | .tyFloat ft => none
   | .tySlice e => some e
   | .tyNamed d args => none
   | .tySint k => none
@@ -117,6 +118,7 @@ def namedParts (t : Ty) : Option Inst :=
   | .tyPtr => none
   | .tyIsize => none
   | .tyChar => none
+  | .tyFloat ft => none
   | .tySlice e => none
   | .tyNamed d args => some ({ decl := d, args := args } : Inst)
   | .tySint k => none

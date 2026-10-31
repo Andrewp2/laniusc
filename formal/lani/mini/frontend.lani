@@ -803,7 +803,7 @@ pub fn spelled5(name: List<usize>, a: usize, b: usize, c: usize, d: usize, e: us
     };
 }
 
-// i32, bool, u8, u16, u32, u64, usize, ptr, isize, i8, i16, i64, char
+// i32, bool, u8, u16, u32, u64, usize, ptr, isize, i8, i16, i64, char, f32, f64
 pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     if (spelled3(name, 105, 51, 50)) {
         return Some(I32);
@@ -843,6 +843,12 @@ pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     }
     if (spelled4(name, 99, 104, 97, 114)) {
         return Some(SrcType::Char);
+    }
+    if (spelled3(name, 102, 51, 50)) {
+        return Some(SrcType::Float(F32));
+    }
+    if (spelled3(name, 102, 54, 52)) {
+        return Some(SrcType::Float(F64));
     }
     return None;
 }
@@ -1052,6 +1058,8 @@ pub enum Ty {
     TyPtr,
     TyIsize,
     TyChar,
+    // f32 or f64
+    TyFloat(FloatTy),
     TySlice(Box<Ty>),
     TyNamed(usize, Box<List<Ty>>),
     TySint(UintTy),
@@ -1744,6 +1752,17 @@ pub fn uint_code(u: UintTy) -> usize {
     };
 }
 
+pub fn float_code(f: FloatTy) -> usize {
+    return match (f) {
+        F32 -> 0,
+        F64 -> 1,
+    };
+}
+
+pub fn same_float(f: FloatTy, g: FloatTy) -> bool {
+    return float_code(f) == float_code(g);
+}
+
 // extract: mutual begin
 pub fn same_ty(a: Ty, b: Ty) -> bool {
     return match (a) {
@@ -1754,6 +1773,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1765,6 +1785,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1776,6 +1797,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1787,6 +1809,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> true,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1798,6 +1821,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> true,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1809,6 +1833,19 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> true,
+            TyFloat(g) -> false,
+            TySlice(f) -> false,
+            TyNamed(e, bs) -> false,
+            TySint(v) -> false,
+        },
+        TyFloat(f) -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TyIsize -> false,
+            TyChar -> false,
+            TyFloat(g) -> same_float(f, g),
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1820,6 +1857,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> same_ty(unbox(x), unbox(f)),
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1831,6 +1869,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> (d == e) && same_tys(unbox(args), unbox(bs)),
             TySint(v) -> false,
@@ -1842,6 +1881,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> uint_code(u) == uint_code(v),
@@ -2031,7 +2071,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         Unit -> None,
         Isize -> Some(TyIsize),
         SrcType::Char -> Some(TyChar),
-        SrcType::Float(ft) -> None,
+        SrcType::Float(ft) -> Some(TyFloat(ft)),
         Sint(sk) -> Some(TySint(sk)),
     };
 }
@@ -2044,6 +2084,7 @@ pub fn scalar_src(t: Ty) -> core::option::Option<SrcType> {
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
+        TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> None,
         TyNamed(d, args) -> None,
         TySint(k) -> Some(Sint(k)),
@@ -2382,6 +2423,7 @@ pub fn lower_ty(fuel: usize, decls: Decls, table: List<Inst>, t: Ty) -> core::op
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
+        TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> slice_type(lower_ty(minus(fuel, 1), decls, table, unbox(e))),
         TyNamed(d, args) -> lower_named(minus(fuel, 1), decls, table, d, unbox(args)),
         TySint(k) -> Some(Sint(k)),
@@ -2466,6 +2508,7 @@ pub fn ty_insts(fuel: usize, decls: Decls, t: Ty) -> core::option::Option<List<I
         TyPtr -> Some(empty()),
         TyIsize -> Some(empty()),
         TyChar -> Some(empty()),
+        TyFloat(ft) -> Some(empty()),
         TySlice(e) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
         TyNamed(d, args) -> cons_inst(Inst { decl: d, args: unbox(args) }, named_insts(minus(fuel, 1), decls, d, unbox(args))),
         TySint(k) -> Some(empty()),
@@ -2883,6 +2926,7 @@ pub fn field_index(env: FrontEnv, t: Ty, name: List<usize>) -> core::option::Opt
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> field_in(get(env.decls.types, d), name),
         TySint(k) -> None,
@@ -3068,6 +3112,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> null_const(k),
             TyIsize -> Some(Cast(Isize, boxed(e))),
             TyChar -> None,
+            TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> sint_const(u, k),
@@ -3079,6 +3124,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> None,
             TyIsize -> None,
             TyChar -> None,
+            TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> None,
@@ -3093,6 +3139,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> None,
             TyIsize -> negated_int(unbox(x), Negate(boxed(Cast(Isize, x)))),
             TyChar -> None,
+            TyFloat(ft) -> None,
             TySlice(y) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> neg_sint_const(u, unbox(x)),
@@ -3108,6 +3155,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> None,
             TyIsize -> None,
             TyChar -> Some(e),
+            TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> None,
@@ -3189,6 +3237,7 @@ pub fn wide_of(ty: Ty, negative: bool, n: usize) -> core::option::Option<SrcExpr
         TyPtr -> None,
         TyIsize -> wide_isize(negative, n),
         TyChar -> None,
+        TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> None,
         TySint(u) -> wide_sint(u, negative, n),
@@ -3547,6 +3596,7 @@ pub fn struct_field_tys(fuel: usize, decls: Decls, t: Ty) -> core::option::Optio
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> field_tys(fuel, decls, d, unbox(args)),
         TySint(k) -> None,
@@ -3695,6 +3745,7 @@ pub fn slice_elem(t: Ty) -> core::option::Option<Ty> {
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyFloat(ft) -> None,
         TySlice(e) -> Some(unbox(e)),
         TyNamed(d, args) -> None,
         TySint(k) -> None,
@@ -3709,6 +3760,7 @@ pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> Some(Inst { decl: d, args: unbox(args) }),
         TySint(k) -> None,
@@ -6129,6 +6181,7 @@ pub fn is_ptr_ty(t: Ty) -> bool {
         TyPtr -> true,
         TyIsize -> false,
         TyChar -> false,
+        TyFloat(ft) -> false,
         TySlice(e) -> false,
         TyNamed(d, args) -> false,
         TySint(k) -> false,
@@ -6978,6 +7031,7 @@ pub fn ty_known(table: List<Inst>, t: Ty) -> bool {
         TyPtr -> true,
         TyIsize -> true,
         TyChar -> true,
+        TyFloat(ft) -> true,
         TySlice(e) -> ty_known(table, unbox(e)),
         TyNamed(d, args) -> inst_member(table, Inst { decl: d, args: unbox(args) }),
         TySint(k) -> true,
@@ -7048,6 +7102,7 @@ pub fn close_ty(fuel: usize, t: Tables, ty: Ty) -> core::option::Option<SrcType>
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
+        TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> slice_type(close_ty(minus(fuel, 1), t, unbox(e))),
         TyNamed(d, args) -> close_named(fuel, t, d, unbox(args), inst_index(t.types, Inst { decl: d, args: unbox(args) }, 0)),
         TySint(k) -> Some(Sint(k)),

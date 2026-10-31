@@ -38,6 +38,7 @@ def tyInsts (fuel : Nat) (decls : Decls) (t : Ty) : Option (List Inst) :=
     | .tyPtr => some []
     | .tyIsize => some []
     | .tyChar => some []
+    | .tyFloat ft => some []
     | .tySlice e => tyInsts (fuel - 1) decls e
     | .tyNamed d args => consInst ({ decl := d, args := args } : Inst) (namedInsts (fuel - 1) decls d args)
     | .tySint k => some []
