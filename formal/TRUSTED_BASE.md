@@ -889,10 +889,12 @@ for a process the trusted part is only this:
   call can observe.
   No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
   runtime").
-- The startup code sets rsp, r12 to r15 and rbx (the frame pointer, at the
-  heap's top) and calls `entry` (the driver's convention is function 0,
-  `main`), and `mov rdi, rax; mov eax, 60; syscall` follows the call. Its 75
-  bytes are proved, not trusted. `entry` must take
+- The startup code sets rsp, r12 to r15, r10 (the heap's top) and rbx (the
+  frame pointer, at the heap's top) and calls `entry` (the driver's
+  convention is function 0, `main`), and `mov rdi, rax; mov eax, 60;
+  syscall` follows the call. Its 85 bytes are proved, not trusted. The
+  program header maps frame memory, as many bytes as the stack, above the
+  heap: the heap's top is `heap + stack`. `entry` must take
   no parameters.
 - `tools/elf_test.py` (gate step `elf`) runs such executables natively:
   exit statuses, a division by zero (SIGFPE) and a stack too small for the
@@ -931,9 +933,10 @@ and a run to a state with no step that is not a fault.
   - `depth` is existential in `compileSource_correct`, so nobody can compute
     the needed stack before the run.
 - **Heap (`HeapAt`).**
-  - The base is in r12, the cursor (an offset) in r13, and the limit in r14,
-    with `limit < 2^62`.
-  - The bytes at `r12 + a` for `a < limit` are the heap. They are mapped,
+  - The base is in r12, the cursor (an offset) in r13, the limit in r14 and
+    the heap's top in r10, with `top < 2^62` (`HeapAt.small`).
+  - The bytes at `r12 + a` for `a < top` are the heap: the bump heap below
+    the limit, then frame memory. They are mapped,
     writable, and apart from the stack window, the return address and the
     image.
   - `compileSource_correct` also requires `r13 = 1` and zero bytes from
@@ -943,17 +946,19 @@ and a run to a state with no step that is not a fault.
     Core's world's is the code's own.
   - `compileProgram_correct` accepts any cursor.
   - rbx holds the frame pointer `fsp`, an offset from r12 like the cursor
-    (`HeapAt.fsp`), at most the heap's top (`HeapAt.fspLe`). Frame memory, the bytes from `limit` up to the heap's
-    top, is not mapped yet: the heap's top is its limit (`HeapAt.top`), and
-    the startup code sets rbx to the limit.
+    (`HeapAt.fsp`), at most the heap's top (`HeapAt.fspLe`). Frame memory
+    is the bytes from `limit` up to the top in r10 (`HeapAt.top`); the
+    startup code sets r10 and rbx to `heap + stack`.
 - **Registers after the call.**
   - rsp is restored to `rsp + 8` and rbp is restored.
   - rax, rbx, rcx, rdx, rsi, rdi, r11 and r13 may change (the code writes rdx,
     rsi and rdi only for a `Sys` statement). Each call saves rbx in the
     caller's first result slot and loads it back after the return, so a
-    callee need not keep it. rbx and r13 are callee-saved under SysV, so a
+    callee need not keep it. r10 is kept (`Returned.top`: the callee's
+    heap ends at the same top). rbx and r13 are callee-saved under SysV, so a
     SysV caller's stub has to save them. The stubs also save r12, r14 and
-    r15, which they set.
+    r15, which they set, and must set r10 to the top of the region they hand
+    over (r10 is caller-saved under SysV).
   - RFLAGS is unspecified. DF is never changed, and the code has no string
     instructions.
 - **Memory.** Only the window and the heap change.

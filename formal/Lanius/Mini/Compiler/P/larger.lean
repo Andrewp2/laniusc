@@ -59,19 +59,19 @@ def elfHeader (binary : Binary) : List UInt8 :=
   let sizes : List UInt8 := le32 0 ++ le16 64 ++ le16 56 ++ le16 1 ++ le16 64 ++ (le16 0 ++ le16 0)
   ident ++ kinds ++ places ++ sizes
 
-/-- The program header: a loadable segment, readable, writable and executable, from file offset 0 to the segment's start, the file's bytes and then zeros up to the end of the heap. -/
+/-- The program header: a loadable segment, readable, writable and executable, from file offset 0 to the segment's start, the file's bytes and then zeros up to the end of frame memory. -/
 def elfProgramHeader (binary : Binary) (stack : Nat) (heap : Nat) : List UInt8 :=
   let file : Nat := elfBeforeImage + binary.image.length
-  let memory : Nat := elfStackBase binary - elfBase + stack + heap
+  let memory : Nat := elfStackBase binary - elfBase + stack + heap + stack
   let kinds : List UInt8 := le32 1 ++ le32 7 ++ le64n 0
   let places : List UInt8 := le64n elfBase ++ le64n elfBase
   kinds ++ places ++ (le64n file ++ le64n memory) ++ le64n 4096
 
-/-- mov reg, imm64 for rsp, r15, r12, r14, r13 and rbx; call the entry; exit. -/
+/-- mov reg, imm64 for rsp, r15, r12, r14, r13, r10 and rbx; call the entry; exit. -/
 def elfStartup (binary : Binary) (entry : Nat) (stack : Nat) (heap : Nat) : List UInt8 :=
   let bottom : Nat := elfStackBase binary
   let top : Nat := bottom + stack
-  let sets : List UInt8 := 72 :: 188 :: le64n top ++ 73 :: 191 :: le64n (bottom + stackGuard binary) ++ (73 :: 188 :: le64n top ++ 73 :: 190 :: le64n heap) ++ (73 :: 189 :: le64n 1 ++ 72 :: 187 :: le64n heap)
+  let sets : List UInt8 := 72 :: 188 :: le64n top ++ 73 :: 191 :: le64n (bottom + stackGuard binary) ++ (73 :: 188 :: le64n top ++ 73 :: 190 :: le64n heap) ++ (73 :: 189 :: le64n 1 ++ 73 :: 186 :: le64n (heap + stack) ++ 72 :: 187 :: le64n (heap + stack))
   let call : List UInt8 := 232 :: le32 (BitVec.ofNat 32 (binary.entries.getD entry 0 + 10))
   let exit : List UInt8 := 72 :: 137 :: 199 :: 184 :: 60 :: 0 :: 0 :: 0 :: 15 :: [5]
   sets ++ call ++ exit

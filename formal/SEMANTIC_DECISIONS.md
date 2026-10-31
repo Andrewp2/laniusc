@@ -635,9 +635,12 @@ verified compiler's locals are 64-bit slots with no address. The design:
    the cursor in r13. rbx is scratch: each call stores it into the
    caller's first result slot (the results overwrite that slot after the
    return) and loads it back after the return, so the callee may change it
-   and the call rule's restore is what x86 does. The startup code sets rbx
-   to the heap's top; the loader maps the region above the heap once a
-   `Frame` instruction uses it (until then the top is the limit).
+   and the call rule's restore is what x86 does. r10 holds the heap's top
+   (`Frame.heapTop`, `Rel.top`), so loads and stores reach frame memory
+   through the same `r12 + offset` as the bump heap. The loader maps frame
+   memory as large as the stack above the heap (`frame` stops at a `ud2`
+   past it, as the prologue does past the stack); the startup code
+   sets r10 and rbx to `heap + stack`.
    `Frame target bytes` compiles to the abstract instruction `frame bytes`
    then `store target`. `frame bytes` is `mov r11, bytes; mov rax, rbx;
    sub rax, r11; jb +12; mov r11, rax; cmp r11, r14; jae +2; ud2; mov rbx,
