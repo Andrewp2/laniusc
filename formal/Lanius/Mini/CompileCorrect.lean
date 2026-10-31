@@ -453,7 +453,8 @@ theorem compileStmt_correct {prog : Program} {base : Nat} {arities : List Arity}
       rw [values, Instr.exec_heap, onHeap]
       exact ⟨inner, lower, func, lookup, by rw [evalAll_length, length], calleeExec⟩
     apply StmtResult.step (.call (by rw [Instr.exec_pc, pc]; exact placed.right.fetch) returns counted)
-    refine ⟨_, .refl _, by simp only [Instr.exec_pc, pc, codeSize_append, codeSize]; omega, ?_, rfl⟩
+    refine ⟨_, .refl _, by simp only [Instr.exec_pc, pc, codeSize_append, codeSize]; omega, ?_,
+      by simp only [Instr.exec_heap, onHeap]⟩
     intro other below
     simp only [writeSlots]
     rw [setMany_eq]

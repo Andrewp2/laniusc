@@ -56,6 +56,12 @@ structure HeapCorr (h : Memory.Heap) (w : World.State) (hp : Heap) : Prop where
   err : w.standardError = outputOf 2 hp.io.trace
   closed : w.fileHandles = []
 
+/-- The correspondence does not see the frame pointer. -/
+theorem HeapCorr.withFsp {h : Memory.Heap} {w : World.State} {hp : Heap} (hc : HeapCorr h w hp) (fsp : Nat) :
+    HeapCorr h w { hp with fsp := fsp } :=
+  ⟨hc.cursor, hc.pos, hc.unbounded, hc.small, hc.sized, hc.below, hc.apart, hc.unique, hc.bytes, hc.zero,
+    hc.out, hc.err, hc.closed⟩
+
 /-! ## Lists of blocks -/
 
 theorem setByte_length : ∀ (bs : List UInt8) (i : Nat) (v : UInt8), (Memory.setByte bs i v).length = bs.length

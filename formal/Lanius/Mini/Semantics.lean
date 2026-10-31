@@ -391,11 +391,13 @@ inductive Exec (prog : Program) : Nat → Env → Heap → Stmt → Outcome → 
       Exec prog depth env heap (.loop condition body) outcome
   | brk {depth : Nat} {env : Env} {heap : Heap} : Exec prog depth env heap .brk (.broke env heap)
   | cont {depth : Nat} {env : Env} {heap : Heap} : Exec prog depth env heap .cont (.continued env heap)
+  /-- A call gives its callee's frame memory back: the caller's `fsp` again. -/
   | call {depth inner target count callee : Nat} {env : Env} {heap after : Heap} {args : List Expr}
       {func : Func} {value : List (BitVec 64)} :
       prog.funcs[callee]? = some func → args.length = func.params → value.length = count → inner < depth →
       Exec prog inner (Func.entry (Expr.evalAll env args)) heap func.body (.returned value after) →
-      Exec prog depth env heap (.call target count callee args) (.normal (env.setMany target value) after)
+      Exec prog depth env heap (.call target count callee args)
+        (.normal (env.setMany target value) { after with fsp := heap.fsp })
   | ret {depth : Nat} {env : Env} {heap : Heap} {values : List Expr} :
       Exec prog depth env heap (.ret values) (.returned (Expr.evalAll env values) heap)
   | alloc {depth : Nat} {env : Env} {heap : Heap} {target shift : Nat} {size : Expr} :

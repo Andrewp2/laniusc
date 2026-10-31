@@ -907,7 +907,8 @@ theorem call_sound {sp : SrcProgram} {mp : Program}
         bodyRun result bound
     obtain ⟨g', -, gOk⟩ := lowerFuncs_get lowered found
     refine ⟨restore_fresh freshDone, keeps.trans (restore_keeps _ _ _), rfl, (lowerFunc_some gOk).2.1, d + 1, rs,
-      hp', holdsRet, len, hcDone, fun target => .call gFound ?_ len (Nat.lt_succ_self d) exec⟩
+      { hp' with fsp := hp.fsp }, holdsRet, len, hcDone.withFsp _,
+      fun target => .call gFound ?_ len (Nat.lt_succ_self d) exec⟩
     rw [← arity, evalAll_length]
   · simp at ok
 

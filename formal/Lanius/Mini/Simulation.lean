@@ -909,6 +909,11 @@ theorem Rel.congr (rel : Rel frame s m) {m' : Machine} (pc : m'.pc = m.pc) (acc 
   heap := by rw [heap]; exact rel.heap
   io := by rw [heap]; exact rel.io
 
+/-- The relation does not see the frame pointer. -/
+theorem Rel.withFsp (rel : Rel frame s m) (fsp : Nat) : Rel frame s { m with heap := { m.heap with fsp := fsp } } :=
+  ⟨rel.rip, rel.rbp, rel.rsp, rel.acc, rel.slots, rel.saved, rel.preserved, rel.unchanged, rel.cursor, rel.limit,
+    rel.heap, rel.io⟩
+
 /-- The machine after copy code of `size` bytes stored `values` at `target`, ... -/
 def Machine.copied (m : Machine) (size target : Nat) (values : List (BitVec 64)) : Machine :=
   { m with pc := m.pc + size, acc := values.getLastD m.acc, slots := writeSlots m.slots target values }
@@ -1865,8 +1870,8 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
       (by have := body.entrySmall callee; omega) argsFit argsCount targetFit positive body.image body.imageApart
       body.imageHeap body.guard (by omega) room
       (fun s a b c d e f g h => (contract s a b c d e f g h).imp (fun r => ⟨trivial, r⟩) id) counted with
-      ⟨-, done⟩ | ⟨k, s2, -, det, short, faults⟩
-    · exact .inl (forward fetched rfl done)
+      ⟨-, n, s2, steps, det, done⟩ | ⟨k, s2, -, det, short, faults⟩
+    · exact .inl (forward fetched rfl ⟨n, s2, steps, det, done.withFsp _⟩)
     · exact .inr ⟨by omega, det.faults faults⟩
   | bump fetched room =>
     obtain ⟨loaded, -⟩ := body.fetch rel fetched

@@ -111,7 +111,7 @@ inductive Step (calls : Calls) (code : List Instr) : Machine → Machine → Pro
       Step calls code m { m with pc := m.pc + (Instr.jz target).size }
   | call : fetch code m.pc = some (.call callee args target count) →
       calls callee (readSlots m.slots args) m.heap values after → values.length = count →
-      Step calls code m { m with pc := m.pc + (Instr.call callee args target count).size, acc := values.getLastD m.acc, slots := writeSlots m.slots target values, heap := after }
+      Step calls code m { m with pc := m.pc + (Instr.call callee args target count).size, acc := values.getLastD m.acc, slots := writeSlots m.slots target values, heap := { after with fsp := m.heap.fsp } }
   | bump : fetch code m.pc = some (.bump shift) →
       alignUp m.heap.cursor shift + m.acc.toNat ≤ m.heap.limit →
       Step calls code m { m with
