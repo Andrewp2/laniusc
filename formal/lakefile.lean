@@ -29,6 +29,10 @@ lean_exe srcDump where
 lean_exe floatTest where
   root := `Lanius.Tools.FloatTest
 
+/-- The top theorems' axioms and statement hashes, for formal/tools/trusted_check.py. -/
+lean_exe topAxioms where
+  root := `Lanius.Tools.TopAxioms
+
 lean_exe checkCompact where
   root := `Lanius.Extraction.CheckCompact
 
