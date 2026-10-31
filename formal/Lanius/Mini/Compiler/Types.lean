@@ -183,6 +183,8 @@ inductive Instr where
   | fp : FOp → Nat → Instr
   /-- rax := call(slot, slot + 1, slot + 2), through rdi, rsi and rdx -/
   | sys : Syscall → Nat → Instr
+  /-- Frame memory: the frame pointer (rbx) drops by bytes, to no lower than the limit (r14), and rax gets its new value -/
+  | frame : Nat → Instr
   deriving DecidableEq, Repr
 
 /-- A function's parameter and result counts. -/

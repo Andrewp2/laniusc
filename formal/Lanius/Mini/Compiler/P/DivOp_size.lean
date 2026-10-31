@@ -76,5 +76,6 @@ def Instr.size (self : Instr) : Nat :=
   | .div word operation slot => 18 + Word.prefix word + DivOp.size operation word
   | .fp operation slot => 10 + FOp.size operation
   | .sys kind slot => 34
+  | .frame bytes => 39
 
 end Lanius.Mini

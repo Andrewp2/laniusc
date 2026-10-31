@@ -874,7 +874,7 @@ and a run to a state with no step that is not a fault.
     Core's world's is the code's own.
   - `compileProgram_correct` accepts any cursor.
   - rbx holds the frame pointer `fsp`, an offset from r12 like the cursor
-    (`HeapAt.fsp`). Frame memory, the bytes from `limit` up to the heap's
+    (`HeapAt.fsp`), at most the heap's top (`HeapAt.fspLe`). Frame memory, the bytes from `limit` up to the heap's
     top, is not mapped yet: the heap's top is its limit (`HeapAt.top`), and
     the startup code sets rbx to the limit.
 - **Registers after the call.**

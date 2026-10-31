@@ -48,6 +48,9 @@ inductive Stops (prog : Program) : Nat → Env → Heap → Stmt → Nat → Pro
       {left right : Expr} {n : Nat} :
       word.divides operation (left.eval env) (right.eval env) = false →
       Stops prog depth env heap (.divide word operation target left right) n
+  /-- Frame memory runs out: the frame pointer would pass the limit. -/
+  | frame {depth : Nat} {env : Env} {heap : Heap} {target bytes n : Nat} :
+      heap.fsp < heap.limit + bytes → Stops prog depth env heap (.frame target bytes) n
 
 /-- Fewer ticks. -/
 theorem Stops.mono (stops : Stops prog depth env heap stmt n) : ∀ {k}, k ≤ n → Stops prog depth env heap stmt k := by
@@ -75,6 +78,7 @@ theorem Stops.mono (stops : Stops prog depth env heap stmt n) : ∀ {k}, k ≤ n
     | succ k => exact .call found length lower (ih (by omega))
   | alloc inside over => exact fun _ => .alloc inside over
   | divide undefined => exact fun _ => .divide undefined
+  | frame over => exact fun _ => .frame over
 
 /-- What a call may do that does not return: `stops callee args heap n`. -/
 abbrev StopCalls := Nat → List (BitVec 64) → Heap → Nat → Prop
@@ -93,6 +97,8 @@ inductive AStops (calls : Calls) (stops : StopCalls) (code : List Instr) : Machi
   | div {m : Machine} {word : Word} {operation : DivOp} {slot n : Nat} :
       fetch code m.pc = some (.div word operation slot) →
       word.divides operation (m.slots slot) m.acc = false → AStops calls stops code m n
+  | frame {m : Machine} {bytes n : Nat} : fetch code m.pc = some (.frame bytes) →
+      m.heap.fsp < m.heap.limit + bytes → AStops calls stops code m n
 
 theorem AStops.mono {calls : Calls} {stops : StopCalls} {code : List Instr}
     (downward : ∀ callee args heap n k, stops callee args heap n → k ≤ n → stops callee args heap k)
@@ -111,6 +117,7 @@ theorem AStops.mono {calls : Calls} {stops : StopCalls} {code : List Instr}
     | succ k => exact .call fetched (downward _ _ _ _ _ callee (by omega))
   | bump fetched inside over => exact fun _ => .bump fetched inside over
   | div fetched undefined => exact fun _ => .div fetched undefined
+  | frame fetched over => exact fun _ => .frame fetched over
 
 /-- A run, then a stop. -/
 theorem AStops.star {calls : Calls} {stops : StopCalls} {code : List Instr}
@@ -276,6 +283,11 @@ theorem compileStmt_stops {prog : Program} {base : Nat} {arities : List Arity} {
       (by simp only [List.all_append, compileExpr_straight]; rfl))
     obtain ⟨divAt, -⟩ := placed.right.pair
     exact .div (by rw [Instr.exec_pc, pc]; exact divAt.fetch) (by rw [kept, acc]; exact undefined)
+  | @frame depth env heap target bytes n over =>
+    intro pos brk cont m placed pc agree onHeap within
+    simp only [compileStmt] at placed
+    obtain ⟨frameAt, -⟩ := placed.pair
+    exact .frame (pc ▸ frameAt).fetch (by rw [onHeap]; exact over)
 
 /-- A compiled function, entered with its parameters in the first slots, runs
 as long as the source body. -/

@@ -53,7 +53,7 @@ def compileStmt (base : Nat) (pos : Nat) (brk : Nat) (cont : Nat) (s : Stmt) : L
   | .storeWord width address value => compileExpr base address 0 ++ [Instr.store base] ++ (compileExpr base value 1 ++ [Instr.storeWordAt width base])
   | .divide word operation target left right => compileExpr base left 0 ++ [Instr.store base] ++ compileExpr base right 1 ++ Instr.div word operation base :: [Instr.store target]
   | .sys kind target args => compileArgs base args 0 ++ Instr.sys kind base :: [Instr.store target]
-  | .frame target bytes => []
+  | .frame target bytes => Instr.frame bytes :: [Instr.store target]
 
 def Expr.within (self : Expr) (locals : Nat) : Bool :=
   match self with
@@ -109,7 +109,7 @@ def Stmt.within (self : Stmt) (locals : Nat) (arities : List Arity) (results : N
   | .storeWord width address value => Expr.within address locals && Expr.within value locals
   | .divide word operation target left right => decide (target < locals) && Expr.within left locals && Expr.within right locals
   | .sys kind target args => decide (target < locals) && decide (args.length = 3) && allWithin locals args
-  | .frame target bytes => false
+  | .frame target bytes => decide (target < locals) && decide (bytes < 2147483648)
 
 def Stmt.temps (self : Stmt) : Nat :=
   match self with

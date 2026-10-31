@@ -88,6 +88,7 @@ theorem Stops.ignores {prog : Program} {depth : Nat} {env : Env} {heap : Heap} {
     simp only [Stmt.ignores, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at p
     rw [Expr.eval_except h left p.1, Expr.eval_except h right p.2] at undefined
     exact .divide undefined
+  | frame over => intro _ _ _; exact .frame over
 
 /-- A statement that kills `index` stops alike whatever `index` holds on entry. -/
 theorem Stops.killed {prog : Program} (s : Stmt) :
@@ -228,6 +229,11 @@ theorem Stops.agrees {p q : Program} (ok : funcsAgree p.funcs q.funcs = true) {d
     have r := (Expr.agrees_eval _ _ sameRight env).trans (Expr.subst_eval hold right)
     rw [← l, ← r] at undefined
     exact .divide undefined
+  | frame over =>
+    intro facts s' hold h
+    simp only [Stmt.agrees] at h
+    rw [frameAgrees_cases h]
+    exact .frame over
 
 theorem Program.Stops.validated {p q : Program} (ok : validate p q = true) {depth f : Nat}
     {args : List (BitVec 64)} {heap : Heap} {n : Nat} (stops : p.Stops depth f args heap n) :

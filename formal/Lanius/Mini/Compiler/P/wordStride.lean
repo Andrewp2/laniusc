@@ -1,7 +1,6 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.Code_size
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
@@ -13,6 +12,7 @@ import Lanius.Mini.Compiler.P.consArgs
 import Lanius.Mini.Compiler.P.evalDivide
 import Lanius.Mini.Compiler.P.evalNot
 import Lanius.Mini.Compiler.P.evalSame
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.lowerLoadType
 import Lanius.Mini.Compiler.P.matchDst

@@ -638,6 +638,14 @@ verified compiler's locals are 64-bit slots with no address. The design:
    and the call rule's restore is what x86 does. The startup code sets rbx
    to the heap's top; the loader maps the region above the heap once a
    `Frame` instruction uses it (until then the top is the limit).
+   `Frame target bytes` compiles to the abstract instruction `frame bytes`
+   then `store target`. `frame bytes` is `mov r11, bytes; mov rax, rbx;
+   sub rax, r11; jb +12; mov r11, rax; cmp r11, r14; jae +2; ud2; mov rbx,
+   rax`: a borrow or a result below the limit reaches the `ud2` (the stop
+   rule `Stops.frame`, as for an allocation past the limit), and otherwise
+   rbx and rax hold the new frame pointer. `bytes` is below 2^31 (`within`).
+   The simulation keeps `fsp ≤ top` (`Rel.fspLe`, `HeapAt.fspLe`), so the
+   frame pointer is below 2^62 and rbx's subtraction is exact.
 2. **Addressed bindings.** A local is addressed when the program takes its
    address: an array local passed where a slice is expected (later `&x`
    and `&self`). Its slot holds its frame address, and its value lives in

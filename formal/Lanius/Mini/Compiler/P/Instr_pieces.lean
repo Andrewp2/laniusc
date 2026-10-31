@@ -1,11 +1,11 @@
 module
 
 public import Lanius.Mini.Compiler.Types
-import Lanius.Mini.Compiler.P.Code_size
 import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arities
+import Lanius.Mini.Compiler.P.loadAtBytes
 import Lanius.Mini.Compiler.P.moduleFirsts
 
 public section
@@ -36,6 +36,7 @@ def Instr.pieces (self : Instr) (own : Nat) (place : Place) (pc : Nat) : List Pi
   | .div word operation slot => [Piece.bytes (Instr.encode self place pc)]
   | .fp operation slot => [Piece.bytes (Instr.encode self place pc)]
   | .sys kind slot => [Piece.bytes (Instr.encode self place pc)]
+  | .frame bytes => [Piece.bytes (Instr.encode self place pc)]
 
 def piecesFrom (own : Nat) (place : Place) (pc : Nat) (code : List Instr) : List Piece :=
   match code with
