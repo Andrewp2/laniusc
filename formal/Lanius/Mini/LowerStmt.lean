@@ -1090,6 +1090,7 @@ def Expr.Below (n : Nat) : Expr → Prop
   | .neg e => e.Below n
   | .binary _ _ l r => l.Below n ∧ r.Below n
   | .compare _ _ l r => l.Below n ∧ r.Below n
+  | .fp _ l r => l.Below n ∧ r.Below n
 
 theorem Expr.Below.eval_set {n : Nat} : ∀ {x : Expr}, x.Below n → ∀ {j : Nat}, n ≤ j →
     ∀ (E : Env) (w : BitVec 64), x.eval (E.set j w) = x.eval E
@@ -1103,6 +1104,8 @@ theorem Expr.Below.eval_set {n : Nat} : ∀ {x : Expr}, x.Below n → ∀ {j : N
   | .binary _ _ l r, below, j, le, E, w => by
     simp only [Expr.eval, Expr.Below.eval_set below.1 le, Expr.Below.eval_set below.2 le]
   | .compare _ _ l r, below, j, le, E, w => by
+    simp only [Expr.eval, Expr.Below.eval_set below.1 le, Expr.Below.eval_set below.2 le]
+  | .fp _ l r, below, j, le, E, w => by
     simp only [Expr.eval, Expr.Below.eval_set below.1 le, Expr.Below.eval_set below.2 le]
 
 theorem Insens.below {xs : List Expr} {slot : Nat} (all : ∀ x ∈ xs, x.Below slot) : Insens xs slot :=
@@ -1178,6 +1181,21 @@ theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty i
       · exact below.fromI32 kind
   | isize => exact castToIsize_below h below
   | char => simp [castTo] at h
+  | float ft =>
+    simp only [castTo, castToFloat] at h
+    split at h <;> (try simp only [intToFloat, ifNarrow, reduceCtorEq] at h)
+    all_goals first
+      | (simp only [Option.some.injEq] at h
+         subst h
+         exact ⟨trivial, below⟩)
+      | (split at h
+         · simp at h
+         · simp only [Option.some.injEq] at h
+           subst h
+           exact ⟨trivial, below⟩)
+      | (rename_i source _
+         cases source <;> cases ft <;> simp only [floatToFloat, Option.some.injEq, reduceCtorEq] at h <;>
+           subst h <;> exact ⟨trivial, below⟩)
   | sint kind =>
     simp only [castTo, castToSint] at h
     split at h
@@ -1247,6 +1265,7 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     case h_9 => simp at lowered
     case h_10 => simp at lowered
     case h_11 => simp at lowered
+    case h_12 => simp at lowered
     rename_i sid fields hty
     simp only [lowerFieldAt] at lowered
     split at lowered
@@ -1271,6 +1290,13 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     · simp at lowered
     rename_i inner innerLowered
     simp only [lowerNegateTyped] at lowered
+    split at lowered
+    · simp only [negateFloat] at lowered
+      split at lowered
+      · simp at lowered
+      simp only [Option.some.injEq] at lowered
+      subst lowered
+      exact ⟨ih (t := inner) innerLowered, trivial⟩
     split at lowered
     · simp only [Option.some.injEq] at lowered
       subst lowered
@@ -1323,6 +1349,9 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
       all_goals
         simp only [arith] at lowered
         split at lowered
+        · obtain ⟨_, _, rfl⟩ := floatArith_some lowered
+          exact ⟨bl, br⟩
+        split at lowered
         · simp only [Option.some.injEq] at lowered
           subst lowered
           exact ⟨bl, br⟩
@@ -1345,6 +1374,9 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
           exact Expr.Below.wrap (e := .binary .u64 _ _ _) ⟨bl, br⟩ k
     case less | lessEq | greater | greaterEq =>
       simp only [SrcOp.lower, order] at lowered
+      split at lowered
+      · obtain ⟨_, rfl⟩ := floatOrder_some lowered
+        first | exact ⟨bl, br⟩ | exact ⟨br, bl⟩
       split at lowered
       · simp only [Option.some.injEq] at lowered
         subst lowered
@@ -1372,6 +1404,9 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
         exact ⟨bl, br⟩
     all_goals
       simp only [SrcOp.lower, equality, conjunction, disjunction] at lowered
+      try (split at lowered
+           · obtain ⟨_, rfl⟩ := floatOrder_some lowered
+             first | exact ⟨bl, br⟩ | exact ⟨⟨bl, br⟩, trivial⟩)
       split at lowered <;> simp only [Option.some.injEq, reduceCtorEq] at lowered <;> subst lowered <;>
       first | exact ⟨bl, br⟩ | exact ⟨⟨bl, br⟩, trivial⟩
   | cast ty operand ih =>
@@ -1382,6 +1417,14 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     rename_i inner innerLowered
     exact castTo_below lowered (ih innerLowered)
   | char c => intro t lowered; simp only [SrcExpr.lower, Option.some.injEq] at lowered; subst lowered; trivial
+  | float ft bits =>
+    intro t lowered
+    simp only [SrcExpr.lower, lowerFloat] at lowered
+    split at lowered
+    · simp only [Option.some.injEq] at lowered
+      subst lowered
+      trivial
+    · simp at lowered
 
 theorem ValueShape.sized {scope frame base next} {xs : List Expr} (shape : ValueShape scope xs)
     (fr : Layout scope frame base next) : 0 < xs.length := by
@@ -1802,6 +1845,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
   | unit => simp [lowerLiteral] at literalOk
   | isize => simp [lowerLiteral] at literalOk
   | char => simp [lowerLiteral] at literalOk
+  | float => simp [lowerLiteral] at literalOk
   | sint => simp [lowerLiteral] at literalOk
   | ptr => simp [lowerLiteral] at literalOk
   | struct sid types =>
@@ -1907,6 +1951,7 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
   | unit => simp [lowerEnumValue] at valueOk
   | isize => simp [lowerEnumValue] at valueOk
   | char => simp [lowerEnumValue] at valueOk
+  | float => simp [lowerEnumValue] at valueOk
   | sint => simp [lowerEnumValue] at valueOk
   | enum eid variants =>
     simp only [lowerEnumValue, lowerTagged] at valueOk
@@ -1992,6 +2037,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
   case h_9 => simp at matchOk
   case h_10 => simp at matchOk
   case h_11 => simp at matchOk
+  case h_12 => simp at matchOk
   rename_i eid variants hty
   simp only [lowerMatchArms] at matchOk
   split at matchOk
@@ -2353,6 +2399,7 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   case h_9 => simp at ok
   case h_10 => simp at ok
   case h_11 => simp at ok
+  case h_12 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -2958,7 +3005,7 @@ theorem slice_kind {ds : SrcDecls} {element : SrcType}
   | i32 => exact .inl rfl
   | struct sid fields => exact .inr (.inl ⟨sid, fields, rfl⟩)
   | enum eid variants => exact .inr (.inr ⟨eid, variants, rfl⟩)
-  | bool | uint | ptr | slice | unit | isize | char | sint => simp [SrcType.isI32, wordElement] at cond
+  | bool | uint | ptr | slice | unit | isize | char | float | sint => simp [SrcType.isI32, wordElement] at cond
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
@@ -3116,7 +3163,7 @@ theorem index_toNat {t : Typed} {iv : Value} {x : BitVec 64} {pos : Nat}
     obtain ⟨rfl, -⟩ := holds
     simp only [Semantics.integerIndex, Except.ok.injEq] at ok
     exact ok
-  | bool | struct | enum | ptr | slice | unit | isize | char | sint => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
+  | bool | struct | enum | ptr | slice | unit | isize | char | float | sint => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
 
 /-- Core's read of `slice[idx]` from a raw slice local. -/
 theorem eval_index_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx : Core.Expr}
@@ -3436,6 +3483,7 @@ theorem Expr.Below.mono {n m : Nat} (le : n ≤ m) : ∀ {x : Expr}, x.Below n �
   | .neg e, below => Expr.Below.mono le (x := e) below
   | .binary _ _ l r, below => ⟨Expr.Below.mono le below.1, Expr.Below.mono le below.2⟩
   | .compare _ _ l r, below => ⟨Expr.Below.mono le below.1, Expr.Below.mono le below.2⟩
+  | .fp _ l r, below => ⟨Expr.Below.mono le below.1, Expr.Below.mono le below.2⟩
 
 theorem Expr.Below.eval_agree {n : Nat} : ∀ {x : Expr}, x.Below n → ∀ {E E' : Env},
     (∀ i < n, E' i = E i) → x.eval E' = x.eval E
@@ -3449,6 +3497,8 @@ theorem Expr.Below.eval_agree {n : Nat} : ∀ {x : Expr}, x.Below n → ∀ {E E
   | .binary _ _ l r, below, E, E', agree => by
     simp only [Expr.eval, Expr.Below.eval_agree below.1 agree, Expr.Below.eval_agree below.2 agree]
   | .compare _ _ l r, below, E, E', agree => by
+    simp only [Expr.eval, Expr.Below.eval_agree below.1 agree, Expr.Below.eval_agree below.2 agree]
+  | .fp _ l r, below, E, E', agree => by
     simp only [Expr.eval, Expr.Below.eval_agree below.1 agree, Expr.Below.eval_agree below.2 agree]
 
 theorem addressBelow_eval {env : Env} {base : Expr} {offset : Nat} (fits : offset ≤ (base.eval env).toNat) :

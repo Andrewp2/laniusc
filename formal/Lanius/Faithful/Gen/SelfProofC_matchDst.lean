@@ -4,7 +4,7 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_matchDst
 public import Lanius.Faithful.Gen.SelfStmt1
-public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_matchDst
 import all Lanius.Faithful.Gen.SelfSrcC_matchDst
 import all Lanius.Mini.Compiler.P.matchDst

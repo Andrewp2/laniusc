@@ -6,6 +6,7 @@ public import Lanius.Faithful.Gen.SelfSrcC_wordWidth
 public import Lanius.Faithful.Gen.SelfStmt0
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_enumVariants
 public import Lanius.Faithful.Gen.SelfStmtC_structFields

@@ -26,7 +26,7 @@ abbrev Stmt_BinOp_compute (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
 
 abbrev Stmt_declare_program (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcProgram} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcProgram x0 v0 →
-    (RepOption 64 RepSrcDecls) (Lanius.Mini.declareProgram x0) w
+    (RepOption 68 RepSrcDecls) (Lanius.Mini.declareProgram x0) w
 
 abbrev Stmt_funcs_return (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcFunc} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 5 RepSrcFunc) x0 v0 →

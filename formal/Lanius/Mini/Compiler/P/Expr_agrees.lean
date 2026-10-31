@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.BinOp_folds
+import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Word_narrows
 import Lanius.Mini.Compiler.P.binaryConstant
 
@@ -26,21 +27,32 @@ def Expr.agrees (self : Expr) (other : Expr) : Bool :=
        | .var i => false
        | .neg o => Expr.agrees operand o
        | .binary w op l r => false
-       | .compare w op l r => false)
+       | .compare w op l r => false
+       | .fp op l r => false)
     | .binary word operation left right =>
       (match other with
        | .lit v => false
        | .var i => false
        | .neg o => false
        | .binary w op l r => decide (Word.number word = Word.number w) && decide (BinOp.number operation = BinOp.number op) && Expr.agrees left l && Expr.agrees right r
-       | .compare w op l r => false) || (Expr.unitOf right word operation && Word.keeps word other && Expr.agrees left other || BinOp.commutes operation && Expr.unitOf left word operation && Word.keeps word other && Expr.agrees right other)
+       | .compare w op l r => false
+       | .fp op l r => false) || (Expr.unitOf right word operation && Word.keeps word other && Expr.agrees left other || BinOp.commutes operation && Expr.unitOf left word operation && Word.keeps word other && Expr.agrees right other)
     | .compare word operation left right =>
+      (match other with
+       | .lit v => false
+       | .var i => false
+       | .neg o => false
+       | .binary w op l r => false
+       | .compare w op l r => decide (Word.number word = Word.number w) && decide (CmpOp.number operation = CmpOp.number op) && Expr.agrees left l && Expr.agrees right r
+       | .fp op l r => false)
+    | .fp operation left right =>
       match other with
       | .lit v => false
       | .var i => false
       | .neg o => false
       | .binary w op l r => false
-      | .compare w op l r => decide (Word.number word = Word.number w) && decide (CmpOp.number operation = CmpOp.number op) && Expr.agrees left l && Expr.agrees right r
+      | .compare w op l r => false
+      | .fp op l r => decide (FOp.number operation = FOp.number op) && Expr.agrees left l && Expr.agrees right r
 
 def argsAgree (args : List Expr) (others : List Expr) : Bool :=
   match args with

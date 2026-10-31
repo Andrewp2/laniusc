@@ -60,6 +60,15 @@ theorem proof_p_let_type {prog : SrcProgram} {prims : Prims} {ix_p_let_type : Na
   simp only [src_p_let_type] at h
   faithful [Lanius.Mini.Inline.pLetType]
 
+theorem proof_p_let_type_none {prog : SrcProgram} {prims : Prims} {ix_p_let_type_none : Nat} (fn : prog.funcs[ix_p_let_type_none]? = some (src_p_let_type_none)) (np : prims.isPrim ix_p_let_type_none = false) {n : Nat} :
+    Stmt_p_let_type_none prog prims ix_p_let_type_none n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_let_type_none] at h
+  faithful [Lanius.Mini.Inline.pLetTypeNone]
+
 theorem proof_p_lt_tail {prog : SrcProgram} {prims : Prims} {ix_p_lt_tail : Nat} (fn : prog.funcs[ix_p_lt_tail]? = some (src_p_lt_tail)) (np : prims.isPrim ix_p_lt_tail = false) {n : Nat} :
     Stmt_p_lt_tail prog prims ix_p_lt_tail n := by
   intro w h

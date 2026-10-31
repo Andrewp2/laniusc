@@ -7,7 +7,7 @@ public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
-public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_elementBase
 public import Lanius.Faithful.Gen.SelfStmtC_widthOf
 import all Lanius.Faithful.Gen.SelfSrcC_elementBase

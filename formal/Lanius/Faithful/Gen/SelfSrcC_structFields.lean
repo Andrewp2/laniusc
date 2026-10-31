@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::struct_fields -/
-def src_struct_fields (ix_struct_fields_at : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcStructDecl : Nat) : SrcFunc := { params := [{ id := 14, ty := ty69 }, { id := 42, ty := SrcType.uint (UintTy.usize) }], ret := ty206, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 14)) ty69 ty206 [[], [155, 161]] [SrcEff.eVariant ty206 1 [], SrcEff.eCall ix_struct_fields_at [SrcEff.ePure (SrcExpr.local 155), SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcStructDecl [SrcEff.ePure (SrcExpr.local 161)], SrcEff.ePure (SrcExpr.local 42)]]) }
+def src_struct_fields (ix_struct_fields_at : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcStructDecl : Nat) : SrcFunc := { params := [{ id := 14, ty := ty73 }, { id := 42, ty := SrcType.uint (UintTy.usize) }], ret := ty210, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 14)) ty73 ty210 [[], [155, 161]] [SrcEff.eVariant ty210 1 [], SrcEff.eCall ix_struct_fields_at [SrcEff.ePure (SrcExpr.local 155), SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcStructDecl [SrcEff.ePure (SrcExpr.local 161)], SrcEff.ePure (SrcExpr.local 42)]]) }
 
 end
 

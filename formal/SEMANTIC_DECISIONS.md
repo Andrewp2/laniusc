@@ -34,10 +34,13 @@ Lean definition or judgment.
   unsigned right shift is logical. The amount of a signed or unsigned shift may
   be of any signed or unsigned integer type; its number is what is checked
   (`evalShiftBy`, since 2026-10-30).
-- `f32` and `f64` values are represented by their IEEE bit patterns. Arithmetic
-  and ordered comparisons use Lean's `Float32` and `Float` operations, so
-  division by zero and NaNs follow floating-point behavior rather than integer
-  traps.
+- `f32` and `f64` values are represented by their IEEE bit patterns.
+  Arithmetic, comparisons, negation and conversions are `Lanius/IEEE.lean`'s,
+  on those bits (since 2026-10-30; before, Lean's `Float32` and `Float`):
+  round to nearest, ties to even, no traps (division by zero gives an
+  infinity), NaN results as x86 SSE gives them (the first NaN operand
+  quieted, or the default NaN for an invalid operation). A float to integer
+  cast truncates toward zero and saturates, NaN to 0 (Rust's `as`).
 - Array indexing outside the array bounds traps.
 - Slices are borrowed views identified by an element type, stable backing cell,
   projection path, start, and length. Reads observe later writes to the backing
@@ -527,11 +530,57 @@ or one of the escapes `\n \r \t \0 \' \" \\`, between quotes
 than given laniusc's reading, since a program that relies on them is
 almost certainly wrong. Where both read a literal they give the same code.
 
+### Floats in the verified compiler (decided 10-30, F9)
+
+`f32` and `f64` are source types of the verified compiler (`SrcType.float`).
+A slot holds a float's bit pattern, an `f32` one zero-extended, and every
+operation goes through xmm0 and xmm1 (`Instr.fp`). The lowering:
+
+- `+ - *` of two floats of one type are `addss`/`subss`/`mulss` (`sd` for
+  `f64`). Source `/` and `%` of floats are not lowered: Core's division is
+  `eval_division`, and its float arm is not yet part of the subset (the IR
+  and the x86 model have `divss`/`divsd`, proved, for when it is).
+- `==`, `<`, `<=` are `cmpss`/`cmpsd` with predicates 0, 1, 2, the mask's
+  low bit made 0 or 1 (`neg eax`). `>` and `>=` swap the operands (both
+  are pure, so nothing is reordered), and `!=` compares `==`'s result to 0,
+  so that a NaN operand makes `!=` true as Core's `!=` is.
+- Negation flips the sign bit by adding it at the format's width and
+  dropping the carry, NaNs included, as Core's `neg` (and `xorps`) do.
+- Casts to a float: `i32` and the narrow signed types from their 32-bit
+  value (`cvtsi2ss xmm0, ecx`); `isize`, `i64`, `char` and the narrow
+  unsigned types from the 64-bit slot (an unsigned narrow value is below
+  2^32, so its signed 64-bit reading is its value); `f32 -> f64` widens and
+  `f64 -> f32` rounds. `u64` and `usize` to a float are rejected (x86 has no
+  unsigned 64-bit conversion before AVX-512; a sequence for it is later
+  work), and so are casts of a float to an integer (Core's `truncSat`; the
+  saturating sequence is later work) and to its own type (Core has none).
+- Float fields, locals, parameters, results and constants are lowered;
+  slices and raw views of floats are rejected (no element layout yet), as
+  is a match on a float.
+
+Float literals in the front end:
+
+- A literal is read as `m * 10^e` exactly and rounded once to the nearest
+  pattern by `Lanius.IEEE.Format.ofDecimal`, the function Core's elaboration
+  uses (`flDecimal_eq` proves the front end's bignum rounding equal to it).
+  So `0.1`, `1e-1` and `100000000000000000e-18` are one literal.
+- While the expected type is not yet known the builder carries both
+  roundings in a marker no source can spell (`float_marker`); the context
+  picks one (`float_want`). With no float type expected, the literal is an
+  `f32`, Core's `literalDefaultType`: `(0.5 as f64)` is the `f32` 0.5
+  widened. A typed constant takes its declared type, and `-` of a literal
+  is its negation at that type.
+- Underscores in a float literal are rejected, and so is an exponent above
+  99999 (with 10^400 already past every finite pattern, this only keeps the
+  front end's powers small).
+
 ## Decisions still required
 
 - Which NaN payload details are observable through future bit-conversion APIs.
   Literal parsing/rounding is already explicit, and resolved numeric casts are
-  explicit in core and width-correct dynamically.
+  explicit in core and width-correct dynamically. (Since 2026-10-30 Core
+  fixes NaN payloads as x86 SSE does, `Lanius/IEEE.lean`; a target with other
+  NaN rules, Wasm's nondeterministic NaNs, would need this revisited.)
 - Calling-convention classification for aggregate parameters and results on
   x86-64 and Wasm. In-memory value layouts are fixed; register/stack passing is
   not yet part of the language model.

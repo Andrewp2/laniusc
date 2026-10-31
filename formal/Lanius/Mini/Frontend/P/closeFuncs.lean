@@ -27,6 +27,7 @@ def isizeTy (t : SrcType) : Bool :=
   | .unit => false
   | .isize => true
   | .char => false
+  | .float ft => false
   | .sint sk => false
 
 end Lanius.Mini

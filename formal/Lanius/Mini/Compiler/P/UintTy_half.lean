@@ -2,11 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
-import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.UintTy_isWide
-import Lanius.Mini.Compiler.P.UintTy_mask
-import Lanius.Mini.Compiler.P.compileModules
-import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.render
 
 public section
@@ -78,6 +74,7 @@ def SrcType.isI32 (self : SrcType) : Bool :=
   | .unit => false
   | .isize => false
   | .char => false
+  | .float ft => false
   | .sint sk => false
 
 def SrcType.isBool (self : SrcType) : Bool :=
@@ -92,6 +89,7 @@ def SrcType.isBool (self : SrcType) : Bool :=
   | .unit => false
   | .isize => false
   | .char => false
+  | .float ft => false
   | .sint sk => false
 
 def SrcType.isScalar (self : SrcType) : Bool :=
@@ -106,6 +104,7 @@ def SrcType.isScalar (self : SrcType) : Bool :=
   | .unit => false
   | .isize => true
   | .char => true
+  | .float ft => true
   | .sint kind => true
 
 def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
@@ -120,6 +119,7 @@ def SrcType.isUint (self : SrcType) (kind : UintTy) : Bool :=
   | .unit => false
   | .isize => false
   | .char => false
+  | .float ft => false
   | .sint sk => false
 
 def SrcType.isPtr (self : SrcType) : Bool :=
@@ -134,6 +134,7 @@ def SrcType.isPtr (self : SrcType) : Bool :=
   | .unit => false
   | .isize => false
   | .char => false
+  | .float ft => false
   | .sint sk => false
 
 def SrcType.isUnit (self : SrcType) : Bool :=
@@ -148,6 +149,7 @@ def SrcType.isUnit (self : SrcType) : Bool :=
   | .unit => true
   | .isize => false
   | .char => false
+  | .float ft => false
   | .sint sk => false
 
 def SrcType.isIsize (self : SrcType) : Bool :=
@@ -162,6 +164,7 @@ def SrcType.isIsize (self : SrcType) : Bool :=
   | .unit => false
   | .isize => true
   | .char => false
+  | .float ft => false
   | .sint kind => false
 
 def SrcType.isChar (self : SrcType) : Bool :=
@@ -176,6 +179,52 @@ def SrcType.isChar (self : SrcType) : Bool :=
   | .unit => false
   | .isize => false
   | .char => true
+  | .float ft => false
+  | .sint kind => false
+
+def SrcType.isFloat (self : SrcType) (t : FloatTy) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .uint kind => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice element => false
+  | .unit => false
+  | .isize => false
+  | .char => false
+  | .float ft => decide (FloatTy.number ft = FloatTy.number t)
+  | .sint kind => false
+
+def SrcType.floatTy (self : SrcType) : Option FloatTy :=
+  match self with
+  | .i32 => none
+  | .bool => none
+  | .uint kind => none
+  | .struct id fields => none
+  | .enum id variants => none
+  | .ptr => none
+  | .slice element => none
+  | .unit => none
+  | .isize => none
+  | .char => none
+  | .float ft => some ft
+  | .sint kind => none
+
+def SrcType.isFloatAny (self : SrcType) : Bool :=
+  match self with
+  | .i32 => false
+  | .bool => false
+  | .uint kind => false
+  | .struct id fields => false
+  | .enum id variants => false
+  | .ptr => false
+  | .slice element => false
+  | .unit => false
+  | .isize => false
+  | .char => false
+  | .float ft => true
   | .sint kind => false
 
 /-- An integer type: a shift takes an amount of any of them. -/
@@ -191,6 +240,7 @@ def SrcType.isInteger (self : SrcType) : Bool :=
   | .unit => false
   | .isize => true
   | .char => false
+  | .float ft => false
   | .sint kind => true
 
 def SrcType.isSintAny (self : SrcType) : Bool :=
@@ -205,6 +255,7 @@ def SrcType.isSintAny (self : SrcType) : Bool :=
   | .unit => false
   | .isize => false
   | .char => false
+  | .float ft => false
   | .sint kind => true
 
 def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
@@ -219,6 +270,7 @@ def SrcType.isSint (self : SrcType) (kind : UintTy) : Bool :=
   | .unit => false
   | .isize => false
   | .char => false
+  | .float ft => false
   | .sint other => decide (UintTy.code other = UintTy.code kind)
 
 /-- The width of the signed type this is, if it is one of Sint. -/
@@ -234,6 +286,7 @@ def SrcType.sintKind (self : SrcType) : Option UintTy :=
   | .unit => none
   | .isize => none
   | .char => none
+  | .float ft => none
   | .sint kind => some kind
 
 /-- The unsigned type this is, if it is one. -/
@@ -249,6 +302,7 @@ def SrcType.uintKind (self : SrcType) : Option UintTy :=
   | .unit => none
   | .isize => none
   | .char => none
+  | .float ft => none
   | .sint sk => none
 
 /-- How a comparison of two values of this type reads their slots. -/
@@ -264,6 +318,7 @@ def SrcType.word (self : SrcType) : Word :=
   | .unit => Word.s32
   | .isize => Word.u64
   | .char => Word.u64
+  | .float ft => Word.u64
   | .sint kind => UintTy.signedWord kind
 
 mutual
@@ -284,6 +339,7 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .unit => false
      | .isize => false
      | .char => false
+     | .float ft => false
      | .sint otherSk => false)
   | .enum id variants =>
     (match other with
@@ -297,6 +353,7 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .unit => false
      | .isize => false
      | .char => false
+     | .float ft => false
      | .sint otherSk => false)
   | .ptr => SrcType.isPtr other
   | .slice element =>
@@ -311,10 +368,12 @@ def SrcType.same (self : SrcType) (other : SrcType) : Bool :=
      | .unit => false
      | .isize => false
      | .char => false
+     | .float ft => false
      | .sint otherSk => false)
   | .unit => SrcType.isUnit other
   | .isize => SrcType.isIsize other
   | .char => SrcType.isChar other
+  | .float ft => SrcType.isFloat other ft
   | .sint kind => SrcType.isSint other kind
 def typesSame (types : List SrcType) (others : List SrcType) : Bool :=
   match types with
@@ -337,48 +396,5 @@ def variantsSame (variants : List (List SrcType)) (others : List (List SrcType))
     | [] => false
     | other :: more => typesSame types other && variantsSame rest more
 end
-
-mutual
-/-- Slots a value of this type takes: a struct's fields in order; an enum's tag, then room for its largest payload. -/
-def SrcType.size (self : SrcType) : Nat :=
-  match self with
-  | .i32 => 1
-  | .bool => 1
-  | .uint kind => 1
-  | .struct id fields => sizes fields
-  | .enum id variants => 1 + maxSize variants
-  | .ptr => 1
-  | .slice element => 2
-  | .unit => 1
-  | .isize => 1
-  | .char => 1
-  | .sint kind => 1
-def sizes (types : List SrcType) : Nat :=
-  match types with
-  | [] => 0
-  | ty :: rest => SrcType.size ty + sizes rest
-/-- The largest payload. -/
-def maxSize (variants : List (List SrcType)) : Nat :=
-  match variants with
-  | [] => 0
-  | types :: rest => max (sizes types) (maxSize rest)
-end
-
-/-- The slot of field index, counted from the struct's first slot. -/
-def fieldOffset (types : List SrcType) (index : Nat) : Nat :=
-  match types with
-  | [] => 0
-  | ty :: rest =>
-    if index = 0 then
-      0
-    else
-      SrcType.size ty + fieldOffset rest (index - 1)
-
-/-- e reduced to the width of kind. -/
-def wrap (kind : UintTy) (e : Expr) : Expr :=
-  if UintTy.isWide kind then
-    e
-  else
-    Expr.binary Word.u64 BinOp.and e (Expr.lit (UintTy.mask kind))
 
 end Lanius.Mini

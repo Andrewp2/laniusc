@@ -3,7 +3,7 @@ module
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.UintTy_isWide
-import Lanius.Mini.Compiler.P.arithUint
+import Lanius.Mini.Compiler.P.floatApply
 import Lanius.Mini.Compiler.P.lowerShift
 
 public section
@@ -53,18 +53,21 @@ def orderSint (operation : CmpOp) (left : Typed) (right : Typed) (kind : Option 
         none
 
 def order (operation : CmpOp) (left : Typed) (right : Typed) : Option Typed :=
-  if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
-    some ({ expr := Expr.compare Word.s32 operation left.expr right.expr, ty := SrcType.bool } : Typed)
+  if SrcType.isFloatAny left.ty then
+    floatOrder operation left right (SrcType.floatTy left.ty)
   else
-    if SrcType.isIsize left.ty && SrcType.isIsize right.ty then
-      some ({ expr := Expr.compare Word.u64 operation (signKey left.expr) (signKey right.expr), ty := SrcType.bool } : Typed)
+    if SrcType.isI32 left.ty && SrcType.isI32 right.ty then
+      some ({ expr := Expr.compare Word.s32 operation left.expr right.expr, ty := SrcType.bool } : Typed)
     else
-      if SrcType.isSintAny left.ty then
-        orderSint operation left right (SrcType.sintKind left.ty)
+      if SrcType.isIsize left.ty && SrcType.isIsize right.ty then
+        some ({ expr := Expr.compare Word.u64 operation (signKey left.expr) (signKey right.expr), ty := SrcType.bool } : Typed)
       else
-        if SrcType.isChar left.ty && SrcType.isChar right.ty then
-          some ({ expr := Expr.compare Word.u64 operation left.expr right.expr, ty := SrcType.bool } : Typed)
+        if SrcType.isSintAny left.ty then
+          orderSint operation left right (SrcType.sintKind left.ty)
         else
-          orderUint operation left right (SrcType.uintKind left.ty)
+          if SrcType.isChar left.ty && SrcType.isChar right.ty then
+            some ({ expr := Expr.compare Word.u64 operation left.expr right.expr, ty := SrcType.bool } : Typed)
+          else
+            orderUint operation left right (SrcType.uintKind left.ty)
 
 end Lanius.Mini

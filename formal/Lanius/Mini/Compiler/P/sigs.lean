@@ -22,6 +22,7 @@ def Expr.extent (self : Expr) : Nat :=
   | .neg operand => Expr.extent operand
   | .binary word operation left right => max (Expr.extent left) (Expr.extent right)
   | .compare word operation left right => max (Expr.extent left) (Expr.extent right)
+  | .fp operation left right => max (Expr.extent left) (Expr.extent right)
 
 def argsExtent (args : List Expr) : Nat :=
   match args with

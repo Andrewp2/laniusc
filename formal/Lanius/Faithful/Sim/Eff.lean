@@ -138,6 +138,7 @@ theorem structTy_some {boxes : Boxes} {ty t : SrcType} {ts : List SrcType} (h : 
   | unit => simp [structTy] at h
   | isize => simp [structTy] at h
   | char => simp [structTy] at h
+  | float => simp [structTy] at h
   | sint => simp [structTy] at h
 
 theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : variantTy ty k ts = some t) :
@@ -163,6 +164,7 @@ theorem variantTy_some {ty t : SrcType} {k : Nat} {ts : List SrcType} (h : varia
   | unit => simp [variantTy] at h
   | isize => simp [variantTy] at h
   | char => simp [variantTy] at h
+  | float => simp [variantTy] at h
   | sint => simp [variantTy] at h
 
 /-- A state between two that grow is below the later one's cursor. -/

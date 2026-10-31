@@ -3,7 +3,14 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_charOpen
+public import Lanius.Faithful.Gen.SelfStmt1
+public import Lanius.Faithful.Gen.SelfStmt2
+public import Lanius.Faithful.Gen.SelfStmt4
+public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_charOpen
+public import Lanius.Faithful.Gen.SelfStmtF_flDecimal
+public import Lanius.Faithful.Gen.SelfStmtF_flExpFirst
+public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
@@ -62,5 +69,77 @@ theorem step_find_local_id_at {prog : SrcProgram} {prims : Prims} {ix_find_local
   rw [pcall_succ np fn] at h
   simp only [src_find_local_id_at] at h
   faithful [Lanius.Mini.Inline.findLocalIdAt]
+
+theorem proof_fl_exp_at {prog : SrcProgram} {prims : Prims} {ix_fl_exp_at ix_fl_exp_sign : Nat} (fn : prog.funcs[ix_fl_exp_at]? = some (src_fl_exp_at ix_fl_exp_sign)) (np : prims.isPrim ix_fl_exp_at = false)
+    (ext_fl_exp_sign : Certified (∀ {n : Nat}, Stmt_fl_exp_sign prog prims ix_fl_exp_sign n)) {n : Nat} :
+    Stmt_fl_exp_at prog prims ix_fl_exp_at n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_exp_at] at h
+  faithful [Lanius.Mini.Inline.flExpAt]
+
+theorem step_fl_exp_digit_at {prog : SrcProgram} {prims : Prims} {ix_fl_exp_digit_at ix_plus ix_minus ix_times ix_fl_digit ix_fl_exp_digits : Nat} (fn : prog.funcs[ix_fl_exp_digit_at]? = some (src_fl_exp_digit_at ix_plus ix_minus ix_times ix_fl_digit ix_fl_exp_digits)) (np : prims.isPrim ix_fl_exp_digit_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
+    (ext_fl_digit : Certified (∀ {n : Nat}, Stmt_fl_digit prog prims ix_fl_digit n)) {n : Nat}
+    (ih_fl_exp_digits : Certified (Stmt_fl_exp_digits prog prims ix_fl_exp_digits n)) :
+    Stmt_fl_exp_digit_at prog prims ix_fl_exp_digit_at (n + 1) := by
+  intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_exp_digit_at] at h
+  faithful [Lanius.Mini.Inline.flExpDigitAt]
+
+theorem proof_fl_exp_first_at {prog : SrcProgram} {prims : Prims} {ix_fl_exp_first_at ix_minus ix_fl_digit ix_fl_exp_digits : Nat} (fn : prog.funcs[ix_fl_exp_first_at]? = some (src_fl_exp_first_at ix_minus ix_fl_digit ix_fl_exp_digits)) (np : prims.isPrim ix_fl_exp_first_at = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_fl_digit : Certified (∀ {n : Nat}, Stmt_fl_digit prog prims ix_fl_digit n))
+    (ext_fl_exp_digits : Certified (∀ {n : Nat}, Stmt_fl_exp_digits prog prims ix_fl_exp_digits n)) {n : Nat} :
+    Stmt_fl_exp_first_at prog prims ix_fl_exp_first_at n := by
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_exp_first_at] at h
+  faithful [Lanius.Mini.Inline.flExpFirstAt]
+
+theorem proof_fl_exp_sign_at {prog : SrcProgram} {prims : Prims} {ix_fl_exp_sign_at ix_cons_of_usize ix_fl_exp_first : Nat} (fn : prog.funcs[ix_fl_exp_sign_at]? = some (src_fl_exp_sign_at ix_cons_of_usize ix_fl_exp_first)) (np : prims.isPrim ix_fl_exp_sign_at = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_fl_exp_first : Certified (∀ {n : Nat}, Stmt_fl_exp_first prog prims ix_fl_exp_first n)) {n : Nat} :
+    Stmt_fl_exp_sign_at prog prims ix_fl_exp_sign_at n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_exp_sign_at] at h
+  faithful [Lanius.Mini.Inline.flExpSignAt]
+
+theorem step_fl_frac_at {prog : SrcProgram} {prims : Prims} {ix_fl_frac_at ix_plus ix_cons_of_usize ix_fl_digit ix_fl_push ix_fl_frac_part ix_fl_exp_part : Nat} (fn : prog.funcs[ix_fl_frac_at]? = some (src_fl_frac_at ix_plus ix_cons_of_usize ix_fl_digit ix_fl_push ix_fl_frac_part ix_fl_exp_part)) (np : prims.isPrim ix_fl_frac_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_fl_digit : Certified (∀ {n : Nat}, Stmt_fl_digit prog prims ix_fl_digit n))
+    (ext_fl_push : Certified (∀ {n : Nat}, Stmt_fl_push prog prims ix_fl_push n))
+    (ext_fl_exp_part : Certified (∀ {n : Nat}, Stmt_fl_exp_part prog prims ix_fl_exp_part n)) {n : Nat}
+    (ih_fl_frac_part : Certified (Stmt_fl_frac_part prog prims ix_fl_frac_part n)) :
+    Stmt_fl_frac_at prog prims ix_fl_frac_at (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_frac_at] at h
+  faithful [Lanius.Mini.Inline.flFracAt]
+
+theorem step_fl_int_at {prog : SrcProgram} {prims : Prims} {ix_fl_int_at ix_plus ix_cons_of_usize ix_fl_int_part ix_fl_digit ix_fl_push ix_fl_frac_part ix_fl_exp_part : Nat} (fn : prog.funcs[ix_fl_int_at]? = some (src_fl_int_at ix_plus ix_cons_of_usize ix_fl_int_part ix_fl_digit ix_fl_push ix_fl_frac_part ix_fl_exp_part)) (np : prims.isPrim ix_fl_int_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_fl_digit : Certified (∀ {n : Nat}, Stmt_fl_digit prog prims ix_fl_digit n))
+    (ext_fl_push : Certified (∀ {n : Nat}, Stmt_fl_push prog prims ix_fl_push n))
+    (ext_fl_frac_part : Certified (∀ {n : Nat}, Stmt_fl_frac_part prog prims ix_fl_frac_part n))
+    (ext_fl_exp_part : Certified (∀ {n : Nat}, Stmt_fl_exp_part prog prims ix_fl_exp_part n)) {n : Nat}
+    (ih_fl_int_part : Certified (Stmt_fl_int_part prog prims ix_fl_int_part n)) :
+    Stmt_fl_int_at prog prims ix_fl_int_at (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_fl_int_at] at h
+  faithful [Lanius.Mini.Inline.flIntAt]
 
 end Lanius.Faithful.SelfCert

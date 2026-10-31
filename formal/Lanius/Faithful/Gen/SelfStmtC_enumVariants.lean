@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_enum_variants (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SrcEnumDecl} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 70 RepSrcEnumDecl) x0 v0 → RepNat x1 v1 →
-    (RepOption 179 (RepList 72 (RepList 68 RepSrcType))) (Lanius.Mini.enumVariants x0 x1) w
+  ∀ {x0 : List Lanius.Mini.SrcEnumDecl} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 74 RepSrcEnumDecl) x0 v0 → RepNat x1 v1 →
+    (RepOption 183 (RepList 76 (RepList 72 RepSrcType))) (Lanius.Mini.enumVariants x0 x1) w
 
 end Lanius.Faithful.SelfCert

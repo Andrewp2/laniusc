@@ -267,7 +267,7 @@ structure AtEntry (binary : Binary) (entry stack heap : Nat) (file : List UInt8)
 
 theorem AtEntry.congr {binary : Binary} {entry stack heap : Nat} {file : List UInt8} {t u : State}
     (h : AtEntry binary entry stack heap file t) (same : DataEq t u) : AtEntry binary entry stack heap file u := by
-  obtain ⟨r, i, m, o⟩ := same
+  obtain ⟨r, i, m, -, o⟩ := same
   exact ⟨r ▸ h.rsp, r ▸ h.limit, r ▸ h.base, r ▸ h.heapLimit, r ▸ h.cursor, i ▸ h.rip, m ▸ h.code, m ▸ h.zero,
     m ▸ h.ret, o ▸ h.io⟩
 

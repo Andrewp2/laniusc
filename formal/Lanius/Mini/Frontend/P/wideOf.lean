@@ -3,6 +3,8 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.consTys
 import Lanius.Mini.Frontend.P.findConst
+import Lanius.Mini.Frontend.P.flExpFirst
+import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral
@@ -34,6 +36,7 @@ def wideOf (ty : Ty) (negative : Bool) (n : Nat) : Option SrcExpr :=
   | .tyPtr => none
   | .tyIsize => wideIsize negative n
   | .tyChar => none
+  | .tyFloat ft => none
   | .tySlice e => none
   | .tyNamed d args => none
   | .tySint u => wideSint u negative n
@@ -118,7 +121,10 @@ def exprOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) : Opti
                               if p = (178) then
                                 charLiteral (kidToken c 0).text
                               else
-                                none
+                                if p = (176) then
+                                  floatLiteral (kidToken c 0).text
+                                else
+                                  none
 /-- A name: a local, or else a constant, whose literal value it is. -/
 def identExpr (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) : Option SrcExpr :=
   if fuel = 0 then
@@ -158,6 +164,7 @@ def wideInner (t : SrcType) (x : SrcExpr) : Option (BitVec 64) :=
     | .cast s y => none
     | .null => none
     | .char code => none
+    | .float ft bits => none
   else
     none
 /-- The literal a wide marker holds, if e is one. -/
@@ -174,6 +181,7 @@ def wideValue (e : SrcExpr) : Option (BitVec 64) :=
   | .cast t x => wideInner t x
   | .null => none
   | .char code => none
+  | .float ft bits => none
 def hasWide (v : Option (BitVec 64)) : Bool :=
   match v with
   | none => false
@@ -192,6 +200,7 @@ def wideRead (e : SrcExpr) : Bool :=
   | .cast t x => hasWide (wideInner t x)
   | .null => false
   | .char code => false
+  | .float ft bits => false
 def wideReadOf (v : Option SrcExpr) : Bool :=
   match v with
   | none => false
@@ -328,6 +337,7 @@ def structFieldTys (fuel : Nat) (decls : Decls) (t : Ty) : Option (List Ty) :=
   | .tyPtr => none
   | .tyIsize => none
   | .tyChar => none
+  | .tyFloat ft => none
   | .tySlice e => none
   | .tyNamed d args => fieldTys fuel decls d args
   | .tySint k => none
@@ -354,5 +364,6 @@ def bareInt (e : SrcExpr) : Bool :=
   | .cast t x => unitTy t
   | .null => false
   | .char code => false
+  | .float ft bits => false
 
 end Lanius.Mini

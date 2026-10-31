@@ -51,6 +51,7 @@ def Instr.rename (table : List Nat) (missing : Nat) : Instr → Instr
   | .loadWordAt width => .loadWordAt width
   | .storeWordAt width slot => .storeWordAt width slot
   | .div word operation slot => .div word operation slot
+  | .fp operation slot => .fp operation slot
   | .sys kind slot => .sys kind slot
 
 def Code.rename (table : List Nat) (missing : Nat) (code : Code) : Code :=

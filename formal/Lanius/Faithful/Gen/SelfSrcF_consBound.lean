@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::cons_bound -/
-def src_cons_bound (ix_cons_of_mini_selfhost_MEff : Nat) : SrcFunc := { params := [{ id := 11, ty := ty183 }, { id := 20, ty := ty321 }], ret := ty321, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 20)) ty321 ty321 [[151], []] [SrcEff.eVariant ty321 0 [SrcEff.eStruct ty320 [SrcEff.eCall ix_cons_of_mini_selfhost_MEff [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.field 151 0)], SrcEff.ePure (SrcExpr.field 151 1)]], SrcEff.eVariant ty321 1 []]) }
+def src_cons_bound (ix_cons_of_mini_selfhost_MEff : Nat) : SrcFunc := { params := [{ id := 11, ty := ty187 }, { id := 20, ty := ty335 }], ret := ty335, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 20)) ty335 ty335 [[151], []] [SrcEff.eVariant ty335 0 [SrcEff.eStruct ty334 [SrcEff.eCall ix_cons_of_mini_selfhost_MEff [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.field 151 0)], SrcEff.ePure (SrcExpr.field 151 1)]], SrcEff.eVariant ty335 1 []]) }
 
 end
 

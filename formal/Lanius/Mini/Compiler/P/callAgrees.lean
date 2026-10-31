@@ -2,7 +2,9 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.BinOp_folds
+import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.Expr_agrees
+import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.Word_narrows
 import Lanius.Mini.Compiler.P.arities
@@ -202,6 +204,7 @@ def Expr.mentions (self : Expr) (index : Nat) : Bool :=
   | .neg operand => Expr.mentions operand index
   | .binary word operation left right => Expr.mentions left index || Expr.mentions right index
   | .compare word operation left right => Expr.mentions left index || Expr.mentions right index
+  | .fp operation left right => Expr.mentions left index || Expr.mentions right index
 
 /-- Each slot with a fact replaced by the fact's value. -/
 def Expr.subst (self : Expr) (facts : List Fact) : Expr :=
@@ -211,6 +214,7 @@ def Expr.subst (self : Expr) (facts : List Fact) : Expr :=
   | .neg operand => Expr.neg (Expr.subst operand facts)
   | .binary word operation left right => Expr.binary word operation (Expr.subst left facts) (Expr.subst right facts)
   | .compare word operation left right => Expr.compare word operation (Expr.subst left facts) (Expr.subst right facts)
+  | .fp operation left right => Expr.fp operation (Expr.subst left facts) (Expr.subst right facts)
 
 /-- A literal or a slot: cheap to copy into each use. -/
 def Expr.isAtom (self : Expr) : Bool :=
@@ -220,5 +224,6 @@ def Expr.isAtom (self : Expr) : Bool :=
   | .neg operand => false
   | .binary word operation left right => false
   | .compare word operation left right => false
+  | .fp operation left right => false
 
 end Lanius.Mini

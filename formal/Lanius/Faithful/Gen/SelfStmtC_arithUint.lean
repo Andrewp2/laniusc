@@ -20,16 +20,16 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-abbrev Stmt_arith (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    (RepOption 146 RepTyped) (Lanius.Mini.arith x0 x1 x2) w
-
 abbrev Stmt_arith_sint (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 195 RepUintTy) x3 v3 →
-    (RepOption 146 RepTyped) (Lanius.Mini.arithSint x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 199 RepUintTy) x3 v3 →
+    (RepOption 150 RepTyped) (Lanius.Mini.arithSint x0 x1 x2 x3) w
 
 abbrev Stmt_arith_uint (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 195 RepUintTy) x3 v3 →
-    (RepOption 146 RepTyped) (Lanius.Mini.arithUint x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 199 RepUintTy) x3 v3 →
+    (RepOption 150 RepTyped) (Lanius.Mini.arithUint x0 x1 x2 x3) w
+
+abbrev Stmt_float_op (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.BinOp} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepBinOp x0 v0 →
+    (RepOption 237 RepFArith) (Lanius.Mini.floatOp x0) w
 
 end Lanius.Faithful.SelfCert

@@ -8,6 +8,7 @@ public import Lanius.Mini.Frontend.P.consBinder
 public import Lanius.Mini.Frontend.P.consTreeTail
 public import Lanius.Mini.Frontend.P.effNamedTys
 public import Lanius.Mini.Frontend.P.findConst
+public import Lanius.Mini.Frontend.P.floatTyped
 public import Lanius.Mini.Frontend.P.freshId
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.intLiteral

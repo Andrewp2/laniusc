@@ -8,7 +8,9 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.pow2
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.Code_image
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -20,14 +22,16 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
@@ -87,7 +91,7 @@ import all Lanius.Mini.Compiler.P.compileSource
 import all Lanius.Mini.Compiler.P.larger
 import all Lanius.Mini.Compiler.P.Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
-import all Lanius.Mini.Compiler.P.Inline_branchAgrees
+import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
 
 @[expose] public section
@@ -410,7 +414,7 @@ theorem SrcExpr.eval_state (e : SrcExpr) {P : Core.Program} :
     ∀ {fuel : Nat} {st : State} {v : Value} {st' : State},
       evalExpr fuel P st e.toCore = .done v st' → st' = st := by
   induction e with
-  | int _ | boolean _ | unsigned _ _ | null | char _ =>
+  | int _ | boolean _ | unsigned _ _ | null | char _ | float _ _ =>
     intro fuel st v st' run
     cases fuel with
     | zero => simp [evalExpr] at run

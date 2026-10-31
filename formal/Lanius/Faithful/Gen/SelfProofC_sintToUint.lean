@@ -3,12 +3,12 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_sintToUint
-public import Lanius.Faithful.Gen.SelfStmt0
+public import Lanius.Faithful.Gen.SelfStmt3
+public import Lanius.Faithful.Gen.SelfStmtC_DivOp_size
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_isWide
-public import Lanius.Faithful.Gen.SelfStmtC_conjunction
 public import Lanius.Faithful.Gen.SelfStmtC_lowerLocal
-public import Lanius.Faithful.Gen.SelfStmtC_norm
 public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_sintToUint
 import all Lanius.Mini.Compiler.P.sintToUint
@@ -30,28 +30,11 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_SrcExpr_lower {prog : SrcProgram} {prims : Prims} {ix_SrcExpr_lower ix_lookup ix_unbox_of_mini_selfhost_SrcExpr ix_bool_bits ix_lower_unsigned ix_lower_local ix_lower_field ix_lower_negate ix_lower_not ix_lower_apply ix_lower_cast : Nat} (fn : prog.funcs[ix_SrcExpr_lower]? = some (src_SrcExpr_lower ix_lookup ix_unbox_of_mini_selfhost_SrcExpr ix_SrcExpr_lower ix_bool_bits ix_lower_unsigned ix_lower_local ix_lower_field ix_lower_negate ix_lower_not ix_lower_apply ix_lower_cast)) (np : prims.isPrim ix_SrcExpr_lower = false)
-    (ext_lookup : Certified (∀ {n : Nat}, Stmt_lookup prog prims ix_lookup n))
-    (ext_unbox_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcExpr prog prims ix_unbox_of_mini_selfhost_SrcExpr n))
-    (ext_bool_bits : Certified (∀ {n : Nat}, Stmt_bool_bits prog prims ix_bool_bits n))
-    (ext_lower_unsigned : Certified (∀ {n : Nat}, Stmt_lower_unsigned prog prims ix_lower_unsigned n))
-    (ext_lower_local : Certified (∀ {n : Nat}, Stmt_lower_local prog prims ix_lower_local n))
-    (ext_lower_field : Certified (∀ {n : Nat}, Stmt_lower_field prog prims ix_lower_field n))
-    (ext_lower_negate : Certified (∀ {n : Nat}, Stmt_lower_negate prog prims ix_lower_negate n))
-    (ext_lower_not : Certified (∀ {n : Nat}, Stmt_lower_not prog prims ix_lower_not n))
-    (ext_lower_apply : Certified (∀ {n : Nat}, Stmt_lower_apply prog prims ix_lower_apply n))
-    (ext_lower_cast : Certified (∀ {n : Nat}, Stmt_lower_cast prog prims ix_lower_cast n)) {n : Nat}
-    (ih_SrcExpr_lower : Certified (Stmt_SrcExpr_lower prog prims ix_SrcExpr_lower n)) :
-    Stmt_SrcExpr_lower prog prims ix_SrcExpr_lower (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_SrcExpr_lower] at h
-  faithful [Lanius.Mini.SrcExpr.lower]
-
-theorem proof_cast_to {prog : SrcProgram} {prims : Prims} {ix_cast_to ix_cast_to_i32 ix_cast_to_uint ix_cast_to_isize ix_cast_to_sint : Nat} (fn : prog.funcs[ix_cast_to]? = some (src_cast_to ix_cast_to_i32 ix_cast_to_uint ix_cast_to_isize ix_cast_to_sint)) (np : prims.isPrim ix_cast_to = false)
+theorem proof_cast_to {prog : SrcProgram} {prims : Prims} {ix_cast_to ix_cast_to_i32 ix_cast_to_uint ix_cast_to_isize ix_cast_to_float ix_cast_to_sint : Nat} (fn : prog.funcs[ix_cast_to]? = some (src_cast_to ix_cast_to_i32 ix_cast_to_uint ix_cast_to_isize ix_cast_to_float ix_cast_to_sint)) (np : prims.isPrim ix_cast_to = false)
     (ext_cast_to_i32 : Certified (∀ {n : Nat}, Stmt_cast_to_i32 prog prims ix_cast_to_i32 n))
     (ext_cast_to_uint : Certified (∀ {n : Nat}, Stmt_cast_to_uint prog prims ix_cast_to_uint n))
     (ext_cast_to_isize : Certified (∀ {n : Nat}, Stmt_cast_to_isize prog prims ix_cast_to_isize n))
+    (ext_cast_to_float : Certified (∀ {n : Nat}, Stmt_cast_to_float prog prims ix_cast_to_float n))
     (ext_cast_to_sint : Certified (∀ {n : Nat}, Stmt_cast_to_sint prog prims ix_cast_to_sint n)) {n : Nat} :
     Stmt_cast_to prog prims ix_cast_to n := by
   intro x0 x1 v0 v1 w h r0 r1
@@ -60,6 +43,19 @@ theorem proof_cast_to {prog : SrcProgram} {prims : Prims} {ix_cast_to ix_cast_to
   rw [pcall_succ np fn] at h
   simp only [src_cast_to] at h
   faithful [Lanius.Mini.castTo]
+
+theorem proof_cast_to_float {prog : SrcProgram} {prims : Prims} {ix_cast_to_float ix_int_to_float ix_if_narrow ix_float_to_float ix_UintTy_signed_word : Nat} (fn : prog.funcs[ix_cast_to_float]? = some (src_cast_to_float ix_int_to_float ix_if_narrow ix_float_to_float ix_UintTy_signed_word)) (np : prims.isPrim ix_cast_to_float = false)
+    (ext_int_to_float : Certified (∀ {n : Nat}, Stmt_int_to_float prog prims ix_int_to_float n))
+    (ext_if_narrow : Certified (∀ {n : Nat}, Stmt_if_narrow prog prims ix_if_narrow n))
+    (ext_float_to_float : Certified (∀ {n : Nat}, Stmt_float_to_float prog prims ix_float_to_float n))
+    (ext_UintTy_signed_word : Certified (∀ {n : Nat}, Stmt_UintTy_signed_word prog prims ix_UintTy_signed_word n)) {n : Nat} :
+    Stmt_cast_to_float prog prims ix_cast_to_float n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_cast_to_float] at h
+  faithful [Lanius.Mini.castToFloat]
 
 theorem proof_cast_to_i32 {prog : SrcProgram} {prims : Prims} {ix_cast_to_i32 ix_wrap ix_sint_to_i32 : Nat} (fn : prog.funcs[ix_cast_to_i32]? = some (src_cast_to_i32 ix_wrap ix_sint_to_i32)) (np : prims.isPrim ix_cast_to_i32 = false)
     (ext_wrap : Certified (∀ {n : Nat}, Stmt_wrap prog prims ix_wrap n))
@@ -83,10 +79,11 @@ theorem proof_cast_to_isize {prog : SrcProgram} {prims : Prims} {ix_cast_to_isiz
   simp only [src_cast_to_isize] at h
   faithful [Lanius.Mini.castToIsize]
 
-theorem proof_cast_to_sint {prog : SrcProgram} {prims : Prims} {ix_cast_to_sint ix_SrcType_is_scalar ix_SrcType_is_bool ix_SrcType_is_ptr ix_cast_to_isize ix_UintTy_is_wide ix_norm : Nat} (fn : prog.funcs[ix_cast_to_sint]? = some (src_cast_to_sint ix_SrcType_is_scalar ix_SrcType_is_bool ix_SrcType_is_ptr ix_cast_to_isize ix_UintTy_is_wide ix_norm)) (np : prims.isPrim ix_cast_to_sint = false)
+theorem proof_cast_to_sint {prog : SrcProgram} {prims : Prims} {ix_cast_to_sint ix_SrcType_is_scalar ix_SrcType_is_bool ix_SrcType_is_ptr ix_SrcType_is_float_any ix_cast_to_isize ix_UintTy_is_wide ix_norm : Nat} (fn : prog.funcs[ix_cast_to_sint]? = some (src_cast_to_sint ix_SrcType_is_scalar ix_SrcType_is_bool ix_SrcType_is_ptr ix_SrcType_is_float_any ix_cast_to_isize ix_UintTy_is_wide ix_norm)) (np : prims.isPrim ix_cast_to_sint = false)
     (ext_SrcType_is_scalar : Certified (∀ {n : Nat}, Stmt_SrcType_is_scalar prog prims ix_SrcType_is_scalar n))
     (ext_SrcType_is_bool : Certified (∀ {n : Nat}, Stmt_SrcType_is_bool prog prims ix_SrcType_is_bool n))
     (ext_SrcType_is_ptr : Certified (∀ {n : Nat}, Stmt_SrcType_is_ptr prog prims ix_SrcType_is_ptr n))
+    (ext_SrcType_is_float_any : Certified (∀ {n : Nat}, Stmt_SrcType_is_float_any prog prims ix_SrcType_is_float_any n))
     (ext_cast_to_isize : Certified (∀ {n : Nat}, Stmt_cast_to_isize prog prims ix_cast_to_isize n))
     (ext_UintTy_is_wide : Certified (∀ {n : Nat}, Stmt_UintTy_is_wide prog prims ix_UintTy_is_wide n))
     (ext_norm : Certified (∀ {n : Nat}, Stmt_norm prog prims ix_norm n)) {n : Nat} :
@@ -110,24 +107,35 @@ theorem proof_cast_to_uint {prog : SrcProgram} {prims : Prims} {ix_cast_to_uint 
   simp only [src_cast_to_uint] at h
   faithful [Lanius.Mini.castToUint]
 
-theorem proof_is_one {prog : SrcProgram} {prims : Prims} {ix_is_one : Nat} (fn : prog.funcs[ix_is_one]? = some (src_is_one)) (np : prims.isPrim ix_is_one = false) {n : Nat} :
-    Stmt_is_one prog prims ix_is_one n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_is_one] at h
-  faithful [Lanius.Mini.isOne]
-
-theorem proof_lower_apply {prog : SrcProgram} {prims : Prims} {ix_lower_apply ix_SrcOp_lower : Nat} (fn : prog.funcs[ix_lower_apply]? = some (src_lower_apply ix_SrcOp_lower)) (np : prims.isPrim ix_lower_apply = false)
-    (ext_SrcOp_lower : Certified (∀ {n : Nat}, Stmt_SrcOp_lower prog prims ix_SrcOp_lower n)) {n : Nat} :
-    Stmt_lower_apply prog prims ix_lower_apply n := by
+theorem proof_float_to_float {prog : SrcProgram} {prims : Prims} {ix_float_to_float ix_boxed_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_float_to_float]? = some (src_float_to_float ix_boxed_of_mini_selfhost_Expr)) (np : prims.isPrim ix_float_to_float = false)
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n)) {n : Nat} :
+    Stmt_float_to_float prog prims ix_float_to_float n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_lower_apply] at h
-  faithful [Lanius.Mini.lowerApply]
+  simp only [src_float_to_float] at h
+  faithful [Lanius.Mini.floatToFloat]
+
+theorem proof_if_narrow {prog : SrcProgram} {prims : Prims} {ix_if_narrow ix_UintTy_is_wide : Nat} (fn : prog.funcs[ix_if_narrow]? = some (src_if_narrow ix_UintTy_is_wide)) (np : prims.isPrim ix_if_narrow = false)
+    (ext_UintTy_is_wide : Certified (∀ {n : Nat}, Stmt_UintTy_is_wide prog prims ix_UintTy_is_wide n)) {n : Nat} :
+    Stmt_if_narrow prog prims ix_if_narrow n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_if_narrow] at h
+  faithful [Lanius.Mini.ifNarrow]
+
+theorem proof_int_to_float {prog : SrcProgram} {prims : Prims} {ix_int_to_float ix_boxed_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_int_to_float]? = some (src_int_to_float ix_boxed_of_mini_selfhost_Expr)) (np : prims.isPrim ix_int_to_float = false)
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n)) {n : Nat} :
+    Stmt_int_to_float prog prims ix_int_to_float n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_int_to_float] at h
+  faithful [Lanius.Mini.intToFloat]
 
 theorem proof_lower_cast {prog : SrcProgram} {prims : Prims} {ix_lower_cast ix_cast_to : Nat} (fn : prog.funcs[ix_lower_cast]? = some (src_lower_cast ix_cast_to)) (np : prims.isPrim ix_lower_cast = false)
     (ext_cast_to : Certified (∀ {n : Nat}, Stmt_cast_to prog prims ix_cast_to n)) {n : Nat} :
@@ -138,6 +146,16 @@ theorem proof_lower_cast {prog : SrcProgram} {prims : Prims} {ix_lower_cast ix_c
   rw [pcall_succ np fn] at h
   simp only [src_lower_cast] at h
   faithful [Lanius.Mini.lowerCast]
+
+theorem proof_lower_float {prog : SrcProgram} {prims : Prims} {ix_lower_float ix_FloatTy_mask : Nat} (fn : prog.funcs[ix_lower_float]? = some (src_lower_float ix_FloatTy_mask)) (np : prims.isPrim ix_lower_float = false)
+    (ext_FloatTy_mask : Certified (∀ {n : Nat}, Stmt_FloatTy_mask prog prims ix_FloatTy_mask n)) {n : Nat} :
+    Stmt_lower_float prog prims ix_lower_float n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lower_float] at h
+  faithful [Lanius.Mini.lowerFloat]
 
 theorem proof_sint_to_uint {prog : SrcProgram} {prims : Prims} {ix_sint_to_uint ix_UintTy_is_wide ix_wrap ix_from_i32 : Nat} (fn : prog.funcs[ix_sint_to_uint]? = some (src_sint_to_uint ix_UintTy_is_wide ix_wrap ix_from_i32)) (np : prims.isPrim ix_sint_to_uint = false)
     (ext_UintTy_is_wide : Certified (∀ {n : Nat}, Stmt_UintTy_is_wide prog prims ix_UintTy_is_wide n))

@@ -56,6 +56,7 @@ def srcTy (t : SrcType) : Option Ty :=
   | .unit => none
   | .isize => some Ty.tyIsize
   | .char => some Ty.tyChar
+  | .float ft => some (Ty.tyFloat ft)
   | .sint sk => some (Ty.tySint sk)
 
 def scalarSrc (t : Ty) : Option SrcType :=
@@ -66,6 +67,7 @@ def scalarSrc (t : Ty) : Option SrcType :=
   | .tyPtr => some SrcType.ptr
   | .tyIsize => some SrcType.isize
   | .tyChar => some SrcType.char
+  | .tyFloat ft => some (SrcType.float ft)
   | .tySlice e => none
   | .tyNamed d args => none
   | .tySint k => some (SrcType.sint k)

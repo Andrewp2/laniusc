@@ -8,7 +8,9 @@ null pointer for `0` at ptr, the cast of the i32 literal at isize or at a
 signed type that holds it, and `-k` at a narrow signed type whose least
 value it is as the cast of the i32 literal `-k`: `negLeast`), and each
 wide literal (one of 2^31 or more, read as a marker) at its expected type
-too (`wideAt`, `negWideAt`). What a position expects: a let's type, a
+too (`wideAt`, `negWideAt`), and each float literal's marker as its literal of
+the expected type when that is a float type, else as its f32 literal
+(`floatWant`). What a position expects: a let's type, a
 local's or field's when stored to, a parameter's, the function's result for
 return, a field's or payload's in a literal, a slice element's in an index
 store, an arm's result type, Bool for conditions, asserts and `!`; an
@@ -44,11 +46,15 @@ inductive LitExpr (locals : List LocalTy) : Option SrcType → SrcExpr → SrcEx
       LitExpr locals (amountWant op want (knownExpr locals a) (knownExpr locals b)) b b' →
       LitExpr locals want (.apply op a b) (.apply op a' b')
   | cast {want : Option SrcType} {t : SrcType} {x y : SrcExpr} :
-      wideValue (.cast t x) = none → LitExpr locals none x y → LitExpr locals want (.cast t x) (.cast t y)
+      wideValue (.cast t x) = none → floatWant want t x = none → LitExpr locals none x y →
+      LitExpr locals want (.cast t x) (.cast t y)
+  | floatLit {want : Option SrcType} {t : SrcType} {x y : SrcExpr} :
+      wideValue (.cast t x) = none → floatWant want t x = some y → LitExpr locals want (.cast t x) y
   | wide {want : Option SrcType} {t : SrcType} {x : SrcExpr} {n : BitVec 64} :
       wideValue (.cast t x) = some n → LitExpr locals want (.cast t x) (wideAt want n (.cast t x))
   | null {want : Option SrcType} : LitExpr locals want .null .null
   | char {want : Option SrcType} {c : BitVec 32} : LitExpr locals want (.char c) (.char c)
+  | float {want : Option SrcType} {t : FloatTy} {b : BitVec 64} : LitExpr locals want (.float t b) (.float t b)
 
 /-- Expressions at a list of expected types, in order (none past its end). -/
 inductive LitExprs (locals : List LocalTy) : Option (List SrcType) → List SrcExpr → List SrcExpr → Prop
@@ -82,10 +88,14 @@ theorem litExpr_sound (locals : List LocalTy) :
     simp only [litExpr]; exact .apply (litExpr_sound locals _ a) (litExpr_sound locals _ b)
   | want, .cast t x => by
     cases hw : wideValue (.cast t x) with
-    | none => simp only [litExpr, hw]; exact .cast hw (litExpr_sound locals none x)
+    | none =>
+      cases hf : floatWant want t x with
+      | none => simp only [litExpr, hw, hf]; exact .cast hw hf (litExpr_sound locals none x)
+      | some y => simp only [litExpr, hw, hf]; exact .floatLit hw hf
     | some n => simp only [litExpr, hw]; exact .wide hw
   | want, .null => by simp only [litExpr]; exact .null
   | want, .char c => by simp only [litExpr]; exact .char
+  | want, .float t b => by simp only [litExpr]; exact .float
 
 theorem litExprs_sound (locals : List LocalTy) :
     ∀ (wants : Option (List SrcType)) (es : List SrcExpr), LitExprs locals wants es (litExprs locals wants es)

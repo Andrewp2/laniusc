@@ -6,9 +6,9 @@ public import Lanius.Faithful.Gen.SelfSrcC_conjunction
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_arithShiftRight
-public import Lanius.Faithful.Gen.SelfStmtC_arithUint
 public import Lanius.Faithful.Gen.SelfStmtC_conjunction
 public import Lanius.Faithful.Gen.SelfStmtC_equality
+public import Lanius.Faithful.Gen.SelfStmtC_floatApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerShift
 import all Lanius.Faithful.Gen.SelfSrcC_conjunction
 import all Lanius.Mini.Compiler.P.conjunction

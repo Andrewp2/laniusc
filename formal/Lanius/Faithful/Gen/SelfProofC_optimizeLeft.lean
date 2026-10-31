@@ -37,7 +37,8 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_Expr_optimize {prog : SrcProgram} {prims : Prims} {ix_Expr_optimize ix_unbox_of_mini_selfhost_Expr ix_optimize_neg ix_optimize_binary ix_optimize_compare : Nat} (fn : prog.funcs[ix_Expr_optimize]? = some (src_Expr_optimize ix_Expr_optimize ix_unbox_of_mini_selfhost_Expr ix_optimize_neg ix_optimize_binary ix_optimize_compare)) (np : prims.isPrim ix_Expr_optimize = false)
+theorem step_Expr_optimize {prog : SrcProgram} {prims : Prims} {ix_Expr_optimize ix_boxed_of_mini_selfhost_Expr ix_unbox_of_mini_selfhost_Expr ix_optimize_neg ix_optimize_binary ix_optimize_compare : Nat} (fn : prog.funcs[ix_Expr_optimize]? = some (src_Expr_optimize ix_boxed_of_mini_selfhost_Expr ix_Expr_optimize ix_unbox_of_mini_selfhost_Expr ix_optimize_neg ix_optimize_binary ix_optimize_compare)) (np : prims.isPrim ix_Expr_optimize = false)
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
     (ext_unbox_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_Expr prog prims ix_unbox_of_mini_selfhost_Expr n))
     (ext_optimize_neg : Certified (∀ {n : Nat}, Stmt_optimize_neg prog prims ix_optimize_neg n))
     (ext_optimize_binary : Certified (∀ {n : Nat}, Stmt_optimize_binary prog prims ix_optimize_binary n))

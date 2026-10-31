@@ -3,9 +3,7 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_arithUint
-public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtC_Inline_arithOf
-public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_arithUint
 import all Lanius.Faithful.Gen.SelfSrcC_arithUint
 import all Lanius.Mini.Compiler.P.arithUint
@@ -27,23 +25,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_arith {prog : SrcProgram} {prims : Prims} {ix_arith ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_arith_sint ix_arith_uint : Nat} (fn : prog.funcs[ix_arith]? = some (src_arith ix_boxed_of_mini_selfhost_Expr ix_SrcType_is_i32 ix_SrcType_is_isize ix_SrcType_sint_kind ix_SrcType_uint_kind ix_SrcType_is_sint_any ix_arith_sint ix_arith_uint)) (np : prims.isPrim ix_arith = false)
-    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
-    (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
-    (ext_SrcType_is_isize : Certified (∀ {n : Nat}, Stmt_SrcType_is_isize prog prims ix_SrcType_is_isize n))
-    (ext_SrcType_sint_kind : Certified (∀ {n : Nat}, Stmt_SrcType_sint_kind prog prims ix_SrcType_sint_kind n))
-    (ext_SrcType_uint_kind : Certified (∀ {n : Nat}, Stmt_SrcType_uint_kind prog prims ix_SrcType_uint_kind n))
-    (ext_SrcType_is_sint_any : Certified (∀ {n : Nat}, Stmt_SrcType_is_sint_any prog prims ix_SrcType_is_sint_any n))
-    (ext_arith_sint : Certified (∀ {n : Nat}, Stmt_arith_sint prog prims ix_arith_sint n))
-    (ext_arith_uint : Certified (∀ {n : Nat}, Stmt_arith_uint prog prims ix_arith_uint n)) {n : Nat} :
-    Stmt_arith prog prims ix_arith n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_arith] at h
-  faithful [Lanius.Mini.arith]
-
 theorem proof_arith_sint {prog : SrcProgram} {prims : Prims} {ix_arith_sint ix_arith_signed_of : Nat} (fn : prog.funcs[ix_arith_sint]? = some (src_arith_sint ix_arith_signed_of)) (np : prims.isPrim ix_arith_sint = false)
     (ext_arith_signed_of : Certified (∀ {n : Nat}, Stmt_arith_signed_of prog prims ix_arith_signed_of n)) {n : Nat} :
     Stmt_arith_sint prog prims ix_arith_sint n := by
@@ -63,5 +44,14 @@ theorem proof_arith_uint {prog : SrcProgram} {prims : Prims} {ix_arith_uint ix_a
   rw [pcall_succ np fn] at h
   simp only [src_arith_uint] at h
   faithful [Lanius.Mini.arithUint]
+
+theorem proof_float_op {prog : SrcProgram} {prims : Prims} {ix_float_op : Nat} (fn : prog.funcs[ix_float_op]? = some (src_float_op)) (np : prims.isPrim ix_float_op = false) {n : Nat} :
+    Stmt_float_op prog prims ix_float_op n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_float_op] at h
+  faithful [Lanius.Mini.floatOp]
 
 end Lanius.Faithful.SelfCert

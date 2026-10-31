@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_compile_declared (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcProgram} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 64 RepSrcDecls) x0 v0 → RepSrcProgram x1 v1 →
-    (RepOption 48 RepBinary) (Lanius.Mini.compileDeclared x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcProgram} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 68 RepSrcDecls) x0 v0 → RepSrcProgram x1 v1 →
+    (RepOption 49 RepBinary) (Lanius.Mini.compileDeclared x0 x1) w
 
 abbrev Stmt_compile_lowered (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.Func)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 80 (RepList 81 RepFunc)) x0 v0 →
-    (RepOption 48 RepBinary) (Lanius.Mini.compileLowered x0) w
+  ∀ {x0 : Option (List Lanius.Mini.Func)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 84 (RepList 85 RepFunc)) x0 v0 →
+    (RepOption 49 RepBinary) (Lanius.Mini.compileLowered x0) w
 
 abbrev Stmt_compile_optimized (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Program} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepProgram x0 v0 →
-    (RepOption 48 RepBinary) (Lanius.Mini.compileOptimized x0) w
+    (RepOption 49 RepBinary) (Lanius.Mini.compileOptimized x0) w
 
 abbrev Stmt_compile_or (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Binary} {x1 : Lanius.Mini.Program} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 48 RepBinary) x0 v0 → RepProgram x1 v1 →
-    (RepOption 48 RepBinary) (Lanius.Mini.compileOr x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.Binary} {x1 : Lanius.Mini.Program} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 49 RepBinary) x0 v0 → RepProgram x1 v1 →
+    (RepOption 49 RepBinary) (Lanius.Mini.compileOr x0 x1) w
 
 end Lanius.Faithful.SelfCert

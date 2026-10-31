@@ -115,6 +115,7 @@ theorem sliceFrom_word {ds : SrcDecls} {t : SrcType} (el : wordElement ds t = tr
   | unit => simp [wordElement] at el
   | isize => simp [wordElement] at el
   | char => simp [wordElement] at el
+  | float => simp [wordElement] at el
   | sint => simp [wordElement] at el
 
 theorem stride_word {P : Core.Program} {T : Core.Ty} {a len w : Nat}

@@ -124,6 +124,7 @@ theorem NativeStoreSpec.sty {t : SrcType} {v : Value} (s : STy t v) (notUnit : t
   | ptr => exact s.elim
   | slice => exact s.elim
   | char => exact s.elim
+  | float => exact s.elim
   | sint => exact s.elim
 
 end

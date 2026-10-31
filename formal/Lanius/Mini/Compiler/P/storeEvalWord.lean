@@ -2,8 +2,10 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.DivOp_size
+import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
+import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.armBodyScope
@@ -16,6 +18,7 @@ import Lanius.Mini.Compiler.P.evalSame
 import Lanius.Mini.Compiler.P.guardAnd
 import Lanius.Mini.Compiler.P.indexOf
 import Lanius.Mini.Compiler.P.lowerAddress
+import Lanius.Mini.Compiler.P.lowerApply
 import Lanius.Mini.Compiler.P.lowerCallSig
 import Lanius.Mini.Compiler.P.lowerLoadType
 import Lanius.Mini.Compiler.P.lowerReturn
@@ -24,9 +27,7 @@ import Lanius.Mini.Compiler.P.lowerSetValues
 import Lanius.Mini.Compiler.P.lowerSlice
 import Lanius.Mini.Compiler.P.lowerTagged
 import Lanius.Mini.Compiler.P.matchVariants
-import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.shortCircuit
-import Lanius.Mini.Compiler.P.sintToUint
 import Lanius.Mini.Compiler.P.storeType
 import Lanius.Mini.Compiler.P.wordElement
 
@@ -90,6 +91,7 @@ def setFieldEvalOf (b : Binding) (field : Nat) (slot : Nat) (v : Evaluated) : Op
   | .unit => none
   | .isize => none
   | .char => none
+  | .float ft => none
   | .sint sk => none
 
 def lowerSetFieldEval (slot : Nat) (binding : Option Binding) (field : Nat) (value : Option Evaluated) : Option Stmt :=

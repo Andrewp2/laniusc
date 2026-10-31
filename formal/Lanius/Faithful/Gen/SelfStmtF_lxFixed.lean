@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lx_fixed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 180 RepSymRule) x0 v0 → (RepList 24 RepNat) x1 v1 → RepNat x2 v2 →
+  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 184 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 →
     RepOneTok (Lanius.Mini.lxFixed x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

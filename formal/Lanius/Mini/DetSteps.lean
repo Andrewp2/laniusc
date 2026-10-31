@@ -187,17 +187,18 @@ theorem frameEpilogue_det (before : State)
 /-- From states that agree but for their flags, the kernel leaves states that
 agree but for their flags and r11. -/
 theorem Kernel.agree (same : DataEq s t) (ka : Kernel s a) (kb : Kernel t b) :
-    (∀ r, r ≠ 11 → a.registers r = b.registers r) ∧ a.rip = b.rip ∧ a.memory = b.memory ∧ a.io = b.io := by
-  obtain ⟨R, P, M, F, I⟩ := s
-  obtain ⟨R', P', M', G, I'⟩ := t
-  obtain ⟨hR, hP, hM, hI⟩ := same
-  simp only at hR hP hM hI
-  subst hR hP hM hI
+    (∀ r, r ≠ 11 → a.registers r = b.registers r) ∧ a.rip = b.rip ∧ a.memory = b.memory ∧ a.xmm = b.xmm ∧
+      a.io = b.io := by
+  obtain ⟨R, P, M, F, X, I⟩ := s
+  obtain ⟨R', P', M', G, X', I'⟩ := t
+  obtain ⟨hR, hP, hM, hX, hI⟩ := same
+  simp only at hR hP hM hX hI
+  subst hR hP hM hX hI
   cases ka with
   | write number fd count r11 =>
     cases kb with
     | write number' fd' count' r11' =>
-      refine ⟨fun r ne => ?_, rfl, rfl, rfl⟩
+      refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
       simp only [State.syscalled, if_neg ne]
 
 /-- A `syscall`, then `mov r11, source`, which gives r11 a value the data
@@ -220,12 +221,12 @@ theorem Det.syscall (sa : Step s a) (sys : CodeAt s.memory s.rip [15, 5]) {sourc
       cases rest with
       | cons ut' rest =>
         cases rest
-        obtain ⟨registers, rip, memory, io⟩ := Kernel.agree same ka (kernelOf same tu)
+        obtain ⟨registers, rip, memory, xmm, io⟩ := Kernel.agree same ka (kernelOf same tu)
         have rb := ab.decodedResults (decodes rfl rfl)
         have ru := ut'.decodedResults (decodes memory.symm rip.symm)
         simp only [Results, moveInstruction] at rb ru
         subst rb ru
-        refine ⟨funext fun r => ?_, by simp only [State.move64, rip], memory, io⟩
+        refine ⟨funext fun r => ?_, by simp only [State.move64, rip], memory, xmm, io⟩
         simp only [State.move64]
         by_cases eleven : r = 11
         · rw [if_pos eleven, if_pos eleven, registers source other]
@@ -235,7 +236,7 @@ theorem Det.syscall (sa : Step s a) (sys : CodeAt s.memory s.rip [15, 5]) {sourc
     | cons tu rest =>
       cases rest with
       | refl =>
-        obtain ⟨-, rip, memory, -⟩ := Kernel.agree same ka (kernelOf same tu)
+        obtain ⟨-, rip, memory, -, -⟩ := Kernel.agree same ka (kernelOf same tu)
         exact ⟨_, .decoded _ (by rw [← memory, ← rip]; exact kill) _ _ (move_decodes .w64 11 source) rfl rfl⟩
       | cons _ _ => omega
 

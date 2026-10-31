@@ -124,6 +124,7 @@ def wideAt (want : Option SrcType) (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
     | .unit => e
     | .isize => wideIsizeAt n e
     | .char => e
+    | .float ft => e
     | .sint sk => wideSintAt sk n e
 
 end Lanius.Mini

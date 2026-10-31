@@ -5,10 +5,10 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_lowerSetCallArgs
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
-public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
+public import Lanius.Faithful.Gen.SelfStmtC_SrcType_size
+public import Lanius.Faithful.Gen.SelfStmtC_lowerApply
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetCallArgs
-public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_lowerSetCallArgs
 import all Lanius.Mini.Compiler.P.lowerSetCallArgs
 

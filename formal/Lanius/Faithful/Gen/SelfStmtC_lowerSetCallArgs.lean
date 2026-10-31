@@ -21,24 +21,24 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lower_if (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Expr} {x1 : Option Lanius.Mini.Stmt} {x2 : Option Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 145 RepExpr) x0 v0 → (RepOption 126 RepStmt) x1 v1 → (RepOption 126 RepStmt) x2 v2 →
-    (RepOption 126 RepStmt) (Lanius.Mini.lowerIf x0 x1 x2) w
+  ∀ {x0 : Option Lanius.Mini.Expr} {x1 : Option Lanius.Mini.Stmt} {x2 : Option Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 149 RepExpr) x0 v0 → (RepOption 130 RepStmt) x1 v1 → (RepOption 130 RepStmt) x2 v2 →
+    (RepOption 130 RepStmt) (Lanius.Mini.lowerIf x0 x1 x2) w
 
 abbrev Stmt_lower_set_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Sig} {x1 : List Lanius.Mini.Binding} {x2 : Option Lanius.Mini.Binding} {x3 : Nat} {x4 : List Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 91 RepSig) x0 v0 → (RepList 127 RepBinding) x1 v1 → (RepOption 144 RepBinding) x2 v2 → RepNat x3 v3 → (RepList 20 RepSrcExpr) x4 v4 →
-    (RepOption 126 RepStmt) (Lanius.Mini.lowerSetCall x0 x1 x2 x3 x4) w
+  ∀ {x0 : List Lanius.Mini.Sig} {x1 : List Lanius.Mini.Binding} {x2 : Option Lanius.Mini.Binding} {x3 : Nat} {x4 : List Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 95 RepSig) x0 v0 → (RepList 131 RepBinding) x1 v1 → (RepOption 148 RepBinding) x2 v2 → RepNat x3 v3 → (RepList 21 RepSrcExpr) x4 v4 →
+    (RepOption 130 RepStmt) (Lanius.Mini.lowerSetCall x0 x1 x2 x3 x4) w
 
 abbrev Stmt_lower_set_call_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Option (List Lanius.Mini.Expr)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 142 (RepList 87 RepExpr)) x3 v3 →
-    (RepOption 126 RepStmt) (Lanius.Mini.lowerSetCallArgs x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Option (List Lanius.Mini.Expr)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 146 (RepList 91 RepExpr)) x3 v3 →
+    (RepOption 130 RepStmt) (Lanius.Mini.lowerSetCallArgs x0 x1 x2 x3) w
 
 abbrev Stmt_lower_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Stmt} {x1 : Option Lanius.Mini.Stmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 126 RepStmt) x0 v0 → (RepOption 126 RepStmt) x1 v1 →
-    (RepOption 126 RepStmt) (Lanius.Mini.lowerThen x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.Stmt} {x1 : Option Lanius.Mini.Stmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 130 RepStmt) x0 v0 → (RepOption 130 RepStmt) x1 v1 →
+    (RepOption 130 RepStmt) (Lanius.Mini.lowerThen x0 x1) w
 
 abbrev Stmt_lower_while (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepExpr x1 v1 → (RepOption 145 RepExpr) x2 v2 → (RepOption 126 RepStmt) x3 v3 →
-    (RepOption 126 RepStmt) (Lanius.Mini.lowerWhile x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepExpr x1 v1 → (RepOption 149 RepExpr) x2 v2 → (RepOption 130 RepStmt) x3 v3 →
+    (RepOption 130 RepStmt) (Lanius.Mini.lowerWhile x0 x1 x2 x3) w
 
 abbrev Stmt_while_loop (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Lanius.Mini.Expr} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepExpr x1 v1 → RepExpr x2 v2 → RepStmt x3 v3 →

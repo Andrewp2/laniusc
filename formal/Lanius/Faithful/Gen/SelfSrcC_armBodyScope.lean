@@ -14,13 +14,13 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::arm_body_scope -/
-def src_arm_body_scope (ix_cons_of_mini_selfhost_Binding : Nat) : SrcFunc := { params := [{ id := 15, ty := SrcType.bool }, { id := 28, ty := SrcType.uint (UintTy.usize) }, { id := 43, ty := ty8 }, { id := 56, ty := SrcType.uint (UintTy.usize) }, { id := 69, ty := ty139 }], ret := ty139, body := SrcStmt.then (SrcStmt.if (SrcExpr.not (SrcExpr.local 15)) (SrcStmt.return (SrcExpr.local 69)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eCall ix_cons_of_mini_selfhost_Binding [SrcEff.eStruct ty137 [SrcEff.ePure (SrcExpr.local 28), SrcEff.ePure (SrcExpr.local 56), SrcEff.ePure (SrcExpr.local 43)], SrcEff.ePure (SrcExpr.local 69)])) }
+def src_arm_body_scope (ix_cons_of_mini_selfhost_Binding : Nat) : SrcFunc := { params := [{ id := 15, ty := SrcType.bool }, { id := 28, ty := SrcType.uint (UintTy.usize) }, { id := 43, ty := ty9 }, { id := 56, ty := SrcType.uint (UintTy.usize) }, { id := 69, ty := ty143 }], ret := ty143, body := SrcStmt.then (SrcStmt.if (SrcExpr.not (SrcExpr.local 15)) (SrcStmt.return (SrcExpr.local 69)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eCall ix_cons_of_mini_selfhost_Binding [SrcEff.eStruct ty141 [SrcEff.ePure (SrcExpr.local 28), SrcEff.ePure (SrcExpr.local 56), SrcEff.ePure (SrcExpr.local 43)], SrcEff.ePure (SrcExpr.local 69)])) }
 
 /-- mini::selfhost::field_payload -/
-def src_field_payload : SrcFunc := { params := [{ id := 14, ty := SrcType.bool }, { id := 27, ty := ty160 }], ret := ty160, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 14) (SrcStmt.return (SrcExpr.local 27)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty160 1 [])) }
+def src_field_payload : SrcFunc := { params := [{ id := 14, ty := SrcType.bool }, { id := 27, ty := ty164 }], ret := ty164, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 14) (SrcStmt.return (SrcExpr.local 27)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty164 1 [])) }
 
 /-- mini::selfhost::unit_payload -/
-def src_unit_payload (ix_empty_of_mini_selfhost_Expr : Nat) : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }], ret := ty160, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.returnEval (SrcEff.eVariant ty160 0 [SrcEff.eCall ix_empty_of_mini_selfhost_Expr []])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty160 1 [])) }
+def src_unit_payload (ix_empty_of_mini_selfhost_Expr : Nat) : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }], ret := ty164, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.returnEval (SrcEff.eVariant ty164 0 [SrcEff.eCall ix_empty_of_mini_selfhost_Expr []])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty164 1 [])) }
 
 end
 

@@ -14,16 +14,16 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::e_cast_closed -/
-def src_e_cast_closed (ix_boxed_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 14, ty := ty8 }, { id := 26, ty := ty264 }], ret := ty264, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 26)) ty264 ty264 [[151], []] [SrcEff.eVariant ty264 0 [SrcEff.eVariant ty28 5 [SrcEff.ePure (SrcExpr.local 14), SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 151)]]], SrcEff.eVariant ty264 1 []]) }
+def src_e_cast_closed (ix_boxed_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 14, ty := ty9 }, { id := 26, ty := ty269 }], ret := ty269, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 26)) ty269 ty269 [[151], []] [SrcEff.eVariant ty269 0 [SrcEff.eVariant ty29 5 [SrcEff.ePure (SrcExpr.local 14), SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 151)]]], SrcEff.eVariant ty269 1 []]) }
 
 /-- mini::selfhost::e_divide_closed -/
-def src_e_divide_closed (ix_boxed_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 16, ty := ty27 }, { id := 30, ty := ty264 }, { id := 63, ty := ty264 }], ret := ty264, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 30)) ty264 ty264 [[188], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 63)) ty264 ty264 [[249], []] [SrcEff.eVariant ty264 0 [SrcEff.eVariant ty28 10 [SrcEff.ePure (SrcExpr.local 16), SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 188)], SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 249)]]], SrcEff.eVariant ty264 1 []], SrcEff.eVariant ty264 1 []]) }
+def src_e_divide_closed (ix_boxed_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 16, ty := ty28 }, { id := 30, ty := ty269 }, { id := 63, ty := ty269 }], ret := ty269, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 30)) ty269 ty269 [[188], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 63)) ty269 ty269 [[249], []] [SrcEff.eVariant ty269 0 [SrcEff.eVariant ty29 10 [SrcEff.ePure (SrcExpr.local 16), SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 188)], SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 249)]]], SrcEff.eVariant ty269 1 []], SrcEff.eVariant ty269 1 []]) }
 
 /-- mini::selfhost::e_neg_closed -/
-def src_e_neg_closed (ix_boxed_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 13, ty := ty264 }], ret := ty264, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 13)) ty264 ty264 [[138], []] [SrcEff.eVariant ty264 0 [SrcEff.eVariant ty28 3 [SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 138)]]], SrcEff.eVariant ty264 1 []]) }
+def src_e_neg_closed (ix_boxed_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 13, ty := ty269 }], ret := ty269, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 13)) ty269 ty269 [[138], []] [SrcEff.eVariant ty269 0 [SrcEff.eVariant ty29 3 [SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 138)]]], SrcEff.eVariant ty269 1 []]) }
 
 /-- mini::selfhost::e_not_closed -/
-def src_e_not_closed (ix_boxed_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 13, ty := ty264 }], ret := ty264, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 13)) ty264 ty264 [[138], []] [SrcEff.eVariant ty264 0 [SrcEff.eVariant ty28 4 [SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 138)]]], SrcEff.eVariant ty264 1 []]) }
+def src_e_not_closed (ix_boxed_of_mini_selfhost_SrcEff : Nat) : SrcFunc := { params := [{ id := 13, ty := ty269 }], ret := ty269, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 13)) ty269 ty269 [[138], []] [SrcEff.eVariant ty269 0 [SrcEff.eVariant ty29 4 [SrcEff.eCall ix_boxed_of_mini_selfhost_SrcEff [SrcEff.ePure (SrcExpr.local 138)]]], SrcEff.eVariant ty269 1 []]) }
 
 end
 

@@ -30,6 +30,7 @@ inductive LowerR (decls : Decls) (table : List Inst) : Ty → SrcType → Prop
   | ptr : LowerR decls table .tyPtr .ptr
   | isize : LowerR decls table .tyIsize .isize
   | char : LowerR decls table .tyChar .char
+  | float {ft : FloatTy} : LowerR decls table (.tyFloat ft) (.float ft)
   | sint {k : UintTy} : LowerR decls table (.tySint k) (.sint k)
   | slice {e : Ty} {s : SrcType} : LowerR decls table e s → LowerR decls table (.tySlice e) (.slice s)
   | struct {d : Nat} {args : List Ty} {t : TypeDecl} {k : Nat} {tys : List Ty} {ss : List SrcType} :
@@ -59,6 +60,7 @@ inductive TyInsts (decls : Decls) : Ty → List Inst → Prop
   | ptr : TyInsts decls .tyPtr []
   | isize : TyInsts decls .tyIsize []
   | char : TyInsts decls .tyChar []
+  | float {ft : FloatTy} : TyInsts decls (.tyFloat ft) []
   | sint {k : UintTy} : TyInsts decls (.tySint k) []
   | slice {e : Ty} {xs : List Inst} : TyInsts decls e xs → TyInsts decls (.tySlice e) xs
   | struct {d : Nat} {args : List Ty} {t : TypeDecl} {tys : List Ty} {xs : List Inst} :
@@ -76,6 +78,10 @@ end
 
 /-! ## Type equality -/
 
+theorem floatCode_inj : ∀ (f g : FloatTy), floatCode f = floatCode g ↔ f = g := by
+  intro f g
+  cases f <;> cases g <;> simp [floatCode]
+
 theorem uintCode_inj : ∀ (u v : UintTy), uintCode u = uintCode v ↔ u = v := by
   intro u v
   cases u <;> cases v <;> simp [uintCode]
@@ -88,6 +94,7 @@ theorem sameTy_iff : ∀ (a b : Ty), sameTy a b = true ↔ a = b
   | .tyPtr, b => by cases b <;> simp [sameTy]
   | .tyIsize, b => by cases b <;> simp [sameTy]
   | .tyChar, b => by cases b <;> simp [sameTy]
+  | .tyFloat f, b => by cases b <;> simp [sameTy, sameFloat, floatCode_inj]
   | .tySlice x, b => by cases b <;> simp [sameTy, sameTy_iff x]
   | .tyNamed d args, b => by cases b <;> simp [sameTy, sameTys_iff args]
   | .tySint u, b => by cases b <;> simp [sameTy, uintCode_inj]
@@ -181,6 +188,7 @@ theorem lowerSound : ∀ fuel, LowerSound fuel
       | tyPtr => cases h; exact .ptr
       | tyIsize => cases h; exact .isize
       | tyChar => cases h; exact .char
+      | tyFloat ft => cases h; exact .float
       | tySint k => cases h; exact .sint
       | tySlice e =>
         simp only [sliceType] at h
@@ -328,6 +336,7 @@ theorem instsSound : ∀ fuel, InstsSound fuel
       | tyPtr => cases h; exact .ptr
       | tyIsize => cases h; exact .isize
       | tyChar => cases h; exact .char
+      | tyFloat ft => cases h; exact .float
       | tySint k => cases h; exact .sint
       | tySlice e => exact .slice (ty_ih h)
       | tyNamed d args =>

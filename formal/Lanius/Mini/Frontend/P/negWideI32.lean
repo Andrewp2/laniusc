@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.firstSrc
+import Lanius.Mini.Frontend.P.flExpFirst
 import Lanius.Mini.Frontend.P.nullConst
 import Lanius.Mini.Frontend.P.sintAt
 import Lanius.Mini.Frontend.P.unitTy
@@ -49,6 +50,7 @@ def negWideAt (want : Option SrcType) (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
     | .unit => e
     | .isize => negWideIsize n e
     | .char => e
+    | .float ft => e
     | .sint sk => negWideSint sk n e
 
 def leastCast (u : UintTy) (k : BitVec 32) (d : SrcExpr) : SrcExpr :=
@@ -70,6 +72,7 @@ def negLeastAt (u : UintTy) (x : SrcExpr) (d : SrcExpr) : SrcExpr :=
   | .cast t y => d
   | .null => d
   | .char code => d
+  | .float ft bits => d
 
 /-- `-k` at a narrow signed type whose least value is -k, which k alone is not in the range of: the cast of the i32 literal -k. -/
 def negLeast (want : Option SrcType) (x : SrcExpr) (d : SrcExpr) : SrcExpr :=
@@ -87,6 +90,7 @@ def negLeast (want : Option SrcType) (x : SrcExpr) (d : SrcExpr) : SrcExpr :=
     | .unit => d
     | .isize => d
     | .char => d
+    | .float ft => d
     | .sint sk => negLeastAt sk x d
 
 /-- An expression's type when it does not rest on literals. -/
@@ -103,6 +107,7 @@ def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=
   | .cast t x => knownCast t
   | .null => some SrcType.ptr
   | .char code => some SrcType.char
+  | .float ft bits => some (SrcType.float ft)
 
 def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcExpr :=
   match e with
@@ -119,10 +124,14 @@ def litExpr (locals : List LocalTy) (want : Option SrcType) (e : SrcExpr) : SrcE
   | .apply op a b => SrcExpr.apply op (litExpr locals (operandWant op want (knownExpr locals a) (knownExpr locals b)) a) (litExpr locals (amountWant op want (knownExpr locals a) (knownExpr locals b)) b)
   | .cast t x =>
     (match wideValue e with
-     | none => SrcExpr.cast t (litExpr locals none x)
+     | none =>
+       (match floatWant want t x with
+        | none => SrcExpr.cast t (litExpr locals none x)
+        | some y => y)
      | some n => wideAt want n e)
   | .null => e
   | .char code => e
+  | .float ft bits => e
 
 def litExprs (locals : List LocalTy) (wants : Option (List SrcType)) (es : List SrcExpr) : List SrcExpr :=
   match es with
@@ -255,6 +264,7 @@ def wideLeft (e : SrcExpr) : Bool :=
   | .cast t x => unitTy t || wideLeft x
   | .null => false
   | .char code => false
+  | .float ft bits => false
 
 def wideLeftExprs (es : List SrcExpr) : Bool :=
   match es with

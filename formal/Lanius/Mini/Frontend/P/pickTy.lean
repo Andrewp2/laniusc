@@ -4,8 +4,8 @@ public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
+import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
@@ -45,6 +45,7 @@ def exprTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : SrcExpr) : Op
     | .cast t x => srcTy t
     | .null => some Ty.tyPtr
     | .char code => none
+    | .float ft bits => none
 
 def exprsTys (fuel : Nat) (env : FrontEnv) (scope : List Local) (es : List SrcExpr) : Option (List Ty) :=
   match es with
@@ -104,6 +105,7 @@ def sliceElem (t : Ty) : Option Ty :=
   | .tyPtr => none
   | .tyIsize => none
   | .tyChar => none
+  | .tyFloat ft => none
   | .tySlice e => some e
   | .tyNamed d args => none
   | .tySint k => none
@@ -116,6 +118,7 @@ def namedParts (t : Ty) : Option Inst :=
   | .tyPtr => none
   | .tyIsize => none
   | .tyChar => none
+  | .tyFloat ft => none
   | .tySlice e => none
   | .tyNamed d args => some ({ decl := d, args := args } : Inst)
   | .tySint k => none

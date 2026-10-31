@@ -25,6 +25,10 @@ lean_exe extract where
 lean_exe srcDump where
   root := `Lanius.Tools.SrcDump
 
+/-- The IEEE specification, compiled, for formal/tools/float_test.py. -/
+lean_exe floatTest where
+  root := `Lanius.Tools.FloatTest
+
 lean_exe checkCompact where
   root := `Lanius.Extraction.CheckCompact
 

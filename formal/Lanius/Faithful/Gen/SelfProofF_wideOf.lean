@@ -20,6 +20,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pSelfValue
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
 public import Lanius.Faithful.Gen.SelfStmtF_consTys
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
+public import Lanius.Faithful.Gen.SelfStmtF_flExpFirst
+public import Lanius.Faithful.Gen.SelfStmtF_floatTyped
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteral
@@ -36,6 +38,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_typedLiteral
 public import Lanius.Faithful.Gen.SelfStmtF_unitTy
 public import Lanius.Faithful.Gen.SelfStmtF_wideOf
 import all Lanius.Faithful.Gen.SelfSrcF_wideOf
+import all Lanius.Mini.Frontend.P.flExpFirst
+import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.freshId
 import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.intLiteral
@@ -136,7 +140,7 @@ theorem proof_dash_text {prog : SrcProgram} {prims : Prims} {ix_dash_text ix_sin
   simp only [src_dash_text] at h
   faithful [Lanius.Mini.dashText]
 
-theorem step_expr_of {prog : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_expr ix_p_assign ix_int_literal ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_p_true ix_p_false ix_p_char ix_char_literal : Nat} (fn : prog.funcs[ix_expr_of]? = some (src_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_expr ix_p_assign ix_expr_of ix_int_literal ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_p_true ix_p_false ix_p_char ix_char_literal)) (np : prims.isPrim ix_expr_of = false)
+theorem step_expr_of {prog : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_expr ix_p_assign ix_int_literal ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal : Nat} (fn : prog.funcs[ix_expr_of]? = some (src_expr_of ix_minus ix_node_prod ix_kid ix_field_text_Token_of_mini_selfhost_Token ix_kid_token ix_p_expr ix_p_assign ix_expr_of ix_int_literal ix_p_base ix_is_level ix_p_cast ix_p_postfix ix_local_of ix_assign_value ix_fold ix_casts ix_p_neg ix_negated ix_p_not ix_notted ix_postfix_value ix_p_group ix_p_ident ix_ident_expr ix_p_self_value ix_local_expr ix_p_int ix_p_true ix_p_false ix_p_char ix_char_literal ix_p_float ix_float_literal)) (np : prims.isPrim ix_expr_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -163,7 +167,9 @@ theorem step_expr_of {prog : SrcProgram} {prims : Prims} {ix_expr_of ix_minus ix
     (ext_p_true : Certified (∀ {n : Nat}, Stmt_p_true prog prims ix_p_true n))
     (ext_p_false : Certified (∀ {n : Nat}, Stmt_p_false prog prims ix_p_false n))
     (ext_p_char : Certified (∀ {n : Nat}, Stmt_p_char prog prims ix_p_char n))
-    (ext_char_literal : Certified (∀ {n : Nat}, Stmt_char_literal prog prims ix_char_literal n)) {n : Nat}
+    (ext_char_literal : Certified (∀ {n : Nat}, Stmt_char_literal prog prims ix_char_literal n))
+    (ext_p_float : Certified (∀ {n : Nat}, Stmt_p_float prog prims ix_p_float n))
+    (ext_float_literal : Certified (∀ {n : Nat}, Stmt_float_literal prog prims ix_float_literal n)) {n : Nat}
     (ih_expr_of : Certified (Stmt_expr_of prog prims ix_expr_of n))
     (ih_assign_value : Certified (Stmt_assign_value prog prims ix_assign_value n))
     (ih_fold : Certified (Stmt_fold prog prims ix_fold n))

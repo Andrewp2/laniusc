@@ -22,6 +22,6 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_read_decl_inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : Lanius.Mini.Inst} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → RepInst x3 v3 →
-    (RepOption 191 RepMFunc) (Lanius.Mini.readDeclInst x0 x1 x2 x3) w
+    (RepOption 195 RepMFunc) (Lanius.Mini.readDeclInst x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

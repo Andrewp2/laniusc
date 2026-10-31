@@ -25,95 +25,79 @@ abbrev Stmt_binary_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepBool (Lanius.Mini.Inline.binaryAgrees x0 x1 x2 x3 x4) w
 
 abbrev Stmt_checked_element (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinding x0 v0 → RepSrcType x1 v1 → (RepOption 145 RepExpr) x2 v2 →
-    (RepOption 145 RepExpr) (Lanius.Mini.Inline.checkedElement x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinding x0 v0 → RepSrcType x1 v1 → (RepOption 149 RepExpr) x2 v2 →
+    (RepOption 149 RepExpr) (Lanius.Mini.Inline.checkedElement x0 x1 x2) w
 
 abbrev Stmt_checked_load (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.Binding} {x2 : Lanius.Mini.SrcType} {x3 : Lanius.Mini.Expr} {x4 : Nat} {x5 : Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepSrcDecls x0 v0 → RepBinding x1 v1 → RepSrcType x2 v2 → RepExpr x3 v3 → RepNat x4 v4 → RepStmt x5 v5 →
-    (RepOption 126 RepStmt) (Lanius.Mini.Inline.checkedLoad x0 x1 x2 x3 x4 x5) w
+    (RepOption 130 RepStmt) (Lanius.Mini.Inline.checkedLoad x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_compare_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.CmpOp} {x2 : Lanius.Mini.Expr} {x3 : Lanius.Mini.Expr} {x4 : Lanius.Mini.Expr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepWord x0 v0 → RepCmpOp x1 v1 → RepExpr x2 v2 → RepExpr x3 v3 → RepExpr x4 v4 →
     RepBool (Lanius.Mini.Inline.compareAgrees x0 x1 x2 x3 x4) w
 
-abbrev Stmt_dead_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 172 RepFact) x2 v2 → RepStmt x3 v3 →
-    RepBool (Lanius.Mini.Inline.deadAgrees x0 x1 x2 x3) w
-
 abbrev Stmt_declare_enum_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List (List Lanius.Mini.SrcType)} {x2 : Lanius.Mini.SrcDecls} {x3 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepList 72 (RepList 68 RepSrcType)) x1 v1 → RepSrcDecls x2 v2 → (RepOption 179 (RepList 72 (RepList 68 RepSrcType))) x3 v3 →
-    (RepOption 64 RepSrcDecls) (Lanius.Mini.Inline.declareEnumIn x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : List (List Lanius.Mini.SrcType)} {x2 : Lanius.Mini.SrcDecls} {x3 : Option (List (List Lanius.Mini.SrcType))} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepList 76 (RepList 72 RepSrcType)) x1 v1 → RepSrcDecls x2 v2 → (RepOption 183 (RepList 76 (RepList 72 RepSrcType))) x3 v3 →
+    (RepOption 68 RepSrcDecls) (Lanius.Mini.Inline.declareEnumIn x0 x1 x2 x3) w
 
 abbrev Stmt_declare_funcs_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : List Lanius.Mini.SrcFunc} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 64 RepSrcDecls) x0 v0 → (RepList 5 RepSrcFunc) x1 v1 →
-    (RepOption 64 RepSrcDecls) (Lanius.Mini.Inline.declareFuncsAfter x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : List Lanius.Mini.SrcFunc} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 68 RepSrcDecls) x0 v0 → (RepList 5 RepSrcFunc) x1 v1 →
+    (RepOption 68 RepSrcDecls) (Lanius.Mini.Inline.declareFuncsAfter x0 x1) w
 
 abbrev Stmt_declare_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcStmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 64 RepSrcDecls) x0 v0 → RepSrcStmt x1 v1 →
-    (RepOption 64 RepSrcDecls) (Lanius.Mini.Inline.declareIn x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcStmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 68 RepSrcDecls) x0 v0 → RepSrcStmt x1 v1 →
+    (RepOption 68 RepSrcDecls) (Lanius.Mini.Inline.declareIn x0 x1) w
 
 abbrev Stmt_declare_params_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : List Lanius.Mini.SrcParam} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 64 RepSrcDecls) x0 v0 → (RepList 7 RepSrcParam) x1 v1 →
-    (RepOption 64 RepSrcDecls) (Lanius.Mini.Inline.declareParamsAfter x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : List Lanius.Mini.SrcParam} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 68 RepSrcDecls) x0 v0 → (RepList 7 RepSrcParam) x1 v1 →
+    (RepOption 68 RepSrcDecls) (Lanius.Mini.Inline.declareParamsAfter x0 x1) w
 
 abbrev Stmt_declare_struct_in (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcDecls} {x3 : Option (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepList 68 RepSrcType) x1 v1 → RepSrcDecls x2 v2 → (RepOption 178 (RepList 68 RepSrcType)) x3 v3 →
-    (RepOption 64 RepSrcDecls) (Lanius.Mini.Inline.declareStructIn x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : List Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcDecls} {x3 : Option (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → (RepList 72 RepSrcType) x1 v1 → RepSrcDecls x2 v2 → (RepOption 182 (RepList 72 RepSrcType)) x3 v3 →
+    (RepOption 68 RepSrcDecls) (Lanius.Mini.Inline.declareStructIn x0 x1 x2 x3) w
 
 abbrev Stmt_declare_types_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : List Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 64 RepSrcDecls) x0 v0 → (RepList 68 RepSrcType) x1 v1 →
-    (RepOption 64 RepSrcDecls) (Lanius.Mini.Inline.declareTypesAfter x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : List Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 68 RepSrcDecls) x0 v0 → (RepList 72 RepSrcType) x1 v1 →
+    (RepOption 68 RepSrcDecls) (Lanius.Mini.Inline.declareTypesAfter x0 x1) w
 
 abbrev Stmt_declare_variants_after (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 64 RepSrcDecls) x0 v0 → (RepList 72 (RepList 68 RepSrcType)) x1 v1 →
-    (RepOption 64 RepSrcDecls) (Lanius.Mini.Inline.declareVariantsAfter x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcDecls} {x1 : List (List Lanius.Mini.SrcType)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 68 RepSrcDecls) x0 v0 → (RepList 76 (RepList 72 RepSrcType)) x1 v1 →
+    (RepOption 68 RepSrcDecls) (Lanius.Mini.Inline.declareVariantsAfter x0 x1) w
 
 abbrev Stmt_element_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepSrcType x1 v1 → RepExpr x2 v2 →
-    (RepOption 145 RepExpr) (Lanius.Mini.Inline.elementAt x0 x1 x2) w
+    (RepOption 149 RepExpr) (Lanius.Mini.Inline.elementAt x0 x1 x2) w
 
 abbrev Stmt_enum_variants_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcEnumDecl} {x1 : List Lanius.Mini.SrcEnumDecl} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcEnumDecl x0 v0 → (RepList 70 RepSrcEnumDecl) x1 v1 → RepNat x2 v2 →
-    (RepOption 179 (RepList 72 (RepList 68 RepSrcType))) (Lanius.Mini.Inline.enumVariantsAt x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.SrcEnumDecl} {x1 : List Lanius.Mini.SrcEnumDecl} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcEnumDecl x0 v0 → (RepList 74 RepSrcEnumDecl) x1 v1 → RepNat x2 v2 →
+    (RepOption 183 (RepList 76 (RepList 72 RepSrcType))) (Lanius.Mini.Inline.enumVariantsAt x0 x1 x2) w
 
-abbrev Stmt_fact_or (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFact x0 v0 → RepNat x1 v1 → (RepList 172 RepFact) x2 v2 →
-    RepExpr (Lanius.Mini.Inline.factOr x0 x1 x2) w
-
-abbrev Stmt_kept (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Fact} {x1 : Nat} {x2 : List Lanius.Mini.Fact} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepFact x0 v0 → RepNat x1 v1 → (RepList 172 RepFact) x2 v2 →
-    (RepList 172 RepFact) (Lanius.Mini.Inline.kept x0 x1 x2) w
+abbrev Stmt_fp_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.FOp} {x1 : Lanius.Mini.Expr} {x2 : Lanius.Mini.Expr} {x3 : Lanius.Mini.Expr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepFOp x0 v0 → RepExpr x1 v1 → RepExpr x2 v2 → RepExpr x3 v3 →
+    RepBool (Lanius.Mini.Inline.fpAgrees x0 x1 x2 x3) w
 
 abbrev Stmt_lower_set_scalar (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : List Lanius.Mini.Binding} {x3 : Lanius.Mini.SrcExpr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepSrcType x1 v1 → (RepList 127 RepBinding) x2 v2 → RepSrcExpr x3 v3 →
-    (RepOption 126 RepStmt) (Lanius.Mini.Inline.lowerSetScalar x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : List Lanius.Mini.Binding} {x3 : Lanius.Mini.SrcExpr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepSrcType x1 v1 → (RepList 131 RepBinding) x2 v2 → RepSrcExpr x3 v3 →
+    (RepOption 130 RepStmt) (Lanius.Mini.Inline.lowerSetScalar x0 x1 x2 x3) w
 
 abbrev Stmt_neg_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {x1 : Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepExpr x0 v0 → RepExpr x1 v1 →
     RepBool (Lanius.Mini.Inline.negAgrees x0 x1) w
 
-abbrev Stmt_seq_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.Stmt} {x2 : List Lanius.Mini.Fact} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepStmt x0 v0 → RepStmt x1 v1 → (RepList 172 RepFact) x2 v2 → RepStmt x3 v3 →
-    RepBool (Lanius.Mini.Inline.seqAgrees x0 x1 x2 x3) w
-
 abbrev Stmt_set_scalar_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.SrcType} {x2 : Nat} {x3 : Lanius.Mini.Evaluated} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepSrcType x1 v1 → RepNat x2 v2 → RepEvaluated x3 v3 →
-    (RepOption 126 RepStmt) (Lanius.Mini.Inline.setScalarEval x0 x1 x2 x3) w
+    (RepOption 130 RepStmt) (Lanius.Mini.Inline.setScalarEval x0 x1 x2 x3) w
 
 abbrev Stmt_store_element (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {x3 : List Lanius.Mini.Binding} {x4 : Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepBinding x0 v0 → RepSrcType x1 v1 → (RepOption 145 RepExpr) x2 v2 → (RepList 127 RepBinding) x3 v3 → RepSrcExpr x4 v4 →
-    (RepOption 126 RepStmt) (Lanius.Mini.Inline.storeElement x0 x1 x2 x3 x4) w
+  ∀ {x0 : Lanius.Mini.Binding} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {x3 : List Lanius.Mini.Binding} {x4 : Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepBinding x0 v0 → RepSrcType x1 v1 → (RepOption 149 RepExpr) x2 v2 → (RepList 131 RepBinding) x3 v3 → RepSrcExpr x4 v4 →
+    (RepOption 130 RepStmt) (Lanius.Mini.Inline.storeElement x0 x1 x2 x3 x4) w
 
 abbrev Stmt_struct_fields_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcStructDecl} {x1 : List Lanius.Mini.SrcStructDecl} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcStructDecl x0 v0 → (RepList 66 RepSrcStructDecl) x1 v1 → RepNat x2 v2 →
-    (RepOption 178 (RepList 68 RepSrcType)) (Lanius.Mini.Inline.structFieldsAt x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.SrcStructDecl} {x1 : List Lanius.Mini.SrcStructDecl} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcStructDecl x0 v0 → (RepList 70 RepSrcStructDecl) x1 v1 → RepNat x2 v2 →
+    (RepOption 182 (RepList 72 RepSrcType)) (Lanius.Mini.Inline.structFieldsAt x0 x1 x2) w
 
 abbrev Stmt_unit_agrees (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.BinOp} {x2 : Lanius.Mini.Expr} {x3 : Lanius.Mini.Expr} {x4 : Lanius.Mini.Expr} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepWord x0 v0 → RepBinOp x1 v1 → RepExpr x2 v2 → RepExpr x3 v3 → RepExpr x4 v4 →
     RepBool (Lanius.Mini.Inline.unitAgrees x0 x1 x2 x3 x4) w
-
-abbrev Stmt_unknown (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (BitVec 64)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 193 RepU64) x0 v0 →
-    RepBool (Lanius.Mini.Inline.unknown x0) w
 
 end Lanius.Faithful.SelfCert

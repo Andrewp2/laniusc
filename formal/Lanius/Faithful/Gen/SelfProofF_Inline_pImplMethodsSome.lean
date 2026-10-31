@@ -24,6 +24,15 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_p_float {prog : SrcProgram} {prims : Prims} {ix_p_float : Nat} (fn : prog.funcs[ix_p_float]? = some (src_p_float)) (np : prims.isPrim ix_p_float = false) {n : Nat} :
+    Stmt_p_float prog prims ix_p_float n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_float] at h
+  faithful [Lanius.Mini.Inline.pFloat]
+
 theorem proof_p_impl_methods_some {prog : SrcProgram} {prims : Prims} {ix_p_impl_methods_some : Nat} (fn : prog.funcs[ix_p_impl_methods_some]? = some (src_p_impl_methods_some)) (np : prims.isPrim ix_p_impl_methods_some = false) {n : Nat} :
     Stmt_p_impl_methods_some prog prims ix_p_impl_methods_some n := by
   intro w h

@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_attach_node (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Lanius.Mini.Rule} {x5 : List Nat} {x6 : List Nat} {x7 : List Lanius.Mini.Sym} {x8 : Nat} {x9 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some w → (RepList 34 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepRule x4 v4 → (RepList 24 RepNat) x5 v5 → (RepList 24 RepNat) x6 v6 → (RepList 36 RepSym) x7 v7 → RepNat x8 v8 → RepCursor x9 v9 →
-    (RepOption 122 RepAttached) (Lanius.Mini.Inline.attachNode x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) w
+  ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : Lanius.Mini.Rule} {x5 : List Nat} {x6 : List Nat} {x7 : List Lanius.Mini.Sym} {x8 : Nat} {x9 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some w → (RepList 35 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → RepRule x4 v4 → (RepList 25 RepNat) x5 v5 → (RepList 25 RepNat) x6 v6 → (RepList 37 RepSym) x7 v7 → RepNat x8 v8 → RepCursor x9 v9 →
+    (RepOption 126 RepAttached) (Lanius.Mini.Inline.attachNode x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) w
 
 abbrev Stmt_attach_prod (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : List Nat} {x5 : Nat} {x6 : List Nat} {x7 : List Lanius.Mini.Sym} {x8 : Nat} {x9 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some w → (RepList 34 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 24 RepNat) x4 v4 → RepNat x5 v5 → (RepList 24 RepNat) x6 v6 → (RepList 36 RepSym) x7 v7 → RepNat x8 v8 → RepCursor x9 v9 →
-    (RepOption 122 RepAttached) (Lanius.Mini.Inline.attachProd x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) w
+  ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : Nat} {x3 : Nat} {x4 : List Nat} {x5 : Nat} {x6 : List Nat} {x7 : List Lanius.Mini.Sym} {x8 : Nat} {x9 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 v5 v6 v7 v8 v9 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9] = some w → (RepList 35 RepRule) x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepNat x3 v3 → (RepList 25 RepNat) x4 v4 → RepNat x5 v5 → (RepList 25 RepNat) x6 v6 → (RepList 37 RepSym) x7 v7 → RepNat x8 v8 → RepCursor x9 v9 →
+    (RepOption 126 RepAttached) (Lanius.Mini.Inline.attachProd x0 x1 x2 x3 x4 x5 x6 x7 x8 x9) w
 
 end Lanius.Faithful.SelfCert

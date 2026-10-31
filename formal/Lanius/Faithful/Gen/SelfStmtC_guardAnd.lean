@@ -37,7 +37,7 @@ abbrev Stmt_guard_or (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepExpr (Lanius.Mini.guardOr x0 x1) w
 
 abbrev Stmt_left_false (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 146 RepTyped) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.Typed} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 150 RepTyped) x0 v0 →
     RepExpr (Lanius.Mini.leftFalse x0) w
 
 abbrev Stmt_literal_below (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -45,7 +45,7 @@ abbrev Stmt_literal_below (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepBool (Lanius.Mini.literalBelow x0 x1) w
 
 abbrev Stmt_shift_guard (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Typed} {x1 : Option Lanius.Mini.Typed} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 146 RepTyped) x0 v0 → (RepOption 146 RepTyped) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.Typed} {x1 : Option Lanius.Mini.Typed} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 150 RepTyped) x0 v0 → (RepOption 150 RepTyped) x1 v1 →
     RepExpr (Lanius.Mini.shiftGuard x0 x1) w
 
 abbrev Stmt_shift_width (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

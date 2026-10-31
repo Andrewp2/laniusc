@@ -9,7 +9,9 @@ import all Lanius.Mini.Compiler.P.DivOp_size
 import all Lanius.Mini.Compiler.P.codeSize
 import all Lanius.Mini.Compiler.P.compileArgs
 import all Lanius.Mini.Compiler.P.arities
-import all Lanius.Mini.Compiler.P.pow2
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.Code_image
 import all Lanius.Mini.Compiler.P.moduleExports
 import all Lanius.Mini.Compiler.P.importOk
 import all Lanius.Mini.Compiler.P.importsOk
@@ -21,14 +23,16 @@ import all Lanius.Mini.Compiler.P.render
 import all Lanius.Mini.Compiler.P.UintTy_mask
 import all Lanius.Mini.Compiler.P.UintTy_isWide
 import all Lanius.Mini.Compiler.P.UintTy_half
-import all Lanius.Mini.Compiler.P.norm
+import all Lanius.Mini.Compiler.P.SrcType_size
 import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.floatApply
 import all Lanius.Mini.Compiler.P.lowerShift
 import all Lanius.Mini.Compiler.P.arithShiftRight
 import all Lanius.Mini.Compiler.P.equality
 import all Lanius.Mini.Compiler.P.conjunction
 import all Lanius.Mini.Compiler.P.lowerLocal
 import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.lowerApply
 import all Lanius.Mini.Compiler.P.guardAnd
 import all Lanius.Mini.Compiler.P.leftTrue
 import all Lanius.Mini.Compiler.P.applyGuard
@@ -88,7 +92,7 @@ import all Lanius.Mini.Compiler.P.compileSource
 import all Lanius.Mini.Compiler.P.larger
 import all Lanius.Mini.Compiler.P.Inline_arithOf
 import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
-import all Lanius.Mini.Compiler.P.Inline_branchAgrees
+import all Lanius.Mini.Compiler.P.Inline_factOr
 -- end import all
 
 @[expose] public section
@@ -229,6 +233,9 @@ theorem shift_amount {op : SrcOp} (shift : op = .shiftLeft ∨ op = .shiftRight)
     intro ar evaluated holdsr
     simp only [arith] at ar
     split at ar
+    · rename_i float
+      cases htl : tl.ty <;> simp [htl, SrcType.isFloatAny, SrcType.isInteger] at float ints
+    split at ar
     · rename_i types
       cases htl : tl.ty <;> cases htr : tr.ty <;> simp [htl, htr, SrcType.isI32] at types
       rw [htl] at holdsl
@@ -269,6 +276,7 @@ theorem SrcExpr.guard_sound (e : SrcExpr) {scope : List Binding} {frame : Nat �
   | boolean x => intro t fuel v st' _ _; rfl
   | null => intro t fuel v st' _ _; rfl
   | char c => intro t fuel v st' _ _; rfl
+  | float ft bits => intro t fuel v st' _ _; rfl
   | unsigned kind value => intro t fuel v st' _ _; rfl
   | «local» id => intro t fuel v st' _ _; rfl
   | field id index => intro t fuel v st' _ _; rfl
@@ -548,6 +556,7 @@ theorem matchArm_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} 
   case h_9 => simp at ok
   case h_10 => simp at ok
   case h_11 => simp at ok
+  case h_12 => simp at ok
   rename_i eid variants hty
   simp only [lowerArmFound] at ok
   split at ok

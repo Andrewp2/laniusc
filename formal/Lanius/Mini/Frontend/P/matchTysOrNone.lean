@@ -13,10 +13,10 @@ import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.consTys
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.findConst
+import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.hasConst
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isFnPath
 import Lanius.Mini.Frontend.P.isPathCall

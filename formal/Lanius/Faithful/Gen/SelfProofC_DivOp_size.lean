@@ -38,14 +38,73 @@ theorem proof_DivOp_size {prog : SrcProgram} {prims : Prims} {ix_DivOp_size ix_p
   simp only [src_DivOp_size] at h
   faithful [Lanius.Mini.DivOp.size]
 
-theorem proof_Instr_size {prog : SrcProgram} {prims : Prims} {ix_Instr_size ix_length_of_usize ix_plus ix_times ix_BinOp_size ix_Word_prefix ix_MemWidth_prefix ix_DivOp_size : Nat} (fn : prog.funcs[ix_Instr_size]? = some (src_Instr_size ix_length_of_usize ix_plus ix_times ix_BinOp_size ix_Word_prefix ix_MemWidth_prefix ix_DivOp_size)) (np : prims.isPrim ix_Instr_size = false)
+theorem proof_FOp_size {prog : SrcProgram} {prims : Prims} {ix_FOp_size ix_plus ix_times ix_Word_prefix ix_FloatTy_rex_size : Nat} (fn : prog.funcs[ix_FOp_size]? = some (src_FOp_size ix_plus ix_times ix_Word_prefix ix_FloatTy_rex_size)) (np : prims.isPrim ix_FOp_size = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
+    (ext_Word_prefix : Certified (∀ {n : Nat}, Stmt_Word_prefix prog prims ix_Word_prefix n))
+    (ext_FloatTy_rex_size : Certified (∀ {n : Nat}, Stmt_FloatTy_rex_size prog prims ix_FloatTy_rex_size n)) {n : Nat} :
+    Stmt_FOp_size prog prims ix_FOp_size n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_FOp_size] at h
+  faithful [Lanius.Mini.FOp.size]
+
+theorem proof_FloatTy_mask {prog : SrcProgram} {prims : Prims} {ix_FloatTy_mask : Nat} (fn : prog.funcs[ix_FloatTy_mask]? = some (src_FloatTy_mask)) (np : prims.isPrim ix_FloatTy_mask = false) {n : Nat} :
+    Stmt_FloatTy_mask prog prims ix_FloatTy_mask n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_FloatTy_mask] at h
+  faithful [Lanius.Mini.FloatTy.mask]
+
+theorem proof_FloatTy_number {prog : SrcProgram} {prims : Prims} {ix_FloatTy_number : Nat} (fn : prog.funcs[ix_FloatTy_number]? = some (src_FloatTy_number)) (np : prims.isPrim ix_FloatTy_number = false) {n : Nat} :
+    Stmt_FloatTy_number prog prims ix_FloatTy_number n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_FloatTy_number] at h
+  faithful [Lanius.Mini.FloatTy.number]
+
+theorem proof_FloatTy_rex_size {prog : SrcProgram} {prims : Prims} {ix_FloatTy_rex_size : Nat} (fn : prog.funcs[ix_FloatTy_rex_size]? = some (src_FloatTy_rex_size)) (np : prims.isPrim ix_FloatTy_rex_size = false) {n : Nat} :
+    Stmt_FloatTy_rex_size prog prims ix_FloatTy_rex_size n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_FloatTy_rex_size] at h
+  faithful [Lanius.Mini.FloatTy.rexSize]
+
+theorem proof_FloatTy_sign_bit {prog : SrcProgram} {prims : Prims} {ix_FloatTy_sign_bit : Nat} (fn : prog.funcs[ix_FloatTy_sign_bit]? = some (src_FloatTy_sign_bit)) (np : prims.isPrim ix_FloatTy_sign_bit = false) {n : Nat} :
+    Stmt_FloatTy_sign_bit prog prims ix_FloatTy_sign_bit n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_FloatTy_sign_bit] at h
+  faithful [Lanius.Mini.FloatTy.signBit]
+
+theorem proof_FloatTy_sign_word {prog : SrcProgram} {prims : Prims} {ix_FloatTy_sign_word : Nat} (fn : prog.funcs[ix_FloatTy_sign_word]? = some (src_FloatTy_sign_word)) (np : prims.isPrim ix_FloatTy_sign_word = false) {n : Nat} :
+    Stmt_FloatTy_sign_word prog prims ix_FloatTy_sign_word n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_FloatTy_sign_word] at h
+  faithful [Lanius.Mini.FloatTy.signWord]
+
+theorem proof_Instr_size {prog : SrcProgram} {prims : Prims} {ix_Instr_size ix_length_of_usize ix_plus ix_times ix_BinOp_size ix_Word_prefix ix_MemWidth_prefix ix_DivOp_size ix_FOp_size : Nat} (fn : prog.funcs[ix_Instr_size]? = some (src_Instr_size ix_length_of_usize ix_plus ix_times ix_BinOp_size ix_Word_prefix ix_MemWidth_prefix ix_DivOp_size ix_FOp_size)) (np : prims.isPrim ix_Instr_size = false)
     (ext_length_of_usize : Certified (∀ {n : Nat}, Stmt_length_of_usize prog prims ix_length_of_usize n))
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_times : Certified (∀ {n : Nat}, Stmt_times prog prims ix_times n))
     (ext_BinOp_size : Certified (∀ {n : Nat}, Stmt_BinOp_size prog prims ix_BinOp_size n))
     (ext_Word_prefix : Certified (∀ {n : Nat}, Stmt_Word_prefix prog prims ix_Word_prefix n))
     (ext_MemWidth_prefix : Certified (∀ {n : Nat}, Stmt_MemWidth_prefix prog prims ix_MemWidth_prefix n))
-    (ext_DivOp_size : Certified (∀ {n : Nat}, Stmt_DivOp_size prog prims ix_DivOp_size n)) {n : Nat} :
+    (ext_DivOp_size : Certified (∀ {n : Nat}, Stmt_DivOp_size prog prims ix_DivOp_size n))
+    (ext_FOp_size : Certified (∀ {n : Nat}, Stmt_FOp_size prog prims ix_FOp_size n)) {n : Nat} :
     Stmt_Instr_size prog prims ix_Instr_size n := by
   intro x0 v0 w h r0
   rcases n with _ | n

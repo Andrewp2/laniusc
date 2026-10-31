@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::left_true -/
-def src_left_true : SrcFunc := { params := [{ id := 10, ty := ty165 }], ret := ty87, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty165 ty87 [[118], []] [SrcEff.ePure (SrcExpr.field 118 0), SrcEff.eVariant ty87 0 [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x0000000000000001#64)]]) }
+def src_left_true : SrcFunc := { params := [{ id := 10, ty := ty169 }], ret := ty91, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty169 ty91 [[118], []] [SrcEff.ePure (SrcExpr.field 118 0), SrcEff.eVariant ty91 0 [SrcEff.ePure (SrcExpr.unsigned (UintTy.uint64) 0x0000000000000001#64)]]) }
 
 end
 

@@ -1,14 +1,15 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.Code_image
 import Lanius.Mini.Compiler.P.DivOp_size
+import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
-import Lanius.Mini.Compiler.P.UintTy_half
+import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.compileModules
 import Lanius.Mini.Compiler.P.elementBase
 import Lanius.Mini.Compiler.P.iteThen
 import Lanius.Mini.Compiler.P.lowerSetCallArgs
-import Lanius.Mini.Compiler.P.pow2
 import Lanius.Mini.Compiler.P.widthOf
 
 public section
@@ -35,6 +36,7 @@ def storeType (ty : SrcType) (values : List Expr) (first : Nat) (base : Expr) (o
   | .unit => storeOne (widthOf ty) (addressBelow base offset) values[first]?
   | .isize => storeOne (widthOf ty) (addressBelow base offset) values[first]?
   | .char => storeOne (widthOf ty) (addressBelow base offset) values[first]?
+  | .float ft => storeOne (widthOf ty) (addressBelow base offset) values[first]?
   | .sint kind => storeOne (widthOf ty) (addressBelow base offset) values[first]?
 def storeTypes (types : List SrcType) (values : List Expr) (first : Nat) (base : Expr) (offset : Nat) : Option Stmt :=
   match types with
@@ -67,6 +69,7 @@ def withinLayout (depth : Nat) (ty : SrcType) : Bool :=
     | .unit => false
     | .isize => true
     | .char => false
+    | .float ft => false
     | .sint kind => true
 def withinLayouts (depth : Nat) (types : List SrcType) : Bool :=
   match types with

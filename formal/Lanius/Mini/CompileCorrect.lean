@@ -28,6 +28,8 @@ theorem compileExpr_straight (base : Nat) (e : Expr) (depth : Nat) :
     simp only [compileExpr, List.all_append, ihLeft, ihRight]; rfl
   | compare _ _ left right ihLeft ihRight =>
     simp only [compileExpr, List.all_append, ihLeft, ihRight]; rfl
+  | fp _ left right ihLeft ihRight =>
+    simp only [compileExpr, List.all_append, ihLeft, ihRight]; rfl
 
 /-- The shared shape of binary operators and comparisons: after the operands'
 code, the left value waits in slot `base + depth` and the right is in the accumulator. -/
@@ -79,6 +81,12 @@ theorem compileExpr_correct (base : Nat) (e : Expr) (depth : Nat) (env : Env) (m
     simp only [compileExpr, Instr.exec_append (_ ++ _ ++ _), Instr.exec_singleton]
     exact ⟨by simp only [Instr.step, Instr.update, Expr.eval]; rw [kept, acc], slots⟩
   | compare word operation left right ihLeft ihRight =>
+    simp only [Expr.within, Bool.and_eq_true] at within
+    obtain ⟨kept, acc, slots⟩ := operands_correct base depth env m agree _ _ _ _
+      (fun m agree => ihLeft depth m agree within.1) (fun m agree => ihRight (depth + 1) m agree within.2)
+    simp only [compileExpr, Instr.exec_append (_ ++ _ ++ _), Instr.exec_singleton]
+    exact ⟨by simp only [Instr.step, Instr.update, Expr.eval]; rw [kept, acc], slots⟩
+  | fp operation left right ihLeft ihRight =>
     simp only [Expr.within, Bool.and_eq_true] at within
     obtain ⟨kept, acc, slots⟩ := operands_correct base depth env m agree _ _ _ _
       (fun m agree => ihLeft depth m agree within.1) (fun m agree => ihRight (depth + 1) m agree within.2)

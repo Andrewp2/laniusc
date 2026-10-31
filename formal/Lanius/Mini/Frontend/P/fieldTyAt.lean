@@ -3,10 +3,10 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.armsOf
 import Lanius.Mini.Frontend.P.consTreeTail
+import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isFnPath
 import Lanius.Mini.Frontend.P.isPathCall

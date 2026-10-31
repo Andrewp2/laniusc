@@ -5,7 +5,7 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcC_guardAnd
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
-public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
+public import Lanius.Faithful.Gen.SelfStmtC_lowerApply
 import all Lanius.Faithful.Gen.SelfSrcC_guardAnd
 import all Lanius.Mini.Compiler.P.guardAnd
 

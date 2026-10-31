@@ -21,16 +21,16 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lx_filter_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : List Nat} {x3 : Lanius.Mini.RawTok} {x4 : List Lanius.Mini.RawTok} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 180 RepSymRule) x0 v0 → (RepList 24 RepNat) x1 v1 → (RepList 24 RepNat) x2 v2 → RepRawTok x3 v3 → (RepList 153 RepRawTok) x4 v4 →
-    (RepList 153 RepRawTok) (Lanius.Mini.Inline.lxFilterAt x0 x1 x2 x3 x4) w
+  ∀ {x0 : List Lanius.Mini.SymRule} {x1 : List Nat} {x2 : List Nat} {x3 : Lanius.Mini.RawTok} {x4 : List Lanius.Mini.RawTok} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 184 RepSymRule) x0 v0 → (RepList 25 RepNat) x1 v1 → (RepList 25 RepNat) x2 v2 → RepRawTok x3 v3 → (RepList 157 RepRawTok) x4 v4 →
+    (RepList 157 RepRawTok) (Lanius.Mini.Inline.lxFilterAt x0 x1 x2 x3 x4) w
 
 abbrev Stmt_lx_ranges_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.RawTok} {x1 : List Lanius.Mini.RawTok} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepRawTok x0 v0 → (RepList 153 RepRawTok) x1 v1 →
-    (RepList 153 RepRawTok) (Lanius.Mini.Inline.lxRangesAt x0 x1) w
+  ∀ {x0 : Lanius.Mini.RawTok} {x1 : List Lanius.Mini.RawTok} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepRawTok x0 v0 → (RepList 157 RepRawTok) x1 v1 →
+    (RepList 157 RepRawTok) (Lanius.Mini.Inline.lxRangesAt x0 x1) w
 
 abbrev Stmt_lx_tokens_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : List Nat} {x2 : Lanius.Mini.RawTok} {x3 : List Lanius.Mini.RawTok} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 24 RepNat) x0 v0 → (RepList 24 RepNat) x1 v1 → RepRawTok x2 v2 → (RepList 153 RepRawTok) x3 v3 →
-    (RepList 44 RepToken) (Lanius.Mini.Inline.lxTokensAt x0 x1 x2 x3) w
+  ∀ {x0 : List Nat} {x1 : List Nat} {x2 : Lanius.Mini.RawTok} {x3 : List Lanius.Mini.RawTok} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 25 RepNat) x0 v0 → (RepList 25 RepNat) x1 v1 → RepRawTok x2 v2 → (RepList 157 RepRawTok) x3 v3 →
+    (RepList 45 RepToken) (Lanius.Mini.Inline.lxTokensAt x0 x1 x2 x3) w
 
 abbrev Stmt_p_add (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →

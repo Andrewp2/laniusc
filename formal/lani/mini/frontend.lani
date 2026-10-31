@@ -155,6 +155,10 @@ pub fn get_or<T>(items: List<T>, index: usize, fallback: T) -> T {
 
 pub enum UintTy { Uint8, Uint32, Uint64, Usize, Uint16, }
 
+// An IEEE binary floating-point format: binary32 or binary64. A word holds
+// a float's bit pattern, an F32 one zero-extended.
+pub enum FloatTy { F32, F64, }
+
 pub enum SrcType {
     I32,
     Bool,
@@ -171,6 +175,9 @@ pub enum SrcType {
     Isize,
     // a char, its 32-bit code in one slot
     Char,
+    // an f32 or f64, its IEEE bit pattern in one slot (an f32's
+    // zero-extended)
+    Float(FloatTy),
     // the signed integer type as wide as kind (i8, i16, i32, i64, isize). A
     // narrow one sits in its slot as an i32 does, its value's 32-bit two's
     // complement zero-extended; a 64-bit one as an isize does.
@@ -200,6 +207,8 @@ pub enum SrcExpr {
     Null,
     // a char literal: its code, a Unicode scalar value
     Char(u32),
+    // a float literal: its IEEE bit pattern
+    Float(FloatTy, u64),
 }
 
 pub struct SrcArm {
@@ -815,7 +824,7 @@ pub fn spelled5(name: List<usize>, a: usize, b: usize, c: usize, d: usize, e: us
     };
 }
 
-// i32, bool, u8, u16, u32, u64, usize, ptr, isize, i8, i16, i64, char
+// i32, bool, u8, u16, u32, u64, usize, ptr, isize, i8, i16, i64, char, f32, f64
 pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     if (spelled3(name, 105, 51, 50)) {
         return Some(I32);
@@ -855,6 +864,12 @@ pub fn primitive(name: List<usize>) -> core::option::Option<SrcType> {
     }
     if (spelled4(name, 99, 104, 97, 114)) {
         return Some(SrcType::Char);
+    }
+    if (spelled3(name, 102, 51, 50)) {
+        return Some(SrcType::Float(F32));
+    }
+    if (spelled3(name, 102, 54, 52)) {
+        return Some(SrcType::Float(F64));
     }
     return None;
 }
@@ -1064,6 +1079,8 @@ pub enum Ty {
     TyPtr,
     TyIsize,
     TyChar,
+    // f32 or f64
+    TyFloat(FloatTy),
     TySlice(Box<Ty>),
     TyNamed(usize, Box<List<Ty>>),
     TySint(UintTy),
@@ -1810,6 +1827,17 @@ pub fn uint_code(u: UintTy) -> usize {
     };
 }
 
+pub fn float_code(f: FloatTy) -> usize {
+    return match (f) {
+        F32 -> 0,
+        F64 -> 1,
+    };
+}
+
+pub fn same_float(f: FloatTy, g: FloatTy) -> bool {
+    return float_code(f) == float_code(g);
+}
+
 // extract: mutual begin
 pub fn same_ty(a: Ty, b: Ty) -> bool {
     return match (a) {
@@ -1820,6 +1848,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1831,6 +1860,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1842,6 +1872,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1853,6 +1884,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> true,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1864,6 +1896,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> true,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1875,6 +1908,19 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> true,
+            TyFloat(g) -> false,
+            TySlice(f) -> false,
+            TyNamed(e, bs) -> false,
+            TySint(v) -> false,
+        },
+        TyFloat(f) -> match (b) {
+            TyI32 -> false,
+            TyBool -> false,
+            TyUint(v) -> false,
+            TyPtr -> false,
+            TyIsize -> false,
+            TyChar -> false,
+            TyFloat(g) -> same_float(f, g),
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1886,6 +1932,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> same_ty(unbox(x), unbox(f)),
             TyNamed(e, bs) -> false,
             TySint(v) -> false,
@@ -1897,6 +1944,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> (d == e) && same_tys(unbox(args), unbox(bs)),
             TySint(v) -> false,
@@ -1908,6 +1956,7 @@ pub fn same_ty(a: Ty, b: Ty) -> bool {
             TyPtr -> false,
             TyIsize -> false,
             TyChar -> false,
+            TyFloat(g) -> false,
             TySlice(f) -> false,
             TyNamed(e, bs) -> false,
             TySint(v) -> uint_code(u) == uint_code(v),
@@ -2097,6 +2146,7 @@ pub fn src_ty(t: SrcType) -> core::option::Option<Ty> {
         Unit -> None,
         Isize -> Some(TyIsize),
         SrcType::Char -> Some(TyChar),
+        SrcType::Float(ft) -> Some(TyFloat(ft)),
         Sint(sk) -> Some(TySint(sk)),
     };
 }
@@ -2109,6 +2159,7 @@ pub fn scalar_src(t: Ty) -> core::option::Option<SrcType> {
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
+        TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> None,
         TyNamed(d, args) -> None,
         TySint(k) -> Some(Sint(k)),
@@ -2447,6 +2498,7 @@ pub fn lower_ty(fuel: usize, decls: Decls, table: List<Inst>, t: Ty) -> core::op
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
+        TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> slice_type(lower_ty(minus(fuel, 1), decls, table, unbox(e))),
         TyNamed(d, args) -> lower_named(minus(fuel, 1), decls, table, d, unbox(args)),
         TySint(k) -> Some(Sint(k)),
@@ -2531,6 +2583,7 @@ pub fn ty_insts(fuel: usize, decls: Decls, t: Ty) -> core::option::Option<List<I
         TyPtr -> Some(empty()),
         TyIsize -> Some(empty()),
         TyChar -> Some(empty()),
+        TyFloat(ft) -> Some(empty()),
         TySlice(e) -> ty_insts(minus(fuel, 1), decls, unbox(e)),
         TyNamed(d, args) -> cons_inst(Inst { decl: d, args: unbox(args) }, named_insts(minus(fuel, 1), decls, d, unbox(args))),
         TySint(k) -> Some(empty()),
@@ -2704,6 +2757,7 @@ pub fn unit_ty(t: SrcType) -> bool {
         Unit -> true,
         Isize -> false,
         SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
         Sint(sk) -> false,
     };
 }
@@ -2862,6 +2916,508 @@ pub fn char_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
     };
 }
 
+// Float literals. A literal's text is read as m * 10^e and rounded to the
+// nearest binary32 and binary64 patterns exactly as formal/Lanius/IEEE.lean's
+// ofDecimal does, on naturals held as lists of bits, least significant
+// first (any length; missing high bits are zeros).
+
+pub fn fl_xor(x: bool, y: bool) -> bool {
+    if (x) {
+        return !y;
+    }
+    return y;
+}
+
+// The carry out of x + y + c.
+pub fn fl_carry(x: bool, y: bool, c: bool) -> bool {
+    return (x && y) || (c && (x || y));
+}
+
+// The borrow out of x - y - c.
+pub fn fl_borrow_bit(x: bool, y: bool, c: bool) -> bool {
+    if (x) {
+        return y && c;
+    }
+    return y || c;
+}
+
+pub fn fl_carry_out(c: bool) -> List<bool> {
+    if (c) {
+        return single(true);
+    }
+    return empty();
+}
+
+// a + b + c.
+pub fn fl_add(a: List<bool>, b: List<bool>, c: bool) -> List<bool> {
+    return match (a) {
+        Nil -> match (b) {
+            Nil -> fl_carry_out(c),
+            Cons(y, rb) -> cons(fl_xor(y, c), fl_add(empty(), unbox(rb), y && c)),
+        },
+        Cons(x, ra) -> match (b) {
+            Nil -> cons(fl_xor(x, c), fl_add(unbox(ra), empty(), x && c)),
+            Cons(y, rb) -> cons(fl_xor(fl_xor(x, y), c), fl_add(unbox(ra), unbox(rb), fl_carry(x, y, c))),
+        },
+    };
+}
+
+// Whether a < b + c.
+pub fn fl_less(a: List<bool>, b: List<bool>, c: bool) -> bool {
+    return match (a) {
+        Nil -> match (b) {
+            Nil -> c,
+            Cons(y, rb) -> fl_less(empty(), unbox(rb), fl_borrow_bit(false, y, c)),
+        },
+        Cons(x, ra) -> match (b) {
+            Nil -> fl_less(unbox(ra), empty(), fl_borrow_bit(x, false, c)),
+            Cons(y, rb) -> fl_less(unbox(ra), unbox(rb), fl_borrow_bit(x, y, c)),
+        },
+    };
+}
+
+// a - b - c, when b + c <= a.
+pub fn fl_sub(a: List<bool>, b: List<bool>, c: bool) -> List<bool> {
+    return match (a) {
+        Nil -> empty(),
+        Cons(x, ra) -> match (b) {
+            Nil -> cons(fl_xor(x, c), fl_sub(unbox(ra), empty(), fl_borrow_bit(x, false, c))),
+            Cons(y, rb) -> cons(fl_xor(fl_xor(x, y), c), fl_sub(unbox(ra), unbox(rb), fl_borrow_bit(x, y, c))),
+        },
+    };
+}
+
+// a * 2^k.
+pub fn fl_shl(a: List<bool>, k: usize) -> List<bool> {
+    if (k == 0) {
+        return a;
+    }
+    return cons(false, fl_shl(a, minus(k, 1)));
+}
+
+// a * 10.
+pub fn fl_mul10(a: List<bool>) -> List<bool> {
+    return fl_add(cons(false, a), cons(false, cons(false, cons(false, a))), false);
+}
+
+// a * 10^k.
+pub fn fl_times10(a: List<bool>, k: usize) -> List<bool> {
+    if (k == 0) {
+        return a;
+    }
+    return fl_mul10(fl_times10(a, minus(k, 1)));
+}
+
+// The low k bits of n.
+// n / 2 and n % 2 == 1, by subtraction (n is a digit).
+pub fn fl_nat_half(n: usize) -> usize {
+    if (n < 2) {
+        return 0;
+    }
+    return plus(fl_nat_half(minus(n, 2)), 1);
+}
+
+pub fn fl_nat_odd(n: usize) -> bool {
+    if (n < 2) {
+        return n == 1;
+    }
+    return fl_nat_odd(minus(n, 2));
+}
+
+pub fn fl_of_nat(n: usize, k: usize) -> List<bool> {
+    if (k == 0) {
+        return empty();
+    }
+    return cons(fl_nat_odd(n), fl_of_nat(fl_nat_half(n), minus(k, 1)));
+}
+
+pub fn fl_pow2(k: usize) -> usize {
+    if (k == 0) {
+        return 1;
+    }
+    return times(2, fl_pow2(minus(k, 1)));
+}
+
+pub fn fl_bit(x: bool) -> usize {
+    if (x) {
+        return 1;
+    }
+    return 0;
+}
+
+// The value, below 2^64.
+pub fn fl_to_nat(a: List<bool>) -> usize {
+    return match (a) {
+        Nil -> 0,
+        Cons(x, rest) -> plus(fl_bit(x), times(2, fl_to_nat(unbox(rest)))),
+    };
+}
+
+pub fn fl_low_bit(x: bool) -> core::option::Option<usize> {
+    if (x) {
+        return Some(0);
+    }
+    return None;
+}
+
+pub fn fl_log2_up(x: bool, high: core::option::Option<usize>) -> core::option::Option<usize> {
+    return match (high) {
+        None -> fl_low_bit(x),
+        Some(i) -> Some(plus(i, 1)),
+    };
+}
+
+// The position of the highest one bit, none for zero.
+pub fn fl_log2(a: List<bool>) -> core::option::Option<usize> {
+    return match (a) {
+        Nil -> None,
+        Cons(x, rest) -> fl_log2_up(x, fl_log2(unbox(rest))),
+    };
+}
+
+pub fn fl_log2_or0(a: List<bool>) -> usize {
+    return match (fl_log2(a)) {
+        None -> 0,
+        Some(i) -> i,
+    };
+}
+
+pub fn fl_odd(a: List<bool>) -> bool {
+    return match (a) {
+        Nil -> false,
+        Cons(x, rest) -> x,
+    };
+}
+
+// a - b, or 0.
+pub fn fl_sat(a: usize, b: usize) -> usize {
+    if (a >= b) {
+        return minus(a, b);
+    }
+    return 0;
+}
+
+pub struct FlDiv {
+    q: List<bool>,
+    r: List<bool>,
+}
+
+pub fn fl_div_step(s: FlDiv, x: bool, d: List<bool>) -> FlDiv {
+    let r2: List<bool> = cons(x, s.r);
+    if (fl_less(r2, d, false)) {
+        return FlDiv { q: cons(false, s.q), r: r2 };
+    }
+    return FlDiv { q: cons(true, s.q), r: fl_sub(r2, d, false) };
+}
+
+// n / d and n % d, d positive: binary long division from the high bits.
+pub fn fl_divmod(n: List<bool>, d: List<bool>) -> FlDiv {
+    return match (n) {
+        Nil -> FlDiv { q: empty(), r: empty() },
+        Cons(x, rest) -> fl_div_step(fl_divmod(unbox(rest), d), x, d),
+    };
+}
+
+pub fn fl_round_up(up: bool, q: List<bool>) -> List<bool> {
+    if (up) {
+        return fl_add(q, empty(), true);
+    }
+    return q;
+}
+
+// Whether den * 2^(l - m) <= num * 2^(m - l) (the exponents' differences
+// cut at zero): floorLog2Ratio's test that log2 num - log2 den is not one
+// too many.
+pub fn fl_ratio_ok(l: usize, m: usize, num: List<bool>, den: List<bool>) -> bool {
+    return !fl_less(fl_shl(num, fl_sat(m, l)), fl_shl(den, fl_sat(l, m)), false);
+}
+
+// The pattern of num / den (both positive) rounded to nearest, ties to
+// even, in the format of exponent width ew and fraction width f with bias
+// 2^(ew-1) - 1 (IEEE.lean's roundRatio false num den 0). u = max(uMin,
+// floorLog2Ratio - f) is held as the biased un = u - uMin, which is
+// max(0, floorLog2Ratio + bias - 1); the scale 2^-u is 2^(bias + f - 1 - un).
+pub fn fl_round(ew: usize, f: usize, num: List<bool>, den: List<bool>) -> usize {
+    let bias: usize = minus(fl_pow2(minus(ew, 1)), 1);
+    let l: usize = fl_log2_or0(num);
+    let m: usize = fl_log2_or0(den);
+    let un: usize = fl_sat(minus(plus(l, bias), plus(fl_bit(!fl_ratio_ok(l, m, num, den)), 1)), m);
+    let k0: usize = minus(plus(bias, f), 1);
+    let inf: usize = times(minus(fl_pow2(ew), 1), fl_pow2(f));
+    let d: List<bool> = fl_shl(den, fl_sat(un, k0));
+    let s: FlDiv = fl_divmod(fl_shl(num, fl_sat(k0, un)), d);
+    let up: bool = fl_less(d, cons(false, s.r), false) || (!fl_less(cons(false, s.r), d, false) && !fl_less(d, cons(false, s.r), false) && fl_odd(s.q));
+    let q: List<bool> = fl_round_up(up, s.q);
+    if (un >= minus(fl_pow2(ew), 1)) {
+        return inf;
+    }
+    let bits: usize = plus(times(un, fl_pow2(f)), fl_to_nat(q));
+    if (bits >= inf) {
+        return inf;
+    }
+    return bits;
+}
+
+pub fn fl_decimal_at(ew: usize, f: usize, m: List<bool>, neg: bool, mag: usize, lm: usize) -> usize {
+    if (!neg && mag > 400) {
+        return times(minus(fl_pow2(ew), 1), fl_pow2(f));
+    }
+    if (neg && plus(plus(lm, 1), 400) < mag) {
+        return 0;
+    }
+    if (neg) {
+        return fl_round(ew, f, m, fl_times10(single(true), mag));
+    }
+    return fl_round(ew, f, fl_times10(m, mag), single(true));
+}
+
+// The pattern nearest m * 10^e (e = -mag when neg, else mag), IEEE.lean's
+// ofDecimal.
+pub fn fl_decimal(ew: usize, f: usize, m: List<bool>, neg: bool, mag: usize) -> usize {
+    return match (fl_log2(m)) {
+        None -> 0,
+        Some(lm) -> fl_decimal_at(ew, f, m, neg, mag, lm),
+    };
+}
+
+// A float literal's digits and exponent.
+pub struct FlDec {
+    m: List<bool>,
+    neg: bool,
+    mag: usize,
+}
+
+pub fn fl_digit(b: usize) -> bool {
+    return b >= 48 && 57 >= b;
+}
+
+pub fn fl_push(m: List<bool>, b: usize) -> List<bool> {
+    return fl_add(fl_mul10(m), fl_of_nat(minus(b, 48), 4), false);
+}
+
+// m * 10^(±x - k), n digits in all (at least one).
+pub fn fl_finish(m: List<bool>, n: usize, k: usize, neg: bool, x: usize) -> core::option::Option<FlDec> {
+    if (n == 0) {
+        return None;
+    }
+    if (neg) {
+        return Some(FlDec { m: m, neg: true, mag: plus(x, k) });
+    }
+    if (x >= k) {
+        return Some(FlDec { m: m, neg: false, mag: minus(x, k) });
+    }
+    return Some(FlDec { m: m, neg: true, mag: minus(k, x) });
+}
+
+// extract: inline
+fn fl_exp_digit_at(db: usize, drest: List<usize>, dm: List<bool>, dn: usize, dk: usize, dneg: bool, dx: usize) -> core::option::Option<FlDec> {
+    if (fl_digit(db)) {
+        return fl_exp_digits(drest, dm, dn, dk, dneg, plus(times(dx, 10), minus(db, 48)));
+    }
+    return None;
+}
+
+// The exponent's digits, x their value so far (at most 99999).
+pub fn fl_exp_digits(text: List<usize>, m: List<bool>, n: usize, k: usize, neg: bool, x: usize) -> core::option::Option<FlDec> {
+    if (x > 99999) {
+        return None;
+    }
+    return match (text) {
+        Nil -> fl_finish(m, n, k, neg, x),
+        Cons(b, rest) -> fl_exp_digit_at(b, unbox(rest), m, n, k, neg, x),
+    };
+}
+
+// extract: inline
+fn fl_exp_first_at(xb: usize, xrest: List<usize>, xm: List<bool>, xn: usize, xk: usize, xneg: bool) -> core::option::Option<FlDec> {
+    if (fl_digit(xb)) {
+        return fl_exp_digits(xrest, xm, xn, xk, xneg, minus(xb, 48));
+    }
+    return None;
+}
+
+pub fn fl_exp_first(text: List<usize>, m: List<bool>, n: usize, k: usize, neg: bool) -> core::option::Option<FlDec> {
+    return match (text) {
+        Nil -> None,
+        Cons(b, rest) -> fl_exp_first_at(b, unbox(rest), m, n, k, neg),
+    };
+}
+
+// extract: inline
+fn fl_exp_sign_at(sb: usize, srest: List<usize>, sm: List<bool>, sn: usize, sk: usize) -> core::option::Option<FlDec> {
+    if (sb == 45) {
+        return fl_exp_first(srest, sm, sn, sk, true);
+    }
+    if (sb == 43) {
+        return fl_exp_first(srest, sm, sn, sk, false);
+    }
+    return fl_exp_first(cons(sb, srest), sm, sn, sk, false);
+}
+
+pub fn fl_exp_sign(text: List<usize>, m: List<bool>, n: usize, k: usize) -> core::option::Option<FlDec> {
+    return match (text) {
+        Nil -> None,
+        Cons(b, rest) -> fl_exp_sign_at(b, unbox(rest), m, n, k),
+    };
+}
+
+// extract: inline
+fn fl_exp_at(eb: usize, erest: List<usize>, em: List<bool>, en: usize, ek: usize) -> core::option::Option<FlDec> {
+    if (eb == 101 || eb == 69) {
+        return fl_exp_sign(erest, em, en, ek);
+    }
+    return None;
+}
+
+// e or E, an optional sign and the exponent's digits, then the end.
+pub fn fl_exp_part(text: List<usize>, m: List<bool>, n: usize, k: usize) -> core::option::Option<FlDec> {
+    return match (text) {
+        Nil -> fl_finish(m, n, k, false, 0),
+        Cons(b, rest) -> fl_exp_at(b, unbox(rest), m, n, k),
+    };
+}
+
+// extract: inline
+fn fl_frac_at(fb: usize, frest: List<usize>, fm: List<bool>, fnn: usize, fk: usize) -> core::option::Option<FlDec> {
+    if (fl_digit(fb)) {
+        return fl_frac_part(frest, fl_push(fm, fb), plus(fnn, 1), plus(fk, 1));
+    }
+    return fl_exp_part(cons(fb, frest), fm, fnn, fk);
+}
+
+// The fraction's digits, k of them so far (n digits in all).
+pub fn fl_frac_part(text: List<usize>, m: List<bool>, n: usize, k: usize) -> core::option::Option<FlDec> {
+    return match (text) {
+        Nil -> fl_finish(m, n, k, false, 0),
+        Cons(b, rest) -> fl_frac_at(b, unbox(rest), m, n, k),
+    };
+}
+
+// extract: inline
+fn fl_int_at(ib: usize, irest: List<usize>, im: List<bool>, inn: usize) -> core::option::Option<FlDec> {
+    if (fl_digit(ib)) {
+        return fl_int_part(irest, fl_push(im, ib), plus(inn, 1));
+    }
+    if (ib == 46) {
+        return fl_frac_part(irest, im, inn, 0);
+    }
+    return fl_exp_part(cons(ib, irest), im, inn, 0);
+}
+
+// The integer part's digits, n of them so far.
+pub fn fl_int_part(text: List<usize>, m: List<bool>, n: usize) -> core::option::Option<FlDec> {
+    return match (text) {
+        Nil -> fl_finish(m, n, 0, false, 0),
+        Cons(b, rest) -> fl_int_at(b, unbox(rest), m, n),
+    };
+}
+
+// The marker a float literal reads as: Cast(Unit, Apply(Plus, its f32
+// literal, its f64 literal)), a form no other source has (no cast names
+// Unit); lit_funcs gives it the type its context expects, and build rejects
+// one that gets none.
+pub fn float_marker(d: FlDec) -> SrcExpr {
+    return Cast(Unit, boxed(Apply(Plus, boxed(SrcExpr::Float(F32, fl_decimal(8, 23, d.m, d.neg, d.mag) as u64)), boxed(SrcExpr::Float(F64, fl_decimal(11, 52, d.m, d.neg, d.mag) as u64)))));
+}
+
+pub fn float_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
+    return match (fl_int_part(text, empty(), 0)) {
+        None -> None,
+        Some(d) -> Some(float_marker(d)),
+    };
+}
+
+pub fn float_pick_of(ft: FloatTy, a: SrcExpr, b: SrcExpr) -> core::option::Option<SrcExpr> {
+    return match (ft) {
+        F32 -> Some(a),
+        F64 -> Some(b),
+    };
+}
+
+// A float marker Cast(t, x)'s literal of type ft.
+pub fn float_pick(ft: FloatTy, t: SrcType, x: SrcExpr) -> core::option::Option<SrcExpr> {
+    if (unit_ty(t)) {
+        return match (x) {
+            Int(k) -> None,
+            Boolean(b) -> None,
+            Unsigned(u, k) -> None,
+            Local(id) -> None,
+            Field(id, j) -> None,
+            Negate(y) -> None,
+            Not(y) -> None,
+            Apply(op, a, b) -> float_pick_of(ft, unbox(a), unbox(b)),
+            Cast(s, y) -> None,
+            Null -> None,
+            SrcExpr::Char(code) -> None,
+            SrcExpr::Float(g, bits) -> None,
+        };
+    }
+    return None;
+}
+
+// A float marker Cast(t, x) at the expected type want if that is a float
+// type, else as an f32 literal (Core's default, `literalDefaultType`).
+pub fn float_want(want: core::option::Option<SrcType>, t: SrcType, x: SrcExpr) -> core::option::Option<SrcExpr> {
+    return match (want) {
+        None -> float_pick(F32, t, x),
+        Some(w) -> match (w) {
+            I32 -> float_pick(F32, t, x),
+            Bool -> float_pick(F32, t, x),
+            Uint(k) -> float_pick(F32, t, x),
+            Struct(id, fields) -> float_pick(F32, t, x),
+            Enum(id, variants) -> float_pick(F32, t, x),
+            Ptr -> float_pick(F32, t, x),
+            Slice(e) -> float_pick(F32, t, x),
+            Unit -> float_pick(F32, t, x),
+            Isize -> float_pick(F32, t, x),
+            SrcType::Char -> float_pick(F32, t, x),
+            SrcType::Float(ft) -> float_pick(ft, t, x),
+            Sint(sk) -> float_pick(F32, t, x),
+        },
+    };
+}
+
+// A constant's float marker Cast(s, x) at its declared type t.
+pub fn float_typed(t: Ty, s: SrcType, x: SrcExpr) -> core::option::Option<SrcExpr> {
+    return match (t) {
+        TyI32 -> None,
+        TyBool -> None,
+        TyUint(u) -> None,
+        TyPtr -> None,
+        TyIsize -> None,
+        TyChar -> None,
+        TyFloat(ft) -> float_pick(ft, s, x),
+        TySlice(y) -> None,
+        TyNamed(d, args) -> None,
+        TySint(u) -> None,
+    };
+}
+
+pub fn negate_some(e: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr> {
+    return match (e) {
+        None -> None,
+        Some(y) -> Some(Negate(boxed(y))),
+    };
+}
+
+// A constant's negated float marker -x at the float type ft.
+pub fn negated_float(ft: FloatTy, x: SrcExpr) -> core::option::Option<SrcExpr> {
+    return match (x) {
+        Int(k) -> None,
+        Boolean(b) -> None,
+        Unsigned(u, k) -> None,
+        Local(id) -> None,
+        Field(id, j) -> None,
+        Negate(y) -> None,
+        Not(y) -> None,
+        Apply(op, a, b) -> None,
+        Cast(s, y) -> negate_some(float_pick(ft, s, unbox(y))),
+        Null -> None,
+        SrcExpr::Char(code) -> None,
+        SrcExpr::Float(g, bits) -> None,
+    };
+}
+
 // A local in scope: its spelling, its id and its type.
 pub struct Local {
     name: List<usize>,
@@ -2947,6 +3503,7 @@ pub fn field_index(env: FrontEnv, t: Ty, name: List<usize>) -> core::option::Opt
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> field_in(get(env.decls.types, d), name),
         TySint(k) -> None,
@@ -3060,6 +3617,7 @@ pub fn negated_int(x: SrcExpr, e: SrcExpr) -> core::option::Option<SrcExpr> {
         Cast(t, y) -> None,
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -3116,6 +3674,7 @@ pub fn neg_sint_const(u: UintTy, x: SrcExpr) -> core::option::Option<SrcExpr> {
         Cast(t, y) -> None,
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -3130,6 +3689,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> null_const(k),
             TyIsize -> Some(Cast(Isize, boxed(e))),
             TyChar -> None,
+            TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> sint_const(u, k),
@@ -3141,6 +3701,7 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> None,
             TyIsize -> None,
             TyChar -> None,
+            TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> None,
@@ -3155,13 +3716,14 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> None,
             TyIsize -> negated_int(unbox(x), Negate(boxed(Cast(Isize, x)))),
             TyChar -> None,
+            TyFloat(ft) -> negated_float(ft, unbox(x)),
             TySlice(y) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> neg_sint_const(u, unbox(x)),
         },
         Not(x) -> None,
         Apply(op, a, b) -> None,
-        Cast(s, x) -> None,
+        Cast(s, x) -> float_typed(t, s, unbox(x)),
         Null -> None,
         SrcExpr::Char(code) -> match (t) {
             TyI32 -> None,
@@ -3170,10 +3732,12 @@ pub fn typed_literal(t: Ty, e: SrcExpr) -> core::option::Option<SrcExpr> {
             TyPtr -> None,
             TyIsize -> None,
             TyChar -> Some(e),
+            TyFloat(ft) -> None,
             TySlice(x) -> None,
             TyNamed(d, args) -> None,
             TySint(u) -> None,
         },
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -3250,6 +3814,7 @@ pub fn wide_of(ty: Ty, negative: bool, n: usize) -> core::option::Option<SrcExpr
         TyPtr -> None,
         TyIsize -> wide_isize(negative, n),
         TyChar -> None,
+        TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> None,
         TySint(u) -> wide_sint(u, negative, n),
@@ -3343,6 +3908,9 @@ pub fn expr_of(fuel: usize, env: FrontEnv, scope: List<Local>, c: CTree) -> core
     if (p == p_char()) {
         return char_literal(kid_token(c, 0).text);
     }
+    if (p == p_float()) {
+        return float_literal(kid_token(c, 0).text);
+    }
     return None;
 }
 
@@ -3391,6 +3959,7 @@ pub fn wide_inner(t: SrcType, x: SrcExpr) -> core::option::Option<u64> {
             Cast(s, y) -> None,
             Null -> None,
             SrcExpr::Char(code) -> None,
+            SrcExpr::Float(ft, bits) -> None,
         };
     }
     return None;
@@ -3410,6 +3979,7 @@ pub fn wide_value(e: SrcExpr) -> core::option::Option<u64> {
         Cast(t, x) -> wide_inner(t, unbox(x)),
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -3434,6 +4004,7 @@ pub fn wide_read(e: SrcExpr) -> bool {
         Cast(t, x) -> has_wide(wide_inner(t, unbox(x))),
         Null -> false,
         SrcExpr::Char(code) -> false,
+        SrcExpr::Float(ft, bits) -> false,
     };
 }
 
@@ -3605,6 +4176,7 @@ pub fn struct_field_tys(fuel: usize, decls: Decls, t: Ty) -> core::option::Optio
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> field_tys(fuel, decls, d, unbox(args)),
         TySint(k) -> None,
@@ -3637,6 +4209,7 @@ pub fn bare_int(e: SrcExpr) -> bool {
         Cast(t, x) -> unit_ty(t),
         Null -> false,
         SrcExpr::Char(code) -> false,
+        SrcExpr::Float(ft, bits) -> false,
     };
 }
 
@@ -3664,6 +4237,7 @@ pub fn expr_ty(fuel: usize, env: FrontEnv, scope: List<Local>, e: SrcExpr) -> co
         Cast(t, x) -> src_ty(t),
         Null -> Some(TyPtr),
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -3751,6 +4325,7 @@ pub fn slice_elem(t: Ty) -> core::option::Option<Ty> {
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyFloat(ft) -> None,
         TySlice(e) -> Some(unbox(e)),
         TyNamed(d, args) -> None,
         TySint(k) -> None,
@@ -3765,6 +4340,7 @@ pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
         TyPtr -> None,
         TyIsize -> None,
         TyChar -> None,
+        TyFloat(ft) -> None,
         TySlice(e) -> None,
         TyNamed(d, args) -> Some(Inst { decl: d, args: unbox(args) }),
         TySint(k) -> None,
@@ -4822,6 +5398,7 @@ pub fn is_usize(t: SrcType) -> bool {
         Unit -> false,
         Isize -> false,
         SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
         Sint(sk) -> false,
     };
 }
@@ -4840,6 +5417,7 @@ pub fn literal_shift(e: SrcExpr) -> core::option::Option<usize> {
         Cast(t, x) -> None,
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -4865,6 +5443,7 @@ pub fn shift_of(e: SrcExpr) -> core::option::Option<usize> {
         Cast(t, x) -> cast_shift(is_usize(t), unbox(x)),
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -5442,6 +6021,7 @@ pub fn pure_local(e: SrcExpr) -> core::option::Option<usize> {
         Cast(t, a) -> None,
         Null -> None,
         SrcExpr::Char(code) -> None,
+        SrcExpr::Float(ft, bits) -> None,
     };
 }
 
@@ -6460,6 +7040,7 @@ pub fn pure_inferred(e: SrcExpr) -> bool {
         Cast(t, a) -> true,
         Null -> false,
         SrcExpr::Char(c) -> false,
+        SrcExpr::Float(ft, bits) -> false,
     };
 }
 
@@ -6548,6 +7129,7 @@ pub fn is_ptr_ty(t: Ty) -> bool {
         TyPtr -> true,
         TyIsize -> false,
         TyChar -> false,
+        TyFloat(ft) -> false,
         TySlice(e) -> false,
         TyNamed(d, args) -> false,
         TySint(k) -> false,
@@ -7736,6 +8318,7 @@ pub fn ty_known(table: List<Inst>, t: Ty) -> bool {
         TyPtr -> true,
         TyIsize -> true,
         TyChar -> true,
+        TyFloat(ft) -> true,
         TySlice(e) -> ty_known(table, unbox(e)),
         TyNamed(d, args) -> inst_member(table, Inst { decl: d, args: unbox(args) }),
         TySint(k) -> true,
@@ -7806,6 +8389,7 @@ pub fn close_ty(fuel: usize, t: Tables, ty: Ty) -> core::option::Option<SrcType>
         TyPtr -> Some(Ptr),
         TyIsize -> Some(Isize),
         TyChar -> Some(SrcType::Char),
+        TyFloat(ft) -> Some(SrcType::Float(ft)),
         TySlice(e) -> slice_type(close_ty(minus(fuel, 1), t, unbox(e))),
         TyNamed(d, args) -> close_named(fuel, t, d, unbox(args), inst_index(t.types, Inst { decl: d, args: unbox(args) }, 0)),
         TySint(k) -> Some(Sint(k)),
@@ -7826,6 +8410,7 @@ pub fn src_enum_id(t: core::option::Option<SrcType>) -> core::option::Option<usi
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         },
     };
@@ -8323,6 +8908,7 @@ pub fn isize_ty(t: SrcType) -> bool {
         Unit -> false,
         Isize -> true,
         SrcType::Char -> false,
+        SrcType::Float(ft) -> false,
         Sint(sk) -> false,
     };
 }
@@ -8357,6 +8943,7 @@ pub fn int_literal_at(t: SrcType, k: i32, e: SrcExpr) -> SrcExpr {
         Unit -> e,
         Isize -> Cast(Isize, boxed(e)),
         SrcType::Char -> e,
+        SrcType::Float(ft) -> e,
         Sint(sk) -> sint_at(sk, k, e),
     };
 }
@@ -8398,6 +8985,7 @@ pub fn src_fields(t: core::option::Option<SrcType>) -> core::option::Option<List
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         },
     };
@@ -8417,6 +9005,7 @@ pub fn src_variants(t: core::option::Option<SrcType>) -> core::option::Option<Li
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         },
     };
@@ -8436,6 +9025,7 @@ pub fn src_element(t: core::option::Option<SrcType>) -> core::option::Option<Src
             Unit -> None,
             Isize -> None,
             SrcType::Char -> None,
+            SrcType::Float(ft) -> None,
             Sint(sk) -> None,
         },
     };
@@ -8587,6 +9177,7 @@ pub fn wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> SrcEx
             Unit -> e,
             Isize -> wide_isize_at(n, e),
             SrcType::Char -> e,
+            SrcType::Float(ft) -> e,
             Sint(sk) -> wide_sint_at(sk, n, e),
         },
     };
@@ -8631,6 +9222,7 @@ pub fn neg_wide_at(want: core::option::Option<SrcType>, n: u64, e: SrcExpr) -> S
             Unit -> e,
             Isize -> neg_wide_isize(n, e),
             SrcType::Char -> e,
+            SrcType::Float(ft) -> e,
             Sint(sk) -> neg_wide_sint(sk, n, e),
         },
     };
@@ -8656,6 +9248,7 @@ pub fn neg_least_at(u: UintTy, x: SrcExpr, d: SrcExpr) -> SrcExpr {
         Cast(t, y) -> d,
         Null -> d,
         SrcExpr::Char(code) -> d,
+        SrcExpr::Float(ft, bits) -> d,
     };
 }
 
@@ -8675,6 +9268,7 @@ pub fn neg_least(want: core::option::Option<SrcType>, x: SrcExpr, d: SrcExpr) ->
             Unit -> d,
             Isize -> d,
             SrcType::Char -> d,
+            SrcType::Float(ft) -> d,
             Sint(sk) -> neg_least_at(sk, x, d),
         },
     };
@@ -8694,6 +9288,7 @@ pub fn known_expr(locals: List<LocalTy>, e: SrcExpr) -> core::option::Option<Src
         Cast(t, x) -> known_cast(t),
         Null -> Some(Ptr),
         SrcExpr::Char(code) -> Some(SrcType::Char),
+        SrcExpr::Float(ft, bits) -> Some(SrcType::Float(ft)),
     };
 }
 
@@ -8711,12 +9306,16 @@ pub fn lit_expr(locals: List<LocalTy>, want: core::option::Option<SrcType>, e: S
         Not(x) -> Not(boxed(lit_expr(locals, Some(Bool), unbox(x)))),
         Apply(op, a, b) -> Apply(op, boxed(lit_expr(locals, operand_want(op, want, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))), unbox(a))), boxed(lit_expr(locals, amount_want(op, want, known_expr(locals, unbox(a)), known_expr(locals, unbox(b))), unbox(b)))),
         Cast(t, x) -> match (wide_value(e)) {
-            None -> Cast(t, boxed(lit_expr(locals, None, unbox(x)))),
+            None -> match (float_want(want, t, unbox(x))) {
+                None -> Cast(t, boxed(lit_expr(locals, None, unbox(x)))),
+                Some(y) -> y,
+            },
             Some(n) -> wide_at(want, n, e),
         },
 
         Null -> e,
         SrcExpr::Char(code) -> e,
+        SrcExpr::Float(ft, bits) -> e,
     };
 }
 
@@ -8880,6 +9479,7 @@ pub fn wide_left(e: SrcExpr) -> bool {
         Cast(t, x) -> unit_ty(t) || wide_left(unbox(x)),
         Null -> false,
         SrcExpr::Char(code) -> false,
+        SrcExpr::Float(ft, bits) -> false,
     };
 }
 
@@ -10985,6 +11585,11 @@ fn p_import_path() -> usize {
 // extract: inline
 fn p_int() -> usize {
     return 175;
+}
+
+// extract: inline
+fn p_float() -> usize {
+    return 176;
 }
 
 // extract: inline

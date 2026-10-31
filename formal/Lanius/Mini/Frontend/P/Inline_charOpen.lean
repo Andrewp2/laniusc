@@ -1,6 +1,9 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Frontend.P.flDecimal
+public import Lanius.Mini.Frontend.P.flExpFirst
+public import Lanius.Mini.Frontend.P.floatTyped
 public import Lanius.Mini.Frontend.P.hasKids
 public import Lanius.Mini.Frontend.P.intLiteral
 public import Lanius.Mini.Frontend.P.pickTy
@@ -17,6 +20,48 @@ namespace Lanius.Mini
     charBody orest
   else
     none
+
+@[expose] def Inline.flExpDigitAt (db : Nat) (drest : List Nat) (dm : List Bool) (dn : Nat) (dk : Nat) (dneg : Bool) (dx : Nat) : Option FlDec :=
+  if flDigit db then
+    flExpDigits drest dm dn dk dneg (dx * 10 + (db - 48))
+  else
+    none
+
+@[expose] def Inline.flExpFirstAt (xb : Nat) (xrest : List Nat) (xm : List Bool) (xn : Nat) (xk : Nat) (xneg : Bool) : Option FlDec :=
+  if flDigit xb then
+    flExpDigits xrest xm xn xk xneg (xb - 48)
+  else
+    none
+
+@[expose] def Inline.flExpSignAt (sb : Nat) (srest : List Nat) (sm : List Bool) (sn : Nat) (sk : Nat) : Option FlDec :=
+  if sb = 45 then
+    flExpFirst srest sm sn sk true
+  else
+    if sb = 43 then
+      flExpFirst srest sm sn sk false
+    else
+      flExpFirst (sb :: srest) sm sn sk false
+
+@[expose] def Inline.flExpAt (eb : Nat) (erest : List Nat) (em : List Bool) (en : Nat) (ek : Nat) : Option FlDec :=
+  if decide (eb = 101) || decide (eb = 69) then
+    flExpSign erest em en ek
+  else
+    none
+
+@[expose] def Inline.flFracAt (fb : Nat) (frest : List Nat) (fm : List Bool) (fnn : Nat) (fk : Nat) : Option FlDec :=
+  if flDigit fb then
+    flFracPart frest (flPush fm fb) (fnn + 1) (fk + 1)
+  else
+    flExpPart (fb :: frest) fm fnn fk
+
+@[expose] def Inline.flIntAt (ib : Nat) (irest : List Nat) (im : List Bool) (inn : Nat) : Option FlDec :=
+  if flDigit ib then
+    flIntPart irest (flPush im ib) (inn + 1)
+  else
+    if ib = 46 then
+      flFracPart irest im inn 0
+    else
+      flExpPart (ib :: irest) im inn 0
 
 @[expose] def Inline.findLocalAt (fl : Local) (frest : List Local) (fname : List Nat) : Option Local :=
   if sameText fl.name fname then

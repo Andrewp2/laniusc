@@ -14,7 +14,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_applyGuard
 public import Lanius.Faithful.Gen.SelfStmtC_guardAnd
-public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
+public import Lanius.Faithful.Gen.SelfStmtC_lowerApply
 import all Lanius.Faithful.Gen.SelfSrcC_SrcExpr_guard
 import all Lanius.Mini.Compiler.P.SrcExpr_guard
 

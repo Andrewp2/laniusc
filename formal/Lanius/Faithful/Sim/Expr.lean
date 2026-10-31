@@ -220,6 +220,9 @@ theorem expr_sim (target : P.target = .x86_64) (tenv : TEnv) (env : Env) (e : Sr
   | char code =>
     intro k st v st' t run ht rel
     simp [exprTy] at ht
+  | float t x =>
+    intro k st v st' t run ht rel
+    simp [exprTy] at ht
 
 theorem exprs_sim (target : P.target = .x86_64) (tenv : TEnv) (env : Env) :
     ∀ (es : List SrcExpr) {k : Nat} {st : State} {vs : List Value} {st' : State} {ts : List SrcType},

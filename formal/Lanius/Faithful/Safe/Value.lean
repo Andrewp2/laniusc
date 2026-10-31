@@ -81,6 +81,7 @@ theorem same_error {op : Core.BinaryOp} {t : SrcType} {lv rv : Value} {reason : 
     | ptr => exact hl.elim
     | slice => exact hl.elim
     | char => exact hl.elim
+    | float => exact hl.elim
     | sint => exact hl.elim
   · have notEq : op ≠ .equal := fun e => eq (.inl e)
     have notNe : op ≠ .notEqual := fun e => eq (.inr e)
@@ -123,6 +124,7 @@ theorem same_error {op : Core.BinaryOp} {t : SrcType} {lv rv : Value} {reason : 
     | ptr => simp [numTy] at num
     | slice => simp [numTy] at num
     | char => exact hl.elim
+    | float => exact hl.elim
     | sint => exact hl.elim
 
 theorem opTy_same {op : SrcOp} {tl tr t : SrcType} (ht : opTy op tl tr = some t) (notAnd : op ≠ .logicalAnd)
@@ -166,6 +168,7 @@ theorem neg_ok {t : SrcType} {v : Value} {reason : Lanius.Trap} (num : numTy t =
   | i32 => obtain ⟨a, rfl, -⟩ := hv; simp [evalUnaryValue] at h
   | isize => obtain ⟨a, rfl, -⟩ := hv; simp [evalUnaryValue] at h
   | char => exact hv.elim
+  | float => exact hv.elim
   | sint => exact hv.elim
   | uint k => obtain ⟨a, rfl, -⟩ := hv; simp [evalUnaryValue] at h
   | bool => simp [numTy] at num
@@ -186,6 +189,7 @@ theorem cast_ok {ty t : SrcType} {v : Value} {reason : Lanius.Trap} (num : numTy
   | i32 => obtain ⟨a, rfl, -⟩ := hv; cases ty <;> simp_all [numTy, SrcType.toScalar, evalScalarCast]
   | isize => obtain ⟨a, rfl, -⟩ := hv; cases ty <;> simp_all [numTy, SrcType.toScalar, evalScalarCast]
   | char => exact hv.elim
+  | float => exact hv.elim
   | sint => exact hv.elim
   | uint k => obtain ⟨a, rfl, -⟩ := hv; cases ty <;> simp_all [numTy, SrcType.toScalar, evalScalarCast]
   | bool => simp [numTy] at num

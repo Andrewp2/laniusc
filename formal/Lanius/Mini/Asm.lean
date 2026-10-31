@@ -71,7 +71,7 @@ def readSlots (slots : Nat → BitVec 64) : List Nat → List (BitVec 64)
 
 /-- Instructions that fall through to the next one. -/
 def Instr.straight : Instr → Bool
-  | .imm _ | .load _ | .store _ | .neg | .op _ _ _ | .cmp _ _ _ => true
+  | .imm _ | .load _ | .store _ | .neg | .op _ _ _ | .cmp _ _ _ | .fp _ _ => true
   | .jmp _ | .jz _ | .call _ _ _ _ | .ret _ | .bump _ | .loadAt | .storeAt _ | .loadWordAt _
   | .storeWordAt _ _ | .div _ _ _ | .sys _ _ => false
 
@@ -83,6 +83,7 @@ def Instr.update : Instr → Machine → Machine
   | .neg, m => { m with acc := widen (-low m.acc) }
   | .op word operation slot, m => { m with acc := word.apply operation (m.slots slot) m.acc }
   | .cmp word operation slot, m => { m with acc := if word.holds operation (m.slots slot) m.acc then 1 else 0 }
+  | .fp operation slot, m => { m with acc := operation.apply (m.slots slot) m.acc }
   | .jmp _, m | .jz _, m | .call _ _ _ _, m | .ret _, m | .bump _, m | .loadAt, m | .storeAt _, m
   | .loadWordAt _, m | .storeWordAt _ _, m | .div _ _ _, m | .sys _ _, m => m
 

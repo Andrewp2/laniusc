@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Compiler.Types
 import Lanius.Mini.Compiler.P.SrcExpr_guard
+import Lanius.Mini.Compiler.P.SrcType_size
 import Lanius.Mini.Compiler.P.UintTy_half
 import Lanius.Mini.Compiler.P.assignFrom
 import Lanius.Mini.Compiler.P.copyBinding
@@ -50,6 +51,7 @@ def lowerSetFieldOf (b : Binding) (field : Nat) (scope : List Binding) (value : 
   | .unit => none
   | .isize => none
   | .char => none
+  | .float ft => none
   | .sint sk => none
 
 def lowerSetField (binding : Option Binding) (field : Nat) (scope : List Binding) (value : SrcExpr) : Option Stmt :=

@@ -25,19 +25,19 @@ abbrev Stmt_lx_base_digit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     RepBool (Lanius.Mini.lxBaseDigit x0 x1) w
 
 abbrev Stmt_lx_block_end (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
     RepScan (Lanius.Mini.lxBlockEnd x0 x1) w
 
 abbrev Stmt_lx_digit_run (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
+  ∀ {x0 : List Nat} {x1 : Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 → RepNat x2 v2 →
     RepScan (Lanius.Mini.lxDigitRun x0 x1 x2) w
 
 abbrev Stmt_lx_digit_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 24 RepNat) x1 v1 → RepNat x2 v2 →
+  ∀ {x0 : Nat} {x1 : List Nat} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → (RepList 25 RepNat) x1 v1 → RepNat x2 v2 →
     RepScan (Lanius.Mini.lxDigitTail x0 x1 x2) w
 
 abbrev Stmt_lx_exponent_digits (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 24 RepNat) x0 v0 → RepNat x1 v1 →
+  ∀ {x0 : List Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 25 RepNat) x0 v0 → RepNat x1 v1 →
     RepNat (Lanius.Mini.lxExponentDigits x0 x1) w
 
 end Lanius.Faithful.SelfCert

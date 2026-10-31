@@ -22,26 +22,26 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_tree_tokens (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepCTree x0 v0 →
-    (RepList 44 RepToken) (Lanius.Mini.treeTokens x0) w
+    (RepList 45 RepToken) (Lanius.Mini.treeTokens x0) w
 
 abbrev Stmt_trees_tokens (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 77 RepCTree) x0 v0 →
-    (RepList 44 RepToken) (Lanius.Mini.treesTokens x0) w
+  ∀ {x0 : List Lanius.Mini.CTree} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 81 RepCTree) x0 v0 →
+    (RepList 45 RepToken) (Lanius.Mini.treesTokens x0) w
 
 abbrev Stmt_wide_i32 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepNat x1 v1 →
-    (RepOption 238 RepSrcExpr) (Lanius.Mini.wideI32 x0 x1) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.wideI32 x0 x1) w
 
 abbrev Stmt_wide_isize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepNat x1 v1 →
-    (RepOption 238 RepSrcExpr) (Lanius.Mini.wideIsize x0 x1) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.wideIsize x0 x1) w
 
 abbrev Stmt_wide_sint (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Bool} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepUintTy x0 v0 → RepBool x1 v1 → RepNat x2 v2 →
-    (RepOption 238 RepSrcExpr) (Lanius.Mini.wideSint x0 x1 x2) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.wideSint x0 x1 x2) w
 
 abbrev Stmt_wide_uint (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.UintTy} {x1 : Bool} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepUintTy x0 v0 → RepBool x1 v1 → RepNat x2 v2 →
-    (RepOption 238 RepSrcExpr) (Lanius.Mini.wideUint x0 x1 x2) w
+    (RepOption 223 RepSrcExpr) (Lanius.Mini.wideUint x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

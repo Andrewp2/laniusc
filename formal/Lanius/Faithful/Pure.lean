@@ -104,6 +104,7 @@ def pexpr (env : Env) : SrcExpr → Option Value
   | .cast ty operand => (pexpr env operand).bind (cast ty)
   | .null => some (.pointer 0)
   | .char code => some (.character (UInt32.ofNat code.toNat))
+  | .float t x => some (t.value x)
 
 def pexprs (env : Env) : List SrcExpr → Option (List Value)
   | [] => some []

@@ -46,6 +46,7 @@ theorem closeTy_sound {t : Tables} (ok : LoweredOk t) :
     | tyPtr => cases h; exact .ptr
     | tyIsize => cases h; exact .isize
     | tyChar => cases h; exact .char
+    | tyFloat ft => cases h; exact .float
     | tySint _ => cases h; exact .sint
     | tySlice e =>
       simp only at h

@@ -168,6 +168,15 @@ theorem proof_p_postfix_member {prog : SrcProgram} {prims : Prims} {ix_p_postfix
   simp only [src_p_postfix_member] at h
   faithful [Lanius.Mini.Inline.pPostfixMember]
 
+theorem proof_p_postfix_try {prog : SrcProgram} {prims : Prims} {ix_p_postfix_try : Nat} (fn : prog.funcs[ix_p_postfix_try]? = some (src_p_postfix_try)) (np : prims.isPrim ix_p_postfix_try = false) {n : Nat} :
+    Stmt_p_postfix_try prog prims ix_p_postfix_try n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_postfix_try] at h
+  faithful [Lanius.Mini.Inline.pPostfixTry]
+
 theorem proof_p_range_bound {prog : SrcProgram} {prims : Prims} {ix_p_range_bound : Nat} (fn : prog.funcs[ix_p_range_bound]? = some (src_p_range_bound)) (np : prims.isPrim ix_p_range_bound = false) {n : Nat} :
     Stmt_p_range_bound prog prims ix_p_range_bound n := by
   intro w h

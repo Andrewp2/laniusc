@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.DivOp_size
 import Lanius.Mini.Compiler.P.declareProgram
 
 public section

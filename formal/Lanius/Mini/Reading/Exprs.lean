@@ -1,4 +1,5 @@
 import Lanius.Mini.Reading.Types
+import Lanius.Mini.Reading.FloatBits
 
 /-! # The reading, V8c: expressions and literals
 
@@ -374,6 +375,222 @@ theorem charLiteral_sound {text : List Nat} {e : SrcExpr} (h : charLiteral text 
     omega
   · cases h
 
+/-! ## Float literals -/
+
+/-- An exponent's digits and sign as a value. -/
+def expValue (neg : Bool) (ds : List Nat) : Option Int :=
+  if ds ≠ [] ∧ (∀ b ∈ ds, 48 ≤ b ∧ b ≤ 57) then some (if neg then -(digitsValue ds : Int) else (digitsValue ds : Int)) else none
+
+/-- After `e` or `E`: an optional sign, then at least one digit. -/
+def expSigned : List Nat → Option Int
+  | [] => none
+  | s :: ds => if s = 45 then expValue true ds else if s = 43 then expValue false ds else expValue false (s :: ds)
+
+/-- A float literal's exponent part: nothing (0), or `e` or `E` and a signed exponent. -/
+def expPart : List Nat → Option Int
+  | [] => some 0
+  | c :: rest => if c = 101 ∨ c = 69 then expSigned rest else none
+
+/-- The digits `ds` read, `k` of them after the point, then the exponent part. -/
+def floatFinish (ds : List Nat) (k : Nat) (rest : List Nat) : Option (Nat × Int) :=
+  if ds = [] then none else (expPart rest).map fun x => (digitsValue ds, x - k)
+
+def floatFrac (ds : List Nat) (k : Nat) : List Nat → Option (Nat × Int)
+  | [] => floatFinish ds k []
+  | b :: rest => if 48 ≤ b ∧ b ≤ 57 then floatFrac (ds ++ [b]) (k + 1) rest else floatFinish ds k (b :: rest)
+
+def floatInt (ds : List Nat) : List Nat → Option (Nat × Int)
+  | [] => floatFinish ds 0 []
+  | b :: rest =>
+    if 48 ≤ b ∧ b ≤ 57 then floatInt (ds ++ [b]) rest
+    else if b = 46 then floatFrac ds 0 rest
+    else floatFinish ds 0 (b :: rest)
+
+/-- A float literal's text as `m * 10^e`: decimal digits, then optionally a
+point and more digits, then optionally `e` or `E`, an optional sign and at
+least one digit; at least one digit comes before the exponent. `m` is the
+value of all the digits before the exponent and `e` the exponent less the
+number of digits after the point. -/
+def floatParts (text : List Nat) : Option (Nat × Int) := floatInt [] text
+
+/-- What a float literal `m * 10^e` reads as: the marker
+`Cast(Unit, Apply(_, f32 literal, f64 literal))` holding its nearest binary32
+and binary64 patterns (`Lanius.IEEE.Format.ofDecimal`: round to nearest, ties
+to even), until its context gives it a type (`floatWant`, `TypedLiteral`). -/
+def floatMarkerOf (m : Nat) (e : Int) : SrcExpr :=
+  .cast .unit (.apply .plus (.float .f32 (BitVec.ofNat 64 (Lanius.IEEE.binary32.ofDecimal m e)))
+    (.float .f64 (BitVec.ofNat 64 (Lanius.IEEE.binary64.ofDecimal m e))))
+
+/-- A parsed literal's exponent. -/
+def flExp (d : FlDec) : Int := if d.neg then -(d.mag : Int) else d.mag
+
+theorem digitsValue_append (ds : List Nat) (b : Nat) : digitsValue (ds ++ [b]) = digitsValue ds * 10 + (b - 48) := by
+  simp [digitsValue, digitsFrom, List.foldl_append]
+
+theorem flPush_val {m : List Bool} {b : Nat} (le : b ≤ 57) : bval (flPush m b) = bval m * 10 + (b - 48) := by
+  simp only [flPush, flAdd_val, flMul10_val, flOfNat_val, Bool.false_eq_true, if_false, Nat.add_zero]
+  have : b - 48 < 2 ^ 4 := by simp; omega
+  rw [Nat.mod_eq_of_lt this]
+
+theorem flFinish_some {m : List Bool} {n k x : Nat} {neg : Bool} {d : FlDec} (h : flFinish m n k neg x = some d) :
+    n ≠ 0 ∧ d.m = m ∧ flExp d = (if neg then -(x : Int) else x) - k := by
+  unfold flFinish at h
+  by_cases z : n = 0
+  · simp [z] at h
+  · simp only [z, if_false] at h
+    refine ⟨z, ?_⟩
+    cases neg with
+    | true => simp only [if_true, Option.some.injEq] at h; subst h; simp [flExp]; omega
+    | false =>
+      simp only [Bool.false_eq_true, if_false] at h
+      by_cases le : k ≤ x
+      · simp only [le, if_true, Option.some.injEq] at h; subst h; simp [flExp]; omega
+      · simp only [le, if_false, Option.some.injEq] at h; subst h; simp [flExp]; omega
+
+theorem flExpDigits_some {m : List Bool} {n k : Nat} {neg : Bool} {d : FlDec} :
+    ∀ (text : List Nat) (x : Nat), flExpDigits text m n k neg x = some d →
+      Digits text ∧ flFinish m n k neg (digitsFrom x text) = some d
+  | [], x, h => by
+    unfold flExpDigits at h
+    by_cases big : 99999 < x
+    · simp [big] at h
+    · simp only [big, if_false] at h
+      exact ⟨by simp [Digits], h⟩
+  | b :: rest, x, h => by
+    unfold flExpDigits at h
+    by_cases big : 99999 < x
+    · simp [big] at h
+    · simp only [big, if_false] at h
+      by_cases dig : flDigit b = true
+      · simp only [dig, if_true] at h
+        obtain ⟨ds, f⟩ := flExpDigits_some rest _ h
+        refine ⟨fun y mem => ?_, f⟩
+        rcases List.mem_cons.1 mem with rfl | mem
+        · simpa [flDigit] using dig
+        · exact ds y mem
+      · simp [dig] at h
+
+theorem flExpFirst_some {m : List Bool} {n k : Nat} {neg : Bool} {d : FlDec} {text : List Nat}
+    (h : flExpFirst text m n k neg = some d) :
+    ∃ ex, expValue neg text = some ex ∧ n ≠ 0 ∧ d.m = m ∧ flExp d = ex - k := by
+  cases text with
+  | nil => simp [flExpFirst] at h
+  | cons b rest =>
+    simp only [flExpFirst] at h
+    by_cases dig : flDigit b = true
+    · simp only [dig, if_true] at h
+      obtain ⟨ds, f⟩ := flExpDigits_some rest _ h
+      obtain ⟨nz, hm, he⟩ := flFinish_some f
+      have db : 48 ≤ b ∧ b ≤ 57 := by simpa [flDigit] using dig
+      have dsAll : ∀ y ∈ b :: rest, 48 ≤ y ∧ y ≤ 57 := fun y mem => by
+        rcases List.mem_cons.1 mem with rfl | mem
+        · exact db
+        · exact ds y mem
+      have val : digitsValue (b :: rest) = digitsFrom (b - 48) rest := by simp [digitsValue, digitsFrom]
+      refine ⟨_, ?_, nz, hm, he⟩
+      simp only [expValue, ne_eq, reduceCtorEq, not_false_eq_true, true_and, val]
+      rw [if_pos dsAll]
+    · simp [dig] at h
+
+theorem flExpSign_some {m : List Bool} {n k : Nat} {d : FlDec} {text : List Nat}
+    (h : flExpSign text m n k = some d) :
+    ∃ ex, expSigned text = some ex ∧ n ≠ 0 ∧ d.m = m ∧ flExp d = ex - k := by
+  cases text with
+  | nil => simp [flExpSign] at h
+  | cons s rest =>
+    simp only [flExpSign] at h
+    simp only [expSigned]
+    by_cases minus : s = 45
+    · simp only [minus, if_true] at h ⊢; exact flExpFirst_some h
+    · simp only [minus, if_false] at h ⊢
+      by_cases plus : s = 43
+      · simp only [plus, if_true] at h ⊢; exact flExpFirst_some h
+      · simp only [plus, if_false] at h ⊢; exact flExpFirst_some h
+
+theorem flExpPart_some {m : List Bool} {n k : Nat} {d : FlDec} {text : List Nat}
+    (h : flExpPart text m n k = some d) :
+    ∃ ex, expPart text = some ex ∧ n ≠ 0 ∧ d.m = m ∧ flExp d = ex - k := by
+  cases text with
+  | nil =>
+    simp only [flExpPart] at h
+    obtain ⟨nz, hm, he⟩ := flFinish_some h
+    exact ⟨0, rfl, nz, hm, by simpa using he⟩
+  | cons c rest =>
+    simp only [flExpPart] at h
+    simp only [expPart]
+    by_cases e : c = 101 ∨ c = 69
+    · have : (decide (c = 101) || decide (c = 69)) = true := by simpa using e
+      simp only [this, if_true] at h
+      rw [if_pos e]
+      exact flExpSign_some h
+    · have : (decide (c = 101) || decide (c = 69)) = false := by simpa using e
+      simp [this] at h
+
+theorem flFracPart_some {d : FlDec} : ∀ (text ds : List Nat) (m : List Bool) (n k : Nat),
+    bval m = digitsValue ds → n = ds.length → flFracPart text m n k = some d →
+      floatFrac ds k text = some (bval d.m, flExp d)
+  | [], ds, m, n, k, hv, hn, h => by
+    simp only [flFracPart] at h
+    obtain ⟨nz, hm, he⟩ := flFinish_some h
+    have : ds ≠ [] := by intro e; subst e; simp at hn; exact nz hn
+    simp [floatFrac, floatFinish, this, expPart, hm, hv, he]
+  | b :: rest, ds, m, n, k, hv, hn, h => by
+    simp only [flFracPart] at h
+    by_cases dig : flDigit b = true
+    · simp only [dig, if_true] at h
+      have db : 48 ≤ b ∧ b ≤ 57 := by simpa [flDigit] using dig
+      have := flFracPart_some rest (ds ++ [b]) _ _ _ (by rw [flPush_val db.2, hv, digitsValue_append])
+        (by simp [hn]) h
+      simp only [floatFrac, db, and_self, if_true]
+      exact this
+    · simp only [dig, Bool.false_eq_true, if_false] at h
+      have db : ¬(48 ≤ b ∧ b ≤ 57) := by simpa [flDigit] using dig
+      obtain ⟨ex, he, nz, hm, hx⟩ := flExpPart_some h
+      have : ds ≠ [] := by intro e; subst e; simp at hn; exact nz hn
+      simp [floatFrac, db, floatFinish, this, he, hm, hv, hx]
+
+theorem flIntPart_some {d : FlDec} : ∀ (text ds : List Nat) (m : List Bool) (n : Nat),
+    bval m = digitsValue ds → n = ds.length → flIntPart text m n = some d →
+      floatInt ds text = some (bval d.m, flExp d)
+  | [], ds, m, n, hv, hn, h => by
+    simp only [flIntPart] at h
+    obtain ⟨nz, hm, he⟩ := flFinish_some h
+    have : ds ≠ [] := by intro e; subst e; simp at hn; exact nz hn
+    simp [floatInt, floatFinish, this, expPart, hm, hv, he]
+  | b :: rest, ds, m, n, hv, hn, h => by
+    simp only [flIntPart] at h
+    by_cases dig : flDigit b = true
+    · simp only [dig, if_true] at h
+      have db : 48 ≤ b ∧ b ≤ 57 := by simpa [flDigit] using dig
+      have := flIntPart_some rest (ds ++ [b]) _ _ (by rw [flPush_val db.2, hv, digitsValue_append])
+        (by simp [hn]) h
+      simp only [floatInt, db, and_self, if_true]
+      exact this
+    · simp only [dig, Bool.false_eq_true, if_false] at h
+      have db : ¬(48 ≤ b ∧ b ≤ 57) := by simpa [flDigit] using dig
+      by_cases pt : b = 46
+      · simp only [pt, if_true] at h
+        simp only [floatInt, db, if_false, pt, if_true]
+        exact flFracPart_some rest ds m n 0 hv hn h
+      · simp only [pt, if_false] at h
+        obtain ⟨ex, he, nz, hm, hx⟩ := flExpPart_some h
+        have : ds ≠ [] := by intro e; subst e; simp at hn; exact nz hn
+        simp [floatInt, db, pt, floatFinish, this, he, hm, hv, hx]
+
+theorem floatLiteral_sound {text : List Nat} {e : SrcExpr} (h : floatLiteral text = some e) :
+    ∃ m x, floatParts text = some (m, x) ∧ e = floatMarkerOf m x := by
+  unfold floatLiteral at h
+  cases hd : flIntPart text [] 0 with
+  | none => rw [hd] at h; cases h
+  | some d =>
+    rw [hd, Option.some.injEq] at h
+    subst h
+    refine ⟨_, _, flIntPart_some text [] [] 0 (by simp [digitsValue, digitsFrom]) rfl hd, ?_⟩
+    have h32 := flDecimal_eq Lanius.IEEE.binary32 (by decide) d.m d.neg d.mag
+    have h64 := flDecimal_eq Lanius.IEEE.binary64 (by decide) d.m d.neg d.mag
+    simp only [Lanius.IEEE.binary32, Lanius.IEEE.binary64] at h32 h64
+    simp only [floatMarker, floatMarkerOf, h32, h64, flExp, Lanius.IEEE.binary32, Lanius.IEEE.binary64]
+
 /-! ## Typed literals -/
 
 /-- The width of an unsigned type. -/
@@ -406,6 +623,37 @@ theorem sintFits_iff (u : UintTy) (k : BitVec 32) : sintFits u k = true ↔ Sint
     first | exact .inl (by decide) | skip
   all_goals split <;> omega
 
+/-- A float marker's literal of the type `ft`. -/
+def floatPart : FloatTy → SrcExpr → SrcExpr → SrcExpr
+  | .f32, a, _ => a
+  | .f64, _, b => b
+
+theorem unitTy_iff (t : SrcType) : unitTy t = true ↔ t = .unit := by
+  cases t <;> simp [unitTy]
+
+theorem floatPick_some {ft : FloatTy} {t : SrcType} {x e : SrcExpr} (h : floatPick ft t x = some e) :
+    t = .unit ∧ ∃ op a b, x = .apply op a b ∧ e = floatPart ft a b := by
+  unfold floatPick at h
+  by_cases u : unitTy t = true
+  · rw [if_pos u] at h
+    refine ⟨(unitTy_iff t).1 u, ?_⟩
+    cases x with
+    | apply op a b =>
+      refine ⟨op, a, b, rfl, ?_⟩
+      cases ft <;> simp [floatPickOf] at h <;> simp [floatPart, h]
+    | int _ => cases h
+    | boolean _ => cases h
+    | unsigned _ _ => cases h
+    | «local» _ => cases h
+    | field _ _ => cases h
+    | negate _ => cases h
+    | not _ => cases h
+    | cast _ _ => cases h
+    | null => cases h
+    | char _ => cases h
+    | float _ _ => cases h
+  · rw [if_neg u] at h; cases h
+
 /-- A constant's value as a literal of its type: an `i32` literal (or its
 negation) of `i32`, of `isize` (cast), of an unsigned type when it fits, `0`
 of `ptr` (the null pointer), `true` or `false` of `bool`, and of a signed
@@ -423,6 +671,10 @@ inductive TypedLiteral : Ty → SrcExpr → SrcExpr → Prop
   | negSint {u : UintTy} {k : BitVec 32} : SintFits u (0 - k) →
       TypedLiteral (.tySint u) (.negate (.int k)) (.cast (.sint u) (.int (0 - k)))
   | char {c : BitVec 32} : TypedLiteral .tyChar (.char c) (.char c)
+  | float {ft : FloatTy} {op : SrcOp} {a b : SrcExpr} :
+      TypedLiteral (.tyFloat ft) (.cast .unit (.apply op a b)) (floatPart ft a b)
+  | negFloat {ft : FloatTy} {op : SrcOp} {a b : SrcExpr} :
+      TypedLiteral (.tyFloat ft) (.negate (.cast .unit (.apply op a b))) (.negate (floatPart ft a b))
 
 theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some e) : TypedLiteral t v e := by
   cases v with
@@ -443,6 +695,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
       · rw [if_neg z] at h; cases h
     | tyIsize => cases h; exact .isize
     | tyChar => cases h
+    | tyFloat ft => cases h
     | tyBool => cases h
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
@@ -461,6 +714,7 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
     | tyPtr => cases h
     | tyIsize => cases h
     | tyChar => cases h
+    | tyFloat ft => cases h
     | tySlice _ => cases h
     | tyNamed _ _ => cases h
     | tySint _ => cases h
@@ -476,6 +730,29 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
       exact .negIsize
     | tyBool => cases h
     | tyChar => cases h
+    | tyFloat ft =>
+      simp only [typedLiteral] at h
+      cases x with
+      | cast s y =>
+        simp only [negatedFloat, negateSome] at h
+        cases hp : floatPick ft s y with
+        | none => rw [hp] at h; cases h
+        | some z =>
+          rw [hp, Option.some.injEq] at h
+          subst h
+          obtain ⟨rfl, op, a, b, rfl, rfl⟩ := floatPick_some hp
+          exact .negFloat
+      | int _ => cases h
+      | boolean _ => cases h
+      | unsigned _ _ => cases h
+      | «local» _ => cases h
+      | field _ _ => cases h
+      | negate _ => cases h
+      | not _ => cases h
+      | apply _ _ _ => cases h
+      | null => cases h
+      | char _ => cases h
+      | float _ _ => cases h
     | tyUint _ => cases h
     | tyPtr => cases h
     | tySlice _ => cases h
@@ -495,12 +772,27 @@ theorem typedLiteral_sound {t : Ty} {v e : SrcExpr} (h : typedLiteral t v = some
   | field _ _ => cases h
   | not _ => cases h
   | apply _ _ _ => cases h
-  | cast _ _ => cases h
+  | cast s y =>
+    cases t with
+    | tyFloat ft =>
+      simp only [typedLiteral, floatTyped] at h
+      obtain ⟨rfl, op, a, b, rfl, rfl⟩ := floatPick_some h
+      exact .float
+    | tyI32 => cases h
+    | tyBool => cases h
+    | tyUint _ => cases h
+    | tyPtr => cases h
+    | tyIsize => cases h
+    | tyChar => cases h
+    | tySlice _ => cases h
+    | tyNamed _ _ => cases h
+    | tySint _ => cases h
   | null => cases h
   | char c =>
     cases t <;> simp only [typedLiteral, reduceCtorEq, Option.some.injEq] at h
     subst h
     exact .char
+  | float _ _ => cases h
 
 /-- A wide literal `n` (or `-n`, `negative`) as a literal of a type:
 `-2^31` of `i32`, `n` of an unsigned type when it fits, and for `isize`
@@ -560,6 +852,7 @@ theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wid
       · rw [if_neg (by cases negative <;> simp_all)] at h; cases h
   | tyBool => cases h
   | tyChar => cases h
+  | tyFloat ft => cases h
   | tyPtr => cases h
   | tySlice _ => cases h
   | tyNamed _ _ => cases h
@@ -730,6 +1023,7 @@ theorem memberOf_sound {env : FrontEnv} {scope : List Local} {primary tail : CTr
         | tyPtr => rw [ht] at hf; cases hf
         | tyIsize => rw [ht] at hf; cases hf
         | tyChar => rw [ht] at hf; cases hf
+        | tyFloat ft => rw [ht] at hf; cases hf
         | tySlice _ => rw [ht] at hf; cases hf
         | tySint _ => rw [ht] at hf; cases hf
   · rw [if_neg (by simpa using c)] at h; cases h
@@ -744,6 +1038,7 @@ inductive ScalarTy : Ty → SrcType → Prop
   | ptr : ScalarTy .tyPtr .ptr
   | isize : ScalarTy .tyIsize .isize
   | char : ScalarTy .tyChar .char
+  | float {ft : FloatTy} : ScalarTy (.tyFloat ft) (.float ft)
   | sint {k : UintTy} : ScalarTy (.tySint k) (.sint k)
 
 theorem scalarSrc_sound {t : Ty} {s : SrcType} (h : scalarSrc t = some s) : ScalarTy t s := by
@@ -899,6 +1194,8 @@ inductive ExprR : FrontEnv → List Local → CTree → SrcExpr → Prop
       nodeProd c = pInt → IntLiteral (kidToken c 0).text e → ExprR env scope c e
   | char {env : FrontEnv} {scope : List Local} {c : CTree} {n : Nat} :
       nodeProd c = pChar → CharLiteral (kidToken c 0).text n → ExprR env scope c (.char (BitVec.ofNat 32 n))
+  | float {env : FrontEnv} {scope : List Local} {c : CTree} {m : Nat} {x : Int} :
+      nodeProd c = pFloat → floatParts (kidToken c 0).text = some (m, x) → ExprR env scope c (floatMarkerOf m x)
   | true {env : FrontEnv} {scope : List Local} {c : CTree} : nodeProd c = pTrue → ExprR env scope c (.boolean true)
   | false {env : FrontEnv} {scope : List Local} {c : CTree} : nodeProd c = pFalse → ExprR env scope c (.boolean false)
 
@@ -1057,6 +1354,11 @@ theorem exprSound : ∀ fuel, ExprSound fuel
         obtain ⟨n, lit, rfl⟩ := charLiteral_sound h
         exact .char ch lit
       rw [if_neg ch] at h
+      by_cases fl : nodeProd c = pFloat
+      · rw [if_pos fl] at h
+        obtain ⟨m, x, lit, rfl⟩ := floatLiteral_sound h
+        exact .float fl lit
+      rw [if_neg fl] at h
       cases h
     · intro env scope c e h
       rw [identExpr.eq_def] at h

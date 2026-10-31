@@ -61,6 +61,9 @@ def src_p_postfix_index : SrcFunc := { params := [], ret := SrcType.uint (UintTy
 /-- mini::selfhost::p_postfix_member -/
 def src_p_postfix_member : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000a3#64) }
 
+/-- mini::selfhost::p_postfix_try -/
+def src_p_postfix_try : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000013e#64) }
+
 /-- mini::selfhost::p_range_bound -/
 def src_p_range_bound : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000066#64) }
 

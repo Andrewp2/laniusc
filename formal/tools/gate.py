@@ -39,6 +39,10 @@ T = 'formal/tools/'
 # step reads besides its script, from INPUTS below. {w} is the step's
 # workdir, {s} the seed.
 STEPS = [
+    # F9: the IEEE specification against this CPU's SSE unit.
+    ('float', ['float_test.py', '{w}', '--count', '2000', '--seed', '{s}'], ['float_test'], True),
+    # Step 14 and F9: the x86 model's decode and execute against this CPU, every emitted form.
+    ('x86-model', ['x86_model_test.py', '{w}', '--per-form', '100', '--seed', '{s}'], ['lean'], True),
     ('mini', ['mini_difftest.py', '{w}', '--count', '40', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], True),
     ('oracle', ['oracle_difftest.py', '{w}', '--count', '40', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], True),
     ('optimize', ['optimize_test.py', '{w}', '--count', '60', '--seed', '{s}'], ['lean'], True),
@@ -107,6 +111,7 @@ def inputs():
     return {
         'lean': lean,
         'run_all': run_cache.file_digest(run_all),
+        'float_test': run_cache.file_digest(os.path.join(run_cache.FORMAL, '.lake/build/bin/floatTest')),
         'extract': run_cache.file_digest(os.path.join(run_cache.FORMAL, '.lake/build/bin/extract'))
         + run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius')),
         'lani': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'lani')),
@@ -123,7 +128,7 @@ def build():
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
         run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                              'lake', 'build', 'runAll', 'extract', 'LaniusMini', 'Lanius.Mini.FrontLex',
+                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                               'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)

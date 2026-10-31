@@ -403,6 +403,7 @@ theorem eff_safe_step (calls : ∀ m, FuncSim sp prims outside m) (funcs : FuncS
     | unit => simp at hm
     | isize => simp at hm
     | char => simp at hm
+    | float => simp at hm
     | sint => simp at hm
 
 theorem effs_safe_step (calls : ∀ m, FuncSim sp prims outside m) (eff : EffSafe sp prims outside k)

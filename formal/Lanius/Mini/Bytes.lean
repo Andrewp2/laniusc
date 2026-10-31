@@ -214,9 +214,12 @@ def Instr.bytes (i : Instr) (place : Place) (pc : Nat) : List UInt8 :=
   | .loadWordAt width => loadWordSpec width
   | .storeWordAt width slot => storeWordSpec width slot
   | .div word operation slot => operation.spec word slot
+  | .fp operation slot => accToRcxBytes ++ slotLoadBytes slot ++ operation.opcodeBytes
   | .sys kind slot => sysSpec kind slot
 
-/-! The extracted encoders are the x86 ones. -/
+/-! The extracted encoders are the x86 ones. (A float operation's SSE bytes
+are the extracted ones themselves: `Simulation.lean` proves what each
+decodes to.) -/
 
 theorem uint8_ofNat_mod (n : Nat) : UInt8.ofNat (n % 256) = UInt8.ofNat n := by
   apply UInt8.toNat_inj.mp
@@ -303,6 +306,7 @@ theorem Instr.encode_eq (i : Instr) (place : Place) (pc : Nat) : i.encode place 
   | storeWordAt width slot =>
     cases width <;> rw [Instr.encode, Instr.bytes, storeWordBytes, le32_i32Bytes _ _ (slotOffset_toNat slot)] <;> rfl
   | div word operation slot => exact DivOp.bytes_eq operation word slot
+  | fp operation slot => rw [Instr.encode, FOp.bytes, slotOperands, slotLoad_eq]; rfl
   | sys kind slot =>
     cases kind
     rw [Instr.encode, Instr.bytes, sysBytes, le32_i32Bytes _ _ (slotOffset_toNat slot),
@@ -399,6 +403,12 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
     cases word <;> cases operation <;>
       simp only [Instr.bytes, DivOp.spec, List.length_append, slotLoadBytes_length, Instr.size, DivOp.size,
         Word.prefix] <;> decide
+  | fp operation slot =>
+    rcases operation with ⟨ty, operation⟩ | ⟨ty, operation⟩ | ⟨ty, word⟩ | _ | _ <;>
+      (try cases ty) <;> (try cases operation) <;> (try cases word) <;>
+      simp only [Instr.bytes, FOp.opcodeBytes, floatOperands, floatResult, FloatTy.rex, Word.rex,
+        List.length_append, slotLoadBytes_length, Instr.size, FOp.size, FloatTy.rexSize, Word.prefix,
+        List.length_cons, List.length_nil] <;> decide
   | sys kind slot =>
     cases kind
     simp only [Instr.bytes, sysSpec, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,

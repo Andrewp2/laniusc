@@ -37,7 +37,8 @@ def primNames : List (Name × SrcType) :=
   [([105, 51, 50], .i32), ([98, 111, 111, 108], .bool), ([117, 56], .uint .uint8), ([117, 49, 54], .uint .uint16), ([117, 51, 50], .uint .uint32),
    ([117, 54, 52], .uint .uint64), ([117, 115, 105, 122, 101], .uint .usize), ([112, 116, 114], .ptr),
    ([105, 115, 105, 122, 101], .isize), ([105, 56], .sint .uint8), ([105, 49, 54], .sint .uint16),
-   ([105, 54, 52], .sint .uint64), ([99, 104, 97, 114], .char)]
+   ([105, 54, 52], .sint .uint64), ([99, 104, 97, 114], .char), ([102, 51, 50], .float .f32),
+   ([102, 54, 52], .float .f64)]
 
 def primName (n : Name) : Option SrcType := primNames.lookup n
 
@@ -190,9 +191,16 @@ theorem primitive_eq (n : Name) : primitive n = primName n := by
   by_cases h12 : n = [99, 104, 97, 114]
   · subst h12; rfl
   rw [if_neg (by rw [spelled_iff4]; exact h12)]
+  by_cases h13 : n = [102, 51, 50]
+  · subst h13; rfl
+  rw [if_neg (by rw [spelled_iff3]; exact h13)]
+  by_cases h14 : n = [102, 54, 52]
+  · subst h14; rfl
+  rw [if_neg (by rw [spelled_iff3]; exact h14)]
   simp [primName, primNames, List.lookup, beq_false_of_ne h1, beq_false_of_ne h2, beq_false_of_ne h3, beq_false_of_ne h3',
     beq_false_of_ne h4, beq_false_of_ne h5, beq_false_of_ne h6, beq_false_of_ne h7, beq_false_of_ne h8,
-    beq_false_of_ne h9, beq_false_of_ne h10, beq_false_of_ne h11, beq_false_of_ne h12]
+    beq_false_of_ne h9, beq_false_of_ne h10, beq_false_of_ne h11, beq_false_of_ne h12, beq_false_of_ne h13,
+    beq_false_of_ne h14]
 
 theorem noPrimitive_iff : ∀ (types : List TypeDecl), noPrimitive types = true ↔ ∀ t ∈ types, primName t.name = none
   | [] => by simp [noPrimitive]

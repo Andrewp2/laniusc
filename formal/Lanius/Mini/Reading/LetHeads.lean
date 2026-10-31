@@ -112,7 +112,7 @@ theorem literalShift_sound {e : SrcExpr} {k : Nat} (h : literalShift e = some k)
     simp only [literalShift] at h
     obtain ⟨j, lt, rfl, w⟩ := shiftOfU64_sound h
     exact .unsigned (by omega) (by simpa using w.symm)
-  | boolean _ | «local» _ | field _ _ | negate _ | «not» _ | apply _ _ _ | cast _ _ | null | char _ =>
+  | boolean _ | «local» _ | field _ _ | negate _ | «not» _ | apply _ _ _ | cast _ _ | null | char _ | float _ _ =>
     simp [literalShift] at h
 
 theorem shiftOf_sound {e : SrcExpr} {k : Nat} (h : shiftOf e = some k) : ShiftOf e k := by
@@ -128,7 +128,7 @@ theorem shiftOf_sound {e : SrcExpr} {k : Nat} (h : shiftOf e = some k) : ShiftOf
       subst this
       exact .cast (literalShift_sound h)
     · cases h
-  | boolean _ | «local» _ | field _ _ | negate _ | «not» _ | apply _ _ _ | null | char _ =>
+  | boolean _ | «local» _ | field _ _ | negate _ | «not» _ | apply _ _ _ | null | char _ | float _ _ =>
     simp [shiftOf] at h
 
 /-- `alloc(size, 2^k)`. -/

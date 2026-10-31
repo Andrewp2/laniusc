@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_extern_body (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.MParams} {x1 : Option Lanius.Mini.RetTy} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 219 RepMParams) x0 v0 → (RepOption 212 RepRetTy) x1 v1 → RepNat x2 v2 →
-    (RepOption 191 RepMFunc) (Lanius.Mini.externBody x0 x1 x2) w
+  ∀ {x0 : Option Lanius.Mini.MParams} {x1 : Option Lanius.Mini.RetTy} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 225 RepMParams) x0 v0 → (RepOption 217 RepRetTy) x1 v1 → RepNat x2 v2 →
+    (RepOption 195 RepMFunc) (Lanius.Mini.externBody x0 x1 x2) w
 
 abbrev Stmt_extern_func (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 133 RepTy) x3 v3 →
-    (RepOption 191 RepMFunc) (Lanius.Mini.externFunc x0 x1 x2 x3) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.FnDecl} {x3 : List Lanius.Mini.Ty} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepFnDecl x2 v2 → (RepList 137 RepTy) x3 v3 →
+    (RepOption 195 RepMFunc) (Lanius.Mini.externFunc x0 x1 x2 x3) w
 
 end Lanius.Faithful.SelfCert

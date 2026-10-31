@@ -3,9 +3,9 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Frontend.P.consTreeTail
+import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasConst
-import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
 
 public section
@@ -49,6 +49,7 @@ def pureLocal (e : SrcExpr) : Option Nat :=
   | .cast t a => none
   | .null => none
   | .char code => none
+  | .float ft bits => none
 
 def effLocal (x : MEff) : Option Nat :=
   match purePart x with

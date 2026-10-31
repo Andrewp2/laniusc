@@ -21,39 +21,39 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_front_end_words (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List (BitVec 32)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 34 RepRule) x0 v0 → (RepList 0 RepI32) x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List (BitVec 32)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepRule) x0 v0 → (RepList 0 RepI32) x1 v1 →
     (RepOption 3 RepSrcProgram) (Lanius.Mini.frontEndWords x0 x1) w
 
 abbrev Stmt_grammar_part_0 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 34 RepRule) (Lanius.Mini.grammarPart0) w
+    (RepList 35 RepRule) (Lanius.Mini.grammarPart0) w
 
 abbrev Stmt_grammar_part_1 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 34 RepRule) (Lanius.Mini.grammarPart1) w
+    (RepList 35 RepRule) (Lanius.Mini.grammarPart1) w
 
 abbrev Stmt_grammar_part_2 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 34 RepRule) (Lanius.Mini.grammarPart2) w
+    (RepList 35 RepRule) (Lanius.Mini.grammarPart2) w
 
 abbrev Stmt_grammar_part_3 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 34 RepRule) (Lanius.Mini.grammarPart3) w
+    (RepList 35 RepRule) (Lanius.Mini.grammarPart3) w
 
 abbrev Stmt_grammar_part_4 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 34 RepRule) (Lanius.Mini.grammarPart4) w
+    (RepList 35 RepRule) (Lanius.Mini.grammarPart4) w
 
 abbrev Stmt_grammar_part_5 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 34 RepRule) (Lanius.Mini.grammarPart5) w
+    (RepList 35 RepRule) (Lanius.Mini.grammarPart5) w
 
 abbrev Stmt_grammar_part_6 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 34 RepRule) (Lanius.Mini.grammarPart6) w
+    (RepList 35 RepRule) (Lanius.Mini.grammarPart6) w
 
 abbrev Stmt_grammar_part_7 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    (RepList 34 RepRule) (Lanius.Mini.grammarPart7) w
+    (RepList 35 RepRule) (Lanius.Mini.grammarPart7) w
 
 end Lanius.Faithful.SelfCert

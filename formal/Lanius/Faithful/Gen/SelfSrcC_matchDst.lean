@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::match_dst -/
-def src_match_dst (ix_plus : Nat) (ix_SrcType_size : Nat) (ix_max_of : Nat) : SrcFunc := { params := [{ id := 10, ty := SrcType.uint (UintTy.usize) }, { id := 23, ty := ty8 }, { id := 37, ty := ty8 }], ret := SrcType.uint (UintTy.usize), body := SrcStmt.returnEval (SrcEff.eCall ix_plus [SrcEff.ePure (SrcExpr.local 10), SrcEff.eCall ix_max_of [SrcEff.eCall ix_SrcType_size [SrcEff.ePure (SrcExpr.local 23)], SrcEff.eCall ix_SrcType_size [SrcEff.ePure (SrcExpr.local 37)]]]) }
+def src_match_dst (ix_plus : Nat) (ix_SrcType_size : Nat) (ix_max_of : Nat) : SrcFunc := { params := [{ id := 10, ty := SrcType.uint (UintTy.usize) }, { id := 23, ty := ty9 }, { id := 37, ty := ty9 }], ret := SrcType.uint (UintTy.usize), body := SrcStmt.returnEval (SrcEff.eCall ix_plus [SrcEff.ePure (SrcExpr.local 10), SrcEff.eCall ix_max_of [SrcEff.eCall ix_SrcType_size [SrcEff.ePure (SrcExpr.local 23)], SrcEff.eCall ix_SrcType_size [SrcEff.ePure (SrcExpr.local 37)]]]) }
 
 end
 

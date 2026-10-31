@@ -1,12 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.joinInsts
-import Lanius.Mini.Frontend.P.noToken
-import Lanius.Mini.Frontend.P.noTrees
-import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.wideMarker
 
 public section
@@ -123,36 +118,78 @@ def charLiteral (text : List Nat) : Option SrcExpr :=
     else
       none
 
-/-- The innermost local spelled name. -/
-def findLocal (scope : List Local) (name : List Nat) : Option Local :=
-  match scope with
-  | [] => none
-  | l :: rest =>
-    if sameText l.name name then
-      some l
-    else
-      findLocal rest name
-
-/-- The innermost local with this id. -/
-def findLocalId (scope : List Local) (id : Nat) : Option Local :=
-  match scope with
-  | [] => none
-  | l :: rest =>
-    if l.id = id then
-      some l
-    else
-      findLocalId rest id
-
-/-- A primary `name` (ident -> path ident_plain) or `self`: a local. -/
-def localOf (env : FrontEnv) (scope : List Local) (c : CTree) : Option Local :=
-  if decide (nodeProd c = (173)) && decide (nodeProd (kid c 1) = (274)) then
-    match pathName (kid c 0) with
-    | none => none
-    | some name => findLocal scope name
+def flXor (x : Bool) (y : Bool) : Bool :=
+  if x then
+    !y
   else
-    if nodeProd c = (174) then
-      findLocal scope textSelf
-    else
-      none
+    y
+
+/-- The carry out of x + y + c. -/
+def flCarry (x : Bool) (y : Bool) (c : Bool) : Bool :=
+  x && y || c && (x || y)
+
+/-- The borrow out of x - y - c. -/
+def flBorrowBit (x : Bool) (y : Bool) (c : Bool) : Bool :=
+  if x then
+    y && c
+  else
+    y || c
+
+def flCarryOut (c : Bool) : List Bool :=
+  if c then
+    [true]
+  else
+    []
+
+/-- a + b + c. -/
+def flAdd (a : List Bool) (b : List Bool) (c : Bool) : List Bool :=
+  match a with
+  | [] =>
+    (match b with
+     | [] => flCarryOut c
+     | y :: rb => flXor y c :: flAdd [] rb (y && c))
+  | x :: ra =>
+    match b with
+    | [] => flXor x c :: flAdd ra [] (x && c)
+    | y :: rb => flXor (flXor x y) c :: flAdd ra rb (flCarry x y c)
+
+/-- Whether a < b + c. -/
+def flLess (a : List Bool) (b : List Bool) (c : Bool) : Bool :=
+  match a with
+  | [] =>
+    (match b with
+     | [] => c
+     | y :: rb => flLess [] rb (flBorrowBit false y c))
+  | x :: ra =>
+    match b with
+    | [] => flLess ra [] (flBorrowBit x false c)
+    | y :: rb => flLess ra rb (flBorrowBit x y c)
+
+/-- a - b - c, when b + c <= a. -/
+def flSub (a : List Bool) (b : List Bool) (c : Bool) : List Bool :=
+  match a with
+  | [] => []
+  | x :: ra =>
+    match b with
+    | [] => flXor x c :: flSub ra [] (flBorrowBit x false c)
+    | y :: rb => flXor (flXor x y) c :: flSub ra rb (flBorrowBit x y c)
+
+/-- a * 2^k. -/
+def flShl (a : List Bool) (k : Nat) : List Bool :=
+  if k = 0 then
+    a
+  else
+    false :: flShl a (k - 1)
+
+/-- a * 10. -/
+def flMul10 (a : List Bool) : List Bool :=
+  flAdd (false :: a) (false :: false :: false :: a) false
+
+/-- a * 10^k. -/
+def flTimes10 (a : List Bool) (k : Nat) : List Bool :=
+  if k = 0 then
+    a
+  else
+    flMul10 (flTimes10 a (k - 1))
 
 end Lanius.Mini

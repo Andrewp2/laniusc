@@ -49,6 +49,40 @@ inductive MemWidth where
   | m64 : MemWidth
   deriving DecidableEq, Repr
 
+/-- An IEEE binary floating-point format: binary32 or binary64. A word holds a float's bit pattern, an F32 one zero-extended. -/
+inductive FloatTy where
+  | f32 : FloatTy
+  | f64 : FloatTy
+  deriving DecidableEq, Repr
+
+/-- IEEE arithmetic, rounded to nearest, ties to even. -/
+inductive FArith where
+  | fAdd : FArith
+  | fSub : FArith
+  | fMul : FArith
+  | fDiv : FArith
+  deriving DecidableEq, Repr
+
+/-- IEEE comparisons: false when either operand is a NaN. -/
+inductive FCmp where
+  | fEq : FCmp
+  | fLt : FCmp
+  | fLe : FCmp
+  deriving DecidableEq, Repr
+
+/-- A float operation of the left and the right operand, by Lanius.IEEE. The conversions read only the right operand. -/
+inductive FOp where
+  | basic : FloatTy → FArith → FOp
+  /-- 1 when the comparison holds, else 0 -/
+  | fCompare : FloatTy → FCmp → FOp
+  /-- the right operand, a signed integer (its low 32 bits for S32, all 64 for U64), to the nearest float -/
+  | fromInt : FloatTy → Word → FOp
+  /-- the right operand, an F32, as an F64 (exact) -/
+  | widen : FOp
+  /-- the right operand, an F64, to the nearest F32 -/
+  | narrow : FOp
+  deriving DecidableEq, Repr
+
 inductive Expr where
   | lit : (BitVec 64) → Expr
   | var : Nat → Expr
@@ -56,6 +90,8 @@ inductive Expr where
   | neg : Expr → Expr
   | binary : Word → BinOp → Expr → Expr → Expr
   | compare : Word → CmpOp → Expr → Expr → Expr
+  /-- a float operation (SSE on x86) -/
+  | fp : FOp → Expr → Expr → Expr
   deriving DecidableEq, Repr
 
 /-- A Linux system call (roadmap F8). Write: write(fd, the heap address, count), arguments in that order. -/
@@ -140,6 +176,8 @@ inductive Instr where
   | storeWordAt : MemWidth → Nat → Instr
   /-- rax := slot op rax -/
   | div : Word → DivOp → Nat → Instr
+  /-- rax := slot op rax, a float operation through xmm0 and xmm1 -/
+  | fp : FOp → Nat → Instr
   /-- rax := call(slot, slot + 1, slot + 2), through rdi, rsi and rdx -/
   | sys : Syscall → Nat → Instr
   deriving DecidableEq, Repr
@@ -236,6 +274,8 @@ inductive SrcType where
   | isize : SrcType
   /-- a char, its 32-bit code in one slot -/
   | char : SrcType
+  /-- an f32 or f64, its IEEE bit pattern in one slot (an f32's zero-extended) -/
+  | float : FloatTy → SrcType
   /-- the signed integer type as wide as kind (i8, i16, i32, i64, isize). A narrow one sits in its slot as an i32 does, its value's 32-bit two's complement zero-extended; a 64-bit one as an isize does. -/
   | sint : UintTy → SrcType
   deriving Repr
@@ -276,6 +316,8 @@ inductive SrcExpr where
   | null : SrcExpr
   /-- a char literal: its code, a Unicode scalar value -/
   | char : (BitVec 32) → SrcExpr
+  /-- a float literal: its IEEE bit pattern -/
+  | float : FloatTy → (BitVec 64) → SrcExpr
   deriving Repr
 
 /-- A match arm: the binders of its variant's payload, and its value. -/

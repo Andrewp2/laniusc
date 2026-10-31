@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_front_end_read (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : Lanius.Mini.FilesRead} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 34 RepRule) x0 v0 → RepFilesRead x1 v1 →
+  ∀ {x0 : List Lanius.Mini.Rule} {x1 : Lanius.Mini.FilesRead} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 35 RepRule) x0 v0 → RepFilesRead x1 v1 →
     (RepOption 3 RepSrcProgram) (Lanius.Mini.frontEndRead x0 x1) w
 
 end Lanius.Faithful.SelfCert

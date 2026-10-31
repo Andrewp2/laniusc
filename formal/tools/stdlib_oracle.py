@@ -12,8 +12,9 @@ they are, never edited.
    (`pub impl Ord<i32> for i32 { pub fn lt(..) }`), is a target. A target is
    testable when its parameter and result types, after the module's type
    aliases and with every type parameter at i32, are scalars the front pass
-   has (i32, bool, u8, u16, u32, u64, usize, isize) or `core::option::Option` of
-   one; others are counted by the type that stops them.
+   has (i32, bool, u8, u16, u32, u64, usize, isize, i8, i16, i64, char, f32,
+   f64) or `core::option::Option` of one; others are counted by the type
+   that stops them. A float goes in and out as its bit pattern (FLOATS).
 2. Each testable target gets a program of its own: a first file, the module
    app::main, holding one wrapper `w` that takes scalar arguments (an
    Option as a flag and a payload), calls the target and returns an i32 (a
@@ -66,8 +67,15 @@ import run_cache  # noqa: E402
 
 STDLIB = 'stdlib'
 HEAVY = 'target/claude-work/bin/heavy'
-SCALARS = ('i32', 'bool', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize', 'i8', 'i16', 'i64', 'char')
+SCALARS = ('i32', 'bool', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize', 'i8', 'i16', 'i64', 'char', 'f32', 'f64')
 WIDE = ('u64', 'usize', 'isize', 'i64')
+# F9: a float argument is passed as its bit pattern in the slot (an f32 one
+# zero-extended), and a float result is the wrapper's own result, read as its
+# bits (an f64 in two halves, as a 64-bit integer is). laniusc's harness
+# makes the argument with core::f32::from_bits and reads the result with
+# to_bits; inside a struct or enum result a float leaf is read by to_bits in
+# the wrapper.
+FLOATS = ('f32', 'f64')
 
 
 # ---------------------------------------------------------------- scanning
@@ -479,7 +487,7 @@ def results_of(ret):
     if ret.startswith('enum:'):
         return ['tag'] + [f'e{i}_{n}:{sub}' for i, (_, ps) in enumerate(ENUMS[ret][1])
                           for n, (_, _, lty) in enumerate(variant_leaves(ps)) for sub in results_of(lty)]
-    if ret in WIDE:
+    if ret in WIDE or ret == 'f64':
         return ['lo', 'hi']
     if ret.startswith('Option<'):
         return ['tag', 'val']
@@ -517,6 +525,12 @@ def scalar_lines(base, part):
         home, vs = ENUMS[base]
         arms = [f'{variant_pattern(home, v, ps, None)} -> {i}' for i, (v, ps) in enumerate(vs)]
         return [f'    let t: i32 = match (r) {{ {", ".join(arms)} }};', '    return t;']
+    if base in FLOATS:
+        bits = f'core::{base}::to_bits(r)'
+        if part == 'hi':
+            return [f'    let b: u64 = {bits};', '    let high: u64 = 4294967296;', '    let top: u64 = b / high;',
+                    '    return (top as i32);']
+        return [f'    return ({bits} as i32);']
     if part == 'all':
         if base == 'bool':
             lines += ['    if (r) {', '        return 1;', '    }', '    return 0;']
@@ -533,7 +547,8 @@ def scalar_lines(base, part):
         if part == 'tag':
             lines.append('    let t: i32 = match (r) { Some(x) -> 1, None -> 0 };')
         else:
-            conv = 'x' if inner == 'i32' else '(x as i32)'
+            conv = 'x' if inner == 'i32' else f'(core::{inner}::to_bits(x) as i32)' if inner in FLOATS \
+                else '(x as i32)'
             if inner == 'bool':
                 lines.append('    let t: i32 = match (r) { Some(x) -> oracle_flag(x), None -> 0 };')
             else:
@@ -548,6 +563,12 @@ def wrapper_text(mods, t, part):
     lines = ['module app::main;', '']
     imports = {t.module, 'core::option'} if any(ty.startswith('Option<') for _, ty in t.params) or \
         t.ret.startswith('Option<') else {t.module}
+    if t.ret not in FLOATS:
+        # a float leaf of a struct, enum or Option result is read by to_bits
+        rleaves = [lty for _, ps in ENUMS[t.ret][1] for _, _, lty in variant_leaves(ps)] \
+            if t.ret.startswith('enum:') else [lty for _, lty in leaves(t.ret)] \
+            if t.ret.startswith('struct:') else [t.ret[7:-1]] if t.ret.startswith('Option<') else []
+        imports |= {f'core::{f}' for f in FLOATS if f in rleaves}
     if t.trait:
         imports.add(trait_home(mods, t).rsplit('::', 1)[0])
     for dep in sorted(imports | {m for ty in [t.ret] + [ty for _, ty in t.params] for m in struct_modules(ty)}):
@@ -588,6 +609,10 @@ def wrapper_text(mods, t, part):
         targs = f'<{t.targs or ", ".join("i32" for _ in fn["generics"])}>' if fn['generics'] else ''
         call = f'{t.module}::{fn["name"]}{targs}({", ".join(args)})'
     sig = ', '.join(f'{p}: {ty}' for p, ty in wparams)
+    if t.ret in FLOATS:
+        # The float itself is the result; its bits are what the image returns.
+        lines += [f'fn w({sig}) -> {t.ret} {{'] + setup + [f'    let r: {t.ret} = {call};', '    return r;', '}']
+        return '\n'.join(lines) + '\n', wparams
     lines.append(f'fn w({sig}) -> i32 {{')
     lines += setup
     base = t.ret
@@ -838,7 +863,7 @@ class Native(oracle.Native):
 
 
 def slot(value, ty):
-    if ty in ('i32', 'i8', 'i16'):
+    if ty in ('i32', 'i8', 'i16', 'f32'):
         return value & 0xffffffff
     return value & (2 ** 64 - 1)
 
@@ -870,8 +895,9 @@ def read_both(a, b):
     return got[a], got[b]
 
 
-def native_call(native, args, types):
-    """The wrapper's result, or 'trap' (a signal) or 'timeout', and the bytes
+def native_call(native, args, types, high=False):
+    """The wrapper's result (its high 32 bits when high), or 'trap' (a signal)
+    or 'timeout', and the bytes
     it wrote to stdout and to stderr, from a forked child (both pipes)."""
     r, w = os.pipe()
     out_r, out_w = os.pipe()
@@ -888,7 +914,7 @@ def native_call(native, args, types):
         signal.alarm(2)
         native.heap[0:native.HEAP] = bytes(native.HEAP)
         value = native.fn(*[slot(a, t) for a, t in zip(args, types)])
-        os.write(w, str(oracle.i32(value)).encode())
+        os.write(w, str(oracle.i32(value >> 32 if high else value)).encode())
         os._exit(0)
     os.close(w)
     os.close(out_w)
@@ -925,7 +951,38 @@ def gen_char(rng):
             return v
 
 
+F32_EDGES = [0, 0x80000000, 0x3F800000, 0xBF800000, 0x7F800000, 0xFF800000, 0x7FC00000, 0xFFC00000,
+             0x7F800001, 0x7FA00000, 0xFFA00001, 1, 0x80000001, 0x007FFFFF, 0x00800000, 0x7F7FFFFF, 0xFF7FFFFF,
+             0x3F000000, 0x3FC00000, 0x40000000, 0x4B000000, 0x4B7FFFFF, 0xCB000001, 0x3EFFFFFF, 0x3F7FFFFF]
+F64_EDGES = [0, 1 << 63, 0x3FF0000000000000, 0xBFF0000000000000, 0x7FF0000000000000, 0xFFF0000000000000,
+             0x7FF8000000000000, 0xFFF8000000000000, 0x7FF0000000000001, 0x7FF4000000000000,
+             0xFFF4000000000001, 1, (1 << 63) | 1, 0x000FFFFFFFFFFFFF, 0x0010000000000000, 0x7FEFFFFFFFFFFFFF,
+             0xFFEFFFFFFFFFFFFF, 0x3FE0000000000000, 0x3FF8000000000000, 0x4000000000000000,
+             0x4330000000000000, 0x433FFFFFFFFFFFFF, 0xC330000000000001, 0x3FDFFFFFFFFFFFFF,
+             0x3FEFFFFFFFFFFFFF]
+
+
+def gen_float(rng, ty):
+    """A float argument's bit pattern: an edge, a value near 1 of either sign,
+    an integer-valued one, or random bits."""
+    width, frac, bias = (32, 23, 127) if ty == 'f32' else (64, 52, 1023)
+    roll = rng.random()
+    if roll < 0.35:
+        return rng.choice(F32_EDGES if ty == 'f32' else F64_EDGES)
+    sign = rng.randrange(2) << (width - 1)
+    if roll < 0.6:
+        exponent = bias + rng.randrange(-4, 5)
+        return sign | exponent << frac | rng.randrange(1 << frac)
+    if roll < 0.75:
+        exponent = bias + rng.randrange(0, frac + 3)
+        unit = frac - min(exponent - bias, frac)
+        return sign | exponent << frac | (rng.randrange(1 << frac) >> unit << unit)
+    return rng.randrange(1 << width)
+
+
 def gen_arg(rng, ty):
+    if ty in FLOATS:
+        return gen_float(rng, ty)
     if ty == 'bool':
         return int(rng.random() < 0.5)
     if ty == 'char':
@@ -953,6 +1010,8 @@ CHAR_ESCAPES = {0: '\\0', 9: '\\t', 10: '\\n', 13: '\\r', 39: "\\'", 92: '\\\\'}
 
 
 def lani_arg(value, ty):
+    if ty in FLOATS:
+        return f'core::{ty}::from_bits({oracle.lani_expr(("uint", "u32" if ty == "f32" else "u64", value))})'
     if ty == 'char':
         return "'" + CHAR_ESCAPES.get(value, chr(value)) + "'"
     if ty == 'i32':
@@ -968,7 +1027,7 @@ def lani_arg(value, ty):
 
 # ---------------------------------------------------------------- reasons
 
-UNREAD_TYPES = ('f32', 'f64', 'str')
+UNREAD_TYPES = ('str',)
 
 
 def constructs(mods, module, fn):
@@ -1147,7 +1206,8 @@ def main():
         handles = {f'a{k}' for k, (name, ty) in enumerate(p['target'].params) if name == 'handle' and ty == 'i32'}
         p['calls'] = [[rng.choice((1, 2)) if name in handles else gen_arg(rng, ty) for name, ty in p['wparams']]
                       for _ in range(args.calls if types else 1)]
-        p['native'] = [native_call(native, a, types) for a in p['calls']]
+        high = p['target'].ret in FLOATS and p['part'] == 'hi'
+        p['native'] = [native_call(native, a, types, high) for a in p['calls']]
 
     native_s = time.time() - began - parse_s - compile_s
     # laniusc: the compiled wrappers, renamed, in harness binaries.
@@ -1199,7 +1259,8 @@ def harness_text(chunk, start):
     """One binary for a chunk's wrappers: main makes every call, from the one
     numbered by its argument count on, printing each result (laniusc's
     output is unbuffered, so the results before a trap are kept)."""
-    imports = sorted({'std::io_byte', 'std::process'} |
+    floats = {f'core::{ty}' for p in chunk for ty in [p['target'].ret] + [t for _, t in p['wparams']] if ty in FLOATS}
+    imports = sorted({'std::io_byte', 'std::process'} | floats |
                      {line[7:-1] for p in chunk for line in open(p['base'] + '.lani').read().split('\n')
                       if line.startswith('import ')})
     out = ['module app::main;'] + [f'import {m};' for m in imports] + ['']
@@ -1218,8 +1279,14 @@ def harness_text(chunk, start):
     n = 0
     for j, p in enumerate(chunk):
         types = [ty for _, ty in p['wparams']]
+        ret, part = p['target'].ret, p['part']
         for a in p['calls']:
-            out.append(f'    if (start <= {n}) {{ frame(w{start + j}({", ".join(lani_arg(v, t) for v, t in zip(a, types))})); }}')
+            call = f'w{start + j}({", ".join(lani_arg(v, t) for v, t in zip(a, types))})'
+            if ret in FLOATS:
+                # the result's bits, as the verified compiler's image returns them
+                call = f'core::{ret}::to_bits({call})'
+                call = f'(({call} >> 32) as i32)' if part == 'hi' else f'({call} as i32)'
+            out.append(f'    if (start <= {n}) {{ frame({call}); }}')
             n += 1
     out.append('    return 0;\n}')
     return '\n'.join(out) + '\n'

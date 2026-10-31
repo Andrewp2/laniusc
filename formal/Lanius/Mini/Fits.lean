@@ -8,8 +8,8 @@ namespace Lanius.Mini
 
 def Instr.Fits (slots bound funcs : Nat) : Instr → Prop
   | .imm _ | .neg | .loadAt | .loadWordAt _ => True
-  | .load slot | .store slot | .op _ _ slot | .cmp _ _ slot | .storeAt slot | .storeWordAt _ slot | .div _ _ slot =>
-      slot < slots
+  | .load slot | .store slot | .op _ _ slot | .cmp _ _ slot | .storeAt slot | .storeWordAt _ slot | .div _ _ slot
+  | .fp _ slot => slot < slots
   | .bump shift => shift < 32
   | .jmp target | .jz target => target ≤ bound
   | .call callee args target count => callee < funcs ∧ args.length ≤ slots ∧ (∀ slot ∈ args, slot < slots) ∧
@@ -21,7 +21,7 @@ theorem Instr.Fits.mono {i : Instr} {slots slots' bound bound' funcs : Nat} (fit
     (moreSlots : slots ≤ slots') (moreBound : bound ≤ bound') : i.Fits slots' bound' funcs := by
   cases i with
   | imm | neg | loadAt | loadWordAt => trivial
-  | load | store | op | cmp | storeAt | storeWordAt | div => simp only [Instr.Fits] at fits ⊢; omega
+  | load | store | op | cmp | storeAt | storeWordAt | div | fp => simp only [Instr.Fits] at fits ⊢; omega
   | bump => exact fits
   | jmp | jz => simp only [Instr.Fits] at fits ⊢; omega
   | call callee args target count =>
@@ -53,6 +53,14 @@ theorem compileExpr_fits (base : Nat) (e : Expr) (depth : Nat) (within : e.withi
     · exact (ihRight (depth + 1) within.2 i inRight).mono (by omega) (Nat.le_refl _)
     · simp only [Instr.Fits]; omega
   | compare _ _ left right ihLeft ihRight =>
+    simp only [Expr.within, Bool.and_eq_true] at within
+    simp only [compileExpr, List.mem_append, List.mem_singleton, Expr.temps]
+    rintro i (((inLeft | rfl) | inRight) | rfl)
+    · exact (ihLeft depth within.1 i inLeft).mono (by omega) (Nat.le_refl _)
+    · simp only [Instr.Fits]; omega
+    · exact (ihRight (depth + 1) within.2 i inRight).mono (by omega) (Nat.le_refl _)
+    · simp only [Instr.Fits]; omega
+  | fp _ left right ihLeft ihRight =>
     simp only [Expr.within, Bool.and_eq_true] at within
     simp only [compileExpr, List.mem_append, List.mem_singleton, Expr.temps]
     rintro i (((inLeft | rfl) | inRight) | rfl)

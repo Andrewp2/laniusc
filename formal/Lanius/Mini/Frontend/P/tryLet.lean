@@ -46,6 +46,7 @@ def pureInferred (e : SrcExpr) : Bool :=
   | .cast t a => true
   | .null => false
   | .char c => false
+  | .float ft bits => false
 
 def inferred (x : MEff) : Bool :=
   match x with
@@ -115,6 +116,7 @@ def isPtrTy (t : Ty) : Bool :=
   | .tyPtr => true
   | .tyIsize => false
   | .tyChar => false
+  | .tyFloat ft => false
   | .tySlice e => false
   | .tyNamed d args => false
   | .tySint k => false

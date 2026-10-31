@@ -48,6 +48,7 @@ abbrev pCastTypePath : Nat := 311
 abbrev pCastTypePathEnd : Nat := 314
 abbrev pCastTypePathIdent : Nat := 312
 abbrev pChar : Nat := 178
+abbrev pFloat : Nat := 176
 abbrev pCompare : Nat := 137
 abbrev pConst : Nat := 208
 abbrev pContractsNone : Nat := 321

@@ -67,6 +67,8 @@ inductive Ty where
   | tyPtr : Ty
   | tyIsize : Ty
   | tyChar : Ty
+  /-- f32 or f64 -/
+  | tyFloat : FloatTy → Ty
   | tySlice : Ty → Ty
   | tyNamed : Nat → (List Ty) → Ty
   | tySint : UintTy → Ty
@@ -172,6 +174,18 @@ structure FrontEnv where
   ret : Option Ty
   base : Nat
   deriving Repr
+
+structure FlDiv where
+  q : List Bool
+  r : List Bool
+  deriving DecidableEq, Repr
+
+/-- A float literal's digits and exponent. -/
+structure FlDec where
+  m : List Bool
+  neg : Bool
+  mag : Nat
+  deriving DecidableEq, Repr
 
 /-- A local in scope: its spelling, its id and its type. -/
 structure Local where

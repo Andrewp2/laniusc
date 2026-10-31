@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_is_empty_usize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 24 RepNat) x0 v0 →
+  ∀ {x0 : List Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 25 RepNat) x0 v0 →
     RepBool (Lanius.Mini.isEmptyUsize x0) w
 
 abbrev Stmt_no_tokens (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 44 RepToken) x0 v0 →
+  ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 45 RepToken) x0 v0 →
     RepBool (Lanius.Mini.noTokens x0) w
 
 abbrev Stmt_node_prod (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -37,11 +37,11 @@ abbrev Stmt_used_up (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     RepBool (Lanius.Mini.usedUp x0) w
 
 abbrev Stmt_validate_tree (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.Token} {x2 : List Nat} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 34 RepRule) x0 v0 → (RepList 44 RepToken) x1 v1 → (RepList 24 RepNat) x2 v2 → (RepList 24 RepNat) x3 v3 →
-    (RepOption 120 RepCTree) (Lanius.Mini.validateTree x0 x1 x2 x3) w
+  ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.Token} {x2 : List Nat} {x3 : List Nat} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → (RepList 35 RepRule) x0 v0 → (RepList 45 RepToken) x1 v1 → (RepList 25 RepNat) x2 v2 → (RepList 25 RepNat) x3 v3 →
+    (RepOption 124 RepCTree) (Lanius.Mini.validateTree x0 x1 x2 x3) w
 
 abbrev Stmt_whole (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Attached} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepAttached x0 v0 →
-    (RepOption 120 RepCTree) (Lanius.Mini.whole x0) w
+    (RepOption 124 RepCTree) (Lanius.Mini.whole x0) w
 
 end Lanius.Faithful.SelfCert

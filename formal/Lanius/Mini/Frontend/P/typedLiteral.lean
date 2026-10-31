@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.nullConst
 import Lanius.Mini.Frontend.P.scalarOf
 
@@ -22,6 +23,7 @@ def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
      | .tyPtr => nullConst k
      | .tyIsize => some (SrcExpr.cast SrcType.isize e)
      | .tyChar => none
+     | .tyFloat ft => none
      | .tySlice x => none
      | .tyNamed d args => none
      | .tySint u => sintConst u k)
@@ -33,6 +35,7 @@ def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
      | .tyPtr => none
      | .tyIsize => none
      | .tyChar => none
+     | .tyFloat ft => none
      | .tySlice x => none
      | .tyNamed d args => none
      | .tySint u => none)
@@ -47,24 +50,27 @@ def typedLiteral (t : Ty) (e : SrcExpr) : Option SrcExpr :=
      | .tyPtr => none
      | .tyIsize => negatedInt x (SrcExpr.negate (SrcExpr.cast SrcType.isize x))
      | .tyChar => none
+     | .tyFloat ft => negatedFloat ft x
      | .tySlice y => none
      | .tyNamed d args => none
      | .tySint u => negSintConst u x)
   | .not x => none
   | .apply op a b => none
-  | .cast s x => none
+  | .cast s x => floatTyped t s x
   | .null => none
   | .char code =>
-    match t with
-    | .tyI32 => none
-    | .tyBool => none
-    | .tyUint u => none
-    | .tyPtr => none
-    | .tyIsize => none
-    | .tyChar => some e
-    | .tySlice x => none
-    | .tyNamed d args => none
-    | .tySint u => none
+    (match t with
+     | .tyI32 => none
+     | .tyBool => none
+     | .tyUint u => none
+     | .tyPtr => none
+     | .tyIsize => none
+     | .tyChar => some e
+     | .tyFloat ft => none
+     | .tySlice x => none
+     | .tyNamed d args => none
+     | .tySint u => none)
+  | .float ft bits => none
 
 def literalAs (t : Option Ty) (e : Option SrcExpr) : Option SrcExpr :=
   match t with

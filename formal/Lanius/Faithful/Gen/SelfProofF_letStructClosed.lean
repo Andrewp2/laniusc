@@ -25,6 +25,15 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_arm_ty_closed {prog : SrcProgram} {prims : Prims} {ix_arm_ty_closed : Nat} (fn : prog.funcs[ix_arm_ty_closed]? = some (src_arm_ty_closed)) (np : prims.isPrim ix_arm_ty_closed = false) {n : Nat} :
+    Stmt_arm_ty_closed prog prims ix_arm_ty_closed n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_arm_ty_closed] at h
+  faithful [Lanius.Mini.armTyClosed]
+
 theorem proof_if_closed {prog : SrcProgram} {prims : Prims} {ix_if_closed ix_boxed_of_mini_selfhost_SrcStmt : Nat} (fn : prog.funcs[ix_if_closed]? = some (src_if_closed ix_boxed_of_mini_selfhost_SrcStmt)) (np : prims.isPrim ix_if_closed = false)
     (ext_boxed_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcStmt prog prims ix_boxed_of_mini_selfhost_SrcStmt n)) {n : Nat} :
     Stmt_if_closed prog prims ix_if_closed n := by
@@ -75,6 +84,16 @@ theorem proof_let_struct_closed {prog : SrcProgram} {prims : Prims} {ix_let_stru
   simp only [src_let_struct_closed] at h
   faithful [Lanius.Mini.letStructClosed]
 
+theorem proof_match_arm_closed {prog : SrcProgram} {prims : Prims} {ix_match_arm_closed ix_boxed_of_mini_selfhost_SrcStmt : Nat} (fn : prog.funcs[ix_match_arm_closed]? = some (src_match_arm_closed ix_boxed_of_mini_selfhost_SrcStmt)) (np : prims.isPrim ix_match_arm_closed = false)
+    (ext_boxed_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcStmt prog prims ix_boxed_of_mini_selfhost_SrcStmt n)) {n : Nat} :
+    Stmt_match_arm_closed prog prims ix_match_arm_closed n := by
+  intro x0 x1 x2 x3 x4 x5 x6 x7 v0 v1 v2 v3 v4 v5 v6 v7 w h r0 r1 r2 r3 r4 r5 r6 r7
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_match_arm_closed] at h
+  faithful [Lanius.Mini.matchArmClosed]
+
 theorem proof_set_call_closed {prog : SrcProgram} {prims : Prims} {ix_set_call_closed : Nat} (fn : prog.funcs[ix_set_call_closed]? = some (src_set_call_closed)) (np : prims.isPrim ix_set_call_closed = false) {n : Nat} :
     Stmt_set_call_closed prog prims ix_set_call_closed n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
@@ -93,6 +112,15 @@ theorem proof_then_closed {prog : SrcProgram} {prims : Prims} {ix_then_closed ix
   rw [pcall_succ np fn] at h
   simp only [src_then_closed] at h
   faithful [Lanius.Mini.thenClosed]
+
+theorem proof_unreachable_closed {prog : SrcProgram} {prims : Prims} {ix_unreachable_closed : Nat} (fn : prog.funcs[ix_unreachable_closed]? = some (src_unreachable_closed)) (np : prims.isPrim ix_unreachable_closed = false) {n : Nat} :
+    Stmt_unreachable_closed prog prims ix_unreachable_closed n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_unreachable_closed] at h
+  faithful [Lanius.Mini.unreachableClosed]
 
 theorem proof_while_closed {prog : SrcProgram} {prims : Prims} {ix_while_closed ix_boxed_of_mini_selfhost_SrcStmt : Nat} (fn : prog.funcs[ix_while_closed]? = some (src_while_closed ix_boxed_of_mini_selfhost_SrcStmt)) (np : prims.isPrim ix_while_closed = false)
     (ext_boxed_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcStmt prog prims ix_boxed_of_mini_selfhost_SrcStmt n)) {n : Nat} :
