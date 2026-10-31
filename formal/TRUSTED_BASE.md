@@ -410,8 +410,11 @@ still a parse tree of the same tokens. Trusted:
     value's type, or else the shift's expected type, and a bare amount the
     value's (`amountWant`), as a shift's type is its left operand's;
   - `&self` (added 10-30) is read as `self`: the method takes the impl's
-    type by value, as a shared reference to a value no one can change while
-    it lives means the value (`PatternOf.selfRef`, `paramToken`);
+    type by value (`PatternOf.selfRef`, `paramToken`). laniusc's `&self`
+    may write the caller's value (`self.n = ..` reaches the caller), so a
+    method that writes `self` is not read (10-31, `writesLocal`,
+    `refChecked`, `ReadFn`); while nothing writes through it, the reference
+    and the value read the same, as no other code runs during the call;
   - `S::m(args)` for a struct S of the current module (added 10-30) is read
     as `T::m` is for a type parameter bound to S: the one method spelled m
     of an impl whose type matches S (`TypeOwner`, `OwnerTy`); an enum's

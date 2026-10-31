@@ -928,3 +928,14 @@ in laniusc, never change what an accepted one does, so the reading of a
 program laniusc accepts is unchanged. Unlocks the 51 such impls in 15
 stdlib and `extended/` files, among them `core::iter` and
 `core::clone_values`, which most of the stdlib reaches (case impl_where).
+
+## Writes through `&self` (decided 10-31, F5)
+
+laniusc's `&self` and `&T` are references that may write: `fn bump(&self) {
+self.n = self.n + 1; }` changes the caller's value (laniusc returns 12 for
+the case reject_self_write, where the by-value reading gave 11). Until F5
+gives such locals an address, the front end keeps reading `&self` by value
+and does not read a method whose body writes the `self` local (a set, a
+field set, a set from a call or an effectful value: `writesLocal`). A write
+to a slice element through `self` goes to the heap, which the copy shares,
+so it is read. `&T` parameters are not read yet.

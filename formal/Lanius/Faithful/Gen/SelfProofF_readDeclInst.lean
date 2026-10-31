@@ -5,10 +5,10 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_readDeclInst
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_externBody
+public import Lanius.Faithful.Gen.SelfStmtF_ifNotWrites
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
 public import Lanius.Faithful.Gen.SelfStmtF_readDeclInst
-public import Lanius.Faithful.Gen.SelfStmtF_readFn
 import all Lanius.Faithful.Gen.SelfSrcF_readDeclInst
 import all Lanius.Mini.Frontend.P.readDeclInst
 

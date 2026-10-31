@@ -317,7 +317,7 @@ def native_batch(batch, heap_log2, stack_log2, room, timeout):
 def read_out(path):
     data = open(path, 'rb').read()
     line, rest = data.split(b'\n', 1)
-    status, seconds, rss = line.decode().split(' ')
+    status, seconds, rss = line.decode().rsplit(' ', 2)
     got = {'words': None, 'rejected': None}.get(status, status)
     if status == 'words':
         got = [int.from_bytes(rest[i:i + 4], 'little', signed=True) for i in range(0, len(rest), 4)]
