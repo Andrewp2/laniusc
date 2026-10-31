@@ -173,7 +173,7 @@ inductive EffR (env : FrontEnv) : List Local → Option Ty → CTree → MEff �
       {t : TypeDecl} {ps : List (List Ty)} {arms os : List CTree} {eas : List EffArm} {rt : Ty} :
       nodeProd c = pMatchExpr → EffR env scope none (kid c 2) s → EffTy env.decls scope s ety → ety = .tyNamed d args →
       env.decls.types[d]? = some t → t.isEnum = true → PayloadTys env.decls d args ps → Items (kid c 5) arms →
-      arms.length = (List.zipWith VariantTy.mk t.variants ps).length → (∀ a ∈ os, a ∈ arms) →
+      ArmsOrder (List.zipWith VariantTy.mk t.variants ps) arms os →
       EffArmsR env scope expected t (List.zipWith VariantTy.mk t.variants ps) os eas → resultTy expected eas = some rt →
       EffR env scope expected c (.xMatch s ety rt (armBinders eas) (armValues eas))
   | array {scope : List Local} {expected : Option Ty} {c : CTree} {e : Ty} {n : Nat} {items : List CTree}
@@ -646,14 +646,14 @@ def MethodEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (pf :
 def MatchEnumEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s : MEff) (ety : Ty) (t : TypeDecl)
     (payloads : Option (List (List Ty))) (m : CTree) (x : MEff) : Prop :=
   t.isEnum = true ∧ ∃ ps arms os eas rt, payloads = some ps ∧ Items (kid m 5) arms ∧
-    arms.length = (List.zipWith VariantTy.mk t.variants ps).length ∧ (∀ a ∈ os, a ∈ arms) ∧
+    ArmsOrder (List.zipWith VariantTy.mk t.variants ps) arms os ∧
     EffArmsR env scope expected t (List.zipWith VariantTy.mk t.variants ps) os eas ∧ resultTy expected eas = some rt ∧
     x = .xMatch s ety rt (armBinders eas) (armValues eas)
 
 def MatchOnEff (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s : MEff) (m : CTree) (x : MEff) : Prop :=
   ∃ ety d args t ps arms os eas rt, EffTy env.decls scope s ety ∧ ety = .tyNamed d args ∧
     env.decls.types[d]? = some t ∧ t.isEnum = true ∧ PayloadTys env.decls d args ps ∧ Items (kid m 5) arms ∧
-    arms.length = (List.zipWith VariantTy.mk t.variants ps).length ∧ (∀ a ∈ os, a ∈ arms) ∧
+    ArmsOrder (List.zipWith VariantTy.mk t.variants ps) arms os ∧
     EffArmsR env scope expected t (List.zipWith VariantTy.mk t.variants ps) os eas ∧ resultTy expected eas = some rt ∧
     x = .xMatch s ety rt (armBinders eas) (armValues eas)
 
@@ -747,7 +747,7 @@ def EffSound (fuel : Nat) : Prop :=
   (∀ {env scope expected s ety t payloads m x}, effMatchEnum fuel env scope expected s ety t payloads m = some x →
     MatchEnumEff env scope expected s ety t payloads m x) ∧
   (∀ {env scope expected owner vs arms eas}, effArmsOrdered fuel env scope expected owner vs arms = some eas →
-    ∃ os, arms.length = vs.length ∧ (∀ a ∈ os, a ∈ arms) ∧ EffArmsR env scope expected owner vs os eas) ∧
+    ∃ os, ArmsOrder vs arms os ∧ EffArmsR env scope expected owner vs os eas) ∧
   (∀ {env scope expected owner vs arms eas}, effArms fuel env scope expected owner vs arms = some eas →
     EffArmsR env scope expected owner vs arms eas) ∧
   (∀ {env scope expected owner v arm ea}, effArm fuel env scope expected owner v arm = some ea →
@@ -1381,9 +1381,9 @@ theorem effSound : ∀ fuel, EffSound fuel
     · intro env scope expected m x pm h
       rw [effMatch.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
-      obtain ⟨s, hs, ety, d, args, t, ps, arms, os, eas, rt, he, rfl, ht, en, hp, hi, len, sub, ar, hr, rfl⟩ :=
+      obtain ⟨s, hs, ety, d, args, t, ps, arms, os, eas, rt, he, rfl, ht, en, hp, hi, ord, ar, hr, rfl⟩ :=
         ihMatchOn h
-      exact .match pm (ihOf hs) he rfl ht en hp hi len sub ar hr
+      exact .match pm (ihOf hs) he rfl ht en hp hi ord ar hr
     -- effMatchOn
     · intro env scope expected so m x h
       rw [effMatchOn.eq_def] at h
@@ -1408,9 +1408,9 @@ theorem effSound : ∀ fuel, EffSound fuel
             | some t =>
               rw [ht] at h
               simp only at h
-              obtain ⟨en, ps, arms, os, eas, rt, hps, hi, len, sub, ar, hr, rfl⟩ := ihMatchEnum h
+              obtain ⟨en, ps, arms, os, eas, rt, hps, hi, ord, ar, hr, rfl⟩ := ihMatchEnum h
               exact ⟨ety, n.decl, n.args, t, ps, arms, os, eas, rt, effTy_sound he, namedParts_eq hn, ht, en,
-                payloadTys_sound hps, hi, len, sub, ar, hr, rfl⟩
+                payloadTys_sound hps, hi, ord, ar, hr, rfl⟩
     -- effMatchEnum
     · intro env scope expected s ety t payloads m x h
       rw [effMatchEnum.eq_def] at h
@@ -1437,9 +1437,9 @@ theorem effSound : ∀ fuel, EffSound fuel
                 rw [hr] at h
                 simp only [Option.some.injEq] at h
                 subst h
-                obtain ⟨os, len, sub, ar⟩ := ihArmsOrdered ho
-                rw [zipVariants_eq] at len ar
-                exact ⟨en, ps, arms, os, eas, rt, rfl, listItems_sound hi, len, sub, ar, hr, rfl⟩
+                obtain ⟨os, ord, ar⟩ := ihArmsOrdered ho
+                rw [zipVariants_eq] at ord ar
+                exact ⟨en, ps, arms, os, eas, rt, rfl, listItems_sound hi, ord, ar, hr, rfl⟩
       · cases h
     -- effArmsOrdered
     · intro env scope expected owner vs arms eas h
@@ -1450,11 +1450,7 @@ theorem effSound : ∀ fuel, EffSound fuel
       | some os =>
         rw [hio] at h
         simp only at h
-        unfold armsInOrder at hio
-        split at hio
-        · rename_i len
-          exact ⟨os, len, armsByVariant_mem hio, ihArms h⟩
-        · cases hio
+        exact ⟨os, armsInOrder_sound hio, ihArms h⟩
     -- effArms
     · intro env scope expected owner vs arms eas h
       rw [effArms.eq_def] at h

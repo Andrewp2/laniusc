@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::checked_bound -/
-def src_checked_bound : SrcFunc := { params := [{ id := 14, ty := SrcType.bool }, { id := 24, ty := ty355 }], ret := ty355, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 14) (SrcStmt.return (SrcExpr.local 24)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty355 1 [])) }
+def src_checked_bound : SrcFunc := { params := [{ id := 14, ty := SrcType.bool }, { id := 24, ty := ty357 }], ret := ty357, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 14) (SrcStmt.return (SrcExpr.local 24)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty357 1 [])) }
 
 /-- mini::selfhost::checked_eff -/
 def src_checked_eff : SrcFunc := { params := [{ id := 12, ty := SrcType.bool }, { id := 22, ty := ty305 }], ret := ty305, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 12) (SrcStmt.return (SrcExpr.local 22)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty305 1 [])) }

@@ -6281,14 +6281,161 @@ pub fn arms_by_variant(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, 
     };
 }
 
-// The arms in variant order: as many arms as variants, each variant named
-// by exactly one. Only one arm runs, so the order they are written in has
-// no effect.
-pub fn arms_in_order(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<CTree>> {
+// Whether a name is `_`.
+pub fn text_underscore() -> List<usize> {
+    return single(95);
+}
+
+pub fn is_underscore(name: core::option::Option<List<usize>>) -> bool {
+    return match (name) {
+        None -> false,
+        Some(n) -> same_text(n, text_underscore()),
+    };
+}
+
+// A wildcard arm, `_ -> value`.
+pub fn is_wild_arm(arm: CTree) -> bool {
+    let pattern: CTree = kid(arm, 0);
+    return node_prod(pattern) == p_pattern_ident() && node_prod(kid(pattern, 1)) == p_pattern_plain() && is_underscore(path_name(kid(pattern, 0)));
+}
+
+// Arms whose last is a wildcard: the others, and the wildcard.
+pub struct WildSplit {
+    init: List<CTree>,
+    wild: CTree,
+}
+
+pub fn cons_wild(a: CTree, rest: core::option::Option<WildSplit>) -> core::option::Option<WildSplit> {
+    return match (rest) {
+        None -> None,
+        Some(w) -> Some(WildSplit { init: cons(a, w.init), wild: w.wild }),
+    };
+}
+
+pub fn wild_alone(a: CTree) -> core::option::Option<WildSplit> {
+    if (is_wild_arm(a)) {
+        return Some(WildSplit { init: empty(), wild: a });
+    }
+    return None;
+}
+
+// The arms split before a last wildcard arm; None when the last arm is not one.
+pub fn wild_split(arms: List<CTree>) -> core::option::Option<WildSplit> {
+    return match (arms) {
+        Nil -> None,
+        Cons(a, rest) -> match (unbox(rest)) {
+            Nil -> wild_alone(a),
+            Cons(b, more) -> cons_wild(a, wild_split(unbox(rest))),
+        },
+    };
+}
+
+// The wildcard's pattern `_` with its token moved on by i: the binder of
+// payload field i, its id the wildcard's position plus i.
+pub fn wild_binder(w: CTree, i: usize) -> CTree {
+    let pattern: CTree = kid(w, 0);
+    let path: CTree = kid(pattern, 0);
+    let tok: Token = kid_token(kid(path, 0), 0);
+    let segment: CTree = Node(node_prod(kid(path, 0)), boxed(single(Leaf(Token { kind: tok.kind, start: plus(tok.start, i), text: tok.text }))));
+    let named: CTree = Node(node_prod(path), boxed(cons(segment, single(kid(path, 1)))));
+    return Node(node_prod(pattern), boxed(cons(named, single(kid(pattern, 1)))));
+}
+
+pub fn wild_binders(w: CTree, i: usize, payload: List<Ty>) -> List<CTree> {
+    return match (payload) {
+        Nil -> empty(),
+        Cons(t, rest) -> cons(wild_binder(w, i), wild_binders(w, plus(i, 1), unbox(rest))),
+    };
+}
+
+// The pattern's tail: none for a variant with no payload, else one binder
+// per payload field (the compiler binds every field).
+pub fn wild_tail(w: CTree, payload: List<Ty>) -> CTree {
+    let plain: CTree = kid(kid(w, 0), 1);
+    return match (payload) {
+        Nil -> plain,
+        Cons(t, rest) -> Node(p_pattern_tuple(), boxed(cons(plain, single(Node(p_patterns_some(), boxed(wild_binders(w, 0, payload))))))),
+    };
+}
+
+// The wildcard arm `_ -> value` as variant v's arm `V(_, ...) -> value`, V
+// spelled v's name, binding each payload field.
+pub fn wild_arm_for(w: CTree, v: VariantTy) -> CTree {
+    let pattern: CTree = kid(w, 0);
+    let path: CTree = kid(pattern, 0);
+    let tok: Token = kid_token(kid(path, 0), 0);
+    let segment: CTree = Node(node_prod(kid(path, 0)), boxed(single(Leaf(Token { kind: tok.kind, start: tok.start, text: v.name }))));
+    let named: CTree = Node(node_prod(path), boxed(cons(segment, single(kid(path, 1)))));
+    return Node(node_prod(w), boxed(cons(Node(node_prod(pattern), boxed(cons(named, single(wild_tail(w, v.payload))))), cons(kid(w, 1), single(kid(w, 2))))));
+}
+
+// Whether the arm names one of the variants.
+pub fn names_some(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, a: CTree) -> bool {
+    return match (variants) {
+        Nil -> false,
+        Cons(v, rest) -> arm_names(fuel, owner, v.name, a) || names_some(fuel, owner, unbox(rest), a),
+    };
+}
+
+pub fn all_name_some(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> bool {
+    return match (arms) {
+        Nil -> true,
+        Cons(a, rest) -> names_some(fuel, owner, variants, a) && all_name_some(fuel, owner, variants, unbox(rest)),
+    };
+}
+
+// For each variant in order, the one arm that names it, else the wildcard
+// arm w as that variant's arm.
+pub fn arms_or_wild(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>, w: CTree) -> core::option::Option<List<CTree>> {
+    return match (variants) {
+        Nil -> Some(empty()),
+        Cons(v, rest) -> match (arms_naming(fuel, owner, v.name, arms)) {
+            Nil -> cons_tree_tail(wild_arm_for(w, v), arms_or_wild(fuel, owner, unbox(rest), arms, w)),
+            Cons(a, more) -> match (unbox(more)) {
+                Nil -> cons_tree_tail(a, arms_or_wild(fuel, owner, unbox(rest), arms, w)),
+                Cons(b, others) -> None,
+            },
+        },
+    };
+}
+
+// Some variant is named by no arm, so it takes the wildcard's arm.
+pub fn uses_wild(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> bool {
+    return match (variants) {
+        Nil -> false,
+        Cons(v, rest) -> match (arms_naming(fuel, owner, v.name, arms)) {
+            Nil -> true,
+            Cons(a, more) -> uses_wild(fuel, owner, unbox(rest), arms),
+        },
+    };
+}
+
+pub fn wild_order(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, s: WildSplit) -> core::option::Option<List<CTree>> {
+    if (all_name_some(fuel, owner, variants, s.init) && uses_wild(fuel, owner, variants, s.init)) {
+        return arms_or_wild(fuel, owner, variants, s.init, s.wild);
+    }
+    return None;
+}
+
+pub fn arms_exact(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<CTree>> {
     if (length(arms) == length(variants)) {
         return arms_by_variant(fuel, owner, variants, arms);
     }
     return None;
+}
+
+// The arms in variant order: as many arms as variants, each variant named
+// by exactly one. Only one arm runs, so the order they are written in has
+// no effect. With a wildcard arm `_ -> value` last, every other arm names a
+// variant, no variant is named twice, and the variants no arm names (at
+// least one, so the wildcard's value is read) take the wildcard's arm.
+// laniusc runs the first arm that matches, so an arm after a wildcard
+// never runs; a wildcard is read only as the last arm.
+pub fn arms_in_order(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<CTree>> {
+    return match (wild_split(arms)) {
+        Some(s) -> wild_order(fuel, owner, variants, s),
+        None -> arms_exact(fuel, owner, variants, arms),
+    };
 }
 
 // Arm k is variant k.
@@ -12749,6 +12896,11 @@ fn p_pattern_ident() -> usize {
 // extract: inline
 fn p_pattern_plain() -> usize {
     return 199;
+}
+
+// extract: inline
+fn p_pattern_tuple() -> usize {
+    return 200;
 }
 
 // extract: inline

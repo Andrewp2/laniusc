@@ -57,7 +57,7 @@ abbrev Stmt_field_ty_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 206 RepTy) (Lanius.Mini.fieldTyAt x0 x1 x2 x3) w
 
 abbrev Stmt_free_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 293 (RepList 21 RepSrcExpr)) x0 v0 →
+  ∀ {x0 : Option (List Lanius.Mini.SrcExpr)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 295 (RepList 21 RepSrcExpr)) x0 v0 →
     (RepOption 244 RepMStmt) (Lanius.Mini.freeOf x0) w
 
 abbrev Stmt_free_shifted (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

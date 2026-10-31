@@ -106,7 +106,10 @@ STEPS = [
       False) for k in range(3)] + [
     # F11: laniusc's own test programs, a seeded sample of them, run both ways.
     ('programs', ['programs_oracle.py', '{w}', '--sample', '60', '--seed', '{s}'],
-     ['lean', 'run_all', 'laniusc', 'stdlib', 'programs'], False),
+     ['lean', 'run_all', 'laniusc', 'stdlib', 'programs', 'extended_all'], False),
+    # F11: every extended/ module's testable targets, as stdlib-* tests the stdlib's.
+    ('extended', ['stdlib_oracle.py', '{w}', '--root', 'extended', '--seed', '{s}'],
+     ['run_all', 'laniusc', 'stdlib', 'extended_all'], False),
     # M11c: the self-built verified compiler compiles itself to its own image.
     ('self-host-fixpoint', ['self_host.py', '{w}', '--no-cases', '--fixpoint', '--timeout', '280'],
      ['run_all', 'lani', 'laniusc', 'stdlib'], False),
@@ -131,6 +134,7 @@ def inputs():
         'stdlib': run_cache.tree_digest(os.path.join(ROOT, 'stdlib')),
         'programs': run_cache.tree_digest(os.path.join(ROOT, 'tests/fixtures'))
         + run_cache.tree_digest(os.path.join(ROOT, 'sample_programs')),
+        'extended_all': run_cache.tree_digest(os.path.join(ROOT, 'extended')),
         'extended': ''.join(run_cache.file_digest(os.path.join(ROOT, 'extended/ext', name))
                             for name in ('sqlite_statement.lani', 'openssl_tls_lifecycle.lani')),
     }
@@ -174,6 +178,8 @@ def main():
     args = parser.parse_args()
     run_cache.no_core_dumps()
     build()
+    # The steps' own builds of runAll would only wait on the Lean lock.
+    os.environ['LANIUS_BUILT'] = '1'
     digests = inputs()
     steps = [s for s in STEPS if (s[3] or args.tier == 'full')]
     if args.only:

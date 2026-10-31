@@ -848,17 +848,21 @@ inductive RepEffArm : Lanius.Mini.EffArm → Value → Prop where
   | c0 {x0 : List Nat} {x1 : Lanius.Mini.MEff} {x2 : Option Lanius.Mini.Ty} {v0 v1 v2 : Value} :
       (RepList 25 RepNat) x0 v0 → RepMEff x1 v1 → (RepOption 206 RepTy) x2 v2 → RepEffArm (Lanius.Mini.EffArm.mk x0 x1 x2) (.structure 289 [v0, v1, v2])
 
+inductive RepWildSplit : Lanius.Mini.WildSplit → Value → Prop where
+  | c0 {x0 : List Lanius.Mini.CTree} {x1 : Lanius.Mini.CTree} {v0 v1 : Value} :
+      (RepList 81 RepCTree) x0 v0 → RepCTree x1 v1 → RepWildSplit (Lanius.Mini.WildSplit.mk x0 x1) (.structure 292 [v0, v1])
+
 inductive RepBound : Lanius.Mini.Bound → Value → Prop where
   | c0 {x0 : List Nat} {x1 : List Lanius.Mini.Local} {v0 v1 : Value} :
-      (RepList 25 RepNat) x0 v0 → (RepList 230 RepLocal) x1 v1 → RepBound (Lanius.Mini.Bound.mk x0 x1) (.structure 292 [v0, v1])
+      (RepList 25 RepNat) x0 v0 → (RepList 230 RepLocal) x1 v1 → RepBound (Lanius.Mini.Bound.mk x0 x1) (.structure 294 [v0, v1])
 
 inductive RepFlDiv : Lanius.Mini.FlDiv → Value → Prop where
   | c0 {x0 : List Bool} {x1 : List Bool} {v0 v1 : Value} :
-      (RepList 253 RepBool) x0 v0 → (RepList 253 RepBool) x1 v1 → RepFlDiv (Lanius.Mini.FlDiv.mk x0 x1) (.structure 294 [v0, v1])
+      (RepList 253 RepBool) x0 v0 → (RepList 253 RepBool) x1 v1 → RepFlDiv (Lanius.Mini.FlDiv.mk x0 x1) (.structure 296 [v0, v1])
 
 inductive RepArgsBound : Lanius.Mini.ArgsBound → Value → Prop where
   | c0 {x0 : List Lanius.Mini.MEff} {x1 : List Lanius.Mini.Bind} {v0 v1 : Value} :
-      (RepList 227 RepMEff) x0 v0 → (RepList 263 RepBind) x1 v1 → RepArgsBound (Lanius.Mini.ArgsBound.mk x0 x1) (.structure 296 [v0, v1])
+      (RepList 227 RepMEff) x0 v0 → (RepList 263 RepBind) x1 v1 → RepArgsBound (Lanius.Mini.ArgsBound.mk x0 x1) (.structure 298 [v0, v1])
 
 attribute [rep_rule] RepUintTy.c0 RepUintTy.c1 RepUintTy.c2 RepUintTy.c3 RepUintTy.c4 RepFloatTy.c0 RepFloatTy.c1 RepSrcType.c0
 attribute [rep_rule] RepSrcType.c1 RepSrcType.c2 RepSrcType.c3 RepSrcType.c4 RepSrcType.c5 RepSrcType.c6 RepSrcType.c7 RepSrcType.c8
@@ -900,7 +904,7 @@ attribute [rep_rule] RepScan.c0 RepScan.c1 RepFields.c0 RepLocal.c0 RepMParams.c
 attribute [rep_rule] RepFlDec.c0 RepArrayParts.c0 RepCalled.c0 RepTried.c0 RepLetHead.c0 RepLetHead.c1 RepLetHead.c2 RepLetHead.c3
 attribute [rep_rule] RepLetHead.c4 RepLetHead.c5 RepLetHead.c6 RepLetHead.c7 RepLetHead.c8 RepLetHead.c9 RepUntyped.c0 RepBind.c0
 attribute [rep_rule] RepPathRef.c0 RepVariantAt.c0 RepVariantTy.c0 RepMatchStmt.c0 RepFound.c0 RepFit.c0 RepFit.c1 RepFit.c2
-attribute [rep_rule] RepEffArm.c0 RepBound.c0 RepFlDiv.c0 RepArgsBound.c0
+attribute [rep_rule] RepEffArm.c0 RepWildSplit.c0 RepBound.c0 RepFlDiv.c0 RepArgsBound.c0
 
 @[pure_rule] theorem ty0_typeId : ty0.typeId = 1 := rfl
 @[pure_rule] theorem ty1_typeId : ty1.typeId = 0 := rfl
@@ -1195,12 +1199,14 @@ attribute [rep_rule] RepEffArm.c0 RepBound.c0 RepFlDiv.c0 RepArgsBound.c0
 @[pure_rule] theorem ty347_typeId : ty347.typeId = 287 := rfl
 @[pure_rule] theorem ty348_typeId : ty348.typeId = 292 := rfl
 @[pure_rule] theorem ty349_typeId : ty349.typeId = 291 := rfl
+@[pure_rule] theorem ty350_typeId : ty350.typeId = 294 := rfl
 @[pure_rule] theorem ty351_typeId : ty351.typeId = 293 := rfl
-@[pure_rule] theorem ty353_typeId : ty353.typeId = 294 := rfl
-@[pure_rule] theorem ty354_typeId : ty354.typeId = 296 := rfl
-@[pure_rule] theorem ty355_typeId : ty355.typeId = 295 := rfl
-@[pure_rule] theorem ty356_typeId : ty356.typeId = 297 := rfl
-@[pure_rule] theorem ty357_typeId : ty357.typeId = 298 := rfl
-@[pure_rule] theorem ty360_typeId : ty360.typeId = 299 := rfl
+@[pure_rule] theorem ty353_typeId : ty353.typeId = 295 := rfl
+@[pure_rule] theorem ty355_typeId : ty355.typeId = 296 := rfl
+@[pure_rule] theorem ty356_typeId : ty356.typeId = 298 := rfl
+@[pure_rule] theorem ty357_typeId : ty357.typeId = 297 := rfl
+@[pure_rule] theorem ty358_typeId : ty358.typeId = 299 := rfl
+@[pure_rule] theorem ty359_typeId : ty359.typeId = 300 := rfl
+@[pure_rule] theorem ty362_typeId : ty362.typeId = 301 := rfl
 
 end Lanius.Faithful.SelfRep

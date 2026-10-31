@@ -1241,3 +1241,53 @@ reference. In that order of need:
    Stores below the frame pointer (the bump heap, a callee's own frame) and
    Core writes to other cells keep it (`FrameCorr.congr`); a store through a
    reference changes Core's cell at the path and the words together.
+
+## Wildcard match arms (decided 10-31, F11)
+
+A last arm `_ -> value` (a plain one-segment pattern spelled `_`) is the arm
+of every variant that no other arm names, in a match expression, a match
+statement with block arms and a let's match (`arms_in_order`,
+`ArmsOrder`). The front end reads it as the arm `V(_, ...) -> value` for
+each such variant V, in variant order (`wild_arm_for`: the wildcard's tree
+with its one segment spelled V and one binder per payload field), so the
+arms after it are read as before.
+
+- laniusc runs the first arm that matches, so an arm after a wildcard never
+  runs. The front end reads a wildcard only as the last arm; a wildcard
+  before another arm is not read (case reject_wild_first). laniusc accepts
+  it, so this is a reading the front end leaves out, not one that differs.
+- Every other arm must name a variant, and no variant may be named twice,
+  as without a wildcard. A wildcard after arms naming every variant stands
+  for none, so its value would not be read at all; the front end rejects it
+  (`uses_wild`; case reject_wild_unused), which laniusc accepts.
+- The compiler binds every payload field of an arm (`arm_scope`), so the
+  wildcard binds each field of V's payload, field i to the id of the `_`
+  token's position plus i, named `_`, which no expression can spell. The
+  ids are checked fresh like any binder's. The value is read once per
+  variant it stands for. A match statement's arm still binds at most one
+  value (`arm_binder`), so there a wildcard for a variant of two or more
+  fields is not read, as an arm naming it would not be. A
+  wildcard with a block value in a match statement is the same block in
+  each variant's arm; its lets bind the same local ids in branches that
+  exclude each other, which Core's scoped lets and the lowering allow.
+- Determinism: an arm another arm names is the same arm in any reading
+  (it names one variant, and variant names are distinct), and the wildcard
+  as V's arm names V only (`armsOrder_unique`).
+- A let's match with block arms still needs exactly one value arm as
+  written; a wildcard value arm then copies the statements after the let
+  into each variant it stands for.
+
+## Oracle comparisons of laniusc's programs and `extended/` (decided 10-31, F11)
+
+- Traps agree as traps: laniusc's checked traps exit 101 (bounds), 102
+  (shift), 103 (division by zero) and 104 (signed overflow), or end with
+  SIGILL or SIGFPE; the verified compiler's traps end with SIGFPE or SIGILL.
+  The programs oracle counts a run as agreeing when both trap with the same
+  output, as Core does not tell the traps apart in a program's result.
+- A program whose resources differ by design is listed as known, not as
+  agreeing: `raw_host_width_admission` asks the host for 4 GiB, which
+  laniusc's mmap gives and Core's heap budget (64 MiB) refuses with a trap.
+- Programs read their imports from `extended/` and from their own
+  directory (`--source-root`, more than once); the stdlib oracle's `--root
+  DIR` adds such a root and makes its modules the targets, which is the
+  full-tier gate step `extended`.

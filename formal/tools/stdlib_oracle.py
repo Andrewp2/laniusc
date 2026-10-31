@@ -74,6 +74,9 @@ import oracle_difftest as oracle  # noqa: E402
 import run_cache  # noqa: E402
 
 STDLIB = 'stdlib'
+# Source roots besides the stdlib (--root): laniusc's --source-root.
+SOURCE_ROOTS = []
+SRC_DUMP = 'formal/.lake/build/bin/srcDump'
 HEAVY = 'target/claude-work/bin/heavy'
 SCALARS = ('i32', 'bool', 'u8', 'u16', 'u32', 'u64', 'usize', 'isize', 'i8', 'i16', 'i64', 'char', 'f32', 'f64')
 WIDE = ('u64', 'usize', 'isize', 'i64')
@@ -282,9 +285,10 @@ class Module:
             i += 1
 
 
-def load_modules():
+def load_modules(top=None):
+    """The modules below top (default STDLIB, read when called), by name."""
     mods = {}
-    for root, _, names in os.walk(STDLIB):
+    for root, _, names in os.walk(top or STDLIB):
         for name in sorted(names):
             if name.endswith('.lani'):
                 m = Module(os.path.join(root, name))
@@ -688,8 +692,8 @@ def capture_tree(laniusc, lani_path, workdir, index):
     env = dict(os.environ, LANIUS_DEBUG_CAPTURE_PASS='parser/tree/parent_parallel', LANIUS_DEBUG_CAPTURE_DIR=cap,
                LANIUS_DEBUG_CAPTURE_INDEX=str(index))
     shutil.rmtree(cap, ignore_errors=True)
-    subprocess.run([HEAVY, '-t', '10', laniusc, '--stdlib-root', STDLIB, '-o', os.path.join(workdir, 'a.out'),
-                    lani_path], env=env, capture_output=True, text=True)
+    subprocess.run([HEAVY, '-t', '10', laniusc, '--stdlib-root', STDLIB, *source_root_args(SOURCE_ROOTS), '-o',
+                    os.path.join(workdir, 'a.out'), lani_path], env=env, capture_output=True, text=True)
     status = os.path.join(cap, 'post', '002_tree_count_status.bin')
     if not os.path.exists(status):
         return None
@@ -843,7 +847,11 @@ def parse_checked(laniusc, base, workdir):
 
 
 def build_run_all():
-    """Build runAll (a no-op when it is current)."""
+    """Build runAll (a no-op when it is current). Skipped when LANIUS_BUILT
+    is set (gate.py sets it after its own build), so that a step does not
+    wait on another build's hold of the Lean lock."""
+    if os.environ.get('LANIUS_BUILT'):
+        return
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
         subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
@@ -1168,6 +1176,51 @@ def causes(mods, t, find=None):
     return out
 
 
+# The gap a srcDump reason shows (its source snippet, by the first pattern that
+# matches), and which roadmap step owns it.
+GAPS = [
+    ('references (&T), F6', r'& (mut )?[\w\[]|&self'),
+    ('str and string literals, F6', r'\bstr\b|"'),
+    ('arrays, slices and raw views, F6', r'\[ [\w:<> ]+ (; [\w:]+ )?\]|i32_array_data_ptr|slice_from_raw_parts|string_data|\w \[ '),
+    ('host externs (process, time, random, files, syscall6), F8',
+     r'std::(process|time|random\w*|linux|fs|file\w*|env|socket|signal|command\w*|clock|resolve)::|extern'),
+    ('floats, F9', r'\bf(32|64)\b'),
+    ('the print builtin', r'(^|[^\w:.])print \('),
+    ('patterns other than V or V(names): nested, literal or module-qualified',
+     r'\b[a-z]\w*::\w+::[A-Z]\w* (\( [^)]*\) )?->|[A-Z]\w* \( [\w:]*[A-Z]\w* \( |[{,] (-?\d+|true|false) ->'),
+    ('a method or field of a call result', r'\) \. \w+'),
+    ('a bound that does not hold', r'a bound that does not hold'),
+]
+
+
+def gap(reason):
+    text = reason.replace(' : : ', '::')
+    if reason.startswith('compileSource: '):
+        return 'read, but compileSource fails: ' + re.sub(r'\d+', 'N', text.split(': ', 1)[1].split(':')[0])
+    for label, pattern in GAPS:
+        if re.search(pattern, text):
+            return label
+    if reason.startswith('the first file') or reason.startswith('the declarations'):
+        return 'declarations: ' + text.split(': ', 1)[-1][:80]
+    return 'other: ' + text.split(': ', 1)[-1][:100]
+
+
+def why(base_files, workdir, k):
+    """srcDump's reason the front end rejects the files."""
+    manifest = os.path.join(workdir, f'why{k}.txt')
+    open(manifest, 'w').write(f'p{k} ' + ' '.join(base_files) + '\n')
+    out = subprocess.run([SRC_DUMP, manifest, os.path.join(workdir, f'why{k}.out'), 'Why'], capture_output=True,
+                         text=True, timeout=60)
+    text = (out.stdout + out.stderr).strip().split('\n')[-1]
+    if out.returncode == 0:
+        # The front end reads them: runAll's diag says where compileSource fails.
+        open(manifest, 'w').write(f'diag p{k} ' + ' '.join(base_files) + '\n')
+        diag = subprocess.run([RUN_ALL, manifest], capture_output=True, text=True, timeout=60).stdout.split('\n')
+        fails = [line.split(' ', 1)[1] for line in diag if line and ' funcs ' not in line]
+        return 'compileSource: ' + (fails[0][:150] if fails else 'no diagnosis')
+    return re.sub(r'^the front end rejects the files: ', '', text)
+
+
 # ---------------------------------------------------------------- main
 
 def main():
@@ -1180,10 +1233,17 @@ def main():
     parser.add_argument('--chunk', type=int, default=40)
     parser.add_argument('--laniusc', default='target/release/laniusc')
     parser.add_argument('--shard', default='0/1', help='k/n: every nth target from the kth')
+    parser.add_argument('--root', help='a source root (extended) whose modules are the targets, by default all of them')
+    parser.add_argument('--why', action='store_true', help="srcDump's reason for each unread target, in unread.txt")
     args = parser.parse_args()
     rng = random.Random(args.seed)
     mods = load_modules()
     wanted = set(args.modules.split(',')) if args.modules else None
+    if args.root:
+        SOURCE_ROOTS.append(args.root)
+        extra = load_modules(args.root)
+        mods.update({n: m for n, m in extra.items() if n not in mods})
+        wanted = wanted or set(extra)
     all_targets = targets(mods, wanted)
     shard, shards = (int(x) for x in args.shard.split('/'))
     all_targets = all_targets[shard::shards]
@@ -1238,6 +1298,7 @@ def main():
         if not all(b in good for b in bases):
             p['status'] = 'noparse'
             continue
+        p['bases'] = bases
         manifest.append(f'compile p{k} ' + ' '.join(bases))
     open(os.path.join(workdir, 'manifest.txt'), 'w').write('\n'.join(manifest) + '\n')
     run = subprocess.run([RUN_ALL, os.path.join(workdir, 'manifest.txt')], capture_output=True, text=True)
@@ -1326,7 +1387,7 @@ def main():
     print(f'time: parse {parse_s:.0f} s, runAll {compile_s:.0f} s, native {native_s:.0f} s, '
           f'laniusc {time.time() - began - parse_s - compile_s - native_s:.0f} s',
           file=sys.stderr)
-    report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps)
+    report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps, args.why)
     return 1 if disagreements else 0
 
 
@@ -1379,11 +1440,18 @@ def harness_text(chunk, start, single=False):
     return '\n'.join(out) + '\n'
 
 
-def build(args, workdir, name, text):
-    """laniusc's binary of a harness (cached), or None and its error output."""
+def source_root_args(roots):
+    return [a for r in roots for a in ('--source-root', r)]
+
+
+def build(args, workdir, name, text, roots=None):
+    """laniusc's binary of a harness (cached), or None and its error output;
+    roots are source roots besides the stdlib (default SOURCE_ROOTS)."""
+    roots = SOURCE_ROOTS if roots is None else roots
     lani_path = os.path.join(workdir, name + '.lani')
     open(lani_path, 'w').write(text)
-    k = run_cache.key(run_cache.file_digest(args.laniusc), run_cache.tree_digest(STDLIB), text)
+    k = run_cache.key(run_cache.file_digest(args.laniusc), run_cache.tree_digest(STDLIB), text,
+                      *(run_cache.tree_digest(r) for r in roots))
     hit = run_cache.load_file('build', k)
     if hit is not None:
         return hit, ''
@@ -1391,7 +1459,8 @@ def build(args, workdir, name, text):
     if os.path.exists(exe):
         os.remove(exe)
     built = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                            HEAVY, '-t', '20', args.laniusc, '--stdlib-root', STDLIB, '-o', exe, lani_path],
+                            HEAVY, '-t', '20', args.laniusc, '--stdlib-root', STDLIB,
+                            *source_root_args(roots), '-o', exe, lani_path],
                            capture_output=True, text=True)
     if built.returncode != 0 or not os.path.exists(exe):
         return None, built.stdout[-2000:] + built.stderr[-2000:]
@@ -1459,7 +1528,7 @@ def category(cause):
     return c
 
 
-def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps):
+def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_total, traps, with_why=False):
     by_target = {}
     for p in programs:
         by_target.setdefault(p['target'].label, []).append(p)
@@ -1476,6 +1545,7 @@ def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_to
         states.setdefault(s, []).append(t)
     unread_lines = []
     reason_counts = {}
+    gaps = {}
     for s in ('unread', 'tree', 'nolex', 'noparse', 'uncompiled'):
         for t in states.get(s, []):
             cs = causes(mods, t, compile_constructs if s == 'uncompiled' else constructs) \
@@ -1485,8 +1555,14 @@ def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_to
                 key = ('compileSource: ' if s == 'uncompiled' else '') + kind
                 if s in ('unread', 'uncompiled'):
                     reason_counts[key] = reason_counts.get(key, 0) + 1
-            unread_lines.append(f'{t.label} [{s}]: ' + ('; '.join(dict.fromkeys(cs)) if cs else
-                                                        ('no known cause' if s in ('unread', 'uncompiled') else s)))
+            line = f'{t.label} [{s}]: ' + ('; '.join(dict.fromkeys(cs)) if cs else
+                                           ('no known cause' if s in ('unread', 'uncompiled') else s))
+            if with_why and s == 'unread':
+                p = by_target[t.label][0]
+                r = why(p['bases'], workdir, os.path.basename(p['base']))
+                gaps[gap(r)] = gaps.get(gap(r), 0) + 1
+                line += f'\n    srcDump: {r}'
+            unread_lines.append(line)
     modules = sorted({t.module for t in all_targets})
     per_module = []
     for m in modules:
@@ -1507,6 +1583,9 @@ def report(workdir, mods, all_targets, programs, disagreements, agreed, calls_to
         f'each checked to stop laniusc\'s binary too',
         f'{len(disagreements)} disagreements',
     ]
+    if with_why:
+        summary[-1:-1] = ['unread, by the gap srcDump names (GAPS):'] + \
+            [f'  {n} {r}' for r, n in sorted(gaps.items(), key=lambda x: (-x[1], x[0]))]
     for d in disagreements:
         print(d)
     open(os.path.join(workdir, 'summary.txt'), 'w').write('\n'.join(summary + disagreements) + '\n')

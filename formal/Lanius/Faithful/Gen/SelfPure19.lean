@@ -376,15 +376,15 @@ theorem pure1993 : PureFunc prog prims outside src1993 = true :=
 theorem pure1994 : PureFunc prog prims outside src1994 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::length<mini::selfhost::CTree> -/
+/-- mini::selfhost::wild_split -/
 theorem pure1995 : PureFunc prog prims outside src1995 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::length<mini::selfhost::VariantTy> -/
+/-- mini::selfhost::wild_order -/
 theorem pure1996 : PureFunc prog prims outside src1996 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arms_by_variant -/
+/-- mini::selfhost::arms_exact -/
 theorem pure1997 : PureFunc prog prims outside src1997 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
