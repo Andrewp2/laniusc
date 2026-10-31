@@ -114,6 +114,16 @@ theorem stmt_ends (sp : SrcProgram) :
   | returnUnit => obtain ⟨rfl, -⟩ := returnUnit_inv run; trivial
   | «break» => simp [SrcStmt.breaksOut] at inside
   | «continue» => simp [SrcStmt.breaksOut] at inside
+  | matchArm scrutinee enumId variant binds binder ty body rest =>
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at inside
+    obtain ⟨j, s1, x, rfl, -, brun⟩ := if_inv run
+    cases x
+    · exact ih j (Nat.lt_succ_self j) (s := rest) inside.2 brun
+    · simp only [↓reduceIte] at brun
+      split at brun
+      · obtain ⟨j', v, s2, s3, rfl, -, brun', -⟩ := letLocal_inv brun
+        exact ih j' (by omega) inside.1 brun'
+      · exact ih j (Nat.lt_succ_self j) (s := body) inside.1 brun
 
 /-! ## Definitions -/
 

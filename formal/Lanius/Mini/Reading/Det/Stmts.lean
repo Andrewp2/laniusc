@@ -370,6 +370,23 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
     cases h₂ with
     | assign _ a' => exact assignR_unique nd vn a a'
     | _ => prod_clash
+  | _, _, _, .forRange _ _ _ _ _ _ _ _ _ _ fx ln il bb fr, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => blockR_unique bb (idsFresh_cons nd fx) vn (b := y) k'
+    cases h₂ with
+    | forRange _ _ _ _ _ _ _ _ _ _ _ ln' il' bb' fr' =>
+      obtain ⟨_, f⟩ := ln
+      obtain ⟨_, f'⟩ := ln'
+      cases (firstWith_unique f f').2
+      cases intLiteral_unique il il'
+      cases ih bb'
+      rw [fr'] at fr
+      exact (Option.some.inj fr).symm
+    | _ => prod_clash
+  | _, _, _, .block _ bb, nd, vn, _, h₂ => by
+    have ih := fun {y} k' => blockR_unique bb nd vn (b := y) k'
+    cases h₂ with
+    | block _ bb' => exact ih bb'
+    | _ => prod_clash
 termination_by structural _ _ _ h _ _ _ _ => h
 end
 

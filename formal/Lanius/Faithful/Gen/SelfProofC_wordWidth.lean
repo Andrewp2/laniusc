@@ -51,13 +51,13 @@ theorem proof_declared_variants {prog : SrcProgram} {prims : Prims} {ix_declared
   simp only [src_declared_variants] at h
   faithful [Lanius.Mini.declaredVariants]
 
-theorem step_word_type {prog : SrcProgram} {prims : Prims} {ix_word_type ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_struct_fields ix_enum_variants ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_declared_same ix_word_types ix_declared_variants ix_word_variants : Nat} (fn : prog.funcs[ix_word_type]? = some (src_word_type ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_struct_fields ix_enum_variants ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_declared_same ix_word_types ix_declared_variants ix_word_variants)) (np : prims.isPrim ix_word_type = false)
+theorem step_word_type {prog : SrcProgram} {prims : Prims} {ix_word_type ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_struct_fields ix_enum_variants ix_declared_same ix_word_types ix_declared_variants ix_word_variants : Nat} (fn : prog.funcs[ix_word_type]? = some (src_word_type ix_sizes ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_struct_fields ix_enum_variants ix_declared_same ix_word_types ix_declared_variants ix_word_variants)) (np : prims.isPrim ix_word_type = false)
     (ext_sizes : Certified (∀ {n : Nat}, Stmt_sizes prog prims ix_sizes n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_List_mini_selfhost_SrcType n))
+    (ext_length_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_length_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_struct_fields : Certified (∀ {n : Nat}, Stmt_struct_fields prog prims ix_struct_fields n))
     (ext_enum_variants : Certified (∀ {n : Nat}, Stmt_enum_variants prog prims ix_enum_variants n))
-    (ext_length_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_length_of_mini_selfhost_List_mini_selfhost_SrcType n))
     (ext_declared_same : Certified (∀ {n : Nat}, Stmt_declared_same prog prims ix_declared_same n))
     (ext_declared_variants : Certified (∀ {n : Nat}, Stmt_declared_variants prog prims ix_declared_variants n)) {n : Nat}
     (ih_word_types : Certified (Stmt_word_types prog prims ix_word_types n))

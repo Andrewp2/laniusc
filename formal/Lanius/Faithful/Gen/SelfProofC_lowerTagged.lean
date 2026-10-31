@@ -39,10 +39,10 @@ theorem proof_lower_enum_value {prog : SrcProgram} {prims : Prims} {ix_lower_enu
   simp only [src_lower_enum_value] at h
   faithful [Lanius.Mini.lowerEnumValue]
 
-theorem proof_lower_tagged {prog : SrcProgram} {prims : Prims} {ix_lower_tagged ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_lower_variant ix_get_of_mini_selfhost_List_mini_selfhost_SrcType : Nat} (fn : prog.funcs[ix_lower_tagged]? = some (src_lower_tagged ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_lower_variant ix_get_of_mini_selfhost_List_mini_selfhost_SrcType)) (np : prims.isPrim ix_lower_tagged = false)
+theorem proof_lower_tagged {prog : SrcProgram} {prims : Prims} {ix_lower_tagged ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_get_of_mini_selfhost_List_mini_selfhost_SrcType ix_lower_variant : Nat} (fn : prog.funcs[ix_lower_tagged]? = some (src_lower_tagged ix_length_of_mini_selfhost_List_mini_selfhost_SrcType ix_get_of_mini_selfhost_List_mini_selfhost_SrcType ix_lower_variant)) (np : prims.isPrim ix_lower_tagged = false)
     (ext_length_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_length_of_mini_selfhost_List_mini_selfhost_SrcType n))
-    (ext_lower_variant : Certified (∀ {n : Nat}, Stmt_lower_variant prog prims ix_lower_variant n))
-    (ext_get_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_get_of_mini_selfhost_List_mini_selfhost_SrcType n)) {n : Nat} :
+    (ext_get_of_mini_selfhost_List_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_List_mini_selfhost_SrcType prog prims ix_get_of_mini_selfhost_List_mini_selfhost_SrcType n))
+    (ext_lower_variant : Certified (∀ {n : Nat}, Stmt_lower_variant prog prims ix_lower_variant n)) {n : Nat} :
     Stmt_lower_tagged prog prims ix_lower_tagged n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n

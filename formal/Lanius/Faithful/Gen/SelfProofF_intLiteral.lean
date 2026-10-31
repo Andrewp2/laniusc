@@ -129,14 +129,14 @@ theorem proof_int_literal {prog : SrcProgram} {prims : Prims} {ix_int_literal ix
   simp only [src_int_literal] at h
   faithful [Lanius.Mini.intLiteral]
 
-theorem proof_local_of {prog : SrcProgram} {prims : Prims} {ix_local_of ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_ident_plain ix_path_name ix_find_local ix_text_self : Nat} (fn : prog.funcs[ix_local_of]? = some (src_local_of ix_node_prod ix_kid ix_p_ident ix_p_self_value ix_p_ident_plain ix_path_name ix_find_local ix_text_self)) (np : prims.isPrim ix_local_of = false)
+theorem proof_local_of {prog : SrcProgram} {prims : Prims} {ix_local_of ix_node_prod ix_kid ix_find_local ix_p_ident ix_p_self_value ix_p_ident_plain ix_path_name ix_text_self : Nat} (fn : prog.funcs[ix_local_of]? = some (src_local_of ix_node_prod ix_kid ix_find_local ix_p_ident ix_p_self_value ix_p_ident_plain ix_path_name ix_text_self)) (np : prims.isPrim ix_local_of = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_find_local : Certified (∀ {n : Nat}, Stmt_find_local prog prims ix_find_local n))
     (ext_p_ident : Certified (∀ {n : Nat}, Stmt_p_ident prog prims ix_p_ident n))
     (ext_p_self_value : Certified (∀ {n : Nat}, Stmt_p_self_value prog prims ix_p_self_value n))
     (ext_p_ident_plain : Certified (∀ {n : Nat}, Stmt_p_ident_plain prog prims ix_p_ident_plain n))
     (ext_path_name : Certified (∀ {n : Nat}, Stmt_path_name prog prims ix_path_name n))
-    (ext_find_local : Certified (∀ {n : Nat}, Stmt_find_local prog prims ix_find_local n))
     (ext_text_self : Certified (∀ {n : Nat}, Stmt_text_self prog prims ix_text_self n)) {n : Nat} :
     Stmt_local_of prog prims ix_local_of n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2

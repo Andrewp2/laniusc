@@ -219,6 +219,13 @@ theorem returns_noNext : ∀ (s : SrcStmt), s.returns = true → NoNext P s.toCo
   | .assert _, h => by simp [SrcStmt.returns] at h
   | .break, h => by simp [SrcStmt.returns] at h
   | .continue, h => by simp [SrcStmt.returns] at h
+  | .matchArm _ _ _ _ _ ty body rest, h => by
+    simp only [SrcStmt.returns, Bool.and_eq_true] at h
+    simp only [SrcStmt.toCore]
+    refine NoNext.ite ?_ (returns_noNext rest h.2)
+    split
+    · exact NoNext.letLocal (returns_noNext body h.1)
+    · exact returns_noNext body h.1
 
 /-- A run that completes does not break or continue out of the statement. -/
 abbrev NoEscape (P : Core.Program) (s : Core.Stmt) : Prop :=
@@ -375,6 +382,13 @@ theorem breaksOut_noEscape : ∀ (s : SrcStmt), s.breaksOut = false → NoEscape
   | .assert _, _ => NoEscape.expression
   | .break, h => by simp [SrcStmt.breaksOut] at h
   | .continue, h => by simp [SrcStmt.breaksOut] at h
+  | .matchArm _ _ _ _ _ ty body rest, h => by
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at h
+    simp only [SrcStmt.toCore]
+    refine NoEscape.ite ?_ (breaksOut_noEscape rest h.2)
+    split
+    · exact NoEscape.letLocal (breaksOut_noEscape body h.1)
+    · exact breaksOut_noEscape body h.1
 
 end Returns
 
@@ -1475,6 +1489,116 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
       (env' := env.setFrom next xs) (fr.agree fun j below => setFrom_outside xs next env j (.inl below))
       (flat.store insens) hc1 (by rw [heap1]; exact within) (fails.letBody matchRun)
     exact ⟨_, Stops.after (mexec 0) stops⟩
+
+
+theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {ty : SrcType} {body rest : SrcStmt}
+    (ih1 : SrcStops sp mp n body) (ih2 : SrcStops sp mp n rest) :
+    SrcStops sp mp n (.matchArm scrutinee enumId variant binds binder ty body rest) := by
+  intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
+  obtain ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, few, payloadOk, bodyOk, restOk, rfl⟩ :=
+    matchArm_lower_inv ok
+  have bmem := (lookup_mem found).1
+  have variantLt : variant < variants.length := (List.getElem?_eq_some_iff.mp fieldsFound).1
+  have fieldsMem : fields ∈ variants := List.mem_of_getElem? fieldsFound
+  have room : b.slot + 1 + sizes fields ≤ next := by
+    have bound := sizes_le_maxSize_of_mem fieldsMem
+    have := fr.slots b bmem
+    rw [hty] at this
+    simp only [SrcType.size] at this
+    omega
+  have clear : ∀ b' ∈ scope, b'.slot < b.slot + 1 ∨ b.slot + 1 + sizes fields ≤ b'.slot := by
+    intro b' mem'
+    have bound := sizes_le_maxSize_of_mem fieldsMem
+    by_cases same : b' = b
+    · subst same
+      omega
+    · rcases fr.apart b' mem' b bmem same with h | h
+      · have := fr.sized b' mem'
+        omega
+      · rw [hty] at h
+        simp only [SrcType.size] at h
+        omega
+  have shape := armPayload_shape payloadOk
+  obtain ⟨w, entry, holdsW⟩ := corr.values b bmem
+  have localRun : ∀ k, evalExpr (k + 1) sp.toCore st (.local scrutinee) = .done w st := fun k => by
+    simp only [evalExpr, corr.cellId, found, Option.map_some, entry]
+  rw [hty] at holdsW
+  cases holdsW with
+  | @enum _ _ kv fs pvs _ _ fsFound tag payload =>
+  have kvLt : kv < variants.length := (List.getElem?_eq_some_iff.mp fsFound).1
+  have fits : variant = kv →
+      (Semantics.matchPatterns (if binds then [.wildcard] else []) pvs).isSome = true := by
+    intro hk
+    subst hk
+    have same : fs = fields := by simpa [fsFound] using fieldsFound
+    subst same
+    rcases shape with ⟨u, rfl, _⟩ | ⟨u, _, s', scopeOk, _⟩
+    · cases payload
+      simp [u, Semantics.matchPatterns]
+    · obtain ⟨_, _, _, _, blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+      rcases pvs with _ | ⟨pv, _ | ⟨pv', more⟩⟩
+      · simp at blen
+      · simp [u, Semantics.matchPatterns, Semantics.matchPattern]
+      · simp at blen
+  simp only [SrcStmt.toCore] at fails
+  generalize hpats : (if binds then [Core.Pattern.wildcard] else []) = pats at fails fits
+  generalize hthen : (if binds then .letLocal binder ty.toCore
+    (.matchValue (.local scrutinee) [(.enumVariant enumId variant [.bind binder], .local binder)]) body.toCore
+    else body.toCore) = T
+    at fails
+  have noBinds : ∀ bs, Semantics.matchPatterns pats pvs = some bs → bs = [] := by
+    intro bs m
+    rw [← hpats] at m
+    split at m <;> rcases pvs with _ | ⟨v, _ | ⟨v', more⟩⟩ <;>
+      simp [Semantics.matchPatterns, Semantics.matchPattern] at m <;> simp_all
+  have differ : variant ≠ kv → BitVec.ofNat 64 kv ≠ BitVec.ofNat 64 variant := fun hk =>
+    ofNat_ne (Nat.lt_trans kvLt (by omega)) (Nat.lt_trans variantLt (by omega)) (Ne.symm hk)
+  obtain ⟨r, testRun⟩ := armTest_done localRun noBinds (variant := variant) 0
+  obtain ⟨-, picked, either⟩ := armTest_run localRun noBinds testRun
+  rcases either with rfl | rfl
+  · have branch := fails.ifBranch testRun
+    simp only [↓reduceIte] at branch
+    obtain ⟨rfl, _⟩ := picked.mp rfl
+    have same : fs = fields := by simpa [fsFound] using fieldsFound
+    subst same
+    have test : (Expr.compare Word.u64 CmpOp.eq (Expr.var b.slot) (Expr.lit (BitVec.ofNat 64 variant))).eval env ≠ 0 := by
+      simp [Expr.eval, Word.holds, CmpOp.holdsU, tag]
+    rcases shape with ⟨u, rfl, rfl⟩ | ⟨u, sized, s', scopeOk, valueOk⟩
+    · simp only [u, Bool.false_eq_true, ↓reduceIte] at hthen
+      subst hthen
+      simp only [armBodyScope, u, Bool.not_false, ↓reduceIte] at bodyOk
+      obtain ⟨d, stops⟩ := ih1 bodyOk corr (fr.mono (Nat.le_add_right _ _)) fresh le hc within branch
+      exact ⟨d, .ifTrue test stops⟩
+    · simp only [u, ↓reduceIte] at hthen
+      subst hthen
+      simp only [armBodyScope, u, Bool.not_true, Bool.false_eq_true, ↓reduceIte] at bodyOk
+      obtain ⟨frame', corr', fresh', keeps', blen⟩ := armScope_corr [binder] scopeOk payload clear corr fresh
+      obtain ⟨pv, rfl⟩ : ∃ pv, pvs = [pv] := by
+        rcases pvs with _ | ⟨pv, _ | ⟨pv', more⟩⟩
+        · simp at blen
+        · exact ⟨pv, rfl⟩
+        · simp at blen
+      obtain ⟨k, v', bindRun⟩ := lowerValue_progress corr' (SrcProgram.target_toCore sp) valueOk
+        (by simp [SrcExpr.guard, Expr.eval])
+      obtain ⟨-, flat, vshape⟩ := lowerValue_sound corr' (SrcProgram.target_toCore sp) valueOk bindRun
+      have initRun := armBind_run localRun (binder := binder) bindRun
+      have fails' := branch.letBody initRun
+      have slots' := armScope_slots [binder] scopeOk fr.slots room
+      have insens : Insens vs next := Insens.below fun x mem => vshape.below slots' x mem
+      have keeps1 := keeps'.trans (restore_keeps st.nextCell st _)
+      have corr1 := corr.keeps fresh keeps1 rfl
+      obtain ⟨d, stops⟩ := let_stops ih1 bodyOk corr1 fr (restore_fresh fresh') (Nat.le_trans le keeps1.next)
+        sized (env' := env.setFrom next vs) (fr.agree fun j below => setFrom_outside vs next env j (.inl below))
+        (flat.store insens) (by rw [restore_heap, (bindLocals_same _ st).1]; exact hc)
+        (by rw [restore_heap, (bindLocals_same _ st).1]; exact within) fails'
+      exact ⟨d, .ifTrue test (Stops.assignFrom vs next stops)⟩
+  · have branch := fails.ifBranch testRun
+    simp only [Bool.false_eq_true, ↓reduceIte] at branch
+    have hk : variant ≠ kv := fun hk => by
+      have := picked.mpr ⟨hk, fits hk⟩
+      simp at this
+    obtain ⟨d, stops⟩ := ih2 restOk corr fr fresh le hc within branch
+    exact ⟨d, .ifFalse (by simp [Expr.eval, Word.holds, CmpOp.holdsU, tag, differ hk]) stops⟩
 
 
 theorem stops_letAlloc {id shift : Nat} {size : SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp n body) :

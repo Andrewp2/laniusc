@@ -37,7 +37,8 @@ import all Lanius.Mini.Compiler.P.copyBinding
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
@@ -492,5 +493,82 @@ theorem Exec.thenCheck_returned {prog : Program} {d : Nat} {env : Env} {hp hp' :
   split
   · exact exec
   · exact .seqReturned exec
+
+/-- A match arm statement's payload: nothing for a variant with no payload,
+else one field that takes slots, which the binder copies. -/
+theorem armPayload_shape {scope : List Binding} {slot : Nat} {fields : List SrcType} {binds : Bool}
+    {binder : Nat} {ty : SrcType} {vs : List Expr} (h : armPayload scope slot fields binds binder ty = some vs) :
+    (binds = false ∧ fields = [] ∧ vs = []) ∨
+      (binds = true ∧ 0 < ty.size ∧ ∃ s', armScope [binder] fields (slot + 1) scope = some s' ∧
+        lowerValue s' (.local binder) ty = some vs) := by
+  cases fields with
+  | nil =>
+    simp only [armPayload, unitPayload] at h
+    split at h
+    · rename_i u
+      simp only [Option.some.injEq] at h
+      exact .inl ⟨by simpa using u, rfl, h.symm⟩
+    · simp at h
+  | cons f more =>
+    simp only [armPayload, fieldPayload] at h
+    split at h
+    · rename_i cnd
+      simp only [lowerArmValue] at h
+      split at h
+      · simp at h
+      rename_i s' scopeOk
+      have cnd' : binds = true ∧ 0 < ty.size := by simpa using cnd
+      exact .inr ⟨cnd'.1, cnd'.2, s', scopeOk, h⟩
+    · simp at h
+
+/-- What lowering a match arm statement checks, and what it emits. -/
+theorem matchArm_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {scope : List Binding}
+    {next scrutinee enumId variant binder : Nat} {binds : Bool} {ty : SrcType} {body rest : SrcStmt}
+    {stmt : Stmt} (ok : (SrcStmt.matchArm scrutinee enumId variant binds binder ty body rest).lower sigs decls ret scope next =
+      some stmt) :
+    ∃ b variants fields vs bstmt rstmt, lookup scope scrutinee = some b ∧ b.ty = .enum enumId variants ∧
+      variants[variant]? = some fields ∧ variants.length < 4294967296 ∧
+      armPayload scope b.slot fields binds binder ty = some vs ∧
+      body.lower sigs decls ret (armBodyScope binds binder ty next scope) (next + ty.size) = some bstmt ∧
+      rest.lower sigs decls ret scope next = some rstmt ∧
+      stmt = .ite (.compare .u64 .eq (.var b.slot) (.lit (BitVec.ofNat 64 variant)))
+        (assignFrom next vs bstmt) rstmt := by
+  simp only [SrcStmt.lower, lowerMatchArm] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  split at ok
+  · simp at ok
+  · simp at ok
+  · simp at ok
+  · simp at ok
+  case h_6 => simp at ok
+  case h_7 => simp at ok
+  case h_8 => simp at ok
+  case h_9 => simp at ok
+  case h_10 => simp at ok
+  case h_11 => simp at ok
+  rename_i eid variants hty
+  simp only [lowerArmFound] at ok
+  split at ok
+  · simp at ok
+  rename_i fields fieldsFound
+  simp only [lowerArmStmt] at ok
+  split at ok
+  · simp at ok
+  rename_i cond
+  split at ok
+  · simp at ok
+  rename_i vs payloadOk
+  split at ok
+  · simp at ok
+  rename_i bstmt bodyOk
+  split at ok
+  · simp at ok
+  rename_i rstmt restOk
+  simp only [Option.some.injEq] at ok
+  have cond' : eid = enumId ∧ variants.length < 4294967296 := by simpa using cond
+  obtain ⟨rfl, few⟩ := cond'
+  exact ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, few, payloadOk, bodyOk, restOk, ok.symm⟩
 
 end Lanius.Mini

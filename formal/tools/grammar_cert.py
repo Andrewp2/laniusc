@@ -28,8 +28,8 @@ B = 80
 MASK = (1 << B) - 1
 SHR, GT = 2, 1
 # Mirrors Unique.lean's `ruledOut` and the pair `picks` decides.
-RULED_OUT = {84, 298}
-PICKED_PAIR = (48, 49)
+RULED_OUT = {298}
+PICKED_PAIRS = {(48, 49), (84, 85)}
 
 
 def grammar():
@@ -149,7 +149,7 @@ def certificate():
     bad = []
     for i in allowed:
         for j in allowed:
-            if i < j and rules[i][0] == rules[j][0] and (i, j) != PICKED_PAIR:
+            if i < j and rules[i][0] == rules[j][0] and (i, j) not in PICKED_PAIRS:
                 a, r1, r2 = rules[i][0], rules[i][1], rules[j][1]
                 c = common_prefix(r1, r2)
                 if not apart(concat(seq(r1[c:]), follow[a]), concat(seq(r2[c:]), follow[a])):

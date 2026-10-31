@@ -213,6 +213,17 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .assert condition => .expression (.intrinsic .assert condition.toCore)
   | .break => .breakLoop
   | .continue => .continueLoop
+  | .matchArm scrutinee enumId variant binds binder ty body rest =>
+      .ifThenElse
+        (.matchValue (.local scrutinee)
+          [(.enumVariant enumId variant (if binds then [.wildcard] else []), .value (.boolean true)),
+           (.wildcard, .value (.boolean false))])
+        (if binds then
+          .letLocal binder ty.toCore
+            (.matchValue (.local scrutinee) [(.enumVariant enumId variant [.bind binder], .local binder)])
+            body.toCore
+        else body.toCore)
+        rest.toCore
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id

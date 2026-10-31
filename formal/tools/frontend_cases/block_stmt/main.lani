@@ -1,0 +1,20 @@
+fn scoped(n: i32) -> i32 {
+    let total: i32 = 0;
+    {
+        let twice: i32 = n * 2;
+        total = total + twice;
+    }
+    {
+        let twice: i32 = n * 3;
+        total = total + twice;
+    }
+    while (total < 100) {
+        {
+            total = total + 1;
+        }
+        if (total == 50) {
+            break;
+        }
+    }
+    return total;
+}

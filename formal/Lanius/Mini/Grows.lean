@@ -36,7 +36,8 @@ import all Lanius.Mini.Compiler.P.copyBinding
 import all Lanius.Mini.Compiler.P.lowerTagged
 import all Lanius.Mini.Compiler.P.armScope
 import all Lanius.Mini.Compiler.P.assignFrom
-import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
@@ -1210,6 +1211,54 @@ theorem matchValue_grows {P : Core.Program} {k : Nat} {st : State} {scrutinee id
       exact Grows.same this.1 this.2
     all_goals simp at run
 
+/-- Arms whose bodies leave the state as it was leave the heap as it was. -/
+theorem pureArms_same {P : Core.Program} {value : Value} : ∀ (arms : List (Core.Pattern × Core.Expr)),
+    (∀ a ∈ arms, ∀ {k : Nat} {st : State} {v : Value} {st' : State}, evalExpr k P st a.2 = .done v st' → st' = st) →
+    ∀ {k : Nat} {st : State} {v : Value} {st' : State},
+      Semantics.evalMatchArms k P st value arms = .done v st' →
+      st'.heap = st.heap ∧ st'.i32ArrayViews = st.i32ArrayViews
+  | [], _, k, st, v, st', run => by cases k <;> simp [Semantics.evalMatchArms] at run
+  | (pat, body) :: rest, pure, k, st, v, st', run => by
+    cases k with
+    | zero => simp [Semantics.evalMatchArms] at run
+    | succ k =>
+      simp only [Semantics.evalMatchArms] at run
+      split at run
+      · exact pureArms_same rest (fun a mem => pure a (List.mem_cons_of_mem _ mem)) run
+      · rename_i bindings _
+        cases armRun : evalExpr k P (st.bindLocals bindings) body with
+        | done w completed =>
+          simp only [armRun, Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+          obtain ⟨-, rfl⟩ := run
+          have := pure (pat, body) (List.mem_cons_self ..) armRun
+          subst this
+          exact bindLocals_same bindings st
+        | trapped => simp [armRun, Semantics.restoreOutcomeLocals] at run
+        | exited => simp [armRun, Semantics.restoreOutcomeLocals] at run
+        | outOfFuel => simp [armRun, Semantics.restoreOutcomeLocals] at run
+
+theorem matchPure_grows {P : Core.Program} {k : Nat} {st : State} {scrutinee : Nat}
+    {arms : List (Core.Pattern × Core.Expr)}
+    (pure : ∀ a ∈ arms, ∀ {k : Nat} {st : State} {v : Value} {st' : State}, evalExpr k P st a.2 = .done v st' → st' = st)
+    {v : Value} {st' : State} (run : evalExpr k P st (.matchValue (.local scrutinee) arms) = .done v st') :
+    Grows st st' := by
+  cases k with
+  | zero => simp [evalExpr] at run
+  | succ k =>
+    simp only [evalExpr] at run
+    split at run
+    · rename_i w next scrutineeRun
+      have := eval_local_state scrutineeRun
+      subst this
+      have := pureArms_same arms pure run
+      exact Grows.same this.1 this.2
+    all_goals simp at run
+
+theorem value_state {P : Core.Program} (x : Value) {k : Nat} {st : State} {v : Value} {st' : State}
+    (run : evalExpr k P st (.value x) = .done v st') : st' = st := by
+  cases k <;> simp [evalExpr] at run
+  exact run.2.symm
+
 /-- Making a raw slice leaves the state as it was. -/
 theorem sliceFrom_grows {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
     {pointer length : SrcExpr} {v : Value} {st' : State}
@@ -1570,6 +1619,45 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
       split at run
       · rename_i v next valueRun
         exact (matchValue_grows valueRun).trans (let_grows (fun r => below (s := body) r) run)
+      all_goals simp at run
+    | matchArm scrutinee enumId variant binds binder ty body rest =>
+      simp only [SrcStmt.toCore] at run
+      generalize hpats : (if binds then [Core.Pattern.wildcard] else []) = pats at run
+      generalize hthen : (if binds then .letLocal binder ty.toCore (.matchValue (.local scrutinee)
+        [(.enumVariant enumId variant [.bind binder], .local binder)]) body.toCore else body.toCore) = T at run
+      simp only [execStmt] at run
+      have testPure : ∀ a ∈ [(Core.Pattern.enumVariant enumId variant pats, Core.Expr.value (.boolean true)),
+          (Core.Pattern.wildcard, Core.Expr.value (.boolean false))],
+          ∀ {k : Nat} {st : State} {v : Value} {st' : State}, evalExpr k sp.toCore st a.2 = .done v st' → st' = st := by
+        intro a mem
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at mem
+        rcases mem with rfl | rfl
+        · exact value_state _
+        · exact value_state _
+      split at run
+      · rename_i next testRun
+        refine (matchPure_grows testPure testRun).trans ?_
+        rw [← hthen] at run
+        split at run
+        · cases f with
+          | zero => simp [execStmt] at run
+          | succ g =>
+            simp only [execStmt] at run
+            split at run
+            · rename_i v n2 initRun
+              have bindPure : ∀ a ∈ [(Core.Pattern.enumVariant enumId variant [.bind binder], Core.Expr.local binder)],
+                  ∀ {k : Nat} {st : State} {v : Value} {st' : State},
+                    evalExpr k sp.toCore st a.2 = .done v st' → st' = st := by
+                intro a mem
+                simp only [List.mem_cons, List.not_mem_nil, or_false] at mem
+                subst mem
+                exact fun r => eval_local_state r
+              exact (matchPure_grows bindPure initRun).trans
+                (let_grows (fun r => ihf g (Nat.lt_succ_self g) (s := body) r) run)
+            all_goals simp at run
+        · exact below (s := body) run
+      · rename_i next testRun
+        exact (matchPure_grows testPure testRun).trans (below (s := rest) run)
       all_goals simp at run
     | set id value =>
       simp only [SrcStmt.toCore, execStmt] at run

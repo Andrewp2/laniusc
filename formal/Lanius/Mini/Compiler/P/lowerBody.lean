@@ -202,6 +202,14 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
   | .assert condition => declareTypes (SrcEff.types condition) decls
   | .break => some decls
   | .continue => some decls
+  | .matchArm scrutinee enumId variant binds binder ty body rest =>
+    let after : Option SrcDecls := (let after : Option SrcDecls := SrcType.declare ty decls
+     match after with
+     | none => none
+     | some decls => SrcStmt.declare body decls)
+    match after with
+    | none => none
+    | some decls => SrcStmt.declare rest decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -238,6 +246,7 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .assert condition => false
   | .break => false
   | .continue => false
+  | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.returns body && SrcStmt.returns rest
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with

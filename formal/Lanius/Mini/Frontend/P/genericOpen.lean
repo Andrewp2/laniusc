@@ -20,17 +20,29 @@ def genericPathAt (tokens : List Token) : Bool :=
   | [] => false
   | t :: rest => genericOpen rest
 
-/-- Whether the validator accepts production prod for a node whose tokens begin with `tokens`: not a block statement or a method's type arguments (the subset has neither, and each makes the grammar ambiguous, as in `{ a } - b;` and `x.f < a > (b)`), and a path segment `x` or `x<...>` only as generic_path_at says. -/
+/-- Whether the tokens begin with `{`. -/
+def opensBlock (tokens : List Token) : Bool :=
+  match tokens with
+  | [] => false
+  | t :: rest => decide (t.kind = (22))
+
+/-- Whether the validator accepts production prod for a node whose tokens begin with `tokens`: not a method's type arguments (the subset has none, and they make the grammar ambiguous, as in `x.f < a > (b)`); a statement that begins with `{` is a block statement, never an expression statement (as in Rust: `{ a } - b;` is a block, then `-b;`); and a path segment `x` or `x<...>` only as generic_path_at says. -/
 def picks (prod : Nat) (tokens : List Token) : Bool :=
-  if decide (prod = (84)) || decide (prod = (298)) then
+  if prod = (298) then
     false
   else
-    if prod = (48) then
-      !(genericPathAt tokens)
+    if prod = (84) then
+      opensBlock tokens
     else
-      if prod = (49) then
-        genericPathAt tokens
+      if prod = (85) then
+        !(opensBlock tokens)
       else
-        true
+        if prod = (48) then
+          !(genericPathAt tokens)
+        else
+          if prod = (49) then
+            genericPathAt tokens
+          else
+            true
 
 end Lanius.Mini

@@ -1763,6 +1763,8 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
   | .returnUnit => stops_returnUnit
   | .break => stops_break
   | .continue => stops_continue
+  | .matchArm _ _ _ _ _ _ body rest =>
+      stops_matchArm (stmtStops_succ lowered returns prev body) (stmtStops_succ lowered returns prev rest)
   | .assert condition => stops_assert lowered (effStops_all lowered returns prev condition)
 
 /-- Every lowered statement whose Core run fails stops for every number of

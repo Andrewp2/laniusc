@@ -515,6 +515,26 @@ inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
       BlockR env scope (kid (kid s 4) 1) body → WhileR env scope (kid s 2) body m → StmtR env scope s m
   | assign {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s = pExprStmt → AssignR env scope (kid s 0) m →
       StmtR env scope s m
+  /-- `for x in a..n { body }`: `let c = a; let e = n; while (c < e) { let x = c;
+  c = c + 1; body }`, c, e and x numbered by the `for`, x's and the `in` token. -/
+  | forRange {scope : List Local} {s : CTree} {n : Local} {a : SrcExpr} {body m : MStmt} :
+      nodeProd s = pForStmt → nodeProd (kid s 3) = pForIterRangeFromStart →
+      nodeProd (kid (kid s 3) 0) = pRangeStartInt → nodeProd (kid (kid s 3) 1) = pRangeExclusive →
+      nodeProd (kid (kid (kid s 3) 1) 1) = pRangeBound →
+      nodeProd (kid (kid (kid (kid s 3) 1) 1) 0) = pRangeBoundName →
+      nodeProd (kid (kid (kid (kid (kid s 3) 1) 1) 0) 1) = pPostfixEnd →
+      (kidToken s 1).text ∉ env.globals → FreshId scope ((kidToken s 1).start - env.base) →
+      FreshId scope ((kidToken s 0).start - env.base) → FreshId scope ((kidToken s 2).start - env.base) →
+      LocalNamed scope (kidToken (kid (kid (kid (kid (kid s 3) 1) 1) 0) 0) 0).text n →
+      IntLiteral (kidToken (kid (kid s 3) 0) 0).text a →
+      BlockR env ({ name := (kidToken s 1).text, id := (kidToken s 2).start - env.base, ty := n.ty } :: scope)
+        (kid (kid s 4) 1) body →
+      forRange ((kidToken s 0).start - env.base) ((kidToken s 1).start - env.base) ((kidToken s 2).start - env.base)
+        n.ty a n.id (some body) = some m →
+      StmtR env scope s m
+  /-- `{ ... }`: its lets scope over the block only. -/
+  | block {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s = pBlockStmt →
+      BlockR env scope (kid (kid s 0) 1) m → StmtR env scope s m
 end
 
 def StmtSound (fuel : Nat) : Prop :=
@@ -523,11 +543,12 @@ def StmtSound (fuel : Nat) : Prop :=
   (∀ {env scope s rest m}, stmtFirst fuel env scope s rest = some m → StmtsR env scope (s :: rest) m) ∧
   (∀ {env scope s rest m}, nodeProd s = pLetStmt → letFirst fuel env scope s rest = some m →
     StmtsR env scope (s :: rest) m) ∧
-  (∀ {env scope s m}, stmtOf fuel env scope s = some m → StmtR env scope s m)
+  (∀ {env scope s m}, stmtOf fuel env scope s = some m → StmtR env scope s m) ∧
+  (∀ {env scope s m}, nestedOf fuel env scope s = some m → StmtR env scope s m)
 
 theorem stmtSound : ∀ fuel, StmtSound fuel
   | 0 => by
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     all_goals intros
     all_goals rename_i h
     · rw [blockOf.eq_def] at h; simp at h
@@ -535,9 +556,10 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
     · rw [stmtFirst.eq_def] at h; simp at h
     · rw [letFirst.eq_def] at h; simp at h
     · rw [stmtOf.eq_def] at h; simp at h
+    · rw [nestedOf.eq_def] at h; simp at h
   | f + 1 => by
-    obtain ⟨ihBlock, ihStmts, ihFirst, ihLet, ihStmt⟩ := stmtSound f
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    obtain ⟨ihBlock, ihStmts, ihFirst, ihLet, ihStmt, ihNested⟩ := stmtSound f
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
     · intro env scope list m h
       rw [blockOf.eq_def] at h
       simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
@@ -646,8 +668,45 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
         obtain ⟨body, hb, wr⟩ := whileOrEval_sound h
         exact .while pw (ihBlock hb) wr
       split at h
-      · rename_i _ _ _ _ _ _ _ pa
+      · exact ihNested h
+      split at h
+      · rename_i _ _ _ _ _ _ _ _ pa
         exact .assign pa (assignment_sound h)
+      cases h
+    · intro env scope s m h
+      rw [nestedOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      split at h
+      · rename_i pf
+        try dsimp only at h
+        split at h
+        · rename_i c
+          simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
+          obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨pi, ps⟩, pe⟩, pb⟩, pn⟩, pp⟩, ng⟩, fx⟩, fc⟩, fe⟩ := c
+          cases hn : findLocal scope (kidToken (kid (kid (kid (kid (kid s 3) 1) 1) 0) 0) 0).text with
+          | none => rw [hn] at h; cases h
+          | some n =>
+            rw [hn] at h
+            try dsimp only at h
+            cases ha : intLiteral (kidToken (kid (kid s 3) 0) 0).text with
+            | none => rw [ha] at h; cases h
+            | some a =>
+              rw [ha] at h
+              try dsimp only at h
+              cases hb : blockOf f env (⟨(kidToken s 1).text, (kidToken s 2).start - env.base, n.ty⟩ :: scope)
+                  (kid (kid s 4) 1) with
+              | none => rw [hb] at h; simp [forRange] at h
+              | some body =>
+                rw [hb] at h
+                refine .forRange pf pi ps pe pb pn pp (fun mem => ?_) ((freshId_iff _ _).1 fx)
+                  ((freshId_iff _ _).1 fc) ((freshId_iff _ _).1 fe) (findLocal_sound hn) (intLiteral_sound ha)
+                  (ihBlock hb) h
+                rw [(member_iff _ _).2 mem] at ng
+                cases ng
+        · cases h
+      split at h
+      · rename_i _ pb
+        exact .block pb (ihBlock h)
       cases h
 
 theorem blockOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {list : CTree} {m : MStmt}

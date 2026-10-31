@@ -1515,6 +1515,11 @@ pub enum SrcStmt {
     // break; and continue; of the innermost loop
     Break,
     Continue,
+    // MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest):
+    // when the enum local scrutinee (Core id enum_id) is the variant, run
+    // body, else run rest. A variant with no payload binds nothing (binds is
+    // false); one with one field, of type ty, binds a copy of it to binder.
+    MatchArm(usize, usize, usize, bool, usize, SrcType, Box<SrcStmt>, Box<SrcStmt>),
 }
 
 pub struct SrcParam {
@@ -2856,6 +2861,82 @@ pub fn lower_arms(scope: List<Binding>, slot: usize, target: usize, ty: SrcType,
         Cons(arm, rest) -> match (variants) {
             Nil -> None,
             Cons(types, more) -> lower_arm(slot, target, k, arm_guard(arm_scope(arm.binders, types, plus(slot, 1), scope), arm.value), lower_arm_value(arm_scope(arm.binders, types, plus(slot, 1), scope), arm.value, ty), unbox(rest), lower_arms(scope, slot, target, ty, plus(k, 1), unbox(more), unbox(rest))),
+        },
+    };
+}
+
+// The scope of a match arm statement's body: the binder at next, if it binds.
+pub fn arm_body_scope(binds: bool, binder: usize, ty: SrcType, next: usize, scope: List<Binding>) -> List<Binding> {
+    if (!binds) {
+        return scope;
+    }
+    return cons(Binding { id: binder, slot: next, ty: ty }, scope);
+}
+
+pub fn unit_payload(unit: bool) -> core::option::Option<List<Expr>> {
+    if (unit) {
+        return Some(empty());
+    }
+    return None;
+}
+
+pub fn field_payload(bound: bool, values: core::option::Option<List<Expr>>) -> core::option::Option<List<Expr>> {
+    if (bound) {
+        return values;
+    }
+    return None;
+}
+
+// The payload a match arm statement copies to its binder: nothing for a
+// variant with no payload, else its one field, read in the arm's scope from
+// the slots after the tag. A bound field takes slots.
+pub fn arm_payload(scope: List<Binding>, slot: usize, fields: List<SrcType>, binds: bool, binder: usize, ty: SrcType) -> core::option::Option<List<Expr>> {
+    return match (fields) {
+        Nil -> unit_payload(!binds),
+        Cons(f, more) -> field_payload(binds && (ty.size() > 0), lower_arm_value(arm_scope(cons(binder, empty()), fields, plus(slot, 1), scope), Local(binder), ty)),
+    };
+}
+
+// If the tag at slot is the variant, copy the payload to next and run body;
+// else run rest. Tags are 32-bit.
+pub fn lower_arm_stmt(slot: usize, ok: bool, variant: usize, values: core::option::Option<List<Expr>>, next: usize, body: core::option::Option<Stmt>, rest: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    if (!ok) {
+        return None;
+    }
+    return match (values) {
+        None -> None,
+        Some(vs) -> match (body) {
+            None -> None,
+            Some(b) -> match (rest) {
+                None -> None,
+                Some(r) -> Some(Ite(Compare(U64, Eq, boxed(Var(slot)), boxed(Lit(variant as u64))), boxed(assign_from(next, vs, b)), boxed(r))),
+            },
+        },
+    };
+}
+
+pub fn lower_arm_found(scope: List<Binding>, slot: usize, ok: bool, variant: usize, found: core::option::Option<List<SrcType>>, binds: bool, binder: usize, ty: SrcType, next: usize, body: core::option::Option<Stmt>, rest: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (found) {
+        None -> None,
+        Some(fields) -> lower_arm_stmt(slot, ok, variant, arm_payload(scope, slot, fields, binds, binder, ty), next, body, rest),
+    };
+}
+
+pub fn lower_match_arm(scope: List<Binding>, binding: core::option::Option<Binding>, enum_id: usize, variant: usize, binds: bool, binder: usize, ty: SrcType, next: usize, body: core::option::Option<Stmt>, rest: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+    return match (binding) {
+        None -> None,
+        Some(b) -> match (b.ty) {
+            I32 -> None,
+            Bool -> None,
+            Uint(kind) -> None,
+            Struct(id, types) -> None,
+            Enum(id, variants) -> lower_arm_found(scope, b.slot, (id == enum_id) && (length(unbox(variants)) < 4294967296), variant, get(unbox(variants), variant), binds, binder, ty, next, body, rest),
+            Ptr -> None,
+            Slice(element) -> None,
+            Unit -> None,
+            Isize -> None,
+            SrcType::Char -> None,
+            Sint(sk) -> None,
         },
     };
 }
@@ -4478,6 +4559,7 @@ impl SrcStmt {
             Assert(condition) -> lower_assert(condition.eval(sigs, decls, scope, next), next),
             Break -> Some(Brk),
             Continue -> Some(Cont),
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
         };
     }
 
@@ -4517,6 +4599,7 @@ impl SrcStmt {
             Assert(condition) -> false,
             Break -> true,
             Continue -> true,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).breaks_out() || unbox(rest).breaks_out(),
         };
     }
 
@@ -4555,6 +4638,7 @@ impl SrcStmt {
             Assert(condition) -> 0,
             Break -> 0,
             Continue -> 0,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(plus(unbox(body).depth(), ty.size()), unbox(rest).depth()),
         };
     }
 }
@@ -4835,6 +4919,7 @@ impl SrcStmt {
             Assert(condition) -> declare_types(condition.types(), decls),
             Break -> Some(decls),
             Continue -> Some(decls),
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> declare_in(declare_in(ty.declare(decls), unbox(body)), unbox(rest)),
         };
     }
 
@@ -4874,6 +4959,7 @@ impl SrcStmt {
             Assert(condition) -> false,
             Break -> false,
             Continue -> false,
+            MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).returns() && unbox(rest).returns(),
         };
     }
 }

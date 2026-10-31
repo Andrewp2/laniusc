@@ -478,10 +478,14 @@ closes or a `;`, no `||`, `==`, `!=`, `<=` or `>=` comes before it, and `(`,
 `::` or `{` follows it; otherwise `<` is a comparison. This is laniusc's rule
 (`shaders/parser/tokens/to/angle_kinds.slang`) without its limit of 64
 argument tokens; the verified compiler's validator checks it (`picks`).
-Block statements and a method's type arguments (`x.f<T>(..)`) are outside
-the verified compiler's subset, since they are ambiguous in the same way
-(`{ a } - b;`, `x.f < a > (b)`). With these, every token sequence has at
-most one parse tree (V4, `Mini/ParseUnique.lean`).
+A method's type arguments (`x.f<T>(..)`) are outside the verified
+compiler's subset, since they are ambiguous in the same way (`x.f < a >
+(b)`). A statement that begins with `{` is a block statement, never an
+expression statement (decided 10-30, F4), as in Rust: `{ a } - b;` is the
+block `{ a }` and then `-b;`. Its lets scope over the block only
+(`StmtR.block`). With these, every token sequence has at most one parse
+tree (V4, `Mini/ParseUnique.lean`; `pickedPair` in `Mini/Unique.lean` lists
+the two pairs of productions `picks` tells apart).
 
 ### The process (decided 10-29)
 
@@ -658,69 +662,9 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   heap has the same field. The simulation relation (`Rel`, `HeapAt`,
   `Returned`, `Frame.Exit`) says they are equal, and `process_exits` says
   the process trace at the exit is the compiled program's trace. Core's
-  side is `World.State.standardOutput`/`standardError`, and the link is
-  `outputOf fd trace` (`Mini/HeapCorr.lean`), the bytes the trace's events
-  write to `fd`, in order.
-- **Host functions in the Core meaning (decided 10-31).** `SrcProgram.toCore`
-  appends three body-less Core functions to the source functions
-  (`hostFuncs`, `Mini/SourceCore.lean`): `write_byte` at id 2^32,
-  `write_stdout` at 2^32 + 1 and `write_stderr` at 2^32 + 2, each with
-  `external := .host service` and the service's parameter and return types.
-  The ids are past any source function's, so source function ids and
-  `function?` of them are unchanged (`SrcProgram.function?_toCore`). An
-  effectful source call `ECall(id, args)` whose id has no source signature
-  is lowered by `eval_host` (`compiler.lani`) when the id is a host id and
-  the arguments have the service's types (`i32, i32`, or `ptr, usize`), and
-  rejected otherwise. Pure calls (`lowerCall`) still need a source callee;
-  the front end will reach the services through source wrappers.
-- **`write_byte` lowered.** For handle 1 or 2 the code saves heap byte 0,
-  stores the value's low byte there, runs `Sys write [handle, 0, 1]`,
-  restores byte 0 and leaves 1; for any other handle it leaves -1, as Core
-  does when no file is open (`writeFileBytes` finds no handle). Heap offset
-  0 is no Core block's (Core's addresses start at 1), so the borrowed byte
-  keeps `HeapCorr`, and the heap's limit is at least Core's next address,
-  so offset 0 is in range.
-- **`write_stdout` and `write_stderr` lowered.** The code writes the range in
-  chunks of at most `maxTransfer` until the count is 0 (`hostWriteCode`) and
-  leaves the count as `i32`, Core's `i32Result bytes.length`. A count of 0
-  writes nothing and reads no pointer, as Core's `loadBytes` of 0 bytes. A
-  range Core cannot load traps in Core with `rawMemoryBounds` or
-  `invalidPointer`, undefined traps the theorems exclude, so a write the
-  compiled code makes is always of bytes Core's heap holds.
-- **The world in `HeapCorr`.** `HeapCorr h w hp` relates Core's heap and
-  world to the mini heap: besides the heap facts, `w.standardOutput =
-  outputOf 1 hp.io.trace`, `w.standardError = outputOf 2 hp.io.trace`, and
-  `w.fileHandles = []` (the verified compiler's programs open no files, so a
-  `write_byte` to another handle is -1 on both sides). Every source proof
-  carries it, and a host call keeps it (`HeapCorr.wrote`). The top theorems
-  start from Core's empty state and a mini heap whose trace is empty
-  (`silent`), and conclude `final.world.standardOutput = outputOf 1
-  after.io.trace` and the same for standard error, where `after` is the mini
-  heap the compiled code returns with (`Returned.io` makes it the machine's
-  trace; `process_exits` the process's).
-- **Externs in the front end (decided 10-31).** An `extern "lanius_std" fn`
-  named `write_byte`, `write_stdout` or `write_stderr`, without a where
-  clause, declares a function (`host_extern`, `frontend.lani`), in whatever
-  module declares it; laniusc binds the same names. Its declaration's tree
-  is the extern node with its kids moved to a `fn`'s positions
-  (`extern_tree`), so a call reads its signature as any function's. Its
-  instance (no type parameters) is a source function with the declared
-  parameters and result whose body is `return host(params);`, the
-  effectful call `ECall(host id, params)` (`XHost`, `extern_func`); the
-  compiler then accepts it only with the service's parameter and result
-  types (`eval_host`), so a mistyped declaration is rejected, not
-  miscompiled. Any other extern declares nothing, and a call of it is
-  rejected as before.
-- **The stdlib oracle compares stdout and stderr.** Each native call runs
-  with both streams on pipes, and laniusc's harness ends each call's output
-  on both with a frame marker (`FRAME`, `stdlib_oracle.py`), the result
-  after it on stdout; a call agrees only when the result and the bytes on
-  each stream agree (also for a call that traps on both sides).
-  A wrapper argument for a stdlib parameter named `handle` is 1 or 2: on
-  another handle Core (and so the verified compiler's code) gives -1, as no
-  file is open in its world, while laniusc's process passes the kernel's
-  result through (-9, `EBADF`, or a real write to an fd the process
-  inherited). That difference is the world's, not the compiler's.
+  side is `World.State.standardOutput`/`standardError`; the link from
+  Core's `write_byte`/`write_stdout` services to `.write` events (one event
+  per call, the bytes Core appends) is the next part of F8.
 - **Not yet modeled (deferred).** `read`/`read_stdin` (input is an
   environment input, so the trace needs read events and the theorem a
   premise "given the same input"), `getrandom`/`secure_u32`, process
@@ -728,5 +672,50 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   `argv`/`envp`, now arbitrary memory), time (`clock_gettime`, `nanosleep`),
   files, sockets and processes, the general `syscall6`, the allocator
   externs (the verified compiler's `alloc` is the mini bump allocator over
-  a heap the startup code provides, not `mmap`), and short writes (the
-  kernel's `write` is trusted to write the whole chunk).
+  a heap the startup code provides, not `mmap`), and writes longer than
+  `MAX_RW_COUNT` (Core would have to loop; a short write is not modeled).
+
+## `for` over a range (decided 10-30, F4)
+
+`for x in a..n { body }`, with `a` an integer literal and `n` a local, is
+read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`
+(`for_of`, `StmtR.forRange`), so that:
+
+- `n` is read once, before the loop, as Rust evaluates a range once;
+  assigning `n` in the body does not change the iterations;
+- `x` is a fresh local each iteration, and `c` moves on before the body, so a
+  `continue` goes to the next value; `c + 1` cannot overflow, as `c < e`;
+- `x`, `c` and `e` have `n`'s type, and the literal `a` takes it.
+
+This agrees with Core's own `forRange` (`Semantics.lean`), which evaluates
+the bound once, on `i32`, the one type Core's loop takes.
+
+`c` and `e` are hidden locals: they have no name in scope, and they are
+numbered by the `for` token and `x`'s token, and `x` by the `in` token, so the
+locals are numbered in the order the desugared text declares them and the
+front end's cases can write the desugaring as the expected reading.
+
+## Match arm statements (decided 10-31, F4)
+
+The source statement `MatchArm(scrutinee, enum_id, variant, binds, binder,
+ty, body, rest)` runs `body` when the enum local `scrutinee` is `variant`,
+and `rest` otherwise. A match statement, and `?`, are read as a chain of
+these, so the statement type has no list of arms and no nested inductive. In
+Core (`SrcStmt.toCore`) it is, when `binds`,
+
+    if (match scrutinee { enum_id::variant(_) => true, _ => false }) {
+        let binder: ty = match scrutinee { enum_id::variant(binder) => binder };
+        body
+    } else { rest }
+
+and without `binds` the test's pattern has no fields and `body` runs as it
+is. So that:
+
+- a variant with no payload binds nothing (`binds` false); a variant with a
+  payload has exactly one field, of type `ty`, which takes slots, and
+  `binder` is a copy of it, not an alias, as in Core's `let`;
+- `binds` is a flag, not read off `ty`: `Ok(())` has one field of type unit,
+  which takes a slot, while `None` has none;
+- the lowering tests the tag word against `variant` and copies the field to
+  the next free slots (`lower_match_arm`); a tag never needs more than 32
+  bits, as for `let match`.

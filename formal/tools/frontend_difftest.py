@@ -1098,6 +1098,7 @@ partial def serStmt : SrcStmt → String
   | .break => ".break"
   | .continue => ".continue"
   | .assert x => s!"(.assert {serEff x})"
+  | .matchArm sc e k b x t body r => s!"(.matchArm {sc} {e} {k} {b} {x} {serType t} {serStmt body} {serStmt r})"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
 
@@ -1200,6 +1201,7 @@ partial def bindersOf : SrcStmt → List Nat
   | .whileEval x b => effBinders x ++ bindersOf b
   | .setIndexEval _ i v => effBinders i ++ effBinders v
   | .setFieldEval _ _ x | .assert x => effBinders x
+  | .matchArm _ _ _ b x _ body r => (if b then [x] else []) ++ bindersOf body ++ bindersOf r
   | _ => []
 
 partial def renExpr (f : Nat → Nat) : SrcExpr → SrcExpr
@@ -1258,6 +1260,7 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .returnUnit => .returnUnit
   | .break => .break
   | .continue => .continue
+  | .matchArm sc e k b x t body r => .matchArm (f sc) e k b (f x) t (renStmt f body) (renStmt f r)
   | .assert x => .assert (renEff f x)
 
 def canonFunc (fn : SrcFunc) : SrcFunc :=

@@ -9,10 +9,13 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-@[expose] def Inline.pBreakStmt : Nat :=
-  82
+@[expose] def Inline.pContractsNone : Nat :=
+  321
 
-@[expose] def Inline.pContinueStmt : Nat :=
-  83
+@[expose] def Inline.pDivTail : Nat :=
+  153
+
+@[expose] def Inline.pElseNone : Nat :=
+  79
 
 end Lanius.Mini
