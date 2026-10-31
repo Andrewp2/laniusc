@@ -233,7 +233,9 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
       guard := binary.guard }
   have fits : frame.Fits :=
     ⟨limit, by show frameBytes code.slots + 16 ≤ window; omega, bounded,
-      by show (s.registers limitRegister).toNat < 2 ^ 62; rw [← heapAt.limit]; exact heapAt.small,
+      by show (s.registers topRegister).toNat < 2 ^ 62; rw [← heapAt.top]; exact heapAt.small,
+      by show (s.registers limitRegister).toNat ≤ (s.registers topRegister).toNat
+         rw [← heapAt.limit, ← heapAt.top]; exact heap.limit_le_top,
       heapAt.apart, stackLimit, stackHigh, by show frameBytes code.slots + 8 + binary.guard ≤ window; omega⟩
   have body : Body frame binary imageBase ⟨offset + 24, code.slots, binary.entries⟩ code.instrs :=
     { loaded := by
@@ -316,7 +318,7 @@ theorem function_enter {prog : Program} {binary : Binary} (compiled : compilePro
       fspLe := heapAt.fspLe
       heap := by
         intro a inside
-        have inside' : a < frame.heapLimit := by rw [show frame.heapLimit = heap.limit from heapAt.limit.symm]; exact inside
+        have inside' : a < frame.heapTop := by rw [show frame.heapTop = heap.top from heapAt.top.symm]; exact inside
         rw [memoryEntered, write64_frame _ _ _ _ (fun lane => heap_ne_below fits inside' (pushBelow lane))]
         exact heapAt.bytes a inside
       io := heapAt.io }
