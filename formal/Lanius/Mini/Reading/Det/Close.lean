@@ -78,6 +78,8 @@ theorem stmtClosed_unique : ∀ {m : MStmt} {a b : SrcStmt}, StmtClosed decls fn
   | _, _, _, .setIndexEval i v, .setIndexEval i' v' => by rw [effClosed_unique i i', effClosed_unique v v']
   | _, _, _, .setFieldEval x, .setFieldEval x' => by rw [effClosed_unique x x']
   | _, _, _, .returnUnit, .returnUnit => rfl
+  | _, _, _, .break, .break => rfl
+  | _, _, _, .continue, .continue => rfl
   | _, _, _, .assert x, .assert x' => by rw [effClosed_unique x x']
 termination_by structural _ _ _ h _ => h
 
@@ -210,6 +212,8 @@ theorem litStmt_eq {ret : SrcType} : ∀ {locals : List LocalTy} {s s' : SrcStmt
   | _, _, _, .setIndexEval hi hv => by rw [litEff_eq hi, litEff_eq hv]; simp only [litStmt]
   | _, _, _, .setFieldEval h => by rw [litEff_eq h]; simp only [litStmt]
   | _, _, _, .returnUnit => by simp only [litStmt]
+  | _, _, _, .break => by simp only [litStmt]
+  | _, _, _, .continue => by simp only [litStmt]
   | _, _, _, .assert h => by rw [litEff_eq h]; simp only [litStmt]
 
 theorem litFunc_unique {g a b : SrcFunc} (h₁ : LitFunc funcs g a) (h₂ : LitFunc funcs g b) : a = b := by

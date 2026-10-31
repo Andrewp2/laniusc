@@ -8,6 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmtC_SrcExpr_guard
 public import Lanius.Faithful.Gen.SelfStmtC_UintTy_half
 public import Lanius.Faithful.Gen.SelfStmtC_lowerCallSig
 public import Lanius.Faithful.Gen.SelfStmtC_lowerSetCallArgs
+public import Lanius.Faithful.Gen.SelfStmtC_sintToUint
 import all Lanius.Faithful.Gen.SelfSrcC_lowerSetCallArgs
 import all Lanius.Mini.Compiler.P.lowerSetCallArgs
 
@@ -69,9 +70,8 @@ theorem proof_lower_then {prog : SrcProgram} {prims : Prims} {ix_lower_then ix_b
   simp only [src_lower_then] at h
   faithful [Lanius.Mini.lowerThen]
 
-theorem proof_lower_while {prog : SrcProgram} {prims : Prims} {ix_lower_while ix_boxed_of_mini_selfhost_Stmt ix_then_check : Nat} (fn : prog.funcs[ix_lower_while]? = some (src_lower_while ix_boxed_of_mini_selfhost_Stmt ix_then_check)) (np : prims.isPrim ix_lower_while = false)
-    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
-    (ext_then_check : Certified (∀ {n : Nat}, Stmt_then_check prog prims ix_then_check n)) {n : Nat} :
+theorem proof_lower_while {prog : SrcProgram} {prims : Prims} {ix_lower_while ix_while_loop : Nat} (fn : prog.funcs[ix_lower_while]? = some (src_lower_while ix_while_loop)) (np : prims.isPrim ix_lower_while = false)
+    (ext_while_loop : Certified (∀ {n : Nat}, Stmt_while_loop prog prims ix_while_loop n)) {n : Nat} :
     Stmt_lower_while prog prims ix_lower_while n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n
@@ -79,5 +79,17 @@ theorem proof_lower_while {prog : SrcProgram} {prims : Prims} {ix_lower_while ix
   rw [pcall_succ np fn] at h
   simp only [src_lower_while] at h
   faithful [Lanius.Mini.lowerWhile]
+
+theorem proof_while_loop {prog : SrcProgram} {prims : Prims} {ix_while_loop ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_is_one : Nat} (fn : prog.funcs[ix_while_loop]? = some (src_while_loop ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_is_one)) (np : prims.isPrim ix_while_loop = false)
+    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_check_then : Certified (∀ {n : Nat}, Stmt_check_then prog prims ix_check_then n))
+    (ext_is_one : Certified (∀ {n : Nat}, Stmt_is_one prog prims ix_is_one n)) {n : Nat} :
+    Stmt_while_loop prog prims ix_while_loop n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_while_loop] at h
+  faithful [Lanius.Mini.whileLoop]
 
 end Lanius.Faithful.SelfCert

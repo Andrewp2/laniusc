@@ -133,7 +133,7 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .setCall id callee args => guarded next (guardAll scope args) (lowerSetCall sigs scope (lookup scope id) callee args)
   | .then first second => lowerThen (SrcStmt.lower first sigs decls ret scope next) (SrcStmt.lower second sigs decls ret scope next)
   | .if condition thenBranch elseBranch => guarded next (SrcExpr.guard condition scope) (lowerIf (lowerAs scope condition SrcType.bool) (SrcStmt.lower thenBranch sigs decls ret scope next) (SrcStmt.lower elseBranch sigs decls ret scope next))
-  | .while condition body => guarded next (SrcExpr.guard condition scope) (lowerWhile next (SrcExpr.guard condition scope) (lowerAs scope condition SrcType.bool) (SrcStmt.lower body sigs decls ret scope next))
+  | .while condition body => lowerWhile next (SrcExpr.guard condition scope) (lowerAs scope condition SrcType.bool) (SrcStmt.lower body sigs decls ret scope next)
   | .return value => guarded next (SrcExpr.guard value scope) (lowerReturn (lowerValue scope value ret))
   | .letAlloc id size shift body => guarded next (SrcExpr.guard size scope) (lowerAlloc next shift (lowerAs scope size (SrcType.uint UintTy.usize)) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.ptr } : Binding) :: scope) (next + 1)))
   | .letLoad id pointer offset body => guarded next (guardAnd (SrcExpr.guard pointer scope) (SrcExpr.guard offset scope)) (lowerLoad next (lowerAddress (lowerAs scope pointer SrcType.ptr) (lowerAs scope offset (SrcType.uint UintTy.usize))) (SrcStmt.lower body sigs decls ret (({ id := id, slot := next, ty := SrcType.uint UintTy.uint8 } : Binding) :: scope) (next + 1)))
@@ -152,6 +152,44 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .setFieldEval id field value => lowerSetFieldEval next (lookup scope id) field (SrcEff.eval value sigs decls scope next)
   | .returnUnit => lowerReturnUnit ret
   | .assert condition => lowerAssert (SrcEff.eval condition sigs decls scope next) next
+  | .break => some Stmt.brk
+  | .continue => some Stmt.cont
+
+/-- A break or continue outside every loop of the statement: Core's typing rejects one outside every loop of the function. -/
+def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
+  match self with
+  | .nop => false
+  | .let id ty value body => SrcStmt.breaksOut body
+  | .letStruct id ty fields body => SrcStmt.breaksOut body
+  | .letCall id ty callee args body => SrcStmt.breaksOut body
+  | .letEnum id ty variant payload body => SrcStmt.breaksOut body
+  | .letMatch id ty scrutinee enumId arms body => SrcStmt.breaksOut body
+  | .set id value => false
+  | .setField id index value => false
+  | .setCall id callee args => false
+  | .then first second => SrcStmt.breaksOut first || SrcStmt.breaksOut second
+  | .if condition thenBranch elseBranch => SrcStmt.breaksOut thenBranch || SrcStmt.breaksOut elseBranch
+  | .while condition body => false
+  | .return value => false
+  | .letAlloc id size shift body => SrcStmt.breaksOut body
+  | .letLoad id pointer offset body => SrcStmt.breaksOut body
+  | .setByte pointer offset value => false
+  | .free pointer size shift => false
+  | .letSlice id element pointer length body => SrcStmt.breaksOut body
+  | .letIndex id ty slice index body => SrcStmt.breaksOut body
+  | .setIndex slice index value => false
+  | .letEval id ty value body => SrcStmt.breaksOut body
+  | .setEval id value => false
+  | .ifEval condition thenBranch elseBranch => SrcStmt.breaksOut thenBranch || SrcStmt.breaksOut elseBranch
+  | .whileEval condition body => false
+  | .returnEval value => false
+  | .discard value => false
+  | .setIndexEval slice index value => false
+  | .setFieldEval id field value => false
+  | .returnUnit => false
+  | .assert condition => false
+  | .break => true
+  | .continue => true
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -186,6 +224,8 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .setFieldEval id field value => 0
   | .returnUnit => 0
   | .assert condition => 0
+  | .break => 0
+  | .continue => 0
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=

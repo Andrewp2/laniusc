@@ -10,6 +10,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArgsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBitAnd
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pBreakStmt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pElseStmt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pIdentPlain
@@ -221,7 +222,7 @@ theorem step_stmt_first {prog : SrcProgram} {prims : Prims} {ix_stmt_first ix_mi
   simp only [src_stmt_first] at h
   faithful [Lanius.Mini.stmtFirst]
 
-theorem step_stmt_of {prog : SrcProgram} {prims : Prims} {ix_stmt_of ix_minus ix_node_prod ix_kid ix_block_of ix_p_return_stmt ix_p_return_value ix_return_or_eval ix_p_return_void ix_p_if_stmt ix_p_else_stmt ix_if_or_eval ix_p_else_none ix_p_while_stmt ix_while_or_eval ix_p_expr_stmt ix_assignment : Nat} (fn : prog.funcs[ix_stmt_of]? = some (src_stmt_of ix_minus ix_node_prod ix_kid ix_block_of ix_p_return_stmt ix_p_return_value ix_return_or_eval ix_p_return_void ix_p_if_stmt ix_p_else_stmt ix_if_or_eval ix_p_else_none ix_p_while_stmt ix_while_or_eval ix_p_expr_stmt ix_assignment)) (np : prims.isPrim ix_stmt_of = false)
+theorem step_stmt_of {prog : SrcProgram} {prims : Prims} {ix_stmt_of ix_minus ix_node_prod ix_kid ix_block_of ix_p_return_stmt ix_p_return_value ix_return_or_eval ix_p_return_void ix_p_break_stmt ix_p_continue_stmt ix_p_if_stmt ix_p_else_stmt ix_if_or_eval ix_p_else_none ix_p_while_stmt ix_while_or_eval ix_p_expr_stmt ix_assignment : Nat} (fn : prog.funcs[ix_stmt_of]? = some (src_stmt_of ix_minus ix_node_prod ix_kid ix_block_of ix_p_return_stmt ix_p_return_value ix_return_or_eval ix_p_return_void ix_p_break_stmt ix_p_continue_stmt ix_p_if_stmt ix_p_else_stmt ix_if_or_eval ix_p_else_none ix_p_while_stmt ix_while_or_eval ix_p_expr_stmt ix_assignment)) (np : prims.isPrim ix_stmt_of = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
@@ -229,6 +230,8 @@ theorem step_stmt_of {prog : SrcProgram} {prims : Prims} {ix_stmt_of ix_minus ix
     (ext_p_return_value : Certified (∀ {n : Nat}, Stmt_p_return_value prog prims ix_p_return_value n))
     (ext_return_or_eval : Certified (∀ {n : Nat}, Stmt_return_or_eval prog prims ix_return_or_eval n))
     (ext_p_return_void : Certified (∀ {n : Nat}, Stmt_p_return_void prog prims ix_p_return_void n))
+    (ext_p_break_stmt : Certified (∀ {n : Nat}, Stmt_p_break_stmt prog prims ix_p_break_stmt n))
+    (ext_p_continue_stmt : Certified (∀ {n : Nat}, Stmt_p_continue_stmt prog prims ix_p_continue_stmt n))
     (ext_p_if_stmt : Certified (∀ {n : Nat}, Stmt_p_if_stmt prog prims ix_p_if_stmt n))
     (ext_p_else_stmt : Certified (∀ {n : Nat}, Stmt_p_else_stmt prog prims ix_p_else_stmt n))
     (ext_if_or_eval : Certified (∀ {n : Nat}, Stmt_if_or_eval prog prims ix_if_or_eval n))

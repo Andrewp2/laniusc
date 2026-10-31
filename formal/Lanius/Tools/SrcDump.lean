@@ -106,7 +106,7 @@ partial def stmtCalls : SrcStmt → List Nat
   | .whileEval c b => effCalls c ++ stmtCalls b
   | .setIndexEval _ i v => effCalls i ++ effCalls v
   | .nop | .set _ _ | .setField _ _ _ | .return _ | .setByte _ _ _ | .free _ _ _ | .setIndex _ _ _
-  | .returnUnit => []
+  | .returnUnit | .break | .continue => []
 end
 
 /-- `sig ID PARAMS RET CALLEES` (comma lists, `-` when empty), and for a

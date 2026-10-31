@@ -334,7 +334,7 @@ theorem lowerFuncs_get {sg : List Sig} {ds : SrcDecls} {funcs : List SrcFunc} {l
       exact ih restOk found
 
 theorem lowerFunc_some {sg : List Sig} {ds : SrcDecls} {f : SrcFunc} {g : Func} (ok : lowerFunc sg ds f = some g) :
-    g.params = paramsSize f.params ∧ 0 < f.ret.size ∧ paramsValid f.params = true ∧
+    g.params = paramsSize f.params ∧ 0 < f.ret.size ∧ paramsValid f.params = true ∧ f.body.breaksOut = false ∧
       ∃ b, f.body.lower sg ds f.ret (paramScope f.params 0 []) (paramsSize f.params) = some b ∧
         unitTail f.ret (some b) = some g.body := by
   simp only [lowerFunc] at ok
@@ -352,8 +352,8 @@ theorem lowerFunc_some {sg : List Sig} {ds : SrcDecls} {f : SrcFunc} {g : Func} 
     · split at bodyOk
       · simp at bodyOk
       rename_i b lowered
-      exact ⟨rfl, checks.1, checks.2, b, lowered, by simp only [unitTail, bodyOk, ‹f.ret.isUnit = true›, if_true]⟩
-    · exact ⟨rfl, checks.1, checks.2, body, bodyOk, by simp only [unitTail, if_neg (by assumption)]⟩
+      exact ⟨rfl, checks.1.1, checks.1.2, by simpa using checks.2, b, lowered, by simp only [unitTail, bodyOk, ‹f.ret.isUnit = true›, if_true]⟩
+    · exact ⟨rfl, checks.1.1, checks.1.2, by simpa using checks.2, body, bodyOk, by simp only [unitTail, if_neg (by assumption)]⟩
   · simp at ok
 
 theorem paramTypes_length (params : List SrcParam) : (paramTypes params).length = params.length := by
@@ -763,6 +763,10 @@ inductive Matches (ret : SrcType) (scope : List Binding) (frame : Nat → Nat) (
   | returned {v : Option Value} {bits : List (BitVec 64)} {hp : Heap} :
       RetHolds ret v bits → bits.length = ret.size → HeapCorr st.heap hp →
       Matches ret scope frame st (.returned v) (.returned bits hp)
+  | broke {env : Env} {hp : Heap} : Corr scope frame st env → HeapCorr st.heap hp →
+      Matches ret scope frame st .breakLoop (.broke env hp)
+  | continued {env : Env} {hp : Heap} : Corr scope frame st env → HeapCorr st.heap hp →
+      Matches ret scope frame st .continueLoop (.continued env hp)
 
 /-- Core went from `st` to `st'` with completion `c`; the mini statement has a
 derivation from `env` and `hp` with a matching outcome. -/
@@ -807,7 +811,7 @@ theorem body_sound {sp : SrcProgram} {mp : Program}
       ∃ d rs hp', mp.Returns d callee bits hp rs hp' ∧ f.ret.HoldsAt v (Func.entry rs) 0 ∧
         rs.length = f.ret.size ∧ HeapCorr completed.heap hp' := by
   obtain ⟨g, gFound, gOk⟩ := lowerFuncs_get lowered found
-  obtain ⟨gParams, _, valid, b, bodyOk, tail⟩ := lowerFunc_some gOk
+  obtain ⟨gParams, _, valid, inside, b, bodyOk, tail⟩ := lowerFunc_some gOk
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
     (Nat.le_refl _) fresh ⟨rfl, fun _ mem => by simp at mem⟩
@@ -1458,6 +1462,8 @@ theorem let_tail {sp : SrcProgram} {mp : Program} {fuel : Nat} (ih : StmtSound s
     cases matched with
     | next corr'' hc'' => exact .next (corr''.pop fr corr.locals rfl) hc''
     | returned holdsRet len hc'' => exact .returned holdsRet len hc''
+    | broke corr'' hc'' => exact .broke (corr''.pop fr corr.locals rfl) hc''
+    | continued corr'' hc'' => exact .continued (corr''.pop fr corr.locals rfl) hc''
   | trapped => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
   | exited => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
   | outOfFuel => simp [bodyRun, Semantics.restoreOutcomeLocals] at run
@@ -2215,6 +2221,8 @@ theorem stmt_then (ih : StmtSound sp mp fuel) {first second : SrcStmt}
     cases matched1 with
     | next => exact absurd rfl notNext
     | returned holds len hc1 => exact ⟨fresh1, keeps1, d1, _, .seqReturned exec1, .returned holds len hc1⟩
+    | broke corr1 hc1 => exact ⟨fresh1, keeps1, d1, _, .seqBroke exec1, .broke corr1 hc1⟩
+    | continued corr1 hc1 => exact ⟨fresh1, keeps1, d1, _, .seqContinued exec1, .continued corr1 hc1⟩
   all_goals simp at run
 
 theorem stmt_if (ih : StmtSound sp mp fuel) {condition : SrcExpr} {thenBranch elseBranch : SrcStmt}
@@ -2266,10 +2274,7 @@ theorem stmt_while (ih : StmtSound sp mp fuel) {condition : SrcExpr} {body : Src
     (bound : st'.heap.nextAddress ≤ hp.limit) :
     Simulates mp hp ret scope frame base st env stmt c st' := by
   have whileOk := ok
-  simp only [SrcStmt.lower] at ok
-  replace ok := guarded_some ok
-  obtain ⟨stmt, ok, rfl⟩ := ok
-  simp only [lowerWhile] at ok
+  simp only [SrcStmt.lower, lowerWhile] at ok
   split at ok
   · simp at ok
   rename_i x condOk
@@ -2281,17 +2286,17 @@ theorem stmt_while (ih : StmtSound sp mp fuel) {condition : SrcExpr} {body : Src
   simp only [SrcStmt.toCore, execStmt] at run
   split at run
   · rename_i mid condRun
+    have one := lowerAs_guard corr (SrcProgram.target_toCore sp) condOk condRun
     obtain ⟨rfl, y, hy, bits⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) condOk condRun
     cases hy
     simp only [Semantics.Outcome.done.injEq] at run
-    refine Simulates.checked (lowerAs_guard corr (SrcProgram.target_toCore sp) condOk condRun) ?_
     obtain ⟨rfl, rfl⟩ := run
-    exact ⟨fresh, Keeps.refl _ _, 0, _, .loopDone (by rw [bits]; decide), .next corr hc⟩
+    exact ⟨fresh, Keeps.refl _ _, 0, _, Exec.whileLoop_done one (by rw [bits]; decide), .next corr hc⟩
   · rename_i mid condRun
+    have one := lowerAs_guard corr (SrcProgram.target_toCore sp) condOk condRun
     obtain ⟨rfl, y, hy, bits⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) condOk condRun
     cases hy
     have condTrue : x.eval env ≠ 0 := by rw [bits]; decide
-    refine Simulates.checked (lowerAs_guard corr (SrcProgram.target_toCore sp) condOk condRun) ?_
     split at run
     · rename_i completed bodyRun
       obtain ⟨fresh1, keeps1, d1, out1, exec1, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun
@@ -2301,26 +2306,33 @@ theorem stmt_while (ih : StmtSound sp mp fuel) {condition : SrcExpr} {body : Src
         obtain ⟨fresh2, keeps2, d2, out2, exec2, matched2⟩ :=
           ih whileOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) hc1 run
             (by rw [exec1.limit_normal]; exact bound)
-        obtain ⟨pass, exec2⟩ := exec2.checkThen_inv
         exact ⟨fresh2, keeps1.trans keeps2, max d1 d2, out2,
-          .loopNext condTrue ((exec1.thenCheck pass).mono (Nat.le_max_left _ _)) (exec2.mono (Nat.le_max_right _ _)),
+          Exec.whileLoop_next one condTrue (.inl (exec1.mono (Nat.le_max_left _ _))) (exec2.mono (Nat.le_max_right _ _)),
           matched2⟩
     · rename_i completed bodyRun
-      obtain ⟨_, _, _, _, _, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun
+      obtain ⟨fresh1, keeps1, d1, out1, exec1, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun
         (stmt_bound (execStmt_grows bodyRun fresh.2).1 (s := .while condition body) run bound)
-      cases matched1
+      cases matched1 with
+      | continued corr1 hc1 =>
+        obtain ⟨fresh2, keeps2, d2, out2, exec2, matched2⟩ :=
+          ih whileOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) hc1 run
+            (by have limit := exec1.limit; simp only [Outcome.heap] at limit; rw [limit]; exact bound)
+        exact ⟨fresh2, keeps1.trans keeps2, max d1 d2, out2,
+          Exec.whileLoop_next one condTrue (.inr (exec1.mono (Nat.le_max_left _ _))) (exec2.mono (Nat.le_max_right _ _)),
+          matched2⟩
     · rename_i completed bodyRun
       simp only [Semantics.Outcome.done.injEq] at run
-      obtain ⟨-, rfl⟩ := run
-      obtain ⟨_, _, _, _, _, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun bound
-      cases matched1
+      obtain ⟨rfl, rfl⟩ := run
+      obtain ⟨fresh1, keeps1, d1, out1, exec1, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun bound
+      cases matched1 with
+      | broke corr1 hc1 => exact ⟨fresh1, keeps1, d1, _, Exec.whileLoop_broke one condTrue exec1, .next corr1 hc1⟩
     · rename_i value completed bodyRun
       simp only [Semantics.Outcome.done.injEq] at run
       obtain ⟨rfl, rfl⟩ := run
       obtain ⟨fresh1, keeps1, d1, out1, exec1, matched1⟩ := ih (hp := hp) bodyOk corr fr fresh le hc bodyRun bound
       cases matched1 with
       | returned holds len hc1 =>
-        exact ⟨fresh1, keeps1, d1, _, .loopReturned condTrue exec1.thenCheck_returned, .returned holds len hc1⟩
+        exact ⟨fresh1, keeps1, d1, _, Exec.whileLoop_returned one condTrue exec1, .returned holds len hc1⟩
     all_goals simp at run
   · rename_i w mid notFalse notTrue condRun
     obtain ⟨rfl, y, rfl, _⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) condOk condRun

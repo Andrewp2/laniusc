@@ -271,6 +271,8 @@ inductive LitStmt (funcs : List SrcFunc) (ret : SrcType) : List LocalTy → SrcS
       LitEff funcs locals (tyAt (srcFields (tyLocal locals id)) j) x x' →
       LitStmt funcs ret locals (.setFieldEval id j x) (.setFieldEval id j x')
   | returnUnit {locals : List LocalTy} : LitStmt funcs ret locals .returnUnit .returnUnit
+  | «break» {locals : List LocalTy} : LitStmt funcs ret locals .break .break
+  | «continue» {locals : List LocalTy} : LitStmt funcs ret locals .continue .continue
   | «assert» {locals : List LocalTy} {x x' : SrcEff} :
       LitEff funcs locals (some .bool) x x' → LitStmt funcs ret locals (.assert x) (.assert x')
 
@@ -328,6 +330,8 @@ theorem litStmt_sound (funcs : List SrcFunc) (ret : SrcType) :
     simp only [litStmt]; exact .setIndexEval (litEff_sound _ _ _ _) (litEff_sound _ _ _ _)
   | locals, .setFieldEval id j x => by simp only [litStmt]; exact .setFieldEval (litEff_sound _ _ _ _)
   | locals, .returnUnit => by simp only [litStmt]; exact .returnUnit
+  | locals, .break => by simp only [litStmt]; exact .break
+  | locals, .continue => by simp only [litStmt]; exact .continue
   | locals, .assert x => by simp only [litStmt]; exact .assert (litEff_sound _ _ _ _)
 
 /-! ## Functions and the closed program -/

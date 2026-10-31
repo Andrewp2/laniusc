@@ -257,6 +257,8 @@ inductive MStmt where
   | mSetFieldEval : Nat → Nat → MEff → MStmt
   | mReturnUnit : MStmt
   | mAssert : MEff → MStmt
+  | mBreak : MStmt
+  | mContinue : MStmt
   deriving Repr
 
 /-- A call: the function instance and the arguments. -/

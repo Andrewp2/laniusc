@@ -211,6 +211,8 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
   | .setFieldEval id index value => .expression (.assign .set (.field (.local id) index) value.toCore)
   | .returnUnit => .returnValue none
   | .assert condition => .expression (.intrinsic .assert condition.toCore)
+  | .break => .breakLoop
+  | .continue => .continueLoop
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id

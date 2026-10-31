@@ -613,3 +613,23 @@ The relation is deterministic (`reading_unique`, F1): `compileText_correct`
 and the process theorems say that the program is the texts' one reading
 (`TextReading`, on `Reading.Reading`, unique by `textReading_unique`). That
 `build` finds a reading whenever there is one is a later step.
+
+## `break` and `continue` (decided 10-30, F4)
+
+Core's `breakLoop` and `continueLoop` leave or restart the nearest
+`whileLoop`, and the Mini IR's `Brk` and `Cont` do the same for `Loop`.
+`Brk` compiles to `Imm 0; Jmp brk`, where `brk` is the loop's `Jz`, so the
+loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
+(`compileStmt_correct` takes both targets).
+
+- A function body with a `break` or `continue` outside any loop is
+  rejected by `lower_func` (`breaks_out`). The front end reads it; the
+  `reject_loose_break` case (marker `compile_rejects`) checks that
+  `compileSource` rejects it. Lowered code thus never runs a loose
+  `Brk` (`breaksOut_noEscape`).
+- `continue` must re-test the condition. A while loop whose condition needs
+  a check (a division, a call) lowers as `Loop(1, check; if c { body }
+  else { Brk })`, so the check runs on every iteration, including after a
+  `continue`; a condition that needs none lowers as `Loop(c, body)`. A
+  `while` whose condition has effects lowers the same way:
+  `Loop(1, c.stmt; if c { body } else { Brk })`.

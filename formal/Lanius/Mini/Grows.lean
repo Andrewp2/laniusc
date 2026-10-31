@@ -1498,6 +1498,10 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
             all_goals simp_all
           all_goals simp at assertRun
       all_goals simp at run
+    | «break» | «continue» =>
+      simp only [SrcStmt.toCore, execStmt, Semantics.Outcome.done.injEq] at run
+      obtain ⟨-, rfl⟩ := run
+      exact Grows.refl _
 
 /-- Every subset statement Core completes grows the heap. -/
 theorem grows (sp : SrcProgram) : ∀ fuel, GrowsBelow sp fuel

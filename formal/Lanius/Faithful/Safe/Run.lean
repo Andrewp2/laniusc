@@ -457,7 +457,7 @@ end
 /-- A call of a function of `sp`, on arguments of the callee's arity, whose
 body is safe from every start the arguments' runs give. -/
 theorem safeE_call {sp : SrcProgram} {st : State} {callee : Nat} {args : List Core.Expr} {f : SrcFunc}
-    (found : sp.funcs[callee]? = some f) (sa : SafeEs sp.toCore st args)
+    (found : sp.funcs[callee]? = some f) (inside : f.body.breaksOut = false) (sa : SafeEs sp.toCore st args)
     (body : ∀ {k values s}, evalExprs k sp.toCore st args = .done values s → values.length = f.params.length ∧
       SafeS sp.toCore (({ s with locals := [] } : State).bindLocals (paramBindings f.params values)) f.body.toCore) :
     SafeE sp.toCore st (.call callee args) := by
@@ -469,7 +469,9 @@ theorem safeE_call {sp : SrcProgram} {st : State} {callee : Nat} {args : List Co
   · rw [found, Option.some.injEq] at found'
     subst found'
     exact (body hargs).2 _ _ _ hb bound
-  · have ends := stmt_ends sp _ done
+  · rw [found, Option.some.injEq] at found'
+    subst found'
+    have ends := stmt_ends sp _ inside done
     rcases bad with rfl | ⟨rfl | rfl, -⟩
     · rfl
     · exact ends.elim

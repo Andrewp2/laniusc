@@ -80,7 +80,7 @@ theorem read_safe {inp : Nat} {W : List (BitVec 32)} (len : W.length < 2 ^ 64) :
       have m47 := local?_bindLocal_other (id := 146) (by decide) (.unsigned .usize (lo + (hi - lo) / 2)) l47
       have args1 := knowns_cons (known_local (P := prog.toCore) m12) (knowns_cons (known_local m146)
         (knowns_cons (known_local m36) (knowns_cons (known_local m47) knowns_nil)))
-      refine safeS_let (safeE_call fn_read args1.safeEs fun {k values s1} h1 => ?_) fun {k rv s5} recRun => ?_
+      refine safeS_let (safeE_call fn_read (by decide) args1.safeEs fun {k values s1} h1 => ?_) fun {k rv s5} recRun => ?_
       · obtain ⟨rfl, hs1⟩ := args1.done h1
         subst s1
         refine ⟨rfl, ?_⟩
@@ -115,7 +115,7 @@ theorem read_safe {inp : Nat} {W : List (BitVec 32)} (len : W.length < 2 ^ 64) :
         (knowns_cons (known_local (back (by decide) (local?_bindLocal_other (by decide) _ l25)))
           (knowns_cons (known_local (back (by decide) m146))
             (knowns_cons (known_local (local?_bindLocal_self (inv1'.restore _) 191 rv)) knowns_nil)))
-      refine safeS_return (safeE_call fn_read args2.safeEs fun {k values s1} h2 => ?_)
+      refine safeS_return (safeE_call fn_read (by decide) args2.safeEs fun {k values s1} h2 => ?_)
       obtain ⟨rfl, hs1⟩ := args2.done h2
       subst s1
       refine ⟨rfl, ?_⟩
@@ -203,7 +203,7 @@ theorem write_one_safe {outp room : Nat} (roomLt : room < 2 ^ 31) {x : BitVec 32
     (known_value (.unsigned .usize (1#64).toNat)) (v := .unsigned .usize ((ofs + 1) % 2 ^ 64)) rfl
   have args := knowns_cons (known_local (P := prog.toCore) l17) (knowns_cons next
     (knowns_cons (known_local l48) knowns_nil))
-  refine safeS_let (safeE_call fn_write args.safeEs fun {k values s1} h1 => ?_) fun {k rv s5} recRun => ?_
+  refine safeS_let (safeE_call fn_write (by decide) args.safeEs fun {k values s1} h1 => ?_) fun {k rv s5} recRun => ?_
   · obtain ⟨rfl, hs1⟩ := args.done h1
     subst s1
     refine ⟨rfl, ?_⟩
@@ -318,7 +318,7 @@ theorem write_safe {outp room : Nat} (roomLt : room < 2 ^ 31) : ∀ ws, WriteSaf
         obtain ⟨rfl, hs1⟩ := kU.done h1
         subst s1
         exact ⟨inv2, _, .cons (heapE ▸ rbox) .nil⟩
-    refine safeE_call fn_write_one (safeEs_cons (known_local m13).safeE fun {k v1 s1} h1 => ?_)
+    refine safeE_call fn_write_one (by decide) (safeEs_cons (known_local m13).safeE fun {k v1 s1} h1 => ?_)
       fun {k values s1} h1 => ?_
     · obtain ⟨rfl, hs1⟩ := (known_local m13).done h1
       subst s1
@@ -472,7 +472,7 @@ theorem put_safe {outp room : Nat} (roomLt : room < 2 ^ 31) {s : State} {rv rp :
     have m153 : (E.bindLocals [(153, lv)]).local? 153 = some lv := local?_bindLocal_self invE _ _
     have args := knowns_cons (known_local (P := prog.toCore) m11)
       (knowns_cons (known_value (.unsigned .usize (0#64).toNat)) (knowns_cons (known_local m153) knowns_nil))
-    refine safeE_cast (safeE_call fn_write args.safeEs fun {k values s1} h1 => ?_) fun {k v s1} h1 bound => ?_
+    refine safeE_cast (safeE_call fn_write (by decide) args.safeEs fun {k values s1} h1 => ?_) fun {k v s1} h1 bound => ?_
     · obtain ⟨rfl, hs1⟩ := args.done h1
       subst s1
       refine ⟨rfl, ?_⟩
@@ -503,7 +503,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
   have args0 := knowns_cons (known_value (P := prog.toCore) (st := st) (.pointer inp))
     (knowns_cons (known_value (.signed .i32 W.length)) (knowns_cons (known_value (.pointer outp))
       (knowns_cons (known_value (.signed .i32 room)) knowns_nil)))
-  refine safeE_call fn_w args0.safeEs fun {k values s0} h0 => ?_
+  refine safeE_call fn_w (by decide) args0.safeEs fun {k values s0} h0 => ?_
   obtain ⟨rfl, hs0⟩ := args0.done h0
   subst s0
   refine ⟨rfl, ?_⟩
@@ -563,7 +563,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
       obtain ⟨rfl, rfl⟩ := exprs_nil_inv h
       exact ⟨inv2, [], .nil⟩
   -- `let read = oracle_read(data, 0, words as usize, empty())`
-  refine safeS_let (safeE_call fn_read (safeEs_cons (known_local k67).safeE fun {k v1 s1} h1 => ?_)
+  refine safeS_let (safeE_call fn_read (by decide) (safeEs_cons (known_local k67).safeE fun {k v1 s1} h1 => ?_)
     fun {k values s1} h1 => ?_) fun {k lv s6} readRun => ?_
   · obtain ⟨rfl, hs1⟩ := (known_local k67).done h1
     subst s1
@@ -642,7 +642,7 @@ theorem driver_safe {st : State} {inp outp room : Nat} {W : List (BitVec 32)}
     · simp [TEnv.get?, Ne.symm e] at hx
   have effSafe := safeE_of_eff (e := SrcEff.eCall 6 [SrcEff.eCall 7 [SrcEff.eCall 8 [], SrcEff.ePure (SrcExpr.local 182)]])
     (t := ty3) rfl invR0 envR
-  refine safeS_return (safeE_call fn_put (safeEs_cons (known_local k125').safeE fun {k v1 s1} h1 => ?_)
+  refine safeS_return (safeE_call fn_put (by decide) (safeEs_cons (known_local k125').safeE fun {k v1 s1} h1 => ?_)
     fun {k values s1} h1 => ?_)
   · obtain ⟨rfl, hs1⟩ := (known_local k125').done h1
     subst s1

@@ -162,10 +162,11 @@ theorem proof_lower_body {prog : SrcProgram} {prims : Prims} {ix_lower_body ix_p
   simp only [src_lower_body] at h
   faithful [Lanius.Mini.lowerBody]
 
-theorem proof_lower_func {prog : SrcProgram} {prims : Prims} {ix_lower_func ix_params_size ix_SrcType_size ix_params_valid ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_param_scope ix_empty_of_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_lower_func]? = some (src_lower_func ix_params_size ix_SrcType_size ix_params_valid ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_param_scope ix_empty_of_mini_selfhost_Binding)) (np : prims.isPrim ix_lower_func = false)
+theorem proof_lower_func {prog : SrcProgram} {prims : Prims} {ix_lower_func ix_params_size ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_param_scope ix_empty_of_mini_selfhost_Binding : Nat} (fn : prog.funcs[ix_lower_func]? = some (src_lower_func ix_params_size ix_SrcType_size ix_params_valid ix_SrcStmt_breaks_out ix_lower_body ix_SrcStmt_depth ix_unit_tail ix_SrcStmt_lower ix_param_scope ix_empty_of_mini_selfhost_Binding)) (np : prims.isPrim ix_lower_func = false)
     (ext_params_size : Certified (∀ {n : Nat}, Stmt_params_size prog prims ix_params_size n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
     (ext_params_valid : Certified (∀ {n : Nat}, Stmt_params_valid prog prims ix_params_valid n))
+    (ext_SrcStmt_breaks_out : Certified (∀ {n : Nat}, Stmt_SrcStmt_breaks_out prog prims ix_SrcStmt_breaks_out n))
     (ext_lower_body : Certified (∀ {n : Nat}, Stmt_lower_body prog prims ix_lower_body n))
     (ext_SrcStmt_depth : Certified (∀ {n : Nat}, Stmt_SrcStmt_depth prog prims ix_SrcStmt_depth n))
     (ext_unit_tail : Certified (∀ {n : Nat}, Stmt_unit_tail prog prims ix_unit_tail n))

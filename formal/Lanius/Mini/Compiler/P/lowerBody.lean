@@ -38,7 +38,7 @@ def unitTail (ret : SrcType) (body : Option Stmt) : Option Stmt :=
 /-- Results and struct parameters have slots; a function returns its result type's slots, so it has at least that many locals. -/
 def lowerFunc (sigs : List Sig) (decls : SrcDecls) (func : SrcFunc) : Option Func :=
   let count : Nat := paramsSize func.params
-  if decide (0 < SrcType.size func.ret) && paramsValid func.params then
+  if decide (0 < SrcType.size func.ret) && paramsValid func.params && !(SrcStmt.breaksOut func.body) then
     lowerBody count (SrcType.size func.ret) (SrcStmt.depth func.body) (unitTail func.ret (SrcStmt.lower func.body sigs decls func.ret (paramScope func.params 0 []) count))
   else
     none
@@ -200,6 +200,8 @@ def SrcStmt.declare (self : SrcStmt) (decls : SrcDecls) : Option SrcDecls :=
   | .setFieldEval id field value => declareTypes (SrcEff.types value) decls
   | .returnUnit => some decls
   | .assert condition => declareTypes (SrcEff.types condition) decls
+  | .break => some decls
+  | .continue => some decls
 
 /-- Every path ends in a return, the way Core's DefinitelyReturns counts: a while body never counts. -/
 def SrcStmt.returns (self : SrcStmt) : Bool :=
@@ -234,6 +236,8 @@ def SrcStmt.returns (self : SrcStmt) : Bool :=
   | .setFieldEval id field value => false
   | .returnUnit => true
   | .assert condition => false
+  | .break => false
+  | .continue => false
 
 def declareParams (params : List SrcParam) (decls : SrcDecls) : Option SrcDecls :=
   match params with

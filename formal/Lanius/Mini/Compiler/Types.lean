@@ -355,6 +355,9 @@ inductive SrcStmt where
   | returnUnit : SrcStmt
   /-- assert(condition): Core traps when it is false -/
   | assert : SrcEff → SrcStmt
+  /-- break; and continue; of the innermost loop -/
+  | break : SrcStmt
+  | continue : SrcStmt
   deriving Repr
 
 structure SrcParam where

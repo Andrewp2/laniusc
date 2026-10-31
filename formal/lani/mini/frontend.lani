@@ -255,6 +255,8 @@ pub enum SrcStmt {
     SetFieldEval(usize, usize, SrcEff),
     ReturnUnit,
     Assert(SrcEff),
+    Break,
+    Continue,
 }
 
 pub struct SrcParam {
@@ -4497,6 +4499,8 @@ pub enum MStmt {
     MSetFieldEval(usize, usize, MEff),
     MReturnUnit,
     MAssert(MEff),
+    MBreak,
+    MContinue,
 }
 
 // A call: the function instance and the arguments.
@@ -6547,6 +6551,12 @@ pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core
     if (p == p_return_stmt() && node_prod(kid(s, 1)) == p_return_void()) {
         return Some(MReturnUnit);
     }
+    if (p == p_break_stmt()) {
+        return Some(MBreak);
+    }
+    if (p == p_continue_stmt()) {
+        return Some(MContinue);
+    }
     if (p == p_if_stmt() && node_prod(kid(s, 5)) == p_else_stmt()) {
         return if_or_eval(f, env, scope, kid(s, 2), block_of(f, env, scope, kid(kid(s, 4), 1)), block_of(f, env, scope, kid(kid(kid(s, 5), 1), 1)));
     }
@@ -6835,6 +6845,8 @@ pub fn stmt_calls(m: MStmt) -> List<Inst> {
         MSetFieldEval(id, j, x) -> eff_calls(x),
         MReturnUnit -> empty(),
         MAssert(x) -> eff_calls(x),
+        MBreak -> empty(),
+        MContinue -> empty(),
     };
 }
 
@@ -6897,6 +6909,8 @@ pub fn stmt_tys(m: MStmt) -> List<Ty> {
         MSetFieldEval(id, j, x) -> eff_named_tys(x),
         MReturnUnit -> empty(),
         MAssert(x) -> eff_named_tys(x),
+        MBreak -> empty(),
+        MContinue -> empty(),
     };
 }
 
@@ -7412,6 +7426,8 @@ pub fn close_stmt(fuel: usize, t: Tables, m: MStmt) -> core::option::Option<SrcS
         MSetFieldEval(id, j, x) -> set_field_eval_closed(id, j, close_eff(fuel, t, x)),
         MReturnUnit -> Some(ReturnUnit),
         MAssert(x) -> assert_closed(close_eff(fuel, t, x)),
+        MBreak -> Some(Break),
+        MContinue -> Some(Continue),
     };
 }
 
@@ -8025,6 +8041,8 @@ pub fn lit_stmt(funcs: List<SrcFunc>, ret: SrcType, locals: List<LocalTy>, s: Sr
         SetFieldEval(id, j, x) -> SetFieldEval(id, j, lit_eff(funcs, locals, ty_at(src_fields(ty_local(locals, id)), j), x)),
         ReturnUnit -> ReturnUnit,
         Assert(x) -> Assert(lit_eff(funcs, locals, Some(Bool), x)),
+        Break -> Break,
+        Continue -> Continue,
     };
 }
 
@@ -8134,6 +8152,8 @@ pub fn wide_left_stmt(s: SrcStmt) -> bool {
         SetFieldEval(id, j, x) -> wide_left_eff(x),
         ReturnUnit -> false,
         Assert(x) -> wide_left_eff(x),
+        Break -> false,
+        Continue -> false,
     };
 }
 
@@ -10435,6 +10455,16 @@ fn p_return_value() -> usize {
 // extract: inline
 fn p_return_void() -> usize {
     return 91;
+}
+
+// extract: inline
+fn p_break_stmt() -> usize {
+    return 82;
+}
+
+// extract: inline
+fn p_continue_stmt() -> usize {
+    return 83;
 }
 
 // extract: inline

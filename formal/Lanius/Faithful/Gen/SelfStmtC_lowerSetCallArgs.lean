@@ -40,4 +40,8 @@ abbrev Stmt_lower_while (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepExpr x1 v1 → (RepOption 144 RepExpr) x2 v2 → (RepOption 125 RepStmt) x3 v3 →
     (RepOption 125 RepStmt) (Lanius.Mini.lowerWhile x0 x1 x2 x3) w
 
+abbrev Stmt_while_loop (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.Expr} {x2 : Lanius.Mini.Expr} {x3 : Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepExpr x1 v1 → RepExpr x2 v2 → RepStmt x3 v3 →
+    RepStmt (Lanius.Mini.whileLoop x0 x1 x2 x3) w
+
 end Lanius.Faithful.SelfCert

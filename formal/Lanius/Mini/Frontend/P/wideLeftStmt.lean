@@ -50,6 +50,8 @@ def wideLeftStmt (s : SrcStmt) : Bool :=
   | .setFieldEval id j x => wideLeftEff x
   | .returnUnit => false
   | .assert x => wideLeftEff x
+  | .break => false
+  | .continue => false
 
 def wideLeftFuncs (fs : List SrcFunc) : Bool :=
   match fs with

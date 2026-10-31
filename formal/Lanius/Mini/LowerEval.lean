@@ -2018,8 +2018,9 @@ theorem stmt_ifEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) {co
     all_goals simp at run
   · simp at ok
 
-/-- The loop's code computes the condition again after the body; Core's
-remaining iterations are the same statement with less fuel. -/
+/-- The loop's code computes the condition at the top of every iteration and
+breaks when it is false, so a continue reaches it too; Core's remaining
+iterations are the same statement with less fuel. -/
 theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) {condition : SrcEff}
     {body : SrcStmt}
     (ok : (SrcStmt.whileEval condition body).lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
@@ -2053,7 +2054,8 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
       rw [tyEq] at holds1
       obtain ⟨_, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
       cases eq
-      exact ⟨fresh1, keeps1.lower le, d1, _, .seq exec1 (.loopDone (by simp [Expr.eval, bits, boolBits])),
+      exact ⟨fresh1, keeps1.lower le, d1, _,
+        .loopBroke (Expr.lit_one_ne env) (.seq exec1 (.ifFalse (by simp [Expr.eval, bits, boolBits]) .brk)),
         .next (corr.after fr fresh keeps1 locals1 same1) hc1⟩
     · rename_i mid condRun
       have views1 := (eff_grown condRun fresh.2).1
@@ -2079,31 +2081,49 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
           have exec1' := exec1.mono (Nat.le_max_left d1 (max d2 d3))
           have exec2' := exec2.mono (Nat.le_trans (Nat.le_max_left d2 d3) (Nat.le_max_right d1 _))
           have exec3' := exec3.mono (Nat.le_trans (Nat.le_max_right d2 d3) (Nat.le_max_right d1 _))
-          refine ⟨fresh3, ((keeps1.lower le).trans keeps2).trans keeps3, max d1 (max d2 d3), out3, ?_, matched3⟩
-          cases exec3' with
-          | seq execC execLoop => exact .seq exec1' (.loopNext condTrue (.seq exec2' execC) execLoop)
-          | seqReturned execC => exact .seq exec1' (.loopReturned condTrue (.seq exec2' execC))
-          | seqBroke _ => cases matched3
-          | seqContinued _ => cases matched3
+          exact ⟨fresh3, ((keeps1.lower le).trans keeps2).trans keeps3, max d1 (max d2 d3), out3,
+            .loopNext (Expr.lit_one_ne env) (.seq exec1' (.ifTrue condTrue exec2')) exec3', matched3⟩
       · rename_i completed bodyRun
         obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
           ihe condOk corr fr fresh hc condRun
             (stmt_bound views1 bodyRun (stmt_bound (execStmt_grows bodyRun views1).1
               (s := .whileEval condition body) run bound))
-        obtain ⟨_, _, _, _, _, matched2⟩ :=
+        rw [tyEq] at holds1
+        obtain ⟨_, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
+        cases eq
+        have condTrue : (Expr.var next).eval env1 ≠ 0 := by simp [Expr.eval, bits, boolBits]
+        obtain ⟨fresh2, keeps2, d2, out2, exec2, matched2⟩ :=
           ih bodyOk (corr.after fr fresh keeps1 locals1 same1) fr fresh1 (Nat.le_trans le keeps1.next) hc1 bodyRun
             (stmt_bound (execStmt_grows bodyRun views1).1 (s := .whileEval condition body) run
               (by rw [exec1.limit_normal]; exact bound))
-        cases matched2
+        cases matched2 with
+        | continued corr2 hc2 =>
+          obtain ⟨fresh3, keeps3, d3, out3, exec3, matched3⟩ :=
+            ih whileOk corr2 fr fresh2 (Nat.le_trans (Nat.le_trans le keeps1.next) keeps2.next) hc2 run
+              (by have limit := exec2.limit; simp only [Outcome.heap] at limit; rw [limit, exec1.limit_normal]; exact bound)
+          have exec1' := exec1.mono (Nat.le_max_left d1 (max d2 d3))
+          have exec2' := exec2.mono (Nat.le_trans (Nat.le_max_left d2 d3) (Nat.le_max_right d1 _))
+          have exec3' := exec3.mono (Nat.le_trans (Nat.le_max_right d2 d3) (Nat.le_max_right d1 _))
+          exact ⟨fresh3, ((keeps1.lower le).trans keeps2).trans keeps3, max d1 (max d2 d3), out3,
+            .loopContinued (Expr.lit_one_ne env) (.seq exec1' (.ifTrue condTrue exec2')) exec3', matched3⟩
       · rename_i completed bodyRun
         simp only [Semantics.Outcome.done.injEq] at run
-        obtain ⟨-, rfl⟩ := run
+        obtain ⟨rfl, rfl⟩ := run
         obtain ⟨fresh1, keeps1, locals1, -, d1, env1, hp1, exec1, same1, holds1, hc1⟩ :=
           ihe condOk corr fr fresh hc condRun (stmt_bound views1 bodyRun bound)
-        obtain ⟨_, _, _, _, _, matched2⟩ :=
+        rw [tyEq] at holds1
+        obtain ⟨_, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
+        cases eq
+        have condTrue : (Expr.var next).eval env1 ≠ 0 := by simp [Expr.eval, bits, boolBits]
+        obtain ⟨fresh2, keeps2, d2, out2, exec2, matched2⟩ :=
           ih bodyOk (corr.after fr fresh keeps1 locals1 same1) fr fresh1 (Nat.le_trans le keeps1.next) hc1 bodyRun
             (by rw [exec1.limit_normal]; exact bound)
-        cases matched2
+        cases matched2 with
+        | broke corr2 hc2 =>
+          exact ⟨fresh2, (keeps1.lower le).trans keeps2, max d1 d2, _,
+            .loopBroke (Expr.lit_one_ne env)
+              (.seq (exec1.mono (Nat.le_max_left _ _)) (.ifTrue condTrue (exec2.mono (Nat.le_max_right _ _)))),
+            .next corr2 hc2⟩
       · rename_i value completed bodyRun
         simp only [Semantics.Outcome.done.injEq] at run
         obtain ⟨rfl, rfl⟩ := run
@@ -2119,7 +2139,8 @@ theorem stmt_whileEval (ih : StmtSound sp mp fuel) (ihe : EvalSound sp mp fuel) 
         cases matched2 with
         | returned holds len hc2 =>
           exact ⟨fresh2, (keeps1.lower le).trans keeps2, max d1 d2, _,
-            .seq (exec1.mono (Nat.le_max_left _ _)) (.loopReturned condTrue (.seqReturned (exec2.mono (Nat.le_max_right _ _)))),
+            .loopReturned (Expr.lit_one_ne env)
+              (.seq (exec1.mono (Nat.le_max_left _ _)) (.ifTrue condTrue (exec2.mono (Nat.le_max_right _ _)))),
             .returned holds len hc2⟩
       all_goals simp at run
     · simp at run
@@ -2251,6 +2272,29 @@ theorem stmt_returnUnit
   have unit : ret = .unit := by cases ret <;> simp_all [SrcType.isUnit]
   exact ⟨fresh, Keeps.refl _ _, 0, _, .ret, .returned unit (by rw [unit]; rfl) hc⟩
 
+/-- `break;` and `continue;` jump out of the body with the state unchanged. -/
+theorem stmt_break
+    (ok : SrcStmt.break.lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (run : execStmt (fuel + 1) sp.toCore st SrcStmt.break.toCore = .done c st') :
+    Simulates mp hp ret scope frame base st env stmt c st' := by
+  simp only [SrcStmt.lower, Option.some.injEq] at ok
+  subst ok
+  simp only [SrcStmt.toCore, execStmt, Semantics.Outcome.done.injEq] at run
+  obtain ⟨rfl, rfl⟩ := run
+  exact ⟨fresh, Keeps.refl _ _, 0, _, .brk, .broke corr hc⟩
+
+theorem stmt_continue
+    (ok : SrcStmt.continue.lower (sigs sp.funcs) sp.decls ret scope next = some stmt)
+    (corr : Corr scope frame st env) (fresh : st.Fresh) (hc : HeapCorr st.heap hp)
+    (run : execStmt (fuel + 1) sp.toCore st SrcStmt.continue.toCore = .done c st') :
+    Simulates mp hp ret scope frame base st env stmt c st' := by
+  simp only [SrcStmt.lower, Option.some.injEq] at ok
+  subst ok
+  simp only [SrcStmt.toCore, execStmt, Semantics.Outcome.done.injEq] at run
+  obtain ⟨rfl, rfl⟩ := run
+  exact ⟨fresh, Keeps.refl _ _, 0, _, .cont, .continued corr hc⟩
+
 end Statements
 
 /-! ## The simulation -/
@@ -2303,6 +2347,8 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | discard => exact stmt_discard hereE ok corr fr fresh le hc run bound
         | assert => exact stmt_assert belowE ok corr fr fresh le hc run bound
         | returnUnit => exact stmt_returnUnit ok fresh hc run
+        | «break» => exact stmt_break ok corr fresh hc run
+        | «continue» => exact stmt_continue ok corr fresh hc run
         | setIndexEval => exact stmt_setIndexEval belowE ok corr fr fresh le hc run bound
         | setFieldEval => exact stmt_setFieldEval belowE ok corr fr fresh le hc run bound
       · intro hp e scope slot ev frame base st env v st' ok corr fr fresh hc run bound

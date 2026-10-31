@@ -234,6 +234,8 @@ def stmtOk (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .setFieldEval _ _ _ => false
   | .returnUnit => true
   | .assert condition => isBoolTy (effTy sp outside boxes tenv condition)
+  | .break => false
+  | .continue => false
 
 end
 

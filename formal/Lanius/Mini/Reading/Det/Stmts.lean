@@ -335,6 +335,14 @@ theorem stmtR_unique : ∀ {scope : List Local} {s : CTree} {a : MStmt}, StmtR e
     cases h₂ with
     | retUnit _ _ => rfl
     | _ => prod_clash
+  | _, _, _, .brk _, _, _, _, h₂ => by
+    cases h₂ with
+    | brk _ => rfl
+    | _ => prod_clash
+  | _, _, _, .cont _, _, _, _, h₂ => by
+    cases h₂ with
+    | cont _ => rfl
+    | _ => prod_clash
   | _, _, _, .ifElse _ _ ba bb i, nd, vn, _, h₂ => by
     have iha := fun {y} k' => blockR_unique ba nd vn (b := y) k'
     have ihb := fun {y} k' => blockR_unique bb nd vn (b := y) k'

@@ -96,19 +96,25 @@ def stmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Opti
       if decide (p = (76)) && decide (nodeProd (kid s 1) = (91)) then
         some MStmt.mReturnUnit
       else
-        if decide (p = (77)) && decide (nodeProd (kid s 5) = (78)) then
-          ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (blockOf f env scope (kid (kid (kid s 5) 1) 1))
+        if p = (82) then
+          some MStmt.mBreak
         else
-          if decide (p = (77)) && decide (nodeProd (kid s 5) = (79)) then
-            ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (some MStmt.mNop)
+          if p = (83) then
+            some MStmt.mContinue
           else
-            if p = (80) then
-              whileOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1))
+            if decide (p = (77)) && decide (nodeProd (kid s 5) = (78)) then
+              ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (blockOf f env scope (kid (kid (kid s 5) 1) 1))
             else
-              if p = (85) then
-                assignment f env scope (kid s 0)
+              if decide (p = (77)) && decide (nodeProd (kid s 5) = (79)) then
+                ifOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1)) (some MStmt.mNop)
               else
-                none
+                if p = (80) then
+                  whileOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1))
+                else
+                  if p = (85) then
+                    assignment f env scope (kid s 0)
+                  else
+                    none
 end
 
 def consParam (p : MParam) (rest : Option MParams) : Option MParams :=

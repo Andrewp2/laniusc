@@ -110,6 +110,7 @@ public import Lanius.Mini.Frontend.P.Inline_pLeTail
 public import Lanius.Mini.Frontend.P.Inline_pModTail
 public import Lanius.Mini.Frontend.P.Inline_pPathMore
 public import Lanius.Mini.Frontend.P.Inline_pRetVoid
+public import Lanius.Mini.Frontend.P.Inline_pBreakStmt
 public import Lanius.Mini.Frontend.P.Inline_pSelfParamPlain
 public import Lanius.Mini.Frontend.P.Inline_pSelfParamTyped
 public import Lanius.Mini.Frontend.P.Inline_pSelfValue
@@ -132,6 +133,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 121 parts, `.P0` on, in source order, whose bodies
+The definitions are in 122 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

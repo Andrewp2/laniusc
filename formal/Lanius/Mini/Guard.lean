@@ -410,6 +410,52 @@ theorem Exec.checkThen {prog : Program} {d : Nat} {env : Env} {hp : Heap} {s : S
   · exact exec
   · exact .ifTrue (by rw [one]; decide) exec
 
+/-! A lowered `while`: `whileLoop slot g c b` checks `g`, then tests `c`, each iteration. -/
+
+theorem Expr.lit_one_ne (env : Env) : (Expr.lit 1).eval env ≠ 0 := by simp [Expr.eval]
+
+theorem Exec.whileLoop_done {prog : Program} {d : Nat} {env : Env} {hp : Heap} {slot : Nat} {g c : Expr}
+    {b : Stmt} (one : g.eval env = 1) (zero : c.eval env = 0) :
+    Exec prog d env hp (Lanius.Mini.whileLoop slot g c b) (.normal env hp) := by
+  unfold Lanius.Mini.whileLoop
+  split
+  · exact .loopDone zero
+  · exact .loopBroke (Expr.lit_one_ne env) ((Exec.ifFalse zero .brk).checkThen one)
+
+theorem Exec.whileLoop_next {prog : Program} {d : Nat} {env env' : Env} {hp hp' : Heap} {slot : Nat}
+    {g c : Expr} {b : Stmt} {out : Outcome} (one : g.eval env = 1) (nonzero : c.eval env ≠ 0)
+    (body : Exec prog d env hp b (.normal env' hp') ∨ Exec prog d env hp b (.continued env' hp'))
+    (rest : Exec prog d env' hp' (Lanius.Mini.whileLoop slot g c b) out) :
+    Exec prog d env hp (Lanius.Mini.whileLoop slot g c b) out := by
+  unfold Lanius.Mini.whileLoop at rest ⊢
+  by_cases isOne : Lanius.Mini.isOne g = true
+  · simp only [isOne, if_true] at rest ⊢
+    rcases body with body | body
+    · exact .loopNext nonzero body rest
+    · exact .loopContinued nonzero body rest
+  · simp only [isOne, Bool.false_eq_true, if_false] at rest ⊢
+    rcases body with body | body
+    · exact .loopNext (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one) rest
+    · exact .loopContinued (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one) rest
+
+theorem Exec.whileLoop_broke {prog : Program} {d : Nat} {env env' : Env} {hp hp' : Heap} {slot : Nat}
+    {g c : Expr} {b : Stmt} (one : g.eval env = 1) (nonzero : c.eval env ≠ 0)
+    (body : Exec prog d env hp b (.broke env' hp')) :
+    Exec prog d env hp (Lanius.Mini.whileLoop slot g c b) (.normal env' hp') := by
+  unfold Lanius.Mini.whileLoop
+  split
+  · exact .loopBroke nonzero body
+  · exact .loopBroke (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one)
+
+theorem Exec.whileLoop_returned {prog : Program} {d : Nat} {env : Env} {hp hp' : Heap} {slot : Nat}
+    {g c : Expr} {b : Stmt} {values : List (BitVec 64)} (one : g.eval env = 1) (nonzero : c.eval env ≠ 0)
+    (body : Exec prog d env hp b (.returned values hp')) :
+    Exec prog d env hp (Lanius.Mini.whileLoop slot g c b) (.returned values hp') := by
+  unfold Lanius.Mini.whileLoop
+  split
+  · exact .loopReturned nonzero body
+  · exact .loopReturned (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one)
+
 theorem Exec.thenCheck {prog : Program} {d : Nat} {env env' : Env} {hp hp' : Heap} {s : Stmt}
     {slot : Nat} {g : Expr} (exec : Exec prog d env hp s (.normal env' hp')) (pass : g.eval env' ≠ 0) :
     Exec prog d env hp (Lanius.Mini.thenCheck slot g s) (.normal env' hp') := by

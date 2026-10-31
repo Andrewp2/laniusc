@@ -64,5 +64,7 @@ def stmtCalls (m : MStmt) : List Inst :=
   | .mSetFieldEval id j x => effCalls x
   | .mReturnUnit => []
   | .mAssert x => effCalls x
+  | .mBreak => []
+  | .mContinue => []
 
 end Lanius.Mini

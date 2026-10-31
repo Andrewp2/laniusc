@@ -1487,6 +1487,9 @@ pub enum SrcStmt {
     ReturnUnit,
     // assert(condition): Core traps when it is false
     Assert(SrcEff),
+    // break; and continue; of the innermost loop
+    Break,
+    Continue,
 }
 
 pub struct SrcParam {
@@ -3439,7 +3442,7 @@ pub fn lower_while_eval(slot: usize, condition: core::option::Option<Evaluated>,
         None -> None,
         Some(c) -> match (body) {
             None -> None,
-            Some(b) -> eval_same(c, Bool, Seq(boxed(c.stmt), boxed(Loop(Var(slot), boxed(Seq(boxed(b), boxed(c.stmt))))))),
+            Some(b) -> eval_same(c, Bool, Loop(Lit(1), boxed(Seq(boxed(c.stmt), boxed(Ite(Var(slot), boxed(b), boxed(Brk))))))),
         },
     };
 }
@@ -3576,12 +3579,21 @@ pub fn lower_if(condition: core::option::Option<Expr>, then_branch: core::option
 }
 
 // The body checks the condition's guard g before Core evaluates it again.
+// A loop whose condition c needs the check g tests g, then c, at the top of
+// every iteration, so a continue reaches both.
+pub fn while_loop(slot: usize, g: Expr, c: Expr, b: Stmt) -> Stmt {
+    if (is_one(g)) {
+        return Loop(c, boxed(b));
+    }
+    return Loop(Lit(1), boxed(check_then(slot, g, Ite(c, boxed(b), boxed(Brk)))));
+}
+
 pub fn lower_while(slot: usize, g: Expr, condition: core::option::Option<Expr>, body: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     return match (condition) {
         None -> None,
         Some(c) -> match (body) {
             None -> None,
-            Some(b) -> Some(Loop(c, boxed(then_check(slot, g, b)))),
+            Some(b) -> Some(while_loop(slot, g, c, b)),
         },
     };
 }
@@ -4372,7 +4384,7 @@ impl SrcStmt {
             SetCall(id, callee, args) -> guarded(next, guard_all(scope, args), lower_set_call(sigs, scope, lookup(scope, id), callee, args)),
             Then(first, second) -> lower_then(unbox(first).lower(sigs, decls, ret, scope, next), unbox(second).lower(sigs, decls, ret, scope, next)),
             If(condition, then_branch, else_branch) -> guarded(next, condition.guard(scope), lower_if(lower_as(scope, condition, Bool), unbox(then_branch).lower(sigs, decls, ret, scope, next), unbox(else_branch).lower(sigs, decls, ret, scope, next))),
-            While(condition, body) -> guarded(next, condition.guard(scope), lower_while(next, condition.guard(scope), lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next))),
+            While(condition, body) -> lower_while(next, condition.guard(scope), lower_as(scope, condition, Bool), unbox(body).lower(sigs, decls, ret, scope, next)),
             Return(value) -> guarded(next, value.guard(scope), lower_return(lower_value(scope, value, ret))),
             LetAlloc(id, size, shift, body) -> guarded(next, size.guard(scope), lower_alloc(next, shift, lower_as(scope, size, Uint(Usize)), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Ptr }, scope), plus(next, 1)))),
             LetLoad(id, pointer, offset, body) -> guarded(next, guard_and(pointer.guard(scope), offset.guard(scope)), lower_load(next, lower_address(lower_as(scope, pointer, Ptr), lower_as(scope, offset, Uint(Usize))), unbox(body).lower(sigs, decls, ret, cons(Binding { id: id, slot: next, ty: Uint(Uint8) }, scope), plus(next, 1)))),
@@ -4391,6 +4403,47 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> lower_set_field_eval(next, lookup(scope, id), field, value.eval(sigs, decls, scope, next)),
             ReturnUnit -> lower_return_unit(ret),
             Assert(condition) -> lower_assert(condition.eval(sigs, decls, scope, next), next),
+            Break -> Some(Brk),
+            Continue -> Some(Cont),
+        };
+    }
+
+    // A break or continue outside every loop of the statement: Core's
+    // typing rejects one outside every loop of the function.
+    pub fn breaks_out(self) -> bool {
+        return match (self) {
+            Nop -> false,
+            Let(id, ty, value, body) -> unbox(body).breaks_out(),
+            LetStruct(id, ty, fields, body) -> unbox(body).breaks_out(),
+            LetCall(id, ty, callee, args, body) -> unbox(body).breaks_out(),
+            LetEnum(id, ty, variant, payload, body) -> unbox(body).breaks_out(),
+            LetMatch(id, ty, scrutinee, enum_id, arms, body) -> unbox(body).breaks_out(),
+            Set(id, value) -> false,
+            SetField(id, index, value) -> false,
+            SetCall(id, callee, args) -> false,
+            Then(first, second) -> unbox(first).breaks_out() || unbox(second).breaks_out(),
+            If(condition, then_branch, else_branch) -> unbox(then_branch).breaks_out() || unbox(else_branch).breaks_out(),
+            While(condition, body) -> false,
+            Return(value) -> false,
+            LetAlloc(id, size, shift, body) -> unbox(body).breaks_out(),
+            LetLoad(id, pointer, offset, body) -> unbox(body).breaks_out(),
+            SetByte(pointer, offset, value) -> false,
+            Free(pointer, size, shift) -> false,
+            LetSlice(id, element, pointer, length, body) -> unbox(body).breaks_out(),
+            LetIndex(id, ty, slice, index, body) -> unbox(body).breaks_out(),
+            SetIndex(slice, index, value) -> false,
+            LetEval(id, ty, value, body) -> unbox(body).breaks_out(),
+            SetEval(id, value) -> false,
+            IfEval(condition, then_branch, else_branch) -> unbox(then_branch).breaks_out() || unbox(else_branch).breaks_out(),
+            WhileEval(condition, body) -> false,
+            ReturnEval(value) -> false,
+            Discard(value) -> false,
+            SetIndexEval(slice, index, value) -> false,
+            SetFieldEval(id, field, value) -> false,
+            ReturnUnit -> false,
+            Assert(condition) -> false,
+            Break -> true,
+            Continue -> true,
         };
     }
 
@@ -4427,6 +4480,8 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> 0,
             ReturnUnit -> 0,
             Assert(condition) -> 0,
+            Break -> 0,
+            Continue -> 0,
         };
     }
 }
@@ -4535,7 +4590,7 @@ pub fn unit_tail(ret: SrcType, body: core::option::Option<Stmt>) -> core::option
 // type's slots, so it has at least that many locals.
 pub fn lower_func(sigs: List<Sig>, decls: SrcDecls, func: SrcFunc) -> core::option::Option<Func> {
     let count: usize = params_size(func.params);
-    if ((func.ret.size() > 0) && params_valid(func.params)) {
+    if ((func.ret.size() > 0) && params_valid(func.params) && !func.body.breaks_out()) {
         return lower_body(count, func.ret.size(), func.body.depth(), unit_tail(func.ret, func.body.lower(sigs, decls, func.ret, param_scope(func.params, 0, empty()), count)));
     }
     return None;
@@ -4704,6 +4759,8 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> declare_types(value.types(), decls),
             ReturnUnit -> Some(decls),
             Assert(condition) -> declare_types(condition.types(), decls),
+            Break -> Some(decls),
+            Continue -> Some(decls),
         };
     }
 
@@ -4741,6 +4798,8 @@ impl SrcStmt {
             SetFieldEval(id, field, value) -> false,
             ReturnUnit -> true,
             Assert(condition) -> false,
+            Break -> false,
+            Continue -> false,
         };
     }
 }

@@ -1295,8 +1295,8 @@ theorem stops_ifEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
       (by rw [limit]; exact branch)
     exact ⟨_, Stops.after exec1 (.ifFalse (by simp [Expr.eval, bits, boolBits]) stops)⟩
 
-/-- A loop whose condition is computed again after its body, from a test of
-the condition's value: it stops within `j` ticks for every `j` up to the
+/-- A loop that computes its condition at the top of every iteration and
+breaks when it is false: it stops within `j` ticks for every `j` up to the
 ticks its body and condition stop within. -/
 theorem loop_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {c : SrcEff}
     {body : SrcStmt} {m : Nat} (ihc : EffStops sp mp m c) (ihb : SrcStops sp mp m body) {ret : SrcType}
@@ -1304,52 +1304,58 @@ theorem loop_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
     (condOk : c.eval (sigs sp.funcs) sp.decls scope next = some cv)
     (bodyOk : body.lower (sigs sp.funcs) sp.decls ret scope next = some bstmt) (isBool : cv.ty = .bool)
     (fr : Layout scope frame base next) :
-    ∀ j ≤ m, ∀ {hp : Heap} {st0 st1 : State} {env1 : Env} {k : Nat} {y : Bool},
-      Corr scope frame st1 env1 → st1.Fresh → base ≤ st1.nextCell → HeapCorr st1.heap hp →
-      st1.heap.nextAddress ≤ hp.limit → evalExpr k sp.toCore st0 c.toCore = .done (.boolean y) st1 →
-      env1 next = boolBits y → Fails sp hp.limit st0 (.whileLoop c.toCore body.toCore) →
-      ∃ d, Stops mp d env1 hp (.loop (.var next) (.seq bstmt cv.stmt)) j := by
+    ∀ j ≤ m, ∀ {hp : Heap} {st0 : State} {env0 : Env},
+      Corr scope frame st0 env0 → st0.Fresh → base ≤ st0.nextCell → HeapCorr st0.heap hp →
+      st0.heap.nextAddress ≤ hp.limit → Fails sp hp.limit st0 (.whileLoop c.toCore body.toCore) →
+      ∃ d, Stops mp d env0 hp (.loop (.lit 1) (.seq cv.stmt (.ite (.var next) bstmt .brk))) j := by
   intro j
   induction j with
   | zero => intros; exact ⟨0, .zero⟩
   | succ j ihj =>
-    intro le hp st0 st1 env1 k y corr1 fresh1 le1 hc1 within1 condRun bits fails
+    intro le hp st0 env0 corr0 fresh0 le0 hc0 within0 fails
+    rcases eff_split lowered ihc condOk corr0 fr fresh0 hc0 within0 fails
+        (fun i r s h => ⟨i + 1, s, by simp only [execStmt, h], rfl⟩) with
+      ⟨d, stops⟩ | ⟨k, w, st1, condRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
+    · exact ⟨d, .loopBody (Expr.lit_one_ne env0) (.seqFirst (stops.mono le))⟩
+    rw [isBool] at holds1
+    obtain ⟨y, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
+    cases eq
+    have limit1 := exec1.limit_normal
+    have corr1 := corr0.after fr fresh0 keeps1 locals1 same1
+    have le1 : base ≤ st1.nextCell := Nat.le_trans le0 keeps1.next
     cases y with
     | false =>
       have := fails (k + 1)
       simp only [execStmt, condRun] at this
-      exact absurd within1 (Nat.not_le.mpr this)
+      exact absurd bound1 (Nat.not_le.mpr this)
     | true =>
       have condTrue : (Expr.var next).eval env1 ≠ 0 := by simp [Expr.eval, bits, boolBits]
       by_cases done : Completes hp.limit fun i => execStmt i sp.toCore st1 body.toCore
-      · obtain ⟨k', cpl, st2, run1, bound1⟩ := done
-        obtain ⟨fresh2, keeps2, d1, out1, exec1, matched1⟩ :=
-          stmt_sound lowered k' bodyOk corr1 fr fresh1 le1 hc1 run1 bound1
-        cases matched1 with
+      · obtain ⟨k', cpl, st2, run1, bound2⟩ := done
+        obtain ⟨fresh2, keeps2, d2, out2, exec2, matched2⟩ :=
+          stmt_sound lowered k' bodyOk corr1 fr fresh1 le1 hc1 run1 (by rw [limit1]; exact bound2)
+        cases matched2 with
         | @next env2 hp2 corr2 hc2 =>
-          have limit := exec1.limit_normal
-          have fails2 := fails.whileNext condRun run1
-          rcases eff_split lowered ihc condOk corr2 fr fresh2 hc2 (by rw [limit]; exact bound1)
-              (by rw [limit]; exact fails2) (fun i r s h => ⟨i + 1, s, by simp only [execStmt, h], rfl⟩) with
-            ⟨d, stops⟩ | ⟨k2, w, st3, condRun2, bound3, fresh3, keeps3, locals3, _, d3, env3, hp3, exec3, same3,
-              holds3, hc3⟩
-          · exact ⟨_, .loopBody condTrue (Stops.after exec1 (stops.mono le))⟩
-          · rw [isBool] at holds3
-            obtain ⟨y', eq, bits3⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds3)
-            cases eq
-            have limit3 := exec3.limit_normal
-            obtain ⟨d4, stops⟩ := ihj (by omega) (corr2.after fr fresh2 keeps3 locals3 same3) fresh3
-              (Nat.le_trans (Nat.le_trans le1 keeps2.next) keeps3.next) hc3 (by rw [limit3]; exact bound3)
-              condRun2 bits3 (by rw [limit3, limit]; exact fails2)
-            exact ⟨d1 + d3 + d4, .loopNext condTrue (.seq (exec1.mono (by omega)) (exec3.mono (by omega)))
-              (stops.deeper (by omega))⟩
-        | returned =>
+          have limit2 := exec2.limit_normal
+          obtain ⟨d3, stops⟩ := ihj (by omega) corr2 fresh2 (Nat.le_trans le1 keeps2.next) hc2
+            (by rw [limit2, limit1]; exact bound2) (by rw [limit2, limit1]; exact fails.whileNext condRun run1)
+          exact ⟨d1 + d2 + d3, .loopNext (Expr.lit_one_ne env0)
+            (.seq (exec1.mono (by omega)) (.ifTrue condTrue (exec2.mono (by omega)))) (stops.deeper (by omega))⟩
+        | @continued env2 hp2 corr2 hc2 =>
+          have limit2 := exec2.limit
+          simp only [Outcome.heap] at limit2
+          obtain ⟨d3, stops⟩ := ihj (by omega) corr2 fresh2 (Nat.le_trans le1 keeps2.next) hc2
+            (by rw [limit2, limit1]; exact bound2) (by rw [limit2, limit1]; exact fails.whileContinue condRun run1)
+          exact ⟨d1 + d2 + d3, .loopContinued (Expr.lit_one_ne env0)
+            (.seq (exec1.mono (by omega)) (.ifTrue condTrue (exec2.mono (by omega)))) (stops.deeper (by omega))⟩
+        | returned | broke =>
           have := fails (max k k' + 1)
           simp only [execStmt, value_after condRun (Nat.le_max_left k k'),
             done_after run1 (Nat.le_max_right k k')] at this
-          exact absurd bound1 (Nat.not_le.mpr this)
-      · obtain ⟨d, stops⟩ := ihb bodyOk corr1 fr fresh1 le1 hc1 within1 (fails.whileBody condRun done)
-        exact ⟨d, .loopBody condTrue (.seqFirst (stops.mono le))⟩
+          exact absurd bound2 (Nat.not_le.mpr this)
+      · obtain ⟨d, stops⟩ := ihb bodyOk corr1 fr fresh1 le1 hc1 (by rw [limit1]; exact bound1)
+          (by rw [limit1]; exact fails.whileBody condRun done)
+        exact ⟨_, .loopBody (Expr.lit_one_ne env0) (Stops.after exec1 (.ifTrue condTrue (stops.mono le)))⟩
 
 theorem stops_whileEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {condition : SrcEff} {body : SrcStmt} (ihe : EffStops sp mp n condition) (ih : SrcStops sp mp n body) :
@@ -1370,18 +1376,20 @@ theorem stops_whileEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs 
   simp only [Option.some.injEq] at ok
   subst ok
   simp only [SrcStmt.toCore] at fails
-  rcases eff_split lowered ihe condOk corr fr fresh hc within fails
-      (fun j r s h => ⟨j + 1, s, by simp only [execStmt, h], rfl⟩) with
-    ⟨d, stops⟩ | ⟨k, w, st1, condRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
-  · exact ⟨d, .seqFirst stops⟩
-  rw [tyEq] at holds1
-  obtain ⟨y, eq, bits⟩ := bool_bits ((SrcType.holdsAt_scalar rfl).mp holds1)
-  cases eq
-  have limit := exec1.limit_normal
-  obtain ⟨d2, stops⟩ := loop_stops lowered ihe ih condOk bodyOk tyEq fr n (Nat.le_refl _)
-    (corr.after fr fresh keeps1 locals1 same1) fresh1 (Nat.le_trans le keeps1.next) hc1
-    (by rw [limit]; exact bound1) condRun bits (by rw [limit]; exact fails)
-  exact ⟨_, Stops.after exec1 stops⟩
+  exact loop_stops lowered ihe ih condOk bodyOk tyEq fr n (Nat.le_refl _) corr fresh le hc within fails
+
+/-- `break;` and `continue;` complete at once, so they never fail. -/
+theorem stops_break : SrcStops sp mp n .break := by
+  intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
+  have := fails 1
+  simp only [SrcStmt.toCore, execStmt, Failing] at this
+  exact absurd within (Nat.not_le.mpr this)
+
+theorem stops_continue : SrcStops sp mp n .continue := by
+  intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
+  have := fails 1
+  simp only [SrcStmt.toCore, execStmt, Failing] at this
+  exact absurd within (Nat.not_le.mpr this)
 
 theorem stops_returnEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     {value : SrcEff} (ihe : EffStops sp mp n value) : SrcStops sp mp n (.returnEval value) := by
@@ -1701,6 +1709,8 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
       stops_setIndexEval lowered (effStops_all lowered returns prev index) (effStops_all lowered returns prev value)
   | .setFieldEval _ _ value => stops_setFieldEval lowered (effStops_all lowered returns prev value)
   | .returnUnit => stops_returnUnit
+  | .break => stops_break
+  | .continue => stops_continue
   | .assert condition => stops_assert lowered (effStops_all lowered returns prev condition)
 
 /-- Every lowered statement whose Core run fails stops for every number of

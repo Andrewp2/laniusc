@@ -18,7 +18,8 @@ open Lanius.Semantics (State Completion evalExpr evalExprs evalMatchArms execStm
 
 /-! ## Subset statements end with `next` or a return -/
 
-/-- How a subset statement can end: never with `break` or `continue`. -/
+/-- How a statement with no loose `break` or `continue` can end: never with
+`break` or `continue`. -/
 def Ends : Completion → Prop
   | .next => True
   | .returned _ => True
@@ -27,32 +28,33 @@ def Ends : Completion → Prop
 
 theorem stmt_ends (sp : SrcProgram) :
     ∀ (fuel : Nat) {st : State} {s : SrcStmt} {c : Completion} {st' : State},
-      execStmt fuel sp.toCore st s.toCore = .done c st' → Ends c := by
+      s.breaksOut = false → execStmt fuel sp.toCore st s.toCore = .done c st' → Ends c := by
   intro fuel
   induction fuel using Nat.strongRecOn with
   | _ fuel ih =>
-  intro st s c st' run
+  intro st s c st' inside run
   have letCase : ∀ {id : Nat} {ty : Core.Ty} {e : Core.Expr} {body : SrcStmt},
-      execStmt fuel sp.toCore st (.letLocal id ty e body.toCore) = .done c st' → Ends c := by
-    intro id ty e body run
+      execStmt fuel sp.toCore st (.letLocal id ty e body.toCore) = .done c st' →
+      body.breaksOut = false → Ends c := by
+    intro id ty e body run inside
     obtain ⟨j, v, s1, s2, rfl, -, brun, -⟩ := letLocal_inv run
-    exact ih j (Nat.lt_succ_self j) brun
+    exact ih j (Nat.lt_succ_self j) inside brun
   have exprCase : ∀ {e : Core.Expr}, execStmt fuel sp.toCore st (.expression e) = .done c st' → Ends c := by
     intro e run
     obtain ⟨j, v, -, -, rfl⟩ := expression_inv run
     trivial
   cases s with
   | nop => obtain ⟨rfl, -⟩ := skip_inv run; trivial
-  | «let» => exact letCase run
-  | letStruct => exact letCase run
-  | letCall => exact letCase run
-  | letEnum => exact letCase run
-  | letMatch => exact letCase run
-  | letAlloc => exact letCase run
-  | letLoad => exact letCase run
-  | letSlice => exact letCase run
-  | letIndex => exact letCase run
-  | letEval => exact letCase run
+  | «let» => exact letCase run inside
+  | letStruct => exact letCase run inside
+  | letCall => exact letCase run inside
+  | letEnum => exact letCase run inside
+  | letMatch => exact letCase run inside
+  | letAlloc => exact letCase run inside
+  | letLoad => exact letCase run inside
+  | letSlice => exact letCase run inside
+  | letIndex => exact letCase run inside
+  | letEval => exact letCase run inside
   | set => exact exprCase run
   | setField => exact exprCase run
   | setCall => exact exprCase run
@@ -65,19 +67,22 @@ theorem stmt_ends (sp : SrcProgram) :
   | setFieldEval => exact exprCase run
   | «assert» => exact exprCase run
   | «then» first second =>
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at inside
     obtain ⟨j, s1, c1, rfl, frun, ⟨-, srun⟩ | ⟨-, rfl, -⟩⟩ := sequence_inv run
-    · exact ih j (Nat.lt_succ_self j) (s := second) srun
-    · exact ih j (Nat.lt_succ_self j) (s := first) frun
+    · exact ih j (Nat.lt_succ_self j) (s := second) inside.2 srun
+    · exact ih j (Nat.lt_succ_self j) (s := first) inside.1 frun
   | «if» condition thenBranch elseBranch =>
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at inside
     obtain ⟨j, s1, x, rfl, -, brun⟩ := if_inv run
     cases x
-    · exact ih j (Nat.lt_succ_self j) (s := elseBranch) brun
-    · exact ih j (Nat.lt_succ_self j) (s := thenBranch) brun
+    · exact ih j (Nat.lt_succ_self j) (s := elseBranch) inside.2 brun
+    · exact ih j (Nat.lt_succ_self j) (s := thenBranch) inside.1 brun
   | ifEval condition thenBranch elseBranch =>
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at inside
     obtain ⟨j, s1, x, rfl, -, brun⟩ := if_inv run
     cases x
-    · exact ih j (Nat.lt_succ_self j) (s := elseBranch) brun
-    · exact ih j (Nat.lt_succ_self j) (s := thenBranch) brun
+    · exact ih j (Nat.lt_succ_self j) (s := elseBranch) inside.2 brun
+    · exact ih j (Nat.lt_succ_self j) (s := thenBranch) inside.1 brun
   | «while» condition body =>
     cases fuel with
     | zero => simp [execStmt] at run
@@ -89,7 +94,7 @@ theorem stmt_ends (sp : SrcProgram) :
         all_goals first
           | (simp at run; done)
           | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.1]; trivial)
-          | exact ih f (Nat.lt_succ_self f) (s := .while condition body) run
+          | exact ih f (Nat.lt_succ_self f) (s := .while condition body) rfl run
       all_goals simp at run
   | whileEval condition body =>
     cases fuel with
@@ -102,11 +107,13 @@ theorem stmt_ends (sp : SrcProgram) :
         all_goals first
           | (simp at run; done)
           | (simp only [Semantics.Outcome.done.injEq] at run; rw [← run.1]; trivial)
-          | exact ih f (Nat.lt_succ_self f) (s := .whileEval condition body) run
+          | exact ih f (Nat.lt_succ_self f) (s := .whileEval condition body) rfl run
       all_goals simp at run
   | «return» => obtain ⟨j, v, -, -, rfl⟩ := return_inv run; trivial
   | returnEval => obtain ⟨j, v, -, -, rfl⟩ := return_inv run; trivial
   | returnUnit => obtain ⟨rfl, -⟩ := returnUnit_inv run; trivial
+  | «break» => simp [SrcStmt.breaksOut] at inside
+  | «continue» => simp [SrcStmt.breaksOut] at inside
 
 /-! ## Definitions -/
 
@@ -114,14 +121,17 @@ section
 variable (sp : SrcProgram) (prims : Prims) (outside : List Nat)
 
 /-- Core's runs of a callee's body with fuel `m` that trap within the heap
-bound trap defined. -/
+bound, or end with no value (a call then traps), trap defined. -/
 def FuncSafe (m : Nat) : Prop :=
   ∀ {c : Nat} {f : SrcFunc} {values ps : List Value} {st completed : State} {r : Lanius.Trap},
     sp.funcs[c]? = some f → outside.contains c = false → values.length = f.params.length → Inv st →
     completed.heap.nextAddress ≤ 2 ^ 64 →
     VRels sp.toCore (boxElem sp prims) st.heap (f.params.map SrcParam.ty) values ps →
-    execStmt m sp.toCore (({ st with locals := [] } : State).bindLocals (paramBindings f.params values))
-      f.body.toCore = .trapped r completed →
+    (execStmt m sp.toCore (({ st with locals := [] } : State).bindLocals (paramBindings f.params values))
+      f.body.toCore = .trapped r completed ∨
+     ∃ c, execStmt m sp.toCore (({ st with locals := [] } : State).bindLocals (paramBindings f.params values))
+      f.body.toCore = .done c completed ∧
+      (r = .missingReturn ∨ ((c = .breakLoop ∨ c = .continueLoop) ∧ r = .typeMismatch))) →
     undefinedTrap r = false
 
 def EffSafe (k : Nat) : Prop :=
@@ -184,12 +194,8 @@ theorem call_body_safe {sp : SrcProgram} {prims : Prims} {outside : List Nat} {k
       ∃ c, execStmt k sp.toCore (({ afterArgs with locals := [] } : State).bindLocals
         (paramBindings f.params values)) f.body.toCore = .done c completed ∧
         (r = .missingReturn ∨ ((c = .breakLoop ∨ c = .continueLoop) ∧ r = .typeMismatch))) :
-    undefinedTrap r = false := by
-  rcases body with body | ⟨c, body, rfl | ⟨bad, -⟩⟩
-  · exact funcs found notOut len inv bound rs body
-  · rfl
-  · have ends := stmt_ends sp k body
-    rcases bad with rfl | rfl <;> exact ends.elim
+    undefinedTrap r = false :=
+  funcs found notOut len inv bound rs body
 
 /-- The values of typed arguments are as many as the callee's parameters. -/
 theorem VRels.length_params {P : Core.Program} {boxes : Boxes} {heap : Memory.Heap} {f : SrcFunc}

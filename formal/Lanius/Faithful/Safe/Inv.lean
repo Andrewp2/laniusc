@@ -427,6 +427,12 @@ theorem return_trap_inv {e : Core.Expr} (h : execStmt k P st (.returnValue (some
 theorem returnUnit_trap (h : execStmt k P st (.returnValue none) = .trapped r st') : False := by
   cases k <;> simp [execStmt] at h
 
+theorem breakLoop_trap (h : execStmt k P st .breakLoop = .trapped r st') : False := by
+  cases k <;> simp [execStmt] at h
+
+theorem continueLoop_trap (h : execStmt k P st .continueLoop = .trapped r st') : False := by
+  cases k <;> simp [execStmt] at h
+
 end
 
 /-! ## Calls -/

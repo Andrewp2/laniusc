@@ -504,6 +504,8 @@ inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
       ReturnR env scope (kid (kid s 1) 0) m → StmtR env scope s m
   | retUnit {scope : List Local} {s : CTree} : nodeProd s = pReturnStmt → nodeProd (kid s 1) = pReturnVoid →
       StmtR env scope s .mReturnUnit
+  | brk {scope : List Local} {s : CTree} : nodeProd s = pBreakStmt → StmtR env scope s .mBreak
+  | cont {scope : List Local} {s : CTree} : nodeProd s = pContinueStmt → StmtR env scope s .mContinue
   | ifElse {scope : List Local} {s : CTree} {a b m : MStmt} : nodeProd s = pIfStmt → nodeProd (kid s 5) = pElseStmt →
       BlockR env scope (kid (kid s 4) 1) a → BlockR env scope (kid (kid (kid s 5) 1) 1) b →
       IfR env scope (kid s 2) a b m → StmtR env scope s m
@@ -619,22 +621,32 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
         exact .retUnit c.1 c.2
       split at h
       · rename_i _ _ c
+        simp only [Option.some.injEq] at h
+        subst h
+        exact .brk (by simpa using c)
+      split at h
+      · rename_i _ _ _ c
+        simp only [Option.some.injEq] at h
+        subst h
+        exact .cont (by simpa using c)
+      split at h
+      · rename_i _ _ _ _ c
         simp only [Bool.and_eq_true, decide_eq_true_eq] at c
         obtain ⟨a, b, ha, hb, ir⟩ := ifOrEval_sound h
         exact .ifElse c.1 c.2 (ihBlock ha) (ihBlock hb) ir
       split at h
-      · rename_i _ _ _ c
+      · rename_i _ _ _ _ _ c
         simp only [Bool.and_eq_true, decide_eq_true_eq] at c
         obtain ⟨a, b, ha, hb, ir⟩ := ifOrEval_sound h
         simp only [Option.some.injEq] at hb
         subst hb
         exact .ifOnly c.1 c.2 (ihBlock ha) ir
       split at h
-      · rename_i _ _ _ _ pw
+      · rename_i _ _ _ _ _ _ pw
         obtain ⟨body, hb, wr⟩ := whileOrEval_sound h
         exact .while pw (ihBlock hb) wr
       split at h
-      · rename_i _ _ _ _ _ pa
+      · rename_i _ _ _ _ _ _ _ pa
         exact .assign pa (assignment_sound h)
       cases h
 

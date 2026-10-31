@@ -247,6 +247,8 @@ inductive StmtClosed (decls : Decls) (fns types : List Inst) : MStmt → SrcStmt
   | setFieldEval {id j : Nat} {x : MEff} {a : SrcEff} :
       EffClosed decls fns types x a → StmtClosed decls fns types (.mSetFieldEval id j x) (.setFieldEval id j a)
   | returnUnit : StmtClosed decls fns types .mReturnUnit .returnUnit
+  | «break» : StmtClosed decls fns types .mBreak .break
+  | «continue» : StmtClosed decls fns types .mContinue .continue
   | «assert» {x : MEff} {a : SrcEff} :
       EffClosed decls fns types x a → StmtClosed decls fns types (.mAssert x) (.assert a)
 
@@ -364,6 +366,8 @@ theorem closeStmt_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     subst h
     exact .setFieldEval (closeEff_sound ok _ _ hx)
   | .mReturnUnit, s, h => by simp only [closeStmt, Option.some.injEq] at h; subst h; exact .returnUnit
+  | .mBreak, s, h => by simp only [closeStmt, Option.some.injEq] at h; subst h; exact .break
+  | .mContinue, s, h => by simp only [closeStmt, Option.some.injEq] at h; subst h; exact .continue
   | .mAssert x, s, h => by
     simp only [closeStmt] at h
     cases hx : closeEff fuel t x <;> simp [hx, assertClosed] at h

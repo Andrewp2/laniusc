@@ -1095,6 +1095,8 @@ partial def serStmt : SrcStmt → String
   | .setIndexEval sl i v => s!"(.setIndexEval {sl} {serEff i} {serEff v})"
   | .setFieldEval n f x => s!"(.setFieldEval {n} {f} {serEff x})"
   | .returnUnit => ".returnUnit"
+  | .break => ".break"
+  | .continue => ".continue"
   | .assert x => s!"(.assert {serEff x})"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
@@ -1254,6 +1256,8 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .setIndexEval sl i v => .setIndexEval (f sl) (renEff f i) (renEff f v)
   | .setFieldEval n k x => .setFieldEval (f n) k (renEff f x)
   | .returnUnit => .returnUnit
+  | .break => .break
+  | .continue => .continue
   | .assert x => .assert (renEff f x)
 
 def canonFunc (fn : SrcFunc) : SrcFunc :=
@@ -1352,6 +1356,12 @@ def run_cases(args, cases_dir):
             if not os.path.exists(compiled) or open(compiled).read() != 'compiles\n':
                 problems += 1
                 print(f'{case}: compileSource rejects the program read')
+        if os.path.exists(os.path.join(cases_dir, case, 'compile_rejects')):
+            # the front end reads the program but compileSource must reject it
+            compiled = os.path.join(out_dir, 'got.out.compile')
+            if not os.path.exists(compiled) or open(compiled).read() != 'rejected\n':
+                problems += 1
+                print(f'{case}: compileSource accepts the program read')
         if reject:
             ok = got == 'rejected\n'
         else:

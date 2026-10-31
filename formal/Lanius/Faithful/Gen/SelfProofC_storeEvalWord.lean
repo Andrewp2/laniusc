@@ -51,6 +51,15 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem step_SrcStmt_breaks_out {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_breaks_out ix_unbox_of_mini_selfhost_SrcStmt : Nat} (fn : prog.funcs[ix_SrcStmt_breaks_out]? = some (src_SrcStmt_breaks_out ix_unbox_of_mini_selfhost_SrcStmt ix_SrcStmt_breaks_out)) (np : prims.isPrim ix_SrcStmt_breaks_out = false)
+    (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n)) {n : Nat}
+    (ih_SrcStmt_breaks_out : Certified (Stmt_SrcStmt_breaks_out prog prims ix_SrcStmt_breaks_out n)) :
+    Stmt_SrcStmt_breaks_out prog prims ix_SrcStmt_breaks_out (n + 1) := by
+  intro x0 v0 w h r0
+  rw [pcall_succ np fn] at h
+  simp only [src_SrcStmt_breaks_out] at h
+  faithful [Lanius.Mini.SrcStmt.breaksOut]
+
 theorem step_SrcStmt_depth {prog : SrcProgram} {prims : Prims} {ix_SrcStmt_depth ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_SrcType_size ix_max_of : Nat} (fn : prog.funcs[ix_SrcStmt_depth]? = some (src_SrcStmt_depth ix_plus ix_unbox_of_mini_selfhost_SrcStmt ix_SrcType_size ix_SrcStmt_depth ix_max_of)) (np : prims.isPrim ix_SrcStmt_depth = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_unbox_of_mini_selfhost_SrcStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_SrcStmt prog prims ix_unbox_of_mini_selfhost_SrcStmt n))

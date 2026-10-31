@@ -59,6 +59,8 @@ def closeStmt (fuel : Nat) (t : Tables) (m : MStmt) : Option SrcStmt :=
   | .mSetFieldEval id j x => setFieldEvalClosed id j (closeEff fuel t x)
   | .mReturnUnit => some SrcStmt.returnUnit
   | .mAssert x => assertClosed (closeEff fuel t x)
+  | .mBreak => some SrcStmt.break
+  | .mContinue => some SrcStmt.continue
 
 def consSrcParam (id : Nat) (ty : Option SrcType) (rest : Option (List SrcParam)) : Option (List SrcParam) :=
   match ty with

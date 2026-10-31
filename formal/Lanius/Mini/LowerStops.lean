@@ -51,6 +51,43 @@ theorem Stops.checked {prog : Program} {env : Env} {hp : Heap} {s : Stmt} {n slo
   · obtain ⟨d, stops⟩ := pass zero
     exact ⟨d, Stops.check fun _ => stops⟩
 
+/-- A lowered `while` whose check fails at the top of an iteration stops. -/
+theorem Stops.whileLoop_checked {prog : Program} {env : Env} {hp : Heap} {slot n : Nat} {g c : Expr} {b : Stmt}
+    (pass : g.eval env ≠ 0 → ∃ d, Stops prog d env hp (Lanius.Mini.whileLoop slot g c b) n) :
+    ∃ d, Stops prog d env hp (Lanius.Mini.whileLoop slot g c b) n := by
+  by_cases zero : g.eval env = 0
+  · unfold Lanius.Mini.whileLoop
+    split
+    · rename_i one
+      rw [isOne_eval one] at zero
+      exact absurd zero (by decide)
+    · exact ⟨0, .loopBody (Expr.lit_one_ne env) (Stops.check fun h => absurd zero h)⟩
+  · exact pass zero
+
+theorem Stops.whileLoop_body {prog : Program} {d : Nat} {env : Env} {hp : Heap} {slot n : Nat} {g c : Expr}
+    {b : Stmt} (nonzero : c.eval env ≠ 0) (stops : Stops prog d env hp b n) :
+    Stops prog d env hp (Lanius.Mini.whileLoop slot g c b) n := by
+  unfold Lanius.Mini.whileLoop
+  split
+  · exact .loopBody nonzero stops
+  · exact .loopBody (Expr.lit_one_ne env) (Stops.check fun _ => .ifTrue nonzero stops)
+
+theorem Stops.whileLoop_next {prog : Program} {d : Nat} {env env' : Env} {hp hp' : Heap} {slot n : Nat}
+    {g c : Expr} {b : Stmt} (one : g.eval env = 1) (nonzero : c.eval env ≠ 0)
+    (body : Exec prog d env hp b (.normal env' hp') ∨ Exec prog d env hp b (.continued env' hp'))
+    (rest : Stops prog d env' hp' (Lanius.Mini.whileLoop slot g c b) n) :
+    Stops prog d env hp (Lanius.Mini.whileLoop slot g c b) (n + 1) := by
+  unfold Lanius.Mini.whileLoop at rest ⊢
+  by_cases isOne : Lanius.Mini.isOne g = true
+  · simp only [isOne, if_true] at rest ⊢
+    rcases body with body | body
+    · exact .loopNext nonzero body rest
+    · exact .loopContinued nonzero body rest
+  · simp only [isOne, Bool.false_eq_true, if_false] at rest ⊢
+    rcases body with body | body
+    · exact .loopNext (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one) rest
+    · exact .loopContinued (Expr.lit_one_ne env) ((Exec.ifTrue nonzero body).checkThen one) rest
+
 /-- A statement, then a check that fails. -/
 theorem Stops.thenCheck {prog : Program} {d : Nat} {env env' : Env} {hp hp' : Heap} {s : Stmt} {n slot : Nat}
     {g : Expr} (exec : Exec prog d env hp s (.normal env' hp')) (zero : g.eval env' = 0) :
@@ -180,6 +217,164 @@ theorem returns_noNext : ∀ (s : SrcStmt), s.returns = true → NoNext P s.toCo
   | .setFieldEval _ _ _, h => by simp [SrcStmt.returns] at h
   | .returnUnit, _ => NoNext.returnValue
   | .assert _, h => by simp [SrcStmt.returns] at h
+  | .break, h => by simp [SrcStmt.returns] at h
+  | .continue, h => by simp [SrcStmt.returns] at h
+
+/-- A run that completes does not break or continue out of the statement. -/
+abbrev NoEscape (P : Core.Program) (s : Core.Stmt) : Prop :=
+  ∀ {fuel : Nat} {st : State} {c : Completion} {st' : State}, execStmt fuel P st s = .done c st' →
+    c ≠ .breakLoop ∧ c ≠ .continueLoop
+
+theorem NoEscape.letLocal {id : Nat} {ty : Core.Ty} {init : Core.Expr} {body : Core.Stmt} (ih : NoEscape P body) :
+    NoEscape P (.letLocal id ty init body) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    split at run
+    · rename_i v st1 _
+      cases hb : execStmt fuel P (st1.bindLocal id v) body <;>
+        simp [hb, Semantics.restoreOutcomeLocals] at run
+      obtain ⟨rfl, -⟩ := run
+      exact ih hb
+    all_goals simp at run
+
+theorem NoEscape.sequence {a b : Core.Stmt} (ha : NoEscape P a) (hb : NoEscape P b) :
+    NoEscape P (.sequence a b) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    split at run
+    · exact hb run
+    · rename_i completion st1 notNext firstRun
+      simp only [Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, -⟩ := run
+      exact ha firstRun
+    all_goals simp at run
+
+theorem NoEscape.ite {cond : Core.Expr} {a b : Core.Stmt} (ha : NoEscape P a) (hb : NoEscape P b) :
+    NoEscape P (.ifThenElse cond a b) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    split at run
+    · exact ha run
+    · exact hb run
+    all_goals simp at run
+
+theorem NoEscape.expression {e : Core.Expr} : NoEscape P (.expression e) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    split at run
+    · simp only [Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, -⟩ := run
+      simp
+    all_goals simp at run
+
+theorem NoEscape.returnValue {value : Option Core.Expr} : NoEscape P (.returnValue value) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    cases value with
+    | none =>
+      simp only [execStmt, Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, -⟩ := run
+      simp
+    | some e =>
+      simp only [execStmt] at run
+      split at run
+      · simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, -⟩ := run
+        simp
+      all_goals simp at run
+
+theorem NoEscape.skip : NoEscape P .skip := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt, Semantics.Outcome.done.injEq] at run
+    obtain ⟨rfl, -⟩ := run
+    simp
+
+/-- A loop ends a break and runs again on a continue. -/
+theorem NoEscape.whileLoop {cond : Core.Expr} {body : Core.Stmt} : NoEscape P (.whileLoop cond body) := by
+  intro fuel
+  induction fuel with
+  | zero => intro st c st' run; simp [execStmt] at run
+  | succ fuel ih =>
+    intro st c st' run
+    simp only [execStmt] at run
+    split at run
+    · simp only [Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, -⟩ := run
+      simp
+    · split at run
+      · cases fuel with
+        | zero => simp [execStmt] at run
+        | succ f => exact ih run
+      · cases fuel with
+        | zero => simp [execStmt] at run
+        | succ f => exact ih run
+      · simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, -⟩ := run
+        simp
+      · simp only [Semantics.Outcome.done.injEq] at run
+        obtain ⟨rfl, -⟩ := run
+        simp
+      all_goals simp at run
+    all_goals simp at run
+
+/-- A statement with no break or continue outside its loops does not
+complete with one. -/
+theorem breaksOut_noEscape : ∀ (s : SrcStmt), s.breaksOut = false → NoEscape P s.toCore
+  | .nop, _ => NoEscape.skip
+  | .let _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letStruct _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letCall _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letEnum _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letMatch _ _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .set _ _, _ => NoEscape.expression
+  | .setField _ _ _, _ => NoEscape.expression
+  | .setCall _ _ _, _ => NoEscape.expression
+  | .then first second, h => by
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at h
+    exact NoEscape.sequence (breaksOut_noEscape first h.1) (breaksOut_noEscape second h.2)
+  | .if _ thenBranch elseBranch, h => by
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at h
+    exact NoEscape.ite (breaksOut_noEscape thenBranch h.1) (breaksOut_noEscape elseBranch h.2)
+  | .while _ _, _ => NoEscape.whileLoop
+  | .return _, _ => NoEscape.returnValue
+  | .letAlloc _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letLoad _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .setByte _ _ _, _ => NoEscape.expression
+  | .free _ _ _, _ => NoEscape.expression
+  | .letSlice _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .letIndex _ _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .setIndex _ _ _, _ => NoEscape.expression
+  | .letEval _ _ _ body, h => NoEscape.letLocal (breaksOut_noEscape body h)
+  | .setEval _ _, _ => NoEscape.expression
+  | .ifEval _ thenBranch elseBranch, h => by
+    simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at h
+    exact NoEscape.ite (breaksOut_noEscape thenBranch h.1) (breaksOut_noEscape elseBranch h.2)
+  | .whileEval _ _, _ => NoEscape.whileLoop
+  | .returnEval _, _ => NoEscape.returnValue
+  | .discard _, _ => NoEscape.expression
+  | .setIndexEval _ _ _, _ => NoEscape.expression
+  | .setFieldEval _ _ _, _ => NoEscape.expression
+  | .returnUnit, _ => NoEscape.returnValue
+  | .assert _, _ => NoEscape.expression
+  | .break, h => by simp [SrcStmt.breaksOut] at h
+  | .continue, h => by simp [SrcStmt.breaksOut] at h
 
 end Returns
 
@@ -243,7 +438,7 @@ theorem callee_frame (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = s
       Layout (paramScope f.params 0 []) frame st.nextCell (paramsSize f.params) ∧
       (calleeState f values st).Fresh ∧ Keeps st.nextCell ({ st with locals := [] } : State) (calleeState f values st) := by
   obtain ⟨g, gFound, gOk⟩ := lowerFuncs_get lowered found
-  obtain ⟨gParams, _, valid, b, bodyOk, tail⟩ := lowerFunc_some gOk
+  obtain ⟨gParams, _, valid, inside, b, bodyOk, tail⟩ := lowerFunc_some gOk
   obtain ⟨frame, corr, fr, fresh0, keeps0⟩ := entry_corr (Func.entry bits) st.nextCell f.params
     (k := 0) (scope := []) (frame := fun _ => 0) (st := { st with locals := [] }) holds valid
     (Nat.le_refl _) fresh ⟨rfl, fun _ mem => by simp at mem⟩
@@ -280,6 +475,12 @@ theorem body_shapes (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
     cases v with
     | some w => exact .inr (.inl ⟨w, rfl⟩)
     | none => exact .inr (.inr ⟨rfl, holdsRet⟩)
+  | broke =>
+    obtain ⟨_, _, gOk⟩ := lowerFuncs_get lowered found
+    exact absurd rfl (breaksOut_noEscape f.body (lowerFunc_some gOk).2.2.2.1 run).1
+  | continued =>
+    obtain ⟨_, _, gOk⟩ := lowerFuncs_get lowered found
+    exact absurd rfl (breaksOut_noEscape f.body (lowerFunc_some gOk).2.2.2.1 run).2
 
 /-- The callee of a call that fails stops, one tick fewer. -/
 theorem callee_stops (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
@@ -803,7 +1004,7 @@ theorem stops_then (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = som
       obtain ⟨d2, stops2⟩ := ih2 secondOk corr1 fr fresh1 (Nat.le_trans le keeps1.next) hc1
         (by rw [limit]; exact bound1) (by rw [limit]; exact fails.seqSecond run1)
       exact ⟨_, Stops.after exec1 stops2⟩
-    | returned =>
+    | returned | broke | continued =>
       have := fails (k + 1)
       simp only [execStmt, run1] at this
       exact absurd bound1 (Nat.not_le.mpr this)
@@ -847,10 +1048,7 @@ theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
     SrcStops sp mp (n + 1) (.while condition body) := by
   intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
   have whileOk := ok
-  simp only [SrcStmt.lower] at ok
-  replace ok := guarded_some ok
-  obtain ⟨stmt, ok, rfl⟩ := ok
-  simp only [lowerWhile] at ok
+  simp only [SrcStmt.lower, lowerWhile] at ok
   split at ok
   · simp at ok
   rename_i x condOk
@@ -859,8 +1057,9 @@ theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
   rename_i bstmt bodyOk
   simp only [Option.some.injEq] at ok
   subst ok
-  refine Stops.checked fun g => ?_
+  refine Stops.whileLoop_checked fun g => ?_
   obtain ⟨k, w, condRun⟩ := lowerAs_progress corr (SrcProgram.target_toCore sp) condOk g
+  have one := lowerAs_guard corr (SrcProgram.target_toCore sp) condOk condRun
   obtain ⟨-, y, rfl, bits⟩ := lowerAs_sound corr (SrcProgram.target_toCore sp) condOk condRun
   simp only [SrcStmt.toCore] at fails
   cases y with
@@ -877,20 +1076,26 @@ theorem stops_while (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = so
       cases matched1 with
       | @next env1 hp1 corr1 hc1 =>
         have limit := exec1.limit_normal
-        by_cases pass : (condition.guard scope).eval env1 = 0
-        · exact ⟨d1, .loopBody condTrue (Stops.thenCheck exec1 pass)⟩
-        · obtain ⟨d2, stops2⟩ := prev (.while condition body) whileOk corr1 fr fresh1
-            (Nat.le_trans le keeps1.next) hc1 (by rw [limit]; exact bound1)
-            (by rw [limit]; exact fails.whileNext condRun run1)
-          exact ⟨max d1 d2, .loopNext condTrue ((exec1.thenCheck pass).mono (Nat.le_max_left _ _))
-            ((stops2.checkThen_inv pass).deeper (Nat.le_max_right _ _))⟩
-      | returned =>
+        obtain ⟨d2, stops2⟩ := prev (.while condition body) whileOk corr1 fr fresh1
+          (Nat.le_trans le keeps1.next) hc1 (by rw [limit]; exact bound1)
+          (by rw [limit]; exact fails.whileNext condRun run1)
+        exact ⟨max d1 d2, Stops.whileLoop_next one condTrue (.inl (exec1.mono (Nat.le_max_left _ _)))
+          (stops2.deeper (Nat.le_max_right _ _))⟩
+      | @continued env1 hp1 corr1 hc1 =>
+        have limit := exec1.limit
+        simp only [Outcome.heap] at limit
+        obtain ⟨d2, stops2⟩ := prev (.while condition body) whileOk corr1 fr fresh1
+          (Nat.le_trans le keeps1.next) hc1 (by rw [limit]; exact bound1)
+          (by rw [limit]; exact fails.whileContinue condRun run1)
+        exact ⟨max d1 d2, Stops.whileLoop_next one condTrue (.inr (exec1.mono (Nat.le_max_left _ _)))
+          (stops2.deeper (Nat.le_max_right _ _))⟩
+      | returned | broke =>
         have := fails (max k k' + 1)
         simp only [execStmt, value_after condRun (Nat.le_max_left k k'),
           done_after run1 (Nat.le_max_right k k')] at this
         exact absurd bound1 (Nat.not_le.mpr this)
     · obtain ⟨d, stops⟩ := ih bodyOk corr fr fresh le hc within (fails.whileBody condRun done)
-      exact ⟨d, .loopBody condTrue stops.thenCheck_first⟩
+      exact ⟨d, Stops.whileLoop_body condTrue stops⟩
 
 theorem stops_let {id : Nat} {ty : SrcType} {value : SrcExpr} {body : SrcStmt} (ih : SrcStops sp mp n body) :
     SrcStops sp mp n (.let id ty value body) := by

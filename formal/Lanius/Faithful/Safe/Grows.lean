@@ -975,6 +975,8 @@ theorem grows_trap_step {fuel : Nat} (ih : GrowsBelow sp fuel) (ihT : GrowsBelow
       obtain rfl : f = j := Nat.succ.inj hj
       exact effT f (Nat.le_refl _) vrun
     | returnUnit => exact (returnUnit_trap run).elim
+    | «break» => exact (breakLoop_trap run).elim
+    | «continue» => exact (continueLoop_trap run).elim
 
 /-- Every subset statement Core runs until it traps grows the heap. -/
 theorem grows_trap (sp : SrcProgram) : ∀ fuel, GrowsBelowT sp fuel
