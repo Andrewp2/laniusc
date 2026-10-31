@@ -69,6 +69,15 @@ theorem proof_p_pattern_plain {prog : SrcProgram} {prims : Prims} {ix_p_pattern_
   simp only [src_p_pattern_plain] at h
   faithful [Lanius.Mini.Inline.pPatternPlain]
 
+theorem proof_p_pattern_tuple {prog : SrcProgram} {prims : Prims} {ix_p_pattern_tuple : Nat} (fn : prog.funcs[ix_p_pattern_tuple]? = some (src_p_pattern_tuple)) (np : prims.isPrim ix_p_pattern_tuple = false) {n : Nat} :
+    Stmt_p_pattern_tuple prog prims ix_p_pattern_tuple n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_pattern_tuple] at h
+  faithful [Lanius.Mini.Inline.pPatternTuple]
+
 theorem proof_p_patterns_after_comma_more {prog : SrcProgram} {prims : Prims} {ix_p_patterns_after_comma_more : Nat} (fn : prog.funcs[ix_p_patterns_after_comma_more]? = some (src_p_patterns_after_comma_more)) (np : prims.isPrim ix_p_patterns_after_comma_more = false) {n : Nat} :
     Stmt_p_patterns_after_comma_more prog prims ix_p_patterns_after_comma_more n := by
   intro w h

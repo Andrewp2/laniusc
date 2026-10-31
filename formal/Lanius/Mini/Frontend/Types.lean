@@ -360,6 +360,12 @@ structure VariantTy where
   payload : List Ty
   deriving Repr
 
+/-- Arms whose last is a wildcard: the others, and the wildcard. -/
+structure WildSplit where
+  init : List CTree
+  wild : CTree
+  deriving Repr
+
 /-- Arguments read so far, and the type parameters they bind. -/
 structure ArgsBound where
   args : List MEff

@@ -1,0 +1,16 @@
+module app::main;
+
+// laniusc runs the first arm that matches, so an arm after a wildcard never
+// runs; the front end reads a wildcard only as the last arm.
+enum Shape {
+    Dot,
+    Line(i32),
+}
+
+fn size(s: Shape) -> i32 {
+    return match (s) { _ -> 0, Line(n) -> n };
+}
+
+fn main() -> i32 {
+    return size(Line(3));
+}

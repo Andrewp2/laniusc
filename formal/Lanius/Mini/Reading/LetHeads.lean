@@ -497,6 +497,211 @@ theorem armsByVariant_mem {fuel : Nat} {owner : TypeDecl} {arms : List CTree} :
           · exact armsNaming_mem (by rw [hn]; exact List.mem_cons_self)
           · exact armsByVariant_mem hr x mem
 
+/-! ### Wildcard arms
+
+A last arm `_ -> value` (`wildSplit`) is the arm of every variant no other
+arm names, read as that variant's arm `V(_, ...) -> value` (`wildArmFor`). -/
+
+/-- The arms in variant order (`armsInOrder`). With no wildcard last: as many
+arms as variants, each a written arm. With a wildcard last: every other arm
+is used, the wildcard stands for some variant, and each is another arm or
+the wildcard as a variant's arm. -/
+def ArmsOrder (vs : List VariantTy) (arms os : List CTree) : Prop :=
+  (wildSplit arms = none ∧ arms.length = vs.length ∧ ∀ a ∈ os, a ∈ arms) ∨
+    ∃ s, wildSplit arms = some s ∧ (∀ a ∈ s.init, a ∈ os) ∧ (∃ v, wildArmFor s.wild v ∈ os) ∧
+      ∀ o ∈ os, o ∈ s.init ∨ ∃ v ∈ vs, o = wildArmFor s.wild v
+
+theorem wildSplit_some : ∀ {arms : List CTree} {s : WildSplit}, wildSplit arms = some s →
+    arms = s.init ++ [s.wild] ∧ isWildArm s.wild = true
+  | [], s, h => by simp [wildSplit] at h
+  | [a], s, h => by
+    simp only [wildSplit, wildAlone] at h
+    split at h
+    · rename_i w
+      simp only [Option.some.injEq] at h
+      subst h
+      exact ⟨rfl, w⟩
+    · cases h
+  | a :: b :: more, s, h => by
+    rw [wildSplit] at h
+    cases hr : wildSplit (b :: more) with
+    | none => rw [hr] at h; simp [consWild] at h
+    | some r =>
+      rw [hr] at h
+      simp only [consWild, Option.some.injEq] at h
+      subst h
+      obtain ⟨e, w⟩ := wildSplit_some hr
+      exact ⟨by rw [e]; rfl, w⟩
+
+theorem armsNaming_of {fuel : Nat} {owner : TypeDecl} {name : Name} :
+    ∀ {arms : List CTree} {a : CTree}, a ∈ arms → armNames fuel owner name a = true → a ∈ armsNaming fuel owner name arms
+  | [], _, m, _ => by cases m
+  | b :: rest, a, m, h => by
+    rw [armsNaming]
+    unfold armsNamingAt
+    rcases List.mem_cons.1 m with rfl | m
+    · rw [if_pos h]
+      exact List.mem_cons_self
+    · split
+      · exact List.mem_cons_of_mem _ (armsNaming_of m h)
+      · exact armsNaming_of m h
+
+theorem armsOrWild_sub {fuel : Nat} {owner : TypeDecl} {arms : List CTree} {w : CTree} :
+    ∀ {vs : List VariantTy} {os : List CTree}, armsOrWild fuel owner vs arms w = some os →
+      ∀ o ∈ os, o ∈ arms ∨ ∃ v' ∈ vs, o = wildArmFor w v'
+  | [], os, h => by
+    simp only [armsOrWild, Option.some.injEq] at h
+    subst h
+    simp
+  | v :: rest, os, h => by
+    rw [armsOrWild] at h
+    cases hn : armsNaming fuel owner v.name arms with
+    | nil =>
+      rw [hn] at h
+      cases hr : armsOrWild fuel owner rest arms w with
+      | none => rw [hr] at h; simp [consTreeTail] at h
+      | some ts =>
+        rw [hr] at h
+        simp only [consTreeTail, Option.some.injEq] at h
+        subst h
+        intro o mo
+        rcases List.mem_cons.1 mo with rfl | mo
+        · exact .inr ⟨_, List.mem_cons_self, rfl⟩
+        · exact (armsOrWild_sub hr o mo).imp id fun ⟨v', mv, e⟩ => ⟨v', List.mem_cons_of_mem _ mv, e⟩
+    | cons a more =>
+      rw [hn] at h
+      cases more with
+      | cons _ _ => cases h
+      | nil =>
+        simp only at h
+        cases hr : armsOrWild fuel owner rest arms w with
+        | none => rw [hr] at h; simp [consTreeTail] at h
+        | some ts =>
+          rw [hr] at h
+          simp only [consTreeTail, Option.some.injEq] at h
+          subst h
+          intro o mo
+          rcases List.mem_cons.1 mo with rfl | mo
+          · exact .inl (armsNaming_mem (by rw [hn]; exact List.mem_cons_self))
+          · exact (armsOrWild_sub hr o mo).imp id fun ⟨v', mv, e⟩ => ⟨v', List.mem_cons_of_mem _ mv, e⟩
+
+theorem armsOrWild_names {fuel : Nat} {owner : TypeDecl} {arms : List CTree} {w : CTree} :
+    ∀ {vs : List VariantTy} {os : List CTree}, armsOrWild fuel owner vs arms w = some os →
+      ∀ v ∈ vs, ∀ a ∈ arms, armNames fuel owner v.name a = true → a ∈ os
+  | [], _, _, _, mv, _, _, _ => by cases mv
+  | v :: rest, os, h, v', mv, a, ma, na => by
+    rw [armsOrWild] at h
+    cases hn : armsNaming fuel owner v.name arms with
+    | nil =>
+      rw [hn] at h
+      cases hr : armsOrWild fuel owner rest arms w with
+      | none => rw [hr] at h; simp [consTreeTail] at h
+      | some ts =>
+        rw [hr] at h
+        simp only [consTreeTail, Option.some.injEq] at h
+        subst h
+        rcases List.mem_cons.1 mv with rfl | mv
+        · have m := armsNaming_of ma na
+          rw [hn] at m
+          cases m
+        · exact List.mem_cons_of_mem _ (armsOrWild_names hr v' mv a ma na)
+    | cons b more =>
+      rw [hn] at h
+      cases more with
+      | cons _ _ => cases h
+      | nil =>
+        simp only at h
+        cases hr : armsOrWild fuel owner rest arms w with
+        | none => rw [hr] at h; simp [consTreeTail] at h
+        | some ts =>
+          rw [hr] at h
+          simp only [consTreeTail, Option.some.injEq] at h
+          subst h
+          rcases List.mem_cons.1 mv with rfl | mv
+          · have m := armsNaming_of ma na
+            rw [hn] at m
+            rcases List.mem_cons.1 m with rfl | m
+            · exact List.mem_cons_self
+            · cases m
+          · exact List.mem_cons_of_mem _ (armsOrWild_names hr v' mv a ma na)
+
+theorem armsOrWild_uses {fuel : Nat} {owner : TypeDecl} {arms : List CTree} {w : CTree} :
+    ∀ {vs : List VariantTy} {os : List CTree}, usesWild fuel owner vs arms = true →
+      armsOrWild fuel owner vs arms w = some os → ∃ v', wildArmFor w v' ∈ os
+  | [], _, u, _ => by simp [usesWild] at u
+  | v :: rest, os, u, h => by
+    rw [armsOrWild] at h
+    rw [usesWild] at u
+    cases hn : armsNaming fuel owner v.name arms with
+    | nil =>
+      rw [hn] at h
+      cases hr : armsOrWild fuel owner rest arms w with
+      | none => rw [hr] at h; simp [consTreeTail] at h
+      | some ts =>
+        rw [hr] at h
+        simp only [consTreeTail, Option.some.injEq] at h
+        subst h
+        exact ⟨v, List.mem_cons_self⟩
+    | cons b more =>
+      rw [hn] at h u
+      simp only at u
+      cases more with
+      | cons _ _ => cases h
+      | nil =>
+        simp only at h
+        cases hr : armsOrWild fuel owner rest arms w with
+        | none => rw [hr] at h; simp [consTreeTail] at h
+        | some ts =>
+          rw [hr] at h
+          simp only [consTreeTail, Option.some.injEq] at h
+          subst h
+          obtain ⟨n, m⟩ := armsOrWild_uses u hr
+          exact ⟨n, List.mem_cons_of_mem _ m⟩
+
+theorem namesSome_exists {fuel : Nat} {owner : TypeDecl} {a : CTree} :
+    ∀ {vs : List VariantTy}, namesSome fuel owner vs a = true → ∃ v ∈ vs, armNames fuel owner v.name a = true
+  | [], h => by simp [namesSome] at h
+  | v :: rest, h => by
+    simp only [namesSome, Bool.or_eq_true] at h
+    rcases h with h | h
+    · exact ⟨v, List.mem_cons_self, h⟩
+    · obtain ⟨v', mv, h'⟩ := namesSome_exists h
+      exact ⟨v', List.mem_cons_of_mem _ mv, h'⟩
+
+theorem allNameSome_mem {fuel : Nat} {owner : TypeDecl} {vs : List VariantTy} :
+    ∀ {arms : List CTree}, allNameSome fuel owner vs arms = true → ∀ a ∈ arms, namesSome fuel owner vs a = true
+  | [], _, _, m => by cases m
+  | b :: rest, h, a, m => by
+    simp only [allNameSome, Bool.and_eq_true] at h
+    rcases List.mem_cons.1 m with rfl | m
+    · exact h.1
+    · exact allNameSome_mem h.2 a m
+
+theorem armsInOrder_sound {fuel : Nat} {owner : TypeDecl} {vs : List VariantTy} {arms os : List CTree}
+    (h : armsInOrder fuel owner vs arms = some os) : ArmsOrder vs arms os := by
+  unfold armsInOrder at h
+  cases hw : wildSplit arms with
+  | none =>
+    rw [hw] at h
+    simp only at h
+    unfold armsExact at h
+    split at h
+    · rename_i len
+      exact .inl ⟨hw, len, armsByVariant_mem h⟩
+    · cases h
+  | some s =>
+    rw [hw] at h
+    simp only at h
+    unfold wildOrder at h
+    split at h
+    · rename_i all
+      rw [Bool.and_eq_true] at all
+      obtain ⟨all, uses⟩ := all
+      refine .inr ⟨s, hw, fun a ma => ?_, armsOrWild_uses uses h, armsOrWild_sub h⟩
+      obtain ⟨v, mv, na⟩ := namesSome_exists (allNameSome_mem all a ma)
+      exact armsOrWild_names h v mv a ma na
+    · cases h
+
 theorem zipVariants_eq : ∀ (ns : List Name) (ps : List (List Ty)), zipVariants ns ps = List.zipWith VariantTy.mk ns ps
   | [], _ => by simp [zipVariants]
   | _ :: _, [] => by simp [zipVariants]

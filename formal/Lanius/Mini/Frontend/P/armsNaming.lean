@@ -1,7 +1,6 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Frontend.P.consBinder
 import Lanius.Mini.Frontend.P.consTreeTail
@@ -30,11 +29,8 @@ def armsByVariant (fuel : Nat) (owner : TypeDecl) (variants : List VariantTy) (a
       | [] => consTreeTail a (armsByVariant fuel owner rest arms)
       | b :: others => none
 
-/-- The arms in variant order: as many arms as variants, each variant named by exactly one. Only one arm runs, so the order they are written in has no effect. -/
-def armsInOrder (fuel : Nat) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List CTree) :=
-  if arms.length = variants.length then
-    armsByVariant fuel owner variants arms
-  else
-    none
+/-- Whether a name is `_`. -/
+def textUnderscore : List Nat :=
+  [95]
 
 end Lanius.Mini

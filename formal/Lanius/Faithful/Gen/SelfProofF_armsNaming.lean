@@ -5,7 +5,6 @@ public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_armsNaming
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
-public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_armsNaming
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
@@ -43,28 +42,26 @@ theorem step_arms_by_variant {prog : SrcProgram} {prims : Prims} {ix_arms_by_var
   simp only [src_arms_by_variant] at h
   faithful [Lanius.Mini.armsByVariant]
 
-theorem proof_arms_in_order {prog : SrcProgram} {prims : Prims} {ix_arms_in_order ix_length_of_mini_selfhost_CTree ix_length_of_mini_selfhost_VariantTy ix_arms_by_variant : Nat} (fn : prog.funcs[ix_arms_in_order]? = some (src_arms_in_order ix_length_of_mini_selfhost_CTree ix_length_of_mini_selfhost_VariantTy ix_arms_by_variant)) (np : prims.isPrim ix_arms_in_order = false)
-    (ext_length_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_CTree prog prims ix_length_of_mini_selfhost_CTree n))
-    (ext_length_of_mini_selfhost_VariantTy : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_VariantTy prog prims ix_length_of_mini_selfhost_VariantTy n))
-    (ext_arms_by_variant : Certified (∀ {n : Nat}, Stmt_arms_by_variant prog prims ix_arms_by_variant n)) {n : Nat} :
-    Stmt_arms_in_order prog prims ix_arms_in_order n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_arms_in_order] at h
-  faithful [Lanius.Mini.armsInOrder]
-
-theorem step_arms_naming {prog : SrcProgram} {prims : Prims} {ix_arms_naming ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_arms_naming_at ix_arm_names : Nat} (fn : prog.funcs[ix_arms_naming]? = some (src_arms_naming ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_arms_naming ix_arms_naming_at ix_arm_names)) (np : prims.isPrim ix_arms_naming = false)
+theorem step_arms_naming {prog : SrcProgram} {prims : Prims} {ix_arms_naming ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_arm_names ix_arms_naming_at : Nat} (fn : prog.funcs[ix_arms_naming]? = some (src_arms_naming ix_empty_of_mini_selfhost_CTree ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_arms_naming ix_arm_names ix_arms_naming_at)) (np : prims.isPrim ix_arms_naming = false)
     (ext_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_CTree prog prims ix_empty_of_mini_selfhost_CTree n))
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n))
-    (ext_arms_naming_at : Certified (∀ {n : Nat}, Stmt_arms_naming_at prog prims ix_arms_naming_at n))
-    (ext_arm_names : Certified (∀ {n : Nat}, Stmt_arm_names prog prims ix_arm_names n)) {n : Nat}
+    (ext_arm_names : Certified (∀ {n : Nat}, Stmt_arm_names prog prims ix_arm_names n))
+    (ext_arms_naming_at : Certified (∀ {n : Nat}, Stmt_arms_naming_at prog prims ix_arms_naming_at n)) {n : Nat}
     (ih_arms_naming : Certified (Stmt_arms_naming prog prims ix_arms_naming n)) :
     Stmt_arms_naming prog prims ix_arms_naming (n + 1) := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rw [pcall_succ np fn] at h
   simp only [src_arms_naming] at h
   faithful [Lanius.Mini.armsNaming]
+
+theorem proof_text_underscore {prog : SrcProgram} {prims : Prims} {ix_text_underscore ix_single_of_usize : Nat} (fn : prog.funcs[ix_text_underscore]? = some (src_text_underscore ix_single_of_usize)) (np : prims.isPrim ix_text_underscore = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_text_underscore prog prims ix_text_underscore n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_text_underscore] at h
+  faithful [Lanius.Mini.textUnderscore]
 
 end Lanius.Faithful.SelfCert

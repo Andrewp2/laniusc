@@ -40,6 +40,10 @@ abbrev Stmt_p_pattern_plain (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pPatternPlain) w
 
+abbrev Stmt_p_pattern_tuple (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pPatternTuple) w
+
 abbrev Stmt_p_patterns_after_comma_more (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pPatternsAfterCommaMore) w

@@ -26,7 +26,7 @@ abbrev Stmt_arm_binder (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 
 abbrev Stmt_arm_binding (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.TypeDecl} {x4 : Lanius.Mini.VariantTy} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 230 RepLocal) x2 v2 → RepTypeDecl x3 v3 → RepVariantTy x4 v4 → RepCTree x5 v5 →
-    (RepOption 291 RepBound) (Lanius.Mini.armBinding x0 x1 x2 x3 x4 x5) w
+    (RepOption 293 RepBound) (Lanius.Mini.armBinding x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_arm_block_list (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepCTree x1 v1 →

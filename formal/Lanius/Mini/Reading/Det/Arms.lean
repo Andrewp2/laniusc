@@ -218,6 +218,87 @@ theorem armNames_fun {owner : TypeDecl} (o : CTree) (n n' : Name) (h₁ : ArmNam
   rw [pathSpellings_unique ps ps', e'] at e
   exact (split_unique e).2.symm
 
+/-- The wildcard as a variant's arm names that variant only. -/
+theorem armNames_wildArmFor {owner : TypeDecl} {w : CTree} {v : VariantTy} {n' : Name} (hw : isWildArm w = true)
+    (h : ArmNames owner (wildArmFor w v) n') : v.name = n' := by
+  obtain ⟨ss, ps, front, e, _⟩ := h
+  simp only [isWildArm, Bool.and_eq_true, decide_eq_true_eq] at hw
+  cases hp : pathName (kid (kid w 0) 0) with
+  | none => rw [hp] at hw; simp [isUnderscore] at hw
+  | some m =>
+    obtain ⟨_, _, pe, _⟩ := pathName_eq hp
+    simp only [wildArmFor, kid, kidsOf, List.getD_cons_zero, List.getD_cons_succ] at ps
+    cases ps with
+    | last _ _ =>
+      simp only [kidToken, kid, kidsOf, leafToken, List.getD_cons_zero] at e
+      exact (split_unique (front := []) e).2
+    | more _ t _ =>
+      simp only [kid, kidsOf] at pe t
+      rw [pe] at t
+      exact absurd t (by decide)
+
+/-- Variants with distinct names are told apart by their names. -/
+theorem variant_of_name : ∀ {vs : List VariantTy}, (vs.map (·.name)).Nodup →
+    ∀ {v v' : VariantTy}, v ∈ vs → v' ∈ vs → v.name = v'.name → v = v'
+  | [], _, _, _, m, _, _ => by cases m
+  | u :: rest, nd, v, v', m, m', e => by
+    rw [List.map_cons, List.nodup_cons] at nd
+    rcases List.mem_cons.1 m with h | m <;> rcases List.mem_cons.1 m' with h' | m'
+    · rw [h, h']
+    · rw [h] at e
+      exact (nd.1 (by rw [e]; exact List.mem_map_of_mem m')).elim
+    · rw [h'] at e
+      exact (nd.1 (by rw [← e]; exact List.mem_map_of_mem m)).elim
+    · exact variant_of_name nd.2 m m' e
+
+/-- Two lists naming the same names in turn are equal when any of their
+elements that name one name are equal. -/
+theorem listRel_pointwise {α β : Type} {N : α → β → Prop} : ∀ {os₁ os₂ : List α} {ns : List β},
+    ListRel N os₁ ns → ListRel N os₂ ns → (∀ o o' n, o ∈ os₁ → o' ∈ os₂ → N o n → N o' n → o = o') → os₁ = os₂
+  | _, _, _, .nil, .nil, _ => rfl
+  | _, _, _, .cons r rest, .cons r' rest', pt => by
+    rw [pt _ _ _ List.mem_cons_self List.mem_cons_self r r',
+      listRel_pointwise rest rest' (fun o o' n mo mo' => pt o o' n (List.mem_cons_of_mem _ mo) (List.mem_cons_of_mem _ mo'))]
+
+/-- The arms in variant order are one list (`arms_unique`; with a wildcard,
+an arm another arm names stays that arm, and the wildcard as a variant's
+arm names that variant only). -/
+theorem armsOrder_unique {owner : TypeDecl} {vs : List VariantTy} (nd : (vs.map (·.name)).Nodup)
+    {arms os₁ os₂ : List CTree} (o₁ : ArmsOrder vs arms os₁) (o₂ : ArmsOrder vs arms os₂)
+    (h₁ : ListRel (ArmNames owner) os₁ (vs.map (·.name))) (h₂ : ListRel (ArmNames owner) os₂ (vs.map (·.name))) :
+    os₁ = os₂ := by
+  rcases o₁ with ⟨w₁, len, sub₁⟩ | ⟨s, w₁, cover₁, _, sub₁⟩
+  · rcases o₂ with ⟨_, _, sub₂⟩ | ⟨s, w₂, _, _, _⟩
+    · classical
+      exact arms_unique armNames_fun nd (by rw [List.length_map]; exact len) h₁ h₂ sub₁ sub₂
+    · rw [w₁] at w₂; cases w₂
+  · rcases o₂ with ⟨w₂, _, _⟩ | ⟨s', w₂, cover₂, _, sub₂⟩
+    · rw [w₂] at w₁; cases w₁
+    · rw [w₁] at w₂
+      cases w₂
+      have hw := (wildSplit_some w₁).2
+      refine listRel_pointwise h₁ h₂ fun o o' n mo mo' no no' => ?_
+      rcases sub₁ o mo with i | ⟨m, mm, rfl⟩
+      · exact listRel_named_unique armNames_fun h₂ nd (cover₂ o i) mo' no no'
+      · rcases sub₂ o' mo' with i' | ⟨m', mm', rfl⟩
+        · exact listRel_named_unique armNames_fun h₁ nd mo (cover₁ _ i') no no'
+        · rw [variant_of_name nd mm mm' ((armNames_wildArmFor hw no).trans (armNames_wildArmFor hw no').symm)]
+
+/-- Each written arm is read: as itself, or, the wildcard, as some variant's
+arm with the same value. -/
+theorem armsOrder_reaches {owner : TypeDecl} {vs : List VariantTy} (nd : (vs.map (·.name)).Nodup)
+    {arms os : List CTree} (ord : ArmsOrder vs arms os) (named : ListRel (ArmNames owner) os (vs.map (·.name)))
+    {a : CTree} (ma : a ∈ arms) : ∃ o ∈ os, kid o 2 = kid a 2 := by
+  rcases ord with ⟨_, len, sub⟩ | ⟨s, w, cover, ⟨n, mw⟩, _⟩
+  · classical
+    have nd' := listRel_nodup armNames_fun named nd
+    exact ⟨a, subset_of_nodup_length nd' sub (by rw [listRel_length named, List.length_map, len]) ma, rfl⟩
+  · rw [(wildSplit_some w).1] at ma
+    rcases List.mem_append.1 ma with i | i
+    · exact ⟨a, cover a i, rfl⟩
+    · rw [List.mem_singleton.1 i]
+      exact ⟨_, mw, by simp [wildArmFor, kid, kidsOf]⟩
+
 theorem zipVariants_names : ∀ (ns : List Name) (ps : List (List Ty)),
     ((List.zipWith VariantTy.mk ns ps).map (·.name)).Sublist ns
   | [], _ => by simp

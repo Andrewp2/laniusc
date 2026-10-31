@@ -24,6 +24,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pPatternPlain : Nat :=
   199
 
+@[expose] def Inline.pPatternTuple : Nat :=
+  200
+
 @[expose] def Inline.pPatternsAfterCommaMore : Nat :=
   205
 

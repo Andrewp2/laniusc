@@ -209,12 +209,12 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       subst e
       rw [declInst_unique di di']
     | _ => eff_clash
-  | _, _, _, _, .match pm k et ee td en pt it len sub arms rt, nd, vn, _, h₂ => by
+  | _, _, _, _, .match pm k et ee td en pt it ord arms rt, nd, vn, _, h₂ => by
     have ih1 := fun {y} k' => effR_unique k nd vn (y := y) k'
     have ih2 := fun {y} k' => effArmsR_unique arms nd vn (eas' := y) k'
     cases h₂ with
-    | pure p => exact pure_agree p nd (.match pm k et ee td en pt it len sub arms rt)
-    | «match» _ k' et' ee' td' _ pt' it' _ sub' arms' rt' =>
+    | pure p => exact pure_agree p nd (.match pm k et ee td en pt it ord arms rt)
+    | «match» _ k' et' ee' td' _ pt' it' ord' arms' rt' =>
       have e := ih1 k'
       subst e
       have e := effTy_unique et et'
@@ -227,10 +227,8 @@ theorem effR_unique : ∀ {scope : List Local} {expected : Option Ty} {c : CTree
       subst e
       have e := items_unique it it'
       subst e
-      have eo := by
-        classical
-        exact arms_unique armNames_fun ((vn _ _ td en).sublist (zipVariants_names _ _))
-          (by rw [List.length_map]; exact len) (effArmsR_named arms) (effArmsR_named arms') sub sub'
+      have eo := armsOrder_unique ((vn _ _ td en).sublist (zipVariants_names _ _)) ord ord'
+        (effArmsR_named arms) (effArmsR_named arms')
       subst eo
       have ag := ih2 arms'
       rw [armsAgree_binders ag, armsAgree_values ag, armsAgree_resultTy ag rt rt']
