@@ -331,7 +331,9 @@ address, count)` to fd 1 or 2 of at most `maxTransfer` bytes inside the heap
 appends them to the trace and returns the count. `read(0, address, count)`
 of at most `maxTransfer` bytes takes the next `count` bytes of the input, or
 all that are left, stores them from `address` on (inside the heap), and
-returns how many. No other call returns. -/
+returns how many. `poll(0, 0, timeout)` with a timeout below 2^31 (a
+nonnegative `int`) polls no fd: it returns 0 and changes nothing. No other
+call returns. -/
 def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 × Heap)
   | .write, [fd, address, count], heap =>
     if (fd = 1 ∨ fd = 2) ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
@@ -347,6 +349,8 @@ def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 ×
         { heap.writeAll address.toNat (heap.io.input.take count.toNat) with
           io := { heap.io with input := heap.io.input.drop count.toNat } })
     else none
+  | .poll, [fds, nfds, timeout], heap =>
+    if fds = 0 ∧ nfds = 0 ∧ timeout.toNat < 2 ^ 31 then some (0, heap) else none
   | .write, [], _ => none
   | .write, [_], _ => none
   | .write, [_, _], _ => none
@@ -355,6 +359,10 @@ def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 ×
   | .read, [_], _ => none
   | .read, [_, _], _ => none
   | .read, _ :: _ :: _ :: _ :: _, _ => none
+  | .poll, [], _ => none
+  | .poll, [_], _ => none
+  | .poll, [_, _], _ => none
+  | .poll, _ :: _ :: _ :: _ :: _, _ => none
 
 /-- A system call keeps the heap's limit and cursor. -/
 theorem Syscall.run_frame {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}

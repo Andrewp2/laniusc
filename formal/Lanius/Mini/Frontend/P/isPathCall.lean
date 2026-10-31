@@ -1,8 +1,6 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.distinct
-import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noToken
 
@@ -75,98 +73,11 @@ def isTryLocal (pf : CTree) : Bool :=
   let tail : CTree := kid pf 1
   decide (nodeProd tail = (318)) && decide (nodeProd (kid tail 1) = (164))
 
-/-- core::result::Result { Ok, Err } or core::option::Option { Some, None }. -/
-def isTryEnum (t : TypeDecl) : Bool :=
-  t.isEnum && (sameSpellings t.home (textCore :: [textResult]) && sameText t.name textResultTy && sameSpellings t.variants (textOk :: [textErr]) || sameSpellings t.home (textCore :: [textOption]) && sameText t.name textOptionTy && sameSpellings t.variants (textSome :: [textNone]))
-
-/-- The shift of an alignment 2^shift, counting up from 2^s = p. -/
-def shiftOfU64 (fuel : Nat) (k : BitVec 64) (s : Nat) (p : Nat) : Option Nat :=
-  if fuel = 0 then
-    none
-  else
-    if BitVec.ofNat 64 p = k then
-      some s
-    else
-      shiftOfU64 (fuel - 1) k (s + 1) (p * 2)
-
-def isUsize (t : SrcType) : Bool :=
-  match t with
-  | .i32 => false
-  | .bool => false
-  | .uint k =>
-    (match k with
-     | .uint8 => false
-     | .uint32 => false
-     | .uint64 => false
-     | .usize => true
-     | .uint16 => false)
-  | .struct id fields => false
-  | .enum id variants => false
-  | .ptr => false
-  | .slice e => false
-  | .array e arrayLength => false
-  | .unit => false
-  | .isize => false
-  | .char => false
-  | .float ft => false
-  | .sint sk => false
-
-/-- An integer literal 2^shift with shift below 31. -/
-def literalShift (e : SrcExpr) : Option Nat :=
-  match e with
-  | .int k => shiftOfU64 31 (BitVec.setWidth 64 k) 0 1
-  | .boolean b => none
-  | .unsigned u k => shiftOfU64 31 k 0 1
-  | .local id => none
-  | .field id j => none
-  | .negate x => none
-  | .not x => none
-  | .apply op a b => none
-  | .cast t x => none
-  | .null => none
-  | .char code => none
-  | .float ft bits => none
-
-def castShift (usizeCast : Bool) (x : SrcExpr) : Option Nat :=
-  if usizeCast then
-    literalShift x
-  else
-    none
-
-/-- The shift of a literal alignment 2^shift: `8`, `(8 as usize)`, or an unsigned literal (a constant's value). -/
-def shiftOf (e : SrcExpr) : Option Nat :=
-  match e with
-  | .int k => literalShift e
-  | .boolean b => none
-  | .unsigned u k => literalShift e
-  | .local id => none
-  | .field id j => none
-  | .negate x => none
-  | .not x => none
-  | .apply op a b => none
-  | .cast t x => castShift (isUsize t) x
-  | .null => none
-  | .char code => none
-  | .float ft bits => none
-
-def allocShifted (size : SrcExpr) (shift : Option Nat) (more : List SrcExpr) : Option LetHead :=
-  match shift with
-  | none => none
-  | some k =>
-    match more with
-    | [] => some (LetHead.allocOf size k)
-    | e :: others => none
-
-/-- alloc(size, align) -/
-def allocHead (args : Option (List SrcExpr)) : Option LetHead :=
-  match args with
-  | none => none
-  | some es =>
-    match es with
-    | [] => none
-    | size :: rest =>
-      match rest with
-      | [] => none
-      | align :: more => allocShifted size (shiftOf align) more
+/-- A postfix `x.m(args)?` (no further postfix), x a name or self. -/
+def isTryMethod (pf : CTree) : Bool :=
+  let primary : CTree := kid pf 0
+  let tail : CTree := kid pf 1
+  let call : CTree := kid tail 3
+  (decide (nodeProd primary = (174)) || decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274))) && decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd call = (161)) && decide (nodeProd (kid call 3) = (318)) && decide (nodeProd (kid (kid call 3) 1) = (164))
 
 end Lanius.Mini

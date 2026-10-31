@@ -232,8 +232,9 @@ pub enum Expr {
 }
 
 // A Linux system call (roadmap F8). Write: write(fd, the heap address,
-// count), arguments in that order; Read: read(fd, the heap address, count).
-pub enum Syscall { Write, Read, }
+// count), arguments in that order; Read: read(fd, the heap address, count);
+// Poll: poll(fds, nfds, timeout), the second argument not made an address.
+pub enum Syscall { Write, Read, Poll, }
 
 pub enum Stmt {
     Skip,
@@ -980,15 +981,27 @@ pub fn syscall_linux_byte(kind: Syscall) -> u8 {
     return match (kind) {
         Write -> 1,
         Read -> 0,
+        Poll -> 7,
+    };
+}
+
+// What a system call does to its second argument in rsi: add rsi, r12 (a
+// heap address) for write and read, mov rsi, rsi (kept) for poll.
+pub fn syscall_rsi_bytes(kind: Syscall) -> List<u8> {
+    return match (kind) {
+        Write -> cons(76, cons(1, single(230))),
+        Read -> cons(76, cons(1, single(230))),
+        Poll -> cons(72, cons(137, single(246))),
     };
 }
 
 // mov rdi, [rbp + disp32] (the fd); mov rsi, [rbp + disp32]; add rsi, r12
-// (the heap address); mov rdx, [rbp + disp32] (the count); mov eax, the call's number;
-// syscall; mov r11, rcx (the kernel leaves RFLAGS in r11)
+// (the heap address; mov rsi, rsi for poll); mov rdx, [rbp + disp32] (the
+// count); mov eax, the call's number; syscall; mov r11, rcx (the kernel
+// leaves RFLAGS in r11)
 pub fn sys_bytes(kind: Syscall, slot: usize) -> List<u8> {
     let fd: List<u8> = concat(cons(72, cons(139, single(189))), le32(slot_offset(slot)));
-    let address: List<u8> = concat(concat(cons(72, cons(139, single(181))), le32(slot_offset(plus(slot, 1)))), cons(76, cons(1, single(230))));
+    let address: List<u8> = concat(concat(cons(72, cons(139, single(181))), le32(slot_offset(plus(slot, 1)))), syscall_rsi_bytes(kind));
     let count: List<u8> = concat(cons(72, cons(139, single(149))), le32(slot_offset(plus(slot, 2))));
     return concat(concat(fd, address), concat(count, cons(184, cons(syscall_linux_byte(kind), cons(0, cons(0, cons(0, cons(15, cons(5, cons(73, cons(137, single(203))))))))))));
 }
@@ -3621,7 +3634,7 @@ pub fn eval_call_sig(sig: Sig, callee: usize, slot: usize, args: EvaluatedArgs) 
 // Core's host services (roadmap F8) are its functions from id 2^32 on
 // (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is
 // write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr, 2^32 + 3
-// read_stdin. Their code is system calls.
+// read_stdin, 2^32 + 4 sleep_ms_i32. Their code is system calls.
 //
 // write_byte(handle, value), handle and value in slot and slot + 1: to handle
 // 1 or 2 the value's low byte goes through the heap's byte 0 (no block's,
@@ -3669,6 +3682,14 @@ pub fn host_read_code(slot: usize) -> Stmt {
     return Seq(boxed(Assign(total, Lit(0))), boxed(looped));
 }
 
+// sleep_ms_i32(milliseconds), milliseconds in slot: -1 for a negative count;
+// else poll(0, 0, milliseconds), which polls no fd and so returns after the
+// timeout, and 0.
+pub fn host_sleep_code(slot: usize) -> Stmt {
+    let sleep: Stmt = Seq(boxed(Stmt::Sys(Poll, plus(slot, 1), cons(Lit(0), cons(Lit(0), single(Var(slot)))))), boxed(Assign(slot, Lit(0))));
+    return Stmt::Ite(Compare(S32, Lt, boxed(Var(slot)), boxed(Lit(0))), boxed(Assign(slot, Lit(4294967295))), boxed(sleep));
+}
+
 pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
     if ((callee == 4294967296) && types_same(args.types, cons(I32, single(I32)))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_byte_code(slot))), ty: I32 });
@@ -3681,6 +3702,9 @@ pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::optio
     }
     if ((callee == 4294967299) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_read_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967300) && types_same(args.types, single(I32))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_sleep_code(slot))), ty: I32 });
     }
     return None;
 }
@@ -5855,6 +5879,7 @@ impl Syscall {
         return match (self) {
             Write -> 0,
             Read -> 1,
+            Poll -> 2,
         };
     }
 }

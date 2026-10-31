@@ -69,9 +69,11 @@ theorem proof_try_of_init {prog : SrcProgram} {prims : Prims} {ix_try_of_init ix
   simp only [src_try_of_init] at h
   faithful [Lanius.Mini.tryOfInit]
 
-theorem proof_try_postfix {prog : SrcProgram} {prims : Prims} {ix_try_postfix ix_is_try_call ix_try_call_of ix_is_try_local ix_try_local_of : Nat} (fn : prog.funcs[ix_try_postfix]? = some (src_try_postfix ix_is_try_call ix_try_call_of ix_is_try_local ix_try_local_of)) (np : prims.isPrim ix_try_postfix = false)
+theorem proof_try_postfix {prog : SrcProgram} {prims : Prims} {ix_try_postfix ix_is_try_call ix_try_call_of ix_is_try_method ix_try_method_of ix_is_try_local ix_try_local_of : Nat} (fn : prog.funcs[ix_try_postfix]? = some (src_try_postfix ix_is_try_call ix_try_call_of ix_is_try_method ix_try_method_of ix_is_try_local ix_try_local_of)) (np : prims.isPrim ix_try_postfix = false)
     (ext_is_try_call : Certified (∀ {n : Nat}, Stmt_is_try_call prog prims ix_is_try_call n))
     (ext_try_call_of : Certified (∀ {n : Nat}, Stmt_try_call_of prog prims ix_try_call_of n))
+    (ext_is_try_method : Certified (∀ {n : Nat}, Stmt_is_try_method prog prims ix_is_try_method n))
+    (ext_try_method_of : Certified (∀ {n : Nat}, Stmt_try_method_of prog prims ix_try_method_of n))
     (ext_is_try_local : Certified (∀ {n : Nat}, Stmt_is_try_local prog prims ix_is_try_local n))
     (ext_try_local_of : Certified (∀ {n : Nat}, Stmt_try_local_of prog prims ix_try_local_of n)) {n : Nat} :
     Stmt_try_postfix prog prims ix_try_postfix n := by

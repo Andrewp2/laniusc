@@ -205,6 +205,15 @@ def syscallBytes : List UInt8 := [15, 5]
 def Syscall.linux : Syscall → BitVec 32
   | .write => 1
   | .read => 0
+  | .poll => 7
+
+/-- What a system call does to its second argument in rsi: `add rsi, r12`
+makes it a heap address for `write` and `read`; `mov rsi, rsi` keeps it for
+`poll`. -/
+def Syscall.rsiBytes : Syscall → List UInt8
+  | .write => aluBytes .w64 .add rsiRegister heapBaseRegister
+  | .read => aluBytes .w64 .add rsiRegister heapBaseRegister
+  | .poll => moveBytes .w64 rsiRegister rsiRegister
 
 /-- `mov rdi, [slot]; mov rsi, [slot + 1]; add rsi, r12; mov rdx, [slot + 2];
 mov eax, number; syscall; mov r11, rcx`. The kernel leaves r11 unknown; the last
@@ -212,7 +221,7 @@ move makes it a function of the state again. -/
 def sysSpec (kind : Syscall) (slot : Nat) : List UInt8 :=
   memoryBytes .w64 true rdiRegister rbpRegister (frameDisplacement slot) ++
     (memoryBytes .w64 true rsiRegister rbpRegister (frameDisplacement (slot + 1)) ++
-    (aluBytes .w64 .add rsiRegister heapBaseRegister ++
+    (kind.rsiBytes ++
     (memoryBytes .w64 true rdxRegister rbpRegister (frameDisplacement (slot + 2)) ++
     (immediateBytes .w32 0 kind.linux 0 ++ (syscallBytes ++ moveBytes .w64 r11Register rcxRegister)))))
 
@@ -457,8 +466,8 @@ theorem Instr.bytes_length (place : Place) (pc : Nat) (i : Instr) : (i.bytes pla
         List.length_cons, List.length_nil] <;> decide
   | sys kind slot =>
     cases kind <;>
-    · simp only [Instr.bytes, sysSpec, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes, List.length_append,
-        List.length_map, List.length_range, Instr.size]
+    · simp only [Instr.bytes, sysSpec, Syscall.rsiBytes, memoryBytes, memoryHeader, Lanius.Semantics.i32Bytes,
+        List.length_append, List.length_map, List.length_range, Instr.size]
       decide
   | frame bytes => rw [← Instr.encode_eq]; simp [Instr.encode, frameMemoryBytes, le64, Instr.size]
 

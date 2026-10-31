@@ -40,4 +40,8 @@ abbrev Stmt_try_call_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 230 RepLocal) x2 v2 → RepCTree x3 v3 →
     (RepOption 281 RepTried) (Lanius.Mini.tryCallOf x0 x1 x2 x3) w
 
+abbrev Stmt_try_method_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.CTree} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 230 RepLocal) x2 v2 → RepCTree x3 v3 →
+    (RepOption 281 RepTried) (Lanius.Mini.tryMethodOf x0 x1 x2 x3) w
+
 end Lanius.Faithful.SelfCert

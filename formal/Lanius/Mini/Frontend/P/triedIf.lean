@@ -7,7 +7,7 @@ import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.isPathCall
+import Lanius.Mini.Frontend.P.isTryEnum
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.repeatEff
 import Lanius.Mini.Frontend.P.triedErr
@@ -55,6 +55,16 @@ def tryCallOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) : 
   let w : Nat := (kidToken (kid tail 3) 0).start - env.base
   if freshId scope r && freshId scope w && decide (r ≠ w) then
     triedCall fuel env scope r w (effPathCall fuel env scope none (kid (kid pf 0) 0) (kid tail 1))
+  else
+    none
+
+/-- `x.m(args)?`: as `path(args)?`, the method call's value bound to a local numbered by its `(`, the failure binder numbered by the `?`. -/
+def tryMethodOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) : Option Tried :=
+  let call : CTree := kid (kid pf 1) 3
+  let r : Nat := (kidToken call 0).start - env.base
+  let w : Nat := (kidToken (kid call 3) 0).start - env.base
+  if freshId scope r && freshId scope w && decide (r ≠ w) then
+    triedCall fuel env scope r w (effMethod fuel env scope none pf)
   else
     none
 

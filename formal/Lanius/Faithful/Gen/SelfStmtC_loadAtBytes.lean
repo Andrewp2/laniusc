@@ -108,4 +108,8 @@ abbrev Stmt_syscall_linux_byte (prog : SrcProgram) (prims : Prims) (ix n : Nat) 
   ∀ {x0 : Lanius.Mini.Syscall} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSyscall x0 v0 →
     RepU8 (Lanius.Mini.syscallLinuxByte x0) w
 
+abbrev Stmt_syscall_rsi_bytes (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.Syscall} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSyscall x0 v0 →
+    (RepList 66 RepU8) (Lanius.Mini.syscallRsiBytes x0) w
+
 end Lanius.Faithful.SelfCert

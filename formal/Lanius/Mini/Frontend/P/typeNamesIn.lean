@@ -15,6 +15,15 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+def typeNamesIn (types : List TypeDecl) (m : List (List Nat)) : List (List Nat) :=
+  match types with
+  | [] => []
+  | t :: rest =>
+    if sameSpellings t.home m then
+      t.name :: (t.variants ++ typeNamesIn rest m)
+    else
+      typeNamesIn rest m
+
 def constNamesIn (consts : List ConstDecl) (m : List (List Nat)) : List (List Nat) :=
   match consts with
   | [] => []

@@ -151,7 +151,10 @@ theorem hostFuncs_find (i : Nat) :
       · by_cases d : i = hostBase + 3
         · subst d
           simp [hostFunc, hostBase]
-        · simp [hostFunc, a, b, c, d, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d]
+        · by_cases e : i = hostBase + 4
+          · subst e
+            simp [hostFunc, hostBase]
+          · simp [hostFunc, a, b, c, d, e, Ne.symm a, Ne.symm b, Ne.symm c, Ne.symm d, Ne.symm e]
 
 /-- A function of the program, or else a host function. -/
 theorem SrcProgram.function?_toCore (sp : SrcProgram) (i : Nat) :
@@ -940,6 +943,35 @@ theorem call_readStdin_inv {heap : Memory.Heap} {world : World.State} {values : 
       | _ => simp [World.call, World.callSimple] at h
     | _ => simp [World.call, World.callSimple] at h
 
+/-- What `sleep_ms_i32` did when it returned: -1 for a negative count, else
+0 with the clocks advanced; the heap as it was. -/
+theorem call_sleepMsI32_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .sleepMsI32 values = .returned v heap' world') :
+    ∃ ms, values = [.signed .i32 ms] ∧ heap' = heap ∧
+      (ms < 0 ∧ v = World.i32Result (-1) ∧ world' = World.record world .sleepMsI32 ∨
+        0 ≤ ms ∧ v = World.i32Result 0 ∧ world' = (World.record world .sleepMsI32).afterSleepMs ms.toNat) := by
+  match values, h with
+  | [], h => simp [World.call, World.callSimple] at h
+  | a :: b :: rest, h =>
+    cases a with
+    | signed k x => cases k <;> simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+  | [a], h =>
+    cases a with
+    | signed k ms =>
+      cases k
+      all_goals first
+        | (by_cases neg : ms < 0
+           · simp only [World.call, World.callSimple, neg, ↓reduceIte, World.EffectResult.returned.injEq] at h
+             obtain ⟨rfl, rfl, rfl⟩ := h
+             exact ⟨ms, rfl, rfl, .inl ⟨neg, rfl, rfl⟩⟩
+           · simp only [World.call, World.callSimple, neg, ↓reduceIte, World.EffectResult.returned.injEq] at h
+             obtain ⟨rfl, rfl, rfl⟩ := h
+             exact ⟨ms, rfl, rfl, .inr ⟨Int.not_lt.mp neg, rfl, rfl⟩⟩)
+        | simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+
 /-- The host functions other than `read_stdin` leave Core's heap as it was. -/
 theorem hostCall_heap {id : Nat} {service : Core.HostService} (hs : hostService? id = some service)
     (writes : service ≠ .readStdin)
@@ -961,6 +993,10 @@ theorem hostCall_heap {id : Nat} {service : Core.HostService} (hs : hostService?
   split at hs
   · cases hs
     exact absurd rfl writes
+  split at hs
+  · cases hs
+    obtain ⟨_, _, same, _⟩ := call_sleepMsI32_inv h
+    exact same
   · cases hs
 
 /-- The host functions keep Core's next free address. -/
@@ -987,29 +1023,20 @@ theorem numberedParams_length : ∀ (n : Nat) (tys : List Core.Ty), (numberedPar
   | _, [] => rfl
   | n, _ :: rest => by simp [numberedParams, numberedParams_length (n + 1) rest]
 
-/-- A host call whose arguments evaluated, to two values, and left no views:
+/-- A host call whose arguments evaluated, to as many values as it has
+parameters, and left no views:
 Core's world call's outcome. -/
 theorem host_call_eval {sp : SrcProgram} {fuel : Nat} {st : State} {callee : Nat} {args : List Core.Expr}
     {values : List Value} {afterArgs : State} {service : Core.HostService}
-    (outside : sp.funcs.length ≤ callee) (hs : hostService? callee = some service) (len : values.length = 2)
+    (outside : sp.funcs.length ≤ callee) (hs : hostService? callee = some service)
+    (len : values.length = service.parameterTypes.length)
     (argsRun : evalExprs fuel sp.toCore st args = .done values afterArgs) (views : afterArgs.i32ArrayViews = []) :
     evalExpr (fuel + 1) sp.toCore st (.call callee args) =
       Semantics.worldCallOutcome callee afterArgs (World.call afterArgs.heap afterArgs.world service values) := by
-  have two : service.parameterTypes.length = 2 := by
-    unfold hostService? at hs
-    split at hs
-    · cases hs; rfl
-    split at hs
-    · cases hs; rfl
-    split at hs
-    · cases hs; rfl
-    split at hs
-    · cases hs; rfl
-    · cases hs
   have bound : Semantics.bindParameters (numberedParams 0 service.parameterTypes) values =
       some (((numberedParams 0 service.parameterTypes).zip values).map fun pair => (pair.1.1, pair.2)) := by
-    rw [Semantics.bindParameters, numberedParams_length, two, len]
-    rfl
+    rw [Semantics.bindParameters, numberedParams_length, len]
+    simp
   simp only [evalExpr, argsRun]
   rw [SrcProgram.function?_toCore, List.getElem?_eq_none outside, hs]
   simp only [Option.map_some, hostFunc, bound, sync_ok views]
@@ -1028,6 +1055,15 @@ theorem writeByte_returns (heap : Memory.Heap) (world : World.State) (a b : Int)
     cases wf : World.writeFileBytes (World.record world .writeByte) a [UInt8.ofNat (b % 256).toNat] with
     | some w => exact ⟨_, _, by simp [World.call, World.callSimple, wb, wf] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
     | none => exact ⟨_, _, by simp [World.call, World.callSimple, wb, wf] <;> first | exact ⟨rfl, rfl⟩ | rfl⟩
+
+/-- `sleep_ms_i32` on an `i32` returns. -/
+theorem sleepMsI32_returns (heap : Memory.Heap) (world : World.State) (ms : Int) :
+    ∃ v world', World.call heap world .sleepMsI32 [.signed .i32 ms] = .returned v heap world' := by
+  by_cases neg : ms < 0
+  · exact ⟨World.i32Result (-1), World.record world .sleepMsI32,
+      by simp only [World.call, World.callSimple, neg, ↓reduceIte]⟩
+  · exact ⟨World.i32Result 0, (World.record world .sleepMsI32).afterSleepMs ms.toNat,
+      by simp only [World.call, World.callSimple, neg, ↓reduceIte]⟩
 
 /-- `write_stdout` or `write_stderr` on a pointer and a count returns, or
 traps as the heap's load of the bytes does. -/
@@ -1064,7 +1100,8 @@ theorem hostCall_resultHeap {id : Nat} {service : Core.HostService} (hs : hostSe
     (heap : Memory.Heap) (world : World.State) (values : List Value)
     (stopped : ∀ v heap' world', World.call heap world service values ≠ .returned v heap' world') :
     resultHeap (World.call heap world service values) = heap := by
-  have four : service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr ∨ service = .readStdin := by
+  have five : service = .writeByte ∨ service = .writeStdout ∨ service = .writeStderr ∨ service = .readStdin ∨
+      service = .sleepMsI32 := by
     unfold hostService? at hs
     split at hs
     · cases hs; exact .inl rfl
@@ -1073,9 +1110,11 @@ theorem hostCall_resultHeap {id : Nat} {service : Core.HostService} (hs : hostSe
     split at hs
     · cases hs; exact .inr (.inr (.inl rfl))
     split at hs
-    · cases hs; exact .inr (.inr (.inr rfl))
+    · cases hs; exact .inr (.inr (.inr (.inl rfl)))
+    split at hs
+    · cases hs; exact .inr (.inr (.inr (.inr rfl)))
     · cases hs
-  rcases four with rfl | rfl | rfl | rfl <;>
+  rcases five with rfl | rfl | rfl | rfl | rfl <;>
   · simp only [World.call] at stopped ⊢
     repeat' split
     all_goals first | rfl | contradiction | simp_all
