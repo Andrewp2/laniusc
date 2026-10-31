@@ -45,6 +45,7 @@ import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
 import all Lanius.Mini.Compiler.P.evalDivideSint

@@ -233,8 +233,11 @@ pub enum Expr {
 
 // A Linux system call (roadmap F8). Write: write(fd, the heap address,
 // count), arguments in that order; Read: read(fd, the heap address, count);
-// Poll: poll(fds, nfds, timeout), the second argument not made an address.
-pub enum Syscall { Write, Read, Poll, }
+// Poll: poll(fds, nfds, timeout), the second argument not made an address;
+// Clock: clock_gettime(clock, the heap address, unused); Random:
+// getrandom(the heap address, count, flags), the first argument made an
+// address.
+pub enum Syscall { Write, Read, Poll, Clock, Random, }
 
 pub enum Stmt {
     Skip,
@@ -982,16 +985,32 @@ pub fn syscall_linux_byte(kind: Syscall) -> u8 {
         Write -> 1,
         Read -> 0,
         Poll -> 7,
+        Clock -> 228,
+        Random -> 62,
     };
 }
 
-// What a system call does to its second argument in rsi: add rsi, r12 (a
-// heap address) for write and read, mov rsi, rsi (kept) for poll.
+// The second byte of a system call's Linux number (getrandom is 318).
+pub fn syscall_linux_high(kind: Syscall) -> u8 {
+    return match (kind) {
+        Write -> 0,
+        Read -> 0,
+        Poll -> 0,
+        Clock -> 0,
+        Random -> 1,
+    };
+}
+
+// Which argument a system call makes a heap address: add rsi, r12 (the
+// second) for write, read and clock_gettime, mov rsi, rsi (none) for poll,
+// add rdi, r12 (the first) for getrandom.
 pub fn syscall_rsi_bytes(kind: Syscall) -> List<u8> {
     return match (kind) {
         Write -> cons(76, cons(1, single(230))),
         Read -> cons(76, cons(1, single(230))),
         Poll -> cons(72, cons(137, single(246))),
+        Clock -> cons(76, cons(1, single(230))),
+        Random -> cons(76, cons(1, single(231))),
     };
 }
 
@@ -1003,7 +1022,7 @@ pub fn sys_bytes(kind: Syscall, slot: usize) -> List<u8> {
     let fd: List<u8> = concat(cons(72, cons(139, single(189))), le32(slot_offset(slot)));
     let address: List<u8> = concat(concat(cons(72, cons(139, single(181))), le32(slot_offset(plus(slot, 1)))), syscall_rsi_bytes(kind));
     let count: List<u8> = concat(cons(72, cons(139, single(149))), le32(slot_offset(plus(slot, 2))));
-    return concat(concat(fd, address), concat(count, cons(184, cons(syscall_linux_byte(kind), cons(0, cons(0, cons(0, cons(15, cons(5, cons(73, cons(137, single(203))))))))))));
+    return concat(concat(fd, address), concat(count, cons(184, cons(syscall_linux_byte(kind), cons(syscall_linux_high(kind), cons(0, cons(0, cons(15, cons(5, cons(73, cons(137, single(203))))))))))));
 }
 
 // mov rsp, rbp; pop rbp; ret
@@ -3690,6 +3709,30 @@ pub fn host_sleep_code(slot: usize) -> Stmt {
     return Stmt::Ite(Compare(S32, Lt, boxed(Var(slot)), boxed(Lit(0))), boxed(Assign(slot, Lit(4294967295))), boxed(sleep));
 }
 
+// monotonic_read(pointer, len) (clock 1) or system_read (clock 0), pointer
+// and len in slot and slot + 1: -1 when len is below 16; else
+// clock_gettime(clock, pointer) and 0.
+pub fn host_clock_code(clock: u64, slot: usize) -> Stmt {
+    let read: Stmt = Seq(boxed(Stmt::Sys(Clock, plus(slot, 2), cons(Lit(clock), cons(Var(slot), single(Lit(0)))))), boxed(Assign(slot, Lit(0))));
+    return Stmt::Ite(Compare(U64, Lt, boxed(Var(plus(slot, 1))), boxed(Lit(16))), boxed(Assign(slot, Lit(4294967295))), boxed(read));
+}
+
+// fill_secure_bytes(pointer, count), pointer and count in slot and slot + 1:
+// getrandom of at most 256 bytes at a time to the pointer until none are
+// left to ask for, then the count as i32.
+pub fn host_random_code(slot: usize) -> Stmt {
+    let count: usize = plus(slot, 1);
+    let total: usize = plus(slot, 2);
+    let chunk: usize = plus(slot, 3);
+    let got: usize = plus(slot, 4);
+    let pick: Stmt = Stmt::Ite(Compare(U64, Lt, boxed(Var(count)), boxed(Lit(256))), boxed(Assign(chunk, Var(count))), boxed(Assign(chunk, Lit(256))));
+    let advance: Stmt = Seq(boxed(Assign(slot, Binary(U64, Add, boxed(Var(slot)), boxed(Var(chunk))))), boxed(Assign(count, Binary(U64, Sub, boxed(Var(count)), boxed(Var(chunk))))));
+    let fill: Stmt = Seq(boxed(Stmt::Sys(Random, got, cons(Var(slot), cons(Var(chunk), single(Lit(0)))))), boxed(advance));
+    let body: Stmt = Seq(boxed(pick), boxed(fill));
+    let looped: Stmt = Seq(boxed(Stmt::Loop(Compare(U64, Ne, boxed(Var(count)), boxed(Lit(0))), boxed(body))), boxed(Assign(slot, Binary(S32, Add, boxed(Var(total)), boxed(Lit(0))))));
+    return Seq(boxed(Assign(total, Var(count))), boxed(looped));
+}
+
 pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::option::Option<Evaluated> {
     if ((callee == 4294967296) && types_same(args.types, cons(I32, single(I32)))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_byte_code(slot))), ty: I32 });
@@ -3705,6 +3748,15 @@ pub fn eval_host(callee: usize, slot: usize, args: EvaluatedArgs) -> core::optio
     }
     if ((callee == 4294967300) && types_same(args.types, single(I32))) {
         return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_sleep_code(slot))), ty: I32 });
+    }
+    if ((callee == 4294967301) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_clock_code(1, slot))), ty: I32 });
+    }
+    if ((callee == 4294967302) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_clock_code(0, slot))), ty: I32 });
+    }
+    if ((callee == 4294967303) && types_same(args.types, cons(Ptr, single(Uint(Usize))))) {
+        return Some(Evaluated { stmt: Seq(boxed(args.stmt), boxed(host_random_code(slot))), ty: I32 });
     }
     return None;
 }
@@ -5880,6 +5932,8 @@ impl Syscall {
             Write -> 0,
             Read -> 1,
             Poll -> 2,
+            Clock -> 3,
+            Random -> 4,
         };
     }
 }

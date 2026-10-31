@@ -45,6 +45,7 @@ import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
 import all Lanius.Mini.Compiler.P.evalDivideSint
@@ -332,8 +333,12 @@ appends them to the trace and returns the count. `read(0, address, count)`
 of at most `maxTransfer` bytes takes the next `count` bytes of the input, or
 all that are left, stores them from `address` on (inside the heap), and
 returns how many. `poll(0, 0, timeout)` with a timeout below 2^31 (a
-nonnegative `int`) polls no fd: it returns 0 and changes nothing. No other
-call returns. -/
+nonnegative `int`) polls no fd: it returns 0 and changes nothing.
+`clock_gettime(clock, address, _)` of clock 0 or 1 with a reading left
+stores it as a `struct timespec` from `address` on (inside the heap) and
+returns 0. `getrandom(address, count, 0)` of at most 256 bytes, no more than
+the secure bytes left, stores the next `count` of them from `address` on
+(inside the heap) and returns `count`. No other call returns. -/
 def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 × Heap)
   | .write, [fd, address, count], heap =>
     if (fd = 1 ∨ fd = 2) ∧ count.toNat ≤ Lanius.X86.Machine.maxTransfer ∧
@@ -351,6 +356,16 @@ def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 ×
     else none
   | .poll, [fds, nfds, timeout], heap =>
     if fds = 0 ∧ nfds = 0 ∧ timeout.toNat < 2 ^ 31 then some (0, heap) else none
+  | .clock, [which, address, _unused], heap =>
+    if (which = 0 ∨ which = 1) ∧ heap.io.readings which ≠ [] ∧ address.toNat + 16 ≤ heap.top then
+      some (0, { heap.writeAll address.toNat (Lanius.X86.Machine.timespecLE ((heap.io.readings which).headD (0, 0))) with
+        io := heap.io.afterReading which })
+    else none
+  | .random, [address, count, flags], heap =>
+    if flags = 0 ∧ count.toNat ≤ 256 ∧ count.toNat ≤ heap.io.entropy.length ∧ address.toNat + count.toNat ≤ heap.top then
+      some (count, { heap.writeAll address.toNat (heap.io.entropy.take count.toNat) with
+        io := { heap.io with entropy := heap.io.entropy.drop count.toNat } })
+    else none
   | .write, [], _ => none
   | .write, [_], _ => none
   | .write, [_, _], _ => none
@@ -363,6 +378,14 @@ def Syscall.run : Syscall → List (BitVec 64) → Heap → Option (BitVec 64 ×
   | .poll, [_], _ => none
   | .poll, [_, _], _ => none
   | .poll, _ :: _ :: _ :: _ :: _, _ => none
+  | .clock, [], _ => none
+  | .clock, [_], _ => none
+  | .clock, [_, _], _ => none
+  | .clock, _ :: _ :: _ :: _ :: _, _ => none
+  | .random, [], _ => none
+  | .random, [_], _ => none
+  | .random, [_, _], _ => none
+  | .random, _ :: _ :: _ :: _ :: _, _ => none
 
 /-- A system call keeps the heap's limit and cursor. -/
 theorem Syscall.run_frame {call : Syscall} {args : List (BitVec 64)} {heap after : Heap} {result : BitVec 64}

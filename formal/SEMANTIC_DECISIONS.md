@@ -805,7 +805,8 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   to inline `syscall` code. The mini IR's `Stmt.sys kind target args`
   (`Instr.sys kind slot`, `Mini/Semantics.lean`) is one system call; its
   arguments are evaluated into three consecutive frame slots, and the
-  result lands in `target`. `Syscall.write`, `Syscall.read` and `Syscall.poll` exist.
+  result lands in `target`. `Syscall.write`, `Syscall.read`, `Syscall.poll`,
+  `Syscall.clock` and `Syscall.random` exist.
 - **`Syscall.write` at the mini level.** `[fd, address, count]` with fd 1 or
   2, count at most `maxTransfer`, and `address + count` within the heap
   limit; it appends `.write fd (heap bytes address..address+count)` to
@@ -825,11 +826,10 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   side is `World.State.standardOutput`/`standardError`; the link from
   Core's `write_byte`/`write_stdout` services to `.write` events (one event
   per call, the bytes Core appends) is the next part of F8.
-- **Not yet modeled (deferred).** `getrandom`/`secure_u32`, process
+- **Not yet modeled (deferred).** Process
   arguments and environment variables (the loader would have to place
-  `argv`/`envp`, now arbitrary memory), clock reads (`clock_gettime`; sleeping is done, "Host sleep"),
-  files, sockets and processes, the general `syscall6`, the allocator
-  externs (the verified compiler's `alloc` is the mini bump allocator over
+  `argv`/`envp`, now arbitrary memory), files, sockets and processes, the
+  general `syscall6`, the allocator externs (the verified compiler's `alloc` is the mini bump allocator over
   a heap the startup code provides, not `mmap`), and writes longer than
   `MAX_RW_COUNT` (Core would have to loop; a short write is not modeled).
 
@@ -927,10 +927,23 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
 - **Host ids.** `monotonic_read`, `system_read` and `fill_secure_bytes` are
   host functions 2^32 + 5, + 6 and + 7 (`hostFuncs`); the front end reads
   their `extern "lanius_std"` declarations as those host calls (case
-  `host_clock`). They are not lowered yet, so `compileSource` rejects a
-  program that calls one (the case is marked `compile_rejects`): the
-  kernel's `clock_gettime` and `getrandom` write memory, and come after F6's
-  heap changes.
+  `host_clock`, which `compileSource` compiles).
+- **Lowering.** A clock read is `host_clock_code`: -1 when `len` is below
+  16, else `clock_gettime(clock, ptr)` (clock 1 for the monotonic clock, 0
+  for the system clock; `Syscall.clock`, rax 228, `add rsi, r12`) and 0.
+  `fill_secure_bytes` is `host_random_code`: `getrandom(ptr, chunk, 0)` of
+  chunks of at most 256 bytes until none are left to ask for, then `len`
+  as `i32` (`Syscall.random`, rax 318, `add rdi, r12`: the first argument
+  is the address). At the mini level `Syscall.clock` with clock 0 or 1, a
+  reading left and 16 bytes inside the heap stores the reading
+  (`timespecLE`, the same bytes as Core's `timespecBytes`) and drops it;
+  `Syscall.random` with flags 0, a count of at most 256 and no more than
+  the secure bytes left, inside the heap, stores and drops them. Proved
+  against `World.call` (`LowerEval.host_monotonicRead`, `host_systemRead`,
+  `host_fillSecureBytes`) and through the simulation (`clock_simulates`,
+  `random_simulates`); the kernel calls are in TRUSTED_BASE.md section 8.
+  The stdlib's callers pass a pointer the oracle cannot give, so there is
+  no oracle step for them.
 
 ## `for` over a range (decided 10-30, F4)
 

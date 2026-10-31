@@ -43,6 +43,7 @@ import all Lanius.Mini.Compiler.P.assignFrom
 import all Lanius.Mini.Compiler.P.armBodyScope
 import all Lanius.Mini.Compiler.P.armPayload
 import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.hostRandomCode
 import all Lanius.Mini.Compiler.P.consArgs
 import all Lanius.Mini.Compiler.P.shortCircuit
 import all Lanius.Mini.Compiler.P.evalDivideSint
@@ -980,6 +981,140 @@ theorem call_sleepMsI32_inv {heap : Memory.Heap} {world : World.State} {values :
              exact ⟨ms, rfl, rfl, .inr ⟨Int.not_lt.mp neg, rfl, rfl⟩⟩)
         | simp [World.call, World.callSimple] at h
     | _ => simp [World.call, World.callSimple] at h
+
+/-- What `monotonic_read` did when it returned: -1 for a buffer below 16 bytes, else
+0 with the clock's next reading stored at the pointer. -/
+theorem call_monotonicRead_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .monotonicRead values = .returned v heap' world') :
+    ∃ p n, values = [.pointer p, .unsigned .usize n] ∧
+      (n < 16 ∧ v = World.i32Result (-1) ∧ heap' = heap ∧ world' = World.record world .monotonicRead ∨
+        16 ≤ n ∧ ∃ reading rest, world.monotonicReadings = reading :: rest ∧
+          heap.storeBytes p (World.timespecBytes reading.1 reading.2) = .ok heap' ∧ v = World.i32Result 0 ∧
+          world' = { World.record world .monotonicRead with monotonicReadings := rest }) := by
+  match values, h with
+  | [], h => simp [World.call, World.callSimple] at h
+  | [a], h => cases a <;> simp [World.call, World.callSimple] at h
+  | a :: b :: c :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+  | [a, b], h =>
+    cases a with
+    | pointer p =>
+      cases b with
+      | unsigned k n =>
+        cases k
+        all_goals simp only [World.call, World.callSimple] at h
+        all_goals first
+          | (refine ⟨p, n, rfl, ?_⟩
+             split at h
+             · rename_i small
+               simp only [World.EffectResult.returned.injEq] at h
+               obtain ⟨rfl, rfl, rfl⟩ := h
+               exact .inl ⟨small, rfl, rfl, rfl⟩
+             · rename_i big
+               split at h
+               · simp at h
+               · rename_i reading rest readings
+                 split at h
+                 · simp at h
+                 · rename_i copied stored
+                   simp only [World.EffectResult.returned.injEq] at h
+                   obtain ⟨rfl, rfl, rfl⟩ := h
+                   exact .inr ⟨by omega, reading, rest, readings, stored, rfl, rfl⟩)
+          | simp at h
+      | _ => simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+
+/-- What `system_read` did when it returned: -1 for a buffer below 16 bytes, else
+0 with the clock's next reading stored at the pointer. -/
+theorem call_systemRead_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .systemRead values = .returned v heap' world') :
+    ∃ p n, values = [.pointer p, .unsigned .usize n] ∧
+      (n < 16 ∧ v = World.i32Result (-1) ∧ heap' = heap ∧ world' = World.record world .systemRead ∨
+        16 ≤ n ∧ ∃ reading rest, world.systemReadings = reading :: rest ∧
+          heap.storeBytes p (World.timespecBytes reading.1 reading.2) = .ok heap' ∧ v = World.i32Result 0 ∧
+          world' = { World.record world .systemRead with systemReadings := rest }) := by
+  match values, h with
+  | [], h => simp [World.call, World.callSimple] at h
+  | [a], h => cases a <;> simp [World.call, World.callSimple] at h
+  | a :: b :: c :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+  | [a, b], h =>
+    cases a with
+    | pointer p =>
+      cases b with
+      | unsigned k n =>
+        cases k
+        all_goals simp only [World.call, World.callSimple] at h
+        all_goals first
+          | (refine ⟨p, n, rfl, ?_⟩
+             split at h
+             · rename_i small
+               simp only [World.EffectResult.returned.injEq] at h
+               obtain ⟨rfl, rfl, rfl⟩ := h
+               exact .inl ⟨small, rfl, rfl, rfl⟩
+             · rename_i big
+               split at h
+               · simp at h
+               · rename_i reading rest readings
+                 split at h
+                 · simp at h
+                 · rename_i copied stored
+                   simp only [World.EffectResult.returned.injEq] at h
+                   obtain ⟨rfl, rfl, rfl⟩ := h
+                   exact .inr ⟨by omega, reading, rest, readings, stored, rfl, rfl⟩)
+          | simp at h
+      | _ => simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+
+/-- What `fill_secure_bytes` did when it returned: the next `n` secure bytes
+stored at the pointer, and `n`. -/
+theorem call_fillSecureBytes_inv {heap : Memory.Heap} {world : World.State} {values : List Value} {v : Value}
+    {heap' : Memory.Heap} {world' : World.State}
+    (h : World.call heap world .fillSecureBytes values = .returned v heap' world') :
+    ∃ p n, values = [.pointer p, .unsigned .usize n] ∧ n ≤ world.secureByteStream.length ∧
+      heap.storeBytes p (world.secureByteStream.take n) = .ok heap' ∧ v = World.i32Result n ∧
+      world' = { World.record world .fillSecureBytes with secureByteStream := world.secureByteStream.drop n } := by
+  match values, h with
+  | [], h => simp [World.call, World.callSimple] at h
+  | [a], h => cases a <;> simp [World.call, World.callSimple] at h
+  | a :: b :: c :: rest, h => cases a <;> simp [World.call, World.callSimple] at h
+  | [a, b], h =>
+    cases a with
+    | pointer p =>
+      cases b with
+      | unsigned k n =>
+        cases k
+        all_goals simp only [World.call, World.callSimple] at h
+        all_goals first
+          | (split at h
+             · simp at h
+             · rename_i enough
+               split at h
+               · simp at h
+               · rename_i copied stored
+                 simp only [World.EffectResult.returned.injEq] at h
+                 obtain ⟨rfl, rfl, rfl⟩ := h
+                 exact ⟨p, n, rfl, by simp [World.record] at enough; omega, stored, rfl, rfl⟩)
+          | simp at h
+      | _ => simp [World.call, World.callSimple] at h
+    | _ => simp [World.call, World.callSimple] at h
+
+/-- `monotonic_read`, `system_read` or `fill_secure_bytes` on a pointer and a
+count returns, or traps at the end of a stream or as the heap's store does. -/
+theorem stores_outcome {service : Core.HostService}
+    (which : service = .monotonicRead ∨ service = .systemRead ∨ service = .fillSecureBytes)
+    (heap : Memory.Heap) (world : World.State) (p n : Nat) :
+    (∃ v heap' world', World.call heap world service [.pointer p, .unsigned .usize n] = .returned v heap' world') ∨
+    (∃ r world', World.call heap world service [.pointer p, .unsigned .usize n] = .trapped r heap world' ∧
+      (r = .clockExhausted ∨ r = .entropyExhausted ∨ ∃ bytes, heap.storeBytes p bytes = .error r)) := by
+  rcases which with rfl | rfl | rfl <;>
+  · simp only [World.call, World.callSimple]
+    repeat' split
+    all_goals first
+      | exact .inl ⟨_, _, _, rfl⟩
+      | exact .inr ⟨_, _, rfl, .inl rfl⟩
+      | exact .inr ⟨_, _, rfl, .inr (.inl rfl)⟩
+      | exact .inr ⟨_, _, rfl, .inr (.inr ⟨_, by assumption⟩)⟩
 
 /-- The services of the host functions. -/
 theorem hostService?_some {id : Nat} {service : Core.HostService} (hs : hostService? id = some service) :

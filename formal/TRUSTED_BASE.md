@@ -883,8 +883,7 @@ for a process the trusted part is only this:
   `systemReadings`, `secureByteStream`), and a Core run that reads past
   their end traps (`clockExhausted`, `entropyExhausted`), a trap the
   theorems say nothing about (`undefinedTrap`), since the kernel's streams
-  do not end. No system call reads them yet: the kernel's `clock_gettime`
-  and `getrandom` wait for the heap changes of F6.
+  do not end. `clock_gettime` and `getrandom` read them (below).
 - **The kernel's `poll` with no fds (`Kernel.poll`, roadmap F8, 10-31).**
   With rax 7, rdi 0 (no array), rsi 0 (no fds) and an rdx below 2^31 (a
   nonnegative `int` timeout in milliseconds), the call returns 0 in rax,
@@ -900,6 +899,34 @@ for a process the trusted part is only this:
   `sleep_ms_i32` is lowered to this `poll` (SEMANTIC_DECISIONS.md, "Host
   sleep"); Core's world advances only its whole-second compatibility clock
   by the count, which no modeled call reads.
+- **The kernel's `clock_gettime` (`Kernel.clock`, roadmap F8, 10-31).**
+  With rax 228 and rdi 0 (`CLOCK_REALTIME`) or 1 (`CLOCK_MONOTONIC`), the
+  call stores the next reading of that clock's stream (`Io.readings`:
+  `monotonic` for 1, `realtime` for 0) from rsi on as a `struct timespec`,
+  16 bytes, `tv_sec` then `tv_nsec`, each a little-endian 64-bit word
+  (`timespecLE`), drops the reading (`Io.afterReading`), returns 0 in rax,
+  and leaves rcx, rip, r11, the other registers and RFLAGS as for `write`.
+  The compiled code passes a heap address with 16 bytes inside the heap
+  (`add rsi, r12`). So it is trusted that `clock_gettime` of these two
+  clocks into writable memory always succeeds (Linux returns EFAULT only
+  for an address it cannot write, and EINVAL only for other clocks), that
+  the seconds and nanoseconds it gives are some stream of readings fixed
+  for the run (the code makes the system call itself, not the vDSO
+  call). When the stream has no
+  reading left the model has no step: such runs are outside the theorems,
+  as Core's `clockExhausted` is.
+- **The kernel's `getrandom` (`Kernel.getrandom`, roadmap F8, 10-31).**
+  With rax 318, rsi (the count) at most 256, rdx 0 (no flags) and at
+  least that many bytes left in `entropy`, the call stores the next count
+  of them from rdi on, drops them, returns the count in rax, and leaves
+  the other registers as for `write`. The compiled code asks for at most
+  256 bytes at a time, to a heap address inside the heap (`add rdi,
+  r12`). So it is trusted that such a `getrandom` returns every byte asked
+  for and is not interrupted (Linux's documented guarantee for requests of
+  at most 256 bytes once the entropy pool is initialized; before that the
+  call blocks, which the model does not see), that it never fails on
+  writable memory, and that the bytes it gives are some stream fixed for
+  the run.
   No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
   runtime").
 - The startup code sets rsp, r12 to r15, r10 (the heap's top) and rbx (the

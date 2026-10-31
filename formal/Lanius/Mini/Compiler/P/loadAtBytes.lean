@@ -37,20 +37,33 @@ def syscallLinuxByte (kind : Syscall) : UInt8 :=
   | .write => 1
   | .read => 0
   | .poll => 7
+  | .clock => 228
+  | .random => 62
 
-/-- What a system call does to its second argument in rsi: add rsi, r12 (a heap address) for write and read, mov rsi, rsi (kept) for poll. -/
+/-- The second byte of a system call's Linux number (getrandom is 318). -/
+def syscallLinuxHigh (kind : Syscall) : UInt8 :=
+  match kind with
+  | .write => 0
+  | .read => 0
+  | .poll => 0
+  | .clock => 0
+  | .random => 1
+
+/-- Which argument a system call makes a heap address: add rsi, r12 (the second) for write, read and clock_gettime, mov rsi, rsi (none) for poll, add rdi, r12 (the first) for getrandom. -/
 def syscallRsiBytes (kind : Syscall) : List UInt8 :=
   match kind with
   | .write => 76 :: 1 :: [230]
   | .read => 76 :: 1 :: [230]
   | .poll => 72 :: 137 :: [246]
+  | .clock => 76 :: 1 :: [230]
+  | .random => 76 :: 1 :: [231]
 
 /-- mov rdi, [rbp + disp32] (the fd); mov rsi, [rbp + disp32]; add rsi, r12 (the heap address; mov rsi, rsi for poll); mov rdx, [rbp + disp32] (the count); mov eax, the call's number; syscall; mov r11, rcx (the kernel leaves RFLAGS in r11) -/
 def sysBytes (kind : Syscall) (slot : Nat) : List UInt8 :=
   let fd : List UInt8 := 72 :: 139 :: [189] ++ le32 (slotOffset slot)
   let address : List UInt8 := 72 :: 139 :: [181] ++ le32 (slotOffset (slot + 1)) ++ syscallRsiBytes kind
   let count : List UInt8 := 72 :: 139 :: [149] ++ le32 (slotOffset (slot + 2))
-  fd ++ address ++ (count ++ 184 :: syscallLinuxByte kind :: 0 :: 0 :: 0 :: 15 :: 5 :: 73 :: 137 :: [203])
+  fd ++ address ++ (count ++ 184 :: syscallLinuxByte kind :: syscallLinuxHigh kind :: 0 :: 0 :: 15 :: 5 :: 73 :: 137 :: [203])
 
 /-- mov rsp, rbp; pop rbp; ret -/
 def epilogue : List UInt8 :=
