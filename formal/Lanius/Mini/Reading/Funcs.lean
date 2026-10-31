@@ -67,7 +67,7 @@ theorem paramsOf_sound {fuel : Nat} {env : FrontEnv} {fd : FnDecl} :
             rw [hr] at h
             simp only [Option.some.injEq] at h
             subst h
-            refine .cons c.1 (fun mem => ?_) ((freshId_iff _ _).1 fr) (patternOf_sound hp) (tyOf_sound ht)
+            refine .cons (or_assoc.1 c.1) (fun mem => ?_) ((freshId_iff _ _).1 fr) (patternOf_sound hp) (tyOf_sound ht)
               (paramsOf_sound hr)
             have := c.2
             rw [(member_iff _ _).2 mem] at this
