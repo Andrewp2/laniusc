@@ -48,6 +48,10 @@ abbrev Stmt_lower_set_index_eval (prog : SrcProgram) (prims : Prims) (ix n : Nat
   ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Nat} {x2 : Option Lanius.Mini.Binding} {x3 : Option Lanius.Mini.Evaluated} {x4 : Option Lanius.Mini.Evaluated} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepSrcDecls x0 v0 → RepNat x1 v1 → (RepOption 144 RepBinding) x2 v2 → (RepOption 148 RepEvaluated) x3 v3 → (RepOption 148 RepEvaluated) x4 v4 →
     (RepOption 126 RepStmt) (Lanius.Mini.lowerSetIndexEval x0 x1 x2 x3 x4) w
 
+abbrev Stmt_lower_unreachable (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Bool} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → RepNat x1 v1 →
+    (RepOption 126 RepStmt) (Lanius.Mini.lowerUnreachable x0 x1) w
+
 abbrev Stmt_param_scope (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcParam} {x1 : Nat} {x2 : List Lanius.Mini.Binding} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 7 RepSrcParam) x0 v0 → RepNat x1 v1 → (RepList 127 RepBinding) x2 v2 →
     (RepList 127 RepBinding) (Lanius.Mini.paramScope x0 x1 x2) w

@@ -278,6 +278,8 @@ inductive LitStmt (funcs : List SrcFunc) (ret : SrcType) : List LocalTy → SrcS
       LitStmt funcs ret locals (.matchArm sc eid k bs x ty b r) (.matchArm sc eid k bs x ty b' r')
   | «assert» {locals : List LocalTy} {x x' : SrcEff} :
       LitEff funcs locals (some .bool) x x' → LitStmt funcs ret locals (.assert x) (.assert x')
+  | unreachable {locals : List LocalTy} {id : Nat} {ty : SrcType} :
+      LitStmt funcs ret locals (.unreachable id ty) (.unreachable id ty)
 
 theorem litStmt_sound (funcs : List SrcFunc) (ret : SrcType) :
     ∀ (locals : List LocalTy) (s : SrcStmt), LitStmt funcs ret locals s (litStmt funcs ret locals s)
@@ -337,6 +339,7 @@ theorem litStmt_sound (funcs : List SrcFunc) (ret : SrcType) :
   | locals, .continue => by simp only [litStmt]; exact .continue
   | locals, .matchArm sc eid k bs x ty b r => by
     simp only [litStmt]; exact .matchArm (litStmt_sound funcs ret _ b) (litStmt_sound funcs ret _ r)
+  | locals, .unreachable id ty => by simp only [litStmt]; exact .unreachable
   | locals, .assert x => by simp only [litStmt]; exact .assert (litEff_sound _ _ _ _)
 
 /-! ## Functions and the closed program -/

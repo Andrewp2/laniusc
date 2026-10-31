@@ -258,6 +258,9 @@ pub enum SrcStmt {
     Break,
     Continue,
     MatchArm(usize, usize, usize, bool, usize, SrcType, Box<SrcStmt>, Box<SrcStmt>),
+    // Unreachable(id, ty): Core binds id, uninitialized, at type ty and
+    // returns it, so it traps; ty is the function's result type.
+    Unreachable(usize, SrcType),
 }
 
 pub struct SrcParam {
@@ -8206,6 +8209,7 @@ pub fn lit_stmt(funcs: List<SrcFunc>, ret: SrcType, locals: List<LocalTy>, s: Sr
         Break -> Break,
         Continue -> Continue,
         MatchArm(sc, en, k, bs, x, ty, body, rest) -> MatchArm(sc, en, k, bs, x, ty, boxed(lit_stmt(funcs, ret, with_local(x, ty, locals), unbox(body))), boxed(lit_stmt(funcs, ret, locals, unbox(rest)))),
+        Unreachable(id, ty) -> Unreachable(id, ty),
     };
 }
 
@@ -8318,6 +8322,7 @@ pub fn wide_left_stmt(s: SrcStmt) -> bool {
         Break -> false,
         Continue -> false,
         MatchArm(sc, en, k, bs, x, ty, body, rest) -> wide_left_stmt(unbox(body)) || wide_left_stmt(unbox(rest)),
+        Unreachable(id, ty) -> false,
     };
 }
 

@@ -719,3 +719,20 @@ is. So that:
 - the lowering tests the tag word against `variant` and copies the field to
   the next free slots (`lower_match_arm`); a tag never needs more than 32
   bits, as for `let match`.
+
+## Unreachable statements (decided 10-31, F4)
+
+`Unreachable(id, ty)` is a branch that never runs, such as the last branch
+of the MatchArm chain a `let x: T = op?;` reads as. Its Core meaning
+(`SrcStmt.toCore`) is `let id: ty; return id;` (`letUninitialized` of the
+`returnValue` of the local), so that:
+
+- Core's `DefinitelyReturns` holds by `letUninitialized` and `returnValue`,
+  and a chain ending in it counts as returning without a match rule;
+- the read of `id` traps with `uninitializedLocal`, a defined trap, so a
+  run that reaches it is a run the compiled code must stop on;
+- `ty` is the function's result type: the lowering requires `ty = ret`,
+  which makes the `return` type-check, and emits `1 / 0` into the next slot
+  (`lower_unreachable`), which has no mini step and traps on x86, as
+  `assert`'s failing division does. It binds no slot beyond that one
+  (depth 1).

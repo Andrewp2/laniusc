@@ -2429,6 +2429,16 @@ theorem stmt_discard (ihe : EvalSound sp mp fuel) {value : SrcEff}
     exact ⟨fresh1, keeps1.lower le, d1, _, exec1, .next (corr.after fr fresh keeps1 locals1 same1) hc1⟩
   all_goals simp at run
 
+/-- `Unreachable`: Core's run never completes from a fresh state (the read
+of the uninitialized local traps), so there is nothing to simulate. -/
+theorem stmt_unreachable {id : Nat} {ty : SrcType} (fresh : st.Fresh)
+    (run : execStmt (fuel + 1) sp.toCore st (SrcStmt.unreachable id ty).toCore = .done c st') :
+    Simulates mp hp ret scope frame base st env stmt c st' := by
+  have found := (unreachable_done run).2.1
+  cases h : st.cellEntry? st.nextCell with
+  | none => simp [h] at found
+  | some e => exact absurd (fresh.below h) (Nat.lt_irrefl _)
+
 /-- `assert(condition)`: the condition's code, then `1 / condition` into the
 condition's slot. Core continues only when the condition is true, and then
 the division has a run. -/
@@ -2580,6 +2590,7 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | setIndexEval => exact stmt_setIndexEval belowE ok corr fr fresh le hc run bound
         | setFieldEval => exact stmt_setFieldEval belowE ok corr fr fresh le hc run bound
         | matchArm => exact stmt_matchArm below ok corr fr fresh le hc run bound
+        | unreachable => exact stmt_unreachable fresh run
       · intro hp e scope slot ev frame base st env v st' ok corr fr fresh hc run bound
         cases e with
         | ePure e => exact eval_pure ok corr fr fresh hc run

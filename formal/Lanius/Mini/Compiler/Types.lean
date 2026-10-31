@@ -369,6 +369,8 @@ inductive SrcStmt where
   | continue : SrcStmt
   /-- MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest): when the enum local scrutinee (Core id enum_id) is the variant, run body, else run rest. A variant with no payload binds nothing (binds is false); one with one field, of type ty, binds a copy of it to binder. -/
   | matchArm : Nat → Nat → Nat → Bool → Nat → SrcType → SrcStmt → SrcStmt → SrcStmt
+  /-- Unreachable(id, ty): Core binds id, uninitialized, at type ty and returns it, so it traps; ty is the function's result type. -/
+  | unreachable : Nat → SrcType → SrcStmt
   deriving Repr
 
 structure SrcParam where

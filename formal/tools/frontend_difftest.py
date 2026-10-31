@@ -1099,6 +1099,7 @@ partial def serStmt : SrcStmt → String
   | .continue => ".continue"
   | .assert x => s!"(.assert {serEff x})"
   | .matchArm sc e k b x t body r => s!"(.matchArm {sc} {e} {k} {b} {x} {serType t} {serStmt body} {serStmt r})"
+  | .unreachable n t => s!"(.unreachable {n} {serType t})"
 
 def serParam (p : SrcParam) : String := "{ id := " ++ toString p.id ++ ", ty := " ++ serType p.ty ++ " }"
 
@@ -1261,6 +1262,7 @@ partial def renStmt (f : Nat → Nat) : SrcStmt → SrcStmt
   | .break => .break
   | .continue => .continue
   | .matchArm sc e k b x t body r => .matchArm (f sc) e k b (f x) t (renStmt f body) (renStmt f r)
+  | .unreachable n t => .unreachable (f n) t
   | .assert x => .assert (renEff f x)
 
 def canonFunc (fn : SrcFunc) : SrcFunc :=

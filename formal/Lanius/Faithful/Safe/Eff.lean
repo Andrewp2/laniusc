@@ -114,6 +114,9 @@ theorem stmt_ends (sp : SrcProgram) :
   | returnUnit => obtain ⟨rfl, -⟩ := returnUnit_inv run; trivial
   | «break» => simp [SrcStmt.breaksOut] at inside
   | «continue» => simp [SrcStmt.breaksOut] at inside
+  | unreachable id ty =>
+    obtain ⟨-, -, v, rfl⟩ := unreachable_done run
+    trivial
   | matchArm scrutinee enumId variant binds binder ty body rest =>
     simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at inside
     obtain ⟨j, s1, x, rfl, -, brun⟩ := if_inv run

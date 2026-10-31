@@ -14,7 +14,7 @@ open Lanius.Mini
 noncomputable section
 
 /-- mini::selfhost::equality -/
-def src_equality (ix_boxed_of_mini_selfhost_Expr : Nat) (ix_SrcType_same : Nat) (ix_SrcType_word : Nat) : SrcFunc := { params := [{ id := 9, ty := ty52 }, { id := 27, ty := ty164 }, { id := 40, ty := ty164 }], ret := ty165, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eCall ix_SrcType_same [SrcEff.ePure (SrcExpr.field 27 1), SrcEff.ePure (SrcExpr.field 40 1)]) (SrcStmt.returnEval (SrcEff.eVariant ty165 0 [SrcEff.eStruct ty164 [SrcEff.eVariant ty87 4 [SrcEff.eCall ix_SrcType_word [SrcEff.ePure (SrcExpr.field 27 1)], SrcEff.ePure (SrcExpr.local 9), SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.ePure (SrcExpr.field 27 0)], SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.ePure (SrcExpr.field 40 0)]], SrcEff.eVariant ty8 1 []]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty165 1 [])) }
+def src_equality (ix_SrcType_same : Nat) (ix_boxed_of_mini_selfhost_Expr : Nat) (ix_SrcType_word : Nat) : SrcFunc := { params := [{ id := 9, ty := ty52 }, { id := 27, ty := ty164 }, { id := 40, ty := ty164 }], ret := ty165, body := SrcStmt.then (SrcStmt.ifEval (SrcEff.eCall ix_SrcType_same [SrcEff.ePure (SrcExpr.field 27 1), SrcEff.ePure (SrcExpr.field 40 1)]) (SrcStmt.returnEval (SrcEff.eVariant ty165 0 [SrcEff.eStruct ty164 [SrcEff.eVariant ty87 4 [SrcEff.eCall ix_SrcType_word [SrcEff.ePure (SrcExpr.field 27 1)], SrcEff.ePure (SrcExpr.local 9), SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.ePure (SrcExpr.field 27 0)], SrcEff.eCall ix_boxed_of_mini_selfhost_Expr [SrcEff.ePure (SrcExpr.field 40 0)]], SrcEff.eVariant ty8 1 []]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty165 1 [])) }
 
 end
 

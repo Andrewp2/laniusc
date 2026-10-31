@@ -1569,6 +1569,70 @@ theorem eff_grows {sp : SrcProgram} : ∀ k, GrowsBelow sp k → EffGrows sp k
     · exact eff_grows k (fun j lt' => ih j (Nat.lt_succ_of_lt lt')) m (Nat.le_of_lt_succ lt) run
     · exact eff_grows_step ih (eff_grows k (fun j lt' => ih j (Nat.lt_succ_of_lt lt'))) run
 
+/-- `Unreachable`'s Core code finishes only when the cell it binds was
+already there with a value: then its state is the caller's, the binding
+dropped. (In a fresh state the read traps, `uninitializedLocal`.) -/
+theorem unreachable_done {P : Core.Program} {fuel : Nat} {st : State} {id : Nat} {ty : SrcType}
+    {c : Completion} {st' : State}
+    (run : execStmt fuel P st (SrcStmt.unreachable id ty).toCore = .done c st') :
+    st' = Semantics.restoreLocals st (st.bindUninitialized id) ∧ (st.cellEntry? st.nextCell).isSome = true ∧
+      ∃ v, c = .returned (some v) := by
+  rcases fuel with _ | _ | _ | k
+  · simp [execStmt] at run
+  · simp [SrcStmt.toCore, execStmt, Semantics.restoreOutcomeLocals] at run
+  · simp [SrcStmt.toCore, execStmt, evalExpr, Semantics.restoreOutcomeLocals] at run
+  simp only [SrcStmt.toCore, execStmt, evalExpr] at run
+  have cid : (st.bindUninitialized id).cellId? id = some st.nextCell := by
+    simp [State.bindUninitialized, State.bindCell, State.cellId?]
+  rw [cid] at run
+  simp only at run
+  cases hfind : st.cells.find? (fun cell => cell.id == st.nextCell) with
+  | none =>
+    have hent : (st.bindUninitialized id).cellEntry? st.nextCell = some ⟨st.nextCell, none⟩ := by
+      simp [State.cellEntry?, State.bindUninitialized, State.bindCell, List.find?_append, hfind]
+    rw [hent] at run
+    simp [Semantics.restoreOutcomeLocals] at run
+  | some e =>
+    have hent : (st.bindUninitialized id).cellEntry? st.nextCell = some e := by
+      simp [State.cellEntry?, State.bindUninitialized, State.bindCell, List.find?_append, hfind]
+    rw [hent] at run
+    rcases e with ⟨eid, _ | v⟩
+    · simp [Semantics.restoreOutcomeLocals] at run
+    · simp only [Semantics.restoreOutcomeLocals, Semantics.Outcome.done.injEq] at run
+      obtain ⟨rfl, rfl⟩ := run
+      exact ⟨rfl, by simp [State.cellEntry?, hfind], v, rfl⟩
+
+/-- When `Unreachable`'s Core code traps, its state is the caller's with the
+uninitialized binding dropped. -/
+theorem unreachable_trapped {P : Core.Program} {fuel : Nat} {st : State} {id : Nat} {ty : SrcType}
+    {r : Lanius.Trap} {st' : State}
+    (run : execStmt fuel P st (SrcStmt.unreachable id ty).toCore = .trapped r st') :
+    st' = Semantics.restoreLocals st (st.bindUninitialized id) := by
+  rcases fuel with _ | _ | _ | k
+  · simp [execStmt] at run
+  · simp [SrcStmt.toCore, execStmt, Semantics.restoreOutcomeLocals] at run
+  · simp [SrcStmt.toCore, execStmt, evalExpr, Semantics.restoreOutcomeLocals] at run
+  simp only [SrcStmt.toCore, execStmt, evalExpr] at run
+  have cid : (st.bindUninitialized id).cellId? id = some st.nextCell := by
+    simp [State.bindUninitialized, State.bindCell, State.cellId?]
+  rw [cid] at run
+  simp only at run
+  cases hfind : st.cells.find? (fun cell => cell.id == st.nextCell) with
+  | none =>
+    have hent : (st.bindUninitialized id).cellEntry? st.nextCell = some ⟨st.nextCell, none⟩ := by
+      simp [State.cellEntry?, State.bindUninitialized, State.bindCell, List.find?_append, hfind]
+    rw [hent] at run
+    simp only [Semantics.restoreOutcomeLocals, Semantics.Outcome.trapped.injEq] at run
+    exact run.2.symm
+  | some e =>
+    have hent : (st.bindUninitialized id).cellEntry? st.nextCell = some e := by
+      simp [State.cellEntry?, State.bindUninitialized, State.bindCell, List.find?_append, hfind]
+    rw [hent] at run
+    rcases e with ⟨eid, _ | v⟩
+    · simp only [Semantics.restoreOutcomeLocals, Semantics.Outcome.trapped.injEq] at run
+      exact run.2.symm
+    · simp [Semantics.restoreOutcomeLocals] at run
+
 theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st : State} {s : SrcStmt}
     {c : Completion} {st' : State} (run : execStmt fuel sp.toCore st s.toCore = .done c st') :
     Grows st st' := by
@@ -1620,6 +1684,9 @@ theorem grows_step {sp : SrcProgram} {fuel : Nat} (ih : GrowsBelow sp fuel) {st 
       · rename_i v next valueRun
         exact (matchValue_grows valueRun).trans (let_grows (fun r => below (s := body) r) run)
       all_goals simp at run
+    | unreachable id ty =>
+      obtain ⟨rfl, -⟩ := unreachable_done run
+      exact Grows.same rfl rfl
     | matchArm scrutinee enumId variant binds binder ty body rest =>
       simp only [SrcStmt.toCore] at run
       generalize hpats : (if binds then [Core.Pattern.wildcard] else []) = pats at run

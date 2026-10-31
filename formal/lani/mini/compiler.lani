@@ -1520,6 +1520,9 @@ pub enum SrcStmt {
     // body, else run rest. A variant with no payload binds nothing (binds is
     // false); one with one field, of type ty, binds a copy of it to binder.
     MatchArm(usize, usize, usize, bool, usize, SrcType, Box<SrcStmt>, Box<SrcStmt>),
+    // Unreachable(id, ty): Core binds id, uninitialized, at type ty and
+    // returns it, so it traps; ty is the function's result type.
+    Unreachable(usize, SrcType),
 }
 
 pub struct SrcParam {
@@ -4507,6 +4510,16 @@ pub fn lower_return_unit(ret: SrcType) -> core::option::Option<Stmt> {
 // assert(condition): the condition's code, then 1 / condition into the same
 // slot, which has no run when the condition is false (on x86 the division
 // traps, as Core does), so a failed assert or a panic stops the program.
+// Unreachable at the function's result type: 1 / 0 into the slot, which
+// has no run (on x86 the division traps), as Core traps reading the
+// uninitialized local.
+pub fn lower_unreachable(same: bool, slot: usize) -> core::option::Option<Stmt> {
+    if (same) {
+        return Some(Stmt::Divide(U64, UDiv, slot, Lit(1), Lit(0)));
+    }
+    return None;
+}
+
 pub fn lower_assert(condition: core::option::Option<Evaluated>, slot: usize) -> core::option::Option<Stmt> {
     return match (condition) {
         None -> None,
@@ -4560,6 +4573,7 @@ impl SrcStmt {
             Break -> Some(Brk),
             Continue -> Some(Cont),
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> lower_match_arm(scope, lookup(scope, scrutinee), enum_id, variant, binds, binder, ty, next, unbox(body).lower(sigs, decls, ret, arm_body_scope(binds, binder, ty, next, scope), plus(next, ty.size())), unbox(rest).lower(sigs, decls, ret, scope, next)),
+            Unreachable(id, ty) -> lower_unreachable(ty.same(ret), next),
         };
     }
 
@@ -4600,6 +4614,7 @@ impl SrcStmt {
             Break -> true,
             Continue -> true,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).breaks_out() || unbox(rest).breaks_out(),
+            Unreachable(id, ty) -> false,
         };
     }
 
@@ -4639,6 +4654,7 @@ impl SrcStmt {
             Break -> 0,
             Continue -> 0,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> max_of(plus(unbox(body).depth(), ty.size()), unbox(rest).depth()),
+            Unreachable(id, ty) -> 1,
         };
     }
 }
@@ -4920,6 +4936,7 @@ impl SrcStmt {
             Break -> Some(decls),
             Continue -> Some(decls),
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> declare_in(declare_in(ty.declare(decls), unbox(body)), unbox(rest)),
+            Unreachable(id, ty) -> ty.declare(decls),
         };
     }
 
@@ -4960,6 +4977,7 @@ impl SrcStmt {
             Break -> false,
             Continue -> false,
             MatchArm(scrutinee, enum_id, variant, binds, binder, ty, body, rest) -> unbox(body).returns() && unbox(rest).returns(),
+            Unreachable(id, ty) -> true,
         };
     }
 }

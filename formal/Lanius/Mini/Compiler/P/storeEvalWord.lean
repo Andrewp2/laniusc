@@ -107,7 +107,13 @@ def lowerReturnUnit (ret : SrcType) : Option Stmt :=
   else
     none
 
-/-- assert(condition): the condition's code, then 1 / condition into the same slot, which has no run when the condition is false (on x86 the division traps, as Core does), so a failed assert or a panic stops the program. -/
+/-- assert(condition): the condition's code, then 1 / condition into the same slot, which has no run when the condition is false (on x86 the division traps, as Core does), so a failed assert or a panic stops the program. Unreachable at the function's result type: 1 / 0 into the slot, which has no run (on x86 the division traps), as Core traps reading the uninitialized local. -/
+def lowerUnreachable (same : Bool) (slot : Nat) : Option Stmt :=
+  if same then
+    some (Stmt.divide Word.u64 DivOp.uDiv slot (Expr.lit 1) (Expr.lit 0))
+  else
+    none
+
 def lowerAssert (condition : Option Evaluated) (slot : Nat) : Option Stmt :=
   match condition with
   | none => none
@@ -156,6 +162,7 @@ def SrcStmt.lower (self : SrcStmt) (sigs : List Sig) (decls : SrcDecls) (ret : S
   | .break => some Stmt.brk
   | .continue => some Stmt.cont
   | .matchArm scrutinee enumId variant binds binder ty body rest => lowerMatchArm scope (lookup scope scrutinee) enumId variant binds binder ty next (SrcStmt.lower body sigs decls ret (armBodyScope binds binder ty next scope) (next + SrcType.size ty)) (SrcStmt.lower rest sigs decls ret scope next)
+  | .unreachable id ty => lowerUnreachable (SrcType.same ty ret) next
 
 /-- A break or continue outside every loop of the statement: Core's typing rejects one outside every loop of the function. -/
 def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
@@ -193,6 +200,7 @@ def SrcStmt.breaksOut (self : SrcStmt) : Bool :=
   | .break => true
   | .continue => true
   | .matchArm scrutinee enumId variant binds binder ty body rest => SrcStmt.breaksOut body || SrcStmt.breaksOut rest
+  | .unreachable id ty => false
 
 /-- Slots the statement's lets need beyond the ones in scope. -/
 def SrcStmt.depth (self : SrcStmt) : Nat :=
@@ -230,6 +238,7 @@ def SrcStmt.depth (self : SrcStmt) : Nat :=
   | .break => 0
   | .continue => 0
   | .matchArm scrutinee enumId variant binds binder ty body rest => max (SrcStmt.depth body + SrcType.size ty) (SrcStmt.depth rest)
+  | .unreachable id ty => 1
 
 /-- Parameters take slots from 0 in order, a struct one per field; a later parameter with the same id shadows an earlier one, as Core's bindLocals does. -/
 def paramScope (params : List SrcParam) (slot : Nat) (scope : List Binding) : List Binding :=

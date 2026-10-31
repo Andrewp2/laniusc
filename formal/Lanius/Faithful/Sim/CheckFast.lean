@@ -110,6 +110,7 @@ def stmtOkC (ret : SrcType) (tenv : TEnv) : SrcStmt → Bool
   | .break => false
   | .continue => false
   | .matchArm _ _ _ _ _ _ _ _ => false
+  | .unreachable _ _ => false
 
 end
 
@@ -198,6 +199,7 @@ theorem stmtOkC_eq (ret : SrcType) (s : SrcStmt) : ∀ tenv : TEnv,
   | «break» => intro tenv; rw [stmtOkC, stmtOk]
   | «continue» => intro tenv; rw [stmtOkC, stmtOk]
   | matchArm => intro tenv; rw [stmtOkC, stmtOk]
+  | unreachable => intro tenv; rw [stmtOkC, stmtOk]
 
 end
 

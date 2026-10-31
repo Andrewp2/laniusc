@@ -224,6 +224,7 @@ def SrcStmt.toCore : SrcStmt → Core.Stmt
             body.toCore
         else body.toCore)
         rest.toCore
+  | .unreachable id ty => .letUninitialized id ty.toCore (.returnValue (some (.local id)))
 
 def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
   id := id

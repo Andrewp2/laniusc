@@ -84,6 +84,7 @@ def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
   | .break => True
   | .continue => True
   | .matchArm _ _ _ _ _ ty body rest => TypeDeclared P ty ∧ SrcStmt.Declared P body ∧ SrcStmt.Declared P rest
+  | .unreachable _ ty => TypeDeclared P ty
 
 /-- Every parameter type and binding type of every function is declared. -/
 def SrcProgram.Declared (P : Core.Program) (sp : SrcProgram) : Prop :=
@@ -132,6 +133,7 @@ theorem returns_sound : ∀ (s : SrcStmt), s.returns = true → Typing.Definitel
   | .assert _, h => by simp [SrcStmt.returns] at h
   | .break, h => by simp [SrcStmt.returns] at h
   | .continue, h => by simp [SrcStmt.returns] at h
+  | .unreachable _ _, _ => .letUninitialized .returnValue
   | .matchArm _ _ _ _ _ ty body rest, h => by
     simp only [SrcStmt.returns, Bool.and_eq_true] at h
     simp only [SrcStmt.toCore]
@@ -2177,6 +2179,11 @@ theorem SrcStmt.lower_typed {P : Core.Program} (target : P.target = Core.Target.
       exact .ifThenElse (.matchValue (.local inCtx)
           (.cons (pat (.cons .wildcard .nil)) (.value (.boolean true)) (.one .wildcard (.value (.boolean false)))))
         (.letLocal (.matchValue (.local inCtx) (.one (pat pats) init)) bodyTyped) restTyped
+  | .unreachable id ty, scope, ctx, next, inLoop, out, ok, d, bo, h => by
+    obtain ⟨same, -⟩ := unreachable_lower_inv h
+    simp only [SrcStmt.toCore]
+    rw [same_toCore same]
+    exact .letUninitialized (.returnValue (.local (by simp [Typing.Context.bind])))
   | .assert condition, scope, ctx, next, inLoop, out, ok, d, bo, h => by
     simp only [SrcStmt.lower, lowerAssert] at h
     split at h
@@ -2762,6 +2769,10 @@ theorem SrcStmt.declare_sound : ∀ (s : SrcStmt) {d d' : SrcDecls}, s.declare d
   | .assert condition, d, d', h => by
     simp only [SrcStmt.declare] at h
     exact declareTypes_sound _ h
+  | .unreachable _ ty, d, d', h => by
+    simp only [SrcStmt.declare] at h
+    obtain ⟨ext, head⟩ := SrcType.declare_sound ty h
+    exact ⟨ext, fun extD agrees => head extD agrees⟩
 
 theorem declareParams_sound : ∀ (params : List SrcParam) {d d' : SrcDecls},
     declareParams params d = some d' →

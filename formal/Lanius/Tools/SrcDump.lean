@@ -99,6 +99,7 @@ partial def stmtCalls : SrcStmt → List Nat
   | .setCall _ c _ => [c]
   | .then a b => stmtCalls a ++ stmtCalls b
   | .matchArm _ _ _ _ _ _ a b => stmtCalls a ++ stmtCalls b
+  | .unreachable _ _ => []
   | .if _ a b => stmtCalls a ++ stmtCalls b
   | .while _ b => stmtCalls b
   | .letEval _ _ v b => effCalls v ++ stmtCalls b

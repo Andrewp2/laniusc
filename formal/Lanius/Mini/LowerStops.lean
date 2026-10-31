@@ -131,6 +131,18 @@ theorem NoNext.letLocal {id : Nat} {ty : Core.Ty} {init : Core.Expr} {body : Cor
       exact ih hb
     all_goals simp at run
 
+theorem NoNext.letUninitialized {id : Nat} {ty : Core.Ty} {body : Core.Stmt} (ih : NoNext P body) :
+    NoNext P (.letUninitialized id ty body) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    cases hb : execStmt fuel P (st.bindUninitialized id) body <;>
+      simp [hb, Semantics.restoreOutcomeLocals] at run
+    obtain ⟨rfl, -⟩ := run
+    exact ih hb
+
 theorem NoNext.sequence {a b : Core.Stmt} (h : NoNext P a ∨ NoNext P b) : NoNext P (.sequence a b) := by
   intro fuel st c st' run
   cases fuel with
@@ -219,6 +231,7 @@ theorem returns_noNext : ∀ (s : SrcStmt), s.returns = true → NoNext P s.toCo
   | .assert _, h => by simp [SrcStmt.returns] at h
   | .break, h => by simp [SrcStmt.returns] at h
   | .continue, h => by simp [SrcStmt.returns] at h
+  | .unreachable _ _, _ => NoNext.letUninitialized NoNext.returnValue
   | .matchArm _ _ _ _ _ ty body rest, h => by
     simp only [SrcStmt.returns, Bool.and_eq_true] at h
     simp only [SrcStmt.toCore]
@@ -246,6 +259,18 @@ theorem NoEscape.letLocal {id : Nat} {ty : Core.Ty} {init : Core.Expr} {body : C
       obtain ⟨rfl, -⟩ := run
       exact ih hb
     all_goals simp at run
+
+theorem NoEscape.letUninitialized {id : Nat} {ty : Core.Ty} {body : Core.Stmt} (ih : NoEscape P body) :
+    NoEscape P (.letUninitialized id ty body) := by
+  intro fuel st c st' run
+  cases fuel with
+  | zero => simp [execStmt] at run
+  | succ fuel =>
+    simp only [execStmt] at run
+    cases hb : execStmt fuel P (st.bindUninitialized id) body <;>
+      simp [hb, Semantics.restoreOutcomeLocals] at run
+    obtain ⟨rfl, -⟩ := run
+    exact ih hb
 
 theorem NoEscape.sequence {a b : Core.Stmt} (ha : NoEscape P a) (hb : NoEscape P b) :
     NoEscape P (.sequence a b) := by
@@ -382,6 +407,7 @@ theorem breaksOut_noEscape : ∀ (s : SrcStmt), s.breaksOut = false → NoEscape
   | .assert _, _ => NoEscape.expression
   | .break, h => by simp [SrcStmt.breaksOut] at h
   | .continue, h => by simp [SrcStmt.breaksOut] at h
+  | .unreachable _ _, _ => NoEscape.letUninitialized NoEscape.returnValue
   | .matchArm _ _ _ _ _ ty body rest, h => by
     simp only [SrcStmt.breaksOut, Bool.or_eq_false_iff] at h
     simp only [SrcStmt.toCore]
@@ -1490,6 +1516,12 @@ theorem stops_letMatch {id : Nat} {ty : SrcType} {scrutinee enumId : Nat} {arms 
       (flat.store insens) hc1 (by rw [heap1]; exact within) (fails.letBody matchRun)
     exact ⟨_, Stops.after (mexec 0) stops⟩
 
+
+/-- `Unreachable`: `1 / 0`, which has no step. -/
+theorem stops_unreachable {id : Nat} {ty : SrcType} : SrcStops sp mp n (.unreachable id ty) := by
+  intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
+  obtain ⟨-, rfl⟩ := unreachable_lower_inv ok
+  exact ⟨0, .divide (by simp [Expr.eval, Word.divides, DivOp.defined])⟩
 
 theorem stops_matchArm {scrutinee enumId variant binder : Nat} {binds : Bool} {ty : SrcType} {body rest : SrcStmt}
     (ih1 : SrcStops sp mp n body) (ih2 : SrcStops sp mp n rest) :

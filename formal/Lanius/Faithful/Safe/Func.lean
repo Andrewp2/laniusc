@@ -40,7 +40,7 @@ theorem stmtOk_inside {boxes : Boxes} {ret : SrcType} :
     simp [SrcStmt.breaksOut, ih1 ok.1.2, ih2 ok.2]
   | nop | letMatch | set | setField | setCall | «while» | «return» | letAlloc | letLoad | setByte
   | free | letSlice | letIndex | setIndex | setEval | whileEval | returnEval | discard | setIndexEval
-  | setFieldEval | returnUnit | «assert» | «break» | «continue» | matchArm =>
+  | setFieldEval | returnUnit | «assert» | «break» | «continue» | matchArm | unreachable =>
     intro ok; simp_all [stmtOk, SrcStmt.breaksOut]
 
 theorem func_safe (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims) :

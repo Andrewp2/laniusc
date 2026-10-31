@@ -571,4 +571,16 @@ theorem matchArm_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} 
   obtain ⟨rfl, few⟩ := cond'
   exact ⟨b, variants, fields, vs, bstmt, rstmt, found, hty, fieldsFound, few, payloadOk, bodyOk, restOk, ok.symm⟩
 
+/-- What lowering `Unreachable` checks, and what it emits. -/
+theorem unreachable_lower_inv {sigs : List Sig} {decls : SrcDecls} {ret : SrcType} {scope : List Binding}
+    {next id : Nat} {ty : SrcType} {stmt : Stmt}
+    (ok : (SrcStmt.unreachable id ty).lower sigs decls ret scope next = some stmt) :
+    ty.same ret = true ∧ stmt = .divide .u64 .uDiv next (.lit 1) (.lit 0) := by
+  simp only [SrcStmt.lower, lowerUnreachable] at ok
+  split at ok
+  · rename_i same
+    simp only [Option.some.injEq] at ok
+    exact ⟨same, ok.symm⟩
+  · simp at ok
+
 end Lanius.Mini

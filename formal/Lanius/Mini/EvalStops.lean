@@ -1766,6 +1766,7 @@ theorem stmtStops_succ {sp : SrcProgram} {mp : Program} {n : Nat}
   | .matchArm _ _ _ _ _ _ body rest =>
       stops_matchArm (stmtStops_succ lowered returns prev body) (stmtStops_succ lowered returns prev rest)
   | .assert condition => stops_assert lowered (effStops_all lowered returns prev condition)
+  | .unreachable _ _ => stops_unreachable
 
 /-- Every lowered statement whose Core run fails stops for every number of
 ticks. -/

@@ -1021,6 +1021,9 @@ theorem grows_trap_step {fuel : Nat} (ih : GrowsBelow sp fuel) (ihT : GrowsBelow
     | returnUnit => exact (returnUnit_trap run).elim
     | «break» => exact (breakLoop_trap run).elim
     | «continue» => exact (continueLoop_trap run).elim
+    | unreachable id ty =>
+      rw [unreachable_trapped run]
+      exact Grows.same rfl rfl
     | matchArm scrutinee enumId variant binds binder ty body rest =>
       have testD : ∀ a ∈ [(Core.Pattern.enumVariant enumId variant (if binds then [.wildcard] else []),
           Core.Expr.value (.boolean true)), (Core.Pattern.wildcard, Core.Expr.value (.boolean false))],

@@ -194,9 +194,9 @@ theorem proof_lower_call {prog : SrcProgram} {prims : Prims} {ix_lower_call ix_g
   simp only [src_lower_call] at h
   faithful [Lanius.Mini.lowerCall]
 
-theorem proof_lower_call_sig {prog : SrcProgram} {prims : Prims} {ix_lower_call_sig ix_lower_args ix_SrcType_same : Nat} (fn : prog.funcs[ix_lower_call_sig]? = some (src_lower_call_sig ix_lower_args ix_SrcType_same)) (np : prims.isPrim ix_lower_call_sig = false)
-    (ext_lower_args : Certified (∀ {n : Nat}, Stmt_lower_args prog prims ix_lower_args n))
-    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n)) {n : Nat} :
+theorem proof_lower_call_sig {prog : SrcProgram} {prims : Prims} {ix_lower_call_sig ix_SrcType_same ix_lower_args : Nat} (fn : prog.funcs[ix_lower_call_sig]? = some (src_lower_call_sig ix_SrcType_same ix_lower_args)) (np : prims.isPrim ix_lower_call_sig = false)
+    (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
+    (ext_lower_args : Certified (∀ {n : Nat}, Stmt_lower_args prog prims ix_lower_args n)) {n : Nat} :
     Stmt_lower_call_sig prog prims ix_lower_call_sig n := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
   rcases n with _ | n

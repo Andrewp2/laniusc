@@ -8,66 +8,71 @@ open Lanius.Mini
 open Lanius.Faithful
 open Lanius.Faithful.Self
 
-/-- mini::selfhost::prim_if -/
+/-- mini::selfhost::cons<mini::selfhost::Bind> -/
 theorem pure1900 : PureFunc prog prims outside src1900 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::match_same_decl -/
+/-- mini::selfhost::prim_if -/
 theorem pure1901 : PureFunc prog prims outside src1901 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::fit_same_decl -/
+/-- mini::selfhost::match_same_decl -/
 theorem pure1902 : PureFunc prog prims outside src1902 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::diverge_call -/
+/-- mini::selfhost::fit_same_decl -/
 theorem pure1903 : PureFunc prog prims outside src1903 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::match_args -/
-theorem pure1905 : PureFunc prog prims outside src1905 = true :=
+/-- mini::selfhost::diverge_call -/
+theorem pure1904 : PureFunc prog prims outside src1904 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::fit_args -/
+/-- mini::selfhost::match_args -/
 theorem pure1906 : PureFunc prog prims outside src1906 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::diverge_checked -/
+/-- mini::selfhost::fit_args -/
 theorem pure1907 : PureFunc prog prims outside src1907 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::match_args_next -/
-theorem pure1909 : PureFunc prog prims outside src1909 = true :=
+/-- mini::selfhost::diverge_checked -/
+theorem pure1908 : PureFunc prog prims outside src1908 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::match_arg -/
+/-- mini::selfhost::match_args_next -/
 theorem pure1910 : PureFunc prog prims outside src1910 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::fit_args_next -/
+/-- mini::selfhost::match_arg -/
 theorem pure1911 : PureFunc prog prims outside src1911 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::fit_arg -/
+/-- mini::selfhost::fit_args_next -/
 theorem pure1912 : PureFunc prog prims outside src1912 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-def part19 : List SrcFunc := [src1900, src1901, src1902, src1903, src1904, src1905, src1906, src1907, src1908, src1909, src1910, src1911, src1912]
+/-- mini::selfhost::fit_arg -/
+theorem pure1913 : PureFunc prog prims outside src1913 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+def part19 : List SrcFunc := [src1900, src1901, src1902, src1903, src1904, src1905, src1906, src1907, src1908, src1909, src1910, src1911, src1912, src1913]
 
 theorem chunk19 : FuncsOk prog prims outside 1900 part19 :=
   funcsOk_cons (funcOk_pure pure1900) <|
   funcsOk_cons (funcOk_pure pure1901) <|
   funcsOk_cons (funcOk_pure pure1902) <|
   funcsOk_cons (funcOk_pure pure1903) <|
-  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 1904 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Bind>>, a prim
-  funcsOk_cons (funcOk_pure pure1905) <|
+  funcsOk_cons (funcOk_pure pure1904) <|
+  funcsOk_cons (funcOk_prim (by decide +kernel)) <| -- 1905 mini::selfhost::boxed<mini::selfhost::List<mini::selfhost::Bind>>, a prim
   funcsOk_cons (funcOk_pure pure1906) <|
   funcsOk_cons (funcOk_pure pure1907) <|
-  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1908 core::mem::size_of<mini::selfhost::List<mini::selfhost::Bind>>, outside
-  funcsOk_cons (funcOk_pure pure1909) <|
+  funcsOk_cons (funcOk_pure pure1908) <|
+  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 1909 core::mem::size_of<mini::selfhost::List<mini::selfhost::Bind>>, outside
   funcsOk_cons (funcOk_pure pure1910) <|
   funcsOk_cons (funcOk_pure pure1911) <|
   funcsOk_cons (funcOk_pure pure1912) <|
+  funcsOk_cons (funcOk_pure pure1913) <|
   funcsOk_nil
 
 end Lanius.Faithful.SelfPure
