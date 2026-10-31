@@ -67,7 +67,7 @@ theorem proof_lx_fraction_at {prog : SrcProgram} {prims : Prims} {ix_lx_fraction
   simp only [src_lx_fraction_at] at h
   faithful [Lanius.Mini.Inline.lxFractionAt]
 
-theorem step_lx_keyword_at {prog : SrcProgram} {prims : Prims} {ix_lx_keyword_at ix_lx_keyword ix_same_text : Nat} (fn : prog.funcs[ix_lx_keyword_at]? = some (src_lx_keyword_at ix_lx_keyword ix_same_text)) (np : prims.isPrim ix_lx_keyword_at = false)
+theorem step_lx_keyword_at {prog : SrcProgram} {prims : Prims} {ix_lx_keyword_at ix_same_text ix_lx_keyword : Nat} (fn : prog.funcs[ix_lx_keyword_at]? = some (src_lx_keyword_at ix_same_text ix_lx_keyword)) (np : prims.isPrim ix_lx_keyword_at = false)
     (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n)) {n : Nat}
     (ih_lx_keyword : Certified (Stmt_lx_keyword prog prims ix_lx_keyword n)) :
     Stmt_lx_keyword_at prog prims ix_lx_keyword_at (n + 1) := by

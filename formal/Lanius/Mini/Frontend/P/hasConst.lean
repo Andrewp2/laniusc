@@ -8,7 +8,7 @@ import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.joinInsts
-import Lanius.Mini.Frontend.P.noNames
+import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.scalarOf

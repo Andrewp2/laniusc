@@ -19,6 +19,9 @@ def src_p_expr : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), 
 /-- mini::selfhost::p_expr_stmt -/
 def src_p_expr_stmt : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000055#64) }
 
+/-- mini::selfhost::p_extern_abi -/
+def src_p_extern_abi : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000020#64) }
+
 /-- mini::selfhost::p_extern_fn -/
 def src_p_extern_fn : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000000f#64) }
 

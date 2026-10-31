@@ -104,6 +104,8 @@ inductive EffClosed (decls : Decls) (fns types : List Inst) : MEff → SrcEff �
       EffClosed decls fns types l a → EffClosed decls fns types r b →
       EffClosed decls fns types (.xDivide op l r) (.eDivide op a b)
   | stride {sl : Nat} : EffClosed decls fns types (.xStride sl) (.eStride sl)
+  | host {id : Nat} {args : List MEff} {as : List SrcEff} : EffsClosed decls fns types args as →
+      EffClosed decls fns types (.xHost id args) (.eCall id as)
 
 inductive EffsClosed (decls : Decls) (fns types : List Inst) : List MEff → List SrcEff → Prop
   | nil : EffsClosed decls fns types [] []
@@ -169,6 +171,11 @@ theorem closeEff_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     subst h
     exact .divide (closeEff_sound ok _ _ hl) (closeEff_sound ok _ _ hr)
   | .xStride sl, s, h => by simp only [closeEff, Option.some.injEq] at h; subst h; exact .stride
+  | .xHost id args, s, h => by
+    simp only [closeEff] at h
+    cases ha : closeEffs fuel t args <;> simp [ha, eCallClosed] at h
+    subst h
+    exact .host (closeEffs_sound ok _ _ ha)
 
 theorem closeEffs_sound {fuel : Nat} {t : Tables} (ok : LoweredOk t) :
     ∀ (xs : List MEff) (ss : List SrcEff), closeEffs fuel t xs = some ss → EffsClosed t.decls t.fns t.types xs ss

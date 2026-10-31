@@ -156,19 +156,55 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
               blockOf_sound hb, rfl⟩
   · cases h
 
+/-- An extern function's instance (its tree is `externTree`'s): no type
+parameters or arguments, its parameters and result type, and the body
+returning the call of its host service on its parameters. -/
+def ReadExtern (decls : Decls) (fd : FnDecl) (args : List Ty) (mf : MFunc) : Prop :=
+  ∃ r items ps, (fd.implParams ++ fd.params).length = 0 ∧ args.length = 0 ∧
+    ResultR (fnScope decls fd args none) (kid fd.tree 6) r ∧ Items (kid fd.tree 4) items ∧
+    ParamsR (fnScope decls fd args none) fd [] items ps ∧
+    mf = { params := ps.params, ret := r, body := .mReturnEval (.xHost (hostId fd.name) (paramEffs ps.params)) }
+
+theorem externFunc_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty} {mf : MFunc}
+    (h : externFunc fuel decls fd args = some mf) : ReadExtern decls fd args mf := by
+  unfold externFunc at h
+  simp only at h
+  split at h
+  · rename_i c
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+    cases hi : listItems fuel (kid fd.tree 4) with
+    | none => rw [hi] at h; cases h
+    | some items =>
+      rw [hi] at h
+      simp only [externBody] at h
+      cases hp : paramsOf fuel (fnScope decls fd args none) fd [] items with
+      | none => rw [hp] at h; cases h
+      | some ps =>
+        rw [hp] at h
+        simp only at h
+        cases hr : resultOf fuel (fnScope decls fd args none) (kid fd.tree 6) with
+        | none => rw [hr] at h; cases h
+        | some r =>
+          rw [hr, Option.some.injEq] at h
+          subst h
+          exact ⟨r, items, ps, c.1, c.2, resultOf_sound hr, listItems_sound hi, paramsOf_sound hp, rfl⟩
+  · cases h
+
 /-- A function instance: a projection (numbered past the declared
-functions), a declared function's instance, or a `-> !` function's
-instance at a value type. -/
+functions), an extern function's instance, a declared function's instance,
+or a `-> !` function's instance at a value type. -/
 inductive ReadInst (decls : Decls) (inst : Inst) : MFunc → Prop
   | projection {t : Ty} {rest : List Ty} {r : Ty} : decls.fns[inst.decl]? = none → inst.args = t :: rest →
       FieldTyAt decls t (inst.decl - decls.fns.length) r →
       ReadInst decls inst
         { params := [{ id := 0, ty := t }], ret := .retOf r,
           body := .mReturn (.field 0 (inst.decl - decls.fns.length)) }
+  | host {fd : FnDecl} {mf : MFunc} : decls.fns[inst.decl]? = some fd → nodeProd fd.tree = pExternFn →
+      ReadExtern decls fd inst.args mf → ReadInst decls inst mf
   | plain {fd : FnDecl} {mf : MFunc} : decls.fns[inst.decl]? = some fd → diverges fd inst = false →
-      ReadFn decls fd inst.args mf → ReadInst decls inst mf
+      ReadFn decls fd inst.args mf → nodeProd fd.tree ≠ pExternFn → ReadInst decls inst mf
   | diverge {fd : FnDecl} {g : MFunc} {t : Ty} : decls.fns[inst.decl]? = some fd → diverges fd inst = true →
-      ReadFn decls fd (initTys inst.args) g → lastTy inst.args = some t →
+      ReadFn decls fd (initTys inst.args) g → lastTy inst.args = some t → nodeProd fd.tree ≠ pExternFn →
       ReadInst decls inst
         { params := g.params, ret := .retOf t,
           body := .mThen (.mDiscard (.xCall ⟨inst.decl, initTys inst.args⟩ (paramEffs g.params)))
@@ -200,6 +236,10 @@ theorem readInst_sound {fuel : Nat} {decls : Decls} {inst : Inst} {mf : MFunc} (
     rw [hf] at h
     simp only [readDeclInst] at h
     split at h
+    · rename_i ex
+      exact .host hf ex (externFunc_sound h)
+    rename_i ex
+    split at h
     · rename_i dv
       simp only [divergeFunc] at h
       cases hg : readFn fuel decls fd (initTys inst.args) with
@@ -213,9 +253,9 @@ theorem readInst_sound {fuel : Nat} {decls : Decls} {inst : Inst} {mf : MFunc} (
           rw [hl] at h
           simp only [Option.some.injEq] at h
           subst h
-          exact .diverge hf dv (readFn_sound hg) hl
+          exact .diverge hf dv (readFn_sound hg) hl ex
     · rename_i dv
-      exact .plain hf (by simpa using dv) (readFn_sound h)
+      exact .plain hf (by simpa using dv) (readFn_sound h) ex
 
 /-! ## Monomorphization -/
 

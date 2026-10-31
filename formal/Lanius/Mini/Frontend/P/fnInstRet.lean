@@ -6,11 +6,11 @@ import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral
+import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.typeDeclAt
-import Lanius.Mini.Frontend.P.typeDecls
 import Lanius.Mini.Frontend.P.variantIn
 import Lanius.Mini.Frontend.P.wideOf
 
@@ -54,6 +54,7 @@ def bareEff (x : MEff) : Bool :=
   | .xMatch s ety t bs vs => false
   | .xDivide op l r => bareEff l && bareEff r
   | .xStride sl => false
+  | .xHost id args => false
 
 def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option Ty :=
   if fuel = 0 then
@@ -72,6 +73,7 @@ def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option
     | .xMatch s ety t bs vs => some t
     | .xDivide op l r => pickTy (bareEff l) (effTy (fuel - 1) env scope l) (effTy (fuel - 1) env scope r)
     | .xStride sl => some Ty.tyIsize
+    | .xHost id args => some Ty.tyI32
 
 def effsTys (fuel : Nat) (env : FrontEnv) (scope : List Local) (xs : List MEff) : Option (List Ty) :=
   match xs with

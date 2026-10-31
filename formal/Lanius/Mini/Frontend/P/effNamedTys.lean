@@ -27,6 +27,7 @@ def effNamedTys (x : MEff) : List Ty :=
   | .xMatch s ety t bs vs => effNamedTys s ++ ety :: t :: effsNamedTys vs
   | .xDivide op l r => effNamedTys l ++ effNamedTys r
   | .xStride sl => []
+  | .xHost id args => effsNamedTys args
 def effsNamedTys (xs : List MEff) : List Ty :=
   match xs with
   | [] => []

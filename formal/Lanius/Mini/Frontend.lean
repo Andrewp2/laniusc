@@ -14,7 +14,7 @@ public import Lanius.Mini.Frontend.P.pathRef
 public import Lanius.Mini.Frontend.P.typePathSpellings
 public import Lanius.Mini.Frontend.P.moduleOr
 public import Lanius.Mini.Frontend.P.typeDecls
-public import Lanius.Mini.Frontend.P.noNames
+public import Lanius.Mini.Frontend.P.moduleNamesOk
 public import Lanius.Mini.Frontend.P.rootInsts
 public import Lanius.Mini.Frontend.P.findConst
 public import Lanius.Mini.Frontend.P.variantOfDecl
@@ -59,6 +59,7 @@ public import Lanius.Mini.Frontend.P.fieldTyAt
 public import Lanius.Mini.Frontend.P.compoundEval
 public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.readFn
+public import Lanius.Mini.Frontend.P.externBody
 public import Lanius.Mini.Frontend.P.readDeclInst
 public import Lanius.Mini.Frontend.P.readInst
 public import Lanius.Mini.Frontend.P.effNamedTys
@@ -133,6 +134,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 122 parts, `.P0` on, in source order, whose bodies
+The definitions are in 123 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

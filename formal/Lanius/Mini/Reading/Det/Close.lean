@@ -34,6 +34,7 @@ theorem effClosed_unique : ∀ {x : MEff} {a b : SrcEff}, EffClosed decls fns ty
     rw [effClosed_unique sc sc', lowerR_unique le le', lowerR_unique lt lt', effsClosed_unique vs vs']
   | _, _, _, .divide l r, .divide l' r' => by rw [effClosed_unique l l', effClosed_unique r r']
   | _, _, _, .stride, .stride => rfl
+  | _, _, _, .host as, .host as' => by rw [effsClosed_unique as as']
 termination_by structural _ _ _ h _ => h
 
 theorem effsClosed_unique : ∀ {xs : List MEff} {a b : List SrcEff}, EffsClosed decls fns types xs a →

@@ -1344,9 +1344,60 @@ pub fn alias_decls(home: List<List<usize>>, name: List<usize>, params: core::opt
     };
 }
 
-// The declarations an item makes. Imports, extern functions, traits and
-// type aliases with a where clause make none; a use of one is rejected when
-// it is read.
+// "lanius_std", its quotes included: the ABI of the host services.
+pub fn text_lanius_std() -> List<usize> {
+    let t: List<usize> = cons(34, cons(108, cons(97, cons(110, cons(105, cons(117, cons(115, cons(95, cons(115, cons(116, cons(100, single(34))))))))))));
+    return t;
+}
+
+// write_byte
+pub fn text_write_byte() -> List<usize> {
+    let t: List<usize> = cons(119, cons(114, cons(105, cons(116, cons(101, cons(95, cons(98, cons(121, cons(116, single(101))))))))));
+    return t;
+}
+
+// write_stdout
+pub fn text_write_stdout() -> List<usize> {
+    let t: List<usize> = cons(119, cons(114, cons(105, cons(116, cons(101, cons(95, cons(115, cons(116, cons(100, cons(111, cons(117, single(116))))))))))));
+    return t;
+}
+
+// write_stderr
+pub fn text_write_stderr() -> List<usize> {
+    let t: List<usize> = cons(119, cons(114, cons(105, cons(116, cons(101, cons(95, cons(115, cons(116, cons(100, cons(101, cons(114, single(114))))))))))));
+    return t;
+}
+
+// The Core function id of the host service an `extern "lanius_std" fn` of
+// this name stands for (hostFuncs in SrcProgram.toCore), 0 for none.
+pub fn host_id(name: List<usize>) -> usize {
+    if (same_text(name, text_write_byte())) {
+        return 4294967296;
+    }
+    if (same_text(name, text_write_stdout())) {
+        return 4294967297;
+    }
+    if (same_text(name, text_write_stderr())) {
+        return 4294967298;
+    }
+    return 0;
+}
+
+// An `extern "lanius_std" fn` naming a host service, without a where clause.
+pub fn host_extern(b: CTree) -> bool {
+    return node_prod(kid(b, 1)) == p_extern_abi() && same_text(kid_token(kid(b, 1), 0).text, text_lanius_std()) && host_id(kid_token(b, 3).text) != 0 && node_prod(kid(b, 9)) == p_where_none();
+}
+
+// An extern's node with its kids where a fn's are (name 1, type parameters
+// 2, parameters 4, return type 6), so its signature reads as a fn's.
+pub fn extern_tree(b: CTree) -> CTree {
+    return Node(p_extern_fn(), boxed(cons(kid(b, 0), cons(kid(b, 3), cons(kid(b, 4), cons(kid(b, 5), cons(kid(b, 6), cons(kid(b, 7), cons(kid(b, 8), cons(kid(b, 9), single(kid(b, 10))))))))))));
+}
+
+// The declarations an item makes. An extern function of a host service
+// (host_extern) is a function whose instance calls the service (see
+// extern_func). Imports, other extern functions, traits and type aliases
+// with a where clause make none; a use of one is rejected when it is read.
 pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::option::Option<Decls> {
     let b: CTree = item_body(item);
     let p: usize = node_prod(b);
@@ -1371,6 +1422,9 @@ pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::op
     if (p == p_type_alias() && node_prod(kid(b, 3)) == p_where_none()) {
         // A `distinct` alias (kid 5) runs as its target type.
         return alias_decls(home, kid_token(b, 1).text, type_params(fuel, kid(b, 2)), kid(b, 6));
+    }
+    if (p == p_extern_fn() && host_extern(b)) {
+        return fns_decls(cons_fn_decl(fn_decl_of(home, extern_tree(b), false, empty(), b, type_params(fuel, kid(b, 4))), Some(empty())));
     }
     if (p == p_module() || p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
         return Some(no_decls());
@@ -4164,6 +4218,9 @@ pub enum MEff {
     XDivide(SrcDivOp, Box<MEff>, Box<MEff>),
     // slice_stride(x) of a slice local x
     XStride(usize),
+    // a call of the host service with this Core function id (see
+    // extern_func): only an extern's instance has one
+    XHost(usize, Box<List<MEff>>),
 }
 
 // The expression, when it is pure.
@@ -4181,6 +4238,7 @@ pub fn pure_part(x: MEff) -> core::option::Option<SrcExpr> {
         XMatch(s, ety, t, bs, vs) -> None,
         XDivide(op, l, r) -> None,
         XStride(sl) -> None,
+        XHost(id, args) -> None,
     };
 }
 
@@ -4360,6 +4418,7 @@ pub fn bare_eff(x: MEff) -> bool {
         XMatch(s, ety, t, bs, vs) -> false,
         XDivide(op, l, r) -> bare_eff(unbox(l)) && bare_eff(unbox(r)),
         XStride(sl) -> false,
+        XHost(id, args) -> false,
     };
 }
 
@@ -4380,6 +4439,7 @@ pub fn eff_ty(fuel: usize, env: FrontEnv, scope: List<Local>, x: MEff) -> core::
         XMatch(s, ety, t, bs, vs) -> Some(t),
         XDivide(op, l, r) -> pick_ty(bare_eff(unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(l)), eff_ty(minus(fuel, 1), env, scope, unbox(r))),
         XStride(sl) -> Some(TyIsize),
+        XHost(id, args) -> Some(TyI32),
     };
 }
 
@@ -5250,6 +5310,7 @@ pub fn call_parts(x: MEff) -> core::option::Option<Called> {
         XMatch(sc, ety, t, bs, vs) -> None,
         XDivide(op, l, r) -> None,
         XStride(sl) -> None,
+        XHost(id, args) -> None,
     };
 }
 
@@ -5421,6 +5482,7 @@ pub fn diverge_eff(decls: Decls, t: Ty, x: MEff) -> MEff {
         XMatch(sc, ety, mt, bs, vs) -> x,
         XDivide(op, l, r) -> x,
         XStride(sl) -> x,
+        XHost(id, args) -> x,
     };
 }
 
@@ -6069,6 +6131,7 @@ pub fn eval_let_head(ty: Ty, x: MEff) -> LetHead {
         XMatch(sc, ety, rt, binders, values) -> match_let_head(x, eff_local(unbox(sc)), ety, pure_arms(binders, unbox(values))),
         XDivide(op, l, r) -> EvalOf(x),
         XStride(sl) -> EvalOf(x),
+        XHost(id, args) -> EvalOf(x),
     };
 }
 
@@ -6742,7 +6805,37 @@ pub fn diverge_func(g: core::option::Option<MFunc>, inst: Inst) -> core::option:
     };
 }
 
+pub fn extern_body(params: core::option::Option<MParams>, ret: core::option::Option<RetTy>, id: usize) -> core::option::Option<MFunc> {
+    return match (params) {
+        None -> None,
+        Some(ps) -> match (ret) {
+            None -> None,
+            Some(r) -> Some(MFunc { params: ps.params, ret: r, body: MReturnEval(XHost(id, boxed(param_effs(ps.params)))) }),
+        },
+    };
+}
+
+// An extern function's instance, without type parameters: its parameters,
+// its result, and the body `return host(params);`, the call of its host
+// service (XHost). The compiler checks that the parameter and result types
+// are the service's.
+pub fn extern_func(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
+    let names: List<List<usize>> = concat(fd.impl_params, fd.params);
+    let f: CTree = fd.tree;
+    let env: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None, base: kid_token(f, 1).start };
+    if (length(names) == 0 && length(args) == 0) {
+        return match (list_items(fuel, kid(f, 4))) {
+            None -> None,
+            Some(items) -> extern_body(params_of(fuel, env, fd, empty(), items), result_of(fuel, env, kid(f, 6)), host_id(fd.name)),
+        };
+    }
+    return None;
+}
+
 pub fn read_decl_inst(fuel: usize, decls: Decls, fd: FnDecl, inst: Inst) -> core::option::Option<MFunc> {
+    if (node_prod(fd.tree) == p_extern_fn()) {
+        return extern_func(fuel, decls, fd, inst.args);
+    }
     if (diverges(fd, inst)) {
         return diverge_func(read_fn(fuel, decls, fd, init_tys(inst.args)), inst);
     }
@@ -6775,6 +6868,7 @@ pub fn eff_calls(x: MEff) -> List<Inst> {
         XMatch(s, ety, t, bs, vs) -> concat(eff_calls(unbox(s)), effs_calls(unbox(vs))),
         XDivide(op, l, r) -> concat(eff_calls(unbox(l)), eff_calls(unbox(r))),
         XStride(sl) -> empty(),
+        XHost(id, args) -> effs_calls(unbox(args)),
     };
 }
 
@@ -6803,6 +6897,7 @@ pub fn eff_named_tys(x: MEff) -> List<Ty> {
         XMatch(s, ety, t, bs, vs) -> concat(eff_named_tys(unbox(s)), cons(ety, cons(t, effs_named_tys(unbox(vs))))),
         XDivide(op, l, r) -> concat(eff_named_tys(unbox(l)), eff_named_tys(unbox(r))),
         XStride(sl) -> empty(),
+        XHost(id, args) -> effs_named_tys(unbox(args)),
     };
 }
 
@@ -7302,6 +7397,7 @@ pub fn close_eff(fuel: usize, t: Tables, x: MEff) -> core::option::Option<SrcEff
         XMatch(s, ety, ty, bs, vs) -> e_match_closed(close_eff(fuel, t, unbox(s)), close_ty(fuel, t, ety), close_ty(fuel, t, ty), bs, close_effs(fuel, t, unbox(vs))),
         XDivide(op, l, r) -> e_divide_closed(op, close_eff(fuel, t, unbox(l)), close_eff(fuel, t, unbox(r))),
         XStride(sl) -> Some(EStride(sl)),
+        XHost(id, args) -> e_call_closed(Some(id), close_effs(fuel, t, unbox(args))),
     };
 }
 
@@ -10045,6 +10141,11 @@ fn p_expr() -> usize {
 // extract: inline
 fn p_expr_stmt() -> usize {
     return 85;
+}
+
+// extract: inline
+fn p_extern_abi() -> usize {
+    return 32;
 }
 
 // extract: inline

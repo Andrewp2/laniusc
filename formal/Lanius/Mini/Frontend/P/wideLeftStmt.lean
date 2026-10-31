@@ -6,6 +6,7 @@ import Lanius.Mini.Compiler.P.arithShiftRight
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.closeFuncs
 import Lanius.Mini.Frontend.P.isEmptyUsize
+import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.monoLoop
 import Lanius.Mini.Frontend.P.negWideI32
 import Lanius.Mini.Frontend.P.rootInsts

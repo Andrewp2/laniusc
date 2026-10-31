@@ -111,6 +111,15 @@ theorem readFn_unique {decls : Decls} {fd : FnDecl} {args : List Ty} {a b : MFun
   cases blockR_unique br (paramsR_fresh pr List.nodup_nil) vn br'
   rfl
 
+theorem readExtern_unique {decls : Decls} {fd : FnDecl} {args : List Ty} {a b : MFunc}
+    (h₁ : ReadExtern decls fd args a) (h₂ : ReadExtern decls fd args b) : a = b := by
+  obtain ⟨r, items, ps, _, _, rr, it, pr, rfl⟩ := h₁
+  obtain ⟨r', items', ps', _, _, rr', it', pr', rfl⟩ := h₂
+  cases resultR_unique rr rr'
+  cases items_unique it it'
+  cases paramsR_unique pr pr'
+  rfl
+
 theorem readInst_unique {decls : Decls} {inst : Inst} {a b : MFunc} (vn : VariantsNodup decls)
     (h₁ : ReadInst decls inst a) (h₂ : ReadInst decls inst b) : a = b := by
   cases h₁ with
@@ -119,27 +128,50 @@ theorem readInst_unique {decls : Decls} {inst : Inst} {a b : MFunc} (vn : Varian
       rw [ea] at ea'
       cases ea'
       rw [fieldTyAt_unique ft ft']
-    | plain f _ _ => rw [n] at f; cases f
-    | diverge f _ _ _ => rw [n] at f; cases f
-  | plain f dv rf => cases h₂ with
+    | host f _ _ => rw [n] at f; cases f
+    | plain f _ _ _ => rw [n] at f; cases f
+    | diverge f _ _ _ _ => rw [n] at f; cases f
+  | host f ex re => cases h₂ with
     | projection n _ _ => rw [n] at f; cases f
-    | plain f' _ rf' =>
+    | host f' _ re' =>
+      rw [f] at f'
+      cases f'
+      exact readExtern_unique re re'
+    | plain f' _ _ ne =>
+      rw [f] at f'
+      cases f'
+      exact absurd ex ne
+    | diverge f' _ _ _ ne =>
+      rw [f] at f'
+      cases f'
+      exact absurd ex ne
+  | plain f dv rf ne => cases h₂ with
+    | projection n _ _ => rw [n] at f; cases f
+    | host f' ex _ =>
+      rw [f] at f'
+      cases f'
+      exact absurd ex ne
+    | plain f' _ rf' _ =>
       rw [f] at f'
       cases f'
       exact readFn_unique vn rf rf'
-    | diverge f' dv' _ _ =>
+    | diverge f' dv' _ _ _ =>
       rw [f] at f'
       cases f'
       rw [dv] at dv'
       cases dv'
-  | diverge f dv rg lt => cases h₂ with
+  | diverge f dv rg lt ne => cases h₂ with
     | projection n _ _ => rw [n] at f; cases f
-    | plain f' dv' _ =>
+    | host f' ex _ =>
+      rw [f] at f'
+      cases f'
+      exact absurd ex ne
+    | plain f' dv' _ _ =>
       rw [f] at f'
       cases f'
       rw [dv] at dv'
       cases dv'
-    | diverge f' _ rg' lt' =>
+    | diverge f' _ rg' lt' _ =>
       rw [f] at f'
       cases f'
       cases readFn_unique vn rg rg'

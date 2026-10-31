@@ -14,8 +14,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_distinct
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
+public import Lanius.Faithful.Gen.SelfStmtF_moduleNamesOk
 public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
-public import Lanius.Faithful.Gen.SelfStmtF_noNames
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_rootInsts
@@ -77,9 +77,9 @@ theorem step_const_name_at {prog : SrcProgram} {prims : Prims} {ix_const_name_at
   simp only [src_const_name_at] at h
   faithful [Lanius.Mini.Inline.constNameAt]
 
-theorem step_find_alias_at {prog : SrcProgram} {prims : Prims} {ix_find_alias_at ix_same_spellings ix_same_text ix_find_alias : Nat} (fn : prog.funcs[ix_find_alias_at]? = some (src_find_alias_at ix_same_spellings ix_same_text ix_find_alias)) (np : prims.isPrim ix_find_alias_at = false)
-    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))
-    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n)) {n : Nat}
+theorem step_find_alias_at {prog : SrcProgram} {prims : Prims} {ix_find_alias_at ix_same_text ix_same_spellings ix_find_alias : Nat} (fn : prog.funcs[ix_find_alias_at]? = some (src_find_alias_at ix_same_text ix_same_spellings ix_find_alias)) (np : prims.isPrim ix_find_alias_at = false)
+    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n)) {n : Nat}
     (ih_find_alias : Certified (Stmt_find_alias prog prims ix_find_alias n)) :
     Stmt_find_alias_at prog prims ix_find_alias_at (n + 1) := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
@@ -87,9 +87,9 @@ theorem step_find_alias_at {prog : SrcProgram} {prims : Prims} {ix_find_alias_at
   simp only [src_find_alias_at] at h
   faithful [Lanius.Mini.Inline.findAliasAt]
 
-theorem step_find_const_at {prog : SrcProgram} {prims : Prims} {ix_find_const_at ix_same_spellings ix_same_text ix_find_const : Nat} (fn : prog.funcs[ix_find_const_at]? = some (src_find_const_at ix_same_spellings ix_same_text ix_find_const)) (np : prims.isPrim ix_find_const_at = false)
-    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))
-    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n)) {n : Nat}
+theorem step_find_const_at {prog : SrcProgram} {prims : Prims} {ix_find_const_at ix_same_text ix_same_spellings ix_find_const : Nat} (fn : prog.funcs[ix_find_const_at]? = some (src_find_const_at ix_same_text ix_same_spellings ix_find_const)) (np : prims.isPrim ix_find_const_at = false)
+    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n)) {n : Nat}
     (ih_find_const : Certified (Stmt_find_const prog prims ix_find_const n)) :
     Stmt_find_const_at prog prims ix_find_const_at (n + 1) := by
   intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
@@ -97,10 +97,10 @@ theorem step_find_const_at {prog : SrcProgram} {prims : Prims} {ix_find_const_at
   simp only [src_find_const_at] at h
   faithful [Lanius.Mini.Inline.findConstAt]
 
-theorem step_find_fn_at {prog : SrcProgram} {prims : Prims} {ix_find_fn_at ix_plus ix_same_spellings ix_same_text ix_find_fn : Nat} (fn : prog.funcs[ix_find_fn_at]? = some (src_find_fn_at ix_plus ix_same_spellings ix_same_text ix_find_fn)) (np : prims.isPrim ix_find_fn_at = false)
+theorem step_find_fn_at {prog : SrcProgram} {prims : Prims} {ix_find_fn_at ix_plus ix_same_text ix_same_spellings ix_find_fn : Nat} (fn : prog.funcs[ix_find_fn_at]? = some (src_find_fn_at ix_plus ix_same_text ix_same_spellings ix_find_fn)) (np : prims.isPrim ix_find_fn_at = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))
-    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n)) {n : Nat}
+    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n)) {n : Nat}
     (ih_find_fn : Certified (Stmt_find_fn prog prims ix_find_fn n)) :
     Stmt_find_fn_at prog prims ix_find_fn_at (n + 1) := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
@@ -108,10 +108,10 @@ theorem step_find_fn_at {prog : SrcProgram} {prims : Prims} {ix_find_fn_at ix_pl
   simp only [src_find_fn_at] at h
   faithful [Lanius.Mini.Inline.findFnAt]
 
-theorem step_find_type_at {prog : SrcProgram} {prims : Prims} {ix_find_type_at ix_plus ix_same_spellings ix_same_text ix_find_type : Nat} (fn : prog.funcs[ix_find_type_at]? = some (src_find_type_at ix_plus ix_same_spellings ix_same_text ix_find_type)) (np : prims.isPrim ix_find_type_at = false)
+theorem step_find_type_at {prog : SrcProgram} {prims : Prims} {ix_find_type_at ix_plus ix_same_text ix_same_spellings ix_find_type : Nat} (fn : prog.funcs[ix_find_type_at]? = some (src_find_type_at ix_plus ix_same_text ix_same_spellings ix_find_type)) (np : prims.isPrim ix_find_type_at = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n))
-    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n)) {n : Nat}
+    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
+    (ext_same_spellings : Certified (∀ {n : Nat}, Stmt_same_spellings prog prims ix_same_spellings n)) {n : Nat}
     (ih_find_type : Certified (Stmt_find_type prog prims ix_find_type n)) :
     Stmt_find_type_at prog prims ix_find_type_at (n + 1) := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4

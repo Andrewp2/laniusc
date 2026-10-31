@@ -48,6 +48,7 @@ inductive EffTy (decls : Decls) (scope : List Local) : MEff → Ty → Prop
   | divideRight {op : SrcDivOp} {l r : MEff} {t : Ty} : bareEff l = true → EffTy decls scope r t →
       EffTy decls scope (.xDivide op l r) t
   | stride {sl : Nat} : EffTy decls scope (.xStride sl) .tyIsize
+  | host {id : Nat} {args : List MEff} : EffTy decls scope (.xHost id args) .tyI32
 
 theorem instRet_sound {fuel : Nat} {decls : Decls} {inst : Inst} {t : Ty} (h : instRet fuel decls inst = some t) :
     InstRet decls inst t := by
@@ -145,6 +146,7 @@ theorem effTy_sound : ∀ {fuel : Nat} {env : FrontEnv} {scope : List Local} {x 
       · rw [if_neg bl] at h
         exact .divideLeft (by simpa using bl) (effTy_sound h)
     | xStride sl => cases h; exact .stride
+    | xHost id args => cases h; exact .host
 
 theorem effsTys_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} :
     ∀ {xs : List MEff} {ts : List Ty}, effsTys fuel env scope xs = some ts → ListRel (EffTy env.decls scope) xs ts

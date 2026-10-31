@@ -53,6 +53,7 @@ def evalLetHead (ty : Ty) (x : MEff) : LetHead :=
   | .xMatch sc ety rt binders values => matchLetHead x (effLocal sc) ety (pureArms binders values)
   | .xDivide op l r => LetHead.evalOf x
   | .xStride sl => LetHead.evalOf x
+  | .xHost id args => LetHead.evalOf x
 
 def evalHead (ty : Ty) (x : Option MEff) : Option LetHead :=
   match x with

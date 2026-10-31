@@ -262,7 +262,11 @@ still a parse tree of the same tokens. Trusted:
     without one); `m::x` names `x` of the module `m`, a bare `x` names `x`
     of the current module; `import m;` only adds m's variants to those a
     bare variant name may mean, and traits, type aliases with a `where`
-    clause and extern functions are skipped;
+    clause and extern functions are skipped, except that an `extern
+    "lanius_std" fn` named `write_byte`, `write_stdout` or `write_stderr`
+    (`hostExtern`) is a function whose instance returns the call of that
+    host service on its parameters, `ECall(2^32 + k, params)` (`ReadExtern`;
+    Core's meaning of that id is the host function, section 2);
   - `type A<P..> = T;` is an alias: a type path that names no type
     parameter, primitive or declared type names the alias of that module,
     and means T read in the alias's module with its parameters standing for

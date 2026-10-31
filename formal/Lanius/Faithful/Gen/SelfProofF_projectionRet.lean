@@ -36,12 +36,12 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_diverges {prog : SrcProgram} {prims : Prims} {ix_diverges ix_plus ix_length_of_mini_selfhost_List_usize ix_concat_of_mini_selfhost_List_usize ix_never_ret ix_length_of_mini_selfhost_Ty : Nat} (fn : prog.funcs[ix_diverges]? = some (src_diverges ix_plus ix_length_of_mini_selfhost_List_usize ix_concat_of_mini_selfhost_List_usize ix_never_ret ix_length_of_mini_selfhost_Ty)) (np : prims.isPrim ix_diverges = false)
+theorem proof_diverges {prog : SrcProgram} {prims : Prims} {ix_diverges ix_plus ix_length_of_mini_selfhost_List_usize ix_concat_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_Ty ix_never_ret : Nat} (fn : prog.funcs[ix_diverges]? = some (src_diverges ix_plus ix_length_of_mini_selfhost_List_usize ix_concat_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_Ty ix_never_ret)) (np : prims.isPrim ix_diverges = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_length_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_usize prog prims ix_length_of_mini_selfhost_List_usize n))
     (ext_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize n))
-    (ext_never_ret : Certified (∀ {n : Nat}, Stmt_never_ret prog prims ix_never_ret n))
-    (ext_length_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_Ty prog prims ix_length_of_mini_selfhost_Ty n)) {n : Nat} :
+    (ext_length_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_Ty prog prims ix_length_of_mini_selfhost_Ty n))
+    (ext_never_ret : Certified (∀ {n : Nat}, Stmt_never_ret prog prims ix_never_ret n)) {n : Nat} :
     Stmt_diverges prog prims ix_diverges n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n

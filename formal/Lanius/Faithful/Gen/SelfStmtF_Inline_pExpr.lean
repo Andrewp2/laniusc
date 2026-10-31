@@ -28,6 +28,10 @@ abbrev Stmt_p_expr_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pExprStmt) w
 
+abbrev Stmt_p_extern_abi (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pExternAbi) w
+
 abbrev Stmt_p_extern_fn (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pExternFn) w

@@ -15,6 +15,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pExprStmt : Nat :=
   85
 
+@[expose] def Inline.pExternAbi : Nat :=
+  32
+
 @[expose] def Inline.pExternFn : Nat :=
   15
 

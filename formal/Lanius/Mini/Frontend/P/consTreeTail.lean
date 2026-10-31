@@ -5,7 +5,7 @@ import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.noNames
+import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.pickTy
 import Lanius.Mini.Frontend.P.scalarOf
@@ -257,6 +257,7 @@ def purePart (x : MEff) : Option SrcExpr :=
   | .xMatch s ety t bs vs => none
   | .xDivide op l r => none
   | .xStride sl => none
+  | .xHost id args => none
 
 /-- The operators, casts and negations of pure operands are pure. -/
 def applyEff (op : SrcOp) (l : MEff) (r : MEff) : MEff :=

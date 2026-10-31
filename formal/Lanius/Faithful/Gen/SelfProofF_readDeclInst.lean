@@ -3,6 +3,9 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_readDeclInst
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
+public import Lanius.Faithful.Gen.SelfStmtF_externBody
+public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_projectionRet
 public import Lanius.Faithful.Gen.SelfStmtF_readDeclInst
 public import Lanius.Faithful.Gen.SelfStmtF_readFn
@@ -26,7 +29,10 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_read_decl_inst {prog : SrcProgram} {prims : Prims} {ix_read_decl_inst ix_diverges ix_diverge_func ix_read_fn ix_init_tys : Nat} (fn : prog.funcs[ix_read_decl_inst]? = some (src_read_decl_inst ix_diverges ix_diverge_func ix_read_fn ix_init_tys)) (np : prims.isPrim ix_read_decl_inst = false)
+theorem proof_read_decl_inst {prog : SrcProgram} {prims : Prims} {ix_read_decl_inst ix_node_prod ix_p_extern_fn ix_extern_func ix_diverges ix_diverge_func ix_read_fn ix_init_tys : Nat} (fn : prog.funcs[ix_read_decl_inst]? = some (src_read_decl_inst ix_node_prod ix_p_extern_fn ix_extern_func ix_diverges ix_diverge_func ix_read_fn ix_init_tys)) (np : prims.isPrim ix_read_decl_inst = false)
+    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
+    (ext_p_extern_fn : Certified (∀ {n : Nat}, Stmt_p_extern_fn prog prims ix_p_extern_fn n))
+    (ext_extern_func : Certified (∀ {n : Nat}, Stmt_extern_func prog prims ix_extern_func n))
     (ext_diverges : Certified (∀ {n : Nat}, Stmt_diverges prog prims ix_diverges n))
     (ext_diverge_func : Certified (∀ {n : Nat}, Stmt_diverge_func prog prims ix_diverge_func n))
     (ext_read_fn : Certified (∀ {n : Nat}, Stmt_read_fn prog prims ix_read_fn n))

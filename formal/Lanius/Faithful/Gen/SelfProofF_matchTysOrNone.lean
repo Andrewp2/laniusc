@@ -36,8 +36,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_isFnPath
 public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
+public import Lanius.Faithful.Gen.SelfStmtF_moduleNamesOk
 public import Lanius.Faithful.Gen.SelfStmtF_moduleOr
-public import Lanius.Faithful.Gen.SelfStmtF_noNames
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_pathRef
@@ -88,12 +88,12 @@ theorem proof_diverge_arm {prog : SrcProgram} {prims : Prims} {ix_diverge_arm ix
   simp only [src_diverge_arm] at h
   faithful [Lanius.Mini.divergeArm]
 
-theorem proof_diverge_call {prog : SrcProgram} {prims : Prims} {ix_diverge_call ix_length_of_mini_selfhost_List_usize ix_get_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_List_usize ix_never_ret ix_length_of_mini_selfhost_Ty ix_diverge_checked : Nat} (fn : prog.funcs[ix_diverge_call]? = some (src_diverge_call ix_length_of_mini_selfhost_List_usize ix_get_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_List_usize ix_never_ret ix_length_of_mini_selfhost_Ty ix_diverge_checked)) (np : prims.isPrim ix_diverge_call = false)
+theorem proof_diverge_call {prog : SrcProgram} {prims : Prims} {ix_diverge_call ix_length_of_mini_selfhost_List_usize ix_get_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_Ty ix_never_ret ix_diverge_checked : Nat} (fn : prog.funcs[ix_diverge_call]? = some (src_diverge_call ix_length_of_mini_selfhost_List_usize ix_get_of_mini_selfhost_FnDecl ix_concat_of_mini_selfhost_List_usize ix_length_of_mini_selfhost_Ty ix_never_ret ix_diverge_checked)) (np : prims.isPrim ix_diverge_call = false)
     (ext_length_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_List_usize prog prims ix_length_of_mini_selfhost_List_usize n))
     (ext_get_of_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, Stmt_get_of_mini_selfhost_FnDecl prog prims ix_get_of_mini_selfhost_FnDecl n))
     (ext_concat_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_concat_of_mini_selfhost_List_usize prog prims ix_concat_of_mini_selfhost_List_usize n))
-    (ext_never_ret : Certified (∀ {n : Nat}, Stmt_never_ret prog prims ix_never_ret n))
     (ext_length_of_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_Ty prog prims ix_length_of_mini_selfhost_Ty n))
+    (ext_never_ret : Certified (∀ {n : Nat}, Stmt_never_ret prog prims ix_never_ret n))
     (ext_diverge_checked : Certified (∀ {n : Nat}, Stmt_diverge_checked prog prims ix_diverge_checked n)) {n : Nat} :
     Stmt_diverge_call prog prims ix_diverge_call n := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4

@@ -698,6 +698,29 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   after.io.trace` and the same for standard error, where `after` is the mini
   heap the compiled code returns with (`Returned.io` makes it the machine's
   trace; `process_exits` the process's).
+- **Externs in the front end (decided 10-31).** An `extern "lanius_std" fn`
+  named `write_byte`, `write_stdout` or `write_stderr`, without a where
+  clause, declares a function (`host_extern`, `frontend.lani`), in whatever
+  module declares it; laniusc binds the same names. Its declaration's tree
+  is the extern node with its kids moved to a `fn`'s positions
+  (`extern_tree`), so a call reads its signature as any function's. Its
+  instance (no type parameters) is a source function with the declared
+  parameters and result whose body is `return host(params);`, the
+  effectful call `ECall(host id, params)` (`XHost`, `extern_func`); the
+  compiler then accepts it only with the service's parameter and result
+  types (`eval_host`), so a mistyped declaration is rejected, not
+  miscompiled. Any other extern declares nothing, and a call of it is
+  rejected as before.
+- **The stdlib oracle compares stdout and stderr.** Each native call runs
+  with both streams on pipes, and laniusc's harness ends each call's output
+  on both with a frame marker (`FRAME`, `stdlib_oracle.py`), the result
+  after it on stdout; a call agrees only when the result and the bytes on
+  each stream agree (also for a call that traps on both sides).
+  A wrapper argument for a stdlib parameter named `handle` is 1 or 2: on
+  another handle Core (and so the verified compiler's code) gives -1, as no
+  file is open in its world, while laniusc's process passes the kernel's
+  result through (-9, `EBADF`, or a real write to an fd the process
+  inherited). That difference is the world's, not the compiler's.
 - **Not yet modeled (deferred).** `read`/`read_stdin` (input is an
   environment input, so the trace needs read events and the theorem a
   premise "given the same input"), `getrandom`/`secure_u32`, process

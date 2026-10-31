@@ -914,7 +914,12 @@ Generics, modules, constants and methods. Each file is a module, named by
 its `module a::b;` item (the empty path without one). A path `a::b::x` names
 `x` of module `a::b`; a bare `x` names `x` of the current module. An
 `import m;` item only adds m's variants to those a bare variant name may
-mean; traits, type aliases and extern functions are skipped. Generic structs,
+mean; traits, type aliases and extern functions are skipped, except the
+host externs: `extern "lanius_std" fn write_byte`, `write_stdout` and
+`write_stderr` (`host_extern`) declare functions whose instance is
+`return host(params);` (`XHost`, closed to `ECall(2^32 + k, params)`, which
+`eval_host` lowers to `Sys write` code; the cases `host_write` and
+`host_wrong_type`). Generic structs,
 enums and functions are monomorphized by `mono`, a worklist of instances, each
 a declaration with its type arguments:
 - the roots are the first file's functions without type parameters, in order,

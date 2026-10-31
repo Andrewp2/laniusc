@@ -174,12 +174,12 @@ theorem step_params_of {prog : SrcProgram} {prims : Prims} {ix_params_of ix_unbo
   simp only [src_params_of] at h
   faithful [Lanius.Mini.paramsOf]
 
-theorem proof_result_of {prog : SrcProgram} {prims : Prims} {ix_result_of ix_node_prod ix_kid ix_p_ret_type ix_p_type_never ix_p_ret_void ix_ret_of_ty ix_ty_of : Nat} (fn : prog.funcs[ix_result_of]? = some (src_result_of ix_node_prod ix_kid ix_p_ret_type ix_p_type_never ix_p_ret_void ix_ret_of_ty ix_ty_of)) (np : prims.isPrim ix_result_of = false)
+theorem proof_result_of {prog : SrcProgram} {prims : Prims} {ix_result_of ix_node_prod ix_kid ix_p_ret_void ix_p_ret_type ix_p_type_never ix_ret_of_ty ix_ty_of : Nat} (fn : prog.funcs[ix_result_of]? = some (src_result_of ix_node_prod ix_kid ix_p_ret_void ix_p_ret_type ix_p_type_never ix_ret_of_ty ix_ty_of)) (np : prims.isPrim ix_result_of = false)
     (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
     (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_p_ret_void : Certified (∀ {n : Nat}, Stmt_p_ret_void prog prims ix_p_ret_void n))
     (ext_p_ret_type : Certified (∀ {n : Nat}, Stmt_p_ret_type prog prims ix_p_ret_type n))
     (ext_p_type_never : Certified (∀ {n : Nat}, Stmt_p_type_never prog prims ix_p_type_never n))
-    (ext_p_ret_void : Certified (∀ {n : Nat}, Stmt_p_ret_void prog prims ix_p_ret_void n))
     (ext_ret_of_ty : Certified (∀ {n : Nat}, Stmt_ret_of_ty prog prims ix_ret_of_ty n))
     (ext_ty_of : Certified (∀ {n : Nat}, Stmt_ty_of prog prims ix_ty_of n)) {n : Nat} :
     Stmt_result_of prog prims ix_result_of n := by

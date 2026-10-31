@@ -215,6 +215,8 @@ inductive MEff where
   | xDivide : SrcDivOp → MEff → MEff → MEff
   /-- slice_stride(x) of a slice local x -/
   | xStride : Nat → MEff
+  /-- a call of the host service with this Core function id (see extern_func): only an extern's instance has one -/
+  | xHost : Nat → (List MEff) → MEff
   deriving Repr
 
 /-- An arm of a match expression: its binders, its value and the value's type. -/

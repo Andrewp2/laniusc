@@ -388,9 +388,11 @@ def onlyAliases (as : List AliasDecl) : Decls := { noDecls with aliases := as }
 
 /-- What an item (`b` is the item it holds, `pub` or not) declares in the
 module `home`: a struct or enum, a function, a constant, the methods of an
-impl block without a where clause, an import, or a type alias without a
-where clause. A `module` item, an `extern fn`, a trait, an import of
-another form and an alias with a where clause declare nothing. -/
+impl block without a where clause, an import, a type alias without a
+where clause, or an `extern "lanius_std" fn` of a host service (`hostExtern`;
+its tree rearranged by `externTree` to a function's shape). A `module`
+item, another `extern fn`, a trait, an import of another form and an alias
+with a where clause declare nothing. -/
 inductive ItemDecls (home : ModPath) : CTree → Decls → Prop
   | type {item : CTree} {t : TypeDecl} : (nodeProd (itemBody item) = pStruct ∨ nodeProd (itemBody item) = pEnum) →
       TypeDeclR home (itemBody item) t → ItemDecls home item (onlyTypes [t])
@@ -413,9 +415,13 @@ inductive ItemDecls (home : ModPath) : CTree → Decls → Prop
   | alias {item : CTree} {ps : List Name} : nodeProd (itemBody item) = pTypeAlias →
       nodeProd (kid (itemBody item) 3) = pWhereNone → TypeParams (kid (itemBody item) 2) ps →
       ItemDecls home item (onlyAliases [aliasDeclAt home (itemBody item) ps])
+  | host {item : CTree} {ps : List Name} : nodeProd (itemBody item) = pExternFn →
+      hostExtern (itemBody item) = true → TypeParams (kid (itemBody item) 4) ps →
+      ItemDecls home item (onlyFns [fnDeclAt home (externTree (itemBody item)) false [] (itemBody item) ps])
   | none {item : CTree} : (nodeProd (itemBody item) = pModule ∨
         (nodeProd (itemBody item) = pImport ∧ nodeProd (kid (itemBody item) 1) ≠ pImportPath) ∨
-        nodeProd (itemBody item) = pExternFn ∨ nodeProd (itemBody item) = pTrait ∨
+        (nodeProd (itemBody item) = pExternFn ∧ hostExtern (itemBody item) = false) ∨
+        nodeProd (itemBody item) = pTrait ∨
         (nodeProd (itemBody item) = pTypeAlias ∧ nodeProd (kid (itemBody item) 3) ≠ pWhereNone)) →
       ItemDecls home item noDecls
 
@@ -495,17 +501,27 @@ theorem itemDecls_sound {fuel : Nat} {home : ModPath} {item : CTree} {d : Decls}
       subst h
       exact .alias al.1 al.2 (typeParams_sound hp)
   rw [if_neg (by simpa using al)] at h
+  by_cases ex : nodeProd (itemBody item) = pExternFn ∧ hostExtern (itemBody item) = true
+  · rw [if_pos (by simpa using ex)] at h
+    simp only [fnsDecls, consFnDecl, fnDeclOf] at h
+    cases hp : typeParams fuel (kid (itemBody item) 4) with
+    | none => rw [hp] at h; cases h
+    | some ps =>
+      rw [hp, Option.some.injEq] at h
+      subst h
+      exact .host ex.1 ex.2 (typeParams_sound hp)
+  rw [if_neg (by simpa using ex)] at h
   split at h
   · rename_i nd
     rw [Option.some.injEq] at h
     subst h
     refine .none ?_
     simp only [Bool.or_eq_true, decide_eq_true_eq] at nd
-    simp only [not_and] at im al
+    simp only [not_and, Bool.not_eq_true] at im al ex
     rcases nd with (((m | i) | e) | t) | a
     · exact .inl m
     · exact .inr (.inl ⟨i, im i⟩)
-    · exact .inr (.inr (.inl e))
+    · exact .inr (.inr (.inl ⟨e, ex e⟩))
     · exact .inr (.inr (.inr (.inl t)))
     · exact .inr (.inr (.inr (.inr ⟨a, al a⟩)))
   · cases h

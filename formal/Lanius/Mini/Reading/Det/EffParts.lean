@@ -80,6 +80,7 @@ theorem effTy_unique {decls : Decls} {scope : List Local} :
     | divideLeft bl' _ => rw [bl] at bl'; cases bl'
     | divideRight _ r' => exact effTy_unique r r'
   | _, _, _, .stride, h₂ => by cases h₂; rfl
+  | _, _, _, .host, h₂ => by cases h₂; rfl
 
 theorem effTys_unique {decls : Decls} {scope : List Local} {xs : List MEff} {a b : List Ty}
     (h₁ : ListRel (EffTy decls scope) xs a) (h₂ : ListRel (EffTy decls scope) xs b) : a = b :=

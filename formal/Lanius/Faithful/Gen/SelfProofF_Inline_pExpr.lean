@@ -42,6 +42,15 @@ theorem proof_p_expr_stmt {prog : SrcProgram} {prims : Prims} {ix_p_expr_stmt : 
   simp only [src_p_expr_stmt] at h
   faithful [Lanius.Mini.Inline.pExprStmt]
 
+theorem proof_p_extern_abi {prog : SrcProgram} {prims : Prims} {ix_p_extern_abi : Nat} (fn : prog.funcs[ix_p_extern_abi]? = some (src_p_extern_abi)) (np : prims.isPrim ix_p_extern_abi = false) {n : Nat} :
+    Stmt_p_extern_abi prog prims ix_p_extern_abi n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_extern_abi] at h
+  faithful [Lanius.Mini.Inline.pExternAbi]
+
 theorem proof_p_extern_fn {prog : SrcProgram} {prims : Prims} {ix_p_extern_fn : Nat} (fn : prog.funcs[ix_p_extern_fn]? = some (src_p_extern_fn)) (np : prims.isPrim ix_p_extern_fn = false) {n : Nat} :
     Stmt_p_extern_fn prog prims ix_p_extern_fn n := by
   intro w h

@@ -71,6 +71,7 @@ abbrev pEquality : Nat := 133
 abbrev pExpr : Nat := 104
 abbrev pContinueStmt : Nat := 83
 abbrev pExprStmt : Nat := 85
+abbrev pExternAbi : Nat := 32
 abbrev pExternFn : Nat := 15
 abbrev pFalse : Nat := 186
 abbrev pFile : Nat := 0
