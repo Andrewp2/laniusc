@@ -10,7 +10,6 @@ import Lanius.Mini.Frontend.P.consBinder
 import Lanius.Mini.Frontend.P.consBound
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.consTys
-import Lanius.Mini.Frontend.P.constNamesIn
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.fnInstRet
@@ -33,6 +32,7 @@ import Lanius.Mini.Frontend.P.rootInsts
 import Lanius.Mini.Frontend.P.sliceHead
 import Lanius.Mini.Frontend.P.textSelf
 import Lanius.Mini.Frontend.P.typeDeclAt
+import Lanius.Mini.Frontend.P.typeNamesIn
 import Lanius.Mini.Frontend.P.typePathSpellings
 import Lanius.Mini.Frontend.P.variantIn
 import Lanius.Mini.Frontend.P.wideOf

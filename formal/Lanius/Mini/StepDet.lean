@@ -350,6 +350,9 @@ theorem Step.live (sa : Step s a) (same : DataEq s t) : ∃ b, Step t b := by
     | read number fd count r11 =>
       exact ⟨_, .syscalled (code loaded) (.read (by rw [registers]; exact number) (by rw [registers]; exact fd)
         (by rw [registers]; exact count) r11)⟩
+    | poll number fds nfds timeout r11 =>
+      exact ⟨_, .syscalled (code loaded) (.poll (by rw [registers]; exact number) (by rw [registers]; exact fds)
+        (by rw [registers]; exact nfds) (by rw [registers]; exact timeout) r11)⟩
 
 /-- No run from a state that agrees with `s` but for its flags stops before
 its `n`th step. -/

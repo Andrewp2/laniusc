@@ -82,6 +82,11 @@ def textReadStdin : List Nat :=
   let t : List Nat := 114 :: 101 :: 97 :: 100 :: 95 :: 115 :: 116 :: 100 :: 105 :: [110]
   t
 
+/-- sleep_ms_i32 -/
+def textSleepMsI32 : List Nat :=
+  let t : List Nat := 115 :: 108 :: 101 :: 101 :: 112 :: 95 :: 109 :: 115 :: 95 :: 105 :: 51 :: [50]
+  t
+
 /-- The Core function id of the host service an `extern "lanius_std" fn` of this name stands for (hostFuncs in SrcProgram.toCore), 0 for none. -/
 def hostId (name : List Nat) : Nat :=
   if sameText name textWriteByte then
@@ -96,7 +101,10 @@ def hostId (name : List Nat) : Nat :=
         if sameText name textReadStdin then
           4294967299
         else
-          0
+          if sameText name textSleepMsI32 then
+            4294967300
+          else
+            0
 
 /-- An `extern "lanius_std" fn` naming a host service, without a where clause. -/
 def hostExtern (b : CTree) : Bool :=
@@ -187,14 +195,5 @@ def fnNamesIn (fns : List FnDecl) (m : List (List Nat)) : List (List Nat) :=
       f.name :: fnNamesIn rest m
     else
       fnNamesIn rest m
-
-def typeNamesIn (types : List TypeDecl) (m : List (List Nat)) : List (List Nat) :=
-  match types with
-  | [] => []
-  | t :: rest =>
-    if sameSpellings t.home m then
-      t.name :: (t.variants ++ typeNamesIn rest m)
-    else
-      typeNamesIn rest m
 
 end Lanius.Mini

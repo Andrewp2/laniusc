@@ -36,11 +36,19 @@ def syscallLinuxByte (kind : Syscall) : UInt8 :=
   match kind with
   | .write => 1
   | .read => 0
+  | .poll => 7
 
-/-- mov rdi, [rbp + disp32] (the fd); mov rsi, [rbp + disp32]; add rsi, r12 (the heap address); mov rdx, [rbp + disp32] (the count); mov eax, the call's number; syscall; mov r11, rcx (the kernel leaves RFLAGS in r11) -/
+/-- What a system call does to its second argument in rsi: add rsi, r12 (a heap address) for write and read, mov rsi, rsi (kept) for poll. -/
+def syscallRsiBytes (kind : Syscall) : List UInt8 :=
+  match kind with
+  | .write => 76 :: 1 :: [230]
+  | .read => 76 :: 1 :: [230]
+  | .poll => 72 :: 137 :: [246]
+
+/-- mov rdi, [rbp + disp32] (the fd); mov rsi, [rbp + disp32]; add rsi, r12 (the heap address; mov rsi, rsi for poll); mov rdx, [rbp + disp32] (the count); mov eax, the call's number; syscall; mov r11, rcx (the kernel leaves RFLAGS in r11) -/
 def sysBytes (kind : Syscall) (slot : Nat) : List UInt8 :=
   let fd : List UInt8 := 72 :: 139 :: [189] ++ le32 (slotOffset slot)
-  let address : List UInt8 := 72 :: 139 :: [181] ++ le32 (slotOffset (slot + 1)) ++ 76 :: 1 :: [230]
+  let address : List UInt8 := 72 :: 139 :: [181] ++ le32 (slotOffset (slot + 1)) ++ syscallRsiBytes kind
   let count : List UInt8 := 72 :: 139 :: [149] ++ le32 (slotOffset (slot + 2))
   fd ++ address ++ (count ++ 184 :: syscallLinuxByte kind :: 0 :: 0 :: 0 :: 15 :: 5 :: 73 :: 137 :: [203])
 

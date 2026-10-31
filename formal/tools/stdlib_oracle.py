@@ -992,6 +992,9 @@ def stdin_file(workdir, data):
 
 SMALL = [0, 1, 2, 3, 5, 7, 10, 31, 32, 63, 64, 100, 255, 256]
 
+# The counts a sleep is called with (milliseconds).
+SLEEP_MS = [-2 ** 31, -1000, -5, -1, 0, 1, 2, 3]
+
 
 SIGNED_BITS = {'i8': 8, 'i16': 16}
 
@@ -1265,7 +1268,11 @@ def main():
         # Core's world) have no other file open, where laniusc's process has
         # (SEMANTIC_DECISIONS.md, "Externs and the runtime").
         handles = {f'a{k}' for k, (name, ty) in enumerate(p['target'].params) if name == 'handle' and ty == 'i32'}
-        p['calls'] = [[rng.choice((1, 2)) if name in handles else gen_arg(rng, ty) for name, ty in p['wparams']]
+        # A sleep's count is a few milliseconds or negative, so that a call
+        # ends well inside its timeout.
+        sleeps = {f'a{k}' for k, (name, ty) in enumerate(p['target'].params) if name == 'milliseconds' and ty == 'i32'}
+        p['calls'] = [[rng.choice((1, 2)) if name in handles else rng.choice(SLEEP_MS) if name in sleeps
+                       else gen_arg(rng, ty) for name, ty in p['wparams']]
                       for _ in range(args.calls if types else 1)]
         high = p['target'].ret in FLOATS and p['part'] == 'hi'
         p['reads'] = reads_stdin(mods, p)

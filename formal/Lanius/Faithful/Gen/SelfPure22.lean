@@ -8,42 +8,58 @@ open Lanius.Mini
 open Lanius.Faithful
 open Lanius.Faithful.Self
 
-/-- mini::selfhost::fl_exp_digits -/
-theorem pure2200 : PureFunc prog prims outside src2200 = true :=
-  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
-
-/-- mini::selfhost::fit_same_decl -/
+/-- mini::selfhost::diverge_eff -/
 theorem pure2201 : PureFunc prog prims outside src2201 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::diverge_call -/
+/-- mini::selfhost::tried_err -/
 theorem pure2202 : PureFunc prog prims outside src2202 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::fl_exp_digit_at -/
+/-- mini::selfhost::single_ty -/
 theorem pure2203 : PureFunc prog prims outside src2203 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::fit_args -/
+/-- mini::selfhost::if_same_tys -/
 theorem pure2204 : PureFunc prog prims outside src2204 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::diverge_checked -/
+/-- mini::selfhost::fl_exp_digits -/
 theorem pure2205 : PureFunc prog prims outside src2205 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::fit_args_next -/
+/-- mini::selfhost::fit_same_decl -/
 theorem pure2206 : PureFunc prog prims outside src2206 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::fit_arg -/
+/-- mini::selfhost::diverge_call -/
 theorem pure2207 : PureFunc prog prims outside src2207 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-def part22 : List SrcFunc := [src2200, src2201, src2202, src2203, src2204, src2205, src2206, src2207]
+/-- mini::selfhost::fl_exp_digit_at -/
+theorem pure2208 : PureFunc prog prims outside src2208 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::fit_args -/
+theorem pure2209 : PureFunc prog prims outside src2209 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::diverge_checked -/
+theorem pure2210 : PureFunc prog prims outside src2210 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::fit_args_next -/
+theorem pure2211 : PureFunc prog prims outside src2211 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::fit_arg -/
+theorem pure2212 : PureFunc prog prims outside src2212 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+def part22 : List SrcFunc := [src2200, src2201, src2202, src2203, src2204, src2205, src2206, src2207, src2208, src2209, src2210, src2211, src2212]
 
 theorem chunk22 : FuncsOk prog prims outside 2200 part22 :=
-  funcsOk_cons (funcOk_pure pure2200) <|
+  funcsOk_cons (funcOk_outside (by decide +kernel)) <| -- 2200 core::mem::size_of<mini::selfhost::List<mini::selfhost::EffArm>>, outside
   funcsOk_cons (funcOk_pure pure2201) <|
   funcsOk_cons (funcOk_pure pure2202) <|
   funcsOk_cons (funcOk_pure pure2203) <|
@@ -51,6 +67,11 @@ theorem chunk22 : FuncsOk prog prims outside 2200 part22 :=
   funcsOk_cons (funcOk_pure pure2205) <|
   funcsOk_cons (funcOk_pure pure2206) <|
   funcsOk_cons (funcOk_pure pure2207) <|
+  funcsOk_cons (funcOk_pure pure2208) <|
+  funcsOk_cons (funcOk_pure pure2209) <|
+  funcsOk_cons (funcOk_pure pure2210) <|
+  funcsOk_cons (funcOk_pure pure2211) <|
+  funcsOk_cons (funcOk_pure pure2212) <|
   funcsOk_nil
 
 end Lanius.Faithful.SelfPure

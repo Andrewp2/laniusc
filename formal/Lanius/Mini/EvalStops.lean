@@ -1033,12 +1033,21 @@ theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some 
     · rw [stmtEq]
       exact ⟨d, .seqFirst stops⟩
     exfalso
-    have len : vs.length = 2 := by
+    have len : vs.length = service.parameterTypes.length := by
       rw [holdsA.length]
-      rcases shape with ⟨-, tys⟩ | ⟨-, tys⟩ <;> rw [tys] <;> rfl
+      rcases shape with ⟨rfl, tys⟩ | ⟨which, tys⟩ | ⟨rfl, tys⟩
+      · rw [tys]; rfl
+      · rw [tys]; rcases which with rfl | rfl | rfl <;> rfl
+      · rw [tys]; rfl
     have outcome := fails (k + 1)
     rw [host_call_eval outside hs len argsRun fresh1.2] at outcome
-    rcases shape with ⟨rfl, tys⟩ | ⟨which, tys⟩
+    rcases shape with ⟨rfl, tys⟩ | ⟨which, tys⟩ | ⟨rfl, tys⟩
+    rotate_left 2
+    · obtain ⟨valuesA, -⟩ := one_i32 holdsA tys
+      subst valuesA
+      obtain ⟨v, world', called⟩ := sleepMsI32_returns st1.heap st1.world (low (env1 slot)).toInt
+      rw [called, worldCall_returned fresh1.2] at outcome
+      exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome bound)
     · obtain ⟨_, _, valuesA, -⟩ := two_i32 holdsA tys
       subst valuesA
       obtain ⟨v, world', called⟩ := writeByte_returns st1.heap st1.world (low (env1 slot)).toInt

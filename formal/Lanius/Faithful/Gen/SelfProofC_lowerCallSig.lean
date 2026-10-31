@@ -116,14 +116,15 @@ theorem proof_eval_field_type {prog : SrcProgram} {prims : Prims} {ix_eval_field
   simp only [src_eval_field_type] at h
   faithful [Lanius.Mini.evalFieldType]
 
-theorem proof_eval_host {prog : SrcProgram} {prims : Prims} {ix_eval_host ix_cons_of_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_Stmt ix_types_same ix_single_of_mini_selfhost_SrcType ix_host_byte_code ix_host_write_code ix_host_read_code : Nat} (fn : prog.funcs[ix_eval_host]? = some (src_eval_host ix_cons_of_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_Stmt ix_types_same ix_single_of_mini_selfhost_SrcType ix_host_byte_code ix_host_write_code ix_host_read_code)) (np : prims.isPrim ix_eval_host = false)
+theorem proof_eval_host {prog : SrcProgram} {prims : Prims} {ix_eval_host ix_cons_of_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_Stmt ix_types_same ix_single_of_mini_selfhost_SrcType ix_host_byte_code ix_host_write_code ix_host_read_code ix_host_sleep_code : Nat} (fn : prog.funcs[ix_eval_host]? = some (src_eval_host ix_cons_of_mini_selfhost_SrcType ix_boxed_of_mini_selfhost_Stmt ix_types_same ix_single_of_mini_selfhost_SrcType ix_host_byte_code ix_host_write_code ix_host_read_code ix_host_sleep_code)) (np : prims.isPrim ix_eval_host = false)
     (ext_cons_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SrcType prog prims ix_cons_of_mini_selfhost_SrcType n))
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
     (ext_types_same : Certified (∀ {n : Nat}, Stmt_types_same prog prims ix_types_same n))
     (ext_single_of_mini_selfhost_SrcType : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_SrcType prog prims ix_single_of_mini_selfhost_SrcType n))
     (ext_host_byte_code : Certified (∀ {n : Nat}, Stmt_host_byte_code prog prims ix_host_byte_code n))
     (ext_host_write_code : Certified (∀ {n : Nat}, Stmt_host_write_code prog prims ix_host_write_code n))
-    (ext_host_read_code : Certified (∀ {n : Nat}, Stmt_host_read_code prog prims ix_host_read_code n)) {n : Nat} :
+    (ext_host_read_code : Certified (∀ {n : Nat}, Stmt_host_read_code prog prims ix_host_read_code n))
+    (ext_host_sleep_code : Certified (∀ {n : Nat}, Stmt_host_sleep_code prog prims ix_host_sleep_code n)) {n : Nat} :
     Stmt_eval_host prog prims ix_eval_host n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
   rcases n with _ | n
@@ -184,6 +185,20 @@ theorem proof_host_read_code {prog : SrcProgram} {prims : Prims} {ix_host_read_c
   rw [pcall_succ np fn] at h
   simp only [src_host_read_code] at h
   faithful [Lanius.Mini.hostReadCode]
+
+theorem proof_host_sleep_code {prog : SrcProgram} {prims : Prims} {ix_host_sleep_code ix_plus ix_boxed_of_mini_selfhost_Stmt ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_host_sleep_code]? = some (src_host_sleep_code ix_plus ix_boxed_of_mini_selfhost_Stmt ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr)) (np : prims.isPrim ix_host_sleep_code = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_single_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_Expr prog prims ix_single_of_mini_selfhost_Expr n))
+    (ext_boxed_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Expr prog prims ix_boxed_of_mini_selfhost_Expr n))
+    (ext_cons_of_mini_selfhost_Expr : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Expr prog prims ix_cons_of_mini_selfhost_Expr n)) {n : Nat} :
+    Stmt_host_sleep_code prog prims ix_host_sleep_code n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_host_sleep_code] at h
+  faithful [Lanius.Mini.hostSleepCode]
 
 theorem proof_host_write_code {prog : SrcProgram} {prims : Prims} {ix_host_write_code ix_plus ix_boxed_of_mini_selfhost_Stmt ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr : Nat} (fn : prog.funcs[ix_host_write_code]? = some (src_host_write_code ix_plus ix_boxed_of_mini_selfhost_Stmt ix_single_of_mini_selfhost_Expr ix_boxed_of_mini_selfhost_Expr ix_cons_of_mini_selfhost_Expr)) (np : prims.isPrim ix_host_write_code = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))

@@ -801,7 +801,7 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   to inline `syscall` code. The mini IR's `Stmt.sys kind target args`
   (`Instr.sys kind slot`, `Mini/Semantics.lean`) is one system call; its
   arguments are evaluated into three consecutive frame slots, and the
-  result lands in `target`. Only `Syscall.write` exists so far.
+  result lands in `target`. `Syscall.write`, `Syscall.read` and `Syscall.poll` exist.
 - **`Syscall.write` at the mini level.** `[fd, address, count]` with fd 1 or
   2, count at most `maxTransfer`, and `address + count` within the heap
   limit; it appends `.write fd (heap bytes address..address+count)` to
@@ -823,7 +823,7 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   per call, the bytes Core appends) is the next part of F8.
 - **Not yet modeled (deferred).** `getrandom`/`secure_u32`, process
   arguments and environment variables (the loader would have to place
-  `argv`/`envp`, now arbitrary memory), time (`clock_gettime`, `nanosleep`),
+  `argv`/`envp`, now arbitrary memory), clock reads (`clock_gettime`; sleeping is done, "Host sleep"),
   files, sockets and processes, the general `syscall6`, the allocator
   externs (the verified compiler's `alloc` is the mini bump allocator over
   a heap the startup code provides, not `mmap`), and writes longer than
@@ -863,6 +863,35 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   random bytes (by seed, program and call) as a regular file on fd 0, to
   the verified compiler's image and to laniusc's harness (one call per
   run); other calls read `/dev/null`.
+
+## Host sleep (decided 10-31, F8)
+
+- **`sleep_ms_i32(ms)` (host id 2^32 + 4) is `poll(NULL, 0, ms)`.** Core's
+  meaning (`World.call .sleepMsI32`): -1 for a negative count; else 0, with
+  the world's clocks advanced by `ms` (`afterSleepMs`). laniusc's runtime
+  calls `nanosleep` with a timespec on the stack; the verified compiler
+  calls `poll` with no fds instead (rax 7), which waits the same
+  milliseconds and needs no memory, so neither the frame nor the heap
+  changes. The front end reads the stdlib's `extern "lanius_std" fn
+  sleep_ms_i32` as the host call (case `host_sleep`), and the verified
+  compiler lowers it to `host_sleep_code`: a signed test of the count, -1 if
+  it is negative, else `Sys Poll [0, 0, ms]` and 0.
+- **`Syscall.poll` at the mini level.** `[0, 0, timeout]` with a timeout
+  below 2^31 returns 0 and changes nothing; anything else has no step. The
+  x86 code is `sysSpec` with `mov rsi, rsi` where the address calls have
+  `add rsi, r12` (`Syscall.rsiBytes`, same length, so every `Sys` is still
+  34 bytes) and `mov eax, 7`; the kernel's `poll` is in TRUSTED_BASE.md
+  section 8.
+- **The clocks are not observed.** Neither the mini heap nor the x86 model
+  has a clock, and `HeapCorr` does not mention Core's clocks
+  (`HeapCorr.sleep`), so the proof (`LowerEval.host_sleep`) is about the
+  result and the rest of the world only. Reading a clock
+  (`monotonic_read`, `system_read`) would need Core's clock to be a stream
+  of readings given before the run, like standard input, and is not done.
+- **The oracle sleeps briefly.** A stdlib function's `milliseconds: i32`
+  parameter gets small or negative counts (`SLEEP_MS`), so that calls end
+  well inside the two-second timeout; gate step `stdlib-time` compares
+  `std::time_checked::sleep_nonnegative_ms` with laniusc.
 
 ## `for` over a range (decided 10-30, F4)
 

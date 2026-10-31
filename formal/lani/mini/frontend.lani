@@ -1468,6 +1468,12 @@ pub fn text_read_stdin() -> List<usize> {
     return t;
 }
 
+// sleep_ms_i32
+pub fn text_sleep_ms_i32() -> List<usize> {
+    let t: List<usize> = cons(115, cons(108, cons(101, cons(101, cons(112, cons(95, cons(109, cons(115, cons(95, cons(105, cons(51, single(50))))))))))));
+    return t;
+}
+
 // The Core function id of the host service an `extern "lanius_std" fn` of
 // this name stands for (hostFuncs in SrcProgram.toCore), 0 for none.
 pub fn host_id(name: List<usize>) -> usize {
@@ -1482,6 +1488,9 @@ pub fn host_id(name: List<usize>) -> usize {
     }
     if (same_text(name, text_read_stdin())) {
         return 4294967299;
+    }
+    if (same_text(name, text_sleep_ms_i32())) {
+        return 4294967300;
     }
     return 0;
 }
