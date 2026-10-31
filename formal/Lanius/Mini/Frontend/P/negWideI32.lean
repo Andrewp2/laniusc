@@ -53,6 +53,7 @@ def negWideAt (want : Option SrcType) (n : BitVec 64) (e : SrcExpr) : SrcExpr :=
     | .char => e
     | .float ft => e
     | .sint sk => negWideSint sk n e
+    | .ref referent => e
 
 def leastCast (u : UintTy) (k : BitVec 32) (d : SrcExpr) : SrcExpr :=
   if !(sintFits u k) && sintFits u (0 - k) then
@@ -94,6 +95,7 @@ def negLeast (want : Option SrcType) (x : SrcExpr) (d : SrcExpr) : SrcExpr :=
     | .char => d
     | .float ft => d
     | .sint sk => negLeastAt sk x d
+    | .ref referent => d
 
 /-- An expression's type when it does not rest on literals. -/
 def knownExpr (locals : List LocalTy) (e : SrcExpr) : Option SrcType :=

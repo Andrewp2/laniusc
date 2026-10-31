@@ -59,6 +59,7 @@ def srcTy (t : SrcType) : Option Ty :=
   | .char => some Ty.tyChar
   | .float ft => some (Ty.tyFloat ft)
   | .sint sk => some (Ty.tySint sk)
+  | .ref referent => none
 
 def scalarSrc (t : Ty) : Option SrcType :=
   match t with

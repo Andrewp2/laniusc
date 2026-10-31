@@ -1031,6 +1031,7 @@ partial def serType : SrcType → String
   | .sint u => s!"(.sint {serTy u})"
   | .float .f32 => "(.float .f32)"
   | .float .f64 => "(.float .f64)"
+  | .ref t => s!"(.ref {serType t})"
 
 partial def serExpr : SrcExpr → String
   | .int k => s!"(.int {k.toNat})"

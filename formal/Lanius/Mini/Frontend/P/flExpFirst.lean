@@ -118,5 +118,6 @@ def floatWant (want : Option SrcType) (t : SrcType) (x : SrcExpr) : Option SrcEx
     | .char => floatPick FloatTy.f32 t x
     | .float ft => floatPick ft t x
     | .sint sk => floatPick FloatTy.f32 t x
+    | .ref referent => floatPick FloatTy.f32 t x
 
 end Lanius.Mini

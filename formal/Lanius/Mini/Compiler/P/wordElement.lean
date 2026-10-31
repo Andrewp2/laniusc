@@ -26,5 +26,6 @@ def wordElement (decls : SrcDecls) (element : SrcType) : Bool :=
   | .char => false
   | .float ft => false
   | .sint sk => false
+  | .ref referent => false
 
 end Lanius.Mini

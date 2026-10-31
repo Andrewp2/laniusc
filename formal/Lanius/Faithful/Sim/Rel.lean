@@ -31,6 +31,7 @@ def STy : SrcType → Value → Prop
   | .char, _ => False
   | .float _, _ => False
   | .sint _, _ => False
+  | .ref _, _ => False
   | .array _ _, _ => False
 
 /-- Every range Core's raw views check in `h` still checks in `h'`: blocks
@@ -124,6 +125,7 @@ theorem STy.flat : ∀ {t : SrcType} {v : Value}, STy t v → Flat v
   | .char, _, s => s.elim
   | .float _, _, s => s.elim
   | .sint _, _, s => s.elim
+  | .ref _, _, s => s.elim
   | .array _ _, _, s => s.elim
 
 theorem VRels.length {heap : Memory.Heap} :

@@ -39,6 +39,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | char => simp [SrcType.same] at same
     | float => simp [SrcType.same] at same
     | sint => simp [SrcType.same] at same
+    | ref => simp [SrcType.same] at same
   | .enum id vs, b, same => by
     cases b with
     | enum id' ws =>
@@ -56,6 +57,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | char => simp [SrcType.same] at same
     | float => simp [SrcType.same] at same
     | sint => simp [SrcType.same] at same
+    | ref => simp [SrcType.same] at same
   | .slice e, b, same => by
     cases b with
     | slice e' =>
@@ -73,6 +75,7 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | char => simp [SrcType.same] at same
     | float => simp [SrcType.same] at same
     | sint => simp [SrcType.same] at same
+    | ref => simp [SrcType.same] at same
   | .array e n, b, same => by
     cases b with
     | array e' n' =>
@@ -90,11 +93,30 @@ theorem SrcType.eq_of_same : ∀ (a : SrcType) {b : SrcType}, a.same b = true �
     | char => simp [SrcType.same] at same
     | float => simp [SrcType.same] at same
     | sint => simp [SrcType.same] at same
+    | ref => simp [SrcType.same] at same
   | .unit, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isUnit]
   | .isize, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isIsize]
   | .char, b, same => by cases b <;> simp_all [SrcType.same, SrcType.isChar]
   | .float ft, b, same => (SrcType.eq_of_isFloat (by simpa [SrcType.same] using same)).symm
   | .sint k, b, same => (SrcType.eq_of_isSint (by simpa [SrcType.same] using same)).symm
+  | .ref e, b, same => by
+    cases b with
+    | ref e' =>
+      simp only [SrcType.same] at same
+      rw [SrcType.eq_of_same e same]
+    | i32 => simp [SrcType.same] at same
+    | bool => simp [SrcType.same] at same
+    | uint => simp [SrcType.same] at same
+    | struct => simp [SrcType.same] at same
+    | enum => simp [SrcType.same] at same
+    | ptr => simp [SrcType.same] at same
+    | slice => simp [SrcType.same] at same
+    | array => simp [SrcType.same] at same
+    | unit => simp [SrcType.same] at same
+    | isize => simp [SrcType.same] at same
+    | char => simp [SrcType.same] at same
+    | float => simp [SrcType.same] at same
+    | sint => simp [SrcType.same] at same
 
 theorem typesSame_eq : ∀ (fs : List SrcType) {gs : List SrcType}, typesSame fs gs = true → fs = gs
   | [], gs, same => by cases gs <;> simp_all [typesSame]
@@ -128,7 +150,7 @@ theorem wordWidth_cases {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) 
   | ptr => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inl ⟨rfl, h.symm⟩)))
   | isize => simp only [wordWidth, Option.some.injEq] at h; exact .inr (.inr (.inr (.inr (.inl ⟨rfl, h.symm⟩))))
   | sint k => exact .inr (.inr (.inr (.inr (.inr ⟨k, rfl, h⟩))))
-  | struct | enum | slice | array | unit | char | float => simp [wordWidth] at h
+  | struct | enum | slice | array | unit | char | float | ref => simp [wordWidth] at h
 
 theorem wordWidth_size {f : SrcType} {w : MemWidth} (h : wordWidth f = some w) : f.size = 1 := by
   rcases wordWidth_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨k, rfl, -⟩ <;> rfl

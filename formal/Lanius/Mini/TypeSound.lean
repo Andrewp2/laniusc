@@ -49,6 +49,7 @@ inductive TypeDeclared (P : Core.Program) : SrcType → Prop where
   | char : TypeDeclared P .char
   | float (ft : FloatTy) : TypeDeclared P (.float ft)
   | sint (kind : UintTy) : TypeDeclared P (.sint kind)
+  | ref {referent : SrcType} (inner : TypeDeclared P referent) : TypeDeclared P (.ref referent)
 
 /-- The types a statement's bindings name are declared. -/
 def SrcStmt.Declared (P : Core.Program) (s : SrcStmt) : Prop :=
@@ -199,6 +200,9 @@ theorem same_toCore : ∀ {a b : SrcType}, a.same b = true → a.toCore = b.toCo
   | .slice element, b, h => by
     cases b <;> simp only [SrcType.same, Bool.false_eq_true] at h
     simp only [SrcType.toCore, same_toCore h]
+  | .ref referent, b, h => by
+    cases b <;> simp only [SrcType.same, Bool.false_eq_true] at h
+    simp only [SrcType.toCore, same_toCore h]
   | .array element n, b, h => by
     cases b <;> simp only [SrcType.same, Bool.and_eq_true, decide_eq_true_eq, Bool.false_eq_true] at h
     simp only [SrcType.toCore, h.1, same_toCore h.2]
@@ -260,6 +264,7 @@ theorem equalityTy {ty : SrcType} (scalar : ty.isScalar = true) : Typing.Equalit
   | isize => exact .signed _
   | char => exact .character
   | float ft => cases ft <;> first | exact .f32 | exact .f64
+  | ref _ => simp [SrcType.isScalar] at scalar
   | sint => exact .signed _
 
 theorem floatArithTy (ft : FloatTy) : Typing.ArithmeticTy (SrcType.float ft).toCore := by
@@ -409,6 +414,7 @@ theorem shiftTy_of {ty : SrcType} (int : ty.isInteger = true) : Typing.ShiftTy t
   | char => simp [SrcType.isInteger] at int
   | float => simp [SrcType.isInteger] at int
   | uint k => exact .unsigned _
+  | ref _ => simp [SrcType.isInteger] at int
   | sint k => exact .signed _
   | bool => simp [SrcType.isInteger] at int
   | unit => simp [SrcType.isInteger] at int
@@ -808,6 +814,7 @@ theorem SrcExpr.lower_typed {P : Core.Program} (target : P.target = Core.Target.
              first
                | exact ⟨.cast inner (.signedToSigned _ _), rfl⟩
                | exact ⟨.cast inner (.charToSigned _), rfl⟩)
+      | ref _ => simp [castTo] at h
       | sint kind =>
         cases hty : o.ty <;> rw [hty] at inner <;>
           by_cases wide : kind.isWide = true <;>
@@ -992,6 +999,7 @@ theorem lowerLiteral_typed {P : Core.Program} (target : P.target = Core.Target.x
   | char => simp [lowerLiteral] at h
   | float => simp [lowerLiteral] at h
   | sint => simp [lowerLiteral] at h
+  | ref => simp [lowerLiteral] at h
 
 theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target.x86_64)
     {scope : List Binding} {ctx : Typing.Context} (ok : ScopeOk P ctx scope) {ty : SrcType}
@@ -1025,6 +1033,7 @@ theorem lowerEnumValue_typed {P : Core.Program} (target : P.target = Core.Target
   | char => simp [lowerEnumValue] at h
   | float => simp [lowerEnumValue] at h
   | sint => simp [lowerEnumValue] at h
+  | ref => simp [lowerEnumValue] at h
 
 /-! ## Match -/
 
@@ -1127,6 +1136,7 @@ theorem lowerMatch_typed {P : Core.Program} (target : P.target = Core.Target.x86
     · simp at h
     · simp at h
     · simp at h
+    · simp at h
 
 /-! ## Statements -/
 
@@ -1153,7 +1163,7 @@ theorem wordElement_kind {ds : SrcDecls} {e : SrcType} (h : wordElement ds e = t
   cases e with
   | struct id fields => exact .inl ⟨id, fields, rfl⟩
   | enum id variants => exact .inr ⟨id, variants, rfl⟩
-  | i32 | bool | uint | ptr | slice | array | unit | isize | char | float | sint => simp [wordElement] at h
+  | i32 | bool | uint | ptr | slice | array | unit | isize | char | float | sint | ref => simp [wordElement] at h
 
 theorem lowerSlice_some {ds : SrcDecls} {element : SrcType} {p l : Option Expr} {xs : List Expr}
     (h : lowerSlice ds element p l = some xs) :
@@ -1293,6 +1303,7 @@ theorem castTo_typed {P : Core.Program} {ctx : Typing.Context} {ce : Core.Expr} 
          first
            | exact .cast inner (.signedToSigned _ _)
            | exact .cast inner (.charToSigned _))
+  | ref _ => simp [castTo] at h
   | sint kind =>
     cases hty : o.ty <;> rw [hty] at inner <;>
       by_cases wide : kind.isWide = true <;>
@@ -1662,6 +1673,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | char => simp at h
       | float => simp at h
       | sint => simp at h
+      | ref => simp at h
   | .eVariant ty variant payload, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalVariant] at h
     split at h
@@ -1697,6 +1709,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
       | char => simp at h
       | float => simp at h
       | sint => simp at h
+      | ref => simp at h
   | .eMatch scrutinee ety ty binders values, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalMatch] at h
     split at h
@@ -1733,6 +1746,7 @@ theorem SrcEff.eval_typed {P : Core.Program} (target : P.target = Core.Target.x8
           | char => cases values <;> simp [matchVariants, evalArms] at ha
           | float => cases values <;> simp [matchVariants, evalArms] at ha
           | sint => cases values <;> simp [matchVariants, evalArms] at ha
+          | ref => cases values <;> simp [matchVariants, evalArms] at ha
         · simp at h
   | .eDivide op left right, scope, ctx, slot, ev, ok, dd, h => by
     simp only [SrcEff.eval, evalDivision] at h
@@ -2767,6 +2781,10 @@ theorem SrcType.declare_sound : ∀ (ty : SrcType) {d d' : SrcDecls}, ty.declare
     simp only [SrcType.declare] at h
     obtain ⟨ext, declared⟩ := SrcType.declare_sound element h
     exact ⟨ext, fun extD agrees => .slice (declared extD agrees)⟩
+  | .ref referent, d, d', h => by
+    simp only [SrcType.declare] at h
+    obtain ⟨ext, declared⟩ := SrcType.declare_sound referent h
+    exact ⟨ext, fun extD agrees => .ref (declared extD agrees)⟩
   | .array element _, d, d', h => by
     simp only [SrcType.declare] at h
     obtain ⟨ext, declared⟩ := SrcType.declare_sound element h

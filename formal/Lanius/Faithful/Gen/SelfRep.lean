@@ -61,6 +61,8 @@ inductive RepSrcType : Lanius.Mini.SrcType → Value → Prop where
       RepFloatTy x0 v0 → RepSrcType (Lanius.Mini.SrcType.float x0) (.enumeration 9 11 [v0])
   | c12 {x0 : Lanius.Mini.UintTy} {v0 : Value} :
       RepUintTy x0 v0 → RepSrcType (Lanius.Mini.SrcType.sint x0) (.enumeration 9 12 [v0])
+  | c13 {x0 : Lanius.Mini.SrcType} {v0 : Value} :
+      RepSrcType x0 v0 → RepSrcType (Lanius.Mini.SrcType.ref x0) (.enumeration 9 13 [v0])
 
 inductive RepSrcParam : Lanius.Mini.SrcParam → Value → Prop where
   | c0 {x0 : Nat} {x1 : Lanius.Mini.SrcType} {v0 v1 : Value} :
@@ -862,45 +864,45 @@ inductive RepArgsBound : Lanius.Mini.ArgsBound → Value → Prop where
 
 attribute [rep_rule] RepUintTy.c0 RepUintTy.c1 RepUintTy.c2 RepUintTy.c3 RepUintTy.c4 RepFloatTy.c0 RepFloatTy.c1 RepSrcType.c0
 attribute [rep_rule] RepSrcType.c1 RepSrcType.c2 RepSrcType.c3 RepSrcType.c4 RepSrcType.c5 RepSrcType.c6 RepSrcType.c7 RepSrcType.c8
-attribute [rep_rule] RepSrcType.c9 RepSrcType.c10 RepSrcType.c11 RepSrcType.c12 RepSrcParam.c0 RepSrcOp.c0 RepSrcOp.c1 RepSrcOp.c2
-attribute [rep_rule] RepSrcOp.c3 RepSrcOp.c4 RepSrcOp.c5 RepSrcOp.c6 RepSrcOp.c7 RepSrcOp.c8 RepSrcOp.c9 RepSrcOp.c10
-attribute [rep_rule] RepSrcOp.c11 RepSrcOp.c12 RepSrcOp.c13 RepSrcOp.c14 RepSrcOp.c15 RepSrcExpr.c0 RepSrcExpr.c1 RepSrcExpr.c2
-attribute [rep_rule] RepSrcExpr.c3 RepSrcExpr.c4 RepSrcExpr.c5 RepSrcExpr.c6 RepSrcExpr.c7 RepSrcExpr.c8 RepSrcExpr.c9 RepSrcExpr.c10
-attribute [rep_rule] RepSrcExpr.c11 RepSrcArm.c0 RepSrcDivOp.c0 RepSrcDivOp.c1 RepSrcEff.c0 RepSrcEff.c1 RepSrcEff.c2 RepSrcEff.c3
-attribute [rep_rule] RepSrcEff.c4 RepSrcEff.c5 RepSrcEff.c6 RepSrcEff.c7 RepSrcEff.c8 RepSrcEff.c9 RepSrcEff.c10 RepSrcEff.c11
-attribute [rep_rule] RepSrcStmt.c0 RepSrcStmt.c1 RepSrcStmt.c2 RepSrcStmt.c3 RepSrcStmt.c4 RepSrcStmt.c5 RepSrcStmt.c6 RepSrcStmt.c7
-attribute [rep_rule] RepSrcStmt.c8 RepSrcStmt.c9 RepSrcStmt.c10 RepSrcStmt.c11 RepSrcStmt.c12 RepSrcStmt.c13 RepSrcStmt.c14 RepSrcStmt.c15
-attribute [rep_rule] RepSrcStmt.c16 RepSrcStmt.c17 RepSrcStmt.c18 RepSrcStmt.c19 RepSrcStmt.c20 RepSrcStmt.c21 RepSrcStmt.c22 RepSrcStmt.c23
-attribute [rep_rule] RepSrcStmt.c24 RepSrcStmt.c25 RepSrcStmt.c26 RepSrcStmt.c27 RepSrcStmt.c28 RepSrcStmt.c29 RepSrcStmt.c30 RepSrcStmt.c31
-attribute [rep_rule] RepSrcStmt.c32 RepSrcStmt.c33 RepSrcFunc.c0 RepSrcProgram.c0 RepSym.c0 RepSym.c1 RepRule.c0 RepToken.c0
-attribute [rep_rule] RepFileInput.c0 RepFilesRead.c0 RepWord.c0 RepWord.c1 RepBinOp.c0 RepBinOp.c1 RepBinOp.c2 RepBinOp.c3
-attribute [rep_rule] RepBinOp.c4 RepBinOp.c5 RepBinOp.c6 RepBinOp.c7 RepBinOp.c8 RepCmpOp.c0 RepCmpOp.c1 RepCmpOp.c2
-attribute [rep_rule] RepCmpOp.c3 RepCmpOp.c4 RepCmpOp.c5 RepMemWidth.c0 RepMemWidth.c1 RepDivOp.c0 RepDivOp.c1 RepDivOp.c2
-attribute [rep_rule] RepDivOp.c3 RepFArith.c0 RepFArith.c1 RepFArith.c2 RepFArith.c3 RepFCmp.c0 RepFCmp.c1 RepFCmp.c2
-attribute [rep_rule] RepFOp.c0 RepFOp.c1 RepFOp.c2 RepFOp.c3 RepFOp.c4 RepSyscall.c0 RepSyscall.c1 RepSyscall.c2
-attribute [rep_rule] RepInstr.c0 RepInstr.c1 RepInstr.c2 RepInstr.c3 RepInstr.c4 RepInstr.c5 RepInstr.c6 RepInstr.c7
-attribute [rep_rule] RepInstr.c8 RepInstr.c9 RepInstr.c10 RepInstr.c11 RepInstr.c12 RepInstr.c13 RepInstr.c14 RepInstr.c15
-attribute [rep_rule] RepInstr.c16 RepInstr.c17 RepInstr.c18 RepCode.c0 RepBinary.c0 RepSrcStructDecl.c0 RepSrcEnumDecl.c0 RepSrcDecls.c0
-attribute [rep_rule] RepFileRead.c0 RepCTree.c0 RepCTree.c1 RepExpr.c0 RepExpr.c1 RepExpr.c2 RepExpr.c3 RepExpr.c4
-attribute [rep_rule] RepExpr.c5 RepStmt.c0 RepStmt.c1 RepStmt.c2 RepStmt.c3 RepStmt.c4 RepStmt.c5 RepStmt.c6
-attribute [rep_rule] RepStmt.c7 RepStmt.c8 RepStmt.c9 RepStmt.c10 RepStmt.c11 RepStmt.c12 RepStmt.c13 RepStmt.c14
-attribute [rep_rule] RepStmt.c15 RepStmt.c16 RepFunc.c0 RepProgram.c0 RepSig.c0 RepNumsRead.c0 RepTypeDecl.c0 RepFnDecl.c0
-attribute [rep_rule] RepConstDecl.c0 RepImportDecl.c0 RepAliasDecl.c0 RepImplDecl.c0 RepDecls.c0 RepFileDecls.c0 RepCollected.c0 RepCursor.c0
-attribute [rep_rule] RepAttached.c0 RepBinding.c0 RepTy.c0 RepTy.c1 RepTy.c2 RepTy.c3 RepTy.c4 RepTy.c5
-attribute [rep_rule] RepTy.c6 RepTy.c7 RepTy.c8 RepTy.c9 RepTy.c10 RepInst.c0 RepArity.c0 RepTyped.c0
-attribute [rep_rule] RepEvaluated.c0 RepRawTok.c0 RepMParam.c0 RepRetTy.c0 RepRetTy.c1 RepMEff.c0 RepMEff.c1 RepMEff.c2
-attribute [rep_rule] RepMEff.c3 RepMEff.c4 RepMEff.c5 RepMEff.c6 RepMEff.c7 RepMEff.c8 RepMEff.c9 RepMEff.c10
-attribute [rep_rule] RepMEff.c11 RepMEff.c12 RepMStmt.c0 RepMStmt.c1 RepMStmt.c2 RepMStmt.c3 RepMStmt.c4 RepMStmt.c5
-attribute [rep_rule] RepMStmt.c6 RepMStmt.c7 RepMStmt.c8 RepMStmt.c9 RepMStmt.c10 RepMStmt.c11 RepMStmt.c12 RepMStmt.c13
-attribute [rep_rule] RepMStmt.c14 RepMStmt.c15 RepMStmt.c16 RepMStmt.c17 RepMStmt.c18 RepMStmt.c19 RepMStmt.c20 RepMStmt.c21
-attribute [rep_rule] RepMStmt.c22 RepMStmt.c23 RepMStmt.c24 RepMStmt.c25 RepMStmt.c26 RepMStmt.c27 RepMStmt.c28 RepMStmt.c29
-attribute [rep_rule] RepMStmt.c30 RepMStmt.c31 RepMFunc.c0 RepMono.c0 RepFact.c0 RepEvaluatedArgs.c0 RepSymRule.c0 RepOneTok.c0
-attribute [rep_rule] RepOneTok.c1 RepTables.c0 RepPlace.c0 RepVariants.c0 RepLocalTy.c0 RepFrontEnv.c0 RepNumScan.c0 RepNumScan.c1
-attribute [rep_rule] RepScan.c0 RepScan.c1 RepFields.c0 RepLocal.c0 RepMParams.c0 RepTraitRef.c0 RepBoundGoal.c0 RepSplit.c0
-attribute [rep_rule] RepFlDec.c0 RepArrayParts.c0 RepCalled.c0 RepTried.c0 RepLetHead.c0 RepLetHead.c1 RepLetHead.c2 RepLetHead.c3
-attribute [rep_rule] RepLetHead.c4 RepLetHead.c5 RepLetHead.c6 RepLetHead.c7 RepLetHead.c8 RepLetHead.c9 RepUntyped.c0 RepBind.c0
-attribute [rep_rule] RepPathRef.c0 RepVariantAt.c0 RepVariantTy.c0 RepMatchStmt.c0 RepFound.c0 RepFit.c0 RepFit.c1 RepFit.c2
-attribute [rep_rule] RepEffArm.c0 RepBound.c0 RepFlDiv.c0 RepArgsBound.c0
+attribute [rep_rule] RepSrcType.c9 RepSrcType.c10 RepSrcType.c11 RepSrcType.c12 RepSrcType.c13 RepSrcParam.c0 RepSrcOp.c0 RepSrcOp.c1
+attribute [rep_rule] RepSrcOp.c2 RepSrcOp.c3 RepSrcOp.c4 RepSrcOp.c5 RepSrcOp.c6 RepSrcOp.c7 RepSrcOp.c8 RepSrcOp.c9
+attribute [rep_rule] RepSrcOp.c10 RepSrcOp.c11 RepSrcOp.c12 RepSrcOp.c13 RepSrcOp.c14 RepSrcOp.c15 RepSrcExpr.c0 RepSrcExpr.c1
+attribute [rep_rule] RepSrcExpr.c2 RepSrcExpr.c3 RepSrcExpr.c4 RepSrcExpr.c5 RepSrcExpr.c6 RepSrcExpr.c7 RepSrcExpr.c8 RepSrcExpr.c9
+attribute [rep_rule] RepSrcExpr.c10 RepSrcExpr.c11 RepSrcArm.c0 RepSrcDivOp.c0 RepSrcDivOp.c1 RepSrcEff.c0 RepSrcEff.c1 RepSrcEff.c2
+attribute [rep_rule] RepSrcEff.c3 RepSrcEff.c4 RepSrcEff.c5 RepSrcEff.c6 RepSrcEff.c7 RepSrcEff.c8 RepSrcEff.c9 RepSrcEff.c10
+attribute [rep_rule] RepSrcEff.c11 RepSrcStmt.c0 RepSrcStmt.c1 RepSrcStmt.c2 RepSrcStmt.c3 RepSrcStmt.c4 RepSrcStmt.c5 RepSrcStmt.c6
+attribute [rep_rule] RepSrcStmt.c7 RepSrcStmt.c8 RepSrcStmt.c9 RepSrcStmt.c10 RepSrcStmt.c11 RepSrcStmt.c12 RepSrcStmt.c13 RepSrcStmt.c14
+attribute [rep_rule] RepSrcStmt.c15 RepSrcStmt.c16 RepSrcStmt.c17 RepSrcStmt.c18 RepSrcStmt.c19 RepSrcStmt.c20 RepSrcStmt.c21 RepSrcStmt.c22
+attribute [rep_rule] RepSrcStmt.c23 RepSrcStmt.c24 RepSrcStmt.c25 RepSrcStmt.c26 RepSrcStmt.c27 RepSrcStmt.c28 RepSrcStmt.c29 RepSrcStmt.c30
+attribute [rep_rule] RepSrcStmt.c31 RepSrcStmt.c32 RepSrcStmt.c33 RepSrcFunc.c0 RepSrcProgram.c0 RepSym.c0 RepSym.c1 RepRule.c0
+attribute [rep_rule] RepToken.c0 RepFileInput.c0 RepFilesRead.c0 RepWord.c0 RepWord.c1 RepBinOp.c0 RepBinOp.c1 RepBinOp.c2
+attribute [rep_rule] RepBinOp.c3 RepBinOp.c4 RepBinOp.c5 RepBinOp.c6 RepBinOp.c7 RepBinOp.c8 RepCmpOp.c0 RepCmpOp.c1
+attribute [rep_rule] RepCmpOp.c2 RepCmpOp.c3 RepCmpOp.c4 RepCmpOp.c5 RepMemWidth.c0 RepMemWidth.c1 RepDivOp.c0 RepDivOp.c1
+attribute [rep_rule] RepDivOp.c2 RepDivOp.c3 RepFArith.c0 RepFArith.c1 RepFArith.c2 RepFArith.c3 RepFCmp.c0 RepFCmp.c1
+attribute [rep_rule] RepFCmp.c2 RepFOp.c0 RepFOp.c1 RepFOp.c2 RepFOp.c3 RepFOp.c4 RepSyscall.c0 RepSyscall.c1
+attribute [rep_rule] RepSyscall.c2 RepInstr.c0 RepInstr.c1 RepInstr.c2 RepInstr.c3 RepInstr.c4 RepInstr.c5 RepInstr.c6
+attribute [rep_rule] RepInstr.c7 RepInstr.c8 RepInstr.c9 RepInstr.c10 RepInstr.c11 RepInstr.c12 RepInstr.c13 RepInstr.c14
+attribute [rep_rule] RepInstr.c15 RepInstr.c16 RepInstr.c17 RepInstr.c18 RepCode.c0 RepBinary.c0 RepSrcStructDecl.c0 RepSrcEnumDecl.c0
+attribute [rep_rule] RepSrcDecls.c0 RepFileRead.c0 RepCTree.c0 RepCTree.c1 RepExpr.c0 RepExpr.c1 RepExpr.c2 RepExpr.c3
+attribute [rep_rule] RepExpr.c4 RepExpr.c5 RepStmt.c0 RepStmt.c1 RepStmt.c2 RepStmt.c3 RepStmt.c4 RepStmt.c5
+attribute [rep_rule] RepStmt.c6 RepStmt.c7 RepStmt.c8 RepStmt.c9 RepStmt.c10 RepStmt.c11 RepStmt.c12 RepStmt.c13
+attribute [rep_rule] RepStmt.c14 RepStmt.c15 RepStmt.c16 RepFunc.c0 RepProgram.c0 RepSig.c0 RepNumsRead.c0 RepTypeDecl.c0
+attribute [rep_rule] RepFnDecl.c0 RepConstDecl.c0 RepImportDecl.c0 RepAliasDecl.c0 RepImplDecl.c0 RepDecls.c0 RepFileDecls.c0 RepCollected.c0
+attribute [rep_rule] RepCursor.c0 RepAttached.c0 RepBinding.c0 RepTy.c0 RepTy.c1 RepTy.c2 RepTy.c3 RepTy.c4
+attribute [rep_rule] RepTy.c5 RepTy.c6 RepTy.c7 RepTy.c8 RepTy.c9 RepTy.c10 RepInst.c0 RepArity.c0
+attribute [rep_rule] RepTyped.c0 RepEvaluated.c0 RepRawTok.c0 RepMParam.c0 RepRetTy.c0 RepRetTy.c1 RepMEff.c0 RepMEff.c1
+attribute [rep_rule] RepMEff.c2 RepMEff.c3 RepMEff.c4 RepMEff.c5 RepMEff.c6 RepMEff.c7 RepMEff.c8 RepMEff.c9
+attribute [rep_rule] RepMEff.c10 RepMEff.c11 RepMEff.c12 RepMStmt.c0 RepMStmt.c1 RepMStmt.c2 RepMStmt.c3 RepMStmt.c4
+attribute [rep_rule] RepMStmt.c5 RepMStmt.c6 RepMStmt.c7 RepMStmt.c8 RepMStmt.c9 RepMStmt.c10 RepMStmt.c11 RepMStmt.c12
+attribute [rep_rule] RepMStmt.c13 RepMStmt.c14 RepMStmt.c15 RepMStmt.c16 RepMStmt.c17 RepMStmt.c18 RepMStmt.c19 RepMStmt.c20
+attribute [rep_rule] RepMStmt.c21 RepMStmt.c22 RepMStmt.c23 RepMStmt.c24 RepMStmt.c25 RepMStmt.c26 RepMStmt.c27 RepMStmt.c28
+attribute [rep_rule] RepMStmt.c29 RepMStmt.c30 RepMStmt.c31 RepMFunc.c0 RepMono.c0 RepFact.c0 RepEvaluatedArgs.c0 RepSymRule.c0
+attribute [rep_rule] RepOneTok.c0 RepOneTok.c1 RepTables.c0 RepPlace.c0 RepVariants.c0 RepLocalTy.c0 RepFrontEnv.c0 RepNumScan.c0
+attribute [rep_rule] RepNumScan.c1 RepScan.c0 RepScan.c1 RepFields.c0 RepLocal.c0 RepMParams.c0 RepTraitRef.c0 RepBoundGoal.c0
+attribute [rep_rule] RepSplit.c0 RepFlDec.c0 RepArrayParts.c0 RepCalled.c0 RepTried.c0 RepLetHead.c0 RepLetHead.c1 RepLetHead.c2
+attribute [rep_rule] RepLetHead.c3 RepLetHead.c4 RepLetHead.c5 RepLetHead.c6 RepLetHead.c7 RepLetHead.c8 RepLetHead.c9 RepUntyped.c0
+attribute [rep_rule] RepBind.c0 RepPathRef.c0 RepVariantAt.c0 RepVariantTy.c0 RepMatchStmt.c0 RepFound.c0 RepFit.c0 RepFit.c1
+attribute [rep_rule] RepFit.c2 RepEffArm.c0 RepBound.c0 RepFlDiv.c0 RepArgsBound.c0
 
 @[pure_rule] theorem ty0_typeId : ty0.typeId = 1 := rfl
 @[pure_rule] theorem ty1_typeId : ty1.typeId = 0 := rfl

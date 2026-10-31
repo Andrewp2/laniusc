@@ -190,6 +190,7 @@ theorem wordType_words {sp : SrcProgram} : ∀ (t : SrcType), wordType sp.decls 
     all_goals exact word_words (by rfl) h
   | .slice _, ok, _, _, _ => by simp [wordType] at ok
   | .unit, ok, _, _, _ => by simp [wordType] at ok
+  | .ref _, ok, _, _, _ => by simp [wordType] at ok
   | .struct sid fields, ok, fuel, n, h => by
     obtain ⟨decl, words, pos⟩ := wordType_struct ok
     cases fuel with
@@ -660,6 +661,7 @@ theorem wordType_layout {sp : SrcProgram} : ∀ (t : SrcType) {d k : Nat}, wordT
     | .sint kind, _, _ => cases kind <;> exact words_word (by rfl) k
     | .slice _, ok, _ => simp [wordType] at ok
     | .unit, ok, _ => simp [wordType] at ok
+    | .ref _, ok, _ => simp [wordType] at ok
     | .struct sid fields, ok, wl =>
       obtain ⟨decl, words, pos⟩ := wordType_struct ok
       simp only [Bool.and_eq_true, decide_eq_true_eq] at wl

@@ -286,6 +286,8 @@ inductive SrcType where
   | float : FloatTy → SrcType
   /-- the signed integer type as wide as kind (i8, i16, i32, i64, isize). A narrow one sits in its slot as an i32 does, its value's 32-bit two's complement zero-extended; a 64-bit one as an isize does. -/
   | sint : UintTy → SrcType
+  /-- a reference to a place of the referent type: one slot, the place's address in frame memory (SEMANTIC_DECISIONS, "The design of writes through references") -/
+  | ref : SrcType → SrcType
   deriving Repr
 
 inductive SrcOp where

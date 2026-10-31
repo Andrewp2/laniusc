@@ -82,6 +82,7 @@ def srcTyName : SrcType → String
   | .struct id _ => s!"#{id}"
   | .enum id _ => s!"#{id}"
   | .sint k => sintName k
+  | .ref _ => "ref"
 
 mutual
 partial def effCalls : SrcEff → List Nat
@@ -208,6 +209,7 @@ partial def typeText : SrcType → StateM Table String
       let ts ← v.mapM typeText
       pure s!"[{", ".intercalate ts}]"
     named s!".enum {id} [{", ".intercalate ts}]"
+  | .ref e => do named s!"(.ref {← typeText e})"
 
 /-- The placeholder a named type prints as until `faithful_dump.py` writes
 its name: `.struct (placeholder + k) []`. -/

@@ -177,6 +177,7 @@ theorem shiftBy_range {cop : Core.BinaryOp} (shift : cop = .shiftLeft ∨ cop = 
     obtain ⟨e, -⟩ := hl
     have := unsigned e
     cases k <;> simp_all [shiftWidth, UintTy.bits, UintTy.toCore, Core.UnsignedIntTy.bits, Core.Target.x86_64, Core.PointerWidth.bits]
+  | ref _ => exact hl.elim
   | sint k =>
     cases k with
     | uint8 =>
@@ -228,6 +229,7 @@ theorem shiftWidth_le {tl : SrcType} (int : tl.isInteger = true) : (shiftWidth t
   | char => simp [SrcType.isInteger] at int
   | float _ => simp [SrcType.isInteger] at int
   | uint k => cases k <;> decide
+  | ref _ => simp [SrcType.isInteger] at int
   | sint k => cases k <;> decide
   | bool => simp [SrcType.isInteger] at int
   | unit => simp [SrcType.isInteger] at int
@@ -286,6 +288,7 @@ theorem amount_of {tr : SrcType} (int : tr.isInteger = true) {vr : Value} {wr : 
     refine ⟨wr.toNat, fun shift int => by rw [e]; exact shift_unsignedAmount shift int _ _, fun _ _ => ?_,
       fun _ => rfl⟩
     simp
+  | ref _ => simp [SrcType.isInteger] at int
   | sint k =>
     cases k with
     | uint8 => exact narrow hr.1 hr.2.1
@@ -331,6 +334,7 @@ theorem retype_holds {tl : SrcType} (int : tl.isInteger = true) {n : Nat} (lt : 
     refine ⟨.unsigned k.toCore n, holds_uint k (Nat.lt_trans lt Nat.lt_two_pow_self), ?_⟩
     intro tgt cop l shift int
     exact shift_unsignedAmount shift int _ _
+  | ref _ => simp [SrcType.isInteger] at int
   | sint k =>
     cases k with
     | uint8 => exact ⟨.signed .i8 n, narrow .i8 8 (by simp [shiftWidth, UintTy.bits] at lt; omega), signed _⟩
@@ -354,6 +358,7 @@ theorem integer_value {tl : SrcType} (int : tl.isInteger = true) {vl : Value} {w
   | char => simp [SrcType.isInteger] at int
   | float _ => simp [SrcType.isInteger] at int
   | uint k => exact .inr ⟨_, _, hl.1⟩
+  | ref _ => simp [SrcType.isInteger] at int
   | sint k =>
     cases k with
     | uint8 => exact .inl ⟨_, _, hl.1⟩

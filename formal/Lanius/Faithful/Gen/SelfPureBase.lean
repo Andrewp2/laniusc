@@ -444,7 +444,7 @@ def decls : SrcDecls where
     { id := 17, variants := [[.i32], [.bool], [ty4, (.uint .uint64)], [(.uint .usize)], [(.uint .usize), (.uint .usize)], [ty13], [ty13], [ty14, ty13, ty13], [ty9, ty13], [], [(.uint .uint32)], [ty8, (.uint .uint64)]] },
     { id := 19, variants := [[], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []] },
     { id := 7, variants := [[], [ty10, ty11]] },
-    { id := 9, variants := [[], [], [ty4], [(.uint .usize), ty5], [(.uint .usize), ty6], [], [ty7], [ty7, (.uint .usize)], [], [], [], [ty8], [ty4]] },
+    { id := 9, variants := [[], [], [ty4], [(.uint .usize), ty5], [(.uint .usize), ty6], [], [ty7], [ty7, (.uint .usize)], [], [], [], [ty8], [ty4], [ty7]] },
     { id := 14, variants := [[], []] },
     { id := 10, variants := [[], [], [], [], []] },
     { id := 2, variants := [[ty1], []] },

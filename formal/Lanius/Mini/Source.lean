@@ -277,6 +277,7 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
   | .char, value, bits => value = .character (UInt32.ofNat bits.toNat) ∧ bits.toNat < 2 ^ 32
   | .float t, value, bits => value = t.value bits ∧ bits.toNat < 2 ^ t.width
   | .sint kind, value, bits => kind.SintHolds value bits
+  | .ref _, _, _ => False
 
 mutual
 /-- `ty.HoldsAt value env slot`: the `ty.size` slots of `env` from `slot`
@@ -318,6 +319,10 @@ inductive SrcType.HoldsAt : SrcType → Value → Env → Nat → Prop where
       (SrcType.float t).Holds value (env slot) → SrcType.HoldsAt (.float t) value env slot
   | sint {kind : UintTy} {value : Value} {env : Env} {slot : Nat} :
       (SrcType.sint kind).Holds value (env slot) → SrcType.HoldsAt (.sint kind) value env slot
+  /-- A reference is a cell and a projection path in Core; its slot holds the
+  place's address, which `FrameCorr` relates to the cell. -/
+  | ref {referent : SrcType} {cell : Nat} {projections : List Core.ValueProjection} {env : Env} {slot : Nat} :
+      SrcType.HoldsAt (.ref referent) (.reference referent.toCore cell projections) env slot
 
 /-- Values of these types, one after another from `slot`: a struct's fields,
 a payload, or arguments. -/
@@ -343,6 +348,7 @@ theorem SrcType.holdsAt_scalar {ty : SrcType} (scalar : ty.isScalar = true) {v :
   | char => exact ⟨fun | .char h => h, .char⟩
   | float => exact ⟨fun | .float h => h, .float⟩
   | sint => exact ⟨fun | .sint h => h, .sint⟩
+  | ref => simp [SrcType.isScalar] at scalar
 
 theorem FieldsHold.length : ∀ {fs vs env slot}, FieldsHold fs vs env slot → vs.length = fs.length
   | [], _, _, _, .nil => rfl
@@ -434,6 +440,7 @@ theorem SrcType.HoldsAt.congr : ∀ {ty : SrcType} {v : Value} {env : Env} {slot
     have := agree 0 (by simp [SrcType.size])
     simp only [Nat.add_zero] at this
     exact .sint (by rw [this]; exact holds)
+  | .ref _, _, _, _, .ref, _, _, _ => .ref
 
 theorem FieldsHold.congr : ∀ {fs : List SrcType} {vs : List Value} {env : Env} {slot : Nat},
     FieldsHold fs vs env slot → ∀ {env' : Env} {slot' : Nat},

@@ -56,6 +56,7 @@ def copyFieldOf (b : Binding) (index : Nat) (ty : SrcType) : Option (List Expr) 
   | .char => none
   | .float ft => none
   | .sint sk => none
+  | .ref referent => none
 
 /-- A field of type ty of a struct local, slot by slot. It takes slots. -/
 def copyField (binding : Option Binding) (index : Nat) (ty : SrcType) : Option (List Expr) :=
@@ -125,6 +126,7 @@ def lowerLiteral (scope : List Binding) (ty : SrcType) (fields : List SrcExpr) :
   | .char => none
   | .float ft => none
   | .sint sk => none
+  | .ref referent => none
 
 def lowerTag (variant : Nat) (payload : Option (List Expr)) : Option (List Expr) :=
   match payload with

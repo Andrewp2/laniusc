@@ -373,6 +373,7 @@ theorem castToIsize_sound {inner t : Typed} {env : Env} {w result : Value}
     · simp at lowered
     · rename_i _ hty
       simp [hty, SrcType.sintKind] at base
+    · simp at lowered
 
 /-- A lowered cast of an operand of a type other than `SrcType.sint` holds Core's cast of its value. -/
 theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result : Value}
@@ -430,6 +431,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
     · simp at lowered
     · rename_i _ hty
       simp [hty, SrcType.sintKind] at base
+    · simp at lowered
   | bool => simp [castTo] at lowered
   | uint kind =>
     have positive := Nat.two_pow_pos kind.width
@@ -479,6 +481,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
     · simp at lowered
     · rename_i _ hty
       simp [hty, SrcType.sintKind] at base
+    · simp at lowered
   | struct => simp [castTo] at lowered
   | enum => simp [castTo] at lowered
   | ptr => simp [castTo] at lowered
@@ -492,6 +495,7 @@ theorem cast_sound_base {ty : SrcType} {inner t : Typed} {env : Env} {w result :
   | float ft =>
     simp only [castTo] at lowered
     exact castToFloat_sound base notChar holds lowered casted
+  | ref _ => simp [castTo] at lowered
   | sint k =>
     simp only [castTo, castToSint] at lowered
     by_cases wide : k.isWide = true
@@ -552,7 +556,8 @@ theorem cast_sound {ty : SrcType} {inner t : Typed} {env : Env} {w result : Valu
 /-- Types `same` agrees on are equal, apart from aggregates (which no word holds). -/
 theorem SrcType.same_cases {a b : SrcType} (h : a.same b = true) :
     (∃ id fields, a = .struct id fields) ∨ (∃ id variants, a = .enum id variants) ∨
-      (∃ element, a = .slice element) ∨ (∃ element n, a = .array element n) ∨ b = a := by
+      (∃ element, a = .slice element) ∨ (∃ element n, a = .array element n) ∨ (∃ referent, a = .ref referent) ∨
+      b = a := by
   cases a <;> cases b <;>
     simp [SrcType.same, SrcType.isI32, SrcType.isBool, SrcType.isUint, SrcType.isPtr, SrcType.isUnit,
       SrcType.isIsize, SrcType.isSint, SrcType.isChar, SrcType.isFloat] at h ⊢ <;>
@@ -658,7 +663,7 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
     · rename_i types
       simp only [Option.some.injEq] at lowered
       subst lowered
-      rcases SrcType.same_cases types with ⟨_, _, e⟩ | ⟨_, _, e⟩ | ⟨_, e⟩ | ⟨_, _, e⟩ | e
+      rcases SrcType.same_cases types with ⟨_, _, e⟩ | ⟨_, _, e⟩ | ⟨_, e⟩ | ⟨_, _, e⟩ | ⟨_, e⟩ | e
       any_goals (rw [e] at holdsl; simp [SrcType.Holds] at holdsl)
       rw [e] at holdsr
       cases htl : tl.ty <;> rw [htl] at holdsl holdsr
@@ -710,6 +715,7 @@ theorem equality_holds {op : CmpOp} {cop : Core.BinaryOp} (h : (op = .eq ∧ cop
         subst e
         simp only [Expr.eval, htl, SrcType.word]
         exact holds_compare _
+      · simp [SrcType.Holds] at holdsl
     · simp at lowered
 
 /-- A strict operator's lowering, on operands that represent `vl` and `vr`,

@@ -34,6 +34,7 @@ def intLiteralAt (t : SrcType) (k : BitVec 32) (e : SrcExpr) : SrcExpr :=
   | .char => e
   | .float ft => e
   | .sint sk => sintAt sk k e
+  | .ref referent => nullAt k e
 
 def intAt (want : Option SrcType) (k : BitVec 32) (e : SrcExpr) : SrcExpr :=
   match want with
@@ -75,6 +76,7 @@ def srcFields (t : Option SrcType) : Option (List SrcType) :=
     | .char => none
     | .float ft => none
     | .sint sk => none
+    | .ref referent => none
 
 def srcVariants (t : Option SrcType) : Option (List (List SrcType)) :=
   match t with
@@ -94,6 +96,7 @@ def srcVariants (t : Option SrcType) : Option (List (List SrcType)) :=
     | .char => none
     | .float ft => none
     | .sint sk => none
+    | .ref referent => none
 
 def srcElement (t : Option SrcType) : Option SrcType :=
   match t with
@@ -113,6 +116,7 @@ def srcElement (t : Option SrcType) : Option SrcType :=
     | .char => none
     | .float ft => none
     | .sint sk => none
+    | .ref referent => none
 
 def tyAt (ts : Option (List SrcType)) (j : Nat) : Option SrcType :=
   match ts with

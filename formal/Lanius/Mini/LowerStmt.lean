@@ -1198,6 +1198,7 @@ theorem castTo_below {n : Nat} {ty : SrcType} {inner t : Typed} (h : castTo ty i
       | (rename_i source _
          cases source <;> cases ft <;> simp only [floatToFloat, Option.some.injEq, reduceCtorEq] at h <;>
            subst h <;> exact ⟨trivial, below⟩)
+  | ref _ => simp [castTo] at h
   | sint kind =>
     simp only [castTo, castToSint] at h
     split at h
@@ -1270,6 +1271,7 @@ theorem SrcExpr.lower_below {scope : List Binding} {next : Nat}
     case h_11 => simp at lowered
     case h_12 => simp at lowered
     case h_13 => simp at lowered
+    case h_14 => simp at lowered
     rename_i sid fields hty
     simp only [lowerFieldAt] at lowered
     split at lowered
@@ -1851,6 +1853,7 @@ theorem stmt_letStruct (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {fi
   | char => simp [lowerLiteral] at literalOk
   | float => simp [lowerLiteral] at literalOk
   | sint => simp [lowerLiteral] at literalOk
+  | ref => simp [lowerLiteral] at literalOk
   | ptr => simp [lowerLiteral] at literalOk
   | struct sid types =>
     simp only [lowerLiteral, lowerStructFields] at literalOk
@@ -1992,6 +1995,7 @@ theorem stmt_letEnum (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {vari
   | char => simp [lowerEnumValue] at valueOk
   | float => simp [lowerEnumValue] at valueOk
   | sint => simp [lowerEnumValue] at valueOk
+  | ref => simp [lowerEnumValue] at valueOk
   | enum eid variants =>
     simp only [lowerEnumValue, lowerTagged] at valueOk
     split at valueOk
@@ -2078,6 +2082,7 @@ theorem stmt_letMatch (ih : StmtSound sp mp fuel) {id : Nat} {ty : SrcType} {scr
   case h_11 => simp at matchOk
   case h_12 => simp at matchOk
   case h_13 => simp at matchOk
+  case h_14 => simp at matchOk
   rename_i eid variants hty
   simp only [lowerMatchArms] at matchOk
   split at matchOk
@@ -2441,6 +2446,7 @@ theorem stmt_setField {id index : Nat} {value : SrcExpr}
   case h_11 => simp at ok
   case h_12 => simp at ok
   case h_13 => simp at ok
+  case h_14 => simp at ok
   rename_i sid types hty
   simp only [lowerSetFieldAt] at ok
   split at ok
@@ -3047,7 +3053,7 @@ theorem slice_kind {ds : SrcDecls} {element : SrcType}
   | i32 => exact .inl rfl
   | struct sid fields => exact .inr (.inl ⟨sid, fields, rfl⟩)
   | enum eid variants => exact .inr (.inr ⟨eid, variants, rfl⟩)
-  | bool | uint | ptr | slice | array | unit | isize | char | float | sint => simp [SrcType.isI32, wordElement] at cond
+  | bool | uint | ptr | slice | array | unit | isize | char | float | sint | ref => simp [SrcType.isI32, wordElement] at cond
 
 /-- What Core's `slice_from_raw_parts` of an accepted element type did. -/
 theorem sliceFrom_inv {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
@@ -3205,7 +3211,7 @@ theorem index_toNat {t : Typed} {iv : Value} {x : BitVec 64} {pos : Nat}
     obtain ⟨rfl, -⟩ := holds
     simp only [Semantics.integerIndex, Except.ok.injEq] at ok
     exact ok
-  | bool | struct | enum | ptr | slice | array | unit | isize | char | float | sint => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
+  | bool | struct | enum | ptr | slice | array | unit | isize | char | float | sint | ref => rw [hty] at kind; simp [SrcType.isI32, SrcType.isUint] at kind
 
 /-- Core's read of `slice[idx]` from a raw slice local. -/
 theorem eval_index_raw {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx : Core.Expr}
@@ -3589,6 +3595,7 @@ theorem exec_loadType {sp : SrcProgram} {mp : Program} {hp : Heap} {heap : Memor
   | .uint _, ok, _, _, _, _, _, fits, read => exec_loadScalar hc tail (wordType_scalar ok rfl) fits read
   | .ptr, ok, _, _, _, _, _, fits, read => exec_loadScalar hc tail (wordType_scalar ok rfl) fits read
   | .isize, ok, _, _, _, _, _, fits, read => exec_loadScalar hc tail (wordType_scalar ok rfl) fits read
+  | .ref _, ok, _, _, _, _, _, _, _ => by simp [wordType] at ok
   | .sint _, ok, _, _, _, _, _, fits, read => exec_loadScalar hc tail (wordType_scalar ok rfl) fits read
   | .slice _, ok, _, _, _, _, _, _, _ => by simp [wordType] at ok
   | .unit, ok, _, _, _, _, _, _, _ => by simp [wordType] at ok
@@ -3876,6 +3883,7 @@ theorem exec_storeType {sp : SrcProgram} {mp : Program} {st : State} {env : Env}
     exec_storeScalar (wordType_scalar ok rfl) sOk holds fits wrote hc bound
   | .isize, ok, _, _, _, _, _, _, _, sOk, holds, fits, wrote, hc, bound =>
     exec_storeScalar (wordType_scalar ok rfl) sOk holds fits wrote hc bound
+  | .ref _, ok, _, _, _, _, _, _, _, _, _, _, _, _, _ => by simp [wordType] at ok
   | .sint _, ok, _, _, _, _, _, _, _, sOk, holds, fits, wrote, hc, bound =>
     exec_storeScalar (wordType_scalar ok rfl) sOk holds fits wrote hc bound
   | .slice _, ok, _, _, _, _, _, _, _, _, _, _, _, _, _ => by simp [wordType] at ok

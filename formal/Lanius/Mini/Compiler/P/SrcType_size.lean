@@ -33,6 +33,7 @@ def SrcType.size (self : SrcType) : Nat :=
   | .char => 1
   | .float ft => 1
   | .sint kind => 1
+  | .ref referent => 1
 def sizes (types : List SrcType) : Nat :=
   match types with
   | [] => 0

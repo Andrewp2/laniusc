@@ -1628,6 +1628,10 @@ pub enum SrcType {
     // narrow one sits in its slot as an i32 does, its value's 32-bit two's
     // complement zero-extended; a 64-bit one as an isize does.
     Sint(UintTy),
+    // a reference to a place of the referent type: one slot, the place's
+    // address in frame memory (SEMANTIC_DECISIONS, "The design of writes
+    // through references")
+    Ref(Box<SrcType>),
 }
 
 pub enum SrcOp {
@@ -1827,6 +1831,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -1845,6 +1850,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -1863,6 +1869,7 @@ impl SrcType {
             SrcType::Char -> true,
             SrcType::Float(ft) -> true,
             Sint(kind) -> true,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -1881,6 +1888,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -1899,6 +1907,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -1917,6 +1926,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -1935,6 +1945,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(kind) -> false,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -1953,6 +1964,7 @@ impl SrcType {
             SrcType::Char -> true,
             SrcType::Float(ft) -> false,
             Sint(kind) -> false,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -1971,6 +1983,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> ft.number() == t.number(),
             Sint(kind) -> false,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -1989,6 +2002,7 @@ impl SrcType {
             SrcType::Char -> None,
             SrcType::Float(ft) -> Some(ft),
             Sint(kind) -> None,
+            SrcType::Ref(referent) -> None,
         };
     }
 
@@ -2007,6 +2021,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> true,
             Sint(kind) -> false,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -2026,6 +2041,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(kind) -> true,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -2044,6 +2060,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(kind) -> true,
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -2062,6 +2079,7 @@ impl SrcType {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(other) -> other.code() == kind.code(),
+            SrcType::Ref(referent) -> false,
         };
     }
 
@@ -2081,6 +2099,7 @@ impl SrcType {
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(kind) -> Some(kind),
+            SrcType::Ref(referent) -> None,
         };
     }
 
@@ -2100,6 +2119,7 @@ impl SrcType {
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            SrcType::Ref(referent) -> None,
         };
     }
 
@@ -2119,6 +2139,7 @@ impl SrcType {
             SrcType::Char -> U64,
             SrcType::Float(ft) -> U64,
             Sint(kind) -> kind.signed_word(),
+            SrcType::Ref(referent) -> U64,
         };
     }
 }
@@ -2144,6 +2165,7 @@ impl SrcType {
                 SrcType::Char -> false,
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
+                SrcType::Ref(referent) -> false,
             },
             Enum(id, variants) -> match (other) {
                 I32 -> false,
@@ -2159,6 +2181,7 @@ impl SrcType {
                 SrcType::Char -> false,
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
+                SrcType::Ref(referent) -> false,
             },
             Ptr -> other.is_ptr(),
             Slice(element) -> match (other) {
@@ -2175,6 +2198,7 @@ impl SrcType {
                 SrcType::Char -> false,
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
+                SrcType::Ref(referent) -> false,
             },
             SrcType::Array(array_element, array_length) -> match (other) {
                 I32 -> false,
@@ -2190,12 +2214,29 @@ impl SrcType {
                 SrcType::Char -> false,
                 SrcType::Float(ft) -> false,
                 Sint(other_sk) -> false,
+                SrcType::Ref(referent) -> false,
             },
             Unit -> other.is_unit(),
             Isize -> other.is_isize(),
             SrcType::Char -> other.is_char(),
             SrcType::Float(ft) -> other.is_float(ft),
             Sint(kind) -> other.is_sint(kind),
+            SrcType::Ref(referent) -> match (other) {
+                I32 -> false,
+                Bool -> false,
+                Uint(other_kind) -> false,
+                Struct(other_id, other_fields) -> false,
+                Enum(other_id, other_variants) -> false,
+                Ptr -> false,
+                Slice(other_element) -> false,
+                SrcType::Array(array_element, array_length) -> false,
+                Unit -> false,
+                Isize -> false,
+                SrcType::Char -> false,
+                SrcType::Float(ft) -> false,
+                Sint(other_sk) -> false,
+                SrcType::Ref(other_referent) -> unbox(referent).same(unbox(other_referent)),
+            },
         };
     }
 }
@@ -2246,6 +2287,7 @@ impl SrcType {
             SrcType::Char -> 1,
             SrcType::Float(ft) -> 1,
             Sint(kind) -> 1,
+            SrcType::Ref(referent) -> 1,
         };
     }
 }
@@ -2604,6 +2646,7 @@ pub fn lower_field_of(b: Binding, field: usize) -> core::option::Option<Typed> {
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -2725,6 +2768,7 @@ pub fn cast_to_i32(e: Typed) -> core::option::Option<Typed> {
         SrcType::Char -> Some(Typed { expr: wrap(Uint32, e.expr), ty: I32 }),
         SrcType::Float(ft) -> None,
         Sint(kind) -> Some(Typed { expr: sint_to_i32(kind, e.expr), ty: I32 }),
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -2743,6 +2787,7 @@ pub fn cast_to_uint(kind: UintTy, e: Typed) -> core::option::Option<Typed> {
         SrcType::Char -> Some(Typed { expr: wrap(kind, e.expr), ty: Uint(kind) }),
         SrcType::Float(ft) -> None,
         Sint(source) -> Some(Typed { expr: sint_to_uint(source, kind, e.expr), ty: Uint(kind) }),
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -2763,6 +2808,7 @@ pub fn cast_to_isize(e: Typed) -> core::option::Option<Typed> {
         SrcType::Char -> Some(Typed { expr: e.expr, ty: Isize }),
         SrcType::Float(ft) -> None,
         Sint(source) -> Some(Typed { expr: sint_to_wide(source, e.expr), ty: Isize }),
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -2828,6 +2874,7 @@ pub fn cast_to_float(t: FloatTy, e: Typed) -> core::option::Option<Typed> {
         SrcType::Char -> int_to_float(t, U64, e.expr),
         SrcType::Float(source) -> float_to_float(t, source, e.expr),
         Sint(kind) -> int_to_float(t, kind.signed_word(), e.expr),
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -2846,6 +2893,7 @@ pub fn cast_to(ty: SrcType, e: Typed) -> core::option::Option<Typed> {
         SrcType::Char -> None,
         SrcType::Float(ft) -> cast_to_float(ft, e),
         Sint(kind) -> cast_to_sint(kind, e),
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -2959,6 +3007,7 @@ pub fn shift_width(ty: SrcType) -> u64 {
         SrcType::Char -> 32,
         SrcType::Float(ft) -> 64,
         Sint(kind) -> kind.bits(),
+        SrcType::Ref(referent) -> 64,
     };
 }
 
@@ -3184,6 +3233,7 @@ pub fn copy_field_of(b: Binding, index: usize, ty: SrcType) -> core::option::Opt
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -3266,6 +3316,7 @@ pub fn lower_literal(scope: List<Binding>, ty: SrcType, fields: List<SrcExpr>) -
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -3308,6 +3359,7 @@ pub fn lower_enum_value(scope: List<Binding>, ty: SrcType, variant: usize, paylo
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -3458,6 +3510,7 @@ pub fn lower_match_arm(scope: List<Binding>, binding: core::option::Option<Bindi
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            SrcType::Ref(referent) -> None,
         },
     };
 }
@@ -3485,6 +3538,7 @@ pub fn lower_match_on(scope: List<Binding>, b: Binding, enum_id: usize, arms: Li
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -3592,6 +3646,7 @@ pub fn eval_field_of(scope: List<Binding>, e: SrcExpr, slot: usize, b: Binding, 
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -3823,6 +3878,7 @@ pub fn element_of(ty: SrcType) -> core::option::Option<SrcType> {
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -3861,6 +3917,7 @@ pub fn eval_struct(ty: SrcType, args: core::option::Option<EvaluatedArgs>) -> co
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            SrcType::Ref(referent) -> None,
         },
     };
 }
@@ -3901,6 +3958,7 @@ pub fn eval_variant(ty: SrcType, variant: usize, slot: usize, args: core::option
             SrcType::Char -> None,
             SrcType::Float(ft) -> None,
             Sint(sk) -> None,
+            SrcType::Ref(referent) -> None,
         },
     };
 }
@@ -4069,6 +4127,7 @@ pub fn match_variants(ty: SrcType) -> List<List<SrcType>> {
         SrcType::Char -> empty(),
         SrcType::Float(ft) -> empty(),
         Sint(sk) -> empty(),
+        SrcType::Ref(referent) -> empty(),
     };
 }
 
@@ -4254,6 +4313,7 @@ pub fn lower_set_field_of(b: Binding, field: usize, scope: List<Binding>, value:
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -4468,6 +4528,7 @@ pub fn word_width(ty: SrcType) -> core::option::Option<MemWidth> {
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(kind) -> usize_width(kind),
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -4509,6 +4570,7 @@ pub fn word_type(decls: SrcDecls, ty: SrcType) -> bool {
         SrcType::Char -> false,
         SrcType::Float(ft) -> false,
         Sint(kind) -> true,
+        SrcType::Ref(referent) -> false,
     };
 }
 
@@ -4543,6 +4605,7 @@ pub fn word_element(decls: SrcDecls, element: SrcType) -> bool {
         SrcType::Char -> false,
         SrcType::Float(ft) -> false,
         Sint(sk) -> false,
+        SrcType::Ref(referent) -> false,
     };
 }
 
@@ -4585,6 +4648,7 @@ pub fn load_type(ty: SrcType, target: usize, base: Expr, offset: usize, body: St
         SrcType::Char -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         SrcType::Float(ft) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
         Sint(kind) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
+        SrcType::Ref(referent) -> Seq(boxed(LoadWord(width_of(ty), target, address_below(base, offset))), boxed(body)),
     };
 }
 
@@ -4648,6 +4712,7 @@ pub fn store_type(ty: SrcType, values: List<Expr>, first: usize, base: Expr, off
         SrcType::Char -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         SrcType::Float(ft) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
         Sint(kind) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
+        SrcType::Ref(referent) -> store_one(width_of(ty), address_below(base, offset), get(values, first)),
     };
 }
 
@@ -4693,6 +4758,7 @@ pub fn within_layout(depth: usize, ty: SrcType) -> bool {
         SrcType::Char -> false,
         SrcType::Float(ft) -> false,
         Sint(kind) -> true,
+        SrcType::Ref(referent) -> false,
     };
 }
 
@@ -4941,6 +5007,7 @@ pub fn eval_array_index(b: Binding, slot: usize, index: core::option::Option<Eva
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -4972,6 +5039,7 @@ pub fn is_array_local(binding: core::option::Option<Binding>) -> bool {
             SrcType::Char -> false,
             SrcType::Float(ft) -> false,
             Sint(sk) -> false,
+            SrcType::Ref(referent) -> false,
         },
     };
 }
@@ -5160,6 +5228,7 @@ pub fn store_array(b: Binding, slot: usize, index: core::option::Option<Evaluate
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -5194,6 +5263,7 @@ pub fn set_field_eval_of(b: Binding, field: usize, slot: usize, v: Evaluated) ->
         SrcType::Char -> None,
         SrcType::Float(ft) -> None,
         Sint(sk) -> None,
+        SrcType::Ref(referent) -> None,
     };
 }
 
@@ -5594,6 +5664,7 @@ impl SrcType {
             SrcType::Char -> Some(decls),
             SrcType::Float(ft) -> Some(decls),
             Sint(kind) -> Some(decls),
+            SrcType::Ref(referent) -> unbox(referent).declare(decls),
         };
     }
 }
