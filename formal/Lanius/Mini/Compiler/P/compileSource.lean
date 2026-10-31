@@ -43,8 +43,8 @@ def compileWords (program : Option SrcProgram) : Option (List (BitVec 32)) :=
 def elfBase : Nat :=
   4294967296
 
-/-- The bytes before the image: the headers (120) and the startup code (75). -/
+/-- The bytes before the image: the headers (120) and the startup code (85). -/
 def elfBeforeImage : Nat :=
-  195
+  205
 
 end Lanius.Mini

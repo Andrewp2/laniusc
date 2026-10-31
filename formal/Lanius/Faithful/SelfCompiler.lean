@@ -314,7 +314,7 @@ theorem selfCompiler_outcome {B : Binary} (compiled : compileSource prog = some 
       cases holds with
       | i32 h => exact h.1
     have agree : ∀ a, a < after.limit → s'.memory (s.registers heapBaseRegister + BitVec.ofNat 64 a) = after.bytes a :=
-      ret.heap
+      fun a below => ret.heap a (Nat.lt_of_lt_of_le below after.limit_le_top)
     have within : final.heap.nextAddress ≤ after.limit := by
       rw [ret.limit, ← heapAt.limit]; exact fits
     unfold SelfOutput

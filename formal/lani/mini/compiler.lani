@@ -7257,10 +7257,11 @@ pub fn compile_words(program: core::option::Option<SrcProgram>) -> core::option:
 // readable, writable and executable, from the file's first byte. The file is
 // the ELF header, its one program header, the startup code and the image;
 // the segment goes on, zero-filled by Linux, to a page boundary, then `stack`
-// bytes of stack and `heap` bytes of heap. The startup code sets rsp to the
+// bytes of stack, `heap` bytes of heap and `stack` bytes of frame memory. The startup code sets rsp to the
 // stack's top, r15 to the stack limit (`binary.guard` above its bottom),
-// r12, r14 and r13 to the heap's base, its limit and cursor 1, rbx to the
-// frame pointer (the heap's top, which is its limit), calls function
+// r12, r14 and r13 to the heap's base, its limit and cursor 1, r10 and rbx
+// to the heap's top (the end of frame memory) and the frame pointer there,
+// calls function
 // `entry`, and exits with its rax: mov rdi, rax; mov eax, 60; syscall. None
 // when the sizes do not fit (`elf_fits`).
 
@@ -7268,9 +7269,9 @@ pub fn elf_base() -> usize {
     return 4294967296;
 }
 
-// The bytes before the image: the headers (120) and the startup code (75).
+// The bytes before the image: the headers (120) and the startup code (85).
 pub fn elf_before_image() -> usize {
-    return 195;
+    return 205;
 }
 
 pub fn larger(a: usize, b: usize) -> usize {
@@ -7324,20 +7325,20 @@ pub fn elf_header(binary: Binary) -> List<u8> {
 
 // The program header: a loadable segment, readable, writable and
 // executable, from file offset 0 to the segment's start, the file's bytes
-// and then zeros up to the end of the heap.
+// and then zeros up to the end of frame memory.
 pub fn elf_program_header(binary: Binary, stack: usize, heap: usize) -> List<u8> {
     let file: usize = plus(elf_before_image(), length(binary.image));
-    let memory: usize = plus(plus(minus(elf_stack_base(binary), elf_base()), stack), heap);
+    let memory: usize = plus(plus(plus(minus(elf_stack_base(binary), elf_base()), stack), heap), stack);
     let kinds: List<u8> = concat(concat(le32(1), le32(7)), le64n(0));
     let places: List<u8> = concat(le64n(elf_base()), le64n(elf_base()));
     return concat(concat(concat(kinds, places), concat(le64n(file), le64n(memory))), le64n(4096));
 }
 
-// mov reg, imm64 for rsp, r15, r12, r14, r13 and rbx; call the entry; exit.
+// mov reg, imm64 for rsp, r15, r12, r14, r13, r10 and rbx; call the entry; exit.
 pub fn elf_startup(binary: Binary, entry: usize, stack: usize, heap: usize) -> List<u8> {
     let bottom: usize = elf_stack_base(binary);
     let top: usize = plus(bottom, stack);
-    let sets: List<u8> = concat(concat(concat(cons(72, cons(188, le64n(top))), cons(73, cons(191, le64n(plus(bottom, stack_guard(binary)))))), concat(cons(73, cons(188, le64n(top))), cons(73, cons(190, le64n(heap))))), concat(cons(73, cons(189, le64n(1))), cons(72, cons(187, le64n(heap)))));
+    let sets: List<u8> = concat(concat(concat(cons(72, cons(188, le64n(top))), cons(73, cons(191, le64n(plus(bottom, stack_guard(binary)))))), concat(cons(73, cons(188, le64n(top))), cons(73, cons(190, le64n(heap))))), concat(concat(cons(73, cons(189, le64n(1))), cons(73, cons(186, le64n(plus(heap, stack))))), cons(72, cons(187, le64n(plus(heap, stack))))));
     let call: List<u8> = cons(232, le32(plus(get_or(binary.entries, entry, 0), 10) as i32));
     let exit: List<u8> = cons(72, cons(137, cons(199, cons(184, cons(60, cons(0, cons(0, cons(0, cons(15, single(5))))))))));
     return concat(concat(sets, call), exit);

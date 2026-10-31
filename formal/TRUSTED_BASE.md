@@ -30,6 +30,16 @@ on but do not prove:
   `w` never traps undefinedly (`driver_safe`, V7b). That the native
   self-built compiler's bytes are `compileSource prog` is computed by
   `lake exe runAll` (section 5, the Lean build), not by the kernel.
+- `Lanius.Faithful.SelfHost.selfHost_fixpoint`
+  (`Lanius/Faithful/SelfHost.lean`, F12). For source files `self` the
+  front end reads as `prog` (`read`) and `B` with `compileText self =
+  some B` (`compiled`): `prog` is the files' one reading, and `B`'s code
+  for `w`, given the words of `self`, faults or returns `B`'s own words:
+  the verified compiler compiles its own text to itself.
+  `selfHost_outcome` is V7 with the same two premises in place of
+  `compileSource prog = some B`. Both premises are computed by Lean's
+  compiled code on the self program's files, not by the kernel (section 5,
+  "The self-built verified compiler").
 - `Lanius.Mini.compileProgram_correct` (`Lanius/Mini/Correct.lean`). The same
   for a mini IR program against the mini big-step semantics.
 - `Lanius.Mini.compileProgram_stops` (`Lanius/Mini/StopsCorrect.lean`, V2c).
@@ -611,6 +621,50 @@ compiler that someone actually runs is one of these two:
    implementations of `BitVec`, `UInt8` and `List`. The kernel does not see
    any of this code.
 
+### The self-built verified compiler (F12)
+
+`selfHost_fixpoint` and `selfHost_outcome` take two facts about the self
+program's files `self` (the driver `w` and the module closure of
+`mini::selfhost`: 8 files, about 795 KB of text, each with laniusc's parse
+tree, laid out as `self_host.py` and `faithful_current.py` lay them out) as
+premises. Each is computed by Lean's compiled code (item 2 above), because
+the kernel cannot evaluate the front end on 795 KB of text or `compileSource`
+on a program whose image is 15,049,168 bytes:
+
+- **`read : sourceProgramFiles self = some prog`.** `lake exe srcDump`
+  (`Lanius/Tools/SrcDump.lean`) runs the front end on the files and prints
+  its program with `repr`, named types shared (`faithful_dump.py` names
+  them), and `faithful_certs.py` splits the text into `Gen/SelfSrc*` and
+  `Gen/SelfProg` as a chain of named tails. Trusted: the front end's
+  compiled code, `repr` and these text transformations print a term that
+  elaborates to the value the front end computed. Checked by the gate's
+  `self-current` step (`faithful_current.py`), which regenerates `Gen/`
+  from the current sources and fails unless it is what is checked in, so
+  `prog` is never stale; and by the certificates and the prim tests, which
+  hold of the 1,945 functions of `prog` reachable from the driver's roots
+  (each certificate proves the function's Core run computes its
+  extraction), so a reachable function printed with another meaning fails
+  to check. The other 264 functions (`elf_file`, test helpers) change the
+  image's bytes but no run of `w`, so for them the printing is trusted as
+  stated.
+- **`compiled : compileText self = some B`.** `lake exe runAll` (manifest
+  line `compile self ...`) computes it and writes `B` as the self-built
+  compiler's image and entries. Trusted: Lean's compiled code for
+  `compileText`. Checked by the gate's `self-host-fixpoint` step: `B` run
+  natively on `self` returns exactly runAll's words for `self`, whose image
+  is `B`'s own image byte for byte, so an error in Lean's compiled code
+  would have to be one that `B` itself reproduces.
+
+The native run's x86 state is set up by `self_host.py`'s ctypes stub
+(`Native`), which lays the heap out as `selfHeap` says; its premises are the
+caller's obligations of section 8 (stack window, image placement, the
+argument slots), tested and not proved.
+
+To shrink it: kernel evaluation of the front end and of `compileSource`
+(CakeML's in-logic bootstrap) needs a kernel that can run a 795 KB front
+end and a 15 MB code generator; a per-function split of `compileSource`
+(each function's code checked in its own module) would be the first step.
+
 ### `&mut` pilot
 
 `formal/lani/mini/mut_pilot.lani` is extracted to `Lanius/Mini/MutPilot.lean`
@@ -848,10 +902,12 @@ for a process the trusted part is only this:
   by the count, which no modeled call reads.
   No other system call is modeled (SEMANTIC_DECISIONS.md, "Externs and the
   runtime").
-- The startup code sets rsp, r12 to r15 and rbx (the frame pointer, at the
-  heap's top) and calls `entry` (the driver's convention is function 0,
-  `main`), and `mov rdi, rax; mov eax, 60; syscall` follows the call. Its 75
-  bytes are proved, not trusted. `entry` must take
+- The startup code sets rsp, r12 to r15, r10 (the heap's top) and rbx (the
+  frame pointer, at the heap's top) and calls `entry` (the driver's
+  convention is function 0, `main`), and `mov rdi, rax; mov eax, 60;
+  syscall` follows the call. Its 85 bytes are proved, not trusted. The
+  program header maps frame memory, as many bytes as the stack, above the
+  heap: the heap's top is `heap + stack`. `entry` must take
   no parameters.
 - `tools/elf_test.py` (gate step `elf`) runs such executables natively:
   exit statuses, a division by zero (SIGFPE) and a stack too small for the
@@ -890,9 +946,10 @@ and a run to a state with no step that is not a fault.
   - `depth` is existential in `compileSource_correct`, so nobody can compute
     the needed stack before the run.
 - **Heap (`HeapAt`).**
-  - The base is in r12, the cursor (an offset) in r13, and the limit in r14,
-    with `limit < 2^62`.
-  - The bytes at `r12 + a` for `a < limit` are the heap. They are mapped,
+  - The base is in r12, the cursor (an offset) in r13, the limit in r14 and
+    the heap's top in r10, with `top < 2^62` (`HeapAt.small`).
+  - The bytes at `r12 + a` for `a < top` are the heap: the bump heap below
+    the limit, then frame memory. They are mapped,
     writable, and apart from the stack window, the return address and the
     image.
   - `compileSource_correct` also requires `r13 = 1` and zero bytes from
@@ -902,17 +959,19 @@ and a run to a state with no step that is not a fault.
     Core's world's is the code's own.
   - `compileProgram_correct` accepts any cursor.
   - rbx holds the frame pointer `fsp`, an offset from r12 like the cursor
-    (`HeapAt.fsp`), at most the heap's top (`HeapAt.fspLe`). Frame memory, the bytes from `limit` up to the heap's
-    top, is not mapped yet: the heap's top is its limit (`HeapAt.top`), and
-    the startup code sets rbx to the limit.
+    (`HeapAt.fsp`), at most the heap's top (`HeapAt.fspLe`). Frame memory
+    is the bytes from `limit` up to the top in r10 (`HeapAt.top`); the
+    startup code sets r10 and rbx to `heap + stack`.
 - **Registers after the call.**
   - rsp is restored to `rsp + 8` and rbp is restored.
   - rax, rbx, rcx, rdx, rsi, rdi, r11 and r13 may change (the code writes rdx,
     rsi and rdi only for a `Sys` statement). Each call saves rbx in the
     caller's first result slot and loads it back after the return, so a
-    callee need not keep it. rbx and r13 are callee-saved under SysV, so a
+    callee need not keep it. r10 is kept (`Returned.top`: the callee's
+    heap ends at the same top). rbx and r13 are callee-saved under SysV, so a
     SysV caller's stub has to save them. The stubs also save r12, r14 and
-    r15, which they set.
+    r15, which they set, and must set r10 to the top of the region they hand
+    over (r10 is caller-saved under SysV).
   - RFLAGS is unspecified. DF is never changed, and the code has no string
     instructions.
 - **Memory.** Only the window and the heap change.

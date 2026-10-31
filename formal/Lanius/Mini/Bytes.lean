@@ -138,6 +138,8 @@ def epilogueBytes : List UInt8 :=
 def heapBaseRegister : Register := 12
 def cursorRegister : Register := 13
 def limitRegister : Register := 14
+/-- r10 holds the heap's top: the end of frame memory, which lies above the limit. -/
+def topRegister : Register := 10
 
 /-- `mov r11, imm64` -/
 def r11Bytes (value : BitVec 64) : List UInt8 := immediateBytes .w64 r11Register (lowHalf value) (highHalf value)

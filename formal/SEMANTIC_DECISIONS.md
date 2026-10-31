@@ -636,9 +636,12 @@ verified compiler's locals are 64-bit slots with no address. The design:
    the cursor in r13. rbx is scratch: each call stores it into the
    caller's first result slot (the results overwrite that slot after the
    return) and loads it back after the return, so the callee may change it
-   and the call rule's restore is what x86 does. The startup code sets rbx
-   to the heap's top; the loader maps the region above the heap once a
-   `Frame` instruction uses it (until then the top is the limit).
+   and the call rule's restore is what x86 does. r10 holds the heap's top
+   (`Frame.heapTop`, `Rel.top`), so loads and stores reach frame memory
+   through the same `r12 + offset` as the bump heap. The loader maps frame
+   memory as large as the stack above the heap (`frame` stops at a `ud2`
+   past it, as the prologue does past the stack); the startup code
+   sets r10 and rbx to `heap + stack`.
    `Frame target bytes` compiles to the abstract instruction `frame bytes`
    then `store target`. `frame bytes` is `mov r11, bytes; mov rax, rbx;
    sub rax, r11; jb +12; mov r11, rax; cmp r11, r14; jae +2; ud2; mov rbx,
@@ -1184,3 +1187,56 @@ and does not read a method whose body writes the `self` local (a set, a
 field set, a set from a call or an effectful value: `writesLocal`). A write
 to a slice element through `self` goes to the heap, which the copy shares,
 so it is read. `&T` parameters are not read yet.
+
+## The fixpoint (decided 10-31, F12)
+
+What "the verified compiler self-hosts" states, as a theorem
+(`selfHost_fixpoint`, `Faithful/SelfHost.lean`): for the self program's
+source files `self`, if the front end reads them as `prog` (the program the
+certificates are about) and the verified compiler makes `B` of them, then
+`prog` is their one reading, and `B`'s code for the driver `w`, given the
+words of `self`, faults or returns `B`'s own words (entry count, entries,
+image length, image). The native compiler, run on its own text, is the
+compilation of what that text means, and gives itself back.
+
+- The two facts about `self` stay premises, computed by Lean's compiled
+  code and checked by the gate (TRUSTED_BASE.md section 5, "The self-built
+  verified compiler"). The kernel cannot evaluate the front end on the 8
+  files (795 KB, 1.4 million productions) or `compileSource` on `prog`
+  (2,209 functions, a 15 MB image): Lean's compiled code takes 12 s for
+  both, the kernel's evaluator is orders of magnitude slower and keeps every
+  intermediate term. The premises are about source text and the binary on
+  disk, so they are exactly what `srcDump` and `runAll` compute; V7's
+  premise `compileSource prog = some B` follows from them
+  (`compileSource_of_text`).
+- `self` is a parameter, not a Lean constant: writing 795 KB of text and
+  2.8 million tree numbers as a Lean literal adds nothing the premise `read`
+  does not already say, and the theorem holds of any text read as `prog`.
+- The extractor is not in the self program. It is not on the path from
+  source text to the image: the top theorems are about Core's meaning of
+  the reading and the Lean definitions `compileText` and `compileSource`,
+  and for the self program the certificates prove each reachable function's
+  Core run equal to its extraction, so a wrong extraction would fail to
+  check rather than be trusted. A self-built extractor would only matter
+  for running `extract` natively, which nothing in the theorems needs.
+- The ELF writer is not on the native path: `elf_file` is in the self
+  program's text but no root of `w` reaches it, and the self-built compiler
+  writes the binary's words. V6's `textProcess_exits` covers `elfFile` as a
+  Lean function. A self-built compiler that is itself a process (reading
+  the files from standard input with F8's `read_stdin` and writing the
+  executable to standard output) would put the driver under
+  `process_exits`; it needs a driver proved for byte I/O, and the
+  run's 12 GiB of heap and 5 GiB of stack in an ELF's zero fill.
+- The fixpoint's time (10-31): the gate step takes 264 s of its 300 s, the
+  native run 218 s (106 s on 10-29, at 1,823 functions and an 11 MB
+  image). Sampled by rip (`target/claude-work/f12/prof.py`): the first
+  ~135 s are CPU (front end, then the optimizer's validator facts:
+  `boxed`/`unbox` of `List<Fact>`, `fact_value`, `kill`); the last ~80 s are
+  paging, with 3 s of CPU: the heap reaches 12 GiB and the stack 5 GiB
+  under the 4 GiB memory cap, and the walks over the 15 million image
+  bytes and output words (`length<u8>`, `byte_words`, `oracle_write`)
+  recurse 15 million calls deep (none is a tail call: `oracle_write`
+  writes a word after it has read the rest, so that its writes cannot
+  change a list still to be read). What would make it faster: fewer such
+  walks (`binaryWords` counts the image and then copies it into words), a
+  smaller frame for them, or less heap for the validator's facts.

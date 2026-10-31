@@ -218,8 +218,8 @@ theorem frame_fails (rel : Rel frame s m) (fits : frame.Fits) {bytes : Nat} (byt
   have atLimit := rel.limitNat
   have fspSmall : m.heap.fsp < 2 ^ 62 := by
     have le := rel.fspLe
-    rw [rel.top, rel.limit] at le
-    have := fits.heapSmall
+    rw [rel.top] at le
+    have := fits.topSmall
     omega
   generalize m.heap.fsp = fsp at atFsp over fspSmall
   generalize m.heap.limit = limit at atLimit over
