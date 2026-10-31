@@ -84,6 +84,22 @@ abbrev Stmt_p_postfix_member (prog : SrcProgram) (prims : Prims) (ix n : Nat) : 
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pPostfixMember) w
 
+abbrev Stmt_p_range_bound (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pRangeBound) w
+
+abbrev Stmt_p_range_bound_name (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pRangeBoundName) w
+
+abbrev Stmt_p_range_exclusive (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pRangeExclusive) w
+
+abbrev Stmt_p_range_start_int (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pRangeStartInt) w
+
 abbrev Stmt_p_ret_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pRetType) w

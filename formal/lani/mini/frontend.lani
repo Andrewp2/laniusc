@@ -6488,6 +6488,15 @@ pub fn assignment(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> c
     return None;
 }
 
+// The reading of a range loop (for_of): counter c from a, bound e = n,
+// the loop variable x.
+pub fn for_range(c: usize, e: usize, x: usize, t: Ty, a: SrcExpr, n: usize, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+    return match (body) {
+        None -> None,
+        Some(b) -> Some(MLet(c, t, a, boxed(MLet(e, t, Local(n), boxed(MWhile(Apply(Less, boxed(Local(c)), boxed(Local(e))), boxed(MLet(x, t, Local(c), boxed(MThen(boxed(MSet(c, Apply(Plus, boxed(Local(c)), boxed(Int(1))))), boxed(b))))))))))),
+    };
+}
+
 // extract: mutual begin
 // A statement list: a let scopes over the statements after it.
 pub fn block_of(fuel: usize, env: FrontEnv, scope: List<Local>, list: CTree) -> core::option::Option<MStmt> {
@@ -6566,12 +6575,38 @@ pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core
     if (p == p_while_stmt()) {
         return while_or_eval(f, env, scope, kid(s, 2), block_of(f, env, scope, kid(kid(s, 4), 1)));
     }
+    if (p == p_for_stmt()) {
+        return for_of(f, env, scope, s);
+    }
     if (p == p_expr_stmt()) {
         return assignment(f, env, scope, kid(s, 0));
     }
     return None;
 }
 // extract: mutual end
+
+// `for x in a..n { body }`, a an integer literal and n a local (for_stmt ->
+// For Ident In for_iterable block), read as `let c = a; let e = n; while (c
+// < e) { let x = c; c = c + 1; body }`: n is read once, and a `continue` in
+// body moves to the next value. The hidden c and e are numbered by the `for`
+// token and x's token, and x by the `in` token, so that the locals are
+// numbered in the order the desugared text declares them.
+// extract: inline
+fn for_of(ffuel: usize, fenv: FrontEnv, fscope: List<Local>, fs: CTree) -> core::option::Option<MStmt> {
+    let x: Token = kid_token(fs, 1);
+    let iter: CTree = kid(fs, 3);
+    let bound: CTree = kid(kid(kid(iter, 1), 1), 0);
+    if (node_prod(iter) == p_for_iter_range_from_start() && node_prod(kid(iter, 0)) == p_range_start_int() && node_prod(kid(iter, 1)) == p_range_exclusive() && node_prod(kid(kid(iter, 1), 1)) == p_range_bound() && node_prod(bound) == p_range_bound_name() && node_prod(kid(bound, 1)) == p_postfix_end() && !member(fenv.globals, x.text) && fresh_id(fscope, minus(x.start, fenv.base)) && fresh_id(fscope, minus(kid_token(fs, 0).start, fenv.base)) && fresh_id(fscope, minus(kid_token(fs, 2).start, fenv.base))) {
+        return match (find_local(fscope, kid_token(kid(bound, 0), 0).text)) {
+            None -> None,
+            Some(n) -> match (int_literal(kid_token(kid(iter, 0), 0).text)) {
+                None -> None,
+                Some(a) -> for_range(minus(kid_token(fs, 0).start, fenv.base), minus(x.start, fenv.base), minus(kid_token(fs, 2).start, fenv.base), n.ty, a, n.id, block_of(ffuel, fenv, cons(Local { name: x.text, id: minus(kid_token(fs, 2).start, fenv.base), ty: n.ty }, fscope), kid(kid(fs, 4), 1))),
+            },
+        };
+    }
+    return None;
+}
 
 // ---------------------------------------------------------------- functions
 
@@ -9883,6 +9918,11 @@ fn p_bor_tail() -> usize {
 }
 
 // extract: inline
+fn p_break_stmt() -> usize {
+    return 82;
+}
+
+// extract: inline
 fn p_cast() -> usize {
     return 307;
 }
@@ -9908,6 +9948,11 @@ fn p_cast_type_path_ident() -> usize {
 }
 
 // extract: inline
+fn p_char() -> usize {
+    return 178;
+}
+
+// extract: inline
 fn p_compare() -> usize {
     return 137;
 }
@@ -9915,6 +9960,11 @@ fn p_compare() -> usize {
 // extract: inline
 fn p_const() -> usize {
     return 208;
+}
+
+// extract: inline
+fn p_continue_stmt() -> usize {
+    return 83;
 }
 
 // extract: inline
@@ -10068,6 +10118,16 @@ fn p_fn() -> usize {
 }
 
 // extract: inline
+fn p_for_iter_range_from_start() -> usize {
+    return 93;
+}
+
+// extract: inline
+fn p_for_stmt() -> usize {
+    return 81;
+}
+
+// extract: inline
 fn p_ge_tail() -> usize {
     return 141;
 }
@@ -10150,11 +10210,6 @@ fn p_import_path() -> usize {
 // extract: inline
 fn p_int() -> usize {
     return 175;
-}
-
-// extract: inline
-fn p_char() -> usize {
-    return 178;
 }
 
 // extract: inline
@@ -10433,6 +10488,26 @@ fn p_postfix_member() -> usize {
 }
 
 // extract: inline
+fn p_range_bound() -> usize {
+    return 102;
+}
+
+// extract: inline
+fn p_range_bound_name() -> usize {
+    return 99;
+}
+
+// extract: inline
+fn p_range_exclusive() -> usize {
+    return 97;
+}
+
+// extract: inline
+fn p_range_start_int() -> usize {
+    return 96;
+}
+
+// extract: inline
 fn p_ret_type() -> usize {
     return 34;
 }
@@ -10455,16 +10530,6 @@ fn p_return_value() -> usize {
 // extract: inline
 fn p_return_void() -> usize {
     return 91;
-}
-
-// extract: inline
-fn p_break_stmt() -> usize {
-    return 82;
-}
-
-// extract: inline
-fn p_continue_stmt() -> usize {
-    return 83;
 }
 
 // extract: inline

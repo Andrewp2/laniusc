@@ -30,10 +30,10 @@ abbrev Stmt_find_bind_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_find_local_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Local} {x1 : List Lanius.Mini.Local} {x2 : List Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepLocal x0 v0 → (RepList 221 RepLocal) x1 v1 → (RepList 24 RepNat) x2 v2 →
-    (RepOption 239 RepLocal) (Lanius.Mini.Inline.findLocalAt x0 x1 x2) w
+    (RepOption 237 RepLocal) (Lanius.Mini.Inline.findLocalAt x0 x1 x2) w
 
 abbrev Stmt_find_local_id_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Local} {x1 : List Lanius.Mini.Local} {x2 : Nat} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepLocal x0 v0 → (RepList 221 RepLocal) x1 v1 → RepNat x2 v2 →
-    (RepOption 239 RepLocal) (Lanius.Mini.Inline.findLocalIdAt x0 x1 x2) w
+    (RepOption 237 RepLocal) (Lanius.Mini.Inline.findLocalIdAt x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

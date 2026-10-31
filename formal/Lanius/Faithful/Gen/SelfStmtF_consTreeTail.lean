@@ -141,7 +141,7 @@ abbrev Stmt_unique_found (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     (RepOption 249 RepFound) (Lanius.Mini.uniqueFound x0 x1 x2) w
 
 abbrev Stmt_x_apply_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.MEff} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → (RepOption 237 RepMEff) x1 v1 → (RepOption 237 RepMEff) x2 v2 →
-    (RepOption 237 RepMEff) (Lanius.Mini.xApplyOf x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.MEff} {x2 : Option Lanius.Mini.MEff} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → (RepOption 239 RepMEff) x1 v1 → (RepOption 239 RepMEff) x2 v2 →
+    (RepOption 239 RepMEff) (Lanius.Mini.xApplyOf x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

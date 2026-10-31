@@ -104,7 +104,7 @@ def src_ret_pattern (ix_node_prod : Nat) (ix_kid : Nat) (ix_p_ret_type : Nat) : 
 def src_unique_found : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }, { id := 27, ty := SrcType.uint (UintTy.usize) }, { id := 37, ty := ty305 }], ret := ty307, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.returnEval (SrcEff.eVariant ty307 0 [SrcEff.eStruct ty306 [SrcEff.ePure (SrcExpr.local 27), SrcEff.ePure (SrcExpr.local 37)]])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty307 1 [])) }
 
 /-- mini::selfhost::x_apply_of -/
-def src_x_apply_of (ix_apply_eff : Nat) : SrcFunc := { params := [{ id := 11, ty := ty13 }, { id := 22, ty := ty291 }, { id := 53, ty := ty291 }], ret := ty291, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 22)) ty291 ty291 [[174], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 53)) ty291 ty291 [[235], []] [SrcEff.eVariant ty291 0 [SrcEff.eCall ix_apply_eff [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.local 174), SrcEff.ePure (SrcExpr.local 235)]], SrcEff.eVariant ty291 1 []], SrcEff.eVariant ty291 1 []]) }
+def src_x_apply_of (ix_apply_eff : Nat) : SrcFunc := { params := [{ id := 11, ty := ty13 }, { id := 22, ty := ty293 }, { id := 53, ty := ty293 }], ret := ty293, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 22)) ty293 ty293 [[174], []] [SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 53)) ty293 ty293 [[235], []] [SrcEff.eVariant ty293 0 [SrcEff.eCall ix_apply_eff [SrcEff.ePure (SrcExpr.local 11), SrcEff.ePure (SrcExpr.local 174), SrcEff.ePure (SrcExpr.local 235)]], SrcEff.eVariant ty293 1 []], SrcEff.eVariant ty293 1 []]) }
 
 end
 

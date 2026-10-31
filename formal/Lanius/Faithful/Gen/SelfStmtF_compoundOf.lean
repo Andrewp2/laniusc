@@ -36,6 +36,10 @@ abbrev Stmt_cons_param (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {x0 : Lanius.Mini.MParam} {x1 : Option Lanius.Mini.MParams} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepMParam x0 v0 → (RepOption 219 RepMParams) x1 v1 →
     (RepOption 219 RepMParams) (Lanius.Mini.consParam x0 x1) w
 
+abbrev Stmt_for_range (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Lanius.Mini.Ty} {x4 : Lanius.Mini.SrcExpr} {x5 : Nat} {x6 : Option Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepTy x3 v3 → RepSrcExpr x4 v4 → RepNat x5 v5 → (RepOption 230 RepMStmt) x6 v6 →
+    (RepOption 230 RepMStmt) (Lanius.Mini.forRange x0 x1 x2 x3 x4 x5 x6) w
+
 abbrev Stmt_func_body (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MParams} {x1 : Lanius.Mini.RetTy} {x2 : Option Lanius.Mini.MStmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepMParams x0 v0 → RepRetTy x1 v1 → (RepOption 230 RepMStmt) x2 v2 →
     (RepOption 191 RepMFunc) (Lanius.Mini.funcBody x0 x1 x2) w

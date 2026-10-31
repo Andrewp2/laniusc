@@ -24,15 +24,6 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem proof_p_char {prog : SrcProgram} {prims : Prims} {ix_p_char : Nat} (fn : prog.funcs[ix_p_char]? = some (src_p_char)) (np : prims.isPrim ix_p_char = false) {n : Nat} :
-    Stmt_p_char prog prims ix_p_char n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_char] at h
-  faithful [Lanius.Mini.Inline.pChar]
-
 theorem proof_p_impl_methods_some {prog : SrcProgram} {prims : Prims} {ix_p_impl_methods_some : Nat} (fn : prog.funcs[ix_p_impl_methods_some]? = some (src_p_impl_methods_some)) (np : prims.isPrim ix_p_impl_methods_some = false) {n : Nat} :
     Stmt_p_impl_methods_some prog prims ix_p_impl_methods_some n := by
   intro w h

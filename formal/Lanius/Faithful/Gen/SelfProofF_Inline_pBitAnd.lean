@@ -69,6 +69,15 @@ theorem proof_p_bor_tail {prog : SrcProgram} {prims : Prims} {ix_p_bor_tail : Na
   simp only [src_p_bor_tail] at h
   faithful [Lanius.Mini.Inline.pBorTail]
 
+theorem proof_p_break_stmt {prog : SrcProgram} {prims : Prims} {ix_p_break_stmt : Nat} (fn : prog.funcs[ix_p_break_stmt]? = some (src_p_break_stmt)) (np : prims.isPrim ix_p_break_stmt = false) {n : Nat} :
+    Stmt_p_break_stmt prog prims ix_p_break_stmt n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_break_stmt] at h
+  faithful [Lanius.Mini.Inline.pBreakStmt]
+
 theorem proof_p_cast {prog : SrcProgram} {prims : Prims} {ix_p_cast : Nat} (fn : prog.funcs[ix_p_cast]? = some (src_p_cast)) (np : prims.isPrim ix_p_cast = false) {n : Nat} :
     Stmt_p_cast prog prims ix_p_cast n := by
   intro w h
@@ -114,6 +123,15 @@ theorem proof_p_cast_type_path_ident {prog : SrcProgram} {prims : Prims} {ix_p_c
   simp only [src_p_cast_type_path_ident] at h
   faithful [Lanius.Mini.Inline.pCastTypePathIdent]
 
+theorem proof_p_char {prog : SrcProgram} {prims : Prims} {ix_p_char : Nat} (fn : prog.funcs[ix_p_char]? = some (src_p_char)) (np : prims.isPrim ix_p_char = false) {n : Nat} :
+    Stmt_p_char prog prims ix_p_char n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_char] at h
+  faithful [Lanius.Mini.Inline.pChar]
+
 theorem proof_p_compare {prog : SrcProgram} {prims : Prims} {ix_p_compare : Nat} (fn : prog.funcs[ix_p_compare]? = some (src_p_compare)) (np : prims.isPrim ix_p_compare = false) {n : Nat} :
     Stmt_p_compare prog prims ix_p_compare n := by
   intro w h
@@ -132,31 +150,13 @@ theorem proof_p_const {prog : SrcProgram} {prims : Prims} {ix_p_const : Nat} (fn
   simp only [src_p_const] at h
   faithful [Lanius.Mini.Inline.pConst]
 
-theorem proof_p_contracts_none {prog : SrcProgram} {prims : Prims} {ix_p_contracts_none : Nat} (fn : prog.funcs[ix_p_contracts_none]? = some (src_p_contracts_none)) (np : prims.isPrim ix_p_contracts_none = false) {n : Nat} :
-    Stmt_p_contracts_none prog prims ix_p_contracts_none n := by
+theorem proof_p_continue_stmt {prog : SrcProgram} {prims : Prims} {ix_p_continue_stmt : Nat} (fn : prog.funcs[ix_p_continue_stmt]? = some (src_p_continue_stmt)) (np : prims.isPrim ix_p_continue_stmt = false) {n : Nat} :
+    Stmt_p_continue_stmt prog prims ix_p_continue_stmt n := by
   intro w h
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_p_contracts_none] at h
-  faithful [Lanius.Mini.Inline.pContractsNone]
-
-theorem proof_p_div_tail {prog : SrcProgram} {prims : Prims} {ix_p_div_tail : Nat} (fn : prog.funcs[ix_p_div_tail]? = some (src_p_div_tail)) (np : prims.isPrim ix_p_div_tail = false) {n : Nat} :
-    Stmt_p_div_tail prog prims ix_p_div_tail n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_div_tail] at h
-  faithful [Lanius.Mini.Inline.pDivTail]
-
-theorem proof_p_else_none {prog : SrcProgram} {prims : Prims} {ix_p_else_none : Nat} (fn : prog.funcs[ix_p_else_none]? = some (src_p_else_none)) (np : prims.isPrim ix_p_else_none = false) {n : Nat} :
-    Stmt_p_else_none prog prims ix_p_else_none n := by
-  intro w h
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_p_else_none] at h
-  faithful [Lanius.Mini.Inline.pElseNone]
+  simp only [src_p_continue_stmt] at h
+  faithful [Lanius.Mini.Inline.pContinueStmt]
 
 end Lanius.Faithful.SelfCert

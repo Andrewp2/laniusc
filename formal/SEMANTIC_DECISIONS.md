@@ -670,3 +670,23 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   externs (the verified compiler's `alloc` is the mini bump allocator over
   a heap the startup code provides, not `mmap`), and writes longer than
   `MAX_RW_COUNT` (Core would have to loop; a short write is not modeled).
+
+## `for` over a range (decided 10-30, F4)
+
+`for x in a..n { body }`, with `a` an integer literal and `n` a local, is
+read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`
+(`for_of`, `StmtR.forRange`), so that:
+
+- `n` is read once, before the loop, as Rust evaluates a range once;
+  assigning `n` in the body does not change the iterations;
+- `x` is a fresh local each iteration, and `c` moves on before the body, so a
+  `continue` goes to the next value; `c + 1` cannot overflow, as `c < e`;
+- `x`, `c` and `e` have `n`'s type, and the literal `a` takes it.
+
+This agrees with Core's own `forRange` (`Semantics.lean`), which evaluates
+the bound once, on `i32`, the one type Core's loop takes.
+
+`c` and `e` are hidden locals: they have no name in scope, and they are
+numbered by the `for` token and `x`'s token, and `x` by the `in` token, so the
+locals are numbered in the order the desugared text declares them and the
+front end's cases can write the desugaring as the expected reading.

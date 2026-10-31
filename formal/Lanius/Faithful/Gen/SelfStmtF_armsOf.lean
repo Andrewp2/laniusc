@@ -25,8 +25,8 @@ abbrev Stmt_checked_bound (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pro
     (RepOption 265 RepArgsBound) (Lanius.Mini.checkedBound x0 x1) w
 
 abbrev Stmt_checked_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 237 RepMEff) x1 v1 →
-    (RepOption 237 RepMEff) (Lanius.Mini.checkedEff x0 x1) w
+  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 239 RepMEff) x1 v1 →
+    (RepOption 239 RepMEff) (Lanius.Mini.checkedEff x0 x1) w
 
 abbrev Stmt_checked_effs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option (List Lanius.Mini.MEff)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 254 (RepList 218 RepMEff)) x1 v1 →
@@ -37,7 +37,7 @@ abbrev Stmt_checked_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
     (RepOption 230 RepMStmt) (Lanius.Mini.checkedStmt x0 x1) w
 
 abbrev Stmt_has_local (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.Local} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 239 RepLocal) x0 v0 →
+  ∀ {x0 : Option Lanius.Mini.Local} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 237 RepLocal) x0 v0 →
     RepBool (Lanius.Mini.hasLocal x0) w
 
 abbrev Stmt_has_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

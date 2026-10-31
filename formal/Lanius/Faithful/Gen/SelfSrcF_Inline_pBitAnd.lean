@@ -28,6 +28,9 @@ def src_p_block_stmt : SrcFunc := { params := [], ret := SrcType.uint (UintTy.us
 /-- mini::selfhost::p_bor_tail -/
 def src_p_bor_tail : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000007d#64) }
 
+/-- mini::selfhost::p_break_stmt -/
+def src_p_break_stmt : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000052#64) }
+
 /-- mini::selfhost::p_cast -/
 def src_p_cast : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000133#64) }
 
@@ -43,20 +46,17 @@ def src_p_cast_type_path_end : SrcFunc := { params := [], ret := SrcType.uint (U
 /-- mini::selfhost::p_cast_type_path_ident -/
 def src_p_cast_type_path_ident : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000138#64) }
 
+/-- mini::selfhost::p_char -/
+def src_p_char : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000b2#64) }
+
 /-- mini::selfhost::p_compare -/
 def src_p_compare : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000089#64) }
 
 /-- mini::selfhost::p_const -/
 def src_p_const : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x00000000000000d0#64) }
 
-/-- mini::selfhost::p_contracts_none -/
-def src_p_contracts_none : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000141#64) }
-
-/-- mini::selfhost::p_div_tail -/
-def src_p_div_tail : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000099#64) }
-
-/-- mini::selfhost::p_else_none -/
-def src_p_else_none : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000004f#64) }
+/-- mini::selfhost::p_continue_stmt -/
+def src_p_continue_stmt : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000053#64) }
 
 end
 

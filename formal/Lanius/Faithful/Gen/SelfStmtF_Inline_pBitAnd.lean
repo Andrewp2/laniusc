@@ -40,6 +40,10 @@ abbrev Stmt_p_bor_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pBorTail) w
 
+abbrev Stmt_p_break_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pBreakStmt) w
+
 abbrev Stmt_p_cast (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pCast) w
@@ -60,6 +64,10 @@ abbrev Stmt_p_cast_type_path_ident (prog : SrcProgram) (prims : Prims) (ix n : N
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pCastTypePathIdent) w
 
+abbrev Stmt_p_char (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.pChar) w
+
 abbrev Stmt_p_compare (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pCompare) w
@@ -68,16 +76,8 @@ abbrev Stmt_p_const (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pConst) w
 
-abbrev Stmt_p_contracts_none (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+abbrev Stmt_p_continue_stmt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pContractsNone) w
-
-abbrev Stmt_p_div_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pDivTail) w
-
-abbrev Stmt_p_else_none (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pElseNone) w
+    RepNat (Lanius.Mini.Inline.pContinueStmt) w
 
 end Lanius.Faithful.SelfCert

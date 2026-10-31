@@ -17,7 +17,7 @@ noncomputable section
 def src_checked_bound : SrcFunc := { params := [{ id := 14, ty := SrcType.bool }, { id := 24, ty := ty321 }], ret := ty321, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 14) (SrcStmt.return (SrcExpr.local 24)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty321 1 [])) }
 
 /-- mini::selfhost::checked_eff -/
-def src_checked_eff : SrcFunc := { params := [{ id := 12, ty := SrcType.bool }, { id := 22, ty := ty291 }], ret := ty291, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 12) (SrcStmt.return (SrcExpr.local 22)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty291 1 [])) }
+def src_checked_eff : SrcFunc := { params := [{ id := 12, ty := SrcType.bool }, { id := 22, ty := ty293 }], ret := ty293, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 12) (SrcStmt.return (SrcExpr.local 22)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty293 1 [])) }
 
 /-- mini::selfhost::checked_effs -/
 def src_checked_effs : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }, { id := 23, ty := ty308 }], ret := ty308, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.return (SrcExpr.local 23)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty308 1 [])) }
@@ -26,7 +26,7 @@ def src_checked_effs : SrcFunc := { params := [{ id := 13, ty := SrcType.bool },
 def src_checked_stmt : SrcFunc := { params := [{ id := 13, ty := SrcType.bool }, { id := 23, ty := ty282 }], ret := ty282, body := SrcStmt.then (SrcStmt.if (SrcExpr.local 13) (SrcStmt.return (SrcExpr.local 23)) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eVariant ty282 1 [])) }
 
 /-- mini::selfhost::has_local -/
-def src_has_local : SrcFunc := { params := [{ id := 10, ty := ty293 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty293 (SrcType.bool) [[111], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
+def src_has_local : SrcFunc := { params := [{ id := 10, ty := ty291 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 10)) ty291 (SrcType.bool) [[111], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }
 
 /-- mini::selfhost::has_ty -/
 def src_has_ty : SrcFunc := { params := [{ id := 7, ty := ty237 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 7)) ty237 (SrcType.bool) [[105], []] [SrcEff.ePure (SrcExpr.boolean true), SrcEff.ePure (SrcExpr.boolean false)]) }

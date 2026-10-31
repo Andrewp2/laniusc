@@ -6,6 +6,7 @@ import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.fieldTyAt
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.matchLetHead
 import Lanius.Mini.Frontend.P.noToken
@@ -44,6 +45,12 @@ def assignment (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : 
         | some pf => callStmt fuel env scope pf
       else
         none
+
+/-- The reading of a range loop (for_of): counter c from a, bound e = n, the loop variable x. -/
+def forRange (c : Nat) (e : Nat) (x : Nat) (t : Ty) (a : SrcExpr) (n : Nat) (body : Option MStmt) : Option MStmt :=
+  match body with
+  | none => none
+  | some b => some (MStmt.mLet c t a (MStmt.mLet e t (SrcExpr.local n) (MStmt.mWhile (SrcExpr.apply SrcOp.less (SrcExpr.local c) (SrcExpr.local e)) (MStmt.mLet x t (SrcExpr.local c) (MStmt.mThen (MStmt.mSet c (SrcExpr.apply SrcOp.plus (SrcExpr.local c) (SrcExpr.int 1))) b)))))
 
 mutual
 /-- A statement list: a let scopes over the statements after it. -/
@@ -111,10 +118,24 @@ def stmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Opti
                 if p = (80) then
                   whileOrEval f env scope (kid s 2) (blockOf f env scope (kid (kid s 4) 1))
                 else
-                  if p = (85) then
-                    assignment f env scope (kid s 0)
+                  if p = (81) then
+                    let x : Token := kidToken s 1
+                    let iter : CTree := kid s 3
+                    let bound : CTree := kid (kid (kid iter 1) 1) 0
+                    if decide (nodeProd iter = (93)) && decide (nodeProd (kid iter 0) = (96)) && decide (nodeProd (kid iter 1) = (97)) && decide (nodeProd (kid (kid iter 1) 1) = (102)) && decide (nodeProd bound = (99)) && decide (nodeProd (kid bound 1) = (164)) && !(member env.globals x.text) && freshId scope (x.start - env.base) && freshId scope ((kidToken s 0).start - env.base) && freshId scope ((kidToken s 2).start - env.base) then
+                      match findLocal scope (kidToken (kid bound 0) 0).text with
+                      | none => none
+                      | some n =>
+                        match intLiteral (kidToken (kid iter 0) 0).text with
+                        | none => none
+                        | some a => forRange ((kidToken s 0).start - env.base) (x.start - env.base) ((kidToken s 2).start - env.base) n.ty a n.id (blockOf f env (({ name := x.text, id := (kidToken s 2).start - env.base, ty := n.ty } : Local) :: scope) (kid (kid s 4) 1))
+                    else
+                      none
                   else
-                    none
+                    if p = (85) then
+                      assignment f env scope (kid s 0)
+                    else
+                      none
 end
 
 def consParam (p : MParam) (rest : Option MParams) : Option MParams :=
