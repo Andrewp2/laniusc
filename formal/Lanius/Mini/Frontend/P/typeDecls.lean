@@ -47,6 +47,11 @@ def textWriteStderr : List Nat :=
   let t : List Nat := 119 :: 114 :: 105 :: 116 :: 101 :: 95 :: 115 :: 116 :: 100 :: 101 :: 114 :: [114]
   t
 
+/-- read_stdin -/
+def textReadStdin : List Nat :=
+  let t : List Nat := 114 :: 101 :: 97 :: 100 :: 95 :: 115 :: 116 :: 100 :: 105 :: [110]
+  t
+
 /-- The Core function id of the host service an `extern "lanius_std" fn` of this name stands for (hostFuncs in SrcProgram.toCore), 0 for none. -/
 def hostId (name : List Nat) : Nat :=
   if sameText name textWriteByte then
@@ -58,7 +63,10 @@ def hostId (name : List Nat) : Nat :=
       if sameText name textWriteStderr then
         4294967298
       else
-        0
+        if sameText name textReadStdin then
+          4294967299
+        else
+          0
 
 /-- An `extern "lanius_std" fn` naming a host service, without a where clause. -/
 def hostExtern (b : CTree) : Bool :=
@@ -196,10 +204,5 @@ def enumNamedOk (t : TypeDecl) (m : List (List Nat)) (values : List (List Nat)) 
     distinct t.variants && noneMember t.variants values
   else
     true
-
-def enumsNamedOk (types : List TypeDecl) (m : List (List Nat)) (values : List (List Nat)) : Bool :=
-  match types with
-  | [] => true
-  | t :: rest => enumNamedOk t m values && enumsNamedOk rest m values
 
 end Lanius.Mini

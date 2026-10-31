@@ -1411,6 +1411,12 @@ pub fn text_write_stderr() -> List<usize> {
     return t;
 }
 
+// read_stdin
+pub fn text_read_stdin() -> List<usize> {
+    let t: List<usize> = cons(114, cons(101, cons(97, cons(100, cons(95, cons(115, cons(116, cons(100, cons(105, single(110))))))))));
+    return t;
+}
+
 // The Core function id of the host service an `extern "lanius_std" fn` of
 // this name stands for (hostFuncs in SrcProgram.toCore), 0 for none.
 pub fn host_id(name: List<usize>) -> usize {
@@ -1422,6 +1428,9 @@ pub fn host_id(name: List<usize>) -> usize {
     }
     if (same_text(name, text_write_stderr())) {
         return 4294967298;
+    }
+    if (same_text(name, text_read_stdin())) {
+        return 4294967299;
     }
     return 0;
 }
@@ -8428,6 +8437,81 @@ pub fn ret_expected(r: core::option::Option<RetTy>) -> core::option::Option<Ty> 
     };
 }
 
+// Whether s writes the local id itself: a set, a field set or a set from a
+// call or an effectful value. (A slice element's write goes to the heap,
+// which a copy of the local shares.)
+pub fn writes_local(s: MStmt, id: usize) -> bool {
+    return match (s) {
+        MNop -> false,
+        MLet(x, t, e, rest) -> writes_local(unbox(rest), id),
+        MLetStruct(x, t, es, rest) -> writes_local(unbox(rest), id),
+        MLetCall(x, t, i, es, rest) -> writes_local(unbox(rest), id),
+        MLetEnum(x, t, v, es, rest) -> writes_local(unbox(rest), id),
+        MLetMatch(x, t, sc, st, arms, rest) -> writes_local(unbox(rest), id),
+        MSet(x, e) -> x == id,
+        MSetField(x, j, e) -> x == id,
+        MSetCall(x, i, es) -> x == id,
+        MThen(a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
+        MIf(c, a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
+        MWhile(c, b) -> writes_local(unbox(b), id),
+        MReturn(e) -> false,
+        MLetAlloc(x, e, k, rest) -> writes_local(unbox(rest), id),
+        MFree(a, b, k) -> false,
+        MLetSlice(x, t, a, b, rest) -> writes_local(unbox(rest), id),
+        MLetIndex(x, t, sl, e, rest) -> writes_local(unbox(rest), id),
+        MSetIndex(x, i, e) -> false,
+        MLetEval(x, t, e, rest) -> writes_local(unbox(rest), id),
+        MSetEval(x, e) -> x == id,
+        MIfEval(c, a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
+        MWhileEval(c, b) -> writes_local(unbox(b), id),
+        MReturnEval(e) -> false,
+        MDiscard(e) -> false,
+        MSetIndexEval(x, i, e) -> false,
+        MSetFieldEval(x, j, e) -> x == id,
+        MReturnUnit -> false,
+        MAssert(e) -> false,
+        MBreak -> false,
+        MContinue -> false,
+        MMatchArm(sc, st, v, binds, b, bt, body, rest) -> writes_local(unbox(body), id) || writes_local(unbox(rest), id),
+        MUnreachable(x, t) -> false,
+    };
+}
+
+// (minus only when p is `&self`: its token follows the function's name.)
+pub fn self_ref_of(env: FrontEnv, p: CTree) -> core::option::Option<usize> {
+    if (node_prod(p) == p_param_self_ref()) {
+        return Some(minus(kid_token(p, 1).start, env.base));
+    }
+    return None;
+}
+
+pub fn if_not_writes(w: bool, m: MFunc) -> core::option::Option<MFunc> {
+    if (w) {
+        return None;
+    }
+    return Some(m);
+}
+
+// The local of a leading `&self`.
+pub fn self_ref_id(env: FrontEnv, items: List<CTree>) -> core::option::Option<usize> {
+    return match (items) {
+        Nil -> None,
+        Cons(p, rest) -> self_ref_of(env, p),
+    };
+}
+
+// `&self` is read by value, which is the reference's meaning only while
+// nothing writes through it: a method that writes self is not read.
+pub fn ref_checked(f: core::option::Option<MFunc>, sid: core::option::Option<usize>) -> core::option::Option<MFunc> {
+    return match (f) {
+        None -> None,
+        Some(m) -> match (sid) {
+            None -> Some(m),
+            Some(i) -> if_not_writes(writes_local(m.body, i), m),
+        },
+    };
+}
+
 // A function instance's body, read with its type parameters (the impl's,
 // then its own) standing for the instance's arguments.
 pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
@@ -8439,7 +8523,7 @@ pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::o
     if (length(names) == length(args)) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,
-            Some(items) -> func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(f, 8), kid(kid(f, 9), 1)),
+            Some(items) -> ref_checked(func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(f, 8), kid(kid(f, 9), 1)), self_ref_id(env, items)),
         };
     }
     return None;

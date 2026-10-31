@@ -409,8 +409,10 @@ def main():
     for label, lean_head, params, ret, call in chosen:
         for _ in range(args.per_fn):
             # A `count` is how many copies a function makes (an array's
-            # elements): kept short, as an array's length is.
-            values = [('nat', rng.choice([0, 1, 2, 3, 5, 12])) if name == 'count' and pt.value().strip_box().name == 'usize'
+            # elements), and a `size` how many slots each copy takes: both
+            # kept short, as an array's length and element size are (a
+            # `size` of 2^19 renders a million statements in Lean).
+            values = [('nat', rng.choice([0, 1, 2, 3, 5, 12])) if name in ('count', 'size') and pt.value().strip_box().name == 'usize'
                       else ty.gen(pt.value(), rng, 3) for name, pt in params]
             lean_args = [ty.lean(v) for v in values]
             lean_term = f'({" ".join([lean_head] + lean_args)})'

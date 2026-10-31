@@ -158,14 +158,33 @@ theorem contractsOf_none {env : FrontEnv} {scope : List Local} :
     rfl
 
 /-- A function instance's body: its parameters, its result type, its block
-read with the result type as `return`'s, after its `requires` checks. -/
+read with the result type as `return`'s, after its `requires` checks; a
+method taking `&self` (read by value) does not write `self`. -/
 def ReadFn (decls : Decls) (fd : FnDecl) (args : List Ty) (mf : MFunc) : Prop :=
   ∃ r items ps body mb, (fd.implParams ++ fd.params).length = args.length ∧
     ResultR (fnScope decls fd args none) (kid fd.tree 6) r ∧ Items (kid fd.tree 4) items ∧
     ParamsR (fnScope decls fd args (retExpected (some r))) fd [] items ps ∧
     BlockR (fnScope decls fd args (retExpected (some r))) ps.scope (kid (kid fd.tree 9) 1) body ∧
     ContractsR (fnScope decls fd args (retExpected (some r))) ps.scope (kid fd.tree 8) body mb ∧
+    (∀ i, selfRefId (fnScope decls fd args (retExpected (some r))) items = some i → writesLocal mb i = false) ∧
     mf = { params := ps.params, ret := r, body := mb }
+
+theorem refChecked_some {f : Option MFunc} {sid : Option Nat} {m : MFunc} (h : refChecked f sid = some m) :
+    f = some m ∧ ∀ i, sid = some i → writesLocal m.body i = false := by
+  cases f with
+  | none => simp [refChecked] at h
+  | some m' =>
+    cases sid with
+    | none => simp only [refChecked, Option.some.injEq] at h; subst h; exact ⟨rfl, fun _ e => by cases e⟩
+    | some i =>
+      simp only [refChecked, ifNotWrites] at h
+      cases w : writesLocal m'.body i with
+      | true => rw [w] at h; simp at h
+      | false =>
+        rw [w] at h
+        simp only [Bool.false_eq_true, if_false, Option.some.injEq] at h
+        subst h
+        exact ⟨rfl, fun j e => by cases e; exact w⟩
 
 theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty} {mf : MFunc}
     (h : readFn fuel decls fd args = some mf) : ReadFn decls fd args mf := by
@@ -181,6 +200,7 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
       | none => rw [hi] at h; cases h
       | some items =>
         rw [hi] at h
+        obtain ⟨h, -⟩ := refChecked_some h
         simp only [funcParams] at h
         split at h
         · cases h
@@ -191,6 +211,7 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
       | none => rw [hi] at h; cases h
       | some items =>
         rw [hi] at h
+        obtain ⟨h, nw⟩ := refChecked_some h
         simp only [funcParams] at h
         cases hp : paramsOf fuel (fnScope decls fd args (retExpected (some r))) fd [] items with
         | none => rw [hp] at h; cases h
@@ -209,7 +230,7 @@ theorem readFn_sound {fuel : Nat} {decls : Decls} {fd : FnDecl} {args : List Ty}
               simp only [Option.some.injEq] at h
               subst h
               exact ⟨r, items, ps, body, mb, c, resultOf_sound hr, listItems_sound hi, paramsOf_sound hp,
-                blockOf_sound hb, contractsOf_sound hc, rfl⟩
+                blockOf_sound hb, contractsOf_sound hc, nw, rfl⟩
   · cases h
 
 /-- An extern function's instance (its tree is `externTree`'s): no type

@@ -1646,14 +1646,219 @@ theorem memoryBytes_length7 (reg : Register) (slot : Nat) :
       (memoryHeader .w64 true reg rbpRegister).length + 4 := by
   simp only [memoryBytes, Lanius.Semantics.i32Bytes, List.length_append, List.length_map, List.length_range]
 
+/-- The kernel's `read` stores bytes that fit in the heap: it leaves every
+address outside the heap as it was. -/
+theorem writeBytes_outside (memory : Memory) {base : BitVec 64} {a limit : Nat} {bytes : List UInt8}
+    (fit : bytes = [] ∨ a + bytes.length ≤ limit) {address : BitVec 64} (outside : ¬InHeap base limit address) :
+    writeBytes memory (base + BitVec.ofNat 64 a) bytes address = memory address := by
+  unfold writeBytes
+  rw [if_neg]
+  intro lt
+  rcases fit with empty | fit
+  · subst empty; simp at lt
+  apply outside
+  refine ⟨a + (address - (base + BitVec.ofNat 64 a)).toNat, by omega, ?_⟩
+  rw [BitVec.ofNat_add, BitVec.ofNat_toNat, BitVec.setWidth_eq, ← BitVec.add_assoc]
+  bv_omega
+
+/-- At a heap offset `b`, the kernel's `read` from heap offset `a` leaves the
+heap's `writeAll`. -/
+theorem writeBytes_heap (memory : Memory) {base : BitVec 64} {a b limit : Nat} {bytes : List UInt8}
+    (fit : bytes = [] ∨ a + bytes.length ≤ limit) (small : limit < 2 ^ 62) (below : b < limit) :
+    writeBytes memory (base + BitVec.ofNat 64 a) bytes (base + BitVec.ofNat 64 b) =
+      if a ≤ b ∧ b - a < bytes.length then bytes.getD (b - a) 0 else memory (base + BitVec.ofNat 64 b) := by
+  unfold writeBytes
+  have diff : base + BitVec.ofNat 64 b - (base + BitVec.ofNat 64 a) = BitVec.ofNat 64 b - BitVec.ofNat 64 a := by
+    bv_omega
+  rw [diff]
+  rcases fit with empty | fit
+  · subst empty; simp
+  by_cases le : a ≤ b
+  · have nat : (BitVec.ofNat 64 b - BitVec.ofNat 64 a).toNat = b - a := by
+      rw [BitVec.toNat_sub, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+      omega
+    rw [nat]
+    simp only [le, true_and]
+  · have big : bytes.length ≤ (BitVec.ofNat 64 b - BitVec.ofNat 64 a).toNat := by
+      rw [BitVec.toNat_sub, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+      omega
+    rw [if_neg (by omega), if_neg (by omega)]
+
+/-- `sys .read slot`: as `sys .write slot`, but the kernel stores the bytes it
+read in the heap. -/
+theorem read_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot + 3 ≤ frame.slots)
+    (loaded : CodeAt s.memory s.rip (sysSpec .read slot))
+    (codeHeap : ∀ index, index < 34 → ¬frame.InHeap (s.rip + BitVec.ofNat 64 index))
+    {result : BitVec 64} {after : Heap}
+    (ran : Syscall.read.run [m.slots slot, m.slots (slot + 1), m.slots (slot + 2)] m.heap = some (result, after)) :
+    ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' { m with
+      pc := m.pc + (Instr.sys .read slot).size, acc := result, heap := after } := by
+  rw [Syscall.run] at ran
+  split at ran
+  next ok =>
+    obtain ⟨fdOk, countOk, inside⟩ := ok
+    cases ran
+    have c0 := loaded
+    simp only [sysSpec] at c0
+    let s1 := s.load64 rdiRegister rbpRegister (BitVec.ofInt 32 (frameDisplacement slot))
+      (memoryBytes .w64 true rdiRegister rbpRegister (frameDisplacement slot)).length
+    have t1 : Lanius.X86.Machine.Step s s1 :=
+      Lanius.X86.Machine.Step.decoded _ c0.prefix _ _
+        (by simpa [memoryInstruction] using
+          memory_decodes .w64 true rdiRegister rbpRegister (frameDisplacement slot) [])
+        rfl rfl
+    have c1 := c0.next (s' := s1) rfl rfl
+    let s2 := s1.load64 rsiRegister rbpRegister (BitVec.ofInt 32 (frameDisplacement (slot + 1)))
+      (memoryBytes .w64 true rsiRegister rbpRegister (frameDisplacement (slot + 1))).length
+    have t2 : Lanius.X86.Machine.Step s1 s2 :=
+      Lanius.X86.Machine.Step.decoded _ c1.prefix _ _
+        (by simpa [memoryInstruction] using
+          memory_decodes .w64 true rsiRegister rbpRegister (frameDisplacement (slot + 1)) [])
+        rfl rfl
+    have c2 := c1.next (s' := s2) rfl rfl
+    let s3 := s2.alu64 .add rsiRegister heapBaseRegister false (aluBytes .w64 .add rsiRegister heapBaseRegister).length
+    have t3 : Lanius.X86.Machine.Step s2 s3 := alu_step .w64 s2 s3 .add _ _ c2.prefix false rfl
+    have c3 := c2.next (s' := s3) rfl rfl
+    let s4 := s3.load64 rdxRegister rbpRegister (BitVec.ofInt 32 (frameDisplacement (slot + 2)))
+      (memoryBytes .w64 true rdxRegister rbpRegister (frameDisplacement (slot + 2))).length
+    have t4 : Lanius.X86.Machine.Step s3 s4 :=
+      Lanius.X86.Machine.Step.decoded _ c3.prefix _ _
+        (by simpa [memoryInstruction] using
+          memory_decodes .w64 true rdxRegister rbpRegister (frameDisplacement (slot + 2)) [])
+        rfl rfl
+    have c4 := c3.next (s' := s4) rfl rfl
+    let s5 := s4.immediate32 0 Syscall.read.linux (immediateBytes .w32 0 Syscall.read.linux 0).length
+    have t5 : Lanius.X86.Machine.Step s4 s5 := immediate_step s4 s5 .w32 0 _ _ c4.prefix rfl
+    have c5 := c4.next (s' := s5) rfl rfl
+    have r7 : s5.registers 7 = m.slots slot := rel_slot (slot := slot) rel (by omega)
+    have r2 : s5.registers 2 = m.slots (slot + 2) := by
+      show read64 s.memory (s.registers 5 + (BitVec.ofInt 32 (frameDisplacement (slot + 2))).signExtend 64) = _
+      exact rel_slot rel (by omega)
+    have r6 : s5.registers 6 = m.slots (slot + 1) + frame.heapBase := by
+      have base : s2.registers heapBaseRegister = frame.heapBase := rel.heapBase
+      have six : s2.registers 6 = m.slots (slot + 1) := by
+        show read64 s.memory (s.registers 5 + (BitVec.ofInt 32 (frameDisplacement (slot + 1))).signExtend 64) = _
+        exact rel_slot rel (by omega)
+      show (Alu.add.result ((s2.registers 6).setWidth 64) ((s2.registers heapBaseRegister).setWidth 64)).setWidth 64 = _
+      rw [base, six]
+      simp [Alu.result]
+    have r0 : s5.registers 0 = 0 := by
+      show (Syscall.read.linux).setWidth 64 = 0
+      decide
+    have io5 : s5.io = m.heap.io := rel.io
+    have memory5 : s5.memory = s.memory := rfl
+    have address : m.slots (slot + 1) + frame.heapBase =
+        frame.heapBase + BitVec.ofNat 64 (m.slots (slot + 1)).toNat := by
+      rw [BitVec.ofNat_toNat, BitVec.setWidth_eq, BitVec.add_comm]
+    let bytes := m.heap.io.input.take (m.slots (slot + 2)).toNat
+    have bytes5 : s5.io.input.take (s5.registers 2).toNat = bytes := by rw [io5, r2]
+    let s6 := s5.syscalled (BitVec.ofNat 64 (s5.io.input.take (s5.registers 2).toNat).length) 0
+      (writeBytes s5.memory (s5.registers 6) (s5.io.input.take (s5.registers 2).toNat))
+      { s5.io with input := s5.io.input.drop (s5.registers 2).toNat }
+    have kernel : Kernel s5 s6 := .read r0 (by rw [r7]; exact fdOk) (by rw [r2]; exact countOk) 0
+    have t6 : Lanius.X86.Machine.Step s5 s6 := .syscalled c5.prefix kernel
+    have limitSmall : frame.heapLimit < 2 ^ 62 := fits.heapSmall
+    have fit : bytes = [] ∨ (m.slots (slot + 1)).toNat + bytes.length ≤ frame.heapLimit := by
+      rw [← rel.limit, ← rel.top]; exact inside
+    have memory6 : s6.memory = writeBytes s.memory (frame.heapBase + BitVec.ofNat 64 (m.slots (slot + 1)).toNat)
+        bytes := by
+      show writeBytes s5.memory (s5.registers 6) (s5.io.input.take (s5.registers 2).toNat) = _
+      rw [bytes5, r6, address, memory5]
+    have away : ∀ address, ¬frame.InHeap address → s6.memory address = s.memory address := by
+      intro address outside
+      rw [memory6]
+      exact writeBytes_outside _ fit outside
+    have rip5 : s5.rip = s.rip + BitVec.ofNat 64 29 := by
+      have l1 := memoryBytes_length7 rdiRegister slot
+      have l2 := memoryBytes_length7 rsiRegister (slot + 1)
+      have l4 := memoryBytes_length7 rdxRegister (slot + 2)
+      simp only [s5, s4, s3, s2, s1, State.immediate32, State.load64,
+        State.alu64, State.alu, l1, l2, l4, show (memoryHeader .w64 true rdiRegister rbpRegister).length = 3 from rfl,
+        show (memoryHeader .w64 true rsiRegister rbpRegister).length = 3 from rfl,
+        show (memoryHeader .w64 true rdxRegister rbpRegister).length = 3 from rfl,
+        show (aluBytes .w64 .add rsiRegister heapBaseRegister).length = 3 from rfl,
+        show (immediateBytes .w32 0 Syscall.read.linux 0).length = 5 from rfl]
+      bv_omega
+    have c6 : CodeAt s6.memory s6.rip (moveBytes .w64 r11Register rcxRegister) := by
+      have moved : CodeAt s5.memory (s5.rip + BitVec.ofNat 64 2) (moveBytes .w64 r11Register rcxRegister) :=
+        c5.suffix
+      intro index small
+      have size : (moveBytes .w64 r11Register rcxRegister).length = 3 := rfl
+      have rip6 : s6.rip = s5.rip + BitVec.ofNat 64 2 := rfl
+      rw [rip6, away _ ?_]
+      · exact moved index small
+      · rw [rip5, BitVec.add_assoc, BitVec.add_assoc, ← BitVec.ofNat_add, ← BitVec.ofNat_add]
+        exact codeHeap _ (by omega)
+    let s7 := s6.move64 r11Register rcxRegister (moveBytes .w64 r11Register rcxRegister).length
+    have t7 : Lanius.X86.Machine.Step s6 s7 := move_step s6 s7 .w64 _ _ c6 rfl
+    have det : Det 7 s s7 :=
+      Det.cons t1 (memory_noRead c0.prefix) (Det.cons t2 (memory_noRead c1.prefix)
+        (Det.cons t3 (alu_noRead c2.prefix) (Det.cons t4 (memory_noRead c3.prefix)
+          (Det.cons t5 (immediate_noRead c4.prefix) (Det.syscall t6 c5.prefix (by decide) c6 t7)))))
+    have kept : ∀ register, register ≠ 0 → register ≠ 1 → register ≠ 2 → register ≠ 6 → register ≠ 7 →
+        register ≠ 11 → s7.registers register = s.registers register := by
+      intro register a b c d e f
+      simp [s7, s6, s5, s4, s3, s2, s1, State.move64, State.syscalled, State.immediate32, State.load64,
+        State.alu64, State.alu, a, b, c, d, e, f, rdiRegister, rsiRegister, rdxRegister, r11Register,
+        heapBaseRegister]
+    have rip7 : s7.rip = s.rip + BitVec.ofNat 64 34 := by
+      show s5.rip + 2 + BitVec.ofNat 64 (moveBytes .w64 r11Register rcxRegister).length = _
+      rw [rip5, show (moveBytes .w64 r11Register rcxRegister).length = 3 from rfl]
+      bv_omega
+    have memory7 : s7.memory = s6.memory := rfl
+    have acc7 : s7.registers 0 = BitVec.ofNat 64 bytes.length := by
+      rw [← bytes5]
+      simp [s7, s6, State.move64, State.syscalled, r11Register]
+    have io7 : s7.io = { m.heap.io with input := m.heap.io.input.drop (m.slots (slot + 2)).toNat } := by
+      show { s5.io with input := s5.io.input.drop (s5.registers 2).toNat } = _
+      rw [io5, r2]
+    refine ⟨7, s7, .cons t1 (.cons t2 (.cons t3 (.cons t4 (.cons t5 (.cons t6 (.cons t7 (.refl _))))))), det, ?_⟩
+    exact
+      { rip := rip7.trans (rel.advance 34)
+        rbp := (kept 5 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).trans rel.rbp
+        rsp := (kept 4 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).trans rel.rsp
+        acc := acc7
+        slots := fun other otherIn => by
+          rw [← rel.slots other otherIn, memory7]
+          apply read64_congr
+          intro lane
+          exact away _ (fits.notHeap (slot_below fits otherIn lane.isLt))
+        saved := by
+          rw [← rel.saved, memory7]
+          apply read64_congr
+          intro lane
+          exact away _ (fits.notHeap (saved_below fits lane.isLt))
+        preserved := fun register other => by
+          obtain ⟨zero, one, -, -, eleven, -, two, six, seven⟩ := not_scratch other
+          rw [kept register zero one two six seven eleven]
+          exact rel.preserved register other
+        unchanged := fun address outside notHeap => by
+          rw [memory7, away address notHeap]
+          exact rel.unchanged address outside notHeap
+        cursor := (kept 13 (by decide) (by decide) (by decide) (by decide) (by decide) (by decide)).trans rel.cursor
+        limit := rel.limit
+        top := rel.top
+        heap := fun a below => by
+          have below' : a < frame.heapLimit := by rw [← rel.limit]; exact below
+          rw [memory7, memory6, writeBytes_heap _ fit limitSmall below']
+          simp only [Heap.writeAll]
+          split
+          · rfl
+          · exact rel.heap a below
+        io := io7 }
+  next => cases ran
+
 /-- `sys kind slot`: the arguments to rdi, rsi (made an address) and rdx, the
 number to rax, `syscall`, then `mov r11, rcx`. -/
-theorem sys_simulates (rel : Rel frame s m) (inFrame : slot + 3 ≤ frame.slots) {kind : Syscall}
-    (loaded : CodeAt s.memory s.rip (sysSpec kind slot)) {result : BitVec 64} {after : Heap}
+theorem sys_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot + 3 ≤ frame.slots) {kind : Syscall}
+    (loaded : CodeAt s.memory s.rip (sysSpec kind slot))
+    (codeHeap : ∀ index, index < 34 → ¬frame.InHeap (s.rip + BitVec.ofNat 64 index))
+    {result : BitVec 64} {after : Heap}
     (ran : kind.run [m.slots slot, m.slots (slot + 1), m.slots (slot + 2)] m.heap = some (result, after)) :
     ∃ n s', Steps n s s' ∧ Det n s s' ∧ Rel frame s' { m with
       pc := m.pc + (Instr.sys kind slot).size, acc := result, heap := after } := by
   cases kind
+  case read => exact read_simulates rel fits inFrame loaded codeHeap ran
   rw [Syscall.run] at ran
   split at ran
   next ok =>
@@ -1736,7 +1941,7 @@ theorem sys_simulates (rel : Rel frame s m) (inFrame : slot + 3 ≤ frame.slots)
         show (immediateBytes .w32 0 Syscall.write.linux 0).length = 5 from rfl,
         show (moveBytes .w64 r11Register rcxRegister).length = 3 from rfl]
       bv_omega
-    have io7 : s7.io = { trace := s.io.trace ++
+    have io7 : s7.io = { s.io with trace := s.io.trace ++
         [.write (s5.registers 7).toNat (bytesAt s.memory (s5.registers 6) (s5.registers 2).toNat)] } := rfl
     have address : m.slots (slot + 1) + frame.heapBase =
         frame.heapBase + BitVec.ofNat 64 (m.slots (slot + 1)).toNat := by
@@ -1909,8 +2114,9 @@ theorem step_simulates (body : Body frame binary imageBase place instrs) (fits :
     obtain ⟨loaded, -⟩ := body.fetch rel fetched
     exact .inl <| forward fetched rfl <| div_simulates _ _ rel (body.fits _ (fetch_mem fetched)) loaded defined
   | sys fetched ran =>
-    obtain ⟨loaded, -⟩ := body.fetch rel fetched
-    exact .inl <| forward fetched rfl <| sys_simulates rel (body.fits _ (fetch_mem fetched)) loaded ran
+    obtain ⟨loaded, -, -, codeHeap⟩ := body.fetch rel fetched
+    exact .inl <| forward fetched rfl <| sys_simulates rel fits (body.fits _ (fetch_mem fetched)) loaded
+      codeHeap ran
 
 /-- The bytes of a body simulate its abstract run to `ret`. -/
 theorem body_simulates (body : Body frame binary imageBase place instrs) (fits : frame.Fits) {calls : Calls}

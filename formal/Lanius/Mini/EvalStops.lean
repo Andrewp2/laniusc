@@ -997,6 +997,23 @@ theorem loadBytes_undefined {heap : Memory.Heap} {p n : Nat} {r : Lanius.Trap}
     (h : heap.loadBytes p n = .error r) : undefinedTrap r = true :=
   loadBytesFrom_undefined n 0 h
 
+theorem storeBytesFrom_undefined {p : Nat} {r : Lanius.Trap} :
+    ∀ (bytes : List UInt8) (o : Nat) {heap : Memory.Heap}, Memory.storeBytesFrom heap p o bytes = .error r →
+      undefinedTrap r = true
+  | [], _, _, h => by simp [Memory.storeBytesFrom] at h
+  | byte :: rest, o, heap, h => by
+    simp only [Memory.storeBytesFrom] at h
+    split at h
+    · rename_i reason stored
+      cases h
+      exact storeByte_undefined stored
+    · exact storeBytesFrom_undefined rest (o + 1) h
+
+/-- A heap store's traps are raw memory errors. -/
+theorem storeBytes_undefined {heap : Memory.Heap} {p : Nat} {bytes : List UInt8} {r : Lanius.Trap}
+    (h : heap.storeBytes p bytes = .error r) : undefinedTrap r = true :=
+  storeBytesFrom_undefined bytes 0 h
+
 theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
     (returns : funcsReturn sp.funcs = true) (prev : StmtStops sp mp n) {callee : Nat} {args : List SrcEff}
     (each : ∀ e ∈ args, EffStops sp mp (n + 1) e) : EffStops sp mp (n + 1) (.eCall callee args) := by
@@ -1030,7 +1047,18 @@ theorem eff_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some 
       exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome bound)
     · have valuesA := ptr_usize holdsA tys
       subst valuesA
-      rcases writeOut_outcome which st1.heap st1.world (env1 slot).toNat (env1 (slot + 1)).toNat with
+      rcases which with which | which | rfl
+      rotate_left 2
+      · rcases readStdin_outcome st1.heap st1.world (env1 slot).toNat (env1 (slot + 1)).toNat with
+          ⟨v, heap', world', called⟩ | ⟨r, world', called, stored⟩
+        · rw [called, worldCall_returned fresh1.2] at outcome
+          exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome
+            (show heap'.nextAddress ≤ hp.limit by rw [hostCall_next hs called]; exact bound))
+        · rw [called] at outcome
+          exact trap_within outcome (storeBytes_undefined stored) bound
+      all_goals
+      rcases writeOut_outcome (by first | exact .inl which | exact .inr which) st1.heap st1.world
+          (env1 slot).toNat (env1 (slot + 1)).toNat with
         ⟨v, world', called⟩ | ⟨r, world', called, loaded⟩
       · rw [called, worldCall_returned fresh1.2] at outcome
         exact Nat.lt_irrefl _ (Nat.lt_of_lt_of_le outcome bound)

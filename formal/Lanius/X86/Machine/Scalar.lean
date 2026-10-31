@@ -719,6 +719,10 @@ def bytesAt (memory : Memory) (address : Address) : Nat → List UInt8
   | 0 => []
   | count + 1 => memory address :: bytesAt memory (address + 1) count
 
+/-- `memory` with `bytes` written from `address` on. -/
+def writeBytes (memory : Memory) (address : Address) (bytes : List UInt8) : Memory :=
+  fun other => if (other - address).toNat < bytes.length then bytes.getD (other - address).toNat 0 else memory other
+
 /-- The state after a `syscall` that returned `result`, leaving `memory` and
 `io`: Linux's `syscall` entry and `sysret` leave rcx at the next instruction,
 every other register but r11 and the flags as they were. r11 holds RFLAGS;
@@ -740,13 +744,22 @@ that no signal arrives (TRUSTED_BASE.md section 8):
 
 - `write` (rax 1) to fd 1 or 2 (rdi) of at most `maxTransfer` bytes (rdx)
   from rsi writes all of them, an event on the trace, and returns their
-  count. -/
+  count.
+- `read` (rax 0) from fd 0 (rdi) of at most `maxTransfer` bytes (rdx) to rsi
+  delivers the next of them that standard input holds, as many as asked for
+  or all that are left, stores them from rsi on, and returns their count
+  (standard input is a regular file, or a stream that delivers like one). -/
 inductive Kernel (before : State) : State → Prop where
   | write (number : before.registers 0 = 1) (fd : before.registers 7 = 1 ∨ before.registers 7 = 2)
       (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
       Kernel before (before.syscalled (before.registers 2) r11 before.memory
         { before.io with trace := before.io.trace ++
           [.write (before.registers 7).toNat (bytesAt before.memory (before.registers 6) (before.registers 2).toNat)] })
+  | read (number : before.registers 0 = 0) (fd : before.registers 7 = 0)
+      (count : (before.registers 2).toNat ≤ maxTransfer) (r11 : BitVec 64) :
+      Kernel before (before.syscalled (BitVec.ofNat 64 (before.io.input.take (before.registers 2).toNat).length) r11
+        (writeBytes before.memory (before.registers 6) (before.io.input.take (before.registers 2).toNat))
+        { before.io with input := before.io.input.drop (before.registers 2).toNat })
 
 /-- Decoding consumes bytes actually loaded at RIP. Division must use
 `divided`, which also requires nonzero-divisor and quotient-range evidence;

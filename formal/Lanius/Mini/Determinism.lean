@@ -89,7 +89,8 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
     (bitsLen : bits.length = paramsSize func.params) {fuel : Nat} {v : Value}
     {final : Semantics.State} {heap : Heap} (start : heap.cursor = 1)
     (zero : ∀ a, 1 ≤ a → heap.bytes a = 0) (small : heap.limit < 2 ^ 62) (silent : heap.io.trace = [])
-    (runs : Semantics.evalExpr fuel sp.toCore {} (.call f (args.map Core.Expr.value)) = .done v final)
+    (runs : Semantics.evalExpr fuel sp.toCore (startState heap.io.input) (.call f (args.map Core.Expr.value)) =
+      .done v final)
     (fits : final.heap.nextAddress ≤ heap.limit) :
     ∃ depth results after, func.ret.HoldsAt v (Func.entry results) 0 ∧ results.length = func.ret.size ∧
       after.cursor = final.heap.nextAddress ∧
@@ -116,7 +117,7 @@ theorem compileSource_deterministic {sp : SrcProgram} {binary : Binary}
     obtain ⟨rfl, rfl⟩ := evalExprs_values argsRun
     obtain ⟨_, _, depth, results, after, returns, holds, len, hc⟩ :=
       body_sound (mp := { funcs := funcs }) (hp := heap) lowered (stmt_sound lowered k) found
-        ⟨fun _ mem => by simp at mem, rfl⟩ (HeapCorr.empty start zero small silent) typed bitsLen bodyRun result fits
+        (startState_fresh _) (HeapCorr.empty start zero small silent) typed bitsLen bodyRun result fits
     exact ⟨depth, results, after, holds, len, hc.cursor,
       fun s imageBase window enough bounded loaded apart imageHeap entry params heapAt stack =>
         compileOptimized_deterministic compiledProgram returns s imageBase window enough bounded loaded apart

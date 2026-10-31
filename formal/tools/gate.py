@@ -99,6 +99,9 @@ STEPS = [
      ['lean', 'run_all', 'lani', 'laniusc', 'stdlib'], False),
 ] + [(f'stdlib-{k}', ['stdlib_oracle.py', '{w}', '--seed', '{s}', '--shard', f'{k}/3'], ['run_all', 'laniusc', 'stdlib'],
       False) for k in range(3)] + [
+    # F11: laniusc's own test programs, a seeded sample of them, run both ways.
+    ('programs', ['programs_oracle.py', '{w}', '--sample', '60', '--seed', '{s}'],
+     ['lean', 'run_all', 'laniusc', 'stdlib', 'programs'], False),
     # M11c: the self-built verified compiler compiles itself to its own image.
     ('self-host-fixpoint', ['self_host.py', '{w}', '--no-cases', '--fixpoint', '--timeout', '280'],
      ['run_all', 'lani', 'laniusc', 'stdlib'], False),
@@ -121,6 +124,8 @@ def inputs():
         'tools': run_cache.tree_digest(os.path.join(ROOT, T)),
         'laniusc': run_cache.file_digest(LANIUSC),
         'stdlib': run_cache.tree_digest(os.path.join(ROOT, 'stdlib')),
+        'programs': run_cache.tree_digest(os.path.join(ROOT, 'tests/fixtures'))
+        + run_cache.tree_digest(os.path.join(ROOT, 'sample_programs')),
         'extended': ''.join(run_cache.file_digest(os.path.join(ROOT, 'extended/ext', name))
                             for name in ('sqlite_statement.lani', 'openssl_tls_lifecycle.lani')),
     }
@@ -131,7 +136,7 @@ def build():
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
         run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'LaniusMini', 'Lanius.Mini.FrontLex',
+                              'lake', 'build', 'runAll', 'extract', 'floatTest', 'srcDump', 'LaniusMini', 'Lanius.Mini.FrontLex',
                               'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
                               'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'],
                              cwd=run_cache.FORMAL, env=env, capture_output=True, text=True)

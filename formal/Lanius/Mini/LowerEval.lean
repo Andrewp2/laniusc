@@ -632,7 +632,8 @@ for arguments of the service's types. -/
 theorem evalHost_some {callee slot : Nat} {ea : EvaluatedArgs} {ev : Evaluated} (ok : evalHost callee slot ea = some ev) :
     ∃ service code, hostService? callee = some service ∧ ev.stmt = .seq ea.stmt code ∧
       (service = .writeByte ∧ ea.types = [.i32, .i32] ∨
-        (service = .writeStdout ∨ service = .writeStderr) ∧ ea.types = [.ptr, .uint .usize]) := by
+        (service = .writeStdout ∨ service = .writeStderr ∨ service = .readStdin) ∧
+          ea.types = [.ptr, .uint .usize]) := by
   simp only [evalHost] at ok
   split at ok
   · rename_i checks
@@ -654,7 +655,14 @@ theorem evalHost_some {callee slot : Nat} {ea : EvaluatedArgs} {ev : Evaluated} 
     obtain ⟨rfl, same⟩ := checks
     simp only [Option.some.injEq] at ok
     subst ok
-    exact ⟨.writeStderr, _, by simp [hostService?, hostBase], rfl, .inr ⟨.inr rfl, typesSame_eq _ same⟩⟩
+    exact ⟨.writeStderr, _, by simp [hostService?, hostBase], rfl, .inr ⟨.inr (.inl rfl), typesSame_eq _ same⟩⟩
+  split at ok
+  · rename_i _ _ _ checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨rfl, same⟩ := checks
+    simp only [Option.some.injEq] at ok
+    subst ok
+    exact ⟨.readStdin, _, by simp [hostService?, hostBase], rfl, .inr ⟨.inr (.inr rfl), typesSame_eq _ same⟩⟩
   · simp at ok
 
 /-- `write_stdout` or `write_stderr` after its arguments: the mini loop
@@ -682,8 +690,47 @@ theorem host_write {fd : BitVec 64} {service : Core.HostService}
     rw [wrote, sliced, Heap.slice_length, i32Result_nat, ← low_ofNat]
     exact holds_i32 _
   · refine (hcA.record service).wrote (fd := fd.toNat) (bytes := bytes) rfl rfl rfl rfl
-      (fun k => by rw [outs k, sliced]) ?_ ?_ ?_
-    all_goals rcases which with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> simp [worldEq]
+      (fun k => by rw [outs k, sliced]) ?_ ?_ ?_ ?_
+    all_goals rcases which with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> simp [worldEq, World.record, hcA.input]
+
+/-- `read_stdin` after its arguments: the mini loop stores the bytes Core
+stored, and takes from the input what Core's world took. -/
+theorem host_read {ea : EvaluatedArgs}
+    {dA : Nat} {envA : Env} {hpA : Heap} {values : List Value} {afterArgs : State} {heap : Memory.Heap}
+    {world : World.State}
+    (execA : Exec mp dA env hp ea.stmt (.normal envA hpA)) (sameA : ∀ j < slot, envA j = env j)
+    (holdsA : FieldsHold ea.types values envA slot) (tyEq : ea.types = [.ptr, .uint .usize])
+    (hcA : HeapCorr afterArgs.heap afterArgs.world hpA) (limitA : afterArgs.heap.nextAddress ≤ hpA.limit)
+    (called : World.call afterArgs.heap afterArgs.world .readStdin values = .returned v heap world) :
+    ∃ env' hp', Exec mp dA env hp (.seq ea.stmt (hostReadCode slot)) (.normal env' hp') ∧
+      (∀ j < slot, env' j = env j) ∧ SrcType.i32.HoldsAt v env' slot ∧ HeapCorr heap world hp' := by
+  have vals := ptr_usize holdsA tyEq
+  obtain ⟨p, n, valuesEq, stored, rfl, rfl⟩ := call_readStdin_inv called
+  rw [vals] at valuesEq
+  simp only [List.cons.injEq, Value.pointer.injEq, Value.unsigned.injEq, true_and, and_true] at valuesEq
+  obtain ⟨rfl, rfl⟩ := valuesEq
+  have input := hcA.input
+  rw [input] at stored
+  obtain ⟨hc', inside⟩ := hcA.storeBytesAll stored
+  obtain ⟨E', exec, keep, result⟩ := hostRead_exec (mp := mp) (d := dA) (E := envA) (H := hpA) slot
+    (by
+      by_cases empty : hpA.io.input.take (envA (slot + 1)).toNat = []
+      · exact .inl empty
+      · exact .inr (Nat.le_trans (inside empty) limitA))
+    hcA.small
+  refine ⟨E', _, .seq execA exec, fun j below => (keep j below).trans (sameA j below), ?_, ?_⟩
+  · refine .i32 ?_
+    rw [result, ← input, i32Result_nat]
+    exact holds_i32 _
+  · refine hc'.retrace rfl rfl rfl ?_ ?_ ?_ ?_
+    · show afterArgs.world.standardOutput = outputOf 1 hpA.io.trace
+      exact hcA.out
+    · show afterArgs.world.standardError = outputOf 2 hpA.io.trace
+      exact hcA.err
+    · show afterArgs.world.fileHandles = []
+      exact hcA.closed
+    · show afterArgs.world.standardInput.drop (envA (slot + 1)).toNat = hpA.io.input.drop (envA (slot + 1)).toNat
+      rw [input]
 
 /-- A host call of one of the output services. -/
 theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} {args : List SrcEff}
@@ -698,11 +745,39 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
   · omega
   have viewsA := (effs_grows args (eff_grows k (grows sp k)) argsRun fresh.2).1
   obtain ⟨heap, world, called, rfl⟩ := returns viewsA
-  have heapEq := hostCall_heap hs called
-  subst heapEq
+  have nextEq := hostCall_next hs called
   obtain ⟨freshA, keepsA, localsA, dA, envA, hpA, execA, sameA, holdsA, hcA⟩ :=
-    evalArgs_sound args ihe argsOk corr fr fresh hc argsRun bound
-  have limitA : afterArgs.heap.nextAddress ≤ hpA.limit := by rw [execA.limit_normal]; exact bound
+    evalArgs_sound args ihe argsOk corr fr fresh hc argsRun (by rw [← nextEq]; exact bound)
+  have limitA : afterArgs.heap.nextAddress ≤ hpA.limit := by rw [execA.limit_normal, ← nextEq]; exact bound
+  by_cases reads : service = .readStdin
+  · subst reads
+    have callee3 : callee = hostBase + 3 := by
+      unfold hostService? at hs
+      split at hs; · cases hs
+      split at hs; · cases hs
+      split at hs; · cases hs
+      split at hs
+      · assumption
+      · cases hs
+    subst callee3
+    simp only [evalHost] at ok
+    split at ok
+    · rename_i checks; simp [hostBase] at checks
+    split at ok
+    · rename_i _ checks; simp [hostBase] at checks
+    split at ok
+    · rename_i _ _ checks; simp [hostBase] at checks
+    split at ok
+    · rename_i _ _ _ checks
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+      obtain ⟨-, same⟩ := checks
+      simp only [Option.some.injEq] at ok
+      subst ok
+      exact ⟨freshA, ⟨keepsA.cells, keepsA.next⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
+        host_read (afterArgs := afterArgs) execA sameA holdsA (typesSame_eq _ same) hcA limitA called⟩
+    · simp at ok
+  have heapEq := hostCall_heap hs reads called
+  subst heapEq
   have posA : 0 < hpA.limit := Nat.lt_of_lt_of_le hcA.pos limitA
   simp only [evalHost] at ok
   split at ok
@@ -726,7 +801,7 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
         rcases which with one | two
         · rw [one]; decide
         · rw [two]; decide
-      obtain ⟨E', H', exec, keep, one, sameBytes, cursor, limit, top, trace⟩ :=
+      obtain ⟨E', H', exec, keep, one, sameBytes, cursor, limit, top, trace, input⟩ :=
         hostByte_exec (mp := mp) (d := dA) slot (Nat.lt_of_lt_of_le posA hcA.topped) which
       have byte : UInt8.ofNat ((low (envA (slot + 1))).toInt % 256).toNat = lowByte (envA (slot + 1)) := by
         have := hostByte_low (low (envA (slot + 1)))
@@ -747,6 +822,11 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
           rw [one]
           exact holds_one
         · refine (hcA.record .writeByte).wrote sameBytes cursor limit trace (fun k => outputOf_write _ _ _) ?_ ?_ ?_
+            (by
+              rw [input, ← hcA.input]
+              rcases which with one | two
+              · simp only [one] at wrote; simp [World.writeBytes] at wrote; subst wrote; rfl
+              · simp only [two] at wrote; simp [World.writeBytes] at wrote; subst wrote; rfl)
           · rcases which with one | two
             · simp only [one] at wrote ⊢; simp [World.writeBytes] at wrote; subst wrote; simp
             · simp only [two] at wrote ⊢; simp [World.writeBytes] at wrote; subst wrote; simp
@@ -803,6 +883,11 @@ theorem eval_host {k : Nat} (ihe : ∀ m < k, EvalSound sp mp m) {callee : Nat} 
     subst svc
     exact ⟨freshA, ⟨keepsA.cells, keepsA.next⟩, localsA, (by decide : 0 < SrcType.i32.size), dA,
       host_write (afterArgs := afterArgs) (.inr ⟨rfl, rfl⟩) execA sameA holdsA (typesSame_eq _ same) hcA limitA called⟩
+  split at ok
+  · rename_i _ _ _ checks
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at checks
+    obtain ⟨rfl, -⟩ := checks
+    exact absurd (by simpa [hostService?, hostBase] using hs.symm) reads
   · simp at ok
 
 theorem eval_call (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs) {k : Nat}

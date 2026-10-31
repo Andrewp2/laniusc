@@ -11,6 +11,7 @@ import Lanius.Mini.Frontend.P.consBound
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.consTys
 import Lanius.Mini.Frontend.P.distinct
+import Lanius.Mini.Frontend.P.enumsNamedOk
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.fnInstRet
@@ -22,7 +23,6 @@ import Lanius.Mini.Frontend.P.isPathCall
 import Lanius.Mini.Frontend.P.itemOf
 import Lanius.Mini.Frontend.P.joinInsts
 import Lanius.Mini.Frontend.P.matchTysOrNone
-import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.pathRef

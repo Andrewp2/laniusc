@@ -39,8 +39,8 @@ theorem outputOf_write (fd target : Nat) (bytes : List UInt8) :
 
 /-- Core's heap `h` and world `w`, and the mini heap `hp` with its trace. The
 world's standard output and error are what the trace wrote to fds 1 and 2
-(roadmap F8), and no file is open, so a `write_byte` to another handle
-returns -1. -/
+(roadmap F8), its standard input is what the process has still to read, and
+no file is open, so a `write_byte` to another handle returns -1. -/
 structure HeapCorr (h : Memory.Heap) (w : World.State) (hp : Heap) : Prop where
   cursor : hp.cursor = h.nextAddress
   pos : 1 ≤ h.nextAddress
@@ -55,6 +55,7 @@ structure HeapCorr (h : Memory.Heap) (w : World.State) (hp : Heap) : Prop where
   out : w.standardOutput = outputOf 1 hp.io.trace
   err : w.standardError = outputOf 2 hp.io.trace
   closed : w.fileHandles = []
+  input : w.standardInput = hp.io.input
 
 /-- Frame memory starts at the limit. -/
 theorem HeapCorr.topped {h : Memory.Heap} {w : World.State} {hp : Heap} (_ : HeapCorr h w hp) :
@@ -65,7 +66,7 @@ theorem HeapCorr.topped {h : Memory.Heap} {w : World.State} {hp : Heap} (_ : Hea
 theorem HeapCorr.withFsp {h : Memory.Heap} {w : World.State} {hp : Heap} (hc : HeapCorr h w hp) (fsp : Nat) :
     HeapCorr h w { hp with fsp := fsp } :=
   ⟨hc.cursor, hc.pos, hc.unbounded, hc.small, hc.sized, hc.below, hc.apart, hc.unique, hc.bytes, hc.zero,
-    hc.out, hc.err, hc.closed⟩
+    hc.out, hc.err, hc.closed, hc.input⟩
 
 /-! ## Lists of blocks -/
 
@@ -149,7 +150,7 @@ theorem HeapCorr.store {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) {p
   have cases : ∀ b ∈ Memory.replaceBlock h.blocks { blk with bytes := Memory.setByte blk.bytes (p + o - blk.base) v },
       (b = { blk with bytes := Memory.setByte blk.bytes (p + o - blk.base) v }) ∨ (b ∈ h.blocks ∧ b.base ≠ blk.base) :=
     fun b m => mem_replaceBlock m
-  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err, corr.closed⟩
+  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err, corr.closed, corr.input⟩
   · intro b m
     rcases cases b m with rfl | ⟨m', -⟩
     · simp only [setByte_length]
@@ -218,7 +219,7 @@ theorem HeapCorr.dealloc {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) 
       (b = { blk with live := false }) ∨ (b ∈ h.blocks ∧ b.base ≠ blk.base) :=
     fun b m => mem_replaceBlock m
   refine ⟨corr.cursor, corr.pos, by simp [Memory.refundBudget, corr.unbounded], corr.small, ?_, ?_, ?_, ?_, ?_,
-    corr.zero, corr.out, corr.err, corr.closed⟩
+    corr.zero, corr.out, corr.err, corr.closed, corr.input⟩
   · intro b m
     rcases cases b m with rfl | ⟨m', -⟩
     · exact corr.sized blk mem
@@ -261,7 +262,7 @@ theorem HeapCorr.allocate {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp)
   have ge : hp.cursor ≤ alignUp hp.cursor shift := by
     rw [alignUp_eq]
     exact memAlignUp_ge _ _ (Nat.two_pow_pos _)
-  refine ⟨rfl, rfl, rfl, by addr_omega, rfl, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err, corr.closed⟩
+  refine ⟨rfl, rfl, rfl, by addr_omega, rfl, corr.small, ?_, ?_, ?_, ?_, ?_, ?_, corr.out, corr.err, corr.closed, corr.input⟩
   · intro b m
     simp only [List.mem_append, List.mem_singleton] at m
     rcases m with m | rfl
@@ -334,8 +335,7 @@ theorem Exec.limit {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stm
   | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame => rfl
   | storeWord => exact (Heap.writeLE_limit _ _ _ _).1
   | sys ran =>
-    have same := congrArg Heap.limit (Syscall.run_heap ran)
-    exact same
+    exact (Syscall.run_frame ran).1
 
 theorem Exec.top {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt} {out : Outcome}
     (exec : Exec prog d env heap s out) : out.heap.top = heap.top := by
@@ -354,8 +354,7 @@ theorem Exec.top {prog : Program} {d : Nat} {env : Env} {heap : Heap} {s : Stmt}
   | skip | assign | loopDone | ret | brk | cont | alloc | loadByte | storeByte | loadWord | divide | frame => rfl
   | storeWord => exact (Heap.writeLE_top _ _ _ _).1
   | sys ran =>
-    have same := congrArg Heap.top (Syscall.run_heap ran)
-    exact same
+    exact Syscall.run_top ran
 
 /-! ## Lowered heap operations -/
 
@@ -411,7 +410,7 @@ theorem HeapCorr.replace {h : Memory.Heap} {hp : Heap} (corr : HeapCorr h w hp) 
   have cases : ∀ b ∈ Memory.replaceBlock h.blocks ⟨blk.base, blk.size, ra, blk.bytes, blk.live, ro⟩,
       b = ⟨blk.base, blk.size, ra, blk.bytes, blk.live, ro⟩ ∨ (b ∈ h.blocks ∧ b.base ≠ blk.base) :=
     fun b m => mem_replaceBlock m
-  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, corr.zero, corr.out, corr.err, corr.closed⟩
+  refine ⟨corr.cursor, corr.pos, corr.unbounded, corr.small, ?_, ?_, ?_, ?_, ?_, corr.zero, corr.out, corr.err, corr.closed, corr.input⟩
   · intro b m
     rcases cases b m with rfl | ⟨m', -⟩
     · exact corr.sized blk mem

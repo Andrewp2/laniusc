@@ -8,10 +8,10 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_variantsNamedAt
+public import Lanius.Faithful.Gen.SelfStmtF_enumsNamedOk
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_itemOf
-public import Lanius.Faithful.Gen.SelfStmtF_moduleNamesOk
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 import all Lanius.Faithful.Gen.SelfSrcF_itemOf
 import all Lanius.Mini.Frontend.P.itemOf

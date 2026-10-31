@@ -1,8 +1,8 @@
 module
 
 public import Lanius.Mini.Compiler.Types
+import Lanius.Mini.Compiler.P.Code_size
 import Lanius.Mini.Compiler.P.DivOp_size
-import Lanius.Mini.Compiler.P.FArith_opcode
 import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Compiler.P.SrcExpr_guard
 import Lanius.Mini.Compiler.P.SrcType_size
@@ -112,7 +112,7 @@ def evalCallSig (sig : Sig) (callee : Nat) (slot : Nat) (args : EvaluatedArgs) :
   else
     none
 
-/-- Core's host services (roadmap F8) are its functions from id 2^32 on (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr. Their code is system calls.  write_byte(handle, value), handle and value in slot and slot + 1: to handle 1 or 2 the value's low byte goes through the heap's byte 0 (no block's, kept as it was) and returns 1; any other handle returns -1, as Core's does with no file open. -/
+/-- Core's host services (roadmap F8) are its functions from id 2^32 on (`hostService?`, Mini/SourceCore.lean), past every program's own: 2^32 is write_byte, 2^32 + 1 write_stdout, 2^32 + 2 write_stderr, 2^32 + 3 read_stdin. Their code is system calls.  write_byte(handle, value), handle and value in slot and slot + 1: to handle 1 or 2 the value's low byte goes through the heap's byte 0 (no block's, kept as it was) and returns 1; any other handle returns -1, as Core's does with no file open. -/
 def hostByteCode (slot : Nat) : Stmt :=
   let handleOk : Expr := Expr.binary Word.u64 BinOp.or (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit 1)) (Expr.compare Word.u64 CmpOp.eq (Expr.var slot) (Expr.lit 2))
   let restore : Stmt := Stmt.seq (Stmt.storeByte (Expr.lit 0) (Expr.var (slot + 2))) (Stmt.assign slot (Expr.lit 1))
@@ -132,6 +132,21 @@ def hostWriteCode (fd : BitVec 64) (slot : Nat) : Stmt :=
   let looped : Stmt := Stmt.seq (Stmt.loop (Expr.compare Word.u64 CmpOp.ne (Expr.var count) (Expr.lit 0)) body) (Stmt.assign slot (Expr.binary Word.s32 BinOp.add (Expr.var (slot + 2)) (Expr.lit 0)))
   Stmt.seq (Stmt.assign (slot + 2) (Expr.var count)) looped
 
+/-- read_stdin(pointer, count), pointer and count in slot and slot + 1: reads of at most MAX_RW_COUNT bytes from fd 0 to the pointer until none are left to ask for or a read delivers fewer than it asked for (standard input is used up), then the total as i32. -/
+def hostReadCode (slot : Nat) : Stmt :=
+  let count : Nat := slot + 1
+  let total : Nat := slot + 2
+  let chunk : Nat := slot + 3
+  let got : Nat := slot + 4
+  let pick : Stmt := Stmt.ite (Expr.compare Word.u64 CmpOp.lt (Expr.var count) (Expr.lit 2147479552)) (Stmt.assign chunk (Expr.var count)) (Stmt.assign chunk (Expr.lit 2147479552))
+  let stop : Stmt := Stmt.ite (Expr.compare Word.u64 CmpOp.ne (Expr.var got) (Expr.var chunk)) (Stmt.assign count (Expr.lit 0)) Stmt.skip
+  let tally : Stmt := Stmt.seq (Stmt.assign total (Expr.binary Word.u64 BinOp.add (Expr.var total) (Expr.var got))) stop
+  let advance : Stmt := Stmt.seq (Stmt.assign slot (Expr.binary Word.u64 BinOp.add (Expr.var slot) (Expr.var got))) (Stmt.seq (Stmt.assign count (Expr.binary Word.u64 BinOp.sub (Expr.var count) (Expr.var got))) tally)
+  let read : Stmt := Stmt.seq (Stmt.sys Syscall.read got (Expr.lit 0 :: Expr.var slot :: [Expr.var chunk])) advance
+  let body : Stmt := Stmt.seq pick read
+  let looped : Stmt := Stmt.seq (Stmt.loop (Expr.compare Word.u64 CmpOp.ne (Expr.var count) (Expr.lit 0)) body) (Stmt.assign slot (Expr.binary Word.s32 BinOp.add (Expr.var total) (Expr.lit 0)))
+  Stmt.seq (Stmt.assign total (Expr.lit 0)) looped
+
 def evalHost (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluated :=
   if decide (callee = 4294967296) && typesSame args.types (SrcType.i32 :: [SrcType.i32]) then
     some ({ stmt := Stmt.seq args.stmt (hostByteCode slot), ty := SrcType.i32 } : Evaluated)
@@ -142,7 +157,10 @@ def evalHost (callee : Nat) (slot : Nat) (args : EvaluatedArgs) : Option Evaluat
       if decide (callee = 4294967298) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
         some ({ stmt := Stmt.seq args.stmt (hostWriteCode 2 slot), ty := SrcType.i32 } : Evaluated)
       else
-        none
+        if decide (callee = 4294967299) && typesSame args.types (SrcType.ptr :: [SrcType.uint UintTy.usize]) then
+          some ({ stmt := Stmt.seq args.stmt (hostReadCode slot), ty := SrcType.i32 } : Evaluated)
+        else
+          none
 
 def evalCall (sig : Option Sig) (callee : Nat) (slot : Nat) (args : Option EvaluatedArgs) : Option Evaluated :=
   match sig with

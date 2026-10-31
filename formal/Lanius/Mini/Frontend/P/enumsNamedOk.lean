@@ -15,6 +15,11 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
+def enumsNamedOk (types : List TypeDecl) (m : List (List Nat)) (values : List (List Nat)) : Bool :=
+  match types with
+  | [] => true
+  | t :: rest => enumNamedOk t m values && enumsNamedOk rest m values
+
 /-- A module's functions, types and constants have distinct names. Variants are scoped by their enum: an enum's variants are distinct, and no variant is spelled like a function or constant of the module (a variant may share a name with a type, or with another enum's variant; a bare use of such a variant must then be unambiguous, see bare_variant). -/
 def moduleNamesOk (decls : Decls) (m : List (List Nat)) : Bool :=
   distinct (fnNamesIn decls.fns m ++ (typeOnlyNamesIn decls.types m ++ (aliasNamesIn decls.aliases m ++ constNamesIn decls.consts m))) && enumsNamedOk decls.types m (fnNamesIn decls.fns m ++ constNamesIn decls.consts m)

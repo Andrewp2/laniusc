@@ -11,9 +11,12 @@ inductive Event where
   | write (fd : Nat) (bytes : List UInt8)
 deriving DecidableEq, Repr
 
-/-- The process's side of its environment: the trace of events so far. -/
+/-- The process's side of its environment: the trace of events so far, and
+the bytes standard input has still to deliver (a stream fixed when the
+process starts, TRUSTED_BASE.md section 8). -/
 structure Io where
   trace : List Event := []
+  input : List UInt8 := []
 deriving Repr
 
 /-- The most bytes Linux's `write` transfers in one call (`MAX_RW_COUNT`,

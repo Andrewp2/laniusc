@@ -64,6 +64,10 @@ abbrev Stmt_host_byte_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
   ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
     RepStmt (Lanius.Mini.hostByteCode x0) w
 
+abbrev Stmt_host_read_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
+    RepStmt (Lanius.Mini.hostReadCode x0) w
+
 abbrev Stmt_host_write_code (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : BitVec 64} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepU64 x0 v0 → RepNat x1 v1 →
     RepStmt (Lanius.Mini.hostWriteCode x0 x1) w

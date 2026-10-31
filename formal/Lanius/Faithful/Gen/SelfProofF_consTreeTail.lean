@@ -19,10 +19,10 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pSelfParamTyped
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeArgsNone
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pTypeSliceTail
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
+public import Lanius.Faithful.Gen.SelfStmtF_enumsNamedOk
 public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
-public import Lanius.Faithful.Gen.SelfStmtF_moduleNamesOk
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
 public import Lanius.Faithful.Gen.SelfStmtF_repeatEff

@@ -211,6 +211,7 @@ theorem start_corr (nonempty : 0 < W.length) {limit : Nat} (small : limit < 2 ^ 
   out := rfl
   err := rfl
   closed := rfl
+  input := rfl
 
 theorem args_hold (wordsLt : W.length < 2 ^ 31) (roomLt : room < 2 ^ 31) :
     FieldsHold (paramTypes (src_app_main_w 1 2 5 6 7 8).params) (selfArgs W room) (Func.entry (selfBits W room)) 0 := by

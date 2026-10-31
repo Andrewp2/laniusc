@@ -200,6 +200,13 @@ theorem Kernel.agree (same : DataEq s t) (ka : Kernel s a) (kb : Kernel t b) :
     | write number' fd' count' r11' =>
       refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
       simp only [State.syscalled, if_neg ne]
+    | read number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
+  | read number fd count r11 =>
+    cases kb with
+    | write number' fd' count' r11' => simp only at number number'; rw [number] at number'; cases number'
+    | read number' fd' count' r11' =>
+      refine ⟨fun r ne => ?_, rfl, rfl, rfl, rfl⟩
+      simp only [State.syscalled, if_neg ne]
 
 /-- A `syscall`, then `mov r11, source`, which gives r11 a value the data
 determines again. -/

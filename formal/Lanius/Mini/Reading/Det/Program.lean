@@ -112,8 +112,8 @@ theorem contractsR_unique {env : FrontEnv} {scope : List Local} {b : MStmt} (nd 
 
 theorem readFn_unique {decls : Decls} {fd : FnDecl} {args : List Ty} {a b : MFunc} (vn : VariantsNodup decls)
     (h₁ : ReadFn decls fd args a) (h₂ : ReadFn decls fd args b) : a = b := by
-  obtain ⟨r, items, ps, body, mb, _, rr, it, pr, br, cr, rfl⟩ := h₁
-  obtain ⟨r', items', ps', body', mb', _, rr', it', pr', br', cr', rfl⟩ := h₂
+  obtain ⟨r, items, ps, body, mb, _, rr, it, pr, br, cr, _, rfl⟩ := h₁
+  obtain ⟨r', items', ps', body', mb', _, rr', it', pr', br', cr', _, rfl⟩ := h₂
   cases resultR_unique rr rr'
   cases items_unique it it'
   cases paramsR_unique pr pr'

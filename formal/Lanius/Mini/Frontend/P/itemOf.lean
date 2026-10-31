@@ -3,9 +3,9 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.matchVariants
 import Lanius.Mini.Frontend.P.distinct
+import Lanius.Mini.Frontend.P.enumsNamedOk
 import Lanius.Mini.Frontend.P.findConst
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.moduleNamesOk
 import Lanius.Mini.Frontend.P.typePathSpellings
 
 public section
