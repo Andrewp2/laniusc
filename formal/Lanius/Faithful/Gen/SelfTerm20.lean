@@ -18,7 +18,7 @@ theorem ok_DivOp_number : FnOk prog prims info (946, ⟨0, [], 0⟩) :=
 theorem ok_Syscall_number : FnOk prog prims info (947, ⟨0, [], 0⟩) :=
   fnOk_of fn_Syscall_number (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_Arity : FnOk prog prims info (948, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_Arity : FnOk prog prims info (948, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_Arity (by decide +kernel)
 
 theorem ok_BinOp_size : FnOk prog prims info (951, ⟨0, [], 0⟩) :=
@@ -63,7 +63,7 @@ theorem ok_arg_base : FnOk prog prims info (964, ⟨3, [], 0⟩) :=
 theorem ok_fsp_save : FnOk prog prims info (965, ⟨3, [], 0⟩) :=
   fnOk_of fn_fsp_save (by decide +kernel)
 
-theorem ok_get_or_of_usize : FnOk prog prims info (966, ⟨2, [0], 0⟩) :=
+theorem ok_get_or_of_usize : FnOk prog prims info (966, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_or_of_usize (by decide +kernel)
 
 theorem ok_fsp_load : FnOk prog prims info (967, ⟨3, [], 0⟩) :=
@@ -75,7 +75,7 @@ theorem ok_slot_range : FnOk prog prims info (968, ⟨2, [1], 0⟩) :=
 theorem ok_epilogue : FnOk prog prims info (969, ⟨1, [], 0⟩) :=
   fnOk_of fn_epilogue (by decide +kernel)
 
-theorem ok_bump_bytes : FnOk prog prims info (970, ⟨3, [], 0⟩) :=
+theorem ok_bump_bytes : FnOk prog prims info (970, ⟨2, [], 0⟩) :=
   fnOk_of fn_bump_bytes (by decide +kernel)
 
 theorem ok_load_at_bytes : FnOk prog prims info (971, ⟨1, [], 0⟩) :=

@@ -16,13 +16,15 @@ Declaration counts: function: 25.
 
 ## Declared imports
 
-None.
+Direct source imports; this is not a package-resolution or transitive dependency result.
+
+- [core::slice](slice.md) · [source](../../../stdlib/core/utf8.lani#L4)
 
 ## Free functions and extern declarations
 
 ### function: is_scalar
 
-[Source line 12](../../../stdlib/core/utf8.lani#L12)
+[Source line 13](../../../stdlib/core/utf8.lani#L13)
 
 ```lanius
 pub fn is_scalar(value: u32) -> bool
@@ -30,7 +32,7 @@ pub fn is_scalar(value: u32) -> bool
 
 ### function: is_continuation_byte
 
-[Source line 15](../../../stdlib/core/utf8.lani#L15)
+[Source line 16](../../../stdlib/core/utf8.lani#L16)
 
 ```lanius
 pub fn is_continuation_byte(value: u8) -> bool
@@ -38,7 +40,7 @@ pub fn is_continuation_byte(value: u8) -> bool
 
 ### function: sequence_len_or
 
-[Source line 20](../../../stdlib/core/utf8.lani#L20)
+[Source line 21](../../../stdlib/core/utf8.lani#L21)
 
 ```lanius
 pub fn sequence_len_or(first: u8, fallback: u32) -> u32
@@ -46,7 +48,7 @@ pub fn sequence_len_or(first: u8, fallback: u32) -> u32
 
 ### function: encoded_len_or
 
-[Source line 36](../../../stdlib/core/utf8.lani#L36)
+[Source line 37](../../../stdlib/core/utf8.lani#L37)
 
 ```lanius
 pub fn encoded_len_or(value: u32, fallback: u32) -> u32
@@ -54,7 +56,7 @@ pub fn encoded_len_or(value: u32, fallback: u32) -> u32
 
 ### function: encoded_byte_or
 
-[Source line 53](../../../stdlib/core/utf8.lani#L53)
+[Source line 54](../../../stdlib/core/utf8.lani#L54)
 
 ```lanius
 pub fn encoded_byte_or(value: u32, index: u32, fallback: u8) -> u8
@@ -62,7 +64,7 @@ pub fn encoded_byte_or(value: u32, index: u32, fallback: u8) -> u8
 
 ### function: decode_or
 
-[Source line 90](../../../stdlib/core/utf8.lani#L90)
+[Source line 91](../../../stdlib/core/utf8.lani#L91)
 
 ```lanius
 pub fn decode_or(first: u8, second: u8, third: u8, fourth: u8, length: u32, fallback: u32) -> u32
@@ -70,7 +72,7 @@ pub fn decode_or(first: u8, second: u8, third: u8, fourth: u8, length: u32, fall
 
 ### function: bytes_are_valid
 
-[Source line 226](../../../stdlib/core/utf8.lani#L226)
+[Source line 233](../../../stdlib/core/utf8.lani#L233)
 
 ```lanius
 pub fn bytes_are_valid(values: [u8], len: i32) -> bool
@@ -78,7 +80,7 @@ pub fn bytes_are_valid(values: [u8], len: i32) -> bool
 
 ### function: byte_scalar_count_or
 
-[Source line 232](../../../stdlib/core/utf8.lani#L232)
+[Source line 239](../../../stdlib/core/utf8.lani#L239)
 
 ```lanius
 pub fn byte_scalar_count_or(values: [u8], len: i32, fallback: i32) -> i32
@@ -86,7 +88,7 @@ pub fn byte_scalar_count_or(values: [u8], len: i32, fallback: i32) -> i32
 
 ### function: byte_view_offset_of_scalar_or
 
-[Source line 243](../../../stdlib/core/utf8.lani#L243)
+[Source line 250](../../../stdlib/core/utf8.lani#L250)
 
 ```lanius
 pub fn byte_view_offset_of_scalar_or(values: [u8], len: i32, scalar_index: i32, fallback: i32) -> i32
@@ -94,7 +96,7 @@ pub fn byte_view_offset_of_scalar_or(values: [u8], len: i32, scalar_index: i32, 
 
 ### function: byte_view_scalar_index_of_byte_or
 
-[Source line 261](../../../stdlib/core/utf8.lani#L261)
+[Source line 268](../../../stdlib/core/utf8.lani#L268)
 
 ```lanius
 pub fn byte_view_scalar_index_of_byte_or(values: [u8], len: i32, byte_index: i32, fallback: i32) -> i32
@@ -102,7 +104,7 @@ pub fn byte_view_scalar_index_of_byte_or(values: [u8], len: i32, byte_index: i32
 
 ### function: byte_view_scalar_at_or
 
-[Source line 283](../../../stdlib/core/utf8.lani#L283)
+[Source line 290](../../../stdlib/core/utf8.lani#L290)
 
 ```lanius
 pub fn byte_view_scalar_at_or(values: [u8], len: i32, scalar_index: i32, fallback: u32) -> u32
@@ -110,7 +112,7 @@ pub fn byte_view_scalar_at_or(values: [u8], len: i32, scalar_index: i32, fallbac
 
 ### function: codes_are_valid
 
-[Source line 306](../../../stdlib/core/utf8.lani#L306)
+[Source line 313](../../../stdlib/core/utf8.lani#L313)
 
 ```lanius
 pub fn codes_are_valid(values: [i32], len: i32) -> bool
@@ -118,7 +120,7 @@ pub fn codes_are_valid(values: [i32], len: i32) -> bool
 
 ### function: scalar_count_or
 
-[Source line 313](../../../stdlib/core/utf8.lani#L313)
+[Source line 320](../../../stdlib/core/utf8.lani#L320)
 
 ```lanius
 pub fn scalar_count_or(values: [i32], len: i32, fallback: i32) -> i32
@@ -126,7 +128,7 @@ pub fn scalar_count_or(values: [i32], len: i32, fallback: i32) -> i32
 
 ### function: byte_offset_of_scalar_or
 
-[Source line 325](../../../stdlib/core/utf8.lani#L325)
+[Source line 332](../../../stdlib/core/utf8.lani#L332)
 
 ```lanius
 pub fn byte_offset_of_scalar_or(values: [i32], len: i32, scalar_index: i32, fallback: i32) -> i32
@@ -134,7 +136,7 @@ pub fn byte_offset_of_scalar_or(values: [i32], len: i32, scalar_index: i32, fall
 
 ### function: scalar_index_of_byte_or
 
-[Source line 346](../../../stdlib/core/utf8.lani#L346)
+[Source line 353](../../../stdlib/core/utf8.lani#L353)
 
 ```lanius
 pub fn scalar_index_of_byte_or(values: [i32], len: i32, byte_index: i32, fallback: i32) -> i32
@@ -142,7 +144,7 @@ pub fn scalar_index_of_byte_or(values: [i32], len: i32, byte_index: i32, fallbac
 
 ### function: scalar_at_or
 
-[Source line 394](../../../stdlib/core/utf8.lani#L394)
+[Source line 401](../../../stdlib/core/utf8.lani#L401)
 
 ```lanius
 pub fn scalar_at_or(values: [i32], len: i32, scalar_index: i32, fallback: u32) -> u32
@@ -150,7 +152,7 @@ pub fn scalar_at_or(values: [i32], len: i32, scalar_index: i32, fallback: u32) -
 
 ### function: index_of_scalar_or
 
-[Source line 406](../../../stdlib/core/utf8.lani#L406)
+[Source line 413](../../../stdlib/core/utf8.lani#L413)
 
 ```lanius
 pub fn index_of_scalar_or(values: [i32], len: i32, needle: u32, fallback: i32) -> i32
@@ -158,7 +160,7 @@ pub fn index_of_scalar_or(values: [i32], len: i32, needle: u32, fallback: i32) -
 
 ### function: last_index_of_scalar_or
 
-[Source line 429](../../../stdlib/core/utf8.lani#L429)
+[Source line 436](../../../stdlib/core/utf8.lani#L436)
 
 ```lanius
 pub fn last_index_of_scalar_or(values: [i32], len: i32, needle: u32, fallback: i32) -> i32
@@ -166,7 +168,7 @@ pub fn last_index_of_scalar_or(values: [i32], len: i32, needle: u32, fallback: i
 
 ### function: append_scalar_or
 
-[Source line 457](../../../stdlib/core/utf8.lani#L457)
+[Source line 464](../../../stdlib/core/utf8.lani#L464)
 
 ```lanius
 pub fn append_scalar_or(values: [i32], len: i32, capacity: i32, value: u32, fallback: i32) -> i32
@@ -174,7 +176,7 @@ pub fn append_scalar_or(values: [i32], len: i32, capacity: i32, value: u32, fall
 
 ### function: equal_codes
 
-[Source line 479](../../../stdlib/core/utf8.lani#L479)
+[Source line 486](../../../stdlib/core/utf8.lani#L486)
 
 ```lanius
 pub fn equal_codes(left: [i32], left_len: i32, right: [i32], right_len: i32) -> bool
@@ -182,7 +184,7 @@ pub fn equal_codes(left: [i32], left_len: i32, right: [i32], right_len: i32) -> 
 
 ### function: starts_with_codes
 
-[Source line 494](../../../stdlib/core/utf8.lani#L494)
+[Source line 501](../../../stdlib/core/utf8.lani#L501)
 
 ```lanius
 pub fn starts_with_codes(values: [i32], len: i32, prefix: [i32], prefix_len: i32) -> bool
@@ -190,7 +192,7 @@ pub fn starts_with_codes(values: [i32], len: i32, prefix: [i32], prefix_len: i32
 
 ### function: ends_with_codes
 
-[Source line 505](../../../stdlib/core/utf8.lani#L505)
+[Source line 512](../../../stdlib/core/utf8.lani#L512)
 
 ```lanius
 pub fn ends_with_codes(values: [i32], len: i32, suffix: [i32], suffix_len: i32) -> bool
@@ -198,7 +200,7 @@ pub fn ends_with_codes(values: [i32], len: i32, suffix: [i32], suffix_len: i32) 
 
 ### function: compare_codes_or
 
-[Source line 519](../../../stdlib/core/utf8.lani#L519)
+[Source line 526](../../../stdlib/core/utf8.lani#L526)
 
 ```lanius
 pub fn compare_codes_or(
@@ -208,7 +210,7 @@ pub fn compare_codes_or(
 
 ### function: index_of_codes_byte_or
 
-[Source line 540](../../../stdlib/core/utf8.lani#L540)
+[Source line 547](../../../stdlib/core/utf8.lani#L547)
 
 ```lanius
 pub fn index_of_codes_byte_or(
@@ -218,7 +220,7 @@ pub fn index_of_codes_byte_or(
 
 ### function: last_index_of_codes_byte_or
 
-[Source line 558](../../../stdlib/core/utf8.lani#L558)
+[Source line 565](../../../stdlib/core/utf8.lani#L565)
 
 ```lanius
 pub fn last_index_of_codes_byte_or(

@@ -1,6 +1,9 @@
-import Lanius.Faithful.Sim.Expr
-import Lanius.Faithful.Sim.Mono
+module
 
+public import Lanius.Faithful.Sim.Expr
+public import Lanius.Faithful.Sim.Mono
+
+@[expose] public section
 /-! # Effectful expressions
 
 An effectful expression `effTy` types, that Core completes, has the pure

@@ -120,7 +120,7 @@ theorem ok_items_in : FnOk prog prims info (240, ⟨3, [0], 0⟩) :=
 theorem ok_kids_of : FnOk prog prims info (241, ⟨1, [], 0⟩) :=
   fnOk_of fn_kids_of (by decide +kernel)
 
-theorem ok_get_or_of_mini_selfhost_CTree : FnOk prog prims info (242, ⟨2, [0], 0⟩) :=
+theorem ok_get_or_of_mini_selfhost_CTree : FnOk prog prims info (242, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_or_of_mini_selfhost_CTree (by decide +kernel)
 
 theorem ok_no_token : FnOk prog prims info (243, ⟨1, [], 0⟩) :=
@@ -129,7 +129,7 @@ theorem ok_no_token : FnOk prog prims info (243, ⟨1, [], 0⟩) :=
 theorem ok_file_collected : FnOk prog prims info (244, ⟨0, [], 0⟩) :=
   fnOk_of fn_file_collected (by decide +kernel)
 
-theorem ok_collect : FnOk prog prims info (245, ⟨11, [2], 0⟩) :=
+theorem ok_collect : FnOk prog prims info (245, ⟨10, [2], 0⟩) :=
   fnOk_of fn_collect (by decide +kernel)
 
 theorem chunk4 : AllFns prog prims info part4 :=

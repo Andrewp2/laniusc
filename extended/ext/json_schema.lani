@@ -1,0 +1,627 @@
+// JSON Schema draft 2020-12 validation (core, applicator and validation
+// vocabularies) over ext::json_tree trees, with `pattern` and
+// `patternProperties` through ext::regex. See docs/extended-json-schema.md.
+module ext::json_schema;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::text;
+import ext::json_pointer;
+import ext::json_tree;
+import ext::regex;
+
+pub enum ErrorKind { InvalidSchema, InvalidPattern, InvalidReference, Unsupported, UnsupportedDialect, DepthLimit, WorkLimit, AllocationFailed }
+// schema_node is the schema tree node where compilation failed, or the
+// schema node being evaluated when validation stopped.
+pub struct Error { kind: ErrorKind, schema_node: i32 }
+// max_depth bounds nested schema evaluation (each subschema, $ref and
+// property-name check is one level); max_work bounds subschema evaluations.
+pub struct Limits { max_depth: i32, max_work: u64 }
+pub fn default_limits() -> Limits { return Limits { max_depth: 256, max_work: 10000000 }; }
+
+fn lit(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+    return core::text::from_utf8_unchecked(bytes, 0, count);
+}
+pub fn kind_name(kind: ErrorKind) -> core::text::Text {
+    let name: core::text::Text = match (kind) {
+        ErrorKind::InvalidSchema -> lit("InvalidSchema", 13),
+        ErrorKind::InvalidPattern -> lit("InvalidPattern", 14),
+        ErrorKind::InvalidReference -> lit("InvalidReference", 16),
+        ErrorKind::Unsupported -> lit("Unsupported", 11),
+        ErrorKind::UnsupportedDialect -> lit("UnsupportedDialect", 18),
+        ErrorKind::DepthLimit -> lit("DepthLimit", 10),
+        ErrorKind::WorkLimit -> lit("WorkLimit", 9),
+        ErrorKind::AllocationFailed -> lit("AllocationFailed", 16),
+    };
+    return name;
+}
+fn same_text(a: core::text::Text, b: core::text::Text) -> bool {
+    if (a.length != b.length) { return false; }
+    let index: i32 = 0;
+    while (index < a.length) { if (a.bytes[a.start + index] != b.bytes[b.start + index]) { return false; } index += 1; }
+    return true;
+}
+
+// Record words, one record per object schema. Each holds the keyword's value
+// node or -1, except TYPE (a mask of TYPE_* bits), the counts (the bound,
+// saturated at 2^31-1) and UNIQUE (1 when uniqueItems is true).
+const TYPE: i32 = 0; const ENUM: i32 = 1; const CONST: i32 = 2;
+const MULTIPLE_OF: i32 = 3; const MAXIMUM: i32 = 4; const EXCLUSIVE_MAXIMUM: i32 = 5; const MINIMUM: i32 = 6; const EXCLUSIVE_MINIMUM: i32 = 7;
+const MAX_LENGTH: i32 = 8; const MIN_LENGTH: i32 = 9; const PATTERN: i32 = 10;
+const MAX_ITEMS: i32 = 11; const MIN_ITEMS: i32 = 12; const UNIQUE: i32 = 13; const MAX_CONTAINS: i32 = 14; const MIN_CONTAINS: i32 = 15;
+const MAX_PROPERTIES: i32 = 16; const MIN_PROPERTIES: i32 = 17; const REQUIRED: i32 = 18; const DEPENDENT_REQUIRED: i32 = 19;
+const ALL_OF: i32 = 20; const ANY_OF: i32 = 21; const ONE_OF: i32 = 22; const NOT: i32 = 23; const IF: i32 = 24; const THEN: i32 = 25; const ELSE: i32 = 26;
+const DEPENDENT_SCHEMAS: i32 = 27; const PREFIX_ITEMS: i32 = 28; const ITEMS: i32 = 29; const CONTAINS: i32 = 30;
+const PROPERTIES: i32 = 31; const PATTERN_PROPERTIES: i32 = 32; const ADDITIONAL_PROPERTIES: i32 = 33; const PROPERTY_NAMES: i32 = 34;
+const REF: i32 = 35; const DEFS: i32 = 36;
+const WORDS: i32 = 37;
+// Keyword ids beyond the record words.
+const SCHEMA: i32 = 40; const ID: i32 = 41; const UNSUPPORTED: i32 = 42; const OTHER: i32 = 43;
+
+const TYPE_NULL: i32 = 1; const TYPE_BOOLEAN: i32 = 2; const TYPE_OBJECT: i32 = 4; const TYPE_ARRAY: i32 = 8;
+const TYPE_NUMBER: i32 = 16; const TYPE_STRING: i32 = 32; const TYPE_INTEGER: i32 = 64;
+
+fn keyword(key: core::text::Text) -> i32 {
+    if (key.length == 0) { return OTHER; }
+    if (same_text(key, lit("type", 4))) { return TYPE; }
+    if (same_text(key, lit("enum", 4))) { return ENUM; }
+    if (same_text(key, lit("const", 5))) { return CONST; }
+    if (same_text(key, lit("multipleOf", 10))) { return MULTIPLE_OF; }
+    if (same_text(key, lit("maximum", 7))) { return MAXIMUM; }
+    if (same_text(key, lit("exclusiveMaximum", 16))) { return EXCLUSIVE_MAXIMUM; }
+    if (same_text(key, lit("minimum", 7))) { return MINIMUM; }
+    if (same_text(key, lit("exclusiveMinimum", 16))) { return EXCLUSIVE_MINIMUM; }
+    if (same_text(key, lit("maxLength", 9))) { return MAX_LENGTH; }
+    if (same_text(key, lit("minLength", 9))) { return MIN_LENGTH; }
+    if (same_text(key, lit("pattern", 7))) { return PATTERN; }
+    if (same_text(key, lit("maxItems", 8))) { return MAX_ITEMS; }
+    if (same_text(key, lit("minItems", 8))) { return MIN_ITEMS; }
+    if (same_text(key, lit("uniqueItems", 11))) { return UNIQUE; }
+    if (same_text(key, lit("maxContains", 11))) { return MAX_CONTAINS; }
+    if (same_text(key, lit("minContains", 11))) { return MIN_CONTAINS; }
+    if (same_text(key, lit("maxProperties", 13))) { return MAX_PROPERTIES; }
+    if (same_text(key, lit("minProperties", 13))) { return MIN_PROPERTIES; }
+    if (same_text(key, lit("required", 8))) { return REQUIRED; }
+    if (same_text(key, lit("dependentRequired", 17))) { return DEPENDENT_REQUIRED; }
+    if (same_text(key, lit("allOf", 5))) { return ALL_OF; }
+    if (same_text(key, lit("anyOf", 5))) { return ANY_OF; }
+    if (same_text(key, lit("oneOf", 5))) { return ONE_OF; }
+    if (same_text(key, lit("not", 3))) { return NOT; }
+    if (same_text(key, lit("if", 2))) { return IF; }
+    if (same_text(key, lit("then", 4))) { return THEN; }
+    if (same_text(key, lit("else", 4))) { return ELSE; }
+    if (same_text(key, lit("dependentSchemas", 16))) { return DEPENDENT_SCHEMAS; }
+    if (same_text(key, lit("prefixItems", 11))) { return PREFIX_ITEMS; }
+    if (same_text(key, lit("items", 5))) { return ITEMS; }
+    if (same_text(key, lit("contains", 8))) { return CONTAINS; }
+    if (same_text(key, lit("properties", 10))) { return PROPERTIES; }
+    if (same_text(key, lit("patternProperties", 17))) { return PATTERN_PROPERTIES; }
+    if (same_text(key, lit("additionalProperties", 20))) { return ADDITIONAL_PROPERTIES; }
+    if (same_text(key, lit("propertyNames", 13))) { return PROPERTY_NAMES; }
+    if (same_text(key, lit("$ref", 4))) { return REF; }
+    if (same_text(key, lit("$defs", 5))) { return DEFS; }
+    if (same_text(key, lit("$schema", 7))) { return SCHEMA; }
+    if (same_text(key, lit("$id", 3))) { return ID; }
+    if (same_text(key, lit("$anchor", 7)) || same_text(key, lit("$dynamicRef", 11)) || same_text(key, lit("$dynamicAnchor", 14))
+        || same_text(key, lit("$vocabulary", 11)) || same_text(key, lit("unevaluatedItems", 16)) || same_text(key, lit("unevaluatedProperties", 21))) { return UNSUPPORTED; }
+    return OTHER;
+}
+fn type_bit(name: core::text::Text) -> i32 {
+    if (same_text(name, lit("null", 4))) { return TYPE_NULL; }
+    if (same_text(name, lit("boolean", 7))) { return TYPE_BOOLEAN; }
+    if (same_text(name, lit("object", 6))) { return TYPE_OBJECT; }
+    if (same_text(name, lit("array", 5))) { return TYPE_ARRAY; }
+    if (same_text(name, lit("number", 6))) { return TYPE_NUMBER; }
+    if (same_text(name, lit("string", 6))) { return TYPE_STRING; }
+    if (same_text(name, lit("integer", 7))) { return TYPE_INTEGER; }
+    return 0;
+}
+fn hex(byte: u8) -> i32 {
+    if (byte >= 48 && byte <= 57) { return (byte - 48) as i32; }
+    if (byte >= 65 && byte <= 70) { return (byte - 55) as i32; }
+    if (byte >= 97 && byte <= 102) { return (byte - 87) as i32; }
+    return -1;
+}
+
+// A compiled schema. It borrows the schema tree, which must stay alive and
+// unchanged until destroy().
+pub struct Schema {
+    tree: &ext::json_tree::Tree,
+    // Per schema-tree node: slots holds an object schema's record base (-2
+    // for a compiled boolean schema, -1 otherwise); links holds a $ref
+    // value's target node or a pattern's regex index.
+    slot_store: alloc::vec::Vec<i32>, slots: [i32], link_store: alloc::vec::Vec<i32>, links: [i32],
+    record_store: alloc::vec::Vec<i32>, records: [i32], record_used: i32, record_cap: i32,
+    // dfa_of[i] indexes dfas for regexes[i], or is -1 (lookbehind: the VM alone).
+    regexes: alloc::vec::Vec<ext::regex::Regex>, dfas: alloc::vec::Vec<ext::regex::Dfa>, dfa_of: alloc::vec::Vec<i32>,
+    workspace: ext::regex::Workspace, max_states: i32,
+    limits: Limits, depth: i32, work: u64, failed: bool, fault: ErrorKind, fault_node: i32,
+    scratch: alloc::vec::Vec<u8>,
+}
+
+pub impl Schema {
+    pub fn borrow(&self) -> &Schema { return self; }
+    fn fail(&self, kind: ErrorKind, node: i32) -> bool {
+        if (!self.failed) { self.failed = true; self.fault = kind; self.fault_node = node; }
+        return false;
+    }
+    fn word(&self, base: i32, index: i32) -> i32 { return self.records[base + index]; }
+    fn set_word(&self, base: i32, index: i32, value: i32) { self.records[base + index] = value; }
+    fn new_record(&self) -> i32 {
+        let base: i32 = self.record_used;
+        if (base + WORDS > self.record_cap) {
+            let target: i32 = self.record_cap * 2;
+            if (target < base + WORDS) { target = base + WORDS; }
+            if (target < 64 * WORDS) { target = 64 * WORDS; }
+            if (self.record_store.try_resize(target, -1).is_err()) { self.fail(ErrorKind::AllocationFailed, -1); return -1; }
+            self.records = self.record_store.as_slice(); self.record_cap = target;
+        }
+        let index: i32 = 0;
+        while (index < WORDS) { self.records[base + index] = -1; index += 1; }
+        self.record_used = base + WORDS;
+        return base;
+    }
+    fn add_regex(&self, pattern: core::text::Text, node: i32) -> i32 {
+        let made = ext::regex::compile(pattern, ext::regex::options());
+        if (made.is_err()) {
+            let kind: ErrorKind = match (made.unwrap_err()) { ext::regex::Error::AllocationFailed -> ErrorKind::AllocationFailed, _ -> ErrorKind::InvalidPattern };
+            self.fail(kind, node); return -1;
+        }
+        let regex: ext::regex::Regex = made.unwrap();
+        let index: i32 = self.regexes.len();
+        if (self.regexes.try_push(regex).is_err()) { regex.destroy(); self.fail(ErrorKind::AllocationFailed, node); return -1; }
+        if (regex.state_count() > self.max_states) { self.max_states = regex.state_count(); }
+        let lazy = ext::regex::dfa(regex.borrow());
+        let slot: i32 = -1;
+        if (lazy.is_ok()) {
+            let automaton: ext::regex::Dfa = lazy.unwrap();
+            slot = self.dfas.len();
+            if (self.dfas.try_push(automaton).is_err()) { automaton.destroy(); self.fail(ErrorKind::AllocationFailed, node); return -1; }
+        }
+        if (self.dfa_of.try_push(slot).is_err()) { self.fail(ErrorKind::AllocationFailed, node); return -1; }
+        return index;
+    }
+
+    // Compiling ---------------------------------------------------------------
+
+    // Checks and indexes the schema at node (and everything it reaches).
+    fn compile_at(&self, node: i32, root: bool) -> bool {
+        if (self.slots[node] != -1) { return true; }
+        let tree: &ext::json_tree::Tree = self.tree;
+        let code: i32 = tree.code(node);
+        if (code == 1 || code == 2) { self.slots[node] = -2; return true; }
+        if (code != 6) { return self.fail(ErrorKind::InvalidSchema, node); }
+        let base: i32 = self.new_record();
+        if (base < 0) { return false; }
+        self.slots[node] = base;
+        let member: i32 = tree.first_child(node);
+        while (member >= 0) {
+            if (!self.compile_keyword(base, keyword(tree.key(member)), member, root)) { return false; }
+            member = tree.next_sibling(member);
+        }
+        return true;
+    }
+    fn compile_keyword(&self, base: i32, id: i32, value: i32, root: bool) -> bool {
+        let tree: &ext::json_tree::Tree = self.tree;
+        let code: i32 = tree.code(value);
+        if (id == OTHER) { return true; }
+        if (id == UNSUPPORTED) { return self.fail(ErrorKind::Unsupported, value); }
+        if (id == SCHEMA) {
+            if (code != 4) { return self.fail(ErrorKind::InvalidSchema, value); }
+            if (!same_text(tree.text(value), lit("https://json-schema.org/draft/2020-12/schema", 44))) { return self.fail(ErrorKind::UnsupportedDialect, value); }
+            return true;
+        }
+        if (id == ID) {
+            if (code != 4) { return self.fail(ErrorKind::InvalidSchema, value); }
+            if (!root) { return self.fail(ErrorKind::Unsupported, value); }
+            return true;
+        }
+        if (id == TYPE) {
+            let mask: i32 = 0;
+            if (code == 4) { mask = type_bit(tree.text(value)); }
+            if (code == 5 && tree.child_count(value) > 0) {
+                let item: i32 = tree.first_child(value);
+                while (item >= 0) {
+                    if (tree.code(item) != 4) { return self.fail(ErrorKind::InvalidSchema, item); }
+                    let bit: i32 = type_bit(tree.text(item));
+                    if (bit == 0 || (mask & bit) != 0) { return self.fail(ErrorKind::InvalidSchema, item); }
+                    mask = mask | bit; item = tree.next_sibling(item);
+                }
+            }
+            if (mask == 0) { return self.fail(ErrorKind::InvalidSchema, value); }
+            self.set_word(base, TYPE, mask); return true;
+        }
+        if (id == ENUM) { if (code != 5) { return self.fail(ErrorKind::InvalidSchema, value); } self.set_word(base, ENUM, value); return true; }
+        if (id == CONST) { self.set_word(base, CONST, value); return true; }
+        if (id >= MULTIPLE_OF && id <= EXCLUSIVE_MINIMUM) {
+            if (code != 3) { return self.fail(ErrorKind::InvalidSchema, value); }
+            if (id == MULTIPLE_OF) {
+                if (ext::json_tree::number_compare(tree.text(value), lit("0", 1)) <= 0) { return self.fail(ErrorKind::InvalidSchema, value); }
+                if (ext::json_tree::number_digits(tree.text(value)) > 18) { return self.fail(ErrorKind::Unsupported, value); }
+            }
+            self.set_word(base, id, value); return true;
+        }
+        if (id == MAX_LENGTH || id == MIN_LENGTH || id == MAX_ITEMS || id == MIN_ITEMS || id == MAX_CONTAINS || id == MIN_CONTAINS || id == MAX_PROPERTIES || id == MIN_PROPERTIES) {
+            if (code != 3) { return self.fail(ErrorKind::InvalidSchema, value); }
+            let count: i64 = ext::json_tree::number_count(tree.text(value), 2147483647);
+            if (count < 0) { return self.fail(ErrorKind::InvalidSchema, value); }
+            self.set_word(base, id, count as i32); return true;
+        }
+        if (id == PATTERN) {
+            if (code != 4) { return self.fail(ErrorKind::InvalidSchema, value); }
+            let index: i32 = self.add_regex(tree.text(value), value);
+            if (index < 0) { return false; }
+            self.links[value] = index; self.set_word(base, PATTERN, value); return true;
+        }
+        if (id == UNIQUE) {
+            if (code != 1 && code != 2) { return self.fail(ErrorKind::InvalidSchema, value); }
+            if (code == 2) { self.set_word(base, UNIQUE, 1); }
+            return true;
+        }
+        if (id == REQUIRED) {
+            if (!self.names(value)) { return false; }
+            self.set_word(base, REQUIRED, value); return true;
+        }
+        if (id == DEPENDENT_REQUIRED) {
+            if (code != 6) { return self.fail(ErrorKind::InvalidSchema, value); }
+            let member: i32 = tree.first_child(value);
+            while (member >= 0) { if (!self.names(member)) { return false; } member = tree.next_sibling(member); }
+            self.set_word(base, DEPENDENT_REQUIRED, value); return true;
+        }
+        if (id == ALL_OF || id == ANY_OF || id == ONE_OF || id == PREFIX_ITEMS) {
+            if (code != 5 || tree.child_count(value) == 0) { return self.fail(ErrorKind::InvalidSchema, value); }
+            let item: i32 = tree.first_child(value);
+            while (item >= 0) { if (!self.compile_at(item, false)) { return false; } item = tree.next_sibling(item); }
+            self.set_word(base, id, value); return true;
+        }
+        if (id == NOT || id == IF || id == THEN || id == ELSE || id == ITEMS || id == CONTAINS || id == ADDITIONAL_PROPERTIES || id == PROPERTY_NAMES) {
+            if (!self.compile_at(value, false)) { return false; }
+            self.set_word(base, id, value); return true;
+        }
+        if (id == PROPERTIES || id == PATTERN_PROPERTIES || id == DEPENDENT_SCHEMAS || id == DEFS) {
+            if (code != 6) { return self.fail(ErrorKind::InvalidSchema, value); }
+            let member: i32 = tree.first_child(value);
+            while (member >= 0) {
+                if (id == PATTERN_PROPERTIES) {
+                    let index: i32 = self.add_regex(tree.key(member), member);
+                    if (index < 0) { return false; }
+                    self.links[member] = index;
+                }
+                if (!self.compile_at(member, false)) { return false; }
+                member = tree.next_sibling(member);
+            }
+            self.set_word(base, id, value); return true;
+        }
+        // REF
+        if (code != 4) { return self.fail(ErrorKind::InvalidSchema, value); }
+        let target: i32 = self.resolve(value);
+        if (target < 0) { return false; }
+        self.links[value] = target; self.set_word(base, REF, value);
+        return self.compile_at(target, false);
+    }
+    // An array of distinct strings.
+    fn names(&self, value: i32) -> bool {
+        let tree: &ext::json_tree::Tree = self.tree;
+        if (tree.code(value) != 5) { return self.fail(ErrorKind::InvalidSchema, value); }
+        let item: i32 = tree.first_child(value);
+        while (item >= 0) {
+            if (tree.code(item) != 4) { return self.fail(ErrorKind::InvalidSchema, item); }
+            let other: i32 = tree.first_child(value);
+            while (other != item) { if (same_text(tree.text(other), tree.text(item))) { return self.fail(ErrorKind::InvalidSchema, item); } other = tree.next_sibling(other); }
+            item = tree.next_sibling(item);
+        }
+        return true;
+    }
+    // The target of a "#" + JSON Pointer reference, percent-decoded.
+    fn resolve(&self, value: i32) -> i32 {
+        let tree: &ext::json_tree::Tree = self.tree;
+        let text: core::text::Text = tree.text(value);
+        if (text.length == 0 || text.bytes[text.start] != 35) { self.fail(ErrorKind::InvalidReference, value); return -1; }
+        self.scratch.clear();
+        let index: i32 = 1;
+        while (index < text.length) {
+            let byte: u8 = text.bytes[text.start + index];
+            if (byte == 37) {
+                if (index + 2 >= text.length) { self.fail(ErrorKind::InvalidReference, value); return -1; }
+                let high: i32 = hex(text.bytes[text.start + index + 1]); let low: i32 = hex(text.bytes[text.start + index + 2]);
+                if (high < 0 || low < 0) { self.fail(ErrorKind::InvalidReference, value); return -1; }
+                byte = (high * 16 + low) as u8; index += 2;
+            }
+            if (self.scratch.try_push(byte).is_err()) { self.fail(ErrorKind::AllocationFailed, value); return -1; }
+            index += 1;
+        }
+        let parsed = ext::json_pointer::parse(core::text::from_utf8_unchecked(self.scratch.as_slice(), 0, self.scratch.len()));
+        if (parsed.is_err()) { self.fail(ErrorKind::InvalidReference, value); return -1; }
+        let pointer: ext::json_pointer::Pointer = parsed.unwrap();
+        let found = ext::json_pointer::get(tree, pointer.borrow());
+        pointer.destroy();
+        if (found.is_err()) { self.fail(ErrorKind::InvalidReference, value); return -1; }
+        let target: i32 = found.unwrap();
+        let code: i32 = tree.code(target);
+        if (code != 1 && code != 2 && code != 6) { self.fail(ErrorKind::InvalidReference, value); return -1; }
+        return target;
+    }
+
+    // Validating --------------------------------------------------------------
+
+    // Whether instance's root satisfies the schema.
+    pub fn validate(&self, instance: &ext::json_tree::Tree) -> core::result::Result<bool, Error> {
+        return self.validate_node(instance, instance.root());
+    }
+    pub fn validate_node(&self, instance: &ext::json_tree::Tree, node: i32) -> core::result::Result<bool, Error> {
+        self.depth = 0; self.work = 0; self.failed = false;
+        let result: i32 = self.check(self.tree.root(), instance, node, false);
+        if (result < 0) { return core::result::Err(Error { kind: self.fault, schema_node: self.fault_node }); }
+        return core::result::Ok(result == 1);
+    }
+    // 1 valid, 0 invalid, -1 stopped (see fault). With key, the instance is
+    // the key of member node, as a string.
+    fn check(&self, schema: i32, instance: &ext::json_tree::Tree, node: i32, key: bool) -> i32 {
+        self.work += 1;
+        if (self.work > self.limits.max_work) { self.fail(ErrorKind::WorkLimit, schema); return -1; }
+        if (self.depth >= self.limits.max_depth) { self.fail(ErrorKind::DepthLimit, schema); return -1; }
+        self.depth += 1;
+        let result: i32 = self.evaluate(schema, instance, node, key);
+        self.depth -= 1;
+        return result;
+    }
+    fn evaluate(&self, schema: i32, instance: &ext::json_tree::Tree, node: i32, key: bool) -> i32 {
+        let tree: &ext::json_tree::Tree = self.tree;
+        let base: i32 = self.slots[schema];
+        if (base == -2) { if (tree.code(schema) == 2) { return 1; } return 0; }
+        let code: i32 = 4; if (!key) { code = instance.code(node); }
+        let text: core::text::Text = lit("", 0);
+        if (key) { text = instance.key(node); } else { if (code == 3 || code == 4) { text = instance.text(node); } }
+        let reference: i32 = self.word(base, REF);
+        if (reference >= 0) { let r: i32 = self.check(self.links[reference], instance, node, key); if (r != 1) { return r; } }
+        let mask: i32 = self.word(base, TYPE);
+        if (mask >= 0) {
+            let bit: i32 = TYPE_NULL;
+            if (code == 1 || code == 2) { bit = TYPE_BOOLEAN; }
+            if (code == 3) { bit = TYPE_NUMBER; if (ext::json_tree::number_is_integer(text)) { bit = TYPE_NUMBER | TYPE_INTEGER; } }
+            if (code == 4) { bit = TYPE_STRING; }
+            if (code == 5) { bit = TYPE_ARRAY; }
+            if (code == 6) { bit = TYPE_OBJECT; }
+            if ((mask & bit) == 0) { return 0; }
+        }
+        let options: i32 = self.word(base, ENUM);
+        if (options >= 0) {
+            let found: bool = false; let item: i32 = tree.first_child(options);
+            while (item >= 0 && !found) { found = self.same(item, instance, node, key); item = tree.next_sibling(item); }
+            if (!found) { return 0; }
+        }
+        let constant: i32 = self.word(base, CONST);
+        if (constant >= 0 && !self.same(constant, instance, node, key)) { return 0; }
+        if (code == 3) {
+            let bound: i32 = self.word(base, MULTIPLE_OF);
+            if (bound >= 0 && !ext::json_tree::number_is_multiple(text, tree.text(bound))) { return 0; }
+            bound = self.word(base, MAXIMUM);
+            if (bound >= 0 && ext::json_tree::number_compare(text, tree.text(bound)) > 0) { return 0; }
+            bound = self.word(base, EXCLUSIVE_MAXIMUM);
+            if (bound >= 0 && ext::json_tree::number_compare(text, tree.text(bound)) >= 0) { return 0; }
+            bound = self.word(base, MINIMUM);
+            if (bound >= 0 && ext::json_tree::number_compare(text, tree.text(bound)) < 0) { return 0; }
+            bound = self.word(base, EXCLUSIVE_MINIMUM);
+            if (bound >= 0 && ext::json_tree::number_compare(text, tree.text(bound)) <= 0) { return 0; }
+        }
+        if (code == 4) {
+            let most: i32 = self.word(base, MAX_LENGTH); let least: i32 = self.word(base, MIN_LENGTH);
+            if (most >= 0 || least >= 0) {
+                let length: i32 = scalars(text);
+                if (most >= 0 && length > most) { return 0; }
+                if (least >= 0 && length < least) { return 0; }
+            }
+            let pattern: i32 = self.word(base, PATTERN);
+            if (pattern >= 0) { let r: i32 = self.matches(self.links[pattern], text, schema); if (r != 1) { return r; } }
+        }
+        if (code == 5) { let r: i32 = self.array(base, schema, instance, node); if (r != 1) { return r; } }
+        if (code == 6) { let r: i32 = self.object(base, schema, instance, node); if (r != 1) { return r; } }
+        let list: i32 = self.word(base, ALL_OF);
+        if (list >= 0) {
+            let item: i32 = tree.first_child(list);
+            while (item >= 0) { let r: i32 = self.check(item, instance, node, key); if (r != 1) { return r; } item = tree.next_sibling(item); }
+        }
+        list = self.word(base, ANY_OF);
+        if (list >= 0) {
+            let item: i32 = tree.first_child(list); let found: bool = false;
+            while (item >= 0) { let r: i32 = self.check(item, instance, node, key); if (r < 0) { return r; } if (r == 1) { found = true; break; } item = tree.next_sibling(item); }
+            if (!found) { return 0; }
+        }
+        list = self.word(base, ONE_OF);
+        if (list >= 0) {
+            let item: i32 = tree.first_child(list); let passed: i32 = 0;
+            while (item >= 0) { let r: i32 = self.check(item, instance, node, key); if (r < 0) { return r; } passed += r; if (passed > 1) { return 0; } item = tree.next_sibling(item); }
+            if (passed != 1) { return 0; }
+        }
+        let negated: i32 = self.word(base, NOT);
+        if (negated >= 0) { let r: i32 = self.check(negated, instance, node, key); if (r < 0) { return r; } if (r == 1) { return 0; } }
+        let condition: i32 = self.word(base, IF);
+        if (condition >= 0) {
+            let r: i32 = self.check(condition, instance, node, key);
+            if (r < 0) { return r; }
+            let branch: i32 = self.word(base, ELSE); if (r == 1) { branch = self.word(base, THEN); }
+            if (branch >= 0) { let s: i32 = self.check(branch, instance, node, key); if (s != 1) { return s; } }
+        }
+        return 1;
+    }
+    // Schema value item equals the instance (a key when key is set).
+    fn same(&self, item: i32, instance: &ext::json_tree::Tree, node: i32, key: bool) -> bool {
+        if (key) { return self.tree.code(item) == 4 && same_text(self.tree.text(item), instance.key(node)); }
+        return ext::json_tree::equal(self.tree, item, instance, node);
+    }
+    fn matches(&self, index: i32, text: core::text::Text, schema: i32) -> i32 {
+        let regex: ext::regex::Regex = self.regexes.at(index);
+        // Match tests need no capture slots, so one workspace serves every
+        // pattern; the lazy DFA answers when it can and falls back to the VM.
+        let slot: i32 = self.dfa_of.at(index);
+        if (slot >= 0) {
+            let automaton: ext::regex::Dfa = self.dfas.at(slot);
+            let decided = automaton.is_match_with(regex.borrow(), ext::regex::input_unchecked(text), 0, self.workspace.borrow());
+            if (decided.is_err()) { return self.regex_failed(decided.unwrap_err(), schema); }
+            if (decided.unwrap()) { return 1; }
+            return 0;
+        }
+        let found = regex.find_span_with(ext::regex::input_unchecked(text), 0, self.workspace.borrow());
+        if (found.is_err()) { return self.regex_failed(found.unwrap_err(), schema); }
+        if (found.unwrap().is_some()) { return 1; }
+        return 0;
+    }
+    fn regex_failed(&self, error: ext::regex::Error, schema: i32) -> i32 {
+        let kind: ErrorKind = match (error) { ext::regex::Error::AllocationFailed -> ErrorKind::AllocationFailed, ext::regex::Error::WorkLimit -> ErrorKind::WorkLimit, _ -> ErrorKind::InvalidPattern };
+        self.fail(kind, schema); return -1;
+    }
+    fn array(&self, base: i32, schema: i32, instance: &ext::json_tree::Tree, node: i32) -> i32 {
+        let tree: &ext::json_tree::Tree = self.tree;
+        let count: i32 = instance.child_count(node);
+        let most: i32 = self.word(base, MAX_ITEMS);
+        if (most >= 0 && count > most) { return 0; }
+        let least: i32 = self.word(base, MIN_ITEMS);
+        if (least >= 0 && count < least) { return 0; }
+        if (self.word(base, UNIQUE) == 1) {
+            let item: i32 = instance.first_child(node);
+            while (item >= 0) {
+                let other: i32 = instance.next_sibling(item);
+                while (other >= 0) { if (ext::json_tree::equal(instance, item, instance, other)) { return 0; } other = instance.next_sibling(other); }
+                item = instance.next_sibling(item);
+            }
+        }
+        let item: i32 = instance.first_child(node);
+        let prefix: i32 = self.word(base, PREFIX_ITEMS);
+        if (prefix >= 0) {
+            let rule: i32 = tree.first_child(prefix);
+            while (rule >= 0 && item >= 0) {
+                let r: i32 = self.check(rule, instance, item, false); if (r != 1) { return r; }
+                rule = tree.next_sibling(rule); item = instance.next_sibling(item);
+            }
+        }
+        let rest: i32 = self.word(base, ITEMS);
+        if (rest >= 0) {
+            while (item >= 0) { let r: i32 = self.check(rest, instance, item, false); if (r != 1) { return r; } item = instance.next_sibling(item); }
+        }
+        let contains: i32 = self.word(base, CONTAINS);
+        if (contains >= 0) {
+            let matched: i32 = 0; item = instance.first_child(node);
+            while (item >= 0) { let r: i32 = self.check(contains, instance, item, false); if (r < 0) { return r; } matched += r; item = instance.next_sibling(item); }
+            let minimum: i32 = self.word(base, MIN_CONTAINS); if (minimum < 0) { minimum = 1; }
+            let maximum: i32 = self.word(base, MAX_CONTAINS);
+            if (matched < minimum || (maximum >= 0 && matched > maximum)) { return 0; }
+        }
+        return 1;
+    }
+    fn object(&self, base: i32, schema: i32, instance: &ext::json_tree::Tree, node: i32) -> i32 {
+        let tree: &ext::json_tree::Tree = self.tree;
+        let count: i32 = instance.child_count(node);
+        let most: i32 = self.word(base, MAX_PROPERTIES);
+        if (most >= 0 && count > most) { return 0; }
+        let least: i32 = self.word(base, MIN_PROPERTIES);
+        if (least >= 0 && count < least) { return 0; }
+        let required: i32 = self.word(base, REQUIRED);
+        if (required >= 0 && !has_all(tree, required, instance, node)) { return 0; }
+        let dependent: i32 = self.word(base, DEPENDENT_REQUIRED);
+        if (dependent >= 0) {
+            let rule: i32 = tree.first_child(dependent);
+            while (rule >= 0) {
+                if (instance.member(node, tree.key(rule)) >= 0 && !has_all(tree, rule, instance, node)) { return 0; }
+                rule = tree.next_sibling(rule);
+            }
+        }
+        let properties: i32 = self.word(base, PROPERTIES);
+        if (properties >= 0) {
+            let rule: i32 = tree.first_child(properties);
+            while (rule >= 0) {
+                let member: i32 = instance.member(node, tree.key(rule));
+                if (member >= 0) { let r: i32 = self.check(rule, instance, member, false); if (r != 1) { return r; } }
+                rule = tree.next_sibling(rule);
+            }
+        }
+        let patterns: i32 = self.word(base, PATTERN_PROPERTIES);
+        let additional: i32 = self.word(base, ADDITIONAL_PROPERTIES);
+        if (patterns >= 0 || additional >= 0) {
+            let member: i32 = instance.first_child(node);
+            while (member >= 0) {
+                let name: core::text::Text = instance.key(member);
+                let covered: bool = properties >= 0 && tree.member(properties, name) >= 0;
+                if (patterns >= 0) {
+                    let rule: i32 = tree.first_child(patterns);
+                    while (rule >= 0) {
+                        let hit: i32 = self.matches(self.links[rule], name, schema);
+                        if (hit < 0) { return hit; }
+                        if (hit == 1) { covered = true; let r: i32 = self.check(rule, instance, member, false); if (r != 1) { return r; } }
+                        rule = tree.next_sibling(rule);
+                    }
+                }
+                if (!covered && additional >= 0) { let r: i32 = self.check(additional, instance, member, false); if (r != 1) { return r; } }
+                member = instance.next_sibling(member);
+            }
+        }
+        let names: i32 = self.word(base, PROPERTY_NAMES);
+        if (names >= 0) {
+            let member: i32 = instance.first_child(node);
+            while (member >= 0) { let r: i32 = self.check(names, instance, member, true); if (r != 1) { return r; } member = instance.next_sibling(member); }
+        }
+        let schemas: i32 = self.word(base, DEPENDENT_SCHEMAS);
+        if (schemas >= 0) {
+            let rule: i32 = tree.first_child(schemas);
+            while (rule >= 0) {
+                if (instance.member(node, tree.key(rule)) >= 0) { let r: i32 = self.check(rule, instance, node, false); if (r != 1) { return r; } }
+                rule = tree.next_sibling(rule);
+            }
+        }
+        return 1;
+    }
+    pub fn destroy(&self) {
+        let index: i32 = 0;
+        while (index < self.regexes.len()) { let regex: ext::regex::Regex = self.regexes.at(index); regex.destroy(); index += 1; }
+        index = 0;
+        while (index < self.dfas.len()) { let automaton: ext::regex::Dfa = self.dfas.at(index); automaton.destroy(); index += 1; }
+        self.regexes.destroy(); self.dfas.destroy(); self.dfa_of.destroy(); self.workspace.destroy(); self.scratch.destroy();
+        self.dfas = alloc::vec::new(); self.dfa_of = alloc::vec::new();
+        self.slot_store.destroy(); self.link_store.destroy(); self.record_store.destroy();
+        self.regexes = alloc::vec::new(); self.scratch = alloc::vec::new();
+        self.slot_store = alloc::vec::new(); self.link_store = alloc::vec::new(); self.record_store = alloc::vec::new();
+        self.slots = self.slot_store.as_slice(); self.links = self.link_store.as_slice(); self.records = self.record_store.as_slice();
+        self.record_used = 0; self.record_cap = 0;
+    }
+}
+
+// Unicode scalar values in UTF-8 text.
+fn scalars(text: core::text::Text) -> i32 {
+    let count: i32 = 0; let index: i32 = 0;
+    while (index < text.length) { if ((text.bytes[text.start + index] & 192) != 128) { count += 1; } index += 1; }
+    return count;
+}
+// Every string of array names is a member of instance object node.
+fn has_all(tree: &ext::json_tree::Tree, names: i32, instance: &ext::json_tree::Tree, node: i32) -> bool {
+    let item: i32 = tree.first_child(names);
+    while (item >= 0) { if (instance.member(node, tree.text(item)) < 0) { return false; } item = tree.next_sibling(item); }
+    return true;
+}
+
+// Compiles the schema at tree's root, checking every reachable keyword
+// (including unused $defs and untaken branches) and resolving every $ref.
+pub fn compile(tree: &ext::json_tree::Tree, limits: Limits) -> core::result::Result<Schema, Error> {
+    let ws = ext::regex::workspace(1, 1);
+    if (ws.is_err()) { return core::result::Err(Error { kind: ErrorKind::AllocationFailed, schema_node: -1 }); }
+    let slot_store: alloc::vec::Vec<i32> = alloc::vec::new(); let link_store: alloc::vec::Vec<i32> = alloc::vec::new();
+    let record_store: alloc::vec::Vec<i32> = alloc::vec::new();
+    let schema: Schema = Schema { tree: tree, slot_store: slot_store, slots: slot_store.as_slice(), link_store: link_store, links: link_store.as_slice(),
+        record_store: record_store, records: record_store.as_slice(), record_used: 0, record_cap: 0,
+        regexes: alloc::vec::new(), dfas: alloc::vec::new(), dfa_of: alloc::vec::new(), workspace: ws.unwrap(), max_states: 1,
+        limits: limits, depth: 0, work: 0, failed: false, fault: ErrorKind::InvalidSchema, fault_node: -1, scratch: alloc::vec::new() };
+    let nodes: i32 = tree.node_count();
+    if (schema.slot_store.try_resize(nodes, -1).is_err() || schema.link_store.try_resize(nodes, -1).is_err()) {
+        schema.destroy(); return core::result::Err(Error { kind: ErrorKind::AllocationFailed, schema_node: -1 });
+    }
+    schema.slots = schema.slot_store.as_slice(); schema.links = schema.link_store.as_slice();
+    if (!schema.compile_at(tree.root(), true)) {
+        let error: Error = Error { kind: schema.fault, schema_node: schema.fault_node };
+        schema.destroy(); return core::result::Err(error);
+    }
+    if (schema.max_states > 1) {
+        let sized = ext::regex::workspace(schema.max_states, 1);
+        if (sized.is_err()) { schema.destroy(); return core::result::Err(Error { kind: ErrorKind::AllocationFailed, schema_node: -1 }); }
+        schema.workspace.destroy(); schema.workspace = sized.unwrap();
+    }
+    return core::result::Ok(schema);
+}

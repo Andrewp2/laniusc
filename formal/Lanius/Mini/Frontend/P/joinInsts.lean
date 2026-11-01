@@ -144,9 +144,12 @@ def wideDecimal (text : List Nat) (acc : Nat) : Option Nat :=
     match text with
     | [] => some acc
     | b :: rest =>
-      if decide (48 ≤ b) && decide (b ≤ 57) then
-        wideDecimal rest (acc * 10 + (b - 48))
-      else
+      if decide (1844674407370955161 < acc) || decide (acc = 1844674407370955161) && decide (53 < b) then
         none
+      else
+        if decide (48 ≤ b) && decide (b ≤ 57) then
+          wideDecimal rest (acc * 10 + (b - 48))
+        else
+          none
 
 end Lanius.Mini

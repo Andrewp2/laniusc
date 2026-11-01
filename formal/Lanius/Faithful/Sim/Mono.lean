@@ -1,5 +1,8 @@
-import Lanius.Faithful.Pure
+module
 
+public import Lanius.Faithful.Pure
+
+@[expose] public section
 /-! # More fuel, the same pure value
 
 The pure semantics only looks at the values its calls give, so calls that

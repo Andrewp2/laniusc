@@ -5,7 +5,8 @@
 // bytes against a native byte array), which takes the element path. Each
 // random operation runs through the library on one pair of views and through
 // reference loops on an identical pair; both pairs must then agree. memchr
-// and memcmp are checked at every position for lengths 0..80. Exits 0 and
+// and memcmp are checked at every position for lengths 0..80, and
+// memchr_from, memcmp_range and ascii_run_end at random offsets. Exits 0 and
 // prints the operation count; a mismatch exits with a code naming its check.
 module app::main;
 import alloc::vec;
@@ -184,6 +185,38 @@ fn bytes_at(code: i32, a: [u8], b: [u8], rng: &Rng, tally: &Tally) -> i32 {
     return 0;
 }
 
+// memchr_from, memcmp_range and ascii_run_end at random offsets of 81-byte views.
+fn ranges_at(code: i32, a: [u8], b: [u8], rng: &Rng, tally: &Tally) -> i32 {
+    let k: i32 = 0;
+    while (k < 81) { a[k] = (65 + rng.below(3)) as u8; b[k] = (65 + rng.below(2)) as u8; k += 1; }
+    let trial: i32 = 0;
+    while (trial < 1500) {
+        let start: i32 = rng.below(82); let end: i32 = start + rng.below(82 - start);
+        let needle: u8 = (64 + rng.below(4)) as u8;
+        let want: i32 = -1; let i: i32 = start;
+        while (i < end && want < 0) { if (a[i] == needle) { want = i; } i += 1; }
+        if (core::slice::memchr_from(a, start, end, needle) != want) { return code + 1; }
+        let count: i32 = rng.below(82);
+        let left: i32 = rng.below(82 - count); let right: i32 = rng.below(82 - count);
+        if (rng.below(2) == 0) { right = left; k = 0; while (k < count) { b[right + k] = a[left + k]; k += 1; } if (count > 0 && rng.below(2) == 0) { b[right + rng.below(count)] = 66; } }
+        let order: i32 = 0; i = 0;
+        while (i < count && order == 0) {
+            if (a[left + i] < b[right + i]) { order = -1; }
+            if (a[left + i] > b[right + i]) { order = 1; }
+            i += 1;
+        }
+        if (core::slice::memcmp_range(a, left, b, right, count) != order) { return code + 2; }
+        if (rng.below(4) == 0) { a[rng.below(81)] = (128 + rng.below(128)) as u8; }
+        let ascii: i32 = start; while (ascii < end && a[ascii] < 128) { ascii += 1; }
+        if (core::slice::ascii_run_end(a, start, end) != ascii) { return code + 4; }
+        if (rng.below(8) == 0) { k = 0; while (k < 81) { if (a[k] >= 128) { a[k] = 65; } k += 1; } }
+        tally.operations += 1; trial += 1;
+    }
+    if (core::slice::memchr_from(a, -1, 10, 65) != -1 || core::slice::memcmp_range(a, -1, b, 0, 5) != 0) { return code + 3; }
+    if (core::slice::ascii_run_end(a, -1, 10) != -1 || core::slice::ascii_run_end(a, 7, 7) != 7) { return code + 5; }
+    return 0;
+}
+
 // The new Vec methods on one-word and packed elements.
 fn vec_methods(rng: &Rng) -> i32 {
     let v: alloc::vec::Vec<u64> = alloc::vec::new();
@@ -244,6 +277,8 @@ fn main() -> i32 {
     r = bytes_at(100, sa.as_slice(), sb.as_slice(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
     let ta: [u8; 81] = [0; 81]; let tb: [u8; 81] = [0; 81];
     r = bytes_at(110, ta, tb, rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+    r = ranges_at(120, sa.as_slice(), sb.as_slice(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+    r = ranges_at(130, ta, tb, rng.borrow(), tally.borrow()); if (r != 0) { return r; }
     r = vec_methods(rng.borrow()); if (r != 0) { return r; }
     print(tally.operations);
     return 0;

@@ -1,5 +1,8 @@
-import Lanius.X86.Machine.State
+module
 
+public import Lanius.X86.Machine.State
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 /-- Intel arithmetic status flags. Other RFLAGS bits, including DF, are

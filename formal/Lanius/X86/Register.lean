@@ -1,5 +1,8 @@
-import Std.Tactic
+module
 
+public import Std.Tactic
+
+@[expose] public section
 namespace Lanius.X86.Register
 
 inductive Width where

@@ -558,7 +558,85 @@ class Declarer:
 
 # ---------------------------------------------------------------- Lean text
 
+GEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Lanius', 'Faithful', 'Gen')
+
+
+def gen_closure(mods):
+    """The generated modules (Gen/) mods import, transitively, with mods."""
+    seen, todo = set(), [m for m in mods if m.startswith('Lanius.Faithful.Gen.')]
+    while todo:
+        m = todo.pop()
+        if m in seen:
+            continue
+        seen.add(m)
+        path = os.path.join(GEN_DIR, m.rsplit('.', 1)[1] + '.lean')
+        if os.path.exists(path):
+            todo += [x for x in re.findall(r'^(?:public )?import (?:all )?(\S+)', open(path).read(), re.M)
+                     if x.startswith('Lanius.Faithful.Gen.')]
+    return sorted(seen)
+
+
+CHECKERS = ('CheckFast', 'Check', 'ProgOk', 'DeclStep', 'Boxed')
+_bodies = []
+
+
+def checker_bodies():
+    """The extracted modules whose bodies the checkers (Sim/CheckFast.lean, ..)
+    unfold (their own `import all`s), which a kernel check of them unfolds too."""
+    if not _bodies:
+        sim = os.path.join(GEN_DIR, '..', 'Sim')
+        found = set()
+        for c in CHECKERS:
+            found |= set(re.findall(r'^import all (\S+)', open(os.path.join(sim, c + '.lean')).read(), re.M))
+        _bodies.append(sorted(found))
+    return _bodies[0]
+
+
+_srcs = {}
+
+
+def src_modules(names):
+    """The generated modules defining `src_X` for X in names."""
+    if not _srcs:
+        for n in sorted(os.listdir(GEN_DIR)):
+            if n.startswith('SelfSrc') and n.endswith('.lean'):
+                for m in re.finditer(r'^(?:def|abbrev) src_(\S+)', open(os.path.join(GEN_DIR, n)).read(), re.M):
+                    _srcs.setdefault(m.group(1), 'Lanius.Faithful.Gen.' + n[:-5])
+    return sorted({_srcs[x] for x in names if x in _srcs})
+
+
+def modulize(name, text):
+    """A legacy file's text as a `module`: its imports public, the bodies its
+    kernel checks unfold imported (`import all`), and the rest in an exposed
+    public section. Only the checks of functions (SelfOk*, SelfDecl<k>,
+    SelfPureBase) unfold the generated sources; a file whose checks are over
+    the tables unfolds the types; the others (SelfDecls, SelfPrims,
+    SelfPure) unfold nothing, so that they depend on the statements below
+    them only."""
+    lines = text.split('\n')
+    k = 0
+    while k < len(lines) and lines[k].startswith('import '):
+        k += 1
+    mods = [line.split()[1] for line in lines[:k]]
+    if re.fullmatch(r'SelfOk\d+|SelfDecl\d+|SelfPureBase', name):
+        bodies = gen_closure(mods) + checker_bodies()
+    elif name == 'SelfDecls':
+        bodies = checker_bodies()
+    elif name == 'SelfPrims':
+        # The prims' own sources (`src_X` of each `at_X` it uses).
+        bodies = src_modules(set(re.findall(r'\bat_([A-Za-z0-9_]+)', text))) + checker_bodies()
+    elif 'decide' in text:
+        bodies = ['Lanius.Faithful.Gen.SelfTypes'] + checker_bodies()
+    else:
+        bodies = []
+    return '\n'.join(['module', ''] + [f'public import {m}' for m in mods] +
+                     [f'import all {m}' for m in bodies] +
+                     ['', '@[expose] public section'] + lines[k:])
+
+
 def write(path, text):
+    if not text.startswith('module'):
+        text = modulize(os.path.basename(path)[:-5], text)
     try:
         with open(path) as f:
             if f.read() == text:

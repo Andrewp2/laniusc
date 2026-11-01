@@ -19,7 +19,7 @@ theorem ok_lx_range_pair : FnOk prog prims info (764, ⟨0, [], 0⟩) :=
 theorem ok_lx_trivia : FnOk prog prims info (765, ⟨0, [], 0⟩) :=
   fnOk_of fn_lx_trivia (by decide +kernel)
 
-theorem ok_lx_canonical_kind : FnOk prog prims info (766, ⟨3, [], 0⟩) :=
+theorem ok_lx_canonical_kind : FnOk prog prims info (766, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_canonical_kind (by decide +kernel)
 
 theorem ok_with_kid : FnOk prog prims info (768, ⟨1, [], 0⟩) :=

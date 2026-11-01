@@ -105,6 +105,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if ((core.flags & (SEMANTIC_LIR_FLAG_UNSUPPORTED |
                        SEMANTIC_LIR_FLAG_UNSUPPORTED_FOR_ITERABLE)) != 0u)
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+    // A C entry address (a function named as a value) exists only on x86.
+    // It is a CALL row from a name (lir/x86/scatter c_entry_call); a const
+    // named as a value is one too, so also check the callee is a fn item.
+    uint source_kind = compact_hir_core[opt_ir_source_hir[semantic_row]].kind;
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL && (source_kind == 22u || source_kind == 33u) &&
+        compact_hir_core[semantic_lir_functions[operands.a].hir_function].kind == 3u)
+        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     flags |= semantic_function_id_by_hir[
         opt_ir_source_hir[semantic_row]] == WASM_LIR_INVALID
         ? 0u : (1u << 8u);

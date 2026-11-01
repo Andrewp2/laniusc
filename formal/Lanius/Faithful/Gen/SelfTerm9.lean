@@ -90,7 +90,7 @@ theorem ok_lower_set_field_at : FnOk prog prims info (469, ⟨12, [], 0⟩) :=
 theorem ok_field_offset : FnOk prog prims info (470, ⟨3, [0], 0⟩) :=
   fnOk_of fn_field_offset (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_SrcType : FnOk prog prims info (471, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_SrcType : FnOk prog prims info (471, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_SrcType (by decide +kernel)
 
 theorem ok_UintTy_code : FnOk prog prims info (474, ⟨0, [], 0⟩) :=

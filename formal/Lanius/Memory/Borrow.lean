@@ -1,5 +1,8 @@
-import Lanius.Memory.Read
+module
 
+public import Lanius.Memory.Read
+
+@[expose] public section
 namespace Lanius.Memory
 
 /-- Fresh aligned storage for the packed-i32 host interface. -/

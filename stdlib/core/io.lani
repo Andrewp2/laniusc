@@ -374,11 +374,7 @@ pub impl Read for SliceReader {
         if (!valid_range(offset, count)) { return core::result::Err(Error::InvalidInput); }
         let amount: i32 = count;
         if (amount > self.length - self.cursor) { amount = self.length - self.cursor; }
-        let index: i32 = 0;
-        while (index < amount) {
-            destination[offset + index] = self.data[self.cursor + index];
-            index += 1;
-        }
+        core::slice::copy_nonoverlapping_range(destination, offset + amount, offset, self.data, self.length, self.cursor, amount);
         self.cursor += amount;
         return core::result::Ok(amount);
     }
@@ -389,11 +385,7 @@ pub impl Write for SliceWriter {
         if (!valid_range(offset, count)) { return core::result::Err(Error::InvalidInput); }
         let amount: i32 = count;
         if (amount > self.length - self.cursor) { amount = self.length - self.cursor; }
-        let index: i32 = 0;
-        while (index < amount) {
-            self.data[self.cursor + index] = source[offset + index];
-            index += 1;
-        }
+        core::slice::copy_nonoverlapping_range(self.data, self.length, self.cursor, source, offset + amount, offset, amount);
         self.cursor += amount;
         return core::result::Ok(amount);
     }
@@ -565,16 +557,14 @@ fn delimiter_engine<B>(reader:&B, delimiter:u8, destination:[u8], offset:i32,
         let amount:i32 = available.length;
         let amount_wide:u64 = amount as u64;
         if (amount_wide > remaining) { amount = remaining as i32; }
-        let selected:i32 = 0;
+        let selected:i32 = amount;
         let found:bool = false;
-        while (selected < amount && !found) {
-            let byte:u8 = available.values[available.start+selected];
-            selected += 1;
-            if (copying) {
-                destination[offset+copied] = byte;
-                copied += 1;
-            }
-            if (byte == delimiter) { found = true; }
+        let hit:i32 = core::slice::memchr_from(available.values, available.start, available.start+amount, delimiter);
+        if (hit >= 0) { selected = hit-available.start+1; found = true; }
+        if (copying) {
+            core::slice::copy_nonoverlapping_range(destination, offset+copied+selected, offset+copied,
+                available.values, available.start+selected, available.start, selected);
+            copied += selected;
         }
         calls += 1;
         let acknowledged:core::result::Result<i32,Error> = reader.consume(selected);

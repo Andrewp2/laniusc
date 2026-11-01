@@ -129,6 +129,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         if (callee_index < target_function_count[0u])
             input.callee_row = target_functions[callee_index].instruction_start;
     }
+    input.c_entry_narrow_mask = 0u;
+    if (core.op == X86_LIR_OP_CALL && (operands.metadata & X86_LIR_METADATA_NATIVE_C) != 0u &&
+        operands.a < semantic_function_count)
+    {
+        SemanticLirFunction callee = semantic_lir_functions[operands.a];
+        for (uint ordinal = 0u; ordinal < min(callee.param_count, 6u); ordinal++)
+        {
+            uint type = semantic_lir_params[callee.param_start + ordinal].type_id;
+            if (type == SCALAR_I32 || type == SCALAR_U32) input.c_entry_narrow_mask |= 1u << ordinal;
+        }
+    }
     input.specialized = x86_is_specialized_instruction(core, operands);
     bool final_explicit_return = core.op == X86_LIR_OP_RETURN ||
         core.op == X86_LIR_OP_RETURN_VOID || core.op == X86_LIR_OP_TRAP;

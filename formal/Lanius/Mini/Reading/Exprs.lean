@@ -116,6 +116,8 @@ theorem wideDecimal_sound : ∀ (text : List Nat) (acc n : Nat), wideDecimal tex
     · rw [if_pos big] at h; cases h
     · rw [if_neg big] at h
       simp only at h
+      split at h
+      · cases h
       by_cases dig : 48 ≤ b ∧ b ≤ 57
       · rw [if_pos (by simpa using dig)] at h
         obtain ⟨ds, rfl, le⟩ := wideDecimal_sound rest _ n h

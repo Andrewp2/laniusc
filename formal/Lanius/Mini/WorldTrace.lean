@@ -1,7 +1,52 @@
-import Lanius.World
-import Lanius.X86.Machine.Io
-import Lanius.Mini.HeapCorr
+module
 
+public import Lanius.World
+public import Lanius.X86.Machine.Io
+public import Lanius.Mini.HeapCorr
+public import Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.Instr_pieces
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.UintTy_mask
+import all Lanius.Mini.Compiler.P.applyGuard
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileModules
+import all Lanius.Mini.Compiler.P.conjunction
+import all Lanius.Mini.Compiler.P.equality
+import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.importOk
+import all Lanius.Mini.Compiler.P.importsOk
+import all Lanius.Mini.Compiler.P.leftTrue
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.lowerShift
+import all Lanius.Mini.Compiler.P.moduleExports
+import all Lanius.Mini.Compiler.P.moduleFirsts
+import all Lanius.Mini.Compiler.P.modulesOk
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.repeatType
+import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.lowerCallSig
+
+@[expose] public section
 /-! Core's host world and the process's write trace (roadmap F8).
 
 Core keeps what a program wrote as two byte lists in its world,
@@ -227,7 +272,7 @@ def writeBody (fd : BitVec 64) (slot : Nat) : Stmt :=
 theorem hostWriteCode_eq (fd : BitVec 64) (slot : Nat) :
     hostWriteCode fd slot = .seq (.assign (slot + 2) (.var (slot + 1)))
       (.seq (.loop (writeCond slot) (writeBody fd slot))
-        (.assign slot (.binary .s32 .add (.var (slot + 2)) (.lit 0)))) := rfl
+        (.assign slot (.binary .s32 .add (.var (slot + 2)) (.lit 0)))) := by rfl
 
 theorem eval_pick (E : Env) (slot : Nat) :
     (if Word.holds .u64 .lt ((Expr.var (slot + 1)).eval E) ((Expr.lit 2147479552).eval E) then (1 : BitVec 64) else 0)
@@ -451,7 +496,7 @@ def readBody (slot : Nat) : Stmt :=
 theorem hostReadCode_eq (slot : Nat) :
     hostReadCode slot = .seq (.assign (slot + 2) (.lit 0))
       (.seq (.loop (writeCond slot) (readBody slot))
-        (.assign slot (.binary .s32 .add (.var (slot + 2)) (.lit 0)))) := rfl
+        (.assign slot (.binary .s32 .add (.var (slot + 2)) (.lit 0)))) := by rfl
 
 /-- The loop reads the next `count` bytes of the input, or all that are left,
 to the pointer, adds how many to the total, and keeps the slots below `slot`.
@@ -788,7 +833,7 @@ def randomBody (slot : Nat) : Stmt :=
 theorem hostRandomCode_eq (slot : Nat) :
     hostRandomCode slot = .seq (.assign (slot + 2) (.var (slot + 1)))
       (.seq (.loop (writeCond slot) (randomBody slot))
-        (.assign slot (.binary .s32 .add (.var (slot + 2)) (.lit 0)))) := rfl
+        (.assign slot (.binary .s32 .add (.var (slot + 2)) (.lit 0)))) := by rfl
 
 theorem eval_pick256 (E : Env) (slot : Nat) :
     (if Word.holds .u64 .lt ((Expr.var (slot + 1)).eval E) ((Expr.lit 256).eval E) then (1 : BitVec 64) else 0)

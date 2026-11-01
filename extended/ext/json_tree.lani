@@ -388,6 +388,9 @@ fn same(left: [u8], left_start: i32, right: [u8], right_start: i32, length: i32)
     return true;
 }
 
+// An empty tree for builders such as ext::yaml: add nodes with new_node,
+// new_text, set_key and insert, then set_root.
+pub fn new_tree(limits: Limits) -> Tree { return empty(limits); }
 // A tree holding a deep copy of source's root.
 pub fn copy(source: &Tree, limits: Limits) -> core::result::Result<Tree, Error> {
     let tree: Tree = empty(limits);
@@ -468,6 +471,75 @@ pub fn numbers_equal(left: core::text::Text, right: core::text::Text) -> bool {
         index += 1;
     }
     return true;
+}
+// -1, 0 or 1 as the value of number spelling left is below, equal to or
+// above right's. Exponents beyond +-10^15 saturate.
+pub fn number_compare(left: core::text::Text, right: core::text::Text) -> i32 {
+    let a: Decimal = decimal(left); let b: Decimal = decimal(right);
+    let sign_a: i32 = sign_of(a); let sign_b: i32 = sign_of(b);
+    if (sign_a != sign_b) { if (sign_a < sign_b) { return -1; } return 1; }
+    if (sign_a == 0) { return 0; }
+    let order: i32 = magnitude_compare(left, a, right, b);
+    if (sign_a < 0) { return -order; }
+    return order;
+}
+fn sign_of(value: Decimal) -> i32 { if (value.first < 0) { return 0; } if (value.negative) { return -1; } return 1; }
+fn magnitude_compare(left: core::text::Text, a: Decimal, right: core::text::Text, b: Decimal) -> i32 {
+    let count_a: i32 = a.last - a.first + 1; let count_b: i32 = b.last - b.first + 1;
+    let adjusted_a: i64 = a.scale + (count_a as i64); let adjusted_b: i64 = b.scale + (count_b as i64);
+    if (adjusted_a != adjusted_b) { if (adjusted_a < adjusted_b) { return -1; } return 1; }
+    let index: i32 = 0;
+    while (index < count_a || index < count_b) {
+        let x: u8 = 48; let y: u8 = 48;
+        if (index < count_a) { x = digit_at(left, a, a.first + index); }
+        if (index < count_b) { y = digit_at(right, b, b.first + index); }
+        if (x != y) { if (x < y) { return -1; } return 1; }
+        index += 1;
+    }
+    return 0;
+}
+// Whether a number spelling has an integral value (1.0 and 1e2 do).
+pub fn number_is_integer(text: core::text::Text) -> bool {
+    let value: Decimal = decimal(text);
+    return value.first < 0 || value.scale >= 0;
+}
+// The value of a nonnegative integral number spelling, saturated at limit;
+// -1 for a negative or fractional value.
+pub fn number_count(text: core::text::Text, limit: i64) -> i64 {
+    let value: Decimal = decimal(text);
+    if (value.first < 0) { return 0; }
+    if (value.negative || value.scale < 0) { return -1; }
+    let count: i32 = value.last - value.first + 1;
+    if (value.scale + (count as i64) > 18) { return limit; }
+    let result: i64 = 0; let index: i32 = 0;
+    while (index < count) { result = result * 10 + ((digit_at(text, value, value.first + index) - 48) as i64); index += 1; }
+    let power: i64 = 0;
+    while (power < value.scale) { result = result * 10; power += 1; }
+    if (result > limit) { return limit; }
+    return result;
+}
+// Significant digits of a number spelling (0 for zero).
+pub fn number_digits(text: core::text::Text) -> i32 {
+    let value: Decimal = decimal(text);
+    if (value.first < 0) { return 0; }
+    return value.last - value.first + 1;
+}
+// Whether value is an integer multiple of divisor, exactly. divisor must be
+// nonzero with at most 18 significant digits; the result is false otherwise.
+pub fn number_is_multiple(value: core::text::Text, divisor: core::text::Text) -> bool {
+    let x: Decimal = decimal(value); let m: Decimal = decimal(divisor);
+    if (m.first < 0 || m.last - m.first + 1 > 18) { return false; }
+    if (x.first < 0) { return true; }
+    if (x.scale < m.scale) { return false; }
+    let modulus: u64 = 0; let index: i32 = 0;
+    while (index <= m.last - m.first) { modulus = modulus * 10 + ((digit_at(divisor, m, m.first + index) - 48) as u64); index += 1; }
+    let rest: u64 = 0; index = 0;
+    while (index <= x.last - x.first) { rest = (rest * 10 + ((digit_at(value, x, x.first + index) - 48) as u64)) % modulus; index += 1; }
+    // modulus < 2^60 has fewer than 64 factors of 2 or 5, so shifting by
+    // more than 64 decimal places cannot change divisibility.
+    let shift: i64 = x.scale - m.scale; if (shift > 64) { shift = 64; }
+    while (shift > 0) { rest = (rest * 10) % modulus; shift -= 1; }
+    return rest == 0;
 }
 // Significant digits are mantissa digits first..last (-1 when zero), counted
 // over the integer and fraction digits; scale is the exponent of the last one.

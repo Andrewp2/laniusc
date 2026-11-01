@@ -27,7 +27,7 @@ theorem ok_pack_round : FnOk prog prims info (54, ⟨3, [0], 0⟩) :=
 theorem ok_round_join : FnOk prog prims info (55, ⟨2, [], 0⟩) :=
   fnOk_of fn_round_join (by decide +kernel)
 
-theorem ok_minus : FnOk prog prims info (56, ⟨1, [], 0⟩) :=
+theorem ok_minus : FnOk prog prims info (56, ⟨0, [], 0⟩) :=
   fnOk_of fn_minus (by decide +kernel)
 
 theorem ok_SrcType_is_unit : FnOk prog prims info (57, ⟨0, [], 0⟩) :=
@@ -66,7 +66,7 @@ theorem ok_files_after : FnOk prog prims info (68, ⟨1, [], 0⟩) :=
 theorem ok_validate_files : FnOk prog prims info (69, ⟨8, [1], 0⟩) :=
   fnOk_of fn_validate_files (by decide +kernel)
 
-theorem ok_build_files : FnOk prog prims info (70, ⟨46, [], 0⟩) :=
+theorem ok_build_files : FnOk prog prims info (70, ⟨45, [], 0⟩) :=
   fnOk_of fn_build_files (by decide +kernel)
 
 theorem ok_files_fuel : FnOk prog prims info (71, ⟨3, [0], 0⟩) :=

@@ -18,7 +18,7 @@ theorem ok_empty_of_i32 : FnOk prog prims info (5, ⟨0, [], 0⟩) :=
 theorem ok_compile_words : FnOk prog prims info (6, ⟨22, [], 0⟩) :=
   fnOk_of fn_compile_words (by decide +kernel)
 
-theorem ok_front_end_words : FnOk prog prims info (7, ⟨49, [], 0⟩) :=
+theorem ok_front_end_words : FnOk prog prims info (7, ⟨48, [], 0⟩) :=
   fnOk_of fn_front_end_words (by decide +kernel)
 
 theorem ok_grammar : FnOk prog prims info (8, ⟨2, [], 0⟩) :=
@@ -36,7 +36,7 @@ theorem ok_compile_source : FnOk prog prims info (12, ⟨21, [], 0⟩) :=
 theorem ok_read_counted_files : FnOk prog prims info (13, ⟨23, [], 0⟩) :=
   fnOk_of fn_read_counted_files (by decide +kernel)
 
-theorem ok_front_end_read : FnOk prog prims info (14, ⟨48, [], 0⟩) :=
+theorem ok_front_end_read : FnOk prog prims info (14, ⟨47, [], 0⟩) :=
   fnOk_of fn_front_end_read (by decide +kernel)
 
 theorem ok_concat_of_mini_selfhost_Rule : FnOk prog prims info (15, ⟨0, [0], 0⟩) :=
@@ -114,7 +114,7 @@ theorem ok_read_files : FnOk prog prims info (40, ⟨22, [1], 0⟩) :=
 theorem ok_word_num : FnOk prog prims info (41, ⟨0, [], 0⟩) :=
   fnOk_of fn_word_num (by decide +kernel)
 
-theorem ok_front_end_files : FnOk prog prims info (42, ⟨47, [], 0⟩) :=
+theorem ok_front_end_files : FnOk prog prims info (42, ⟨46, [], 0⟩) :=
   fnOk_of fn_front_end_files (by decide +kernel)
 
 theorem ok_cons_of_mini_selfhost_Rule : FnOk prog prims info (45, ⟨0, [], 0⟩) :=
