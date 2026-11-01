@@ -136,12 +136,13 @@ The receipts are for `extended/ext/regex.lani` SHA256
 `c21ac7a5de9e4047073606d60ac90debe146bf90027fca9c2c640ae79e9edf26`, oracle
 SHA256 `8751ce9a25df4303cf5c6dbf722184684894aa64b43755f45d4b7faa49dce3c0`,
 `text_grep.lani` SHA256
-`53a845d297f8c390cfe13c6cdc2dbd89374a6880966e80db7a120037f0ea7830` and
+`b3cadd964d1683635b498a39d51c7b8eb9cb126e160ef733828207cadcc1890c` and
 `dfa.lani` SHA256
 `b6112163f8d84bae6d2357e3fd486c1ebdb763f23fc1a22e4831962d1f64b999`, with
 CPython 3.12.3, on native Linux x86_64. Executables were built with
 `target/claude-work/bin/lcc`. Log:
-`target/claude-work/s3/oracle-lines-receipt.log`. The earlier logs
+`target/claude-work/s3/oracle-output-receipt.log`. The earlier logs
+`oracle-lines-receipt.log` (before the output rework),
 `oracle-unicode-receipt.log` (before the line scan and `grep_unicode`),
 `oracle-dfa-assert-receipt.log` (before byte-level transitions and the grep
 prefilter), `oracle-lookbehind-receipt.log` (before assertions in the DFA),
