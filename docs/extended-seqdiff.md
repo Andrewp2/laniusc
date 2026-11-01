@@ -101,7 +101,8 @@ The search follows GNU patch 2.7:
   trailing context lines. While the shorter side's count is negative, a hunk
   starting at line 1 must match at the start of the file, and a hunk with short
   trailing context must match at the end.
-- A match may not start before the end of the previously applied hunk.
+- A match may not start before the end of the previously applied hunk, and the
+  hunk, including fuzzed-away leading context, may not start before line 1.
 - Fuzzed-away context lines keep the base's text.
 
 Each `HunkReport { index, status, reason, line, offset, fuzz }` has a
@@ -120,6 +121,10 @@ for strict application.
 seq-diff [-U N] [--myers|--patience|--xdiff] OLD NEW   # exit 0 same, 1 differ, 2 error
 seq-patch [-F N] [--max-offset N] BASE PATCH    # exit 0 applied, 1 rejects, 2 error
 ```
+
+`seq-patch` also patches whole trees from multi-file GNU and git patches
+(`-i PATCH`, with GNU or `--git`/`--3way` semantics); see
+[multi-file patches](extended-patchset.md).
 
 `seq-diff` writes `--- OLD` / `+++ NEW` and the hunks to stdout. Its git-format
 `--word-diff`, `--char-diff` and `--stat` modes are described in

@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **313 modules**, **16401 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **314 modules**, **16456 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -282,6 +282,7 @@ Inventory: **313 modules**, **16401 declaration/member entries**. Counts include
 | [ext::openssl_websocket](ext/openssl_websocket.md) | [source](../../extended/ext/openssl_websocket.lani#L4) | 10 | Source inventory | [extended-openssl-websocket](../extended-openssl-websocket.md), [extended-websocket](../extended-websocket.md), [extended-websocket-upgrade-program](../extended-websocket-upgrade-program.md), [library-native-c](../library-native-c.md) |
 | [ext::parse](ext/parse.md) | [source](../../extended/ext/parse.lani#L3) | 68 | Source inventory | [extended-parse](../extended-parse.md) |
 | [ext::patch](ext/patch.md) | [source](../../extended/ext/patch.lani#L2) | 32 | Source inventory | [extended-patch](../extended-patch.md) |
+| [ext::patchset](ext/patchset.md) | [source](../../extended/ext/patchset.lani#L5) | 55 | Source inventory | [extended-patchset](../extended-patchset.md) |
 | [ext::pax](ext/pax.md) | [source](../../extended/ext/pax.lani#L4) | 74 | Source inventory | [extended-pax](../extended-pax.md) |
 | [ext::percent](ext/percent.md) | [source](../../extended/ext/percent.lani#L5) | 11 | Source inventory | [extended-percent](../extended-percent.md) |
 | [ext::png](ext/png.md) | [source](../../extended/ext/png.lani#L2) | 30 | Source inventory | [extended-png](../extended-png.md) |

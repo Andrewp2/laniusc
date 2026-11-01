@@ -1,7 +1,22 @@
-// patch style tool over ext::unidiff: applies a unified diff with offset/fuzz.
-// usage: seq-patch [-F N] [--max-offset N] BASE PATCHFILE
-// Writes the patched file to stdout and one report line per hunk to stderr.
-// Exit 0 all hunks applied, 1 some hunk rejected, 2 usage/parse/limits/I/O.
+// patch(1) and `git apply` style tool over ext::unidiff and ext::patchset.
+//
+// Tree mode (patches files under the current directory):
+//   seq-patch [-p N] [-F N] [-t | -N | -f] [-R] -i PATCHFILE
+//       GNU patch semantics: offset and fuzz search, reversed-patch
+//       detection (-t assumes -R, the default; -N skips; -f applies anyway;
+//       -R reverses and skips patches that look unreversed), renames,
+//       copies, creation, deletion and mode changes. Each file is patched
+//       on its own; rejected hunks are reported and dropped.
+//   seq-patch --git [--3way --base-dir DIR] [-p N] [-R] -i PATCHFILE
+//       git apply semantics: exact context, nothing is written unless every
+//       file applies. --3way first merges the patch into each file with
+//       DIR/OLDNAME as the preimage (git's blob from the index line),
+//       leaving conflict markers, then falls back to direct application.
+//   Binary sections are rejected with an error in both modes.
+// Single-file mode: seq-patch [-F N] [--max-offset N] BASE PATCHFILE writes
+//   the patched BASE to stdout and one report line per hunk to stderr.
+// Exit 0 all applied, 1 some hunk or file failed (or merged with
+// conflicts), 2 usage, malformed patch, limits or I/O trouble.
 module app::main;
 import alloc::io;
 import alloc::vec;
@@ -12,10 +27,12 @@ import core::option;
 import core::path;
 import core::result;
 import core::slice;
+import ext::patchset;
 import ext::seqdiff;
 import ext::unidiff;
 import std::args;
 import std::file;
+import std::file_ops;
 import std::stream;
 
 fn literal(value: str, count: i32) -> core::slice::View<u8> {
@@ -27,6 +44,7 @@ fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
     let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
 }
 fn emit(v: core::slice::View<u8>) { let sink: std::stream::Descriptor = std::stream::stderr(); let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); }
+fn emit_out(v: core::slice::View<u8>) { let sink: std::stream::Descriptor = std::stream::stdout(); let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(), v.values, v.start, v.len()); }
 fn complain(text: str, count: i32) -> i32 { emit(literal(text, count)); return 2; }
 fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
     let checked: core::result::Result<core::path::Path, core::path::Error> = core::path::from_view(name);
@@ -40,6 +58,7 @@ fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
 }
 fn view_of(buffer: &alloc::io::Buffer) -> core::slice::View<u8> { return core::result::unwrap(core::slice::view(buffer.as_bytes(), buffer.len())); }
 fn put(out: &alloc::vec::Vec<u8>, text: str, count: i32) { let r: core::result::Result<i32, alloc::vec::Error> = out.try_extend(literal(text, count)); }
+fn put_view(out: &alloc::vec::Vec<u8>, v: core::slice::View<u8>) { let r: core::result::Result<i32, alloc::vec::Error> = out.try_extend(v); }
 fn put_number(out: &alloc::vec::Vec<u8>, number: i32) {
     let digits: [u8;11] = [0;11]; let count: i32 = 0; let value: i32 = number;
     if (value < 0) { put(out, "-", 1); value = 0 - value; }
@@ -85,6 +104,383 @@ fn run(base_name: core::slice::View<u8>, patch_name: core::slice::View<u8>, opti
     }
     base.destroy(); text.destroy(); return status;
 }
+
+// ---------------------------------------------------------------- filesystem
+fn path_of(name: core::slice::View<u8>) -> core::result::Result<core::path::Path, core::path::Error> { return core::path::from_view(name); }
+fn sub(v: core::slice::View<u8>, from: i32, to: i32) -> core::slice::View<u8> { return core::slice::View { values: v.values, start: v.start+from, length: to-from }; }
+// -1 missing, otherwise the mode bits. Never follows symbolic links.
+fn mode_of(name: core::slice::View<u8>) -> i32 {
+    let checked: core::result::Result<core::path::Path, core::path::Error> = path_of(name);
+    if (core::result::is_err(checked)) { return -1; }
+    let meta: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    if (core::result::is_err(std::file_ops::metadata_into(core::result::unwrap(checked), false, meta.borrow()))) { return -1; }
+    return (meta.mode & 65535) as i32;
+}
+fn exists(name: core::slice::View<u8>) -> bool { return mode_of(name) >= 0; }
+fn load(name: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> bool {
+    let buffer: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
+    let ok: bool = read_file(name, buffer.borrow()) && core::result::is_ok(out.try_extend(view_of(buffer.borrow())));
+    buffer.destroy(); return ok;
+}
+fn store(name: core::slice::View<u8>, bytes: core::slice::View<u8>) -> bool {
+    let checked: core::result::Result<core::path::Path, core::path::Error> = path_of(name);
+    if (core::result::is_err(checked)) { return false; }
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Create);
+    if (core::result::is_err(opened)) { return false; }
+    let file: std::file::File = core::result::unwrap(opened); let done: i32 = 0; let ok: bool = true;
+    while (ok && done < bytes.length) {
+        let wrote: core::result::Result<i32, core::io::Error> = file.write(bytes.values, bytes.start + done, bytes.length - done);
+        if (core::result::is_err(wrote) || core::result::unwrap(wrote) <= 0) { ok = false; } else { done += core::result::unwrap(wrote); }
+    }
+    let closed: core::result::Result<i32, core::io::Error> = file.close();
+    return ok && core::result::is_ok(closed);
+}
+fn make_parents(name: core::slice::View<u8>) {
+    let i: i32 = 1;
+    while (i < name.length) {
+        if (name.values[name.start+i] == 47) {
+            let checked: core::result::Result<core::path::Path, core::path::Error> = path_of(sub(name, 0, i));
+            if (core::result::is_ok(checked)) { let r: core::result::Result<i32, core::io::Error> = std::file_ops::create_dir_at(std::file_ops::AT_FDCWD, core::result::unwrap(checked), 511); }
+        }
+        i += 1;
+    }
+}
+// Remove the now-empty directories that held a removed or renamed file.
+fn remove_parents(name: core::slice::View<u8>) {
+    let i: i32 = name.length - 1; let going: bool = true;
+    while (going && i > 0) {
+        if (name.values[name.start+i] == 47) {
+            let checked: core::result::Result<core::path::Path, core::path::Error> = path_of(sub(name, 0, i));
+            going = core::result::is_ok(checked) && core::result::is_ok(std::file_ops::remove_dir_at(std::file_ops::AT_FDCWD, core::result::unwrap(checked)));
+        }
+        i -= 1;
+    }
+}
+fn remove(name: core::slice::View<u8>) -> bool {
+    let checked: core::result::Result<core::path::Path, core::path::Error> = path_of(name);
+    return core::result::is_ok(checked) && core::result::is_ok(std::file_ops::remove_file_at(std::file_ops::AT_FDCWD, core::result::unwrap(checked)));
+}
+fn chmod(name: core::slice::View<u8>, mode: i32) -> bool {
+    let checked: core::result::Result<core::path::Path, core::path::Error> = path_of(name);
+    return core::result::is_ok(checked) && core::result::is_ok(std::file_ops::set_permissions_path(core::result::unwrap(checked), mode as u32));
+}
+
+// ---------------------------------------------------------------- tree mode
+// policy: 0 batch (-t, assume reversed patches are already applied), 1 skip
+// reversed patches (-N, and -R without -t), 2 force (-f, never check).
+struct Config { strip: i32, policy: i32, reverse: bool, git: bool, threeway: bool, base_dir: core::slice::View<u8>, has_base: bool, options: ext::unidiff::ApplyOptions }
+impl Config { fn borrow(&self) -> &Config { return self; } }
+fn name_of(ps: &ext::patchset::PatchSet, start: i32, length: i32) -> core::slice::View<u8> { return sub(ps.names.as_view(), start, start + length); }
+fn is_kind(k: ext::patchset::Kind, which: i32) -> bool {
+    let v: i32 = match (k) { ext::patchset::Kind::Modify -> 0, ext::patchset::Kind::Create -> 1, ext::patchset::Kind::Delete -> 2, ext::patchset::Kind::Rename -> 3, ext::patchset::Kind::Copy -> 4 };
+    return v == which;
+}
+fn binary_of(b: ext::patchset::Binary) -> i32 { return match (b) { ext::patchset::Binary::Text -> 0, ext::patchset::Binary::Literal -> 1, ext::patchset::Binary::Marker -> 2 }; }
+fn hunk_word(log: &alloc::vec::Vec<u8>, count: i32, total: i32) {
+    put_number(log, count); put(log, " out of ", 8); put_number(log, total);
+    if (total == 1) { put(log, " hunk", 5); } else { put(log, " hunks", 6); }
+}
+fn ignored(log: &alloc::vec::Vec<u8>, total: i32) { if (total > 0) { hunk_word(log, total, total); put(log, " ignored\n", 9); } }
+fn gnu_report(log: &alloc::vec::Vec<u8>, r: ext::unidiff::HunkReport) {
+    let rejected: bool = match (r.status) { ext::unidiff::HunkStatus::Rejected -> true, _ -> false };
+    if (rejected) { put(log, "Hunk #", 6); put_number(log, r.index + 1); put(log, " FAILED at ", 11); put_number(log, r.line); put(log, ".\n", 2); return; }
+    if (r.fuzz == 0 && r.offset == 0) { return; }
+    put(log, "Hunk #", 6); put_number(log, r.index + 1); put(log, " succeeded at ", 14); put_number(log, r.line);
+    if (r.fuzz > 0) { put(log, " with fuzz ", 11); put_number(log, r.fuzz); }
+    if (r.offset != 0) {
+        put(log, " (offset ", 9); put_number(log, r.offset);
+        if (r.offset == 1 || r.offset == -1) { put(log, " line)", 6); } else { put(log, " lines)", 7); }
+    }
+    put(log, ".\n", 2);
+}
+fn reverse_or_none(fp: ext::patchset::FilePatch, wanted: bool, log: &alloc::vec::Vec<u8>) -> core::option::Option<ext::patchset::FilePatch> {
+    if (!wanted) { return core::option::Some(fp); }
+    let r: core::result::Result<ext::patchset::FilePatch, ext::patchset::Error> = ext::patchset::reverse_file(fp);
+    if (core::result::is_err(r)) { put(log, "seq-patch: out of memory\n", 25); return core::option::None; }
+    return core::option::Some(core::result::unwrap(r));
+}
+// Every change is planned first and written after all files were read: GNU
+// patch and git apply both read rename and copy sources from the tree as it
+// was before the patch, and git apply writes nothing unless all files apply.
+// A plan removes `path`, or writes arena[from, from+length) to it, sets
+// `mode` (0 keeps the file's own) and then removes `drop` (a rename source).
+struct Plan { remove: bool, path: core::slice::View<u8>, drop: core::slice::View<u8>, mode: i32, from: i32, length: i32, conflicted: bool }
+struct Batch { plans: alloc::vec::Vec<Plan>, arena: alloc::vec::Vec<u8> }
+impl Batch { fn borrow(&self) -> &Batch { return self; } }
+// State of `name` after the plans so far: 0 untouched, 1 removed, 2 planned content at index.
+struct Lookup { state: i32, index: i32 }
+fn lookup(b: &Batch, name: core::slice::View<u8>) -> Lookup {
+    let i: i32 = b.plans.len() - 1;
+    while (i >= 0) {
+        let p: Plan = b.plans.as_slice()[i];
+        if (same(p.path, name)) { if (p.remove) { return Lookup { state: 1, index: i }; } return Lookup { state: 2, index: i }; }
+        if (p.drop.len() > 0 && same(p.drop, name)) { return Lookup { state: 1, index: i }; }
+        i -= 1;
+    }
+    return Lookup { state: 0, index: -1 };
+}
+// original: read the tree as it was before the patch (rename and copy sources).
+fn present(b: &Batch, name: core::slice::View<u8>, original: bool) -> bool {
+    if (original) { return exists(name); }
+    let l: Lookup = lookup(b, name); if (l.state == 0) { return exists(name); } return l.state == 2;
+}
+fn current(b: &Batch, name: core::slice::View<u8>, original: bool, out: &alloc::vec::Vec<u8>) -> bool {
+    if (original) { return load(name, out); }
+    let l: Lookup = lookup(b, name);
+    if (l.state == 0) { return load(name, out); }
+    if (l.state == 1) { return false; }
+    let p: Plan = b.plans.as_slice()[l.index];
+    return core::result::is_ok(out.try_extend(sub(b.arena.as_view(), p.from, p.from + p.length)));
+}
+fn plan(b: &Batch, remove: bool, path: core::slice::View<u8>, drop: core::slice::View<u8>, mode: i32, content: core::slice::View<u8>, conflicted: bool, log: &alloc::vec::Vec<u8>) -> i32 {
+    let from: i32 = b.arena.len();
+    if (core::result::is_err(b.arena.try_extend(content)) || core::result::is_err(b.plans.try_push(Plan { remove: remove, path: path, drop: drop, mode: mode, from: from, length: content.len(), conflicted: conflicted }))) { put(log, "seq-patch: out of memory\n", 25); return 1; }
+    return 0;
+}
+fn write_plans(b: &Batch, log: &alloc::vec::Vec<u8>) -> i32 {
+    let i: i32 = 0; let status: i32 = 0;
+    while (i < b.plans.len()) {
+        let p: Plan = b.plans.as_slice()[i]; let ok: bool = true;
+        if (p.remove) { ok = remove(p.path); if (ok) { remove_parents(p.path); } }
+        else {
+            make_parents(p.path); ok = store(p.path, sub(b.arena.as_view(), p.from, p.from + p.length));
+            if (ok && p.mode != 0) { ok = chmod(p.path, p.mode); }
+            if (ok && p.drop.len() > 0) { ok = remove(p.drop); if (ok) { remove_parents(p.drop); } }
+        }
+        if (!ok) { put(log, "seq-patch: cannot update ", 25); put_view(log, p.path); put(log, "\n", 1); status = 1; }
+        i += 1;
+    }
+    return status;
+}
+fn no_name() -> core::slice::View<u8> { return literal("", 0); }
+// GNU patch's choice between two existing names: walk old then new,
+// skipping a name with more path components than the fewest so far, then one
+// longer than the shortest so far; the first name matching both minimums
+// wins. 0 old, 1 new, -1 none (the two minimums came from different names).
+fn components(v: core::slice::View<u8>) -> i32 { let c: i32 = 0; let i: i32 = 0; while (i < v.len()) { if (v.values[v.start+i] == 47) { c += 1; } i += 1; } return c; }
+fn pick_name(old: core::slice::View<u8>, new: core::slice::View<u8>) -> i32 {
+    let co: i32 = components(old); let cn: i32 = components(new); let cmin: i32 = co; let lmin: i32 = old.len();
+    if (cn <= cmin) { cmin = cn; if (new.len() <= lmin) { lmin = new.len(); } }
+    if (co == cmin && old.len() == lmin) { return 0; }
+    if (cn == cmin && new.len() == lmin) { return 1; }
+    return -1;
+}
+
+// One file the GNU way. Returns 0 applied, 1 failed or skipped.
+fn gnu_file(ps: &ext::patchset::PatchSet, index: i32, cfg: &Config, b: &Batch, log: &alloc::vec::Vec<u8>) -> i32 {
+    let picked: core::option::Option<ext::patchset::FilePatch> = reverse_or_none(core::option::unwrap(ps.get(index)), cfg.reverse, log);
+    if (core::option::is_none(picked)) { return 1; }
+    let fp: ext::patchset::FilePatch = core::option::unwrap(picked);
+    let status: i32 = gnu_apply(ps, fp, cfg, b, log);
+    if (cfg.reverse) { fp.patch.destroy(); }
+    return status;
+}
+fn gnu_apply(ps: &ext::patchset::PatchSet, fp: ext::patchset::FilePatch, cfg: &Config, b: &Batch, log: &alloc::vec::Vec<u8>) -> i32 {
+    let old: core::slice::View<u8> = name_of(ps, fp.old_start, fp.old_length); let new: core::slice::View<u8> = name_of(ps, fp.new_start, fp.new_length);
+    let creating: bool = is_kind(fp.kind, 1); let deleting: bool = is_kind(fp.kind, 2); let renaming: bool = is_kind(fp.kind, 3); let copying: bool = is_kind(fp.kind, 4);
+    let moving: bool = renaming || copying;
+    let shown: core::slice::View<u8> = new; if (deleting) { shown = old; }
+    let total: i32 = fp.patch.hunks.len();
+    let binary: i32 = binary_of(fp.binary);
+    if (binary == 1) { put(log, "File ", 5); put_view(log, shown); put(log, ": git binary diffs are not supported.\n", 38); return 1; }
+    if (binary == 2) { put(log, "File ", 5); put_view(log, shown); put(log, ": binary files differ; the patch carries no data to apply.\n", 59); return 1; }
+    let reversed: bool = false; let existed: bool = true; let already: bool = false; let source: core::slice::View<u8> = old;
+    if (creating || deleting) {
+        let here: bool = false; if (creating) { source = new; here = present(b, new, false); } else { here = present(b, old, false); }
+        if (creating == here) {
+            if (creating) { put(log, "The next patch would create the file ", 37); put_view(log, new); put(log, ",\nwhich already exists!  ", 25); }
+            else { put(log, "The next patch would delete the file ", 37); put_view(log, old); put(log, ",\nwhich does not exist!  ", 25); }
+            if (cfg.policy == 1) { put(log, "Skipping patch.\n", 16); ignored(log, total); return 1; }
+            if (cfg.policy == 2) { put(log, "Applying it anyway.\n", 20); if (deleting) { existed = false; } }
+            else { put(log, "Assuming -R.\n", 13); reversed = true; if (deleting) { existed = false; } }
+        } else { if (creating) { existed = false; } }
+    } else {
+        // A rename or copy whose chosen name is the new one is taken as
+        // already done and patches that file in place.
+        let has_old: bool = present(b, old, moving); let has_new: bool = moving && present(b, new, false);
+        // GNU compares the names in patch order, also under -R.
+        let chosen: i32 = 0;
+        if (has_new) {
+            chosen = 1;
+            if (has_old) { if (cfg.reverse) { chosen = pick_name(new, old); if (chosen >= 0) { chosen = 1 - chosen; } } else { chosen = pick_name(old, new); } }
+        }
+        if (chosen < 0) {
+            put(log, "Cannot ", 7); if (renaming) { put(log, "rename", 6); } else { put(log, "copy", 4); }
+            put(log, " file without two valid file names\n", 35); ignored(log, total); return 1;
+        }
+        if (chosen == 1) { already = true; source = new; }
+        else {
+            if (!has_old) { put(log, "can't find file to patch: ", 26); put_view(log, old); put(log, "\nNo file to patch.  Skipping patch.\n", 36); ignored(log, total); return 1; }
+        }
+    }
+    put(log, "patching file ", 14); put_view(log, shown);
+    if (moving && !(already && copying)) {
+        if (already) { put(log, " (already renamed from ", 23); } else { if (renaming) { put(log, " (renamed from ", 15); } else { put(log, " (copied from ", 14); } }
+        put_view(log, old); put(log, ")", 1);
+    }
+    put(log, "\n", 1);
+    let content: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (existed && !current(b, source, moving && !already, content.borrow())) { put(log, "seq-patch: cannot read ", 23); put_view(log, source); put(log, "\n", 1); content.destroy(); return 1; }
+    if (total > 0 && !reversed && cfg.policy != 2) {
+        let d: core::result::Result<ext::patchset::Direction, ext::unidiff::ApplyError> = ext::patchset::direction(content.as_view(), fp.patch.borrow(), cfg.options);
+        if (core::result::is_err(d)) { put(log, "seq-patch: limits exceeded\n", 27); content.destroy(); return 1; }
+        let back: bool = match (core::result::unwrap(d)) { ext::patchset::Direction::Reversed -> true, _ -> false };
+        if (back) {
+            if (cfg.reverse) { put(log, "Unreversed patch detected!  ", 28); } else { put(log, "Reversed (or previously applied) patch detected!  ", 50); }
+            if (cfg.policy == 1) { put(log, "Skipping patch.\n", 16); ignored(log, total); content.destroy(); return 1; }
+            if (cfg.reverse) { put(log, "Ignoring -R.\n", 13); } else { put(log, "Assuming -R.\n", 13); }
+            reversed = true;
+        }
+    }
+    // A creation patch (after any reversal) never applies to a non-empty file.
+    if (total > 0 && content.len() > 0 && ((creating && !reversed) || (deleting && reversed))) {
+        let h: i32 = 0; while (h < total) { put(log, "Hunk #", 6); put_number(log, h + 1); put(log, " FAILED at 1.\n", 14); h += 1; }
+        hunk_word(log, total, total); put(log, " FAILED\n", 8); content.destroy(); return 1;
+    }
+    let output: alloc::vec::Vec<u8> = alloc::vec::new(); let rejected: i32 = 0;
+    if (total > 0) {
+        let flipped: ext::unidiff::Patch = fp.patch;
+        if (reversed) {
+            let r: core::result::Result<ext::unidiff::Patch, ext::patchset::Error> = ext::patchset::reverse(fp.patch.borrow());
+            if (core::result::is_err(r)) { put(log, "seq-patch: out of memory\n", 25); content.destroy(); return 1; }
+            flipped = core::result::unwrap(r);
+        }
+        let applied: core::result::Result<ext::unidiff::Applied, ext::unidiff::ApplyError> = ext::unidiff::apply(content.as_view(), flipped.borrow(), cfg.options);
+        if (reversed) { flipped.destroy(); }
+        if (core::result::is_err(applied)) { put(log, "seq-patch: limits exceeded\n", 27); content.destroy(); return 1; }
+        let result: ext::unidiff::Applied = core::result::unwrap(applied);
+        let i: i32 = 0; while (i < result.reports.len()) { gnu_report(log, result.reports.as_slice()[i]); i += 1; }
+        rejected = result.rejected;
+        if (rejected > 0) { hunk_word(log, rejected, total); put(log, " FAILED\n", 8); }
+        output = result.output; result.reports.destroy();
+    } else { output = content; content = alloc::vec::new(); }
+    content.destroy();
+    let status: i32 = 0; if (rejected > 0) { status = 1; }
+    if (!existed && rejected == total && total > 0) { output.destroy(); return status; }
+    let removing: bool = (deleting && !reversed) || (creating && reversed);
+    let target: core::slice::View<u8> = new; if (deleting) { target = old; }
+    if (removing && output.len() == 0) { status = status + plan(b, true, target, no_name(), 0, output.as_view(), false, log); }
+    else {
+        if (removing) { put(log, "Not deleting file ", 18); put_view(log, target); put(log, " as content differs from patch\n", 31); status = 1; }
+        // A patch found reversed sets the mode of its old side, as GNU patch does.
+        let mode: i32 = fp.new_mode; if (reversed) { mode = fp.old_mode; }
+        mode = mode & 4095;
+        if (mode == 0 && moving && !already) { let m: i32 = mode_of(old); if (m >= 0) { mode = m & 4095; } }
+        let drop: core::slice::View<u8> = no_name(); if (renaming && !already) { drop = old; }
+        status = status + plan(b, false, target, drop, mode, output.as_view(), false, log);
+    }
+    output.destroy();
+    if (status > 1) { status = 1; }
+    return status;
+}
+
+fn git_fail(log: &alloc::vec::Vec<u8>, name: core::slice::View<u8>, text: str, count: i32) -> i32 {
+    put(log, "error: ", 7); put_view(log, name); put(log, text, count); return 1;
+}
+fn git_file(ps: &ext::patchset::PatchSet, index: i32, cfg: &Config, b: &Batch, log: &alloc::vec::Vec<u8>) -> i32 {
+    let picked: core::option::Option<ext::patchset::FilePatch> = reverse_or_none(core::option::unwrap(ps.get(index)), cfg.reverse, log);
+    if (core::option::is_none(picked)) { return 1; }
+    let fp: ext::patchset::FilePatch = core::option::unwrap(picked);
+    let status: i32 = git_plan(ps, fp, cfg, b, log);
+    if (cfg.reverse) { fp.patch.destroy(); }
+    return status;
+}
+fn git_plan(ps: &ext::patchset::PatchSet, fp: ext::patchset::FilePatch, cfg: &Config, b: &Batch, log: &alloc::vec::Vec<u8>) -> i32 {
+    let old: core::slice::View<u8> = name_of(ps, fp.old_start, fp.old_length); let new: core::slice::View<u8> = name_of(ps, fp.new_start, fp.new_length);
+    let creating: bool = is_kind(fp.kind, 1); let deleting: bool = is_kind(fp.kind, 2); let renaming: bool = is_kind(fp.kind, 3);
+    let moving: bool = renaming || is_kind(fp.kind, 4);
+    let shown: core::slice::View<u8> = old; if (creating) { shown = new; }
+    let binary: i32 = binary_of(fp.binary);
+    if (binary == 1) { put(log, "error: cannot apply binary patch to '", 37); put_view(log, shown); put(log, "': binary patches are not supported\n", 36); return 1; }
+    if (binary == 2) { put(log, "error: cannot apply binary patch to '", 37); put_view(log, shown); put(log, "' without full index line\n", 26); return git_fail(log, shown, ": patch does not apply\n", 23); }
+    // onto: the new name already exists; git apply --3way merges into it.
+    let content: alloc::vec::Vec<u8> = alloc::vec::new(); let onto: bool = false;
+    if (creating) {
+        if (present(b, new, false)) {
+            if (!cfg.threeway || !current(b, new, false, content.borrow())) { content.destroy(); return git_fail(log, new, ": already exists in working directory\n", 38); }
+            onto = true;
+        }
+    } else {
+        // Renames and copies read their source as it was before the patch.
+        if (!present(b, old, moving) || !current(b, old, moving, content.borrow())) { content.destroy(); return git_fail(log, old, ": No such file or directory\n", 28); }
+        if (moving && present(b, new, false)) {
+            if (!cfg.threeway) { content.destroy(); return git_fail(log, new, ": already exists in working directory\n", 38); }
+            onto = true;
+        }
+    }
+    let output: alloc::vec::Vec<u8> = alloc::vec::new(); let conflicted: bool = false; let done: bool = false;
+    // A pure rename onto an existing file has nothing to merge.
+    if (onto && fp.patch.hunks.len() == 0) { content.destroy(); return git_fail(log, old, ": patch does not apply\n", 23); }
+    if (fp.patch.hunks.len() == 0) { output = content; content = alloc::vec::new(); done = true; }
+    if (!done && cfg.threeway && !deleting && (onto || !creating)) {
+        let base: alloc::vec::Vec<u8> = alloc::vec::new(); let path: alloc::vec::Vec<u8> = alloc::vec::new(); let found: bool = creating;
+        if (!creating) { put_view(path.borrow(), cfg.base_dir); put(path.borrow(), "/", 1); put_view(path.borrow(), old); found = cfg.has_base && load(path.as_view(), base.borrow()); }
+        if (onto) { put(log, "Performing three-way merge...\n", 30); }
+        if (!found) { put(log, "error: repository lacks the necessary blob to perform 3-way merge.\n", 67); }
+        else {
+            let merged: core::result::Result<ext::patchset::Merged, ext::unidiff::ApplyError> = ext::patchset::three_way(content.as_view(), base.as_view(), fp.patch.borrow(), cfg.options);
+            if (core::result::is_ok(merged)) {
+                let m: ext::patchset::Merged = core::result::unwrap(merged);
+                if (m.applied) {
+                    output = m.output; done = true; conflicted = m.conflicts > 0;
+                    put(log, "Applied patch to '", 18); put_view(log, new);
+                    if (conflicted) { put(log, "' with conflicts.\n", 18); } else { put(log, "' cleanly.\n", 11); }
+                } else { m.destroy(); }
+            }
+        }
+        if (!done && !onto) { put(log, "Falling back to direct application...\n", 38); }
+        base.destroy(); path.destroy();
+    }
+    if (!done && onto) { content.destroy(); return git_fail(log, new, ": already exists in working directory\n", 38); }
+    if (!done) {
+        let applied: core::result::Result<ext::unidiff::Applied, ext::unidiff::ApplyError> = ext::patchset::apply_git(content.as_view(), fp.patch.borrow(), cfg.options);
+        if (core::result::is_err(applied)) { content.destroy(); return git_fail(log, shown, ": patch exceeds limits\n", 23); }
+        let result: ext::unidiff::Applied = core::result::unwrap(applied);
+        if (result.rejected > 0) {
+            let r: ext::unidiff::HunkReport = result.reports.as_slice()[result.reports.len() - 1];
+            put(log, "error: patch failed: ", 21); put_view(log, shown); put(log, ":", 1); put_number(log, r.line); put(log, "\n", 1);
+            result.destroy(); content.destroy(); return git_fail(log, shown, ": patch does not apply\n", 23);
+        }
+        output = result.output; result.reports.destroy();
+    }
+    content.destroy();
+    if (deleting && output.len() > 0) { output.destroy(); put(log, "error: removal patch leaves file contents\n", 42); return git_fail(log, old, ": patch does not apply\n", 23); }
+    let status: i32 = 0;
+    if (deleting) { status = plan(b, true, old, no_name(), 0, output.as_view(), false, log); }
+    else {
+        // git keeps only the executable bit: 0755 or 0644.
+        let mode: i32 = 0; if (fp.new_mode != 0) { mode = 420; if ((fp.new_mode & 64) != 0) { mode = 493; } }
+        if (mode == 0 && moving) { let m: i32 = mode_of(old); if (m >= 0) { mode = m & 4095; } }
+        let drop: core::slice::View<u8> = no_name(); if (renaming) { drop = old; }
+        status = plan(b, false, new, drop, mode, output.as_view(), conflicted, log);
+    }
+    output.destroy();
+    return status;
+}
+fn tree(patch_name: core::slice::View<u8>, cfg: &Config) -> i32 {
+    let text: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(268435456));
+    if (!read_file(patch_name, text.borrow())) { text.destroy(); return complain("seq-patch: cannot read the patch\n", 33); }
+    let parsed: core::result::Result<ext::patchset::PatchSet, ext::patchset::Error> = ext::patchset::parse(view_of(text.borrow()), cfg.strip, 100000, cfg.options.max_lines);
+    if (core::result::is_err(parsed)) { text.destroy(); return complain("seq-patch: malformed patch\n", 27); }
+    let ps: ext::patchset::PatchSet = core::result::unwrap(parsed);
+    if (ps.len() == 0) { ps.destroy(); text.destroy(); return complain("seq-patch: no valid patches in input\n", 37); }
+    let log: alloc::vec::Vec<u8> = alloc::vec::new(); let status: i32 = 0; let i: i32 = 0;
+    let batch: Batch = Batch { plans: alloc::vec::new(), arena: alloc::vec::new() };
+    if (cfg.git) {
+        while (i < ps.len()) { if (git_file(ps.borrow(), i, cfg, batch.borrow(), log.borrow()) != 0) { status = 1; } i += 1; }
+        if (status == 0) {
+            status = write_plans(batch.borrow(), log.borrow()); i = 0;
+            while (i < batch.plans.len()) { let p: Plan = batch.plans.as_slice()[i]; if (p.conflicted) { put(log.borrow(), "U ", 2); put_view(log.borrow(), p.path); put(log.borrow(), "\n", 1); status = 1; } i += 1; }
+        }
+        emit(log.as_view());
+    } else {
+        while (i < ps.len()) { if (gnu_file(ps.borrow(), i, cfg, batch.borrow(), log.borrow()) != 0) { status = 1; } emit_out(log.as_view()); log.clear(); i += 1; }
+        if (write_plans(batch.borrow(), log.borrow()) != 0) { status = 1; }
+        emit(log.as_view());
+    }
+    batch.plans.destroy(); batch.arena.destroy();
+    log.destroy(); ps.destroy(); text.destroy(); return status;
+}
 fn number(v: core::slice::View<u8>) -> i32 {
     let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(v.values, v.start, v.len());
     if (core::result::is_err(parsed) || core::result::unwrap(parsed) > 2147483647 as u64) { return -1; } return core::result::unwrap(parsed) as i32;
@@ -94,16 +490,33 @@ fn main() -> i32 {
     if (core::result::is_err(captured)) { return complain("seq-patch: bad arguments\n", 25); }
     let arguments: std::args::Arguments = core::result::unwrap(captured);
     let options: ext::unidiff::ApplyOptions = ext::unidiff::default_options();
+    let cfg: Config = Config { strip: 1, policy: 0, reverse: false, git: false, threeway: false, base_dir: literal("", 0), has_base: false, options: options };
     let names: [core::slice::View<u8>;2] = [literal("", 0); 2]; let count: i32 = 0; let ok: bool = true; let i: i32 = 0;
+    let patch_name: core::slice::View<u8> = literal("", 0); let has_patch: bool = false; let batch: bool = false; let skip: bool = false;
     while (i < arguments.len() && ok) {
-        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i));
-        if (same(arg, literal("-F", 2)) && i + 1 < arguments.len()) { i += 1; options.max_fuzz = number(core::option::unwrap(arguments.get(i))); if (options.max_fuzz < 0) { ok = false; } }
-        else { if (same(arg, literal("--max-offset", 12)) && i + 1 < arguments.len()) { i += 1; options.max_offset = number(core::option::unwrap(arguments.get(i))); if (options.max_offset < 0) { ok = false; } }
-        else { if (count < 2) { names[count] = arg; count += 1; } else { ok = false; } } }
+        let arg: core::slice::View<u8> = core::option::unwrap(arguments.get(i)); let more: bool = i + 1 < arguments.len();
+        if (same(arg, literal("-F", 2)) && more) { i += 1; cfg.options.max_fuzz = number(core::option::unwrap(arguments.get(i))); if (cfg.options.max_fuzz < 0) { ok = false; } }
+        else { if (same(arg, literal("--max-offset", 12)) && more) { i += 1; cfg.options.max_offset = number(core::option::unwrap(arguments.get(i))); if (cfg.options.max_offset < 0) { ok = false; } }
+        else { if (same(arg, literal("-p", 2)) && more) { i += 1; cfg.strip = number(core::option::unwrap(arguments.get(i))); if (cfg.strip < 0) { ok = false; } }
+        else { if (arg.len() > 2 && arg.values[arg.start] == 45 && arg.values[arg.start+1] == 112) { cfg.strip = number(sub(arg, 2, arg.len())); if (cfg.strip < 0) { ok = false; } }
+        else { if (arg.len() > 2 && arg.values[arg.start] == 45 && arg.values[arg.start+1] == 70) { cfg.options.max_fuzz = number(sub(arg, 2, arg.len())); if (cfg.options.max_fuzz < 0) { ok = false; } }
+        else { if (same(arg, literal("-i", 2)) && more) { i += 1; patch_name = core::option::unwrap(arguments.get(i)); has_patch = true; }
+        else { if (same(arg, literal("--base-dir", 10)) && more) { i += 1; cfg.base_dir = core::option::unwrap(arguments.get(i)); cfg.has_base = true; }
+        else { if (same(arg, literal("-t", 2))) { batch = true; }
+        else { if (same(arg, literal("-N", 2))) { skip = true; }
+        else { if (same(arg, literal("-f", 2))) { cfg.policy = 2; }
+        else { if (same(arg, literal("-R", 2))) { cfg.reverse = true; }
+        else { if (same(arg, literal("--git", 5))) { cfg.git = true; }
+        else { if (same(arg, literal("--3way", 6))) { cfg.git = true; cfg.threeway = true; }
+        else { if (count < 2) { names[count] = arg; count += 1; } else { ok = false; } } } } } } } } } } } } } }
         i += 1;
     }
+    if (cfg.policy != 2) { if (skip || (cfg.reverse && !batch)) { cfg.policy = 1; } }
     let status: i32 = 2;
-    if (!ok || count != 2) { status = complain("usage: seq-patch [-F N] [--max-offset N] BASE PATCHFILE\n", 56); }
-    else { status = run(names[0], names[1], options); }
+    if (ok && has_patch && count == 0) { status = tree(patch_name, cfg.borrow()); }
+    else {
+        if (!ok || count != 2 || has_patch) { status = complain("usage: seq-patch [-p N] [-F N] [-t|-N|-f] [-R] [--git [--3way --base-dir DIR]] -i PATCHFILE\n       seq-patch [-F N] [--max-offset N] BASE PATCHFILE\n", 148); }
+        else { status = run(names[0], names[1], cfg.options); }
+    }
     arguments.destroy(); return status;
 }

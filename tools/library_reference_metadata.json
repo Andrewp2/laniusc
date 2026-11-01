@@ -1389,6 +1389,11 @@
         "docs/extended-parse.md"
       ]
     },
+    "ext::patchset": {
+      "guides": [
+        "docs/extended-patchset.md"
+      ]
+    },
     "ext::pratt": {
       "guides": [
         "docs/extended-pratt.md"
