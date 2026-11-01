@@ -660,9 +660,23 @@ extended`.
 | LNC0047, nested match on a generic enum bound in an outer arm | reported; `candidate_nested_generic_match.lani` and four other shapes compile correctly | compiles | not reproduced | — |
 | LNC0016 on a long file without a `module` line | reported; `candidate_missing_module_long.lani` (401 functions) and 3,000-line variants compile correctly | compiles | not reproduced | add a `module` line |
 | LNC0008 labels pointing at `core/slice.lani:899` | reported; `candidate_slice_select_label.lani` and concrete/generic `select_nth_unstable` calls compile correctly | the label names the caller | not reproduced | — |
+| Slow per-element code for `[u8]` loops (performance) | `byte_loop_codegen.lani`: `while (i < n) { if (data[base+i] == 10) { c += 1; } i += 1; }`, 10 passes over 16 MB | near `gcc -O0` on `byte_loop_codegen.c` (0.14 s; `-O2` 0.02 s) | 0.50 s, 2.8 ns/byte; about 43 instructions per iteration | move hot loops to `[i32]` class ids; fewer passes over bytes |
 
 The two silent miscompiles are the most dangerous: they produce wrong values
 with no diagnostic. `ext::pax`/`tgz` code avoids both shapes.
+
+The codegen row is a cost, not a wrong result. In `byte_loop_codegen.s`, each
+iteration copies the slice's three words (pointer, length, stride) into new
+stack slots and compares the index with the length unsigned, exiting with
+status 101 through a syscall when the check fails. It then multiplies the index
+by the runtime stride and branches on `stride == 1` to choose between a byte
+and a word load. It also stores the constant 10 to the stack, materializes each
+comparison with `set*`/`movzbl` and spills it before testing, and spills every
+`+= 1` before reloading it. Nothing is hoisted out of the loop.
+`core::u32::wrapping_mul` and trait methods such as `T::eq` and `T::hash` are
+calls, not inlined code. A byte loop that also hashes costs 9-14 ns/byte. That is why
+`seq-diff` spends 0.14 s on a 1.6 MB pair where GNU diff spends 0.02 s
+([seqdiff speed notes](extended-seqdiff.md)).
 
 ## Completion requirements
 

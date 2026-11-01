@@ -184,8 +184,8 @@ inside the program (best of 7, both files) changed as follows:
 | hunks + write | 23 ms | 4 ms | the writer validates only emitted lines instead of scanning both files |
 
 The remaining gap is code generation. A plain loop that counts LF bytes in a
-`[u8]` (`tests/fixtures/extended/perf/byte_loop_repro.lani`, 0.50 s for 160 M bytes) costs 2.8 ns/byte,
-against 0.8 ns for `gcc -O0` on `byte_loop_repro.c` and under 0.1 ns for `gcc -O2`. A loop that also
+`[u8]` (`tests/fixtures/compiler_defects/byte_loop_codegen.lani`, 0.50 s for 160 M bytes) costs 2.8 ns/byte,
+against 0.8 ns for `gcc -O0` on `byte_loop_codegen.c` and under 0.1 ns for `gcc -O2`. A loop that also
 hashes costs 9-14 ns/byte. Each element access reloads the slice's fields from
 the stack, emits a bounds check, multiplies the index by the slice's runtime
 stride, and branches on stride 1. Every temporary is spilled and reloaded,
