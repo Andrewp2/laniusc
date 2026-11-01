@@ -1,7 +1,8 @@
 module
 
 public import Lanius.Mini.Frontend.Types
-import Lanius.Mini.Frontend.P.collectedWith
+import Lanius.Mini.Compiler.P.matchVariants
+import Lanius.Mini.Frontend.P.collect
 import Lanius.Mini.Frontend.P.distinct
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
@@ -24,6 +25,12 @@ def consBinder (id : Nat) (rest : Option Bound) : Option Bound :=
   | none => none
   | some b => some ({ ids := id :: b.ids, scope := b.scope } : Bound)
 
+/-- Some enum of the program has a variant spelled name. laniusc reads a payload pattern whose name resolves to a variant as a check of that payload, not a binder (match_payload_binding in shaders/codegen/lir/semantic/local_mark.slang); a payload pattern spelled like any variant is never read as a binder. -/
+def anyVariant (types : List TypeDecl) (name : List Nat) : Bool :=
+  match types with
+  | [] => false
+  | t :: rest => t.isEnum && member t.variants name || anyVariant rest name
+
 /-- One plain name pattern per payload type, each a fresh local. -/
 def bindersOf (env : FrontEnv) (scope : List Local) (pats : List CTree) (payload : List Ty) : Option Bound :=
   match payload with
@@ -37,7 +44,7 @@ def bindersOf (env : FrontEnv) (scope : List Local) (pats : List CTree) (payload
     | p :: more =>
       let path : CTree := kid p 0
       let tok : Token := kidToken (kid path 0) 0
-      if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
+      if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) && !(anyVariant env.decls.types tok.text) && freshId scope (tok.start - env.base) then
         consBinder (tok.start - env.base) (bindersOf env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) more rest)
       else
         none

@@ -16,9 +16,9 @@ import tempfile
 
 INPUT = "aaé\r\nnope\néa".encode()
 EXPECTED = "1:aaé\r\n3:éa".encode()
-# The first pattern has assertions and runs on the VM. The second is
-# assertion-free, so text_grep answers each record with its lazy DFA.
-PATTERNS = [("vm", "^(?:a|é)+$"), ("dfa", "(?:a|é)+")]
+# The first pattern has lookbehind and runs on the VM. The second has
+# anchors, which are lazy-DFA state; the third has no assertion.
+PATTERNS = [("vm", "^(?<!x)(?:a|é)+$"), ("dfa-anchored", "^(?:a|é)+$"), ("dfa", "(?:a|é)+")]
 
 
 def main():

@@ -3,14 +3,11 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_compoundOf
+public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt4
-public import Lanius.Faithful.Gen.SelfStmt5
-public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArrayMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pExpr
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_compoundEval
 public import Lanius.Faithful.Gen.SelfStmtF_compoundOf
 public import Lanius.Faithful.Gen.SelfStmtF_fieldTyAt
@@ -71,45 +68,13 @@ theorem proof_compound_of {prog : SrcProgram} {prims : Prims} {ix_compound_of ix
   simp only [src_compound_of] at h
   faithful [Lanius.Mini.compoundOf]
 
-theorem proof_for_range {prog : SrcProgram} {prims : Prims} {ix_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr : Nat} (fn : prog.funcs[ix_for_range]? = some (src_for_range ix_boxed_of_mini_selfhost_MStmt ix_boxed_of_mini_selfhost_SrcExpr)) (np : prims.isPrim ix_for_range = false)
-    (ext_boxed_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_MStmt prog prims ix_boxed_of_mini_selfhost_MStmt n))
-    (ext_boxed_of_mini_selfhost_SrcExpr : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_SrcExpr prog prims ix_boxed_of_mini_selfhost_SrcExpr n)) {n : Nat} :
-    Stmt_for_range prog prims ix_for_range n := by
-  intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_for_range] at h
-  faithful [Lanius.Mini.forRange]
-
-theorem proof_match_of_postfix {prog : SrcProgram} {prims : Prims} {ix_match_of_postfix ix_node_prod ix_kid ix_p_match_expr ix_p_postfix_end : Nat} (fn : prog.funcs[ix_match_of_postfix]? = some (src_match_of_postfix ix_node_prod ix_kid ix_p_match_expr ix_p_postfix_end)) (np : prims.isPrim ix_match_of_postfix = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_p_match_expr : Certified (∀ {n : Nat}, Stmt_p_match_expr prog prims ix_p_match_expr n))
-    (ext_p_postfix_end : Certified (∀ {n : Nat}, Stmt_p_postfix_end prog prims ix_p_postfix_end n)) {n : Nat} :
-    Stmt_match_of_postfix prog prims ix_match_of_postfix n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_match_of_postfix] at h
-  faithful [Lanius.Mini.matchOfPostfix]
-
-theorem proof_match_primary {prog : SrcProgram} {prims : Prims} {ix_match_primary ix_node_prod ix_kid ix_has_kids ix_p_expr ix_p_assign ix_p_assign_end ix_peel ix_match_of_postfix : Nat} (fn : prog.funcs[ix_match_primary]? = some (src_match_primary ix_node_prod ix_kid ix_has_kids ix_p_expr ix_p_assign ix_p_assign_end ix_peel ix_match_of_postfix)) (np : prims.isPrim ix_match_primary = false)
-    (ext_node_prod : Certified (∀ {n : Nat}, Stmt_node_prod prog prims ix_node_prod n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_has_kids : Certified (∀ {n : Nat}, Stmt_has_kids prog prims ix_has_kids n))
-    (ext_p_expr : Certified (∀ {n : Nat}, Stmt_p_expr prog prims ix_p_expr n))
-    (ext_p_assign : Certified (∀ {n : Nat}, Stmt_p_assign prog prims ix_p_assign n))
-    (ext_p_assign_end : Certified (∀ {n : Nat}, Stmt_p_assign_end prog prims ix_p_assign_end n))
-    (ext_peel : Certified (∀ {n : Nat}, Stmt_peel prog prims ix_peel n))
-    (ext_match_of_postfix : Certified (∀ {n : Nat}, Stmt_match_of_postfix prog prims ix_match_of_postfix n)) {n : Nat} :
-    Stmt_match_primary prog prims ix_match_primary n := by
+theorem step_writes_local {prog : SrcProgram} {prims : Prims} {ix_writes_local ix_unbox_of_mini_selfhost_MStmt : Nat} (fn : prog.funcs[ix_writes_local]? = some (src_writes_local ix_unbox_of_mini_selfhost_MStmt ix_writes_local)) (np : prims.isPrim ix_writes_local = false)
+    (ext_unbox_of_mini_selfhost_MStmt : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_MStmt prog prims ix_unbox_of_mini_selfhost_MStmt n)) {n : Nat}
+    (ih_writes_local : Certified (Stmt_writes_local prog prims ix_writes_local n)) :
+    Stmt_writes_local prog prims ix_writes_local (n + 1) := by
   intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_match_primary] at h
-  faithful [Lanius.Mini.matchPrimary]
+  simp only [src_writes_local] at h
+  faithful [Lanius.Mini.writesLocal]
 
 end Lanius.Faithful.SelfCert

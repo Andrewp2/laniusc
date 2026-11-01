@@ -472,6 +472,15 @@ The compiled code checks in Core's order. A store `slice[i] = v` evaluates
 proving `compileSource_stops` found the old order, `v` before the check,
 wrong when `i` is out of bounds and `v` reaches an undefined trap).
 
+This is a known difference from laniusc (recorded 10-31). laniusc evaluates
+`v` first and then checks `i`, which is Rust's order for an assignment (the
+assigned value, then the place). With `i` out of bounds the two compilers
+trap at the same store, but laniusc first runs whatever `v` does: its
+output, or a trap of its own. Core's order stays: the store's check is
+proved to come before any effect of `v`. fuzz_oracle.py counts such a
+program as known (both trap, the verified compiler's output a prefix of
+laniusc's, an indexed store in the program) rather than as a disagreement.
+
 ### `x<` in an expression (decided 10-29)
 
 The grammar gives `a < b > (c)` two trees: a chain of comparisons and a call
@@ -853,9 +862,12 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   the input a run consumed is what it was given minus what is left, so the
   trace stays the list of writes.
 - **`Syscall.read` at the mini level.** `[0, address, count]` with count at
-  most `maxTransfer` delivers `input.take count` at `address` (`writeAll`)
-  and drops count bytes, returning how many came; the delivered range must
-  lie in the heap (nothing is checked when no byte comes). The x86 code is
+  most `maxTransfer` delivers the bytes the kernel's read does
+  (`Io.readBytes count`: from 1 to count or all that are left, at most the
+  next of `readLimits` plus one, 0 only when count is 0 or the input is
+  used up) at `address` (`writeAll`) and drops them (`Io.afterRead`),
+  returning how many came; the delivered range must lie in the heap
+  (nothing is checked when no byte comes). The x86 code is
   `sysSpec` with `mov eax, 0` (`Syscall.linux`), the kernel's `read`
   (TRUSTED_BASE.md section 8).
 - **`read_stdin(ptr, len)` (host id 2^32 + 3).** Core's meaning
@@ -865,8 +877,11 @@ loop's own exit runs; `Cont` compiles to `Jmp cont`, the loop's start
   stdlib's `extern "lanius_std" fn read_stdin` as the host call
   (`hostExtern`, case `host_read`). The verified compiler lowers it to a
   loop (`host_read_code`): a chunk of at most `maxTransfer` bytes, read;
-  pointer, count and total moved past what came; and the loop ends when a
-  read comes back short, since the input is then used up. Proved against
+  pointer, count and total moved past what came; and the loop ends when
+  none are left to ask for or a read delivers none, since the input is then
+  used up. A short read, as a pipe or terminal gives, does not end it
+  (until 10-31 it did, and a short read lost the rest: review finding 3).
+  Proved for every schedule of read lengths against
   Core (`hostRead_exec`, `LowerEval.host_read`): the stored bytes are
   Core's, the input left is Core's, and the result is Core's count.
 - **The oracle gives each reading call its own input.** The stdlib oracle
@@ -962,6 +977,8 @@ read as `let c = a; let e = n; while (c < e) { let x = c; c = c + 1; body }`
   assigning `n` in the body does not change the iterations;
 - `x` is a fresh local each iteration, and `c` moves on before the body, so a
   `continue` goes to the next value; `c + 1` cannot overflow, as `c < e`;
+  a body that writes `x` is not read (10-31: laniusc's `x` is the counter,
+  see "Front end review fixes");
 - `x`, `c` and `e` have `n`'s type, and the literal `a` takes it.
 
 This agrees with Core's own `forRange` (`Semantics.lean`), which evaluates
@@ -1114,10 +1131,11 @@ grammar has no `ensures` clause, so none is read.
 or a variant (`pathHome`, `itemImport`, `BareVariant.item`). As in laniusc
 (docs/language-ergonomics.md) the import names only that item and beats
 module imports for its name; a module of that whole path wins over the
-item. Two deliberate differences, both on programs laniusc rejects: an item
+item. One deliberate difference, on programs laniusc rejects: an item
 import also beats a declaration of the same name in `m` (laniusc reports a
-clash), and a module with no declarations counts as no module. Module
-imports still bring only variants into scope by their bare names.
+clash). A module is a path a file's `module` item names, whatever the file
+declares (10-31, "Front end review fixes"). Module imports still bring
+only variants into scope by their bare names.
 Stdlib: `core::wide_i64_checked` and `core::wide_u64_checked`, 20 targets,
 all compile now (432 calls agree with laniusc).
 
@@ -1272,15 +1290,25 @@ compilation of what that text means, and gives itself back.
     (`link_onto`, equal to `link_from` by `linkOnto_eq`) instead of
     concatenating whole function images: 5.6 to 5.2 GiB.
 
-  The peak resident set is still at the 4 GiB cap, since 5.2 GiB is
-  allocated. What is left is in each list step: `unbox` copies the node
-  out of its box (for a `List<FnDecl>` node, the whole `FnDecl`), and it
-  and `boxed` build slice headers through `typed_slice_from_storage`. The
-  front end takes 2.3 GiB (`find_fn` walking `decls.fns`, `concat<FnDecl>`),
-  lowering's `concat<Instr>` about 0.7 GiB, and encoding about 1.3 GiB
-  (each byte is a cons cell made by `encode` and copied once by `concat`).
-  Lowering `unbox` without the copy, or a table for the front end's
-  lookups, would take most of it.
+  The front end then built two lists by appending to what it had read so
+  far, so each step copied everything before it: `collect` appended each
+  item's declarations to the file's (each `FnDecl` node copied once per
+  later item), and `mono_loop` appended each function it read to the
+  ones before. `collect` now puts each item's declarations in front of
+  the rest's (`collect_front`; `collect_sound` is now `collect … = some
+  d → Collect home items d`), and `mono_loop` conses each function onto
+  the ones read so far, the last first, and reverses them once at the end
+  (`funcs_onto`, `funcsOnto_eq`; `monoLoop_sound` reads `done.reverse`).
+  The relations `Collect` and `MonoR` are unchanged. The front end's heap
+  went from about 2.1 GiB to 0.7 GiB, and the whole run's from 5.2 to
+  about 3.9 GiB, in the same time (the native run about 110 s). The
+  lookups (`find_fn`, `get`) allocate nothing: `unbox` reads the node
+  through a slice held in slots. The peak resident set is still at the
+  4 GiB cap, since about 3.9 GiB is allocated: what is left is mostly
+  the encoder (each instruction's bytes built as a list and copied once
+  by `concat` onto the rest, and `slot_load`/`slot_store` copying their
+  opcode bytes onto `le32`'s, about 1.5 GiB), lowering's
+  `concat<Instr>` and the validator's facts.
 
 ### The design of writes through references (decided 10-31, F5)
 
@@ -1353,6 +1381,153 @@ arms after it are read as before.
 - A let's match with block arms still needs exactly one value arm as
   written; a wildcard value arm then copies the statements after the let
   into each variant it stands for.
+
+## Enums with no variants (decided 10-31, F11)
+
+An enum with no variants (`enum Never {}`, as `core::clone_values::Infallible`)
+needs nothing new in the front end: it is a type with no values, so a
+`Result<T, Never>` is always `Ok`, and the arm of its error still binds its
+payload (case empty_enum). A match on a value of it has no arms; the front
+end reads it (`ArmsOrder` with no variants and no arms), but `compileSource`
+rejects it, since Core has no match with no arms and the lowering would need
+one that traps (case empty_match, `compile_rejects`). No reachable code can
+run such a match, so this leaves out no behavior a program can show.
+
+The 14 `core::clone_values` targets were unread for a reason in the oracle,
+not the front end: its wrapper wrote the trait method's result at the
+instance type (`Result<bool, E>`) where laniusc checks the generic helper
+first (`Result<T, E>`), and wrote the trait's type arguments unqualified from
+the wrapper's module (LNC0006). `stdlib_oracle.py`'s `wrapper_text` writes
+both as laniusc names them; 12 of the 14 now compile, 240 calls agree.
+
+## Nested patterns (decided 10-31, F11)
+
+A match expression with a nested arm, one whose payload patterns are not all
+plain binders (`Ok(Some(x))`, `Pair(Bar::X(a), b)`, `Err(m::E::V(n))`), is
+read as nested matches (`match_order`, `MatchOrder`, `NestedOrder` in
+`Reading/Nested`). Module-qualified patterns need nothing new: an arm's path
+may already be `V`, `E::V`, `m::V` or `m::E::V` (`ArmNamed`). Variant V's arm
+is the wildcard's when no arm names V, V's one written arm when that is
+plain, and otherwise `V(b, .., h, ..) -> match (h) { p -> value, .., _ ->
+w }`: the arms naming V, in order, matched on the first arm's first column
+j that is not a binder; each gives the inner match its pattern p at j and
+its value. The inner match is read again, nested or not.
+
+- laniusc runs the first arm that matches. The arms naming V are kept in
+  order in the inner match, and every other column of each of them must be
+  a binder spelled as the first arm's (`row_fits`), so each arm matches
+  exactly when its pattern at j does, and its value sees the same names
+  (bound to the same payload fields, with the first arm's ids). Arms that
+  differ off column j are not read; laniusc accepts them, so this is a
+  reading the front end leaves out.
+- (F11b) When V's first arm is plain and a later one for V is nested
+  (`In(n) -> 5, In(Num::Val(x)) -> x`), the plain arm is V's arm
+  (`VariantArm.shadow`): it matches every value of V, so laniusc never runs
+  the later ones, and they are not read. laniusc type-checks them, so a
+  program whose never-run arm is ill-typed is read here and rejected there;
+  the meaning of a program both accept is the same. Without a nested arm
+  for V, a second arm for V is still rejected, as without nesting. Case
+  nested_plain_first (laniusc runs it alike).
+- At column j the last arm may be a binder; it matches everything there,
+  so it is read as `_` when its value spells no token as that name
+  (`Mentions`), and otherwise not read (case reject_nested_binder).
+- The outer wildcard, if any, is added as the inner match's last arm,
+  unless an inner arm is `_` already or the inner arms name every variant
+  of h's enum with plain binders (`Covers`): then no value of V reaches it.
+  In the inner match the first arm's other binders are in scope, where the
+  wildcard's value was written without them, so it is added only when its
+  value spells none of their names (`ColsQuiet`; case
+  reject_nested_capture). The wildcard must still be used somewhere, a
+  variant's arm or an inner arm, so that its value is read.
+- h is a binder no source can spell (the one byte 0), its id the position
+  of the first arm's pattern at j, checked fresh like any binder's. The
+  inner match's scrutinee is h.
+- A match statement reads block arms; a nested match expression may have
+  no arm whose value is a block (`BlockValue`), so the two readings never
+  overlap.
+- (F11b) A match statement with a nested arm is read the same way
+  (`stmt_arm_order`, `StmtOrder`), its arms' values blocks: the nested arm
+  `V(h) -> match (h) { p -> { .. }, .. }` is read as a match statement on h
+  inside V's arm (`ArmsStmtR.inner`), its closer the arm's `->` token, so
+  every inner arm leaves the match as a block arm does. laniusc runs such
+  a statement as written (case nested_match_stmt runs alike); an inner
+  match that names some of h's variants and has no wildcard is rejected
+  (case reject_nested_stmt_gap). A block arm's value is never the bare
+  match node `nest_arm` builds (`armBlockR_noMatch`), so the two arm
+  readings never overlap.
+- (F11b) A let's match with a block arm and a nested arm, `let x: t = match
+  (s) { V(Some(y)) -> y, V(None) -> { return 0; }, .. }`, is read the same
+  way (`LetArmsR.inner`): the inner match is read as the let's match on h,
+  its value arms binding x and running the rest, its block arms leaving. A
+  value arm's value is never the bare match node (a written `match` sits
+  under its expression levels; `LetArmsR.value` requires it), so the value
+  and inner readings never overlap. Case nested_let_match (laniusc runs it
+  alike).
+- Every arm but a last wildcard must name a variant, as without nesting.
+- Determinism: whether some arm is nested decides the branch; the arms
+  naming a variant, their patterns, the column and the inner arms are each
+  determined by the tree (`nestedOrder_unique`, `matchOrder_unique`,
+  `stmtOrder_unique`).
+
+## Payload names that are variants (decided 10-31, F11b)
+
+laniusc reads a payload pattern whose name resolves to a variant as a check
+of that payload, not a binder: `match_payload_binding`
+(`shaders/codegen/lir/semantic/local_mark.slang`) binds a payload pattern
+only when its resolved declaration is no variant, and
+`shaders/codegen/lir/semantic/match_reference.slang` lowers one that names a
+variant as a check of the payload's discriminant. So with `import
+core::option;`, `Some(None) -> 1` matches only `Some(None)` (laniusc runs
+`Some(Some(7))` past it). The front end once bound such a name: a payload
+binder had only to be spelled unlike the module's own types, aliases,
+constants and variants (`module_globals`), so an imported variant's bare
+name was a binder and the arm read as `Some(_) -> 1`, a wrong reading.
+
+Now a payload pattern spelled like a variant of any enum of the program is
+never a binder (`any_variant`; `BindersR`'s `NoVariant`). This covers every
+name laniusc resolves to a variant (its own module's, an imported module's,
+an item import's, or one the payload's type gives), and more: a payload name
+spelled like some variant nowhere visible is not read either, a reading the
+front end leaves out. Such a pattern is a nested pattern, read as the check
+it is (SEMANTIC_DECISIONS "Nested patterns"; cases bare_variant_payload,
+reject_bare_variant, which was misread). Variants are spelled with a capital
+letter in the stdlib and `extended/`, so no binder there is affected.
+
+## Front end review fixes (decided 10-31)
+
+The 10-31 review of the front end against laniusc found three programs the
+front end read with another meaning than laniusc's. Each is now read as
+laniusc reads it or not read (frontend cases `reject_for_write`,
+`reject_index_call`, `module_traits_only`):
+
+- A write to a range loop's variable. laniusc's loop variable is the
+  counter itself (shaders/codegen/lir/semantic/loop_recipe.slang: the
+  binding is set to the start and incremented), so `for i in 0..n { i = i +
+  1; ... }` runs about n/2 times there and n times in a reading with `x` a
+  copy of the counter. `for_range` does not read a body that writes `x`
+  (`writesLocal`, as for `&self`; `StmtR.forRange`). Reading `x` as the
+  counter would also need `continue` to move on after the body, which is
+  laniusc's order but not this desugaring's.
+- `s[i] = value` where the value can act: it calls a declared function or a
+  host service (`effActs`; a field projection only reads). Core checks `i`
+  against the length before it evaluates the value ("Traps in compiled
+  code"); laniusc's store is one operation after its operands, so its bound
+  guard runs after the value (shaders/codegen/x86/safety_emit.slang). With
+  `i` out of bounds, laniusc runs the call's effects (output, a loop that
+  never ends) before it traps, and the reading traps first. Such a store is
+  not read (`AssignTargetR.indexEval`); a value without calls traps or not
+  the same way in both orders (Core does not tell traps apart), and a call
+  in the index is read. Programs write `let t = f(); s[i] = t;`. The quick
+  gate's `store-rule` step (formal/tools/store_rule.py, a port of this rule
+  to the source text) names any such store in stdlib/ and extended/.
+- A module that declares nothing the front end counts. laniusc's module
+  table holds every file's `module` item, and an import whose whole path is
+  a module imports the module (modules/05_resolve_imports.slang). The front
+  end counted a module only when it declared a type, function, constant or
+  alias, so `import a::b;` with `a/b.lani` holding only a trait imported the
+  function `b` of `a`, and a local `b()` called `a::b` instead of this
+  module's `b`. Now a `module` item declares its path (`Decls.homes`,
+  `ItemDecls.module`) and `isModule` is membership in those paths.
 
 ## Oracle comparisons of laniusc's programs and `extended/` (decided 10-31, F11)
 

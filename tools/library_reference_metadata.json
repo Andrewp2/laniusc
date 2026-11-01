@@ -1721,11 +1721,24 @@
         "docs/extended-uri-resolve.md"
       ]
     },
+    "ext::idna": {
+      "guides": [
+        "docs/extended-idna.md"
+      ],
+      "note": "UTS #46 ToASCII with the WHATWG URL options and Node.js's per-label Bidi rule; table derived from the vendored Unicode 17 UCD. A ZWNJ outside the virama/ASCII/edge cases returns UnsupportedJoiner (no Joining_Type data). Evidence is finite native Linux x86_64 CPU execution compared with Node.js."
+    },
+    "ext::idna_data": {
+      "guides": [
+        "docs/extended-idna.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
     "ext::url": {
       "guides": [
         "docs/extended-url.md"
       ],
-      "note": "WHATWG basic URL parser without state override or UTS #46: non-ASCII and xn-- domains return UnsupportedIdna. A Url owns its href; destroy once. Evidence is finite native Linux x86_64 CPU execution compared with Node.js."
+      "note": "WHATWG basic URL parser without state override; hosts use ext::idna (UTS #46). A Url owns its href; destroy once. Evidence is finite native Linux x86_64 CPU execution compared with Node.js."
     },
     "ext::url_client": {
       "guides": [
@@ -1833,6 +1846,11 @@
       "guides": [
         "docs/extended-x509.md",
         "docs/extended-certificate-info.md"
+      ]
+    },
+    "ext::xz": {
+      "guides": [
+        "docs/extended-xz.md"
       ]
     },
     "ext::zip": {

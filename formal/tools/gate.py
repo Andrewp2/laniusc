@@ -39,6 +39,8 @@ T = 'formal/tools/'
 # step reads besides its script, from INPUTS below. {w} is the step's
 # workdir, {s} the seed.
 STEPS = [
+    # The front end's store rule over the stdlib/ and extended/ text: no `v[i] = value;` whose value calls.
+    ('store-rule', ['store_rule.py', '{w}'], ['lani', 'stdlib', 'extended_all'], True),
     # F9: the IEEE specification against this CPU's SSE unit.
     ('float', ['float_test.py', '{w}', '--count', '2000', '--seed', '{s}'], ['float_test'], True),
     # Step 14 and F9: the x86 model's decode and execute against this CPU, every emitted form.
@@ -110,6 +112,8 @@ STEPS = [
     # F11: laniusc's own test programs, a seeded sample of them, run both ways.
     ('programs', ['programs_oracle.py', '{w}', '--sample', '60', '--seed', '{s}'],
      ['lean', 'run_all', 'laniusc', 'stdlib', 'programs', 'extended_all'], False),
+    # Random well-typed programs in the verified compiler's subset, run both ways (fuzz_oracle.py).
+    ('fuzz', ['fuzz_oracle.py', '{w}', '--count', '200', '--seed', '{s}'], ['run_all', 'laniusc', 'stdlib'], False),
     # F11: every extended/ module's testable targets, as stdlib-* tests the stdlib's.
     ('extended', ['stdlib_oracle.py', '{w}', '--root', 'extended', '--seed', '{s}'],
      ['run_all', 'laniusc', 'stdlib', 'extended_all'], False),
@@ -145,7 +149,10 @@ def inputs():
         + run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'Lanius')),
         'lani': run_cache.tree_digest(os.path.join(run_cache.FORMAL, 'lani')),
         'tools': run_cache.tree_digest(os.path.join(ROOT, T)),
-        'laniusc': run_cache.file_digest(LANIUSC),
+        # laniusc loads its kernels at run time from the shader artifacts its
+        # build compiled from shaders/, so a shader-only change can leave the
+        # binary byte-identical: key on both.
+        'laniusc': run_cache.file_digest(LANIUSC) + run_cache.tree_digest(os.path.join(ROOT, 'shaders')),
         'stdlib': run_cache.tree_digest(os.path.join(ROOT, 'stdlib')),
         'programs': run_cache.tree_digest(os.path.join(ROOT, 'tests/fixtures'))
         + run_cache.tree_digest(os.path.join(ROOT, 'sample_programs')),

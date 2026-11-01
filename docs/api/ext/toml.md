@@ -516,7 +516,7 @@ pub fn parse(input: alloc::string::String, options: Options) -> core::result::Re
 
 ### function: encode
 
-[Source line 726](../../../extended/ext/toml.lani#L726)
+[Source line 727](../../../extended/ext/toml.lani#L727)
 
 ```lanius
 pub fn encode(document: Document) -> core::result::Result<alloc::string::String,Error>
@@ -526,7 +526,7 @@ Admit the shared borrowed reader under a 2W serializer budget, then collect inde
 
 ### function: encode_into
 
-[Source line 748](../../../extended/ext/toml.lani#L748)
+[Source line 749](../../../extended/ext/toml.lani#L749)
 
 ```lanius
 pub fn encode_into(document: Document, output: core::slice::View<u8>) -> core::result::Result<i32,Error>

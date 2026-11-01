@@ -1,6 +1,7 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.ifEff
 import Lanius.Mini.Frontend.P.pickTy
@@ -15,7 +16,7 @@ namespace Lanius.Mini
 
 /-- `v[index] = value;` -/
 def setIndexOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (index : CTree) (value : CTree) : Option MStmt :=
-  setIndexEvalOf l.id (effOf fuel env scope none index) (effOf fuel env scope (indexElem l.ty) value)
+  setIndexEvalOf env.decls.fns.length l.id (effOf fuel env scope none index) (effOf fuel env scope (indexElem l.ty) value)
 
 def fieldEvalStmt (id : Nat) (j : Nat) (x : Option MEff) : Option MStmt :=
   match x with

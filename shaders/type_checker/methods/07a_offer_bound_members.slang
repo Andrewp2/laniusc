@@ -304,13 +304,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     MethodCandidate candidate = method_candidate_empty();
     uint mode = member == AMBIGUOUS ? INVALID : method_decl_receiver_mode[member];
     // A path call passes every argument explicitly (methods/07 receiver
-    // mode 0), whatever the member's first parameter.
-    if (!dotted && (mode == 0u || mode == 3u)) mode = 0u;
-    else if (!dotted || (mode != 1u && mode != 2u)) mode = INVALID;
+    // mode 0), whatever the member's first parameter: `T::m(x)` passes a
+    // self member's receiver as its first argument.
+    if (!dotted && mode != INVALID) mode = 0u;
+    else if (mode != 1u && mode != 2u) mode = INVALID;
     // A dotted call of a member without a self parameter (or with an
-    // explicitly typed one), a path call of a self member, two traits
-    // supplying this name, or a bound whose arguments do not bind the
-    // trait's parameters cannot be selected.
+    // explicitly typed one), two traits supplying this name, or a bound
+    // whose arguments do not bind the trait's parameters cannot be selected.
     uint member_trait = local_trait(predicate_bound_reference[predicate]);
     if (mode != INVALID && publish_trait_arguments(call, predicate, member_trait, payload))
     {

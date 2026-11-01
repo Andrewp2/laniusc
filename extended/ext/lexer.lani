@@ -21,7 +21,7 @@ pub enum Error {
 // Internal descriptors are public only because fields are not opaque. Do not
 // forge/mutate them. Copying Lexer aliases its single manual owner.
 pub struct CompiledRule { id: i32, skip: bool, regex: ext::regex::Regex, combined: bool, cost: i64 }
-// prefix is the combined lazy DFA over every assertion-free rule; its fixed
+// prefix is the combined lazy DFA over every lookbehind-free rule; its fixed
 // cache is shared by all copies and cursors.
 pub struct Lexer { rules: alloc::vec::Vec<CompiledRule>, states: i32, workspace_states: i32, prefix: ext::regex::PrefixSet }
 // One active cursor owns its fixed span workspace and borrows Lexer/input.
@@ -66,7 +66,7 @@ pub fn compile(rules: core::slice::View<Rule>, options: ext::regex::Options, lim
         let regex = made.unwrap();
         if (regex.state_count() > limits.max_states - output.states) { regex.destroy(); output.destroy(); return core::result::Err(Error::StateLimit(index)); }
         let states: i32 = regex.state_count();
-        let combined: bool = !regex.has_assertion();
+        let combined: bool = !regex.has_lookbehind();
         if (combined) {
             let added = output.prefix.add(index, regex.borrow());
             if (added.is_err()) { regex.destroy(); output.destroy(); return core::result::Err(Error::AllocationFailed); }

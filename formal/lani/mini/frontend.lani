@@ -1168,23 +1168,34 @@ pub struct Decls {
     imports: List<ImportDecl>,
     aliases: List<AliasDecl>,
     impls: List<ImplDecl>,
+    // the paths of the files' `module` items: a module that declares only
+    // traits, say, is still a module
+    homes: List<List<List<usize>>>,
 }
 
 pub fn no_decls() -> Decls {
-    return Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty() };
+    return Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty(), homes: empty() };
 }
 
 pub fn join_decls(a: Decls, b: core::option::Option<Decls>) -> core::option::Option<Decls> {
     return match (b) {
         None -> None,
-        Some(d) -> Some(Decls { types: concat(a.types, d.types), fns: concat(a.fns, d.fns), consts: concat(a.consts, d.consts), imports: concat(a.imports, d.imports), aliases: concat(a.aliases, d.aliases), impls: concat(a.impls, d.impls) }),
+        Some(d) -> Some(Decls { types: concat(a.types, d.types), fns: concat(a.fns, d.fns), consts: concat(a.consts, d.consts), imports: concat(a.imports, d.imports), aliases: concat(a.aliases, d.aliases), impls: concat(a.impls, d.impls), homes: concat(a.homes, d.homes) }),
+    };
+}
+
+// A `module` item declares its path a module.
+pub fn module_decls(path: core::option::Option<List<List<usize>>>) -> core::option::Option<Decls> {
+    return match (path) {
+        None -> None,
+        Some(m) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty(), homes: single(m) }),
     };
 }
 
 pub fn import_decls(home: List<List<usize>>, target: core::option::Option<List<List<usize>>>) -> core::option::Option<Decls> {
     return match (target) {
         None -> None,
-        Some(t) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: single(ImportDecl { home: home, target: t }), aliases: empty(), impls: empty() }),
+        Some(t) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: single(ImportDecl { home: home, target: t }), aliases: empty(), impls: empty(), homes: empty() }),
     };
 }
 
@@ -1395,7 +1406,7 @@ pub fn methods_of(fuel: usize, home: List<List<usize>>, impl_params: List<List<u
 pub fn fns_decls(fns: core::option::Option<List<FnDecl>>) -> core::option::Option<Decls> {
     return match (fns) {
         None -> None,
-        Some(fs) -> Some(Decls { types: empty(), fns: fs, consts: empty(), imports: empty(), aliases: empty(), impls: empty() }),
+        Some(fs) -> Some(Decls { types: empty(), fns: fs, consts: empty(), imports: empty(), aliases: empty(), impls: empty(), homes: empty() }),
     };
 }
 
@@ -1410,7 +1421,7 @@ pub fn impl_methods(fuel: usize, home: List<List<usize>>, params: core::option::
 }
 
 pub fn with_impl_decl(i: ImplDecl, d: Decls) -> Decls {
-    return Decls { types: d.types, fns: d.fns, consts: d.consts, imports: d.imports, aliases: d.aliases, impls: cons(i, d.impls) };
+    return Decls { types: d.types, fns: d.fns, consts: d.consts, imports: d.imports, aliases: d.aliases, impls: cons(i, d.impls), homes: d.homes };
 }
 
 // A trait impl: its methods, and the impl itself, which the bounds look up.
@@ -1427,14 +1438,14 @@ pub fn with_impl(home: List<List<usize>>, params: core::option::Option<List<List
 pub fn type_decls(t: core::option::Option<TypeDecl>) -> core::option::Option<Decls> {
     return match (t) {
         None -> None,
-        Some(d) -> Some(Decls { types: single(d), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty() }),
+        Some(d) -> Some(Decls { types: single(d), fns: empty(), consts: empty(), imports: empty(), aliases: empty(), impls: empty(), homes: empty() }),
     };
 }
 
 pub fn alias_decls(home: List<List<usize>>, name: List<usize>, params: core::option::Option<List<List<usize>>>, ty: CTree) -> core::option::Option<Decls> {
     return match (params) {
         None -> None,
-        Some(ps) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: single(AliasDecl { home: home, name: name, params: ps, ty: ty }), impls: empty() }),
+        Some(ps) -> Some(Decls { types: empty(), fns: empty(), consts: empty(), imports: empty(), aliases: single(AliasDecl { home: home, name: name, params: ps, ty: ty }), impls: empty(), homes: empty() }),
     };
 }
 
@@ -1547,7 +1558,7 @@ pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::op
         return fns_decls(cons_fn_decl(fn_decl_of(home, b, false, empty(), b, b, type_params(fuel, kid(b, 2))), Some(empty())));
     }
     if (p == p_const()) {
-        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { home: home, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty(), aliases: empty(), impls: empty() });
+        return Some(Decls { types: empty(), fns: empty(), consts: single(ConstDecl { home: home, name: kid_token(b, 1).text, ty: kid(b, 3), value: kid(b, 5) }), imports: empty(), aliases: empty(), impls: empty(), homes: empty() });
     }
     // An impl's bounds and where clause are checked where its methods'
     // instances are read (fn_bounds_ok).
@@ -1567,24 +1578,29 @@ pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::op
     if (p == p_extern_fn() && host_extern(b)) {
         return fns_decls(cons_fn_decl(fn_decl_of(home, extern_tree(b), false, empty(), b, b, type_params(fuel, kid(b, 4))), Some(empty())));
     }
-    if (p == p_module() || p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
+    if (p == p_module()) {
+        return module_decls(path_spellings(fuel, kid(kid(b, 1), 0), kid(kid(b, 1), 1)));
+    }
+    if (p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
         return Some(no_decls());
     }
     return None;
 }
 
-pub fn collect(fuel: usize, home: List<List<usize>>, items: List<CTree>, acc: Decls) -> core::option::Option<Decls> {
-    return match (items) {
-        Nil -> Some(acc),
-        Cons(item, rest) -> collect_next(fuel, home, join_decls(acc, item_decls(fuel, home, item)), unbox(rest)),
+pub fn collect_front(first: core::option::Option<Decls>, rest: core::option::Option<Decls>) -> core::option::Option<Decls> {
+    return match (first) {
+        None -> None,
+        Some(d) -> join_decls(d, rest),
     };
 }
 
-// extract: inline
-fn collect_next(cfuel: usize, cmodule: List<List<usize>>, cacc: core::option::Option<Decls>, crest: List<CTree>) -> core::option::Option<Decls> {
-    return match (cacc) {
-        None -> None,
-        Some(d) -> collect(cfuel, cmodule, crest, d),
+// The items' declarations, in order: each item's in front of the rest's,
+// so each list is copied once (appending to what came before copied it
+// once per item).
+pub fn collect(fuel: usize, home: List<List<usize>>, items: List<CTree>) -> core::option::Option<Decls> {
+    return match (items) {
+        Nil -> Some(no_decls()),
+        Cons(item, rest) -> collect_front(item_decls(fuel, home, item), collect(fuel, home, unbox(rest))),
     };
 }
 
@@ -1604,7 +1620,7 @@ pub fn file_collected(home: List<List<usize>>, decls: core::option::Option<Decls
 pub fn file_items(fuel: usize, home: core::option::Option<List<List<usize>>>, items: List<CTree>) -> core::option::Option<FileDecls> {
     return match (home) {
         None -> None,
-        Some(m) -> file_collected(m, collect(fuel, m, items, no_decls())),
+        Some(m) -> file_collected(m, collect(fuel, m, items)),
     };
 }
 
@@ -1625,7 +1641,7 @@ pub struct Collected {
 }
 
 pub fn collected_with(c: Collected, f: FileDecls) -> Collected {
-    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts), imports: concat(c.decls.imports, f.decls.imports), aliases: concat(c.decls.aliases, f.decls.aliases), impls: concat(c.decls.impls, f.decls.impls) }, modules: concat(c.modules, single(f.home)) };
+    return Collected { decls: Decls { types: concat(c.decls.types, f.decls.types), fns: concat(c.decls.fns, f.decls.fns), consts: concat(c.decls.consts, f.decls.consts), imports: concat(c.decls.imports, f.decls.imports), aliases: concat(c.decls.aliases, f.decls.aliases), impls: concat(c.decls.impls, f.decls.impls), homes: concat(c.decls.homes, f.decls.homes) }, modules: concat(c.modules, single(f.home)) };
 }
 
 pub fn collect_files(fuel: usize, roots: List<CTree>, acc: Collected) -> core::option::Option<Collected> {
@@ -2185,38 +2201,11 @@ fn variants_named_at(nt: TypeDecl, nrest: List<TypeDecl>, nm: List<List<usize>>,
     return variants_named(nrest, nm, nname, plus(nk, 1));
 }
 
-// Some declaration of module m: then m is a module, and `import m;` imports
-// it rather than an item of m's prefix.
-pub fn types_home(types: List<TypeDecl>, m: List<List<usize>>) -> bool {
-    return match (types) {
-        Nil -> false,
-        Cons(t, rest) -> same_spellings(t.home, m) || types_home(unbox(rest), m),
-    };
-}
-
-pub fn fns_home(fns: List<FnDecl>, m: List<List<usize>>) -> bool {
-    return match (fns) {
-        Nil -> false,
-        Cons(f, rest) -> same_spellings(f.home, m) || fns_home(unbox(rest), m),
-    };
-}
-
-pub fn consts_home(consts: List<ConstDecl>, m: List<List<usize>>) -> bool {
-    return match (consts) {
-        Nil -> false,
-        Cons(c, rest) -> same_spellings(c.home, m) || consts_home(unbox(rest), m),
-    };
-}
-
-pub fn aliases_home(aliases: List<AliasDecl>, m: List<List<usize>>) -> bool {
-    return match (aliases) {
-        Nil -> false,
-        Cons(a, rest) -> same_spellings(a.home, m) || aliases_home(unbox(rest), m),
-    };
-}
-
+// A module path is a module when a file's `module` item names it, as in
+// laniusc (modules/05_resolve_imports.slang), whatever the file declares;
+// then `import m;` imports it rather than an item of m's prefix.
 pub fn is_module(d: Decls, m: List<List<usize>>) -> bool {
-    return types_home(d.types, m) || fns_home(d.fns, m) || consts_home(d.consts, m) || aliases_home(d.aliases, m);
+    return module_member(d.homes, m);
 }
 
 pub fn if_item(b: bool, p: List<List<usize>>) -> core::option::Option<List<List<usize>>> {
@@ -6200,6 +6189,18 @@ pub fn cons_binder(id: usize, rest: core::option::Option<Bound>) -> core::option
     };
 }
 
+// Some enum of the program has a variant spelled name. laniusc reads a
+// payload pattern whose name resolves to a variant as a check of that
+// payload, not a binder (match_payload_binding in
+// shaders/codegen/lir/semantic/local_mark.slang); a payload pattern spelled
+// like any variant is never read as a binder.
+pub fn any_variant(types: List<TypeDecl>, name: List<usize>) -> bool {
+    return match (types) {
+        Nil -> false,
+        Cons(t, rest) -> (t.is_enum && member(t.variants, name)) || any_variant(unbox(rest), name),
+    };
+}
+
 // One plain name pattern per payload type, each a fresh local.
 pub fn binders_of(env: FrontEnv, scope: List<Local>, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     return match (payload) {
@@ -6218,7 +6219,7 @@ pub fn binders_of(env: FrontEnv, scope: List<Local>, pats: List<CTree>, payload:
 fn binder_of(env: FrontEnv, scope: List<Local>, p: CTree, t: Ty, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     let path: CTree = kid(p, 0);
     let tok: Token = kid_token(kid(path, 0), 0);
-    if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base))) {
+    if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text) && !any_variant(env.decls.types, tok.text) && fresh_id(scope, minus(tok.start, env.base))) {
         return cons_binder(minus(tok.start, env.base), binders_of(env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), pats, payload));
     }
     return None;
@@ -6476,6 +6477,660 @@ pub fn arms_of(fuel: usize, env: FrontEnv, scope: List<Local>, owner: TypeDecl, 
             Nil -> None,
             Cons(a, more) -> cons_arm(arm_of(fuel, env, scope, owner, v, a), arms_of(fuel, env, scope, owner, unbox(rest), unbox(more))),
         },
+    };
+}
+
+// ---------------------------------------------------------------- nested patterns
+
+// A match expression with a nested arm, one whose payload patterns are not
+// all plain names (`Ok(Some(x))`, `Pair(Bar::X(a), b)`), is read as nested
+// matches. Variant V's arm is V's one written arm when that is plain, the
+// wildcard's when no arm names V, and otherwise V(b, .., h, ..) -> match (h)
+// { p -> value, .. }: the arms naming V matched on their first column j that
+// is not a binder, each arm's pattern p there with its value, then the
+// wildcard unless an arm ends them with `_` or they cover h's enum. h is a
+// binder no source can spell, numbered by the first arm's pattern at j. The
+// last arm may bind at j a name its value does not spell (it is `_`); the
+// wildcard goes in only when its value spells none of the first arm's
+// other binders.
+// SEMANTIC_DECISIONS "Nested patterns".
+
+// A payload pattern that binds a name, as binder_of reads one: a plain
+// one-segment name that is no global's and no variant's.
+pub fn binder_name_ok(env: FrontEnv, name: core::option::Option<List<usize>>) -> bool {
+    return match (name) {
+        None -> false,
+        Some(n) -> !member(env.globals, n) && !any_variant(env.decls.types, n),
+    };
+}
+
+pub fn is_binder_pat(env: FrontEnv, p: CTree) -> bool {
+    return node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && binder_name_ok(env, path_name(kid(p, 0)));
+}
+
+pub fn all_binders(env: FrontEnv, pats: List<CTree>) -> bool {
+    return match (pats) {
+        Nil -> true,
+        Cons(p, rest) -> is_binder_pat(env, p) && all_binders(env, unbox(rest)),
+    };
+}
+
+// `_` as a payload pattern.
+pub fn is_wild_pat(p: CTree) -> bool {
+    return node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_underscore(path_name(kid(p, 0)));
+}
+
+pub fn pats_nested(env: FrontEnv, pats: core::option::Option<List<CTree>>) -> core::option::Option<bool> {
+    return match (pats) {
+        None -> None,
+        Some(ps) -> Some(!all_binders(env, ps)),
+    };
+}
+
+// Whether an arm is nested: a payload pattern list with a pattern that is
+// not a binder. None when its items are not read.
+pub fn arm_nested(fuel: usize, env: FrontEnv, a: CTree) -> core::option::Option<bool> {
+    let pattern: CTree = kid(a, 0);
+    if (node_prod(pattern) == p_pattern_ident() && node_prod(kid(pattern, 1)) != p_pattern_plain()) {
+        return pats_nested(env, list_items(fuel, kid(kid(pattern, 1), 1)));
+    }
+    return Some(false);
+}
+
+pub fn or_known(a: core::option::Option<bool>, b: core::option::Option<bool>) -> core::option::Option<bool> {
+    return match (a) {
+        None -> None,
+        Some(x) -> match (b) {
+            None -> None,
+            Some(y) -> Some(x || y),
+        },
+    };
+}
+
+pub fn and_known(a: core::option::Option<bool>, b: core::option::Option<bool>) -> core::option::Option<bool> {
+    return match (a) {
+        None -> None,
+        Some(x) -> match (b) {
+            None -> None,
+            Some(y) -> Some(x && y),
+        },
+    };
+}
+
+pub fn not_known(a: core::option::Option<bool>) -> core::option::Option<bool> {
+    return match (a) {
+        None -> None,
+        Some(x) -> Some(!x),
+    };
+}
+
+pub fn any_nested(fuel: usize, env: FrontEnv, arms: List<CTree>) -> core::option::Option<bool> {
+    return match (arms) {
+        Nil -> Some(false),
+        Cons(a, rest) -> or_known(arm_nested(fuel, env, a), any_nested(fuel, env, unbox(rest))),
+    };
+}
+
+pub fn named_known(owner: TypeDecl, name: List<usize>, ss: core::option::Option<List<List<usize>>>) -> core::option::Option<bool> {
+    return match (ss) {
+        None -> None,
+        Some(s) -> Some(arm_named(Some(s), owner, name)),
+    };
+}
+
+// Whether the arm's pattern names the variant; None when its path is not read.
+pub fn arm_naming(fuel: usize, owner: TypeDecl, name: List<usize>, a: CTree) -> core::option::Option<bool> {
+    let path: CTree = kid(kid(a, 0), 0);
+    return named_known(owner, name, path_spellings(fuel, kid(path, 0), kid(path, 1)));
+}
+
+pub fn row_cons(named: core::option::Option<bool>, a: CTree, rest: core::option::Option<List<CTree>>) -> core::option::Option<List<CTree>> {
+    return match (named) {
+        None -> None,
+        Some(n) -> match (rest) {
+            None -> None,
+            Some(r) -> Some(arms_naming_at(n, a, r)),
+        },
+    };
+}
+
+// The arms that name the variant, in order.
+pub fn rows_naming(fuel: usize, owner: TypeDecl, name: List<usize>, arms: List<CTree>) -> core::option::Option<List<CTree>> {
+    return match (arms) {
+        Nil -> Some(empty()),
+        Cons(a, rest) -> row_cons(arm_naming(fuel, owner, name, a), a, rows_naming(fuel, owner, name, unbox(rest))),
+    };
+}
+
+pub fn first_at(binds: bool, i: usize, rest: core::option::Option<usize>) -> core::option::Option<usize> {
+    if (binds) {
+        return rest;
+    }
+    return Some(i);
+}
+
+// The first payload pattern from index i on that is not a binder.
+pub fn first_nested(env: FrontEnv, pats: List<CTree>, i: usize) -> core::option::Option<usize> {
+    return match (pats) {
+        Nil -> None,
+        Cons(p, rest) -> first_at(is_binder_pat(env, p), i, first_nested(env, unbox(rest), plus(i, 1))),
+    };
+}
+
+pub fn same_opt_name(a: core::option::Option<List<usize>>, b: core::option::Option<List<usize>>) -> bool {
+    return match (a) {
+        None -> false,
+        Some(x) -> match (b) {
+            None -> false,
+            Some(y) -> same_text(x, y),
+        },
+    };
+}
+
+// A row's pattern y against the first row's x in the same column: at the
+// column matched on, not a binder, or a binder in the last row; elsewhere a
+// binder spelled as the first row's.
+pub fn col_fits(env: FrontEnv, x: CTree, y: CTree, at_j: bool, last: bool) -> bool {
+    if (at_j) {
+        return !is_binder_pat(env, y) || last;
+    }
+    return is_binder_pat(env, y) && same_opt_name(path_name(kid(x, 0)), path_name(kid(y, 0)));
+}
+
+// A row's payload patterns pr against the first row's pa, column j matched on.
+pub fn row_fits(env: FrontEnv, pa: List<CTree>, pr: List<CTree>, i: usize, j: usize, last: bool) -> bool {
+    return match (pa) {
+        Nil -> match (pr) {
+            Nil -> true,
+            Cons(y, more) -> false,
+        },
+        Cons(x, rest) -> match (pr) {
+            Nil -> false,
+            Cons(y, more) -> col_fits(env, x, y, i == j, last) && row_fits(env, unbox(rest), unbox(more), plus(i, 1), j, last),
+        },
+    };
+}
+
+// Row r as an arm of the inner match: its pattern p at the column, its value.
+pub fn sub_arm(r: CTree, p: CTree) -> CTree {
+    return Node(node_prod(r), boxed(cons(p, cons(kid(r, 1), single(kid(r, 2))))));
+}
+
+pub fn is_last(rest: List<CTree>) -> bool {
+    return match (rest) {
+        Nil -> true,
+        Cons(r, more) -> false,
+    };
+}
+
+// Whether a token of the trees is spelled name; None when fuel runs out.
+pub fn mentions(fuel: usize, todo: List<CTree>, name: List<usize>) -> core::option::Option<bool> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (todo) {
+        Nil -> Some(false),
+        Cons(t, rest) -> match (t) {
+            Leaf(tok) -> or_known(Some(same_text(tok.text, name)), mentions(minus(fuel, 1), unbox(rest), name)),
+            Node(q, kids) -> mentions(minus(fuel, 1), concat(unbox(kids), unbox(rest)), name),
+        },
+    };
+}
+
+// The value spells no token as the name, so binding it does not change
+// what the value means; None when the name or the walk is not read.
+pub fn quiet_in(fuel: usize, name: core::option::Option<List<usize>>, value: CTree) -> core::option::Option<bool> {
+    return match (name) {
+        None -> None,
+        Some(n) -> not_known(mentions(fuel, single(value), n)),
+    };
+}
+
+// The one-segment path spelled text at pattern p's first token.
+pub fn named_path(p: CTree, text: List<usize>) -> CTree {
+    let tok: Token = kid_token(kid(kid(p, 0), 0), 0);
+    return Node(p_path(), boxed(cons(Node(p_path_ident(), boxed(single(Leaf(Token { kind: tok.kind, start: tok.start, text: text })))), single(Node(p_path_end(), boxed(empty()))))));
+}
+
+// `_` at binder p.
+pub fn wild_pat(p: CTree) -> CTree {
+    return Node(p_pattern_ident(), boxed(cons(named_path(p, text_underscore()), single(Node(p_pattern_plain(), boxed(empty()))))));
+}
+
+pub fn quiet_arm(q: bool, r: CTree, p: CTree) -> core::option::Option<CTree> {
+    if (q) {
+        return Some(sub_arm(r, wild_pat(p)));
+    }
+    return None;
+}
+
+pub fn quiet_sub(r: CTree, p: CTree, quiet: core::option::Option<bool>) -> core::option::Option<CTree> {
+    return match (quiet) {
+        None -> None,
+        Some(q) -> quiet_arm(q, r, p),
+    };
+}
+
+// Row r's inner arm at its pattern p: a binder p (the last row's) is `_`,
+// when r's value does not spell p's name.
+pub fn column_sub(fuel: usize, env: FrontEnv, r: CTree, p: CTree) -> core::option::Option<CTree> {
+    if (is_binder_pat(env, p)) {
+        return quiet_sub(r, p, quiet_in(fuel, path_name(kid(p, 0)), kid(r, 2)));
+    }
+    return Some(sub_arm(r, p));
+}
+
+pub fn column_fit(fits: bool, a: core::option::Option<CTree>, rest: core::option::Option<List<CTree>>) -> core::option::Option<List<CTree>> {
+    if (fits) {
+        return match (a) {
+            None -> None,
+            Some(x) -> cons_tree_tail(x, rest),
+        };
+    }
+    return None;
+}
+
+pub fn column_arm(fuel: usize, env: FrontEnv, pa: List<CTree>, j: usize, r: CTree, last: bool, pr: core::option::Option<List<CTree>>, rest: core::option::Option<List<CTree>>) -> core::option::Option<List<CTree>> {
+    return match (pr) {
+        None -> None,
+        Some(ps) -> match (get(ps, j)) {
+            None -> None,
+            Some(p) -> column_fit(row_fits(env, pa, ps, 0, j, last), column_sub(fuel, env, r, p), rest),
+        },
+    };
+}
+
+// The payload patterns of a row `V(p, ...) -> value`; None for `V -> value`.
+pub fn row_pats(fuel: usize, r: CTree) -> core::option::Option<List<CTree>> {
+    let pattern: CTree = kid(r, 0);
+    if (node_prod(pattern) == p_pattern_ident() && node_prod(kid(pattern, 1)) != p_pattern_plain()) {
+        return list_items(fuel, kid(kid(pattern, 1), 1));
+    }
+    return None;
+}
+
+// The inner match's arms from the rows, in order.
+pub fn column_arms(fuel: usize, env: FrontEnv, pa: List<CTree>, j: usize, rows: List<CTree>) -> core::option::Option<List<CTree>> {
+    return match (rows) {
+        Nil -> Some(empty()),
+        Cons(r, rest) -> column_arm(fuel, env, pa, j, r, is_last(unbox(rest)), row_pats(fuel, r), column_arms(fuel, env, pa, j, unbox(rest))),
+    };
+}
+
+pub fn ends_wild(arms: List<CTree>) -> bool {
+    return match (wild_split(arms)) {
+        None -> false,
+        Some(s) -> true,
+    };
+}
+
+// An inner arm that names variant u with plain binders, or none.
+pub fn plain_naming(fuel: usize, env: FrontEnv, t: TypeDecl, u: List<usize>, ia: CTree) -> core::option::Option<bool> {
+    return and_known(arm_naming(fuel, t, u, ia), not_known(arm_nested(fuel, env, ia)));
+}
+
+pub fn covered_by(fuel: usize, env: FrontEnv, t: TypeDecl, u: List<usize>, inner: List<CTree>) -> core::option::Option<bool> {
+    return match (inner) {
+        Nil -> Some(false),
+        Cons(ia, rest) -> or_known(plain_naming(fuel, env, t, u, ia), covered_by(fuel, env, t, u, unbox(rest))),
+    };
+}
+
+pub fn covers_all(fuel: usize, env: FrontEnv, t: TypeDecl, names: List<List<usize>>, inner: List<CTree>) -> core::option::Option<bool> {
+    return match (names) {
+        Nil -> Some(true),
+        Cons(u, rest) -> and_known(covered_by(fuel, env, t, u, inner), covers_all(fuel, env, t, unbox(rest), inner)),
+    };
+}
+
+pub fn covers_enum(fuel: usize, env: FrontEnv, t: TypeDecl, inner: List<CTree>) -> core::option::Option<bool> {
+    if (t.is_enum) {
+        return covers_all(fuel, env, t, t.variants, inner);
+    }
+    return Some(false);
+}
+
+pub fn covers_decl(fuel: usize, env: FrontEnv, t: core::option::Option<TypeDecl>, inner: List<CTree>) -> core::option::Option<bool> {
+    return match (t) {
+        None -> Some(false),
+        Some(d) -> covers_enum(fuel, env, d, inner),
+    };
+}
+
+// The inner arms cover the column's enum: each of its variants has an
+// arm naming it with plain binders, so the wildcard is not added.
+pub fn covers(fuel: usize, env: FrontEnv, ty: Ty, inner: List<CTree>) -> core::option::Option<bool> {
+    return match (named_parts(ty)) {
+        None -> Some(false),
+        Some(n) -> covers_decl(fuel, env, get(env.decls.types, n.decl), inner),
+    };
+}
+
+// The binder of the column matched on: its pattern p's first token,
+// spelled with a byte no identifier has.
+pub fn text_hidden() -> List<usize> {
+    return single(0);
+}
+
+pub fn hidden_path(p: CTree) -> CTree {
+    return named_path(p, text_hidden());
+}
+
+pub fn hidden_pat(p: CTree) -> CTree {
+    return Node(p_pattern_ident(), boxed(cons(hidden_path(p), single(Node(p_pattern_plain(), boxed(empty()))))));
+}
+
+pub fn hidden_expr(p: CTree) -> CTree {
+    return Node(p_ident(), boxed(cons(hidden_path(p), single(Node(p_ident_plain(), boxed(empty()))))));
+}
+
+pub fn replace_at(items: List<CTree>, j: usize, x: CTree) -> List<CTree> {
+    if (j == 0) {
+        return match (items) {
+            Nil -> empty(),
+            Cons(p, rest) -> cons(x, unbox(rest)),
+        };
+    }
+    return match (items) {
+        Nil -> empty(),
+        Cons(p, rest) -> cons(p, replace_at(unbox(rest), minus(j, 1), x)),
+    };
+}
+
+// The first row a as `V(b, .., h, ..) -> match (h) { inner }`, h at column
+// j in place of a's pattern p there.
+pub fn nest_arm(a: CTree, pa: List<CTree>, j: usize, p: CTree, inner: List<CTree>) -> CTree {
+    let pattern: CTree = kid(a, 0);
+    let tail: CTree = kid(pattern, 1);
+    let fill: CTree = kid(a, 1);
+    let tuple: CTree = Node(node_prod(tail), boxed(cons(kid(tail, 0), cons(Node(p_patterns_some(), boxed(replace_at(pa, j, hidden_pat(p)))), single(kid(tail, 2))))));
+    let value: CTree = Node(p_match_expr(), boxed(cons(fill, cons(fill, cons(hidden_expr(p), cons(fill, cons(fill, cons(Node(p_match_arms_some(), boxed(inner)), single(fill)))))))));
+    return Node(node_prod(a), boxed(cons(Node(node_prod(pattern), boxed(cons(kid(pattern, 0), single(tuple)))), cons(fill, single(value)))));
+}
+
+// A variant's arm, and whether it is or holds the wildcard's.
+pub struct ArmUse {
+    arm: CTree,
+    used: bool,
+}
+
+pub fn col_quiet(fuel: usize, x: CTree, at_j: bool, value: CTree) -> core::option::Option<bool> {
+    if (at_j) {
+        return Some(true);
+    }
+    return quiet_in(fuel, path_name(kid(x, 0)), value);
+}
+
+// The value spells none of the first row's binders off column j: the
+// wildcard's value in the inner match, where they are bound, means what it
+// means where it is written.
+pub fn cols_quiet(fuel: usize, pa: List<CTree>, i: usize, j: usize, value: CTree) -> core::option::Option<bool> {
+    return match (pa) {
+        Nil -> Some(true),
+        Cons(x, rest) -> and_known(col_quiet(fuel, x, i == j, value), cols_quiet(fuel, unbox(rest), plus(i, 1), j, value)),
+    };
+}
+
+pub fn appended_use(a: CTree, pa: List<CTree>, j: usize, p: CTree, base: List<CTree>, w: CTree, q: bool) -> core::option::Option<ArmUse> {
+    if (q) {
+        return Some(ArmUse { arm: nest_arm(a, pa, j, p, concat(base, single(w))), used: true });
+    }
+    return None;
+}
+
+pub fn quiet_use(a: CTree, pa: List<CTree>, j: usize, p: CTree, base: List<CTree>, w: CTree, quiet: core::option::Option<bool>) -> core::option::Option<ArmUse> {
+    return match (quiet) {
+        None -> None,
+        Some(q) -> appended_use(a, pa, j, p, base, w, q),
+    };
+}
+
+pub fn covered_use(fuel: usize, a: CTree, pa: List<CTree>, j: usize, p: CTree, base: List<CTree>, w: CTree, c: bool) -> core::option::Option<ArmUse> {
+    if (c) {
+        return Some(ArmUse { arm: nest_arm(a, pa, j, p, base), used: false });
+    }
+    return quiet_use(a, pa, j, p, base, w, cols_quiet(fuel, pa, 0, j, kid(w, 2)));
+}
+
+pub fn known_use(fuel: usize, a: CTree, pa: List<CTree>, j: usize, p: CTree, base: List<CTree>, w: CTree, c: core::option::Option<bool>) -> core::option::Option<ArmUse> {
+    return match (c) {
+        None -> None,
+        Some(b) -> covered_use(fuel, a, pa, j, p, base, w, b),
+    };
+}
+
+pub fn wild_inner(fuel: usize, env: FrontEnv, a: CTree, pa: List<CTree>, j: usize, p: CTree, ty: Ty, base: List<CTree>, w: CTree) -> core::option::Option<ArmUse> {
+    if (ends_wild(base)) {
+        return Some(ArmUse { arm: nest_arm(a, pa, j, p, base), used: false });
+    }
+    return known_use(fuel, a, pa, j, p, base, w, covers(fuel, env, ty, base));
+}
+
+// The inner arms: the rows', then the wildcard unless they end with `_` or
+// cover the column's enum.
+pub fn nest_inner(fuel: usize, env: FrontEnv, a: CTree, pa: List<CTree>, j: usize, p: CTree, ty: Ty, inner: core::option::Option<List<CTree>>, w: core::option::Option<CTree>) -> core::option::Option<ArmUse> {
+    return match (inner) {
+        None -> None,
+        Some(base) -> match (w) {
+            None -> Some(ArmUse { arm: nest_arm(a, pa, j, p, base), used: false }),
+            Some(x) -> wild_inner(fuel, env, a, pa, j, p, ty, base, x),
+        },
+    };
+}
+
+pub fn nest_at(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, pa: List<CTree>, j: usize, rows: List<CTree>, w: core::option::Option<CTree>) -> core::option::Option<ArmUse> {
+    return match (get(pa, j)) {
+        None -> None,
+        Some(p) -> match (get(v.payload, j)) {
+            None -> None,
+            Some(ty) -> nest_inner(fuel, env, a, pa, j, p, ty, column_arms(fuel, env, pa, j, rows), w),
+        },
+    };
+}
+
+pub fn nest_pats(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, pa: List<CTree>, rows: List<CTree>, w: core::option::Option<CTree>) -> core::option::Option<ArmUse> {
+    return match (first_nested(env, pa, 0)) {
+        None -> None,
+        Some(j) -> nest_at(fuel, env, v, a, pa, j, rows, w),
+    };
+}
+
+// The rows of v when the first, a, is nested.
+pub fn nest_use(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, rows: List<CTree>, w: core::option::Option<CTree>) -> core::option::Option<ArmUse> {
+    return match (row_pats(fuel, a)) {
+        None -> None,
+        Some(pa) -> nest_pats(fuel, env, v, a, pa, rows, w),
+    };
+}
+
+pub fn shadow_if(a: CTree, n: bool) -> core::option::Option<ArmUse> {
+    if (n) {
+        return Some(ArmUse { arm: a, used: false });
+    }
+    return None;
+}
+
+pub fn shadow_use(a: CTree, n: core::option::Option<bool>) -> core::option::Option<ArmUse> {
+    return match (n) {
+        None -> None,
+        Some(b) -> shadow_if(a, b),
+    };
+}
+
+// V's first arm a is plain: it is V's arm. It matches every value of V, so
+// laniusc never runs V's later arms; they are allowed when one of them is
+// nested (laniusc accepts them), and are not read.
+pub fn plain_use(fuel: usize, env: FrontEnv, a: CTree, more: List<CTree>) -> core::option::Option<ArmUse> {
+    return match (more) {
+        Nil -> Some(ArmUse { arm: a, used: false }),
+        Cons(b, others) -> shadow_use(a, any_nested(fuel, env, more)),
+    };
+}
+
+pub fn nested_or_plain(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, more: List<CTree>, rows: List<CTree>, w: core::option::Option<CTree>, n: bool) -> core::option::Option<ArmUse> {
+    if (n) {
+        return nest_use(fuel, env, v, a, rows, w);
+    }
+    return plain_use(fuel, env, a, more);
+}
+
+pub fn rows_use(fuel: usize, env: FrontEnv, v: VariantTy, a: CTree, more: List<CTree>, rows: List<CTree>, w: core::option::Option<CTree>, nested: core::option::Option<bool>) -> core::option::Option<ArmUse> {
+    return match (nested) {
+        None -> None,
+        Some(n) -> nested_or_plain(fuel, env, v, a, more, rows, w, n),
+    };
+}
+
+pub fn wild_use(w: core::option::Option<CTree>, v: VariantTy) -> core::option::Option<ArmUse> {
+    return match (w) {
+        None -> None,
+        Some(x) -> Some(ArmUse { arm: wild_arm_for(x, v), used: true }),
+    };
+}
+
+// Variant v's arm from the arms naming it.
+pub fn variant_arm(fuel: usize, env: FrontEnv, v: VariantTy, rows: core::option::Option<List<CTree>>, w: core::option::Option<CTree>) -> core::option::Option<ArmUse> {
+    return match (rows) {
+        None -> None,
+        Some(rs) -> match (rs) {
+            Nil -> wild_use(w, v),
+            Cons(a, more) -> rows_use(fuel, env, v, a, unbox(more), rs, w, arm_nested(fuel, env, a)),
+        },
+    };
+}
+
+pub struct ArmsUse {
+    arms: List<CTree>,
+    used: bool,
+}
+
+pub fn join_use(x: ArmUse, r: core::option::Option<ArmsUse>) -> core::option::Option<ArmsUse> {
+    return match (r) {
+        None -> None,
+        Some(y) -> Some(ArmsUse { arms: cons(x.arm, y.arms), used: x.used || y.used }),
+    };
+}
+
+pub fn cons_use(a: core::option::Option<ArmUse>, r: core::option::Option<ArmsUse>) -> core::option::Option<ArmsUse> {
+    return match (a) {
+        None -> None,
+        Some(x) -> join_use(x, r),
+    };
+}
+
+pub fn variant_arms(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<VariantTy>, init: List<CTree>, w: core::option::Option<CTree>) -> core::option::Option<ArmsUse> {
+    return match (variants) {
+        Nil -> Some(ArmsUse { arms: empty(), used: false }),
+        Cons(v, rest) -> cons_use(variant_arm(fuel, env, v, rows_naming(fuel, owner, v.name, init), w), variant_arms(fuel, env, owner, unbox(rest), init, w)),
+    };
+}
+
+pub fn used_arms(used: bool, arms: List<CTree>) -> core::option::Option<List<CTree>> {
+    if (used) {
+        return Some(arms);
+    }
+    return None;
+}
+
+// A wildcard must be some variant's arm or in some inner match, so that its
+// value is read.
+pub fn wild_used(w: core::option::Option<CTree>, u: ArmsUse) -> core::option::Option<List<CTree>> {
+    return match (w) {
+        None -> Some(u.arms),
+        Some(x) -> used_arms(u.used, u.arms),
+    };
+}
+
+pub fn nested_used(w: core::option::Option<CTree>, r: core::option::Option<ArmsUse>) -> core::option::Option<List<CTree>> {
+    return match (r) {
+        None -> None,
+        Some(u) -> wild_used(w, u),
+    };
+}
+
+pub fn nested_with(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<VariantTy>, init: List<CTree>, w: core::option::Option<CTree>) -> core::option::Option<List<CTree>> {
+    if (all_name_some(fuel, owner, variants, init)) {
+        return nested_used(w, variant_arms(fuel, env, owner, variants, init, w));
+    }
+    return None;
+}
+
+// Whether a value is a block `{ statements }`, as arm_block_list reads one
+// (a block arm belongs to a match statement); None when its levels are not
+// read.
+pub fn block_value(fuel: usize, c: CTree) -> core::option::Option<bool> {
+    if (fuel == 0) {
+        return None;
+    }
+    let p: usize = node_prod(c);
+    if (p == p_expr() || p == p_base()) {
+        return block_value(minus(fuel, 1), kid(c, 0));
+    }
+    if ((p == p_assign() || is_level(p) || p == p_cast()) && !has_kids(kid(c, 1))) {
+        return block_value(minus(fuel, 1), kid(c, 0));
+    }
+    if (p == p_postfix()) {
+        return Some(node_prod(kid(c, 0)) == p_arm_block() && node_prod(kid(c, 1)) == p_postfix_end());
+    }
+    return Some(false);
+}
+
+// No arm's value is a block.
+pub fn no_block(fuel: usize, arms: List<CTree>) -> core::option::Option<bool> {
+    return match (arms) {
+        Nil -> Some(true),
+        Cons(a, rest) -> and_known(not_known(block_value(fuel, kid(a, 2))), no_block(fuel, unbox(rest))),
+    };
+}
+
+pub fn nested_checked(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>, ok: bool) -> core::option::Option<List<CTree>> {
+    if (ok) {
+        return match (wild_split(arms)) {
+            Some(s) -> nested_with(fuel, env, owner, variants, s.init, Some(s.wild)),
+            None -> nested_with(fuel, env, owner, variants, arms, None),
+        };
+    }
+    return None;
+}
+
+// The arms in variant order when some arm is nested, none is a block arm;
+// a last `_ -> value` is the wildcard.
+pub fn nested_order(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<CTree>> {
+    return match (no_block(fuel, arms)) {
+        None -> None,
+        Some(ok) -> nested_checked(fuel, env, owner, variants, arms, ok),
+    };
+}
+
+pub fn order_by(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>, nested: bool) -> core::option::Option<List<CTree>> {
+    if (nested) {
+        return nested_order(fuel, env, owner, variants, arms);
+    }
+    return arms_in_order(fuel, owner, variants, arms);
+}
+
+// A match expression's arms in variant order.
+pub fn match_order(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<CTree>> {
+    return match (any_nested(fuel, env, arms)) {
+        None -> None,
+        Some(n) -> order_by(fuel, env, owner, variants, arms, n),
+    };
+}
+
+pub fn stmt_order_by(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>, nested: bool) -> core::option::Option<List<CTree>> {
+    if (nested) {
+        return nested_checked(fuel, env, owner, variants, arms, true);
+    }
+    return arms_in_order(fuel, owner, variants, arms);
+}
+
+// A match statement's arms in variant order: as a match expression's, but
+// an arm's value may be a block. A nested arm's value is then the inner
+// match `match (h) { arms }` (nest_arm), read as a match statement.
+pub fn stmt_arm_order(fuel: usize, env: FrontEnv, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<CTree>> {
+    return match (any_nested(fuel, env, arms)) {
+        None -> None,
+        Some(n) -> stmt_order_by(fuel, env, owner, variants, arms, n),
     };
 }
 
@@ -7433,7 +8088,7 @@ pub fn eff_arms_ordered(fuel: usize, env: FrontEnv, scope: List<Local>, expected
     if (fuel == 0) {
         return None;
     }
-    return match (arms_in_order(fuel, owner, variants, arms)) {
+    return match (match_order(fuel, env, owner, variants, arms)) {
         None -> None,
         Some(os) -> eff_arms(minus(fuel, 1), env, scope, expected, owner, variants, os),
     };
@@ -8103,19 +8758,61 @@ pub fn set_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, v: 
     return set_try_or_eval(fuel, env, scope, l, v, try_of_init(fuel, env, scope, value), value);
 }
 
-pub fn set_index_eval_of(slice: usize, index: core::option::Option<MEff>, value: core::option::Option<MEff>) -> core::option::Option<MStmt> {
+// A statement, unless w.
+pub fn stmt_unless(w: bool, s: MStmt) -> core::option::Option<MStmt> {
+    if (w) {
+        return None;
+    }
+    return Some(s);
+}
+
+// extract: mutual begin
+// Whether evaluating an expression can act: it calls one of the n declared
+// functions (a projection, numbered past them, only reads a field) or a
+// host service.
+pub fn eff_acts(n: usize, x: MEff) -> bool {
+    return match (x) {
+        XPure(e) -> false,
+        XCall(inst, args) -> inst.decl < n || effs_act(n, unbox(args)),
+        XApply(op, l, r) -> eff_acts(n, unbox(l)) || eff_acts(n, unbox(r)),
+        XNeg(a) -> eff_acts(n, unbox(a)),
+        XNot(a) -> eff_acts(n, unbox(a)),
+        XCast(t, a) -> eff_acts(n, unbox(a)),
+        XIndex(s, i) -> eff_acts(n, unbox(i)),
+        XStruct(t, fs) -> effs_act(n, unbox(fs)),
+        XVariant(t, k, ps) -> effs_act(n, unbox(ps)),
+        XMatch(s, ety, t, bs, vs) -> eff_acts(n, unbox(s)) || effs_act(n, unbox(vs)),
+        XDivide(op, l, r) -> eff_acts(n, unbox(l)) || eff_acts(n, unbox(r)),
+        XStride(sl) -> false,
+        XHost(id, args) -> true,
+    };
+}
+
+pub fn effs_act(n: usize, xs: List<MEff>) -> bool {
+    return match (xs) {
+        Nil -> false,
+        Cons(x, rest) -> eff_acts(n, x) || effs_act(n, unbox(rest)),
+    };
+}
+// extract: mutual end
+
+// `v[i] = value`, n the declared functions: Core checks i against v's
+// length before it evaluates the value, laniusc after, so a value that can
+// act is not read (its effect would be seen, or not, on an index out of
+// bounds).
+pub fn set_index_eval_of(n: usize, slice: usize, index: core::option::Option<MEff>, value: core::option::Option<MEff>) -> core::option::Option<MStmt> {
     return match (index) {
         None -> None,
         Some(i) -> match (value) {
             None -> None,
-            Some(v) -> Some(set_index_eff(slice, i, v)),
+            Some(v) -> stmt_unless(eff_acts(n, v), set_index_eff(slice, i, v)),
         },
     };
 }
 
 // `v[index] = value;`
 pub fn set_index_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, index: CTree, value: CTree) -> core::option::Option<MStmt> {
-    return set_index_eval_of(l.id, eff_of(fuel, env, scope, None, index), eff_of(fuel, env, scope, index_elem(l.ty), value));
+    return set_index_eval_of(length(env.decls.fns), l.id, eff_of(fuel, env, scope, None, index), eff_of(fuel, env, scope, index_elem(l.ty), value));
 }
 
 pub fn field_eval_stmt(id: usize, j: usize, x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
@@ -8339,12 +9036,53 @@ pub fn assignment(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> c
     return None;
 }
 
+// Whether s writes the local id itself: a set, a field set or a set from a
+// call or an effectful value. (A slice element's write goes to the heap,
+// which a copy of the local shares.)
+pub fn writes_local(s: MStmt, id: usize) -> bool {
+    return match (s) {
+        MNop -> false,
+        MLet(x, t, e, rest) -> writes_local(unbox(rest), id),
+        MLetStruct(x, t, es, rest) -> writes_local(unbox(rest), id),
+        MLetCall(x, t, i, es, rest) -> writes_local(unbox(rest), id),
+        MLetEnum(x, t, v, es, rest) -> writes_local(unbox(rest), id),
+        MLetMatch(x, t, sc, st, arms, rest) -> writes_local(unbox(rest), id),
+        MSet(x, e) -> x == id,
+        MSetField(x, j, e) -> x == id,
+        MSetCall(x, i, es) -> x == id,
+        MThen(a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
+        MIf(c, a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
+        MWhile(c, b) -> writes_local(unbox(b), id),
+        MReturn(e) -> false,
+        MLetAlloc(x, e, k, rest) -> writes_local(unbox(rest), id),
+        MFree(a, b, k) -> false,
+        MLetSlice(x, t, a, b, rest) -> writes_local(unbox(rest), id),
+        MLetIndex(x, t, sl, e, rest) -> writes_local(unbox(rest), id),
+        MSetIndex(x, i, e) -> false,
+        MLetEval(x, t, e, rest) -> writes_local(unbox(rest), id),
+        MSetEval(x, e) -> x == id,
+        MIfEval(c, a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
+        MWhileEval(c, b) -> writes_local(unbox(b), id),
+        MReturnEval(e) -> false,
+        MDiscard(e) -> false,
+        MSetIndexEval(x, i, e) -> false,
+        MSetFieldEval(x, j, e) -> x == id,
+        MReturnUnit -> false,
+        MAssert(e) -> false,
+        MBreak -> false,
+        MContinue -> false,
+        MMatchArm(sc, st, v, binds, b, bt, body, rest) -> writes_local(unbox(body), id) || writes_local(unbox(rest), id),
+        MUnreachable(x, t) -> false,
+    };
+}
+
 // The reading of a range loop (for_of): counter c from a, bound e = n,
-// the loop variable x.
+// the loop variable x. laniusc's loop variable is the counter itself, so a
+// body that writes x is not read: x a copy of c would be another meaning.
 pub fn for_range(c: usize, e: usize, x: usize, t: Ty, a: SrcExpr, n: usize, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (body) {
         None -> None,
-        Some(b) -> Some(MLet(c, t, a, boxed(MLet(e, t, Local(n), boxed(MWhile(Apply(Less, boxed(Local(c)), boxed(Local(e))), boxed(MLet(x, t, Local(c), boxed(MThen(boxed(MSet(c, Apply(Plus, boxed(Local(c)), boxed(Int(1))))), boxed(b))))))))))),
+        Some(b) -> stmt_unless(writes_local(b, x), MLet(c, t, a, boxed(MLet(e, t, Local(n), boxed(MWhile(Apply(Less, boxed(Local(c)), boxed(Local(e))), boxed(MLet(x, t, Local(c), boxed(MThen(boxed(MSet(c, Apply(Plus, boxed(Local(c)), boxed(Int(1))))), boxed(b))))))))))),
     };
 }
 
@@ -8435,11 +9173,11 @@ pub fn match_stmt_parts(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree
     return match_stmt_on(fuel, env, scope, m, eff_of(fuel, env, scope, None, kid(m, 2)));
 }
 
-// The arms in variant order.
-pub fn match_stmt_arms(fuel: usize, h: MatchStmt, m: CTree) -> core::option::Option<List<CTree>> {
+// A match statement's arms in variant order (stmt_arm_order).
+pub fn stmt_arms(fuel: usize, env: FrontEnv, h: MatchStmt, m: CTree) -> core::option::Option<List<CTree>> {
     return match (list_items(fuel, kid(m, 5))) {
         None -> None,
-        Some(arms) -> arms_in_order(fuel, h.owner, h.variants, arms),
+        Some(arms) -> stmt_arm_order(fuel, env, h.owner, h.variants, arms),
     };
 }
 
@@ -8696,8 +9434,9 @@ pub fn nested_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> co
     return None;
 }
 
-// `match (s) { arms };` with every arm a block: arm k (variant k) runs its
-// block, else the next arm is tried; after the last, Unreachable. Every
+// `match (s) { arms };` with every arm a block (or, for a nested arm, an
+// inner match statement): arm k (variant k) runs its block, else the next
+// arm is tried; after the last, Unreachable. Every
 // block arm leaves the match (laniusc rejects one whose end is reachable),
 // so the match's own end is never reached either.
 pub fn match_stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
@@ -8708,7 +9447,7 @@ pub fn match_stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -
         None -> None,
         Some(m) -> match (match_stmt_parts(fuel, env, scope, m)) {
             None -> None,
-            Some(h) -> match (match_stmt_arms(fuel, h, m)) {
+            Some(h) -> match (stmt_arms(fuel, env, h, m)) {
                 None -> None,
                 Some(os) -> match_stmt_value(h, match_arms_of(minus(fuel, 1), env, scope, h, 0, h.variants, os)),
             },
@@ -8738,11 +9477,38 @@ pub fn match_arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt
     }
     return match (arm_binding(fuel, env, scope, h.owner, v, a)) {
         None -> None,
-        Some(b) -> match (arm_block_list(fuel, a)) {
-            None -> None,
-            Some(list) -> arm_stmt(h, k, b, v, block_of(minus(fuel, 1), env, bound_scope(b), list), rest),
-        },
+        Some(b) -> arm_stmt(h, k, b, v, arm_body_of(minus(fuel, 1), env, bound_scope(b), a), rest),
     };
+}
+
+// A match statement arm's body: its block, or, for a nested arm, its inner
+// match statement.
+pub fn arm_body_of(fuel: usize, env: FrontEnv, scope: List<Local>, a: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (arm_block_list(fuel, a)) {
+        Some(list) -> block_of(minus(fuel, 1), env, scope, list),
+        None -> inner_match_of(minus(fuel, 1), env, scope, kid(a, 2)),
+    };
+}
+
+// The inner match `match (h) { arms }` of a nested arm in a match statement
+// (nest_arm), read as a match statement on h; its closer is the arm's `->`.
+pub fn inner_match_of(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(m) == p_match_expr()) {
+        return match (match_stmt_parts(fuel, env, scope, m)) {
+            None -> None,
+            Some(h) -> match (stmt_arms(fuel, env, h, m)) {
+                None -> None,
+                Some(os) -> match_stmt_value(h, match_arms_of(minus(fuel, 1), env, scope, h, 0, h.variants, os)),
+            },
+        };
+    }
+    return None;
 }
 
 // `let x: ty = match (s) { arms }; rest` with block arms and one value arm:
@@ -8756,7 +9522,7 @@ pub fn let_match_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, in
         None -> None,
         Some(m) -> match (match_stmt_parts(fuel, env, scope, m)) {
             None -> None,
-            Some(h) -> match (match_stmt_arms(fuel, h, m)) {
+            Some(h) -> match (stmt_arms(fuel, env, h, m)) {
                 None -> None,
                 Some(os) -> match (body) {
                     None -> None,
@@ -8791,7 +9557,35 @@ pub fn let_arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt, 
         None -> None,
         Some(b) -> match (arm_block_list(fuel, a)) {
             Some(list) -> arm_stmt(h, k, b, v, block_of(minus(fuel, 1), env, bound_scope(b), list), others),
-            None -> arm_stmt(h, k, b, v, let_of(local_id_of(x), local_ty_of(x), let_head_or_eval(minus(fuel, 1), env, bound_scope(b), local_ty_of(x), kid(a, 2)), Some(rest)), others),
+            None -> arm_stmt(h, k, b, v, let_body_of(minus(fuel, 1), env, bound_scope(b), x, rest, a), others),
+        },
+    };
+}
+
+// A let match's arm that is not a block: a nested arm's inner match (a bare
+// match node, as nest_arm builds; a written value is never one), else a
+// value binding x, then rest.
+pub fn let_body_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, rest: MStmt, a: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(kid(a, 2)) == p_match_expr()) {
+        return inner_let_of(minus(fuel, 1), env, scope, x, rest, kid(a, 2));
+    }
+    return let_of(local_id_of(x), local_ty_of(x), let_head_or_eval(minus(fuel, 1), env, scope, local_ty_of(x), kid(a, 2)), Some(rest));
+}
+
+// The inner match of a nested arm in a let's match, read as the let's match
+// on h: its block arms leave, its value arms bind x and run rest.
+pub fn inner_let_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, rest: MStmt, m: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (match_stmt_parts(fuel, env, scope, m)) {
+        None -> None,
+        Some(h) -> match (stmt_arms(fuel, env, h, m)) {
+            None -> None,
+            Some(os) -> match_stmt_value(h, let_arms_of(minus(fuel, 1), env, scope, h, x, rest, 0, h.variants, os)),
         },
     };
 }
@@ -8960,46 +9754,6 @@ pub fn ret_expected(r: core::option::Option<RetTy>) -> core::option::Option<Ty> 
             RetUnit -> None,
             RetOf(t) -> Some(t),
         },
-    };
-}
-
-// Whether s writes the local id itself: a set, a field set or a set from a
-// call or an effectful value. (A slice element's write goes to the heap,
-// which a copy of the local shares.)
-pub fn writes_local(s: MStmt, id: usize) -> bool {
-    return match (s) {
-        MNop -> false,
-        MLet(x, t, e, rest) -> writes_local(unbox(rest), id),
-        MLetStruct(x, t, es, rest) -> writes_local(unbox(rest), id),
-        MLetCall(x, t, i, es, rest) -> writes_local(unbox(rest), id),
-        MLetEnum(x, t, v, es, rest) -> writes_local(unbox(rest), id),
-        MLetMatch(x, t, sc, st, arms, rest) -> writes_local(unbox(rest), id),
-        MSet(x, e) -> x == id,
-        MSetField(x, j, e) -> x == id,
-        MSetCall(x, i, es) -> x == id,
-        MThen(a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
-        MIf(c, a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
-        MWhile(c, b) -> writes_local(unbox(b), id),
-        MReturn(e) -> false,
-        MLetAlloc(x, e, k, rest) -> writes_local(unbox(rest), id),
-        MFree(a, b, k) -> false,
-        MLetSlice(x, t, a, b, rest) -> writes_local(unbox(rest), id),
-        MLetIndex(x, t, sl, e, rest) -> writes_local(unbox(rest), id),
-        MSetIndex(x, i, e) -> false,
-        MLetEval(x, t, e, rest) -> writes_local(unbox(rest), id),
-        MSetEval(x, e) -> x == id,
-        MIfEval(c, a, b) -> writes_local(unbox(a), id) || writes_local(unbox(b), id),
-        MWhileEval(c, b) -> writes_local(unbox(b), id),
-        MReturnEval(e) -> false,
-        MDiscard(e) -> false,
-        MSetIndexEval(x, i, e) -> false,
-        MSetFieldEval(x, j, e) -> x == id,
-        MReturnUnit -> false,
-        MAssert(e) -> false,
-        MBreak -> false,
-        MContinue -> false,
-        MMatchArm(sc, st, v, binds, b, bt, body, rest) -> writes_local(unbox(body), id) || writes_local(unbox(rest), id),
-        MUnreachable(x, t) -> false,
     };
 }
 
@@ -9239,12 +9993,22 @@ pub struct Mono {
 
 // Read instance i of the table, append the instances it calls that are
 // new, and go on with i + 1 until the table is done.
+// The functions fs reversed, in front of acc.
+pub fn funcs_onto(fs: List<MFunc>, acc: List<MFunc>) -> List<MFunc> {
+    return match (fs) {
+        Nil -> acc,
+        Cons(f, rest) -> funcs_onto(unbox(rest), cons(f, acc)),
+    };
+}
+
+// done holds the functions read so far, the last first, so each step
+// conses one (appending copied every function before it).
 pub fn mono_loop(fuel: usize, rfuel: usize, decls: Decls, table: List<Inst>, done: List<MFunc>, i: usize) -> core::option::Option<Mono> {
     if (fuel == 0) {
         return None;
     }
     return match (get(table, i)) {
-        None -> Some(Mono { table: table, funcs: done }),
+        None -> Some(Mono { table: table, funcs: funcs_onto(done, empty()) }),
         Some(inst) -> mono_next(minus(fuel, 1), rfuel, decls, table, done, i, read_inst(rfuel, decls, inst)),
     };
 }
@@ -9253,7 +10017,7 @@ pub fn mono_loop(fuel: usize, rfuel: usize, decls: Decls, table: List<Inst>, don
 fn mono_next(nfuel: usize, nrfuel: usize, ndecls: Decls, ntable: List<Inst>, ndone: List<MFunc>, ni: usize, nf: core::option::Option<MFunc>) -> core::option::Option<Mono> {
     return match (nf) {
         None -> None,
-        Some(mf) -> mono_loop(nfuel, nrfuel, ndecls, add_insts(ntable, stmt_calls(mf.body)), concat(ndone, single(mf)), plus(ni, 1)),
+        Some(mf) -> mono_loop(nfuel, nrfuel, ndecls, add_insts(ntable, stmt_calls(mf.body)), cons(mf, ndone), plus(ni, 1)),
     };
 }
 

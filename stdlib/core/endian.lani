@@ -111,10 +111,10 @@ pub fn write_u32_be(bytes: [u8], len: i32, offset: i32, value: u32) -> bool {
     if (!has_width(len, offset, 4)) {
         return false;
     }
-    bytes[offset] = core::bits::byte_at_be_or_u32(value, 0, 0);
-    bytes[offset + 1] = core::bits::byte_at_be_or_u32(value, 1, 0);
-    bytes[offset + 2] = core::bits::byte_at_be_or_u32(value, 2, 0);
-    bytes[offset + 3] = core::bits::byte_at_be_or_u32(value, 3, 0);
+    let stored1 = core::bits::byte_at_be_or_u32(value, 0, 0); bytes[offset] = stored1;
+    let stored2 = core::bits::byte_at_be_or_u32(value, 1, 0); bytes[offset + 1] = stored2;
+    let stored3 = core::bits::byte_at_be_or_u32(value, 2, 0); bytes[offset + 2] = stored3;
+    let stored4 = core::bits::byte_at_be_or_u32(value, 3, 0); bytes[offset + 3] = stored4;
     return true;
 }
 
@@ -122,10 +122,10 @@ pub fn write_u32_le(bytes: [u8], len: i32, offset: i32, value: u32) -> bool {
     if (!has_width(len, offset, 4)) {
         return false;
     }
-    bytes[offset] = core::bits::byte_at_le_or_u32(value, 0, 0);
-    bytes[offset + 1] = core::bits::byte_at_le_or_u32(value, 1, 0);
-    bytes[offset + 2] = core::bits::byte_at_le_or_u32(value, 2, 0);
-    bytes[offset + 3] = core::bits::byte_at_le_or_u32(value, 3, 0);
+    let stored5 = core::bits::byte_at_le_or_u32(value, 0, 0); bytes[offset] = stored5;
+    let stored6 = core::bits::byte_at_le_or_u32(value, 1, 0); bytes[offset + 1] = stored6;
+    let stored7 = core::bits::byte_at_le_or_u32(value, 2, 0); bytes[offset + 2] = stored7;
+    let stored8 = core::bits::byte_at_le_or_u32(value, 3, 0); bytes[offset + 3] = stored8;
     return true;
 }
 
@@ -137,14 +137,14 @@ pub fn write_wide_u64_be(
     if (!has_width(len, offset, 8)) { return false; }
     let high: u32 = core::wide_u64::high_word(value);
     let low: u32 = core::wide_u64::low_word(value);
-    bytes[offset] = core::bits::byte_at_be_or_u32(high, 0, 0);
-    bytes[offset + 1] = core::bits::byte_at_be_or_u32(high, 1, 0);
-    bytes[offset + 2] = core::bits::byte_at_be_or_u32(high, 2, 0);
-    bytes[offset + 3] = core::bits::byte_at_be_or_u32(high, 3, 0);
-    bytes[offset + 4] = core::bits::byte_at_be_or_u32(low, 0, 0);
-    bytes[offset + 5] = core::bits::byte_at_be_or_u32(low, 1, 0);
-    bytes[offset + 6] = core::bits::byte_at_be_or_u32(low, 2, 0);
-    bytes[offset + 7] = core::bits::byte_at_be_or_u32(low, 3, 0);
+    let stored9 = core::bits::byte_at_be_or_u32(high, 0, 0); bytes[offset] = stored9;
+    let stored10 = core::bits::byte_at_be_or_u32(high, 1, 0); bytes[offset + 1] = stored10;
+    let stored11 = core::bits::byte_at_be_or_u32(high, 2, 0); bytes[offset + 2] = stored11;
+    let stored12 = core::bits::byte_at_be_or_u32(high, 3, 0); bytes[offset + 3] = stored12;
+    let stored13 = core::bits::byte_at_be_or_u32(low, 0, 0); bytes[offset + 4] = stored13;
+    let stored14 = core::bits::byte_at_be_or_u32(low, 1, 0); bytes[offset + 5] = stored14;
+    let stored15 = core::bits::byte_at_be_or_u32(low, 2, 0); bytes[offset + 6] = stored15;
+    let stored16 = core::bits::byte_at_be_or_u32(low, 3, 0); bytes[offset + 7] = stored16;
     return true;
 }
 
@@ -154,14 +154,14 @@ pub fn write_wide_u64_le(
     if (!has_width(len, offset, 8)) { return false; }
     let high: u32 = core::wide_u64::high_word(value);
     let low: u32 = core::wide_u64::low_word(value);
-    bytes[offset] = core::bits::byte_at_le_or_u32(low, 0, 0);
-    bytes[offset + 1] = core::bits::byte_at_le_or_u32(low, 1, 0);
-    bytes[offset + 2] = core::bits::byte_at_le_or_u32(low, 2, 0);
-    bytes[offset + 3] = core::bits::byte_at_le_or_u32(low, 3, 0);
-    bytes[offset + 4] = core::bits::byte_at_le_or_u32(high, 0, 0);
-    bytes[offset + 5] = core::bits::byte_at_le_or_u32(high, 1, 0);
-    bytes[offset + 6] = core::bits::byte_at_le_or_u32(high, 2, 0);
-    bytes[offset + 7] = core::bits::byte_at_le_or_u32(high, 3, 0);
+    let stored17 = core::bits::byte_at_le_or_u32(low, 0, 0); bytes[offset] = stored17;
+    let stored18 = core::bits::byte_at_le_or_u32(low, 1, 0); bytes[offset + 1] = stored18;
+    let stored19 = core::bits::byte_at_le_or_u32(low, 2, 0); bytes[offset + 2] = stored19;
+    let stored20 = core::bits::byte_at_le_or_u32(low, 3, 0); bytes[offset + 3] = stored20;
+    let stored21 = core::bits::byte_at_le_or_u32(high, 0, 0); bytes[offset + 4] = stored21;
+    let stored22 = core::bits::byte_at_le_or_u32(high, 1, 0); bytes[offset + 5] = stored22;
+    let stored23 = core::bits::byte_at_le_or_u32(high, 2, 0); bytes[offset + 6] = stored23;
+    let stored24 = core::bits::byte_at_le_or_u32(high, 3, 0); bytes[offset + 7] = stored24;
     return true;
 }
 

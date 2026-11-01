@@ -195,6 +195,16 @@ theorem proof_field_fns_Decls_of_mini_selfhost_Decls {prog : SrcProgram} {prims 
   simp only [src_field_fns_Decls_of_mini_selfhost_Decls] at h
   faithful []
 
+theorem step_get_of_mini_selfhost_CTree {prog : SrcProgram} {prims : Prims} {ix_get_of_mini_selfhost_CTree ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Nat} (fn : prog.funcs[ix_get_of_mini_selfhost_CTree]? = some (src_get_of_mini_selfhost_CTree ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_get_of_mini_selfhost_CTree)) (np : prims.isPrim ix_get_of_mini_selfhost_CTree = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_CTree prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree n)) {n : Nat}
+    (ih_get_of_mini_selfhost_CTree : Certified (Stmt_get_of_mini_selfhost_CTree prog prims ix_get_of_mini_selfhost_CTree n)) :
+    Stmt_get_of_mini_selfhost_CTree prog prims ix_get_of_mini_selfhost_CTree (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_get_of_mini_selfhost_CTree] at h
+  faithful []
+
 theorem step_get_of_mini_selfhost_Rule {prog : SrcProgram} {prims : Prims} {ix_get_of_mini_selfhost_Rule ix_unbox_of_mini_selfhost_List_mini_selfhost_Rule ix_minus : Nat} (fn : prog.funcs[ix_get_of_mini_selfhost_Rule]? = some (src_get_of_mini_selfhost_Rule ix_unbox_of_mini_selfhost_List_mini_selfhost_Rule ix_minus ix_get_of_mini_selfhost_Rule)) (np : prims.isPrim ix_get_of_mini_selfhost_Rule = false)
     (ext_unbox_of_mini_selfhost_List_mini_selfhost_Rule : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Rule prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Rule n))
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n)) {n : Nat}

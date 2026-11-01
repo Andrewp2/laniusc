@@ -123,7 +123,7 @@ fn finish_format(bytes: [u8], count: i32, output: core::slice::View<u8>) -> core
 pub impl Ipv4Addr {
     pub fn to_bits(&self) -> u32 { return self.bits; }
     pub fn octet(&self, index: i32) -> core::option::Option<u8> { if (index < 0 || index >= 4) { return core::option::None(); } return core::option::Some(((self.bits >> ((3-index)*8)) & 255) as u8); }
-    pub fn write_octets(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;4] = [0;4]; let index: i32 = 0; while (index < 4) { bytes[index] = core::option::unwrap(self.octet(index)); index += 1; } return finish_format(bytes,4,output); }
+    pub fn write_octets(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;4] = [0;4]; let index: i32 = 0; while (index < 4) { let stored1 = core::option::unwrap(self.octet(index)); bytes[index] = stored1; index += 1; } return finish_format(bytes,4,output); }
     pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;80] = [0;80]; return finish_format(bytes,emit_v4(bytes,0,Ipv4Addr { bits: self.bits }),output); }
     pub fn to_ipv6_mapped(&self) -> Ipv6Addr { return Ipv6Addr { high: 0, low: (65535 as u64) << 32 | self.bits as u64 }; }
     pub fn is_unspecified(&self) -> bool { return self.bits == 0; }
@@ -136,7 +136,7 @@ pub impl Ipv4Addr {
 pub impl Ipv6Addr {
     pub fn segment(&self, index: i32) -> core::option::Option<u16> { if (index < 0 || index >= 8) { return core::option::None(); } return core::option::Some(segment(Ipv6Addr { high: self.high, low: self.low },index)); }
     pub fn octet(&self, index: i32) -> core::option::Option<u8> { if (index < 0 || index >= 16) { return core::option::None(); } let part: u16 = segment(Ipv6Addr { high: self.high, low: self.low },index/2); if (index % 2 == 0) { return core::option::Some((part >> 8) as u8); } return core::option::Some((part & 255) as u8); }
-    pub fn write_octets(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;16] = [0;16]; let index: i32 = 0; while (index < 16) { bytes[index] = core::option::unwrap(self.octet(index)); index += 1; } return finish_format(bytes,16,output); }
+    pub fn write_octets(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;16] = [0;16]; let index: i32 = 0; while (index < 16) { let stored2 = core::option::unwrap(self.octet(index)); bytes[index] = stored2; index += 1; } return finish_format(bytes,16,output); }
     pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;80] = [0;80]; return finish_format(bytes,emit_v6(bytes,0,Ipv6Addr { high: self.high, low: self.low }),output); }
     pub fn to_ipv4_mapped(&self) -> core::option::Option<Ipv4Addr> { if (self.high == 0 && self.low >> 32 == 65535) { return core::option::Some(Ipv4Addr { bits: self.low as u32 }); } return core::option::None(); }
     pub fn is_unspecified(&self) -> bool { return self.high == 0 && self.low == 0; }
