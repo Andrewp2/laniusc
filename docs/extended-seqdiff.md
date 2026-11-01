@@ -21,11 +21,16 @@ their byte-line API, strict application and saved-trace Myers.
 | `classify(a, b, limits)` | `Eq<T>` and `Hash<T>` | `Classes { before, after, count }`: dense ids, equal items share one id |
 | `patience_classes(a, b, classes, limits)` | ids in `[0, classes)` | patience script |
 | `split_lines(bytes, limits)` / `diff_lines(a, b, algorithm, limits)` | `Line` | byte lines, each keeping its LF |
+| `split_classify(a, b, limits)` / `diff_split(split, algorithm, limits)` | two byte views | `Split`: both files' lines and their class ids in one pass; the script `diff_lines` would give |
 | `classify_lines(a, b, limits)` / `myers_classes(a, b, limits)` | `Line` / class ids | the specialized paths `diff_lines` uses |
 | `xdiff_classes(a, b, limits)` | non-negative ids | git's xdiff alignment (`Algorithm::Xdiff`; see [word diff and diffstat](extended-wordiff.md)) |
 
-`a` and `b` are `core::slice::View<T>`. `Line { bytes, hash }` caches its FNV-1a hash; build
-lines with `split_lines` or `line(bytes)` so the two agree. It implements `Eq`
+`a` and `b` are `core::slice::View<T>`. `Line { bytes, hash }` caches a hash
+of its bytes, read as little-endian 8-byte words (the last one zero-padded),
+folded by xor-multiply and mixed with the length. Build lines with
+`split_lines`, `line(bytes)` or `Split.before_lines()`/`after_lines()` so the
+hashes agree; packed byte storage takes a word path and any other `[u8]` a byte
+path, and both give the same value. It implements `Eq`
 (hash, then exact bytes) and `Hash`, so files go through the same generic
 path as caller types; a caller type supplies its own `Eq`/`Hash` impls, and the
 contract fixture uses a struct whose equality ignores one field. Hashes only
@@ -60,6 +65,28 @@ of script steps. Each hunk keeps up to `context` equal steps on each side, and
 two changes separated by at most `2*context` equal steps share a hunk, as in
 GNU diff.
 
+**Split and classify in one pass.** `split_classify(a, b, limits)` reads each
+input once. It finds LFs eight bytes at a time, with an exact zero-byte test
+on `word ^ 0x0A0A…`. Each line is hashed from 8-byte words as soon as it ends,
+then hash-consed into one open-addressing table shared by both sides. Equal
+bytes, compared word by word, decide each class, so equal lines share an id.
+Ids are dense, in first-occurrence order, as `classify_lines` assigns them. The
+table doubles and rehashes from stored hashes. The result keeps lines as
+offsets, not `Line` records:
+
+| `Split` member | meaning |
+| --- | --- |
+| `before_len()` / `after_len()` | line counts |
+| `before_line(i)` / `after_line(i)` | line `i` as a view into the input |
+| `before_lines()` / `after_lines()` | `Vec<Line>` as `split_lines` makes them |
+| `classes` | `Classes` over both sides |
+| `destroy()` | frees offsets and classes; the inputs stay borrowed and must outlive the split |
+
+`diff_split(split, algorithm, limits)` diffs the class ids without consuming
+the split. Inputs that are not packed bytes (native `[u8; N]` arrays) go
+through `split_lines` and `classify_lines` with the same results.
+`empty_split()` owns nothing.
+
 **Limits and errors.** `Limits { max_items, max_work }` (default 4,000,000
 items, 4·10⁹ work units) bound each sequence's length and the item comparisons
 plus frontier work. `Error` is one of `InvalidLimits`, `Bounds`, `ItemLimit`,
@@ -69,7 +96,8 @@ frees every temporary buffer.
 ## Unified diffs (`ext::unidiff`)
 
 `write_unified(a, b, script, hunks, old_name, new_name, max_output)` produces
-GNU `diff -u` hunk syntax. A count of one is omitted (`-3` rather than `-3,1`),
+GNU `diff -u` hunk syntax. `write_unified_split(split, script, hunks, ...)`
+writes the same bytes from a `Split`'s lines. A count of one is omitted (`-3` rather than `-3,1`),
 and an empty range names the line before it (`-4,0`). An incomplete final line
 gets `\ No newline at end of file`. With no hunks the output is empty. Labels
 must be nonempty and contain no NUL, CR or LF. Lines must be LF-terminated
@@ -178,28 +206,42 @@ receipt above came from running the two compiled tools directly
 (`seqdiff_oracle.py SEQ_DIFF SEQ_PATCH WORKDIR 1000`) in 43 s; nearly all of
 that time is process startup and the Python LCS.
 
-**Speed.** On the 100,000-line (1.6 MB) scale pair, `seq-diff` went from 0.85 s
-to 0.14 s wall (0.11 s user; best of 7 on a loaded machine). Patience takes
-0.25 s, and GNU `diff -u` takes 0.02 s on the same pair and load. Phase timings
-inside the program (best of 7, both files) changed as follows:
+**Speed.** The 100,000-line (1.6 MB) scale pair produces byte-identical
+output in every mode before and after this work. Wall times are the best of
+10 runs on the target laptop, measured alongside other agents' jobs. Each
+`git diff --no-index` run used the same flags and load:
 
-| phase | before | after | change |
+| mode | before | now | git |
+| --- | ---: | ---: | ---: |
+| unified, Myers (default) | 182 ms | 59-70 ms | 43 ms |
+| unified, `--xdiff` | 161 ms | 47-63 ms | 31-43 ms |
+| `--word-diff` | 273 ms | 66-90 ms | 36-54 ms |
+| `--char-diff` | — | 75-119 ms | 41-67 ms |
+| `--stat` | 140 ms | 47-96 ms | 33-61 ms |
+| `--patience` | 216 ms | 141 ms | — |
+
+GNU `diff -u` takes 33 ms. Phase times inside the program (best of 7, both
+files, quieter machine):
+
+| phase | before | now | change |
 | --- | ---: | ---: | --- |
-| read | 370 ms | 18 ms | `File.read_to_end` / `std::stream::read_to_end` read straight into `alloc::io::Buffer` storage (`reserve_raw`/`commit_raw`), not through 1,024-byte staging copies, the copier state machine and one `try_push` per byte in `Buffer.write` (which now copies into slots) |
-| split | 47 ms | 25-49 ms | one pass that also hashes; slots are written directly with no per-line `try_push` |
-| classify | 118 ms | 44 ms | `classify_lines`: hash cached in `Line`; inline compare; no trait calls or per-item pushes |
-| Myers | 41 ms | 26 ms | class-id specialization (`==` on hoisted arrays instead of `T::eq` calls); frontier rows reset lazily per round instead of O(N+M) per bisection; script presized |
-| hunks + write | 23 ms | 4 ms | the writer validates only emitted lines instead of scanning both files |
+| read | 15 ms | 2 ms | `seq-diff` sizes each buffer from the file length plus `read_to_end`'s 64 KiB window, so the buffer never regrows (growth copied byte by byte) |
+| split + classify | 37 + 35 ms | 26 ms | `split_classify`: one pass per file; LFs found 8 bytes at a time; lines hashed from words and hash-consed at once; lines kept as `i32` offsets, not six-word `Line` records |
+| Myers | 22 ms | 22 ms | unchanged |
+| xdiff | 50 ms | 21 ms | kept records written to presized slots instead of two `try_push` per record; script written into counted slots; one workspace allocation instead of twelve |
+| render | 2.4 ms | 2.2 ms | `write_unified_split` reads lines from offsets; steps read from the slice, not through `step()` results |
+| word diff render | 63 ms | ~45 ms | no `Vec<Line>` materialized (`write_word_diff_split`); per group one workspace in `xdiff_classes`, one table allocation in `classify_lines` and a reserved word vector |
 
-The remaining gap is code generation. A plain loop that counts LF bytes in a
-`[u8]` (`tests/fixtures/compiler_defects/byte_loop_codegen.lani`, 0.50 s for 160 M bytes) costs 2.8 ns/byte,
-against 0.8 ns for `gcc -O0` on `byte_loop_codegen.c` and under 0.1 ns for `gcc -O2`. A loop that also
-hashes costs 9-14 ns/byte. Each element access reloads the slice's fields from
-the stack, emits a bounds check, multiplies the index by the slice's runtime
-stride, and branches on stride 1. Every temporary is spilled and reloaded,
-loop invariants are not hoisted, and `core::u32::wrapping_mul` is a call rather
-than inline code. A 3.2 MB pass therefore costs 10-30 ms, so `seq-diff` cannot
-come within 2× of GNU through library changes alone.
+Allocations are system calls (each `Vec` allocation maps fresh memory), so
+the per-group allocation count, not the arithmetic, dominated word diff.
+
+The code generator still limits loops. Every value goes through the stack,
+each element access emits a bounds check, constants are reloaded, and loop
+invariants are not hoisted. A plain byte loop that counts LFs
+(`tests/fixtures/compiler_defects/byte_loop_codegen.lani`) costs 2.8 ns/byte,
+against under 0.1 ns for `gcc -O2`. The fused scan avoids most per-byte work
+by reading 8-byte words. Its hot values sit in locals because field and
+constant reads are not hoisted.
 
 Verified execution is x86_64 Linux output from the GPU compiler. Other targets
 have not been verified.

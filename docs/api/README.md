@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **317 modules**, **16701 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **317 modules**, **16721 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -293,7 +293,7 @@ Inventory: **317 modules**, **16701 declaration/member entries**. Counts include
 | [ext::regex_text](ext/regex_text.md) | [source](../../extended/ext/regex_text.lani#L3) | 44 | Source inventory | [extended-regex-text](../extended-regex-text.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::response](ext/response.md) | [source](../../extended/ext/response.lani#L5) | 20 | Source inventory | [extended-cli-response](../extended-cli-response.md), [library-response-files-plan](../library-response-files-plan.md) |
 | [ext::schema](ext/schema.md) | [source](../../extended/ext/schema.lani#L3) | 90 | Source inventory | [extended-schema](../extended-schema.md) |
-| [ext::seqdiff](ext/seqdiff.md) | [source](../../extended/ext/seqdiff.lani#L2) | 64 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
+| [ext::seqdiff](ext/seqdiff.md) | [source](../../extended/ext/seqdiff.lani#L2) | 82 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
 | [ext::server_poll](ext/server_poll.md) | [source](../../extended/ext/server_poll.lani#L2) | 199 | Source inventory | [extended-server-poll](../extended-server-poll.md), [library-server-contract](../library-server-contract.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::settings_env](ext/settings_env.md) | [source](../../extended/ext/settings_env.lani#L3) | 27 | Source inventory | [extended-settings](../extended-settings.md) |
@@ -319,7 +319,7 @@ Inventory: **317 modules**, **16701 declaration/member entries**. Counts include
 | [ext::unicode_normalize](ext/unicode_normalize.md) | [source](../../extended/ext/unicode_normalize.lani#L5) | 30 | Source inventory | [extended-unicode-normalize](../extended-unicode-normalize.md), [extended-unicode-uconv](../extended-unicode-uconv.md) |
 | [ext::unicode_sentences](ext/unicode_sentences.md) | [source](../../extended/ext/unicode_sentences.lani#L3) | 28 | Source inventory | [extended-unicode-sentences](../extended-unicode-sentences.md) |
 | [ext::unicode_words](ext/unicode_words.md) | [source](../../extended/ext/unicode_words.lani#L3) | 18 | Source inventory | [extended-unicode-words](../extended-unicode-words.md) |
-| [ext::unidiff](ext/unidiff.md) | [source](../../extended/ext/unidiff.lani#L3) | 79 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
+| [ext::unidiff](ext/unidiff.md) | [source](../../extended/ext/unidiff.lani#L3) | 80 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
 | [ext::uri](ext/uri.md) | [source](../../extended/ext/uri.lani#L3) | 33 | Source inventory | [extended-uri](../extended-uri.md) |
 | [ext::uri_resolve](ext/uri_resolve.md) | [source](../../extended/ext/uri_resolve.lani#L3) | 8 | Source inventory | [extended-uri-resolve](../extended-uri-resolve.md) |
 | [ext::url](ext/url.md) | [source](../../extended/ext/url.lani#L5) | 67 | Source inventory | [extended-url](../extended-url.md) |
@@ -331,7 +331,7 @@ Inventory: **317 modules**, **16701 declaration/member entries**. Counts include
 | [ext::websocket_stream](ext/websocket_stream.md) | [source](../../extended/ext/websocket_stream.lani#L3) | 59 | Source inventory | [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md), [extended-websocket-echo](../extended-websocket-echo.md) |
 | [ext::websocket_upgrade](ext/websocket_upgrade.md) | [source](../../extended/ext/websocket_upgrade.lani#L3) | 95 | Source inventory | [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md), [extended-websocket-echo](../extended-websocket-echo.md) |
 | [ext::weighted_statistics](ext/weighted_statistics.md) | [source](../../extended/ext/weighted_statistics.lani#L4) | 63 | Source inventory | [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-statistics](../extended-statistics.md), [extended-sample-moments](../extended-sample-moments.md) |
-| [ext::wordiff](ext/wordiff.md) | [source](../../extended/ext/wordiff.lani#L3) | 18 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
+| [ext::wordiff](ext/wordiff.md) | [source](../../extended/ext/wordiff.lani#L3) | 19 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
 | [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 168 | Source inventory | [extended-xz](../extended-xz.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |

@@ -560,7 +560,10 @@ GNU-style offset/fuzz and typed per-hunk rejects. Across 1,000 generated pairs,
 the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
 an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
 applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
-agreements with GNU `patch` at `-F0` and `-F2`.
+agreements with GNU `patch` at `-F0` and `-F2`. On a 1.6 MB pair, `seq-diff`
+runs within 2× of `git diff --no-index` in every mode (59-70 ms against
+43 ms for the default unified diff). It gets there by splitting and
+hash-consing lines in one word-at-a-time pass (`split_classify`).
 [Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
 the xdiff port. It agrees byte for byte with `git merge-file` and
 `git merge-file --diff3` on all 4,000 generated triples (2,000 distinct-line,
