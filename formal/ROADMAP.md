@@ -117,7 +117,9 @@ and `a << (300 & 7)` with `a: u8` needs 300 at `u8`. Fix: read a bare
 amount at `i32` (a constant at its own type), as an operand with no other
 expectation is read, in `amount_want`, its proofs and TRUSTED_BASE section 4;
 then set `BARE_AMOUNTS = True` in `fuzz_oracle.py`, which until then casts
-an amount with no local in it to its own type.
+each computed amount to its own type. Constants count as bare: the front end
+reads a constant as its literal, so `x >> (((K1 >> (l & 31)) % 7) & 15)`
+with `K1: i32 = -93` and `x: u16` fails to lower too.
 
 ### V2 plan (decided 10-28)
 

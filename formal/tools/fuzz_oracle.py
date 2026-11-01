@@ -58,11 +58,15 @@ in target/claude-work/fuzz/found/):
   value calls a function, and the generator writes none; a program that
   still shows the order is counted as known (store_order_known).
 - Bare shift amounts, a verified-compiler reading bug (ROADMAP.md, "Bare
-  shift amounts"; found/bare_amount_*.lani): an amount with no local in it
-  is cast to its own type until it is fixed (BARE_AMOUNTS).
-- Nested `None` in `Some(..)`: laniusc does not resolve it (LNC0005,
-  found/nested_none.lani), a laniusc bug; the generator nests no Option in
-  an Option or Result.
+  shift amounts"; found/bare_amount_*.lani): a computed amount is cast to
+  its own type until it is fixed (BARE_AMOUNTS).
+- Nested bare variants: after a nested pattern names a variant bare
+  (`Ok(V5(p))`, `Some(Some(x))`), laniusc resolves no later bare pattern of
+  it (LNC0005, found/nested_bare_variant.lani, nested_none.lani), a laniusc
+  bug; inner patterns are written qualified (`core::option::Option::Some`).
+- A cast of a nested arm's payload binder: laniusc's x86 backend rejects it
+  (LNC0017, LIR opcode 8; found/nested_cast_lir8.lani), a laniusc bug,
+  counted as known (KNOWN_REJECTS).
 - Constant traps. laniusc rejects a constant divisor of zero and a constant
   index past the end at compile time (KNOWN_REJECTS); Core traps when the
   program runs. Divisors and indexes that may trap are computed.
@@ -99,10 +103,11 @@ import stdlib_oracle as so  # noqa: E402
 MIB = 1 << 20
 # The most candidates a minimizing round compiles.
 MAX_CANDIDATES = 48
-# A shift amount with no local in it, such as `(K1 % 7) & 31`: laniusc gives
-# it a type of its own (i32 for literals, as Rust does) and the verified front
-# end the shifted value's (amountWant), a reading bug (ROADMAP.md, "Bare shift
-# amounts"). Until it is fixed such an amount is cast to its own type.
+# A shift amount with no local deciding its type, such as `(K1 % 7) & 31`:
+# laniusc gives it a type of its own (i32 for literals, as Rust does) and the
+# verified front end the shifted value's (amountWant), a reading bug
+# (ROADMAP.md, "Bare shift amounts"). Until it is fixed a computed amount is
+# cast to its own type.
 BARE_AMOUNTS = False
 # A call (a function's or method's name, maybe with type arguments, then `(`);
 # variants start with a capital letter.
@@ -467,11 +472,18 @@ class Gen:
             out.append(('_', []))
         return out
 
+    @staticmethod
+    def enum_path(t):
+        """The path of t's enum, for a qualified variant."""
+        if option_of(t):
+            return 'core::option::Option'
+        if result_of(t):
+            return 'core::result::Result'
+        return t
+
     def nested_arms(self, s, t, q, ps, wildcard, statement):
         """Nested arms for the variant q of t with payload types ps, or None."""
         cols = [j for j, pt in enumerate(ps) if pt in self.enums or option_of(pt) or result_of(pt)]
-        # laniusc does not resolve `None` nested in `Some(..)` (found/nested_none.lani)
-        cols = [j for j in cols if not (t not in self.enums and option_of(ps[j]))]
         if not cols or not self.chance(min(0.8, 0.2 * self.w['nest'])):
             return None
         j = self.rng.choice(cols)
@@ -487,7 +499,9 @@ class Gen:
             plain = [(s.fresh('p'), pt) for pt in ps]
             out.append((f'{q}({", ".join(b for b, _ in plain)})', plain))
         for iv, ips in some:
-            iq = f'{ps[j]}::{iv}' if ps[j] in self.enums and self.chance(0.3) else iv
+            # Qualified: after a bare inner `V5(..)` laniusc resolves no later
+            # bare `V5` pattern (LNC0005; found/nested_bare_variant.lani).
+            iq = f'{self.enum_path(ps[j])}::{iv}'
             ib = [(s.fresh('p'), ipt) for ipt in ips]
             cells = [b for b, _ in others]
             cells[j] = f'{iq}({", ".join(b for b, _ in ib)})' if ips else iq
@@ -564,8 +578,10 @@ class Gen:
                 amt = self.int_expr(s, at, d - 1, True)
                 if self.chance(self.safe):
                     amt = f'({amt} & {width - 1})'
-                if not BARE_AMOUNTS and not any(re.search(rf'\b{n}\b', amt) for n, _ in s.vars()):
-                    # no local: the front end would read it at the shifted value's type (ROADMAP)
+                if not BARE_AMOUNTS:
+                    # An amount whose atoms are constants and literals (a local
+                    # inside a shift of its own does not count) the front end
+                    # reads at the shifted value's type (ROADMAP): the cast decides it.
                     amt = f'({amt} as {at})'
             return f'({a} {op} {amt})'
         if k == 'div':
@@ -1537,8 +1553,9 @@ def error_text(out):
     try:
         d = json.loads(out.strip().split('\n')[-1])
         label = d.get('primary_label') or {}
+        notes = '; '.join(n for n in d.get('notes') or [] if isinstance(n, str))
         return (f'{d.get("code")} {d.get("message")}: {label.get("message", "")} at line {label.get("line")}: '
-                f'{label.get("source_line", "").strip()}')
+                f'{label.get("source_line", "").strip()}' + (f' (notes: {notes})' if notes else ''))
     except (ValueError, AttributeError):
         return out[-3000:]
 
@@ -1612,6 +1629,8 @@ def agree(want, have):
 # the verified compiler) compiles it and traps when it runs there. Such
 # programs are counted as known, neither agreeing nor disagreeing.
 KNOWN_REJECTS = [
+    # laniusc's x86 backend lacks a cast of a nested arm's payload binder (found/nested_cast_lir8.lani)
+    ('first unsupported target LIR opcode: 8', 'laniusc rejecting a cast in a nested match arm (KNOWN_REJECTS, LIR opcode 8)'),
     ('unsupported x86 zero divisor', 'laniusc rejecting a constant divisor of zero (KNOWN_REJECTS)'),
     ('unsupported x86 array index bounds', 'laniusc rejecting a constant index past the end of an array (KNOWN_REJECTS)'),
 ]
