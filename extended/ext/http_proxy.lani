@@ -23,6 +23,7 @@ import ext::http2_frame;
 import ext::http2_server;
 import ext::http_body;
 import ext::http_rewrite;
+import ext::client_transport;
 import std::clock;
 import std::event;
 import std::linux;
@@ -43,11 +44,12 @@ pub enum Error { Io(core::io::Error), Event(std::event::Error), Clock, Allocatio
 pub struct Options { limits: ext::http::Limits, buffer_bytes: i32, connect_timeout_ms: i32, response_timeout_ms: i32, io_timeout_ms: i32, head_timeout_ms: i32, idle_timeout_ms: i32, pool_idle_ms: i32, max_idle: i32, upstream_connections: i32, max_requests: i32, via: core::slice::View<u8>, h2: bool, h2_streams: i32, h2_stream_window: i32 }
 pub struct Stats { clients: i32, h2_clients: i32, requests: i32, h2_requests: i32, responses: i32, upstream_connects: i32, reused: i32, retries: i32, bad_gateway: i32, gateway_timeout: i32, rejected: i32, aborted: i32, peak_clients: i32 }
 
-struct Client { socket: std::socket::Socket, peer: core::net::SocketAddr, closed: bool, h2: bool, phase: i32, input: alloc::vec::Vec<u8>, filled: i32, output: alloc::vec::Vec<u8>, sent: i32, deadline: core::time::Deadline, keep_alive: bool, requests: i32, exchange: i32, address: alloc::vec::Vec<u8>, streams: alloc::vec::Vec<i32>, interest: u32, eof: bool, shut: bool, live_at: i32 }
+struct Client { socket: std::socket::Socket, peer: core::net::SocketAddr, closed: bool, h2: bool, phase: i32, input: alloc::vec::Vec<u8>, filled: i32, output: alloc::vec::Vec<u8>, sent: i32, deadline: core::time::Deadline, keep_alive: bool, requests: i32, exchange: i32, address: alloc::vec::Vec<u8>, streams: alloc::vec::Vec<i32>, interest: u32, eof: bool, shut: bool, live_at: i32, wrapped: bool, hold: u32 }
 struct Link { socket: std::socket::Socket, upstream: i32, state: i32, input: alloc::vec::Vec<u8>, filled: i32, output: alloc::vec::Vec<u8>, sent: i32, deadline: core::time::Deadline, exchange: i32, reused: bool, got: bool, interest: u32, eof: bool }
 struct Exchange { active: bool, client: i32, stream: i32, link: i32, upstream: i32, method: alloc::vec::Vec<u8>, head: alloc::vec::Vec<u8>, request: ext::http_body::Framer, req_done: bool, chunk_out: bool, started: bool, response: ext::http_body::Framer, resp_done: bool, reusable: bool, replayable: bool, retried: bool, deadline: core::time::Deadline, waiting: bool, queued: bool }
 struct Route { prefix: alloc::vec::Vec<u8>, upstream: i32 }
-pub struct Proxy { events: std::event::Loop, listener: std::socket::Socket, listening: bool, options: Options, upstreams: alloc::vec::Vec<core::net::SocketAddr>, routes: alloc::vec::Vec<Route>, clients: alloc::vec::Vec<Client>, engines: alloc::vec::Vec<core::option::Option<ext::http2_server::Connection>>, links: alloc::vec::Vec<Link>, exchanges: alloc::vec::Vec<Exchange>, free_exchanges: alloc::vec::Vec<i32>, idle: alloc::vec::Vec<i32>, queue: alloc::vec::Vec<i32>, live: alloc::vec::Vec<i32>, active: i32, stats: Stats, now: core::time::Instant, sweep_at: core::time::Deadline, scratch_fields: alloc::vec::Vec<ext::hpack::Header>, scratch: alloc::vec::Vec<u8>, closed: bool }
+
+pub struct Proxy { events: std::event::Loop, listener: std::socket::Socket, listening: bool, options: Options, upstreams: alloc::vec::Vec<core::net::SocketAddr>, routes: alloc::vec::Vec<Route>, clients: alloc::vec::Vec<Client>, engines: alloc::vec::Vec<core::option::Option<ext::http2_server::Connection>>, links: alloc::vec::Vec<Link>, exchanges: alloc::vec::Vec<Exchange>, free_exchanges: alloc::vec::Vec<i32>, idle: alloc::vec::Vec<i32>, queue: alloc::vec::Vec<i32>, live: alloc::vec::Vec<i32>, wrap: bool, secure: bool, notices: alloc::vec::Vec<ext::client_transport::Notice>, active: i32, stats: Stats, now: core::time::Instant, sweep_at: core::time::Deadline, scratch_fields: alloc::vec::Vec<ext::hpack::Header>, scratch: alloc::vec::Vec<u8>, closed: bool }
 
 // Client phases.
 const C_FREE: i32 = 0;
@@ -116,7 +118,7 @@ fn shift(v: alloc::vec::Vec<u8>, count: i32, filled: i32) -> i32 {
 fn closed_client(o: Options) -> Client {
     let placeholder: core::net::SocketAddr = core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(0,0,0,0), port: 0 });
     let now: core::time::Instant = core::time::Instant { ticks: core::time::Duration { seconds: 0, nanos: 0 } };
-    return Client { socket: std::socket::Socket { handle: -1, domain: 2, datagram: false }, peer: placeholder, closed: true, h2: false, phase: C_FREE, input: alloc::vec::new<u8>(), filled: 0, output: alloc::vec::new<u8>(), sent: 0, deadline: core::time::Deadline { instant: now }, keep_alive: false, requests: 0, exchange: -1, address: alloc::vec::new<u8>(), streams: alloc::vec::new<i32>(), interest: 0, eof: false, shut: false, live_at: -1 };
+    return Client { socket: std::socket::Socket { handle: -1, domain: 2, datagram: false }, peer: placeholder, closed: true, h2: false, phase: C_FREE, input: alloc::vec::new<u8>(), filled: 0, output: alloc::vec::new<u8>(), sent: 0, deadline: core::time::Deadline { instant: now }, keep_alive: false, requests: 0, exchange: -1, address: alloc::vec::new<u8>(), streams: alloc::vec::new<i32>(), interest: 0, eof: false, shut: false, live_at: -1, wrapped: false, hold: 0 };
 }
 
 // The listener is borrowed (its descriptor stays the caller's); it must be
@@ -131,7 +133,7 @@ pub fn proxy(listener: &std::socket::Socket, options: Options, max_clients: i32)
     let stats: Stats = Stats { clients: 0, h2_clients: 0, requests: 0, h2_requests: 0, responses: 0, upstream_connects: 0, reused: 0, retries: 0, bad_gateway: 0, gateway_timeout: 0, rejected: 0, aborted: 0, peak_clients: 0 };
     let p: Proxy = Proxy { events: events, listener: std::socket::Socket { handle: fd.unwrap(), domain: listener.domain, datagram: false }, listening: true, options: options,
         upstreams: alloc::vec::new<core::net::SocketAddr>(), routes: alloc::vec::new<Route>(), clients: alloc::vec::new<Client>(), engines: alloc::vec::new<core::option::Option<ext::http2_server::Connection>>(),
-        links: alloc::vec::new<Link>(), exchanges: alloc::vec::new<Exchange>(), free_exchanges: alloc::vec::new<i32>(), idle: alloc::vec::new<i32>(), queue: alloc::vec::new<i32>(), live: alloc::vec::new<i32>(), active: 0, stats: stats, now: now.unwrap(), sweep_at: after(now.unwrap(), 0),
+        links: alloc::vec::new<Link>(), exchanges: alloc::vec::new<Exchange>(), free_exchanges: alloc::vec::new<i32>(), idle: alloc::vec::new<i32>(), queue: alloc::vec::new<i32>(), live: alloc::vec::new<i32>(), wrap: false, secure: false, notices: alloc::vec::new<ext::client_transport::Notice>(), active: 0, stats: stats, now: now.unwrap(), sweep_at: after(now.unwrap(), 0),
         scratch_fields: alloc::vec::new<ext::hpack::Header>(), scratch: alloc::vec::new<u8>(), closed: false };
     let i: i32 = 0;
     while (i < max_clients) {
@@ -171,6 +173,15 @@ pub impl Proxy {
         }
         return best;
     }
+    // ---- The transport interface for wrapped clients ----
+    // Leave the socket I/O of clients accepted from now on to a transport
+    // layer (before the first poll). poll then reports each such client
+    // through notices instead of reading or writing its socket. secure:
+    // the transport encrypts (X-Forwarded-Proto: https).
+    pub fn wrap_clients(&self, secure: bool) -> core::result::Result<i32,Error> {
+        if (self.stats.clients > 0) { return core::result::Err(Error::InvalidState); }
+        self.wrap = true; self.secure = secure; return core::result::Ok(0);
+    }
     // Close everything: clients, upstream connections and the loop. The
     // listener stays open.
     pub fn close(&self) -> core::result::Result<i32,Error> {
@@ -181,11 +192,63 @@ pub impl Proxy {
         i = 0; while (i < self.exchanges.len()) { let x: Exchange = self.exchanges.at(i); x.method.destroy(); x.head.destroy(); i += 1; }
         i = 0; while (i < self.routes.len()) { let r: Route = self.routes.at(i); r.prefix.destroy(); i += 1; }
         if (self.listening) { let lf: i32 = self.listener.raw_handle().unwrap(); self.events.remove(lf); self.listening = false; }
-        self.clients.destroy(); self.engines.destroy(); self.links.destroy(); self.exchanges.destroy(); self.free_exchanges.destroy(); self.idle.destroy(); self.queue.destroy(); self.live.destroy(); self.routes.destroy(); self.upstreams.destroy();
+        self.clients.destroy(); self.engines.destroy(); self.links.destroy(); self.exchanges.destroy(); self.free_exchanges.destroy(); self.idle.destroy(); self.queue.destroy(); self.live.destroy(); self.notices.destroy(); self.routes.destroy(); self.upstreams.destroy();
         self.scratch_fields.destroy(); self.scratch.destroy();
         let closed: core::result::Result<i32,std::event::Error> = self.events.close(); if (closed.is_err()) { return core::result::Err(Error::Event(closed.unwrap_err())); }
         return core::result::Ok(0);
     }
+}
+
+// Wrapped clients (wrap_clients) through ext::client_transport.
+pub impl ext::client_transport::Clients for Proxy {
+    // Notices queued since clear_notices, oldest first. Handling one may
+    // queue more.
+    pub fn notice_count(&self) -> i32 { return self.notices.len(); }
+    pub fn notice(&self, i: i32) -> ext::client_transport::Notice { return self.notices.at(i); }
+    pub fn clear_notices(&self) { self.notices.clear(); }
+    pub fn client_open(&self, slot: i32) -> bool { return self.open_slot(slot); }
+    // Free input space: write decrypted bytes here, then client_received.
+    pub fn client_input(&self, slot: i32) -> core::slice::View<u8> {
+        if (!self.open_slot(slot)) { return literal("", 0); }
+        let c: Client = self.clients.at(slot); return view(c.input, c.filled, c.input.len());
+    }
+    pub fn client_received(&self, slot: i32, count: i32) {
+        if (!self.open_slot(slot)) { return; }
+        let c: Client = self.clients.at(slot); if (count > 0 && count <= c.input.len() - c.filled) { c.filled += count; self.clients.set(slot, c); }
+    }
+    // The client's stream ended (or failed: client_drop).
+    pub fn client_eof(&self, slot: i32) { if (!self.open_slot(slot)) { return; } let c: Client = self.clients.at(slot); c.eof = true; self.clients.set(slot, c); }
+    // True while the proxy would read more from this client.
+    pub fn client_wants_read(&self, slot: i32) -> bool { if (!self.open_slot(slot)) { return false; } return (self.client_bits(slot) & READ) != 0; }
+    // Run the proxy on the client's new input (readable) or sent output.
+    pub fn client_ready(&self, slot: i32, readable: bool, writable: bool) {
+        if (!self.open_slot(slot)) { return; }
+        let bits: u32 = 0; if (readable) { bits = bits | READ; } if (writable) { bits = bits | WRITE; }
+        self.on_client(slot, std::event::Event { token: slot as u64, bits: bits });
+    }
+    // Bytes waiting to be sent to the client; report them with client_sent.
+    pub fn client_output(&self, slot: i32) -> core::slice::View<u8> {
+        if (!self.open_slot(slot)) { return literal("", 0); }
+        self.flush_client(slot);
+        let c: Client = self.clients.at(slot); return view(c.output, c.sent, c.output.len());
+    }
+    pub fn client_sent(&self, slot: i32, count: i32) {
+        if (!self.open_slot(slot)) { return; }
+        let c: Client = self.clients.at(slot); if (count <= 0 || count > c.output.len() - c.sent) { return; }
+        c.sent += count;
+        if (c.sent == c.output.len()) { c.output.clear(); c.sent = 0; }
+        if (c.sent > 65536 && c.sent * 2 > c.output.len()) { let left: i32 = shift(c.output, c.sent, c.output.len()); c.output.truncate(left); c.sent = 0; }
+        self.clients.set(slot, c);
+        if (c.sent == 0 && c.h2) { self.h2_flush(slot); return; }
+        if (c.sent == 0 && c.phase == C_CLOSING) { self.client_step(slot); }
+    }
+    // The transport selected HTTP/2 (ALPN "h2"): serve the client with it.
+    pub fn client_start_h2(&self, slot: i32) { if (!self.open_slot(slot) || !self.options.h2) { return; } let c: Client = self.clients.at(slot); if (!c.h2 && c.requests == 0) { self.h2_start(slot); } }
+    // Readiness the transport needs on top of the proxy's own (a handshake
+    // or a TLS record that must wait for the socket).
+    pub fn client_hold(&self, slot: i32, bits: u32) { if (!self.open_slot(slot)) { return; } let c: Client = self.clients.at(slot); c.hold = bits; self.clients.set(slot, c); }
+    // The transport failed: drop the client (a DROPPED notice follows).
+    pub fn client_drop(&self, slot: i32) { if (self.open_slot(slot)) { self.drop_client(slot); } }
 }
 
 // ---- Connections: readiness, buffers, the upstream pool ----
@@ -204,6 +267,28 @@ impl Proxy {
     }
     fn free_links(&self) -> i32 { let n: i32 = 0; let i: i32 = 0; while (i < self.links.len()) { if (self.links.at(i).state == L_FREE) { n += 1; } i += 1; } return n; }
     fn link_backlog(&self, li: i32) -> i32 { let l: Link = self.links.at(li); return l.output.len() - l.sent; }
+    // The readiness a client needs: WRITE with output pending, READ while
+    // its buffers (and its exchange's upstream backlog) can take more.
+    fn client_bits(&self, i: i32) -> u32 {
+        let c: Client = self.clients.at(i);
+        let bits: u32 = 0;
+        if (c.sent < c.output.len()) { bits = bits | WRITE; }
+        if (c.h2) {
+            let engine: core::option::Option<ext::http2_server::Connection> = self.engines.at(i);
+            if (engine.is_some() && engine.unwrap().output().len() > 0) { bits = bits | WRITE; }
+            if (!c.eof && c.output.len() - c.sent < self.options.buffer_bytes) { bits = bits | READ; }
+            return bits;
+        }
+        if (!c.eof && (c.phase == C_IDLE || c.phase == C_HEAD) && c.filled < c.input.len()) { bits = bits | READ; }
+        if (!c.eof && c.phase == C_CLOSING && c.shut) { bits = bits | READ; }
+        if (!c.eof && c.phase == C_BUSY && c.exchange >= 0 && c.filled < c.input.len()) {
+            let x: Exchange = self.exchanges.at(c.exchange);
+            if (!x.req_done && (x.link < 0 || self.link_backlog(x.link) < self.options.buffer_bytes)) { bits = bits | READ; }
+        }
+        return bits;
+    }
+    fn open_slot(&self, slot: i32) -> bool { return slot >= 0 && slot < self.clients.len() && !self.clients.at(slot).closed; }
+    fn notify(&self, kind: i32, slot: i32, fd: i32, bits: u32) { self.notices.try_push(ext::client_transport::Notice { kind: kind, slot: slot, fd: fd, bits: bits }); }
     // Pick each descriptor's readiness from what its buffers can take.
     fn refresh(&self) {
         let k: i32 = 0;
@@ -211,20 +296,7 @@ impl Proxy {
             let i: i32 = self.live.at(k); k += 1;
             let c: Client = self.clients.at(i);
             if (!c.closed) {
-                let bits: u32 = 0;
-                if (c.sent < c.output.len()) { bits = bits | WRITE; }
-                if (c.h2) {
-                    let engine: core::option::Option<ext::http2_server::Connection> = self.engines.at(i);
-                    if (engine.is_some() && engine.unwrap().output().len() > 0) { bits = bits | WRITE; }
-                    if (!c.eof && c.output.len() - c.sent < self.options.buffer_bytes) { bits = bits | READ; }
-                } else {
-                    if (!c.eof && (c.phase == C_IDLE || c.phase == C_HEAD) && c.filled < c.input.len()) { bits = bits | READ; }
-                    if (!c.eof && c.phase == C_CLOSING && c.shut) { bits = bits | READ; }
-                    if (!c.eof && c.phase == C_BUSY && c.exchange >= 0 && c.filled < c.input.len()) {
-                        let x: Exchange = self.exchanges.at(c.exchange);
-                        if (!x.req_done && (x.link < 0 || self.link_backlog(x.link) < self.options.buffer_bytes)) { bits = bits | READ; }
-                    }
-                }
+                let bits: u32 = self.client_bits(i) | c.hold;
                 if (bits != c.interest) { c.interest = self.watch(c.socket.handle, i as u64, c.interest, bits); self.clients.set(i, c); }
             }
         }
@@ -278,10 +350,13 @@ impl Proxy {
         let engine: core::option::Option<ext::http2_server::Connection> = self.engines.at(slot);
         if (engine.is_some()) { let e: ext::http2_server::Connection = engine.unwrap(); e.destroy(); self.engines.set(slot, core::option::None()); }
         c = self.clients.at(slot);
-        if (c.socket.handle >= 0) { self.events.remove(c.socket.handle); c.socket.close(); }
+        if (c.socket.handle >= 0) {
+            self.events.remove(c.socket.handle);
+            if (c.wrapped && !self.closed) { self.notify(ext::client_transport::DROPPED, slot, c.socket.handle, 0); c.socket.handle = -1; } else { c.socket.close(); }
+        }
         c.input.destroy(); c.output.destroy(); c.address.destroy(); c.streams.destroy();
         c.input = alloc::vec::new<u8>(); c.output = alloc::vec::new<u8>(); c.address = alloc::vec::new<u8>(); c.streams = alloc::vec::new<i32>();
-        c.closed = true; c.phase = C_FREE; c.exchange = -1; c.filled = 0; c.sent = 0; c.interest = 0; c.h2 = false; c.eof = false; c.shut = false;
+        c.closed = true; c.phase = C_FREE; c.exchange = -1; c.filled = 0; c.sent = 0; c.interest = 0; c.h2 = false; c.eof = false; c.shut = false; c.wrapped = false; c.hold = 0;
         let at: i32 = c.live_at; c.live_at = -1; self.clients.set(slot, c); self.active -= 1;
         if (at >= 0 && at < self.live.len()) {
             self.live.swap_remove(at);
@@ -341,6 +416,7 @@ impl Proxy {
                 }
             }
         }
+        if (c.wrapped) { self.clients.set(slot, c); return true; }
         let ok: bool = true; let calls: i32 = 64;
         while (c.sent < c.output.len() && calls > 0) {
             calls -= 1;
@@ -369,6 +445,7 @@ impl Proxy {
     // receive error (EOF sets eof).
     fn read_client(&self, slot: i32) -> i32 {
         let c: Client = self.clients.at(slot); let total: i32 = 0; let calls: i32 = 16;
+        if (c.wrapped) { return 0; }
         while (!c.eof && c.filled < c.input.len() && calls > 0) {
             calls -= 1;
             let got: core::result::Result<i32,core::io::Error> = vec_receive(c.socket, c.input, c.filled, c.input.len() - c.filled);
@@ -431,6 +508,7 @@ fn connection_lists(head: ext::http::Head, token: core::slice::View<u8>) -> bool
 impl Proxy {
     fn forward(&self, slot: i32) -> ext::http_rewrite::Forward {
         let c: Client = self.clients.at(slot);
+        if (c.wrapped && self.secure) { return ext::http_rewrite::Forward { client: c.address.as_view(), via: self.options.via, proto: literal("https", 5) }; }
         return ext::http_rewrite::Forward { client: c.address.as_view(), via: self.options.via, proto: literal("http", 4) };
     }
     fn has_idle(&self, upstream: i32) -> bool { let k: i32 = 0; while (k < self.idle.len()) { if (self.links.at(self.idle.at(k)).upstream == upstream) { return true; } k += 1; } return false; }
@@ -729,7 +807,7 @@ impl Proxy {
                 c = self.clients.at(slot); if (c.sent < c.output.len()) { return; }
                 // Half-close, then discard input until EOF so the client
                 // reads the response instead of a reset.
-                if (!c.shut) { c.socket.shutdown(std::socket::Shutdown::Write); c.shut = true; }
+                if (!c.shut) { if (c.wrapped) { self.notify(ext::client_transport::SHUTDOWN, slot, c.socket.handle, 0); } else { c.socket.shutdown(std::socket::Shutdown::Write); } c.shut = true; }
                 c.filled = 0; self.clients.set(slot, c);
                 if (c.eof) { self.drop_client(slot); }
                 return;
@@ -898,10 +976,11 @@ impl Proxy {
             let text: [u8;64] = [0;64]; let n: core::result::Result<i32,core::net::Error> = a.peer.address().format_into(core::slice::View { values: text, start: 0, length: 64 });
             c.address.clear(); if (n.is_ok()) { c.address.try_extend(core::slice::View { values: text, start: 0, length: n.unwrap() }); }
             c.socket = a.socket; c.peer = a.peer; c.closed = false; c.h2 = false; c.phase = C_IDLE; c.filled = 0; c.output.clear(); c.sent = 0;
-            c.deadline = after(self.now, self.options.idle_timeout_ms); c.keep_alive = true; c.requests = 0; c.exchange = -1; c.streams.clear(); c.interest = READ; c.eof = false; c.shut = false;
+            c.deadline = after(self.now, self.options.idle_timeout_ms); c.keep_alive = true; c.requests = 0; c.exchange = -1; c.streams.clear(); c.interest = READ; c.eof = false; c.shut = false; c.wrapped = self.wrap; c.hold = 0;
             if (self.events.add(a.socket.handle, std::event::readable(), slot as u64).is_err()) { a.socket.close(); c.socket.handle = -1; c.closed = true; self.clients.set(slot, c); continue; }
             c.live_at = self.live.len(); if (self.live.try_push(slot).is_err()) { self.events.remove(a.socket.handle); a.socket.close(); c.socket.handle = -1; c.closed = true; self.clients.set(slot, c); continue; }
             self.clients.set(slot, c); self.active += 1; self.stats.clients += 1;
+            if (c.wrapped) { self.notify(ext::client_transport::ACCEPTED, slot, c.socket.handle, 0); }
             if (self.active > self.stats.peak_clients) { self.stats.peak_clients = self.active; }
         }
         // Full: stop watching the listener so level-triggered readiness cannot spin.
@@ -980,7 +1059,9 @@ impl Proxy {
             let event: std::event::Event = storage[i]; i += 1;
             if (event.token == LISTENER) { self.accept_ready(); continue; }
             if (event.token >= LINK_BASE) { self.on_link((event.token - LINK_BASE) as i32, event); continue; }
-            self.on_client(event.token as i32, event);
+            let slot: i32 = event.token as i32;
+            if (self.clients.at(slot).wrapped) { self.notify(ext::client_transport::READY, slot, -1, event.bits); continue; }
+            self.on_client(slot, event);
         }
         if (self.sweep_at.is_expired(self.now) || !busy) { self.expire(); self.sweep_at = after(self.now, 25); }
         if (self.queue.len() > 0) { self.serve_queue(); }

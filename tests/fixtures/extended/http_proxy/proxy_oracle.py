@@ -13,8 +13,8 @@ def start_upstream(name):
     return p, int(p.stdout.readline())
 
 
-def start_proxy(exe, a, b, quiet=1500, profile="test"):
-    p = subprocess.Popen([exe, str(quiet), str(a), str(b), profile], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def start_proxy(exe, a, b, quiet=1500, profile="test", extra=()):
+    p = subprocess.Popen([exe, str(quiet), str(a), str(b), profile] + list(extra), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     line = p.stdout.readline().decode()
     return p, int(line.rsplit(":", 1)[1])
 
@@ -62,8 +62,10 @@ class Response:
 
 
 class H1:
-    def __init__(self, port, timeout=10):
+    def __init__(self, port, timeout=10, wrap=None):
         self.s = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+        if wrap:
+            self.s = wrap(self.s)
         self.buf = b""
 
     def send(self, data):
@@ -312,11 +314,13 @@ def errors_group(exe):
 class H2:
     """A libnghttp2 client session over TCP (prior-knowledge h2c)."""
 
-    def __init__(self, port):
+    def __init__(self, port, wrap=None):
         import ctypes
         import nghttp2_client as ng
         self.ng, self.ctypes = ng, ctypes
         self.s = socket.create_connection(("127.0.0.1", port), timeout=10)
+        if wrap:
+            self.s = wrap(self.s)
         self.c = ng.Client()
         self.pending = {}
 
@@ -454,4 +458,5 @@ def main():
     group, exe = sys.argv[1], sys.argv[2]
     {"h1": h1_group, "errors": errors_group, "h2": h2_group}[group](exe)
 
-main()
+if __name__ == "__main__":
+    main()
