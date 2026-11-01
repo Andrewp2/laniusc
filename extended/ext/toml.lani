@@ -688,7 +688,8 @@ pub impl core::io::Read for Encoding {
             // Preflight reserved the entire replay. Immutable backing makes it
             // infallible, including across UTF-8 bytes and partial escapes.
             let byte: core::option::Option<u8> = self.machine.pull();
-            destination[offset+completed] = core::option::unwrap(byte);
+            let stored: u8 = core::option::unwrap(byte);
+            destination[offset+completed] = stored;
             completed += 1; self.remaining_bytes -= 1;
         }
         return core::result::Ok(completed);

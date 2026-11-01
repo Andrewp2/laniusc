@@ -17,6 +17,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
+public import Lanius.Faithful.Gen.SelfStmtF_textSelf
 public import Lanius.Faithful.Gen.SelfStmtF_typePathSpellings
 import all Lanius.Faithful.Gen.SelfSrcF_consBinder
 import all Lanius.Mini.Frontend.P.consBinder
@@ -37,6 +38,16 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
+
+theorem step_any_variant {prog : SrcProgram} {prims : Prims} {ix_any_variant ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl ix_member : Nat} (fn : prog.funcs[ix_any_variant]? = some (src_any_variant ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl ix_member ix_any_variant)) (np : prims.isPrim ix_any_variant = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_TypeDecl n))
+    (ext_member : Certified (∀ {n : Nat}, Stmt_member prog prims ix_member n)) {n : Nat}
+    (ih_any_variant : Certified (Stmt_any_variant prog prims ix_any_variant n)) :
+    Stmt_any_variant prog prims ix_any_variant (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_any_variant] at h
+  faithful [Lanius.Mini.anyVariant]
 
 theorem proof_arm_named {prog : SrcProgram} {prims : Prims} {ix_arm_named ix_same_text ix_split_last ix_arm_prefix : Nat} (fn : prog.funcs[ix_arm_named]? = some (src_arm_named ix_same_text ix_split_last ix_arm_prefix)) (np : prims.isPrim ix_arm_named = false)
     (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))

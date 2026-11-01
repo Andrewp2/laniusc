@@ -130,9 +130,9 @@ theorem proof_nested_checked {prog : SrcProgram} {prims : Prims} {ix_nested_chec
   simp only [src_nested_checked] at h
   faithful [Lanius.Mini.nestedChecked]
 
-theorem proof_nested_order {prog : SrcProgram} {prims : Prims} {ix_nested_order ix_no_block ix_nested_checked : Nat} (fn : prog.funcs[ix_nested_order]? = some (src_nested_order ix_no_block ix_nested_checked)) (np : prims.isPrim ix_nested_order = false)
-    (ext_no_block : Certified (∀ {n : Nat}, Stmt_no_block prog prims ix_no_block n))
-    (ext_nested_checked : Certified (∀ {n : Nat}, Stmt_nested_checked prog prims ix_nested_checked n)) {n : Nat} :
+theorem proof_nested_order {prog : SrcProgram} {prims : Prims} {ix_nested_order ix_nested_checked ix_no_block : Nat} (fn : prog.funcs[ix_nested_order]? = some (src_nested_order ix_nested_checked ix_no_block)) (np : prims.isPrim ix_nested_order = false)
+    (ext_nested_checked : Certified (∀ {n : Nat}, Stmt_nested_checked prog prims ix_nested_checked n))
+    (ext_no_block : Certified (∀ {n : Nat}, Stmt_no_block prog prims ix_no_block n)) {n : Nat} :
     Stmt_nested_order prog prims ix_nested_order n := by
   intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
   rcases n with _ | n
@@ -185,5 +185,27 @@ theorem proof_same_decl_args {prog : SrcProgram} {prims : Prims} {ix_same_decl_a
   rw [pcall_succ np fn] at h
   simp only [src_same_decl_args] at h
   faithful [Lanius.Mini.sameDeclArgs]
+
+theorem proof_stmt_arm_order {prog : SrcProgram} {prims : Prims} {ix_stmt_arm_order ix_any_nested ix_stmt_order_by : Nat} (fn : prog.funcs[ix_stmt_arm_order]? = some (src_stmt_arm_order ix_any_nested ix_stmt_order_by)) (np : prims.isPrim ix_stmt_arm_order = false)
+    (ext_any_nested : Certified (∀ {n : Nat}, Stmt_any_nested prog prims ix_any_nested n))
+    (ext_stmt_order_by : Certified (∀ {n : Nat}, Stmt_stmt_order_by prog prims ix_stmt_order_by n)) {n : Nat} :
+    Stmt_stmt_arm_order prog prims ix_stmt_arm_order n := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_stmt_arm_order] at h
+  faithful [Lanius.Mini.stmtArmOrder]
+
+theorem proof_stmt_order_by {prog : SrcProgram} {prims : Prims} {ix_stmt_order_by ix_nested_checked ix_arms_in_order : Nat} (fn : prog.funcs[ix_stmt_order_by]? = some (src_stmt_order_by ix_nested_checked ix_arms_in_order)) (np : prims.isPrim ix_stmt_order_by = false)
+    (ext_nested_checked : Certified (∀ {n : Nat}, Stmt_nested_checked prog prims ix_nested_checked n))
+    (ext_arms_in_order : Certified (∀ {n : Nat}, Stmt_arms_in_order prog prims ix_arms_in_order n)) {n : Nat} :
+    Stmt_stmt_order_by prog prims ix_stmt_order_by n := by
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_stmt_order_by] at h
+  faithful [Lanius.Mini.stmtOrderBy]
 
 end Lanius.Faithful.SelfCert

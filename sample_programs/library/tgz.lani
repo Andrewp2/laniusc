@@ -1,5 +1,5 @@
 // tar czf / cJf / xzf / tzf over ext::pax, ext::tar, streaming ext::compression
-// (gzip) and ext::xz (xz decoding; -cJ writes stored LZMA2 chunks).
+// (gzip) and ext::xz (xz decoding; -cJ encodes LZMA2 at level 2).
 // Archives stream through fixed 64 KiB buffers: neither side holds a whole
 // archive or member. Listing or extracting a file validates it in a first
 // streaming pass before any output; `-f -` (stdin) works in one pass.
@@ -36,8 +36,10 @@ impl Options { fn borrow(&self) -> &Options { return self; } }
 // xz-decoded on fd 37 7a 58 5a 00 (the xz dictionary grows on demand).
 struct Source { fd: i32, gzip: bool, xz: bool, detected: bool, raw: alloc::vec::Vec<u8>, raw_pos: i32, raw_len: i32, raw_eof: bool, out: alloc::vec::Vec<u8>, out_pos: i32, out_len: i32, done: bool, history: alloc::vec::Vec<u8>, workspace: alloc::vec::Vec<i32>, decoder: ext::compression::Decoder, probs: alloc::vec::Vec<i32>, stage: alloc::vec::Vec<u8>, dict: alloc::vec::Vec<u8>, unxz: ext::xz::Decoder }
 impl Source { fn borrow(&self) -> &Source { return self; } fn destroy(&self) { self.raw.destroy(); self.out.destroy(); self.history.destroy(); self.workspace.destroy(); self.probs.destroy(); self.stage.destroy(); self.dict.destroy(); } }
-struct Sink { fd: i32, gzip: bool, xz: bool, started: bool, fill: i32, out: alloc::vec::Vec<u8>, block: alloc::vec::Vec<u8>, pending: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<i32>, encoder: ext::compression::Encoder, store: ext::xz::StoreEncoder }
-impl Sink { fn borrow(&self) -> &Sink { return self; } fn destroy(&self) { self.out.destroy(); self.block.destroy(); self.pending.destroy(); self.scratch.destroy(); } }
+struct Sink { fd: i32, gzip: bool, xz: bool, out: alloc::vec::Vec<u8>, block: alloc::vec::Vec<u8>, pending: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<i32>, encoder: ext::compression::Encoder,
+    xz_work: alloc::vec::Vec<i32>, xz_window: alloc::vec::Vec<u8>, xz_stage: alloc::vec::Vec<u8>, xz_encoder: ext::xz::Encoder }
+impl Sink { fn borrow(&self) -> &Sink { return self; } fn destroy(&self) { self.out.destroy(); self.block.destroy(); self.pending.destroy(); self.scratch.destroy(); self.xz_work.destroy(); self.xz_window.destroy(); self.xz_stage.destroy(); } }
+const XZ_LEVEL: i32 = 2;
 struct Directory { start: i32, length: i32, mode: u32, mtime: u64, nanos: u32 }
 struct Link { major: u32, minor: u32, inode: u64, start: i32, length: i32 }
 // Reused scratch storage for one read pass.
@@ -205,30 +207,33 @@ fn transfer(input: &Source, count: i32, fd: i32) -> core::result::Result<i32,Err
 // ---------------------------------------------------------------- output stream
 fn sink(fd: i32, gzip: bool, xz: bool) -> core::result::Result<Sink,Error> {
     let out: alloc::vec::Vec<u8> = alloc::vec::new(); let block: alloc::vec::Vec<u8> = alloc::vec::new(); let pending: alloc::vec::Vec<u8> = alloc::vec::new(); let scratch: alloc::vec::Vec<i32> = alloc::vec::new();
-    let ok: bool = core::result::is_ok(out.try_resize(CHUNK,0)) && core::result::is_ok(block.try_resize(32768,0)) && core::result::is_ok(pending.try_resize(32773,0)) && core::result::is_ok(scratch.try_resize(32768+ext::xz::STORE_WORKSPACE,0));
+    let ok: bool = core::result::is_ok(out.try_resize(CHUNK,0)) && core::result::is_ok(block.try_resize(32768,0)) && core::result::is_ok(pending.try_resize(32773,0)) && core::result::is_ok(scratch.try_resize(32768,0));
     if (!ok) { out.destroy(); block.destroy(); pending.destroy(); scratch.destroy(); return core::result::Err(Error::Allocation); }
     let limits: ext::compression::EncodeLimits = ext::compression::EncodeLimits { max_input: 1099511627776, max_output: 1099511627776 };
     let made: core::result::Result<ext::compression::Encoder,ext::compression::Error> = ext::compression::encoder(block.as_view(),pending.as_view(),scratch.as_view(),ext::compression::Format::Gzip,limits);
     if (core::result::is_err(made)) { out.destroy(); block.destroy(); pending.destroy(); scratch.destroy(); return core::result::Err(Error::Allocation); }
-    // The xz writer's CRC64 table sits past the deflate scratch words.
-    let store: core::result::Result<ext::xz::StoreEncoder,ext::xz::Error> = ext::xz::store_encoder(core::result::unwrap(scratch.as_view().subview(32768,32768+ext::xz::STORE_WORKSPACE)));
-    return core::result::Ok(Sink { fd: fd, gzip: gzip, xz: xz, started: false, fill: 0, out: out, block: block, pending: pending, scratch: scratch, encoder: core::result::unwrap(made), store: core::result::unwrap(store) });
-}
-// xz output: 32 KiB stored LZMA2 chunks in one block with a CRC64 check.
-fn emit_xz(output: &Sink, bytes: core::slice::View<u8>, final_input: bool) -> core::result::Result<i32,Error> {
-    if (!output.started) { let wrote: i32 = core::result::unwrap(output.store.borrow().begin(output.out.as_view())); write_fd(output.fd,sub(output.out.as_view(),0,wrote))?; output.started = true; }
-    let offset: i32 = 0; let block: core::slice::View<u8> = output.block.as_view();
-    while (offset < bytes.len() || (final_input && output.fill > 0)) {
-        let take: i32 = bytes.len()-offset; if (take > block.len()-output.fill) { take = block.len()-output.fill; }
-        let index: i32 = 0; while (index < take) { block.values[block.start+output.fill+index] = bytes.values[bytes.start+offset+index]; index += 1; }
-        output.fill += take; offset += take;
-        if (output.fill == block.len() || (final_input && offset == bytes.len() && output.fill > 0)) {
-            let wrote: i32 = core::result::unwrap(output.store.borrow().chunk(sub(block,0,output.fill),output.out.as_view()));
-            write_fd(output.fd,sub(output.out.as_view(),0,wrote))?; output.fill = 0;
-        }
+    let output: Sink = Sink { fd: fd, gzip: gzip, xz: xz, out: out, block: block, pending: pending, scratch: scratch, encoder: core::result::unwrap(made),
+        xz_work: alloc::vec::new(), xz_window: alloc::vec::new(), xz_stage: alloc::vec::new(), xz_encoder: ext::xz::unused_encoder(out.as_view(),scratch.as_view()) };
+    if (xz) {
+        let ok: bool = core::result::is_ok(output.xz_work.try_resize(ext::xz::encoder_workspace_len(XZ_LEVEL),0)) && core::result::is_ok(output.xz_window.try_resize(ext::xz::encoder_window_len(XZ_LEVEL),0)) && core::result::is_ok(output.xz_stage.try_resize(ext::xz::ENCODER_STAGE,0));
+        let encoder: core::result::Result<ext::xz::Encoder,ext::xz::Error> = core::result::Err(ext::xz::Error::Bounds);
+        if (ok) { encoder = ext::xz::encoder(output.xz_work.as_view(),output.xz_window.as_view(),output.xz_stage.as_view(),XZ_LEVEL); }
+        if (core::result::is_err(encoder)) { output.destroy(); return core::result::Err(Error::Allocation); }
+        output.xz_encoder = core::result::unwrap(encoder);
     }
-    if (final_input) { let wrote: i32 = core::result::unwrap(output.store.borrow().finish(output.out.as_view())); write_fd(output.fd,sub(output.out.as_view(),0,wrote))?; }
-    return core::result::Ok(offset);
+    return core::result::Ok(output);
+}
+// xz output through the streaming LZMA2 encoder.
+fn emit_xz(output: &Sink, bytes: core::slice::View<u8>, final_input: bool) -> core::result::Result<i32,Error> {
+    let offset: i32 = 0;
+    while (offset < bytes.len() || final_input) {
+        let stepped: core::result::Result<ext::xz::Step,ext::xz::Error> = output.xz_encoder.borrow().step(sub(bytes,offset,bytes.len()),output.out.as_view(),final_input);
+        if (core::result::is_err(stepped)) { return core::result::Err(Error::Limit); }
+        let progress: ext::xz::Step = core::result::unwrap(stepped); offset += progress.read;
+        write_fd(output.fd,sub(output.out.as_view(),0,progress.written))?;
+        if (final_input && output.xz_encoder.borrow().is_done()) { return core::result::Ok(offset); }
+        if (!final_input && offset == bytes.len()) { return core::result::Ok(offset); }
+    } return core::result::Ok(offset);
 }
 fn emit(output: &Sink, bytes: core::slice::View<u8>, final_input: bool) -> core::result::Result<i32,Error> {
     if (output.xz) { return emit_xz(output,bytes,final_input); }

@@ -1,0 +1,13 @@
+// A literal under two negations and an unsigned cast keeps i32 typing
+// (`-(-1539409055) as usize`, from the gate oracle); expected exit 0.
+fn main() -> i32 {
+    let a: usize = (-(-1539409055)) as usize;
+    let b: u64 = (-(-7)) as u64;
+    let c: u32 = (-1) as u32;
+    let d: u64 = 4000000000 as u64;
+    if (a % (7 as usize) != (1539409055 % 7) as usize) { return 1; }
+    if (b != (7 as u64)) { return 2; }
+    if (c != (4294967295 as u32)) { return 3; }
+    if (d / (1000 as u64) != (4000000 as u64)) { return 4; }
+    return 0;
+}

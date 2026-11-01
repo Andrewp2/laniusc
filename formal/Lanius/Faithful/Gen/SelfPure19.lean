@@ -48,7 +48,7 @@ theorem pure1908 : PureFunc prog prims outside src1908 = true :=
 theorem pure1909 : PureFunc prog prims outside src1909 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::arms_in_order -/
+/-- mini::selfhost::stmt_arm_order -/
 theorem pure1910 : PureFunc prog prims outside src1910 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 

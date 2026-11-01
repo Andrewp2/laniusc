@@ -21,8 +21,8 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_checked_bound (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.ArgsBound} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 298 RepArgsBound) x1 v1 →
-    (RepOption 298 RepArgsBound) (Lanius.Mini.checkedBound x0 x1) w
+  ∀ {x0 : Bool} {x1 : Option Lanius.Mini.ArgsBound} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 297 RepArgsBound) x1 v1 →
+    (RepOption 297 RepArgsBound) (Lanius.Mini.checkedBound x0 x1) w
 
 abbrev Stmt_checked_eff (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : Option Lanius.Mini.MEff} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepOption 250 RepMEff) x1 v1 →
@@ -66,7 +66,7 @@ abbrev Stmt_nested_order (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 
 abbrev Stmt_no_block (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → (RepList 82 RepCTree) x1 v1 →
-    (RepOption 300 RepBool) (Lanius.Mini.noBlock x0 x1) w
+    (RepOption 292 RepBool) (Lanius.Mini.noBlock x0 x1) w
 
 abbrev Stmt_order_by (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.VariantTy} {x4 : List Lanius.Mini.CTree} {x5 : Bool} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 278 RepVariantTy) x3 v3 → (RepList 82 RepCTree) x4 v4 → RepBool x5 v5 →
@@ -79,5 +79,13 @@ abbrev Stmt_postfix_head (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop
 abbrev Stmt_same_decl_args (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Bool} {x1 : List Lanius.Mini.Ty} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBool x0 v0 → (RepList 141 RepTy) x1 v1 →
     (RepOption 208 (RepList 141 RepTy)) (Lanius.Mini.sameDeclArgs x0 x1) w
+
+abbrev Stmt_stmt_arm_order (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.VariantTy} {x4 : List Lanius.Mini.CTree} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 278 RepVariantTy) x3 v3 → (RepList 82 RepCTree) x4 v4 →
+    (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.stmtArmOrder x0 x1 x2 x3 x4) w
+
+abbrev Stmt_stmt_order_by (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : Lanius.Mini.TypeDecl} {x3 : List Lanius.Mini.VariantTy} {x4 : List Lanius.Mini.CTree} {x5 : Bool} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → RepTypeDecl x2 v2 → (RepList 278 RepVariantTy) x3 v3 → (RepList 82 RepCTree) x4 v4 → RepBool x5 v5 →
+    (RepOption 81 (RepList 82 RepCTree)) (Lanius.Mini.stmtOrderBy x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfCert

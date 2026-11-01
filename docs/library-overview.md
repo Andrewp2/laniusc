@@ -1922,15 +1922,20 @@ x86_64; its cargo wrapper `tests/extended_tgz_execution.rs` was not run.
 and CRC64 checks; multi-block, concatenated and padded streams with index
 verification) and `.lzma` streams incrementally over caller-owned
 probability, staging and dictionary views, with a dictionary that grows on
-demand, and writes xz as stored LZMA2 chunks. `tgz` now detects and reads xz
-archives and writes them with `-J`. A seeded oracle
+demand, and encodes xz with a streaming LZMA2 encoder (levels 0-3, hash-chain
+match finder, greedy or one-step lazy) whose output is independent of call
+boundaries. `tgz` detects and reads xz archives and writes them with `-J` at
+level 2, which matches `xz -1`'s size on the docs/stdlib tar (7,562,060
+against 7,561,504 bytes) at roughly an eighth of its speed. A seeded oracle
 (`tests/fixtures/extended/xz_oracle.py`) passes 22,913 cases with 0 failures
 against Python `lzma` and the xz 5.4.6 CLI: 2,268 decodes of valid streams
 under step sizes down to one byte, 20,639 concatenated, truncated,
 bit-flipped or extended streams rejected exactly when a strict Python decode
 rejects them (and decoded identically otherwise) and 6 error-class checks. The tgz
-oracle adds 690 xz archive cases (now 4,159 in total) against Python
-`tarfile` and GNU tar. There is no LZMA encoder yet.
+oracle adds 691 xz archive cases (now 4,160 in total) against Python
+`tarfile` and GNU tar; the encoder adds 228 step-size-invariance checks and
+300 exact decodes by Python, `xz -t` and the Lanius decoder (23,475 cases in
+all).
 
 **Accepted bounded archive increment.**
 

@@ -1138,7 +1138,7 @@ pub impl PrefixSet {
     // The lowest rule accepting at end of text from this state, cached.
     fn final_rule(&self, state: i32) -> i32 {
         let accept = self.accept.as_slice();
-        if (accept[state * 2 + 1] == -2) { accept[state * 2 + 1] = self.best(self.resolve(state, 1, self.next_generation())); }
+        if (accept[state * 2 + 1] == -2) { let stored: i32 = self.best(self.resolve(state, 1, self.next_generation())); accept[state * 2 + 1] = stored; }
         return accept[state * 2 + 1];
     }
     // Longest prefix (anchored) or earliest match end (unanchored) over every

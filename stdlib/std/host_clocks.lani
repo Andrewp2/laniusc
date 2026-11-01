@@ -54,7 +54,7 @@ fn linux_error(error: std::linux::Error) -> Error {
 // One syscall on a 16-byte timespec; the clock id must already be validated.
 fn transfer(number: i64, clock: i64, flags: i64, words: [i32]) -> core::result::Result<i64, Error> {
     let arguments: [std::linux::Argument;4] = [std::linux::Argument::Word(clock),std::linux::Argument::Word(flags),std::linux::Argument::Address(core::mem::i32_slice_data_ptr(words)),std::linux::Argument::Word(0)];
-    let count: i32 = 4; if (number != 230) { arguments[1] = std::linux::Argument::Address(core::mem::i32_slice_data_ptr(words)); count = 2; }
+    let count: i32 = 4; if (number != 230) { let stored1: std::linux::Argument = std::linux::Argument::Address(core::mem::i32_slice_data_ptr(words)); arguments[1] = stored1; count = 2; }
     let result: core::result::Result<i64, std::linux::Error> = std::linux::call(number,core::slice::view(arguments,count).unwrap());
     if (result.is_err()) { return core::result::Err(linux_error(result.unwrap_err())); }
     if (result.unwrap() != 0) { return core::result::Err(Error::InvalidStatus); }

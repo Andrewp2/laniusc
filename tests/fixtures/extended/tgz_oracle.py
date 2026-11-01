@@ -500,15 +500,15 @@ def corrupt_group(rng):
     shutil.rmtree(base)
 
 
-def stream_group():
-    """A tgz pipeline over a 96 MiB tree must not hold the archive or a member."""
+def stream_group(flag="z", blocks=64, limit=32768):
+    """A tgz pipeline over a large tree must not hold the archive or a member."""
     base = os.path.join(WORK, "stream")
     shutil.rmtree(base, ignore_errors=True)
     os.makedirs(os.path.join(base, "src", "big"))
     os.makedirs(os.path.join(base, "out"))
     block = random.Random(7).randbytes(1 << 20)
     with open(os.path.join(base, "src", "big", "a.bin"), "wb") as h:
-        for i in range(64):
+        for i in range(blocks):
             h.write(block)
     with open(os.path.join(base, "src", "big", "b.txt"), "wb") as h:
         h.write(b"lanius streaming\n" * (2 << 20))
@@ -517,19 +517,20 @@ def stream_group():
     # inherit this process's resident pages.
     probe = """
 import resource, subprocess, sys
-tgz, src, out = sys.argv[1:]
-create = subprocess.Popen([tgz, "-czf", "-", "-C", src, "big"], stdout=subprocess.PIPE)
-extract = subprocess.Popen([tgz, "-xzf", "-", "-C", out], stdin=create.stdout)
+tgz, src, out, flag = sys.argv[1:]
+create = subprocess.Popen([tgz, "-c" + flag + "f", "-", "-C", src, "big"], stdout=subprocess.PIPE)
+extract = subprocess.Popen([tgz, "-x" + flag + "f", "-", "-C", out], stdin=create.stdout)
 create.stdout.close()
 print(extract.wait(timeout=240), create.wait(timeout=240), resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
 """
-    measured = subprocess.run([sys.executable, "-I", "-c", probe, TGZ, os.path.join(base, "src"), os.path.join(base, "out")], capture_output=True, text=True, timeout=280)
+    measured = subprocess.run([sys.executable, "-I", "-c", probe, TGZ, os.path.join(base, "src"), os.path.join(base, "out"), flag], capture_output=True, text=True, timeout=280)
     a, b, peak = (int(x) for x in measured.stdout.split())
     rc = (a, b)
     same = snapshot(os.path.join(base, "src")) == snapshot(os.path.join(base, "out"))
-    print(f"stream: 96 MiB pipeline rc={rc} peak child RSS {peak} KiB")
-    if rc == (0, 0) and same and peak < 32768:
-        bump("stream: 96 MiB czf | xzf pipeline under 32 MiB RSS")
+    label = f"stream: {blocks + 34} MiB c{flag}f | x{flag}f pipeline under {limit // 1024} MiB RSS"
+    print(f"{label}: rc={rc} peak child RSS {peak} KiB")
+    if rc == (0, 0) and same and peak < limit:
+        bump(label)
     else:
         fail(f"stream pipeline rc={rc} same={same} peak={peak}")
     shutil.rmtree(base)
@@ -588,6 +589,7 @@ def guard_group():
 
 rng = random.Random(20261031)
 stream_group()
+stream_group("J", 16, 49152)
 guard_group()
 codec_group(rng)
 tar_group(rng)
