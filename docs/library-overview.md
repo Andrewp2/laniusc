@@ -2476,6 +2476,15 @@ uses fixed scratch, allocation-free O(n) parsing and typed errors with token
 indices. Its Python-precedence calculator sample agrees with CPython `ast` on
 100,000 generated expressions and 25,000 token-soup lines.
 
+[`ext::fnmatch`](extended-fnmatch.md) matches byte names against shell
+wildcards with glibc's `fnmatch(3)` answers in the C locale, for
+`FNM_PATHNAME`, `FNM_NOESCAPE`, `FNM_PERIOD`, `FNM_LEADING_DIR` and
+`FNM_CASEFOLD`. That includes POSIX bracket classes, `[=x=]`, `[.x.]` and
+glibc's handling of malformed brackets. It backtracks only to the last `*`, so
+it takes at most pattern-times-name steps. It agrees with libc through `ctypes`
+on three seeds of 200,000 generated cases plus 2,304 pinned malformed-bracket
+cases.
+
 The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on
 seeded grammar-generated patterns from the shared subset. Five seeds agree on

@@ -1105,6 +1105,11 @@
         "docs/extended-geometry.md"
       ]
     },
+    "ext::fnmatch": {
+      "guides": [
+        "docs/extended-fnmatch.md"
+      ]
+    },
     "ext::glob": {
       "guides": [
         "docs/extended-glob.md"

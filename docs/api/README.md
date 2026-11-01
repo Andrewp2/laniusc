@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **326 modules**, **17436 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **327 modules**, **17445 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -247,6 +247,7 @@ Inventory: **326 modules**, **17436 declaration/member entries**. Counts include
 | [ext::distributions](ext/distributions.md) | [source](../../extended/ext/distributions.lani#L3) | 45 | Source inventory | [extended-distributions](../extended-distributions.md) |
 | [ext::dns](ext/dns.md) | [source](../../extended/ext/dns.lani#L2) | 139 | Source inventory | [extended-dns](../extended-dns.md) |
 | [ext::dns_client](ext/dns_client.md) | [source](../../extended/ext/dns_client.lani#L2) | 77 | Source inventory | [extended-dns-client](../extended-dns-client.md) |
+| [ext::fnmatch](ext/fnmatch.md) | [source](../../extended/ext/fnmatch.lani#L8) | 9 | Source inventory | [extended-fnmatch](../extended-fnmatch.md) |
 | [ext::form](ext/form.md) | [source](../../extended/ext/form.lani#L3) | 60 | Source inventory | [extended-form](../extended-form.md) |
 | [ext::form_owned](ext/form_owned.md) | [source](../../extended/ext/form_owned.lani#L3) | 36 | Source inventory | [extended-form](../extended-form.md) |
 | [ext::geometry](ext/geometry.md) | [source](../../extended/ext/geometry.lani#L3) | 81 | Source inventory | [extended-geometry](../extended-geometry.md) |
