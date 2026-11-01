@@ -89,8 +89,9 @@ already byte aligned. Final partial blocks use ordinary final encoding.
 Caller chunk boundaries and output capacities do not change the complete
 encoded bytes. Streaming and whole-input encoding may differ: whole-input
 measurement chooses over the complete borrowed span and can use its full
-allowed match window. Both policies use the same match, code and block-writing
-helpers. The streaming policy adds no dynamic trees, cross-block matches,
+allowed match window. Both policies make the same match and code choices; a
+[packed fast pass](#packed-fast-pass) writes streaming blocks when the block
+and pending buffers are packed bytes. The streaming policy adds no dynamic trees, cross-block matches,
 preset dictionaries or public flush modes, and promises no compression ratio.
 
 Storage stays fixed as total input grows. Work is linear in input size with
@@ -104,6 +105,47 @@ For input length n, let q=floor(n/32768) and r=n%32768. Full blocks use at most
 32,773 bytes each; a final partial uses at most r+5 bytes, or exactly two bytes
 when r=0. Raw output is therefore at most n+5q+5, tightened to n+5q+2 when r=0.
 Container framing adds six bytes for zlib or eighteen for gzip.
+
+## Packed fast pass
+
+When the block and pending buffers have stride +1 (any `alloc::vec::Vec<u8>`
+view), each block is encoded in one pass that writes the pending buffer
+directly. It stops as soon as the fixed encoding exceeds the stored size,
+which is exactly when stored is selected, so the earlier separate measuring
+pass is gone. Its output is byte-for-byte the output of the general pass,
+which still serves other strides and whole-input `encode_into`:
+
+- Each hash slot holds `position | (x << 8 | y) << 15` for the bytes x, y, z
+  at that position. For fixed x and y, the 15-bit hash determines z, so a slot
+  whose tag matches already has the same three bytes and needs no byte checks.
+- Fixed literal, length and distance codes come from small per-block tables
+  with bit-reversed codes and extra bits packed together.
+- Lookahead bytes, match comparison and the insertion of positions inside a
+  match read the block a 64-bit word at a time; match comparison finds the
+  first differing byte from the XOR of two words.
+- Output bits accumulate in a 64-bit buffer and leave a word at a time.
+- Only a three-byte match can lose to its literals (a match costs at most 31
+  bits, four literals at least 32), so the literal-cost test is one comparison.
+
+Block intake, pending publication and stored blocks copy by word, and gzip
+CRC-32 uses slicing-by-8 tables built on the stack for spans of 2 KiB or more.
+
+### Measurements
+
+These were measured on the Linux x86_64 laptop (load average 7–9) with the shared `lcc` of 2026-10-31.
+The program streams stdin to stdout through `ext::compression::encoder` (gzip) with 64 KiB
+buffers and direct `std::fs` I/O. Each time is the fastest of nine interleaved runs (two for
+the old encoder). Every output was decoded by Python `gzip` and was byte-identical to the previous
+encoder's output.
+
+| Input | Bytes | Before | After | Output bytes | `gzip -1` | `gzip -6` |
+| --- | --- | --- | --- | --- | --- | --- |
+| docs/stdlib tar | 18,145,280 | 4.78 s (3.8 MB/s) | 0.34 s (54 MB/s) | 10,112,519 | 0.19 s, 8,651,104 | 0.43 s, 7,894,861 |
+| text tar | 13,281,280 | 3.78 s (3.5 MB/s) | 0.26 s (50 MB/s) | 5,401,026 | 0.11 s, 3,973,737 | 0.34 s, 3,240,787 |
+
+Bit-serial CRC-32 accounted for about 2.5 s of the corpus's old time. The remaining cost is
+per-byte bookkeeping in the generated code; the fixed-Huffman profile (no dynamic trees)
+keeps output larger than gzip's.
 
 ## Raw, zlib and gzip containers
 
