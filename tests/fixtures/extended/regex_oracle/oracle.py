@@ -41,6 +41,7 @@ LITERALS = [("a", "a")] * 6 + [("b", "b")] * 5 + [("c", "c")] * 2 + [
 ]
 CLASS_TERMS = ["a", "b", "c", "é", "1", "_", ".", " ", "a-c", "0-9", "A-Z",
                "é-🙂", r"\d", r"\w", r"\s", r"\D", r"\W", r"\S", r"\n"]
+NAMES = ["n", "word", "x_", "Key", "_g"]
 SHORTHANDS = [r"\d", r"\w", r"\s", r"\D", r"\W", r"\S"]
 QUANTIFIERS = ["?", "*", "+", "{2}", "{1,2}", "{0,2}", "{2,}", "??", "*?",
                "+?", "{1,2}?", "{0,3}?", "{2,}?", "{1}", "{0}"]
@@ -51,6 +52,7 @@ class Gen:
         self.rng = rng
         self.multiline = multiline
         self.groups = 0
+        self.names = []
 
     def assertion(self):
         kind = self.rng.choice(["^", "$", r"\A", r"\z", r"\b", r"\B"])
@@ -91,6 +93,13 @@ class Gen:
             self.groups += 1
         lan, py, nullable = self.expr(depth - 1)
         if capture:
+            # Some captures are named, in either Lanius spelling; Python only
+            # has (?P<name>...). Names stay unique within a pattern.
+            if self.rng.random() < 0.35:
+                name = self.rng.choice(NAMES) + str(len(self.names))
+                self.names.append(name)
+                opener = self.rng.choice(["(?P<", "(?<"]) + name + ">"
+                return opener + lan + ")", "(?P<" + name + ">" + py + ")", nullable, True
             return "(" + lan + ")", "(" + py + ")", nullable, True
         return "(?:" + lan + ")", "(?:" + py + ")", nullable, True
 
@@ -163,6 +172,11 @@ def canonical(q, t):
         position = m.end() + (m.start() == m.end())
 
 
+def names(q):
+    by_group = {v: k for k, v in q.groupindex.items()}
+    return "|" + ",".join(by_group.get(g, "-") for g in range(1, q.groups + 1))
+
+
 def describe(q, t):
     out = ""
     for m in canonical(q, t):
@@ -197,13 +211,13 @@ def find_iter_surface(exe, rng, count):
         cases.append((lan, py, t, 0))
         expected.append(describe(re.compile(py, re.ASCII), t))
     for _ in range(count):
-        flags = (1 if rng.random() < 0.25 else 0) | (2 if rng.random() < 0.25 else 0)
+        flags = (1 if rng.random() < 0.25 else 0) | (2 if rng.random() < 0.25 else 0) | 4
         lan, py = pattern(rng, flags & 1)
         q = re.compile(py, re.ASCII | (re.M if flags & 1 else 0) | (re.S if flags & 2 else 0))
         for _ in range(4):
             t = text(rng, 1 if r"\B" in lan else 0)
             cases.append((lan, py, t, flags))
-            expected.append(describe(q, t))
+            expected.append(describe(q, t) + names(q))
     payload = b"".join(header(lan, t, flags) for lan, _, t, flags in cases)
     result = run([exe], payload, timeout=120)
     actual = result.stdout.decode().split("\n")[:-1]
@@ -213,13 +227,14 @@ def find_iter_surface(exe, rng, count):
         return 0, len(cases), [("harness", result.returncode)]
     failures = [(cases[i], expected[i], actual[i])
                 for i in range(len(cases)) if expected[i] != actual[i]]
-    matched = sum(e != "N" for e in expected)
+    named = sum(any(c not in "-," for c in e.split("|", 1)[1]) for e in expected if "|" in e)
+    matched = sum(not e.startswith("N") for e in expected)
     multi = sum(e.count("M") > 1 for e in expected)
     unset = sum("/-" in e for e in expected)
     grouped = sum("/" in e for e in expected)
     print(f"  find_iter_captures coverage: {count} generated patterns, {len(PINNED)} pinned, {matched} cases with a match, "
           f"{multi} with several matches, {grouped} with capture groups, "
-          f"{unset} with an unset group")
+          f"{unset} with an unset group, {named} with named groups")
     return len(cases) - len(failures), len(cases), failures
 
 
