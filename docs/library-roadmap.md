@@ -487,8 +487,22 @@ of 100 concurrent h2c clients (20 multiplexed requests each) and 100
 HTTP/1.1 keep-alive clients passes with every body and counter checked. A
 libnghttp2 client session through ctypes passes 6 session cases and 18
 malformed-frame cases, both against the engine over a pipe and against the
-service over TCP. HTTP/2 over TLS waits on C callback support, which
-OpenSSL's server-side ALPN selection needs.
+service over TCP. HTTP/2 over TLS now runs: `ext::http_service_tls`
+serves the event server through `ext::tls_clients`, and
+`ServerContext.set_alpn` selects `h2` in a Lanius ALPN callback.
+The [reverse proxy](extended-http-proxy.md) (`ext::http_proxy`,
+`ext::http_body`, `ext::http_rewrite` and `ext::http_proxy_tls`) forwards
+HTTP/1.1 and h2c clients, plain or over TLS with ALPN, to pooled HTTP/1.1
+upstreams. It rewrites hop-by-hop and forwarding fields, streams bodies
+with backpressure, and applies connect, response, inactivity, head and
+idle timeouts. These still remain:
+
+- upstream TLS and h2 upstreams;
+- CONNECT and WebSocket tunnels;
+- caching;
+- multi-threaded serving;
+- a faster `ext::http_rewrite`, which rescans Connection fields for each
+  field.
 
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 connects to `ws://` and verified `wss://` URLs through the agent's new

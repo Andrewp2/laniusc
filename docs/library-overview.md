@@ -2319,8 +2319,45 @@ HTTP/1.1 on the same listener. The event server multiplexes h2c
 connections on its loop as well, and a load test of 100 concurrent h2c
 clients against 100 HTTP/1.1 clients checks every body and counter. A libnghttp2 client session through ctypes
 passes 6 session cases and 18 malformed-frame cases, both against the engine
-over a pipe and against the service over TCP. HTTP/2 over TLS waits on C
-callback support for OpenSSL's ALPN selection.
+over a pipe and against the service over TCP. `ext::http_service_tls`
+serves the event server over TLS. `ext::openssl_tls::ServerContext.set_alpn`
+selects the protocol in a Lanius `SSL_CTX_set_alpn_select_cb` callback:
+`h2` clients get HTTP/2 streams and the others get HTTP/1.1
+(`http-service-tls cases=8`, against libnghttp2 and Python `ssl` clients).
+
+The [reverse proxy](extended-http-proxy.md) (`ext::http_proxy`, with
+`ext::http_body` and `ext::http_rewrite`) is part of the same family.
+
+- **Clients:** HTTP/1.1 and h2c clients, on one `std::event` loop, go to
+  HTTP/1.1 upstreams chosen by path prefix.
+- **Pools:** idle upstream connections are kept per upstream, with idle
+  limits, a connection cap with a queue, and one retry on a stale reused
+  connection.
+- **Headers:** RFC 9110 hop-by-hop removal, plus X-Forwarded-For,
+  X-Forwarded-Proto and Via.
+- **Bodies:** bodies stream both ways through fixed buffers, with
+  backpressure.
+- **Timeouts:** connect, response, inactivity, head and idle timeouts map
+  to 502 and 504.
+- **TLS:** `ext::http_proxy_tls` adds TLS with ALPN h2. Both TLS servers
+  use one transport layer: `ext::tls_clients` over the
+  `ext::client_transport` interface.
+
+Python asyncio upstreams with raw HTTP/1.1, libnghttp2 and `ssl` clients
+pass these groups:
+
+| Group | Cases |
+| --- | --- |
+| body | 151 |
+| rewrite | 11 |
+| h1 | 19 |
+| errors | 12 |
+| h2 | 13 |
+| tls | 13 |
+
+A load test sends 100 h2c clients × 20 requests and 100 HTTP/1.1
+clients × 20 requests through the proxy, plain and over TLS, and checks
+every body.
 
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical
