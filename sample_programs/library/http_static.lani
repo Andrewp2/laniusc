@@ -179,6 +179,7 @@ fn serve_static(conn: &ext::http_service::Connection, request: &ext::http_servic
         if (!ends_with(request.path,"/",1)) { return redirect(conn,request.path,request.query); }
         return listing(conn,root,rel,request.path,totals);
     }
+    if (regular && ends_with(request.path,"/",1)) { file.close(); totals.missing += 1; return conn.respond(404,literal("text/plain",10),literal("Not Found",9)); }
     if (regular) { result = serve_file(conn,request,file.borrow(),meta.length.bytes,rel,totals); }
     else { result = conn.respond(403,literal("text/plain",10),literal("Forbidden",9)); }
     file.close(); return result;

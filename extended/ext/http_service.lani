@@ -209,8 +209,14 @@ pub impl Connection {
         if (self.stats.requests >= self.options.max_requests) { self.keep_alive = false; }
         let target: core::slice::View<u8> = head.target; let q: i32 = 0; while (q < target.len() && byte(target,q) != 63) { q += 1; }
         let query: core::slice::View<u8> = literal("",0); if (q < target.len()) { query = part(target,q+1,target.len()); }
+        // Absolute-form targets (RFC 9112 3.2.2) route by their path; "*" stays as is.
+        let path: core::slice::View<u8> = part(target,0,q);
+        if (!path.is_empty() && byte(path,0) != 47 && byte(path,0) != 42) {
+            let k: i32 = 0; while (k + 2 < path.len() && !(byte(path,k) == 58 && byte(path,k+1) == 47 && byte(path,k+2) == 47)) { k += 1; }
+            if (k + 2 < path.len()) { let s: i32 = k + 3; while (s < path.len() && byte(path,s) != 47) { s += 1; } if (s < path.len()) { path = part(path,s,path.len()); } else { path = literal("/",1); } }
+        }
         self.head_only = same(head.method,literal("HEAD",4));
-        return core::result::Ok(core::option::Some(Request { method: head.method, target: target, path: part(target,0,q), query: query, version: head.version, head: head, body: body, keep_alive: self.keep_alive, chunked: chunked }));
+        return core::result::Ok(core::option::Some(Request { method: head.method, target: target, path: path, query: query, version: head.version, head: head, body: body, keep_alive: self.keep_alive, chunked: chunked }));
     }
     // Response writer: begin, header*, end_head(length), then exactly length
     // body bytes through write_body (dropped automatically for HEAD).
