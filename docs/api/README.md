@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **327 modules**, **17499 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **328 modules**, **17529 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -279,7 +279,7 @@ Inventory: **327 modules**, **17499 declaration/member entries**. Counts include
 | [ext::json_pointer](ext/json_pointer.md) | [source](../../extended/ext/json_pointer.lani#L3) | 14 | Source inventory | [extended-json-patch](../extended-json-patch.md) |
 | [ext::json_schema](ext/json_schema.md) | [source](../../extended/ext/json_schema.lani#L4) | 45 | Source inventory | [extended-json-schema](../extended-json-schema.md) |
 | [ext::json_stream](ext/json_stream.md) | [source](../../extended/ext/json_stream.lani#L5) | 163 | Source inventory | [extended-json-stream](../extended-json-stream.md) |
-| [ext::json_tree](ext/json_tree.md) | [source](../../extended/ext/json_tree.lani#L5) | 88 | Source inventory | [extended-json-patch](../extended-json-patch.md) |
+| [ext::json_tree](ext/json_tree.md) | [source](../../extended/ext/json_tree.lani#L5) | 89 | Source inventory | [extended-json-patch](../extended-json-patch.md) |
 | [ext::kv](ext/kv.md) | [source](../../extended/ext/kv.lani#L3) | 48 | Source inventory | [extended-kv](../extended-kv.md), [extended-cli-complete](../extended-cli-complete.md) |
 | [ext::lexer](ext/lexer.md) | [source](../../extended/ext/lexer.lani#L2) | 80 | Source inventory | [extended-lexer](../extended-lexer.md), [extended-lex-scan](../extended-lex-scan.md), [library-regex-workspace-plan](../library-regex-workspace-plan.md) |
 | [ext::linalg](ext/linalg.md) | [source](../../extended/ext/linalg.lani#L3) | 87 | Source inventory | [extended-linalg](../extended-linalg.md), [extended-sparse](../extended-sparse.md) |
@@ -344,6 +344,7 @@ Inventory: **327 modules**, **17499 declaration/member entries**. Counts include
 | [ext::wordiff](ext/wordiff.md) | [source](../../extended/ext/wordiff.lani#L3) | 19 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
 | [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 168 | Source inventory | [extended-xz](../extended-xz.md) |
+| [ext::yaml](ext/yaml.md) | [source](../../extended/ext/yaml.lani#L4) | 29 | Source inventory | [extended-yaml](../extended-yaml.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 
 ## Support and implementation data

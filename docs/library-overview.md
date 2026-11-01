@@ -2444,7 +2444,13 @@ RFC 6901 pointers, RFC 6902 patches and RFC 7386 merge patches to
 documents against JSON Schema 2020-12 (core, applicator and validation
 vocabularies, `pattern` through `ext::regex`, local `$ref`). It agrees with a
 Python model on 246 hand-written specification cases, 92 error and limit
-cases and 10,000 generated schema/instance pairs. [`core::float_decimal`](stdlib-float-decimal.md)
+cases and 10,000 generated schema/instance pairs.
+[`ext::yaml`](extended-yaml.md) reads YAML 1.2 (block and flow collections,
+every scalar style with chomping, anchors and aliases under an expansion
+limit, comments, multiple documents) into `ext::json_tree` with the core
+schema. It agrees with PyYAML 6.0.1 on 87 hand-written and 3,000 generated
+documents, and with hand-written expectations on 32 documents that YAML 1.1
+reads differently and 68 error and limit cases. [`core::float_decimal`](stdlib-float-decimal.md)
 formats shortest decimals with Schubfach, which is exact with no fallback, in
 about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
 before its exact big-integer path, in about 0.7 to 0.8 µs per value. It
