@@ -1,0 +1,107 @@
+// Parallel `wc`: prints "lines words bytes" for stdin (at most 64 MiB).
+// The parent reads stdin into a shared Region, queues 64 KiB jobs on a
+// bounded channel, four workers count each job and reply on a second
+// channel; the counts are summed after every reply arrives. A word starts at a non-space byte whose predecessor is a space
+// (or the input start), so jobs need no boundary alignment.
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::mem;
+import core::result;
+import std::channel;
+import std::io;
+import std::sync;
+import std::worker;
+
+const MAX_INPUT: i64 = 67108864;
+const CHUNK: i64 = 65536;
+const WORKERS: i32 = 4;
+
+fn space(byte: u8) -> bool { return byte == 32 || (byte >= 9 && byte <= 13); }
+
+// Returns (lines << 32) | words for input[start..end).
+fn count(input: [u8], start: i64, end: i64) -> u64 {
+    let lines: u64 = 0; let words: u64 = 0;
+    let previous: bool = true;
+    if (start > 0) { previous = space(input[(start - 1) as i32]); }
+    let i: i64 = start;
+    while (i < end) {
+        let byte: u8 = input[i as i32];
+        let blank: bool = space(byte);
+        if (byte == 10) { lines += 1; }
+        if (!blank && previous) { words += 1; }
+        previous = blank; i += 1;
+    }
+    return (lines << 32) | words;
+}
+
+fn work(input: [u8], length: i64, jobs: std::channel::Receiver, results: std::channel::Sender) -> i32 {
+    while (true) {
+        let job: core::result::Result<u64, std::channel::RecvError> = jobs.recv();
+        if (job.is_err()) {
+            let closed: bool = match (job.unwrap_err()) { std::channel::RecvError::Disconnected -> true, _ -> false };
+            jobs.close(); results.close();
+            if (closed) { return 0; }
+            return 3;
+        }
+        let start: i64 = (job.unwrap() as i64) * CHUNK;
+        let end: i64 = start + CHUNK;
+        if (end > length) { end = length; }
+        if (results.send(count(input, start, end)).is_err()) { return 4; }
+    }
+    return 5;
+}
+
+fn main() -> i32 {
+    let region: std::sync::Region = std::sync::map_shared(MAX_INPUT as usize + 16777216).unwrap();
+    let data: ptr = region.allocate(MAX_INPUT as usize).unwrap();
+    let length: i64 = 0;
+    while (true) {
+        let got: i32 = std::io::read_stdin(data + (length as usize), (MAX_INPUT - length) as usize);
+        if (got < 0) { std::io::eprintln("parallel_word_count: read failed"); return 2; }
+        if (got == 0) { break; }
+        length += got as i64;
+        if (length == MAX_INPUT) { std::io::eprintln("parallel_word_count: input exceeds 64 MiB"); return 2; }
+    }
+    let input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(data, length as i32);
+    let job_count: i64 = (length + CHUNK - 1) / CHUNK;
+    let jobs: std::channel::Channel = std::channel::bounded(region.borrow(), 16).unwrap();
+    let results: std::channel::Channel = std::channel::bounded(region.borrow(), 1025).unwrap();
+    let job_tx: std::channel::Sender = jobs.open_sender().unwrap();
+    let result_rx: std::channel::Receiver = results.open_receiver().unwrap();
+    let job_rx: std::channel::Receiver = jobs.open_receiver().unwrap();
+    let result_tx: std::channel::Sender = results.open_sender().unwrap();
+    let w: i32 = 1;
+    while (w < WORKERS) { jobs.open_receiver().unwrap(); results.open_sender().unwrap(); w += 1; }
+    let pool: std::worker::Pool = std::worker::pool(WORKERS).unwrap();
+    w = 0;
+    while (w < WORKERS) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        let child: bool = match (role) { std::worker::Role::Child(index) -> true, std::worker::Role::Parent(index) -> false };
+        if (child) { return std::worker::finish(work(input, length, job_rx, result_tx)); }
+        w += 1;
+    }
+    // The result channel holds every reply (at most 1024 jobs), so workers
+    // never block on it and the parent can queue all jobs before collecting.
+    let next: i64 = 0;
+    while (next < job_count) {
+        if (job_tx.send(next as u64).is_err()) { std::io::eprintln("parallel_word_count: job channel failed"); return 3; }
+        next += 1;
+    }
+    job_tx.close();
+    let lines: u64 = 0; let words: u64 = 0; let received: i64 = 0;
+    while (received < job_count) {
+        let reply: core::result::Result<u64, std::channel::RecvError> = result_rx.recv();
+        if (reply.is_err()) { std::io::eprintln("parallel_word_count: result channel failed"); return 3; }
+        let value: u64 = reply.unwrap();
+        lines += value >> 32; words += value & 4294967295; received += 1;
+    }
+    result_rx.close();
+    let summary: std::worker::Summary = pool.join_all().unwrap();
+    pool.destroy();
+    if (summary.failed != 0) { std::io::eprintln("parallel_word_count: worker failed"); return 4; }
+    region.unmap();
+    std::io::write_i32(1, lines as i32); std::io::write_text(1, " ");
+    std::io::write_i32(1, words as i32); std::io::write_text(1, " ");
+    std::io::write_i32(1, length as i32); std::io::write_newline(1);
+    return 0;
+}

@@ -189,33 +189,46 @@ pub impl Mutex {
 // notify after the sequence read, and always reacquires the mutex before
 // returning, including on TimedOut and on error after the sleep. Spurious
 // returns are possible: callers loop on their predicate.
-pub struct Condvar { sequence: ptr }
+// waiters counts sleepers registered under the associated mutex, so a
+// notifier holding that mutex can skip the wake syscall when it is zero.
+pub struct Condvar { sequence: ptr, waiters: ptr }
 pub fn condvar(region: &Region) -> core::result::Result<Condvar, Error> {
-    let at: core::result::Result<ptr, Error> = region.allocate(8);
+    let at: core::result::Result<ptr, Error> = region.allocate(16);
     if (at.is_err()) { return core::result::Err(at.unwrap_err()); }
-    return core::result::Ok(Condvar { sequence: at.unwrap() });
+    let base: ptr = at.unwrap();
+    return core::result::Ok(Condvar { sequence: base, waiters: base + 8 });
 }
 pub impl Condvar {
     pub fn borrow(&self) -> &Condvar { return self; }
     fn word(&self) -> std::atomic::Atomic32 { return std::atomic::at32(self.sequence); }
     pub fn wait(&self, held: &Mutex) -> core::result::Result<Wait, Error> {
         let seen: u32 = self.word().load(std::atomic::Load::Acquire);
+        let count: std::atomic::Atomic32 = std::atomic::at32(self.waiters);
+        count.fetch_add(1, std::atomic::Ordering::Relaxed);
         let released: core::result::Result<i32, Error> = held.unlock();
-        if (released.is_err()) { return core::result::Err(released.unwrap_err()); }
+        if (released.is_err()) { count.fetch_sub(1, std::atomic::Ordering::Relaxed); return core::result::Err(released.unwrap_err()); }
         let slept: core::result::Result<Wait, Error> = futex_wait(self.sequence, seen);
         let again: core::result::Result<i32, Error> = held.lock_contended();
         if (again.is_err()) { return core::result::Err(again.unwrap_err()); }
+        count.fetch_sub(1, std::atomic::Ordering::Relaxed);
         return slept;
     }
     pub fn wait_until(&self, held: &Mutex, deadline: Deadline) -> core::result::Result<Wait, Error> {
         let seen: u32 = self.word().load(std::atomic::Load::Acquire);
+        let count: std::atomic::Atomic32 = std::atomic::at32(self.waiters);
+        count.fetch_add(1, std::atomic::Ordering::Relaxed);
         let released: core::result::Result<i32, Error> = held.unlock();
-        if (released.is_err()) { return core::result::Err(released.unwrap_err()); }
+        if (released.is_err()) { count.fetch_sub(1, std::atomic::Ordering::Relaxed); return core::result::Err(released.unwrap_err()); }
         let slept: core::result::Result<Wait, Error> = futex_wait_until(self.sequence, seen, deadline);
         let again: core::result::Result<i32, Error> = held.lock_contended();
         if (again.is_err()) { return core::result::Err(again.unwrap_err()); }
+        count.fetch_sub(1, std::atomic::Ordering::Relaxed);
         return slept;
     }
+    // Exact only while holding the mutex the waiters use. A notifier that
+    // reads zero under that mutex and then skips notification loses no
+    // wake: any later waiter registers after the notifier's state change.
+    pub fn has_waiters(&self) -> bool { return std::atomic::at32(self.waiters).load(std::atomic::Load::Relaxed) != 0; }
     pub fn notify_one(&self) -> core::result::Result<i32, Error> {
         self.word().fetch_add(1, std::atomic::Ordering::Release);
         return futex_wake(self.sequence, 1);

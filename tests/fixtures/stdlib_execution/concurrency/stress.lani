@@ -150,50 +150,50 @@ fn barriers(region: &std::sync::Region) -> i32 {
     return 0;
 }
 
-// 6 producers x 20000 messages (sender << 32 | sequence) through capacity 64
-// to 4 consumers. Each consumer checks per-sender sequences strictly
+// P producers x M messages (sender << 32 | sequence) through a bounded
+// channel to C consumers (P <= 16). Each consumer checks per-sender sequences strictly
 // increase; shared per-sender counts and sequence sums prove no loss or
 // duplication. Consumers end on Disconnected after every producer closes.
-fn channels(region: &std::sync::Region) -> i32 {
-    let queue: std::channel::Channel = std::channel::bounded(region, 64).unwrap();
-    let counts: ptr = region.allocate(6 * 8).unwrap();
-    let sums: ptr = region.allocate(6 * 8).unwrap();
+fn channels(region: &std::sync::Region, producers: i32, consumers: i32, messages: i64, capacity: i32) -> i32 {
+    let queue: std::channel::Channel = std::channel::bounded(region, capacity).unwrap();
+    let counts: ptr = region.allocate(16 * 8).unwrap();
+    let sums: ptr = region.allocate(16 * 8).unwrap();
     let disorder: std::atomic::Atomic64 = std::atomic::at64(cell(region));
     let ends: std::atomic::Atomic64 = std::atomic::at64(cell(region));
-    let pool: std::worker::Pool = std::worker::pool(10).unwrap();
+    let pool: std::worker::Pool = std::worker::pool(producers + consumers).unwrap();
     // Register every endpoint before any worker that uses one exists. The
     // handles are identical copies; the shared counts carry the ownership.
     let tx: std::channel::Sender = queue.open_sender().unwrap();
     let rx: std::channel::Receiver = queue.open_receiver().unwrap();
     let w: i32 = 1;
-    while (w < 6) { queue.open_sender().unwrap(); w += 1; }
+    while (w < producers) { queue.open_sender().unwrap(); w += 1; }
     w = 1;
-    while (w < 4) { queue.open_receiver().unwrap(); w += 1; }
+    while (w < consumers) { queue.open_receiver().unwrap(); w += 1; }
     w = 0;
-    while (w < 10) {
-        let producer: bool = w < 6;
+    while (w < producers + consumers) {
+        let producer: bool = w < producers;
         let role: std::worker::Role = pool.spawn().unwrap();
         if (is_child(role)) {
             let me: i32 = index_of(role);
             if (producer) {
                 let k: i64 = 0;
-                while (k < 20000) {
+                while (k < messages) {
                     if (tx.send((((me as u64) << 32) | (k as u64))).is_err()) { return std::worker::finish(40); }
                     k += 1;
                 }
                 tx.close();
                 return std::worker::finish(0);
             }
-            let last: [i64; 6] = [-1; 6];
-            let local: [i64; 6] = [0; 6];
-            let local_sum: [i64; 6] = [0; 6];
+            let last: [i64; 16] = [-1; 16];
+            let local: [i64; 16] = [0; 16];
+            let local_sum: [i64; 16] = [0; 16];
             while (true) {
                 let got: core::result::Result<u64, std::channel::RecvError> = rx.recv();
                 if (got.is_err()) {
                     let closed: bool = match (got.unwrap_err()) { std::channel::RecvError::Disconnected -> true, _ -> false };
                     if (!closed) { return std::worker::finish(41); }
                     let s: i32 = 0;
-                    while (s < 6) {
+                    while (s < producers) {
                         std::atomic::at64(counts + (s as usize) * 8).fetch_add(local[s] as u64, std::atomic::Ordering::Relaxed);
                         std::atomic::at64(sums + (s as usize) * 8).fetch_add(local_sum[s] as u64, std::atomic::Ordering::Relaxed);
                         s += 1;
@@ -205,7 +205,7 @@ fn channels(region: &std::sync::Region) -> i32 {
                 let message: u64 = got.unwrap();
                 let sender: i32 = (message >> 32) as i32;
                 let sequence: i64 = (message & 4294967295) as i64;
-                if (sender < 0 || sender >= 6) { return std::worker::finish(42); }
+                if (sender < 0 || sender >= producers) { return std::worker::finish(42); }
                 if (sequence <= last[sender]) { disorder.fetch_add(1, std::atomic::Ordering::Relaxed); }
                 last[sender] = sequence; local[sender] += 1; local_sum[sender] += sequence;
             }
@@ -215,15 +215,16 @@ fn channels(region: &std::sync::Region) -> i32 {
     }
     if (!joined_clean(pool.borrow())) { return 1; }
     let total: i64 = 0; let s: i32 = 0; let exact: bool = true;
-    while (s < 6) {
+    while (s < producers) {
         let count: u64 = std::atomic::at64(counts + (s as usize) * 8).load(std::atomic::Load::SeqCst);
         let sum: u64 = std::atomic::at64(sums + (s as usize) * 8).load(std::atomic::Load::SeqCst);
-        if (count != 20000 || sum != 199990000) { exact = false; }
+        if (count != messages as u64 || sum != (messages * (messages - 1) / 2) as u64) { exact = false; }
         total += count as i64; s += 1;
     }
-    line("channel-mpmc-received", 6 * 20000, total as i32);
+    line("channel-mpmc-producers-consumers", producers, consumers);
+    line("channel-mpmc-capacity-received", capacity, total as i32);
     line("channel-fifo-violations-consumer-ends", disorder.load(std::atomic::Load::SeqCst) as i32, ends.load(std::atomic::Load::SeqCst) as i32);
-    if (!exact || total != 120000 || disorder.load(std::atomic::Load::SeqCst) != 0 || ends.load(std::atomic::Load::SeqCst) != 4) { return 2; }
+    if (!exact || total != (producers as i64) * messages || disorder.load(std::atomic::Load::SeqCst) != 0 || ends.load(std::atomic::Load::SeqCst) != consumers as u64) { return 2; }
     if (queue.sender_count() != 0 || queue.receiver_count() != 0 || queue.len() != 0) { return 3; }
     return 0;
 }
@@ -274,7 +275,9 @@ fn main() -> i32 {
     if (status == 0) { status = mutexes(region.borrow()); if (status != 0) { status += 10; } }
     if (status == 0) { status = lazies(region.borrow()); if (status != 0) { status += 20; } }
     if (status == 0) { status = barriers(region.borrow()); if (status != 0) { status += 30; } }
-    if (status == 0) { status = channels(region.borrow()); if (status != 0) { status += 40; } }
+    if (status == 0) { status = channels(region.borrow(), 6, 4, 20000, 64); if (status != 0) { status += 40; } }
+    if (status == 0) { status = channels(region.borrow(), 16, 8, 5000, 1); if (status != 0) { status += 60; } }
+    if (status == 0) { status = channels(region.borrow(), 1, 12, 50000, 7); if (status != 0) { status += 70; } }
     if (status == 0) { status = edges(region.borrow()); if (status != 0) { status += 50; } }
     if (region.unmap().is_err() && status == 0) { status = 99; }
     return status;

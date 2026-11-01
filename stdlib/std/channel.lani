@@ -81,8 +81,10 @@ pub impl Channel {
                 let tail: u64 = (get(self.head()) + length) % self.capacity;
                 set(self.slots + (tail as usize) * 8, value);
                 set(self.length(), length + 1);
+                let sleeping: bool = self.readable.has_waiters();
                 let unlocked: core::result::Result<i32, std::sync::Error> = self.lock.unlock();
                 if (unlocked.is_err()) { return core::result::Err(SendError::Sync(unlocked.unwrap_err())); }
+                if (!sleeping) { return core::result::Ok(0); }
                 let woke: core::result::Result<i32, std::sync::Error> = self.readable.notify_one();
                 if (woke.is_err()) { return core::result::Err(SendError::Sync(woke.unwrap_err())); }
                 return core::result::Ok(0);
@@ -106,8 +108,10 @@ pub impl Channel {
                 let value: u64 = get(self.slots + (head as usize) * 8);
                 set(self.head(), (head + 1) % self.capacity);
                 set(self.length(), length - 1);
+                let sleeping: bool = self.writable.has_waiters();
                 let unlocked: core::result::Result<i32, std::sync::Error> = self.lock.unlock();
                 if (unlocked.is_err()) { return core::result::Err(RecvError::Sync(unlocked.unwrap_err())); }
+                if (!sleeping) { return core::result::Ok(value); }
                 let woke: core::result::Result<i32, std::sync::Error> = self.writable.notify_one();
                 if (woke.is_err()) { return core::result::Err(RecvError::Sync(woke.unwrap_err())); }
                 return core::result::Ok(value);
