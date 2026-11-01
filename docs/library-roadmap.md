@@ -1051,14 +1051,6 @@ the rest of the family scope above stays open.
   `tests/stdlib_ordered_navigation_execution.rs` (four negative fixtures).
   The library APIs and their bounds are unaffected; no library workaround is
   applied.
-- **A user function named `print` is replaced by the built-in i32 printer.**
-  `fn print(value: u64) -> i32 { return 7; }` called with 4,534,056,964
-  prints `239089668` (the low 32 bits as i32) and returns 10, the built-in's
-  byte count; the user body never runs and no redefinition diagnostic is
-  given. Reproduction:
-  `tests/fixtures/compiler_defects/user_fn_print_replaced_by_builtin.lani`
-  (expected exit 7 with no output). Workaround: use another name; methods
-  named print are unaffected. `lru_scale.lani` renamed its printer.
 
 ## Current work
 
@@ -1068,9 +1060,17 @@ with heapsort as the worst-case fallback, for `sort_unstable_by`,
 galloping, `sort_stable_by`/`sort_stable`, over caller scratch. A 1,659-case
 model checks both against Python `sorted` on 19 patterns and McIlroy's
 adversary, and bounds and records their comparison counts. Native timings at
-100,000 keys are recorded next to the previous heapsort. A user function
-named `print` is replaced by the built-in i32 printer; see the known compiler
-issues.
+100,000 keys are recorded next to the previous heapsort.
+
+Language intrinsics (`print`, `assert`, `print_i32`, the `core::mem` pointer
+and slice intrinsics) now act as an implicit prelude: a function that module
+path resolution finds for a call (local, imported or qualified) shadows the
+intrinsic of the same name. Previously such a user function was silently
+replaced by the intrinsic; for example a u64 printer named `print` printed the
+low 32 bits as i32. Unresolved names keep their intrinsic meaning, so
+`std::io::print_i32` now runs its library body, which calls `print`. The fix
+is in `shaders/type_checker/calls/02c_intrinsics.slang`; the two
+`tests/codegen_x86.rs` intrinsic-shadowing tests are its regressions.
 
 Inline fixed-capacity containers and an LRU cache follow ordered navigation.
 `core::ring::Ring<T, N>` is an allocation-free ring buffer with O(1) pushes and
