@@ -47,8 +47,8 @@ fn base256(header: core::slice::View<u8>, start: i32, width: i32, maximum: u64) 
     while (index < start+width) { if (value > (maximum-(byte(header,index) as u64))/256) { return core::result::Err(Error::NumberOverflow); } value = value*256+(byte(header,index) as u64); index += 1; }
     return core::result::Ok(value);
 }
-fn number_in(header: core::slice::View<u8>, start: i32, width: i32, maximum: u64, gnu: bool) -> core::result::Result<u64,Error> {
-    if (gnu && (byte(header,start) & 128) != 0) { return base256(header,start,width,maximum); } return number(header,start,width,maximum);
+fn number_in(header: core::slice::View<u8>, start: i32, width: i32, octal_maximum: u64, base256_maximum: u64, gnu: bool) -> core::result::Result<u64,Error> {
+    if (gnu && (byte(header,start) & 128) != 0) { return base256(header,start,width,base256_maximum); } return number(header,start,width,octal_maximum);
 }
 fn number(header: core::slice::View<u8>, start: i32, width: i32, maximum: u64) -> core::result::Result<u64,Error> {
     if ((byte(header,start) & 128) != 0) { return core::result::Err(Error::UnsupportedFormat); }
@@ -133,13 +133,13 @@ pub impl Reader {
         if (core::result::is_err(link)) { return core::result::Err(core::result::unwrap_err(link)); }
         if (core::result::is_err(uname)) { return core::result::Err(core::result::unwrap_err(uname)); }
         if (core::result::is_err(gname)) { return core::result::Err(core::result::unwrap_err(gname)); }
-        let size: core::result::Result<u64,Error> = number_in(header,124,12,8589934591,gnu);
-        let mode: core::result::Result<u64,Error> = number_in(header,100,8,4095,gnu);
-        let uid: core::result::Result<u64,Error> = number_in(header,108,8,4294967295,gnu);
-        let gid: core::result::Result<u64,Error> = number_in(header,116,8,4294967295,gnu);
-        let mtime: core::result::Result<u64,Error> = number_in(header,136,12,18446744073709551615,gnu);
-        let major: core::result::Result<u64,Error> = number_in(header,329,8,2097151,gnu);
-        let minor: core::result::Result<u64,Error> = number_in(header,337,8,2097151,gnu);
+        let size: core::result::Result<u64,Error> = number_in(header,124,12,8589934591,8589934591,gnu);
+        let mode: core::result::Result<u64,Error> = number_in(header,100,8,4095,4095,gnu);
+        let uid: core::result::Result<u64,Error> = number_in(header,108,8,2097151,4294967295,gnu);
+        let gid: core::result::Result<u64,Error> = number_in(header,116,8,2097151,4294967295,gnu);
+        let mtime: core::result::Result<u64,Error> = number_in(header,136,12,18446744073709551615,18446744073709551615,gnu);
+        let major: core::result::Result<u64,Error> = number_in(header,329,8,2097151,2097151,gnu);
+        let minor: core::result::Result<u64,Error> = number_in(header,337,8,2097151,2097151,gnu);
         if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); }
         if (core::result::is_err(mode)) { return core::result::Err(core::result::unwrap_err(mode)); }
         if (core::result::is_err(uid)) { return core::result::Err(core::result::unwrap_err(uid)); }
