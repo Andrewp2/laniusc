@@ -827,14 +827,16 @@ theorem mapRawNominalSlice_cases {P : Core.Program} {st : State} {element : Core
 
 /-- Core's `slice_from_raw_parts` of evaluated operands completes or traps undefined. -/
 theorem sliceFrom_cases {P : Core.Program} {k : Nat} {st : State} {element : SrcType}
-    (kind : element = .i32 ∨ (∃ sid fields, element = .struct sid fields) ∨
+    (kind : element = .i32 ∨ element = .uint .uint8 ∨ (∃ sid fields, element = .struct sid fields) ∨
       ∃ eid variants, element = .enum eid variants) {p l : Core.Expr} {a : Nat} {n : Int}
     (pRun : evalExpr k P st p = .done (.pointer a) st) (lRun : evalExpr k P st l = .done (.signed .i32 n) st) :
     (∃ v st1, evalExpr (k + 1) P st (element.sliceFrom p l) = .done v st1) ∨
       ∃ r, evalExpr (k + 1) P st (element.sliceFrom p l) = .trapped r st ∧ undefinedTrap r = true := by
-  rcases kind with rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
+  rcases kind with rfl | rfl | ⟨sid, fields, rfl⟩ | ⟨eid, variants, rfl⟩
   · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
     exact mapRawI32Slice_cases rfl
+  · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
+    exact mapRawNominalSlice_cases rfl
   · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
     exact mapRawNominalSlice_cases rfl
   · simp only [SrcType.sliceFrom, evalExpr, pRun, lRun]
@@ -855,7 +857,11 @@ theorem rawSliceElementAddress_undef (P : Core.Program) (element : Core.Ty) (a i
 theorem readRawSliceIndex_undef {P : Core.Program} {st : State} {element : Core.Ty} {a len pos : Nat}
     (lt : pos < len) : UndefErr (Semantics.readRawSliceIndex P st element a len pos) := by
   simp only [Semantics.readRawSliceIndex, if_neg (Nat.not_le.mpr lt)]
-  exact UndefErr.bind (rawSliceElementAddress_undef P element a pos) fun _ => readNativeValue_undef _ _ _ _ _
+  refine UndefErr.bind (rawSliceElementAddress_undef P element a pos) fun _ => ?_
+  simp only [Semantics.readRawElement]
+  split
+  · exact UndefErr.bind (loadNatLE_undef _ _ _) fun _ => UndefErr.pure _
+  · exact readNativeValue_undef _ _ _ _ _
 
 /-- Core's read of `slice[idx]` from a raw slice local, the index in bounds:
 the element, or an undefined trap. -/
@@ -988,14 +994,15 @@ theorem setIndex_outcome {P : Core.Program} {k : Nat} {st : State} {slice : Nat}
   | ok at_ =>
     simp only [located, eRun, Semantics.evalAssignValue, Semantics.assignOpBinary?,
       Semantics.writeResolvedPlaceNative] at hout
-    cases stored : Semantics.writeNativeValue NativeLayout.maxDepth P st st.heap element at_ right with
+    generalize stored : Semantics.writeRawNative P st _ element at_ right = w at hout
+    cases w with
     | error r =>
-      simp only [stored, bind, Except.bind] at hout
-      exact .inr ⟨r, hout.symm, writeNativeValue_undef _ _ _ _ _ _ _ views r stored⟩
+      simp only [bind, Except.bind] at hout
+      exact .inr ⟨r, hout.symm, writeRawNative_undef _ _ _ _ _ _ views r stored⟩
     | ok heap =>
-      simp only [stored, bind, Except.bind, pure, Except.pure, Semantics.syncI32ViewsFromHeap, views,
+      simp only [bind, Except.bind, pure, Except.pure, Semantics.syncI32ViewsFromHeap, views,
         Semantics.syncI32ViewsFromHeapFrom, ite_self] at hout
-      exact .inl ⟨_, hout.symm, writeNativeValue_next _ stored⟩
+      exact .inl ⟨_, hout.symm, writeRawNative_next stored⟩
 
 end Indexing
 
@@ -1954,7 +1961,7 @@ theorem stops_letSlice {id : Nat} {element : SrcType} {pointer length : SrcExpr}
 
 
 theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr} {body : SrcStmt}
-    (ih : SrcStops sp mp n body) {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
+    (tyI32 : ty.isI32 = true) (ih : SrcStops sp mp n body) {hp : Heap} {ret : SrcType} {scope : List Binding} {next : Nat} {stmt : Stmt}
     {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
     (ok : lowerLoadWord next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
       (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
@@ -1984,7 +1991,7 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
   · simp at addressOk
   rename_i i indexOk
   split at addressOk
-  case isFalse => simp at addressOk
+  case isFalse notI32 => exact absurd tyI32 notI32
   rename_i isI32
   cases ty <;> simp [SrcType.isI32] at isI32
   simp only [Option.some.injEq] at addressOk
@@ -2026,7 +2033,8 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
     obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
     simp only [pure, Except.pure, Except.ok.injEq] at eltOk
     subst eltOk
-    simp only [NativeLayout.maxDepth, Semantics.readNativeValue] at read
+    simp only [Semantics.readRawElement, Semantics.isByte, Bool.false_eq_true, ↓reduceIte, NativeLayout.maxDepth,
+      Semantics.readNativeValue] at read
     obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok read
     simp only [pure, Except.pure, Except.ok.injEq] at wrapped
     subst wrapped
@@ -2056,6 +2064,108 @@ theorem stops_letIndex_i32 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcE
           exact i32_load_holds (by simpa using lt32)))
         hc within (fails.letBody valueRun)
     exact ⟨_, Stops.after (.loadWord (depth := 0) (Nat.le_trans room hc.topped)) stops⟩
+  · have := fails (fi + 2 + 1)
+    simp only [execStmt, trapRun, Failing] at this
+    exact (trap_within this undefined within).elim
+
+/-- A failing `let x: u8 = slice[index]` of a byte view stops in the body. -/
+theorem stops_letIndex_u8 {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr} {body : SrcStmt}
+    (isU8 : ty.isUint .uint8 = true) (ih : SrcStops sp mp n body) {hp : Heap} {ret : SrcType}
+    {scope : List Binding} {next : Nat} {stmt : Stmt}
+    {frame : Nat → Nat} {base : Nat} {st : State} {env : Env}
+    (ok : lowerLoad next (lowerElement (lookup scope slice) ty (lowerIndex scope index))
+      (body.lower (sigs sp.funcs) sp.decls ret (⟨id, next, ty⟩ :: scope) (next + ty.size)) = some stmt)
+    (corr : Corr scope frame st env) (fr : Layout scope frame base next) (fresh : st.Fresh)
+    (le : base ≤ st.nextCell) (hc : HeapCorr st.heap st.world hp) (within : st.heap.nextAddress ≤ hp.limit)
+    (fails : Fails sp hp.limit st (SrcStmt.letIndex id ty slice index body).toCore) :
+    ∃ d, Stops mp d env hp (checkThen next (guardAnd (index.guard scope) (indexGuard scope slice index)) stmt) n := by
+  have tyEq := SrcType.eq_of_isUint isU8
+  subst tyEq
+  simp only [lowerLoad] at ok
+  split at ok
+  · simp at ok
+  rename_i a addressOk
+  split at ok
+  · simp at ok
+  rename_i bstmt bodyOk
+  simp only [Option.some.injEq] at ok
+  subst ok
+  simp only [lowerElement] at addressOk
+  split at addressOk
+  · simp at addressOk
+  rename_i b found
+  split at addressOk
+  case isFalse => simp at addressOk
+  rename_i same
+  have bty := SrcType.same_eq same
+  simp only [elementAddress, bty, elementOf] at addressOk
+  split at addressOk
+  · simp at addressOk
+  rename_i i indexOk
+  simp [SrcType.isI32, SrcType.isUint] at addressOk
+  subst addressOk
+  simp only [lowerIndex] at indexOk
+  split at indexOk
+  · simp at indexOk
+  rename_i t indexLowered
+  simp only [indexOf] at indexOk
+  split at indexOk
+  case isFalse => simp at indexOk
+  rename_i kind
+  simp only [Option.some.injEq] at indexOk
+  subst indexOk
+  refine Stops.checked fun g => ?_
+  obtain ⟨gi, gb⟩ := guardAnd_ne g
+  obtain ⟨w0, localRun0, holdsW⟩ := corr.local found 0 sp.toCore
+  rw [bty] at holdsW
+  cases holdsW with
+  | @slice _ len _ _ lenSlot lenSmall =>
+  obtain ⟨fi, iv, indexRun⟩ := index.progress corr (SrcProgram.target_toCore sp) indexLowered gi
+  obtain ⟨-, holdsI⟩ := index.lower_sound corr (SrcProgram.target_toCore sp) indexLowered indexRun
+  have inBounds := indexGuard_ne found (x := t.expr) (by simp [lowerIndex, indexLowered, indexOf, kind]) gb
+  rw [lenSlot] at inBounds
+  have posOk := index_ok kind holdsI (by omega)
+  obtain ⟨w', localRun, -⟩ := corr.local found fi sp.toCore
+  have same' := value_after localRun0 (Nat.le_add_left 1 fi)
+  rw [localRun] at same'
+  simp only [Semantics.Outcome.done.injEq] at same'
+  obtain ⟨rfl, -⟩ := same'
+  have indexRun' := value_after indexRun (Nat.le_succ fi)
+  simp only [SrcStmt.toCore] at fails
+  rcases index_outcome localRun indexRun' posOk inBounds with ⟨v, valueRun, read⟩ | ⟨r, trapRun, undefined⟩
+  · simp only [Semantics.readRawSliceIndex] at read
+    split at read
+    · simp at read
+    simp only [Semantics.rawSliceElementAddress?, SrcType.toCore, UintTy.toCore] at read
+    obtain ⟨elt, eltOk, read⟩ := except_bind_ok read
+    simp only [pure, Except.pure, Except.ok.injEq] at eltOk
+    subst eltOk
+    simp only [Semantics.readRawElement, Semantics.isByte, ↓reduceIte] at read
+    obtain ⟨bits, loaded, wrapped⟩ := except_bind_ok read
+    simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+    subst wrapped
+    obtain ⟨rfl, inside⟩ := hc.loadNatLE loaded
+    have inside := inside (by decide)
+    have tail := within
+    have small := hc.small
+    have address : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat =
+        (env b.slot).toNat + (t.expr.eval env).toNat := by
+      simp only [Expr.eval, Word.apply, BinOp.apply, BitVec.toNat_add]
+      rw [Nat.mod_eq_of_lt (by addr_omega)]
+    have room : ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat < hp.limit := by
+      rw [address]; addr_omega
+    have lt8 := (hp.bytes ((env b.slot).toNat + (t.expr.eval env).toNat)).toNat_lt
+    obtain ⟨d, stops⟩ := let_stops ih (ty := .uint .uint8)
+        (env' := env.set next (BitVec.ofNat 64 (hp.bytes
+          ((Expr.binary Word.u64 BinOp.add (Expr.var b.slot) t.expr).eval env).toNat).toNat))
+        (hp := hp) (by simpa [SrcType.size] using bodyOk) corr fr fresh le Nat.one_pos
+        (fr.agree fun j below => by simp only [Env.set]; rw [if_neg (by omega)])
+        (.uint (by
+          simp only [SrcType.Holds, Env.set, ↓reduceIte, address, BitVec.toNat_ofNat, UintTy.toCore,
+            UintTy.width, Heap.readLE]
+          exact ⟨by rw [Nat.mod_eq_of_lt (by omega)]; simp, by rw [Nat.mod_eq_of_lt (by omega)]; exact lt8⟩))
+        hc within (fails.letBody valueRun)
+    exact ⟨_, Stops.after (.loadByte (depth := 0) (Nat.lt_of_lt_of_le room hc.topped)) stops⟩
   · have := fails (fi + 2 + 1)
     simp only [execStmt, trapRun, Failing] at this
     exact (trap_within this undefined within).elim
@@ -2148,8 +2258,12 @@ theorem stops_letIndex {id : Nat} {ty : SrcType} {slice : Nat} {index : SrcExpr}
   obtain ⟨stmt, ok, rfl⟩ := ok
   simp only [lowerLetIndex] at ok
   split at ok
-  · exact stops_letIndex_i32 ih ok corr fr fresh le hc within fails
-  · exact stops_letIndex_word ih ok corr fr fresh le hc within fails
+  · rename_i tyI32
+    exact stops_letIndex_i32 tyI32 ih ok corr fr fresh le hc within fails
+  · split at ok
+    · rename_i isU8
+      exact stops_letIndex_u8 isU8 ih ok corr fr fresh le hc within fails
+    · exact stops_letIndex_word ih ok corr fr fresh le hc within fails
 
 
 /-- A failing `slice[index] = value` whose operands are checked is impossible. -/
@@ -2231,6 +2345,20 @@ theorem stops_setIndex {slice : Nat} {index value : SrcExpr}
     exact setIndex_fails corr fresh within found bty indexOk gi gb
       (lowerAs_progress corr (SrcProgram.target_toCore sp) vOk gv) fails
   · split at ok
+    · unfold storeByteElement at ok
+      split at ok
+      · simp at ok
+      rename_i a addrOk
+      split at ok
+      · simp at ok
+      rename_i xv vOk
+      simp only [elementAddress, bty, elementOf] at addrOk
+      split at addrOk
+      · simp at addrOk
+      rename_i i indexOk
+      exact setIndex_fails corr fresh within found bty indexOk gi gb
+        (lowerAs_progress corr (SrcProgram.target_toCore sp) vOk gv) fails
+    split at ok
     · unfold storeWordElement at ok
       split at ok
       · simp at ok

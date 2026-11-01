@@ -13,14 +13,14 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_get_of_mini_selfhost_List_mini_selfhost_SrcType : FnOk prog prims info (349, ⟨2, [0], 0⟩) :=
+theorem ok_length_of_mini_selfhost_List_mini_selfhost_SrcType : FnOk prog prims info (349, ⟨2, [0], 0⟩) :=
+  fnOk_of fn_length_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel)
+
+theorem ok_get_of_mini_selfhost_List_mini_selfhost_SrcType : FnOk prog prims info (350, ⟨2, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel)
 
-theorem ok_SrcType_is_bool : FnOk prog prims info (350, ⟨0, [], 0⟩) :=
+theorem ok_SrcType_is_bool : FnOk prog prims info (351, ⟨0, [], 0⟩) :=
   fnOk_of fn_SrcType_is_bool (by decide +kernel)
-
-theorem ok_SrcType_is_uint : FnOk prog prims info (351, ⟨1, [], 0⟩) :=
-  fnOk_of fn_SrcType_is_uint (by decide +kernel)
 
 theorem ok_types_same : FnOk prog prims info (352, ⟨2, [0], 0⟩) :=
   fnOk_of fn_types_same (by decide +kernel)
@@ -134,6 +134,6 @@ theorem ok_no_primitive_alias : FnOk prog prims info (390, ⟨7, [0], 0⟩) :=
   fnOk_of fn_no_primitive_alias (by decide +kernel)
 
 theorem chunk7 : AllFns prog prims info part7 :=
-  ⟨ok_get_of_mini_selfhost_List_mini_selfhost_SrcType, ok_SrcType_is_bool, ok_SrcType_is_uint, ok_types_same, ok_variants_same, ok_SrcType_is_ptr, ok_SrcType_is_isize, ok_SrcType_is_char, ok_SrcType_is_float, ok_SrcType_is_sint, ok_SrcEff_types, ok_concat_of_mini_selfhost_SrcType, ok_declare_struct_in, ok_struct_fields, ok_declare_types_after, ok_declare_enum_in, ok_enum_variants, ok_declare_variants_after, ok_lx_raw, ok_lx_symbol_rules, ok_lx_tokens, ok_lx_ranges, ok_lx_filter, ok_lx_keyword_rules, ok_cons_of_usize, ok_attach_term, ok_attach_nonterm, ok_is_empty_usize, ok_no_tokens, ok_items_cons, ok_no_decls, ok_collect_front, ok_item_decls, ok_p_module, ok_path_spellings, ok_p_item_pub, ok_distinct_modules, ok_modules_distinct_names, ok_no_primitive, ok_no_primitive_alias, trivial⟩
+  ⟨ok_length_of_mini_selfhost_List_mini_selfhost_SrcType, ok_get_of_mini_selfhost_List_mini_selfhost_SrcType, ok_SrcType_is_bool, ok_types_same, ok_variants_same, ok_SrcType_is_ptr, ok_SrcType_is_isize, ok_SrcType_is_char, ok_SrcType_is_float, ok_SrcType_is_sint, ok_SrcEff_types, ok_concat_of_mini_selfhost_SrcType, ok_declare_struct_in, ok_struct_fields, ok_declare_types_after, ok_declare_enum_in, ok_enum_variants, ok_declare_variants_after, ok_lx_raw, ok_lx_symbol_rules, ok_lx_tokens, ok_lx_ranges, ok_lx_filter, ok_lx_keyword_rules, ok_cons_of_usize, ok_attach_term, ok_attach_nonterm, ok_is_empty_usize, ok_no_tokens, ok_items_cons, ok_no_decls, ok_collect_front, ok_item_decls, ok_p_module, ok_path_spellings, ok_p_item_pub, ok_distinct_modules, ok_modules_distinct_names, ok_no_primitive, ok_no_primitive_alias, trivial⟩
 
 end Lanius.Faithful.SelfTerm

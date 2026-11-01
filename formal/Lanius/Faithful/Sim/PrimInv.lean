@@ -112,7 +112,7 @@ theorem place_index_inv {b : Core.Place} {i : Core.Expr} {r : ResolvedPlace}
     ∃ j rb s1, k = j + 1 ∧ evalPlace j P st .read b = .done rb s1 ∧
       ∀ el a len, rb.value = some (.rawSlice el a len) → ∃ iv pos base, evalExpr j P s1 i = .done iv st' ∧
         Semantics.integerIndex iv = .ok pos ∧ pos < len ∧ Semantics.rawSliceElementAddress? P el a pos = .ok base ∧
-        r.raw = some (el, base) := by
+        r.raw = some (el, base) ∧ r.rawByte = Semantics.isByte el := by
   cases k with
   | zero => simp [evalPlace] at h
   | succ j =>
@@ -132,7 +132,7 @@ theorem place_index_inv {b : Core.Place} {i : Core.Expr} {r : ResolvedPlace}
             · rename_i lt _ base baseOk
               simp only [Semantics.Outcome.done.injEq] at h
               obtain ⟨rfl, rfl⟩ := h
-              exact ⟨iv, pos, base, indexRun, posOk, lt, baseOk, rfl⟩
+              exact ⟨iv, pos, base, indexRun, posOk, lt, baseOk, rfl, rfl⟩
           · simp at h
       all_goals simp at h
     all_goals simp at h

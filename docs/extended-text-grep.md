@@ -153,7 +153,8 @@ scalars, CR, NUL, invalid UTF-8, records over 64 KiB, `-v`, `-n`, `-c`, small
 records, which brings in dense literal hits and long line scans. Seeds
 20261031, 1 and 2 gave 1,500/1,500 identical runs, both before and after the
 output rework (`text-grep-output-receipt.log`) and after the skip and numbered
-blocks (`text-grep-numbers-receipt.log`, tiny build included). A build with a 3-state DFA
+blocks (`text-grep-numbers-receipt.log`) and after the counting scan
+(`text-grep-count-receipt.log`), tiny build included. A build with a 3-state DFA
 cache and 2 partials gave 800/800 on seeds 20261031 and 7, which forces the
 undecided-record path (log `target/claude-work/s3/text-grep-scan-receipt.log`).
 
@@ -263,6 +264,19 @@ come from a run at load 17–19, where a repeat of `-v -n` measured 531 / 532 /
 626 / 600 ms against GNU's 196 / 251 / 287 / 298. `-v -n` is 1.3–2.1x GNU at
 the lower load. Every row's output is byte-identical to GNU's.
 
+With `--count`, matching records no longer stop the scan. Without a literal,
+or after a dense-hit switch, `Dfa.count_lines` counts matches across the whole
+region, skips from each match to the next LF, and returns only for an
+undecided record. For a pure literal, the region gets one validating line
+count, and then only the hits are found, each followed by a jump to its LF.
+`-v -c` uses the same counts, as records minus matches. The gain is small.
+`the -c` went from 157 to 123 ms at load 12–14 (GNU 53). The rest of the
+time is `core::search::find` per hit and the DFA byte loop, not line
+splitting: `[0-9]+$` stays at 145 ms (GNU 39), `\bResult<` at 75 (GNU 15)
+and `a.c` at 298 (GNU 70). For `a.c`, the start-state skip stops at every
+`a`. Log: `target/claude-work/s3/grep-count-timings.log`; that run was at load
+17, so it is noisier.
+
 The no-match scan is now close to the cost of `core::search` itself. A
 program that only reads the corpus and calls `core::search::find` in a loop
 takes 30 ms for `zzzz` and 100–110 ms for `core::result::Result`; the rest of
@@ -357,7 +371,7 @@ mappings. The fixed output area saves two compared with the growing
 buffer it replaced. Before the fix above,
 failures 8 through 21 of the DFA pattern were silently absorbed: the search
 fell back to the VM and exited 0. Log:
-`target/claude-work/s3/text-grep-faults-numbers-receipt.log`. The `(?:a|é)+` row goes through the line scan.
+`target/claude-work/s3/text-grep-faults-count-receipt.log`. The `(?:a|é)+` row goes through the line scan.
 
 ```sh
 W=target/claude-work/s3

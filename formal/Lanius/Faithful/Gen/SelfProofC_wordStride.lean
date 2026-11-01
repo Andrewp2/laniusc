@@ -117,8 +117,9 @@ theorem proof_eval_stride {prog : SrcProgram} {prims : Prims} {ix_eval_stride ix
   simp only [src_eval_stride] at h
   faithful [Lanius.Mini.evalStride]
 
-theorem proof_eval_stride_of {prog : SrcProgram} {prims : Prims} {ix_eval_stride_of ix_SrcType_is_i32 ix_eval_word_stride : Nat} (fn : prog.funcs[ix_eval_stride_of]? = some (src_eval_stride_of ix_SrcType_is_i32 ix_eval_word_stride)) (np : prims.isPrim ix_eval_stride_of = false)
+theorem proof_eval_stride_of {prog : SrcProgram} {prims : Prims} {ix_eval_stride_of ix_SrcType_is_i32 ix_SrcType_is_uint ix_eval_word_stride : Nat} (fn : prog.funcs[ix_eval_stride_of]? = some (src_eval_stride_of ix_SrcType_is_i32 ix_SrcType_is_uint ix_eval_word_stride)) (np : prims.isPrim ix_eval_stride_of = false)
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
+    (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n))
     (ext_eval_word_stride : Certified (∀ {n : Nat}, Stmt_eval_word_stride prog prims ix_eval_word_stride n)) {n : Nat} :
     Stmt_eval_stride_of prog prims ix_eval_stride_of n := by
   intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2

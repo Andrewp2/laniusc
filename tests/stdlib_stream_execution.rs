@@ -99,6 +99,30 @@ fn native_descriptors_preserve_errors_strides_and_offsets() {
 
 #[test]
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn native_descriptors_transfer_packed_views_in_place() {
+    use std::os::unix::fs::PermissionsExt;
+    let bytes = compile("tests/fixtures/stdlib_foundation/std_stream_packed.lani");
+    let executable = common::TempArtifact::new("laniusc_stream", "packed", None);
+    executable.write_bytes(&bytes);
+    std::fs::set_permissions(executable.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let input = common::TempArtifact::new("laniusc_stream", "input", None);
+    let data: Vec<u8> = (0..100_000usize)
+        .map(|index| (index * 37 + index / 256) as u8)
+        .collect();
+    input.write_bytes(&data);
+    let output = common::short_process_output_with_timeout(
+        "packed descriptor transfers",
+        std::process::Command::new(executable.path()).stdin(std::process::Stdio::from(
+            std::fs::File::open(input.path()).unwrap(),
+        )),
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, data);
+    assert!(output.stderr.is_empty(), "{output:?}");
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn native_stream_copy_executes_binary_data_and_host_failures() {
     use std::os::unix::fs::PermissionsExt;
     let bytes = compile("sample_programs/stream_copy.lani");

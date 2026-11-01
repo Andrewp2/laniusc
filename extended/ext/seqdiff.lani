@@ -1,6 +1,8 @@
 // Generic sequence diff: linear-space Myers, patience, hunks. See docs/extended-seqdiff.md.
 module ext::seqdiff;
 import alloc::vec;
+import alloc::io;
+import core::io;
 import core::slice;
 import core::option;
 import core::result;
@@ -19,8 +21,9 @@ const SD_RANKS: u64 = 72623859790382856;
 pub struct Limits { max_items: i32, max_work: u64 }
 pub fn default_limits() -> Limits { return Limits { max_items: 4000000, max_work: 4000000000 }; }
 pub enum Error { InvalidLimits, Bounds, ItemLimit, WorkLimit, AllocationFailed }
-// Xdiff reproduces git's default line and word alignment (see xdiff_classes).
-pub enum Algorithm { Myers, Patience, Xdiff }
+// Xdiff reproduces git's default line and word alignment (see xdiff_classes);
+// Histogram is git's --histogram (see histogram_classes).
+pub enum Algorithm { Myers, Patience, Xdiff, Histogram }
 // kind 0 equal, 1 delete (before advances), 2 insert (after advances).
 pub struct Edit { kind: i32, before: i32, after: i32 }
 pub struct Script { steps: alloc::vec::Vec<Edit>, cost: i32, before_len: i32, after_len: i32 }
@@ -85,27 +88,6 @@ fn sd_hash_src(s: &Src, at: i32, len: i32) -> u32 {
     }
     let x: u64 = (h ^ (len as u64)) * k; x = x ^ (x >> 32); return ((x * k) >> 32) as u32;
 }
-// Whether len bytes at offset at of one word source equal those at offset r
-// of another (sources as in Src: descending words, then the tail word).
-fn sd_same_at(words: [u64], nw: i32, tail: u64, at: i32, ow: [u64], onw: i32, otail: u64, r: i32, len: i32) -> bool {
-    let all: u64 = SD_ALL;
-    let i1: i32 = at >> 3; let s1: u64 = ((at & 7) * 8) as u64; let i2: i32 = r >> 3; let s2: u64 = ((r & 7) * 8) as u64;
-    let lo1: u64 = 0; if (i1 < nw) { lo1 = words[nw-1-i1]; } else { if (i1 == nw) { lo1 = tail; } }
-    let lo2: u64 = 0; if (i2 < onw) { lo2 = ow[onw-1-i2]; } else { if (i2 == onw) { lo2 = otail; } }
-    let rem: i32 = len;
-    while (rem > 0) {
-        i1 += 1; i2 += 1;
-        let hi1: u64 = 0; if (i1 < nw) { hi1 = words[nw-1-i1]; } else { if (i1 == nw) { hi1 = tail; } }
-        let hi2: u64 = 0; if (i2 < onw) { hi2 = ow[onw-1-i2]; } else { if (i2 == onw) { hi2 = otail; } }
-        let w1: u64 = lo1; if (s1 != 0) { w1 = (lo1 >> s1) | (hi1 << (64 - s1)); }
-        let w2: u64 = lo2; if (s2 != 0) { w2 = (lo2 >> s2) | (hi2 << (64 - s2)); }
-        let d: u64 = w1 ^ w2;
-        if (rem < 8) { d = d & (all >> ((64 - rem * 8) as u64)); rem = 0; } else { rem -= 8; }
-        if (d != 0) { return false; }
-        lo1 = hi1; lo2 = hi2;
-    }
-    return true;
-}
 // Index of the line starting at offset off (starts ascending, count lines).
 fn sd_line_at(starts: [i32], count: i32, off: i32) -> i32 {
     let lo: i32 = 0; let hi: i32 = count;
@@ -137,24 +119,37 @@ fn sd_limits_ok(limits: Limits) -> bool { return limits.max_items >= 0; }
 // Hash-consing table for split_classify: open addressing over class ids;
 // per class its hash, its first line's side (0, 1 or 2), offset and length.
 // Grows by doubling; the slot table rehashes from stored hashes.
-struct Tab { slots: alloc::vec::Vec<i32>, mask: i32, hs: alloc::vec::Vec<i32>, at: alloc::vec::Vec<i32>, len: alloc::vec::Vec<i32>, sd: alloc::vec::Vec<i32>, cap: i32, count: i32 }
+// All arrays live in one raw buffer: slots (filled with -1 eight bytes at a
+// time) and one four-int record per class (hash, offset, length, side),
+// written before it is read; a probe touches one record, not four arrays.
+struct Tab { slots: [i32], mask: i32, rec: [i32], cap: i32, count: i32, mem: alloc::io::Buffer }
 impl Tab { fn borrow(&self) -> &Tab { return self; } }
-fn sd_tab_destroy(t: &Tab) { t.slots.destroy(); t.hs.destroy(); t.at.destroy(); t.len.destroy(); t.sd.destroy(); }
-fn sd_tab_grow(t: &Tab) -> bool {
-    if (t.count == t.cap) {
-        if (t.cap >= 536870911) { return false; }
-        let cap: i32 = t.cap * 2;
-        if (core::result::is_err(t.hs.try_resize(cap, 0)) || core::result::is_err(t.at.try_resize(cap, 0)) || core::result::is_err(t.len.try_resize(cap, 0)) || core::result::is_err(t.sd.try_resize(cap, 0))) { return false; }
-        t.cap = cap;
-    }
-    if (t.count * 2 >= t.mask) {
-        if (t.mask >= 536870911) { return false; }
-        let size: i32 = (t.mask + 1) * 2;
-        t.slots.clear(); if (core::result::is_err(t.slots.try_resize(size, -1))) { return false; }
-        t.mask = size - 1; let slots: [i32] = t.slots.as_slice(); let hs: [i32] = t.hs.as_slice(); let c: i32 = 0;
-        while (c < t.count) { let slot: i32 = hs[c] & t.mask; while (slots[slot] >= 0) { slot = (slot + 1) & t.mask; } slots[slot] = c; c += 1; }
-    }
+fn sd_tab_destroy(t: &Tab) { t.mem.destroy(); }
+// Lay out a table of size slots and cap classes in a fresh buffer, keeping
+// the first t.count classes and rehashing them.
+fn sd_tab_layout(t: &Tab, size: i32, cap: i32) -> bool {
+    let bytes: i64 = 4 * ((size as i64) + 4 * (cap as i64));
+    if (bytes > 2147483647) { return false; }
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(bytes as i32);
+    if (core::result::is_err(made)) { return false; }
+    let mem: alloc::io::Buffer = core::result::unwrap(made);
+    let room: core::result::Result<ptr, core::io::Error> = mem.reserve_raw(bytes as i32);
+    if (core::result::is_err(room)) { mem.destroy(); return false; }
+    let base: ptr = core::result::unwrap(room);
+    sd_fill_i32(base, size, -1);
+    let n: i32 = t.count; let i: i32 = 0;
+    let rec: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + (size as usize) * 4, 4 * cap); let old: [i32] = t.rec;
+    while (i < 4 * n) { rec[i] = old[i]; i += 1; }
+    let slots: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base, size); let mask: i32 = size - 1; let c: i32 = 0;
+    while (c < n) { let slot: i32 = rec[4*c] & mask; while (slots[slot] >= 0) { slot = (slot + 1) & mask; } slots[slot] = c; c += 1; }
+    t.mem.destroy(); t.mem = mem; t.slots = slots; t.mask = mask; t.rec = rec; t.cap = cap;
     return true;
+}
+fn sd_tab_grow(t: &Tab) -> bool {
+    let cap: i32 = t.cap; let size: i32 = t.mask + 1;
+    if (t.count == cap) { if (cap >= 536870911) { return false; } cap = cap * 2; }
+    if (t.count * 2 >= t.mask) { if (t.mask >= 536870911) { return false; } size = size * 2; }
+    return sd_tab_layout(t, size, cap);
 }
 // Scan one side: find LFs eight bytes at a time, record line k as
 // [starts[k], starts[k+1]), hash it from words, and (when classify)
@@ -171,12 +166,12 @@ fn sd_scan(v: core::slice::View<u8>, side: i32, s: &Src, sa: &Src, sb: &Src, sc:
     if (core::result::is_err(starts.try_resize(room + 1, 0))) { return 2; }
     if (classify && core::result::is_err(ids.try_resize(room, 0))) { return 2; }
     let st: [i32] = starts.as_slice(); let idv: [i32] = ids.as_slice();
-    let slots: [i32] = t.slots.as_slice(); let hs: [i32] = t.hs.as_slice(); let ats: [i32] = t.at.as_slice(); let lens: [i32] = t.len.as_slice(); let sds: [i32] = t.sd.as_slice();
+    let slots: [i32] = t.slots; let rec: [i32] = t.rec;
     let mask: i32 = t.mask; let count: i32 = t.count; let grow_at: i32 = t.cap; if (mask / 2 < grow_at) { grow_at = mask / 2; }
     let words: [u64] = s.words; let nw: i32 = s.nw; let tail: u64 = s.tail;
     let aw: [u64] = sa.words; let anw: i32 = sa.nw; let atail: u64 = sa.tail; let bw: [u64] = sb.words; let bnw: i32 = sb.nw; let btail: u64 = sb.tail;
     let cw: [u64] = sc.words; let cnw: i32 = sc.nw; let ctail: u64 = sc.tail;
-    let low7: u64 = SD_LOW7; let nl: u64 = SD_NL; let all: u64 = SD_ALL; let ranks: u64 = SD_RANKS;
+    let low7: u64 = SD_LOW7; let nl: u64 = SD_NL; let all: u64 = SD_ALL; let ranks: u64 = SD_RANKS; let kk: u64 = SD_K; let seed: u64 = SD_SEED;
     let k: i32 = 0; let start: i32 = 0; let wi: i32 = 0; let m: u64 = 0; let done: bool = false; let guess: i32 = 0;
     while (!done) {
         let end: i32 = n;
@@ -200,26 +195,57 @@ fn sd_scan(v: core::slice::View<u8>, side: i32, s: &Src, sa: &Src, sb: &Src, sc:
             st[k+1] = end;
             if (classify) {
                 let len: i32 = end - start; let id: i32 = -1;
+                // sd_same_at and sd_hash_src, inlined: calls are costly here.
                 if (guess < pn) {
                     let r: i32 = ps[guess];
-                    if (ps[guess+1] - r == len && sd_same_at(words, nw, tail, start, aw, anw, atail, r, len)) { id = pid[guess]; guess += 1; }
+                    if (ps[guess+1] - r == len) {
+                        let i1: i32 = start >> 3; let s1: u64 = ((start & 7) * 8) as u64; let i2: i32 = r >> 3; let s2: u64 = ((r & 7) * 8) as u64;
+                        let lo1: u64 = 0; if (i1 < nw) { lo1 = words[nw-1-i1]; } else { if (i1 == nw) { lo1 = tail; } }
+                        let lo2: u64 = 0; if (i2 < anw) { lo2 = aw[anw-1-i2]; } else { if (i2 == anw) { lo2 = atail; } }
+                        let rem: i32 = len; let same: bool = true;
+                        while (rem > 0 && same) {
+                            i1 += 1; i2 += 1;
+                            let hi1: u64 = 0; if (i1 < nw) { hi1 = words[nw-1-i1]; } else { if (i1 == nw) { hi1 = tail; } }
+                            let hi2: u64 = 0; if (i2 < anw) { hi2 = aw[anw-1-i2]; } else { if (i2 == anw) { hi2 = atail; } }
+                            let w1: u64 = lo1; if (s1 != 0) { w1 = (lo1 >> s1) | (hi1 << (64 - s1)); }
+                            let w2: u64 = lo2; if (s2 != 0) { w2 = (lo2 >> s2) | (hi2 << (64 - s2)); }
+                            let d: u64 = w1 ^ w2;
+                            if (rem < 8) { d = d & (all >> ((64 - rem * 8) as u64)); rem = 0; } else { rem -= 8; }
+                            if (d != 0) { same = false; }
+                            lo1 = hi1; lo2 = hi2;
+                        }
+                        if (same) { id = pid[guess]; guess += 1; }
+                    }
                 }
                 let hi: i32 = 0; let slot: i32 = 0; let probing: bool = id < 0;
-                if (probing) { hi = sd_hash_src(s, start, len) as i32; slot = hi & mask; }
+                if (probing) {
+                    let i: i32 = start >> 3; let sh: u64 = ((start & 7) * 8) as u64; let back: u64 = 64 - sh;
+                    let lo: u64 = 0; if (i < nw) { lo = words[nw-1-i]; } else { if (i == nw) { lo = tail; } }
+                    let h: u64 = seed; let rem: i32 = len;
+                    while (rem > 0) {
+                        i += 1;
+                        let hw: u64 = 0; if (i < nw) { hw = words[nw-1-i]; } else { if (i == nw) { hw = tail; } }
+                        let w: u64 = lo; if (sh != 0) { w = (lo >> sh) | (hw << back); }
+                        if (rem < 8) { w = w & (all >> ((64 - rem * 8) as u64)); rem = 0; } else { rem -= 8; }
+                        h = (h ^ w) * kk; lo = hw;
+                    }
+                    let x: u64 = (h ^ (len as u64)) * kk; x = x ^ (x >> 32); hi = (((x * kk) >> 32) as u32) as i32;
+                    slot = hi & mask;
+                }
                 while (id < 0) {
                     let c: i32 = slots[slot];
                     if (c < 0) {
-                        c = count; slots[slot] = c; hs[c] = hi; lens[c] = len; ats[c] = start; sds[c] = side;
+                        c = count; slots[slot] = c; let q: i32 = 4 * c; rec[q] = hi; rec[q+1] = start; rec[q+2] = len; rec[q+3] = side;
                         count += 1; id = c;
                         if (count >= grow_at) {
                             t.count = count; if (!sd_tab_grow(t)) { return 2; }
-                            slots = t.slots.as_slice(); hs = t.hs.as_slice(); ats = t.at.as_slice(); lens = t.len.as_slice(); sds = t.sd.as_slice();
+                            slots = t.slots; rec = t.rec;
                             mask = t.mask; grow_at = t.cap; if (mask / 2 < grow_at) { grow_at = mask / 2; }
                         }
                     } else {
-                        if (hs[c] == hi && lens[c] == len) {
+                        if (rec[4*c] == hi && rec[4*c+2] == len) {
                             // Compare the two lines as shifted 8-byte words.
-                            let r: i32 = ats[c]; let rs: i32 = sds[c]; let ow: [u64] = aw; let onw: i32 = anw; let otail: u64 = atail;
+                            let r: i32 = rec[4*c+1]; let rs: i32 = rec[4*c+3]; let ow: [u64] = aw; let onw: i32 = anw; let otail: u64 = atail;
                             if (rs == 1) { ow = bw; onw = bnw; otail = btail; } else { if (rs == 2) { ow = cw; onw = cnw; otail = ctail; } }
                             let i1: i32 = start >> 3; let s1: u64 = ((start & 7) * 8) as u64; let i2: i32 = r >> 3; let s2: u64 = ((r & 7) * 8) as u64;
                             let lo1: u64 = 0; if (i1 < nw) { lo1 = words[nw-1-i1]; } else { if (i1 == nw) { lo1 = tail; } }
@@ -242,7 +268,7 @@ fn sd_scan(v: core::slice::View<u8>, side: i32, s: &Src, sa: &Src, sb: &Src, sc:
                     }
                 }
                 // A line found in side 0 resynchronizes the prediction.
-                if (probing && pn > 0 && sds[id] == 0) { guess = sd_line_at(ps, pn, ats[id]) + 1; }
+                if (probing && pn > 0 && rec[4*id+3] == 0) { guess = sd_line_at(ps, pn, rec[4*id+1]) + 1; }
                 idv[k] = id;
             }
             k += 1; start = end;
@@ -256,12 +282,12 @@ fn sd_scan(v: core::slice::View<u8>, side: i32, s: &Src, sa: &Src, sb: &Src, sc:
 fn sd_scan_error(code: i32) -> Error { if (code == 1) { return Error::ItemLimit; } return Error::AllocationFailed; }
 fn sd_tab(estimate: i32) -> core::result::Result<Tab, Error> {
     let size: i32 = 64; while (size < estimate && size < 1073741824) { size = size * 2; }
-    let t: Tab = Tab { slots: alloc::vec::new(), mask: size - 1, hs: alloc::vec::new(), at: alloc::vec::new(), len: alloc::vec::new(), sd: alloc::vec::new(), cap: size / 2, count: 0 };
-    if (core::result::is_err(t.slots.try_resize(size, -1)) || core::result::is_err(t.hs.try_resize(t.cap, 0)) || core::result::is_err(t.at.try_resize(t.cap, 0)) || core::result::is_err(t.len.try_resize(t.cap, 0)) || core::result::is_err(t.sd.try_resize(t.cap, 0))) { sd_tab_destroy(t.borrow()); return core::result::Err(Error::AllocationFailed); }
+    let t: Tab = sd_no_tab();
+    if (!sd_tab_layout(t.borrow(), size, size / 2)) { sd_tab_destroy(t.borrow()); return core::result::Err(Error::AllocationFailed); }
     return core::result::Ok(t);
 }
 
-fn sd_no_tab() -> Tab { return Tab { slots: alloc::vec::new(), mask: 0, hs: alloc::vec::new(), at: alloc::vec::new(), len: alloc::vec::new(), sd: alloc::vec::new(), cap: 0, count: 0 }; }
+fn sd_no_tab() -> Tab { let none: [i32] = [0;1]; return Tab { slots: none, mask: 0, rec: none, cap: 0, count: 0, mem: alloc::io::new() }; }
 // Line records for lines [starts[k], starts[k+1]) of v, hashed from words.
 fn sd_lines_of(v: core::slice::View<u8>, s: &Src, starts: [i32], count: i32) -> core::result::Result<alloc::vec::Vec<Line>, Error> {
     let out: alloc::vec::Vec<Line> = alloc::vec::new();
@@ -510,19 +536,34 @@ pub impl Classes {
 }
 
 // Shared engine state: match table, Myers frontier rows and a range stack.
-struct Engine { pair: alloc::vec::Vec<i32>, v1: alloc::vec::Vec<i32>, v2: alloc::vec::Vec<i32>, off: i32, stack: alloc::vec::Vec<i32>, work: u64, max_work: u64, sx: i32, sy: i32, failed: bool, error: Error }
+// Myers state: pair[i] is the matched b index of a[i] or -1; v1/v2 are the
+// forward and reverse frontier rows (offset off), initialized lazily by
+// each bisection. All three live in one unfilled raw buffer.
+struct Engine { pair: [i32], v1: [i32], v2: [i32], mem: alloc::io::Buffer, off: i32, stack: alloc::vec::Vec<i32>, work: u64, max_work: u64, sx: i32, sy: i32, failed: bool, error: Error }
 impl Engine { fn borrow(&self) -> &Engine { return self; } }
-fn sd_engine_destroy(e: &Engine) { e.pair.destroy(); e.v1.destroy(); e.v2.destroy(); e.stack.destroy(); }
+fn sd_engine_destroy(e: &Engine) { e.mem.destroy(); e.stack.destroy(); }
+// Set count i32 slots at p to value, two per 8-byte store.
+fn sd_fill_i32(p: ptr, count: i32, value: i32) {
+    let nw: i32 = count / 2; let w: u64 = ((value as u32) as u64) | (((value as u32) as u64) << 32);
+    let words: [u64] = core::mem::typed_slice_from_storage<u64>(p, nw); let k: i32 = 0;
+    while (k < nw) { words[k] = w; k += 1; }
+    if (count % 2 != 0) { let last: [i32] = core::mem::typed_slice_from_raw_parts<i32>(p, count); last[count-1] = value; }
+}
 fn sd_engine(n: i32, m: i32, limits: Limits) -> core::result::Result<Engine, Error> {
-    let maxd: i32 = (n + m + 1) / 2;
-    let p: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(n, -1);
-    if (core::result::is_err(p)) { return core::result::Err(Error::AllocationFailed); }
-    let pair: alloc::vec::Vec<i32> = core::result::unwrap(p);
-    let q: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(2 * maxd + 4, -1);
-    if (core::result::is_err(q)) { pair.destroy(); return core::result::Err(Error::AllocationFailed); }
-    let r: core::result::Result<alloc::vec::Vec<i32>, Error> = sd_filled(2 * maxd + 4, -1);
-    if (core::result::is_err(r)) { pair.destroy(); let v: alloc::vec::Vec<i32> = core::result::unwrap(q); v.destroy(); return core::result::Err(Error::AllocationFailed); }
-    return core::result::Ok(Engine { pair: pair, v1: core::result::unwrap(q), v2: core::result::unwrap(r), off: maxd + 1, stack: alloc::vec::new(), work: 0, max_work: limits.max_work, sx: 0, sy: 0, failed: false, error: Error::AllocationFailed });
+    let maxd: i32 = (n + m + 1) / 2; let row: i32 = 2 * maxd + 4;
+    let bytes: i64 = 4 * ((n as i64) + 2 * (row as i64)) + 8;
+    if (bytes > 2147483647) { return core::result::Err(Error::AllocationFailed); }
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(bytes as i32);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let mem: alloc::io::Buffer = core::result::unwrap(made);
+    let room: core::result::Result<ptr, core::io::Error> = mem.reserve_raw(bytes as i32);
+    if (core::result::is_err(room)) { mem.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let base: ptr = core::result::unwrap(room);
+    sd_fill_i32(base, n, -1);
+    let pair: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base, n);
+    let v1: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + ((n as usize) * 4), row);
+    let v2: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + (((n + row) as usize) * 4), row);
+    return core::result::Ok(Engine { pair: pair, v1: v1, v2: v2, mem: mem, off: maxd + 1, stack: alloc::vec::new(), work: 0, max_work: limits.max_work, sx: 0, sy: 0, failed: false, error: Error::AllocationFailed });
 }
 fn sd_push(e: &Engine, x0: i32, x1: i32, y0: i32, y1: i32, mode: i32) {
     if (e.failed) { return; }
@@ -538,7 +579,7 @@ fn sd_charge(e: &Engine, amount: i32) -> bool {
 // Forward and reverse frontiers meet in the middle (Myers 1986, section 4b).
 fn sd_bisect<T>(a: core::slice::View<T>, b: core::slice::View<T>, x0: i32, x1: i32, y0: i32, y1: i32, e: &Engine) -> bool where T: core::cmp::Eq<T> {
     let n: i32 = x1 - x0; let m: i32 = y1 - y0; let maxd: i32 = (n + m + 1) / 2; let off: i32 = e.off;
-    let v1: [i32] = e.v1.as_slice(); let v2: [i32] = e.v2.as_slice();
+    let v1: [i32] = e.v1; let v2: [i32] = e.v2;
     // Rows are initialized lazily: before round d, indices +-(d+1) are reset,
     // so every read below sees this range's values or -1, never a stale row.
     v1[off-1] = -1; v2[off-1] = -1; v1[off] = -1; v2[off] = -1; v1[off+1] = 0; v2[off+1] = 0;
@@ -594,7 +635,7 @@ fn sd_bisect<T>(a: core::slice::View<T>, b: core::slice::View<T>, x0: i32, x1: i
 // narrowed range through the engine's sx/sy and the stack-free out params.
 struct Range { x0: i32, x1: i32, y0: i32, y1: i32 }
 fn sd_trim<T>(a: core::slice::View<T>, b: core::slice::View<T>, r: Range, e: &Engine) -> Range where T: core::cmp::Eq<T> {
-    let pair: [i32] = e.pair.as_slice(); let x0: i32 = r.x0; let x1: i32 = r.x1; let y0: i32 = r.y0; let y1: i32 = r.y1;
+    let pair: [i32] = e.pair; let x0: i32 = r.x0; let x1: i32 = r.x1; let y0: i32 = r.y0; let y1: i32 = r.y1;
     let begin: i32 = x0;
     while (x0 < x1 && y0 < y1 && T::eq(a.values[a.start+x0], b.values[b.start+y0])) { pair[x0] = y0; x0 += 1; y0 += 1; }
     let end: i32 = x1;
@@ -621,66 +662,80 @@ fn sd_run<T>(a: core::slice::View<T>, b: core::slice::View<T>, e: &Engine) where
 // arrays instead of trait calls through views.
 // Find a split point on an optimal path through a[x0,x1) x b[y0,y1).
 // Forward and reverse frontiers meet in the middle (Myers 1986, section 4b).
+// sd_bisect over class ids, with the hot loop kept in locals: the work
+// budget is checked without a call, each visit reads one new frontier value
+// (its left neighbour carries over from the previous diagonal), and a snake
+// has one bound per step (x < min(n, m + k)).
 fn sd_bisect_c(a: core::slice::View<i32>, b: core::slice::View<i32>, x0: i32, x1: i32, y0: i32, y1: i32, e: &Engine) -> bool {
-    let av: [i32] = a.values; let bv: [i32] = b.values; let ab: i32 = a.start; let bb: i32 = b.start;
+    let av: [i32] = a.values; let bv: [i32] = b.values;
     let n: i32 = x1 - x0; let m: i32 = y1 - y0; let maxd: i32 = (n + m + 1) / 2; let off: i32 = e.off;
-    let v1: [i32] = e.v1.as_slice(); let v2: [i32] = e.v2.as_slice();
+    let v1: [i32] = e.v1; let v2: [i32] = e.v2;
+    let work: u64 = e.work; let maxw: u64 = e.max_work;
     // Rows are initialized lazily: before round d, indices +-(d+1) are reset,
     // so every read below sees this range's values or -1, never a stale row.
     v1[off-1] = -1; v2[off-1] = -1; v1[off] = -1; v2[off] = -1; v1[off+1] = 0; v2[off+1] = 0;
     let delta: i32 = n - m; let front: bool = delta % 2 != 0;
+    let fa: i32 = a.start + x0; let fb: i32 = b.start + y0; let ra: i32 = a.start + x1 - 1; let rb: i32 = b.start + y1 - 1;
     let k1start: i32 = 0; let k1end: i32 = 0; let k2start: i32 = 0; let k2end: i32 = 0;
     let d: i32 = 0;
     while (d <= maxd) {
         if (d > 0) { v1[off-d-1] = -1; v2[off-d-1] = -1; v1[off+d+1] = -1; v2[off+d+1] = -1; }
-        let k1: i32 = -d + k1start;
-        while (k1 <= d - k1end) {
-            let x: i32 = 0;
-            if (k1 == -d || (k1 != d && v1[off+k1-1] < v1[off+k1+1])) { x = v1[off+k1+1]; } else { x = v1[off+k1-1] + 1; }
-            let y: i32 = x - k1; let sx: i32 = x;
-            while (x < n && y < m && av[ab+x0+x] == bv[bb+y0+y]) { x += 1; y += 1; }
-            if (!sd_charge(e, x - sx + 1)) { return false; }
-            v1[off+k1] = x;
+        let k1: i32 = -d + k1start; let last: i32 = d - k1end;
+        let left: i32 = v1[off+k1-1];
+        while (k1 <= last) {
+            let right: i32 = v1[off+k1+1]; let x: i32 = left + 1;
+            if (k1 == -d || (k1 != d && left < right)) { x = right; }
+            let sx: i32 = x; let lim: i32 = n; if (m + k1 < lim) { lim = m + k1; }
+            let q: i32 = fb - k1;
+            while (x < lim && av[fa+x] == bv[q+x]) { x += 1; }
+            let cost: u64 = (x - sx + 1) as u64;
+            if (cost > maxw - work) { e.work = maxw; e.failed = true; e.error = Error::WorkLimit; return false; }
+            work += cost;
+            v1[off+k1] = x; let y: i32 = x - k1;
             if (x > n) { k1end += 2; }
             else { if (y > m) { k1start += 2; }
             else { if (front) {
                 let k2: i32 = delta - k1;
                 if (k2 >= -d - 1 && k2 <= d + 1 && k2 >= -maxd && k2 <= maxd && v2[off+k2] != -1) {
-                    if (x >= n - v2[off+k2]) { e.sx = x0 + x; e.sy = y0 + y; return true; }
+                    if (x >= n - v2[off+k2]) { e.sx = x0 + x; e.sy = y0 + y; e.work = work; return true; }
                 }
             } } }
-            k1 += 2;
+            left = right; k1 += 2;
         }
-        let k2: i32 = -d + k2start;
-        while (k2 <= d - k2end) {
-            let x: i32 = 0;
-            if (k2 == -d || (k2 != d && v2[off+k2-1] < v2[off+k2+1])) { x = v2[off+k2+1]; } else { x = v2[off+k2-1] + 1; }
-            let y: i32 = x - k2; let sx: i32 = x;
-            while (x < n && y < m && av[ab+x1-1-x] == bv[bb+y1-1-y]) { x += 1; y += 1; }
-            if (!sd_charge(e, x - sx + 1)) { return false; }
-            v2[off+k2] = x;
+        let k2: i32 = -d + k2start; let last2: i32 = d - k2end;
+        let left2: i32 = v2[off+k2-1];
+        while (k2 <= last2) {
+            let right: i32 = v2[off+k2+1]; let x: i32 = left2 + 1;
+            if (k2 == -d || (k2 != d && left2 < right)) { x = right; }
+            let sx: i32 = x; let lim: i32 = n; if (m + k2 < lim) { lim = m + k2; }
+            let q: i32 = rb + k2;
+            while (x < lim && av[ra-x] == bv[q-x]) { x += 1; }
+            let cost: u64 = (x - sx + 1) as u64;
+            if (cost > maxw - work) { e.work = maxw; e.failed = true; e.error = Error::WorkLimit; return false; }
+            work += cost;
+            v2[off+k2] = x; let y: i32 = x - k2;
             if (x > n) { k2end += 2; }
             else { if (y > m) { k2start += 2; }
             else { if (!front) {
                 let k: i32 = delta - k2;
                 if (k >= -d - 1 && k <= d + 1 && k >= -maxd && k <= maxd && v1[off+k] != -1) {
                     let fx: i32 = v1[off+k];
-                    if (fx >= n - x) { e.sx = x0 + fx; e.sy = y0 + fx - k; return true; }
+                    if (fx >= n - x) { e.sx = x0 + fx; e.sy = y0 + fx - k; e.work = work; return true; }
                 }
             } } }
-            k2 += 2;
+            left2 = right; k2 += 2;
         }
         d += 1;
     }
     // Exhausted without meeting: the range has no common item.
-    e.sx = -1; return true;
+    e.work = work; e.sx = -1; return true;
 }
 
 // Trim equal prefix/suffix of one range, recording matches. Returns the
 // narrowed range through the engine's sx/sy and the stack-free out params.
 fn sd_trim_c(a: core::slice::View<i32>, b: core::slice::View<i32>, r: Range, e: &Engine) -> Range {
     let av: [i32] = a.values; let bv: [i32] = b.values; let ab: i32 = a.start; let bb: i32 = b.start;
-    let pair: [i32] = e.pair.as_slice(); let x0: i32 = r.x0; let x1: i32 = r.x1; let y0: i32 = r.y0; let y1: i32 = r.y1;
+    let pair: [i32] = e.pair; let x0: i32 = r.x0; let x1: i32 = r.x1; let y0: i32 = r.y0; let y1: i32 = r.y1;
     let begin: i32 = x0;
     while (x0 < x1 && y0 < y1 && av[ab+x0] == bv[bb+y0]) { pair[x0] = y0; x0 += 1; y0 += 1; }
     let end: i32 = x1;
@@ -704,7 +759,7 @@ fn sd_run_c(a: core::slice::View<i32>, b: core::slice::View<i32>, e: &Engine) {
     }
 }
 fn sd_script(e: &Engine, n: i32, m: i32, limits: Limits) -> core::result::Result<Script, Error> {
-    let pair: [i32] = e.pair.as_slice();
+    let pair: [i32] = e.pair;
     // Count the steps, size the vector once, then fill its slots.
     let matched: i32 = 0; let q: i32 = 0; while (q < n) { if (pair[q] >= 0) { matched += 1; } q += 1; }
     let total: i32 = n + m - matched;
@@ -785,7 +840,7 @@ fn sd_patience_step(a: core::slice::View<i32>, b: core::slice::View<i32>, r: Ran
     }
     if (!sd_charge(e, count * 4)) { return; }
     // Walk anchors backward; push gaps so the earliest gap is popped first.
-    let pair: [i32] = e.pair.as_slice(); let pi: [i32] = p.pi.as_slice();
+    let pair: [i32] = e.pair; let pi: [i32] = p.pi.as_slice();
     let at: i32 = p.tails.as_slice()[p.tails.len()-1]; let hx: i32 = t.x1; let hy: i32 = t.y1;
     while (at >= 0) {
         let ax: i32 = pi[at]; let ay: i32 = pj[at]; pair[ax] = ay;
@@ -964,8 +1019,58 @@ fn xg_up(r: [i32], v: core::slice::View<i32>, g: &Grp) -> bool {
     if (g.s > 0 && v.values[v.start+g.s-1] == v.values[v.start+g.e-1]) { g.s -= 1; r[g.s+1] = 1; g.e -= 1; r[g.e+1] = 0; while (r[g.s] != 0) { g.s -= 1; } return true; }
     return false;
 }
-// xdl_change_compact without the indent heuristic.
-fn xd_compact(r: [i32], v: core::slice::View<i32>, ro: [i32], vo_len: i32) {
+// Line text for the indent heuristic: line i is text[st[i], st[i+1]).
+struct Ind { text: core::slice::View<u8>, st: [i32], on: bool }
+fn xd_no_ind() -> Ind { let none: [u8] = [0;1]; let st: [i32] = [0;1]; return Ind { text: core::slice::View { values: none, start: 0, length: 0 }, st: st, on: false }; }
+// git's get_indent: columns of leading space (tab to the next multiple of
+// 8, capped at 200), or -1 for a line of whitespace only.
+fn xd_indent(ind: Ind, i: i32) -> i32 {
+    let data: [u8] = ind.text.values; let at: i32 = ind.text.start + ind.st[i]; let end: i32 = ind.text.start + ind.st[i+1]; let ret: i32 = 0;
+    while (at < end) {
+        let c: u8 = data[at];
+        if (c != 32 && c != 9 && c != 10 && c != 11 && c != 12 && c != 13) { return ret; }
+        if (c == 32) { ret += 1; } else { if (c == 9) { ret += 8 - ret % 8; } }
+        if (ret >= 200) { return 200; }
+        at += 1;
+    }
+    return -1;
+}
+struct Score { indent: i32, penalty: i32 }
+impl Score { fn borrow(&self) -> &Score { return self; } }
+// git's measure_split and score_add_split for a split before line split.
+fn xd_score_split(ind: Ind, n: i32, split: i32, s: &Score) {
+    let eof: bool = split >= n; let indent: i32 = -1; if (!eof) { indent = xd_indent(ind, split); }
+    let pre_blank: i32 = 0; let pre_indent: i32 = -1; let i: i32 = split - 1;
+    while (i >= 0) {
+        pre_indent = xd_indent(ind, i); if (pre_indent != -1) { break; }
+        pre_blank += 1; if (pre_blank == 20) { pre_indent = 0; break; }
+        i -= 1;
+    }
+    let post_blank: i32 = 0; let post_indent: i32 = -1; i = split + 1;
+    while (i < n) {
+        post_indent = xd_indent(ind, i); if (post_indent != -1) { break; }
+        post_blank += 1; if (post_blank == 20) { post_indent = 0; break; }
+        i += 1;
+    }
+    if (pre_indent == -1 && pre_blank == 0) { s.penalty += 1; }
+    if (eof) { s.penalty += 21; }
+    let pb: i32 = 0; if (indent == -1) { pb = 1 + post_blank; }
+    let total_blank: i32 = pre_blank + pb;
+    s.penalty += -30 * total_blank; s.penalty += 6 * pb;
+    let eff: i32 = post_indent; if (indent != -1) { eff = indent; }
+    let any: bool = total_blank != 0;
+    s.indent += eff;
+    if (eff != -1 && pre_indent != -1) {
+        if (eff > pre_indent) { if (any) { s.penalty += 10; } else { s.penalty += -4; } }
+        else { if (eff != pre_indent) {
+            if (post_indent != -1 && post_indent > eff) { if (any) { s.penalty += 17; } else { s.penalty += 24; } }
+            else { if (any) { s.penalty += 17; } else { s.penalty += 23; } }
+        } }
+    }
+}
+// xdl_change_compact (git 2.43). With ind.on, a group that can slide and
+// matches nothing on the other side is placed by git's indent heuristic.
+fn xd_compact(r: [i32], v: core::slice::View<i32>, ro: [i32], vo_len: i32, ind: Ind) {
     let n: i32 = v.length;
     let g: Grp = Grp { s: 0, e: 0 }; let go: Grp = Grp { s: 0, e: 0 };
     xg_init(r, g.borrow()); xg_init(ro, go.borrow());
@@ -981,14 +1086,27 @@ fn xd_compact(r: [i32], v: core::slice::View<i32>, ro: [i32], vo_len: i32) {
             }
             if (g.e != earliest && matching != -1) {
                 while (go.e == go.s) { let up: bool = xg_up(r, v, g.borrow()); let moved: bool = xg_prev(ro, go.borrow()); if (!up) { break; } }
-            }
+            } else { if (g.e != earliest && ind.on) {
+                let shift: i32 = earliest; if (g.e - size - 1 > shift) { shift = g.e - size - 1; } if (g.e - 100 > shift) { shift = g.e - 100; }
+                let best: i32 = -1; let best_indent: i32 = 0; let best_penalty: i32 = 0;
+                while (shift <= g.e) {
+                    let sc: Score = Score { indent: 0, penalty: 0 };
+                    xd_score_split(ind, n, shift, sc.borrow()); xd_score_split(ind, n, shift - size, sc.borrow());
+                    let ci: i32 = 0; if (sc.indent > best_indent) { ci = 1; } if (sc.indent < best_indent) { ci = -1; }
+                    if (best == -1 || 60 * ci + (sc.penalty - best_penalty) <= 0) { best = shift; best_indent = sc.indent; best_penalty = sc.penalty; }
+                    shift += 1;
+                }
+                while (g.e > best) { let up: bool = xg_up(r, v, g.borrow()); let moved: bool = xg_prev(ro, go.borrow()); if (!up) { break; } }
+            } }
         }
         if (!xg_next(r, n, g.borrow())) { break; }
         let moved: bool = xg_next(ro, vo_len, go.borrow());
     }
 }
 // git-compatible script over class ids (any non-negative ids).
-pub fn xdiff_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits) -> core::result::Result<Script, Error> {
+pub fn xdiff_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits) -> core::result::Result<Script, Error> { return xd_diff(a, b, limits, true, xd_no_ind(), xd_no_ind()); }
+// xdl_do_diff, then (when compact) xdl_change_compact on both sides.
+fn xd_diff(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits, compact: bool, ia: Ind, ib: Ind) -> core::result::Result<Script, Error> {
     if (!sd_limits_ok(limits)) { return core::result::Err(Error::InvalidLimits); }
     if (!sd_view_ok(a) || !sd_view_ok(b)) { return core::result::Err(Error::Bounds); }
     if (a.length > limits.max_items || b.length > limits.max_items) { return core::result::Err(Error::ItemLimit); }
@@ -1042,13 +1160,199 @@ pub fn xdiff_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, limit
     x.koff = m2 + 1; x.mxcost = xd_bogosqrt(m1 + m2 + 3); if (x.mxcost < 256) { x.mxcost = 256; }
     xd_recs(x.borrow(), m1, m2, ix1, ix2, r1, r2, stack.borrow());
     if (!x.failed) {
-        xd_compact(r1, a, r2, n2); xd_compact(r2, b, r1, n1);
+        if (compact) { xd_compact(r1, a, r2, n2, ia); xd_compact(r2, b, r1, n1, ib); }
         out = sd_rchg_script(r1, r2, n1, n2);
     }
     else { if (x.work > x.max_work) { out = core::result::Err(Error::WorkLimit); } }
     wsv.destroy(); stack.destroy();
     return out;
 }
+// git's histogram diff (xhistogram.c, git 2.43), lines numbered from 1 as
+// there. find_lcs indexes the a-range by class (a chain of records per hash
+// bucket, each record holding its class's first occurrence and count), then
+// for every b line extends each occurrence into a common run, keeping the
+// longest run whose rarest line is rarest. A range with only lines seen more
+// than 64 times falls back to xdiff on that range. Buckets hash git's class
+// ids (first-occurrence order over a then b, as split_classify assigns them)
+// with XDL_HASHLONG, so chain order and ties match git.
+struct Hg { av: [i32], ab: i32, bv: [i32], bb: i32, heads: [i32], lmap: [i32], nxt: [i32], rptr: [i32], rcnt: [i32], rnext: [i32],
+    r1: [i32], r2: [i32], remap: alloc::vec::Vec<i32>, classes: i32, work: u64, max_work: u64, failed: bool, error: Error, limits: Limits,
+    cnt: i32, common: bool, b1: i32, e1: i32, b2: i32, e2: i32 }
+impl Hg { fn borrow(&self) -> &Hg { return self; } }
+fn hg_bits(size: i32) -> i32 { let val: i64 = 1; let bits: i32 = 0; while (val < (size as i64) && bits < 32) { val = val * 2; bits += 1; } if (bits == 0) { return 1; } return bits; }
+// XDL_HASHLONG: (v + (v >> b)) & ((1 << b) - 1).
+fn hg_hash(c: i32, bits: i32) -> i32 { let x: u64 = c as u64; let one: u64 = 1; return ((x + (x >> (bits as u64))) & ((one << (bits as u64)) - one)) as i32; }
+fn hg_charge(h: &Hg, amount: i32) -> bool {
+    let cost: u64 = amount as u64;
+    if (cost > h.max_work - h.work) { h.work = h.max_work; h.failed = true; h.error = Error::WorkLimit; return false; }
+    h.work += cost; return true;
+}
+// find_lcs: -1 when a bucket chain reaches 64 classes (git gives up on the
+// diff there; this falls back to xdiff), 1 to fall back, 0 with the run in
+// h.b1..h.e1 / h.b2..h.e2 (b1 = b2 = 0: nothing in common).
+fn hg_find(h: &Hg, line1: i32, count1: i32, line2: i32, count2: i32) -> i32 {
+    let av: [i32] = h.av; let ab: i32 = h.ab - 1; let bv: [i32] = h.bv; let bb: i32 = h.bb - 1;
+    let heads: [i32] = h.heads; let lmap: [i32] = h.lmap; let nxt: [i32] = h.nxt; let rptr: [i32] = h.rptr; let rcnt: [i32] = h.rcnt; let rnext: [i32] = h.rnext;
+    let bits: i32 = hg_bits(count1); let size: i32 = 1; let q: i32 = 0; while (q < bits) { size = size * 2; q += 1; }
+    q = 0; while (q < size) { heads[q] = -1; q += 1; }
+    q = 0; while (q < count1) { nxt[q] = 0; q += 1; }
+    let shift: i32 = line1; let end1: i32 = line1 + count1 - 1; let end2: i32 = line2 + count2 - 1; let nrec: i32 = 0;
+    // scanA, from the last line back.
+    let ptr: i32 = end1;
+    while (ptr >= line1) {
+        let c: i32 = av[ab+ptr]; let t: i32 = hg_hash(c, bits); let r: i32 = heads[t]; let chain: i32 = 0; let found: bool = false;
+        while (r >= 0 && !found) {
+            if (av[ab+rptr[r]] == c) { nxt[ptr-shift] = rptr[r]; rptr[r] = ptr; rcnt[r] += 1; lmap[ptr-shift] = r; found = true; }
+            else { r = rnext[r]; chain += 1; }
+        }
+        if (!found) {
+            if (chain == 64) { return -1; }
+            r = nrec; nrec += 1; rptr[r] = ptr; rcnt[r] = 1; rnext[r] = heads[t]; heads[t] = r; lmap[ptr-shift] = r;
+        }
+        ptr -= 1;
+    }
+    if (!hg_charge(h, 2 * count1 + 1)) { return 0; }
+    h.cnt = 65; h.common = false; h.b1 = 0; h.e1 = 0; h.b2 = 0; h.e2 = 0;
+    let bp: i32 = line2;
+    while (bp <= end2) {
+        // try_lcs
+        let bnext: i32 = bp + 1; let c: i32 = bv[bb+bp]; let r: i32 = heads[hg_hash(c, bits)]; let steps: i32 = 1;
+        while (r >= 0) {
+            if (rcnt[r] > h.cnt) { if (!h.common) { h.common = av[ab+rptr[r]] == c; } }
+            else { let xs: i32 = rptr[r]; if (av[ab+xs] == c) {
+                h.common = true; let going: bool = true;
+                while (going) {
+                    let np: i32 = nxt[xs-shift]; let bs: i32 = bp; let ae: i32 = xs; let be: i32 = bs; let rc: i32 = rcnt[r];
+                    while (line1 < xs && line2 < bs && av[ab+xs-1] == bv[bb+bs-1]) { xs -= 1; bs -= 1; if (1 < rc) { let k: i32 = rcnt[lmap[xs-shift]]; if (k < rc) { rc = k; } } steps += 1; }
+                    while (ae < end1 && be < end2 && av[ab+ae+1] == bv[bb+be+1]) { ae += 1; be += 1; if (1 < rc) { let k: i32 = rcnt[lmap[ae-shift]]; if (k < rc) { rc = k; } } steps += 1; }
+                    if (bnext <= be) { bnext = be + 1; }
+                    if (h.e1 - h.b1 < ae - xs || rc < h.cnt) { h.b1 = xs; h.b2 = bs; h.e1 = ae; h.e2 = be; h.cnt = rc; }
+                    if (np == 0) { going = false; }
+                    else {
+                        while (going && np <= ae) { np = nxt[np-shift]; if (np == 0) { going = false; } steps += 1; }
+                        xs = np;
+                    }
+                }
+            } }
+            r = rnext[r]; steps += 1;
+        }
+        if (!hg_charge(h, steps)) { return 0; }
+        bp = bnext;
+    }
+    if (h.common && 64 < h.cnt) { return 1; }
+    return 0;
+}
+// xdl_fall_back_diff: xdiff (no compaction) on the two ranges, renumbered.
+fn hg_fallback(h: &Hg, line1: i32, count1: i32, line2: i32, count2: i32) {
+    if (h.remap.len() == 0) { if (core::result::is_err(h.remap.try_resize(h.classes + 1, -1))) { h.failed = true; h.error = Error::AllocationFailed; return; } }
+    let local: alloc::vec::Vec<i32> = alloc::vec::new();
+    if (core::result::is_err(local.try_resize(count1 + count2, 0))) { local.destroy(); h.failed = true; h.error = Error::AllocationFailed; return; }
+    let lv: [i32] = local.as_slice(); let remap: [i32] = h.remap.as_slice(); let next: i32 = 0; let i: i32 = 0;
+    let fa: i32 = h.ab + line1 - 1; let fb: i32 = h.bb + line2 - 1; let av: [i32] = h.av; let bv: [i32] = h.bv;
+    while (i < count1) { let g: i32 = av[fa+i]; let id: i32 = remap[g]; if (id < 0) { id = next; remap[g] = id; next += 1; } lv[i] = id; i += 1; }
+    i = 0; while (i < count2) { let g: i32 = bv[fb+i]; let id: i32 = remap[g]; if (id < 0) { id = next; remap[g] = id; next += 1; } lv[count1+i] = id; i += 1; }
+    i = 0; while (i < count1) { remap[av[fa+i]] = -1; i += 1; }
+    i = 0; while (i < count2) { remap[bv[fb+i]] = -1; i += 1; }
+    let left: Limits = Limits { max_items: h.limits.max_items, max_work: h.max_work - h.work };
+    let made: core::result::Result<Script, Error> = xd_diff(core::slice::View { values: lv, start: 0, length: count1 }, core::slice::View { values: lv, start: count1, length: count2 }, left, false, xd_no_ind(), xd_no_ind());
+    local.destroy();
+    if (core::result::is_err(made)) { h.failed = true; h.error = core::result::unwrap_err(made); return; }
+    let sc: Script = core::result::unwrap(made); let steps: [Edit] = sc.steps.as_slice(); let total: i32 = sc.steps.len(); let r1: [i32] = h.r1; let r2: [i32] = h.r2;
+    i = 0;
+    while (i < total) { let e: Edit = steps[i]; if (e.kind == 1) { r1[line1+e.before] = 1; } if (e.kind == 2) { r2[line2+e.after] = 1; } i += 1; }
+    if (!hg_charge(h, total + 1)) { sc.destroy(); return; }
+    sc.destroy();
+}
+// histogram_diff over a[1..n1] x b[1..n2]: marks r1/r2 (line l at index l).
+fn hg_run(h: &Hg, n1: i32, n2: i32) {
+    let stack: alloc::vec::Vec<i32> = alloc::vec::new();
+    if (core::result::is_err(stack.try_push(1)) || core::result::is_err(stack.try_push(n1)) || core::result::is_err(stack.try_push(1)) || core::result::is_err(stack.try_push(n2))) { stack.destroy(); h.failed = true; h.error = Error::AllocationFailed; return; }
+    let r1: [i32] = h.r1; let r2: [i32] = h.r2;
+    while (!h.failed && stack.len() > 0) {
+        let top: i32 = stack.len() - 4; let sv: [i32] = stack.as_slice();
+        let line1: i32 = sv[top]; let count1: i32 = sv[top+1]; let line2: i32 = sv[top+2]; let count2: i32 = sv[top+3];
+        let cut: core::result::Result<i32, alloc::vec::Error> = stack.truncate(top);
+        let more: bool = true;
+        while (more && !h.failed) {
+            more = false;
+            if (count1 <= 0 && count2 <= 0) { }
+            else { if (count1 == 0) { let q: i32 = 0; while (q < count2) { r2[line2+q] = 1; q += 1; } }
+            else { if (count2 == 0) { let q: i32 = 0; while (q < count1) { r1[line1+q] = 1; q += 1; } }
+            else {
+                let found: i32 = hg_find(h, line1, count1, line2, count2);
+                if (!h.failed) {
+                    if (found != 0) { hg_fallback(h, line1, count1, line2, count2); }
+                    else { if (h.b1 == 0 && h.b2 == 0) {
+                        let q: i32 = 0; while (q < count1) { r1[line1+q] = 1; q += 1; }
+                        q = 0; while (q < count2) { r2[line2+q] = 1; q += 1; }
+                    } else {
+                        let b1: i32 = h.b1; let e1: i32 = h.e1; let b2: i32 = h.b2; let e2: i32 = h.e2;
+                        if (core::result::is_err(stack.try_push(line1)) || core::result::is_err(stack.try_push(b1 - line1)) || core::result::is_err(stack.try_push(line2)) || core::result::is_err(stack.try_push(b2 - line2))) { h.failed = true; h.error = Error::AllocationFailed; }
+                        count1 = line1 + count1 - 1 - e1; line1 = e1 + 1; count2 = line2 + count2 - 1 - e2; line2 = e2 + 1; more = true;
+                    } }
+                }
+            } } }
+        }
+    }
+    stack.destroy();
+}
+// Histogram diff over class ids, then compaction (ia/ib: indent heuristic).
+fn hg_diff(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits, ia: Ind, ib: Ind) -> core::result::Result<Script, Error> {
+    if (!sd_limits_ok(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (!sd_view_ok(a) || !sd_view_ok(b)) { return core::result::Err(Error::Bounds); }
+    if (a.length > limits.max_items || b.length > limits.max_items) { return core::result::Err(Error::ItemLimit); }
+    let n1: i32 = a.length; let n2: i32 = b.length; let classes: i32 = 0; let i: i32 = 0;
+    while (i < n1) { let c: i32 = a.values[a.start+i]; if (c < 0) { return core::result::Err(Error::Bounds); } if (c >= classes) { classes = c + 1; } i += 1; }
+    i = 0; while (i < n2) { let c: i32 = b.values[b.start+i]; if (c < 0) { return core::result::Err(Error::Bounds); } if (c >= classes) { classes = c + 1; } i += 1; }
+    let hb: i32 = hg_bits(n1); let hsize: i64 = 1; i = 0; while (i < hb) { hsize = hsize * 2; i += 1; }
+    let ints: i64 = hsize + 6 * (n1 as i64) + (n2 as i64) + 8;
+    if (4 * ints > 2147483647) { return core::result::Err(Error::AllocationFailed); }
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit((4 * ints) as i32);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let mem: alloc::io::Buffer = core::result::unwrap(made);
+    let room: core::result::Result<ptr, core::io::Error> = mem.reserve_raw((4 * ints) as i32);
+    if (core::result::is_err(room)) { mem.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let base: ptr = core::result::unwrap(room); let w1: i32 = n1 + 2; let w2: i32 = n2 + 2;
+    // Change marks are zeroed; the index arrays are set before use.
+    sd_fill_i32(base, w1 + w2, 0);
+    let r1: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base, w1); let r2: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + (w1 as usize) * 4, w2);
+    let at: usize = ((w1 + w2) as usize) * 4; let row: usize = (n1 as usize) * 4 + 4; let cap: i32 = n1 + 1;
+    let heads: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + at, hsize as i32); at += (hsize as usize) * 4;
+    let lmap: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + at, cap); at += row;
+    let nxt: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + at, cap); at += row;
+    let rptr: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + at, cap); at += row;
+    let rcnt: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + at, cap); at += row;
+    let rnext: [i32] = core::mem::typed_slice_from_raw_parts<i32>(base + at, cap);
+    let h: Hg = Hg { av: a.values, ab: a.start, bv: b.values, bb: b.start, heads: heads, lmap: lmap, nxt: nxt, rptr: rptr, rcnt: rcnt, rnext: rnext,
+        r1: r1, r2: r2, remap: alloc::vec::new(), classes: classes, work: 0, max_work: limits.max_work, failed: false, error: Error::AllocationFailed, limits: limits,
+        cnt: 0, common: false, b1: 0, e1: 0, b2: 0, e2: 0 };
+    hg_run(h.borrow(), n1, n2);
+    h.remap.destroy();
+    let out: core::result::Result<Script, Error> = core::result::Err(h.error);
+    if (!h.failed) {
+        xd_compact(r1, a, r2, n2, ia); xd_compact(r2, b, r1, n1, ib);
+        out = sd_rchg_script(r1, r2, n1, n2);
+    }
+    mem.destroy();
+    return out;
+}
+// git diff --histogram's alignment over class ids (equal ids, equal items;
+// any non-negative ids), with git's compaction but not its indent heuristic.
+pub fn histogram_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits) -> core::result::Result<Script, Error> {
+    return hg_diff(a, b, limits, xd_no_ind(), xd_no_ind());
+}
+// The script git diff gives for a split's lines with Xdiff or Histogram:
+// compaction uses git's default indent heuristic over the line text. Other
+// algorithms are as diff_split.
+pub fn diff_split_indent(split: &Split, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error> {
+    let which: i32 = match (algorithm) { Algorithm::Patience -> 1, Algorithm::Myers -> 0, Algorithm::Xdiff -> 2, Algorithm::Histogram -> 3 };
+    if (which < 2) { return diff_split(split, algorithm, limits); }
+    let ia: Ind = Ind { text: split.before, st: split.before_starts.as_slice(), on: true };
+    let ib: Ind = Ind { text: split.after, st: split.after_starts.as_slice(), on: true };
+    if (which == 2) { return xd_diff(split.classes.before.as_view(), split.classes.after.as_view(), limits, true, ia, ib); }
+    return hg_diff(split.classes.before.as_view(), split.classes.after.as_view(), limits, ia, ib);
+}
+
 // Script from change marks: within each change, deletions precede insertions.
 // Steps are counted first and written into presized slots.
 fn sd_rchg_script(r1: [i32], r2: [i32], n1: i32, n2: i32) -> core::result::Result<Script, Error> {
@@ -1130,9 +1434,10 @@ pub fn diff<T>(a: core::slice::View<T>, b: core::slice::View<T>, algorithm: Algo
 fn sd_run_classes(c: &Classes, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error> { return diff_classes(c.before.as_view(), c.after.as_view(), c.count, algorithm, limits); }
 // Diff two class-id sequences (ids in [0, classes)) with the chosen algorithm.
 pub fn diff_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, classes: i32, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error> {
-    let which: i32 = match (algorithm) { Algorithm::Patience -> 1, Algorithm::Myers -> 0, Algorithm::Xdiff -> 2 };
+    let which: i32 = match (algorithm) { Algorithm::Patience -> 1, Algorithm::Myers -> 0, Algorithm::Xdiff -> 2, Algorithm::Histogram -> 3 };
     if (which == 1) { return patience_classes(a, b, classes, limits); }
     if (which == 2) { return xdiff_classes(a, b, limits); }
+    if (which == 3) { return histogram_classes(a, b, limits); }
     return myers_classes(a, b, limits);
 }
 fn sd_diff_classes(c: Classes, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error> {

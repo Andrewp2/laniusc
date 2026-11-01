@@ -666,6 +666,9 @@ structure ResolvedPlace where
   /-- Native storage selected through a raw slice, if this place aliases heap
       bytes rather than a language cell. -/
   raw : Option (Ty × Address) := none
+  /-- The raw storage is one byte of a byte view (`isByte`), not a native
+      value's words. -/
+  rawByte : Bool := false
 
 def replaceProjectedValue : Value → List ValueProjection → Value → Except Trap Value
   | _, [], replacement => .ok replacement
@@ -855,10 +858,18 @@ def readNativeValue : Nat → Program → Heap → Ty → Address → Except Tra
           pure (.enumeration id variant payload)
       | _ => .error .typeMismatch
 
+/-- A byte view's element: the elements of a raw `u8` slice are single
+    bytes (laniusc's `[u8]`), where a u8 value or field elsewhere in native
+    storage is a 4-byte word. -/
+def isByte : Ty → Bool
+  | .scalar (.unsigned .u8) => true
+  | _ => false
+
 def rawSliceElementAddress? (program : Program) (element : Ty)
     (address index : Nat) : Except Trap Address :=
   match element with
   | .scalar (.signed .i32) => .ok (address + index * 4)
+  | .scalar (.unsigned .u8) => .ok (address + index)
   | .structure _ | .enumeration _ => do
       let some words := NativeLayout.valueWords? program element
         | .error .typeMismatch
@@ -867,12 +878,19 @@ def rawSliceElementAddress? (program : Program) (element : Ty)
       pure base
   | _ => .error .typeMismatch
 
+/-- An element of a raw slice at `base`: one byte for a byte view, the
+    element's native value otherwise. -/
+def readRawElement (program : Program) (heap : Heap) (element : Ty)
+    (base : Address) : Except Trap Value :=
+  if isByte element then do pure (.unsigned .u8 (← loadNatLE heap base 1))
+  else readNativeValue NativeLayout.maxDepth program heap element base
+
 def readRawSliceIndex (program : Program) (state : State)
     (element : Ty) (address length index : Nat) : Except Trap Value := do
   if index ≥ length then .error .arrayBounds
   else
     let base ← rawSliceElementAddress? program element address index
-    readNativeValue NativeLayout.maxDepth program state.heap element base
+    readRawElement program state.heap element base
 
 def readRawSliceValues (program : Program) (state : State)
     (element : Ty) (address length : Nat) : Except Trap (List Value) :=
@@ -973,13 +991,23 @@ def writeNativeValue : Nat → Program → State → Heap → Ty → Address →
                   (← wordBelow address offset) fieldValue) tagged
       | _, _ => .error .typeMismatch
 
+/-- A byte view's element store: the u8's one byte. -/
+def storeRawByte (heap : Heap) (address : Address) : Value → Except Trap Heap
+  | .unsigned .u8 number => heap.storeBytes address (encodeNatLE 1 number)
+  | _ => .error .typeMismatch
+
+/-- A store to raw storage: a byte view's byte, or the native value. -/
+def writeRawNative (program : Program) (state : State) (place : ResolvedPlace)
+    (type : Ty) (address : Address) (value : Value) : Except Trap Heap :=
+  if place.rawByte then storeRawByte state.heap address value
+  else writeNativeValue NativeLayout.maxDepth program state state.heap type address value
+
 def writeResolvedPlaceNative (program : Program) (state : State)
     (place : ResolvedPlace) (value : Value) : Except Trap State :=
   match place.raw with
   | none => writeResolvedPlace state place value
   | some (type, address) => do
-      let heap ← writeNativeValue NativeLayout.maxDepth program state state.heap
-        type address value
+      let heap ← writeRawNative program state place type address value
       pure { state with heap }
 
 def decodeI32Array : Nat → List UInt8 → Except Trap (List Value)
@@ -1091,10 +1119,18 @@ def mapRawI32Slice (state : State) (address : Address) (signedLength : Int) :
 
 /-- Keep native aggregate views as heap aliases, not copied arrays. The
     descriptor points at the high word of element zero; its finite layout
-    determines the whole backward byte range, which must lie in one live block. -/
+    determines the whole backward byte range, which must lie in one live block.
+    A byte view (`isByte`) points at its first byte and runs forward. -/
 def mapRawNominalSlice (program : Program) (state : State)
     (element : Ty) (address : Address) (signedLength : Int) : Outcome Value :=
   if signedLength < 0 then .trapped .rawMemoryBounds state
+  else if isByte element then
+    -- a byte view: `length` bytes from `address`, inside one live block
+    if signedLength = 0 then .done (.rawSlice element address 0) state
+    else
+      match state.heap.checkRange address signedLength.toNat 1 with
+      | .error reason => .trapped reason state
+      | .ok () => .done (.rawSlice element address signedLength.toNat) state
   else if !(match element with
       | .structure _ | .enumeration _ => true
       | _ => false) then .trapped .typeMismatch state
@@ -1701,14 +1737,16 @@ mutual
                         match access with
                         | .address => .done { resolved with
                             value := none
-                            raw := some (fieldType, address - offset) } next
+                            raw := some (fieldType, address - offset)
+                            rawByte := false } next
                         | .read =>
                             match readNativeValue NativeLayout.maxDepth program
                                 next.heap fieldType (address - offset) with
                             | .error reason => .trapped reason next
                             | .ok value => .done { resolved with
                                 value := some value
-                                raw := some (fieldType, address - offset) } next
+                                raw := some (fieldType, address - offset)
+                                rawByte := false } next
                 | _, _ => .trapped .typeMismatch next
             | some _ => .trapped .typeMismatch next
             | none =>
@@ -1780,14 +1818,15 @@ mutual
                               match access with
                               | .address => .done { resolved with
                                   value := none
-                                  raw := some (element, base) } afterIndex
+                                  raw := some (element, base)
+                                  rawByte := isByte element } afterIndex
                               | .read =>
-                                  match readNativeValue NativeLayout.maxDepth program
-                                      afterIndex.heap element base with
+                                  match readRawElement program afterIndex.heap element base with
                                   | .error reason => .trapped reason afterIndex
                                   | .ok value => .done { resolved with
                                       value := some value
-                                      raw := some (element, base) } afterIndex
+                                      raw := some (element, base)
+                                      rawByte := isByte element } afterIndex
                         else .trapped .arrayBounds afterIndex
                 | .trapped reason next => .trapped reason next
                 | .exited code exitedState => .exited code exitedState

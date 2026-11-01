@@ -70,6 +70,7 @@ import all Lanius.Mini.Compiler.P.storeType
 import all Lanius.Mini.Compiler.P.lowerSlice
 import all Lanius.Mini.Compiler.P.indexOf
 import all Lanius.Mini.Compiler.P.elementAddress
+import all Lanius.Mini.Compiler.P.storeWordElement
 import all Lanius.Mini.Compiler.P.lowerLoadType
 import all Lanius.Mini.Compiler.P.wordStride
 import all Lanius.Mini.Compiler.P.storeEvalWord

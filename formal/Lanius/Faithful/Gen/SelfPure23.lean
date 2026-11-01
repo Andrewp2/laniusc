@@ -8,123 +8,135 @@ open Lanius.Mini
 open Lanius.Faithful
 open Lanius.Faithful.Self
 
-/-- mini::selfhost::known_use -/
+/-- mini::selfhost::column_arm -/
 theorem pure2300 : PureFunc prog prims outside src2300 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::covers -/
+/-- mini::selfhost::is_last -/
 theorem pure2301 : PureFunc prog prims outside src2301 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::replace_at -/
+/-- mini::selfhost::ends_wild -/
 theorem pure2302 : PureFunc prog prims outside src2302 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::hidden_pat -/
+/-- mini::selfhost::known_use -/
 theorem pure2303 : PureFunc prog prims outside src2303 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::hidden_expr -/
+/-- mini::selfhost::covers -/
 theorem pure2304 : PureFunc prog prims outside src2304 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::column_fit -/
+/-- mini::selfhost::replace_at -/
 theorem pure2305 : PureFunc prog prims outside src2305 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::row_fits -/
+/-- mini::selfhost::hidden_pat -/
 theorem pure2306 : PureFunc prog prims outside src2306 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::column_sub -/
+/-- mini::selfhost::hidden_expr -/
 theorem pure2307 : PureFunc prog prims outside src2307 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::covered_use -/
+/-- mini::selfhost::column_fit -/
 theorem pure2308 : PureFunc prog prims outside src2308 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::covers_decl -/
+/-- mini::selfhost::row_fits -/
 theorem pure2309 : PureFunc prog prims outside src2309 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::hidden_path -/
+/-- mini::selfhost::column_sub -/
 theorem pure2310 : PureFunc prog prims outside src2310 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::col_fits -/
+/-- mini::selfhost::covered_use -/
 theorem pure2311 : PureFunc prog prims outside src2311 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::quiet_sub -/
+/-- mini::selfhost::covers_decl -/
 theorem pure2312 : PureFunc prog prims outside src2312 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::quiet_in -/
+/-- mini::selfhost::hidden_path -/
 theorem pure2313 : PureFunc prog prims outside src2313 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::sub_arm -/
+/-- mini::selfhost::col_fits -/
 theorem pure2314 : PureFunc prog prims outside src2314 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::quiet_use -/
+/-- mini::selfhost::quiet_sub -/
 theorem pure2315 : PureFunc prog prims outside src2315 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::cols_quiet -/
+/-- mini::selfhost::quiet_in -/
 theorem pure2316 : PureFunc prog prims outside src2316 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::covers_enum -/
+/-- mini::selfhost::sub_arm -/
 theorem pure2317 : PureFunc prog prims outside src2317 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::named_path -/
+/-- mini::selfhost::quiet_use -/
 theorem pure2318 : PureFunc prog prims outside src2318 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::text_hidden -/
+/-- mini::selfhost::cols_quiet -/
 theorem pure2319 : PureFunc prog prims outside src2319 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::same_opt_name -/
+/-- mini::selfhost::covers_enum -/
 theorem pure2320 : PureFunc prog prims outside src2320 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::quiet_arm -/
+/-- mini::selfhost::named_path -/
 theorem pure2321 : PureFunc prog prims outside src2321 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::mentions -/
+/-- mini::selfhost::text_hidden -/
 theorem pure2322 : PureFunc prog prims outside src2322 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::appended_use -/
+/-- mini::selfhost::same_opt_name -/
 theorem pure2323 : PureFunc prog prims outside src2323 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::col_quiet -/
+/-- mini::selfhost::quiet_arm -/
 theorem pure2324 : PureFunc prog prims outside src2324 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::covers_all -/
+/-- mini::selfhost::mentions -/
 theorem pure2325 : PureFunc prog prims outside src2325 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::wild_pat -/
+/-- mini::selfhost::appended_use -/
 theorem pure2326 : PureFunc prog prims outside src2326 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::covered_by -/
+/-- mini::selfhost::col_quiet -/
 theorem pure2327 : PureFunc prog prims outside src2327 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::plain_naming -/
+/-- mini::selfhost::covers_all -/
 theorem pure2328 : PureFunc prog prims outside src2328 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-def part23 : List SrcFunc := [src2300, src2301, src2302, src2303, src2304, src2305, src2306, src2307, src2308, src2309, src2310, src2311, src2312, src2313, src2314, src2315, src2316, src2317, src2318, src2319, src2320, src2321, src2322, src2323, src2324, src2325, src2326, src2327, src2328]
+/-- mini::selfhost::wild_pat -/
+theorem pure2329 : PureFunc prog prims outside src2329 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::covered_by -/
+theorem pure2330 : PureFunc prog prims outside src2330 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+/-- mini::selfhost::plain_naming -/
+theorem pure2331 : PureFunc prog prims outside src2331 = true :=
+  pureFunc_fast boxElem_self callTy_self (by decide +kernel)
+
+def part23 : List SrcFunc := [src2300, src2301, src2302, src2303, src2304, src2305, src2306, src2307, src2308, src2309, src2310, src2311, src2312, src2313, src2314, src2315, src2316, src2317, src2318, src2319, src2320, src2321, src2322, src2323, src2324, src2325, src2326, src2327, src2328, src2329, src2330, src2331]
 
 theorem chunk23 : FuncsOk prog prims outside 2300 part23 :=
   funcsOk_cons (funcOk_pure pure2300) <|
@@ -156,6 +168,9 @@ theorem chunk23 : FuncsOk prog prims outside 2300 part23 :=
   funcsOk_cons (funcOk_pure pure2326) <|
   funcsOk_cons (funcOk_pure pure2327) <|
   funcsOk_cons (funcOk_pure pure2328) <|
+  funcsOk_cons (funcOk_pure pure2329) <|
+  funcsOk_cons (funcOk_pure pure2330) <|
+  funcsOk_cons (funcOk_pure pure2331) <|
   funcsOk_nil
 
 end Lanius.Faithful.SelfPure

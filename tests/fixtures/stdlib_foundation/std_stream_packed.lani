@@ -1,0 +1,45 @@
+// expect: 0
+// stdin: 100000 bytes, byte i = (i * 37 + i / 256) mod 256; stdout: the same
+// Packed (stride +1) views go to the host in place: at most 1024 bytes per
+// call as before, offsets honoured, errors unchanged, and native [u8; N]
+// arrays still staged.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::result;
+import std::stream;
+
+fn expected(i: i32) -> u8 { return ((i * 37 + i / 256) % 256) as u8; }
+fn host_code(result: core::result::Result<i32, core::io::Error>) -> i32 {
+    if (result.is_ok()) { return 0; }
+    return match (result.unwrap_err()) { Host(value) -> value, _ -> -1 };
+}
+
+fn main() -> i32 {
+    let total: i32 = 100000;
+    let buffer: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    if (buffer.try_resize(total + 8, 7 as u8).is_err()) { return 1; }
+    let bytes: [u8] = buffer.as_slice();
+    let invalid: std::stream::Descriptor = std::stream::from_handle(-1);
+    if (host_code(invalid.read(bytes, 4, 10)) != 9 || host_code(invalid.write(bytes, 4, 10)) != 9) { return 2; }
+    if (invalid.read(bytes, 4, 0).unwrap() != 0 || invalid.write(bytes, 4, 0).unwrap() != 0) { return 3; }
+    let input: std::stream::Descriptor = std::stream::stdin();
+    // A regular file fills the whole per-call cap, even when more is asked.
+    let first: core::result::Result<i32, core::io::Error> = input.read(bytes, 3, 70000);
+    if (first.is_err() || first.unwrap() != 1024) { return 4; }
+    if (bytes[1027] != 7) { return 4; }
+    let rest: core::result::Result<i32, core::io::Failure> = core::io::read_exact(input.borrow(), bytes, 1027, total - 1024);
+    if (rest.is_err() || rest.unwrap() != total - 1024) { return 5; }
+    if (input.read(bytes, 0, 5).unwrap() != 0) { return 6; }
+    if (bytes[0] != 7 || bytes[1] != 7 || bytes[2] != 7 || bytes[total + 3] != 7) { return 7; }
+    let i: i32 = 0;
+    while (i < total) { if (bytes[3 + i] != expected(i)) { return 8; } i += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), bytes, 3, total);
+    if (written.is_err() || written.unwrap() != total) { return 9; }
+    // Native arrays keep the staged path.
+    let small: [u8; 4] = [1; 4];
+    if (input.read(small, 1, 3).unwrap() != 0 || small[1] != 1) { return 10; }
+    buffer.destroy();
+    return 0;
+}

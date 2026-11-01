@@ -159,8 +159,9 @@ frees the old storage. Allocation sizes, error order and results match the
 earlier byte-by-byte `try_push` loop. Copying 22 MB of stdin into a Buffer
 through `std::stream::copy` took 3.2–3.8 s before this change and 0.37 s
 after. `read_to_end` likewise went from 1.71 s to 0.37 s. Both runs were on
-native Linux x86_64. Reads still pass through the descriptor's 1,024-byte
-packed staging buffer.
+native Linux x86_64. Each descriptor read still moves at most 1,024 bytes;
+since the Buffer's storage is packed, those bytes land in place (see
+"Native descriptors").
 
 Queries are `len`, `capacity`, `limit` and `as_bytes`. `try_reserve` reserves a
 total capacity; `try_clone` returns independent storage with the same limit.
@@ -188,10 +189,24 @@ descriptors. `from_handle(handle)` borrows an existing descriptor without
 validating it. `Descriptor.raw_handle()` returns that handle. These adapters do
 not own, close, duplicate, change flags, or seek the descriptor.
 
-Each read/write transfers at most 1024 bytes through packed stack storage. This
-adapts arbitrary Lanius byte strides to the contiguous Linux host ABI without
-heap allocation. `std::stream::copy(reader, writer)` supplies its own 1024-byte
-scratch buffer and delegates to the portable copy operation.
+Each read/write transfers at most 1024 bytes and allocates no heap memory. A
+packed (stride +1) byte view, such as `Vec<u8>`, `Buffer` or `String` storage,
+is contiguous native memory, so the host reads or writes the caller's bytes in
+place with no copy. Other strides, including native `[u8; N]` arrays, still go
+through a private packed stack buffer filled or drained element by element.
+Before an in-place transfer the adapter indexes the last byte of the capped
+range, so a range past the view's backing traps rather than overrunning it.
+`std::stream::copy(reader, writer)` supplies its own packed 1024-byte scratch
+buffer and delegates to the portable copy operation.
+
+The 1024-byte cap is kept deliberately: traced tests of several programs
+(`lex_scan`, `csv_report`, `normalize_words`, `certificate_info`) check the
+exact per-call request sizes and partial-output prefixes it produces. Removing
+the in-place path's element loops alone cut the CPU time to move 256 MiB from
+a pipe to a pipe from 2.6–2.8 s to 0.58–0.62 s through both `copy` and a 1 KiB
+`Vec` buffer. An uncapped prototype reached about 2.6 GB/s with a 64 KiB
+buffer, against about 0.56 GB/s capped; lifting the cap means updating those
+traced expectations together with the adapter.
 
 The native binding returns raw negative Linux errors. The adapter maps `EINTR`
 to `Interrupted`, `EAGAIN` to `WouldBlock`, and other errors to `Host(code)` with
@@ -239,6 +254,10 @@ its input/output and allocation-failure suite in 6.14 seconds.
   check that every successful allocation is freed exactly once.
 - Native descriptor errors, strided buffers, partial reads and binary copying
   at 0/1/1023/1024/1025/65539 bytes.
+- `std_stream_packed.lani`: a 100,000-byte packed `Vec` read in place (one
+  oversized request answered with exactly 1024 bytes, then `read_exact`) with
+  sentinels untouched, written back with `write_all`, invalid-handle and
+  zero-count results, and a native array still on the staged path.
 - Injected EINTR, EAGAIN, EIO and zero-write results verify retry behavior,
   termination, and the exact output prefix.
 
