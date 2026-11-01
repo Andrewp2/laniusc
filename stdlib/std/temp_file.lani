@@ -140,7 +140,7 @@ pub impl TempFile {
             if(core::result::is_err(filled)) { return core::result::Err(self.failed(Stage::Entropy,Error::Entropy(core::result::unwrap_err(filled)))); }
             name[0]=46; name[1]=116; name[2]=109; name[3]=112; name[4]=45;
             let index:i32=0;
-            while(index<16) { name[5+index*2]=digit(random[index]>>4); name[6+index*2]=digit(random[index]&15); index+=1; }
+            while(index<16) { let stored2 = digit(random[index]>>4); name[5+index*2] = stored2; let stored1 = digit(random[index]&15); name[6+index*2] = stored1; index+=1; }
             let equal:bool=reserved_length==NAME_BYTES; index=0;
             while(equal && index<NAME_BYTES) { if(name[index]!=reserved[index]) { equal=false; } index+=1; }
             if(equal) { self.counters.excluded+=1; }
