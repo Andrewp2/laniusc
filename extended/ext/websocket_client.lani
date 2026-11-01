@@ -13,8 +13,8 @@ import core::time;
 import ext::http;
 import ext::http_agent;
 import ext::http_url;
-import ext::openssl_websocket;
 import ext::websocket;
+import ext::ws_deflate;
 import std::clock;
 import std::entropy;
 
@@ -36,17 +36,19 @@ pub struct Message { kind: Kind, data: core::slice::View<u8>, close_code: i32 }
 // plus the handshake, and each send. close_ms bounds the wait for the peer's
 // Close and then for its transport close. protocols is empty or a
 // comma-separated token list; headers are extra request fields (for example
-// Origin or Authorization).
+// Origin or Authorization). deflate offers permessage-deflate (RFC 7692,
+// through ext::ws_deflate).
 pub struct Options {
     agent: ext::http_agent::Options, wire: ext::websocket::Limits, timeout_ms: i32, close_ms: i32,
-    protocols: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>
+    protocols: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, deflate: bool
 }
 // One manual owner; destroy it once.
 pub struct Client {
     conn: ext::http_agent::Connection, wire: ext::websocket::Connection, options: Options,
     input: alloc::vec::Vec<u8>, start: i32, filled: i32, eof: bool,
     masks: alloc::vec::Vec<u8>, used: i32, protocol: alloc::vec::Vec<u8>, selected: bool,
-    peer_code: i32, active: bool, open: bool
+    peer_code: i32, active: bool, open: bool,
+    codec: core::option::Option<ext::ws_deflate::Codec>, inflated: alloc::vec::Vec<u8>, packed: alloc::vec::Vec<u8>
 }
 
 const MASK_POOL: i32 = 256;
@@ -70,7 +72,7 @@ fn transport(e: ext::http_agent::Error) -> Error { return match(e) { ext::http_a
 pub fn default_options() -> Options {
     let limits: ext::websocket::Limits = ext::websocket::default_limits();
     let empty: alloc::vec::Vec<ext::http::Field> = alloc::vec::new<ext::http::Field>(); let none: core::slice::View<ext::http::Field> = empty.as_view();
-    return Options { agent: ext::http_agent::default_options(), wire: limits, timeout_ms: 30000, close_ms: 2000, protocols: literal("",0), headers: none };
+    return Options { agent: ext::http_agent::default_options(), wire: limits, timeout_ms: 30000, close_ms: 2000, protocols: literal("",0), headers: none, deflate: false };
 }
 
 // Index just past the head's blank line, or -1.
@@ -128,13 +130,14 @@ fn handshake(conn: ext::http_agent::Connection, u: &ext::http_url::Url, options:
     let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let request: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
     let nonce: [u8;16] = [0;16];
     if (std::entropy::fill(nonce,0,16).is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Entropy); }
+    let offer: core::slice::View<u8> = literal("",0); if (options.deflate) { offer = ext::ws_deflate::offer(); }
     let start: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
     let fields: alloc::vec::Vec<ext::http::Field> = alloc::vec::new<ext::http::Field>();
     let staged: bool = start.try_extend(literal("GET ",4)).is_ok() && start.try_extend(u.target().unwrap()).is_ok() && start.try_extend(literal(" HTTP/1.1",9)).is_ok()
         && fields.try_push(ext::http::Field { raw: literal("",0), name: literal("Host",4), value: u.authority().unwrap(), offset: 0 }).is_ok()
         && fields.try_extend(options.headers).is_ok();
     if (!staged) { start.destroy(); fields.destroy(); return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::AllocationFailed); }
-    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = ext::websocket::encode_request(start.as_view(),fields.as_view(),core::slice::view<u8>(nonce,16).unwrap(),options.protocols,options.wire);
+    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = ext::websocket::encode_request_extensions(start.as_view(),fields.as_view(),core::slice::view<u8>(nonce,16).unwrap(),options.protocols,offer,options.wire);
     start.destroy(); fields.destroy();
     if (encoded.is_err()) {
         let e: Error = match(encoded.unwrap_err()) { ext::websocket::Error::AllocationFailed -> Error::AllocationFailed, _ -> Error::InvalidRequest };
@@ -143,7 +146,7 @@ fn handshake(conn: ext::http_agent::Connection, u: &ext::http_url::Url, options:
     request.destroy(); request = encoded.unwrap();
     let key: [u8;24] = [0;24]; let accept: [u8;28] = [0;28];
     if (ext::websocket::key_into(core::slice::view<u8>(nonce,16).unwrap(),core::slice::view<u8>(key,24).unwrap()).is_err()
-        || ext::openssl_websocket::accept_into(core::slice::view<u8>(key,24).unwrap(),core::slice::view<u8>(accept,28).unwrap()).is_err()) {
+        || ext::websocket::accept_into(core::slice::view<u8>(key,24).unwrap(),core::slice::view<u8>(accept,28).unwrap()).is_err()) {
         return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Handshake(ext::websocket::Error::Handshake));
     }
     let sent: core::result::Result<i32,ext::http_agent::Error> = conn.borrow().send(request.as_view(),deadline);
@@ -167,19 +170,32 @@ fn handshake(conn: ext::http_agent::Connection, u: &ext::http_url::Url, options:
     if (status != 101) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Rejected(status)); }
     let req: core::result::Result<ext::websocket::Request,ext::websocket::Error> = ext::websocket::validate_request(request.as_view(),options.wire);
     if (req.is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Handshake(req.unwrap_err())); }
-    let checked: core::result::Result<ext::websocket::Response,ext::websocket::Error> = ext::websocket::validate_response(part(input.as_view(),0,filled),req.unwrap(),core::slice::view<u8>(accept,28).unwrap(),options.wire);
+    let checked: core::result::Result<ext::websocket::Response,ext::websocket::Error> = ext::websocket::validate_response_extensions(part(input.as_view(),0,filled),req.unwrap(),core::slice::view<u8>(accept,28).unwrap(),options.wire);
     if (checked.is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Handshake(checked.unwrap_err())); }
     let response: ext::websocket::Response = checked.unwrap();
+    // permessage-deflate only when offered, and on the server's terms.
+    let codec: core::option::Option<ext::ws_deflate::Codec> = core::option::None();
+    let extension: core::option::Option<ext::http::Field> = response.head.lookup(literal("Sec-WebSocket-Extensions",24));
+    if (extension.is_some()) {
+        let params: core::result::Result<ext::ws_deflate::Params,ext::ws_deflate::Error> = ext::ws_deflate::accepted(extension.unwrap().value);
+        if (!options.deflate || params.is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Handshake(ext::websocket::Error::Handshake)); }
+        let made: core::result::Result<ext::ws_deflate::Codec,ext::ws_deflate::Error> = ext::ws_deflate::codec(ext::websocket::Role::Client,params.unwrap());
+        if (made.is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::AllocationFailed); }
+        codec = core::option::Some(made.unwrap());
+    }
     let protocol: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let selected: bool = response.protocol.is_some();
     let masks: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
     let wire: core::result::Result<ext::websocket::Connection,ext::websocket::Error> = ext::websocket::connection(ext::websocket::Role::Client,options.wire);
     if (wire.is_err() || (selected && protocol.try_extend(response.protocol.unwrap()).is_err()) || masks.try_resize(MASK_POOL,0 as u8).is_err()) {
         protocol.destroy(); masks.destroy(); if (wire.is_ok()) { let w: ext::websocket::Connection = wire.unwrap(); w.destroy(); }
+        if (codec.is_some()) { let c: ext::ws_deflate::Codec = codec.unwrap(); c.destroy(); }
         return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::AllocationFailed);
     }
     let head: i32 = response.head.raw.len(); request.destroy();
-    return core::result::Ok(Client { conn: conn, wire: wire.unwrap(), options: options, input: input, start: head, filled: filled, eof: false,
-        masks: masks, used: MASK_POOL, protocol: protocol, selected: selected, peer_code: -1, active: true, open: true });
+    let w: ext::websocket::Connection = wire.unwrap(); if (codec.is_some()) { w.enable_compression(); }
+    return core::result::Ok(Client { conn: conn, wire: w, options: options, input: input, start: head, filled: filled, eof: false,
+        masks: masks, used: MASK_POOL, protocol: protocol, selected: selected, peer_code: -1, active: true, open: true,
+        codec: codec, inflated: alloc::vec::new<u8>(), packed: alloc::vec::new<u8>() });
 }
 
 pub impl Client {
@@ -205,10 +221,12 @@ pub impl Client {
     }
     // Stop using the transport. graceful sends TLS close_notify first.
     fn drop_transport(&self, graceful: bool) { if (self.open) { self.open = false; self.conn.close(graceful); } }
-    fn transmit(&self, fin: bool, opcode: i32, payload: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    fn transmit(&self, fin: bool, opcode: i32, payload: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.transmit_with(fin,opcode,payload,false); }
+    fn transmit_with(&self, fin: bool, opcode: i32, payload: core::slice::View<u8>, compressed: bool) -> core::result::Result<i32,Error> {
         if (!self.active || !self.open) { return core::result::Err(Error::Closed); }
         let key: core::result::Result<[u8;4],Error> = self.mask(); if (key.is_err()) { return core::result::Err(key.unwrap_err()); }
-        let framed: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = self.wire.send(fin,opcode,payload,key.unwrap());
+        let framed: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = core::result::Err(ext::websocket::Error::Failed);
+        if (compressed) { framed = self.wire.send_compressed(fin,opcode,payload,key.unwrap()); } else { framed = self.wire.send(fin,opcode,payload,key.unwrap()); }
         if (framed.is_err()) {
             return core::result::Err(match(framed.unwrap_err()) {
                 ext::websocket::Error::Closed -> Error::Closed, ext::websocket::Error::Failed -> Error::Closed,
@@ -224,8 +242,30 @@ pub impl Client {
         return core::result::Ok(length);
     }
     // One whole message.
-    pub fn send_text(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.transmit(true,1,data); }
-    pub fn send_binary(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.transmit(true,2,data); }
+    // Compressed when permessage-deflate was negotiated with
+    // client_no_context_takeover and data is at least 64 bytes.
+    pub fn send_text(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.send_message(1,data); }
+    pub fn send_binary(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.send_message(2,data); }
+    // Whether permessage-deflate was negotiated.
+    pub fn compressed(&self) -> bool { return self.codec.is_some(); }
+    fn send_message(&self, opcode: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (self.codec.is_none() || data.len() < 64) { return self.transmit(true,opcode,data); }
+        let c: ext::ws_deflate::Codec = self.codec.unwrap();
+        if (!c.compresses()) { return self.transmit(true,opcode,data); }
+        self.packed.clear();
+        let packed: core::result::Result<i32,ext::ws_deflate::Error> = c.compress(data,self.packed.borrow()); self.codec = core::option::Some(c);
+        if (packed.is_err()) { return core::result::Err(Error::AllocationFailed); }
+        return self.transmit_with(true,opcode,self.packed.as_view(),true);
+    }
+    // Inflate a compressed message into inflated; text must be UTF-8.
+    fn unpack(&self, payload: core::slice::View<u8>, text: bool) -> core::result::Result<core::slice::View<u8>,ext::websocket::Error> {
+        if (self.codec.is_none()) { return core::result::Err(ext::websocket::Error::Protocol(0)); }
+        let c: ext::ws_deflate::Codec = self.codec.unwrap(); self.inflated.clear();
+        let got: core::result::Result<i32,ext::ws_deflate::Error> = c.inflate(payload,self.inflated.borrow(),self.options.wire.message_bytes); self.codec = core::option::Some(c);
+        if (got.is_err()) { return core::result::Err(match(got.unwrap_err()) { ext::ws_deflate::Error::TooLarge -> ext::websocket::Error::Limit(0), ext::ws_deflate::Error::AllocationFailed -> ext::websocket::Error::AllocationFailed, _ -> ext::websocket::Error::InvalidUtf8(0) }); }
+        if (text && !ext::websocket::valid_text(self.inflated.as_view())) { return core::result::Err(ext::websocket::Error::InvalidUtf8(0)); }
+        return core::result::Ok(self.inflated.as_view());
+    }
     // One fragment: opcode 1 or 2 starts a message, 0 continues it; fin ends it.
     // Controls may be sent between fragments.
     pub fn send_fragment(&self, fin: bool, opcode: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
@@ -280,8 +320,14 @@ pub impl Client {
                         ext::websocket::Event::Pending -> 0, ext::websocket::Event::Text -> 1, ext::websocket::Event::Binary -> 2,
                         ext::websocket::Event::Ping -> 9, ext::websocket::Event::Pong -> 10, ext::websocket::Event::Close -> 8
                     };
-                    if (kind == 1) { return core::result::Ok(Message { kind: Kind::Text, data: step.payload, close_code: -1 }); }
-                    if (kind == 2) { return core::result::Ok(Message { kind: Kind::Binary, data: step.payload, close_code: -1 }); }
+                    let data: core::slice::View<u8> = step.payload;
+                    if ((kind == 1 || kind == 2) && self.wire.last_compressed()) {
+                        let unpacked: core::result::Result<core::slice::View<u8>,ext::websocket::Error> = self.unpack(step.payload,kind == 1);
+                        if (unpacked.is_err()) { return core::result::Err(self.fail(unpacked.unwrap_err())); }
+                        data = unpacked.unwrap();
+                    }
+                    if (kind == 1) { return core::result::Ok(Message { kind: Kind::Text, data: data, close_code: -1 }); }
+                    if (kind == 2) { return core::result::Ok(Message { kind: Kind::Binary, data: data, close_code: -1 }); }
                     if (kind == 10) { return core::result::Ok(Message { kind: Kind::Pong, data: step.payload, close_code: -1 }); }
                     if (kind == 9) {
                         if (!self.wire.close_sent()) {
@@ -357,6 +403,8 @@ pub impl Client {
     pub fn destroy(&self) -> bool {
         if (!self.active) { return false; } self.active = false;
         self.drop_transport(false); self.wire.destroy(); self.input.destroy(); self.masks.destroy(); self.protocol.destroy();
+        if (self.codec.is_some()) { let c: ext::ws_deflate::Codec = self.codec.unwrap(); c.destroy(); self.codec = core::option::None(); }
+        self.inflated.destroy(); self.packed.destroy();
         return true;
     }
 }
