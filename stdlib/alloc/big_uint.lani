@@ -19,7 +19,7 @@ const MASK: u64 = 4294967295;
 pub const KARATSUBA_THRESHOLD: i32 = 32;
 // Divisors with at least this many limbs, and quotients at least this long, use
 // Burnikel-Ziegler recursive division; smaller cases use Knuth algorithm D.
-pub const BURNIKEL_ZIEGLER_THRESHOLD: i32 = 64;
+pub const BURNIKEL_ZIEGLER_THRESHOLD: i32 = 1024;
 // Values above this many limbs (inputs above this many digits) convert by
 // divide and conquer over squared radix powers.
 pub const CONVERSION_THRESHOLD: i32 = 1024;
