@@ -1,0 +1,46 @@
+module app::main;
+import alloc::vec;
+import core::result;
+// Performance defect: the Karatsuba base-case row (alloc::big_uint mul_add)
+// costs about 13 ns per limb on an idle laptop (26 ns under load) instead of
+// about 1 ns. Expected exit 72; 100,000 rows of 1,000 limbs take 1.34 s.
+// Per `xs[j]`, `os[j]` and `os[j] = ...` the loop body (x86_64 backend):
+//   mov -0x118(%rbp),%rax; mov %rax,-0x38(%rbp)   copy slice pointer,
+//   mov -0x120(%rbp),%eax; mov %eax,-0x40(%rbp)   length and stride
+//   mov -0x128(%rbp),%rax; mov %rax,-0x48(%rbp)   into fresh slots
+//   cmp %eax,%ecx; jb ok; mov $0x65,%edi; mov $0x3c,%eax; syscall   bounds
+//   mov -0x48(%rbp),%rcx; imul %rcx,%rdx; add %rdx,%rax              runtime stride
+//   mov (%rax),%rax; mov %rax,-0x58(%rbp); mov -0x58(%rbp),%eax      8-byte load, spill
+// then every u64 temporary takes a stack slot, `wide` (eighth declaration)
+// stays in a slot, `>> 32` range-checks a constant at run time, and the loop
+// test goes through setl/movzbl/store/load/test/je: about 100 instructions,
+// 70 of them with a memory operand, per limb, and the carry chain passes
+// through several store-to-load forwards.
+fn row(xs: [u32], os: [u32], n: i32, factor: u64) -> u64 {
+    let carry: u64 = 0;
+    let j: i32 = 0;
+    while (j < n) {
+        let wide: u64 = factor * (xs[j] as u64) + (os[j] as u64) + carry;
+        os[j] = wide as u32;
+        carry = wide >> 32;
+        j += 1;
+    }
+    return carry;
+}
+fn main() -> i32 {
+    let x: alloc::vec::Vec<u32> = alloc::vec::new();
+    let o: alloc::vec::Vec<u32> = alloc::vec::new();
+    core::result::unwrap(x.try_resize(1000, 2654435761));
+    core::result::unwrap(o.try_resize(1000, 0));
+    let xs: [u32] = x.as_slice();
+    let os: [u32] = o.as_slice();
+    let total: u64 = 0;
+    let r: i32 = 0;
+    while (r < 100000) {
+        total += row(xs, os, 1000, (r as u64) + 305419896);
+        r += 1;
+    }
+    x.destroy();
+    o.destroy();
+    return (total & 127) as i32;
+}
