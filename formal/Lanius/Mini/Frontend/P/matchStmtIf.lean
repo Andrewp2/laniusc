@@ -12,7 +12,6 @@ import Lanius.Mini.Frontend.P.fnInstRet
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.isEmptyUsize
-import Lanius.Mini.Frontend.P.namesSome
 import Lanius.Mini.Frontend.P.noBlock
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
@@ -65,12 +64,6 @@ def matchStmtOn (fuel : Nat) (env : FrontEnv) (scope : List Local) (m : CTree) (
 /-- The scrutinee is read like a match expression's. -/
 def matchStmtParts (fuel : Nat) (env : FrontEnv) (scope : List Local) (m : CTree) : Option MatchStmt :=
   matchStmtOn fuel env scope m (effOf fuel env scope none (kid m 2))
-
-/-- The arms in variant order. -/
-def matchStmtArms (fuel : Nat) (h : MatchStmt) (m : CTree) : Option (List CTree) :=
-  match listItems fuel (kid m 5) with
-  | none => none
-  | some arms => armsInOrder fuel h.owner h.variants arms
 
 /-- A match statement's arms in variant order (stmt_arm_order). -/
 def stmtArms (fuel : Nat) (env : FrontEnv) (h : MatchStmt) (m : CTree) : Option (List CTree) :=

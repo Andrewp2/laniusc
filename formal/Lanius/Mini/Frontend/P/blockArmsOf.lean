@@ -213,7 +213,7 @@ def letMatchOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : Local) (i
       match matchStmtParts fuel env scope m with
       | none => none
       | some h =>
-        match matchStmtArms fuel h m with
+        match stmtArms fuel env h m with
         | none => none
         | some os =>
           match body with
@@ -241,7 +241,27 @@ def letArmOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (h : MatchStmt) 
     | some b =>
       match armBlockList fuel a with
       | some list => armStmt h k b v (blockOf (fuel - 1) env (boundScope b) list) others
-      | none => armStmt h k b v (letOf (localIdOf x) (localTyOf x) (letHeadOrEval (fuel - 1) env (boundScope b) (localTyOf x) (kid a 2)) (some rest)) others
+      | none => armStmt h k b v (letBodyOf (fuel - 1) env (boundScope b) x rest a) others
+/-- A let match's arm that is not a block: a nested arm's inner match (a bare match node, as nest_arm builds; a written value is never one), else a value binding x, then rest. -/
+def letBodyOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : Local) (rest : MStmt) (a : CTree) : Option MStmt :=
+  if fuel = 0 then
+    none
+  else
+    if nodeProd (kid a 2) = (187) then
+      innerLetOf (fuel - 1) env scope x rest (kid a 2)
+    else
+      letOf (localIdOf x) (localTyOf x) (letHeadOrEval (fuel - 1) env scope (localTyOf x) (kid a 2)) (some rest)
+/-- The inner match of a nested arm in a let's match, read as the let's match on h: its block arms leave, its value arms bind x and run rest. -/
+def innerLetOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : Local) (rest : MStmt) (m : CTree) : Option MStmt :=
+  if fuel = 0 then
+    none
+  else
+    match matchStmtParts fuel env scope m with
+    | none => none
+    | some h =>
+      match stmtArms fuel env h m with
+      | none => none
+      | some os => matchStmtValue h (letArmsOf (fuel - 1) env scope h x rest 0 h.variants os)
 end
 
 def consParam (p : MParam) (rest : Option MParams) : Option MParams :=

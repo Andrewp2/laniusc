@@ -527,8 +527,9 @@ unique. Trusted:
     the binder spelled `[0]`, which no source can spell. No arm's value is
     a block (`BlockValue`). A match statement's nested arms are read the
     same way (`StmtOrder`, arms may be blocks), the inner match read as a
-    match statement on h (`ArmsStmtR.inner`). SEMANTIC_DECISIONS "Nested
-    patterns";
+    match statement on h (`ArmsStmtR.inner`), and so are a let's match's
+    (`LetArmsR.inner`; a value arm's value is not that bare match node).
+    SEMANTIC_DECISIONS "Nested patterns";
   - (F11b) a payload pattern binds a name only when no enum of the program
     has a variant so spelled (`BindersR`'s `NoVariant`): laniusc reads one
     that resolves to a variant as a check. SEMANTIC_DECISIONS "Payload

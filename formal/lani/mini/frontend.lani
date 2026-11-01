@@ -9084,14 +9084,6 @@ pub fn match_stmt_parts(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree
     return match_stmt_on(fuel, env, scope, m, eff_of(fuel, env, scope, None, kid(m, 2)));
 }
 
-// The arms in variant order.
-pub fn match_stmt_arms(fuel: usize, h: MatchStmt, m: CTree) -> core::option::Option<List<CTree>> {
-    return match (list_items(fuel, kid(m, 5))) {
-        None -> None,
-        Some(arms) -> arms_in_order(fuel, h.owner, h.variants, arms),
-    };
-}
-
 // A match statement's arms in variant order (stmt_arm_order).
 pub fn stmt_arms(fuel: usize, env: FrontEnv, h: MatchStmt, m: CTree) -> core::option::Option<List<CTree>> {
     return match (list_items(fuel, kid(m, 5))) {
@@ -9441,7 +9433,7 @@ pub fn let_match_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, in
         None -> None,
         Some(m) -> match (match_stmt_parts(fuel, env, scope, m)) {
             None -> None,
-            Some(h) -> match (match_stmt_arms(fuel, h, m)) {
+            Some(h) -> match (stmt_arms(fuel, env, h, m)) {
                 None -> None,
                 Some(os) -> match (body) {
                     None -> None,
@@ -9476,7 +9468,35 @@ pub fn let_arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, h: MatchStmt, 
         None -> None,
         Some(b) -> match (arm_block_list(fuel, a)) {
             Some(list) -> arm_stmt(h, k, b, v, block_of(minus(fuel, 1), env, bound_scope(b), list), others),
-            None -> arm_stmt(h, k, b, v, let_of(local_id_of(x), local_ty_of(x), let_head_or_eval(minus(fuel, 1), env, bound_scope(b), local_ty_of(x), kid(a, 2)), Some(rest)), others),
+            None -> arm_stmt(h, k, b, v, let_body_of(minus(fuel, 1), env, bound_scope(b), x, rest, a), others),
+        },
+    };
+}
+
+// A let match's arm that is not a block: a nested arm's inner match (a bare
+// match node, as nest_arm builds; a written value is never one), else a
+// value binding x, then rest.
+pub fn let_body_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, rest: MStmt, a: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    if (node_prod(kid(a, 2)) == p_match_expr()) {
+        return inner_let_of(minus(fuel, 1), env, scope, x, rest, kid(a, 2));
+    }
+    return let_of(local_id_of(x), local_ty_of(x), let_head_or_eval(minus(fuel, 1), env, scope, local_ty_of(x), kid(a, 2)), Some(rest));
+}
+
+// The inner match of a nested arm in a let's match, read as the let's match
+// on h: its block arms leave, its value arms bind x and run rest.
+pub fn inner_let_of(fuel: usize, env: FrontEnv, scope: List<Local>, x: Local, rest: MStmt, m: CTree) -> core::option::Option<MStmt> {
+    if (fuel == 0) {
+        return None;
+    }
+    return match (match_stmt_parts(fuel, env, scope, m)) {
+        None -> None,
+        Some(h) -> match (stmt_arms(fuel, env, h, m)) {
+            None -> None,
+            Some(os) -> match_stmt_value(h, let_arms_of(minus(fuel, 1), env, scope, h, x, rest, 0, h.variants, os)),
         },
     };
 }

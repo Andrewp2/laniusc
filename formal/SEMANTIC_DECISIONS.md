@@ -1409,7 +1409,7 @@ its value. The inner match is read again, nested or not.
   inner match's scrutinee is h.
 - A match statement reads block arms; a nested match expression may have
   no arm whose value is a block (`BlockValue`), so the two readings never
-  overlap. Lets' matches with a nested arm are not read.
+  overlap.
 - (F11b) A match statement with a nested arm is read the same way
   (`stmt_arm_order`, `StmtOrder`), its arms' values blocks: the nested arm
   `V(h) -> match (h) { p -> { .. }, .. }` is read as a match statement on h
@@ -1420,6 +1420,14 @@ its value. The inner match is read again, nested or not.
   (case reject_nested_stmt_gap). A block arm's value is never the bare
   match node `nest_arm` builds (`armBlockR_noMatch`), so the two arm
   readings never overlap.
+- (F11b) A let's match with a block arm and a nested arm, `let x: t = match
+  (s) { V(Some(y)) -> y, V(None) -> { return 0; }, .. }`, is read the same
+  way (`LetArmsR.inner`): the inner match is read as the let's match on h,
+  its value arms binding x and running the rest, its block arms leaving. A
+  value arm's value is never the bare match node (a written `match` sits
+  under its expression levels; `LetArmsR.value` requires it), so the value
+  and inner readings never overlap. Case nested_let_match (laniusc runs it
+  alike).
 - Every arm but a last wildcard must name a variant, as without nesting.
 - Determinism: whether some arm is nested decides the branch; the arms
   naming a variant, their patterns, the column and the inner arms are each
