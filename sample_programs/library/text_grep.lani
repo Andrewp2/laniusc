@@ -128,33 +128,73 @@ fn valid_utf8(bytes: [u8], from: i32, to: i32) -> bool {
     }
     return true;
 }
-// Selected records collect in one output buffer, written once it holds
-// 64 KiB, at the end, and before any error is reported.
-struct Output { bytes: alloc::vec::Vec<u8> }
+// Selected records collect in one fixed 64 KiB output area, allocated at
+// the first selected record and written when the next piece would not fit,
+// at the end, and before any error is reported. A piece of 64 KiB or more is
+// written straight from the input buffer. The 32 bytes before the area hold
+// the last line number in decimal, right-aligned in [0, 20) with `width`
+// digits, so the next number is usually one carry away.
+struct Output { bytes: alloc::vec::Vec<u8>, used: i32, number: u64, width: i32 }
 impl Output { fn borrow(&self) -> &Output { return self; } }
 fn flush(output: &Output) -> bool {
-    let ok: bool = write_range(output.bytes.storage,0,output.bytes.len()); output.bytes.clear(); return ok;
+    let ok: bool = write_range(output.bytes.storage,32,output.used); output.used = 0; return ok;
 }
-fn put(output: &Output, values: [u8], start: i32, count: i32, diagnostic: &Diagnostic) -> i32 {
-    let extended: core::result::Result<i32,alloc::vec::Error> = output.bytes.try_extend(core::result::unwrap(core::slice::view_range(values,start,count)));
-    if (core::result::is_err(extended)) {
-        let allocation: bool = match (core::result::unwrap_err(extended)) { alloc::vec::Error::AllocationFailed -> true, _ -> false };
-        if (allocation) { return fail(diagnostic,4,8); } return fail(diagnostic,2,5);
+// Room for count more bytes: allocate on first use, flush when full.
+fn reserve(output: &Output, count: i32, diagnostic: &Diagnostic) -> i32 {
+    if (output.bytes.is_empty()) {
+        let grown: core::result::Result<i32,alloc::vec::Error> = output.bytes.try_resize(65568,0);
+        if (core::result::is_err(grown)) {
+            let allocation: bool = match (core::result::unwrap_err(grown)) { alloc::vec::Error::AllocationFailed -> true, _ -> false };
+            if (allocation) { return fail(diagnostic,4,8); } return fail(diagnostic,2,5);
+        }
     }
-    if (output.bytes.len() >= 65536 && !flush(output)) { return fail(diagnostic,3,7); }
+    if (count > 65536 - output.used && output.used > 0 && !flush(output)) { return fail(diagnostic,3,7); }
     return 0;
+}
+// bytes[at, at + count) to target[into ..], eight bytes per step. Both are
+// packed Vec<u8> storage; u64 views of equal length index alike.
+fn copy(bytes: [u8], at: i32, target: [u8], into: i32, count: i32) {
+    let words: i32 = count / 8;
+    if (words > 0) {
+        let from: [u64] = core::mem::typed_slice_from_storage<u64>(core::mem::i32_slice_data_ptr(bytes) + (at as usize), words);
+        let to: [u64] = core::mem::typed_slice_from_storage<u64>(core::mem::i32_slice_data_ptr(target) + (into as usize), words);
+        let k: i32 = 0; while (k < words) { to[k] = from[k]; k += 1; }
+    }
+    let i: i32 = words * 8; while (i < count) { target[into + i] = bytes[at + i]; i += 1; }
+}
+// bytes is the packed input buffer.
+fn put(output: &Output, bytes: [u8], start: i32, count: i32, diagnostic: &Diagnostic) -> i32 {
+    let status: i32 = reserve(output,count,diagnostic); if (status != 0) { return status; }
+    if (count >= 65536) { if (!write_range(core::mem::i32_slice_data_ptr(bytes),start,count)) { return fail(diagnostic,3,7); } return 0; }
+    copy(bytes,start,output.bytes.as_slice(),32 + output.used,count); output.used += count; return 0;
+}
+// The decimal value and a colon. The next line number increments the
+// stored digits; any other value is converted afresh.
+fn put_number(output: &Output, value: u64, diagnostic: &Diagnostic) -> i32 {
+    let status: i32 = reserve(output,21,diagnostic); if (status != 0) { return status; }
+    let target: [u8] = output.bytes.as_slice();
+    if (output.width > 0 && value == output.number + 1) {
+        let i: i32 = 19; let carrying: bool = true;
+        while (carrying) {
+            if (i < 20 - output.width) { target[i] = 49; output.width += 1; carrying = false; }
+            else { if (target[i] == 57) { target[i] = 48; i -= 1; } else { let digit: u8 = target[i] + 1; target[i] = digit; carrying = false; } }
+        }
+    } else {
+        let at: i32 = 20; let rest: u64 = value;
+        while (at == 20 || rest > 0) { at -= 1; target[at] = (48 + rest % 10) as u8; rest = rest / 10; }
+        output.width = 20 - at;
+    }
+    output.number = value;
+    let into: i32 = 32 + output.used; let k: i32 = 20 - output.width;
+    while (k < 20) { target[into] = target[k]; into += 1; k += 1; }
+    target[into] = 58; output.used = into + 1 - 32; return 0;
 }
 // Selected-record bookkeeping; a terminated record keeps its LF.
 fn emit(bytes: [u8], start: i32, end: i32, terminated: bool, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
     if (progress.selected == 18446744073709551615) { return fail(diagnostic,2,5); } progress.selected += 1;
     if (options.count) { return 0; }
     diagnostic.stage = 4;
-    if (options.numbers) {
-        let storage: [i32;8] = [0;8]; let digits: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),32);
-        let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(digits,0,32));
-        format.write_unsigned(diagnostic.line,core::fmt::decimal()); format.write_text(text(":",1));
-        let status: i32 = put(output,digits,0,core::result::unwrap(format.finish()),diagnostic); if (status != 0) { return status; }
-    }
+    if (options.numbers) { let status: i32 = put_number(output,diagnostic.line,diagnostic); if (status != 0) { return status; } }
     let count: i32 = end - start; if (terminated) { count += 1; }
     return put(output,bytes,start,count,diagnostic);
 }
@@ -215,13 +255,18 @@ fn search(regex: &ext::regex::Regex, options: Options, diagnostic: &Diagnostic) 
 // Records are cut from one buffer filled 64 KiB at a time; the unfinished
 // tail moves to the front before the next read.
 fn scan(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, diagnostic: &Diagnostic) -> i32 {
-    let output: Output = Output { bytes: alloc::vec::new() };
+    let output: Output = Output { bytes: alloc::vec::new(), used: 0, number: 0, width: 0 };
     let status: i32 = records(regex,matcher,options,output.borrow(),diagnostic);
-    if (!output.bytes.is_empty() && !flush(output.borrow())) { diagnostic.stage = 4; status = fail(diagnostic,3,7); }
+    if (output.used > 0 && !flush(output.borrow())) { diagnostic.stage = 4; status = fail(diagnostic,3,7); }
     output.bytes.destroy(); return status;
 }
 // Selects (for --invert) every record in bytes[from, to), which match_lines
 // found valid and not matching; to is a record start.
+// --invert --count over n selected records: only the totals move.
+fn tally(progress: &Progress, n: u64, diagnostic: &Diagnostic) -> i32 {
+    if (progress.selected > 18446744073709551615 - n || diagnostic.line > 18446744073709551615 - n) { return fail(diagnostic,2,5); }
+    progress.selected += n; diagnostic.line += n; return 0;
+}
 fn gap(bytes: [u8], from: i32, to: i32, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
     let position: i32 = from;
     while (position < to) {
@@ -268,10 +313,11 @@ fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, outpu
         // WorkLimit. Each gap between hit records gets one pass that checks
         // UTF-8 and counts its lines; at an invalid gap the record-by-record
         // loop below takes over, which locates the error. record() checks
-        // the hit records themselves.
+        // the hit records themselves. With --invert the gap records are the
+        // selected ones.
         let region: i32 = length; while (region > 0 && bytes[region - 1] != 10) { region -= 1; }
         let dense: bool = false;
-        if (filter.length > 0 && !options.invert && region <= options.max_line && ((region as i64) + 2) * filter.cost <= filter.limit) {
+        if (filter.length > 0 && region <= options.max_line && ((region as i64) + 2) * filter.cost <= filter.limit) {
             let position: i32 = 0; let hits: i32 = 0;
             let hit: i32 = core::search::find(bytes,0,region,filter.needle,0,filter.length);
             while (true) {
@@ -282,7 +328,15 @@ fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, outpu
                 if (hit >= 0) { first = core::search::rfind_byte(bytes,position,hit,10) + 1; if (first < position) { first = position; } }
                 let skipped: i64 = newlines_if_valid(bytes,position,first);
                 if (skipped < 0) { break; }
-                if (diagnostic.line > 18446744073709551615 - (skipped as u64)) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += skipped as u64;
+                if (options.invert) {
+                    // The records between hits lack the literal: all selected.
+                    let selected: i32 = 0;
+                    if (options.count) { selected = tally(progress.borrow(),skipped as u64,diagnostic); }
+                    else { selected = gap(bytes,position,first,options,progress.borrow(),output,diagnostic); }
+                    if (selected != 0) { buffer.destroy(); return selected; }
+                } else {
+                    if (diagnostic.line > 18446744073709551615 - (skipped as u64)) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += skipped as u64;
+                }
                 position = first;
                 if (hit < 0) { break; }
                 let newline: i32 = core::search::find_byte(bytes,hit,region,10);
@@ -291,7 +345,7 @@ fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, outpu
                 if (filter.exact) { decided = 1; } else { if (matcher.ready) { decided = matcher.dfa.match_lines(bytes,first,newline + 1).status; } }
                 if (decided != 2 && valid_utf8(bytes,first,newline)) {
                     diagnostic.stage = 3; diagnostic.offset = 0;
-                    if (decided == 1) { status = emit(bytes,first,newline,true,options,progress.borrow(),output,diagnostic); }
+                    if ((decided == 1) != options.invert) { status = emit(bytes,first,newline,true,options,progress.borrow(),output,diagnostic); }
                 }
                 else { status = record(bytes,first,newline,true,regex,matcher,options,progress.borrow(),output,diagnostic); }
                 hits += 1;
@@ -312,7 +366,9 @@ fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, outpu
                 let scan: ext::regex::LineScan = matcher.dfa.match_lines(bytes,position,region);
                 if (options.invert) {
                     // Every record before scan.start was searched and missed.
-                    let status: i32 = gap(bytes,position,scan.start,options,progress.borrow(),output,diagnostic);
+                    let status: i32 = 0;
+                    if (options.count) { status = tally(progress.borrow(),scan.lines as u64,diagnostic); }
+                    else { status = gap(bytes,position,scan.start,options,progress.borrow(),output,diagnostic); }
                     if (status != 0) { buffer.destroy(); return status; }
                 } else {
                     if (diagnostic.line > 18446744073709551615 - (scan.lines as u64)) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += scan.lines as u64;
@@ -346,7 +402,7 @@ fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, outpu
     let status: i32 = 0;
     if (length > 0) { filter.hit = -1; filter.end = length; status = line(buffer.as_slice(),0,length,false,regex,matcher,filter.borrow(),options,progress.borrow(),output,diagnostic); }
     buffer.destroy(); if (status != 0) { return status; }
-    if (!output.bytes.is_empty() && !flush(output)) { diagnostic.stage = 4; diagnostic.offset = -1; return fail(diagnostic,3,7); }
+    if (output.used > 0 && !flush(output)) { diagnostic.stage = 4; diagnostic.offset = -1; return fail(diagnostic,3,7); }
     if (options.count) { diagnostic.stage = 4; diagnostic.offset = -1; if (!write_number(progress.selected,text("\n",1))) { return fail(diagnostic,3,7); } }
     if (progress.selected == 0) { return 1; } return 0;
 }
