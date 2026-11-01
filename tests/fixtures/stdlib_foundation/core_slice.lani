@@ -323,6 +323,10 @@ fn bulk_checks() -> i32 {
     if (!core::slice::swap_with_slice(a, 6, b, 6) || a[1] != 9 || b[1] != 2 || core::slice::swap_with_slice(a, 6, b, 4)) { return 4; }
     if (core::slice::memchr(a, 6, 9) != 1 || core::slice::memchr(a, 6, 7) != -1 || core::slice::memchr(a, 0, 1) != -1) { return 5; }
     if (core::slice::memcmp(a, b, 6) != 1 || core::slice::memcmp(b, a, 6) != -1 || core::slice::memcmp(a, b, 1) != 0) { return 6; }
+    if (core::slice::memchr_from(a, 2, 6, 6) != 5 || core::slice::memchr_from(a, 2, 6, 9) != 2 || core::slice::memchr_from(a, 4, 6, 9) != -1 || core::slice::memchr_from(a, -1, 6, 9) != -1) { return 7; }
+    if (core::slice::memcmp_range(a, 4, b, 4, 2) != 0 || core::slice::memcmp_range(a, 0, b, 1, 1) != -1 || core::slice::memcmp_range(a, -1, b, 0, 2) != 0) { return 8; }
+    let c: [u8; 4] = [65, 200, 66, 67];
+    if (core::slice::ascii_run_end(c, 0, 4) != 1 || core::slice::ascii_run_end(c, 2, 4) != 4 || core::slice::ascii_run_end(c, 3, 3) != 3) { return 9; }
     return 0;
 }
 

@@ -198,7 +198,9 @@ response, because `status_for` maps `Http2Preface` to 0.
 `Err(InvalidState)` once h2 is enabled.
 
 `h2_respond` queues the whole response in the engine and returns without
-blocking. The loop sends DATA as the client's windows and the socket
+blocking. The next `next_ready` call sends it once no more of that
+connection's requests are queued, so one `send` carries the responses to
+a batch of multiplexed requests. The loop sends DATA as the client's windows and the socket
 allow, and keeps reading other streams' frames meanwhile. It waits for
 writability only while the engine has bytes the socket refused.
 
