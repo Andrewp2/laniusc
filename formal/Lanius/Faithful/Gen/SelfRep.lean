@@ -162,7 +162,7 @@ inductive RepSrcEff : Lanius.Mini.SrcEff → Value → Prop where
   | c11 {x0 : Nat} {v0 : Value} :
       RepNat x0 v0 → RepSrcEff (Lanius.Mini.SrcEff.eStride x0) (.enumeration 28 11 [v0])
   | c12 {x0 : Lanius.Mini.SrcType} {x1 : Nat} {v0 v1 : Value} :
-      RepSrcType x0 v0 → RepNat x1 v1 → RepSrcEff (Lanius.Mini.SrcEff.eArraySlice x0 x1) (.enumeration 28 12 [v0, v1])
+      RepSrcType x0 v0 → RepNat x1 v1 → RepSrcEff (Lanius.Mini.SrcEff.arraySlice x0 x1) (.enumeration 28 12 [v0, v1])
 
 inductive RepSrcStmt : Lanius.Mini.SrcStmt → Value → Prop where
   | c0 :

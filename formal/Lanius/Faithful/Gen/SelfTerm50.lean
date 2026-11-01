@@ -57,19 +57,19 @@ theorem ok_and_known : FnOk prog prims info (2257, ⟨0, [], 0⟩) :=
 theorem ok_not_known : FnOk prog prims info (2258, ⟨0, [], 0⟩) :=
   fnOk_of fn_not_known (by decide +kernel)
 
-theorem ok_block_value : FnOk prog prims info (2259, ⟨4, [0], 0⟩) :=
+theorem ok_block_value : FnOk prog prims info (2259, ⟨3, [0], 0⟩) :=
   fnOk_of fn_block_value (by decide +kernel)
 
-theorem ok_diverge_eff : FnOk prog prims info (2261, ⟨6, [], 0⟩) :=
+theorem ok_diverge_eff : FnOk prog prims info (2261, ⟨5, [], 0⟩) :=
   fnOk_of fn_diverge_eff (by decide +kernel)
 
-theorem ok_is_binder_pat : FnOk prog prims info (2262, ⟨6, [], 0⟩) :=
+theorem ok_is_binder_pat : FnOk prog prims info (2262, ⟨5, [], 0⟩) :=
   fnOk_of fn_is_binder_pat (by decide +kernel)
 
-theorem ok_is_wild_arm : FnOk prog prims info (2263, ⟨6, [], 0⟩) :=
+theorem ok_is_wild_arm : FnOk prog prims info (2263, ⟨5, [], 0⟩) :=
   fnOk_of fn_is_wild_arm (by decide +kernel)
 
-theorem ok_names_some : FnOk prog prims info (2264, ⟨7, [2], 0⟩) :=
+theorem ok_names_some : FnOk prog prims info (2264, ⟨6, [2], 0⟩) :=
   fnOk_of fn_names_some (by decide +kernel)
 
 theorem ok_wild_used : FnOk prog prims info (2265, ⟨1, [], 0⟩) :=
@@ -78,16 +78,16 @@ theorem ok_wild_used : FnOk prog prims info (2265, ⟨1, [], 0⟩) :=
 theorem ok_cons_use : FnOk prog prims info (2266, ⟨2, [], 0⟩) :=
   fnOk_of fn_cons_use (by decide +kernel)
 
-theorem ok_variant_arm : FnOk prog prims info (2267, ⟨23, [], 0⟩) :=
+theorem ok_variant_arm : FnOk prog prims info (2267, ⟨22, [], 0⟩) :=
   fnOk_of fn_variant_arm (by decide +kernel)
 
-theorem ok_rows_naming : FnOk prog prims info (2268, ⟨7, [3], 0⟩) :=
+theorem ok_rows_naming : FnOk prog prims info (2268, ⟨6, [3], 0⟩) :=
   fnOk_of fn_rows_naming (by decide +kernel)
 
-theorem ok_arms_naming : FnOk prog prims info (2269, ⟨7, [3], 0⟩) :=
+theorem ok_arms_naming : FnOk prog prims info (2269, ⟨6, [3], 0⟩) :=
   fnOk_of fn_arms_naming (by decide +kernel)
 
-theorem ok_wild_arm_for : FnOk prog prims info (2270, ⟨8, [], 0⟩) :=
+theorem ok_wild_arm_for : FnOk prog prims info (2270, ⟨7, [], 0⟩) :=
   fnOk_of fn_wild_arm_for (by decide +kernel)
 
 theorem ok_tried_err : FnOk prog prims info (2271, ⟨0, [], 0⟩) :=
@@ -108,7 +108,7 @@ theorem ok_view_array : FnOk prog prims info (2275, ⟨3, [], 0⟩) :=
 theorem ok_fit_same_decl : FnOk prog prims info (2276, ⟨10, [0], 0⟩) :=
   fnOk_of fn_fit_same_decl (by decide +kernel)
 
-theorem ok_diverge_call : FnOk prog prims info (2277, ⟨5, [], 0⟩) :=
+theorem ok_diverge_call : FnOk prog prims info (2277, ⟨4, [], 0⟩) :=
   fnOk_of fn_diverge_call (by decide +kernel)
 
 theorem ok_binder_name_ok : FnOk prog prims info (2278, ⟨3, [], 0⟩) :=
@@ -117,7 +117,7 @@ theorem ok_binder_name_ok : FnOk prog prims info (2278, ⟨3, [], 0⟩) :=
 theorem ok_is_underscore : FnOk prog prims info (2279, ⟨2, [], 0⟩) :=
   fnOk_of fn_is_underscore (by decide +kernel)
 
-theorem ok_arm_names : FnOk prog prims info (2280, ⟨6, [], 0⟩) :=
+theorem ok_arm_names : FnOk prog prims info (2280, ⟨5, [], 0⟩) :=
   fnOk_of fn_arm_names (by decide +kernel)
 
 theorem ok_used_arms : FnOk prog prims info (2281, ⟨0, [], 0⟩) :=
@@ -126,10 +126,10 @@ theorem ok_used_arms : FnOk prog prims info (2281, ⟨0, [], 0⟩) :=
 theorem ok_join_use : FnOk prog prims info (2282, ⟨1, [], 0⟩) :=
   fnOk_of fn_join_use (by decide +kernel)
 
-theorem ok_wild_use : FnOk prog prims info (2283, ⟨9, [], 0⟩) :=
+theorem ok_wild_use : FnOk prog prims info (2283, ⟨8, [], 0⟩) :=
   fnOk_of fn_wild_use (by decide +kernel)
 
-theorem ok_rows_use : FnOk prog prims info (2284, ⟨22, [], 0⟩) :=
+theorem ok_rows_use : FnOk prog prims info (2284, ⟨21, [], 0⟩) :=
   fnOk_of fn_rows_use (by decide +kernel)
 
 theorem chunk50 : AllFns prog prims info part50 :=

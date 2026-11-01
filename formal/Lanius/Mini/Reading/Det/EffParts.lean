@@ -1,5 +1,12 @@
-import Lanius.Mini.Reading.Det.Agree
+module
 
+public import Lanius.Mini.Reading.Det.Agree
+import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.tryLet
+
+@[expose] public section
 /-! # The reading is deterministic, F1: the parts of effectful expressions
 
 Result types, effectful expressions' types, paths, variants by path, and

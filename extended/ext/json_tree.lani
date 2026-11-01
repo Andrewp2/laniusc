@@ -1,0 +1,607 @@
+// Mutable JSON trees for ext::json_pointer and ext::json_patch. A document is
+// read with ext::json_stream (exact number spelling, decoded strings,
+// duplicate object keys rejected) into an arena of nodes and written back
+// through an ext::json_stream::Writer. See docs/extended-json-patch.md.
+module ext::json_tree;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::u32;
+import ext::json_stream;
+
+pub enum Kind { Null, Boolean, Number, Text, Array, Object }
+// Shared by ext::json_tree, ext::json_pointer and ext::json_patch.
+pub enum ErrorKind {
+    Parse, DuplicateKey, NodeLimit, AllocationFailed, Output,
+    InvalidPointer, NotFound, InvalidIndex, OutOfRange,
+    InvalidPatch, UnknownOperation, TestFailed, MoveIntoChild, RemoveRoot,
+}
+// operation is the patch operation index, or -1. offset is the byte offset
+// of a Parse or DuplicateKey error in its document, or of the bad byte of an
+// InvalidPointer. cause is the ext::json_stream error kind of a Parse error.
+pub struct Error { kind: ErrorKind, operation: i32, offset: u64, cause: ext::json_stream::ErrorKind }
+pub struct Limits { max_depth: i32, max_string_bytes: i32, max_number_bytes: i32, max_nodes: i32 }
+
+pub fn default_limits() -> Limits {
+    return Limits { max_depth: 1024, max_string_bytes: 16777216, max_number_bytes: 1048576, max_nodes: 16777216 };
+}
+pub fn failure(kind: ErrorKind, operation: i32, offset: u64) -> Error {
+    return Error { kind: kind, operation: operation, offset: offset, cause: ext::json_stream::ErrorKind::Bounds };
+}
+fn lit(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+    return core::text::from_utf8_unchecked(bytes, 0, count);
+}
+// Stable names for diagnostics and tests.
+pub fn kind_name(kind: ErrorKind) -> core::text::Text {
+    let name: core::text::Text = match (kind) {
+        ErrorKind::Parse -> lit("Parse", 5),
+        ErrorKind::DuplicateKey -> lit("DuplicateKey", 12),
+        ErrorKind::NodeLimit -> lit("NodeLimit", 9),
+        ErrorKind::AllocationFailed -> lit("AllocationFailed", 16),
+        ErrorKind::Output -> lit("Output", 6),
+        ErrorKind::InvalidPointer -> lit("InvalidPointer", 14),
+        ErrorKind::NotFound -> lit("NotFound", 8),
+        ErrorKind::InvalidIndex -> lit("InvalidIndex", 12),
+        ErrorKind::OutOfRange -> lit("OutOfRange", 10),
+        ErrorKind::InvalidPatch -> lit("InvalidPatch", 12),
+        ErrorKind::UnknownOperation -> lit("UnknownOperation", 16),
+        ErrorKind::TestFailed -> lit("TestFailed", 10),
+        ErrorKind::MoveIntoChild -> lit("MoveIntoChild", 13),
+        ErrorKind::RemoveRoot -> lit("RemoveRoot", 10),
+    };
+    return name;
+}
+
+// Node words in Tree.cells, WORDS per node. Kind codes: 0 null, 1 false,
+// 2 true, 3 number, 4 string, 5 array, 6 object. TEXT/LENGTH locate a number
+// spelling or decoded string in the pool, KEY/KEY_LENGTH an object member's
+// key. Children form a doubly linked list. Links are -1 when absent.
+const WORDS: i32 = 11;
+const KIND: i32 = 0;
+const TEXT: i32 = 1;
+const LENGTH: i32 = 2;
+const KEY: i32 = 3;
+const KEY_LENGTH: i32 = 4;
+const PARENT: i32 = 5;
+const FIRST: i32 = 6;
+const LAST: i32 = 7;
+const NEXT: i32 = 8;
+const PREV: i32 = 9;
+const COUNT: i32 = 10;
+
+// Objects with at least INDEXED members have every member in the tree's
+// member index, an open-addressing table of node ids (-1 empty, -2 removed)
+// hashed by (object, key); smaller objects are scanned.
+const INDEXED: i32 = 8;
+
+// An arena: nodes are never freed before destroy(), so removed and replaced
+// values keep their storage and count toward max_nodes. root is -1 only for
+// a destroyed tree. When the member index cannot grow, broken is set and
+// member lookups scan from then on.
+pub struct Tree {
+    store: alloc::vec::Vec<i32>, cells: [i32], nodes: i32, cell_cap: i32,
+    bytes: alloc::vec::Vec<u8>, pool: [u8], pool_used: i32, pool_cap: i32,
+    table: alloc::vec::Vec<i32>, slots: [i32], slot_cap: i32, slot_used: i32, slot_live: i32, broken: bool,
+    root: i32, max_nodes: i32, fault: ErrorKind,
+}
+fn empty(limits: Limits) -> Tree {
+    let store: alloc::vec::Vec<i32> = alloc::vec::new(); let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+    let table: alloc::vec::Vec<i32> = alloc::vec::new();
+    return Tree { store: store, cells: store.as_slice(), nodes: 0, cell_cap: 0, bytes: bytes, pool: bytes.as_slice(), pool_used: 0, pool_cap: 0,
+        table: table, slots: table.as_slice(), slot_cap: 0, slot_used: 0, slot_live: 0, broken: false,
+        root: -1, max_nodes: limits.max_nodes, fault: ErrorKind::AllocationFailed };
+}
+
+pub impl Tree {
+    pub fn borrow(&self) -> &Tree { return self; }
+    pub fn root(&self) -> i32 { return self.root; }
+    pub fn node_count(&self) -> i32 { return self.nodes; }
+    pub fn set_root(&self, node: i32) { self.root = node; }
+    // The error kind behind the last -1 from a node-creating method.
+    pub fn fault(&self) -> ErrorKind { return self.fault; }
+    fn get(&self, node: i32, word: i32) -> i32 { return self.cells[node * WORDS + word]; }
+    fn put(&self, node: i32, word: i32, value: i32) { self.cells[node * WORDS + word] = value; }
+    pub fn code(&self, node: i32) -> i32 { return self.get(node, KIND); }
+    pub fn kind(&self, node: i32) -> Kind {
+        let code: i32 = self.code(node);
+        if (code == 0) { return Kind::Null; }
+        if (code <= 2) { return Kind::Boolean; }
+        if (code == 3) { return Kind::Number; }
+        if (code == 4) { return Kind::Text; }
+        if (code == 5) { return Kind::Array; }
+        return Kind::Object;
+    }
+    pub fn boolean(&self, node: i32) -> bool { return self.code(node) == 2; }
+    pub fn parent(&self, node: i32) -> i32 { return self.get(node, PARENT); }
+    pub fn first_child(&self, node: i32) -> i32 { return self.get(node, FIRST); }
+    pub fn next_sibling(&self, node: i32) -> i32 { return self.get(node, NEXT); }
+    pub fn child_count(&self, node: i32) -> i32 { return self.get(node, COUNT); }
+    // Number spelling or decoded string; borrowed until the tree changes.
+    pub fn text(&self, node: i32) -> core::text::Text {
+        return core::text::from_utf8_unchecked(self.pool, self.get(node, TEXT), self.get(node, LENGTH));
+    }
+    pub fn key(&self, node: i32) -> core::text::Text {
+        return core::text::from_utf8_unchecked(self.pool, self.get(node, KEY), self.get(node, KEY_LENGTH));
+    }
+    // Array element index, or -1.
+    pub fn child(&self, node: i32, index: i32) -> i32 {
+        if (index < 0 || index >= self.get(node, COUNT)) { return -1; }
+        let at: i32 = self.get(node, FIRST); let step: i32 = 0;
+        while (step < index) { at = self.get(at, NEXT); step += 1; }
+        return at;
+    }
+    // Object member with this key, or -1.
+    pub fn member(&self, node: i32, key: core::text::Text) -> i32 {
+        if (!self.broken && self.get(node, COUNT) >= INDEXED) {
+            let mask: i32 = self.slot_cap - 1;
+            let slot: i32 = (key_hash(node, key.bytes, key.start, key.length) as i32) & mask;
+            let slots: [i32] = self.slots;
+            while (true) {
+                let entry: i32 = slots[slot];
+                if (entry == -1) { return -1; }
+                if (entry >= 0 && self.get(entry, PARENT) == node && self.get(entry, KEY_LENGTH) == key.length
+                    && same(self.pool, self.get(entry, KEY), key.bytes, key.start, key.length)) { return entry; }
+                slot = (slot + 1) & mask;
+            }
+        }
+        let at: i32 = self.get(node, FIRST);
+        while (at >= 0) {
+            if (self.get(at, KEY_LENGTH) == key.length && same(self.pool, self.get(at, KEY), key.bytes, key.start, key.length)) { return at; }
+            at = self.get(at, NEXT);
+        }
+        return -1;
+    }
+    fn reserve_cells(&self, need: i32) -> bool {
+        if (need <= self.cell_cap) { return true; }
+        let target: i32 = need;
+        if (self.cell_cap <= 536870911 && self.cell_cap * 2 > target) { target = self.cell_cap * 2; }
+        if (target < 256) { target = 256; }
+        if (self.store.try_resize(target, 0).is_err()) { return false; }
+        self.cells = self.store.as_slice(); self.cell_cap = target;
+        return true;
+    }
+    fn reserve_pool(&self, need: i32) -> bool {
+        if (need <= self.pool_cap) { return true; }
+        let target: i32 = need;
+        if (self.pool_cap <= 1073741823 && self.pool_cap * 2 > target) { target = self.pool_cap * 2; }
+        if (target < 256) { target = 256; }
+        if (self.bytes.try_resize(target, 0).is_err()) { return false; }
+        self.pool = self.bytes.as_slice(); self.pool_cap = target;
+        return true;
+    }
+    // A detached node of the given kind code, or -1 (see fault()).
+    pub fn new_node(&self, code: i32) -> i32 {
+        let node: i32 = self.nodes;
+        if (node >= self.max_nodes) { self.fault = ErrorKind::NodeLimit; return -1; }
+        if (node > 195225785 || !self.reserve_cells((node + 1) * WORDS)) { self.fault = ErrorKind::AllocationFailed; return -1; }
+        self.nodes = node + 1;
+        let base: i32 = node * WORDS; let cells: [i32] = self.cells;
+        cells[base] = code; cells[base + TEXT] = 0; cells[base + LENGTH] = 0; cells[base + KEY] = 0; cells[base + KEY_LENGTH] = 0;
+        cells[base + PARENT] = -1; cells[base + FIRST] = -1; cells[base + LAST] = -1; cells[base + NEXT] = -1; cells[base + PREV] = -1;
+        cells[base + COUNT] = 0;
+        return node;
+    }
+    // Copies length bytes from tree source's pool (which may be this tree)
+    // into this pool; the start, or -1.
+    fn copy_pool(&self, source: &Tree, start: i32, length: i32) -> i32 {
+        let at: i32 = self.pool_used;
+        if (length > 2147483647 - at || !self.reserve_pool(at + length)) { self.fault = ErrorKind::AllocationFailed; return -1; }
+        // Read the source pool after growing: it may be this pool.
+        let from: [u8] = source.pool; let to: [u8] = self.pool; let index: i32 = 0;
+        while (index < length) { to[at + index] = from[start + index]; index += 1; }
+        self.pool_used = at + length;
+        return at;
+    }
+    fn copy_bytes(&self, text: core::text::Text) -> i32 {
+        let at: i32 = self.pool_used; let length: i32 = text.length;
+        if (length > 2147483647 - at || !self.reserve_pool(at + length)) { self.fault = ErrorKind::AllocationFailed; return -1; }
+        let from: [u8] = text.bytes; let to: [u8] = self.pool; let index: i32 = 0;
+        while (index < length) { to[at + index] = from[text.start + index]; index += 1; }
+        self.pool_used = at + length;
+        return at;
+    }
+    // A detached number (code 3) or string (code 4) node holding a copy of text.
+    pub fn new_text(&self, code: i32, text: core::text::Text) -> i32 {
+        let at: i32 = self.copy_bytes(text);
+        if (at < 0) { return -1; }
+        let node: i32 = self.new_node(code);
+        if (node < 0) { return -1; }
+        self.put(node, TEXT, at); self.put(node, LENGTH, text.length);
+        return node;
+    }
+    // Gives node a copy of key; false on allocation failure.
+    pub fn set_key(&self, node: i32, key: core::text::Text) -> bool {
+        let at: i32 = self.copy_bytes(key);
+        if (at < 0) { return false; }
+        self.put(node, KEY, at); self.put(node, KEY_LENGTH, key.length);
+        return true;
+    }
+    fn node_hash(&self, node: i32) -> u32 { return key_hash(self.get(node, PARENT), self.pool, self.get(node, KEY), self.get(node, KEY_LENGTH)); }
+    fn place(&self, slots: [i32], mask: i32, node: i32) {
+        let slot: i32 = (self.node_hash(node) as i32) & mask;
+        while (slots[slot] >= 0) { slot = (slot + 1) & mask; }
+        slots[slot] = node;
+    }
+    // Room for one more entry; rebuilds without removed entries when 3/4 full.
+    fn reserve_slots(&self) -> bool {
+        if ((self.slot_used + 1) * 4 <= self.slot_cap * 3) { return true; }
+        let target: i32 = 64;
+        while (target < 1073741824 && target * 3 < (self.slot_live + 1) * 8) { target = target * 2; }
+        let table: alloc::vec::Vec<i32> = alloc::vec::new();
+        if (table.try_resize(target, -1).is_err()) { table.destroy(); return false; }
+        let fresh: [i32] = table.as_slice(); let old: [i32] = self.slots; let index: i32 = 0;
+        while (index < self.slot_cap) { let entry: i32 = old[index]; if (entry >= 0) { self.place(fresh, target - 1, entry); } index += 1; }
+        self.table.destroy();
+        self.table = table; self.slots = fresh; self.slot_cap = target; self.slot_used = self.slot_live;
+        return true;
+    }
+    fn index_add(&self, node: i32) {
+        if (self.broken) { return; }
+        if (!self.reserve_slots()) { self.broken = true; return; }
+        let mask: i32 = self.slot_cap - 1; let slots: [i32] = self.slots;
+        let slot: i32 = (self.node_hash(node) as i32) & mask;
+        while (slots[slot] >= 0) { slot = (slot + 1) & mask; }
+        if (slots[slot] == -1) { self.slot_used += 1; }
+        slots[slot] = node; self.slot_live += 1;
+    }
+    fn index_remove(&self, node: i32) {
+        if (self.broken) { return; }
+        let mask: i32 = self.slot_cap - 1; let slots: [i32] = self.slots;
+        let slot: i32 = (self.node_hash(node) as i32) & mask;
+        while (slots[slot] != -1) {
+            if (slots[slot] == node) { slots[slot] = -2; self.slot_live -= 1; return; }
+            slot = (slot + 1) & mask;
+        }
+    }
+    fn index_children(&self, parent: i32, adding: bool) {
+        let child: i32 = self.get(parent, FIRST);
+        while (child >= 0) { if (adding) { self.index_add(child); } else { self.index_remove(child); } child = self.get(child, NEXT); }
+    }
+    // Links detached node into parent before sibling `before` (-1 appends).
+    pub fn insert(&self, parent: i32, node: i32, before: i32) {
+        self.put(node, PARENT, parent);
+        let previous: i32 = self.get(parent, LAST);
+        if (before >= 0) { previous = self.get(before, PREV); }
+        self.put(node, PREV, previous); self.put(node, NEXT, before);
+        if (previous >= 0) { self.put(previous, NEXT, node); } else { self.put(parent, FIRST, node); }
+        if (before >= 0) { self.put(before, PREV, node); } else { self.put(parent, LAST, node); }
+        let count: i32 = self.get(parent, COUNT) + 1;
+        self.put(parent, COUNT, count);
+        if (self.get(parent, KIND) == 6) {
+            if (count == INDEXED) { self.index_children(parent, true); }
+            if (count > INDEXED) { self.index_add(node); }
+        }
+    }
+    // Unlinks node from its parent; the root and detached nodes are unchanged.
+    pub fn detach(&self, node: i32) {
+        let parent: i32 = self.get(node, PARENT);
+        if (parent < 0) { return; }
+        let count: i32 = self.get(parent, COUNT);
+        if (self.get(parent, KIND) == 6) {
+            if (count == INDEXED) { self.index_children(parent, false); }
+            if (count > INDEXED) { self.index_remove(node); }
+        }
+        let previous: i32 = self.get(node, PREV); let following: i32 = self.get(node, NEXT);
+        if (previous >= 0) { self.put(previous, NEXT, following); } else { self.put(parent, FIRST, following); }
+        if (following >= 0) { self.put(following, PREV, previous); } else { self.put(parent, LAST, previous); }
+        self.put(parent, COUNT, self.get(parent, COUNT) - 1);
+        self.put(node, PARENT, -1); self.put(node, PREV, -1); self.put(node, NEXT, -1);
+    }
+    // Puts detached node where old is, with old's key; old is detached. Old
+    // being the root makes node the root.
+    pub fn replace(&self, old: i32, node: i32) {
+        let parent: i32 = self.get(old, PARENT);
+        if (parent < 0) { if (old == self.root) { self.root = node; } return; }
+        self.put(node, KEY, self.get(old, KEY)); self.put(node, KEY_LENGTH, self.get(old, KEY_LENGTH));
+        self.insert(parent, node, old);
+        self.detach(old);
+    }
+    // Deep copy of node from source (which may be this tree) as a detached
+    // node of this tree, without its key; -1 on failure (see fault()).
+    pub fn copy_node(&self, source: &Tree, node: i32) -> i32 {
+        let code: i32 = source.code(node);
+        let copy: i32 = -1;
+        if (code == 3 || code == 4) {
+            let at: i32 = self.copy_pool(source, source.get(node, TEXT), source.get(node, LENGTH));
+            if (at < 0) { return -1; }
+            copy = self.new_node(code);
+            if (copy < 0) { return -1; }
+            self.put(copy, TEXT, at); self.put(copy, LENGTH, source.get(node, LENGTH));
+            return copy;
+        }
+        copy = self.new_node(code);
+        if (copy < 0 || code < 5) { return copy; }
+        let child: i32 = source.get(node, FIRST);
+        while (child >= 0) {
+            let made: i32 = self.copy_node(source, child);
+            if (made < 0) { return -1; }
+            if (code == 6) {
+                let at: i32 = self.copy_pool(source, source.get(child, KEY), source.get(child, KEY_LENGTH));
+                if (at < 0) { return -1; }
+                self.put(made, KEY, at); self.put(made, KEY_LENGTH, source.get(child, KEY_LENGTH));
+            }
+            self.insert(copy, made, -1);
+            child = source.get(child, NEXT);
+        }
+        return copy;
+    }
+    // Writes the value at node through writer, compactly.
+    pub fn write(&self, node: i32, writer: &ext::json_stream::Writer) -> core::result::Result<i32, ext::json_stream::Error> {
+        let at: i32 = node;
+        while (true) {
+            if (at != node && self.code(self.get(at, PARENT)) == 6) {
+                let named = writer.key(self.key(at));
+                if (named.is_err()) { return named; }
+            }
+            let code: i32 = self.code(at);
+            let wrote: core::result::Result<i32, ext::json_stream::Error> = core::result::Ok(0);
+            if (code == 5 || code == 6) {
+                if (code == 5) { wrote = writer.begin_array(); } else { wrote = writer.begin_object(); }
+                if (wrote.is_err()) { return wrote; }
+                let first: i32 = self.get(at, FIRST);
+                if (first >= 0) { at = first; continue; }
+                if (code == 5) { wrote = writer.end_array(); } else { wrote = writer.end_object(); }
+            } else {
+                if (code == 0) { wrote = writer.null(); }
+                if (code == 1) { wrote = writer.boolean(false); }
+                if (code == 2) { wrote = writer.boolean(true); }
+                if (code == 3) { wrote = writer.number_unchecked(self.text(at)); }
+                if (code == 4) { wrote = writer.string(self.text(at)); }
+            }
+            if (wrote.is_err()) { return wrote; }
+            while (at != node && self.get(at, NEXT) < 0) {
+                at = self.get(at, PARENT);
+                if (self.code(at) == 5) { wrote = writer.end_array(); } else { wrote = writer.end_object(); }
+                if (wrote.is_err()) { return wrote; }
+            }
+            if (at == node) { break; }
+            at = self.get(at, NEXT);
+        }
+        return core::result::Ok(0);
+    }
+    pub fn destroy(&self) {
+        self.store.destroy(); self.bytes.destroy(); self.table.destroy();
+        self.store = alloc::vec::new(); self.bytes = alloc::vec::new(); self.table = alloc::vec::new();
+        self.cells = self.store.as_slice(); self.pool = self.bytes.as_slice(); self.slots = self.table.as_slice();
+        self.nodes = 0; self.cell_cap = 0; self.pool_used = 0; self.pool_cap = 0; self.root = -1;
+        self.slot_cap = 0; self.slot_used = 0; self.slot_live = 0; self.broken = false;
+    }
+}
+
+// FNV-1a over the object's node id and the key bytes.
+fn key_hash(parent: i32, bytes: [u8], start: i32, length: i32) -> u32 {
+    let state: u32 = core::u32::wrapping_mul(2166136261 ^ (parent as u32), 16777619);
+    let index: i32 = 0;
+    while (index < length) { state = core::u32::wrapping_mul(state ^ (bytes[start + index] as u32), 16777619); index += 1; }
+    return state;
+}
+fn same(left: [u8], left_start: i32, right: [u8], right_start: i32, length: i32) -> bool {
+    let index: i32 = 0;
+    while (index < length) {
+        if (left[left_start + index] != right[right_start + index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+
+// An empty tree for builders such as ext::yaml: add nodes with new_node,
+// new_text, set_key and insert, then set_root.
+pub fn new_tree(limits: Limits) -> Tree { return empty(limits); }
+// A tree holding a deep copy of source's root.
+pub fn copy(source: &Tree, limits: Limits) -> core::result::Result<Tree, Error> {
+    let tree: Tree = empty(limits);
+    let root: i32 = tree.copy_node(source, source.root());
+    if (root < 0) { let kind: ErrorKind = tree.fault; tree.destroy(); return core::result::Err(failure(kind, -1, 0)); }
+    tree.root = root;
+    return core::result::Ok(tree);
+}
+
+fn parse_failed(tree: Tree, tokens: ext::json_stream::Tokenizer, error: Error) -> core::result::Result<Tree, Error> {
+    tree.destroy(); tokens.destroy(); return core::result::Err(error);
+}
+// Parses one JSON text from source[start, start + count). Duplicate keys in
+// an object are DuplicateKey at the second key's offset.
+pub fn parse(source: [u8], start: i32, count: i32, limits: Limits) -> core::result::Result<Tree, Error> {
+    let options: ext::json_stream::Options = ext::json_stream::Options { max_depth: limits.max_depth, max_string_bytes: limits.max_string_bytes, max_number_bytes: limits.max_number_bytes };
+    let made = ext::json_stream::tokenizer(options);
+    if (made.is_err()) { return core::result::Err(Error { kind: ErrorKind::Parse, operation: -1, offset: 0, cause: made.unwrap_err().kind }); }
+    let tokens: ext::json_stream::Tokenizer = made.unwrap();
+    let tree: Tree = empty(limits);
+    let at: i32 = start; let end: i32 = start + count; let open: i32 = -1;
+    let key_at: i32 = 0; let key_length: i32 = 0;
+    while (true) {
+        if (at < end) {
+            let used: i32 = tokens.advance(source, at, end - at);
+            if (used < 0) { let cause: ext::json_stream::Error = tokens.last_error(); return parse_failed(tree, tokens, Error { kind: ErrorKind::Parse, operation: -1, offset: cause.offset, cause: cause.kind }); }
+            at += used;
+            if (!tokens.has_token()) { continue; }
+        } else {
+            let ended = tokens.finish();
+            if (ended.is_err()) { let cause: ext::json_stream::Error = ended.unwrap_err(); return parse_failed(tree, tokens, Error { kind: ErrorKind::Parse, operation: -1, offset: cause.offset, cause: cause.kind }); }
+            if (!ended.unwrap()) { break; }
+        }
+        let token: ext::json_stream::Token = core::option::unwrap(tokens.token());
+        let tag: i32 = match (token) {
+            ext::json_stream::Token::BeginObject -> 6, ext::json_stream::Token::EndObject -> 7,
+            ext::json_stream::Token::BeginArray -> 5, ext::json_stream::Token::EndArray -> 8,
+            ext::json_stream::Token::Key -> 9, ext::json_stream::Token::Text -> 4,
+            ext::json_stream::Token::Number -> 3, ext::json_stream::Token::Boolean -> 1,
+            ext::json_stream::Token::Null -> 0,
+        };
+        if (tag == 7 || tag == 8) { open = tree.get(open, PARENT); continue; }
+        if (tag == 9) {
+            let name: core::text::Text = core::result::unwrap(tokens.text());
+            if (tree.member(open, name) >= 0) { return parse_failed(tree, tokens, failure(ErrorKind::DuplicateKey, -1, tokens.token_offset())); }
+            key_at = tree.copy_bytes(name); key_length = name.length;
+            if (key_at < 0) { return parse_failed(tree, tokens, failure(tree.fault, -1, tokens.token_offset())); }
+            continue;
+        }
+        let node: i32 = -1;
+        if (tag == 3 || tag == 4) { node = tree.new_text(tag, core::result::unwrap(tokens.text())); }
+        else {
+            if (tag == 1 && core::result::unwrap(tokens.boolean())) { tag = 2; }
+            node = tree.new_node(tag);
+        }
+        if (node < 0) { return parse_failed(tree, tokens, failure(tree.fault, -1, tokens.token_offset())); }
+        if (open < 0) { tree.root = node; }
+        else {
+            if (tree.code(open) == 6) { tree.put(node, KEY, key_at); tree.put(node, KEY_LENGTH, key_length); }
+            tree.insert(open, node, -1);
+        }
+        if (tag == 5 || tag == 6) { open = node; }
+    }
+    tokens.destroy();
+    return core::result::Ok(tree);
+}
+
+// Exact numeric equality of two RFC 8259 number spellings: same sign and
+// significant digits and the same decimal exponent, with every zero equal.
+// Exponents beyond +-10^15 saturate.
+pub fn numbers_equal(left: core::text::Text, right: core::text::Text) -> bool {
+    let a: Decimal = decimal(left); let b: Decimal = decimal(right);
+    if (a.first < 0 || b.first < 0) { return a.first < 0 && b.first < 0; }
+    if (a.negative != b.negative || a.last - a.first != b.last - b.first || a.scale != b.scale) { return false; }
+    let index: i32 = 0;
+    while (index <= a.last - a.first) {
+        if (digit_at(left, a, a.first + index) != digit_at(right, b, b.first + index)) { return false; }
+        index += 1;
+    }
+    return true;
+}
+// -1, 0 or 1 as the value of number spelling left is below, equal to or
+// above right's. Exponents beyond +-10^15 saturate.
+pub fn number_compare(left: core::text::Text, right: core::text::Text) -> i32 {
+    let a: Decimal = decimal(left); let b: Decimal = decimal(right);
+    let sign_a: i32 = sign_of(a); let sign_b: i32 = sign_of(b);
+    if (sign_a != sign_b) { if (sign_a < sign_b) { return -1; } return 1; }
+    if (sign_a == 0) { return 0; }
+    let order: i32 = magnitude_compare(left, a, right, b);
+    if (sign_a < 0) { return -order; }
+    return order;
+}
+fn sign_of(value: Decimal) -> i32 { if (value.first < 0) { return 0; } if (value.negative) { return -1; } return 1; }
+fn magnitude_compare(left: core::text::Text, a: Decimal, right: core::text::Text, b: Decimal) -> i32 {
+    let count_a: i32 = a.last - a.first + 1; let count_b: i32 = b.last - b.first + 1;
+    let adjusted_a: i64 = a.scale + (count_a as i64); let adjusted_b: i64 = b.scale + (count_b as i64);
+    if (adjusted_a != adjusted_b) { if (adjusted_a < adjusted_b) { return -1; } return 1; }
+    let index: i32 = 0;
+    while (index < count_a || index < count_b) {
+        let x: u8 = 48; let y: u8 = 48;
+        if (index < count_a) { x = digit_at(left, a, a.first + index); }
+        if (index < count_b) { y = digit_at(right, b, b.first + index); }
+        if (x != y) { if (x < y) { return -1; } return 1; }
+        index += 1;
+    }
+    return 0;
+}
+// Whether a number spelling has an integral value (1.0 and 1e2 do).
+pub fn number_is_integer(text: core::text::Text) -> bool {
+    let value: Decimal = decimal(text);
+    return value.first < 0 || value.scale >= 0;
+}
+// The value of a nonnegative integral number spelling, saturated at limit;
+// -1 for a negative or fractional value.
+pub fn number_count(text: core::text::Text, limit: i64) -> i64 {
+    let value: Decimal = decimal(text);
+    if (value.first < 0) { return 0; }
+    if (value.negative || value.scale < 0) { return -1; }
+    let count: i32 = value.last - value.first + 1;
+    if (value.scale + (count as i64) > 18) { return limit; }
+    let result: i64 = 0; let index: i32 = 0;
+    while (index < count) { result = result * 10 + ((digit_at(text, value, value.first + index) - 48) as i64); index += 1; }
+    let power: i64 = 0;
+    while (power < value.scale) { result = result * 10; power += 1; }
+    if (result > limit) { return limit; }
+    return result;
+}
+// Significant digits of a number spelling (0 for zero).
+pub fn number_digits(text: core::text::Text) -> i32 {
+    let value: Decimal = decimal(text);
+    if (value.first < 0) { return 0; }
+    return value.last - value.first + 1;
+}
+// Whether value is an integer multiple of divisor, exactly. divisor must be
+// nonzero with at most 18 significant digits; the result is false otherwise.
+pub fn number_is_multiple(value: core::text::Text, divisor: core::text::Text) -> bool {
+    let x: Decimal = decimal(value); let m: Decimal = decimal(divisor);
+    if (m.first < 0 || m.last - m.first + 1 > 18) { return false; }
+    if (x.first < 0) { return true; }
+    if (x.scale < m.scale) { return false; }
+    let modulus: u64 = 0; let index: i32 = 0;
+    while (index <= m.last - m.first) { modulus = modulus * 10 + ((digit_at(divisor, m, m.first + index) - 48) as u64); index += 1; }
+    let rest: u64 = 0; index = 0;
+    while (index <= x.last - x.first) { rest = (rest * 10 + ((digit_at(value, x, x.first + index) - 48) as u64)) % modulus; index += 1; }
+    // modulus < 2^60 has fewer than 64 factors of 2 or 5, so shifting by
+    // more than 64 decimal places cannot change divisibility.
+    let shift: i64 = x.scale - m.scale; if (shift > 64) { shift = 64; }
+    while (shift > 0) { rest = (rest * 10) % modulus; shift -= 1; }
+    return rest == 0;
+}
+// Significant digits are mantissa digits first..last (-1 when zero), counted
+// over the integer and fraction digits; scale is the exponent of the last one.
+struct Decimal { negative: bool, digits: i32, integer: i32, fraction_at: i32, first: i32, last: i32, scale: i64 }
+fn decimal(text: core::text::Text) -> Decimal {
+    let bytes: [u8] = text.bytes; let at: i32 = text.start; let stop: i32 = text.start + text.length;
+    let negative: bool = false;
+    if (at < stop && bytes[at] == 45) { negative = true; at += 1; }
+    let integer_start: i32 = at;
+    while (at < stop && bytes[at] >= 48 && bytes[at] <= 57) { at += 1; }
+    let integer: i32 = at - integer_start;
+    let fraction_at: i32 = at; let fraction: i32 = 0;
+    if (at < stop && bytes[at] == 46) { at += 1; fraction_at = at; while (at < stop && bytes[at] >= 48 && bytes[at] <= 57) { at += 1; } fraction = at - fraction_at; }
+    let exponent: i64 = 0;
+    if (at < stop && (bytes[at] == 101 || bytes[at] == 69)) {
+        at += 1; let minus: bool = false;
+        if (at < stop && (bytes[at] == 43 || bytes[at] == 45)) { minus = bytes[at] == 45; at += 1; }
+        while (at < stop) { if (exponent < 1000000000000000) { exponent = exponent * 10 + ((bytes[at] - 48) as i64); } at += 1; }
+        if (minus) { exponent = -exponent; }
+    }
+    let shape: Decimal = Decimal { negative: negative, digits: integer + fraction, integer: integer, fraction_at: fraction_at - text.start, first: -1, last: -1, scale: 0 };
+    let first: i32 = 0;
+    while (first < shape.digits && digit_at(text, shape, first) == 48) { first += 1; }
+    if (first == shape.digits) { return shape; }
+    let last: i32 = shape.digits - 1;
+    while (digit_at(text, shape, last) == 48) { last -= 1; }
+    shape.first = first; shape.last = last;
+    shape.scale = exponent - (fraction as i64) + ((shape.digits - 1 - last) as i64);
+    return shape;
+}
+fn digit_at(text: core::text::Text, shape: Decimal, index: i32) -> u8 {
+    let sign: i32 = 0; if (shape.negative) { sign = 1; }
+    if (index < shape.integer) { return text.bytes[text.start + sign + index]; }
+    return text.bytes[text.start + shape.fraction_at + index - shape.integer];
+}
+
+// RFC 6902 equality: same type; numbers numerically equal; strings
+// bytewise; arrays elementwise in order; objects with the same keys and
+// equal values in any order.
+pub fn equal(left: &Tree, a: i32, right: &Tree, b: i32) -> bool {
+    let code: i32 = left.code(a);
+    if (code != right.code(b)) { return false; }
+    if (code <= 2) { return true; }
+    if (code == 3) { return numbers_equal(left.text(a), right.text(b)); }
+    if (code == 4) {
+        let x: core::text::Text = left.text(a); let y: core::text::Text = right.text(b);
+        return x.length == y.length && same(x.bytes, x.start, y.bytes, y.start, x.length);
+    }
+    if (left.child_count(a) != right.child_count(b)) { return false; }
+    let child: i32 = left.first_child(a);
+    if (code == 5) {
+        let other: i32 = right.first_child(b);
+        while (child >= 0) {
+            if (!equal(left, child, right, other)) { return false; }
+            child = left.next_sibling(child); other = right.next_sibling(other);
+        }
+        return true;
+    }
+    while (child >= 0) {
+        let other: i32 = right.member(b, left.key(child));
+        if (other < 0 || !equal(left, child, right, other)) { return false; }
+        child = left.next_sibling(child);
+    }
+    return true;
+}

@@ -28,6 +28,7 @@ TOOLS = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, TOOLS)
 import self_host  # noqa: E402
 import stdlib_oracle  # noqa: E402
+import cert_trees  # noqa: E402
 
 GEN = os.path.join(TOOLS, '..', 'Lanius', 'Faithful', 'Gen')
 NS = 'Lanius.Faithful.Self'
@@ -64,15 +65,16 @@ def self_files(workdir, laniusc):
     os.makedirs(files_dir, exist_ok=True)
     driver = os.path.join(files_dir, 'driver')
     open(driver + '.lani', 'w').write(self_host.DRIVER)
-    if not stdlib_oracle.parse_checked(laniusc, driver, files_dir):
-        raise SystemExit('laniusc does not parse the driver')
     bases = [driver]
     for dep in stdlib_oracle.closure(mods, 'mini::selfhost'):
         b = os.path.join(files_dir, dep.replace('::', '__'))
         shutil.copy(mods[dep].path, b + '.lani')
-        if not stdlib_oracle.parse_checked(laniusc, b, files_dir):
-            raise SystemExit(f'laniusc does not parse {dep}')
         bases.append(b)
+    # Validated trees (cert_trees), laniusc's only where needed.
+    ok = cert_trees.write(bases, files_dir, laniusc)
+    for b in bases:
+        if b not in ok:
+            raise SystemExit(f'no tree the validator accepts for {os.path.basename(b)}')
     return bases
 
 

@@ -144,14 +144,15 @@ unspecified. `finish` writes the two zero records.
 ## tgz
 
 ```text
-tgz (-c|-x|-t) [-z|-J] -f ARCHIVE|- [-C DIR] [PATH...]
+tgz (-c|-x|-t) [-z [-L 0-3]|-J] -f ARCHIVE|- [-C DIR] [PATH...]
 ```
 
 Short options group, so `tgz -czf out.tgz dir` and `tgz -xzf in.tgz -C dir`
 work. `-c` creates from `PATH...` (relative to `-C DIR` when given), `-x`
 extracts into `DIR` (default `.`) and `-t` lists one raw member path per line.
 `-f -` means stdout for create and stdin for reading. `-z` gzip-encodes on
-create; `-J` writes xz through the [LZMA2 encoder](extended-xz.md#encoder)
+create, with the default fixed-Huffman encoder or, with `-L 1`, `-L 2` or
+`-L 3` (`--level`), the [dynamic Huffman levels](extended-streaming-deflate.md#dynamic-huffman-levels); `-J` writes xz through the [LZMA2 encoder](extended-xz.md#encoder)
 at level 2 (2 MiB dictionary, CRC64 check), which compresses the docs/stdlib
 tree to the same size as `xz -1` at about an eighth of its speed. Reading detects the
 gzip magic `1f 8b` and the xz magic `fd 37 7a 58 5a 00` and decodes whether

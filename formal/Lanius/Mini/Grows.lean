@@ -1831,7 +1831,7 @@ theorem eff_grows_step {sp : SrcProgram} {k : Nat} (ih : GrowsBelow sp (k + 1)) 
     all_goals simp at run
   | eIndex slice index =>
     exact index_grows (fun r => sub r) run
-  | eArraySlice element array =>
+  | arraySlice element array =>
     simp only [SrcEff.toCore, evalExpr, Semantics.expressionPlace?] at run
     split at run
     · rename_i placeRun

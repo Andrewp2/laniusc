@@ -1,0 +1,96 @@
+// Batch driver for oracle.py. stdin holds records "MODE LENGTH\n" followed
+// by LENGTH bytes of JSON. MODE Y writes the tree with ext::yaml_writer and
+// reads the result back with ext::yaml::load; MODE T writes it with
+// ext::toml_writer. Each record prints "ok N\n", the N written bytes and
+// "\n", then for Y one line "ok JSON" or "err KIND LINE COLUMN" for the read
+// back. Errors print "err KIND NODE\n"; JSON the tree cannot parse prints
+// "bad\n".
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json_stream;
+import ext::json_tree;
+import ext::toml_writer;
+import ext::yaml;
+import ext::yaml_writer;
+import std::stream;
+
+fn append(out: &alloc::vec::Vec<u8>, bytes: [u8], start: i32, length: i32) {
+    if (length > 0) { core::result::unwrap(out.try_extend(core::slice::View { values: bytes, start: start, length: length })); }
+}
+fn append_str(out: &alloc::vec::Vec<u8>, value: str, count: i32) {
+    append(out, core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count), 0, count);
+}
+fn append_text(out: &alloc::vec::Vec<u8>, t: core::text::Text) { append(out, t.bytes, t.start, t.length); }
+fn append_int(out: &alloc::vec::Vec<u8>, value: i32) {
+    if (value < 0) { core::result::unwrap(out.try_push(45)); value = -value; }
+    let buffer: [u8; 12] = [0; 12]; let used: i32 = 0;
+    while (true) { buffer[used] = ((value % 10) as u8) + 48; used += 1; value = value / 10; if (value == 0) { break; } }
+    while (used > 0) { used -= 1; let digit: u8 = buffer[used]; core::result::unwrap(out.try_push(digit)); }
+}
+fn main() -> i32 {
+    let data: alloc::vec::Vec<u8> = alloc::vec::new();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 65536] = [0; 65536];
+    while (true) {
+        let got = source.read(buffer, 0, 65536);
+        if (got.is_err()) { return 3; }
+        let n: i32 = got.unwrap();
+        if (n == 0) { break; }
+        core::result::unwrap(data.try_extend(core::slice::View { values: buffer, start: 0, length: n }));
+    }
+    let made = ext::json_stream::writer(1048576, 1073741824);
+    if (made.is_err()) { return 4; }
+    let writer: ext::json_stream::Writer = made.unwrap();
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    let doc: alloc::vec::Vec<u8> = alloc::vec::new();
+    let bytes: [u8] = data.as_slice(); let total: i32 = data.len(); let at: i32 = 0;
+    while (at < total) {
+        let yaml: bool = bytes[at] == 89; at += 2;
+        let length: i32 = 0;
+        while (bytes[at] != 10) { length = length * 10 + ((bytes[at] - 48) as i32); at += 1; }
+        at += 1;
+        let parsed = ext::json_tree::parse(bytes, at, length, ext::json_tree::default_limits());
+        at += length;
+        if (parsed.is_err()) { append_str(out.borrow(), "bad\n", 4); continue; }
+        let tree: ext::json_tree::Tree = parsed.unwrap();
+        doc.clear();
+        if (yaml) {
+            let wrote = ext::yaml_writer::write(tree.borrow(), tree.root(), doc.borrow());
+            if (wrote.is_err()) { append_str(out.borrow(), "err AllocationFailed -1\n", 24); tree.destroy(); continue; }
+        } else {
+            let wrote = ext::toml_writer::write(tree.borrow(), tree.root(), doc.borrow());
+            if (wrote.is_err()) {
+                let error: ext::toml_writer::Error = wrote.unwrap_err();
+                append_str(out.borrow(), "err ", 4); append_text(out.borrow(), ext::toml_writer::kind_name(error.kind));
+                core::result::unwrap(out.try_push(32)); append_int(out.borrow(), error.node); core::result::unwrap(out.try_push(10));
+                tree.destroy(); continue;
+            }
+        }
+        tree.destroy();
+        append_str(out.borrow(), "ok ", 3); append_int(out.borrow(), doc.len()); core::result::unwrap(out.try_push(10));
+        append(out.borrow(), doc.as_slice(), 0, doc.len()); core::result::unwrap(out.try_push(10));
+        if (yaml) {
+            let loaded = ext::yaml::load(doc.as_slice(), 0, doc.len(), ext::yaml::default_limits());
+            if (loaded.is_err()) {
+                let error: ext::yaml::Error = loaded.unwrap_err();
+                append_str(out.borrow(), "err ", 4); append_text(out.borrow(), ext::yaml::kind_name(error.kind));
+                core::result::unwrap(out.try_push(32)); append_int(out.borrow(), error.line);
+                core::result::unwrap(out.try_push(32)); append_int(out.borrow(), error.column);
+            } else {
+                let back: ext::json_tree::Tree = loaded.unwrap();
+                writer.clear();
+                if (back.write(back.root(), writer.borrow()).is_err()) { append_str(out.borrow(), "err Output", 10); }
+                else { append_str(out.borrow(), "ok ", 3); let view: core::slice::View<u8> = writer.output(); append(out.borrow(), view.values, view.start, view.length); }
+                back.destroy();
+            }
+            core::result::unwrap(out.try_push(10));
+        }
+    }
+    if (core::io::write_all<std::stream::Descriptor>(std::stream::stdout().borrow(), out.as_slice(), 0, out.len()).is_err()) { return 3; }
+    return 0;
+}

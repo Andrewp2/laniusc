@@ -12,10 +12,10 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_repeat_src : FnOk prog prims info (1300, ⟨2, [1], 0⟩) :=
+theorem ok_repeat_src : FnOk prog prims info (1300, ⟨1, [1], 0⟩) :=
   fnOk_of fn_repeat_src (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_SrcFunc : FnOk prog prims info (1301, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_SrcFunc : FnOk prog prims info (1301, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_SrcFunc (by decide +kernel)
 
 theorem ok_src_param_tys : FnOk prog prims info (1302, ⟨1, [0], 0⟩) :=
@@ -27,7 +27,7 @@ theorem ok_empty_of_mini_selfhost_SrcArm : FnOk prog prims info (1303, ⟨0, [],
 theorem ok_cons_of_mini_selfhost_SrcArm : FnOk prog prims info (1304, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcArm (by decide +kernel)
 
-theorem ok_bound_tys : FnOk prog prims info (1305, ⟨5, [0], 0⟩) :=
+theorem ok_bound_tys : FnOk prog prims info (1305, ⟨4, [0], 0⟩) :=
   fnOk_of fn_bound_tys (by decide +kernel)
 
 theorem ok_rest_payloads : FnOk prog prims info (1306, ⟨0, [], 0⟩) :=
@@ -36,13 +36,13 @@ theorem ok_rest_payloads : FnOk prog prims info (1306, ⟨0, [], 0⟩) :=
 theorem ok_ty_local_at : FnOk prog prims info (1307, ⟨0, [1], 1⟩) :=
   fnOk_of fn_ty_local_at (by decide +kernel)
 
-theorem ok_lit_effs : FnOk prog prims info (1310, ⟨6, [3], 0⟩) :=
+theorem ok_lit_effs : FnOk prog prims info (1310, ⟨5, [3], 0⟩) :=
   fnOk_of fn_lit_effs (by decide +kernel)
 
-theorem ok_known_eff : FnOk prog prims info (1312, ⟨5, [2], 0⟩) :=
+theorem ok_known_eff : FnOk prog prims info (1312, ⟨4, [2], 0⟩) :=
   fnOk_of fn_known_eff (by decide +kernel)
 
-theorem ok_lit_arm_effs : FnOk prog prims info (1313, ⟨6, [5], 0⟩) :=
+theorem ok_lit_arm_effs : FnOk prog prims info (1313, ⟨5, [5], 0⟩) :=
   fnOk_of fn_lit_arm_effs (by decide +kernel)
 
 theorem ok_same_inst : FnOk prog prims info (1315, ⟨3, [], 0⟩) :=
@@ -90,7 +90,7 @@ theorem ok_goals_hold : FnOk prog prims info (1332, ⟨18, [0], 0⟩) :=
 theorem ok_item_goals : FnOk prog prims info (1333, ⟨17, [], 0⟩) :=
   fnOk_of fn_item_goals (by decide +kernel)
 
-theorem ok_impl_where : FnOk prog prims info (1334, ⟨4, [], 0⟩) :=
+theorem ok_impl_where : FnOk prog prims info (1334, ⟨3, [], 0⟩) :=
   fnOk_of fn_impl_where (by decide +kernel)
 
 theorem ok_if_not_writes : FnOk prog prims info (1335, ⟨0, [], 0⟩) :=
@@ -99,10 +99,10 @@ theorem ok_if_not_writes : FnOk prog prims info (1335, ⟨0, [], 0⟩) :=
 theorem ok_writes_local : FnOk prog prims info (1336, ⟨0, [0], 0⟩) :=
   fnOk_of fn_writes_local (by decide +kernel)
 
-theorem ok_func_ret : FnOk prog prims info (1337, ⟨38, [], 0⟩) :=
+theorem ok_func_ret : FnOk prog prims info (1337, ⟨37, [], 0⟩) :=
   fnOk_of fn_func_ret (by decide +kernel)
 
-theorem ok_self_ref_of : FnOk prog prims info (1338, ⟨5, [], 0⟩) :=
+theorem ok_self_ref_of : FnOk prog prims info (1338, ⟨4, [], 0⟩) :=
   fnOk_of fn_self_ref_of (by decide +kernel)
 
 theorem ok_ty_list : FnOk prog prims info (1340, ⟨11, [0], 0⟩) :=
@@ -117,10 +117,10 @@ theorem ok_BinOp_compute : FnOk prog prims info (1342, ⟨0, [], 0⟩) :=
 theorem ok_Expr_narrow : FnOk prog prims info (1343, ⟨1, [], 0⟩) :=
   fnOk_of fn_Expr_narrow (by decide +kernel)
 
-theorem ok_longer : FnOk prog prims info (1345, ⟨2, [0], 0⟩) :=
+theorem ok_longer : FnOk prog prims info (1345, ⟨1, [0], 0⟩) :=
   fnOk_of fn_longer (by decide +kernel)
 
-theorem ok_first_facts : FnOk prog prims info (1346, ⟨2, [0], 0⟩) :=
+theorem ok_first_facts : FnOk prog prims info (1346, ⟨1, [0], 0⟩) :=
   fnOk_of fn_first_facts (by decide +kernel)
 
 theorem ok_kill_tail : FnOk prog prims info (1347, ⟨3, [], 0⟩) :=

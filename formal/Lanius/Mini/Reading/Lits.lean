@@ -1,5 +1,19 @@
-import Lanius.Mini.Reading.Close
+module
 
+public import Lanius.Mini.Reading.Close
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Frontend.P.closeFuncs
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.firstSrc
+import all Lanius.Mini.Frontend.P.flExpFirst
+import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.negWideI32
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.sintAt
+import all Lanius.Mini.Frontend.P.wideLeftStmt
+import all Lanius.Mini.Frontend.P.wideOf
+
+@[expose] public section
 /-! # The reading, V8e: integer literals at their expected types
 
 `LitExpr locals want e e'`: the closed expression `e` with each integer
@@ -145,7 +159,7 @@ inductive LitEff (funcs : List SrcFunc) : List LocalTy → Option SrcType → Sr
       LitEff funcs locals want (.eDivide op a b) (.eDivide op a' b')
   | stride {locals : List LocalTy} {want : Option SrcType} {sl : Nat} : LitEff funcs locals want (.eStride sl) (.eStride sl)
   | arraySlice {locals : List LocalTy} {want : Option SrcType} {e : SrcType} {a : Nat} :
-      LitEff funcs locals want (.eArraySlice e a) (.eArraySlice e a)
+      LitEff funcs locals want (.arraySlice e a) (.arraySlice e a)
 
 inductive LitEffs (funcs : List SrcFunc) : List LocalTy → Option (List SrcType) → List SrcEff → List SrcEff → Prop
   | nil {locals : List LocalTy} {wants : Option (List SrcType)} : LitEffs funcs locals wants [] []
@@ -181,7 +195,7 @@ theorem litEff_sound (funcs : List SrcFunc) :
   | locals, want, .eDivide op a b => by
     simp only [litEff]; exact .divide (litEff_sound funcs _ _ a) (litEff_sound funcs _ _ b)
   | locals, want, .eStride sl => by simp only [litEff]; exact .stride
-  | locals, want, .eArraySlice e a => by simp only [litEff]; exact .arraySlice
+  | locals, want, .arraySlice e a => by simp only [litEff]; exact .arraySlice
 
 theorem litEffs_sound (funcs : List SrcFunc) :
     ∀ (locals : List LocalTy) (wants : Option (List SrcType)) (xs : List SrcEff),

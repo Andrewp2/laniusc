@@ -29,7 +29,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/url_client.lani#L8)
 - [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/url_client.lani#L9)
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/url_client.lani#L10)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/url_client.lani#L11)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/url_client.lani#L11)
 - [core::time](../core/time.md) · [source](../../../extended/ext/url_client.lani#L12)
 - [ext::http](http.md) · [source](../../../extended/ext/url_client.lani#L13)
 - [ext::http_client](http_client.md) · [source](../../../extended/ext/url_client.lani#L14)

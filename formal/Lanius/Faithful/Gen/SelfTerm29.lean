@@ -105,7 +105,7 @@ theorem ok_t_lbrace : FnOk prog prims info (1379, ⟨0, [], 0⟩) :=
 theorem ok_cons_of_mini_selfhost_List_mini_selfhost_CTree : FnOk prog prims info (1380, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_List_mini_selfhost_CTree (by decide +kernel)
 
-theorem ok_get_of_core_option_Option_mini_selfhost_SrcType : FnOk prog prims info (1382, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_core_option_Option_mini_selfhost_SrcType : FnOk prog prims info (1382, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_core_option_Option_mini_selfhost_SrcType (by decide +kernel)
 
 theorem ok_empty_of_mini_selfhost_SrcEff : FnOk prog prims info (1383, ⟨0, [], 0⟩) :=

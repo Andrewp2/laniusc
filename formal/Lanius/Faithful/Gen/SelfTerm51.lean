@@ -15,13 +15,13 @@ open Lanius.Faithful.SelfCert
 theorem ok_row_cons : FnOk prog prims info (2285, ⟨2, [], 0⟩) :=
   fnOk_of fn_row_cons (by decide +kernel)
 
-theorem ok_arm_naming : FnOk prog prims info (2286, ⟨6, [], 0⟩) :=
+theorem ok_arm_naming : FnOk prog prims info (2286, ⟨5, [], 0⟩) :=
   fnOk_of fn_arm_naming (by decide +kernel)
 
 theorem ok_arms_naming_at : FnOk prog prims info (2287, ⟨1, [], 0⟩) :=
   fnOk_of fn_arms_naming_at (by decide +kernel)
 
-theorem ok_wild_tail : FnOk prog prims info (2288, ⟨7, [], 0⟩) :=
+theorem ok_wild_tail : FnOk prog prims info (2288, ⟨6, [], 0⟩) :=
   fnOk_of fn_wild_tail (by decide +kernel)
 
 theorem ok_fl_exp_digit_at : FnOk prog prims info (2289, ⟨3, [1], 1⟩) :=
@@ -36,7 +36,7 @@ theorem ok_diverge_checked : FnOk prog prims info (2291, ⟨1, [], 0⟩) :=
 theorem ok_text_underscore : FnOk prog prims info (2292, ⟨1, [], 0⟩) :=
   fnOk_of fn_text_underscore (by decide +kernel)
 
-theorem ok_nested_or_plain : FnOk prog prims info (2293, ⟨21, [], 0⟩) :=
+theorem ok_nested_or_plain : FnOk prog prims info (2293, ⟨20, [], 0⟩) :=
   fnOk_of fn_nested_or_plain (by decide +kernel)
 
 theorem ok_named_known : FnOk prog prims info (2294, ⟨4, [], 0⟩) :=
@@ -45,7 +45,7 @@ theorem ok_named_known : FnOk prog prims info (2294, ⟨4, [], 0⟩) :=
 theorem ok_p_pattern_tuple : FnOk prog prims info (2295, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_pattern_tuple (by decide +kernel)
 
-theorem ok_wild_binders : FnOk prog prims info (2296, ⟨6, [2], 0⟩) :=
+theorem ok_wild_binders : FnOk prog prims info (2296, ⟨5, [2], 0⟩) :=
   fnOk_of fn_wild_binders (by decide +kernel)
 
 theorem ok_fit_args_next : FnOk prog prims info (2297, ⟨10, [0], 0⟩) :=
@@ -54,28 +54,28 @@ theorem ok_fit_args_next : FnOk prog prims info (2297, ⟨10, [0], 0⟩) :=
 theorem ok_fit_arg : FnOk prog prims info (2298, ⟨10, [0], 0⟩) :=
   fnOk_of fn_fit_arg (by decide +kernel)
 
-theorem ok_nest_use : FnOk prog prims info (2299, ⟨20, [], 0⟩) :=
+theorem ok_nest_use : FnOk prog prims info (2299, ⟨19, [], 0⟩) :=
   fnOk_of fn_nest_use (by decide +kernel)
 
-theorem ok_plain_use : FnOk prog prims info (2300, ⟨11, [], 0⟩) :=
+theorem ok_plain_use : FnOk prog prims info (2300, ⟨10, [], 0⟩) :=
   fnOk_of fn_plain_use (by decide +kernel)
 
-theorem ok_wild_binder : FnOk prog prims info (2301, ⟨5, [], 0⟩) :=
+theorem ok_wild_binder : FnOk prog prims info (2301, ⟨4, [], 0⟩) :=
   fnOk_of fn_wild_binder (by decide +kernel)
 
 theorem ok_row_pats : FnOk prog prims info (2302, ⟨4, [], 0⟩) :=
   fnOk_of fn_row_pats (by decide +kernel)
 
-theorem ok_nest_pats : FnOk prog prims info (2303, ⟨19, [], 0⟩) :=
+theorem ok_nest_pats : FnOk prog prims info (2303, ⟨18, [], 0⟩) :=
   fnOk_of fn_nest_pats (by decide +kernel)
 
 theorem ok_shadow_use : FnOk prog prims info (2304, ⟨1, [], 0⟩) :=
   fnOk_of fn_shadow_use (by decide +kernel)
 
-theorem ok_first_nested : FnOk prog prims info (2305, ⟨7, [1], 0⟩) :=
+theorem ok_first_nested : FnOk prog prims info (2305, ⟨6, [1], 0⟩) :=
   fnOk_of fn_first_nested (by decide +kernel)
 
-theorem ok_nest_at : FnOk prog prims info (2306, ⟨18, [], 0⟩) :=
+theorem ok_nest_at : FnOk prog prims info (2306, ⟨17, [], 0⟩) :=
   fnOk_of fn_nest_at (by decide +kernel)
 
 theorem ok_shadow_if : FnOk prog prims info (2307, ⟨0, [], 0⟩) :=
@@ -84,52 +84,52 @@ theorem ok_shadow_if : FnOk prog prims info (2307, ⟨0, [], 0⟩) :=
 theorem ok_first_at : FnOk prog prims info (2308, ⟨0, [], 0⟩) :=
   fnOk_of fn_first_at (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_CTree : FnOk prog prims info (2309, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_CTree : FnOk prog prims info (2309, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_CTree (by decide +kernel)
 
-theorem ok_nest_inner : FnOk prog prims info (2310, ⟨17, [], 0⟩) :=
+theorem ok_nest_inner : FnOk prog prims info (2310, ⟨16, [], 0⟩) :=
   fnOk_of fn_nest_inner (by decide +kernel)
 
-theorem ok_column_arms : FnOk prog prims info (2311, ⟨11, [4], 0⟩) :=
+theorem ok_column_arms : FnOk prog prims info (2311, ⟨10, [4], 0⟩) :=
   fnOk_of fn_column_arms (by decide +kernel)
 
-theorem ok_wild_inner : FnOk prog prims info (2312, ⟨16, [], 0⟩) :=
+theorem ok_wild_inner : FnOk prog prims info (2312, ⟨15, [], 0⟩) :=
   fnOk_of fn_wild_inner (by decide +kernel)
 
-theorem ok_nest_arm : FnOk prog prims info (2313, ⟨8, [], 0⟩) :=
+theorem ok_nest_arm : FnOk prog prims info (2313, ⟨7, [], 0⟩) :=
   fnOk_of fn_nest_arm (by decide +kernel)
 
-theorem ok_column_arm : FnOk prog prims info (2314, ⟨10, [], 0⟩) :=
+theorem ok_column_arm : FnOk prog prims info (2314, ⟨9, [], 0⟩) :=
   fnOk_of fn_column_arm (by decide +kernel)
 
 theorem ok_is_last : FnOk prog prims info (2315, ⟨0, [], 0⟩) :=
   fnOk_of fn_is_last (by decide +kernel)
 
-theorem ok_ends_wild : FnOk prog prims info (2316, ⟨9, [], 0⟩) :=
+theorem ok_ends_wild : FnOk prog prims info (2316, ⟨8, [], 0⟩) :=
   fnOk_of fn_ends_wild (by decide +kernel)
 
-theorem ok_known_use : FnOk prog prims info (2317, ⟨12, [], 0⟩) :=
+theorem ok_known_use : FnOk prog prims info (2317, ⟨11, [], 0⟩) :=
   fnOk_of fn_known_use (by decide +kernel)
 
-theorem ok_covers : FnOk prog prims info (2318, ⟨15, [], 0⟩) :=
+theorem ok_covers : FnOk prog prims info (2318, ⟨14, [], 0⟩) :=
   fnOk_of fn_covers (by decide +kernel)
 
-theorem ok_replace_at : FnOk prog prims info (2319, ⟨2, [0], 0⟩) :=
+theorem ok_replace_at : FnOk prog prims info (2319, ⟨1, [0], 0⟩) :=
   fnOk_of fn_replace_at (by decide +kernel)
 
-theorem ok_hidden_pat : FnOk prog prims info (2320, ⟨7, [], 0⟩) :=
+theorem ok_hidden_pat : FnOk prog prims info (2320, ⟨6, [], 0⟩) :=
   fnOk_of fn_hidden_pat (by decide +kernel)
 
-theorem ok_hidden_expr : FnOk prog prims info (2321, ⟨7, [], 0⟩) :=
+theorem ok_hidden_expr : FnOk prog prims info (2321, ⟨6, [], 0⟩) :=
   fnOk_of fn_hidden_expr (by decide +kernel)
 
 theorem ok_column_fit : FnOk prog prims info (2322, ⟨2, [], 0⟩) :=
   fnOk_of fn_column_fit (by decide +kernel)
 
-theorem ok_row_fits : FnOk prog prims info (2323, ⟨8, [1], 0⟩) :=
+theorem ok_row_fits : FnOk prog prims info (2323, ⟨7, [1], 0⟩) :=
   fnOk_of fn_row_fits (by decide +kernel)
 
-theorem ok_column_sub : FnOk prog prims info (2324, ⟨9, [], 0⟩) :=
+theorem ok_column_sub : FnOk prog prims info (2324, ⟨8, [], 0⟩) :=
   fnOk_of fn_column_sub (by decide +kernel)
 
 theorem chunk51 : AllFns prog prims info part51 :=

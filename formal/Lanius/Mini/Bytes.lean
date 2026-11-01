@@ -1,8 +1,27 @@
-import Lanius.Mini.Asm
-import Lanius.X86.Machine.FrameSlots
-import Lanius.X86.Machine.ControlEncoding
-import Lanius.X86.Machine.DivisionEncoding
+module
 
+public import Lanius.Mini.Asm
+public import Lanius.X86.Machine.FrameSlots
+public import Lanius.X86.Machine.ControlEncoding
+public import Lanius.X86.Machine.DivisionEncoding
+public import Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.FArith_opcode
+public import Lanius.Mini.Compiler.P.FloatTy_rex
+public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.arities
+public import Lanius.Mini.Compiler.P.codeSize
+public import Lanius.Mini.Compiler.P.loadAtBytes
+
+@[expose] public section
 /-! Assembly. The extracted `Instr.encode` (`Lanius.Mini.Compiler`) writes
 literal bytes; here each is proved equal to the existing encoders in
 `X86/Machine/*Encoding.lean`, whose decoding the machine semantics uses, so
@@ -312,7 +331,7 @@ theorem le64_eq (value : BitVec 64) :
     Nat.reducePow]
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, trivial⟩ <;> apply uint8_ofNat_congr <;> omega
 
-theorem frameSize_eq (slots : Nat) : frameSize slots = frameBytes slots := rfl
+theorem frameSize_eq (slots : Nat) : frameSize slots = frameBytes slots := by rfl
 
 theorem prologue_eq (slots : Nat) : prologue slots = framePrologueBytes slots ++ stackCheckBytes := by
   rw [prologue, le32_eq]

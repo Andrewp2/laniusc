@@ -24,7 +24,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/response.lani#L6)
 - [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/response.lani#L7)
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/response.lani#L8)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/response.lani#L9)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/response.lani#L9)
 
 ## Types, fields and variants
 

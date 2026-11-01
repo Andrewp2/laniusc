@@ -24,10 +24,10 @@ theorem ok_try_rest : FnOk prog prims info (2033, ⟨2, [], 0⟩) :=
 theorem ok_stmt_unless : FnOk prog prims info (2034, ⟨0, [], 0⟩) :=
   fnOk_of fn_stmt_unless (by decide +kernel)
 
-theorem ok_arm_body_of : FnOk prog prims info (2035, ⟨37, [0], 0⟩) :=
+theorem ok_arm_body_of : FnOk prog prims info (2035, ⟨36, [0], 0⟩) :=
   fnOk_of fn_arm_body_of (by decide +kernel)
 
-theorem ok_set_try_or_eval : FnOk prog prims info (2036, ⟨31, [], 0⟩) :=
+theorem ok_set_try_or_eval : FnOk prog prims info (2036, ⟨30, [], 0⟩) :=
   fnOk_of fn_set_try_or_eval (by decide +kernel)
 
 theorem ok_checked_stmt : FnOk prog prims info (2037, ⟨0, [], 0⟩) :=
@@ -51,7 +51,7 @@ theorem ok_set_eval_of : FnOk prog prims info (2042, ⟨3, [], 0⟩) :=
 theorem ok_compound_eff : FnOk prog prims info (2043, ⟨3, [], 0⟩) :=
   fnOk_of fn_compound_eff (by decide +kernel)
 
-theorem ok_compound_field_eval : FnOk prog prims info (2044, ⟨31, [], 0⟩) :=
+theorem ok_compound_field_eval : FnOk prog prims info (2044, ⟨30, [], 0⟩) :=
   fnOk_of fn_compound_field_eval (by decide +kernel)
 
 theorem ok_free_shifted : FnOk prog prims info (2045, ⟨0, [], 0⟩) :=

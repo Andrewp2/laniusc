@@ -1,5 +1,50 @@
-import Lanius.Mini.Reading.Effs
+module
 
+public import Lanius.Mini.Reading.Effs
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Frontend.P.blockArmsOf
+import all Lanius.Mini.Frontend.P.compoundEval
+import all Lanius.Mini.Frontend.P.compoundOf
+import all Lanius.Mini.Frontend.P.consBinder
+import all Lanius.Mini.Frontend.P.consTys
+import all Lanius.Mini.Frontend.P.divergeArm
+import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.fieldTyAt
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.floatTyped
+import all Lanius.Mini.Frontend.P.fnInstRet
+import all Lanius.Mini.Frontend.P.forRange
+import all Lanius.Mini.Frontend.P.freshId
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.ifEff
+import all Lanius.Mini.Frontend.P.intLiteral
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.isPathCall
+import all Lanius.Mini.Frontend.P.isTryEnum
+import all Lanius.Mini.Frontend.P.matchLetHead
+import all Lanius.Mini.Frontend.P.matchStmtIf
+import all Lanius.Mini.Frontend.P.noBlock
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.pickTy
+import all Lanius.Mini.Frontend.P.purePart
+import all Lanius.Mini.Frontend.P.repeatEff
+import all Lanius.Mini.Frontend.P.setIndexOrEval
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.sliceHead
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.treeTokens
+import all Lanius.Mini.Frontend.P.triedErr
+import all Lanius.Mini.Frontend.P.triedIf
+import all Lanius.Mini.Frontend.P.tryLet
+import all Lanius.Mini.Frontend.P.tryLetHead
+import all Lanius.Mini.Frontend.P.tryLocalOf
+import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.whileEvalOf
+import all Lanius.Mini.Frontend.P.wideOf
+
+@[expose] public section
 /-! # The reading, V8d: statements
 
 `StmtsR env scope items m`: a statement list, a `let` scoping over the

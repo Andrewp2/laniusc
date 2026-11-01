@@ -15,7 +15,7 @@ open Lanius.Faithful.SelfCert
 theorem ok_p_postfix_member : FnOk prog prims info (1662, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_postfix_member (by decide +kernel)
 
-theorem ok_member_of : FnOk prog prims info (1663, ⟨7, [], 0⟩) :=
+theorem ok_member_of : FnOk prog prims info (1663, ⟨6, [], 0⟩) :=
   fnOk_of fn_member_of (by decide +kernel)
 
 theorem ok_p_ident_plain : FnOk prog prims info (1664, ⟨0, [], 0⟩) :=
@@ -24,7 +24,7 @@ theorem ok_p_ident_plain : FnOk prog prims info (1664, ⟨0, [], 0⟩) :=
 theorem ok_const_ref : FnOk prog prims info (1665, ⟨14, [0], 0⟩) :=
   fnOk_of fn_const_ref (by decide +kernel)
 
-theorem ok_path_name : FnOk prog prims info (1666, ⟨5, [], 0⟩) :=
+theorem ok_path_name : FnOk prog prims info (1666, ⟨4, [], 0⟩) :=
   fnOk_of fn_path_name (by decide +kernel)
 
 theorem ok_find_local : FnOk prog prims info (1667, ⟨1, [0], 0⟩) :=
@@ -63,16 +63,16 @@ theorem ok_x_cast_into : FnOk prog prims info (1677, ⟨1, [], 0⟩) :=
 theorem ok_pure_part : FnOk prog prims info (1678, ⟨0, [], 0⟩) :=
   fnOk_of fn_pure_part (by decide +kernel)
 
-theorem ok_is_path_call : FnOk prog prims info (1680, ⟨4, [], 0⟩) :=
+theorem ok_is_path_call : FnOk prog prims info (1680, ⟨3, [], 0⟩) :=
   fnOk_of fn_is_path_call (by decide +kernel)
 
-theorem ok_eff_path_call : FnOk prog prims info (1681, ⟨30, [0], 0⟩) :=
+theorem ok_eff_path_call : FnOk prog prims info (1681, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_path_call (by decide +kernel)
 
-theorem ok_is_method_form : FnOk prog prims info (1682, ⟨4, [], 0⟩) :=
+theorem ok_is_method_form : FnOk prog prims info (1682, ⟨3, [], 0⟩) :=
   fnOk_of fn_is_method_form (by decide +kernel)
 
-theorem ok_eff_method : FnOk prog prims info (1683, ⟨30, [0], 0⟩) :=
+theorem ok_eff_method : FnOk prog prims info (1683, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_method (by decide +kernel)
 
 theorem ok_p_postfix_index : FnOk prog prims info (1684, ⟨0, [], 0⟩) :=
@@ -84,10 +84,10 @@ theorem ok_x_index_of : FnOk prog prims info (1685, ⟨0, [], 0⟩) :=
 theorem ok_p_postfix_call : FnOk prog prims info (1686, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_postfix_call (by decide +kernel)
 
-theorem ok_eff_chain : FnOk prog prims info (1687, ⟨30, [0], 0⟩) :=
+theorem ok_eff_chain : FnOk prog prims info (1687, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_chain (by decide +kernel)
 
-theorem ok_eff_primary : FnOk prog prims info (1688, ⟨30, [0], 1⟩) :=
+theorem ok_eff_primary : FnOk prog prims info (1688, ⟨29, [0], 1⟩) :=
   fnOk_of fn_eff_primary (by decide +kernel)
 
 theorem ok_checked_eff : FnOk prog prims info (1689, ⟨0, [], 0⟩) :=
@@ -102,7 +102,7 @@ theorem ok_has_const : FnOk prog prims info (1691, ⟨0, [], 0⟩) :=
 theorem ok_find_const : FnOk prog prims info (1692, ⟨2, [0], 0⟩) :=
   fnOk_of fn_find_const (by decide +kernel)
 
-theorem ok_eff_variant : FnOk prog prims info (1693, ⟨30, [0], 0⟩) :=
+theorem ok_eff_variant : FnOk prog prims info (1693, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_variant (by decide +kernel)
 
 theorem ok_variant_by_path : FnOk prog prims info (1694, ⟨8, [], 0⟩) :=
@@ -111,10 +111,10 @@ theorem ok_variant_by_path : FnOk prog prims info (1694, ⟨8, [], 0⟩) :=
 theorem ok_p_struct_lit : FnOk prog prims info (1695, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_struct_lit (by decide +kernel)
 
-theorem ok_eff_literal : FnOk prog prims info (1696, ⟨30, [0], 0⟩) :=
+theorem ok_eff_literal : FnOk prog prims info (1696, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_literal (by decide +kernel)
 
-theorem ok_eff_match_on : FnOk prog prims info (1697, ⟨30, [0], 0⟩) :=
+theorem ok_eff_match_on : FnOk prog prims info (1697, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_match_on (by decide +kernel)
 
 theorem ok_p_array_repeat : FnOk prog prims info (1698, ⟨0, [], 0⟩) :=
@@ -123,13 +123,13 @@ theorem ok_p_array_repeat : FnOk prog prims info (1698, ⟨0, [], 0⟩) :=
 theorem ok_expected_array : FnOk prog prims info (1699, ⟨1, [], 0⟩) :=
   fnOk_of fn_expected_array (by decide +kernel)
 
-theorem ok_array_repeat_of : FnOk prog prims info (1700, ⟨3, [], 0⟩) :=
+theorem ok_array_repeat_of : FnOk prog prims info (1700, ⟨2, [], 0⟩) :=
   fnOk_of fn_array_repeat_of (by decide +kernel)
 
 theorem ok_array_of : FnOk prog prims info (1701, ⟨3, [], 0⟩) :=
   fnOk_of fn_array_of (by decide +kernel)
 
-theorem ok_eff_list : FnOk prog prims info (1702, ⟨30, [0], 0⟩) :=
+theorem ok_eff_list : FnOk prog prims info (1702, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_list (by decide +kernel)
 
 theorem chunk36 : AllFns prog prims info part36 :=

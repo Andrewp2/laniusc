@@ -751,6 +751,7 @@ impl GpuLoweringPipeline {
                     &workspace,
                     capacities,
                     optimizer.output(semantic.output()),
+                    hir_core,
                     artifact_kind == LoweringArtifactKind::Object,
                     kernels,
                 )

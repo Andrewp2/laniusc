@@ -21,10 +21,10 @@ the argument is a function pointer with a checked calling convention.
 | Boundary | Current source evidence | Consequence |
 | --- | --- | --- |
 | Thread API | [`std::thread`](../stdlib/std/thread.lani) explicitly marks service 8 unavailable; `spawn`, `join`, `yield_now` and `current_id` are runtime externs | Type-checkable metadata does not provide executable operations |
-| Callable definitions and values | [`grammar/lanius.bnf`](../grammar/lanius.bnf) has ordinary function bodies, extern declarations ending in a semicolon, and no function type or address-of expression | No checked source C callback definition/address capability is available |
+| Callable definitions and values | A non-generic free function named as a value is the `ptr` address of a System V entry that loads R15 ([C callbacks](language-ergonomics.md#c-callbacks)); `tests/fixtures/native_c_callback/pthread.lani` starts and joins a pthread running a Lanius `(ptr) -> ptr` worker | Callback entry exists; there is still no function type or indirect call from Lanius |
 | Checked calls | [`00_calls.slang`](../shaders/type_checker/semantic/artifact/00_calls.slang) resolves function/dependency/intrinsic/variant declaration targets; native metadata in [`semantic_interface.rs`](../crates/laniusc-compiler/src/compiler/semantic_interface.rs) carries scalar signatures | A direct C call is established; arbitrary indirect calls and callback entry are not |
 | Memory effects | [`opt_ir_memory_effects`](../shaders/codegen/optimization_ir.slang) treats every call as an opaque memory read and write | Existing calls offer a plausible conservative foundation for native atomics; they are not yet a documented inter-thread memory model |
-| Process context | [`crt_entry.s`](../shaders/codegen/lir/x86/crt_entry.s) reconstructs the argument/environment vector, keeps it in R15 and unmaps it when language main returns | A worker or callback must establish its own valid R15 context and retain the vector for its entire use |
+| Process context | [`crt_entry.s`](../shaders/codegen/lir/x86/crt_entry.s) reconstructs the argument/environment vector at the fixed address `0x100000000000`, keeps it in R15 and unmaps it when language main returns; a C callback entry loads R15 from that address | Workers must finish before main returns, while the vector is mapped |
 | Termination | [`runtime_abi.slang`](../shaders/codegen/lir/x86/runtime_abi.slang) uses Linux syscall 60 for runtime exit and allocation failure | Calling-thread exit cannot silently become whole-process termination or normal pthread completion |
 
 The compiler's GPU-side Slang atomics synchronize compiler workgroups. They
@@ -93,11 +93,11 @@ an i32 handle, process ID or generally portable representation.
 
 `pthread_self` and `pthread_equal` have usable current scalar signatures.
 The initial-thread control now compiles and executes, but produces no worker.
-`pthread_create` needs a checked C entry of shape `(ptr) -> ptr`, not an
-ordinary function cast to a data pointer. The internal generated
-`__lanius_<library>_<unit>_<declaration>` ELF symbol is not such an entry
-contract. The existing CRT bridge is specific to `main`, not a reusable
-worker trampoline.
+`pthread_create` takes a Lanius `fn worker(arg: ptr) -> ptr` named as a
+value: its address is a checked System V entry that establishes R15 and calls
+the ordinary body ([C callbacks](language-ergonomics.md#c-callbacks)). The
+internal generated `__lanius_<library>_<unit>_<declaration>` ELF symbol is
+still not an entry contract.
 
 ## Minimum complete ownership and ordering contract
 

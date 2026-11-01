@@ -34,7 +34,7 @@ partial def sitesEff (A : AEnv) (W : Wit) : SrcEff → List (Nat × List SizeCls
   | .eCall c args => sitesEffs A W args ++ [(c, (effsCls prims T A args).map (SizeCls.res W))]
   | .eApply _ l r | .eDivide _ l r => sitesEff A W l ++ sitesEff A W r
   | .eNeg a | .eNot a | .eCast _ a => sitesEff A W a
-  | .eIndex _ _ | .eStride _ | .eArraySlice _ _ => []
+  | .eIndex _ _ | .eStride _ | .arraySlice _ _ => []
   | .eStruct _ fs | .eVariant _ _ fs => sitesEffs A W fs
   | .eMatch s ety _ bs vs => sitesEff A W s ++ sitesArms A W (effCls prims T A s) ety.typeId 0 bs vs
 
@@ -76,7 +76,7 @@ partial def effCalls : SrcEff → List Nat
   | .eNeg a | .eNot a | .eCast _ a | .eIndex _ a => effCalls a
   | .eStruct _ fs | .eVariant _ _ fs => fs.flatMap effCalls
   | .eMatch s _ _ _ vs => effCalls s ++ vs.flatMap effCalls
-  | .ePure _ | .eStride _ | .eArraySlice _ _ => []
+  | .ePure _ | .eStride _ | .arraySlice _ _ => []
 end
 
 partial def stmtCalls : SrcStmt → List Nat

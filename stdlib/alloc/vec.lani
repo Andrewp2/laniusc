@@ -108,8 +108,7 @@ pub impl<T> Vec<T> {
         if (storage == 0) { return core::result::Err(Error::AllocationFailed); }
         let source: [T] = self.slots();
         let target: [T] = core::mem::typed_slice_from_storage(storage, capacity);
-        let index: i32 = 0;
-        while (index < self.length) { target[index] = source[index]; index += 1; }
+        core::slice::copy_nonoverlapping_range(target, capacity, 0, source, self.reserved, 0, self.length);
         if (self.reserved > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
         self.storage = storage; self.reserved = capacity;
         return core::result::Ok(capacity);
@@ -163,18 +162,53 @@ pub impl<T> Vec<T> {
             }
         }
         let target: [T] = core::mem::typed_slice_from_storage(storage, capacity);
-        let index: i32 = 0;
         if (grows) {
-            let old: [T] = self.slots();
-            while (index < self.length) { target[index] = old[index]; index += 1; }
+            core::slice::copy_nonoverlapping_range(target, capacity, 0, self.slots(), self.reserved, 0, self.length);
         }
-        index = 0;
-        // 0 <= index < count == values.length, so this is exactly values.get(index).
+        // Exactly values.get(0..count): a self-alias reads initialized entries,
+        // which never overlap the appended range.
         let source: [T] = values.values; let first: i32 = values.start;
-        while (index < count) { target[self.length + index] = source[first + index]; index += 1; }
+        core::slice::copy_nonoverlapping_range(target, capacity, self.length, source, first + count, first, count);
         if (grows && self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
         self.storage = storage; self.reserved = capacity; self.length = needed;
         return core::result::Ok(needed);
+    }
+
+    // Append the first `count` elements of a backed slice, eight bytes at a
+    // time where the layouts allow. Atomic, and self-aliases are allowed, as
+    // for try_extend. A negative count is Bounds.
+    pub fn try_extend_from_slice(&self, values: [T], count: i32) -> core::result::Result<i32, Error> {
+        if (count < 0) { return core::result::Err(Error::Bounds); }
+        let view: core::slice::View<T> = core::slice::View { values: values, start: 0, length: count };
+        return self.try_extend(view);
+    }
+
+    // Overwrite every element with the first `count` elements of `values`,
+    // which must not overlap this vector's storage. A count other than len()
+    // is Bounds and writes nothing.
+    pub fn copy_from_slice(&self, values: [T], count: i32) -> core::result::Result<i32, Error> {
+        if (count != self.length) { return core::result::Err(Error::Bounds); }
+        core::slice::copy_nonoverlapping_range(self.slots(), self.reserved, 0, values, count, 0, count);
+        return core::result::Ok(count);
+    }
+
+    // Exchange every element with the first `count` elements of `values`,
+    // which must not overlap this vector's storage. A count other than len()
+    // is Bounds and writes nothing.
+    pub fn swap_with_slice(&self, values: [T], count: i32) -> core::result::Result<i32, Error> {
+        if (count != self.length) { return core::result::Err(Error::Bounds); }
+        core::slice::swap_with_slice(self.slots(), count, values, count);
+        return core::result::Ok(count);
+    }
+
+    // Overwrite every element with `value`; no previous value is destroyed.
+    pub fn fill(&self, value: T) { core::slice::fill_range(self.slots(), self.reserved, 0, self.length, value); }
+
+    // Exchange two elements. An index outside 0..len() is Bounds and writes nothing.
+    pub fn swap(&self, left: i32, right: i32) -> core::result::Result<i32, Error> {
+        if (left < 0 || right < 0 || left >= self.length || right >= self.length) { return core::result::Err(Error::Bounds); }
+        core::slice::swap(self.slots(), self.length, left, right);
+        return core::result::Ok(self.length);
     }
 
     // Transfer entries between distinct active owners with independent backing.
@@ -212,10 +246,8 @@ pub impl<T> Vec<T> {
         if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
         if (core::mem::size_of<T>() > 0) {
             let source: [T] = self.slots(); let target: [T] = extracted.slots();
-            let index: i32 = 0;
-            while (index < count) { target[index] = source[start + index]; index += 1; }
-            index = end;
-            while (index < self.length) { source[index - count] = source[index]; index += 1; }
+            core::slice::copy_nonoverlapping_range(target, extracted.reserved, 0, source, self.reserved, start, count);
+            core::slice::copy_within(source, self.length, end, self.length, start);
         }
         extracted.length = count; self.length -= count;
         return core::result::Ok(extracted);
@@ -236,15 +268,15 @@ pub impl<T> Vec<T> {
         if (index < 0 || index > self.length) { return core::result::Err(Error::Bounds); }
         let pushed: core::result::Result<i32, Error> = self.try_push(item);
         if (core::result::is_err(pushed)) { return pushed; }
-        let slots: [T] = self.slots(); let cursor: i32 = self.length - 1;
-        while (cursor > index) { slots[cursor] = slots[cursor - 1]; cursor -= 1; }
+        let slots: [T] = self.slots();
+        core::slice::copy_within(slots, self.length, index, self.length - 1, index + 1);
         slots[index] = item;
         return pushed;
     }
     pub fn remove(&self, index: i32) -> core::result::Result<T, Error> {
         if (index < 0 || index >= self.length) { return core::result::Err(Error::Bounds); }
-        let slots: [T] = self.slots(); let previous: T = slots[index]; let cursor: i32 = index;
-        while (cursor < self.length - 1) { slots[cursor] = slots[cursor + 1]; cursor += 1; }
+        let slots: [T] = self.slots(); let previous: T = slots[index];
+        core::slice::copy_within(slots, self.length, index + 1, self.length, index);
         self.length -= 1; return core::result::Ok(previous);
     }
     pub fn swap_remove(&self, index: i32) -> core::result::Result<T, Error> {
@@ -331,8 +363,7 @@ pub impl<T> Vec<T> {
         if (length <= self.length) { self.length = length; return core::result::Ok(length); }
         let reserved: core::result::Result<i32, Error> = self.try_reserve(length - self.length);
         if (core::result::is_err(reserved)) { return reserved; }
-        let slots: [T] = self.slots(); let index: i32 = self.length;
-        while (index < length) { slots[index] = fill; index += 1; }
+        core::slice::fill_range(self.slots(), self.reserved, self.length, length, fill);
         self.length = length; return core::result::Ok(length);
     }
     pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error> {
@@ -344,8 +375,7 @@ pub impl<T> Vec<T> {
         let copy: Vec<T> = new();
         let reserved: core::result::Result<i32, Error> = copy.try_reserve(self.length);
         if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
-        let source: [T] = self.slots(); let target: [T] = copy.slots(); let index: i32 = 0;
-        while (index < self.length) { target[index] = source[index]; index += 1; }
+        core::slice::copy_nonoverlapping_range(copy.slots(), copy.reserved, 0, self.slots(), self.reserved, 0, self.length);
         copy.length = self.length; return core::result::Ok(copy);
     }
     pub fn destroy(&self) {

@@ -97,7 +97,7 @@ partial def effCalls : SrcEff → List Nat
   | .eMatch s _ _ _ vs => effCalls s ++ vs.flatMap effCalls
   | .eDivide _ l r => effCalls l ++ effCalls r
   | .eStride _ => []
-  | .eArraySlice _ _ => []
+  | .arraySlice _ _ => []
 
 partial def stmtCalls : SrcStmt → List Nat
   | .let _ _ _ b | .letStruct _ _ _ b | .letEnum _ _ _ _ b | .letMatch _ _ _ _ _ b => stmtCalls b
@@ -145,7 +145,9 @@ def describe (files : List FileInput) : Option (List String) := do
     let c ← collectFiles fuel rest ({ decls := f.decls, modules := [f.home] } : Collected)
     let m ← monoLoop fuel fuel c.decls (rootInsts f.decls.fns 0) [] 0
     let seeds := seedInsts f.decls.types 0
-    let types ← typeTable fuel c.decls seeds (seedTys seeds ++ funcsTys m.funcs)
+    -- As the front end builds it (`typeTableMore`): the table from the seeds
+    -- holds most types the functions mention, which are then passed over.
+    let types ← typeTableMore fuel c.decls (typeTable fuel c.decls seeds (seedTys seeds)) (funcsTys m.funcs)
     let args (ts : List Ty) := if ts.isEmpty then "-" else ",".intercalate (ts.map (tyName c.decls))
     let fns := (List.range m.table.length).zip m.table |>.map fun (i, inst) =>
       match c.decls.fns[inst.decl]? with
@@ -238,7 +240,7 @@ partial def markEff : SrcEff → StateM Table SrcEff
   | .eMatch s ety ty bs vs => return .eMatch (← markEff s) (← mark ety) (← mark ty) bs (← vs.mapM markEff)
   | .eDivide op l r => return .eDivide op (← markEff l) (← markEff r)
   | .eStride s => pure (.eStride s)
-  | .eArraySlice ty a => return .eArraySlice (← mark ty) a
+  | .arraySlice ty a => return .arraySlice (← mark ty) a
 
 partial def markStmt : SrcStmt → StateM Table SrcStmt
   | .let id ty v b => return .let id (← mark ty) (← markExpr v) (← markStmt b)

@@ -1,5 +1,13 @@
-import Lanius.Mini.HeapSteps
+module
 
+public import Lanius.Mini.HeapSteps
+public import Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.Lists_empty
+
+@[expose] public section
 /-! The x86 runs of the heap word load and store, and the byte-level facts
 they rest on: a 32- or 64-bit memory operand is its bytes, little-endian. -/
 

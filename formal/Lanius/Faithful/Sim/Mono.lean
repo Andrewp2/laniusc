@@ -1,5 +1,8 @@
-import Lanius.Faithful.Pure
+module
 
+public import Lanius.Faithful.Pure
+
+@[expose] public section
 /-! # More fuel, the same pure value
 
 The pure semantics only looks at the values its calls give, so calls that
@@ -79,7 +82,7 @@ theorem peff_mono (le : CallsLe call call') :
     exact bind_mono (fun _ hx => peff_mono le hx)
       (fun _ _ hx => bind_mono (fun _ hy => peff_mono le hy) (fun _ _ hy => hy) hx) h
   | _, .eStride _, _, h => by simp [peff] at h
-  | _, .eArraySlice _ _, _, h => by simp [peff] at h
+  | _, .arraySlice _ _, _, h => by simp [peff] at h
 
 theorem peffs_mono (le : CallsLe call call') :
     ∀ {env : Env} {es : List SrcEff} {vs : List Value}, peffs call env es = some vs → peffs call' env es = some vs

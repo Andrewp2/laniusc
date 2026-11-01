@@ -1,6 +1,9 @@
-import Lanius.Mini.Bytes
-import Lanius.X86.Machine.Flags
+module
 
+public import Lanius.Mini.Bytes
+public import Lanius.X86.Machine.Flags
+
+@[expose] public section
 /-! After `cmp left, right`, each comparison's condition code holds exactly
 when the source comparison does. -/
 

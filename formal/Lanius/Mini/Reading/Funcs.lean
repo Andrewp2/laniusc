@@ -1,6 +1,34 @@
-import Lanius.Mini.Reading.Stmts
-import Lanius.Mini.Reading.Bounds
+module
 
+public import Lanius.Mini.Reading.Stmts
+public import Lanius.Mini.Reading.Bounds
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Frontend.P.blockArmsOf
+import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.collect
+import all Lanius.Mini.Frontend.P.compoundOf
+import all Lanius.Mini.Frontend.P.consTreeTail
+import all Lanius.Mini.Frontend.P.divergeArm
+import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.effNamedTys
+import all Lanius.Mini.Frontend.P.externBody
+import all Lanius.Mini.Frontend.P.fieldTyAt
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.ifNotWrites
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.joinInsts
+import all Lanius.Mini.Frontend.P.methodDecl
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.projectionRet
+import all Lanius.Mini.Frontend.P.readDeclInst
+import all Lanius.Mini.Frontend.P.readInst
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.typeDeclAt
+
+@[expose] public section
 /-! # The reading, V8e: functions and monomorphization
 
 `ReadInst decls inst mf`: the body of a function instance, read with its

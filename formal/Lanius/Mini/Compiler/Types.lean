@@ -364,7 +364,7 @@ inductive SrcEff where
   /-- slice_stride(slice) of a slice local, an isize -/
   | eStride : Nat → SrcEff
   /-- the array local array as a slice of its elements, of type element: Core's array-to-slice, so a write through it reaches the array -/
-  | eArraySlice : SrcType → Nat → SrcEff
+  | arraySlice : SrcType → Nat → SrcEff
   deriving Repr
 
 inductive SrcStmt where

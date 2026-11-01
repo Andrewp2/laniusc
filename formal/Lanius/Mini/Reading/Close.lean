@@ -1,5 +1,23 @@
-import Lanius.Mini.Reading.Funcs
+module
 
+public import Lanius.Mini.Reading.Funcs
+import all Lanius.Mini.Frontend.P.allocClosed
+import all Lanius.Mini.Frontend.P.assertClosed
+import all Lanius.Mini.Frontend.P.closeFuncs
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.eDivideClosed
+import all Lanius.Mini.Frontend.P.eIndexClosed
+import all Lanius.Mini.Frontend.P.eStructClosed
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.flattenTys
+import all Lanius.Mini.Frontend.P.funcsOnto
+import all Lanius.Mini.Frontend.P.letClosed
+import all Lanius.Mini.Frontend.P.letStructClosed
+import all Lanius.Mini.Frontend.P.lowerTy
+import all Lanius.Mini.Frontend.P.setEvalClosed
+import all Lanius.Mini.Frontend.P.shrFirst
+
+@[expose] public section
 /-! # The reading, V8e: the closed program
 
 `EffClosed decls fns types x s`, `StmtClosed` and `FuncClosed`: a
@@ -111,7 +129,7 @@ inductive EffClosed (decls : Decls) (fns types : List Inst) : MEff → SrcEff �
       EffClosed decls fns types (.xDivide op l r) (.eDivide op a b)
   | stride {sl : Nat} : EffClosed decls fns types (.xStride sl) (.eStride sl)
   | arraySlice {ty : Ty} {s : SrcType} {a : Nat} :
-      LowerR decls types ty s → EffClosed decls fns types (.xArraySlice ty a) (.eArraySlice s a)
+      LowerR decls types ty s → EffClosed decls fns types (.xArraySlice ty a) (.arraySlice s a)
   | host {id : Nat} {args : List MEff} {as : List SrcEff} : EffsClosed decls fns types args as →
       EffClosed decls fns types (.xHost id args) (.eCall id as)
 

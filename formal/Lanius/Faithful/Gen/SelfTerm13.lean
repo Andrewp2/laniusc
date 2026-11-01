@@ -120,7 +120,7 @@ theorem ok_args_temps : FnOk prog prims info (664, ⟨3, [0], 0⟩) :=
 theorem ok_Expr_within : FnOk prog prims info (665, ⟨0, [0], 0⟩) :=
   fnOk_of fn_Expr_within (by decide +kernel)
 
-theorem ok_arity_is : FnOk prog prims info (666, ⟨3, [], 0⟩) :=
+theorem ok_arity_is : FnOk prog prims info (666, ⟨2, [], 0⟩) :=
   fnOk_of fn_arity_is (by decide +kernel)
 
 theorem ok_length_of_mini_selfhost_Expr : FnOk prog prims info (667, ⟨2, [0], 0⟩) :=

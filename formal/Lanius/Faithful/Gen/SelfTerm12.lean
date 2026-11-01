@@ -27,16 +27,16 @@ theorem ok_p_where_none : FnOk prog prims info (577, ⟨0, [], 0⟩) :=
 theorem ok_alias_decls : FnOk prog prims info (578, ⟨1, [], 0⟩) :=
   fnOk_of fn_alias_decls (by decide +kernel)
 
-theorem ok_free_params : FnOk prog prims info (579, ⟨6, [], 0⟩) :=
+theorem ok_free_params : FnOk prog prims info (579, ⟨5, [], 0⟩) :=
   fnOk_of fn_free_params (by decide +kernel)
 
 theorem ok_p_extern_fn : FnOk prog prims info (580, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_extern_fn (by decide +kernel)
 
-theorem ok_host_extern : FnOk prog prims info (581, ⟨5, [], 0⟩) :=
+theorem ok_host_extern : FnOk prog prims info (581, ⟨4, [], 0⟩) :=
   fnOk_of fn_host_extern (by decide +kernel)
 
-theorem ok_extern_tree : FnOk prog prims info (582, ⟨4, [], 0⟩) :=
+theorem ok_extern_tree : FnOk prog prims info (582, ⟨3, [], 0⟩) :=
   fnOk_of fn_extern_tree (by decide +kernel)
 
 theorem ok_module_decls : FnOk prog prims info (583, ⟨1, [], 0⟩) :=
@@ -81,7 +81,7 @@ theorem ok_lowered_all : FnOk prog prims info (597, ⟨15, [3], 0⟩) :=
 theorem ok_untyped_rejected : FnOk prog prims info (598, ⟨5, [], 0⟩) :=
   fnOk_of fn_untyped_rejected (by decide +kernel)
 
-theorem ok_lit_funcs : FnOk prog prims info (599, ⟨8, [1], 0⟩) :=
+theorem ok_lit_funcs : FnOk prog prims info (599, ⟨7, [1], 0⟩) :=
   fnOk_of fn_lit_funcs (by decide +kernel)
 
 theorem ok_type_table_more_at : FnOk prog prims info (600, ⟨16, [4], 1⟩) :=
@@ -117,10 +117,10 @@ theorem ok_stmt_calls : FnOk prog prims info (613, ⟨2, [0], 0⟩) :=
 theorem ok_cons_of_mini_selfhost_MFunc : FnOk prog prims info (614, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_MFunc (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_FnDecl : FnOk prog prims info (615, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_FnDecl : FnOk prog prims info (615, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_FnDecl (by decide +kernel)
 
-theorem ok_read_decl_inst : FnOk prog prims info (616, ⟨41, [], 0⟩) :=
+theorem ok_read_decl_inst : FnOk prog prims info (616, ⟨40, [], 0⟩) :=
   fnOk_of fn_read_decl_inst (by decide +kernel)
 
 theorem ok_projection_func : FnOk prog prims info (617, ⟨3, [], 0⟩) :=

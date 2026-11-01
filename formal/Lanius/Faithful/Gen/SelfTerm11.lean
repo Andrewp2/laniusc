@@ -27,13 +27,13 @@ theorem ok_empty_of_mini_selfhost_Token : FnOk prog prims info (535, ⟨0, [], 0
 theorem ok_lx_tokens_at : FnOk prog prims info (536, ⟨4, [3], 1⟩) :=
   fnOk_of fn_lx_tokens_at (by decide +kernel)
 
-theorem ok_lx_drop_to : FnOk prog prims info (537, ⟨3, [], 0⟩) :=
+theorem ok_lx_drop_to : FnOk prog prims info (537, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_drop_to (by decide +kernel)
 
 theorem ok_lx_ranges_at : FnOk prog prims info (539, ⟨1, [1], 1⟩) :=
   fnOk_of fn_lx_ranges_at (by decide +kernel)
 
-theorem ok_lx_filter_at : FnOk prog prims info (540, ⟨4, [4], 1⟩) :=
+theorem ok_lx_filter_at : FnOk prog prims info (540, ⟨3, [4], 1⟩) :=
   fnOk_of fn_lx_filter_at (by decide +kernel)
 
 theorem ok_attach_leaf : FnOk prog prims info (542, ⟨6, [1], 1⟩) :=
@@ -87,7 +87,7 @@ theorem ok_p_enum : FnOk prog prims info (557, ⟨0, [], 0⟩) :=
 theorem ok_type_decls : FnOk prog prims info (558, ⟨1, [], 0⟩) :=
   fnOk_of fn_type_decls (by decide +kernel)
 
-theorem ok_type_decl : FnOk prog prims info (559, ⟨8, [], 0⟩) :=
+theorem ok_type_decl : FnOk prog prims info (559, ⟨7, [], 0⟩) :=
   fnOk_of fn_type_decl (by decide +kernel)
 
 theorem ok_p_fn : FnOk prog prims info (560, ⟨0, [], 0⟩) :=
@@ -99,10 +99,10 @@ theorem ok_fns_decls : FnOk prog prims info (561, ⟨1, [], 0⟩) :=
 theorem ok_cons_fn_decl : FnOk prog prims info (562, ⟨1, [], 0⟩) :=
   fnOk_of fn_cons_fn_decl (by decide +kernel)
 
-theorem ok_fn_decl_of : FnOk prog prims info (563, ⟨5, [], 0⟩) :=
+theorem ok_fn_decl_of : FnOk prog prims info (563, ⟨4, [], 0⟩) :=
   fnOk_of fn_fn_decl_of (by decide +kernel)
 
-theorem ok_type_params : FnOk prog prims info (564, ⟨6, [], 0⟩) :=
+theorem ok_type_params : FnOk prog prims info (564, ⟨5, [], 0⟩) :=
   fnOk_of fn_type_params (by decide +kernel)
 
 theorem ok_p_const : FnOk prog prims info (565, ⟨0, [], 0⟩) :=
@@ -114,13 +114,13 @@ theorem ok_single_of_mini_selfhost_ConstDecl : FnOk prog prims info (566, ⟨0, 
 theorem ok_field_text_Token_of_mini_selfhost_Token : FnOk prog prims info (567, ⟨0, [], 0⟩) :=
   fnOk_of fn_field_text_Token_of_mini_selfhost_Token (by decide +kernel)
 
-theorem ok_kid_token : FnOk prog prims info (568, ⟨4, [], 0⟩) :=
+theorem ok_kid_token : FnOk prog prims info (568, ⟨3, [], 0⟩) :=
   fnOk_of fn_kid_token (by decide +kernel)
 
 theorem ok_p_impl_inherent : FnOk prog prims info (569, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_impl_inherent (by decide +kernel)
 
-theorem ok_impl_methods : FnOk prog prims info (570, ⟨9, [], 0⟩) :=
+theorem ok_impl_methods : FnOk prog prims info (570, ⟨8, [], 0⟩) :=
   fnOk_of fn_impl_methods (by decide +kernel)
 
 theorem ok_p_impl_trait : FnOk prog prims info (571, ⟨0, [], 0⟩) :=

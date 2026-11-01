@@ -1,5 +1,18 @@
-import Lanius.Mini.Reading.Det.Infer
+module
 
+public import Lanius.Mini.Reading.Det.Infer
+import all Lanius.Mini.Frontend.P.consTreeTail
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.paramGoals
+import all Lanius.Mini.Frontend.P.pickTy
+import all Lanius.Mini.Frontend.P.repeatEff
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.typeDeclAt
+
+@[expose] public section
 /-! # The reading, F1: the method a call names
 
 A method call's function is the one method of that spelling whose impl's

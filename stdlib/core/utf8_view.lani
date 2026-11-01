@@ -1,5 +1,6 @@
 // Validated operations on caller-backed UTF-8 byte views.
 module core::utf8_view;
+import core::slice;
 import core::utf8;
 
 // Compare two complete, valid UTF-8 byte views. Malformed or negative-length
@@ -247,11 +248,7 @@ pub fn byte_view_insert_scalar_or(
     if (width > capacity - len) {
         return fallback;
     }
-    let cursor: i32 = len;
-    while (cursor > at) {
-        values[cursor + width - 1] = values[cursor - 1];
-        cursor -= 1;
-    }
+    core::slice::copy_within(values, len + width, at, len, at + width);
     let index: i32 = 0;
     while (index < width) {
         let byte_index: u32 = index as u32;
@@ -274,11 +271,7 @@ pub fn byte_view_remove_scalar_or(values: [u8], len: i32, scalar_index: i32, fal
     }
     let end: i32 = core::utf8::byte_view_offset_of_scalar_or(values, len, scalar_index + 1, -1);
     let removed: i32 = end - start;
-    let cursor: i32 = end;
-    while (cursor < len) {
-        values[cursor - removed] = values[cursor];
-        cursor += 1;
-    }
+    core::slice::copy_within(values, len, end, len, start);
     return len - removed;
 }
 
@@ -307,19 +300,11 @@ pub fn byte_view_replace_scalar_or(
     }
     if (new_width > old_width) {
         let increase: i32 = new_width - old_width;
-        let cursor: i32 = len;
-        while (cursor > end) {
-            values[cursor + increase - 1] = values[cursor - 1];
-            cursor -= 1;
-        }
+        core::slice::copy_within(values, len + increase, end, len, end + increase);
     } else {
         if (new_width < old_width) {
             let decrease: i32 = old_width - new_width;
-            let cursor: i32 = end;
-            while (cursor < len) {
-                values[cursor - decrease] = values[cursor];
-                cursor += 1;
-            }
+            core::slice::copy_within(values, len, end, len, end - decrease);
         }
     }
     let index: i32 = 0;

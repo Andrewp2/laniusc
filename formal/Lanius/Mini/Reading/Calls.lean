@@ -1,5 +1,28 @@
-import Lanius.Mini.Reading.Method
+module
 
+public import Lanius.Mini.Reading.Method
+import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.collect
+import all Lanius.Mini.Frontend.P.consTreeTail
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.floatTyped
+import all Lanius.Mini.Frontend.P.fnInstRet
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.pathRef
+import all Lanius.Mini.Frontend.P.pickTy
+import all Lanius.Mini.Frontend.P.projectionRet
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.tryLet
+import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.wideOf
+
+@[expose] public section
 /-! # The reading, V8d: effectful expression types, arguments and paths
 
 `EffTy decls scope x t`: the type of an effectful expression, as type

@@ -60,7 +60,7 @@ theorem ok_float_pick : FnOk prog prims info (1408, ⟨1, [], 0⟩) :=
 theorem ok_cons_of_mini_selfhost_SrcEff : FnOk prog prims info (1413, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcEff (by decide +kernel)
 
-theorem ok_callee_ret : FnOk prog prims info (1415, ⟨3, [], 0⟩) :=
+theorem ok_callee_ret : FnOk prog prims info (1415, ⟨2, [], 0⟩) :=
   fnOk_of fn_callee_ret (by decide +kernel)
 
 theorem ok_first_ids : FnOk prog prims info (1416, ⟨1, [], 0⟩) :=
@@ -81,7 +81,7 @@ theorem ok_flatten_tys : FnOk prog prims info (1421, ⟨1, [0], 0⟩) :=
 theorem ok_type_name_at : FnOk prog prims info (1422, ⟨2, [1], 1⟩) :=
   fnOk_of fn_type_name_at (by decide +kernel)
 
-theorem ok_param_token : FnOk prog prims info (1423, ⟨5, [], 0⟩) :=
+theorem ok_param_token : FnOk prog prims info (1423, ⟨4, [], 0⟩) :=
   fnOk_of fn_param_token (by decide +kernel)
 
 theorem ok_p_param_named : FnOk prog prims info (1424, ⟨0, [], 0⟩) :=
@@ -96,7 +96,7 @@ theorem ok_p_param_self_ref : FnOk prog prims info (1426, ⟨0, [], 0⟩) :=
 theorem ok_fresh_id : FnOk prog prims info (1427, ⟨0, [0], 0⟩) :=
   fnOk_of fn_fresh_id (by decide +kernel)
 
-theorem ok_pattern_of : FnOk prog prims info (1428, ⟨4, [], 0⟩) :=
+theorem ok_pattern_of : FnOk prog prims info (1428, ⟨3, [], 0⟩) :=
   fnOk_of fn_pattern_of (by decide +kernel)
 
 theorem ok_cons_param : FnOk prog prims info (1429, ⟨1, [], 0⟩) :=
@@ -120,7 +120,7 @@ theorem ok_p_type_array_tail : FnOk prog prims info (1434, ⟨0, [], 0⟩) :=
 theorem ok_array_ty : FnOk prog prims info (1435, ⟨0, [], 0⟩) :=
   fnOk_of fn_array_ty (by decide +kernel)
 
-theorem ok_array_len : FnOk prog prims info (1436, ⟨5, [], 0⟩) :=
+theorem ok_array_len : FnOk prog prims info (1436, ⟨4, [], 0⟩) :=
   fnOk_of fn_array_len (by decide +kernel)
 
 theorem ok_p_type_ident : FnOk prog prims info (1437, ⟨0, [], 0⟩) :=

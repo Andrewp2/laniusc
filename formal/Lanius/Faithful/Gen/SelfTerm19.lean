@@ -21,7 +21,7 @@ theorem ok_wide_left_funcs : FnOk prog prims info (888, ⟨4, [0], 0⟩) :=
 theorem ok_cons_of_mini_selfhost_SrcFunc : FnOk prog prims info (889, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcFunc (by decide +kernel)
 
-theorem ok_lit_stmt : FnOk prog prims info (890, ⟨7, [3], 0⟩) :=
+theorem ok_lit_stmt : FnOk prog prims info (890, ⟨6, [3], 0⟩) :=
   fnOk_of fn_lit_stmt (by decide +kernel)
 
 theorem ok_param_locals : FnOk prog prims info (891, ⟨1, [0], 0⟩) :=
@@ -57,13 +57,13 @@ theorem ok_eff_calls : FnOk prog prims info (907, ⟨1, [0], 0⟩) :=
 theorem ok_extern_func : FnOk prog prims info (909, ⟨12, [], 0⟩) :=
   fnOk_of fn_extern_func (by decide +kernel)
 
-theorem ok_diverges : FnOk prog prims info (910, ⟨5, [], 0⟩) :=
+theorem ok_diverges : FnOk prog prims info (910, ⟨4, [], 0⟩) :=
   fnOk_of fn_diverges (by decide +kernel)
 
 theorem ok_diverge_func : FnOk prog prims info (911, ⟨2, [], 0⟩) :=
   fnOk_of fn_diverge_func (by decide +kernel)
 
-theorem ok_read_fn : FnOk prog prims info (912, ⟨40, [], 0⟩) :=
+theorem ok_read_fn : FnOk prog prims info (912, ⟨39, [], 0⟩) :=
   fnOk_of fn_read_fn (by decide +kernel)
 
 theorem ok_init_tys : FnOk prog prims info (913, ⟨1, [0], 0⟩) :=
@@ -78,7 +78,7 @@ theorem ok_length_of_mini_selfhost_FnDecl : FnOk prog prims info (915, ⟨2, [0]
 theorem ok_struct_field_tys : FnOk prog prims info (916, ⟨13, [], 0⟩) :=
   fnOk_of fn_struct_field_tys (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_Ty : FnOk prog prims info (917, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_Ty : FnOk prog prims info (917, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_Ty (by decide +kernel)
 
 theorem ok_low_bits : FnOk prog prims info (928, ⟨0, [], 0⟩) :=

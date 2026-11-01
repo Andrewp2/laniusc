@@ -24,28 +24,28 @@ theorem ok_find_local_id : FnOk prog prims info (1908, ⟨0, [0], 0⟩) :=
 theorem ok_x_match_of : FnOk prog prims info (1909, ⟨2, [], 0⟩) :=
   fnOk_of fn_x_match_of (by decide +kernel)
 
-theorem ok_eff_arms_ordered : FnOk prog prims info (1910, ⟨30, [0], 0⟩) :=
+theorem ok_eff_arms_ordered : FnOk prog prims info (1910, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_arms_ordered (by decide +kernel)
 
 theorem ok_zip_variants : FnOk prog prims info (1911, ⟨1, [0], 0⟩) :=
   fnOk_of fn_zip_variants (by decide +kernel)
 
-theorem ok_match_of_postfix : FnOk prog prims info (1912, ⟨4, [], 0⟩) :=
+theorem ok_match_of_postfix : FnOk prog prims info (1912, ⟨3, [], 0⟩) :=
   fnOk_of fn_match_of_postfix (by decide +kernel)
 
-theorem ok_some_block_arm : FnOk prog prims info (1913, ⟨7, [1], 0⟩) :=
+theorem ok_some_block_arm : FnOk prog prims info (1913, ⟨6, [1], 0⟩) :=
   fnOk_of fn_some_block_arm (by decide +kernel)
 
-theorem ok_value_arms : FnOk prog prims info (1914, ⟨7, [1], 0⟩) :=
+theorem ok_value_arms : FnOk prog prims info (1914, ⟨6, [1], 0⟩) :=
   fnOk_of fn_value_arms (by decide +kernel)
 
 theorem ok_match_stmt_on : FnOk prog prims info (1915, ⟨17, [], 0⟩) :=
   fnOk_of fn_match_stmt_on (by decide +kernel)
 
-theorem ok_stmt_arm_order : FnOk prog prims info (1916, ⟨28, [], 0⟩) :=
+theorem ok_stmt_arm_order : FnOk prog prims info (1916, ⟨27, [], 0⟩) :=
   fnOk_of fn_stmt_arm_order (by decide +kernel)
 
-theorem ok_let_arm_of : FnOk prog prims info (1917, ⟨37, [0], 0⟩) :=
+theorem ok_let_arm_of : FnOk prog prims info (1917, ⟨36, [0], 0⟩) :=
   fnOk_of fn_let_arm_of (by decide +kernel)
 
 theorem ok_postfix_head : FnOk prog prims info (1919, ⟨18, [], 0⟩) :=
@@ -57,7 +57,7 @@ theorem ok_try_head : FnOk prog prims info (1920, ⟨0, [], 0⟩) :=
 theorem ok_eval_let_head : FnOk prog prims info (1921, ⟨3, [], 0⟩) :=
   fnOk_of fn_eval_let_head (by decide +kernel)
 
-theorem ok_try_postfix : FnOk prog prims info (1922, ⟨32, [], 0⟩) :=
+theorem ok_try_postfix : FnOk prog prims info (1922, ⟨31, [], 0⟩) :=
   fnOk_of fn_try_postfix (by decide +kernel)
 
 theorem ok_untyped_if : FnOk prog prims info (1923, ⟨0, [], 0⟩) :=
@@ -108,19 +108,19 @@ theorem ok_p_range_bound_name : FnOk prog prims info (1937, ⟨0, [], 0⟩) :=
 theorem ok_for_range : FnOk prog prims info (1938, ⟨1, [], 0⟩) :=
   fnOk_of fn_for_range (by decide +kernel)
 
-theorem ok_match_arm_of : FnOk prog prims info (1939, ⟨37, [0], 0⟩) :=
+theorem ok_match_arm_of : FnOk prog prims info (1939, ⟨36, [0], 0⟩) :=
   fnOk_of fn_match_arm_of (by decide +kernel)
 
-theorem ok_set_or_eval : FnOk prog prims info (1940, ⟨34, [], 0⟩) :=
+theorem ok_set_or_eval : FnOk prog prims info (1940, ⟨33, [], 0⟩) :=
   fnOk_of fn_set_or_eval (by decide +kernel)
 
-theorem ok_set_field_or_eval : FnOk prog prims info (1941, ⟨31, [], 0⟩) :=
+theorem ok_set_field_or_eval : FnOk prog prims info (1941, ⟨30, [], 0⟩) :=
   fnOk_of fn_set_field_or_eval (by decide +kernel)
 
-theorem ok_set_index_or_eval : FnOk prog prims info (1942, ⟨31, [], 0⟩) :=
+theorem ok_set_index_or_eval : FnOk prog prims info (1942, ⟨30, [], 0⟩) :=
   fnOk_of fn_set_index_or_eval (by decide +kernel)
 
-theorem ok_compound_eval : FnOk prog prims info (1943, ⟨32, [], 0⟩) :=
+theorem ok_compound_eval : FnOk prog prims info (1943, ⟨31, [], 0⟩) :=
   fnOk_of fn_compound_eval (by decide +kernel)
 
 theorem ok_free_of : FnOk prog prims info (1944, ⟨6, [], 0⟩) :=

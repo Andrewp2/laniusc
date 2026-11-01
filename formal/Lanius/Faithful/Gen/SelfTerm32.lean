@@ -81,10 +81,10 @@ theorem ok_p_requires : FnOk prog prims info (1514, ⟨0, [], 0⟩) :=
 theorem ok_contract_then : FnOk prog prims info (1515, ⟨0, [], 0⟩) :=
   fnOk_of fn_contract_then (by decide +kernel)
 
-theorem ok_eff_of : FnOk prog prims info (1516, ⟨30, [0], 0⟩) :=
+theorem ok_eff_of : FnOk prog prims info (1516, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_of (by decide +kernel)
 
-theorem ok_stmts_of : FnOk prog prims info (1517, ⟨37, [0], 0⟩) :=
+theorem ok_stmts_of : FnOk prog prims info (1517, ⟨36, [0], 0⟩) :=
   fnOk_of fn_stmts_of (by decide +kernel)
 
 theorem ok_cons_ty_tail : FnOk prog prims info (1518, ⟨1, [], 0⟩) :=

@@ -31,7 +31,7 @@ import std::stream;
 const CHUNK: i32 = 65536;
 const MAX_HEADERS: i32 = 1048576;
 enum Error { Usage, Archive, Unsafe, Unsupported, Compression, Limit, Io, Allocation }
-struct Options { mode: i32, gzip: bool, xz: bool, archive: core::slice::View<u8>, has_archive: bool, directory: core::slice::View<u8>, has_directory: bool, help: bool }
+struct Options { mode: i32, gzip: bool, xz: bool, archive: core::slice::View<u8>, has_archive: bool, directory: core::slice::View<u8>, has_directory: bool, help: bool, level: i32 }
 impl Options { fn borrow(&self) -> &Options { return self; } }
 // Input: raw descriptor bytes, gzip-decoded on detection of 1f 8b and
 // xz-decoded on fd 37 7a 58 5a 00 (the xz dictionary grows on demand).
@@ -225,12 +225,15 @@ fn transfer(input: &Source, count: i32, fd: i32) -> core::result::Result<i32,Err
 }
 
 // ---------------------------------------------------------------- output stream
-fn sink(fd: i32, gzip: bool, xz: bool) -> core::result::Result<Sink,Error> {
+// Level 0 keeps the default encoder; 1-3 need the level workspaces.
+fn sink(fd: i32, gzip: bool, xz: bool, level: i32) -> core::result::Result<Sink,Error> {
     let out: alloc::vec::Vec<u8> = alloc::vec::new(); let block: alloc::vec::Vec<u8> = alloc::vec::new(); let pending: alloc::vec::Vec<u8> = alloc::vec::new(); let scratch: alloc::vec::Vec<i32> = alloc::vec::new();
-    let ok: bool = core::result::is_ok(out.try_resize(CHUNK,0)) && core::result::is_ok(block.try_resize(32768,0)) && core::result::is_ok(pending.try_resize(32773,0)) && core::result::is_ok(scratch.try_resize(32768,0));
+    let window_len: i32 = 32768; let pending_len: i32 = 32773; let scratch_len: i32 = 32768;
+    if (level > 0) { window_len = ext::deflate::level_window_len(); pending_len = ext::deflate::level_pending_len(); scratch_len = ext::deflate::level_scratch_len(); }
+    let ok: bool = core::result::is_ok(out.try_resize(CHUNK,0)) && core::result::is_ok(block.try_resize(window_len,0)) && core::result::is_ok(pending.try_resize(pending_len,0)) && core::result::is_ok(scratch.try_resize(scratch_len,0));
     if (!ok) { out.destroy(); block.destroy(); pending.destroy(); scratch.destroy(); return core::result::Err(Error::Allocation); }
     let limits: ext::compression::EncodeLimits = ext::compression::EncodeLimits { max_input: 1099511627776, max_output: 1099511627776 };
-    let made: core::result::Result<ext::compression::Encoder,ext::compression::Error> = ext::compression::encoder(block.as_view(),pending.as_view(),scratch.as_view(),ext::compression::Format::Gzip,limits);
+    let made: core::result::Result<ext::compression::Encoder,ext::compression::Error> = ext::compression::level_encoder(block.as_view(),pending.as_view(),scratch.as_view(),ext::compression::Format::Gzip,limits,level);
     if (core::result::is_err(made)) { out.destroy(); block.destroy(); pending.destroy(); scratch.destroy(); return core::result::Err(Error::Allocation); }
     let output: Sink = Sink { fd: fd, gzip: gzip, xz: xz, out: out, block: block, pending: pending, scratch: scratch, encoder: core::result::unwrap(made),
         xz_work: alloc::vec::new(), xz_window: alloc::vec::new(), xz_stage: alloc::vec::new(), xz_encoder: ext::xz::unused_encoder(out.as_view(),scratch.as_view()) };
@@ -549,7 +552,7 @@ fn create(options: Options, operands: alloc::vec::Vec<core::slice::View<u8>>) ->
         let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path_of(options.archive)?,std::file::OpenMode::Create);
         if (core::result::is_err(opened)) { return core::result::Err(Error::Io); } fd = handle(core::result::unwrap(opened));
     }
-    let made: core::result::Result<Sink,Error> = sink(fd,options.gzip,options.xz); if (core::result::is_err(made)) { close_fd(fd); return core::result::Err(core::result::unwrap_err(made)); }
+    let made: core::result::Result<Sink,Error> = sink(fd,options.gzip,options.xz,options.level); if (core::result::is_err(made)) { close_fd(fd); return core::result::Err(core::result::unwrap_err(made)); }
     let output: Sink = core::result::unwrap(made);
     let state: Create = Create { scratch: alloc::vec::new(), link: alloc::vec::new(), member: alloc::vec::new(), header: alloc::vec::new(), buffer: alloc::vec::new(), names: alloc::vec::new(), links: alloc::vec::new() };
     let result: core::result::Result<i32,Error> = create_into(options,operands,output.borrow(),state.borrow());
@@ -564,10 +567,11 @@ fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
     let value: core::slice::View<u8> = core::option::unwrap(item.value).bytes;
     if (item.id == 5) { if (options.has_archive || value.is_empty()) { return false; } options.archive = value; options.has_archive = true; return true; }
     if (item.id == 6) { if (options.has_directory || value.is_empty()) { return false; } options.directory = value; options.has_directory = true; return true; }
+    if (item.id == 9) { if (value.length != 1 || value.values[value.start] < 48 || value.values[value.start] > 51) { return false; } options.level = (value.values[value.start] as i32)-48; return true; }
     return false;
 }
 fn arguments(values: std::args::Arguments) -> i32 {
-    let specs: [ext::cli::Spec;8] = [
+    let specs: [ext::cli::Spec;9] = [
         ext::cli::Spec { id: 1, long: literal("create",6), short: 99, arity: ext::cli::Arity::Flag },
         ext::cli::Spec { id: 2, long: literal("extract",7), short: 120, arity: ext::cli::Arity::Flag },
         ext::cli::Spec { id: 3, long: literal("list",4), short: 116, arity: ext::cli::Arity::Flag },
@@ -575,10 +579,11 @@ fn arguments(values: std::args::Arguments) -> i32 {
         ext::cli::Spec { id: 5, long: literal("file",4), short: 102, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 6, long: literal("directory",9), short: 67, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 7, long: literal("xz",2), short: 74, arity: ext::cli::Arity::Flag },
-        ext::cli::Spec { id: 8, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+        ext::cli::Spec { id: 8, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 9, long: literal("level",5), short: 76, arity: ext::cli::Arity::Required }
     ];
-    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,8)); let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(values.as_view(),schema,ext::cli::Ordering::Intermixed));
-    let options: Options = Options { mode: 0, gzip: false, xz: false, archive: literal("",0), has_archive: false, directory: literal("",0), has_directory: false, help: false };
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,9)); let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(values.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { mode: 0, gzip: false, xz: false, archive: literal("",0), has_archive: false, directory: literal("",0), has_directory: false, help: false, level: 0 };
     let operands: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
     while (true) {
         let parsed: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (core::result::is_err(parsed)) { operands.destroy(); return failed(Error::Usage); }
@@ -587,10 +592,11 @@ fn arguments(values: std::args::Arguments) -> i32 {
         if (!valid) { operands.destroy(); return failed(Error::Usage); }
     }
     if (options.help) {
-        operands.destroy(); let usage: core::slice::View<u8> = literal("Usage: tgz (-c|-x|-t) [-z|-J] -f ARCHIVE|- [-C DIR] [PATH...]\n",62);
+        operands.destroy(); let usage: core::slice::View<u8> = literal("Usage: tgz (-c|-x|-t) [-z [-L 0-3]|-J] -f ARCHIVE|- [-C DIR] [PATH...]\n",71);
         if (core::result::is_err(write_fd(1,usage))) { return failed(Error::Io); } return 0;
     }
-    if (options.mode == 0 || !options.has_archive || (options.mode != 1 && operands.len() != 0)) { operands.destroy(); return failed(Error::Usage); }
+    // A level applies only to gzip output.
+    if (options.mode == 0 || !options.has_archive || (options.mode != 1 && operands.len() != 0) || (options.level != 0 && (options.mode != 1 || !options.gzip))) { operands.destroy(); return failed(Error::Usage); }
     let result: core::result::Result<i32,Error> = core::result::Ok(0);
     if (options.mode == 1) { result = create(options,operands); } else { result = read_archive(options); }
     operands.destroy();

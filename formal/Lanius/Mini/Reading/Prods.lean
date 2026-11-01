@@ -1,3 +1,7 @@
+module
+
+
+@[expose] public section
 /-! # The grammar's productions by name
 
 The production ids `formal/lani/mini/frontend.lani` names (`p_struct` is

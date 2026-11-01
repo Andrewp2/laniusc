@@ -51,7 +51,7 @@ theorem ok_infer_eff : FnOk prog prims info (2170, ⟨13, [], 0⟩) :=
 theorem ok_concat_of_mini_selfhost_MEff : FnOk prog prims info (2171, ⟨0, [0], 0⟩) :=
   fnOk_of fn_concat_of_mini_selfhost_MEff (by decide +kernel)
 
-theorem ok_patterns_of : FnOk prog prims info (2172, ⟨5, [1], 0⟩) :=
+theorem ok_patterns_of : FnOk prog prims info (2172, ⟨4, [1], 0⟩) :=
   fnOk_of fn_patterns_of (by decide +kernel)
 
 theorem ok_inst_bound : FnOk prog prims info (2173, ⟨18, [], 0⟩) :=
@@ -63,7 +63,7 @@ theorem ok_checked_bound : FnOk prog prims info (2174, ⟨0, [], 0⟩) :=
 theorem ok_arg_expected : FnOk prog prims info (2175, ⟨11, [], 0⟩) :=
   fnOk_of fn_arg_expected (by decide +kernel)
 
-theorem ok_eff_arg_next : FnOk prog prims info (2176, ⟨30, [0], 0⟩) :=
+theorem ok_eff_arg_next : FnOk prog prims info (2176, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_arg_next (by decide +kernel)
 
 theorem ok_view_of : FnOk prog prims info (2177, ⟨6, [], 0⟩) :=
@@ -78,37 +78,37 @@ theorem ok_bind_arg : FnOk prog prims info (2179, ⟨17, [], 0⟩) :=
 theorem ok_fit_path : FnOk prog prims info (2180, ⟨10, [0], 0⟩) :=
   fnOk_of fn_fit_path (by decide +kernel)
 
-theorem ok_nested_order : FnOk prog prims info (2182, ⟨27, [], 0⟩) :=
+theorem ok_nested_order : FnOk prog prims info (2182, ⟨26, [], 0⟩) :=
   fnOk_of fn_nested_order (by decide +kernel)
 
 theorem ok_cons_of_mini_selfhost_EffArm : FnOk prog prims info (2183, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_EffArm (by decide +kernel)
 
-theorem ok_eff_arm_bound : FnOk prog prims info (2184, ⟨30, [0], 0⟩) :=
+theorem ok_eff_arm_bound : FnOk prog prims info (2184, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_arm_bound (by decide +kernel)
 
 theorem ok_match_stmt_if : FnOk prog prims info (2186, ⟨0, [], 0⟩) :=
   fnOk_of fn_match_stmt_if (by decide +kernel)
 
-theorem ok_pats_nested : FnOk prog prims info (2187, ⟨8, [], 0⟩) :=
+theorem ok_pats_nested : FnOk prog prims info (2187, ⟨7, [], 0⟩) :=
   fnOk_of fn_pats_nested (by decide +kernel)
 
-theorem ok_wild_split : FnOk prog prims info (2188, ⟨8, [0], 0⟩) :=
+theorem ok_wild_split : FnOk prog prims info (2188, ⟨7, [0], 0⟩) :=
   fnOk_of fn_wild_split (by decide +kernel)
 
-theorem ok_nested_with : FnOk prog prims info (2189, ⟨25, [], 0⟩) :=
+theorem ok_nested_with : FnOk prog prims info (2189, ⟨24, [], 0⟩) :=
   fnOk_of fn_nested_with (by decide +kernel)
 
-theorem ok_wild_order : FnOk prog prims info (2190, ⟨10, [], 0⟩) :=
+theorem ok_wild_order : FnOk prog prims info (2190, ⟨9, [], 0⟩) :=
   fnOk_of fn_wild_order (by decide +kernel)
 
-theorem ok_arms_exact : FnOk prog prims info (2191, ⟨9, [], 0⟩) :=
+theorem ok_arms_exact : FnOk prog prims info (2191, ⟨8, [], 0⟩) :=
   fnOk_of fn_arms_exact (by decide +kernel)
 
 theorem ok_arm_prefix : FnOk prog prims info (2192, ⟨2, [], 0⟩) :=
   fnOk_of fn_arm_prefix (by decide +kernel)
 
-theorem ok_binder_of : FnOk prog prims info (2193, ⟨6, [4], 1⟩) :=
+theorem ok_binder_of : FnOk prog prims info (2193, ⟨5, [4], 1⟩) :=
   fnOk_of fn_binder_of (by decide +kernel)
 
 theorem ok_p_arm_block : FnOk prog prims info (2194, ⟨0, [], 0⟩) :=

@@ -1,6 +1,6 @@
-# Language ergonomics: item imports, `?`, local inference, block arms, path calls
+# Language ergonomics: item imports, `?`, local inference, block arms, path calls, C callbacks
 
-Five features shorten ordinary Lanius code without adding hidden behavior.
+Six features shorten ordinary Lanius code without adding hidden behavior.
 Each section states what the feature does, what it refuses, and the
 decision behind it. Tests: `tests/language_ergonomics_execution.rs`, fixtures
 in `tests/fixtures/language/`.
@@ -153,9 +153,9 @@ through a bound `T: Tw<T>` all work.
   is `LNC0027`.
 - A bare generic type infers its parameters from the arguments and the
   result context: `let w: W<i32> = W::wrap(9);`, `W::get(w)`. A parameter
-  that nothing determines is `LNC0006`; `W<i32>::make()` names it.
-- Not yet: a bare imported generic type, `Option::is_some(o)`, is `LNC0005`;
-  write `Option<i32>::is_some(o)` (generics backlog b19).
+  that nothing determines is `LNC0006`; `W<i32>::make()` names it. The same
+  holds for an imported generic type: `Option::is_some(o)`,
+  `Option::unwrap_or(o, 7)` and `Result::unwrap(r)`.
 
 Decision: the path form is plain function-call syntax with the receiver
 spelled out, so it neither autoreferences nor dereferences. That keeps
@@ -166,7 +166,60 @@ Implementation: methods/07 and 07a offer self members to path calls,
 methods/02b types the syntactic self parameter row from the impl root,
 dependencies/07b and 08 type an imported method's receiver argument from its
 impl root (behind one reference for `&self`), and calls/03d binds no
-parameter from a bare generic qualifier. Fixtures:
-`tests/fixtures/compiler_defects/b14_path_self_method_*.lani`,
+parameter from a bare generic qualifier. A bare imported generic qualifier
+names its declaration's own application, an external canonical type
+(dependencies/14), which only dependencies/15a matches against impl roots.
+Fixtures: `tests/fixtures/compiler_defects/b14_path_self_method_*.lani`,
 `b19_stdlib_path_self_method.lani`, `generic_impl_path_inference.lani`, and
-`tests/fixtures/generics_matrix/p82_imported_type_path_self_method/`.
+`tests/fixtures/generics_matrix/p82_imported_type_path_self_method/` and
+`p83_bare_imported_type_path_self_method.lani`.
+
+## C callbacks
+
+A non-generic free function named as a value, `compare_i32` or
+`app::util::compare_i32` from another module of the program, is a `ptr`:
+the address of a System V entry for that function. C code can call it, so `qsort(data, 8, 4, compare_i32)`,
+`bsearch(key, table, 6, 4, compare_u32)` and
+`pthread_create(thread, attr, worker, arg)` work with the ordinary Lanius
+functions `fn compare_i32(left: ptr, right: ptr) -> i32` and
+`fn worker(arg: ptr) -> ptr`.
+
+- The entry takes arguments in rdi, rsi, rdx, rcx, r8 and r9, preserves rbx,
+  rbp and r12 to r15, keeps the stack 16-byte aligned, and zero-extends
+  `i32` and `u32` arguments, whose upper halves C leaves undefined.
+- It loads R15 with the process vector, so a callback on a thread that a C
+  library created (pthread) can use the runtime's argument and environment
+  services. `crt_entry` maps that vector at the fixed address
+  `0x100000000000` with `MAP_FIXED_NOREPLACE` and unmaps it when `main`
+  returns, so every thread that runs a callback must finish before then.
+  A Lanius library linked into a C program without a Lanius `main` has no
+  vector; its callbacks must not use those services.
+- Admitted signatures: at most six parameters, each `i32`, `u32`, `i64`,
+  `u64`, `isize`, `usize` or `ptr`, and a result of one of those types or
+  none. Other signatures (floats, aggregates, more parameters) and the Wasm
+  target are `LNC0017`. A generic function named as a value is still an
+  unresolved identifier (`LNC0005`), and a method path such as `S::get` is
+  `LNC0006`.
+- The name is already a `ptr`: `let p: i32 = f;` is `LNC0006` and
+  `f as ptr` is `LNC0072`. Lanius cannot call through a `ptr`; the address
+  is for C.
+
+Decision: no new syntax. The request suggested `extern "C" fn name(...) {
+... }`, but every Lanius function already has a C-compatible register
+convention for these scalar types, so a second kind of definition would
+only duplicate it. Naming the function is the one new rule, and it needs no
+grammar change, so the front end the verified compiler reads, its grammar
+tables and their certificates stay as they are. The entry is a 58-byte
+trampoline emitted at each place the name appears and jumped over; it needs
+no symbol, relocation or writable data, and it calls the function's
+ordinary body. Taking the address counts as two calls, so the function is
+never inlined away.
+
+Implementation: modules/10i types a resolved fn path as `ptr`; semantic
+project.slang lowers the name to a CALL row with no arguments; x86 scatter
+(`c_entry_call`) recognizes a CALL row from a name whose callee is a fn item
+and checks the signature; analysis_index counts it twice; instruction_plan
+`plan_c_entry` emits the trampoline and emit sets its zero-extension mask;
+Wasm scatter rejects it. Fixtures: `tests/fixtures/native_c_callback/`
+(`qsort.lani`, `bsearch.lani`, `pthread.lani`), run by
+`tests/native_c_callback_execution.rs`.

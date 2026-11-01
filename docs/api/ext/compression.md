@@ -18,7 +18,7 @@ Borrowed Encoder adds raw/zlib/gzip output with u64 EncodeLimits, consumed-byte 
 - [extended-streaming-deflate](../../extended-streaming-deflate.md)
 - [extended-compress-file](../../extended-compress-file.md)
 
-Declaration counts: constant: 3; enum: 2; field: 39; function: 7; impl: 2; method: 15; struct: 6; variant: 19.
+Declaration counts: constant: 3; enum: 2; field: 39; function: 9; impl: 2; method: 15; struct: 6; variant: 19.
 
 ## Declared imports
 
@@ -239,7 +239,7 @@ Encode(ext::deflate::Error)
 
 ### struct: EncodeLimits
 
-[Source line 126](../../../extended/ext/compression.lani#L126)
+[Source line 170](../../../extended/ext/compression.lani#L170)
 
 ```lanius
 pub struct EncodeLimits
@@ -247,7 +247,7 @@ pub struct EncodeLimits
 
 #### field: max_input
 
-[Source line 126](../../../extended/ext/compression.lani#L126)
+[Source line 170](../../../extended/ext/compression.lani#L170)
 
 ```lanius
 max_input: u64
@@ -255,7 +255,7 @@ max_input: u64
 
 #### field: max_output
 
-[Source line 126](../../../extended/ext/compression.lani#L126)
+[Source line 170](../../../extended/ext/compression.lani#L170)
 
 ```lanius
 max_output: u64
@@ -263,7 +263,7 @@ max_output: u64
 
 ### struct: EncodeFailure
 
-[Source line 127](../../../extended/ext/compression.lani#L127)
+[Source line 171](../../../extended/ext/compression.lani#L171)
 
 ```lanius
 pub struct EncodeFailure
@@ -271,7 +271,7 @@ pub struct EncodeFailure
 
 #### field: error
 
-[Source line 127](../../../extended/ext/compression.lani#L127)
+[Source line 171](../../../extended/ext/compression.lani#L171)
 
 ```lanius
 error: Error
@@ -279,7 +279,7 @@ error: Error
 
 #### field: read
 
-[Source line 127](../../../extended/ext/compression.lani#L127)
+[Source line 171](../../../extended/ext/compression.lani#L171)
 
 ```lanius
 read: i32
@@ -287,7 +287,7 @@ read: i32
 
 #### field: written
 
-[Source line 127](../../../extended/ext/compression.lani#L127)
+[Source line 171](../../../extended/ext/compression.lani#L171)
 
 ```lanius
 written: i32
@@ -295,7 +295,7 @@ written: i32
 
 ### struct: Encoder
 
-[Source line 136](../../../extended/ext/compression.lani#L136)
+[Source line 180](../../../extended/ext/compression.lani#L180)
 
 ```lanius
 pub struct Encoder
@@ -303,7 +303,7 @@ pub struct Encoder
 
 #### field: raw
 
-[Source line 137](../../../extended/ext/compression.lani#L137)
+[Source line 181](../../../extended/ext/compression.lani#L181)
 
 ```lanius
 raw: ext::deflate::Encoder
@@ -311,7 +311,7 @@ raw: ext::deflate::Encoder
 
 #### field: kind
 
-[Source line 137](../../../extended/ext/compression.lani#L137)
+[Source line 181](../../../extended/ext/compression.lani#L181)
 
 ```lanius
 kind: i32
@@ -319,7 +319,7 @@ kind: i32
 
 #### field: limits
 
-[Source line 137](../../../extended/ext/compression.lani#L137)
+[Source line 181](../../../extended/ext/compression.lani#L181)
 
 ```lanius
 limits: EncodeLimits
@@ -327,7 +327,7 @@ limits: EncodeLimits
 
 #### field: phase
 
-[Source line 138](../../../extended/ext/compression.lani#L138)
+[Source line 182](../../../extended/ext/compression.lani#L182)
 
 ```lanius
 phase: i32
@@ -335,7 +335,7 @@ phase: i32
 
 #### field: failure
 
-[Source line 138](../../../extended/ext/compression.lani#L138)
+[Source line 182](../../../extended/ext/compression.lani#L182)
 
 ```lanius
 failure: Error
@@ -343,7 +343,7 @@ failure: Error
 
 #### field: read_total
 
-[Source line 138](../../../extended/ext/compression.lani#L138)
+[Source line 182](../../../extended/ext/compression.lani#L182)
 
 ```lanius
 read_total: u64
@@ -351,7 +351,7 @@ read_total: u64
 
 #### field: written_total
 
-[Source line 138](../../../extended/ext/compression.lani#L138)
+[Source line 182](../../../extended/ext/compression.lani#L182)
 
 ```lanius
 written_total: u64
@@ -359,7 +359,7 @@ written_total: u64
 
 #### field: checksum
 
-[Source line 139](../../../extended/ext/compression.lani#L139)
+[Source line 183](../../../extended/ext/compression.lani#L183)
 
 ```lanius
 checksum: u32
@@ -367,7 +367,7 @@ checksum: u32
 
 #### field: member_size
 
-[Source line 139](../../../extended/ext/compression.lani#L139)
+[Source line 183](../../../extended/ext/compression.lani#L183)
 
 ```lanius
 member_size: u32
@@ -375,7 +375,7 @@ member_size: u32
 
 #### field: field_count
 
-[Source line 139](../../../extended/ext/compression.lani#L139)
+[Source line 183](../../../extended/ext/compression.lani#L183)
 
 ```lanius
 field_count: i32
@@ -383,7 +383,7 @@ field_count: i32
 
 ### struct: DecodeFailure
 
-[Source line 269](../../../extended/ext/compression.lani#L269)
+[Source line 318](../../../extended/ext/compression.lani#L318)
 
 ```lanius
 pub struct DecodeFailure
@@ -391,7 +391,7 @@ pub struct DecodeFailure
 
 #### field: error
 
-[Source line 269](../../../extended/ext/compression.lani#L269)
+[Source line 318](../../../extended/ext/compression.lani#L318)
 
 ```lanius
 error: Error
@@ -399,7 +399,7 @@ error: Error
 
 #### field: read
 
-[Source line 269](../../../extended/ext/compression.lani#L269)
+[Source line 318](../../../extended/ext/compression.lani#L318)
 
 ```lanius
 read: i32
@@ -407,7 +407,7 @@ read: i32
 
 #### field: written
 
-[Source line 269](../../../extended/ext/compression.lani#L269)
+[Source line 318](../../../extended/ext/compression.lani#L318)
 
 ```lanius
 written: i32
@@ -415,7 +415,7 @@ written: i32
 
 ### struct: Decoder
 
-[Source line 289](../../../extended/ext/compression.lani#L289)
+[Source line 338](../../../extended/ext/compression.lani#L338)
 
 ```lanius
 pub struct Decoder
@@ -423,7 +423,7 @@ pub struct Decoder
 
 #### field: raw
 
-[Source line 290](../../../extended/ext/compression.lani#L290)
+[Source line 339](../../../extended/ext/compression.lani#L339)
 
 ```lanius
 raw: ext::inflate::Decoder
@@ -431,7 +431,7 @@ raw: ext::inflate::Decoder
 
 #### field: kind
 
-[Source line 290](../../../extended/ext/compression.lani#L290)
+[Source line 339](../../../extended/ext/compression.lani#L339)
 
 ```lanius
 kind: i32
@@ -439,7 +439,7 @@ kind: i32
 
 #### field: limits
 
-[Source line 290](../../../extended/ext/compression.lani#L290)
+[Source line 339](../../../extended/ext/compression.lani#L339)
 
 ```lanius
 limits: Limits
@@ -447,7 +447,7 @@ limits: Limits
 
 #### field: phase
 
-[Source line 290](../../../extended/ext/compression.lani#L290)
+[Source line 339](../../../extended/ext/compression.lani#L339)
 
 ```lanius
 phase: i32
@@ -455,7 +455,7 @@ phase: i32
 
 #### field: failure
 
-[Source line 290](../../../extended/ext/compression.lani#L290)
+[Source line 339](../../../extended/ext/compression.lani#L339)
 
 ```lanius
 failure: Error
@@ -463,7 +463,7 @@ failure: Error
 
 #### field: read_total
 
-[Source line 291](../../../extended/ext/compression.lani#L291)
+[Source line 340](../../../extended/ext/compression.lani#L340)
 
 ```lanius
 read_total: u64
@@ -471,7 +471,7 @@ read_total: u64
 
 #### field: written_total
 
-[Source line 291](../../../extended/ext/compression.lani#L291)
+[Source line 340](../../../extended/ext/compression.lani#L340)
 
 ```lanius
 written_total: u64
@@ -479,7 +479,7 @@ written_total: u64
 
 #### field: completed_members
 
-[Source line 291](../../../extended/ext/compression.lani#L291)
+[Source line 340](../../../extended/ext/compression.lani#L340)
 
 ```lanius
 completed_members: i32
@@ -487,7 +487,7 @@ completed_members: i32
 
 #### field: checksum
 
-[Source line 292](../../../extended/ext/compression.lani#L292)
+[Source line 341](../../../extended/ext/compression.lani#L341)
 
 ```lanius
 checksum: u32
@@ -495,7 +495,7 @@ checksum: u32
 
 #### field: member_size
 
-[Source line 292](../../../extended/ext/compression.lani#L292)
+[Source line 341](../../../extended/ext/compression.lani#L341)
 
 ```lanius
 member_size: u32
@@ -503,7 +503,7 @@ member_size: u32
 
 #### field: header_crc
 
-[Source line 292](../../../extended/ext/compression.lani#L292)
+[Source line 341](../../../extended/ext/compression.lani#L341)
 
 ```lanius
 header_crc: u32
@@ -511,7 +511,7 @@ header_crc: u32
 
 #### field: field
 
-[Source line 293](../../../extended/ext/compression.lani#L293)
+[Source line 342](../../../extended/ext/compression.lani#L342)
 
 ```lanius
 field: u64
@@ -519,7 +519,7 @@ field: u64
 
 #### field: field_count
 
-[Source line 293](../../../extended/ext/compression.lani#L293)
+[Source line 342](../../../extended/ext/compression.lani#L342)
 
 ```lanius
 field_count: i32
@@ -527,7 +527,7 @@ field_count: i32
 
 #### field: flags
 
-[Source line 293](../../../extended/ext/compression.lani#L293)
+[Source line 342](../../../extended/ext/compression.lani#L342)
 
 ```lanius
 flags: i32
@@ -535,7 +535,7 @@ flags: i32
 
 #### field: remaining
 
-[Source line 293](../../../extended/ext/compression.lani#L293)
+[Source line 342](../../../extended/ext/compression.lani#L342)
 
 ```lanius
 remaining: i32
@@ -543,7 +543,7 @@ remaining: i32
 
 #### field: tables
 
-[Source line 294](../../../extended/ext/compression.lani#L294)
+[Source line 343](../../../extended/ext/compression.lani#L343)
 
 ```lanius
 tables: core::slice::View<i32>
@@ -551,7 +551,7 @@ tables: core::slice::View<i32>
 
 #### field: crc_fast
 
-[Source line 294](../../../extended/ext/compression.lani#L294)
+[Source line 343](../../../extended/ext/compression.lani#L343)
 
 ```lanius
 crc_fast: bool
@@ -559,7 +559,7 @@ crc_fast: bool
 
 #### field: crc_ready
 
-[Source line 294](../../../extended/ext/compression.lani#L294)
+[Source line 343](../../../extended/ext/compression.lani#L343)
 
 ```lanius
 crc_ready: bool
@@ -617,9 +617,17 @@ pub fn fast_workspace_len() -> i32
 pub fn encode(input: core::slice::View<u8>, format: Format, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error>
 ```
 
+### function: encode_level
+
+[Source line 126](../../../extended/ext/compression.lani#L126)
+
+```lanius
+pub fn encode_level(input: core::slice::View<u8>, format: Format, max_output: i32, level: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error>
+```
+
 ### function: default_encode_limits
 
-[Source line 128](../../../extended/ext/compression.lani#L128)
+[Source line 172](../../../extended/ext/compression.lani#L172)
 
 ```lanius
 pub fn default_encode_limits() -> EncodeLimits
@@ -629,7 +637,7 @@ Returns u64 allowances of 16 MiB consumed input and 64 MiB encoded output, inclu
 
 ### function: encoder
 
-[Source line 147](../../../extended/ext/compression.lani#L147)
+[Source line 191](../../../extended/ext/compression.lani#L191)
 
 ```lanius
 pub fn encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>, format: Format, limits: EncodeLimits) -> core::result::Result<Encoder,Error>
@@ -637,9 +645,17 @@ pub fn encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scr
 
 Constructs a borrowed fixed-storage raw/zlib/gzip encoder through the raw workspace admission. Metadata errors map to Bounds, capacity errors to Encode(raw error). No allocation, I/O or cleanup transfer; step/reset contracts and accepted native scope are in the streaming-encoding guide.
 
+### function: level_encoder
+
+[Source line 196](../../../extended/ext/compression.lani#L196)
+
+```lanius
+pub fn level_encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>, format: Format, limits: EncodeLimits, level: i32) -> core::result::Result<Encoder,Error>
+```
+
 ### function: decoder
 
-[Source line 304](../../../extended/ext/compression.lani#L304)
+[Source line 353](../../../extended/ext/compression.lani#L353)
 
 ```lanius
 pub fn decoder(history: core::slice::View<u8>, workspace: core::slice::View<i32>, format: Format, limits: Limits) -> core::result::Result<Decoder,Error>
@@ -649,7 +665,7 @@ Constructs borrowed raw/zlib/gzip framing state with 32768 history bytes and 707
 
 ### function: decode
 
-[Source line 554](../../../extended/ext/compression.lani#L554)
+[Source line 603](../../../extended/ext/compression.lani#L603)
 
 ```lanius
 pub fn decode(input: core::slice::View<u8>, format: Format, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -659,9 +675,9 @@ Owned complete-input decoding through the same persistent state with one ring/wo
 
 ## Implementation blocks and public methods
 
-### impl at line 251
+### impl at line 300
 
-[Source line 251](../../../extended/ext/compression.lani#L251)
+[Source line 300](../../../extended/ext/compression.lani#L300)
 
 ```lanius
 pub impl Encoder
@@ -669,7 +685,7 @@ pub impl Encoder
 
 #### method: borrow
 
-[Source line 252](../../../extended/ext/compression.lani#L252)
+[Source line 301](../../../extended/ext/compression.lani#L301)
 
 ```lanius
 pub fn borrow(&self) -> &Encoder
@@ -677,7 +693,7 @@ pub fn borrow(&self) -> &Encoder
 
 #### method: step
 
-[Source line 253](../../../extended/ext/compression.lani#L253)
+[Source line 302](../../../extended/ext/compression.lani#L302)
 
 ```lanius
 pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<ext::deflate::Step,EncodeFailure>
@@ -685,7 +701,7 @@ pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, 
 
 #### method: total_read
 
-[Source line 254](../../../extended/ext/compression.lani#L254)
+[Source line 303](../../../extended/ext/compression.lani#L303)
 
 ```lanius
 pub fn total_read(&self) -> u64
@@ -693,7 +709,7 @@ pub fn total_read(&self) -> u64
 
 #### method: total_written
 
-[Source line 255](../../../extended/ext/compression.lani#L255)
+[Source line 304](../../../extended/ext/compression.lani#L304)
 
 ```lanius
 pub fn total_written(&self) -> u64
@@ -701,7 +717,7 @@ pub fn total_written(&self) -> u64
 
 #### method: is_done
 
-[Source line 256](../../../extended/ext/compression.lani#L256)
+[Source line 305](../../../extended/ext/compression.lani#L305)
 
 ```lanius
 pub fn is_done(&self) -> bool
@@ -709,7 +725,7 @@ pub fn is_done(&self) -> bool
 
 #### method: is_failed
 
-[Source line 257](../../../extended/ext/compression.lani#L257)
+[Source line 306](../../../extended/ext/compression.lani#L306)
 
 ```lanius
 pub fn is_failed(&self) -> bool
@@ -717,15 +733,15 @@ pub fn is_failed(&self) -> bool
 
 #### method: reset
 
-[Source line 259](../../../extended/ext/compression.lani#L259)
+[Source line 308](../../../extended/ext/compression.lani#L308)
 
 ```lanius
 pub fn reset(&self, format: Format, limits: EncodeLimits)
 ```
 
-### impl at line 530
+### impl at line 579
 
-[Source line 530](../../../extended/ext/compression.lani#L530)
+[Source line 579](../../../extended/ext/compression.lani#L579)
 
 ```lanius
 pub impl Decoder
@@ -733,7 +749,7 @@ pub impl Decoder
 
 #### method: borrow
 
-[Source line 531](../../../extended/ext/compression.lani#L531)
+[Source line 580](../../../extended/ext/compression.lani#L580)
 
 ```lanius
 pub fn borrow(&self) -> &Decoder
@@ -741,7 +757,7 @@ pub fn borrow(&self) -> &Decoder
 
 #### method: step
 
-[Source line 532](../../../extended/ext/compression.lani#L532)
+[Source line 581](../../../extended/ext/compression.lani#L581)
 
 ```lanius
 pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<ext::inflate::Step,DecodeFailure>
@@ -749,7 +765,7 @@ pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, 
 
 #### method: total_read
 
-[Source line 533](../../../extended/ext/compression.lani#L533)
+[Source line 582](../../../extended/ext/compression.lani#L582)
 
 ```lanius
 pub fn total_read(&self) -> u64
@@ -757,7 +773,7 @@ pub fn total_read(&self) -> u64
 
 #### method: total_written
 
-[Source line 534](../../../extended/ext/compression.lani#L534)
+[Source line 583](../../../extended/ext/compression.lani#L583)
 
 ```lanius
 pub fn total_written(&self) -> u64
@@ -765,7 +781,7 @@ pub fn total_written(&self) -> u64
 
 #### method: members
 
-[Source line 535](../../../extended/ext/compression.lani#L535)
+[Source line 584](../../../extended/ext/compression.lani#L584)
 
 ```lanius
 pub fn members(&self) -> i32
@@ -773,7 +789,7 @@ pub fn members(&self) -> i32
 
 #### method: is_done
 
-[Source line 536](../../../extended/ext/compression.lani#L536)
+[Source line 585](../../../extended/ext/compression.lani#L585)
 
 ```lanius
 pub fn is_done(&self) -> bool
@@ -781,7 +797,7 @@ pub fn is_done(&self) -> bool
 
 #### method: is_failed
 
-[Source line 537](../../../extended/ext/compression.lani#L537)
+[Source line 586](../../../extended/ext/compression.lani#L586)
 
 ```lanius
 pub fn is_failed(&self) -> bool
@@ -789,7 +805,7 @@ pub fn is_failed(&self) -> bool
 
 #### method: reset
 
-[Source line 538](../../../extended/ext/compression.lani#L538)
+[Source line 587](../../../extended/ext/compression.lani#L587)
 
 ```lanius
 pub fn reset(&self, format: Format, limits: Limits) -> core::result::Result<bool,Error>

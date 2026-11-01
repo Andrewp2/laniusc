@@ -102,7 +102,7 @@ theorem ok_p_self_value : FnOk prog prims info (1608, ⟨0, [], 0⟩) :=
 theorem ok_local_expr : FnOk prog prims info (1609, ⟨0, [], 0⟩) :=
   fnOk_of fn_local_expr (by decide +kernel)
 
-theorem ok_local_of : FnOk prog prims info (1610, ⟨6, [], 0⟩) :=
+theorem ok_local_of : FnOk prog prims info (1610, ⟨5, [], 0⟩) :=
   fnOk_of fn_local_of (by decide +kernel)
 
 theorem ok_p_int : FnOk prog prims info (1611, ⟨0, [], 0⟩) :=
@@ -129,7 +129,7 @@ theorem ok_p_float : FnOk prog prims info (1617, ⟨0, [], 0⟩) :=
 theorem ok_float_literal : FnOk prog prims info (1618, ⟨12, [], 0⟩) :=
   fnOk_of fn_float_literal (by decide +kernel)
 
-theorem ok_eff_fold : FnOk prog prims info (1619, ⟨30, [0], 0⟩) :=
+theorem ok_eff_fold : FnOk prog prims info (1619, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_fold (by decide +kernel)
 
 theorem chunk34 : AllFns prog prims info part34 :=

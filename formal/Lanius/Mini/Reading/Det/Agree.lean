@@ -1,5 +1,16 @@
-import Lanius.Mini.Reading.Effs
+module
 
+public import Lanius.Mini.Reading.Effs
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.hasConst
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.purePart
+import all Lanius.Mini.Frontend.P.scalarOf
+import all Lanius.Mini.Frontend.P.shrFirst
+
+@[expose] public section
 /-! # The reading is deterministic, F1: the pure and effectful readings agree
 
 A node that reads as a pure expression `e` reads as an effectful expression

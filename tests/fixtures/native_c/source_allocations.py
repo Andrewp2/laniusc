@@ -104,13 +104,13 @@ def _partition(inspected, source_ranges, runtime_ranges, crt=None):
     for runtime_start, runtime_end in runtime_ranges:
         crt_start = runtime_end
         actual_crt = contents(crt_start, len(bridge))
-        entry_target = target(actual_crt, crt_start, 181)
+        entry_target = target(actual_crt, crt_start, 189)
         candidates = [(raw, destination) for raw, destination in wrappers if destination == entry_target]
         ELF.check(len(candidates) == 1 and candidates[0][0] not in used,
                   "runtime bridge lacks unique paired raw entry")
         raw = candidates[0][0]
         used.add(raw)
-        ELF.check(actual_crt[:182] == bridge[:182] and actual_crt[186:] == bridge[186:],
+        ELF.check(actual_crt[:190] == bridge[:190] and actual_crt[194:] == bridge[194:],
                   "unrecognized CRT bootstrap bridge")
         continuous(crt_start, crt_start + len(bridge))
         aliases = [(name, address, size) for name, address, size in inspected["symbols"]
@@ -128,7 +128,7 @@ def _partition(inspected, source_ranges, runtime_ranges, crt=None):
             address = raw + position
             ELF.check(instructions.get(address, (None,))[0] == "syscall", "raw exit lacks exact syscall boundary")
             bootstrap[address + 2] = name
-        for position, name in ((129, "bootstrap-mmap"), (199, "bootstrap-munmap")):
+        for position, name in ((137, "bootstrap-mmap"), (207, "bootstrap-munmap")):
             address = crt_start + position
             ELF.check(instructions.get(address, (None,))[0] == "syscall", "CRT syscall lacks exact boundary")
             bootstrap[address + 2] = name

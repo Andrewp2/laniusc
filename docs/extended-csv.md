@@ -114,6 +114,30 @@ String's own allocation. `write_record` of the same record to a discarding
 sink went from 14 µs to 2.6 µs. End to end, `csv_normalize` on a 7.2 MB,
 100,000-record file went from 11.0 s to 7.5 s, where decoding now dominates.
 
+`parse` and `parse_bytes` keep a Table packed: one byte vector, one field-span
+vector and one row vector, each grown geometrically, with the decoder's own
+record reused between rows. Before, every row owned two vectors that grew a
+few bytes at a time, and each allocation maps its own pages, so a 7.2 MB file
+took 5.4 s of system time and 820 MB of memory. The decoder copies runs of
+plain field bytes in one step: printable ASCII other than the quote (and the
+comma outside quotes), CR and LF inside quotes, and complete valid UTF-8
+sequences. The record vector grows to the same capacity that one push per
+byte reaches, and any byte that could change state, fail or hit a limit
+still goes through the byte-at-a-time path, so results, errors, offsets and
+capacities are unchanged. A failed run reservation is `AllocationFailed`, as
+a failed single-byte push is; it is not retried byte by byte. Measured on 2026-11-01, minimum of 3 interleaved
+runs, against the previous lang build:
+
+| Workload | Before | After |
+| --- | ---: | ---: |
+| `csv_normalize`, 7.2 MB, 100,000 records | 7.63 s (1.97 user, 5.39 system, 820 MB) | 0.90 s (0.90 user, 0.04 system, 32 MB) |
+| `csv_to_json`, 3.6 MB, 50,000 records | 0.73 s | 0.53 s |
+| `csv_rewrite` of all six columns, same input | 0.79 s | 0.69 s |
+
+Against the build before the writer work, `csv_normalize` went from 11.0 s
+to 0.90 s. The streaming paths now spend most of their time on per-field
+work (one `Result` per record, field spans) rather than per-byte work.
+
 Record, Table and Decoder are manually owned values. Copying their handles does
 not clone storage. Maintain one active owner and destroy it once; copies of a
 previous owner must not be reused. Borrowed fields require their owner to remain

@@ -12,7 +12,7 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_type_path_spellings : FnOk prog prims info (1440, ⟨5, [0], 0⟩) :=
+theorem ok_type_path_spellings : FnOk prog prims info (1440, ⟨4, [0], 0⟩) :=
   fnOk_of fn_type_path_spellings (by decide +kernel)
 
 theorem ok_applied_of : FnOk prog prims info (1441, ⟨10, [0], 0⟩) :=
@@ -33,10 +33,10 @@ theorem ok_where_goals : FnOk prog prims info (1445, ⟨16, [], 0⟩) :=
 theorem ok_func_body : FnOk prog prims info (1446, ⟨0, [], 0⟩) :=
   fnOk_of fn_func_body (by decide +kernel)
 
-theorem ok_contracts_of : FnOk prog prims info (1447, ⟨31, [0], 0⟩) :=
+theorem ok_contracts_of : FnOk prog prims info (1447, ⟨30, [0], 0⟩) :=
   fnOk_of fn_contracts_of (by decide +kernel)
 
-theorem ok_block_of : FnOk prog prims info (1448, ⟨37, [0], 0⟩) :=
+theorem ok_block_of : FnOk prog prims info (1448, ⟨36, [0], 0⟩) :=
   fnOk_of fn_block_of (by decide +kernel)
 
 theorem ok_cons_ty : FnOk prog prims info (1449, ⟨2, [], 0⟩) :=

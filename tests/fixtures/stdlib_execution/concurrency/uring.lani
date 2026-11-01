@@ -1,0 +1,412 @@
+// std::uring fixtures and baselines.
+//   uring checks DIR        exact checks (ring-full backpressure, a 10,000-op
+//                           stream, short reads, EOF, readv, errors, links,
+//                           accept/recv/send, transfer); DIR is scratch space.
+//                           Prints one line per check; exit 0 when all pass.
+//   uring loop-cat FILE...  baseline: read/write loop (128 KiB) to stdout.
+//   uring loop-copy SRC DST baseline: read/write loop copy.
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::io;
+import std::linux;
+import std::uring;
+
+const BLOCK: i32 = 131072;
+
+fn word(value: i64) -> std::linux::Argument { return std::linux::Argument::Word(value); }
+fn address(value: ptr) -> std::linux::Argument { return std::linux::Argument::Address(value); }
+fn sys(number: i64, a: std::linux::Argument, b: std::linux::Argument, c: std::linux::Argument) -> i64 {
+    let args: [std::linux::Argument; 3] = [a, b, c];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(number, core::slice::view(args, 3).unwrap());
+    if (done.is_ok()) { return done.unwrap(); }
+    let code: i32 = match (done.unwrap_err()) { std::linux::Error::System(value) -> value, _ -> 22 };
+    return 0 - (code as i64);
+}
+fn bytes(at: ptr, length: i32) -> [u8] { return core::mem::typed_slice_from_raw_parts<u8>(at, length); }
+fn name(slot: ptr, letter: u8) -> ptr { let out: [u8] = bytes(slot, 2); out[0] = letter; out[1] = 0; return slot; }
+fn pattern(index: i64) -> u8 { return ((index * 7 + index / 251) & 255) as u8; }
+
+struct Score { failed: i32 }
+impl Score { pub fn borrow(&self) -> &Score { return self; } }
+fn report(score: &Score, label: str, got: i64, want: i64) {
+    std::io::write_text(1, label); std::io::write_text(1, " ");
+    std::io::write_i32(1, got as i32);
+    if (got != want) {
+        std::io::write_text(1, " FAIL want "); std::io::write_i32(1, want as i32);
+        score.failed += 1;
+    }
+    std::io::write_newline(1);
+}
+fn full(result: core::result::Result<i32, std::uring::Error>) -> bool {
+    if (result.is_ok()) { return false; }
+    return match (result.unwrap_err()) { std::uring::Error::Full -> true, _ -> false };
+}
+fn host_code(result: core::result::Result<i64, std::uring::Error>) -> i64 {
+    if (result.is_ok()) { return result.unwrap(); }
+    return match (result.unwrap_err()) {
+        std::uring::Error::Host(code) -> 0 - (code as i64),
+        std::uring::Error::Read(code) -> -1000 - (code as i64),
+        std::uring::Error::Write(code) -> -2000 - (code as i64),
+        _ -> -1000,
+    };
+}
+// Submit and consume one completion; its result.
+fn one(ring: &std::uring::Ring) -> i64 {
+    let got: core::result::Result<std::uring::Completion, std::uring::Error> = ring.wait();
+    if (got.is_err()) { return -1000; }
+    return got.unwrap().result() as i64;
+}
+fn open_at(ring: &std::uring::Ring, path: ptr, flags: i32, mode: u32) -> i64 {
+    ring.openat(std::uring::AT_FDCWD, path, flags, mode, 1);
+    return one(ring);
+}
+
+fn backpressure(score: &Score) {
+    let made: core::result::Result<std::uring::Ring, std::uring::Error> = std::uring::setup(8);
+    if (made.is_err()) { report(score, "setup", -1, 0); return; }
+    let ring: std::uring::Ring = made.unwrap();
+    report(score, "setup.sq_entries", ring.submission_entries() as i64, 8);
+    report(score, "setup.cq_entries", ring.completion_entries() as i64, 16);
+    // The submission ring fills first.
+    let queued: i64 = 0;
+    while (!full(ring.nop(queued as u64))) { queued += 1; }
+    report(score, "full.sq", queued, 8);
+    report(score, "full.space", ring.space() as i64, 0);
+    let taken: core::result::Result<i32, std::uring::Error> = ring.submit();
+    report(score, "full.submitted", taken.unwrap() as i64, 8);
+    // Eight completions are owed; eight more fill the completion ring, and
+    // push refuses the seventeenth although the submission ring is empty.
+    while (!full(ring.nop(queued as u64))) { queued += 1; }
+    report(score, "full.cq", queued, 16);
+    report(score, "full.owed", ring.owed() as i64, 16);
+    ring.submit();
+    report(score, "full.ready", ring.ready() as i64, 16);
+    report(score, "full.overflow", ring.overflowed() as i64, 0);
+    let first: std::uring::Completion = ring.wait().unwrap();
+    report(score, "full.first_user_data", first.user_data() as i64, 0);
+    report(score, "full.after_one", ring.space() as i64, 1);
+    report(score, "full.push_again", ring.nop(99).unwrap() as i64, 0);
+    let seen: i64 = 0; let sum: i64 = 0;
+    while (ring.owed() > 0) { let c: std::uring::Completion = ring.wait().unwrap(); seen += 1; sum += c.user_data() as i64; }
+    report(score, "full.drained", seen, 16);
+    report(score, "full.sum", sum, 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 + 99);
+    ring.destroy();
+}
+
+// 10,000 operations through an 8-entry ring: nops and one-byte reads of a
+// known file. Every user_data must complete exactly once with its result.
+fn stream(score: &Score, slots: ptr) {
+    let ring: std::uring::Ring = std::uring::setup(8).unwrap();
+    let file: i64 = open_at(ring.borrow(), name(slots, 112), 66, 384);
+    let data: ptr = slots + 4096;
+    let source: [u8] = bytes(data, 4096);
+    let k: i32 = 0;
+    while (k < 4096) { let value: u8 = pattern(k as i64); source[k] = value; k += 1; }
+    ring.write(file as i32, data, 4096, 0, 7);
+    report(score, "stream.file", one(ring.borrow()), 4096);
+    let seen: [u8] = bytes(slots + 8192, 10000);
+    let landing: [u8] = bytes(slots + 20480, 10000);
+    let total: i64 = 10000; let next: i64 = 0; let done: i64 = 0; let wrong: i64 = 0; let fulls: i64 = 0; let sum: i64 = 0;
+    while (done < total) {
+        if (next < total) {
+            let pushed: core::result::Result<i32, std::uring::Error> = core::result::Err(std::uring::Error::Full);
+            if ((next % 3) == 0) { pushed = ring.nop(next as u64); }
+            else { pushed = ring.read(file as i32, slots + 20480 + (next as usize), 1, (next * 13) % 4096, next as u64); }
+            if (full(pushed)) { fulls += 1; } else { next += 1; continue; }
+        }
+        let c: std::uring::Completion = ring.wait().unwrap();
+        let id: i64 = c.user_data() as i64;
+        if (id < 0 || id >= total || seen[id as i32] != 0) { wrong += 1; }
+        else {
+            seen[id as i32] = 1;
+            let expect: i64 = 1;
+            if ((id % 3) == 0) { expect = 0; }
+            if ((c.result() as i64) != expect) { wrong += 1; }
+            if (expect == 1 && landing[id as i32] != pattern((id * 13) % 4096)) { wrong += 1; }
+            sum += c.result() as i64;
+        }
+        done += 1;
+    }
+    report(score, "stream.completed", done, 10000);
+    report(score, "stream.wrong", wrong, 0);
+    report(score, "stream.bytes", sum, 6666);
+    report(score, "stream.backpressured", fulls, total - 15);
+    report(score, "stream.overflow", ring.overflowed() as i64, 0);
+    report(score, "stream.dropped", ring.dropped() as i64, 0);
+    ring.close(file as i32, 8);
+    report(score, "stream.close", one(ring.borrow()), 0);
+    ring.destroy();
+}
+
+// Short reads at EOF and on a pipe, readv spill across iovecs.
+fn short(score: &Score, slots: ptr) {
+    let ring: std::uring::Ring = std::uring::setup(16).unwrap();
+    let buffer: ptr = slots + 4096;
+    let fd: i64 = open_at(ring.borrow(), name(slots, 115), 578, 384);
+    let out: [u8] = bytes(buffer, 37);
+    let k: i32 = 0;
+    while (k < 37) { let value: u8 = pattern(k as i64); out[k] = value; k += 1; }
+    ring.write(fd as i32, buffer, 37, 0, 1);
+    report(score, "short.write", one(ring.borrow()), 37);
+    let back: ptr = slots + 8192;
+    ring.read(fd as i32, back, 100, 0, 2);
+    report(score, "short.read_past_eof", one(ring.borrow()), 37);
+    ring.read(fd as i32, back, 100, 37, 3);
+    report(score, "short.read_at_eof", one(ring.borrow()), 0);
+    ring.read(fd as i32, back, 100, 30, 4);
+    report(score, "short.read_tail", one(ring.borrow()), 7);
+    let tail: [u8] = bytes(back, 7);
+    let same: i64 = 1; let t: i32 = 0;
+    while (t < 7) { if (tail[t] != pattern((30 + t) as i64)) { same = 0; } t += 1; }
+    report(score, "short.read_tail_bytes", same, 1);
+    // readv: 10 + 20 + 30 requested, 37 present.
+    let table: ptr = slots + 12288;
+    let land: ptr = slots + 40960;
+    std::uring::iovec(table, 0, land, 10);
+    std::uring::iovec(table, 1, land + 100, 20);
+    std::uring::iovec(table, 2, land + 200, 30);
+    ring.readv(fd as i32, table, 3, 0, 5);
+    report(score, "short.readv", one(ring.borrow()), 37);
+    let spill: [u8] = bytes(land, 300);
+    let good: i64 = 1; let i: i32 = 0;
+    while (i < 37) {
+        let at: i32 = i;
+        if (i >= 10) { at = 100 + i - 10; }
+        if (i >= 30) { at = 200 + i - 30; }
+        if (spill[at] != pattern(i as i64)) { good = 0; }
+        i += 1;
+    }
+    if (spill[207] != 0) { good = 0; }
+    report(score, "short.readv_bytes", good, 1);
+    // A pipe holding 5 bytes answers a 4096-byte read with 5.
+    let pair: ptr = slots + 24576;
+    report(score, "short.pipe", sys(293, address(pair), word(0), word(0)), 0);
+    let fds: [i32] = core::mem::typed_slice_from_raw_parts<i32>(pair, 2);
+    let reader: i32 = fds[0]; let writer: i32 = fds[1];
+    ring.write(writer, buffer, 5, std::uring::CURRENT, 6);
+    report(score, "short.pipe_write", one(ring.borrow()), 5);
+    ring.read(reader, back, 4096, std::uring::CURRENT, 7);
+    report(score, "short.pipe_read", one(ring.borrow()), 5);
+    ring.close(writer, 8);
+    report(score, "short.pipe_close", one(ring.borrow()), 0);
+    ring.read(reader, back, 4096, std::uring::CURRENT, 9);
+    report(score, "short.pipe_eof", one(ring.borrow()), 0);
+    ring.close(reader, 10); one(ring.borrow());
+    ring.close(fd as i32, 11); one(ring.borrow());
+    ring.destroy();
+}
+
+fn errors(score: &Score, slots: ptr) {
+    let ring: std::uring::Ring = std::uring::setup(16).unwrap();
+    let buffer: ptr = slots + 4096;
+    report(score, "errors.open_missing", open_at(ring.borrow(), name(slots, 122), 0, 0), -2);
+    ring.read(9999, buffer, 10, 0, 1);
+    report(score, "errors.read_bad_fd", one(ring.borrow()), -9);
+    let file: i64 = open_at(ring.borrow(), name(slots, 112), 0, 0);
+    let opened: i64 = 0;
+    if (file > 2) { opened = 1; }
+    report(score, "errors.open_existing", opened, 1);
+    ring.write(file as i32, buffer, 10, 0, 2);
+    report(score, "errors.write_read_only", one(ring.borrow()), -9);
+    ring.recv(file as i32, buffer, 10, 0, 3);
+    report(score, "errors.recv_not_socket", one(ring.borrow()), -88);
+    // O_RDONLY | O_DIRECTORY on "."
+    let here: ptr = slots + 64;
+    let dot: [u8] = bytes(here, 2); dot[0] = 46; dot[1] = 0;
+    let directory: i64 = open_at(ring.borrow(), here, 65536, 0);
+    ring.read(directory as i32, buffer, 10, 0, 4);
+    report(score, "errors.read_directory", one(ring.borrow()), -21);
+    ring.close(9999, 5);
+    report(score, "errors.close_bad_fd", one(ring.borrow()), -9);
+    // A failed link cancels the rest of its chain.
+    ring.nop(10); ring.link_last();
+    ring.read(9999, buffer, 10, 0, 11); ring.link_last();
+    ring.nop(12);
+    let a: std::uring::Completion = ring.wait().unwrap();
+    let b: std::uring::Completion = ring.wait().unwrap();
+    let c: std::uring::Completion = ring.wait().unwrap();
+    report(score, "errors.link_head", a.result() as i64, 0);
+    report(score, "errors.link_failed", b.result() as i64, -9);
+    report(score, "errors.link_cancelled", c.result() as i64, -125);
+    report(score, "errors.link_order", (a.user_data() * 100 + b.user_data() * 10 + c.user_data() - 1120) as i64, 2);
+    // transfer reports the first failure, after draining.
+    report(score, "errors.transfer_bad_input", host_code(ring.transfer(9999, 1, buffer, 1024, 4, false, std::uring::CURRENT)), -1009);
+    let dev: ptr = slots + 128;
+    let full_path: [u8] = bytes(dev, 10);
+    full_path[0] = 47; full_path[1] = 100; full_path[2] = 101; full_path[3] = 118; full_path[4] = 47;
+    full_path[5] = 102; full_path[6] = 117; full_path[7] = 108; full_path[8] = 108; full_path[9] = 0;
+    let sink: i64 = open_at(ring.borrow(), dev, 1, 0);
+    report(score, "errors.transfer_enospc", host_code(ring.transfer(file as i32, sink as i32, buffer, 1024, 4, false, std::uring::CURRENT)), -2028);
+    report(score, "errors.owed_after", ring.owed() as i64, 0);
+    ring.close(sink as i32, 6); one(ring.borrow());
+    ring.close(directory as i32, 7); one(ring.borrow());
+    ring.close(file as i32, 8); one(ring.borrow());
+    let zero: core::result::Result<std::uring::Ring, std::uring::Error> = std::uring::setup(0);
+    let refused: i64 = 0;
+    if (zero.is_err()) { refused = match (zero.unwrap_err()) { std::uring::Error::InvalidEntries -> 1, _ -> 0 }; }
+    report(score, "errors.setup_zero", refused, 1);
+    ring.destroy();
+}
+
+fn store16(at: ptr, value: i32) { let out: [u8] = bytes(at, 2); out[0] = (value & 255) as u8; out[1] = ((value >> 8) & 255) as u8; }
+fn load16(at: ptr) -> i32 { let raw: [u8] = bytes(at, 2); return (raw[0] as i32) + (raw[1] as i32) * 256; }
+
+// accept, then send/recv both ways over loopback TCP.
+fn net(score: &Score, slots: ptr) {
+    let ring: std::uring::Ring = std::uring::setup(16).unwrap();
+    let server: i64 = sys(41, word(2), word(1), word(0));
+    let socket_address: ptr = slots + 256;
+    let raw: [u8] = bytes(socket_address, 16);
+    let z: i32 = 0;
+    while (z < 16) { raw[z] = 0; z += 1; }
+    store16(socket_address, 2); raw[4] = 127; raw[7] = 1;
+    report(score, "net.bind", sys(49, word(server), address(socket_address), word(16)), 0);
+    report(score, "net.listen", sys(50, word(server), word(8), word(0)), 0);
+    let length_slot: ptr = slots + 320;
+    let lengths: [i32] = core::mem::typed_slice_from_raw_parts<i32>(length_slot, 1); lengths[0] = 16;
+    sys(51, word(server), address(socket_address), address(length_slot));
+    let peer: ptr = slots + 384;
+    let peer_length: ptr = slots + 448;
+    let capacity: [i32] = core::mem::typed_slice_from_raw_parts<i32>(peer_length, 1); capacity[0] = 16;
+    ring.accept(server as i32, peer, peer_length, 524288, 1);
+    ring.submit();
+    let client: i64 = sys(41, word(2), word(1), word(0));
+    report(score, "net.connect", sys(42, word(client), address(socket_address), word(16)), 0);
+    let accepted: i64 = one(ring.borrow());
+    report(score, "net.accepted", accepted - client, 1);
+    report(score, "net.peer_length", capacity[0] as i64, 16);
+    report(score, "net.peer_family", load16(peer) as i64, 2);
+    let message: ptr = slots + 512;
+    let text: [u8] = bytes(message, 11);
+    let m: i32 = 0;
+    while (m < 11) { let value: u8 = (104 + m) as u8; text[m] = value; m += 1; }
+    ring.send(client as i32, message, 11, 0, 2);
+    report(score, "net.send", one(ring.borrow()), 11);
+    let inbox: ptr = slots + 1024;
+    ring.recv(accepted as i32, inbox, 100, 0, 3);
+    report(score, "net.recv", one(ring.borrow()), 11);
+    let got: [u8] = bytes(inbox, 11);
+    let same: i64 = 1; let g: i32 = 0;
+    while (g < 11) { if (got[g] != text[g]) { same = 0; } g += 1; }
+    report(score, "net.recv_bytes", same, 1);
+    // Reply, with the recv queued before the send: the recv waits.
+    ring.recv(client as i32, inbox, 100, 0, 4);
+    ring.send(accepted as i32, message, 5, 0, 5);
+    let first: std::uring::Completion = ring.wait().unwrap();
+    let second: std::uring::Completion = ring.wait().unwrap();
+    report(score, "net.reply_total", (first.result() + second.result()) as i64, 10);
+    ring.close(accepted as i32, 6); one(ring.borrow());
+    // The peer closed: recv sees EOF.
+    ring.recv(client as i32, inbox, 100, 0, 7);
+    report(score, "net.recv_eof", one(ring.borrow()), 0);
+    ring.close(client as i32, 8); one(ring.borrow());
+    ring.close(server as i32, 9); one(ring.borrow());
+    ring.destroy();
+}
+
+// Positional copy (concurrent writes) and ordered copy of a 10,007-byte file
+// with 1000-byte blocks, three in flight; both read back exactly.
+fn transfer(score: &Score, slots: ptr) {
+    let ring: std::uring::Ring = std::uring::setup(8).unwrap();
+    let size: i32 = 10007;
+    let data: ptr = slots + 32768;
+    let src: [u8] = bytes(data, size);
+    let k: i32 = 0;
+    while (k < size) { let value: u8 = pattern(k as i64); src[k] = value; k += 1; }
+    let input: i64 = open_at(ring.borrow(), name(slots, 105), 578, 384);
+    ring.write(input as i32, data, size, 0, 1); one(ring.borrow());
+    let buffers: ptr = slots + 65536;
+    let mode: i32 = 0;
+    while (mode < 2) {
+        let output: i64 = open_at(ring.borrow(), name(slots + 16, 111), 578, 384);
+        let at: i64 = 0;
+        if (mode == 1) { at = std::uring::CURRENT; }
+        let moved: i64 = host_code(ring.transfer(input as i32, output as i32, buffers, 1000, 3, false, at));
+        if (mode == 0) { report(score, "transfer.positional", moved, 10007); } else { report(score, "transfer.ordered", moved, 10007); }
+        let back: ptr = slots + 131072;
+        ring.read(output as i32, back, 20000, 0, 2);
+        report(score, "transfer.read_back", one(ring.borrow()), 10007);
+        let got: [u8] = bytes(back, size);
+        let same: i64 = 1; let g: i32 = 0;
+        while (g < size) { if (got[g] != src[g]) { same = 0; } g += 1; }
+        report(score, "transfer.bytes", same, 1);
+        ring.close(output as i32, 3); one(ring.borrow());
+        mode += 1;
+    }
+    ring.close(input as i32, 4); one(ring.borrow());
+    ring.destroy();
+}
+
+fn checks(directory: core::slice::View<u8>) -> i32 {
+    let slots: ptr = std::uring::map_buffers(262144).unwrap();
+    std::uring::stage_path(directory, slots, 4096).unwrap();
+    if (sys(80, address(slots), word(0), word(0)) != 0) { std::io::eprintln("uring: cannot enter DIR"); return 2; }
+    let score: Score = Score { failed: 0 };
+    backpressure(score.borrow());
+    stream(score.borrow(), slots);
+    short(score.borrow(), slots);
+    errors(score.borrow(), slots);
+    net(score.borrow(), slots);
+    transfer(score.borrow(), slots);
+    std::uring::unmap_buffers(slots, 262144);
+    if (score.failed != 0) { return 1; }
+    return 0;
+}
+
+// Baselines: one blocking read(2) then write(2) per block.
+fn pump(input: i64, output: i64, buffer: ptr) -> i64 {
+    while (true) {
+        let got: i64 = sys(0, word(input), address(buffer), word(BLOCK as i64));
+        if (got < 0) { return got; }
+        if (got == 0) { return 0; }
+        let sent: i64 = 0;
+        while (sent < got) {
+            let wrote: i64 = sys(1, word(output), address(buffer + (sent as usize)), word(got - sent));
+            if (wrote <= 0) { return -5; }
+            sent += wrote;
+        }
+    }
+    return 0;
+}
+fn open_path(path: core::slice::View<u8>, slot: ptr, flags: i64) -> i64 {
+    std::uring::stage_path(path, slot, 4096).unwrap();
+    let args: [std::linux::Argument; 4] = [word(-100), address(slot), word(flags), word(438)];
+    let done: core::result::Result<i64, std::linux::Error> = std::linux::call(257, core::slice::view(args, 4).unwrap());
+    if (done.is_ok()) { return done.unwrap(); }
+    return -2;
+}
+
+fn main() -> i32 {
+    let arguments: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 4096, 1048576);
+    if (arguments.is_err() || arguments.unwrap().len() < 1) { std::io::eprintln("usage: uring checks DIR | loop-cat FILE... | loop-copy SRC DST"); return 2; }
+    let all: std::args::Arguments = arguments.unwrap();
+    let command: core::slice::View<u8> = all.get(0).unwrap();
+    let head: u8 = command.values[command.start];
+    if (head == 99 && all.len() == 2) { return checks(all.get(1).unwrap()); }
+    let buffer: ptr = std::uring::map_buffers((BLOCK as usize) + 4096).unwrap();
+    let slot: ptr = buffer + (BLOCK as usize);
+    let status: i32 = 0;
+    if (head == 108 && command.length == 8) {
+        let i: i32 = 1;
+        while (i < all.len()) {
+            let fd: i64 = open_path(all.get(i).unwrap(), slot, 524288);
+            if (fd < 0 || pump(fd, 1, buffer) < 0) { status = 1; }
+            if (fd >= 0) { sys(3, word(fd), word(0), word(0)); }
+            i += 1;
+        }
+        return status;
+    }
+    if (head == 108 && all.len() == 3) {
+        let input: i64 = open_path(all.get(1).unwrap(), slot, 524288);
+        let output: i64 = open_path(all.get(2).unwrap(), slot, 524288 | 577);
+        if (input < 0 || output < 0 || pump(input, output, buffer) < 0) { return 1; }
+        return 0;
+    }
+    std::io::eprintln("usage: uring checks DIR | loop-cat FILE... | loop-copy SRC DST");
+    return 2;
+}

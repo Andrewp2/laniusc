@@ -188,7 +188,7 @@ def SrcEff.toCore : SrcEff → Core.Expr
       .matchValue scrutinee.toCore (SrcEff.coreArms ety.typeId 0 binders values)
   | .eDivide op left right => .binary op.toCore left.toCore right.toCore
   | .eStride slice => .intrinsic .sliceStride (.local slice)
-  | .eArraySlice element array => .arrayToSlice element.toCore (.local array)
+  | .arraySlice element array => .arrayToSlice element.toCore (.local array)
 
 def SrcEff.toCoreList : List SrcEff → List Core.Expr
   | [] => []

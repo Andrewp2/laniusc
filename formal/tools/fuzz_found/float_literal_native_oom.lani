@@ -1,0 +1,18 @@
+// fuzz boundary literals (11-01): the verified compiler built by laniusc
+// (self_host.py's laniusc_driver) is killed for memory (past a 3 GB cap,
+// within 4 s) reading `1e400`, `-1e400` or a 400-digit f64 literal; Lean's
+// compileSource compiles it (to +inf, see float_literal_infinity.lani). f32
+// literals up to 41 digits and `1e-400` are read alike. Likely laniusc's
+// runtime allocator (fresh pages for every allocation) under the front end's
+// decimal bignums, not a trap.
+// Run: python3 -I formal/tools/native_front.py DRIVER THIS
+module app::main;
+
+fn main() -> i32 {
+    let f: f64 = 1e400;
+    let m: f64 = 1e308;
+    if (f > m) {
+        return 1;
+    }
+    return 0;
+}

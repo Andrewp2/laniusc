@@ -15,7 +15,7 @@ open Lanius.Faithful.SelfCert
 theorem ok_length_of_mini_selfhost_List_mini_selfhost_SrcType : FnOk prog prims info (349, ⟨2, [0], 0⟩) :=
   fnOk_of fn_length_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_List_mini_selfhost_SrcType : FnOk prog prims info (350, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_List_mini_selfhost_SrcType : FnOk prog prims info (350, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_List_mini_selfhost_SrcType (by decide +kernel)
 
 theorem ok_SrcType_is_bool : FnOk prog prims info (351, ⟨0, [], 0⟩) :=
@@ -78,7 +78,7 @@ theorem ok_lx_tokens : FnOk prog prims info (370, ⟨4, [3], 0⟩) :=
 theorem ok_lx_ranges : FnOk prog prims info (371, ⟨1, [0], 0⟩) :=
   fnOk_of fn_lx_ranges (by decide +kernel)
 
-theorem ok_lx_filter : FnOk prog prims info (372, ⟨4, [4], 0⟩) :=
+theorem ok_lx_filter : FnOk prog prims info (372, ⟨3, [4], 0⟩) :=
   fnOk_of fn_lx_filter (by decide +kernel)
 
 theorem ok_lx_keyword_rules : FnOk prog prims info (373, ⟨1, [], 0⟩) :=
@@ -108,13 +108,13 @@ theorem ok_no_decls : FnOk prog prims info (381, ⟨1, [], 0⟩) :=
 theorem ok_collect_front : FnOk prog prims info (382, ⟨2, [], 0⟩) :=
   fnOk_of fn_collect_front (by decide +kernel)
 
-theorem ok_item_decls : FnOk prog prims info (383, ⟨10, [], 0⟩) :=
+theorem ok_item_decls : FnOk prog prims info (383, ⟨9, [], 0⟩) :=
   fnOk_of fn_item_decls (by decide +kernel)
 
 theorem ok_p_module : FnOk prog prims info (384, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_module (by decide +kernel)
 
-theorem ok_path_spellings : FnOk prog prims info (385, ⟨5, [0], 0⟩) :=
+theorem ok_path_spellings : FnOk prog prims info (385, ⟨4, [0], 0⟩) :=
   fnOk_of fn_path_spellings (by decide +kernel)
 
 theorem ok_p_item_pub : FnOk prog prims info (386, ⟨0, [], 0⟩) :=

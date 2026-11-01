@@ -100,10 +100,10 @@ theorem ok_bound_goals : FnOk prog prims info (1566, ⟨14, [], 0⟩) :=
 theorem ok_expr_of : FnOk prog prims info (1567, ⟨14, [0], 0⟩) :=
   fnOk_of fn_expr_of (by decide +kernel)
 
-theorem ok_eff_node : FnOk prog prims info (1568, ⟨30, [0], 0⟩) :=
+theorem ok_eff_node : FnOk prog prims info (1568, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_node (by decide +kernel)
 
-theorem ok_stmt_first : FnOk prog prims info (1569, ⟨37, [0], 0⟩) :=
+theorem ok_stmt_first : FnOk prog prims info (1569, ⟨36, [0], 0⟩) :=
   fnOk_of fn_stmt_first (by decide +kernel)
 
 theorem ok_lx_digit_sep : FnOk prog prims info (1570, ⟨3, [2], 1⟩) :=

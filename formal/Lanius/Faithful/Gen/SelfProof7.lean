@@ -303,8 +303,7 @@ theorem step_length_of_mini_selfhost_SrcArm {prog : SrcProgram} {prims : Prims} 
   simp only [src_length_of_mini_selfhost_SrcArm] at h
   faithful []
 
-theorem proof_minus {prog : SrcProgram} {prims : Prims} {ix_minus ix_core_panic_panic : Nat} (fn : prog.funcs[ix_minus]? = some (src_minus ix_core_panic_panic)) (np : prims.isPrim ix_minus = false)
-    (ext_core_panic_panic : Certified (∀ {n : Nat}, Stmt_core_panic_panic prog prims ix_core_panic_panic n)) {n : Nat} :
+theorem proof_minus {prog : SrcProgram} {prims : Prims} {ix_minus : Nat} (fn : prog.funcs[ix_minus]? = some (src_minus)) (np : prims.isPrim ix_minus = false) {n : Nat} :
     Stmt_minus prog prims ix_minus n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n

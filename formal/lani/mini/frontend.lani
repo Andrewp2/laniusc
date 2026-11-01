@@ -80,10 +80,10 @@ pub fn times(a: usize, b: usize) -> usize {
     return product;
 }
 
-// Nat a - b, used only where a >= b
+// Nat a - b, truncated: 0 when b > a
 pub fn minus(a: usize, b: usize) -> usize {
     if (b > a) {
-        core::panic::panic();
+        return 0;
     }
     return a - b;
 }
@@ -234,7 +234,7 @@ pub enum SrcEff {
     EMatch(Box<SrcEff>, SrcType, SrcType, List<List<usize>>, Box<List<SrcEff>>),
     EDivide(SrcDivOp, Box<SrcEff>, Box<SrcEff>),
     EStride(usize),
-    EArraySlice(SrcType, usize),
+    ArraySlice(SrcType, usize),
 }
 
 pub enum SrcStmt {
@@ -2980,6 +2980,9 @@ pub fn wide_decimal(text: List<usize>, acc: usize) -> core::option::Option<usize
 
 // extract: inline
 fn wide_digit(wb: usize, wrest: List<usize>, wacc: usize) -> core::option::Option<usize> {
+    if (wacc > 1844674407370955161 || (wacc == 1844674407370955161 && wb > 53)) {
+        return None;
+    }
     if (wb >= 48 && 57 >= wb) {
         return wide_decimal(wrest, plus(times(wacc, 10), minus(wb, 48)));
     }
@@ -10567,7 +10570,7 @@ pub fn e_index_closed(s: usize, x: core::option::Option<SrcEff>) -> core::option
 pub fn e_array_slice_closed(t: core::option::Option<SrcType>, a: usize) -> core::option::Option<SrcEff> {
     return match (t) {
         None -> None,
-        Some(e) -> Some(EArraySlice(e, a)),
+        Some(e) -> Some(ArraySlice(e, a)),
     };
 }
 
@@ -11336,7 +11339,7 @@ pub fn known_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, x: SrcEff) -> core
         EMatch(s, ety, t, bs, vs) -> Some(t),
         EDivide(op, a, b) -> either_ty(known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))),
         EStride(s) -> Some(Isize),
-        EArraySlice(e, a) -> Some(Slice(boxed(e))),
+        ArraySlice(e, a) -> Some(Slice(boxed(e))),
     };
 }
 
@@ -11355,7 +11358,7 @@ pub fn lit_eff(funcs: List<SrcFunc>, locals: List<LocalTy>, want: core::option::
         EMatch(s, ety, t, bs, vs) -> EMatch(boxed(lit_eff(funcs, locals, Some(ety), unbox(s))), ety, t, bs, boxed(lit_arm_effs(funcs, locals, src_variants(Some(ety)), t, bs, unbox(vs)))),
         EDivide(op, a, b) -> EDivide(op, boxed(lit_eff(funcs, locals, operand_want(Plus, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(a))), boxed(lit_eff(funcs, locals, operand_want(Plus, want, known_eff(funcs, locals, unbox(a)), known_eff(funcs, locals, unbox(b))), unbox(b)))),
         EStride(s) -> EStride(s),
-        EArraySlice(e, a) -> EArraySlice(e, a),
+        ArraySlice(e, a) -> ArraySlice(e, a),
     };
 }
 
@@ -11482,7 +11485,7 @@ pub fn wide_left_eff(x: SrcEff) -> bool {
         EMatch(sc, ety, t, bs, vs) -> wide_left_eff(unbox(sc)) || wide_left_effs(unbox(vs)),
         EDivide(op, a, b) -> wide_left_eff(unbox(a)) || wide_left_eff(unbox(b)),
         EStride(sl) -> false,
-        EArraySlice(e, a) -> false,
+        ArraySlice(e, a) -> false,
     };
 }
 

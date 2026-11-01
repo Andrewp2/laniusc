@@ -15,19 +15,19 @@ open Lanius.Faithful.SelfCert
 theorem ok_match_stmt_value : FnOk prog prims info (1825, ⟨0, [], 0⟩) :=
   fnOk_of fn_match_stmt_value (by decide +kernel)
 
-theorem ok_let_arms_of : FnOk prog prims info (1826, ⟨37, [0], 0⟩) :=
+theorem ok_let_arms_of : FnOk prog prims info (1826, ⟨36, [0], 0⟩) :=
   fnOk_of fn_let_arms_of (by decide +kernel)
 
 theorem ok_let_head : FnOk prog prims info (1827, ⟨19, [], 0⟩) :=
   fnOk_of fn_let_head (by decide +kernel)
 
-theorem ok_try_let_head : FnOk prog prims info (1828, ⟨34, [], 0⟩) :=
+theorem ok_try_let_head : FnOk prog prims info (1828, ⟨33, [], 0⟩) :=
   fnOk_of fn_try_let_head (by decide +kernel)
 
 theorem ok_eval_head : FnOk prog prims info (1829, ⟨4, [], 0⟩) :=
   fnOk_of fn_eval_head (by decide +kernel)
 
-theorem ok_try_of_init : FnOk prog prims info (1830, ⟨33, [], 0⟩) :=
+theorem ok_try_of_init : FnOk prog prims info (1830, ⟨32, [], 0⟩) :=
   fnOk_of fn_try_of_init (by decide +kernel)
 
 theorem ok_untyped_try : FnOk prog prims info (1831, ⟨0, [], 0⟩) :=
@@ -51,28 +51,28 @@ theorem ok_if_eval_of : FnOk prog prims info (1836, ⟨2, [], 0⟩) :=
 theorem ok_while_eval_of : FnOk prog prims info (1837, ⟨2, [], 0⟩) :=
   fnOk_of fn_while_eval_of (by decide +kernel)
 
-theorem ok_for_of : FnOk prog prims info (1838, ⟨37, [0], 1⟩) :=
+theorem ok_for_of : FnOk prog prims info (1838, ⟨36, [0], 1⟩) :=
   fnOk_of fn_for_of (by decide +kernel)
 
-theorem ok_match_primary : FnOk prog prims info (1839, ⟨5, [], 0⟩) :=
+theorem ok_match_primary : FnOk prog prims info (1839, ⟨4, [], 0⟩) :=
   fnOk_of fn_match_primary (by decide +kernel)
 
-theorem ok_match_arms_of : FnOk prog prims info (1840, ⟨37, [0], 0⟩) :=
+theorem ok_match_arms_of : FnOk prog prims info (1840, ⟨36, [0], 0⟩) :=
   fnOk_of fn_match_arms_of (by decide +kernel)
 
 theorem ok_p_assign_set : FnOk prog prims info (1841, ⟨0, [], 0⟩) :=
   fnOk_of fn_p_assign_set (by decide +kernel)
 
-theorem ok_peel : FnOk prog prims info (1842, ⟨4, [0], 0⟩) :=
+theorem ok_peel : FnOk prog prims info (1842, ⟨3, [0], 0⟩) :=
   fnOk_of fn_peel (by decide +kernel)
 
-theorem ok_assign_target : FnOk prog prims info (1843, ⟨35, [], 0⟩) :=
+theorem ok_assign_target : FnOk prog prims info (1843, ⟨34, [], 0⟩) :=
   fnOk_of fn_assign_target (by decide +kernel)
 
-theorem ok_compound_of : FnOk prog prims info (1844, ⟨33, [], 0⟩) :=
+theorem ok_compound_of : FnOk prog prims info (1844, ⟨32, [], 0⟩) :=
   fnOk_of fn_compound_of (by decide +kernel)
 
-theorem ok_call_stmt : FnOk prog prims info (1845, ⟨32, [], 0⟩) :=
+theorem ok_call_stmt : FnOk prog prims info (1845, ⟨31, [], 0⟩) :=
   fnOk_of fn_call_stmt (by decide +kernel)
 
 theorem ok_if_item : FnOk prog prims info (1846, ⟨0, [], 0⟩) :=

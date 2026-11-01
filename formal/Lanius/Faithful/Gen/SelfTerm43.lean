@@ -13,19 +13,19 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_assert_arg : FnOk prog prims info (1947, ⟨31, [], 0⟩) :=
+theorem ok_assert_arg : FnOk prog prims info (1947, ⟨30, [], 0⟩) :=
   fnOk_of fn_assert_arg (by decide +kernel)
 
 theorem ok_discard_of : FnOk prog prims info (1948, ⟨0, [], 0⟩) :=
   fnOk_of fn_discard_of (by decide +kernel)
 
-theorem ok_is_try_call : FnOk prog prims info (1949, ⟨4, [], 0⟩) :=
+theorem ok_is_try_call : FnOk prog prims info (1949, ⟨3, [], 0⟩) :=
   fnOk_of fn_is_try_call (by decide +kernel)
 
 theorem ok_try_stmt : FnOk prog prims info (1950, ⟨3, [], 0⟩) :=
   fnOk_of fn_try_stmt (by decide +kernel)
 
-theorem ok_try_call_of : FnOk prog prims info (1951, ⟨31, [], 0⟩) :=
+theorem ok_try_call_of : FnOk prog prims info (1951, ⟨30, [], 0⟩) :=
   fnOk_of fn_try_call_of (by decide +kernel)
 
 theorem ok_match_named : FnOk prog prims info (1952, ⟨10, [0], 0⟩) :=
@@ -106,13 +106,13 @@ theorem ok_is_some_index : FnOk prog prims info (1977, ⟨0, [], 0⟩) :=
 theorem ok_find_fn : FnOk prog prims info (1978, ⟨2, [0], 0⟩) :=
   fnOk_of fn_find_fn (by decide +kernel)
 
-theorem ok_eff_found : FnOk prog prims info (1979, ⟨30, [0], 0⟩) :=
+theorem ok_eff_found : FnOk prog prims info (1979, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_found (by decide +kernel)
 
-theorem ok_eff_free : FnOk prog prims info (1980, ⟨30, [0], 0⟩) :=
+theorem ok_eff_free : FnOk prog prims info (1980, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_free (by decide +kernel)
 
-theorem ok_eff_infer : FnOk prog prims info (1981, ⟨30, [0], 0⟩) :=
+theorem ok_eff_infer : FnOk prog prims info (1981, ⟨29, [0], 0⟩) :=
   fnOk_of fn_eff_infer (by decide +kernel)
 
 theorem ok_binds_of_tys : FnOk prog prims info (1982, ⟨2, [], 0⟩) :=

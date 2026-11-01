@@ -1,5 +1,8 @@
-import Lanius.Mini.Reading.Infer
+module
 
+public import Lanius.Mini.Reading.Infer
+
+@[expose] public section
 /-! # The reading is deterministic, F1: names, lists and types
 
 Each relation of the reading gives at most one result for its inputs. This

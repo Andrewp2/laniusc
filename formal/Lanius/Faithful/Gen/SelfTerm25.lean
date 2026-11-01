@@ -58,7 +58,7 @@ theorem ok_BinOp_opcode : FnOk prog prims info (1184, ⟨1, [], 0⟩) :=
 theorem ok_CmpOp_setcc : FnOk prog prims info (1185, ⟨1, [], 0⟩) :=
   fnOk_of fn_CmpOp_setcc (by decide +kernel)
 
-theorem ok_pow2 : FnOk prog prims info (1186, ⟨2, [0], 0⟩) :=
+theorem ok_pow2 : FnOk prog prims info (1186, ⟨1, [0], 0⟩) :=
   fnOk_of fn_pow2 (by decide +kernel)
 
 theorem ok_MemWidth_rex : FnOk prog prims info (1187, ⟨1, [], 0⟩) :=

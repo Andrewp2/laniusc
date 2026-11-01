@@ -1,0 +1,285 @@
+// core::slice bulk operations against plain element loops. Every layout the
+// engine distinguishes is covered: packed bytes (Vec<u8>), packed i32
+// (Vec<i32>), one-word elements (Vec<u64>), three-word records (Vec<Rec>),
+// native arrays (one word per u8 and per u64), and a mixed pair (packed
+// bytes against a native byte array), which takes the element path. Each
+// random operation runs through the library on one pair of views and through
+// reference loops on an identical pair; both pairs must then agree. memchr
+// and memcmp are checked at every position for lengths 0..80, and
+// memchr_from, memcmp_range and ascii_run_end at random offsets. Exits 0 and
+// prints the operation count; a mismatch exits with a code naming its check.
+module app::main;
+import alloc::vec;
+import core::cmp;
+import core::function;
+import core::slice;
+import core::result;
+
+struct Rng { state: u64 }
+impl Rng {
+    fn borrow(&self) -> &Rng { return self; }
+    fn next(&self) -> u64 {
+        let x: u64 = self.state; x = x ^ (x << 13); x = x ^ (x >> 7); x = x ^ (x << 17);
+        self.state = x; return x;
+    }
+    fn below(&self, bound: i32) -> i32 { return ((self.next() >> 33) % (bound as u64)) as i32; }
+}
+
+struct Rec { a: u64, b: u32, c: bool }
+pub impl core::cmp::PartialEq<Rec> for Rec {
+    pub fn partial_eq(left: Rec, right: Rec) -> bool { return left.a == right.a && left.b == right.b && left.c == right.c; }
+    pub fn partial_ne(left: Rec, right: Rec) -> bool { return !Rec::partial_eq(left, right); }
+}
+
+struct MakeU8 {}
+impl MakeU8 { fn borrow(&self) -> &MakeU8 { return self; } }
+pub impl core::function::Mapper<u64, u8> for MakeU8 { pub fn apply(&self, value: u64) -> u8 { return (value & 255) as u8; } }
+struct MakeI32 {}
+impl MakeI32 { fn borrow(&self) -> &MakeI32 { return self; } }
+pub impl core::function::Mapper<u64, i32> for MakeI32 { pub fn apply(&self, value: u64) -> i32 { return ((value >> 20) as i32) - 1000000; } }
+struct MakeU64 {}
+impl MakeU64 { fn borrow(&self) -> &MakeU64 { return self; } }
+pub impl core::function::Mapper<u64, u64> for MakeU64 { pub fn apply(&self, value: u64) -> u64 { return value; } }
+struct MakeRec {}
+impl MakeRec { fn borrow(&self) -> &MakeRec { return self; } }
+pub impl core::function::Mapper<u64, Rec> for MakeRec {
+    pub fn apply(&self, value: u64) -> Rec { return Rec { a: value, b: (value >> 40) as u32, c: (value & 1) == 1 }; }
+}
+
+fn same<T>(left: [T], right: [T], count: i32) -> bool where T: core::cmp::PartialEq<T> {
+    let index: i32 = 0;
+    while (index < count) { if (!T::partial_eq(left[index], right[index])) { return false; } index += 1; }
+    return true;
+}
+
+fn seed<T, P>(left: [T], right: [T], count: i32, make: &P, rng: &Rng) where P: core::function::Mapper<u64, T> {
+    let index: i32 = 0;
+    while (index < count) { let value: T = make.apply(rng.next()); left[index] = value; right[index] = value; index += 1; }
+}
+
+// Reference copy, as if through a temporary when both runs share one view.
+fn ref_move<T>(to: [T], to_start: i32, from: [T], from_start: i32, count: i32) {
+    if (to_start > from_start) {
+        let k: i32 = count;
+        while (k > 0) { k -= 1; to[to_start + k] = from[from_start + k]; }
+    } else {
+        let k: i32 = 0;
+        while (k < count) { to[to_start + k] = from[from_start + k]; k += 1; }
+    }
+}
+
+struct Tally { operations: i32 }
+impl Tally { fn borrow(&self) -> &Tally { return self; } }
+
+// Random operations on (a, c) through the library and on (b, d) by reference.
+// The views each back `n` elements; a/b and c/d start equal.
+fn exercise<T, P>(code: i32, a: [T], c: [T], b: [T], d: [T], n: i32, make: &P, rng: &Rng, tally: &Tally) -> i32
+    where T: core::cmp::PartialEq<T>, P: core::function::Mapper<u64, T> {
+    let round: i32 = 0;
+    while (round < 600) {
+        let op: i32 = rng.below(7);
+        let start: i32 = rng.below(n + 1);
+        let end: i32 = start + rng.below(n - start + 1);
+        let count: i32 = end - start;
+        let at: i32 = rng.below(n - count + 1);
+        if (op == 0) {
+            if (!core::slice::copy_within(a, n, start, end, at)) { return code + 1; }
+            ref_move(b, at, b, start, count);
+        }
+        if (op == 1) {
+            if (!core::slice::copy_nonoverlapping_range(a, n, at, c, n, start, count)) { return code + 2; }
+            ref_move(b, at, d, start, count);
+        }
+        if (op == 2) {
+            let value: T = make.apply(rng.next());
+            if (!core::slice::fill_range(a, n, start, end, value)) { return code + 3; }
+            let k: i32 = start;
+            while (k < end) { b[k] = value; k += 1; }
+        }
+        if (op == 3) {
+            if (!core::slice::swap_with_slice(a, count, c, count)) { return code + 4; }
+            let k: i32 = 0;
+            while (k < count) { let held: T = b[k]; b[k] = d[k]; d[k] = held; k += 1; }
+        }
+        if (op == 4) {
+            if (!core::slice::copy_from_slice(c, count, a, count)) { return code + 5; }
+            ref_move(d, 0, b, 0, count);
+        }
+        if (op == 5) {
+            if (count > 0) {
+                if (!core::slice::remove_at(a, end, start)) { return code + 6; }
+                ref_move(b, start, b, start + 1, end - start - 1);
+            }
+        }
+        if (op == 6) {
+            if (end < n) {
+                let value: T = make.apply(rng.next());
+                if (!core::slice::insert(a, end, n, start, value)) { return code + 7; }
+                ref_move(b, start + 1, b, start, end - start); b[start] = value;
+            }
+        }
+        if (!same(a, b, n) || !same(c, d, n)) { return code + 8; }
+        tally.operations += 1;
+        round += 1;
+    }
+    let value: T = make.apply(rng.next());
+    if (core::slice::fill(a, n, value) != n) { return code + 9; }
+    let k: i32 = 0;
+    while (k < n) { b[k] = value; k += 1; }
+    if (!same(a, b, n)) { return code + 9; }
+    return 0;
+}
+
+fn vec_of<T>(n: i32, value: T) -> alloc::vec::Vec<T> {
+    let v: alloc::vec::Vec<T> = alloc::vec::new();
+    v.try_resize(n, value).unwrap();
+    return v;
+}
+
+fn run_vec<T, P>(code: i32, n: i32, zero: T, make: &P, rng: &Rng, tally: &Tally) -> i32
+    where T: core::cmp::PartialEq<T>, P: core::function::Mapper<u64, T> {
+    let va: alloc::vec::Vec<T> = vec_of(n, zero); let vc: alloc::vec::Vec<T> = vec_of(n, zero);
+    let vb: alloc::vec::Vec<T> = vec_of(n, zero); let vd: alloc::vec::Vec<T> = vec_of(n, zero);
+    let a: [T] = va.as_slice(); let b: [T] = vb.as_slice(); let c: [T] = vc.as_slice(); let d: [T] = vd.as_slice();
+    seed(a, b, n, make, rng); seed(c, d, n, make, rng);
+    return exercise(code, a, c, b, d, n, make, rng, tally);
+}
+
+// Byte search and comparison at every position, on one layout.
+fn bytes_at(code: i32, a: [u8], b: [u8], rng: &Rng, tally: &Tally) -> i32 {
+    let len: i32 = 0;
+    while (len <= 80) {
+        let k: i32 = 0;
+        while (k < len) { a[k] = (65 + rng.below(3)) as u8; b[k] = a[k]; k += 1; }
+        // memchr: every needle value present or absent, then a planted match at each position.
+        let needle: i32 = 64;
+        while (needle < 69) {
+            let want: i32 = -1; let i: i32 = 0;
+            while (i < len && want < 0) { if (a[i] == needle as u8) { want = i; } i += 1; }
+            if (core::slice::memchr(a, len, needle as u8) != want) { return code + 1; }
+            needle += 1;
+        }
+        let at: i32 = 0;
+        while (at < len) {
+            let keep: u8 = a[at]; a[at] = 200;
+            let want: i32 = -1; let i: i32 = 0;
+            while (i < len && want < 0) { if (a[i] == 200) { want = i; } i += 1; }
+            if (core::slice::memchr(a, len, 200) != want) { return code + 2; }
+            a[at] = keep; at += 1;
+        }
+        // memcmp: equal, then one byte raised and lowered at each position.
+        if (core::slice::memcmp(a, b, len) != 0) { return code + 3; }
+        at = 0;
+        while (at < len) {
+            let keep: u8 = b[at];
+            b[at] = keep + 1;
+            if (core::slice::memcmp(a, b, len) != -1 || core::slice::memcmp(b, a, len) != 1) { return code + 4; }
+            b[at] = keep - 1;
+            if (core::slice::memcmp(a, b, len) != 1) { return code + 5; }
+            if (at + 1 < len) { let later: u8 = b[len - 1]; b[len - 1] = later + 1; if (core::slice::memcmp(a, b, at) != 0) { return code + 6; } b[len - 1] = later; }
+            b[at] = keep; at += 1;
+            tally.operations += 1;
+        }
+        len += 1;
+    }
+    return 0;
+}
+
+// memchr_from, memcmp_range and ascii_run_end at random offsets of 81-byte views.
+fn ranges_at(code: i32, a: [u8], b: [u8], rng: &Rng, tally: &Tally) -> i32 {
+    let k: i32 = 0;
+    while (k < 81) { a[k] = (65 + rng.below(3)) as u8; b[k] = (65 + rng.below(2)) as u8; k += 1; }
+    let trial: i32 = 0;
+    while (trial < 1500) {
+        let start: i32 = rng.below(82); let end: i32 = start + rng.below(82 - start);
+        let needle: u8 = (64 + rng.below(4)) as u8;
+        let want: i32 = -1; let i: i32 = start;
+        while (i < end && want < 0) { if (a[i] == needle) { want = i; } i += 1; }
+        if (core::slice::memchr_from(a, start, end, needle) != want) { return code + 1; }
+        let count: i32 = rng.below(82);
+        let left: i32 = rng.below(82 - count); let right: i32 = rng.below(82 - count);
+        if (rng.below(2) == 0) { right = left; k = 0; while (k < count) { b[right + k] = a[left + k]; k += 1; } if (count > 0 && rng.below(2) == 0) { b[right + rng.below(count)] = 66; } }
+        let order: i32 = 0; i = 0;
+        while (i < count && order == 0) {
+            if (a[left + i] < b[right + i]) { order = -1; }
+            if (a[left + i] > b[right + i]) { order = 1; }
+            i += 1;
+        }
+        if (core::slice::memcmp_range(a, left, b, right, count) != order) { return code + 2; }
+        if (rng.below(4) == 0) { a[rng.below(81)] = (128 + rng.below(128)) as u8; }
+        let ascii: i32 = start; while (ascii < end && a[ascii] < 128) { ascii += 1; }
+        if (core::slice::ascii_run_end(a, start, end) != ascii) { return code + 4; }
+        if (rng.below(8) == 0) { k = 0; while (k < 81) { if (a[k] >= 128) { a[k] = 65; } k += 1; } }
+        tally.operations += 1; trial += 1;
+    }
+    if (core::slice::memchr_from(a, -1, 10, 65) != -1 || core::slice::memcmp_range(a, -1, b, 0, 5) != 0) { return code + 3; }
+    if (core::slice::ascii_run_end(a, -1, 10) != -1 || core::slice::ascii_run_end(a, 7, 7) != 7) { return code + 5; }
+    return 0;
+}
+
+// The new Vec methods on one-word and packed elements.
+fn vec_methods(rng: &Rng) -> i32 {
+    let v: alloc::vec::Vec<u64> = alloc::vec::new();
+    let k: i32 = 0;
+    while (k < 50) { v.try_push(k as u64).unwrap(); k += 1; }
+    v.try_extend_from_slice(v.as_slice(), 50).unwrap();
+    if (v.len() != 100) { return 201; }
+    k = 0;
+    while (k < 100) { if (v.at(k) != ((k % 50) as u64)) { return 202; } k += 1; }
+    let w: alloc::vec::Vec<u64> = vec_of(100, 7);
+    if (!core::result::is_err(w.copy_from_slice(v.as_slice(), 99))) { return 203; }
+    w.copy_from_slice(v.as_slice(), 100).unwrap();
+    w.fill(9); k = 0;
+    while (k < 100) { if (w.at(k) != 9 || v.at(k) != ((k % 50) as u64)) { return 204; } k += 1; }
+    w.swap_with_slice(v.as_slice(), 100).unwrap();
+    if (w.at(73) != 23 || v.at(73) != 9) { return 205; }
+    w.swap(0, 99).unwrap();
+    if (w.at(0) != 49 || w.at(99) != 0 || !core::result::is_err(w.swap(0, 100))) { return 206; }
+    let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+    let text: [u8; 5] = [104, 101, 108, 108, 111];
+    k = 0;
+    while (k < 40) { bytes.try_extend_from_slice(text, 5).unwrap(); k += 1; }
+    if (bytes.len() != 200 || core::slice::memchr(bytes.as_slice(), 200, 111) != 4) { return 207; }
+    if (!core::result::is_err(bytes.try_extend_from_slice(text, -1))) { return 208; }
+    bytes.try_extend_from_slice(bytes.as_slice(), 200).unwrap();
+    if (bytes.len() != 400 || bytes.at(399) != 111 || bytes.at(395) != 104) { return 209; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let rng: Rng = Rng { state: 88172645463325252 }; let tally: Tally = Tally { operations: 0 };
+    let r: i32 = 0;
+    let mu8: MakeU8 = MakeU8 {}; let mi32: MakeI32 = MakeI32 {}; let mu64: MakeU64 = MakeU64 {}; let mrec: MakeRec = MakeRec {};
+    let zero_rec: Rec = Rec { a: 0, b: 0, c: false };
+    let lengths: [i32; 4] = [1, 9, 40, 97];
+    let i: i32 = 0;
+    while (i < 4) {
+        let n: i32 = lengths[i];
+        r = run_vec(10, n, 0 as u8, mu8.borrow(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+        r = run_vec(20, n, 0, mi32.borrow(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+        r = run_vec(30, n, 0 as u64, mu64.borrow(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+        r = run_vec(40, n, zero_rec, mrec.borrow(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+        i += 1;
+    }
+    // Native arrays, and packed bytes against a native byte array.
+    let na: [u8; 97] = [0; 97]; let nb: [u8; 97] = [0; 97]; let nc: [u8; 97] = [0; 97]; let nd: [u8; 97] = [0; 97];
+    seed(na, nb, 97, mu8.borrow(), rng.borrow()); seed(nc, nd, 97, mu8.borrow(), rng.borrow());
+    r = exercise(50, na, nc, nb, nd, 97, mu8.borrow(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+    let wa: [u64; 97] = [0; 97]; let wb: [u64; 97] = [0; 97]; let wc: [u64; 97] = [0; 97]; let wd: [u64; 97] = [0; 97];
+    seed(wa, wb, 97, mu64.borrow(), rng.borrow()); seed(wc, wd, 97, mu64.borrow(), rng.borrow());
+    r = exercise(60, wa, wc, wb, wd, 97, mu64.borrow(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+    let pa: alloc::vec::Vec<u8> = vec_of(97, 0 as u8); let pb: alloc::vec::Vec<u8> = vec_of(97, 0 as u8);
+    let ma: [u8; 97] = [0; 97]; let mb: [u8; 97] = [0; 97];
+    seed(pa.as_slice(), pb.as_slice(), 97, mu8.borrow(), rng.borrow()); seed(ma, mb, 97, mu8.borrow(), rng.borrow());
+    r = exercise(70, pa.as_slice(), ma, pb.as_slice(), mb, 97, mu8.borrow(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+    // Byte search on packed and native layouts.
+    let sa: alloc::vec::Vec<u8> = vec_of(81, 0 as u8); let sb: alloc::vec::Vec<u8> = vec_of(81, 0 as u8);
+    r = bytes_at(100, sa.as_slice(), sb.as_slice(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+    let ta: [u8; 81] = [0; 81]; let tb: [u8; 81] = [0; 81];
+    r = bytes_at(110, ta, tb, rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+    r = ranges_at(120, sa.as_slice(), sb.as_slice(), rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+    r = ranges_at(130, ta, tb, rng.borrow(), tally.borrow()); if (r != 0) { return r; }
+    r = vec_methods(rng.borrow()); if (r != 0) { return r; }
+    print(tally.operations);
+    return 0;
+}

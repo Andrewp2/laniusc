@@ -15,7 +15,7 @@ open Lanius.Faithful.SelfCert
 theorem ok_trait_at : FnOk prog prims info (1744, ⟨8, [], 0⟩) :=
   fnOk_of fn_trait_at (by decide +kernel)
 
-theorem ok_bound_path_spellings : FnOk prog prims info (1745, ⟨5, [0], 0⟩) :=
+theorem ok_bound_path_spellings : FnOk prog prims info (1745, ⟨4, [0], 0⟩) :=
   fnOk_of fn_bound_path_spellings (by decide +kernel)
 
 theorem ok_args_of_items : FnOk prog prims info (1746, ⟨11, [], 0⟩) :=

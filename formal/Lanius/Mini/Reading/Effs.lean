@@ -1,5 +1,49 @@
-import Lanius.Mini.Reading.Nested
+module
 
+public import Lanius.Mini.Reading.Nested
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Frontend.P.argView
+import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.collect
+import all Lanius.Mini.Frontend.P.consBinder
+import all Lanius.Mini.Frontend.P.consBound
+import all Lanius.Mini.Frontend.P.consTreeTail
+import all Lanius.Mini.Frontend.P.consTys
+import all Lanius.Mini.Frontend.P.divergeArm
+import all Lanius.Mini.Frontend.P.bindsOfTys
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.floatTyped
+import all Lanius.Mini.Frontend.P.fnInstRet
+import all Lanius.Mini.Frontend.P.freshId
+import all Lanius.Mini.Frontend.P.grammarPart13
+import all Lanius.Mini.Frontend.P.hasConst
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.isPathCall
+import all Lanius.Mini.Frontend.P.itemOf
+import all Lanius.Mini.Frontend.P.matchTysOrNone
+import all Lanius.Mini.Frontend.P.noBlock
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.paramGoals
+import all Lanius.Mini.Frontend.P.pathRef
+import all Lanius.Mini.Frontend.P.pickTy
+import all Lanius.Mini.Frontend.P.purePart
+import all Lanius.Mini.Frontend.P.repeatEff
+import all Lanius.Mini.Frontend.P.retBinds
+import all Lanius.Mini.Frontend.P.rootInsts
+import all Lanius.Mini.Frontend.P.scalarOf
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.sliceHead
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.tryLet
+import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.typePathSpellings
+import all Lanius.Mini.Frontend.P.wideOf
+
+@[expose] public section
 /-! # The reading, V8d: effectful expressions
 
 `EffR env scope expected c x`: the effectful expression `x` a node `c` of

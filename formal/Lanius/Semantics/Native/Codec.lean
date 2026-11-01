@@ -1,5 +1,8 @@
-import Lanius.Semantics
+module
 
+public import Lanius.Semantics
+
+@[expose] public section
 namespace Lanius.Semantics
 
 /-- Four arbitrary bytes survive signed-i32 decoding and re-encoding. -/

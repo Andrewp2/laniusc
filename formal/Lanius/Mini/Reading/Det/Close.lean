@@ -1,6 +1,11 @@
-import Lanius.Mini.Reading.Det.Stmts
-import Lanius.Mini.Reading.Lits
+module
 
+public import Lanius.Mini.Reading.Det.Stmts
+public import Lanius.Mini.Reading.Lits
+import all Lanius.Mini.Frontend.P.negWideI32
+import all Lanius.Mini.Frontend.P.shrFirst
+
+@[expose] public section
 /-! # The reading is deterministic, F1: closing and typing literals
 
 Closing a function against the instance tables (`FuncClosed`) and typing

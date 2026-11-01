@@ -1,6 +1,20 @@
-import Lanius.Mini.Reading.Det.Effs
-import Lanius.Mini.Reading.Stmts
+module
 
+public import Lanius.Mini.Reading.Det.Effs
+public import Lanius.Mini.Reading.Stmts
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Frontend.P.callParts
+import all Lanius.Mini.Frontend.P.projection
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.forRange
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.matchStmtIf
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.sliceHead
+import all Lanius.Mini.Frontend.P.textSelf
+
+@[expose] public section
 /-! # The reading is deterministic, F1: statements
 
 `stmtsR_unique`: in a scope whose locals have distinct ids, a statement list

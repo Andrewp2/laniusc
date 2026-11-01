@@ -17,6 +17,6 @@ def eIndexClosed (s : Nat) (x : Option SrcEff) : Option SrcEff :=
 def eArraySliceClosed (t : Option SrcType) (a : Nat) : Option SrcEff :=
   match t with
   | none => none
-  | some e => some (SrcEff.eArraySlice e a)
+  | some e => some (SrcEff.arraySlice e a)
 
 end Lanius.Mini
