@@ -95,7 +95,7 @@ as each lands, F12, F13. Each feature extends the front end (the reading
 and `build`), the front pass (`compileSource_correct`) and, where needed,
 the mini IR and the x86 model, with the gate's difftests for each.
 
-### Bare shift amounts (found 10-31 by `fuzz_oracle.py`; to fix)
+### Bare shift amounts (found 10-31 by `fuzz_oracle.py`; fixed in bcd36a2b0: a bare amount reads as i32, as laniusc does)
 
 A reading bug, not a gap: the front end reads a shift amount whose atoms are
 all literals (or constants, which it reads as their literals) at the
