@@ -5,13 +5,16 @@ combines CLI parsing, owned arguments, bounded input buffering,
 [compression containers](extended-compression.md) and checked native output.
 
 ```text
-compress-bytes [-d] [--format raw|zlib|gzip]
+compress-bytes [-d] [--format raw|zlib|gzip] [--level 0-3]
                [--max-input N] [--max-output N] [--max-members N]
 ```
 
 Input is binary stdin and output is binary stdout. Encoding is the default;
 `--decompress` / `-d` selects decoding. The default format is gzip. `--format`
-or `-f` selects raw DEFLATE, zlib or gzip explicitly. Short groups such as
+or `-f` selects raw DEFLATE, zlib or gzip explicitly. `--level` / `-l`
+selects the encoder: 0 (default) is the fixed-Huffman encoder, and 1-3 are the
+[dynamic Huffman levels](extended-streaming-deflate.md#dynamic-huffman-levels)
+through `ext::compression::encode_level`. Short groups such as
 `-dfgzip` work. There are no filename operands, automatic format detection or
 implicit extraction of names stored in gzip headers.
 

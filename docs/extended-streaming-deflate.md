@@ -145,7 +145,70 @@ encoder's output.
 
 Bit-serial CRC-32 accounted for about 2.5 s of the corpus's old time. The remaining cost is
 per-byte bookkeeping in the generated code; the fixed-Huffman profile (no dynamic trees)
-keeps output larger than gzip's.
+keeps output larger than gzip's. The opt-in [dynamic Huffman levels](#dynamic-huffman-levels)
+close most of that gap.
+
+## Dynamic Huffman levels
+
+```text
+level_window_len() -> i32       // 65552 bytes
+level_pending_len() -> i32      // 32784 bytes
+level_scratch_len() -> i32      // 102400 i32 elements
+level_encoder(window:View<u8>, pending:View<u8>, scratch:View<i32>,
+              level:i32) -> Result<Encoder,Error>
+```
+
+Level 0 is `encoder(window, pending, scratch)`, so its output is unchanged.
+Levels 1-3 are opt-in. They return the same `Encoder` with the same
+`step`/`is_done`/`reset` contract. The window and pending views must be packed
+(stride +1, any `Vec<u8>` view) and at least the lengths above, or the call
+returns `Bounds`, `ScratchTooSmall(65552)`, `Capacity(32784)` or
+`ScratchTooSmall(102400)` (scratch); any other level is `Bounds`.
+
+- **Matching.** A 32 KiB sliding window over a 64 KiB buffer. Every position
+  is inserted into a 32,768-entry hash table with a 32,768-entry chain, keyed
+  on a multiplicative hash of the next four bytes. Matches are 3-258 bytes and
+  are compared a word at a time.
+  Absolute positions start at 32768, so an empty slot is always out of range,
+  and they are rebased before reaching 2^30.
+- **Parameters.** As in zlib: `chain` bounds the candidates per search (a
+  quarter once the previous match reaches `good`), and a match of `nice`
+  bytes ends the search and skips hashing the positions inside it. Lazy
+  matching retries a match shorter than `lazy` one byte later. A three-byte
+  match farther than 4,096 bytes is dropped.
+
+  | Level | Chain | Lazy | Nice | Good |
+  | --- | --- | --- | --- | --- |
+  | 1 | 4 | greedy | 16 | 4 |
+  | 2 | 4 | 8 | 32 | 4 |
+  | 3 | 16 | 32 | 258 | 16 |
+
+- **Blocks.** Each 32 KiB of input becomes one block. Its symbols are kept in
+  scratch, and the block is written as dynamic, fixed or stored, whichever is
+  smallest in exact bits. Bit packing continues across blocks, so only the
+  final block pads to a byte. As with level 0, input that ends on a 32 KiB
+  boundary adds an empty final block.
+- **Codes.** Code lengths come from in-place minimum-redundancy lengths
+  (Moffat and Katajainen) over frequency-sorted symbols. They are limited to
+  15 bits (7 for the code-length code) by removing the Kraft excess as zlib
+  does. Code lengths use the RFC 1951 run codes 16, 17 and 18. Symbols leave
+  a 64-bit word at a time.
+
+### Level measurements
+
+These were measured on the Linux x86_64 laptop (load average 9–10) with the shared `lcc` of 2026-11-01.
+The program is the same gzip streaming program as above, with the level as its argument. Each time is the
+fastest of seven interleaved runs. Every level's output was decoded by Python `gzip` and by
+`zlib` as a raw stream.
+
+| Input | Level 0 | Level 1 | Level 2 | Level 3 | `gzip -1` | `gzip -6` |
+| --- | --- | --- | --- | --- | --- | --- |
+| docs/stdlib tar, 18,145,280 B | 10,112,519 B, 0.37 s | 8,205,489 B (+3.9%), 0.57 s | 8,120,999 B (+2.9%), 0.63 s | 7,920,440 B (+0.3%), 0.78 s | 8,651,104 B, 0.21 s | 7,894,861 B, 0.46 s |
+| text tar, 13,281,280 B | 5,401,026 B, 0.28 s | 3,546,334 B (+9.4%), 0.35 s | 3,464,239 B (+6.9%), 0.39 s | 3,269,766 B (+0.9%), 0.56 s | 3,973,737 B, 0.12 s | 3,240,787 B, 0.35 s |
+
+Percentages are relative to `gzip -6`. Level 2 runs at 28.7 MB/s on the docs/stdlib tar and
+33.8 MB/s on the text tar. On this run level 0 and `gzip -6` were each about 9% slower than in
+the quieter run above.
 
 ## Raw, zlib and gzip containers
 
@@ -155,6 +218,9 @@ EncodeFailure { error:Error, read:i32, written:i32 }
 default_encode_limits() -> EncodeLimits
 encoder(block:View<u8>, pending:View<u8>, scratch:View<i32>,
         format:Format, limits:EncodeLimits) -> Result<Encoder,Error>
+level_encoder(block:View<u8>, pending:View<u8>, scratch:View<i32>,
+              format:Format, limits:EncodeLimits, level:i32)
+    -> Result<Encoder,Error>   // level 0 is encoder()
 Encoder.borrow() -> &Encoder
 Encoder.step(input:View<u8>, output:View<u8>, final_input:bool)
     -> Result<ext::deflate::Step,EncodeFailure>

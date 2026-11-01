@@ -5,7 +5,7 @@ usage: seqdiff_oracle.py SEQ_DIFF SEQ_PATCH WORKDIR [CASES]
 
 1. Minimality: Myers output edit length equals an O(N*M) LCS distance.
 2. Round trip: GNU patch and seq_patch applied to our diffs reproduce targets
-   (Myers and patience, several context widths).
+   (Myers, patience and the git-style default, several context widths).
 3. Interop: seq_patch applies real GNU `diff -u` / `-U0` / `-U5` output.
 4. Offset and fuzz: shifted and context-edited bases agree with GNU patch -F2
    on output bytes and on the set of rejected hunks.
@@ -148,15 +148,16 @@ def main():
     for case in range(CASES):
         a, b = gen_pair(rng)
         best = lcs_distance(a, b)
-        got = roundtrip(a, b, [], "myers -U3")
+        got = roundtrip(a, b, ["--myers"], "myers -U3")
         if got is not None:
             if got != best:
                 fail("myers edit length %d != LCS distance %d" % (got, best), a, b)
             bump("myers minimal (== O(NM) LCS)")
         ctx = rng.choice(["0", "1", "5"])
-        got = roundtrip(a, b, ["-U", ctx], "myers -U" + ctx)
+        got = roundtrip(a, b, ["--myers", "-U", ctx], "myers -U" + ctx)
         if got is not None and got != best:
             fail("myers -U%s not minimal" % ctx, a, b)
+        roundtrip(a, b, [], "default (git xdiff) -U3")
         got = roundtrip(a, b, ["--patience"], "patience -U3")
         if got is not None:
             if got < best:
@@ -195,7 +196,7 @@ def fuzz_cases(rng):
             b[at:at + 1] = uniq_lines(rng, b"new", rng.randint(0, 2))
         write(A, b"".join(a))
         write(B, b"".join(b))
-        diff = run([SEQ_DIFF, A, B]).stdout
+        diff = run([SEQ_DIFF, "--myers", A, B]).stdout
         if not diff:
             continue
         write(P, diff)
@@ -238,7 +239,7 @@ def ambiguous_fuzz_cases(rng):
             b[at:at + 1] = [rng.choice(d) for _ in range(rng.randint(0, 2))]
         write(A, b"".join(a))
         write(B, b"".join(b))
-        diff = run([SEQ_DIFF, A, B]).stdout
+        diff = run([SEQ_DIFF, "--myers", A, B]).stdout
         if not diff:
             continue
         write(P, diff)
@@ -269,7 +270,7 @@ def scale_cases(rng):
         a, b = b"".join(a), b"".join(b)
         write(A, a)
         write(B, b)
-        for args, label in (([], "myers"), (["--patience"], "patience")):
+        for args, label in ((["--myers"], "myers"), (["--patience"], "patience")):
             r = run([SEQ_DIFF] + args + [A, B])
             write(P, r.stdout)
             rc, out, _ = ours_patch(A, P, 0)
@@ -283,7 +284,7 @@ def scale_cases(rng):
                 fail("scale patience below minimum", a, b)
             bump("scale %d-line %s round trip (edit length %d, GNU --minimal %d)" % (n, label, got, gnu))
         if n == 2000:
-            if body_edits(run([SEQ_DIFF, A, B]).stdout) != lcs_distance(a, b):
+            if body_edits(run([SEQ_DIFF, "--myers", A, B]).stdout) != lcs_distance(a, b):
                 fail("scale 2000 LCS", a, b)
             bump("scale 2000-line myers == O(NM) LCS")
 

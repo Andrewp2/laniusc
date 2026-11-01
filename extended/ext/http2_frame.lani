@@ -184,10 +184,19 @@ pub fn check_setting(setting: Setting) -> core::result::Result<i32,Error> {
 fn push4(out: &alloc::vec::Vec<u8>, value: i64) -> bool {
     return out.try_push(((value >> 24) & 255) as u8).is_ok() && out.try_push(((value >> 16) & 255) as u8).is_ok() && out.try_push(((value >> 8) & 255) as u8).is_ok() && out.try_push((value & 255) as u8).is_ok();
 }
+// Room for n more items. try_reserve is exact, so grow to at least twice
+// the capacity: repeated appends then reallocate O(log n) times, not once each.
+fn reserve_more<T>(v: &alloc::vec::Vec<T>, n: i32) -> bool {
+    if (n <= v.capacity() - v.len()) { return true; }
+    let target: i32 = v.len() + n; let doubled: i32 = 16;
+    if (v.capacity() < 536870912) { doubled = v.capacity() * 2; if (doubled < 16) { doubled = 16; } }
+    if (doubled > target && v.try_reserve(doubled - v.len()).is_ok()) { return true; }
+    return v.try_reserve(n).is_ok();
+}
 // Append a frame header.
 pub fn write_header(out: &alloc::vec::Vec<u8>, length: i32, kind: i32, flags: i32, stream: i32) -> bool {
     if (length < 0 || length > LARGEST_FRAME_SIZE || stream < 0) { return false; }
-    if (out.try_reserve(HEADER_BYTES + length).is_err()) { return false; }
+    if (!reserve_more(out, HEADER_BYTES + length)) { return false; }
     return out.try_push(((length >> 16) & 255) as u8).is_ok() && out.try_push(((length >> 8) & 255) as u8).is_ok() && out.try_push((length & 255) as u8).is_ok()
         && out.try_push(kind as u8).is_ok() && out.try_push(flags as u8).is_ok() && push4(out, stream as i64);
 }

@@ -4,8 +4,9 @@
 //
 // The code is pure: values are never mutated, recursion replaces loops, and
 // lists are the prelude's cons list. Arithmetic on usize goes through
-// plus/minus/times, which panic instead of wrapping, so a run that returns
-// computed exactly what the Lean definitions compute over Nat.
+// plus/minus/times: plus and times panic instead of wrapping and minus
+// truncates at 0, so a run that returns computed exactly what the Lean
+// definitions compute over Nat.
 module mini::compiler;
 import alloc::allocator;
 import core::mem;
@@ -59,10 +60,10 @@ pub fn times(a: usize, b: usize) -> usize {
     return product;
 }
 
-// Nat a - b, used only where a >= b
+// Nat a - b, truncated: 0 when b > a
 pub fn minus(a: usize, b: usize) -> usize {
     if (b > a) {
-        core::panic::panic();
+        return 0;
     }
     return a - b;
 }

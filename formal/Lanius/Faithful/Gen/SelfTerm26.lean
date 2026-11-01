@@ -57,7 +57,7 @@ theorem ok_ite_then : FnOk prog prims info (1225, ⟨0, [], 0⟩) :=
 theorem ok_lx_ident_run : FnOk prog prims info (1226, ⟨2, [0], 0⟩) :=
   fnOk_of fn_lx_ident_run (by decide +kernel)
 
-theorem ok_lx_prefixed_base : FnOk prog prims info (1227, ⟨3, [], 0⟩) :=
+theorem ok_lx_prefixed_base : FnOk prog prims info (1227, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_prefixed_base (by decide +kernel)
 
 theorem ok_lx_digit_run : FnOk prog prims info (1228, ⟨5, [], 0⟩) :=
@@ -108,7 +108,7 @@ theorem ok_p_path_ident_args : FnOk prog prims info (1245, ⟨0, [], 0⟩) :=
 theorem ok_attach_after : FnOk prog prims info (1246, ⟨6, [1], 1⟩) :=
   fnOk_of fn_attach_after (by decide +kernel)
 
-theorem ok_cons_field : FnOk prog prims info (1247, ⟨5, [], 0⟩) :=
+theorem ok_cons_field : FnOk prog prims info (1247, ⟨4, [], 0⟩) :=
   fnOk_of fn_cons_field (by decide +kernel)
 
 theorem ok_cons_variant_tail : FnOk prog prims info (1248, ⟨1, [], 0⟩) :=

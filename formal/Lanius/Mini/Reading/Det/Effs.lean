@@ -1,5 +1,11 @@
-import Lanius.Mini.Reading.Det.Nested
+module
 
+public import Lanius.Mini.Reading.Det.Nested
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.shrFirst
+
+@[expose] public section
 /-! # The reading is deterministic, F1: effectful expressions
 
 `effR_unique`: in a scope whose locals have distinct ids, a node reads as
@@ -18,7 +24,7 @@ def VariantsNodup (decls : Decls) : Prop :=
   ∀ (d : Nat) (t : TypeDecl), decls.types[d]? = some t → t.isEnum = true → t.variants.Nodup
 
 /-- Close a goal whose hypotheses give one node two different productions. -/
-macro "eff_clash" : tactic => `(tactic| (exfalso; (try simp only [ChainForm, MethodForm, levelProds, List.mem_cons, List.not_mem_nil, or_false] at *); (try unfold_prods); omega))
+macro "eff_clash" : tactic => `(tactic| (exfalso; prods_clash [ChainForm, MethodForm, levelProds]))
 
 theorem effArmsR_named {env : FrontEnv} : ∀ {scope : List Local} {expected : Option Ty} {owner : TypeDecl}
     {vs : List VariantTy} {os : List CTree} {eas : List EffArm}, EffArmsR env scope expected owner vs os eas →

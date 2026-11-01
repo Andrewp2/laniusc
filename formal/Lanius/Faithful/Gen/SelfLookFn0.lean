@@ -107,7 +107,7 @@ theorem fn_pack_round : prog.funcs[54]? = some (src_pack_round 5 54 56 77 78 79 
 theorem np_pack_round : prims.isPrim 54 = false := by decide +kernel
 theorem fn_round_join : prog.funcs[55]? = some (src_round_join 51 75) := get_of_drop at_round_join
 theorem np_round_join : prims.isPrim 55 = false := by decide +kernel
-theorem fn_minus : prog.funcs[56]? = some (src_minus 50) := get_of_drop at_minus
+theorem fn_minus : prog.funcs[56]? = some (src_minus) := get_of_drop at_minus
 theorem np_minus : prims.isPrim 56 = false := by decide +kernel
 theorem fn_SrcType_is_unit : prog.funcs[57]? = some (src_SrcType_is_unit) := get_of_drop at_SrcType_is_unit
 theorem np_SrcType_is_unit : prims.isPrim 57 = false := by decide +kernel

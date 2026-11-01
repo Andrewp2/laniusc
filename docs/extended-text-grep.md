@@ -133,10 +133,25 @@ match, are the selected ones. With `--count` only their number is added.
 
 Before the scan, `Regex.required_literal` gives the longest literal that every
 match contains (up to 256 bytes). For each 64 KiB read, the complete records
-form one region. `core::search::find` looks for the literal across the whole
-region, and only the records containing it go to the matcher. One pass over
+form one region. text_grep looks for the literal across the whole region,
+and only the records containing it go to the matcher. One pass over
 each gap between those records checks UTF-8 and counts its LFs, eight bytes per
-step, so line numbers and errors stay exact. When the pattern is that literal
+step, so line numbers and errors stay exact. Without `--invert` that pass also
+covers the hit record up to its LF, so the record is not validated again;
+if the combined range is invalid, the gap and the record are checked apart,
+as before.
+
+The literal search (`find_pair`) gives the same answer as
+`core::search::find` and probes the same two needle offsets: the rarest byte
+by `core::search::rank`, and the rarest byte that differs from it. It tests
+eight candidate starts per step, in two word views of the region shifted by
+the two offsets, and compares the whole needle only where both bytes match.
+Two words without the first probe byte are skipped together. `find` instead
+calls `find_byte` for the first probe byte and checks the second byte at each
+of its hits, which costs one call per occurrence of a common byte such as the
+`h` of `the`. Full compares past `core::search`'s linear budget hand the rest
+of the region to `core::search::find`, which then switches to Two-Way, so the
+search stays linear. When the pattern is that literal
 alone (`Regex.literal_length()`) and it has no CR or LF, a valid record that
 contains it is selected without running the matcher at all. The region path
 is used only when none of its records can exceed `--max-line` and none can
@@ -154,7 +169,8 @@ records, which brings in dense literal hits and long line scans. Seeds
 20261031, 1 and 2 gave 1,500/1,500 identical runs, both before and after the
 output rework (`text-grep-output-receipt.log`) and after the skip and numbered
 blocks (`text-grep-numbers-receipt.log`) and after the counting scan
-(`text-grep-count-receipt.log`), tiny build included. A build with a 3-state DFA
+(`text-grep-count-receipt.log`) and after the word-wise literal search
+(`text-grep-pair-receipt.log`), tiny build included. A build with a 3-state DFA
 cache and 2 partials gave 800/800 on seeds 20261031 and 7, which forces the
 undecided-record path (log `target/claude-work/s3/text-grep-scan-receipt.log`).
 
@@ -277,6 +293,25 @@ and `a.c` at 298 (GNU 70). For `a.c`, the start-state skip stops at every
 `a`. Log: `target/claude-work/s3/grep-count-timings.log`; that run was at load
 17, so it is noisier.
 
+The word-wise literal search (`find_pair`, see [Literal prefilter](#literal-prefilter))
+and the combined gap-and-hit pass cut most of the per-hit cost. Best of three
+wall times in ms at load 9 against the build just before them, GNU last; every
+output is byte-identical to GNU's (log
+`target/claude-work/s3/grep-pair-timings.log`):
+
+| Pattern | `-c` before / after / GNU | `-n` before / after / GNU |
+| --- | --- | --- |
+| `the` | 127 / 100 / 54 | 229 / 193 / 88 |
+| `core::result::Result` | 96 / 57 / 15 | 101 / 62 / 23 |
+| `fn main` | 87 / 66 / 30 | 99 / 72 / 37 |
+| `\bResult<` | 77 / 63 / 15 | 84 / 105 / 25 |
+| `a.c` | 569 / 447 / 100 | 497 / 446 / 102 |
+| `zzzz` | 79 / 56 / 9 | 58 / 51 / 16 |
+
+The `\bResult< -n` wall time is noise: its minimum CPU time over five runs
+went from 79 to 66 ms. `a.c` is bound by the DFA byte loop (the literal `a`
+is on most lines), and `the -n` by its 150,582 hit records.
+
 The no-match scan is now close to the cost of `core::search` itself. A
 program that only reads the corpus and calls `core::search::find` in a loop
 takes 30 ms for `zzzz` and 100–110 ms for `core::result::Result`; the rest of
@@ -371,7 +406,7 @@ mappings. The fixed output area saves two compared with the growing
 buffer it replaced. Before the fix above,
 failures 8 through 21 of the DFA pattern were silently absorbed: the search
 fell back to the VM and exited 0. Log:
-`target/claude-work/s3/text-grep-faults-count-receipt.log`. The `(?:a|é)+` row goes through the line scan.
+`target/claude-work/s3/text-grep-faults-pair-receipt.log`. The `(?:a|é)+` row goes through the line scan.
 
 ```sh
 W=target/claude-work/s3

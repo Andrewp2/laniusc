@@ -16,7 +16,6 @@ use crate::{
         PackageLockfile,
         PackageManifest,
         compile_entry_to_x86_64_with_native_link,
-        compile_entry_to_x86_64_with_source_roots,
         compile_source_pack_path_manifest_to_wasm_with_gpu_codegen,
         compile_source_pack_path_manifest_to_x86_64_with_gpu_codegen,
         type_check_entry_with_source_roots,
@@ -43,11 +42,8 @@ pub(super) fn compile_manifest(
             .map_err(|err| package_compile_cli_error("--package-manifest", manifest_path, err))?,
         ))
     } else if check_only {
-        super::entry::check_with_build_fallback(
-            || pollster::block_on(type_check_entry_with_source_roots(&package.entry, &roots)),
-            || pollster::block_on(compile_entry_to_x86_64_with_source_roots(&package.entry, &roots)),
-        )
-        .map_err(|err| package_compile_cli_error("--package-manifest", manifest_path, err))?;
+        pollster::block_on(type_check_entry_with_source_roots(&package.entry, &roots))
+            .map_err(|err| package_compile_cli_error("--package-manifest", manifest_path, err))?;
         Ok(CliEmission::Bytes(Vec::new()))
     } else if emit == "wasm" {
         let source_pack = package
@@ -96,11 +92,8 @@ pub(super) fn compile_lockfile(
             .map_err(|err| package_compile_cli_error("--package-lockfile", lockfile_path, err))?,
         ))
     } else if check_only {
-        super::entry::check_with_build_fallback(
-            || pollster::block_on(type_check_entry_with_source_roots(&package.entry, &roots)),
-            || pollster::block_on(compile_entry_to_x86_64_with_source_roots(&package.entry, &roots)),
-        )
-        .map_err(|err| package_compile_cli_error("--package-lockfile", lockfile_path, err))?;
+        pollster::block_on(type_check_entry_with_source_roots(&package.entry, &roots))
+            .map_err(|err| package_compile_cli_error("--package-lockfile", lockfile_path, err))?;
         Ok(CliEmission::Bytes(Vec::new()))
     } else if emit == "wasm" {
         let source_pack = package

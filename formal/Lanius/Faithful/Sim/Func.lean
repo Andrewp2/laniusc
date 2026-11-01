@@ -1,6 +1,9 @@
-import Lanius.Faithful.Sim.Stmt
-import Lanius.Faithful.Sim.Boxed
+module
 
+public import Lanius.Faithful.Sim.Stmt
+public import Lanius.Faithful.Sim.Boxed
+
+@[expose] public section
 /-! # Every call Core completes
 
 By strong induction on the fuel: a function the purity checker accepts runs

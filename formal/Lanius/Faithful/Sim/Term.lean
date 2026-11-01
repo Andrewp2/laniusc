@@ -398,8 +398,8 @@ def chkFn (f : SrcFunc) : Bool :=
 
 end
 
-/-- A decrement function: `minus(a, b)`, which panics when `b > a` and
-otherwise returns `a - b`. -/
+/-- A decrement function: `minus(a, b)`, which runs `panic` when `b > a`
+(the prelude's `minus` returns 0 there) and otherwise returns `a - b`. -/
 def DecOk (sp : SrcProgram) (prims : Prims) (c : Nat) : Prop :=
   prims.isPrim c = false ∧ ∃ f a b panic, sp.funcs[c]? = some f ∧ paramIds f.params = [a, b] ∧ a ≠ b ∧
     f.body = .then (.if (.apply .greater (.local b) (.local a)) panic .nop)

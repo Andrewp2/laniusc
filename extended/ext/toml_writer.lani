@@ -1,0 +1,178 @@
+// Writes an ext::json_tree object as a TOML 1.0 document. Objects become
+// [tables], nonempty arrays of objects become [[arrays of tables]], and
+// objects inside other arrays or inline values become inline tables.
+// Number spellings are written exactly as the tree keeps them.
+// See docs/extended-toml-writer.md.
+module ext::toml_writer;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json_tree;
+
+// NotTable: the root is not an object. NullValue: TOML has no null.
+// IntegerRange: an integer outside the signed 64-bit range.
+pub enum ErrorKind { NotTable, NullValue, IntegerRange, AllocationFailed }
+// node is the tree node that cannot be written, or -1.
+pub struct Error { kind: ErrorKind, node: i32 }
+
+fn lit(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+    return core::text::from_utf8_unchecked(bytes, 0, count);
+}
+pub fn kind_name(kind: ErrorKind) -> core::text::Text {
+    let name: core::text::Text = match (kind) {
+        ErrorKind::NotTable -> lit("NotTable", 8),
+        ErrorKind::NullValue -> lit("NullValue", 9),
+        ErrorKind::IntegerRange -> lit("IntegerRange", 12),
+        ErrorKind::AllocationFailed -> lit("AllocationFailed", 16),
+    };
+    return name;
+}
+
+fn bare(t: core::text::Text) -> bool {
+    if (t.length == 0) { return false; }
+    let index: i32 = 0;
+    while (index < t.length) {
+        let byte: u8 = t.bytes[t.start + index];
+        let ok: bool = (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57) || byte == 95 || byte == 45;
+        if (!ok) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn hex_digit(value: i32) -> u8 { if (value < 10) { return (value + 48) as u8; } return (value + 55) as u8; }
+// Whether an integer spelling fits in i64.
+fn fits_i64(t: core::text::Text) -> bool {
+    let at: i32 = t.start; let negative: bool = t.length > 0 && t.bytes[at] == 45;
+    if (negative) { at += 1; }
+    let digits: i32 = t.start + t.length - at;
+    if (digits < 19) { return true; }
+    if (digits > 19) { return false; }
+    let limit: core::text::Text = lit("9223372036854775807", 19);
+    if (negative) { limit = lit("9223372036854775808", 19); }
+    let index: i32 = 0;
+    while (index < 19) {
+        let a: u8 = t.bytes[at + index]; let b: u8 = limit.bytes[index];
+        if (a != b) { return a < b; }
+        index += 1;
+    }
+    return true;
+}
+
+struct Emitter { tree: &ext::json_tree::Tree, out: &alloc::vec::Vec<u8>, top: i32, ok: bool, error: Error }
+
+impl Emitter {
+    fn borrow(&self) -> &Emitter { return self; }
+    fn fail(&self, kind: ErrorKind, node: i32) { if (self.ok) { self.ok = false; self.error = Error { kind: kind, node: node }; } }
+    fn byte(&self, value: u8) { if (self.ok && self.out.try_push(value).is_err()) { self.fail(ErrorKind::AllocationFailed, -1); } }
+    fn run(&self, bytes: [u8], start: i32, length: i32) {
+        if (length > 0 && self.ok && self.out.try_extend(core::slice::View { values: bytes, start: start, length: length }).is_err()) { self.fail(ErrorKind::AllocationFailed, -1); }
+    }
+    fn text(&self, t: core::text::Text) { self.run(t.bytes, t.start, t.length); }
+    fn word(&self, value: str, count: i32) { self.text(lit(value, count)); }
+    fn escape(&self, letter: u8) { self.byte(92); self.byte(letter); }
+    // A basic string: quotation mark, backslash and control characters other
+    // than tab are escaped; everything else is written as it is.
+    fn basic(&self, t: core::text::Text) {
+        self.byte(34);
+        let bytes: [u8] = t.bytes; let at: i32 = t.start; let end: i32 = t.start + t.length; let run: i32 = at;
+        while (at < end) {
+            let byte: u8 = bytes[at];
+            if ((byte >= 32 && byte != 34 && byte != 92 && byte != 127) || byte == 9) { at += 1; continue; }
+            self.run(bytes, run, at - run);
+            if (byte == 34) { self.escape(34); } else {
+            if (byte == 92) { self.escape(92); } else {
+            if (byte == 10) { self.escape(110); } else {
+            if (byte == 13) { self.escape(114); } else {
+            if (byte == 8) { self.escape(98); } else {
+            if (byte == 12) { self.escape(102); } else {
+                self.escape(117); self.word("00", 2); self.byte(hex_digit((byte >> 4) as i32)); self.byte(hex_digit((byte & 15) as i32));
+            } } } } } }
+            at += 1; run = at;
+        }
+        self.run(bytes, run, end - run);
+        self.byte(34);
+    }
+    fn key(&self, t: core::text::Text) { if (bare(t)) { self.text(t); } else { self.basic(t); } }
+    // The dotted header path of a table or array-of-tables element.
+    fn path(&self, node: i32) {
+        let tree: &ext::json_tree::Tree = self.tree;
+        let parent: i32 = tree.parent(node);
+        if (tree.code(parent) == 5) { self.path(parent); return; }
+        if (parent != self.top) { self.path(parent); self.byte(46); }
+        self.key(tree.key(node));
+    }
+    fn table_array(&self, node: i32) -> bool {
+        let tree: &ext::json_tree::Tree = self.tree;
+        if (tree.code(node) != 5 || tree.child_count(node) == 0) { return false; }
+        let child: i32 = tree.first_child(node);
+        while (child >= 0) { if (tree.code(child) != 6) { return false; } child = tree.next_sibling(child); }
+        return true;
+    }
+    fn inline(&self, node: i32) {
+        let tree: &ext::json_tree::Tree = self.tree;
+        let code: i32 = tree.code(node);
+        if (code == 0) { self.fail(ErrorKind::NullValue, node); return; }
+        if (code == 1) { self.word("false", 5); return; }
+        if (code == 2) { self.word("true", 4); return; }
+        if (code == 3) {
+            let t: core::text::Text = tree.text(node);
+            let integer: bool = true; let index: i32 = 0;
+            while (index < t.length) { let byte: u8 = t.bytes[t.start + index]; if (byte == 46 || byte == 101 || byte == 69) { integer = false; } index += 1; }
+            if (integer && !fits_i64(t)) { self.fail(ErrorKind::IntegerRange, node); return; }
+            self.text(t); return;
+        }
+        if (code == 4) { self.basic(tree.text(node)); return; }
+        if (code == 5) { self.byte(91); } else { self.byte(123); }
+        let child: i32 = tree.first_child(node); let first: bool = true;
+        while (child >= 0 && self.ok) {
+            if (!first) { self.word(", ", 2); }
+            if (code == 6) { self.key(tree.key(child)); self.word(" = ", 3); }
+            self.inline(child);
+            first = false; child = tree.next_sibling(child);
+        }
+        if (code == 5) { self.byte(93); } else { self.byte(125); }
+    }
+    // header: 0 for the root, 1 for [table], 2 for [[array of tables]].
+    fn table(&self, node: i32, header: i32) {
+        let tree: &ext::json_tree::Tree = self.tree;
+        if (header > 0) {
+            if (self.out.len() > 0) { self.byte(10); }
+            self.byte(91); if (header == 2) { self.byte(91); }
+            self.path(node);
+            self.byte(93); if (header == 2) { self.byte(93); }
+            self.byte(10);
+        }
+        let child: i32 = tree.first_child(node);
+        while (child >= 0 && self.ok) {
+            if (tree.code(child) != 6 && !self.table_array(child)) {
+                self.key(tree.key(child)); self.word(" = ", 3); self.inline(child); self.byte(10);
+            }
+            child = tree.next_sibling(child);
+        }
+        child = tree.first_child(node);
+        while (child >= 0 && self.ok) {
+            if (tree.code(child) == 6) { self.table(child, 1); }
+            else {
+                if (self.table_array(child)) {
+                    let element: i32 = tree.first_child(child);
+                    while (element >= 0 && self.ok) { self.table(element, 2); element = tree.next_sibling(element); }
+                }
+            }
+            child = tree.next_sibling(child);
+        }
+    }
+}
+
+// Appends the TOML document for the object at node to out and returns the
+// bytes written. On an error out may hold a partial document.
+pub fn write(tree: &ext::json_tree::Tree, node: i32, out: &alloc::vec::Vec<u8>) -> core::result::Result<i32, Error> {
+    if (tree.code(node) != 6) { return core::result::Err(Error { kind: ErrorKind::NotTable, node: node }); }
+    let before: i32 = out.len();
+    let emitter: Emitter = Emitter { tree: tree, out: out, top: node, ok: true, error: Error { kind: ErrorKind::AllocationFailed, node: -1 } };
+    emitter.table(node, 0);
+    if (!emitter.ok) { return core::result::Err(emitter.error); }
+    return core::result::Ok(out.len() - before);
+}

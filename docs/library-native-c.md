@@ -70,8 +70,8 @@ registers and eight SSE registers. Overflow arguments share 8-byte stack slots
 in their original parameter order. Float results use XMM0. The limit remains
 32 total parameters, including mixed integer, pointer, `f32` and `f64` values.
 Argument/result transport preserves scalar bits; a called C operation has its
-own floating-point behavior. C variadics, callbacks and aggregate layouts remain
-outside the profile. Existing scalar IDs and the selected System V ABI tag
+own floating-point behavior. C variadics and aggregate layouts remain
+outside the profile; callbacks have their own section below. Existing scalar IDs and the selected System V ABI tag
 represent this extension, so it requires no artifact version change.
 
 ## System hostname and service resolution
@@ -161,6 +161,21 @@ unit scheduling and imported generic replay as the ordinary compiler. A native
 symbol must resolve from supplied objects/libraries or the system driver;
 declaring it alone supplies no implementation.
 
+## C callbacks
+
+A non-generic free function named as a value is a `ptr` to a System V entry
+for it, which C can call: comparators for `qsort` and `bsearch`, and
+`(ptr) -> ptr` start routines for `pthread_create`. The entry preserves the
+callee-saved registers, aligns the stack, zero-extends `i32`/`u32`
+arguments and loads R15 with the process vector, which the CRT bridge now
+maps at the fixed address `0x100000000000` (`MAP_FIXED_NOREPLACE`; the bridge
+returns 127 if that address is taken). A callback signature has at most six
+`i32`, `u32`, `i64`, `u64`, `isize`, `usize` or `ptr` parameters and a result
+of one of those types or none. Threads running callbacks must finish before
+`main` returns, when the vector is unmapped. See
+[language ergonomics](language-ergonomics.md#c-callbacks) for the rules and
+the syntax decision. Tests: `tests/native_c_callback_execution.rs`.
+
 ## Artifacts and current limits
 
 Semantic interface artifacts use version 17 and x86 object artifacts use
@@ -190,9 +205,9 @@ remain resident and grow with the program. Explicit source-pack descriptor CLI
 modes remain unsupported by native linking; ordinary raw x86/Wasm execution
 retains its existing storage policy.
 
-Callbacks, exported C callback trampolines, variadics,
-narrow integer and Boolean C types, aggregate C layouts,
-generic extern declarations and foreign thread entry are unsupported. Runtime
+Callbacks with float, aggregate or more than six parameters, exported
+callback symbols, variadics, narrow integer and Boolean C types, aggregate C
+layouts and generic extern declarations are unsupported. Runtime
 `dlopen`/`dlsym` interfaces are separate work. Wasm, other platforms and user GPU
 execution have no support claim from these gates.
 

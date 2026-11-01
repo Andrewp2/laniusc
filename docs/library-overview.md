@@ -1,7 +1,16 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment makes
-`core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
+The full library goal remains open. The current increment adds
+[bulk slice and vector operations](stdlib-slice-bulk.md): `copy_from_slice`,
+`swap_with_slice`, `fill_range`, `memchr` and `memcmp` in `core::slice`, and
+`try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and
+`swap` on `alloc::vec::Vec`. Packed byte runs move eight bytes at a time:
+a 4 KiB copy runs 5x faster than the element loop and a fill 38x faster.
+`alloc::string`, `alloc::io`, `core::io`, `core::buffered`, `core::utf8_view`,
+`std::io_utf8` and `std::io_line` now [call them](stdlib-slice-bulk.md#callers)
+instead of per-byte loops, and UTF-8 validation skips ASCII eight bytes at a
+time: 7x to 57x on string and buffered-I/O paths, 37x on `Utf8View` edits.
+The preceding increment makes `core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
 for unstable sorts and a run-adaptive stable merge sort with galloping over
 caller scratch. Both are checked against Python `sorted`, with recorded
 comparison counts and timings. The preceding increment adds inline
@@ -50,7 +59,7 @@ work on native Linux x86_64/glibc with libatomic:
   `scan` as stolen tasks on a `std::steal` pool. The sorts keep one forked crew
   for all phases, sort runs with a direct-comparison introsort or merge
   sort, then merge them in parallel at merge-path splits. A Python model oracle covers 3,600 runs with 0
-  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 387–392 ms, against 638–699 ms
+  mismatches, including non-commutative scans. On 10M i64 keys, 8 workers take 306–373 ms, against 577–689 ms
   for C++ `std::sort` at -O2.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
@@ -60,8 +69,9 @@ duplication or per-sender FIFO violation. Those 50 runs passed, alongside
 20 runs each of a parallel word count matching `wc` and a three-stage
 pipeline. The stealing fixture runs a 524,287-task tree with every leaf
 exactly once; a parallel quicksort sorts 2,000,000 values in 0.25 s with
-eight workers, against 0.80 s with one. In-process threads remain blocked on checked callback entry, so
-`std::thread` stays unbound.
+eight workers, against 0.80 s with one. C callback entry now exists (a function named as a value,
+[C callbacks](language-ergonomics.md#c-callbacks)) and a fixture starts and joins a pthread running
+Lanius code, but `std::thread` is not yet bound to it.
 The preceding
 The full library goal remains open. The
 [Unicode quick-check and uconv increment](extended-unicode-uconv.md) replaces
@@ -140,7 +150,7 @@ The preceding
 [resumable compression encoder](extended-streaming-deflate.md) adds fixed
 32 KiB blocks, retained pending output and u64 raw/zlib/gzip limits over shared
 block helpers. Its [packed fast pass](extended-streaming-deflate.md#packed-fast-pass)
-encodes gzip at 50–54 MB/s against 3.5–3.8 MB/s before, with byte-identical output. The [file compressor](extended-compress-file.md) uses fixed
+encodes gzip at 50–54 MB/s against 3.5–3.8 MB/s before, with byte-identical output. Opt-in [dynamic Huffman levels](extended-streaming-deflate.md#dynamic-huffman-levels) 1–3 add a sliding window, hash chains, lazy matching and per-block dynamic codes; level 2 comes within 2.9% (docs/stdlib tar) and 6.9% (text tar) of `gzip -6`'s size at 28.7 and 33.8 MB/s. The [file compressor](extended-compress-file.md) uses fixed
 workspace and NoReplace publication. All five library groups and five
 application groups/99 native cases pass, including the 112-case chunk/block
 model and nine reached application allocation denials. This finite native
@@ -574,10 +584,14 @@ agreements with GNU `patch` at `-F0` and `-F2`. On a 1.6 MB pair, `seq-diff`
 runs within 2× of `git diff --no-index` in every mode (59-70 ms against
 43 ms for the default unified diff). It gets there by splitting and
 hash-consing lines in one word-at-a-time pass (`split_classify`).
-`seq-diff --histogram` matches `git diff --histogram` byte for byte on 4,000
-generated pairs. The comparison covers git's indent heuristic and its xdiff
-fallback for lines repeated more than 64 times. The default Myers diff runs
-within 1.2× of git (41 against 34 ms).
+`seq-diff`'s default output, `--histogram` and `-W`/`--function-context` match
+plain `git diff --no-index` byte for byte on all 4,000 generated pairs in each
+mode, from the first hunk header on. The comparison covers git's indent
+heuristic, its hunk-header function names, its whole-function context and the
+histogram's xdiff fallback for lines repeated more than 64 times. `--myers`
+still gives minimal diffs. The Myers diff ran within 1.2× of git (41 against
+34 ms), and the git-style default runs at 1.2× too (79 against 67 ms under
+heavy load).
 On the same inputs, `seq-patch` runs within 1.1× of GNU `patch` (10 ms) and
 `seq-merge` within 1.2× of `git merge-file` (99 against 83 ms).
 [Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
@@ -2294,6 +2308,20 @@ GOAWAY, RST_STREAM and response validation). The engine passes 17 cases
 against libnghttp2's server session and 46 against hand-built frames for
 every connection and stream error it must detect.
 
+The [HTTP/2 server engine](extended-http2-server.md) (`ext::http2_server`) is
+the I/O-free server side. It reads the client preface, enforces
+MAX_CONCURRENT_STREAMS by refusing extra streams, validates request
+pseudo-fields and fields, buffers bodies under flow control, answers 413 and
+431 itself, and sends responses within the client's windows.
+[`ext::http_service`](extended-http-service.md#http2-h2c) hands connections
+that open with the preface to it (prior-knowledge h2c) and keeps serving
+HTTP/1.1 on the same listener. The event server multiplexes h2c
+connections on its loop as well, and a load test of 100 concurrent h2c
+clients against 100 HTTP/1.1 clients checks every body and counter. A libnghttp2 client session through ctypes
+passes 6 session cases and 18 malformed-frame cases, both against the engine
+over a pipe and against the service over TCP. HTTP/2 over TLS waits on C
+callback support for OpenSSL's ALPN selection.
+
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical
 `ext::websocket` frame engine in the client role. It validates the opening
@@ -2412,7 +2440,30 @@ Its structural writer emits the `ext::json` byte policy. The streaming
 `json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
 agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
 from any `core::io::Read` source, and `Writer.flush_to` streams output to any
-`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md)
+`core::io::Write` sink.
+[`ext::json_pointer` and `ext::json_patch`](extended-json-patch.md) apply
+RFC 6901 pointers, RFC 6902 patches and RFC 7386 merge patches to
+`ext::json_tree` documents atomically. They agree with a Python model on
+6,450 RFC-example, error and generated cases.
+[`ext::json_schema`](extended-json-schema.md) validates `ext::json_tree`
+documents against JSON Schema 2020-12 (core, applicator and validation
+vocabularies, `pattern` through `ext::regex`, local `$ref`). It agrees with a
+Python model on 246 hand-written specification cases, 92 error and limit
+cases and 10,000 generated schema/instance pairs.
+[`ext::yaml`](extended-yaml.md) reads YAML 1.2 (block and flow collections,
+every scalar style with chomping, anchors and aliases under an expansion
+limit, comments, multiple documents) into `ext::json_tree` with the core
+schema. It agrees with PyYAML 6.0.1 on 87 hand-written and 3,000 generated
+documents, and with hand-written expectations on 32 documents that YAML 1.1
+reads differently and 68 error and limit cases. Its scanner skips comments
+and literal block lines with `core::slice::memchr_from`.
+[`ext::yaml_writer`](extended-yaml.md#writing) writes trees as block-style
+YAML, quoting only strings some YAML 1.1 or 1.2 reader could misread, and
+[`ext::toml_writer`](extended-toml-writer.md) writes them as TOML 1.0 with
+tables, arrays of tables, inline tables and the tree's exact number
+spellings. Round trips agree on 3,320 trees through PyYAML `safe_load` and
+`ext::yaml`, and on 3,014 trees through Python `tomllib`, plus 11 TOML writer
+error cases. [`core::float_decimal`](stdlib-float-decimal.md)
 formats shortest decimals with Schubfach, which is exact with no fallback, in
 about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
 before its exact big-integer path, in about 0.7 to 0.8 µs per value. It
@@ -2464,10 +2515,11 @@ accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
 0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s. Its transitions are
 cached per byte, with partial states for UTF-8 prefixes, so `\p{Lu}` on a
 1.3 MB mixed-script file takes 147 ms instead of 1110 ms. `text_grep` also
-searches for the pattern's required literal with `core::search` across each
-64 KiB read and runs the matcher only on the records that contain it. On
-S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
-grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
+searches for the pattern's required literal across each 64 KiB read, eight
+candidate starts per word step, and runs the matcher only on the records that
+contain it. On S4's 49 MB corpus a no-match scan takes 56 ms instead of 5.2 s,
+against GNU grep's 9 ms; patterns with a literal take 57–100 ms with `-c`
+(`the`, 150,582 matching lines, takes 100 ms against GNU's 54)
 ([timings](extended-text-grep.md#literal-prefilter)). Patterns without one
 run `Dfa.match_lines` over each whole block, restarting at every record, so
 `[0-9]+$` takes 0.54 s instead of 1.8 s.

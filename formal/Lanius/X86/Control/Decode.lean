@@ -1,5 +1,8 @@
-import Lanius.X86.Word
+module
 
+public import Lanius.X86.Word
+
+@[expose] public section
 namespace Lanius.X86.Control
 
 /-- The unprefixed control-transfer subset used by the backend in 64-bit

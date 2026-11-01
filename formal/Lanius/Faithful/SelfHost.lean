@@ -1,5 +1,11 @@
-import Lanius.Faithful.SelfCompiler
+module
 
+public import Lanius.Faithful.SelfCompiler
+public import Lanius.Mini.Compiler.P.compileSource
+public import Lanius.Mini.Compiler.P.packRound
+public import Lanius.Mini.Frontend.P.shrFirst
+
+@[expose] public section
 /-! # The verified compiler self-hosts (roadmap step F12)
 
 The top theorem, `selfHost_fixpoint`, first. Let `self` be the self

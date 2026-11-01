@@ -1,5 +1,17 @@
-import Lanius.Mini.Reading.Types
+module
 
+public import Lanius.Mini.Reading.Types
+import all Lanius.Mini.Compiler.P.equality
+import all Lanius.Mini.Frontend.P.consTys
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.flattenTys
+import all Lanius.Mini.Frontend.P.joinInsts
+import all Lanius.Mini.Frontend.P.lowerTy
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.typeDeclAt
+
+@[expose] public section
 /-! # The reading, V8b: source types and the type table
 
 A declared type at type arguments is a type instance; the type table lists

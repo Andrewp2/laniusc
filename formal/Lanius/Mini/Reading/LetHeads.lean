@@ -1,5 +1,38 @@
-import Lanius.Mini.Reading.Calls
+module
 
+public import Lanius.Mini.Reading.Calls
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Frontend.P.armsNaming
+import all Lanius.Mini.Frontend.P.armsOf
+import all Lanius.Mini.Frontend.P.consBinder
+import all Lanius.Mini.Frontend.P.consTreeTail
+import all Lanius.Mini.Frontend.P.distinct
+import all Lanius.Mini.Frontend.P.findConst
+import all Lanius.Mini.Frontend.P.fnInstRet
+import all Lanius.Mini.Frontend.P.hasKids
+import all Lanius.Mini.Frontend.P.isEmptyUsize
+import all Lanius.Mini.Frontend.P.isPathCall
+import all Lanius.Mini.Frontend.P.isTryEnum
+import all Lanius.Mini.Frontend.P.isUnderscore
+import all Lanius.Mini.Frontend.P.itemOf
+import all Lanius.Mini.Frontend.P.namesSome
+import all Lanius.Mini.Frontend.P.noBlock
+import all Lanius.Mini.Frontend.P.noToken
+import all Lanius.Mini.Frontend.P.noTrees
+import all Lanius.Mini.Frontend.P.repeatEff
+import all Lanius.Mini.Frontend.P.rootInsts
+import all Lanius.Mini.Frontend.P.scalarOf
+import all Lanius.Mini.Frontend.P.shrFirst
+import all Lanius.Mini.Frontend.P.sliceHead
+import all Lanius.Mini.Frontend.P.textSelf
+import all Lanius.Mini.Frontend.P.typeDeclAt
+import all Lanius.Mini.Frontend.P.typePathSpellings
+import all Lanius.Mini.Frontend.P.variantIn
+import all Lanius.Mini.Frontend.P.variantOfDecl
+import all Lanius.Mini.Frontend.P.wideOf
+
+@[expose] public section
 /-! # The reading, V8d: let heads and their parts
 
 The let heads a spelling decides: an initializer that is (under wrappers,

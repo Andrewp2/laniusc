@@ -2397,7 +2397,12 @@ pub(in crate::compiler) fn parser_failure_to_compile_error_for_source(
         return diagnostic;
     }
 
-    if let Some(diagnostic) = trait_parser_rejection_diagnostic(diagnostic_path, source) {
+    let error_start =
+        read_single_token_from_buffer(device, queue, token_buffer, failure.ll1().error_pos)
+            .ok()
+            .map(|token| token.start);
+    if let Some(diagnostic) = trait_parser_rejection_diagnostic(diagnostic_path, source, error_start)
+    {
         return diagnostic;
     }
 
@@ -2470,11 +2475,15 @@ struct TraitParserRejection {
     len: usize,
 }
 
+/// `error_start` is the parser's error token in `source`, when it is known:
+/// a textual match on another line is a shape the parser accepted, so only
+/// the error token's line is searched.
 fn trait_parser_rejection_diagnostic(
     diagnostic_path: &Path,
     source: &str,
+    error_start: Option<usize>,
 ) -> Option<super::CompileError> {
-    let rejection = find_trait_parser_rejection(source)?;
+    let rejection = find_trait_parser_rejection(source, error_start)?;
     let label = match rejection.kind {
         TraitParserRejectionKind::Bound => "trait bound argument shape is not supported here",
         TraitParserRejectionKind::Impl => {
@@ -2503,9 +2512,16 @@ fn trait_parser_rejection_diagnostic(
     ))
 }
 
-fn find_trait_parser_rejection(source: &str) -> Option<TraitParserRejection> {
+fn find_trait_parser_rejection(
+    source: &str,
+    error_start: Option<usize>,
+) -> Option<TraitParserRejection> {
     let mut line_start = 0usize;
     for line in source.split_inclusive('\n') {
+        if error_start.is_some_and(|error| error < line_start || error >= line_start + line.len()) {
+            line_start += line.len();
+            continue;
+        }
         if let Some((start, len)) = unsupported_trait_impl_arg_span(line) {
             return Some(TraitParserRejection {
                 kind: TraitParserRejectionKind::Impl,
@@ -2737,12 +2753,38 @@ struct SourcePackSyntaxToken<'a> {
     token: Token,
 }
 
+/// `rejected_token` is the GPU token at the rejection's position, when the
+/// caller could read it. It locates the rejection exactly; the host token
+/// stream rebuilt from the files is only the fallback, since a construct the
+/// host scanner splits differently shifts every later index (a stray `}` in
+/// one stdlib file was labeled a dozen tokens early, inside the previous item).
 fn ll1_rejection_syntax_label_for_source_pack<'a>(
     files: &'a [DiagnosticSourceFile],
     failure: &ParserFailure,
+    rejected_token: Option<&Token>,
 ) -> Option<(&'a DiagnosticSourceFile, SourceSyntaxLabel)> {
     let semantic_token_kinds = failure.semantic_token_kinds()?;
     let rejection = failure.ll1_rejection()?;
+    if let Some(token) = rejected_token
+        && let Some(file) = source_pack_file_for_global_span(files, token.start)
+    {
+        let local = source_pack_local_token(token, file);
+        let after_fn = previous_source_token(&file.source, &local)
+            .is_some_and(|previous| token_source_text(&file.source, &previous) == Some("fn"));
+        let message = ll1_rejection_message_for_context(
+            syntax_token_description(&file.source, &local),
+            rejection,
+            after_fn,
+        );
+        return Some((
+            file,
+            SourceSyntaxLabel {
+                start: local.start,
+                len: local.len,
+                message,
+            },
+        ));
+    }
     let tokens = source_pack_syntax_tokens(files);
     let first_input = ll1_first_input_index(semantic_token_kinds);
     let source_index = rejection.pos.checked_sub(first_input);
@@ -2772,6 +2814,19 @@ fn ll1_rejection_syntax_label_for_source_pack<'a>(
 
     let file = files.last()?;
     Some((file, source_pack_eof_label(file, message)))
+}
+
+/// Reads the GPU token at the LL(1) rejection's position in the parser
+/// token-kind stream (which may start with a sentinel).
+fn ll1_rejected_token(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    token_buffer: &wgpu::Buffer,
+    failure: &ParserFailure,
+) -> Option<Token> {
+    let first_input = ll1_first_input_index(failure.semantic_token_kinds()?);
+    let index = failure.ll1_rejection()?.pos.checked_sub(first_input)?;
+    read_single_token_from_buffer(device, queue, token_buffer, u32::try_from(index).ok()?).ok()
 }
 
 fn source_pack_syntax_tokens(files: &[DiagnosticSourceFile]) -> Vec<SourcePackSyntaxToken<'_>> {
@@ -3393,8 +3448,23 @@ pub(in crate::compiler) fn parser_failure_to_compile_error_for_source_pack(
         }
     }
 
+    // Only the file holding the parser's error token can be the one whose
+    // trait argument shape it rejected.
+    let error_token =
+        read_single_token_from_buffer(device, queue, token_buffer, failure.ll1().error_pos).ok();
     for file in diagnostic_files {
-        if let Some(diagnostic) = trait_parser_rejection_diagnostic(&file.path, &file.source) {
+        let error_start = match &error_token {
+            Some(token) => match source_pack_file_for_global_span(diagnostic_files, token.start) {
+                Some(error_file) if std::ptr::eq(error_file, file) => {
+                    Some(source_pack_local_token(token, file).start)
+                }
+                _ => continue,
+            },
+            None => None,
+        };
+        if let Some(diagnostic) =
+            trait_parser_rejection_diagnostic(&file.path, &file.source, error_start)
+        {
             return diagnostic;
         }
     }
@@ -3412,7 +3482,11 @@ pub(in crate::compiler) fn parser_failure_to_compile_error_for_source_pack(
     }
 
     if let Some((file, label)) =
-        ll1_rejection_syntax_label_for_source_pack(diagnostic_files, failure)
+        ll1_rejection_syntax_label_for_source_pack(
+            diagnostic_files,
+            failure,
+            ll1_rejected_token(device, queue, token_buffer, failure).as_ref(),
+        )
     {
         return syntax_error_to_compile_error_for_source_span_with_message(
             &file.path,
@@ -5651,13 +5725,65 @@ mod tests {
             ]),
         );
 
-        let (file, label) = ll1_rejection_syntax_label_for_source_pack(&files, &failure)
+        let (file, label) = ll1_rejection_syntax_label_for_source_pack(&files, &failure, None)
             .expect("source-pack table context should produce a syntax label");
 
         assert_eq!(file.path, PathBuf::from("second.lani"));
         assert_eq!(label.start, 0);
         assert_eq!(label.len, 1);
         assert_eq!(label.message, "expected `;`, found `{`");
+    }
+
+    #[test]
+    fn ll1_rejection_source_pack_label_follows_the_gpu_token() {
+        let paths = [
+            Some(PathBuf::from("first.lani")),
+            Some(PathBuf::from("second.lani")),
+        ];
+        // The host token stream maps index 2 into `first.lani`; the GPU
+        // token, which is what the parser rejected, is the `{` in the second.
+        let files = source_pack_diagnostic_files(&["value value ", "{\n"], Some(&paths));
+        let tables = tiny_identifier_semicolon_table();
+        let failure = ParserFailure::from_ll1_rejection(
+            crate::parser::driver::Ll1AcceptResult {
+                accepted: false,
+                error_pos: 2,
+                error_code: 2,
+                detail: 0,
+                steps: 2,
+                emit_len: 0,
+            },
+            &tables,
+            Some(vec![
+                0,
+                TokenKind::Ident as u32,
+                TokenKind::LBrace as u32,
+                0,
+            ]),
+        );
+        let gpu_token = Token {
+            kind: TokenKind::LBrace,
+            start: files[1].global_start,
+            len: 1,
+        };
+
+        let (file, label) =
+            ll1_rejection_syntax_label_for_source_pack(&files, &failure, Some(&gpu_token))
+                .expect("source-pack table context should produce a syntax label");
+
+        assert_eq!(file.path, PathBuf::from("second.lani"));
+        assert_eq!(label.start, 0);
+        assert_eq!(label.message, "expected `;`, found `{`");
+    }
+
+    #[test]
+    fn trait_parser_rejection_only_matches_the_error_token_line() {
+        let source = "fn ok() -> i32 { return 0; }\nimpl Rel<Boxed<i32>> for i32 {\n}\n";
+        let impl_line = source.find("impl").expect("impl line");
+
+        assert!(find_trait_parser_rejection(source, None).is_some());
+        assert!(find_trait_parser_rejection(source, Some(impl_line + 5)).is_some());
+        assert!(find_trait_parser_rejection(source, Some(3)).is_none());
     }
 
     #[test]

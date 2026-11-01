@@ -1,6 +1,9 @@
-import Lanius.Faithful.Pure
-import Lanius.Semantics.NativeReadFrame
+module
 
+public import Lanius.Faithful.Pure
+public import Lanius.Semantics.NativeReadFrame
+
+@[expose] public section
 /-! # Core values and their pure meaning
 
 `VRel P boxes heap t v p`: the Core value `v` of source type `t`, in `heap`,

@@ -82,7 +82,7 @@ theorem termOk : TermOk prog prims info :=
 
 /-- Every pure call of `front_end_words` settles. -/
 theorem settles_front_end_words (vs : List Lanius.Core.Value) : Settles prog prims 7 vs :=
-  pcall_complete termOk 7 ⟨49, [], 0⟩ rfl vs
+  pcall_complete termOk 7 ⟨48, [], 0⟩ rfl vs
 
 /-- Every pure call of `grammar` settles. -/
 theorem settles_grammar (vs : List Lanius.Core.Value) : Settles prog prims 8 vs :=

@@ -1,5 +1,18 @@
-import Lanius.Mini.CompileCorrect
+module
 
+public import Lanius.Mini.CompileCorrect
+public import Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.arities
+public import Lanius.Mini.Compiler.P.codeSize
+public import Lanius.Mini.Compiler.P.compileArgs
+
+@[expose] public section
 /-! Static facts the x86 proof needs about compiled code: every slot is inside
 the frame, every jump target is inside the function, every callee is in the
 program. -/

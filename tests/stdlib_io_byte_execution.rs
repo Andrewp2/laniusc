@@ -42,8 +42,8 @@ fn scalar_byte_io_executes_with_binary_input_and_output() {
             )),
         );
         assert_eq!(output.status.code(), Some(0), "{output:?}");
-        assert_eq!(output.stdout, [0, 255], "{output:?}");
-        assert_eq!(output.stderr, b"A", "{output:?}");
+        assert_eq!(output.stdout, [0, 255, 66, 67, 68], "{output:?}");
+        assert_eq!(output.stderr, [65, 1, 2], "{output:?}");
     }
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let _ = bytes;
@@ -188,5 +188,5 @@ fn scalar_byte_io_public_functions_have_runtime_cases() {
         );
         count += 1;
     }
-    assert_eq!(count, 3);
+    assert_eq!(count, 5);
 }

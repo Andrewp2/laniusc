@@ -1,5 +1,8 @@
-import Lanius.Memory.Read
+module
 
+public import Lanius.Memory.Read
+
+@[expose] public section
 namespace Lanius.Memory
 
 /-- Byte-only writes within a proved permission set. This frames all other

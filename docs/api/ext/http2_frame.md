@@ -724,7 +724,7 @@ pub fn check_setting(setting: Setting) -> core::result::Result<i32,Error>
 
 ### function: write_header
 
-[Source line 188](../../../extended/ext/http2_frame.lani#L188)
+[Source line 197](../../../extended/ext/http2_frame.lani#L197)
 
 ```lanius
 pub fn write_header(out: &alloc::vec::Vec<u8>, length: i32, kind: i32, flags: i32, stream: i32) -> bool
@@ -732,7 +732,7 @@ pub fn write_header(out: &alloc::vec::Vec<u8>, length: i32, kind: i32, flags: i3
 
 ### function: write_frame
 
-[Source line 194](../../../extended/ext/http2_frame.lani#L194)
+[Source line 203](../../../extended/ext/http2_frame.lani#L203)
 
 ```lanius
 pub fn write_frame(out: &alloc::vec::Vec<u8>, kind: i32, flags: i32, stream: i32, payload: core::slice::View<u8>) -> bool
@@ -740,7 +740,7 @@ pub fn write_frame(out: &alloc::vec::Vec<u8>, kind: i32, flags: i32, stream: i32
 
 ### function: write_settings
 
-[Source line 200](../../../extended/ext/http2_frame.lani#L200)
+[Source line 209](../../../extended/ext/http2_frame.lani#L209)
 
 ```lanius
 pub fn write_settings(out: &alloc::vec::Vec<u8>, settings: core::slice::View<Setting>) -> bool
@@ -748,7 +748,7 @@ pub fn write_settings(out: &alloc::vec::Vec<u8>, settings: core::slice::View<Set
 
 ### function: write_settings_ack
 
-[Source line 211](../../../extended/ext/http2_frame.lani#L211)
+[Source line 220](../../../extended/ext/http2_frame.lani#L220)
 
 ```lanius
 pub fn write_settings_ack(out: &alloc::vec::Vec<u8>) -> bool
@@ -756,7 +756,7 @@ pub fn write_settings_ack(out: &alloc::vec::Vec<u8>) -> bool
 
 ### function: write_ping
 
-[Source line 212](../../../extended/ext/http2_frame.lani#L212)
+[Source line 221](../../../extended/ext/http2_frame.lani#L221)
 
 ```lanius
 pub fn write_ping(out: &alloc::vec::Vec<u8>, ack: bool, opaque: core::slice::View<u8>) -> bool
@@ -764,7 +764,7 @@ pub fn write_ping(out: &alloc::vec::Vec<u8>, ack: bool, opaque: core::slice::Vie
 
 ### function: write_goaway
 
-[Source line 217](../../../extended/ext/http2_frame.lani#L217)
+[Source line 226](../../../extended/ext/http2_frame.lani#L226)
 
 ```lanius
 pub fn write_goaway(out: &alloc::vec::Vec<u8>, last_stream: i32, code: i32, debug: core::slice::View<u8>) -> bool
@@ -772,7 +772,7 @@ pub fn write_goaway(out: &alloc::vec::Vec<u8>, last_stream: i32, code: i32, debu
 
 ### function: write_window_update
 
-[Source line 222](../../../extended/ext/http2_frame.lani#L222)
+[Source line 231](../../../extended/ext/http2_frame.lani#L231)
 
 ```lanius
 pub fn write_window_update(out: &alloc::vec::Vec<u8>, stream: i32, increment: i32) -> bool
@@ -780,7 +780,7 @@ pub fn write_window_update(out: &alloc::vec::Vec<u8>, stream: i32, increment: i3
 
 ### function: write_rst_stream
 
-[Source line 228](../../../extended/ext/http2_frame.lani#L228)
+[Source line 237](../../../extended/ext/http2_frame.lani#L237)
 
 ```lanius
 pub fn write_rst_stream(out: &alloc::vec::Vec<u8>, stream: i32, code: i32) -> bool
@@ -788,7 +788,7 @@ pub fn write_rst_stream(out: &alloc::vec::Vec<u8>, stream: i32, code: i32) -> bo
 
 ### function: write_headers
 
-[Source line 235](../../../extended/ext/http2_frame.lani#L235)
+[Source line 244](../../../extended/ext/http2_frame.lani#L244)
 
 ```lanius
 pub fn write_headers(out: &alloc::vec::Vec<u8>, stream: i32, block: core::slice::View<u8>, end_stream: bool, max_frame: i32) -> bool
@@ -796,7 +796,7 @@ pub fn write_headers(out: &alloc::vec::Vec<u8>, stream: i32, block: core::slice:
 
 ### function: write_data
 
-[Source line 251](../../../extended/ext/http2_frame.lani#L251)
+[Source line 260](../../../extended/ext/http2_frame.lani#L260)
 
 ```lanius
 pub fn write_data(out: &alloc::vec::Vec<u8>, stream: i32, data: core::slice::View<u8>, end_stream: bool, max_frame: i32) -> bool

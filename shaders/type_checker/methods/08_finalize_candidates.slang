@@ -83,6 +83,9 @@ void set_operand(inout Operands operands, uint index, uint2 operand)
 // Scoped equality of two operands with their canonical IDs.
 bool same_type(uint2 left, uint left_id, uint2 right, uint right_id)
 {
+    // External canonical roots (a bare imported generic qualifier) are
+    // resident-page identities.
+    if (left.x == 5u || right.x == 5u) return left.x == right.x && left.y == right.y && left.y != INVALID;
     return checked_types_equal_ids(SourceSlots(), left.x, left.y, left_id,
         right.x, right.y, right_id, true);
 }

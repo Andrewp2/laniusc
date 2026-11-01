@@ -1,0 +1,39 @@
+// A Lanius comparator passed to libc's bsearch, with a narrow (u32) key
+// compared through a pointer. Exits 0 when every present key is found at its
+// index and absent keys return null.
+module app::main;
+
+import core::mem;
+
+extern "C" fn bsearch(key: ptr, base: ptr, count: usize, size: usize, compare: ptr) -> ptr;
+
+fn compare_u32(key: ptr, item: ptr) -> i32 {
+    let a: [u32] = core::mem::typed_slice_from_raw_parts(key, 1);
+    let b: [u32] = core::mem::typed_slice_from_raw_parts(item, 1);
+    if (a[0] < b[0]) { return -1; }
+    if (a[0] > b[0]) { return 1; }
+    return 0;
+}
+
+fn find(table: ptr, wanted: i32) -> i32 {
+    let keys: [i32; 1] = [wanted];
+    let key: ptr = core::mem::i32_array_data_ptr(keys);
+    let found: ptr = bsearch(key, table, 6, 4, compare_u32);
+    let index: i32 = 0;
+    while (index < 6) {
+        if (found == table + index * 4) { return index; }
+        index += 1;
+    }
+    return -1;
+}
+
+fn main() -> i32 {
+    let values: [i32; 6] = [2, 3, 5, 7, 11, 13];
+    let table: ptr = core::mem::i32_array_data_ptr(values);
+    if (find(table, 2) != 0) { return 1; }
+    if (find(table, 7) != 3) { return 2; }
+    if (find(table, 13) != 5) { return 3; }
+    if (find(table, 4) != -1) { return 4; }
+    if (find(table, 14) != -1) { return 5; }
+    return 0;
+}

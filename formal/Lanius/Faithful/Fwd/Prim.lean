@@ -347,18 +347,19 @@ theorem boxed_live {boxes : Boxes} {t : SrcType} {id sizeOf slice panic w : Nat}
     exact fun i lt => ⟨0, zeros i lt⟩
   obtain ⟨after, write, -, region⟩ := spec q4 q4.heap (a + 8 * w - 8) (by aomega) readable (heap4 ▸ unique1)
   have nb : Semantics.isByte t.toCore = false := wordElement_notByte el
-  have written : Semantics.writeResolvedPlaceNative sp.toCore q4
-      { rb with value := none, raw := some (t.toCore, a + 8 * w - 8), rawByte := Semantics.isByte t.toCore } x =
-        .ok { q4 with heap := after } := by
-    simp only [Semantics.writeResolvedPlaceNative, Semantics.writeRawNative, nb, Bool.false_eq_true, ↓reduceIte, write]
+  generalize hr : ({ rb with
+      value := none, raw := some (t.toCore, a + 8 * w - 8), rawByte := Semantics.isByte t.toCore } :
+    ResolvedPlace) = rp at placeRun
+  have rraw : rp.raw = some (t.toCore, a + 8 * w - 8) := by rw [← hr]
+  have rbyte : rp.rawByte = false := by rw [← hr]; exact nb
+  have written : Semantics.writeResolvedPlaceNative sp.toCore q4 rp x = .ok { q4 with heap := after } := by
+    simp only [Semantics.writeResolvedPlaceNative, Semantics.writeRawNative, rraw, rbyte, Bool.false_eq_true,
+      if_false, write]
     rfl
-  have synced : (if ({ rb with value := none, raw := some (t.toCore, a + 8 * w - 8), rawByte := Semantics.isByte t.toCore } :
-        ResolvedPlace).viewFreeRootWrite x
-      then .ok { q4 with heap := after } else match ({ rb with value := none, raw := some (t.toCore, a + 8 * w - 8), rawByte := Semantics.isByte t.toCore } :
-        ResolvedPlace).raw with
+  have synced : (if rp.viewFreeRootWrite x then .ok { q4 with heap := after } else match rp.raw with
       | none => Semantics.syncI32ViewsToHeap { q4 with heap := after }
       | some _ => Semantics.syncI32ViewsFromHeap { q4 with heap := after }) = .ok { q4 with heap := after } := by
-    simp only [Semantics.ResolvedPlace.viewFreeRootWrite, Option.isNone_some, Bool.false_and,
+    simp only [Semantics.ResolvedPlace.viewFreeRootWrite, rraw, Option.isNone_some, Bool.false_and,
       Bool.false_eq_true, if_false]
     exact syncFrom_ok (st := { q4 with heap := after }) inv4.views
   have assignE := expression_fwd (assign_fwd placeRun (local_fwd x4) written synced)
@@ -431,8 +432,9 @@ theorem unbox_live {boxes : Boxes} {t : SrcType} {id slice : Nat} {values ps : L
   have heap1 : (s1.bindLocal 39 (.rawSlice t.toCore (a + 8 * w - 8) 1)).heap = st.heap := same.heap.trans heap0
   have readE : Semantics.readRawSliceIndex sp.toCore (s1.bindLocal 39 (.rawSlice t.toCore (a + 8 * w - 8) 1))
       t.toCore (a + 8 * w - 8) 1 0 = .ok y := by
+    have nb : Semantics.isByte t.toCore = false := wordElement_notByte el
     simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false, elementAddress_zero kind wv pos,
-      Semantics.readRawElement, wordElement_notByte el, Bool.false_eq_true, ↓reduceIte]
+      Semantics.readRawElement, nb, Bool.false_eq_true, bind, Except.bind]
     rw [heap1]
     exact read
   have idxE := index_fwd (local_fwd view1) (value_fwd (.signed .i32 0))

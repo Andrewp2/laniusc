@@ -1,0 +1,118 @@
+// RFC 6901 JSON Pointers over ext::json_tree trees: parsing with the ~0/~1
+// escapes, array index rules and evaluation. See docs/extended-json-patch.md.
+module ext::json_pointer;
+import alloc::vec;
+import core::result;
+import core::text;
+import ext::json_tree;
+
+// Reference tokens, unescaped: token i is bytes[spans[2i], +spans[2i+1]).
+pub struct Pointer { bytes: alloc::vec::Vec<u8>, spans: alloc::vec::Vec<i32> }
+
+fn invalid(at: i32) -> ext::json_tree::Error { return ext::json_tree::failure(ext::json_tree::ErrorKind::InvalidPointer, -1, at as u64); }
+fn allocation() -> ext::json_tree::Error { return ext::json_tree::failure(ext::json_tree::ErrorKind::AllocationFailed, -1, 0); }
+
+// The empty string is the whole document; anything else starts with '/'.
+// '~' must be followed by '0' (for '~') or '1' (for '/'). InvalidPointer
+// carries the offset of the bad byte.
+pub fn parse(text: core::text::Text) -> core::result::Result<Pointer, ext::json_tree::Error> {
+    let pointer: Pointer = Pointer { bytes: alloc::vec::new(), spans: alloc::vec::new() };
+    if (text.length == 0) { return core::result::Ok(pointer); }
+    let source: [u8] = text.bytes; let base: i32 = text.start;
+    if (source[base] != 47) { return core::result::Err(invalid(0)); }
+    let index: i32 = 1; let begin: i32 = 0;
+    while (true) {
+        if (index == text.length || source[base + index] == 47) {
+            let length: i32 = pointer.bytes.len() - begin;
+            if (pointer.spans.try_push(begin).is_err() || pointer.spans.try_push(length).is_err()) { pointer.destroy(); return core::result::Err(allocation()); }
+            if (index == text.length) { break; }
+            begin = pointer.bytes.len(); index += 1; continue;
+        }
+        let byte: u8 = source[base + index];
+        if (byte == 126) {
+            if (index + 1 == text.length) { pointer.destroy(); return core::result::Err(invalid(index)); }
+            let escaped: u8 = source[base + index + 1];
+            if (escaped == 48) { byte = 126; } else { if (escaped == 49) { byte = 47; } else { pointer.destroy(); return core::result::Err(invalid(index)); } }
+            index += 1;
+        }
+        if (pointer.bytes.try_push(byte).is_err()) { pointer.destroy(); return core::result::Err(allocation()); }
+        index += 1;
+    }
+    return core::result::Ok(pointer);
+}
+
+// Array index of a reference token: its value for 0 or [1-9][0-9]* (values
+// above 2^32 saturate there), -2 for "-", -1 otherwise.
+pub fn array_index(token: core::text::Text) -> i64 {
+    if (token.length == 0) { return -1; }
+    let bytes: [u8] = token.bytes; let first: u8 = bytes[token.start];
+    if (token.length == 1 && first == 45) { return -2; }
+    if (first == 48 && token.length > 1) { return -1; }
+    let value: i64 = 0; let index: i32 = 0;
+    while (index < token.length) {
+        let byte: u8 = bytes[token.start + index];
+        if (byte < 48 || byte > 57) { return -1; }
+        if (value < 4294967296) { value = value * 10 + ((byte - 48) as i64); }
+        if (value > 4294967296) { value = 4294967296; }
+        index += 1;
+    }
+    return value;
+}
+
+pub impl Pointer {
+    pub fn borrow(&self) -> &Pointer { return self; }
+    pub fn count(&self) -> i32 { return self.spans.len() / 2; }
+    pub fn token(&self, index: i32) -> core::text::Text {
+        return core::text::from_utf8_unchecked(self.bytes.as_slice(), self.spans.at(2 * index), self.spans.at(2 * index + 1));
+    }
+    fn same_token(&self, other: &Pointer, index: i32) -> bool {
+        let a: core::text::Text = self.token(index); let b: core::text::Text = other.token(index);
+        if (a.length != b.length) { return false; }
+        let at: i32 = 0;
+        while (at < a.length) { if (a.bytes[a.start + at] != b.bytes[b.start + at]) { return false; } at += 1; }
+        return true;
+    }
+    // Every token of this pointer begins other, which has more tokens.
+    pub fn is_proper_prefix(&self, other: &Pointer) -> bool {
+        if (self.count() >= other.count()) { return false; }
+        let index: i32 = 0;
+        while (index < self.count()) { if (!self.same_token(other, index)) { return false; } index += 1; }
+        return true;
+    }
+    pub fn equals(&self, other: &Pointer) -> bool {
+        if (self.count() != other.count()) { return false; }
+        let index: i32 = 0;
+        while (index < self.count()) { if (!self.same_token(other, index)) { return false; } index += 1; }
+        return true;
+    }
+    pub fn destroy(&self) {
+        self.bytes.destroy(); self.spans.destroy();
+        self.bytes = alloc::vec::new(); self.spans = alloc::vec::new();
+    }
+}
+
+// The node named by the first `count` tokens, from the root. A missing
+// member or a step into a scalar is NotFound; an array token that is not an
+// index is InvalidIndex; "-" or an index at or past the end is OutOfRange.
+pub fn resolve(tree: &ext::json_tree::Tree, pointer: &Pointer, count: i32) -> core::result::Result<i32, ext::json_tree::Error> {
+    let node: i32 = tree.root(); let index: i32 = 0;
+    while (index < count) {
+        let code: i32 = tree.code(node);
+        let token: core::text::Text = pointer.token(index);
+        if (code == 6) {
+            node = tree.member(node, token);
+            if (node < 0) { return core::result::Err(ext::json_tree::failure(ext::json_tree::ErrorKind::NotFound, -1, 0)); }
+        } else {
+            if (code != 5) { return core::result::Err(ext::json_tree::failure(ext::json_tree::ErrorKind::NotFound, -1, 0)); }
+            let position: i64 = array_index(token);
+            if (position == -1) { return core::result::Err(ext::json_tree::failure(ext::json_tree::ErrorKind::InvalidIndex, -1, 0)); }
+            if (position < 0 || position >= (tree.child_count(node) as i64)) { return core::result::Err(ext::json_tree::failure(ext::json_tree::ErrorKind::OutOfRange, -1, 0)); }
+            node = tree.child(node, position as i32);
+        }
+        index += 1;
+    }
+    return core::result::Ok(node);
+}
+pub fn get(tree: &ext::json_tree::Tree, pointer: &Pointer) -> core::result::Result<i32, ext::json_tree::Error> {
+    return resolve(tree, pointer, pointer.count());
+}

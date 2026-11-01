@@ -1,0 +1,31 @@
+// A Lanius function started by pthread_create on a thread glibc creates. Its
+// C entry loads R15 with the process vector, so the runtime's argc thunk
+// works there. The worker returns its argument advanced by argc words;
+// pthread_join hands that back. Exits 0 when the thread saw main's argc.
+module app::main;
+
+import core::mem;
+import std::process;
+
+extern "C" fn pthread_create(thread: ptr, attr: ptr, start: ptr, arg: ptr) -> i32;
+extern "C" fn pthread_join(thread: u64, result: ptr) -> i32;
+
+fn worker(arg: ptr) -> ptr {
+    return arg + std::process::argc() * 8;
+}
+
+fn main() -> i32 {
+    let thread_words: [i32; 2] = [0, 0];
+    let thread_storage: ptr = core::mem::i32_array_data_ptr(thread_words);
+    let result_words: [i32; 2] = [0, 0];
+    let result_storage: ptr = core::mem::i32_array_data_ptr(result_words);
+    let base: [i32; 4] = [1, 2, 3, 4];
+    let arg: ptr = core::mem::i32_array_data_ptr(base);
+    let attr: ptr = 0;
+    if (pthread_create(thread_storage, attr, worker, arg) != 0) { return 1; }
+    let thread: [u64] = core::mem::typed_slice_from_raw_parts(thread_storage, 1);
+    if (pthread_join(thread[0], result_storage) != 0) { return 2; }
+    let result: [ptr] = core::mem::typed_slice_from_raw_parts(result_storage, 1);
+    if (result[0] != arg + std::process::argc() * 8) { return 3; }
+    return 0;
+}

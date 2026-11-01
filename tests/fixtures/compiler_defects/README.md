@@ -34,9 +34,15 @@ one should become a passing regression test once its defect is fixed.
 | `b14_path_self_method_bound.lani` | a bound's self member called through the parameter's path, `T::tw(x, 3)` with `T: Tw<T>`, on `i32` and a record | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed"; registered in `tests/compiler_defect_fixtures_execution.rs` |
 | `lnc0005_nested_variant_pattern.lani` | a variant named inside another pattern, `Ok(V5(p))` or `Some(None)`, then the same variant bare in a later pattern or expression | exit 0 | **fixed 2026-10-31**: was LNC0005 "unresolved identifier" (the nested variant was declared as a match binder); found by `formal/tools/fuzz_oracle.py`; registered in `tests/compiler_defect_fixtures_execution.rs` |
 | `lnc0017_payload_after_nested_variant.lani` | a payload binder after a nested local variant, `V6(V3(p), q) -> (q as usize)` | exit 0 | **fixed 2026-10-31**: was LNC0017 "first unsupported target LIR opcode: 8" (the nested pattern's slot had no type, so q had no word offset); found by `formal/tools/fuzz_oracle.py`; registered in `tests/compiler_defect_fixtures_execution.rs` |
-| `b19_stdlib_path_self_method.lani` | self methods of stdlib types through the type's path: `TotalF32::to_bits(t)`, `Descriptor::raw_handle(d.borrow())`, `Option<i32>::is_some(o)` | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed". The bare `Option::is_some(o)` is still LNC0005 (generics backlog b19) |
+| `b19_stdlib_path_self_method.lani` | self methods of stdlib types through the type's path: `TotalF32::to_bits(t)`, `Descriptor::raw_handle(d.borrow())`, `Option<i32>::is_some(o)` | exit 0 | **fixed 2026-10-31**: was LNC0027 "call resolution failed". The bare `Option::is_some(o)` (was LNC0005) is generics matrix p83 |
+| `b19_bare_imported_generic_path.lani` | self methods of imported generic types through the bare type's path: `Option::is_some(o)`, `Option::unwrap_or(n, 9)`, `Result::unwrap(r)` | exit 0 | **fixed 2026-11-01**: was LNC0005 "unresolved identifier" at `Option`. dependencies/14 gives the bare qualifier its declaration's own application (an external canonical type), methods/06, 07, 08 and candidate.slang accept it as a receiver key, and calls/03d binds no parameter from it |
 | `generic_impl_path_inference.lani` | a bare generic type's path infers the impl's parameters: `W::wrap(5)`, `W::get(w)`, `W::peek(u.borrow())` on `impl<T> W<T>` | exit 0 | **fixed 2026-10-31**: was LNC0006 "type mismatch" (the bare `W` bound T to the declaration's own parameter) |
+| `ptr_zero_local.lani` | `let value: ptr = 0; return value;` after an earlier call | exit 1 | **fixed 2026-11-01**: exit 2, the pointer was non-null; see [immediate stack stores](#immediate-stack-stores) |
+| `ptr_zero_socket_args.lani` | std::socket's shape: `[word(5), address(null()), address(null())]` | exit 11 | **fixed 2026-11-01**: was exit 22. In `std::socket` every `receive`/`receive_until` failed with EFAULT |
+| `u64_raw_view_direction.lani` | reported: a store through `typed_slice_from_raw_parts<u64>(p, n)` at index 1 writes below `p` and segfaults | exit 79 | **not a defect**: raw views of types other than i32 and u8 descend in eight-byte words, as `core::mem` documents, so element 1 is at `p - 8`. The fixture views the storage with `typed_slice_from_storage` and exits 79 |
+| `ptr_zero_paths.lani` | a null pointer through a return, struct field, `Option`, assignment, copy and enum payload, after calls that leave stack addresses behind | exit 12 | exit 12 since the 2026-11-01 fix. S2's h2c programs (`h2c_service`, `h2c_events` and the 100-client load test) pass with the unpatched `std::socket` on that build. `probe/recv.lani` exits 5 against a local server; its SIGILL is the `unwrap` trap when it runs without a port argument |
 | `byte_loop_codegen.lani` | performance: a `[u8]` newline-count loop, 160 M byte reads; compare `byte_loop_codegen.c` and the loop disassembly in `byte_loop_codegen.s` | about `gcc -O0` speed (0.14 s; `-O2` 0.02 s) | 0.50 s (2.8 ns/byte), exit 0: per-iteration slice copy, bounds check, stride `imul` and branch, spills of every temporary |
+| `ptr_literal_store_width.lani` | `let empty: ptr = 0;` in a function whose slot last held a stack address | exit 0 (null) | **fixed 2026-11-01** (fe60937c2: an immediate stored to a stack slot writes the whole word): the literal was stored with `mov %eax,-0x8(%rbp)` (32 bits) and reloaded with a 64-bit `mov`, giving 0x00007ffe00000000. Found when `alloc::vec::new()` returned a nonnull `storage` after a push. Four fixtures that trapped on such a `storage` pass with the plain literal (`stdlib_vec_edit_model`, `stdlib_vec_edit_resources/zero_sized.lani`, `stdlib_vec_transfer_model`, `stdlib_vec_transfer/zero_sized.lani`) |
 
 An imported method called with too few arguments, `o.unwrap_or()` on an
 `Option<i32>` or `TotalF32::to_bits()`, compiled and ran with an undefined
@@ -48,6 +54,29 @@ other shapes also compiled correctly: generic-function and user-enum nested
 matches, `Option<Result<T, i32>>`, an untyped `let` of `T::lt` and
 `try_clone`. The agent that hit that diagnostic should replace the candidate
 with the failing program.
+
+## Immediate stack stores
+
+`x86_put_imm32_to_location` (`shaders/codegen/lir/x86/encoding.slang`) wrote an
+integer or pointer immediate to a stack slot with a 32-bit
+`mov [rbp+d], eax`. Readers of a pointer or 64-bit value load the slot's
+whole eight-byte word. Since the linear-scan allocator (d4453f42b) moved more
+temporaries onto the stack, the upper half could be stale from an earlier
+call's frame. For example, `null()` in `ptr_zero_local.lani` returned a stack
+address with its low half cleared, and so did `std::socket`'s `null()`. The
+store now carries REX.W. RAX already holds the zero-extended immediate, as the
+register form leaves it, so i32 readers see the same value. The change adds
+one byte per such store and no kernel instructions (`emit` 26,250,
+`byte_count` 21,652; limit 40,000).
+
+The compilers built before and after this change compiled 97 programs in
+one daemon each: 84 sample programs and stdlib fixtures, 11 reductions and
+the two `u64_slice` probes. Every executable changed by the extra REX byte.
+16 programs are rejected by both. Of the 243 runs, 204 match. Six of the rest
+differ only in clock output. 30 are the 10 reductions, which went from the
+wrong result to the expected one. The other three are
+`stdlib_foundation/owned_delimited/bounds.lani`, which died with SIGILL on
+lang and now exits 0.
 
 ## check and generic impls
 
@@ -64,12 +93,18 @@ rule that false error also replaced the real label of a program with a real
 unsatisfied bound. Builds, and the label tests that compile, were never
 affected.
 
-The fix is in the CLI (`cli/compile/entry.rs`, `check_with_build_fallback`).
-When the frontend check fails with exactly that diagnostic, check builds the
-program for x86-64 and discards the output, then reports what the build
-reports. Every other check result is unchanged, and so is its cost. The
-library functions `type_check_entry_with_*` and the language server still run
-the frontend alone, so they still reject these programs.
+The fix is in `compiler/gpu_public_api.rs`
+(`frontend_check_missed_generic_impl`). When the frontend check fails with
+exactly that diagnostic, the check builds the program for x86-64 and discards
+the output, then reports what the build reports. Every other check result is
+unchanged, and so is its cost. Since 2026-11-01 the fallback sits in the
+library functions themselves (`type_check_entry_with_stdlib`,
+`_with_source_root`, `_with_source_roots`, `type_check_source_with_gpu` and
+`type_check_source_with_gpu_from_path`), so `laniusc check` and the language
+server share it. The language server's pull diagnostics now accept
+`check_generic_impl_bound.lani` (before: LNC0008 at its call). The server
+still checks one document without the stdlib, so it reports a `core::slice`
+import as LNC0010 "imported module not found", as before.
 
 Before the fix, check rejected `check_generic_impl_bound.lani`,
 `check_slice_import.lani`, `check_slice_select_label.lani`, seven other
@@ -220,7 +255,8 @@ compiler can fix the per-byte cost.
 
 | File | Defect | Expected | Actual |
 | --- | --- | --- | --- |
-| `stdlib_stray_body_diagnostic.lani` | a stray function body (`let stray: i32 = 2; return stray;` then `}`) at top level of a stdlib module, `core::float_decimal` | LNC0016 "syntax error" at the stray line | LNC0008 "unsatisfied trait bound" at `stdlib/core/result.lani:93` (`and_then`'s `Mapper<T,Result<U,E>>` bound), which names neither the file nor the line |
+| `stdlib_stray_body_diagnostic.lani` | a stray function body (`let stray: i32 = 2; return stray;` then `}`) at top level of a stdlib module, `core::float_decimal` | LNC0016 "syntax error" at the stray line | **fixed 2026-11-01**: LNC0016 at the stray `let` (`float_decimal.lani:337:5`). Was LNC0008 "unsatisfied trait bound" at `stdlib/core/result.lani:93` (`and_then`'s `Mapper<T,Result<U,E>>` bound), which named neither the file nor the line; see [parser labels in a source pack](#parser-labels-in-a-source-pack) |
+| `byte_order_mark_source.lani` | the file starts with a UTF-8 byte-order mark (EF BB BF) | rejected with a message that names the mark | **fixed 2026-11-01**: LNC0046 at 1:1, labeled "this file starts with a UTF-8 byte-order mark", with help "save the file as UTF-8 without a byte-order mark (U+FEFF)". Was "tokenization fails at this byte". The same label applies to a module under `--source-root` |
 
 The program compiles and exits 0 against the real stdlib. To reproduce,
 insert the stray lines into a copy of the stdlib:
@@ -233,8 +269,40 @@ target/claude-work/bin/lcc --stdlib-root $D -o target/claude-work/defect \
   tests/fixtures/compiler_defects/stdlib_stray_body_diagnostic.lani
 ```
 
-The same stray lines in a module under `--source-root` (`app::bad`), or in a
-new stdlib module that nothing else imports (`core::straybad`), are reported
-correctly as LNC0016 at the stray line. This misreport cost a bisection
-during the S5 Schubfach work. The stray lines were left by deleting only the
-first line of a removed function.
+The stray lines were left by deleting only the first line of a removed
+function, and the misreport cost a bisection during the S5 Schubfach work.
+
+### Parser labels in a source pack
+
+Two host-side steps mislabeled the stray. Both are in
+`compiler/diagnostics.rs`.
+
+1. The trait-argument heuristic (`find_trait_parser_rejection`) turns a
+   parser rejection into "trait bound argument shape is not supported here"
+   (LNC0008) or "trait impl header uses an unsupported trait argument shape"
+   (LNC0021) when it finds such a shape. It searched every line of every file
+   in the pack, so any parse error in a program importing `core::result`
+   matched the valid `Mapper<T,Result<U,E>>` bound at `result.lani:93`. It now
+   searches only the line of the parser's error token, in that token's file.
+2. The LL(1) label indexed a token stream that the host rebuilt from the
+   files' text. That stream drifts from the GPU's stream after some stdlib
+   constructs, so a rejection was labeled up to about 20 tokens early, inside
+   the previous item. With `core::iter` imported, the stray module's label
+   moved from its `let` to the `pub` of the function before it. The label now
+   uses the GPU token at the rejection position, and the host stream is the
+   fallback.
+
+Probes of both cases were compiled through `laniusc daemon`. They used a
+stray body in `core::float_decimal`, a stray in a new `core::straybad`
+module imported beside `core::cmp`, `core::option`, `core::iter` or
+`core::slice`, and a missing `;`. Every probe now reports LNC0016 at the stray
+`let` or the missing `;`. `impl Rel<Boxed> for i32 {` still reports LNC0021.
+The comparison run was 72 sample programs plus 112 syntax-error mutants of
+40 of them (a dropped `;`, a stray body, an unclosed `(`). All 72 programs
+and 104 mutants gave identical results, and the 53 binaries were identical.
+The 8 mutants that changed all had wrong labels before. Six had a false
+LNC0021 at a valid `Mapper<View<u8>,Result<i64,i32>>` impl header, and two
+had LNC0016 labels three lines before the error. Six now point at the error.
+The two `return (status;` mutants report "expected ';' after return
+statement" at the end of the file, just past the `}` after the unclosed
+`(`. That is the statement heuristic's label, not one of these two steps.

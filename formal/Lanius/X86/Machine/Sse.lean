@@ -1,5 +1,8 @@
-import Lanius.IEEE
+module
 
+public import Lanius.IEEE
+
+@[expose] public section
 /-! The SSE scalar instructions of the x86 model and their meaning.
 
 The model holds the low 64 bits of each XMM register (`State.xmm`). The

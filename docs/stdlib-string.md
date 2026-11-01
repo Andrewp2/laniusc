@@ -76,6 +76,10 @@ use these traits. Existing containers copy handles rather than automatically
 cloning or destroying nested String allocations; keep each key's owner alive
 until the container is destroyed, or manage transferred owners explicitly.
 
+Comparison, prefix and suffix tests use `core::slice::memcmp`, and substring,
+replacement, removal and trimming copy through the `core::slice` bulk engine;
+see [bulk callers](stdlib-slice-bulk.md#callers) for timings.
+
 ## Borrowed collection queries
 
 `alloc::string::TextKey {}` is a zero-sized policy with `borrow()`. It implements

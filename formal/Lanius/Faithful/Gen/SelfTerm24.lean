@@ -13,7 +13,7 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_lit_eff : FnOk prog prims info (1120, ⟨6, [3], 0⟩) :=
+theorem ok_lit_eff : FnOk prog prims info (1120, ⟨5, [3], 0⟩) :=
   fnOk_of fn_lit_eff (by decide +kernel)
 
 theorem ok_empty_of_mini_selfhost_LocalTy : FnOk prog prims info (1121, ⟨0, [], 0⟩) :=
@@ -55,7 +55,7 @@ theorem ok_empty_of_mini_selfhost_Local : FnOk prog prims info (1138, ⟨0, [], 
 theorem ok_result_of : FnOk prog prims info (1139, ⟨11, [], 0⟩) :=
   fnOk_of fn_result_of (by decide +kernel)
 
-theorem ok_never_ret : FnOk prog prims info (1140, ⟨4, [], 0⟩) :=
+theorem ok_never_ret : FnOk prog prims info (1140, ⟨3, [], 0⟩) :=
   fnOk_of fn_never_ret (by decide +kernel)
 
 theorem ok_last_ty : FnOk prog prims info (1141, ⟨0, [0], 0⟩) :=
@@ -73,10 +73,10 @@ theorem ok_fn_bounds_ok : FnOk prog prims info (1146, ⟨19, [], 0⟩) :=
 theorem ok_ref_checked : FnOk prog prims info (1147, ⟨1, [], 0⟩) :=
   fnOk_of fn_ref_checked (by decide +kernel)
 
-theorem ok_func_params : FnOk prog prims info (1148, ⟨39, [], 0⟩) :=
+theorem ok_func_params : FnOk prog prims info (1148, ⟨38, [], 0⟩) :=
   fnOk_of fn_func_params (by decide +kernel)
 
-theorem ok_self_ref_id : FnOk prog prims info (1149, ⟨6, [], 0⟩) :=
+theorem ok_self_ref_id : FnOk prog prims info (1149, ⟨5, [], 0⟩) :=
   fnOk_of fn_self_ref_id (by decide +kernel)
 
 theorem ok_field_tys : FnOk prog prims info (1151, ⟨12, [], 0⟩) :=
@@ -118,7 +118,7 @@ theorem ok_Expr_mentions : FnOk prog prims info (1163, ⟨0, [0], 0⟩) :=
 theorem ok_cons_of_mini_selfhost_Fact : FnOk prog prims info (1164, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_Fact (by decide +kernel)
 
-theorem ok_trim_facts : FnOk prog prims info (1165, ⟨3, [], 0⟩) :=
+theorem ok_trim_facts : FnOk prog prims info (1165, ⟨2, [], 0⟩) :=
   fnOk_of fn_trim_facts (by decide +kernel)
 
 theorem ok_kill_prefix : FnOk prog prims info (1166, ⟨4, [0], 0⟩) :=

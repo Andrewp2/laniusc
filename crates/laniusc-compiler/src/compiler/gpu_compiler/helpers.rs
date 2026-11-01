@@ -177,13 +177,9 @@ pub(super) fn source_lexical_failure_for_source(
         .next()
         .map(char::len_utf8)
         .unwrap_or(1);
-    let label = if start == source.len() {
-        "token is incomplete at end of file"
-    } else {
-        "tokenization fails at this byte"
-    };
+    let label = lexical_failure_label(source, start);
 
-    CompileError::Diagnostic(
+    CompileError::Diagnostic(with_byte_order_mark_help(
         Diagnostic::error("LNC0046", "source tokenization failed")
             .with_primary_label(diagnostic_label_from_source_span(
                 diagnostic_path,
@@ -194,7 +190,30 @@ pub(super) fn source_lexical_failure_for_source(
             ))
             .with_note(format!("source input path: {}", diagnostic_path.display()))
             .with_note(format!("first lexical failure at byte {start}")),
-    )
+        source,
+        start,
+    ))
+}
+
+/// The label of a lexical failure at local byte `start` of `source`.
+fn lexical_failure_label(source: &str, start: usize) -> &'static str {
+    if start == 0 && source.starts_with('\u{feff}') {
+        "this file starts with a UTF-8 byte-order mark"
+    } else if start == source.len() {
+        "token is incomplete at end of file"
+    } else {
+        "tokenization fails at this byte"
+    }
+}
+
+/// Lanius source is UTF-8 without a byte-order mark; say so when that is
+/// what the lexer stopped at.
+fn with_byte_order_mark_help(diagnostic: Diagnostic, source: &str, start: usize) -> Diagnostic {
+    if start == 0 && source.starts_with('\u{feff}') {
+        diagnostic.with_help("save the file as UTF-8 without a byte-order mark (U+FEFF)")
+    } else {
+        diagnostic
+    }
 }
 
 /// Converts a lexer-driver error without losing a source-level failure carried
@@ -277,12 +296,8 @@ pub(super) fn source_lexical_failure_for_source_pack(
         .next()
         .map(char::len_utf8)
         .unwrap_or(1);
-    let label = if start == file.source.len() {
-        "token is incomplete at end of file"
-    } else {
-        "tokenization fails at this byte"
-    };
-    CompileError::Diagnostic(
+    let label = lexical_failure_label(&file.source, start);
+    CompileError::Diagnostic(with_byte_order_mark_help(
         diagnostic.with_primary_label(diagnostic_label_from_source_span(
             &file.path,
             &file.source,
@@ -290,7 +305,9 @@ pub(super) fn source_lexical_failure_for_source_pack(
             len,
             label,
         )),
-    )
+        &file.source,
+        start,
+    ))
 }
 
 /// Source-pack equivalent of `source_lexer_error_for_source`.
@@ -428,6 +445,17 @@ fn source_input_read_failed(path: &Path, err: std::io::Error) -> CompileError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lexical_failure_names_a_leading_byte_order_mark() {
+        let source = "\u{feff}module app::main;\n";
+        assert_eq!(
+            lexical_failure_label(source, 0),
+            "this file starts with a UTF-8 byte-order mark"
+        );
+        assert_eq!(lexical_failure_label("x", 1), "token is incomplete at end of file");
+        assert_eq!(lexical_failure_label("x\u{1}", 1), "tokenization fails at this byte");
+    }
 
     #[test]
     fn type_mismatch_note_decodes_scalar_type_code_record() {

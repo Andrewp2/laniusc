@@ -1,6 +1,9 @@
-import Lanius.X86.Word
-import Lanius.X86.Machine.Io
+module
 
+public import Lanius.X86.Word
+public import Lanius.X86.Machine.Io
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 abbrev Register := Fin 16
