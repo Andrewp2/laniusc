@@ -19,6 +19,7 @@ import core::time;
 import ext::hpack;
 import ext::http;
 import ext::http2;
+import ext::http_body;
 import ext::http_url;
 import ext::openssl_tls;
 import ext::tls_stream;
@@ -34,7 +35,7 @@ pub enum Error {
     Connect(ext::url_connect::Cause), Io(core::io::Error), Timeout, Truncated(i32),
     Parse(ext::http::Error), TooLarge, TooManyRedirects(i32), BadLocation,
     UnreplayableBody(i32), UnexpectedUpgrade, Source(core::io::Error), AllocationFailed, Clock,
-    Tls(ext::openssl_tls::Error), Http2(ext::http2::Error)
+    Tls(ext::openssl_tls::Error), Http2(ext::http2::Error), Sink(core::io::Error)
 }
 pub struct Options {
     limits: ext::http::Limits, url: ext::http_url::Limits, connect: ext::url_connect::Options,
@@ -69,12 +70,17 @@ pub struct Agent { options: Options, pool: alloc::vec::Vec<Idle>, sessions: allo
 // version is 10 or 11, or 20 for HTTP/2, whose wire holds the response fields
 // as "name: value" CRLF lines (lowercase names, no status line) and then the
 // body.
-pub struct Response { status: i32, version: i32, wire: alloc::vec::Vec<u8>, head_length: i32, body_start: i32, body_length: i32, decoded: alloc::vec::Vec<u8>, chunked: bool, method: alloc::vec::Vec<u8>, url: alloc::vec::Vec<u8>, limits: ext::http::Limits, redirects: i32, reused: bool, kept: bool, hint_ms: i32, active: bool }
+pub struct Response { status: i32, version: i32, wire: alloc::vec::Vec<u8>, head_length: i32, body_start: i32, body_length: i32, decoded: alloc::vec::Vec<u8>, chunked: bool, method: alloc::vec::Vec<u8>, url: alloc::vec::Vec<u8>, limits: ext::http::Limits, redirects: i32, reused: bool, kept: bool, hint_ms: i32, active: bool, streamed: i64 }
 // The body source of a request without a streamed body.
 struct NoBody { unused: i32 }
 impl NoBody { fn borrow(&self) -> &NoBody { return self; } }
 pub impl core::io::Read for NoBody {
     pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+// The sink of a request whose response body is buffered (never written).
+pub impl core::io::Write for NoBody {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(count); }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
 }
 
 pub fn default_options() -> Options {
@@ -313,9 +319,72 @@ fn parse_failure(e: ext::http::Error, received: i32) -> core::result::Result<Res
     return match(e) { ext::http::Error::Incomplete(n) -> failed(Error::Truncated(received),received), ext::http::Error::Limit(n) -> failed(Error::TooLarge,received), _ -> failed(Error::Parse(e),received) };
 }
 
+// Whether a final response is passed to the sink rather than buffered: all
+// but the redirects the agent will follow.
+fn streams_to_sink(o: Options, status: i32, location: bool) -> bool { return !(o.follow_redirects && is_redirect(status) && location); }
+fn write_sink<W>(sink: &W, data: core::slice::View<u8>) -> core::result::Result<i32,Error> where W: core::io::Write {
+    if (data.len() == 0) { return core::result::Ok(0); }
+    let wrote: core::result::Result<i32,core::io::Failure> = core::io::write_all<W>(sink,data.values,data.start,data.len());
+    if (wrote.is_err()) { return core::result::Err(Error::Sink(wrote.unwrap_err().cause)); }
+    return core::result::Ok(data.len());
+}
+fn framer_for(kind: ext::http::BodyKind, length: i64, limits: ext::http::Limits) -> ext::http_body::Framer {
+    return match (kind) {
+        ext::http::BodyKind::Empty -> ext::http_body::empty(), ext::http::BodyKind::Fixed -> ext::http_body::fixed(length as u64),
+        ext::http::BodyKind::Chunked -> ext::http_body::chunked(limits.line_bytes,limits.trailer_bytes), _ -> ext::http_body::until_close()
+    };
+}
+// The body of a final response whose head is input[0, head_end), written to
+// sink as it arrives through a fixed buffer instead of being kept. input
+// keeps only the head afterwards.
+fn stream_body<W>(o: Options, conn: &Conn, input: alloc::vec::Vec<u8>, filled: i32, received: i32, eof: bool, unauthenticated: bool, info: ext::http::HeadInfo, head: ext::http::Head, method: core::slice::View<u8>, sink: &W, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> where W: core::io::Write {
+    let status: i32 = head.status; let version: i32 = head.version; let reuse: bool = reusable(head); let hint: i32 = keep_alive_hint(head);
+    let head_end: i32 = info.head_end; let close: bool = match (info.kind) { ext::http::BodyKind::Close -> true, ext::http::BodyKind::Tunnel -> true, _ -> false };
+    let f: ext::http_body::Framer = framer_for(info.kind,info.content_length as i64,o.limits);
+    let streamed: i64 = 0; let pos: i32 = head_end; let cap: i32 = head_end + 65536;
+    while (true) {
+        while (pos < filled && !f.is_done()) {
+            let stepped: core::result::Result<ext::http_body::Step,ext::http_body::Error> = f.advance(part(input.as_view(),pos,filled));
+            if (stepped.is_err()) {
+                input.destroy();
+                return match (stepped.unwrap_err()) { ext::http_body::Error::Limit -> failed(Error::TooLarge,received), _ -> failed(Error::Parse(ext::http::Error::Malformed(received)),received) };
+            }
+            let st: ext::http_body::Step = stepped.unwrap();
+            let wrote: core::result::Result<i32,Error> = write_sink<W>(sink,part(input.as_view(),pos + st.data_start,pos + st.data_start + st.data_length));
+            if (wrote.is_err()) { input.destroy(); return failed(wrote.unwrap_err(),received); }
+            streamed += st.data_length as i64; pos += st.consumed;
+            if (st.consumed == 0 && !st.done) { break; }
+        }
+        if (f.is_done()) { break; }
+        // Everything past the head was consumed: reuse the space.
+        filled = head_end; pos = head_end;
+        if (eof) {
+            let ended: core::result::Result<i32,ext::http_body::Error> = f.finish();
+            if (ended.is_err() || (close && unauthenticated)) { input.destroy(); return failed(Error::Truncated(received),received); }
+            break;
+        }
+        if (!room(input.borrow(),filled,cap)) { input.destroy(); return failed(Error::AllocationFailed,received); }
+        let space: core::slice::View<u8> = part(input.as_view(),filled,input.len());
+        let got: core::result::Result<i32,core::io::Error> = receive(conn,space,deadline);
+        if (got.is_err() && conn.secure && unclean(got.unwrap_err())) { eof = true; unauthenticated = true; continue; }
+        if (got.is_err()) { input.destroy(); let e: core::io::Error = got.unwrap_err(); if (timed_out(e)) { return failed(Error::Timeout,received); } return failed(Error::Io(e),received); }
+        let n: i32 = got.unwrap(); if (n < 0 || n > space.len()) { input.destroy(); return failed(Error::Io(core::io::Error::InvalidCount),received); }
+        if (n == 0) { eof = true; } filled += n; received += n;
+    }
+    let kept: bool = !eof && !close && pos == filled && reuse;
+    let copy: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    if (!push(copy.borrow(),method)) { copy.destroy(); input.destroy(); return failed(Error::AllocationFailed,received); }
+    input.length = head_end;
+    return core::result::Ok(Response { status: status, version: version, wire: input, head_length: head_end, body_start: head_end, body_length: 0,
+        decoded: alloc::vec::new<u8>(), chunked: false, method: copy, url: alloc::vec::new<u8>(), limits: o.limits,
+        redirects: 0, reused: false, kept: kept, hint_ms: hint, active: true, streamed: streamed });
+}
+
 // Read one final response, skipping informational ones. Framing comes from
-// the incremental cursor; the final prefix is parsed canonically once.
-fn read_response(o: Options, conn: &Conn, method: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> {
+// the incremental cursor; the final prefix is parsed canonically once. With
+// deliver, a final response the agent will not follow as a redirect has its
+// body written to sink instead (stream_body).
+fn read_response<W>(o: Options, conn: &Conn, method: core::slice::View<u8>, deadline: core::time::Deadline, sink: &W, deliver: bool) -> core::result::Result<Response,Failure> where W: core::io::Write {
     let cap: i64 = (o.limits.head_bytes as i64) * 2 + (o.limits.body_bytes as i64) * 2 + 65536; if (cap > 1073741824) { cap = 1073741824; }
     let made: core::result::Result<ext::http::Cursor,ext::http::Error> = ext::http::cursor(ext::http::CursorMode::Response,o.limits,cap as i32,4611686018427387904);
     if (made.is_err()) { return failed(Error::Parse(made.unwrap_err()),0); }
@@ -333,6 +402,12 @@ fn read_response(o: Options, conn: &Conn, method: core::slice::View<u8>, deadlin
             let status: i32 = match(s) { ext::http::Scan::HeadReady(h) -> h.status, _ -> 0 };
             if (status == 101) { input.destroy(); return failed(Error::UnexpectedUpgrade,received); }
             let info: ext::http::HeadInfo = match(s) { ext::http::Scan::HeadReady(h) -> h, _ -> ext::http::HeadInfo { status: 0, version: 0, kind: ext::http::BodyKind::Empty, content_length: 0, head_end: 0 } };
+            if (deliver && status >= 200) {
+                let parsed: core::result::Result<ext::http::Head,ext::http::Error> = ext::http::parse_response_head(part(input.as_view(),0,info.head_end),method,o.limits);
+                if (parsed.is_err()) { input.destroy(); return parse_failure(parsed.unwrap_err(),received); }
+                let h: ext::http::Head = parsed.unwrap();
+                if (streams_to_sink(o,status,h.lookup(literal("Location",8)).is_some())) { return stream_body<W>(o,conn,input,filled,received,eof,unauthenticated,info,h,method,sink,deadline); }
+            }
             let fixed: bool = match(info.kind) { ext::http::BodyKind::Fixed -> true, _ -> false };
             let total: i64 = 0; if (fixed) { total = (info.head_end as i64) + (info.content_length as i64); }
             reserve_total(input.borrow(),total,cap as i32);
@@ -374,7 +449,7 @@ fn read_response(o: Options, conn: &Conn, method: core::slice::View<u8>, deadlin
         let kept: bool = !eof && !close && filled == consumed && reusable(m.head);
         let r: Response = Response { status: m.head.status, version: m.head.version, wire: input, head_length: m.head.raw.len(), body_start: m.encoded_body.start - window.start,
             body_length: m.decoded_length, decoded: decoded, chunked: chunked, method: copy, url: alloc::vec::new<u8>(), limits: o.limits,
-            redirects: 0, reused: false, kept: kept, hint_ms: keep_alive_hint(m.head), active: true };
+            redirects: 0, reused: false, kept: kept, hint_ms: keep_alive_hint(m.head), active: true, streamed: -1 };
         return core::result::Ok(r);
     }
     input.destroy(); return failed(Error::Parse(ext::http::Error::Bounds),received);
@@ -382,7 +457,7 @@ fn read_response(o: Options, conn: &Conn, method: core::slice::View<u8>, deadlin
 
 // One request on one connection. A streamed body goes out as chunks; a final
 // response that arrives first ends the upload and the connection.
-fn transact<R>(agent: &Agent, conn: &Conn, head: core::slice::View<u8>, source: &R, streaming: bool, method: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> where R: core::io::Read {
+fn transact<R,W>(agent: &Agent, conn: &Conn, head: core::slice::View<u8>, source: &R, streaming: bool, method: core::slice::View<u8>, deadline: core::time::Deadline, sink: &W, deliver: bool) -> core::result::Result<Response,Failure> where R: core::io::Read, W: core::io::Write {
     let o: Options = agent.options;
     let sent: core::result::Result<i32,core::io::Error> = send_all(conn,head,deadline);
     let early: bool = false; let used: bool = false;
@@ -427,7 +502,7 @@ fn transact<R>(agent: &Agent, conn: &Conn, head: core::slice::View<u8>, source: 
         }
         chunk.destroy();
     }
-    let got: core::result::Result<Response,Failure> = read_response(o,conn,method,deadline);
+    let got: core::result::Result<Response,Failure> = read_response<W>(o,conn,method,deadline,sink,deliver);
     if (got.is_err()) { let f: Failure = got.unwrap_err(); return core::result::Err(Failure { error: f.error, retryable: f.retryable && !used }); }
     let r: Response = got.unwrap(); if (early) { r.kept = false; }
     return core::result::Ok(r);
@@ -541,7 +616,46 @@ fn h2_response(engine: &ext::http2::Connection, id: i32, method: core::slice::Vi
     if (!ok) { wire.destroy(); copy.destroy(); return core::result::Err(Error::AllocationFailed); }
     return core::result::Ok(Response { status: engine.status(id), version: 20, wire: wire, head_length: head_length, body_start: head_length, body_length: body.len(),
         decoded: alloc::vec::new<u8>(), chunked: false, method: copy, url: alloc::vec::new<u8>(), limits: limits,
-        redirects: 0, reused: reused, kept: true, hint_ms: -1, active: true });
+        redirects: 0, reused: reused, kept: true, hint_ms: -1, active: true, streamed: -1 });
+}
+// A streamed HTTP/2 response: decided once the final status is known;
+// failure holds a sink error (the stream is then cancelled, the connection
+// kept).
+struct Delivery { decided: bool, streaming: bool, written: i64, failure: core::option::Option<Error> }
+impl Delivery { fn borrow(&self) -> &Delivery { return self; } }
+fn h2_location(engine: &ext::http2::Connection, id: i32) -> bool {
+    let i: i32 = 0; let n: i32 = engine.field_count(id);
+    while (i < n) { let f: ext::hpack::Header = engine.field(id,i); if (named(f.name,"location",8)) { return true; } i += 1; }
+    return false;
+}
+// Pass what stream id has received to sink, once its final head shows it is
+// not a redirect the agent will follow.
+fn h2_deliver<W>(h: &H2, id: i32, o: Options, sink: &W, d: &Delivery) where W: core::io::Write {
+    if (d.failure.is_some()) { return; }
+    if (!d.decided) {
+        let status: i32 = h.engine.status(id); if (status < 200) { return; }
+        d.decided = true; d.streaming = streams_to_sink(o,status,h2_location(h.engine.borrow(),id));
+    }
+    if (!d.streaming) { return; }
+    let body: core::slice::View<u8> = h.engine.body(id);
+    let wrote: core::result::Result<i32,Error> = write_sink<W>(sink,body);
+    if (wrote.is_err()) { d.failure = core::option::Some(wrote.unwrap_err()); return; }
+    d.written += body.len() as i64; h.engine.take_body(id);
+}
+// H2.pump until stream id is finished, delivering its body as it arrives;
+// a sink failure stops early with Ok.
+fn h2_pump_into<W>(h: &H2, id: i32, scratch: core::slice::View<u8>, deadline: core::time::Deadline, o: Options, sink: &W, d: &Delivery) -> core::result::Result<i32,Error> where W: core::io::Write {
+    while (true) {
+        let flushed: core::result::Result<i32,core::io::Error> = h.flush_out(deadline);
+        if (flushed.is_err() && !h.reached(id,0,false)) { return core::result::Err(io_failure(flushed.unwrap_err())); }
+        h2_deliver<W>(h,id,o,sink,d);
+        if (d.failure.is_some() || !h.engine.is_open() || h.reached(id,0,false)) { return core::result::Ok(0); }
+        let got: core::result::Result<i32,Error> = tls_receive(h.conn.borrow(),scratch,deadline);
+        if (got.is_err()) { return got; }
+        let n: i32 = got.unwrap(); if (n == 0) { return core::result::Err(Error::Truncated(0)); }
+        let fed: core::result::Result<i32,ext::http2::Error> = h.engine.feed(part(scratch,0,n));
+    }
+    return core::result::Ok(0);
 }
 fn h2_open(state: ext::http2::State) -> bool { return match (state) { ext::http2::State::Open -> true, _ -> false }; }
 // After an exchange on session index: keep it for later requests, or close
@@ -558,7 +672,7 @@ fn settle(agent: &Agent, index: i32, h: H2, keep: bool) -> bool {
 // refused (REFUSED_STREAM, or above a GOAWAY's last stream) is retryable, as
 // is an idempotent request on a reused connection that failed before any
 // response, under retry_stale; neither once a streamed body was read.
-fn over_h2<R>(agent: &Agent, index: i32, url: &ext::http_url::Url, method: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8>, source: &R, streaming: bool, reused: bool, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> where R: core::io::Read {
+fn over_h2<R,W>(agent: &Agent, index: i32, url: &ext::http_url::Url, method: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8>, source: &R, streaming: bool, reused: bool, deadline: core::time::Deadline, sink: &W, deliver: bool) -> core::result::Result<Response,Failure> where R: core::io::Read, W: core::io::Write {
     let o: Options = agent.options;
     let made: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(16384);
     if (made.is_err()) { return core::result::Err(Failure { error: Error::AllocationFailed, retryable: false }); }
@@ -599,21 +713,25 @@ fn over_h2<R>(agent: &Agent, index: i32, url: &ext::http_url::Url, method: core:
             chunk.destroy();
         }
     }
+    let d: Delivery = Delivery { decided: false, streaming: false, written: 0, failure: core::option::None() };
     if (failure.is_none()) {
-        let pumped: core::result::Result<i32,Error> = h.pump(id,0,false,scratch.as_view(),deadline);
+        let pumped: core::result::Result<i32,Error> = core::result::Ok(0);
+        if (deliver) { pumped = h2_pump_into<W>(h.borrow(),id,scratch.as_view(),deadline,o,sink,d.borrow()); } else { pumped = h.pump(id,0,false,scratch.as_view(),deadline); }
         if (pumped.is_err()) { failure = core::option::Some(pumped.unwrap_err()); broken = true; }
+        if (d.failure.is_some()) { failure = d.failure; }
     }
     scratch.destroy();
     let result: core::result::Result<Response,Failure> = core::result::Err(Failure { error: Error::InvalidRequest, retryable: false });
     if (failure.is_some()) {
-        let retry: bool = broken && reused && !used && o.retry_stale && idempotent(method) && h.engine.status(id) == 0;
+        let retry: bool = broken && reused && !used && o.retry_stale && idempotent(method) && h.engine.status(id) == 0 && d.written == 0;
         result = core::result::Err(Failure { error: failure.unwrap(), retryable: retry });
     } else {
         let state: ext::http2::State = h.engine.state(id);
         let done: bool = match (state) { ext::http2::State::Done -> true, _ -> false };
         if (done) {
             let r: core::result::Result<Response,Error> = h2_response(h.engine.borrow(),id,method,o.limits,reused);
-            if (r.is_err()) { result = core::result::Err(Failure { error: r.unwrap_err(), retryable: false }); } else { result = core::result::Ok(r.unwrap()); }
+            if (r.is_err()) { result = core::result::Err(Failure { error: r.unwrap_err(), retryable: false }); }
+            else { let ok: Response = r.unwrap(); if (d.streaming) { ok.streamed = d.written; } result = core::result::Ok(ok); }
         } else {
             let e: ext::http2::Error = h.engine.stream_error(id);
             let refused: bool = match (e.cause) { ext::http2::Cause::Refused -> true, _ -> false };
@@ -632,7 +750,7 @@ fn over_h2<R>(agent: &Agent, index: i32, url: &ext::http_url::Url, method: core:
 // One hop: lease a connection, exchange, then pool or close it. A request
 // whose pooled connection turns out dead before any response byte is retried
 // once on a new connection when it is idempotent and its body is replayable.
-fn exchange<R>(agent: &Agent, url: &ext::http_url::Url, method: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8>, source: &R, streaming: bool) -> core::result::Result<Response,Error> where R: core::io::Read {
+fn exchange<R,W>(agent: &Agent, url: &ext::http_url::Url, method: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8>, source: &R, streaming: bool, sink: &W, deliver: bool) -> core::result::Result<Response,Error> where R: core::io::Read, W: core::io::Write {
     let o: Options = agent.options;
     let head: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
     let close: bool = o.max_idle_per_host == 0 || o.max_idle_total == 0;
@@ -655,7 +773,7 @@ fn exchange<R>(agent: &Agent, url: &ext::http_url::Url, method: core::slice::Vie
                 index = opened.unwrap();
             } else {
                 agent.stats.requests += 1;
-                let done: core::result::Result<Response,Failure> = transact<R>(agent,lease.conn.borrow(),head.as_view(),source,streaming,method,deadline.unwrap());
+                let done: core::result::Result<Response,Failure> = transact<R,W>(agent,lease.conn.borrow(),head.as_view(),source,streaming,method,deadline.unwrap(),sink,deliver);
                 if (done.is_err()) {
                     let f: Failure = done.unwrap_err(); close_conn(lease.conn.borrow());
                     if (lease.reused && attempt == 0 && o.retry_stale && f.retryable && idempotent(method)) { agent.stats.retries += 1; attempt += 1; continue; }
@@ -668,7 +786,7 @@ fn exchange<R>(agent: &Agent, url: &ext::http_url::Url, method: core::slice::Vie
             }
         }
         agent.stats.requests += 1; if (!fresh) { agent.stats.reused += 1; }
-        let over: core::result::Result<Response,Failure> = over_h2<R>(agent,index,url,method,headers,body,source,streaming,!fresh,deadline.unwrap());
+        let over: core::result::Result<Response,Failure> = over_h2<R,W>(agent,index,url,method,headers,body,source,streaming,!fresh,deadline.unwrap(),sink,deliver);
         if (over.is_err()) {
             let f: Failure = over.unwrap_err();
             if (attempt == 0 && f.retryable) { agent.stats.retries += 1; attempt += 1; continue; }
@@ -736,7 +854,7 @@ fn https(url: &ext::http_url::Url) -> bool { return match(url.scheme().unwrap())
 // or 302 turn POST into GET; 307 and 308 keep the method and resend the body,
 // which a streamed body cannot do. A hop to another host or port drops
 // Authorization and Cookie. Body headers go with the body.
-fn run<R>(agent: &Agent, request: Request, source: &R, streaming: bool) -> core::result::Result<Response,Error> where R: core::io::Read {
+fn run<R,W>(agent: &Agent, request: Request, source: &R, streaming: bool, sink: &W, deliver: bool) -> core::result::Result<Response,Error> where R: core::io::Read, W: core::io::Write {
     if (!agent.active) { return core::result::Err(Error::InvalidRequest); }
     let checked: core::result::Result<bool,Error> = check_request(request); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
     let o: Options = agent.options;
@@ -748,7 +866,7 @@ fn run<R>(agent: &Agent, request: Request, source: &R, streaming: bool) -> core:
     let url: ext::http_url::Url = parsed.unwrap();
     while (true) {
         if (https(url.borrow()) && !o.https) { url.destroy(); current.destroy(); headers.destroy(); return core::result::Err(Error::UnsupportedScheme); }
-        let got: core::result::Result<Response,Error> = exchange<R>(agent,url.borrow(),method,headers.as_view(),body,source,upload);
+        let got: core::result::Result<Response,Error> = exchange<R,W>(agent,url.borrow(),method,headers.as_view(),body,source,upload,sink,deliver);
         if (got.is_err()) { url.destroy(); current.destroy(); headers.destroy(); return got; }
         let r: Response = got.unwrap();
         let location: core::option::Option<core::slice::View<u8>> = core::option::None();
@@ -778,7 +896,14 @@ fn run<R>(agent: &Agent, request: Request, source: &R, streaming: bool) -> core:
 }
 // Send request.body (fixed length) or, with fetch_stream, the bytes read from
 // source until EOF as a chunked body.
-pub fn fetch_stream<R>(agent: &Agent, request: Request, source: &R) -> core::result::Result<Response,Error> where R: core::io::Read { return run<R>(agent,request,source,true); }
+pub fn fetch_stream<R>(agent: &Agent, request: Request, source: &R) -> core::result::Result<Response,Error> where R: core::io::Read { let none: NoBody = NoBody { unused: 0 }; return run<R,NoBody>(agent,request,source,true,none.borrow(),false); }
+// fetch, with the final response's body written to sink as it arrives
+// instead of being kept: Response.body() is then empty and streamed() counts
+// the bytes written. The bodies of followed redirects are still read apart.
+pub fn fetch_to<W>(agent: &Agent, request: Request, sink: &W) -> core::result::Result<Response,Error> where W: core::io::Write { let none: NoBody = NoBody { unused: 0 }; return run<NoBody,W>(agent,request,none.borrow(),false,sink,true); }
+// fetch_stream and fetch_to together: a chunked upload from source and the
+// response body to sink.
+pub fn fetch_stream_to<R,W>(agent: &Agent, request: Request, source: &R, sink: &W) -> core::result::Result<Response,Error> where R: core::io::Read, W: core::io::Write { return run<R,W>(agent,request,source,true,sink,true); }
 
 pub impl Agent {
     pub fn borrow(&self) -> &Agent { return self; }
@@ -786,7 +911,7 @@ pub impl Agent {
     pub fn idle(&self) -> i32 { return self.pool.len(); }
     // Open HTTP/2 connections.
     pub fn sessions(&self) -> i32 { return self.sessions.len(); }
-    pub fn fetch(&self, request: Request) -> core::result::Result<Response,Error> { let none: NoBody = NoBody { unused: 0 }; return run<NoBody>(self,request,none.borrow(),false); }
+    pub fn fetch(&self, request: Request) -> core::result::Result<Response,Error> { let none: NoBody = NoBody { unused: 0 }; let sink: NoBody = NoBody { unused: 0 }; return run<NoBody,NoBody>(self,request,none.borrow(),false,sink.borrow(),false); }
     fn close_idle(&self, i: i32) { let e: Idle = self.pool.at(i); close_conn(e.conn.borrow()); e.host.destroy(); self.pool.remove(i); }
     fn drop_session(&self, i: i32) { let h: H2 = self.sessions.at(i); h.close(); self.sessions.remove(i); }
     // An open HTTP/2 connection to host and port that can take a stream now,
@@ -1142,6 +1267,8 @@ pub impl Response {
     pub fn body(&self) -> core::slice::View<u8> { if (self.chunked) { return self.decoded.as_view(); } return part(self.wire.as_view(),self.body_start,self.body_start+self.body_length); }
     pub fn head(&self) -> core::slice::View<u8> { return part(self.wire.as_view(),0,self.head_length); }
     pub fn version(&self) -> i32 { return self.version; }
+    // Body bytes written to the sink by fetch_to, or -1 for a buffered body.
+    pub fn streamed(&self) -> i64 { return self.streamed; }
     pub fn url(&self) -> core::slice::View<u8> { return self.url.as_view(); }
     pub fn header(&self, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>> {
         if (self.version == 20) { return h2_lookup(self.head(),name); }

@@ -1,0 +1,265 @@
+// Stress test for the thread-safe runtime allocator under std::pthread.
+// Prints "name value" per check (" FAIL want W" on a mismatch) and exits 0
+// when every check passes:
+//   churn.T    T threads each run ROUNDS random alloc/realloc/dealloc steps
+//              on 64 tagged slots (1 B .. 3,000 B, every 16th 40,000 B):
+//              fresh blocks read as zero, live blocks keep their tag, realloc
+//              keeps the common prefix
+//   cross.*    2 producers allocate tagged blocks and pass them through a
+//              Condvar queue; 2 consumers verify and free them, so every
+//              block is freed by a thread other than the one that made it
+//   spawn.*    1,000 sequential spawn/join pairs whose bodies allocate
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import alloc::allocator;
+import core::mem;
+import core::slice;
+import std::io;
+import std::pthread;
+import std::sync;
+
+const ROUNDS: i64 = 20000;
+const SLOTS: i32 = 64;
+const ITEMS: i64 = 20000;
+const CAPACITY: i64 = 16;
+
+fn get(at: ptr, word: i32) -> i64 { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); return v[0]; }
+fn set(at: ptr, word: i32, value: i64) { let v: [i64] = core::mem::typed_slice_from_raw_parts<i64>(at + (word as usize) * 8, 1); v[0] = value; }
+fn get_ptr(at: ptr, word: i32) -> ptr { let v: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at + (word as usize) * 8, 1); return v[0]; }
+fn set_ptr(at: ptr, word: i32, value: ptr) { let v: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(at + (word as usize) * 8, 1); v[0] = value; }
+
+struct Score { failed: i32 }
+impl Score { pub fn borrow(&self) -> &Score { return self; } }
+fn report(score: &Score, label: str, got: i64, want: i64) {
+    std::io::write_text(1, label); std::io::write_text(1, " ");
+    std::io::write_i32(1, got as i32);
+    if (got != want) { std::io::write_text(1, " FAIL want "); std::io::write_i32(1, want as i32); score.failed += 1; }
+    std::io::write_newline(1);
+}
+
+fn next(seed: u64) -> u64 { return seed * 6364136223846793005 + 1442695040888963407; }
+fn fill(at: ptr, size: i64, tag: u8) {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(at, size as i32);
+    core::slice::fill<u8>(bytes, size as i32, tag);
+}
+// Sampled check: the first and last byte and every 61st byte equal want.
+fn holds(at: ptr, size: i64, want: u8) -> bool {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(at, size as i32);
+    if (bytes[(size - 1) as i32] != want) { return false; }
+    let i: i64 = 0;
+    while (i < size) { if (bytes[i as i32] != want) { return false; } i += 61; }
+    return true;
+}
+fn pick_size(seed: u64) -> i64 {
+    if (((seed >> 20) % 16) == 0) { return 40000; }
+    return 1 + ((seed >> 40) % 3000) as i64;
+}
+
+// Churn. Task words: 0 slot table (ptrs, sizes, tags), 1 seed, 2 errors, 3 steps.
+fn churn(task: ptr) -> ptr {
+    let table: ptr = get_ptr(task, 0);
+    let seed: u64 = get(task, 1) as u64;
+    let errors: i64 = 0;
+    let k: i64 = 0;
+    while (k < ROUNDS) {
+        seed = next(seed);
+        let s: i32 = ((seed >> 33) % 64) as i32;
+        let at: ptr = get_ptr(table, s);
+        let nowhere: ptr = 0;
+        if (at != nowhere) {
+            let size: i64 = get(table, SLOTS + s);
+            let tag: u8 = get(table, 2 * SLOTS + s) as u8;
+            if (!holds(at, size, tag)) { errors += 1; }
+            if (((seed >> 50) % 5) == 0) {
+                let wanted: i64 = pick_size(next(seed));
+                let moved: ptr = alloc::allocator::realloc(at, size as usize, wanted as usize, 8);
+                if (moved == nowhere) { errors += 1; set_ptr(table, s, nowhere); }
+                else {
+                    let keep: i64 = size;
+                    if (wanted < keep) { keep = wanted; }
+                    if (!holds(moved, keep, tag)) { errors += 1; }
+                    fill(moved, wanted, tag);
+                    set_ptr(table, s, moved); set(table, SLOTS + s, wanted);
+                }
+            } else {
+                alloc::allocator::dealloc(at, size as usize, 8);
+                set_ptr(table, s, nowhere);
+            }
+        } else {
+            let size: i64 = pick_size(seed);
+            let fresh: ptr = alloc::allocator::alloc(size as usize, 8);
+            if (fresh == nowhere) { errors += 1; }
+            else {
+                if (!holds(fresh, size, 0)) { errors += 1; }
+                let tag: u8 = (1 + ((seed >> 8) % 255)) as u8;
+                fill(fresh, size, tag);
+                set_ptr(table, s, fresh); set(table, SLOTS + s, size); set(table, 2 * SLOTS + s, tag as i64);
+            }
+        }
+        k += 1;
+    }
+    let s: i32 = 0;
+    while (s < SLOTS) {
+        let at: ptr = get_ptr(table, s);
+        let nowhere: ptr = 0;
+        if (at != nowhere) { alloc::allocator::dealloc(at, get(table, SLOTS + s) as usize, 8); }
+        s += 1;
+    }
+    set(task, 2, errors); set(task, 3, k);
+    return task;
+}
+fn churn_threads(score: &Score, region: &std::sync::Region, threads: i32, label: str) {
+    let tasks: ptr = region.allocate((threads as usize) * 64).unwrap();
+    let tables: ptr = region.allocate((threads as usize) * 3 * (SLOTS as usize) * 8).unwrap();
+    let t: i32 = 0;
+    while (t < threads) {
+        let task: ptr = tasks + (t as usize) * 64;
+        let table: ptr = tables + (t as usize) * 3 * (SLOTS as usize) * 8;
+        let w: i32 = 0;
+        while (w < 3 * SLOTS) { set(table, w, 0); w += 1; }
+        set_ptr(task, 0, table); set(task, 1, 977 + (t as i64) * 7919); set(task, 2, 0); set(task, 3, 0);
+        let made: std::pthread::Thread = std::pthread::spawn(churn, task).unwrap();
+        set(task, 4, made.id() as i64);
+        t += 1;
+    }
+    let errors: i64 = 0; let steps: i64 = 0;
+    t = 0;
+    while (t < threads) {
+        let task: ptr = tasks + (t as usize) * 64;
+        std::pthread::join_id(get(task, 4) as u64).unwrap();
+        errors += get(task, 2); steps += get(task, 3);
+        t += 1;
+    }
+    report(score, label, errors, 0);
+    report(score, "churn.steps", steps, (threads as i64) * ROUNDS);
+}
+
+// Cross-thread frees. Queue words: 0 mutex, 1-2 not_empty, 3-4 not_full,
+// 5 head, 6 tail, 7 taken, 8 bad, 9.. slots (pointer, size, tag per item).
+fn produce(task: ptr) -> ptr {
+    let queue: ptr = get_ptr(task, 0);
+    let seed: u64 = get(task, 1) as u64;
+    let lock: std::sync::Mutex = std::sync::mutex_at(queue);
+    let not_empty: std::sync::Condvar = std::sync::condvar_at(queue + 8);
+    let not_full: std::sync::Condvar = std::sync::condvar_at(queue + 24);
+    let bad: i64 = 0;
+    let k: i64 = 0;
+    while (k < ITEMS) {
+        seed = next(seed);
+        let size: i64 = 1 + ((seed >> 40) % 2000) as i64;
+        let block: ptr = alloc::allocator::alloc(size as usize, 8);
+        let nowhere: ptr = 0;
+        if (block == nowhere) { bad += 1; }
+        else {
+            if (!holds(block, size, 0)) { bad += 1; }
+            let tag: u8 = (1 + ((seed >> 8) % 255)) as u8;
+            fill(block, size, tag);
+            lock.lock();
+            while (get(queue, 6) - get(queue, 5) == CAPACITY) { not_full.wait(lock.borrow()); }
+            let tail: i64 = get(queue, 6);
+            let slot: i32 = 9 + 3 * ((tail % CAPACITY) as i32);
+            set_ptr(queue, slot, block); set(queue, slot + 1, size); set(queue, slot + 2, tag as i64);
+            set(queue, 6, tail + 1);
+            not_empty.notify_one();
+            lock.unlock();
+        }
+        k += 1;
+    }
+    set(task, 2, bad);
+    return task;
+}
+fn consume(task: ptr) -> ptr {
+    let queue: ptr = get_ptr(task, 0);
+    let total: i64 = get(task, 1);
+    let lock: std::sync::Mutex = std::sync::mutex_at(queue);
+    let not_empty: std::sync::Condvar = std::sync::condvar_at(queue + 8);
+    let not_full: std::sync::Condvar = std::sync::condvar_at(queue + 24);
+    let bad: i64 = 0;
+    let running: bool = true;
+    while (running) {
+        lock.lock();
+        while (get(queue, 6) == get(queue, 5) && get(queue, 7) < total) { not_empty.wait(lock.borrow()); }
+        if (get(queue, 7) == total) { running = false; lock.unlock(); }
+        else {
+            let head: i64 = get(queue, 5);
+            let slot: i32 = 9 + 3 * ((head % CAPACITY) as i32);
+            let block: ptr = get_ptr(queue, slot);
+            let size: i64 = get(queue, slot + 1);
+            let tag: u8 = get(queue, slot + 2) as u8;
+            set(queue, 5, head + 1);
+            set(queue, 7, get(queue, 7) + 1);
+            if (get(queue, 7) == total) { not_empty.notify_all(); }
+            not_full.notify_one();
+            lock.unlock();
+            if (!holds(block, size, tag)) { bad += 1; }
+            alloc::allocator::dealloc(block, size as usize, 8);
+        }
+    }
+    set(task, 2, bad);
+    return task;
+}
+
+fn grab(arg: ptr) -> ptr {
+    let block: ptr = alloc::allocator::alloc(500, 8);
+    let nowhere: ptr = 0;
+    if (block == nowhere) { return nowhere; }
+    let ok: bool = holds(block, 500, 0);
+    fill(block, 500, 7);
+    alloc::allocator::dealloc(block, 500, 8);
+    if (!ok) { return nowhere; }
+    return arg + 8;
+}
+
+fn main() -> i32 {
+    let score: Score = Score { failed: 0 };
+    let region: std::sync::Region = std::sync::map_shared(1048576).unwrap();
+    churn_threads(score.borrow(), region.borrow(), 1, "churn.1");
+    churn_threads(score.borrow(), region.borrow(), 4, "churn.4");
+    churn_threads(score.borrow(), region.borrow(), 16, "churn.16");
+
+    // 2 producers, 2 consumers; main allocates meanwhile, too.
+    let queue: ptr = region.allocate(512).unwrap();
+    let jobs: ptr = region.allocate(256).unwrap();
+    let ids: ptr = region.allocate(64).unwrap();
+    let w: i32 = 0;
+    while (w < 64) { set(queue, w, 0); w += 1; }
+    let p: i32 = 0;
+    while (p < 4) {
+        let job: ptr = jobs + (p as usize) * 64;
+        set_ptr(job, 0, queue); set(job, 2, 0);
+        let entry: ptr = consume;
+        if (p < 2) { set(job, 1, 31 + (p as i64) * 104729); entry = produce; }
+        else { set(job, 1, 2 * ITEMS); }
+        let made: std::pthread::Thread = std::pthread::spawn(entry, job).unwrap();
+        set(ids, p, made.id() as i64);
+        p += 1;
+    }
+    let mine: i64 = 0;
+    let r: i32 = 0;
+    while (r < 2000) {
+        let block: ptr = alloc::allocator::alloc(64 + ((r % 7) as usize) * 100, 8);
+        let nowhere: ptr = 0;
+        if (block != nowhere) { fill(block, 64, 3); alloc::allocator::dealloc(block, 64 + ((r % 7) as usize) * 100, 8); mine += 1; }
+        r += 1;
+    }
+    p = 0;
+    while (p < 4) { std::pthread::join_id(get(ids, p) as u64).unwrap(); p += 1; }
+    report(score.borrow(), "cross.taken", get(queue, 7), 2 * ITEMS);
+    report(score.borrow(), "cross.bad", get(jobs, 2) + get(jobs + 64, 2) + get(jobs + 128, 2) + get(jobs + 192, 2), 0);
+    report(score.borrow(), "cross.main", mine, 2000);
+
+    // 1,000 sequential spawn/join pairs that allocate.
+    let base: ptr = region.allocate(64).unwrap();
+    let good: i64 = 0;
+    let k: i32 = 0;
+    while (k < 1000) {
+        let thread: std::pthread::Thread = std::pthread::spawn(grab, base).unwrap();
+        let back: ptr = thread.join().unwrap();
+        if (back == base + 8) { good += 1; }
+        k += 1;
+    }
+    report(score.borrow(), "spawn.pairs", good, 1000);
+    region.unmap();
+    if (score.failed != 0) { return 1; }
+    return 0;
+}

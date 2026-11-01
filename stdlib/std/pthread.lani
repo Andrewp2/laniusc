@@ -5,9 +5,10 @@
 // runtime's services. Native link with --native-link --native-library atomic
 // (std::sync's Mutex and Condvar coordinate threads through libatomic and
 // futexes). Every thread must be joined before main returns: main's return
-// unmaps the process vector. The Lanius heap allocator is not synchronized,
-// so thread bodies work in memory the caller prepared (a std::sync::Region,
-// map_buffers, a Vec allocated before spawning). See docs/stdlib-threads.md.
+// unmaps the process vector. The runtime heap allocator is thread-safe (each
+// thread uses its own pool), so thread bodies may allocate; they can still
+// work in memory the caller prepared (a std::sync::Region, map_buffers, a Vec)
+// to avoid per-thread arenas. See docs/stdlib-threads.md.
 //
 // std::thread keeps the older unbound service-8 declarations, which the
 // compiler's admission diagnostics recognize by path.

@@ -58,6 +58,7 @@ def divergeEff (decls : Decls) (t : Ty) (x : MEff) : MEff :=
   | .xMatch sc ety mt bs vs => x
   | .xDivide op l r => x
   | .xStride sl => x
+  | .xArraySlice e sl => x
   | .xHost id args => x
 
 /-- The literal's elements, count of them. -/

@@ -1,0 +1,17 @@
+// An array local passed where a slice is expected is passed as a slice of
+// it (Core's array-to-slice): the callee's writes reach the array.
+fn put(xs: [u16], n: i32) -> i32 {
+    xs[0] = 5;
+    return n;
+}
+
+fn first(xs: [u16]) -> u16 {
+    return xs[0];
+}
+
+fn run(n: i32) -> i32 {
+    let a: [u16; 2] = [1, 2];
+    let r: i32 = put(a, n);
+    put(a, 3);
+    return (a[0] as i32) + r + (first(a) as i32);
+}

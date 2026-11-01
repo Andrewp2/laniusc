@@ -1,0 +1,215 @@
+// GNU `uniq` under LC_ALL=C: adjacent lines whose keys are equal form a
+// group, and each group's first line is written (with -c its count, "%7lu "
+// first), only repeated groups with -d, only single lines with -u. The key
+// skips `skip_fields` fields (separated by blanks or LF) and then `skip_chars` bytes,
+// keeps at most `check_chars` bytes and with `ignore_case` compares a..z as
+// A..Z. Lines end with `eol` (LF, or NUL for -z); a final line without one
+// is given one. Input arrives as runs of whole lines (ext::text_lines::Lines);
+// lines are found and compared eight bytes at a time, and neighbouring
+// output lines leave as one span. See docs/extended-textutils.md.
+module ext::text_uniq;
+import alloc::io;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::text_lines;
+
+pub enum Error { AllocationFailed }
+pub const MAX: u64 = 18446744073709551615;
+
+pub struct Options { count: bool, unique: bool, repeated: bool, skip_fields: u64, skip_chars: u64, check_chars: u64, ignore_case: bool, eol: u8 }
+// Every group written, no counts: plain `uniq`.
+pub fn default_options() -> Options {
+    return Options { count: false, unique: true, repeated: true, skip_fields: 0, skip_chars: 0, check_chars: MAX, ignore_case: false, eol: 10 };
+}
+
+// The open group: its first line lives in the current chunk (`first` is
+// its offset) or, across a chunk boundary, in `hold`.
+pub struct Uniq {
+    o: Options, open: bool, held: bool, first: i32, first_end: i32, key: i32, key_len: i32, count: u64,
+    hold: alloc::io::Buffer, hold_p: ptr, hold_cap: i32, hold_len: i32, failed: bool
+}
+pub impl Uniq {
+    pub fn borrow(&self) -> &Uniq { return self; }
+    pub fn destroy(&self) { self.hold.destroy(); }
+}
+pub fn uniq(o: Options) -> core::result::Result<Uniq, Error> {
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(1040);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let hold: alloc::io::Buffer = core::result::unwrap(made);
+    let p: core::result::Result<ptr, core::io::Error> = hold.reserve_raw(1040);
+    if (core::result::is_err(p)) { hold.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(Uniq { o: o, open: false, held: false, first: 0, first_end: 0, key: 0, key_len: 0, count: 0, hold: hold, hold_p: core::result::unwrap(p), hold_cap: 1024, hold_len: 0, failed: false });
+}
+
+// Pending output: source bytes [start, end) of the current chunk, written
+// as one span when the next output does not follow on.
+struct Pending { start: i32, end: i32 }
+impl Pending { fn borrow(&self) -> &Pending { return self; } }
+fn tu_flush(p: &Pending, w: &ext::text_lines::Words, out: &ext::text_lines::Out) {
+    if (p.end > p.start) { ext::text_lines::put_span(out, w, p.start, p.end - p.start); }
+    p.start = 0; p.end = 0;
+}
+
+// Whether `len` bytes from a and from b of w are equal (folded when asked).
+fn tu_same(w: &ext::text_lines::Words, a: i32, b: i32, len: i32, fold: bool) -> bool {
+    let words: [u64] = w.words; let nw: i32 = w.nw; let tail: u64 = w.tail; let all: u64 = ext::text_lines::ALL;
+    let low: u64 = ext::text_lines::LOW7; let high: u64 = ext::text_lines::HIGH;
+    let sa: u64 = ((a & 7) * 8) as u64; let sb: u64 = ((b & 7) * 8) as u64; let ba: u64 = (64 - sa) & 63; let bb: u64 = (64 - sb) & 63;
+    let ia: i32 = a >> 3; let ib: i32 = b >> 3; let left: i32 = len;
+    let ca: u64 = tail; if (ia < nw) { ca = words[nw-1-ia]; } let cb: u64 = tail; if (ib < nw) { cb = words[nw-1-ib]; }
+    while (left > 0) {
+        let na: u64 = 0; if (ia + 1 < nw) { na = words[nw-2-ia]; } else { if (ia + 1 == nw) { na = tail; } }
+        let nb: u64 = 0; if (ib + 1 < nw) { nb = words[nw-2-ib]; } else { if (ib + 1 == nw) { nb = tail; } }
+        let x: u64 = ca; if (sa != 0) { x = (ca >> sa) | (na << ba); }
+        let y: u64 = cb; if (sb != 0) { y = (cb >> sb) | (nb << bb); }
+        if (left < 8) { let mask: u64 = all >> ((64 - left * 8) as u64); x = x & mask; y = y & mask; }
+        if (x != y) {
+            if (!fold) { return false; }
+            // Words that differ are compared again with a..z as A..Z:
+            // byte + 31 reaches bit 7 from 97 (a) up, byte + 5 from 123 up.
+            let lx: u64 = x & low; let ly: u64 = y & low;
+            let mx: u64 = ((((lx + 2242545357980376863) ^ (lx + 361700864190383365)) | x) ^ x) & high;
+            let my: u64 = ((((ly + 2242545357980376863) ^ (ly + 361700864190383365)) | y) ^ y) & high;
+            if ((x ^ (mx >> 2)) != (y ^ (my >> 2))) { return false; }
+        }
+        left -= 8; ia += 1; ib += 1; ca = na; cb = nb;
+    }
+    return true;
+}
+fn tu_upper(b: u8) -> u8 { if (b >= 97 && b <= 122) { return b - 32; } return b; }
+
+// Write the open group's first line if the options select it.
+fn tu_emit(u: &Uniq, w: &ext::text_lines::Words, p: &Pending, out: &ext::text_lines::Out) {
+    let show: bool = u.o.repeated; if (u.count == 0) { show = u.o.unique; }
+    if (!show) { return; }
+    if (u.o.count) {
+        tu_flush(p, w, out);
+        let c: u64 = u.count + 1;
+        if (c < 10000000) {
+            // "%7lu " as one word: spaces, then the digits ending in byte 6.
+            let x: u64 = 2314885530818453536; let sh: u64 = 48;
+            while (true) { x = (x ^ (32 << sh)) | ((48 + (c % 10)) << sh); c = c / 10; if (c == 0) { break; } sh -= 8; }
+            ext::text_lines::put(out, x, 8);
+        } else { ext::text_lines::put_number(out, c as i64, 7); ext::text_lines::put_byte(out, 32); }
+    }
+    if (u.held) {
+        tu_flush(p, w, out);
+        let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(u.hold_p, u.hold_len); let i: i32 = 0;
+        while (i < u.hold_len) { ext::text_lines::put_byte(out, bytes[i]); i += 1; }
+        ext::text_lines::put_byte(out, u.o.eol); return;
+    }
+    let s: i32 = u.first; let e: i32 = u.first_end;
+    if (e < w.length) {
+        // The line and its end byte follow on from the pending span.
+        if (p.end == s && p.end > p.start) { p.end = e + 1; return; }
+        tu_flush(p, w, out); p.start = s; p.end = e + 1; return;
+    }
+    tu_flush(p, w, out); ext::text_lines::put_span(out, w, s, e - s); ext::text_lines::put_byte(out, u.o.eol);
+}
+
+// Feed one run of whole lines (with, at the end of input, a final line
+// without its end byte).
+pub fn feed(u: &Uniq, v: core::slice::View<u8>, out: &ext::text_lines::Out) -> core::result::Result<i32, Error> {
+    let made: core::result::Result<ext::text_lines::Words, ext::text_lines::Error> = ext::text_lines::words(v);
+    if (core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); }
+    let w: ext::text_lines::Words = core::result::unwrap(made);
+    let found: core::result::Result<ext::text_lines::Starts, ext::text_lines::Error> = ext::text_lines::byte_positions(w.borrow(), u.o.eol, u.o.eol);
+    if (core::result::is_err(found)) { w.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let hits: ext::text_lines::Starts = core::result::unwrap(found);
+    let at: [i32] = hits.at; let count: i32 = hits.count; let n: i32 = v.length; let values: [u8] = w.values; let base: i32 = w.start;
+    let o: Options = u.o; let plain: bool = o.skip_fields == 0 && o.skip_chars == 0 && o.check_chars == MAX; let fold: bool = o.ignore_case;
+    let sf: u64 = o.skip_fields; let sc: u64 = o.skip_chars; let cc: u64 = o.check_chars;
+    let words: [u64] = w.words; let nw: i32 = w.nw; let tail: u64 = w.tail;
+    let low: u64 = ext::text_lines::LOW7; let high: u64 = ext::text_lines::HIGH; let all: u64 = ext::text_lines::ALL; let ranks: u64 = ext::text_lines::RANKS;
+    let sp: u64 = 2314885530818453536; let tab: u64 = 651061555542690057; let nl: u64 = ext::text_lines::NL;
+    let p: Pending = Pending { start: 0, end: 0 }; let zero: bool = o.eol != 10;
+    let ls: i32 = 0; let h: i32 = 0;
+    while (h <= count) {
+        let e: i32 = n; if (h < count) { e = at[h] >> 1; }
+        h += 1;
+        if (h > count && ls >= n) { break; }
+        let s: i32 = ls; ls = e + 1;
+        let k: i32 = s; let kl: i32 = e - s;
+        if (!plain) {
+            // Skip fields (GNU separates them with blanks and LF, which
+            // only -z lines contain), eight bytes at a time.
+            // want false: skip blanks; true: skip the field's other bytes.
+            // Each word's blank mask serves every step that lands in it.
+            let f: u64 = 0; let want: bool = false;
+            if (sf > 0 && k < e) {
+                let q: i32 = k >> 3; let done: bool = false;
+                while (!done && q * 8 < e) {
+                    let x: u64 = tail; if (q < nw) { x = words[nw-1-q]; }
+                    let a: u64 = x ^ sp; let b: u64 = x ^ tab;
+                    let blank: u64 = ((((a & low) + low) | a | low) ^ all) | ((((b & low) + low) | b | low) ^ all);
+                    // Only -z lines hold an LF before their end.
+                    if (zero) { let c: u64 = x ^ nl; blank = blank | ((((c & low) + low) | c | low) ^ all); }
+                    let wb: i32 = q * 8;
+                    while (k - wb < 8) {
+                        let stop: u64 = blank; if (!want) { stop = blank ^ high; }
+                        if (k > wb) { stop = stop & (all << (((k - wb) * 8) as u64)); }
+                        if (stop == 0) { break; }
+                        let bit: u64 = stop & (0 - stop); k = wb + ((((bit >> 7) * ranks) >> 56) as i32) - 1;
+                        if (k >= e) { k = e; done = true; break; }
+                        if (want) { f += 1; if (f == sf) { done = true; break; } }
+                        want = !want;
+                    }
+                    q += 1;
+                }
+                if (!done || k > e) { k = e; }
+            }
+            let room: u64 = (e - k) as u64; if (sc < room) { k += sc as i32; } else { k = e; }
+            let len: u64 = (e - k) as u64; if (cc < len) { len = cc; } kl = len as i32;
+        }
+        if (u.open) {
+            let same: bool = false;
+            if (u.held) {
+                if (u.key_len == kl) {
+                    let hb: [u8] = core::mem::typed_slice_from_raw_parts<u8>(u.hold_p, u.hold_len); let i: i32 = 0; same = true;
+                    while (i < kl && same) {
+                        let x: u8 = hb[u.key+i]; let y: u8 = values[base+k+i];
+                        if (fold) { x = tu_upper(x); y = tu_upper(y); }
+                        if (x != y) { same = false; } i += 1;
+                    }
+                }
+            } else { same = u.key_len == kl && tu_same(w.borrow(), u.key, k, kl, fold); }
+            if (same) { u.count += 1; continue; }
+            tu_emit(u, w.borrow(), p.borrow(), out);
+        }
+        u.open = true; u.held = false; u.first = s; u.first_end = e; u.key = k; u.key_len = kl; u.count = 0;
+    }
+    // Keep a group that is still open past this chunk.
+    if (u.open && !u.held) {
+        let len: i32 = u.first_end - u.first;
+        if (len > u.hold_cap) {
+            let bigger: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(len + 16);
+            if (core::result::is_err(bigger)) { u.failed = true; }
+            else {
+                let b: alloc::io::Buffer = core::result::unwrap(bigger); let q: core::result::Result<ptr, core::io::Error> = b.reserve_raw(len + 16);
+                if (core::result::is_err(q)) { b.destroy(); u.failed = true; }
+                else { u.hold.destroy(); u.hold = b; u.hold_p = core::result::unwrap(q); u.hold_cap = len; }
+            }
+        }
+        if (!u.failed) {
+            let hb: [u8] = core::mem::typed_slice_from_raw_parts<u8>(u.hold_p, len); let i: i32 = 0;
+            while (i < len) { hb[i] = values[base+u.first+i]; i += 1; }
+            u.hold_len = len; u.key = u.key - u.first; u.held = true;
+        }
+    }
+    tu_flush(p.borrow(), w.borrow(), out);
+    hits.destroy(); w.destroy();
+    if (u.failed) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(0);
+}
+// Write the last group after the final run.
+pub fn finish(u: &Uniq, out: &ext::text_lines::Out) {
+    if (!u.open) { return; }
+    let empty: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(u.hold_p, 0), start: 0, length: 0 };
+    let w: ext::text_lines::Words = core::result::unwrap(ext::text_lines::words(empty));
+    let p: Pending = Pending { start: 0, end: 0 };
+    tu_emit(u, w.borrow(), p.borrow(), out);
+    tu_flush(p.borrow(), w.borrow(), out);
+    w.destroy(); u.open = false;
+}

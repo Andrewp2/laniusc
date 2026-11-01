@@ -3875,6 +3875,7 @@ theorem sound_both {sp : SrcProgram} {mp : Program}
         | eDivide op l r =>
           simp only [SrcEff.eval] at ok
           exact eval_divide hereE ok corr fr fresh hc fc run bound
+        | arraySlice element array => simp [SrcEff.eval] at ok
         | eStride slice =>
           simp only [SrcEff.eval] at ok
           cases fuel with

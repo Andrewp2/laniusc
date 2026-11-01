@@ -40,10 +40,64 @@ page. The first allocation of 32 KiB or less decides.
 So allocation now needs the runtime's R15 context, as argument and
 environment access already did (see
 [library-concurrency-dependencies.md](library-concurrency-dependencies.md)).
-The allocator is not thread-safe. Forked workers each get their own copy of
-the pools, but threads sharing one process vector share one pool state, so
-thread bodies must not allocate. Before this change concurrent allocations
-happened to be safe, because each one was a separate syscall.
+
+## Threads
+
+The allocator is thread-safe, with no lock on the hot path. Every thread
+shares R15 (the C entry and `crt_entry` both load the fixed process vector
+`0x100000000000`), so a thread cannot be told apart by R15. It is identified
+instead by its thread pointer at `%fs:0`, which glibc sets per thread.
+
+Each thread allocates from and frees into its own pool. A pool is a page laid
+out exactly like the single pool above, so the allocation and free code is
+unchanged except for which pool it resolves. A freed small block is
+interchangeable memory of its size class, so a free from a foreign thread
+joins the **freeing** thread's own class list and can be reused there.
+
+That alone would let memory grow with traffic in a producer/consumer pattern:
+if thread A allocates a class and thread B frees it but never allocates it,
+B's list grows by one block per message while A keeps carving new memory. So
+the blocks flow back:
+
+- Every 256 frees into a class, the freeing thread keeps 63 blocks on its
+  list and splices the rest onto that class's shared list in the state page
+  (`state + 512`), under the spinlock at `state + 120`.
+- When a thread's own list for a class is empty, it checks the shared list
+  (a lock-free peek, then the lock) and adopts the whole chain before carving
+  new arena memory.
+
+The common alloc and free paths still take no lock and use no atomics: a free
+adds one counter increment and compare (counters at `pool + 256`), and only a
+miss on an empty list peeks at the shared list. A thread strands at most a few
+hundred blocks per class, so memory is bounded by live data. In a two-thread
+test that passes 2,000,000 1,000-byte messages (1.9 GB of traffic) from a
+producer to a consumer, resident memory grows by under 1.1 MiB.
+
+A thread finds its pool like this:
+
+- Raw mode (R15 is not the fixed vector) is single-threaded and never reads
+  `%fs`; it uses the one state page.
+- The thread that creates the state page records its `%fs:0` at `state + 112`
+  and uses the state page as its own pool.
+- Any other thread hashes its `%fs:0` into an open-addressed table of
+  `(thread pointer, pool)` pairs, held in a 16 KiB mapping that `state + 128`
+  points to (1024 slots). The lookup is a lock-free read. The first operation
+  on a new thread maps a fresh pool page and inserts it under a spinlock at
+  `state + 120` (taken once per thread, never on the hot path); the pool is
+  stored before the thread pointer, so the x86 store order publishes it
+  safely.
+
+The state page is claimed with a 32-bit `lock cmpxchg` on `[R15 + 4]`, so
+threads racing on the very first allocation agree on one state page; a loser
+unmaps its spare page and retries.
+
+A thread beyond the 1024 table slots, or whose pool mapping fails, falls back
+to a direct `mmap` for each allocation and leaks a freed small block rather
+than unmapping an arena sub-range. This is safe and affects only programs with
+more than 1024 live threads.
+
+Large blocks (above 32 KiB) are direct `mmap`/`munmap`/`mremap` on every
+thread, with no shared state, as before.
 
 ## Direct mode
 
@@ -89,6 +143,19 @@ pooled and with `LANIUS_ALLOC=mmap`, at load average 12 to 19.
 | Same, under heavier load: server system time / minor faults | 0.34–0.38 s / 20,430 | 0.09 s / 1,450 |
 | `stdlib_hash_map_perf` u64 insert, 1,048,576 keys | 337–342 ms | 312–316 ms |
 
+Making the allocator thread-safe left the single-thread fast path as fast as
+before, within noise. A C microbench pinned to one CPU calls the previous
+(single-pool) bytes and the thread-safe bytes alternately: 2,000,000
+allocate-and-free pairs of about 1,000 bytes, best of 12 rounds, at load
+average 25 to 40. The best runs were 33.2 against 33.6 ns per pair in raw
+mode and 34.4 against 34.3 ns in CRT mode, where every call also reads
+`%fs:0`. Most of a pair's cost is zeroing the block. The Lanius
+`vec alloc`, `read_line` and hash-map insert phases varied far more between
+runs at that load (by up to 2x) than between the two allocators.
+
+The `thread_alloc` fixture (below) runs in about 1.1 to 2.8 s and peaks at
+7 MiB resident.
+
 The hash map spends little time allocating. Its tables grow past 32 KiB
 early, and those allocations stay direct. The other bulk-caller phases, which
 move megabyte buffers, are unchanged.
@@ -101,6 +168,20 @@ move megabyte buffers, are unchanged.
   live block and checks that no block is overwritten, that every allocation
   reads as zero and that realloc keeps contents. Two mutations are caught:
   skipping the zeroing on reuse, and the wrong class in `dealloc`.
+- A second harness maps the bytes at the fixed vector `0x100000000000`
+  (so the allocator runs in its threaded path) and drives them from real
+  pthreads, so each thread's `%fs:0` differs. 1 to 32 threads each run 150,000
+  tagged operations, and a third of the time a thread hands a live block to
+  another thread through a queue for that thread to verify and free. Pooled
+  and direct modes both pass, repeated. It caught the first draft's bug, where
+  the first-allocation path clobbered the alignment argument before a losing
+  thread restarted. The same harness runs the producer/consumer memory-bound
+  test above, and 2,000 sequential spawn/join pairs: glibc reuses a joined
+  thread's descriptor, so its `%fs:0` and pool come back and the table does
+  not fill. More than 120 repetitions of the threaded modes pass. One early
+  producer/consumer run crashed once and has not reproduced since, including
+  under a fault reporter and with paired runs; it may have been the harness's
+  own inline-assembly call, which writes below the stack pointer.
 - 187 fixtures were compiled with the new runtime. They include the string,
   I/O, UTF-8, vector, sort and allocation-failure fixtures, plus
   `stdlib_ordered_navigation` `edits.lani`, which lowers `RLIMIT_AS`. Each one
@@ -113,5 +194,17 @@ move megabyte buffers, are unchanged.
   array, and it now also checks the `dealloc`/`realloc` entry offsets inside
   the allocator array. Before this change it failed, because the readable
   assembly still had the old `MAP_32BIT` flags.
+- [`thread_alloc.lani`](../tests/fixtures/stdlib_execution/concurrency/thread_alloc.lani)
+  runs the allocator under `std::pthread`:
+  - 1, 4 and 16 threads each run 20,000 tagged alloc, realloc and free steps;
+  - two producers pass 40,000 tagged blocks through a Condvar queue to two
+    consumers, which verify and free them while the main thread also
+    allocates;
+  - 1,000 sequential spawn/join pairs whose bodies allocate.
+
+  Ten runs pass. `tests/stdlib_concurrency_execution.rs` registers it next to
+  `threads.lani`; that Rust test has not been run, but the program was built
+  with `--native-link --native-library atomic` and checked by hand. The
+  emitted runtime matches the table (`raw_host_width_tables.py --elf`).
 - The strace and ptrace expectations were updated by reasoning only and have
   not been run.

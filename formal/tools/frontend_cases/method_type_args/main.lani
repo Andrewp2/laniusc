@@ -7,7 +7,7 @@ pub impl<T> Cell<T> {
 }
 
 // Never instantiated: the file validates with the method's type arguments
-// in it, though the reader does not read them yet.
+// in it (method_type_call reads such calls).
 fn never<T>(c: Cell<T>) -> i32 {
     let r: i32 = c.with<i32>(3);
     return r;

@@ -681,6 +681,11 @@ theorem eff_cast (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some 
     · obtain ⟨r, okv⟩ := castTo_defined lowered' (holds_var holds1 scalar)
       exact (fails.not_done (cast_done run okv) bound).elim
 
+/-- An array's slice is not lowered yet (`SrcEff.eval` rejects it). -/
+theorem eff_arraySlice {element : SrcType} {array : Nat} : EffStops sp mp n (.arraySlice element array) := by
+  intro places hp scope slot ev frame base st env ok
+  simp [SrcEff.eval] at ok
+
 theorem eff_stride {slice : Nat} : EffStops sp mp n (.eStride slice) := by
   intro places hp scope slot ev frame base st env ok corr fr fresh hc fc within fails
   simp only [SrcEff.eval, evalStride] at ok
@@ -2101,6 +2106,7 @@ theorem effStops_all {sp : SrcProgram} {mp : Program} {n : Nat}
       eff_match lowered (effStops_all lowered returns prev scrutinee) fun e _ => effStops_all lowered returns prev e
   | .eDivide _ l r => eff_divide lowered (effStops_all lowered returns prev l) (effStops_all lowered returns prev r)
   | .eStride _ => eff_stride
+  | .arraySlice _ _ => eff_arraySlice
 termination_by e => sizeOf e
 
 /-- Every lowered statement whose Core run fails stops within `n + 1` ticks

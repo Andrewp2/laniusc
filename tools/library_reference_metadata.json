@@ -1361,6 +1361,12 @@
       ],
       "note": "Portable owned Store and CRC-checked snapshot APIs retain their earlier model/format/failure receipts. Completion application source 9a83795a passes 18 direct query cases plus three no-file traces, 16 allocation cases (13 reached OOMs and three baselines), and 12 output cases (three baselines plus nine fault/recovery cases). Full traces check pre-exit releases, without live ACK checkpoints. The existing 55-case response campaign also passes on this source, including 18 reached source OOMs. Final Bash adapter f7934bc9 passes 51 function cases across two option profiles, 26 PTY cases and two additional fresh-cwd quote-transition cases; the unchanged watchdog separately passes two deadline/child-cleanup controls. These are direct process receipts, not Rust-libtest passes. Response-checkpoint source 789143f6, earlier f07fd52f/130-case hierarchy and 64-case atomic campaigns retain separate histories; no counts are added across revisions. Store/anchored AtomicFile publication logic is unchanged, with explicit visibility/cleanup outcomes. Native Linux x86_64/ext4 evidence is finite; cooperative namespaces, manual owners, no locking or universal crash guarantee. CRC is noncryptographic."
     },
+    "ext::kv_log": {
+      "guides": [
+        "docs/extended-kv-log.md"
+      ],
+      "note": "Bitcask-style append-only log of CRC-32 records with an in-memory hash index of keys; values stay on disk and are read through a shared mapping. sync() (fdatasync) is the commit point; open() truncates at the first torn, oversized or bad-CRC record; compact() writes PATH.compact, fsyncs, renames over PATH and fsyncs the directory. Iteration follows Python dict order. A Python dict model passes 300 generated op-sequence cases (crash drops of the write buffer, reopens, exact file bytes) and 600 crash-injection cases (random truncation, bit flips, appended garbage, stale compaction file), plus a bad-header case. Single writer, no locking."
+    },
     "ext::lexer": {
       "guides": [
         "docs/extended-lexer.md",
@@ -1615,6 +1621,36 @@
       ],
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::text_cut": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_lines": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_sort": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_tr": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_uniq": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
+    },
+    "ext::text_wc": {
+      "guides": [
+        "docs/extended-textutils.md"
+      ]
     },
     "ext::timezone": {
       "guides": [
@@ -1904,6 +1940,11 @@
       "declarations": {
         "validate_name": "Allocation-free validation of the canonical writer name policy before archive construction; trailing-slash entries still require empty data during encode. The existing ZIP contract passes with this public helper."
       }
+    },
+    "ext::zip_stream": {
+      "guides": [
+        "docs/extended-zip-stream.md"
+      ]
     },
     "std::cli": {
       "guides": [

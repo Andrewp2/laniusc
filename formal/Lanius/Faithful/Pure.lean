@@ -151,6 +151,7 @@ def peff (env : Env) : SrcEff → Option Value
       (peff env scrutinee).bind fun v => parms env v ety.typeId 0 binders values
   | .eDivide op left right => binary op.toCore (peff env left) (peff env right)
   | .eStride _ => none
+  | .arraySlice _ _ => none
 
 def peffs (env : Env) : List SrcEff → Option (List Value)
   | [] => some []
