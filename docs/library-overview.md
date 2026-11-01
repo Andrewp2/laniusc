@@ -227,7 +227,10 @@ above, with its own evidence and remaining broader slice scope.
 The preceding
 [resumable decompression increment](extended-streaming-inflate.md) preserves
 DEFLATE bits, tables, history and pending output across chunks; zlib/gzip framing
-and owned decoding use the same engine. An atomic file decompressor validates
+and owned decoding use the same engine. Its
+[table-driven fast path](extended-streaming-inflate.md#table-driven-fast-path)
+(10-bit primary tables with subtables, a 64-bit bit buffer, word-wide copies)
+decodes gzip at 83–91 MB/s against 6–7 MB/s before. An atomic file decompressor validates
 complete input before publication. Fixed workspace, provisional output and
 per-call final-input promises are explicit. All seven new library tests pass,
 including 1,925 model cases plus 311 reset passes, fixed backing at 2 MiB and
