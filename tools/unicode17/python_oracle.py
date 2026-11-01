@@ -263,6 +263,11 @@ def main() -> int:
             print(f"  --check {form:5} rc={run.returncode} python={'normalized' if want == 0 else 'not'} {'ok' if same else 'MISMATCH'}")
             if not same:
                 defects.append(f"uconv --check {form}: rc={run.returncode} want={want}")
+            normal = unicodedata.normalize(form, text).encode("utf-8")
+            run = subprocess.run([args.uconv, "-x", "any-" + form.lower(), "--check"], input=normal, capture_output=True, timeout=120)
+            print(f"  --check {form:5} on Python {form} output rc={run.returncode} {'ok' if run.returncode == 0 else 'MISMATCH'}")
+            if run.returncode != 0 or run.stdout:
+                defects.append(f"uconv --check {form} on normalized text: rc={run.returncode}")
     real = [d for d in defects]
     for line in real[:40]:
         print("DEFECT", line)

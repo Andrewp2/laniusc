@@ -11,6 +11,7 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-unicode](../../stdlib-unicode.md)
+- [extended-unicode-uconv](../../extended-unicode-uconv.md)
 
 Declaration counts: constant: 43; enum: 1; field: 12; function: 25; struct: 3; variant: 3.
 
@@ -71,7 +72,7 @@ decimal_digit: u32
 
 ### enum: Error
 
-[Source line 96](../../../stdlib/core/unicode.lani#L96)
+[Source line 98](../../../stdlib/core/unicode.lani#L98)
 
 ```lanius
 pub enum Error
@@ -79,7 +80,7 @@ pub enum Error
 
 #### variant: InvalidScalar
 
-[Source line 96](../../../stdlib/core/unicode.lani#L96)
+[Source line 98](../../../stdlib/core/unicode.lani#L98)
 
 ```lanius
 InvalidScalar
@@ -87,7 +88,7 @@ InvalidScalar
 
 #### variant: Bounds
 
-[Source line 96](../../../stdlib/core/unicode.lani#L96)
+[Source line 98](../../../stdlib/core/unicode.lani#L98)
 
 ```lanius
 Bounds
@@ -95,7 +96,7 @@ Bounds
 
 #### variant: Capacity
 
-[Source line 96](../../../stdlib/core/unicode.lani#L96)
+[Source line 98](../../../stdlib/core/unicode.lani#L98)
 
 ```lanius
 Capacity(i32)
@@ -103,7 +104,7 @@ Capacity(i32)
 
 ### struct: SimpleMappings
 
-[Source line 100](../../../stdlib/core/unicode.lani#L100)
+[Source line 102](../../../stdlib/core/unicode.lani#L102)
 
 ```lanius
 pub struct SimpleMappings
@@ -111,7 +112,7 @@ pub struct SimpleMappings
 
 #### field: lowercase
 
-[Source line 100](../../../stdlib/core/unicode.lani#L100)
+[Source line 102](../../../stdlib/core/unicode.lani#L102)
 
 ```lanius
 lowercase: u32
@@ -119,7 +120,7 @@ lowercase: u32
 
 #### field: uppercase
 
-[Source line 100](../../../stdlib/core/unicode.lani#L100)
+[Source line 102](../../../stdlib/core/unicode.lani#L102)
 
 ```lanius
 uppercase: u32
@@ -127,7 +128,7 @@ uppercase: u32
 
 #### field: titlecase
 
-[Source line 100](../../../stdlib/core/unicode.lani#L100)
+[Source line 102](../../../stdlib/core/unicode.lani#L102)
 
 ```lanius
 titlecase: u32
@@ -135,7 +136,7 @@ titlecase: u32
 
 #### field: case_fold
 
-[Source line 100](../../../stdlib/core/unicode.lani#L100)
+[Source line 102](../../../stdlib/core/unicode.lani#L102)
 
 ```lanius
 case_fold: u32
@@ -143,7 +144,7 @@ case_fold: u32
 
 ### struct: CaseFolding
 
-[Source line 116](../../../stdlib/core/unicode.lani#L116)
+[Source line 119](../../../stdlib/core/unicode.lani#L119)
 
 ```lanius
 pub struct CaseFolding
@@ -151,7 +152,7 @@ pub struct CaseFolding
 
 #### field: length
 
-[Source line 116](../../../stdlib/core/unicode.lani#L116)
+[Source line 119](../../../stdlib/core/unicode.lani#L119)
 
 ```lanius
 length: u32
@@ -159,7 +160,7 @@ length: u32
 
 #### field: first
 
-[Source line 116](../../../stdlib/core/unicode.lani#L116)
+[Source line 119](../../../stdlib/core/unicode.lani#L119)
 
 ```lanius
 first: u32
@@ -167,7 +168,7 @@ first: u32
 
 #### field: second
 
-[Source line 116](../../../stdlib/core/unicode.lani#L116)
+[Source line 119](../../../stdlib/core/unicode.lani#L119)
 
 ```lanius
 second: u32
@@ -175,7 +176,7 @@ second: u32
 
 #### field: third
 
-[Source line 116](../../../stdlib/core/unicode.lani#L116)
+[Source line 119](../../../stdlib/core/unicode.lani#L119)
 
 ```lanius
 third: u32
@@ -547,7 +548,7 @@ pub fn is_scalar(value: u32) -> bool
 
 ### function: properties
 
-[Source line 73](../../../stdlib/core/unicode.lani#L73)
+[Source line 75](../../../stdlib/core/unicode.lani#L75)
 
 ```lanius
 pub fn properties(value: u32) -> Properties
@@ -555,7 +556,7 @@ pub fn properties(value: u32) -> Properties
 
 ### function: general_category
 
-[Source line 77](../../../stdlib/core/unicode.lani#L77)
+[Source line 79](../../../stdlib/core/unicode.lani#L79)
 
 ```lanius
 pub fn general_category(value: u32) -> u32
@@ -563,7 +564,7 @@ pub fn general_category(value: u32) -> u32
 
 ### function: canonical_combining_class
 
-[Source line 78](../../../stdlib/core/unicode.lani#L78)
+[Source line 80](../../../stdlib/core/unicode.lani#L80)
 
 ```lanius
 pub fn canonical_combining_class(value: u32) -> u32
@@ -571,7 +572,7 @@ pub fn canonical_combining_class(value: u32) -> u32
 
 ### function: has_property
 
-[Source line 79](../../../stdlib/core/unicode.lani#L79)
+[Source line 81](../../../stdlib/core/unicode.lani#L81)
 
 ```lanius
 pub fn has_property(value: u32, mask: u32) -> bool
@@ -579,7 +580,7 @@ pub fn has_property(value: u32, mask: u32) -> bool
 
 ### function: is_alphabetic
 
-[Source line 80](../../../stdlib/core/unicode.lani#L80)
+[Source line 82](../../../stdlib/core/unicode.lani#L82)
 
 ```lanius
 pub fn is_alphabetic(value: u32) -> bool
@@ -587,7 +588,7 @@ pub fn is_alphabetic(value: u32) -> bool
 
 ### function: is_lowercase
 
-[Source line 81](../../../stdlib/core/unicode.lani#L81)
+[Source line 83](../../../stdlib/core/unicode.lani#L83)
 
 ```lanius
 pub fn is_lowercase(value: u32) -> bool
@@ -595,7 +596,7 @@ pub fn is_lowercase(value: u32) -> bool
 
 ### function: is_uppercase
 
-[Source line 82](../../../stdlib/core/unicode.lani#L82)
+[Source line 84](../../../stdlib/core/unicode.lani#L84)
 
 ```lanius
 pub fn is_uppercase(value: u32) -> bool
@@ -603,7 +604,7 @@ pub fn is_uppercase(value: u32) -> bool
 
 ### function: is_cased
 
-[Source line 83](../../../stdlib/core/unicode.lani#L83)
+[Source line 85](../../../stdlib/core/unicode.lani#L85)
 
 ```lanius
 pub fn is_cased(value: u32) -> bool
@@ -611,7 +612,7 @@ pub fn is_cased(value: u32) -> bool
 
 ### function: is_case_ignorable
 
-[Source line 84](../../../stdlib/core/unicode.lani#L84)
+[Source line 86](../../../stdlib/core/unicode.lani#L86)
 
 ```lanius
 pub fn is_case_ignorable(value: u32) -> bool
@@ -619,7 +620,7 @@ pub fn is_case_ignorable(value: u32) -> bool
 
 ### function: is_white_space
 
-[Source line 85](../../../stdlib/core/unicode.lani#L85)
+[Source line 87](../../../stdlib/core/unicode.lani#L87)
 
 ```lanius
 pub fn is_white_space(value: u32) -> bool
@@ -627,7 +628,7 @@ pub fn is_white_space(value: u32) -> bool
 
 ### function: is_xid_start
 
-[Source line 86](../../../stdlib/core/unicode.lani#L86)
+[Source line 88](../../../stdlib/core/unicode.lani#L88)
 
 ```lanius
 pub fn is_xid_start(value: u32) -> bool
@@ -635,7 +636,7 @@ pub fn is_xid_start(value: u32) -> bool
 
 ### function: is_xid_continue
 
-[Source line 87](../../../stdlib/core/unicode.lani#L87)
+[Source line 89](../../../stdlib/core/unicode.lani#L89)
 
 ```lanius
 pub fn is_xid_continue(value: u32) -> bool
@@ -643,7 +644,7 @@ pub fn is_xid_continue(value: u32) -> bool
 
 ### function: is_default_ignorable
 
-[Source line 88](../../../stdlib/core/unicode.lani#L88)
+[Source line 90](../../../stdlib/core/unicode.lani#L90)
 
 ```lanius
 pub fn is_default_ignorable(value: u32) -> bool
@@ -651,7 +652,7 @@ pub fn is_default_ignorable(value: u32) -> bool
 
 ### function: decimal_digit_value_or
 
-[Source line 89](../../../stdlib/core/unicode.lani#L89)
+[Source line 91](../../../stdlib/core/unicode.lani#L91)
 
 ```lanius
 pub fn decimal_digit_value_or(value: u32, fallback: u32) -> u32
@@ -659,7 +660,7 @@ pub fn decimal_digit_value_or(value: u32, fallback: u32) -> u32
 
 ### function: simple_mappings
 
-[Source line 101](../../../stdlib/core/unicode.lani#L101)
+[Source line 103](../../../stdlib/core/unicode.lani#L103)
 
 ```lanius
 pub fn simple_mappings(value: u32) -> core::result::Result<SimpleMappings, Error>
@@ -667,7 +668,7 @@ pub fn simple_mappings(value: u32) -> core::result::Result<SimpleMappings, Error
 
 ### function: case_folding
 
-[Source line 117](../../../stdlib/core/unicode.lani#L117)
+[Source line 120](../../../stdlib/core/unicode.lani#L120)
 
 ```lanius
 pub fn case_folding(value: u32, turkic: bool) -> core::result::Result<CaseFolding, Error>
@@ -675,7 +676,7 @@ pub fn case_folding(value: u32, turkic: bool) -> core::result::Result<CaseFoldin
 
 ### function: simple_lowercase
 
-[Source line 147](../../../stdlib/core/unicode.lani#L147)
+[Source line 152](../../../stdlib/core/unicode.lani#L152)
 
 ```lanius
 pub fn simple_lowercase(value: u32) -> core::result::Result<u32, Error>
@@ -683,7 +684,7 @@ pub fn simple_lowercase(value: u32) -> core::result::Result<u32, Error>
 
 ### function: simple_uppercase
 
-[Source line 148](../../../stdlib/core/unicode.lani#L148)
+[Source line 153](../../../stdlib/core/unicode.lani#L153)
 
 ```lanius
 pub fn simple_uppercase(value: u32) -> core::result::Result<u32, Error>
@@ -691,7 +692,7 @@ pub fn simple_uppercase(value: u32) -> core::result::Result<u32, Error>
 
 ### function: simple_titlecase
 
-[Source line 149](../../../stdlib/core/unicode.lani#L149)
+[Source line 154](../../../stdlib/core/unicode.lani#L154)
 
 ```lanius
 pub fn simple_titlecase(value: u32) -> core::result::Result<u32, Error>
@@ -699,7 +700,7 @@ pub fn simple_titlecase(value: u32) -> core::result::Result<u32, Error>
 
 ### function: simple_case_fold
 
-[Source line 151](../../../stdlib/core/unicode.lani#L151)
+[Source line 156](../../../stdlib/core/unicode.lani#L156)
 
 ```lanius
 pub fn simple_case_fold(value: u32, turkic: bool) -> core::result::Result<u32, Error>
@@ -707,7 +708,7 @@ pub fn simple_case_fold(value: u32, turkic: bool) -> core::result::Result<u32, E
 
 ### function: case_fold_len
 
-[Source line 161](../../../stdlib/core/unicode.lani#L161)
+[Source line 166](../../../stdlib/core/unicode.lani#L166)
 
 ```lanius
 pub fn case_fold_len(value: u32, turkic: bool) -> core::result::Result<u32, Error>
@@ -715,7 +716,7 @@ pub fn case_fold_len(value: u32, turkic: bool) -> core::result::Result<u32, Erro
 
 ### function: case_fold_at_or
 
-[Source line 173](../../../stdlib/core/unicode.lani#L173)
+[Source line 178](../../../stdlib/core/unicode.lani#L178)
 
 ```lanius
 pub fn case_fold_at_or(value: u32, index: u32, turkic: bool, fallback: u32) -> u32
@@ -723,7 +724,7 @@ pub fn case_fold_at_or(value: u32, index: u32, turkic: bool, fallback: u32) -> u
 
 ### function: case_fold_into
 
-[Source line 194](../../../stdlib/core/unicode.lani#L194)
+[Source line 199](../../../stdlib/core/unicode.lani#L199)
 
 ```lanius
 pub fn case_fold_into(value: u32, turkic: bool, output: core::slice::View<u32>) -> core::result::Result<i32, Error>

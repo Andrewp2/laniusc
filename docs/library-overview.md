@@ -1,6 +1,16 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current
+The full library goal remains open. The
+[Unicode quick-check and uconv increment](extended-unicode-uconv.md) replaces
+the binary search behind `core::unicode` properties with an O(1) two-level
+table (264 distinct 128-code-point blocks). It also adds a two-level
+combining-class/quick-check table, UAX #15 `quick_check`,
+`normalize_quick_into` and `is_normalized_quick`, and a line-wise
+`uconv -x any-nfc|...|any-casefold` program. A Python `unicodedata` 15.0.0
+oracle compares all 1,114,112 code points and 20,000 generated strings across
+category, combining class, digit, flags, full casing, the four normalization
+forms and `is_normalized`. Every disagreement comes from Unicode 15→17
+assignments: 0 defects. Its registered Rust test has no receipt yet. The current
 [borrowed collection lookup](stdlib-borrowed-lookup.md) adds sixteen point
 methods across hash/tree maps and sets with explicit query laws and stored
 representative ownership. `alloc::string::TextKey` permits borrowed Text

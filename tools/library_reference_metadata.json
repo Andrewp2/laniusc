@@ -723,7 +723,8 @@
     },
     "core::unicode": {
       "guides": [
-        "docs/stdlib-unicode.md"
+        "docs/stdlib-unicode.md",
+        "docs/extended-unicode-uconv.md"
       ]
     },
     "core::unicode_case_data": {
@@ -742,7 +743,8 @@
     },
     "core::unicode_properties_data": {
       "guides": [
-        "docs/stdlib-unicode.md"
+        "docs/stdlib-unicode.md",
+        "docs/extended-unicode-uconv.md"
       ],
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
@@ -1560,12 +1562,21 @@
     },
     "ext::unicode_normalize": {
       "guides": [
-        "docs/extended-unicode-normalize.md"
+        "docs/extended-unicode-normalize.md",
+        "docs/extended-unicode-uconv.md"
       ]
     },
     "ext::unicode_normalize_data": {
       "guides": [
         "docs/extended-unicode-normalize.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_quick_check_data": {
+      "guides": [
+        "docs/extended-unicode-normalize.md",
+        "docs/extended-unicode-uconv.md"
       ],
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."

@@ -11,8 +11,9 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [extended-unicode-normalize](../../extended-unicode-normalize.md)
+- [extended-unicode-uconv](../../extended-unicode-uconv.md)
 
-Declaration counts: enum: 2; field: 4; function: 6; struct: 1; variant: 10.
+Declaration counts: enum: 3; field: 4; function: 9; struct: 1; variant: 13.
 
 ## Declared imports
 
@@ -22,9 +23,9 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result](../core/result.md) · [source](../../../extended/ext/unicode_normalize.lani#L7)
 - [core::slice](../core/slice.md) · [source](../../../extended/ext/unicode_normalize.lani#L8)
 - [core::text](../core/text.md) · [source](../../../extended/ext/unicode_normalize.lani#L9)
-- [core::unicode](../core/unicode.md) · [source](../../../extended/ext/unicode_normalize.lani#L10)
-- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_normalize.lani#L11)
-- [ext::unicode_normalize_data](unicode_normalize_data.md) · [source](../../../extended/ext/unicode_normalize.lani#L12)
+- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/unicode_normalize.lani#L10)
+- [ext::unicode_normalize_data](unicode_normalize_data.md) · [source](../../../extended/ext/unicode_normalize.lani#L11)
+- [ext::unicode_quick_check_data](unicode_quick_check_data.md) · [source](../../../extended/ext/unicode_normalize.lani#L12)
 
 ## Types, fields and variants
 
@@ -70,9 +71,41 @@ Nfkc
 Nfkd
 ```
 
-### enum: Error
+### enum: QuickCheck
 
 [Source line 15](../../../extended/ext/unicode_normalize.lani#L15)
+
+```lanius
+pub enum QuickCheck
+```
+
+#### variant: Yes
+
+[Source line 15](../../../extended/ext/unicode_normalize.lani#L15)
+
+```lanius
+Yes
+```
+
+#### variant: No
+
+[Source line 15](../../../extended/ext/unicode_normalize.lani#L15)
+
+```lanius
+No
+```
+
+#### variant: Maybe
+
+[Source line 15](../../../extended/ext/unicode_normalize.lani#L15)
+
+```lanius
+Maybe
+```
+
+### enum: Error
+
+[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
 
 ```lanius
 pub enum Error
@@ -80,7 +113,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 15](../../../extended/ext/unicode_normalize.lani#L15)
+[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
 
 ```lanius
 Bounds
@@ -88,7 +121,7 @@ Bounds
 
 #### variant: InvalidUtf8
 
-[Source line 15](../../../extended/ext/unicode_normalize.lani#L15)
+[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
 
 ```lanius
 InvalidUtf8(i32)
@@ -96,7 +129,7 @@ InvalidUtf8(i32)
 
 #### variant: SizeOverflow
 
-[Source line 15](../../../extended/ext/unicode_normalize.lani#L15)
+[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
 
 ```lanius
 SizeOverflow
@@ -104,7 +137,7 @@ SizeOverflow
 
 #### variant: ScratchCapacity
 
-[Source line 15](../../../extended/ext/unicode_normalize.lani#L15)
+[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
 
 ```lanius
 ScratchCapacity(i32)
@@ -112,7 +145,7 @@ ScratchCapacity(i32)
 
 #### variant: OutputCapacity
 
-[Source line 15](../../../extended/ext/unicode_normalize.lani#L15)
+[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
 
 ```lanius
 OutputCapacity(i32)
@@ -120,7 +153,7 @@ OutputCapacity(i32)
 
 #### variant: WorkLimit
 
-[Source line 15](../../../extended/ext/unicode_normalize.lani#L15)
+[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
 
 ```lanius
 WorkLimit(u64)
@@ -128,7 +161,7 @@ WorkLimit(u64)
 
 ### struct: Normalized
 
-[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
+[Source line 17](../../../extended/ext/unicode_normalize.lani#L17)
 
 ```lanius
 pub struct Normalized
@@ -136,7 +169,7 @@ pub struct Normalized
 
 #### field: bytes
 
-[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
+[Source line 17](../../../extended/ext/unicode_normalize.lani#L17)
 
 ```lanius
 bytes: i32
@@ -144,7 +177,7 @@ bytes: i32
 
 #### field: scalars
 
-[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
+[Source line 17](../../../extended/ext/unicode_normalize.lani#L17)
 
 ```lanius
 scalars: i32
@@ -152,7 +185,7 @@ scalars: i32
 
 #### field: scratch
 
-[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
+[Source line 17](../../../extended/ext/unicode_normalize.lani#L17)
 
 ```lanius
 scratch: i32
@@ -160,7 +193,7 @@ scratch: i32
 
 #### field: work
 
-[Source line 16](../../../extended/ext/unicode_normalize.lani#L16)
+[Source line 17](../../../extended/ext/unicode_normalize.lani#L17)
 
 ```lanius
 work: u64
@@ -170,7 +203,7 @@ work: u64
 
 ### function: maximum_decomposition_length
 
-[Source line 32](../../../extended/ext/unicode_normalize.lani#L32)
+[Source line 33](../../../extended/ext/unicode_normalize.lani#L33)
 
 ```lanius
 pub fn maximum_decomposition_length(form: Form) -> i32
@@ -178,7 +211,7 @@ pub fn maximum_decomposition_length(form: Form) -> i32
 
 ### function: maximum_decomposition_depth
 
-[Source line 36](../../../extended/ext/unicode_normalize.lani#L36)
+[Source line 37](../../../extended/ext/unicode_normalize.lani#L37)
 
 ```lanius
 pub fn maximum_decomposition_depth(form: Form) -> i32
@@ -186,7 +219,7 @@ pub fn maximum_decomposition_depth(form: Form) -> i32
 
 ### function: scratch_len
 
-[Source line 92](../../../extended/ext/unicode_normalize.lani#L92)
+[Source line 103](../../../extended/ext/unicode_normalize.lani#L103)
 
 ```lanius
 pub fn scratch_len(input: core::text::Text, form: Form, work_limit: u64) -> core::result::Result<i32, Error>
@@ -194,7 +227,7 @@ pub fn scratch_len(input: core::text::Text, form: Form, work_limit: u64) -> core
 
 ### function: measure
 
-[Source line 181](../../../extended/ext/unicode_normalize.lani#L181)
+[Source line 193](../../../extended/ext/unicode_normalize.lani#L193)
 
 ```lanius
 pub fn measure(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<Normalized, Error>
@@ -202,7 +235,7 @@ pub fn measure(input: core::text::Text, form: Form, scratch: core::slice::View<u
 
 ### function: normalize_into
 
-[Source line 188](../../../extended/ext/unicode_normalize.lani#L188)
+[Source line 200](../../../extended/ext/unicode_normalize.lani#L200)
 
 ```lanius
 pub fn normalize_into(input: core::text::Text, form: Form, output: core::slice::View<u8>, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<Normalized, Error>
@@ -210,8 +243,32 @@ pub fn normalize_into(input: core::text::Text, form: Form, output: core::slice::
 
 ### function: is_normalized
 
-[Source line 210](../../../extended/ext/unicode_normalize.lani#L210)
+[Source line 222](../../../extended/ext/unicode_normalize.lani#L222)
 
 ```lanius
 pub fn is_normalized(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<bool, Error>
+```
+
+### function: quick_check
+
+[Source line 283](../../../extended/ext/unicode_normalize.lani#L283)
+
+```lanius
+pub fn quick_check(input: core::text::Text, form: Form, work_limit: u64) -> core::result::Result<QuickCheck, Error>
+```
+
+### function: normalize_quick_into
+
+[Source line 293](../../../extended/ext/unicode_normalize.lani#L293)
+
+```lanius
+pub fn normalize_quick_into(input: core::text::Text, form: Form, output: core::slice::View<u8>, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<Normalized, Error>
+```
+
+### function: is_normalized_quick
+
+[Source line 324](../../../extended/ext/unicode_normalize.lani#L324)
+
+```lanius
+pub fn is_normalized_quick(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<bool, Error>
 ```

@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **281 modules**, **14271 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **282 modules**, **14278 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -81,7 +81,7 @@ Inventory: **281 modules**, **14271 declaration/member entries**. Counts include
 | [core::u32_cells](core/u32_cells.md) | [source](../../stdlib/core/u32_cells.lani#L4) | 4 | Source inventory | **Unregistered** |
 | [core::u64](core/u64.md) | [source](../../stdlib/core/u64.lani#L6) | 124 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
 | [core::u8](core/u8.md) | [source](../../stdlib/core/u8.lani#L5) | 151 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
-| [core::unicode](core/unicode.md) | [source](../../stdlib/core/unicode.lani#L3) | 87 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
+| [core::unicode](core/unicode.md) | [source](../../stdlib/core/unicode.lani#L3) | 87 | Source inventory | [stdlib-unicode](../stdlib-unicode.md), [extended-unicode-uconv](../extended-unicode-uconv.md) |
 | [core::usize](core/usize.md) | [source](../../stdlib/core/usize.lani#L5) | 124 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
 | [core::utf16](core/utf16.md) | [source](../../stdlib/core/utf16.lani#L4) | 29 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
 | [core::utf16_bytes](core/utf16_bytes.md) | [source](../../stdlib/core/utf16_bytes.lani#L5) | 26 | Source inventory | [stdlib-utf-codecs](../stdlib-utf-codecs.md) |
@@ -287,7 +287,7 @@ Inventory: **281 modules**, **14271 declaration/member entries**. Counts include
 | [ext::unicode_graphemes](ext/unicode_graphemes.md) | [source](../../extended/ext/unicode_graphemes.lani#L3) | 18 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
 | [ext::unicode_lines](ext/unicode_lines.md) | [source](../../extended/ext/unicode_lines.lani#L3) | 37 | Source inventory | [extended-unicode-lines](../extended-unicode-lines.md) |
 | [ext::unicode_lines_wrap](ext/unicode_lines_wrap.md) | [source](../../extended/ext/unicode_lines_wrap.lani#L3) | 32 | Source inventory | [extended-text-wrap](../extended-text-wrap.md) |
-| [ext::unicode_normalize](ext/unicode_normalize.md) | [source](../../extended/ext/unicode_normalize.lani#L5) | 23 | Source inventory | [extended-unicode-normalize](../extended-unicode-normalize.md) |
+| [ext::unicode_normalize](ext/unicode_normalize.md) | [source](../../extended/ext/unicode_normalize.lani#L5) | 30 | Source inventory | [extended-unicode-normalize](../extended-unicode-normalize.md), [extended-unicode-uconv](../extended-unicode-uconv.md) |
 | [ext::unicode_sentences](ext/unicode_sentences.md) | [source](../../extended/ext/unicode_sentences.lani#L3) | 28 | Source inventory | [extended-unicode-sentences](../extended-unicode-sentences.md) |
 | [ext::unicode_words](ext/unicode_words.md) | [source](../../extended/ext/unicode_words.lani#L3) | 18 | Source inventory | [extended-unicode-words](../extended-unicode-words.md) |
 | [ext::uri](ext/uri.md) | [source](../../extended/ext/uri.lani#L3) | 33 | Source inventory | [extended-uri](../extended-uri.md) |
@@ -311,7 +311,7 @@ Inventory: **281 modules**, **14271 declaration/member entries**. Counts include
 | --- | --- | ---: | --- | --- |
 | [core::unicode_case_data](core/unicode_case_data.md) | [source](../../stdlib/core/unicode_case_data.lani#L6) | 2 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 | [core::unicode_fold_data](core/unicode_fold_data.md) | [source](../../stdlib/core/unicode_fold_data.lani#L6) | 2 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
-| [core::unicode_properties_data](core/unicode_properties_data.md) | [source](../../stdlib/core/unicode_properties_data.lani#L6) | 2 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
+| [core::unicode_properties_data](core/unicode_properties_data.md) | [source](../../stdlib/core/unicode_properties_data.lani#L8) | 1 | Source inventory | [stdlib-unicode](../stdlib-unicode.md), [extended-unicode-uconv](../extended-unicode-uconv.md) |
 | [core::unicode_table](core/unicode_table.md) | [source](../../stdlib/core/unicode_table.lani#L2) | 1 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 | [core::unicode_turkic_data](core/unicode_turkic_data.md) | [source](../../stdlib/core/unicode_turkic_data.lani#L6) | 2 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
 
@@ -332,6 +332,7 @@ Inventory: **281 modules**, **14271 declaration/member entries**. Counts include
 | [ext::unicode_graphemes_data](ext/unicode_graphemes_data.md) | [source](../../extended/ext/unicode_graphemes_data.lani#L7) | 1 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
 | [ext::unicode_lines_data](ext/unicode_lines_data.md) | [source](../../extended/ext/unicode_lines_data.lani#L7) | 1 | Source inventory | [extended-unicode-lines](../extended-unicode-lines.md) |
 | [ext::unicode_normalize_data](ext/unicode_normalize_data.md) | [source](../../extended/ext/unicode_normalize_data.lani#L6) | 12 | Source inventory | [extended-unicode-normalize](../extended-unicode-normalize.md) |
+| [ext::unicode_quick_check_data](ext/unicode_quick_check_data.md) | [source](../../extended/ext/unicode_quick_check_data.lani#L8) | 1 | Source inventory | [extended-unicode-normalize](../extended-unicode-normalize.md), [extended-unicode-uconv](../extended-unicode-uconv.md) |
 | [ext::unicode_sentences_data](ext/unicode_sentences_data.md) | [source](../../extended/ext/unicode_sentences_data.lani#L6) | 1 | Source inventory | [extended-unicode-sentences](../extended-unicode-sentences.md) |
 | [ext::unicode_words_data](ext/unicode_words_data.md) | [source](../../extended/ext/unicode_words_data.lani#L6) | 1 | Source inventory | [extended-unicode-words](../extended-unicode-words.md) |
 
