@@ -1,0 +1,54 @@
+// Reads search cases from stdin and prints one result line per case:
+// "find rfind count byte text", where byte is find_byte of the needle's first
+// byte (-1 for an empty needle) and text is core::text find on the range
+// (-2 when the haystack range is not valid UTF-8).
+// Case: u32 hay_len, hay, u32 needle_len, needle, u32 from, u32 to (LE).
+module app::main;
+import alloc::allocator;
+import core::mem;
+import core::option;
+import core::result;
+import core::search;
+import core::text;
+import std::io;
+
+const CAP: i64 = 67108864;
+
+fn u32_at(bytes: [u8], at: i32) -> i32 {
+    return (bytes[at] as i32) | ((bytes[at + 1] as i32) << 8) | ((bytes[at + 2] as i32) << 16) | ((bytes[at + 3] as i32) << 24);
+}
+fn put(value: i32) { std::io::write_i32(1, value); std::io::write_text(1, " "); }
+
+fn main() -> i32 {
+    let data: ptr = alloc::allocator::alloc(CAP as usize, 8);
+    let length: i64 = 0;
+    while (true) {
+        let got: i32 = std::io::read_stdin(data + (length as usize), (CAP - length) as usize);
+        if (got < 0) { return 2; }
+        if (got == 0) { break; }
+        length += got as i64;
+    }
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(data, length as i32);
+    let at: i32 = 0;
+    while (at < length as i32) {
+        let hay_len: i32 = u32_at(bytes, at); let hay: i32 = at + 4;
+        let needle_len: i32 = u32_at(bytes, hay + hay_len); let needle: i32 = hay + hay_len + 4;
+        let from: i32 = u32_at(bytes, needle + needle_len); let to: i32 = u32_at(bytes, needle + needle_len + 4);
+        at = needle + needle_len + 8;
+        let f: i32 = core::search::find(bytes, hay + from, hay + to, bytes, needle, needle_len);
+        let r: i32 = core::search::rfind(bytes, hay + from, hay + to, bytes, needle, needle_len);
+        let c: i32 = core::search::count(bytes, hay + from, hay + to, bytes, needle, needle_len);
+        let b: i32 = -1;
+        if (needle_len > 0) { b = core::search::find_byte(bytes, hay + from, hay + to, bytes[needle]); }
+        if (f >= 0) { f -= hay; } if (r >= 0) { r -= hay; } if (b >= 0) { b -= hay; }
+        let t: i32 = -2;
+        let range: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8_range(bytes, hay + from, to - from);
+        let pattern: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8_range(bytes, needle, needle_len);
+        if (range.is_ok() && pattern.is_ok()) {
+            let found: core::option::Option<i32> = range.unwrap().find(pattern.unwrap());
+            t = -1; if (found.is_some()) { t = found.unwrap() + from; }
+        }
+        put(f); put(r); put(c); put(b); std::io::write_i32(1, t); std::io::write_newline(1);
+    }
+    return 0;
+}

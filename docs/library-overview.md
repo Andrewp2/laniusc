@@ -1,6 +1,10 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[`core::search`](stdlib-search.md) increment adds SWAR byte scans and a
+rarest-byte substring prefilter, used by `Text::find` and the parallel
+grep. 160,000 generated cases match Python's search results.
+The preceding
 [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
 work on native Linux x86_64/glibc with libatomic:
 
