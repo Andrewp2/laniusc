@@ -1,0 +1,105 @@
+module app::main;
+import alloc::buffered;
+import core::io;
+import core::result;
+import fixture::peer;
+
+fn normal() {
+    let data:[u8;8]=[11,22,33,44,55,66,77,88];
+    let peer=fixture::peer::stream(data,8,4);
+    let input=alloc::buffered::reader(peer.borrow(),4).unwrap();
+    let storage:ptr=input.buffer.storage;
+    let destination:[u8;3]=[211,211,211];
+    fixture::peer::mark(80);
+    assert(input.fill_buf().unwrap().len()==4 && peer.position==4);
+    assert(input.consume(1).unwrap()==1 && input.buffered().len()==3);
+    peer.log=0;
+    assert(input.seek(core::io::SeekFrom::Current(0)).unwrap()==1);
+    assert(peer.log==54 && peer.last_start==1 && peer.position==1 && input.buffered().len()==0);
+    assert(input.read(destination,1,1).unwrap()==1 && destination[1]==22 && destination[0]==211 && destination[2]==211);
+    assert(peer.position==5 && input.buffered().len()==3);
+    peer.log=0;
+    assert(input.seek(core::io::SeekFrom::Current(2)).unwrap()==4 && peer.log==54 && peer.last_start==4);
+    peer.log=0;
+    assert(input.seek(core::io::SeekFrom::Start(6)).unwrap()==6 && peer.log==4);
+    assert(input.fill_buf().unwrap().len()==2 && input.buffered().get(0).unwrap()==77);
+    peer.log=0;
+    assert(input.seek(core::io::SeekFrom::End(-3)).unwrap()==5 && peer.log==6 && peer.last_offset == -3);
+    assert(input.read(destination,1,1).unwrap()==1 && destination[1]==66);
+    peer.log=0;
+    assert(core::io::rewind(input.borrow()).unwrap()==0 && peer.log==4);
+    peer.log=0;
+    assert(core::io::stream_position(input.borrow()).unwrap()==0 && peer.log==54);
+    assert(input.buffer.storage==storage && input.capacity()==4 && input.is_active() && !input.is_faulted());
+    let parts=input.take_parts().unwrap();
+    assert(parts.buffer.storage==storage && parts.length==0 && !parts.faulted && !input.is_active());
+    let calls:i32=peer.seeks;
+    assert(fixture::peer::error_is(input.seek(core::io::SeekFrom::Start(0)).unwrap_err(),4) && peer.seeks==calls);
+    fixture::peer::mark(112);
+    assert(parts.discard()==0 && input.discard()==0);
+}
+
+fn arithmetic_preserves_unread() {
+    let data:[u8;8]=[11,22,33,44,55,66,77,88];
+    let peer=fixture::peer::stream(data,8,4);
+    let input=alloc::buffered::reader(peer.borrow(),4).unwrap();
+    let storage:ptr=input.buffer.storage;
+    fixture::peer::mark(80);
+    assert(input.fill_buf().unwrap().len()==4 && input.consume(1).unwrap()==1);
+    peer.log=0;
+    assert(fixture::peer::error_is(input.seek(core::io::SeekFrom::Current(-2)).unwrap_err(),4));
+    assert(peer.log==5 && peer.position==4 && input.buffered().start==1 && input.buffered().len()==3);
+    peer.log=0;
+    assert(fixture::peer::error_is(input.seek(core::io::SeekFrom::Current(-9223372036854775807-1)).unwrap_err(),4));
+    assert(peer.log==5 && input.buffered().get(0).unwrap()==22 && !input.is_faulted());
+    // The scripted stream has a full-width logical cursor independent of its
+    // small backing. No physical read is made while it is beyond that backing.
+    peer.position=18446744073709551615; peer.log=0;
+    assert(fixture::peer::error_is(input.seek(core::io::SeekFrom::Current(4)).unwrap_err(),4));
+    assert(peer.log==5 && peer.position==18446744073709551615);
+    assert(input.buffered().len()==3 && input.buffered().get(2).unwrap()==44);
+    assert(input.buffer.storage==storage && input.is_active() && !input.is_faulted() && peer.reads==1);
+    peer.position=4; peer.log=0;
+    assert(input.seek(core::io::SeekFrom::Current(0)).unwrap()==1 && peer.log==54 && input.buffered().len()==0);
+    fixture::peer::mark(112);
+    assert(input.discard()==0);
+}
+
+fn failure(kind:i32) {
+    let data:[u8;8]=[11,22,33,44,55,66,77,88];
+    let destination:[u8;1]=[211];
+    let peer=fixture::peer::stream(data,8,4);
+    let input=alloc::buffered::reader(peer.borrow(),4).unwrap();
+    let storage:ptr=input.buffer.storage;
+    fixture::peer::mark(80);
+    assert(input.fill_buf().unwrap().len()==4 && input.consume(1).unwrap()==1);
+    peer.log=0;
+    let origin:core::io::SeekFrom=core::io::SeekFrom::Current(0);
+    let code:i32=5; let calls:i32=1; let order:u64=5;
+    if(kind==0) { peer.seek_fail=1; peer.seek_error=3; origin=core::io::SeekFrom::Start(7); code=3; order=4; }
+    if(kind==1) { peer.seek_fail=1; peer.seek_error=1; origin=core::io::SeekFrom::End(-1); code=1; order=6; }
+    if(kind==2) { peer.seek_fail=1; peer.seek_error=2; code=2; }
+    if(kind==3) { peer.seek_bad=1; peer.seek_reply=2; }
+    if(kind==4) { peer.seek_fail=2; peer.seek_error=3; code=3; calls=2; order=54; }
+    if(kind==5) { peer.seek_bad=1; peer.seek_reply=8; origin=core::io::SeekFrom::Start(7); order=4; }
+    if(kind==6) { peer.seek_bad=2; peer.seek_reply=2; calls=2; order=54; }
+    assert(fixture::peer::error_is(input.seek(origin).unwrap_err(),code));
+    assert(peer.seeks==calls && peer.log==order && input.is_active() && input.is_faulted());
+    assert(input.buffered().len()==0 && input.buffer.storage==storage && input.capacity()==4);
+    if(kind==0 || kind==1 || kind==2 || kind==4) { assert(peer.position==19); }
+    assert(fixture::peer::error_is(input.seek(core::io::SeekFrom::Start(0)).unwrap_err(),5));
+    assert(fixture::peer::error_is(input.read(destination,0,1).unwrap_err(),5) && destination[0]==211);
+    assert(fixture::peer::error_is(input.fill_buf().unwrap_err(),5));
+    assert(fixture::peer::error_is(input.consume(0).unwrap_err(),5));
+    assert(peer.seeks==calls && peer.reads==1);
+    let parts=input.take_parts().unwrap();
+    assert(parts.faulted && parts.length==0 && parts.buffer.storage==storage && !input.is_active());
+    assert(fixture::peer::error_is(input.seek(core::io::SeekFrom::Current(0)).unwrap_err(),4) && peer.seeks==calls);
+    fixture::peer::mark(112);
+    assert(parts.discard()==0 && input.discard()==0);
+}
+fn main() -> i32 {
+    normal(); arithmetic_preserves_unread();
+    let kind:i32=0; while(kind<7) { failure(kind); kind+=1; }
+    fixture::peer::mark(68); return 0;
+}

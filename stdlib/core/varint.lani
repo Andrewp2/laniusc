@@ -1,35 +1,22 @@
-// Canonical unsigned LEB128 for u32 over caller-backed byte views.
+// Checked shortest base-128 varints and signed ZigZag over borrowed bytes.
+// Signed functions implement sintN ZigZag, not signed LEB128 or intN encoding.
+// See docs/stdlib-varint.md for logical bounds and physical backing obligations.
 module core::varint;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
 
-pub const OK: i32 = 0;
-pub const INVALID_BOUNDS: i32 = 1;
-pub const TRUNCATED: i32 = 2;
-pub const OVERFLOW: i32 = 3;
-pub const NON_CANONICAL: i32 = 4;
+pub enum Error { Bounds, BufferTooSmall(i32), Truncated, Overflow, NonCanonical }
+pub struct Decoded<T> { value: T, next: i32 }
 
-pub struct ReadU32 {
-    // Inspect status before using value or next through their accessors.
-    status: i32,
-    value: u32,
-    next: i32,
+fn valid_offset(bytes: View<u8>, offset: i32) -> bool {
+    if (bytes.start < 0 || bytes.length < 0 || bytes.start > 2147483647 - bytes.length) { return false; }
+    return offset >= 0 && offset <= bytes.length;
 }
 
-fn failed_u32(status: i32) -> ReadU32 {
-    return ReadU32 { status: status, value: 0, next: -1 };
-}
-
-pub fn status_u32(result: ReadU32) -> i32 { return result.status; }
-pub fn value_u32_or(result: ReadU32, fallback: u32) -> u32 {
-    if (result.status == OK) { return result.value; }
-    return fallback;
-}
-pub fn next_u32_or(result: ReadU32, fallback: i32) -> i32 {
-    if (result.status == OK) { return result.next; }
-    return fallback;
-}
-
-pub fn len_u32(value: u32) -> i32 {
-    let remaining: u32 = value;
+fn len_unsigned(value: u64) -> i32 {
+    let remaining: u64 = value;
     let count: i32 = 1;
     while (remaining >= 128) {
         remaining >>= 7;
@@ -38,44 +25,108 @@ pub fn len_u32(value: u32) -> i32 {
     return count;
 }
 
-// Return the next offset, or -1 if logical bounds or capacity fail. A -1
-// result writes nothing; an overclaimed physical backing may trap mid-write.
-pub fn write_u32(bytes: [u8], len: i32, offset: i32, value: u32) -> i32 {
-    if (len < 0 || offset < 0 || offset > len) { return -1; }
-    let count: i32 = len_u32(value);
-    if (count > len - offset) { return -1; }
-    let remaining: u32 = value;
+// Admit the full encoded length before the first store. Successful offsets
+// are relative to the View; ordinary indexing retains its native byte stride.
+fn write_unsigned(bytes: View<u8>, offset: i32, value: u64) -> Result<i32, Error> {
+    if (!valid_offset(bytes, offset)) { return Err(Error::Bounds); }
+    let count: i32 = len_unsigned(value);
+    if (count > bytes.length - offset) { return Err(Error::BufferTooSmall(count)); }
+    let remaining: u64 = value;
     let position: i32 = offset;
     while (remaining >= 128) {
-        let encoded_word: u32 = (remaining & 127) + 128;
+        let encoded_word: u64 = (remaining & 127) | 128;
         let encoded_byte: u8 = encoded_word as u8;
-        bytes[position] = encoded_byte;
+        bytes.values[bytes.start + position] = encoded_byte;
         remaining >>= 7;
         position += 1;
     }
     let last_byte: u8 = remaining as u8;
-    bytes[position] = last_byte;
-    return offset + count;
+    bytes.values[bytes.start + position] = last_byte;
+    return Ok(offset + count);
 }
 
-// Status distinguishes invalid bounds, a truncated prefix, overflow, and a
-// nonminimal encoding. A physical backing overclaim can trap on indexing.
-pub fn read_u32(bytes: [u8], len: i32, offset: i32) -> ReadU32 {
-    if (len < 0 || offset < 0 || offset > len) { return failed_u32(INVALID_BOUNDS); }
-    let value: u32 = 0;
+// The last permitted byte is checked before shifting or canonicality. Its
+// continuation is Overflow even when no later byte is physically available.
+fn read_unsigned(bytes: View<u8>, offset: i32, maximum_bytes: i32, final_payload: u64) -> Result<Decoded<u64>, Error> {
+    if (!valid_offset(bytes, offset)) { return Err(Error::Bounds); }
+    let available: i32 = bytes.length - offset;
+    let value: u64 = 0;
     let index: i32 = 0;
-    while (index < 5) {
-        if (index >= len - offset) { return failed_u32(TRUNCATED); }
-        let raw_byte: u8 = bytes[offset + index];
-        let byte: u32 = raw_byte as u32;
-        let payload: u32 = byte & 127;
-        if (index == 4 && payload > 15) { return failed_u32(OVERFLOW); }
+    while (index < maximum_bytes) {
+        if (index >= available) { return Err(Error::Truncated); }
+        let raw_byte: u8 = bytes.values[bytes.start + offset + index];
+        let byte: u64 = raw_byte as u64;
+        let payload: u64 = byte & 127;
+        let continued: bool = (byte & 128) != 0;
+        if (index == maximum_bytes - 1 && (payload > final_payload || continued)) { return Err(Error::Overflow); }
         value |= payload << (index * 7);
-        if ((byte & 128) == 0) {
-            if (index > 0 && payload == 0) { return failed_u32(NON_CANONICAL); }
-            return ReadU32 { status: OK, value: value, next: offset + index + 1 };
+        if (!continued) {
+            if (index > 0 && payload == 0) { return Err(Error::NonCanonical); }
+            let decoded: Decoded<u64> = Decoded { value: value, next: offset + index + 1 };
+            return Ok(decoded);
         }
         index += 1;
     }
-    return failed_u32(OVERFLOW);
+    return Err(Error::Overflow);
+}
+
+// All sign handling is unsigned; the signed minima need no signed negation.
+pub fn zigzag_encode_i32(value: i32) -> u32 {
+    let bits: u32 = value as u32;
+    let sign_mask: u32 = 0;
+    if (value < 0) { sign_mask = 4294967295; }
+    return (bits << 1) ^ sign_mask;
+}
+pub fn zigzag_decode_i32(value: u32) -> i32 {
+    let sign_mask: u32 = 0;
+    if ((value & 1) != 0) { sign_mask = 4294967295; }
+    return ((value >> 1) ^ sign_mask) as i32;
+}
+pub fn zigzag_encode_i64(value: i64) -> u64 {
+    let bits: u64 = value as u64;
+    let sign_mask: u64 = 0;
+    if (value < 0) { sign_mask = 18446744073709551615; }
+    return (bits << 1) ^ sign_mask;
+}
+pub fn zigzag_decode_i64(value: u64) -> i64 {
+    let sign_mask: u64 = 0;
+    if ((value & 1) != 0) { sign_mask = 18446744073709551615; }
+    return ((value >> 1) ^ sign_mask) as i64;
+}
+
+pub fn len_u32(value: u32) -> i32 { return len_unsigned(value as u64); }
+pub fn len_u64(value: u64) -> i32 { return len_unsigned(value); }
+pub fn len_i32(value: i32) -> i32 { return len_unsigned(zigzag_encode_i32(value) as u64); }
+pub fn len_i64(value: i64) -> i32 { return len_unsigned(zigzag_encode_i64(value)); }
+
+pub fn write_u32(bytes: View<u8>, offset: i32, value: u32) -> Result<i32, Error> {
+    return write_unsigned(bytes, offset, value as u64);
+}
+pub fn write_u64(bytes: View<u8>, offset: i32, value: u64) -> Result<i32, Error> {
+    return write_unsigned(bytes, offset, value);
+}
+pub fn write_i32(bytes: View<u8>, offset: i32, value: i32) -> Result<i32, Error> {
+    return write_unsigned(bytes, offset, zigzag_encode_i32(value) as u64);
+}
+pub fn write_i64(bytes: View<u8>, offset: i32, value: i64) -> Result<i32, Error> {
+    return write_unsigned(bytes, offset, zigzag_encode_i64(value));
+}
+
+pub fn read_u32(bytes: View<u8>, offset: i32) -> Result<Decoded<u32>, Error> {
+    let decoded: Decoded<u64> = read_unsigned(bytes, offset, 5, 15)?;
+    let result: Decoded<u32> = Decoded { value: decoded.value as u32, next: decoded.next };
+    return Ok(result);
+}
+pub fn read_u64(bytes: View<u8>, offset: i32) -> Result<Decoded<u64>, Error> {
+    return read_unsigned(bytes, offset, 10, 1);
+}
+pub fn read_i32(bytes: View<u8>, offset: i32) -> Result<Decoded<i32>, Error> {
+    let decoded: Decoded<u32> = read_u32(bytes, offset)?;
+    let result: Decoded<i32> = Decoded { value: zigzag_decode_i32(decoded.value), next: decoded.next };
+    return Ok(result);
+}
+pub fn read_i64(bytes: View<u8>, offset: i32) -> Result<Decoded<i64>, Error> {
+    let decoded: Decoded<u64> = read_u64(bytes, offset)?;
+    let result: Decoded<i64> = Decoded { value: zigzag_decode_i64(decoded.value), next: decoded.next };
+    return Ok(result);
 }

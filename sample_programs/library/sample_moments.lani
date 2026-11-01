@@ -1,0 +1,213 @@
+// Weighted and unweighted-positive higher moments from bounded CSV.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::f64;
+import core::float_decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::slice::View;
+import core::slice::view;
+import core::text;
+import ext::csv;
+import ext::csv_write;
+import ext::higher_statistics;
+import ext::statistics;
+import ext::weighted_statistics;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Sample { value:f64, weight:f64 }
+struct Cell { value:f64, status:i32 }
+struct Metric { name:View<u8>, cell:Cell }
+struct Writes { bytes:u64, calls:u64 }
+impl Writes { fn borrow(&self) -> &Writes { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return view(raw,count).unwrap();
+}
+fn text(value:View<u8>) -> core::text::Text { return core::text::from_utf8_unchecked(value.values,value.start,value.length); }
+fn bytes(value:core::text::Text) -> View<u8> { return View { values:value.bytes,start:value.start,length:value.length }; }
+fn equal(left:View<u8>, right:View<u8>) -> bool {
+    if (left.length != right.length) { return false; } let index:i32 = 0;
+    while(index < left.length) { if (left.get(index).unwrap() != right.get(index).unwrap()) { return false; } index += 1; } return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:core::result::Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap(); if (count <= 0 || count > bytes.length-completed) { return false; } completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("sample-moments: operation failed\n",33),2,8); return status; }
+fn csv_status(error:ext::csv::Error) -> i32 { return match(error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 }; }
+fn read(input:&Vec<u8>) -> i32 {
+    let source = std::stream::stdin(); let scratch:[u8;4096] = [0;4096]; let calls:i32 = 0;
+    while(true) {
+        if (calls == 4096) { return 2; } calls += 1;
+        let remaining:i32 = 1048576-input.len(); let count:i32 = remaining;
+        if (count > 4096) { count = 4096; } if (count == 0) { count = 1; }
+        let received:core::result::Result<i32,core::io::Error> = source.read(scratch,0,count);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let got = received.unwrap(); if (got < 0 || got > count) { return 3; }
+        if (got == 0) { return 0; } if (got > remaining) { return 2; }
+        if (input.try_extend(view(scratch,got).unwrap()).is_err()) { return 4; }
+    }
+    return 3;
+}
+fn weighted_cell(result:Result<f64,ext::weighted_statistics::Error>) -> Cell {
+    if (result.is_ok()) { return Cell { value:result.unwrap(),status:0 }; }
+    let status:i32 = match(result.unwrap_err().kind) {
+        ext::weighted_statistics::ErrorKind::Empty -> 1,
+        ext::weighted_statistics::ErrorKind::InsufficientData -> 2,
+        ext::weighted_statistics::ErrorKind::Degenerate -> 3,
+        _ -> 4
+    };
+    return Cell { value:0.0,status:status };
+}
+fn higher_cell(result:Result<f64,ext::statistics::Error>) -> Cell {
+    if (result.is_ok()) { return Cell { value:result.unwrap(),status:0 }; }
+    let status:i32 = match(result.unwrap_err().kind) {
+        ext::statistics::ErrorKind::Empty -> 1,
+        ext::statistics::ErrorKind::InsufficientData -> 2,
+        ext::statistics::ErrorKind::Degenerate -> 3,
+        _ -> 4
+    };
+    return Cell { value:0.0,status:status };
+}
+fn cell(value:f64) -> Cell { return Cell { value:value,status:0 }; }
+fn metric(name:View<u8>, value:Cell) -> Metric { return Metric { name:name,cell:value }; }
+fn emit(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Writes) -> i32 {
+    let limits = ext::csv_write::Limits { max_output:16384-state.bytes,max_write_calls:256-state.calls };
+    let sent:Result<ext::csv_write::Progress,ext::csv_write::Failure> = ext::csv_write::write_record(output,record,limits);
+    if (sent.is_err()) {
+        let failure = sent.unwrap_err(); state.bytes += failure.written; state.calls += failure.write_calls;
+        return match(failure.cause) {
+            ext::csv_write::Cause::Csv(detail) -> csv_status(detail),
+            ext::csv_write::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4, _ -> 6 },
+            _ -> 6
+        };
+    }
+    let progress = sent.unwrap(); state.bytes += progress.written; state.calls += progress.write_calls; return 0;
+}
+fn row(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Writes, fields:View<View<u8>>) -> i32 {
+    record.clear(); let index:i32 = 0;
+    while(index < fields.length) {
+        let pushed = record.try_push_field(text(fields.get(index).unwrap()));
+        if (pushed.is_err()) { return csv_status(pushed.unwrap_err()); } index += 1;
+    }
+    return emit(output,record,state);
+}
+fn render(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Writes, profile:View<u8>, metrics:View<Metric>) -> i32 {
+    let scratch:[u32;864] = [0;864]; let workspace = view(scratch,864).unwrap(); let index:i32 = 0;
+    while(index < metrics.length) {
+        let item = metrics.get(index).unwrap(); if (item.cell.status == 4) { return 6; }
+        let number:[u8;32] = [0;32]; let value:View<u8> = literal("",0); let status:View<u8> = literal("ok",2);
+        if (item.cell.status == 0) {
+            if (!core::f64::is_finite(item.cell.value)) { return 6; }
+            let formatted = core::float_decimal::format_f64_into(item.cell.value,view(number,32).unwrap(),workspace,1000000);
+            if (formatted.is_err()) { return 6; } value = view(number,formatted.unwrap()).unwrap();
+        }
+        if (item.cell.status == 1) { status = literal("empty",5); }
+        if (item.cell.status == 2) { status = literal("insufficient",12); }
+        if (item.cell.status == 3) { status = literal("degenerate",10); }
+        let fields:[View<u8>;4] = [profile,item.name,value,status];
+        let written = row(output,record,state,view(fields,4).unwrap()); if (written != 0) { return written; } index += 1;
+    }
+    return 0;
+}
+fn summaries(samples:&Vec<Sample>, output:&alloc::io::Buffer) -> i32 {
+    let weighted = ext::weighted_statistics::moments(); let higher = ext::higher_statistics::moments(); let index:i32 = 0;
+    while(index < samples.len()) {
+        let sample = samples.at(index);
+        if (weighted.push(sample.value,sample.weight).is_err()) { return 6; }
+        if (sample.weight > 0.0 && higher.push(sample.value).is_err()) { return 6; } index += 1;
+    }
+    let weighted_metrics:[Metric;10] = [
+        metric(literal("count",5),cell(weighted.count() as f64)),
+        metric(literal("total_weight",12),weighted_cell(weighted.total_weight())),
+        metric(literal("effective_count",15),weighted_cell(weighted.effective_count())),
+        metric(literal("mean",4),weighted_cell(weighted.mean())),
+        metric(literal("minimum",7),weighted_cell(weighted.minimum())),
+        metric(literal("maximum",7),weighted_cell(weighted.maximum())),
+        metric(literal("m2",2),weighted_cell(weighted.m2())),
+        metric(literal("population_variance",19),weighted_cell(weighted.population_variance())),
+        metric(literal("population_stddev",17),weighted_cell(weighted.population_stddev())),
+        metric(literal("reliability_variance",20),weighted_cell(weighted.reliability_variance()))
+    ];
+    let higher_metrics:[Metric;14] = [
+        metric(literal("count",5),cell(higher.count() as f64)),
+        metric(literal("mean",4),higher_cell(higher.mean())),
+        metric(literal("minimum",7),higher_cell(higher.minimum())),
+        metric(literal("maximum",7),higher_cell(higher.maximum())),
+        metric(literal("m2",2),higher_cell(higher.m2())),
+        metric(literal("m3",2),higher_cell(higher.m3())),
+        metric(literal("m4",2),higher_cell(higher.m4())),
+        metric(literal("population_variance",19),higher_cell(higher.population_variance())),
+        metric(literal("population_stddev",17),higher_cell(higher.population_stddev())),
+        metric(literal("population_skewness",19),higher_cell(higher.population_skewness())),
+        metric(literal("population_kurtosis",19),higher_cell(higher.population_kurtosis())),
+        metric(literal("population_excess_kurtosis",26),higher_cell(higher.population_excess_kurtosis())),
+        metric(literal("adjusted_skewness",17),higher_cell(higher.adjusted_skewness())),
+        metric(literal("adjusted_excess_kurtosis",24),higher_cell(higher.adjusted_excess_kurtosis()))
+    ];
+    let record = ext::csv::new(); let state = Writes { bytes:0,calls:0 };
+    let fields:[View<u8>;4] = [literal("profile",7),literal("metric",6),literal("value",5),literal("status",6)];
+    let status:i32 = row(output,record.borrow(),state.borrow(),view(fields,4).unwrap());
+    if (status == 0) { status = render(output,record.borrow(),state.borrow(),literal("weighted",8),view(weighted_metrics,10).unwrap()); }
+    if (status == 0) { status = render(output,record.borrow(),state.borrow(),literal("unweighted_positive",19),view(higher_metrics,14).unwrap()); }
+    record.destroy(); return status;
+}
+fn collect(input:&Vec<u8>, samples:&Vec<Sample>) -> i32 {
+    let dialect = ext::csv::default_options(); dialect.max_records = 4097; dialect.max_fields = 2;
+    dialect.max_field_bytes = 128; dialect.max_record_bytes = 256;
+    let parsed = ext::csv::parse_bytes(input.as_slice(),0,input.len(),dialect);
+    if (parsed.is_err()) { return csv_status(parsed.unwrap_err()); }
+    let table = parsed.unwrap(); let status:i32 = 0;
+    if (table.row_count() < 1 || table.field_count(0).unwrap() != 2) { status = 2; }
+    if (status == 0 && (!equal(bytes(table.field(0,0).unwrap()),literal("value",5)) || !equal(bytes(table.field(0,1).unwrap()),literal("weight",6)))) { status = 2; }
+    let scratch:[u32;864] = [0;864]; let workspace = view(scratch,864).unwrap();
+    let limits = core::float_decimal::default_limits(); limits.max_input = 128; limits.max_digits = 128;
+    let index:i32 = 1;
+    while(status == 0 && index < table.row_count()) {
+        if (table.field_count(index).unwrap() != 2) { status = 2; break; }
+        let value:Result<f64,core::float_decimal::Error> = core::float_decimal::parse_f64(bytes(table.field(index,0).unwrap()),workspace,limits);
+        let weight:Result<f64,core::float_decimal::Error> = core::float_decimal::parse_f64(bytes(table.field(index,1).unwrap()),workspace,limits);
+        if (value.is_err() || weight.is_err()) { status = 2; break; }
+        if (!core::f64::is_finite(value.unwrap()) || !core::f64::is_finite(weight.unwrap()) || weight.unwrap() < 0.0) { status = 2; break; }
+        if (samples.try_push(Sample { value:value.unwrap(),weight:weight.unwrap() }).is_err()) { status = 4; break; } index += 1;
+    }
+    table.destroy(); return status;
+}
+fn run() -> i32 {
+    let input:Vec<u8> = alloc::vec::new(); let samples:Vec<Sample> = alloc::vec::new(); let status:i32 = read(input.borrow());
+    if (status == 0) { status = collect(input.borrow(),samples.borrow()); } input.destroy();
+    if (status != 0) { samples.destroy(); return status; }
+    let made = alloc::io::with_limit(16384); if (made.is_err()) { samples.destroy(); return 4; }
+    let output = made.unwrap(); status = summaries(samples.borrow(),output.borrow()); samples.destroy();
+    if (status == 0 && !write(view(output.as_bytes(),output.len()).unwrap(),1,64)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    if (values.length > 0) {
+        if (values.length != 1 || !(equal(values.get(0).unwrap(),literal("--help",6)) || equal(values.get(0).unwrap(),literal("-h",2)))) { return report(2); }
+        let help = literal("Usage: sample-moments [--help] < samples.csv\nInput header: value,weight. Finite numbers, nonnegative weights, at most 4096 rows.\nOutput: profile,metric,value,status. Higher moments count positive-weight rows once.\nLimits: 1 MiB input, 128 bytes per numeric field, 16 KiB staged output.\n",286);
+        if (!write(help,1,64)) { return report(5); } return 0;
+    }
+    let status = run(); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,4,1024);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status = arguments(values.as_view()); values.destroy(); return status;
+}

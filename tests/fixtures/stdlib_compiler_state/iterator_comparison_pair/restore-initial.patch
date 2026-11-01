@@ -1,0 +1,35 @@
+--- a/stdlib/core/iter.lani
++++ b/stdlib/core/iter.lani
+@@ -509,9 +509,7 @@
+         let second: core::option::Option<U> = right.next();
+         if (first.is_none()) { return second.is_none(); }
+         if (second.is_none()) { return false; }
+-        let first_value: T = core::option::unwrap<T>(first);
+-        let second_value: U = core::option::unwrap<U>(second);
+-        let values: core::pair::Pair<T,U> = core::pair::Pair { first: first_value, second: second_value };
++        let values: core::pair::Pair<T,U> = core::pair::Pair { first: first.unwrap(), second: second.unwrap() };
+         if (!predicate.apply(values)) { return false; }
+     }
+     return true;
+@@ -535,9 +533,7 @@
+             return core::ordering::Ordering::Less;
+         }
+         if (second.is_none()) { return core::ordering::Ordering::Greater; }
+-        let first_value: T = core::option::unwrap<T>(first);
+-        let second_value: U = core::option::unwrap<U>(second);
+-        let ordering: core::ordering::Ordering = comparator.compare(first_value,second_value);
++        let ordering: core::ordering::Ordering = comparator.compare(first.unwrap(),second.unwrap());
+         if (!core::ordering::is_equal(ordering)) { return ordering; }
+     }
+     return core::ordering::Ordering::Equal;
+@@ -561,9 +557,7 @@
+             return core::cmp::PartialOrdering::Less;
+         }
+         if (second.is_none()) { return core::cmp::PartialOrdering::Greater; }
+-        let first_value: T = core::option::unwrap<T>(first);
+-        let second_value: U = core::option::unwrap<U>(second);
+-        let values: core::pair::Pair<T,U> = core::pair::Pair { first: first_value, second: second_value };
++        let values: core::pair::Pair<T,U> = core::pair::Pair { first: first.unwrap(), second: second.unwrap() };
+         let ordering: core::cmp::PartialOrdering = comparator.apply(values);
+         let equal: bool = match (ordering) { core::cmp::PartialOrdering::Equal -> true, _ -> false };
+         if (!equal) { return ordering; }

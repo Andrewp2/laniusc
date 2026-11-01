@@ -441,7 +441,7 @@ def main():
     open(manifest_path, 'w').write('\n'.join(manifest) + '\n')
     print(f'time: parse {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
-    lean = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=10G', '-p', 'MemorySwapMax=0',
+    lean = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=10G', '-p', 'MemorySwapMax=0',
                            so.RUN_ALL, manifest_path], capture_output=True, text=True)
     print(f'time: runAll {time.time() - began:.0f} s', file=sys.stderr, flush=True)
     began = time.time()
@@ -469,7 +469,7 @@ def main():
     open(exe + '.lani', 'w').write(text)
     if os.path.exists(exe):
         os.remove(exe)
-    build = None if not cases else subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
+    build = None if not cases else subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
                             so.HEAVY, '-t', '30', args.laniusc, '--stdlib-root', 'stdlib', '--source-root',
                             source_root, '-o', exe, exe + '.lani'],
                            capture_output=True, text=True)
@@ -489,7 +489,7 @@ def main():
     runnable = list(range(len(tests)))
     for k, t in enumerate(tests):
         words_file(os.path.join(batch, f'in{k}.words'), layout(t['bases']))
-    subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={args.memory_max}',
+    subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryMax={args.memory_max}',
                     '-p', 'MemorySwapMax=0', sys.executable, '-I', os.path.abspath(__file__), batch,
                     '--native-batch', '--heap-log2', str(args.heap_log2), '--stack-log2', str(args.stack_log2),
                     '--timeout', str(args.timeout)], check=True)
@@ -543,7 +543,7 @@ def run_laniusc(exe, stdin, timeout, memory_max, stack):
     argv = [exe]
     preexec = None
     if memory_max is not None:
-        argv = ['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={memory_max}', '-p', 'MemorySwapMax=0',
+        argv = ['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryMax={memory_max}', '-p', 'MemorySwapMax=0',
                 exe]
 
         def preexec():

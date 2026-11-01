@@ -1,0 +1,67 @@
+// A sparse problem whose corresponding dense square has over four billion cells.
+module app::main;
+import alloc::vec;
+import core::result;
+import ext::linalg;
+import ext::sparse;
+import ext::sparse_matrix;
+import ext::sparse_ops;
+
+fn main() -> i32 {
+    let count:i32=65536;
+    let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let triplets:alloc::vec::Vec<ext::sparse::Triplet> =alloc::vec::with_capacity<ext::sparse::Triplet>(3*count-2).unwrap();
+    // Descending row and column order exercises real coordinate assembly.
+    let row:i32=count-1;
+    while(row>=0) {
+        if(row+1<count) { triplets.try_push(ext::sparse::Triplet { row:row,column:row+1,value:-1.0 }).unwrap(); }
+        triplets.try_push(ext::sparse::Triplet { row:row,column:row,value:2.0 }).unwrap();
+        if(row>0) { triplets.try_push(ext::sparse::Triplet { row:row,column:row-1,value:-1.0 }).unwrap(); }
+        row-=1;
+    }
+    let a:ext::sparse_matrix::Matrix=ext::sparse_matrix::from_triplets(count,count,triplets.as_view(),limits).unwrap();
+    triplets.destroy();
+    assert(a.rows==count && a.cols==count && a.nnz()==196606);
+    assert(ext::sparse::validate(a.view(),limits).unwrap()==196606);
+    let transposed:ext::sparse_matrix::Matrix=ext::sparse_matrix::transpose(a.view(),limits).unwrap();
+    let doubled:ext::sparse_matrix::Matrix=ext::sparse_ops::add(a.view(),transposed.view(),limits).unwrap();
+    assert(doubled.nnz()==196606);
+    let x:alloc::vec::Vec<f64> =alloc::vec::with_capacity<f64>(count).unwrap();
+    x.try_resize(count,1.0).unwrap();
+    let product:alloc::vec::Vec<f64> =ext::sparse_ops::matvec(doubled.view(),x.as_view(),limits).unwrap();
+    assert(product.len()==count);
+    row=0;
+    while(row<count) {
+        let expected:f64=0.0; if(row==0 || row==count-1) { expected=2.0; }
+        assert(product.at(row)==expected);
+        x.set(row,(row+1) as f64).unwrap(); row+=1;
+    }
+    product.destroy();
+    let ramp:alloc::vec::Vec<f64> =ext::sparse_ops::matvec(doubled.view(),x.as_view(),limits).unwrap();
+    row=0;
+    while(row<count) {
+        let expected:f64=0.0; if(row==count-1) { expected=2.0*((count+1) as f64); }
+        assert(ramp.at(row)==expected); row+=1;
+    }
+    ramp.destroy(); x.destroy();
+    let dense_limits:ext::linalg::Limits=ext::linalg::default_limits();
+    let rhs:ext::linalg::Matrix=ext::linalg::zeros(count,2,dense_limits).unwrap();
+    row=0;
+    while(row<count) { rhs.set(row,0,(row+1) as f64).unwrap(); rhs.set(row,1,1.0).unwrap(); row+=1; }
+    let result:ext::linalg::Matrix=ext::sparse_ops::matmul_dense(a.view(),rhs.view(),limits).unwrap();
+    rhs.destroy();
+    row=0;
+    while(row<count) {
+        let ramp_value:f64=0.0; let constant_value:f64=0.0;
+        if(row==count-1) { ramp_value=(count+1) as f64; }
+        if(row==0 || row==count-1) { constant_value=1.0; }
+        assert(result.get(row,0).unwrap()==ramp_value && result.get(row,1).unwrap()==constant_value);
+        row+=1;
+    }
+    result.destroy();
+    let rejected:ext::sparse::Error=ext::sparse_ops::to_dense(a.view(),limits).unwrap_err();
+    assert(match(rejected.kind) { ext::sparse::ErrorKind::EntryLimit -> true, _ -> false });
+    assert(a.nnz()==196606 && transposed.nnz()==196606 && doubled.nnz()==196606);
+    doubled.destroy(); transposed.destroy(); a.destroy();
+    return 0;
+}

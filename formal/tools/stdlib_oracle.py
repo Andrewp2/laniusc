@@ -767,7 +767,7 @@ def accepted(lani_path, tree, workdir):
     if not os.path.exists(RUN_ALL):
         env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
         with run_cache.lean_lock():
-            subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+            subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                             'lake', 'build', 'runAll'], cwd='formal', env=env, capture_output=True, check=True)
     base = os.path.join(workdir, 'candidate')
     shutil.copy(lani_path, base + '.lani')
@@ -911,7 +911,7 @@ def build_run_all():
         return
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with run_cache.lean_lock():
-        subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+        subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                         'lake', 'build', 'runAll'], cwd='formal', env=env, capture_output=True, check=True)
 
 
@@ -1515,7 +1515,7 @@ def build(args, workdir, name, text, roots=None):
     exe = os.path.join(workdir, name)
     if os.path.exists(exe):
         os.remove(exe)
-    built = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+    built = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                             HEAVY, '-t', '20', args.laniusc, '--stdlib-root', STDLIB,
                             *source_root_args(roots), '-o', exe, lani_path],
                            capture_output=True, text=True)

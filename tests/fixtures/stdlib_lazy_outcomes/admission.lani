@@ -1,0 +1,75 @@
+module app::main;
+import core::function;
+import core::option;
+import core::result;
+
+struct Packet { id:i32, bits:u64, flag:core::option::Option<bool> }
+struct MapPacket { calls:[i32] }
+struct Fallback { calls:[i32] }
+struct Bind { calls:[i32] }
+struct Classify { calls:[i32] }
+struct Keep { calls:[i32] }
+impl MapPacket { fn borrow(&self) -> &MapPacket { return self; } }
+impl Fallback { fn borrow(&self) -> &Fallback { return self; } }
+impl Bind { fn borrow(&self) -> &Bind { return self; } }
+impl Classify { fn borrow(&self) -> &Classify { return self; } }
+impl Keep { fn borrow(&self) -> &Keep { return self; } }
+pub impl core::function::Mapper<Packet,u64> for MapPacket {
+    pub fn apply(&self,value:Packet) -> u64 {
+        assert(value.id==7 && !core::option::unwrap(value.flag));
+        self.calls[0]+=1; return value.bits;
+    }
+}
+pub impl core::function::Producer<u64> for Fallback {
+    pub fn produce(&self) -> u64 { self.calls[0]+=1; return 18446744073709551614; }
+}
+pub impl core::function::Mapper<u64,core::result::Result<u64,i32>> for Bind {
+    pub fn apply(&self,value:u64) -> core::result::Result<u64,i32> {
+        self.calls[0]+=1; return core::result::Ok(value-1);
+    }
+}
+pub impl core::function::Mapper<i32,u64> for Classify {
+    pub fn apply(&self,error:i32) -> u64 { self.calls[0]+=1; return (error as u64)+100; }
+}
+pub impl core::function::Mapper<Packet,bool> for Keep {
+    pub fn apply(&self,value:Packet) -> bool { self.calls[0]+=1; return value.id==7; }
+}
+fn option_forward<T,U,M>(value:core::option::Option<T>,mapper:&M) -> core::option::Option<U>
+    where M:core::function::Mapper<T,U> { return value.map<U,M>(mapper); }
+fn result_forward<T,E,U,M>(value:core::result::Result<T,E>,mapper:&M) -> core::result::Result<U,E>
+    where M:core::function::Mapper<T,U> { return value.map<U,M>(mapper); }
+
+fn main() -> i32 {
+    let mapped:[i32;1]=[0]; let produced:[i32;1]=[0]; let bound:[i32;1]=[0];
+    let classified:[i32;1]=[0]; let kept:[i32;1]=[0];
+    let mapper:MapPacket=MapPacket { calls:mapped }; let fallback:Fallback=Fallback { calls:produced };
+    let binder:Bind=Bind { calls:bound }; let classifier:Classify=Classify { calls:classified };
+    let predicate:Keep=Keep { calls:kept };
+    let packet:Packet=Packet { id:7,bits:18446744073709551615,flag:core::option::Some(false) };
+    let present:core::option::Option<Packet> =core::option::Some(packet);
+    let absent:core::option::Option<Packet> =core::option::None();
+    let first:core::option::Option<u64> =option_forward<Packet,u64,MapPacket>(present,mapper.borrow());
+    let skipped:core::option::Option<u64> =option_forward<Packet,u64,MapPacket>(absent,mapper.borrow());
+    assert(core::option::unwrap(first)==18446744073709551615 && core::option::is_none(skipped) && mapped[0]==1);
+    assert(absent.map_or_else<u64,Fallback,MapPacket>(fallback.borrow(),mapper.borrow())==18446744073709551614);
+    assert(core::option::map_or_else<Packet,u64,Fallback,MapPacket>(present,fallback.borrow(),mapper.borrow())==18446744073709551615);
+    assert(produced[0]==1 && mapped[0]==2);
+    let filtered:core::option::Option<Packet> =present.filter<Keep>(predicate.borrow());
+    assert(core::option::unwrap(filtered).bits==18446744073709551615 && kept[0]==1);
+    assert(absent.is_none_or<Keep>(predicate.borrow()) && !absent.is_some_and<Keep>(predicate.borrow()) && kept[0]==1);
+    let success:core::result::Result<Packet,i32> =core::result::Ok(packet);
+    let failure:core::result::Result<Packet,i32> =core::result::Err(23);
+    let value:core::result::Result<u64,i32> =result_forward<Packet,i32,u64,MapPacket>(success,mapper.borrow());
+    let error:core::result::Result<u64,i32> =result_forward<Packet,i32,u64,MapPacket>(failure,mapper.borrow());
+    assert(core::result::unwrap(value)==18446744073709551615 && core::result::unwrap_err(error)==23 && mapped[0]==3);
+    let chained:core::result::Result<u64,i32> =value.and_then<u64,Bind>(binder.borrow());
+    let stopped:core::result::Result<u64,i32> =error.and_then<u64,Bind>(binder.borrow());
+    assert(core::result::unwrap(chained)==18446744073709551614 && core::result::unwrap_err(stopped)==23 && bound[0]==1);
+    let renamed:core::result::Result<Packet,u64> =failure.map_err<u64,Classify>(classifier.borrow());
+    assert(core::result::unwrap_err(renamed)==123 && classified[0]==1);
+    assert(failure.map_or_else<u64,Classify,MapPacket>(classifier.borrow(),mapper.borrow())==123);
+    assert(core::result::map_or_else<Packet,i32,u64,Classify,MapPacket>(success,classifier.borrow(),mapper.borrow())==18446744073709551615);
+    assert(classified[0]==2 && mapped[0]==4 && produced[0]==1);
+    assert(packet.id==7 && packet.bits==18446744073709551615 && !core::option::unwrap(packet.flag));
+    return 0;
+}

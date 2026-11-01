@@ -7,11 +7,39 @@ import core::option;
 import core::result;
 import core::slice;
 
-pub enum Error { Bounds, InvalidBound, InvalidRange, ZeroState, Host(i32), NoProgress, InvalidCount }
+pub enum Error { Bounds, InvalidBound, InvalidRange, ZeroState, Host(i32), NoProgress, InvalidCount, DrawLimit }
 pub struct Failure { cause: Error, completed: i32 }
 pub trait Source64 { pub fn draw(&self) -> core::result::Result<u64, Error>; }
+// Adapter copies share these borrowed references. Copying the counter itself
+// makes an independent budget; keep both borrowed objects live and exclusive.
+pub struct DrawBudget { draws_left: u64 }
+pub struct Budgeted<R> { source: &R, budget: &DrawBudget }
 pub struct State { s0: u64, s1: u64, s2: u64, s3: u64 }
 pub struct Xoshiro256PlusPlus { state: State }
+
+pub fn draw_budget(limit: u64) -> DrawBudget { return DrawBudget { draws_left: limit }; }
+pub impl DrawBudget {
+    pub fn borrow(&self) -> &DrawBudget { return self; }
+    pub fn remaining(&self) -> u64 { return self.draws_left; }
+}
+pub fn budgeted<R>(source: &R, budget: &DrawBudget) -> Budgeted<R> where R: Source64 {
+    return Budgeted { source: source, budget: budget };
+}
+pub impl<R> Budgeted<R> {
+    pub fn borrow(&self) -> &Budgeted<R> { return self; }
+}
+pub impl<R> Source64 for Budgeted<R> where R: Source64 {
+    pub fn draw(&self) -> core::result::Result<u64, Error> {
+        let budget: &DrawBudget = self.budget;
+        if (budget.draws_left == 0) { return core::result::Err(Error::DrawLimit); }
+        // Failed source calls and rejected sampler words spend this attempt.
+        // This bounds delegated draws, not a source's duration or internals.
+        budget.draws_left -= 1;
+        let source: &R = self.source;
+        let drawn: core::result::Result<u64, Error> = source.draw();
+        return drawn;
+    }
+}
 
 fn rotate(value: u64, count: u32) -> u64 { return (value << count) | (value >> (64 - count)); }
 fn mix(value: u64) -> u64 {
@@ -132,6 +160,9 @@ pub fn fill<R>(source: &R, bytes: [u8], offset: i32, count: i32) -> core::result
 // Fisher-Yates from the end. A failed draw performs no swap for that step.
 // completed counts finalized suffix positions (including self-swaps).
 pub fn shuffle<R,T>(source: &R, values: core::slice::View<T>) -> core::result::Result<i32, Failure> where R: Source64 {
+    if (values.start < 0 || values.length < 0 || values.start > 2147483647 - values.length) {
+        return core::result::Err(Failure { cause: Error::Bounds, completed: 0 });
+    }
     let remaining: i32 = values.len(); let completed: i32 = 0;
     while (remaining > 1) {
         let drawn: core::result::Result<u64, Error> = below(source, remaining as u64);
@@ -143,6 +174,9 @@ pub fn shuffle<R,T>(source: &R, values: core::slice::View<T>) -> core::result::R
     return core::result::Ok(completed);
 }
 pub fn choose<R,T>(source: &R, values: core::slice::View<T>) -> core::result::Result<core::option::Option<T>, Error> where R: Source64 {
+    if (values.start < 0 || values.length < 0 || values.start > 2147483647 - values.length) {
+        return core::result::Err(Error::Bounds);
+    }
     if (values.is_empty()) { return core::result::Ok(core::option::None()); }
     let drawn: core::result::Result<u64, Error> = below(source, values.len() as u64);
     if (core::result::is_err(drawn)) { return core::result::Err(core::result::unwrap_err(drawn)); }

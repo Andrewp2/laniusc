@@ -1,6 +1,7 @@
 // Plain-item adapters, same binary protocol/reference as nested_iteration.
 // No fallible wrappers or substitute enum inhabitant is exposed as an item.
 module app::main;
+import core::function;
 import core::clone_values;
 import core::io;
 import core::iter;
@@ -51,7 +52,7 @@ pub impl core::iter::Iterator<i32> for Input {
 }
 struct Mapping { state: &State, calls: i32 }
 impl Mapping { fn borrow(&self) -> &Mapping { return self; } }
-pub impl core::iter::Mapper<i32,Inner> for Mapping {
+pub impl core::function::Mapper<i32,Inner> for Mapping {
     pub fn apply(&self, id: i32) -> Inner {
         let state: &State = self.state; let trace: &Trace = state.trace;
         self.calls += 1; trace.add(400+id as u64);

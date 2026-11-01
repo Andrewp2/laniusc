@@ -5,6 +5,13 @@ sums, Euclidean norms and all nine Hyndman–Fan sample quantiles. Production co
 is Lanius and uses `core::f64`, `core::result` and borrowed `core::slice::View`
 values. It allocates no memory and calls no host mathematics service.
 
+[Weighted summaries](extended-weighted-statistics.md) and
+[third/fourth moments](extended-higher-statistics.md) use separate modules and
+explicit estimator names. Their current runtime-verification status is in
+those guides. Ordinary `Moments` operations retain the behavior documented
+here; the shared error enum also carries `Underflow` for the higher-moment
+profile.
+
 Import it with `--source-root extended` and `import ext::statistics;`. A complete
 executable example is
 [`statistics_smoke.lani`](../tests/fixtures/extended_library/statistics_smoke.lani).
@@ -164,6 +171,7 @@ callers.
 | `InsufficientData` | A sample statistic, correlation or fit needs two observations. |
 | `NonFiniteInput` | An observation is NaN or infinite. |
 | `Overflow` | An intermediate or resulting statistic is nonfinite. |
+| `Underflow` | The higher-moment module rejects a nonconstant summary whose positive fourth central sum rounds nonpositive; ordinary operations here retain gradual underflow. |
 | `CountLimit` | An update would exceed `MAX_COUNT`. |
 | `Bounds` | A logical view or requested count has invalid bounds. |
 | `InvalidProbability` | A probability is nonfinite or outside `[0, 1]`. |
@@ -198,3 +206,10 @@ overflow failures, the exact count limit, view offsets, typed storage, signed
 zero order, exact self aliasing, scratch/work limits and allocation denial.
 
 Run the focused suite with `cargo test --test extended_statistics_execution`.
+
+After adding the higher-moment `Underflow` error variant, both original
+registered runtime tests pass on Linux x86_64 in 12.06s (after a 1.73s build),
+with ordinary source `7f83f1e8…`. The receipt is
+`target/stdlib-work/statistics-original-regression.log`. This rechecks the
+original numerical oracle and atomic/count/view/alias/allocation contracts;
+ordinary moment algorithms and their gradual-underflow policy are unchanged.

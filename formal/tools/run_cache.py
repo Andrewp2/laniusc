@@ -16,27 +16,57 @@ CACHE = os.path.join(ROOT, 'target/claude-work/cache')
 
 
 class lean_lock:
-    """Held while Lean builds or runs: one lock for every worktree of the
-    repository (in its common git directory), so Lean runs one at a time and
-    the memory caps of parallel worktrees never add up past the machine's.
-    With LEAN_LOCK_HELD=1 the caller already holds it (`flock LOCK gate.py`),
-    so a whole gate run waits for the lock once rather than at every step."""
+    """Held while Lean builds or runs: this worktree's lock (no two builds of
+    one checkout at once) and one of two machine-wide slots in the common git
+    directory, the second taken only while 5 GB are available. Every Lean
+    scope runs in lean.slice (SLICE), which caps all of them together.
+    With LEAN_LOCK_HELD=1 the caller already holds them
+    (`target/claude-work/bin/leanslot gate.py`), so a whole gate run waits
+    once rather than at every step."""
 
     def __enter__(self):
         import fcntl
         import subprocess
-        self.f = None
+        import time
+        self.held = []
         if os.environ.get('LEAN_LOCK_HELD') == '1':
             return self
-        common = subprocess.run(['git', 'rev-parse', '--git-common-dir'], cwd=ROOT, capture_output=True,
-                                text=True).stdout.strip() or '.git'
-        self.f = open(os.path.join(ROOT, common, 'lean.lock'), 'a')
-        fcntl.flock(self.f, fcntl.LOCK_EX)
-        return self
+        def git_dir(flag):
+            out = subprocess.run(['git', 'rev-parse', flag], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+            return os.path.join(ROOT, out or '.git')
+        own = open(os.path.join(git_dir('--git-dir'), 'lean-wt.lock'), 'a')
+        fcntl.flock(own, fcntl.LOCK_EX)
+        self.held.append(own)
+        common = git_dir('--git-common-dir')
+        while True:
+            for i, name in enumerate(('lean.lock', 'lean.lock.2')):
+                if i and available_gb() < 5:
+                    continue
+                f = open(os.path.join(common, name), 'a')
+                try:
+                    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    f.close()
+                    continue
+                self.held.append(f)
+                return self
+            time.sleep(3)
 
     def __exit__(self, *exc):
-        if self.f is not None:
-            self.f.close()
+        for f in reversed(self.held):
+            f.close()
+
+
+SLICE = '--slice=lean.slice'
+
+
+def available_gb():
+    with open('/proc/meminfo') as f:
+        for line in f:
+            if line.startswith('MemAvailable:'):
+                return int(line.split()[1]) // 1048576
+    return 0
+
 
 _digests = {}
 
@@ -166,7 +196,7 @@ def run_lean(lean_path, memory='6G'):
         return types.SimpleNamespace(returncode=0, stdout=hit['stdout'], stderr='')
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     with lean_lock():
-        run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={memory}', '-p',
+        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', f'MemoryMax={memory}', '-p',
                               'MemorySwapMax=0', 'lake', 'env', 'lean', os.path.abspath(lean_path)], cwd=FORMAL,
                              env=env, capture_output=True, text=True)
     if run.returncode == 0 and digest:

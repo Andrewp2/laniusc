@@ -1,0 +1,67 @@
+module app::main;
+import alloc::tree_map;
+import alloc::string;
+import alloc::vec;
+import core::option;
+import core::pair;
+import core::result;
+import fixture::owners;
+
+fn main() -> i32 {
+    let mode:i32=fixture::owners::mode(); fixture::owners::mark(65);
+    let setup:fixture::owners::Setup=fixture::owners::setup();
+    let map:alloc::tree_map::TreeMap<fixture::owners::Key,core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>> =alloc::tree_map::with_capacity<fixture::owners::Key,core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>>(4).unwrap();
+    assert(map.try_insert(setup.stored,setup.value).unwrap().is_none());
+    let table:ptr=map.storage; let stored_pointer:ptr=setup.stored.text.bytes.storage; let query_pointer:ptr=setup.query.text.bytes.storage;
+    let grow:fixture::owners::Grow=fixture::owners::Grow { calls:0 };
+    let replace:fixture::owners::Replace=fixture::owners::Replace { calls:0,replacement:setup.replacement };
+    fixture::owners::mark(83);
+    fixture::owners::mark(80);
+    let absent:core::option::Option<core::result::Result<i32,fixture::owners::Fault>> =map.update_value(fixture::owners::missing(),grow.borrow());
+    assert(absent.is_none() && grow.calls==0 && replace.calls==0);
+    let initial=map.get_entry(setup.query).unwrap(); fixture::owners::keys(initial.key,setup.query,stored_pointer,query_pointer);
+    fixture::owners::value(initial.value,0); fixture::owners::replacement(setup.replacement);
+    assert(map.storage==table && map.reserved==4 && map.len()==1 && map.used==1 && map.root==0 && map.free == -1);
+    fixture::owners::mark(112);
+
+    fixture::owners::mark(67);
+    let changed:core::option::Option<core::result::Result<i32,fixture::owners::Fault>> =map.update_value(setup.query,grow.borrow());
+    fixture::owners::mark(70); assert(changed.is_some() && grow.calls==1);
+    let result:core::result::Result<i32,fixture::owners::Fault> =changed.unwrap();
+    if(mode>0) {
+        fixture::owners::denied(result,mode); fixture::owners::mark(80);
+        let retained=map.get_entry(setup.query).unwrap(); fixture::owners::keys(retained.key,setup.query,stored_pointer,query_pointer);
+        fixture::owners::value(retained.value,mode-1);
+        assert(map.storage==table && map.reserved==4 && map.len()==1 && map.used==1 && map.root==0 && map.free == -1);
+        fixture::owners::mark(112);
+        fixture::owners::mark(67); changed=map.update_value(setup.query,grow.borrow()); fixture::owners::mark(70);
+        assert(changed.is_some() && grow.calls==2); result=changed.unwrap();
+    }
+    let error:alloc::string::String=fixture::owners::report(result);
+    fixture::owners::mark(80);
+    let updated=map.get_entry(setup.query).unwrap(); fixture::owners::keys(updated.key,setup.query,stored_pointer,query_pointer);
+    fixture::owners::value(updated.value,2); fixture::owners::text(error,"owned-error",11);
+    assert(updated.value.first.storage!=setup.value.first.storage && updated.value.second.bytes.storage!=setup.value.second.bytes.storage);
+    assert(error.bytes.storage!=updated.value.second.bytes.storage);
+    assert(map.storage==table && map.reserved==4 && map.len()==1 && map.used==1 && map.root==0 && map.free == -1);
+    fixture::owners::mark(112);
+
+    fixture::owners::mark(67);
+    let displaced:core::option::Option<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>> =map.update_value(setup.query,replace.borrow());
+    fixture::owners::mark(70); assert(displaced.is_some() && replace.calls==1);
+    let old=displaced.unwrap(); fixture::owners::mark(80);
+    let installed=map.get_entry(setup.query).unwrap(); fixture::owners::keys(installed.key,setup.query,stored_pointer,query_pointer);
+    fixture::owners::replacement(installed.value); fixture::owners::value(old,2); fixture::owners::text(error,"owned-error",11);
+    assert(installed.value.first.storage==setup.replacement.first.storage && installed.value.second.bytes.storage==setup.replacement.second.bytes.storage);
+    assert(map.storage==table && map.reserved==4 && map.len()==1 && map.used==1 && map.root==0 && map.free == -1);
+    fixture::owners::mark(112);
+    fixture::owners::publish_text(installed.key.text); fixture::owners::publish_text(setup.query.text);
+    fixture::owners::publish(installed.value.first.storage,installed.value.first.len()); fixture::owners::publish_text(installed.value.second);
+
+    fixture::owners::mark(82);
+    let final=map.remove(setup.query).unwrap(); final.key.text.destroy(); fixture::owners::destroy_value(final.value);
+    map.destroy(); setup.query.text.destroy();
+    fixture::owners::mark(80); fixture::owners::value(old,2); fixture::owners::text(error,"owned-error",11); fixture::owners::mark(112);
+    fixture::owners::publish(old.first.storage,old.first.len()); fixture::owners::publish_text(old.second); fixture::owners::publish_text(error);
+    fixture::owners::destroy_value(old); error.destroy(); fixture::owners::mark(68); return 0;
+}

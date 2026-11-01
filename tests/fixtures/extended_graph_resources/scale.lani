@@ -1,0 +1,74 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import ext::graph;
+import ext::graph_algorithms;
+import std::io;
+
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn offset_at(kind:i32,node:i32) -> i32 {
+    if(kind==0) { if(node<65536) { return node; } return 65535; }
+    if(kind==1) { if(node==0) { return 0; } return 65535; }
+    if(node<65280) { return node*2; } return 130560;
+}
+fn target_at(kind:i32,edge:i32) -> i32 {
+    if(kind<2) { return edge+1; }
+    let node:i32=edge/2; let column:i32=node%256; let next:i32=(column+1)%256;
+    let selected:i32=column;
+    if(edge%2==0 && next<column) { selected=next; }
+    if(edge%2==1 && next>column) { selected=next; }
+    return (node/256+1)*256+selected;
+}
+fn expected_distance(kind:i32,node:i32) -> i32 {
+    if(kind==0) { return node; }
+    if(kind==1) { if(node==0) { return 0; } return 1; }
+    if(node%256<=node/256) { return node/256; } return -1;
+}
+fn expected_parent(kind:i32,node:i32) -> i32 {
+    if(node==0) { return -1; }
+    if(kind==0) { return node-1; }
+    if(kind==1) { return 0; }
+    if(node%256>node/256) { return -1; }
+    let column:i32=node%256; if(column>0) { column-=1; }
+    return (node/256-1)*256+column;
+}
+fn main() -> i32 {
+    let header:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(header),1)==1);
+    let kind:i32=header[0]&255; assert(kind>=0 && kind<=2);
+    let edges:i32=65535; if(kind==2) { edges=130560; }
+    let offsets:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(65537).unwrap();
+    let targets:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(edges).unwrap();
+    let packed:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(196608).unwrap();
+    mark(80); let index:i32=0;
+    while(index<=65536) { offsets.try_push(offset_at(kind,index)).unwrap(); index+=1; }
+    index=0; while(index<edges) { targets.try_push(target_at(kind,index)).unwrap(); index+=1; } mark(112);
+    let graph:ext::graph::View=ext::graph::View { nodes:65536,offsets:offsets.as_view(),targets:targets.as_view() };
+    let limits:ext::graph::Limits=ext::graph::default_limits();
+    mark(67); let bfs_result:core::result::Result<ext::graph_algorithms::BfsPaths,ext::graph::Error> =ext::graph_algorithms::bfs(graph,0,limits); mark(70);
+    let paths:ext::graph_algorithms::BfsPaths=bfs_result.unwrap();
+    mark(67); let order_result:core::result::Result<alloc::vec::Vec<i32>,ext::graph::Error> =ext::graph_algorithms::topological_order(graph,limits); mark(70);
+    let order:alloc::vec::Vec<i32> =order_result.unwrap();
+    let reached:i32=0; let maximum:i32=0; mark(80);
+    assert(paths.node_count()==65536 && paths.source().unwrap()==0 && order.len()==65536); index=0;
+    while(index<65536) {
+        let distance:core::option::Option<i32> =paths.distance(index).unwrap();
+        let parent:core::option::Option<i32> =paths.predecessor(index).unwrap();
+        let hops:i32=distance.unwrap_or(-1); let previous:i32=parent.unwrap_or(-1);
+        assert(hops==expected_distance(kind,index) && previous==expected_parent(kind,index) && order.at(index)==index);
+        if(hops>=0) { reached+=1; if(hops>maximum) { maximum=hops; } }
+        packed.try_push(hops).unwrap(); packed.try_push(previous).unwrap(); packed.try_push(order.at(index)).unwrap(); index+=1;
+    }
+    index=0; while(index<=65536) { assert(offsets.at(index)==offset_at(kind,index)); index+=1; }
+    index=0; while(index<edges) { assert(targets.at(index)==target_at(kind,index)); index+=1; } mark(112);
+    assert(paths.destroy() && !paths.destroy()); order.destroy(); order.destroy();
+    let report:[i32;6]=[kind,65536,edges,reached,maximum,196608]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),24)==24);
+    let written:i32=0; let attempts:i32=0;
+    while(written<786432) {
+        assert(attempts<1024); attempts+=1; let remaining:i32=786432-written;
+        let used:i32=std::io::write_stdout(packed.storage+(written as usize),remaining as usize);
+        assert(used>0 && used<=remaining); written+=used;
+    }
+    packed.destroy(); targets.destroy(); offsets.destroy(); mark(68); return 0;
+}

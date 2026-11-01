@@ -1,0 +1,469 @@
+// One bounded WebSocket echo connection over TCP or native OpenSSL TLS.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::slice::View;
+import core::slice::view;
+import core::time;
+import ext::cli;
+import ext::http;
+import ext::openssl_tls;
+import ext::openssl_websocket;
+import ext::tls_stream;
+import ext::websocket;
+import ext::websocket_stream;
+import ext::websocket_upgrade;
+import std::args;
+import std::clock;
+import std::signal;
+import std::socket;
+import std::stream;
+
+// Match only references; the branch-local owner stays live until cleanup.
+enum Channel { Plain(&std::socket::Socket), Tls(&ext::tls_stream::Stream) }
+struct Transport { channel:Channel, deadline:core::time::Deadline, last:core::time::Instant, failed:bool, waits:i32 }
+struct Options { endpoint:View<u8>, certificate:Option<View<u8>>, key:Option<View<u8>>, origin:Option<View<u8>>, count:i32, help:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return view(bytes,count).unwrap();
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let at:i32 = 0; let calls:i32 = 0;
+    while (at < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent = sink.write(bytes.values,bytes.start+at,bytes.length-at);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap(); if (count <= 0 || count > bytes.length-at) { return false; } at += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 {
+    let message = literal("websocket-echo: operation failed\n",33);
+    if (!write(message,2,8)) { return 5; } return status;
+}
+fn cleanup_note() { write(literal("websocket-echo: cleanup failed\n",31),2,8); }
+fn wire_status(error:ext::websocket::Error) -> i32 {
+    return match(error) { ext::websocket::Error::AllocationFailed -> 4, _ -> 3 };
+}
+fn stream_status(error:ext::websocket_stream::Failure) -> i32 {
+    return match(error.cause) {
+        ext::websocket_stream::Cause::AllocationFailed -> 4,
+        ext::websocket_stream::Cause::Wire(detail) -> wire_status(detail),
+        ext::websocket_stream::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4, _ -> 3 },
+        _ -> 3
+    };
+}
+fn upgrade_status(error:ext::websocket_upgrade::Failure) -> i32 {
+    return match(error.cause) {
+        ext::websocket_upgrade::Cause::AllocationFailed -> 4,
+        ext::websocket_upgrade::Cause::Wire(detail) -> wire_status(detail),
+        ext::websocket_upgrade::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4, _ -> 3 },
+        ext::websocket_upgrade::Cause::Http(detail) -> match(detail) { ext::http::Error::AllocationFailed -> 4, _ -> 3 },
+        ext::websocket_upgrade::Cause::Stream(detail) -> stream_status(detail),
+        _ -> 3
+    };
+}
+fn tls_status(error:ext::tls_stream::Failure) -> i32 {
+    return match(error.cause) {
+        ext::tls_stream::Cause::AllocationFailed -> 4,
+        ext::tls_stream::Cause::Tls(detail) -> match(detail.cause) { ext::openssl_tls::Cause::AllocationFailed -> 4, _ -> 3 },
+        _ -> 3
+    };
+}
+fn wire_limits() -> ext::websocket::Limits {
+    let limits = ext::websocket::default_limits();
+    limits.frame_bytes = 65536; limits.message_bytes = 65536; limits.fragments = 64;
+    limits.protocols = 8; limits.http.head_bytes = 16384; limits.http.line_bytes = 8192;
+    limits.http.headers = 32; return limits;
+}
+fn frame_limits() -> ext::websocket_stream::Limits {
+    let limits = ext::websocket_stream::default_limits();
+    limits.wire = wire_limits(); limits.buffer_bytes = 65550;
+    limits.io_calls = 8192; limits.read_bytes = 1048576; limits.written_bytes = 1048576;
+    return limits;
+}
+impl Transport {
+    fn borrow(&self) -> &Transport { return self; }
+    fn check(&self) -> bool {
+        if (self.failed) { return false; }
+        let read = std::clock::monotonic_now();
+        if (read.is_err()) { self.failed = true; return false; }
+        let now = read.unwrap();
+        if (now.compare(self.last) < 0 || self.deadline.is_expired(now)) { self.failed = true; return false; }
+        self.last = now;
+        let healthy:bool = match(self.channel) { Channel::Plain(socket) -> true, Channel::Tls(stream) -> tls_check(stream) };
+        if (!healthy) { self.failed = true; } return healthy;
+    }
+    fn wait(&self, readable:bool) -> bool {
+        if (!self.check() || self.waits == 512) { return false; } self.waits += 1;
+        let ready:bool = match(self.channel) {
+            Channel::Plain(socket) -> plain_wait(socket,readable,self.deadline),
+            Channel::Tls(stream) -> stream.check().is_ok()
+        };
+        if (!ready) { self.failed = true; } return ready && self.check();
+    }
+    // Close always runs. TLS close_notify is attempted only after clean framing.
+    fn close(&self, graceful:bool) -> bool {
+        return match(self.channel) {
+            Channel::Plain(socket) -> socket.close().is_ok(),
+            Channel::Tls(stream) -> close_tls(stream,graceful)
+        };
+    }
+}
+fn plain_wait(socket:&std::socket::Socket, readable:bool, deadline:core::time::Deadline) -> bool {
+    let ready = socket.wait_until(readable,!readable,deadline);
+    return ready.is_ok() && !ready.unwrap().timed_out;
+}
+fn tls_check(stream:&ext::tls_stream::Stream) -> bool {
+    let checked = stream.check();
+    if (checked.is_err()) {
+        if (checked.unwrap_err().cleanup.is_some()) { cleanup_note(); }
+        return false;
+    }
+    return true;
+}
+fn close_tls(stream:&ext::tls_stream::Stream, graceful:bool) -> bool {
+    let healthy:bool = true;
+    if (graceful && stream.shutdown().is_err()) { healthy = false; }
+    if (stream.close().is_err()) { healthy = false; } return healthy;
+}
+pub impl core::io::Read for Transport {
+    pub fn read(&self, output:[u8], offset:i32, count:i32) -> Result<i32,core::io::Error> {
+        if (!self.check()) { return core::result::Err(core::io::Error::Host(110)); }
+        let read:Result<i32,core::io::Error> = match(self.channel) {
+            Channel::Plain(socket) -> socket.read(output,offset,count),
+            Channel::Tls(stream) -> stream.read(output,offset,count)
+        };
+        // Keep a successful transfer's count; check makes any late failure sticky.
+        self.check(); return read;
+    }
+}
+pub impl core::io::Write for Transport {
+    pub fn write(&self, input:[u8], offset:i32, count:i32) -> Result<i32,core::io::Error> {
+        if (!self.check()) { return core::result::Err(core::io::Error::Host(110)); }
+        let sent:Result<i32,core::io::Error> = match(self.channel) {
+            Channel::Plain(socket) -> socket.write(input,offset,count),
+            Channel::Tls(stream) -> stream.write(input,offset,count)
+        };
+        self.check(); return sent;
+    }
+    pub fn flush(&self) -> Result<i32,core::io::Error> {
+        if (!self.check()) { return core::result::Err(core::io::Error::Host(110)); }
+        let result:Result<i32,core::io::Error> = match(self.channel) {
+            Channel::Plain(socket) -> socket.flush(), Channel::Tls(stream) -> stream.flush()
+        };
+        self.check(); return result;
+    }
+}
+fn exact(left:View<u8>, right:View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index:i32 = 0; while(index < left.length) {
+        if (left.get(index).unwrap() != right.get(index).unwrap()) { return false; } index += 1;
+    }
+    return true;
+}
+fn field(name:View<u8>, value:View<u8>) -> ext::http::Field {
+    return ext::http::Field { raw:literal("",0),name:name,value:value,offset:0 };
+}
+// A policy decision sees validated request fields before any HTTP response.
+fn policy(request:ext::websocket::Request, origin:Option<View<u8>>) -> i32 {
+    if (!exact(request.head.target,literal("/echo",5))) { return 404; }
+    if (origin.is_some()) {
+        let fields = request.head.headers(); let count:i32 = 0; let same:bool = false;
+        while(true) {
+            let next = fields.next(); if (next.is_none()) { break; }
+            let item = next.unwrap();
+            if (ext::http::equal_name(item.name,literal("Origin",6))) { count += 1; same = exact(item.value,origin.unwrap()); }
+        }
+        if (count != 1 || !same) { return 403; }
+    }
+    return 101;
+}
+fn drain_bytes(transport:&Transport, bytes:View<u8>) -> bool {
+    let index:i32 = 0; let calls:i32 = 0;
+    while(index < bytes.length) {
+        if (calls == 8192 || !transport.check()) { return false; } calls += 1;
+        let written:Result<i32,core::io::Error> = transport.write(bytes.values,bytes.start+index,bytes.length-index);
+        if (written.is_err()) {
+            let detail = written.unwrap_err();
+            if (core::io::is_interrupted(detail)) { continue; }
+            let blocked:bool = match(detail) { core::io::Error::WouldBlock -> true, _ -> false };
+            if (blocked && transport.wait(false)) { continue; } return false;
+        }
+        let count = written.unwrap(); if (count <= 0 || count > bytes.length-index) { return false; } index += count;
+    }
+    while(calls < 8192) {
+        calls += 1; if (!transport.check()) { return false; }
+        let flushed:Result<i32,core::io::Error> = transport.flush();
+        if (flushed.is_ok()) { return flushed.unwrap() == 0 && transport.check(); }
+        let detail = flushed.unwrap_err();
+        if (core::io::is_interrupted(detail)) { continue; }
+        let blocked:bool = match(detail) { core::io::Error::WouldBlock -> true, _ -> false };
+        if (blocked && transport.wait(false)) { continue; } return false;
+    }
+    return false;
+}
+// Called only after the upgrade owner has been destroyed. Its failed parser
+// never owns or closes the retained transport, so a bounded rejection can send.
+fn reject(transport:&Transport, status:i32) -> i32 {
+    let start = literal("HTTP/1.1 400 Bad Request",24);
+    if (status == 403) { start = literal("HTTP/1.1 403 Forbidden",22); }
+    if (status == 404) { start = literal("HTTP/1.1 404 Not Found",22); }
+    let fields:[ext::http::Field;2] = [
+        field(literal("Connection",10),literal("close",5)),
+        field(literal("Sec-WebSocket-Version",21),literal("13",2))
+    ];
+    let count:i32 = 1; if (status == 400) { count = 2; }
+    let encoded = ext::http::encode_response(start,literal("GET",3),view(fields,count).unwrap(),literal("",0),wire_limits().http);
+    if (encoded.is_err()) { return match(encoded.unwrap_err()) { ext::http::Error::AllocationFailed -> 4, _ -> 3 }; }
+    let response = encoded.unwrap(); drain_bytes(transport,response.as_view()); response.destroy(); return 3;
+}
+fn rejectable(error:ext::websocket_upgrade::Failure) -> bool {
+    return match(error.cause) {
+        ext::websocket_upgrade::Cause::Wire(detail) -> true,
+        ext::websocket_upgrade::Cause::Http(detail) -> true,
+        ext::websocket_upgrade::Cause::BufferLimit -> true,
+        ext::websocket_upgrade::Cause::ReadLimit -> true,
+        ext::websocket_upgrade::Cause::IoLimit -> true,
+        ext::websocket_upgrade::Cause::Io(detail) -> match(detail) { core::io::Error::UnexpectedEof -> true, _ -> false },
+        _ -> false
+    };
+}
+fn flush(stream:&ext::websocket_stream::Stream<Transport>, transport:&Transport) -> i32 {
+    let steps:i32 = 0;
+    while(steps < 8192) {
+        steps += 1; if (!transport.check()) { return 3; }
+        let flushed = stream.flush(); if (flushed.is_err()) { return stream_status(flushed.unwrap_err()); }
+        if (flushed.unwrap()) { return match(transport.check()) { true -> 0, false -> 3 }; }
+        if (!transport.wait(false)) { return 3; }
+    }
+    return 3;
+}
+fn send(stream:&ext::websocket_stream::Stream<Transport>, transport:&Transport, opcode:i32, payload:View<u8>) -> i32 {
+    // RFC 6455 server frames are unmasked. No entropy or fixed client key.
+    let mask:[u8;4] = [0;4]; let queued = stream.send(true,opcode,payload,mask);
+    if (queued.is_err()) { return stream_status(queued.unwrap_err()); } return flush(stream,transport);
+}
+fn conversation(stream:&ext::websocket_stream::Stream<Transport>, transport:&Transport) -> i32 {
+    let echoed:bool = false; let frames:i32 = 0;
+    while(frames < 256) {
+        if (!transport.check()) { return 3; }
+        let received = stream.receive(); if (received.is_err()) { return stream_status(received.unwrap_err()); }
+        if (received.unwrap().is_none()) { if (!transport.wait(true)) { return 3; } continue; }
+        frames += 1; let item = received.unwrap().unwrap();
+        let opcode:i32 = match(item.event) {
+            ext::websocket::Event::Pending -> 0, ext::websocket::Event::Text -> 1,
+            ext::websocket::Event::Binary -> 2, ext::websocket::Event::Ping -> 9,
+            ext::websocket::Event::Pong -> 0, ext::websocket::Event::Close -> 8
+        };
+        if (opcode == 1 || opcode == 2) {
+            if (!echoed) {
+                let sent = send(stream,transport,opcode,item.payload); if (sent != 0) { return sent; } echoed = true;
+            }
+        }
+        if (opcode == 9) { let pong = send(stream,transport,10,item.payload); if (pong != 0) { return pong; } }
+        if (opcode == 8) {
+            let closed = send(stream,transport,8,item.payload); if (closed != 0) { return closed; }
+            if (!echoed || item.close_code != 1000 || !stream.is_closed() || !transport.check()) { return 3; } return 0;
+        }
+    }
+    return 3;
+}
+fn upgrade(transport:&Transport, origin:Option<View<u8>>) -> i32 {
+    let limits = ext::websocket_upgrade::default_server_limits();
+    limits.wire = wire_limits(); limits.buffer_bytes = 16384; limits.response_bytes = 16384;
+    limits.io_calls = 8192; limits.read_bytes = 1048576; limits.work = 16777216;
+    let made = ext::websocket_upgrade::server(transport,limits);
+    if (made.is_err()) { return upgrade_status(made.unwrap_err()); }
+    let server = made.unwrap(); let status:i32 = 3; let request_ready:bool = false; let ready:bool = false; let steps:i32 = 0;
+    while(steps < 8192 && !ready) {
+        steps += 1; if (!transport.check()) { break; }
+        let stepped = server.step();
+        if (stepped.is_err()) {
+            let failure = stepped.unwrap_err(); status = upgrade_status(failure); server.destroy();
+            // Once the response is staged, a failed send/flush may already
+            // have published its prefix. Never append a second HTTP response.
+            if (request_ready || status == 4 || !rejectable(failure) || !transport.check()) { return status; }
+            return reject(transport,400);
+        }
+        let action:i32 = match(stepped.unwrap()) {
+            ext::websocket_upgrade::ServerProgress::Again -> 0,
+            ext::websocket_upgrade::ServerProgress::NeedRead -> 1,
+            ext::websocket_upgrade::ServerProgress::NeedWrite -> 2,
+            ext::websocket_upgrade::ServerProgress::Request -> 3,
+            ext::websocket_upgrade::ServerProgress::Ready -> 4
+        };
+        if (action == 3 && !request_ready) {
+            request_ready = true; let checked = server.request();
+            if (checked.is_err()) { server.destroy(); return reject(transport,400); }
+            let request = checked.unwrap(); let decision = policy(request,origin);
+            if (decision != 101) { server.destroy(); return reject(transport,decision); }
+            let accept:[u8;28] = [0;28];
+            if (ext::openssl_websocket::accept_into(request.key,view(accept,28).unwrap()).is_err()) { server.destroy(); return 3; }
+            let fields:[ext::http::Field;1] = [field(literal("",0),literal("",0))];
+            let accepted = server.accept(view(fields,0).unwrap(),view(accept,28).unwrap(),core::option::None());
+            if (accepted.is_err()) { status = upgrade_status(accepted.unwrap_err()); server.destroy(); return status; }
+        }
+        if (action == 4) { ready = true; }
+        if ((action == 1 || action == 2) && !transport.wait(action == 1)) { break; }
+    }
+    if (ready && transport.check()) {
+        let handed = server.into_stream(frame_limits());
+        if (handed.is_ok()) {
+            let stream = handed.unwrap(); status = conversation(stream.borrow(),transport); stream.destroy();
+        } else { status = upgrade_status(handed.unwrap_err()); }
+    }
+    server.destroy(); return status;
+}
+fn serve(transport:&Transport, origin:Option<View<u8>>) -> i32 {
+    let status:i32 = upgrade(transport,origin);
+    if (status == 0 && !transport.check()) { status = 3; }
+    if (!transport.close(status == 0)) { cleanup_note(); if (status == 0) { status = 3; } } return status;
+}
+fn accepted(socket:std::socket::Socket, context:Option<&ext::openssl_tls::ServerContext>, options:&Options,
+    deadline:core::time::Deadline, now:core::time::Instant) -> i32 {
+    if (context.is_none()) {
+        let transport = Transport { channel:Channel::Plain(socket.borrow()),deadline:deadline,last:now,failed:false,waits:0 };
+        return serve(transport.borrow(),options.origin);
+    }
+    let limits = ext::tls_stream::default_limits();
+    limits.io_calls = 16384; limits.tls_calls = 8192; limits.read_bytes = 1064960; limits.written_bytes = 1064960;
+    // Factory consumes Socket on every outcome. Never close that stale token.
+    let made = ext::tls_stream::accept_connected_until(socket,context.unwrap(),limits,deadline);
+    if (made.is_err()) { let failure = made.unwrap_err(); if (failure.cleanup.is_some()) { cleanup_note(); } return tls_status(failure); }
+    let stream = made.unwrap();
+    let transport = Transport { channel:Channel::Tls(stream.borrow()),deadline:deadline,last:now,failed:false,waits:0 };
+    return serve(transport.borrow(),options.origin);
+}
+fn milliseconds(remaining:core::time::Duration) -> i32 {
+    if (remaining.seconds > 2147483 as u64) { return 2147483647; }
+    let rounded:u64 = remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000;
+    if (rounded > 2147483647 as u64) { return 2147483647; } return rounded as i32;
+}
+fn checkpoint(deadline:core::time::Deadline, last:core::time::Instant) -> Result<core::time::Instant,i32> {
+    let read = std::clock::monotonic_now(); if (read.is_err()) { return core::result::Err(3); }
+    let now = read.unwrap(); if (now.compare(last) < 0 || deadline.is_expired(now)) { return core::result::Err(3); }
+    return core::result::Ok(now);
+}
+fn accept_one(listener:&std::socket::Socket, deadline:core::time::Deadline, initial:core::time::Instant) -> Result<std::socket::Socket,i32> {
+    let last = initial; let attempts:i32 = 0; let polls:i32 = 0;
+    while(attempts < 512 && polls < 512) {
+        let read = std::clock::monotonic_now(); if (read.is_err()) { return core::result::Err(3); }
+        let now = read.unwrap(); if (now.compare(last) < 0 || deadline.is_expired(now)) { return core::result::Err(3); } last = now;
+        attempts += 1; let result = listener.accept(true);
+        if (result.is_ok()) {
+            let found = result.unwrap(); let socket = found.socket;
+            let checked = std::clock::monotonic_now();
+            if (checked.is_err() || checked.unwrap().compare(last) < 0 || deadline.is_expired(checked.unwrap())) {
+                if (socket.close().is_err()) { cleanup_note(); } return core::result::Err(3);
+            }
+            return core::result::Ok(socket);
+        }
+        let failure = result.unwrap_err();
+        if (failure.cleanup_error.is_some()) { cleanup_note(); return core::result::Err(3); }
+        let retry:bool = match(failure.cause) { core::io::Error::WouldBlock -> true, core::io::Error::Interrupted -> true, _ -> false };
+        if (!retry) { return core::result::Err(3); }
+        let checked = std::clock::monotonic_now(); if (checked.is_err()) { return core::result::Err(3); }
+        let now = checked.unwrap(); if (now.compare(last) < 0 || deadline.is_expired(now)) { return core::result::Err(3); } last = now;
+        polls += 1; let waited = listener.wait_ms(true,false,milliseconds(deadline.remaining(now)));
+        if (waited.is_err() && !core::io::is_interrupted(waited.unwrap_err())) { return core::result::Err(3); }
+    }
+    return core::result::Err(3);
+}
+fn listen(options:&Options, endpoint:core::net::SocketAddr, context:Option<&ext::openssl_tls::ServerContext>, deadline:core::time::Deadline, now:core::time::Instant) -> i32 {
+    // TLS credential loading is synchronous. Check its elapsed time before
+    // creating a socket or publishing readiness, then check setup again.
+    let admitted = checkpoint(deadline,now); if (admitted.is_err()) { return 3; }
+    let last = admitted.unwrap();
+    let family = match(endpoint) { core::net::SocketAddr::V4(address) -> std::socket::Family::Ipv4, core::net::SocketAddr::V6(address) -> std::socket::Family::Ipv6 };
+    let opened = std::socket::create(family,std::socket::Kind::Tcp,true); if (opened.is_err()) { return 3; }
+    let listener = opened.unwrap(); let status:i32 = 3;
+    let configured = listener.set_option(std::socket::Setting::ReuseAddress,1);
+    if (configured.is_ok() && match(family) { std::socket::Family::Ipv6 -> true, _ -> false }) { configured = listener.set_option(std::socket::Setting::Ipv6Only,1); }
+    if (configured.is_ok()) { configured = listener.bind(endpoint); }
+    if (configured.is_ok()) { configured = listener.listen(1); }
+    let checked = checkpoint(deadline,last);
+    if (configured.is_ok() && checked.is_ok()) {
+        last = checked.unwrap();
+        let bound = listener.local_addr();
+        if (bound.is_ok()) {
+            let bytes:[u8;96] = [0;96]; let formatted = bound.unwrap().format_into(view(bytes,95).unwrap());
+            if (formatted.is_ok()) {
+                let length = formatted.unwrap(); bytes[length] = 10;
+                if (write(view(bytes,length+1).unwrap(),1,64)) {
+                    let next = accept_one(listener.borrow(),deadline,last);
+                    if (next.is_ok()) { status = accepted(next.unwrap(),context,options,deadline,last); }
+                    else { status = next.unwrap_err(); }
+                } else { status = 5; }
+            }
+        }
+    }
+    if (listener.close().is_err()) { cleanup_note(); if (status == 0) { status = 3; } } return status;
+}
+fn valid_origin(value:View<u8>) -> bool {
+    if (value.is_empty() || value.length > 4096) { return false; }
+    let index:i32 = 0; while(index < value.length) {
+        let byte = value.get(index).unwrap(); if (byte < 32 || byte == 127) { return false; } index += 1;
+    }
+    return true;
+}
+fn run(options:&Options) -> i32 {
+    let endpoint = core::net::parse_socket(options.endpoint); if (endpoint.is_err()) { return 2; }
+    if (options.certificate.is_some() != options.key.is_some()) { return 2; }
+    if (options.certificate.is_some() && (options.certificate.unwrap().is_empty() || options.key.unwrap().is_empty())) { return 2; }
+    if (options.origin.is_some() && !valid_origin(options.origin.unwrap())) { return 2; }
+    let read = std::clock::monotonic_now(); if (read.is_err()) { return 3; } let now = read.unwrap();
+    let deadline = core::time::deadline_after(now,core::time::from_millis(5000)); if (deadline.is_err()) { return 3; }
+    if (options.certificate.is_none()) { return listen(options,endpoint.unwrap(),core::option::None(),deadline.unwrap(),now); }
+    let created = ext::openssl_tls::new_server(options.certificate.unwrap(),options.key.unwrap(),literal("",0),ext::openssl_tls::ClientAuthentication::Unauthenticated,ext::openssl_tls::default_limits());
+    if (created.is_err()) { return match(created.unwrap_err().cause) { ext::openssl_tls::Cause::AllocationFailed -> 4, _ -> 3 }; }
+    let context = created.unwrap();
+    let status = listen(options,endpoint.unwrap(),core::option::Some(context.borrow()),deadline.unwrap(),now);
+    context.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    let specs:[ext::cli::Spec;4] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("tls-cert",8),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:3,long:literal("tls-key",7),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:4,long:literal("origin",6),short:0,arity:ext::cli::Arity::Required }
+    ];
+    let made = ext::cli::parser(values,view(specs,4).unwrap(),ext::cli::Ordering::Intermixed); if (made.is_err()) { return report(2); }
+    let parser = made.unwrap();
+    let options = Options { endpoint:literal("",0),certificate:core::option::None(),key:core::option::None(),origin:core::option::None(),count:0,help:false };
+    while(true) {
+        let parsed = parser.next(); if (parsed.is_err()) { return report(2); }
+        let next = parsed.unwrap(); if (next.is_none()) { break; }
+        let operand:Option<ext::cli::Argument> = match(next.unwrap()) { ext::cli::Event::Operand(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (operand.is_some()) {
+            if (options.count != 0) { return report(2); } options.endpoint = operand.unwrap().bytes; options.count += 1;
+        } else {
+            let item:Option<ext::cli::Occurrence> = match(next.unwrap()) { ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None() };
+            let found = item.unwrap();
+            if (found.id == 1) { options.help = true; }
+            if (found.id == 2) { if (options.certificate.is_some()) { return report(2); } options.certificate = core::option::Some(found.value.unwrap().bytes); }
+            if (found.id == 3) { if (options.key.is_some()) { return report(2); } options.key = core::option::Some(found.value.unwrap().bytes); }
+            if (found.id == 4) { if (options.origin.is_some()) { return report(2); } options.origin = core::option::Some(found.value.unwrap().bytes); }
+        }
+    }
+    if (options.help) {
+        let help = literal("Usage: websocket-echo ENDPOINT [--tls-cert FILE --tls-key FILE] [--origin ORIGIN]\nListen once on a numeric endpoint (port 0 allowed); print the bound endpoint.\nEcho one message at /echo, then mirror Close. Optional Origin must match exactly.\nLimits: 65536 message bytes, 64 fragments, 256 frames, 5-second service deadline.\n",324);
+        if (!write(help,1,64)) { return report(5); } return 0;
+    }
+    if (options.count != 1) { return report(2); }
+    let status = run(options.borrow()); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,16,32768);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, _ -> 2 }); }
+    let values = captured.unwrap(); let status = arguments(values.as_view()); values.destroy(); return status;
+}

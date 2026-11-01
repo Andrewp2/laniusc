@@ -1,0 +1,172 @@
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::io;
+import core::option;
+import core::result;
+
+// Positive actions copy exactly that prefix; zero is an actual EOF result.
+// -1 Interrupted, -2 WouldBlock, -3 Host, -4 InvalidInput,
+// -5 AllocationFailed, -6 negative count, -7 excessive count.
+struct Script { data:[u8], length:i32, actions:[i32], cursor:i32, calls:i32, counts:[i32;16], positions:[i32;16] }
+fn script(data:[u8],length:i32,actions:[i32]) -> Script {
+    return Script { data:data,length:length,actions:actions,cursor:0,calls:0,counts:[-99;16],positions:[-99;16] };
+}
+impl Script { fn borrow(&self) -> &Script { return self; } }
+pub impl core::io::Read for Script {
+    pub fn read(&self,out:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(self.calls<16 && offset==0 && count>0 && count<=1024 && core::io::valid_range(offset,count));
+        let call:i32=self.calls; self.counts[call]=count; self.positions[call]=self.cursor; self.calls+=1;
+        let action:i32=self.actions[call];
+        if(action==-1) { return core::result::Err(core::io::Error::Interrupted); }
+        if(action==-2) { return core::result::Err(core::io::Error::WouldBlock); }
+        if(action==-3) { return core::result::Err(core::io::Error::Host(-7331)); }
+        if(action==-4) { return core::result::Err(core::io::Error::InvalidInput); }
+        if(action==-5) { return core::result::Err(core::io::Error::AllocationFailed); }
+        if(action==-6) { return core::result::Ok(-1); }
+        if(action==-7) { return core::result::Ok(count+1); }
+        assert(action>=0 && action<=count && action<=self.length-self.cursor);
+        let i:i32=0; while(i<action) { out[offset+i]=self.data[self.cursor+i]; i+=1; }
+        self.cursor+=action; return core::result::Ok(action);
+    }
+}
+fn collect(mode:i32,source:&Script,maximum:i32,calls:u64) -> core::result::Result<alloc::vec::Vec<u8>,alloc::io::ReadFailure> {
+    let limits:alloc::io::ReadLimits=alloc::io::ReadLimits { max_bytes:maximum,max_calls:calls };
+    if(mode==0) { return alloc::io::read_to_end<Script>(source,limits); }
+    let result:core::result::Result<alloc::string::String,alloc::io::ReadFailure> =alloc::io::read_to_string<Script>(source,limits);
+    if(result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    let text:alloc::string::String=result.unwrap(); let bytes:alloc::vec::Vec<u8> =text.into_bytes();
+    assert(text.is_empty()); text.destroy(); return core::result::Ok(bytes);
+}
+fn io_code(error:core::io::Error) -> i32 {
+    return match(error) {
+        core::io::Error::InvalidInput -> 1,core::io::Error::InvalidCount -> 2,
+        core::io::Error::Interrupted -> 3,core::io::Error::WouldBlock -> 4,
+        core::io::Error::AllocationFailed -> 5,core::io::Error::Host(value) -> value,_ -> 99
+    };
+}
+fn text_code(error:alloc::string::Error) -> i32 { return match(error) { alloc::string::Error::InvalidUtf8(index) -> 3000+index,_ -> 3999 }; }
+fn cause(error:alloc::io::ReadError) -> i32 {
+    return match(error) {
+        alloc::io::ReadError::InvalidLimits -> 1,alloc::io::ReadError::CallLimit -> 2,alloc::io::ReadError::ByteLimit -> 3,
+        alloc::io::ReadError::Io(inner) -> 100+io_code(inner),alloc::io::ReadError::Text(inner) -> text_code(inner),alloc::io::ReadError::Storage(_) -> 9000
+    };
+}
+fn exact(bytes:alloc::vec::Vec<u8>,expected:[u8],length:i32) {
+    assert(bytes.len()==length); let data:[u8]=bytes.as_slice(); let i:i32=0;
+    while(i<length) { assert(data[i]==expected[i]); i+=1; }
+}
+fn success(result:core::result::Result<alloc::vec::Vec<u8>,alloc::io::ReadFailure>,source:&Script,expected:[u8],length:i32) {
+    assert(result.is_ok()); let bytes:alloc::vec::Vec<u8> =result.unwrap(); exact(bytes,expected,length);
+    let before:i32=source.calls; bytes.destroy(); bytes.destroy(); assert(bytes.len()==0 && source.calls==before);
+}
+fn failed(result:core::result::Result<alloc::vec::Vec<u8>,alloc::io::ReadFailure>,source:&Script,expected:i32,prefix:[u8],length:i32,calls:u64,extra:i32) {
+    assert(result.is_err()); let owned:alloc::io::ReadFailure=result.unwrap_err(); let borrowed:&alloc::io::ReadFailure=owned.borrow();
+    assert(cause(borrowed.cause)==expected && borrowed.calls==calls); exact(borrowed.bytes,prefix,length);
+    if(length==0 && (expected==1 || calls==0 || expected==3)) { assert(borrowed.bytes.capacity()==0); }
+    if(extra<0) { assert(borrowed.extra.is_none()); } else { assert(borrowed.extra.is_some() && borrowed.extra.unwrap()==extra as u8); }
+    let before:i32=source.calls; owned.destroy(); owned.destroy();
+    assert(owned.bytes.len()==0 && owned.bytes.capacity()==0 && source.calls==before);
+}
+fn trace(source:&Script,counts:[i32],positions:[i32],calls:i32,cursor:i32) {
+    assert(source.calls==calls && source.cursor==cursor); let i:i32=0;
+    while(i<calls) { assert(source.counts[i]==counts[i] && source.positions[i]==positions[i]); i+=1; }
+}
+
+fn defaults_invalid_zero_and_observed_empty_input() {
+    let defaults:alloc::io::ReadLimits=alloc::io::default_read_limits(); assert(defaults.max_bytes==16777216 && defaults.max_calls==65536);
+    let data:[u8;2]=[0,11]; let eof:[i32;16]=[0;16]; let mode:i32=0;
+    while(mode<2) {
+        let invalid:Script=script(data,2,eof); failed(collect(mode,invalid.borrow(),-1,0),invalid.borrow(),1,data,0,0,-1);
+        failed(collect(mode,invalid.borrow(),-2147483648,18446744073709551615),invalid.borrow(),1,data,0,0,-1); assert(invalid.calls==0 && invalid.cursor==0);
+        let no_calls:Script=script(data,2,eof); failed(collect(mode,no_calls.borrow(),0,0),no_calls.borrow(),2,data,0,0,-1);
+        failed(collect(mode,no_calls.borrow(),4,0),no_calls.borrow(),2,data,0,0,-1); assert(no_calls.calls==0 && no_calls.cursor==0);
+        let zero:Script=script(data,0,eof); success(collect(mode,zero.borrow(),0,1),zero.borrow(),data,0);
+        let one_count:[i32;1]=[1]; let at_zero:[i32;1]=[0]; trace(zero.borrow(),one_count,at_zero,1,0);
+        let empty:Script=script(data,0,eof); success(collect(mode,empty.borrow(),4,18446744073709551615),empty.borrow(),data,0);
+        let count_four:[i32;1]=[4]; trace(empty.borrow(),count_four,at_zero,1,0); mode+=1;
+    }
+}
+
+fn short_reads_interruptions_and_call_limits() {
+    let data:[u8;4]=[65,0,66,67]; let actions:[i32;16]=[1,-1,2,1,0,1,0,0,0,0,0,0,0,0,0,0];
+    let counts:[i32;5]=[6,5,5,3,2]; let positions:[i32;5]=[0,1,1,3,4]; let mode:i32=0;
+    while(mode<2) {
+        let complete:Script=script(data,4,actions); success(collect(mode,complete.borrow(),6,5),complete.borrow(),data,4); trace(complete.borrow(),counts,positions,5,4);
+        let quota:Script=script(data,4,actions); failed(collect(mode,quota.borrow(),6,4),quota.borrow(),2,data,4,4,-1); trace(quota.borrow(),counts,positions,4,4);
+        let repeated:[i32;16]=[1,-1,-1,0,0,0,0,0,0,0,0,0,0,0,0,0]; let stuck:Script=script(data,4,repeated);
+        failed(collect(mode,stuck.borrow(),6,3),stuck.borrow(),2,data,1,3,-1);
+        let interrupted_counts:[i32;3]=[6,5,5]; let interrupted_positions:[i32;3]=[0,1,1]; trace(stuck.borrow(),interrupted_counts,interrupted_positions,3,1); mode+=1;
+    }
+}
+
+fn exact_caps_probe_errors_and_recoverable_extra_byte() {
+    let data:[u8;4]=[65,66,0,67]; let eof_actions:[i32;16]=[2,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let counts:[i32;3]=[2,1,1]; let positions:[i32;3]=[0,2,2]; let mode:i32=0;
+    while(mode<2) {
+        let exact_cap:Script=script(data,2,eof_actions); success(collect(mode,exact_cap.borrow(),2,2),exact_cap.borrow(),data,2); trace(exact_cap.borrow(),counts,positions,2,2);
+        let no_probe:Script=script(data,2,eof_actions); failed(collect(mode,no_probe.borrow(),2,1),no_probe.borrow(),2,data,2,1,-1); trace(no_probe.borrow(),counts,positions,1,2);
+        let interrupted:[i32;16]=[2,-1,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+        let exhausted:Script=script(data,2,interrupted); failed(collect(mode,exhausted.borrow(),2,2),exhausted.borrow(),2,data,2,2,-1); trace(exhausted.borrow(),counts,positions,2,2);
+        let retried:Script=script(data,2,interrupted); success(collect(mode,retried.borrow(),2,3),retried.borrow(),data,2); trace(retried.borrow(),counts,positions,3,2);
+        let extra_actions:[i32;16]=[2,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0]; let extra:Script=script(data,4,extra_actions);
+        failed(collect(mode,extra.borrow(),2,2),extra.borrow(),3,data,2,2,0); trace(extra.borrow(),counts,positions,2,3);
+        // The confirmed NUL probe byte was returned in extra. Cleanup did not
+        // consume the remaining byte, which an explicit caller read recovers.
+        let tail:[u8;2]=[199;2]; assert(extra.read(tail,0,1).unwrap()==1 && tail[0]==67 && tail[1]==199 && extra.cursor==4 && extra.calls==3);
+        let zero_extra_actions:[i32;16]=[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]; let zero_extra:Script=script(data,4,zero_extra_actions);
+        failed(collect(mode,zero_extra.borrow(),0,1),zero_extra.borrow(),3,data,0,1,65); assert(zero_extra.calls==1 && zero_extra.cursor==1 && zero_extra.counts[0]==1);
+        let only_interrupts:[i32;16]=[-1;16]; let zero_quota:Script=script(data,4,only_interrupts);
+        failed(collect(mode,zero_quota.borrow(),0,1),zero_quota.borrow(),2,data,0,1,-1); assert(zero_quota.calls==1 && zero_quota.cursor==0 && zero_quota.counts[0]==1); mode+=1;
+    }
+}
+
+fn terminal_io_invalid_counts_and_text_precedence() {
+    let invalid_text:[u8;3]=[255,0,65]; let action:i32=-7;
+    while(action<=-2) {
+        let actions:[i32;16]=[1,action,0,0,0,0,0,0,0,0,0,0,0,0,0,0]; let mode:i32=0;
+        while(mode<2) {
+            let source:Script=script(invalid_text,3,actions); let expected:i32=102;
+            if(action==-5) { expected=105; } if(action==-4) { expected=101; } if(action==-3) { expected=-7231; } if(action==-2) { expected=104; }
+            failed(collect(mode,source.borrow(),4,4),source.borrow(),expected,invalid_text,1,2,-1);
+            let counts:[i32;2]=[4,3]; let positions:[i32;2]=[0,1]; trace(source.borrow(),counts,positions,2,1); mode+=1;
+        }
+        action+=1;
+    }
+    let eof:[i32;16]=[1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let raw:Script=script(invalid_text,1,eof); success(collect(0,raw.borrow(),4,2),raw.borrow(),invalid_text,1); assert(raw.calls==2 && raw.cursor==1);
+    let text:Script=script(invalid_text,1,eof); failed(collect(1,text.borrow(),4,2),text.borrow(),3000,invalid_text,1,2,-1); assert(text.calls==2 && text.cursor==1);
+    let call_limited:Script=script(invalid_text,3,eof); failed(collect(1,call_limited.borrow(),4,1),call_limited.borrow(),2,invalid_text,1,1,-1);
+    let over_cap:[i32;16]=[1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0]; let byte_limited:Script=script(invalid_text,3,over_cap);
+    failed(collect(1,byte_limited.borrow(),1,2),byte_limited.borrow(),3,invalid_text,1,2,0); assert(byte_limited.cursor==2 && byte_limited.calls==2);
+    let truncated_utf8:[u8;3]=[65,226,130]; let truncated_actions:[i32;16]=[3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]; let truncated:Script=script(truncated_utf8,3,truncated_actions);
+    failed(collect(1,truncated.borrow(),4,2),truncated.borrow(),3001,truncated_utf8,3,2,-1); assert(truncated.calls==2 && truncated.cursor==3);
+    // A malformed probe count is not evidence of an over-cap byte.
+    let malformed:i32=-7;
+    while(malformed<=-6) {
+        let probe_actions:[i32;16]=[1,malformed,0,0,0,0,0,0,0,0,0,0,0,0,0,0]; let probe:Script=script(invalid_text,3,probe_actions);
+        failed(collect(1,probe.borrow(),1,2),probe.borrow(),102,invalid_text,1,2,-1); assert(probe.calls==2 && probe.cursor==1 && probe.counts[1]==1); malformed+=1;
+    }
+}
+
+fn split_text_and_real_1024_byte_requests() {
+    let utf8:[u8;11]=[65,0,226,130,172,240,159,152,128,13,10]; let actions:[i32;16]=[2,-1,1,2,1,2,3,0,0,0,0,0,0,0,0,0];
+    let source:Script=script(utf8,11,actions);
+    let result:core::result::Result<alloc::string::String,alloc::io::ReadFailure> =alloc::io::read_to_string<Script>(source.borrow(),alloc::io::ReadLimits { max_bytes:12,max_calls:8 });
+    let text:alloc::string::String=result.unwrap(); let actual:[u8]=text.as_bytes(); assert(text.byte_len()==11 && text.scalar_count()==6);
+    let i:i32=0; while(i<11) { assert(actual[i]==utf8[i]); i+=1; } text.destroy(); text.destroy();
+    let counts:[i32;8]=[12,10,10,9,7,6,4,1]; let positions:[i32;8]=[0,2,2,3,5,6,8,11]; trace(source.borrow(),counts,positions,8,11);
+    let bytes:[u8;1030]=[0;1030]; i=0; while(i<1030) { bytes[i]=((i*29+7)%256) as u8; i+=1; }
+    let complete_actions:[i32;16]=[1024,2,0,1,0,0,0,0,0,0,0,0,0,0,0,0]; let complete:Script=script(bytes,1026,complete_actions);
+    success(collect(0,complete.borrow(),1026,3),complete.borrow(),bytes,1026);
+    let full_counts:[i32;3]=[1024,2,1]; let full_positions:[i32;3]=[0,1024,1026]; trace(complete.borrow(),full_counts,full_positions,3,1026);
+    let extra_actions:[i32;16]=[1024,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0]; let extra:Script=script(bytes,1030,extra_actions);
+    failed(collect(0,extra.borrow(),1025,3),extra.borrow(),3,bytes,1025,3,bytes[1025] as i32);
+    let extra_counts:[i32;3]=[1024,1,1]; let extra_positions:[i32;3]=[0,1024,1025]; trace(extra.borrow(),extra_counts,extra_positions,3,1026);
+}
+
+fn main() -> i32 {
+    defaults_invalid_zero_and_observed_empty_input(); short_reads_interruptions_and_call_limits(); exact_caps_probe_errors_and_recoverable_extra_byte();
+    terminal_io_invalid_counts_and_text_precedence(); split_text_and_real_1024_byte_requests(); return 0;
+}

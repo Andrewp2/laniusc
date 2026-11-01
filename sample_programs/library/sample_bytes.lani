@@ -1,0 +1,124 @@
+// Bounded binary sampling through exact-size skip -> step_by -> take adapters.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::slice;
+import core::slice::View;
+import core::slice::view;
+import ext::cli;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Options {
+    offset:u64, step:u64, count:u64, reverse:bool, help:bool,
+    offset_set:bool, step_set:bool, count_set:bool
+}
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return view(raw,count).unwrap();
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:core::result::Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap(); if (count <= 0 || count > bytes.length-completed) { return false; } completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("sample-bytes: operation failed\n",31),2,8); return status; }
+fn read(input:&Vec<u8>) -> i32 {
+    let source = std::stream::stdin(); let scratch:[u8;4096] = [0;4096]; let calls:i32 = 0;
+    while(true) {
+        if (calls == 4096) { return 2; } calls += 1;
+        let remaining:i32 = 1048576-input.len(); let count:i32 = remaining;
+        if (count > 4096) { count = 4096; } if (count == 0) { count = 1; }
+        let received:core::result::Result<i32,core::io::Error> = source.read(scratch,0,count);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let got = received.unwrap(); if (got < 0 || got > count) { return 3; }
+        if (got == 0) { return 0; } if (got > remaining) { return 2; }
+        if (input.try_extend(view(scratch,got).unwrap()).is_err()) { return 4; }
+    }
+    return 3;
+}
+fn select<I>(source:&I, options:&Options, output:&Vec<u8>) -> i32
+    where I:core::iter::Iterator<u8>, I:core::iter::ExactSizeIterator<u8> {
+    // All borrowed cursors remain live. No owner moves into an adapter.
+    let skipped:core::iter::Skip<I,u8> = core::iter::skip<I,u8>(source,options.offset);
+    let made:core::result::Result<core::iter::StepBy<core::iter::Skip<I,u8>,u8>,core::iter::StepError> = core::iter::step_by<core::iter::Skip<I,u8>,u8>(skipped.borrow(),options.step);
+    if (made.is_err()) { return 2; }
+    let stepped = made.unwrap();
+    let limited:core::iter::Take<core::iter::StepBy<core::iter::Skip<I,u8>,u8>,u8> = core::iter::take<core::iter::StepBy<core::iter::Skip<I,u8>,u8>,u8>(stepped.borrow(),options.count);
+    let promised:u64 = limited.remaining_count();
+    if (promised > 1048576) { return 2; }
+    if (output.try_reserve(promised as i32).is_err()) { return 4; }
+    while(true) {
+        let next:Option<u8> = limited.next(); if (next.is_none()) { break; }
+        // The count is an optimization contract, never unchecked write authority.
+        if (output.len() == 1048576) { return 2; }
+        if (output.try_push(next.unwrap()).is_err()) { return 4; }
+    }
+    if ((output.len() as u64) != promised) { return 2; }
+    return 0;
+}
+fn run(options:&Options) -> i32 {
+    let input:Vec<u8> = alloc::vec::new(); let status:i32 = read(input.borrow());
+    if (status != 0) { input.destroy(); return status; }
+    let output:Vec<u8> = alloc::vec::new();
+    let source:core::slice::Iter<u8> = input.iter();
+    if (options.reverse) {
+        let backwards:core::iter::Rev<core::slice::Iter<u8>,u8> = core::iter::rev<core::slice::Iter<u8>,u8>(source.borrow());
+        status = select<core::iter::Rev<core::slice::Iter<u8>,u8>>(backwards.borrow(),options,output.borrow());
+    } else { status = select<core::slice::Iter<u8>>(source.borrow(),options,output.borrow()); }
+    input.destroy();
+    if (status == 0 && !write(output.as_view(),1,4096)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    let specs:[ext::cli::Spec;5] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("offset",6),short:111,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:3,long:literal("step",4),short:115,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:4,long:literal("count",5),short:110,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:5,long:literal("reverse",7),short:114,arity:ext::cli::Arity::Flag }
+    ];
+    let made = ext::cli::parser(values,view(specs,5).unwrap(),ext::cli::Ordering::Intermixed); if (made.is_err()) { return report(2); }
+    let parser = made.unwrap();
+    let options = Options { offset:0,step:1,count:18446744073709551615,reverse:false,help:false,offset_set:false,step_set:false,count_set:false };
+    while(true) {
+        let event = parser.next(); if (event.is_err()) { return report(2); } let next = event.unwrap(); if (next.is_none()) { break; }
+        let item:Option<ext::cli::Occurrence> = match(next.unwrap()) { ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (item.is_none()) { return report(2); } let found = item.unwrap();
+        if (found.id == 1) { if (options.help) { return report(2); } options.help = true; }
+        if (found.id == 5) { if (options.reverse) { return report(2); } options.reverse = true; }
+        if (found.id == 2 || found.id == 3 || found.id == 4) {
+            let value = found.value.unwrap().bytes;
+            let parsed = core::decimal::parse_u64_range(value.values,value.start,value.length); if (parsed.is_err()) { return report(2); }
+            let number:u64 = parsed.unwrap();
+            if (found.id == 2) { if (options.offset_set) { return report(2); } options.offset_set = true; options.offset = number; }
+            if (found.id == 3) { if (options.step_set || number == 0) { return report(2); } options.step_set = true; options.step = number; }
+            if (found.id == 4) { if (options.count_set) { return report(2); } options.count_set = true; options.count = number; }
+        }
+    }
+    if (options.help) {
+        let help = literal("Usage: sample-bytes [--offset N] [--step N] [--count N] [--reverse] [--help]\nRead binary stdin through EOF; reverse if requested, skip offset, step, then take count.\nDefaults: offset 0, step 1, count 18446744073709551615. Decimal u64 values; step must be positive.\nShort options: -o N, -s N, -n N, -r, -h. Duplicate options are errors.\nLimits: 1 MiB input and staged output; 4096 input calls, 4096 output calls.\n",412);
+        if (!write(help,1,64)) { return report(5); } return 0;
+    }
+    let status = run(options.borrow()); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,24,1024);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status = arguments(values.as_view()); values.destroy(); return status;
+}

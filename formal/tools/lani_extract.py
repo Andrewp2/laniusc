@@ -46,7 +46,7 @@ def build_extract():
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'],
                LEAN_NUM_THREADS='3')
     with run_cache.lean_lock():
-        run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
+        run = subprocess.run(['systemd-run', '--user', '--scope', '--slice=lean.slice', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                               'lake', 'build', 'extract'], cwd='formal', env=env, capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build extract failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])

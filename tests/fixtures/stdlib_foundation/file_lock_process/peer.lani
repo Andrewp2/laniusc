@@ -1,0 +1,75 @@
+// Pipe protocol for real independent-process flock tests; no heap services.
+// X acknowledges intention with A, then K only after the blocking call returns.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+import std::io;
+import std::linux;
+
+fn reply(value: i32) {
+    let bytes: [i32;1] = [value]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(bytes),1) == 1);
+}
+fn selected(first: &std::file::File, second: &std::file::File) -> &std::file::File {
+    if (first.is_open()) { return first; } return second;
+}
+fn positions(first: &std::file::File, second: &std::file::File) {
+    if (first.is_open()) { assert(std::file_ops::position(first).unwrap() == 37); }
+    if (second.is_open()) { assert(std::file_ops::position(second).unwrap() == 37); }
+}
+fn acknowledge(result: core::result::Result<i32,core::io::Error>) {
+    if (result.is_ok()) { assert(result.unwrap() == 0); reply(75); return; }
+    assert(match(result.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false }); reply(66);
+}
+fn main() -> i32 {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("input"),5);
+    let path: core::path::Path = core::path::from_view(core::slice::view<u8>(raw,5).unwrap()).unwrap();
+    let options: std::file_ops::OpenOptions = std::file_ops::options(); options.access = std::file_ops::Access::ReadWrite;
+    let file: std::file::File = std::file_ops::open(path,options).unwrap();
+    let duplicate: std::file::File = std::file::File { handle: -1 };
+    assert(std::file_ops::seek(file.borrow(),37,std::file_ops::Origin::Start).unwrap() == 37);
+    let absent: [std::linux::Argument;1] = [std::linux::Argument::Word(0)];
+    let pid: i64 = std::linux::call(39,core::slice::view<std::linux::Argument>(absent,0).unwrap()).unwrap();
+    assert(pid > 0 && pid <= 2147483647);
+    let ready: [i32;2] = [pid as i32,file.raw_handle().unwrap()];
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(ready),8) == 8); reply(82);
+    while (true) {
+        let command: [i32;1] = [0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(command),1) == 1);
+        let operation: i32 = command[0];
+        if (operation == 83) { // S: shared, one nonblocking attempt.
+            let result = std::file_ops::lock(selected(file.borrow(),duplicate.borrow()),std::file_ops::LockMode::Shared,std::file_ops::LockWait::Nonblocking);
+            positions(file.borrow(),duplicate.borrow()); acknowledge(result);
+        } else { if (operation == 69) { // E: exclusive, one nonblocking attempt.
+            let result = std::file_ops::lock(selected(file.borrow(),duplicate.borrow()),std::file_ops::LockMode::Exclusive,std::file_ops::LockWait::Nonblocking);
+            positions(file.borrow(),duplicate.borrow()); acknowledge(result);
+        } else { if (operation == 88) { // X: real blocking exclusive acquisition.
+            reply(65);
+            let result = std::file_ops::lock(selected(file.borrow(),duplicate.borrow()),std::file_ops::LockMode::Exclusive,std::file_ops::LockWait::Blocking);
+            positions(file.borrow(),duplicate.borrow()); assert(result.unwrap() == 0); reply(75);
+        } else { if (operation == 85) { // U: explicit unlock through current owner.
+            assert(std::file_ops::unlock(selected(file.borrow(),duplicate.borrow())).unwrap() == 0);
+            positions(file.borrow(),duplicate.borrow()); reply(75);
+        } else { if (operation == 68) { // D: duplicate the same open description.
+            assert(file.is_open() && !duplicate.is_open());
+            duplicate = std::file_ops::duplicate(file.borrow(),40,true).unwrap();
+            assert(duplicate.raw_handle().unwrap() >= 40); positions(file.borrow(),duplicate.borrow()); reply(75);
+        } else { if (operation == 79) { // O: close only original; duplicate retains lock.
+            assert(file.is_open() && duplicate.is_open()); file.close().unwrap(); file.close().unwrap();
+            positions(file.borrow(),duplicate.borrow()); reply(75);
+        } else { if (operation == 67) { // C: last duplicate close, no explicit unlock.
+            assert(!file.is_open() && duplicate.is_open()); duplicate.close().unwrap(); duplicate.close().unwrap();
+            assert(!duplicate.is_open()); reply(75);
+        } else { if (operation == 81) { // Q: normal explicit owner cleanup.
+            positions(file.borrow(),duplicate.borrow()); file.close().unwrap(); duplicate.close().unwrap();
+            file.close().unwrap(); duplicate.close().unwrap(); reply(81); return 0;
+        } else { // Z: deliberately test kernel process-exit descriptor scope.
+            assert(operation == 90 && file.is_open()); positions(file.borrow(),duplicate.borrow()); reply(90); return 0;
+        } } } } } } } }
+    }
+    return 0;
+}

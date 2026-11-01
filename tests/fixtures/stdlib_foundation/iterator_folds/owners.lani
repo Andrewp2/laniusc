@@ -1,0 +1,212 @@
+// Native ownership witness around the actual core::iter fold operations.
+// P/p delimit phases that may perform no allocation or release service.
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import std::io;
+
+struct Owned { id: i32, text: alloc::string::String }
+struct Acc<T> { values: alloc::vec::Vec<T>, history: alloc::vec::Vec<i32>, seen: i32 }
+struct Failure<A,T> { accumulator: A, current: T, kind: i32 }
+struct Store { calls: i32, stop: i32 }
+struct Keeper { held: &alloc::vec::Vec<Owned>, calls: i32, stop: i32 }
+fn mark(value: i32) {
+    let storage: [i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(storage),1) == 1);
+}
+fn check(value: Owned, id: i32) {
+    assert(value.id == id && value.text.byte_len() == 4);
+    assert(value.text.byte_at(0).unwrap() == (65+id) as u8 && value.text.byte_at(1).unwrap() == 0);
+    assert(value.text.byte_at(2).unwrap() == 194 && value.text.byte_at(3).unwrap() == 162);
+}
+fn release(value: Owned) { check(value,value.id); value.text.destroy(); }
+fn release_values(values: &alloc::vec::Vec<Owned>) {
+    while (true) { let item: core::option::Option<Owned> = values.pop(); if (item.is_none()) { break; } release(item.unwrap()); }
+    values.destroy();
+}
+fn source(count: i32) -> core::result::Result<alloc::vec::Vec<Owned>,i32> {
+    let allocated: core::result::Result<alloc::vec::Vec<Owned>,alloc::vec::Error> = alloc::vec::with_capacity<Owned>(count);
+    if (allocated.is_err()) {
+        assert(match(allocated.unwrap_err()) { alloc::vec::Error::AllocationFailed -> true, _ -> false });
+        return core::result::Err(4);
+    }
+    let out: alloc::vec::Vec<Owned> = allocated.unwrap(); let id: i32 = 0;
+    while (id < count) {
+        let bytes: [u8;4] = [(65+id) as u8,0,194,162];
+        let text: core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_utf8(bytes,4);
+        if (text.is_err()) {
+            assert(match(text.unwrap_err()) { alloc::string::Error::AllocationFailed -> true, _ -> false });
+            release_values(out.borrow()); return core::result::Err(4);
+        }
+        out.try_push(Owned { id: id, text: text.unwrap() }).unwrap(); id += 1;
+    }
+    return core::result::Ok(out);
+}
+fn accumulator(capacity: i32) -> Acc<Owned> {
+    return Acc { values: alloc::vec::with_capacity<Owned>(capacity).unwrap(),
+        history: alloc::vec::with_capacity<i32>(capacity).unwrap(), seen: 0 };
+}
+fn check_acc(value: Acc<Owned>, first: i32, direction: i32, count: i32, seen: i32) {
+    assert(value.values.len() == count && value.history.len() == count && value.seen == seen);
+    let index: i32 = 0;
+    while (index < count) {
+        let id: i32 = first+index*direction; check(value.values.at(index),id);
+        assert(value.history.at(index) == id); index += 1;
+    }
+}
+fn release_acc(value: Acc<Owned>) {
+    assert(value.values.len() == value.history.len());
+    release_values(value.values.borrow()); value.history.destroy();
+}
+fn remainder(cursor: &alloc::vec::IntoIter<Owned>, owner: &alloc::vec::Vec<Owned>, first: i32, count: i32) {
+    assert(cursor.remaining() == count && owner.len() == 0 && owner.capacity() == 0);
+    let view = cursor.as_view(); let index: i32 = 0;
+    while (index < count) { check(view.get(index).unwrap(),first+index); index += 1; }
+    let actual: alloc::vec::Vec<Owned> = cursor.take_remaining();
+    assert(actual.len() == count && cursor.remaining() == 0 && cursor.capacity() == 0);
+    release_values(actual.borrow()); assert(cursor.try_finish().is_none()); owner.destroy();
+}
+impl Store {
+    fn borrow(&self) -> &Store { return self; }
+    fn store(&self, accumulator: Acc<Owned>, current: Owned)
+        -> core::result::Result<Acc<Owned>,Failure<Acc<Owned>,Owned>> {
+        self.calls += 1; accumulator.seen += 1;
+        if (self.calls == self.stop) {
+            return core::result::Err(Failure { accumulator: accumulator, current: current, kind: 1 });
+        }
+        let pushed: core::result::Result<i32,alloc::vec::Error> = accumulator.values.try_push(current);
+        if (pushed.is_err()) {
+            assert(match(pushed.unwrap_err()) { alloc::vec::Error::AllocationFailed -> true, _ -> false });
+            return core::result::Err(Failure { accumulator: accumulator, current: current, kind: 2 });
+        }
+        let history: core::result::Result<i32,alloc::vec::Error> = accumulator.history.try_push(current.id);
+        if (history.is_err()) {
+            assert(match(history.unwrap_err()) { alloc::vec::Error::AllocationFailed -> true, _ -> false });
+            // values may have successfully reallocated during THIS callback.
+            // Return its current owner, plus the popped current item exactly once.
+            let rejected: Owned = accumulator.values.pop().unwrap();
+            return core::result::Err(Failure { accumulator: accumulator, current: rejected, kind: 3 });
+        }
+        return core::result::Ok(accumulator);
+    }
+}
+pub impl core::iter::Folder<Acc<Owned>,Owned> for Store {
+    pub fn apply(&self, accumulator: Acc<Owned>, current: Owned) -> Acc<Owned> { return self.store(accumulator,current).unwrap(); }
+}
+pub impl core::iter::TryFolder<Acc<Owned>,Owned,Failure<Acc<Owned>,Owned>> for Store {
+    pub fn try_apply(&self, accumulator: Acc<Owned>, current: Owned)
+        -> core::result::Result<Acc<Owned>,Failure<Acc<Owned>,Owned>> { return self.store(accumulator,current); }
+}
+impl Keeper { fn borrow(&self) -> &Keeper { return self; } }
+pub impl core::iter::Folder<Owned,Owned> for Keeper {
+    pub fn apply(&self, accumulator: Owned, current: Owned) -> Owned {
+        self.calls += 1; self.held.try_push(current).unwrap(); return accumulator;
+    }
+}
+pub impl core::iter::TryFolder<Owned,Owned,Failure<Owned,Owned>> for Keeper {
+    pub fn try_apply(&self, accumulator: Owned, current: Owned) -> core::result::Result<Owned,Failure<Owned,Owned>> {
+        self.calls += 1;
+        if (self.calls == self.stop) { return core::result::Err(Failure { accumulator: accumulator, current: current, kind: 1 }); }
+        self.held.try_push(current).unwrap(); return core::result::Ok(accumulator);
+    }
+}
+fn pure(mode: i32) {
+    let owner: alloc::vec::Vec<Owned> = source(4).unwrap(); let cursor = owner.take_iter();
+    let initial: Acc<Owned> = accumulator(4);
+    let held: alloc::vec::Vec<Owned> = alloc::vec::with_capacity<Owned>(4).unwrap();
+    let folder: Store = Store { calls: 0, stop: 0 };
+    if (mode == 3 || mode == 5 || mode == 7) { folder.stop = 2; }
+    let keeper: Keeper = Keeper { held: held.borrow(), calls: 0, stop: 2 };
+    let remaining_first: i32 = 0; let remaining_count: i32 = 0;
+    mark(80);
+    if (mode == 0) {
+        let result: core::option::Option<Owned> = core::iter::reduce<alloc::vec::IntoIter<Owned>,Keeper,Owned>(cursor.borrow(),keeper.borrow());
+        mark(112); check(result.unwrap(),0); release(result.unwrap());
+        assert(keeper.calls == 3 && held.len() == 3); let index: i32 = 0;
+        while (index < 3) { check(held.at(index),index+1); index += 1; } release_acc(initial);
+    } else { if (mode == 1) {
+        let result: core::result::Result<core::option::Option<Owned>,Failure<Owned,Owned>> = core::iter::try_reduce<alloc::vec::IntoIter<Owned>,Keeper,Owned,Failure<Owned,Owned>>(cursor.borrow(),keeper.borrow());
+        mark(112); assert(result.is_err()); let failure: Failure<Owned,Owned> = result.unwrap_err();
+        check(failure.accumulator,0); check(failure.current,2); assert(failure.kind == 1 && keeper.calls == 2 && held.len() == 1);
+        check(held.at(0),1); release(failure.accumulator); release(failure.current); release_acc(initial);
+        remaining_first = 3; remaining_count = 1;
+    } else { if (mode == 2) {
+        let result: Acc<Owned> = core::iter::rfold<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>>(cursor.borrow(),initial,folder.borrow());
+        mark(112); check_acc(result,3,-1,4,4); assert(folder.calls == 4); release_acc(result);
+    } else { if (mode == 3) {
+        let result: core::result::Result<Acc<Owned>,Failure<Acc<Owned>,Owned>> = core::iter::try_rfold<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>,Failure<Acc<Owned>,Owned>>(cursor.borrow(),initial,folder.borrow());
+        mark(112); assert(result.is_err()); let failure: Failure<Acc<Owned>,Owned> = result.unwrap_err();
+        check_acc(failure.accumulator,3,-1,1,2); check(failure.current,2); assert(failure.kind == 1 && folder.calls == 2);
+        release_acc(failure.accumulator); release(failure.current); remaining_count = 2;
+    } else { if (mode == 4) {
+        let storage: ptr = initial.values.storage;
+        let zero: core::iter::FoldProgress<Acc<Owned>> = core::iter::fold_up_to<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>>(cursor.borrow(),initial,folder.borrow(),0);
+        assert(zero.folded == 0 && !zero.exhausted && zero.accumulator.values.storage == storage && cursor.remaining() == 4 && folder.calls == 0);
+        let first: core::iter::FoldProgress<Acc<Owned>> = core::iter::fold_up_to<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>>(cursor.borrow(),zero.accumulator,folder.borrow(),2);
+        assert(first.folded == 2 && !first.exhausted && cursor.remaining() == 2);
+        let second: core::iter::FoldProgress<Acc<Owned>> = core::iter::fold_up_to<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>>(cursor.borrow(),first.accumulator,folder.borrow(),2);
+        assert(second.folded == 2 && !second.exhausted && cursor.remaining() == 0);
+        let last: core::iter::FoldProgress<Acc<Owned>> = core::iter::fold_up_to<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>>(cursor.borrow(),second.accumulator,folder.borrow(),1);
+        mark(112); assert(last.folded == 0 && last.exhausted && folder.calls == 4); check_acc(last.accumulator,0,1,4,4); release_acc(last.accumulator);
+    } else { if (mode == 5) {
+        let result: core::result::Result<core::iter::FoldProgress<Acc<Owned>>,core::iter::FoldFailure<Failure<Acc<Owned>,Owned>>> = core::iter::try_fold_up_to<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>,Failure<Acc<Owned>,Owned>>(cursor.borrow(),initial,folder.borrow(),4);
+        mark(112); assert(result.is_err()); let failed = result.unwrap_err(); let failure: Failure<Acc<Owned>,Owned> = failed.error;
+        assert(failed.folded == 1 && folder.calls == 2); check_acc(failure.accumulator,0,1,1,2); check(failure.current,1);
+        release_acc(failure.accumulator); release(failure.current); remaining_first = 2; remaining_count = 2;
+    } else { if (mode == 6) {
+        let first: core::iter::FoldProgress<Acc<Owned>> = core::iter::rfold_up_to<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>>(cursor.borrow(),initial,folder.borrow(),2);
+        assert(first.folded == 2 && !first.exhausted && cursor.remaining() == 2);
+        let second: core::iter::FoldProgress<Acc<Owned>> = core::iter::fold_up_to<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>>(cursor.borrow(),first.accumulator,folder.borrow(),4);
+        mark(112); assert(second.folded == 2 && second.exhausted && folder.calls == 4);
+        assert(second.accumulator.seen == 4 && second.accumulator.values.len() == 4 && second.accumulator.history.len() == 4);
+        let ids: [i32;4] = [3,2,0,1]; let index: i32 = 0;
+        while (index < 4) { check(second.accumulator.values.at(index),ids[index]); assert(second.accumulator.history.at(index) == ids[index]); index += 1; }
+        release_acc(second.accumulator);
+    } else {
+        let result: core::result::Result<core::iter::FoldProgress<Acc<Owned>>,core::iter::FoldFailure<Failure<Acc<Owned>,Owned>>> = core::iter::try_rfold_up_to<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>,Failure<Acc<Owned>,Owned>>(cursor.borrow(),initial,folder.borrow(),4);
+        mark(112); assert(result.is_err()); let failed = result.unwrap_err(); let failure: Failure<Acc<Owned>,Owned> = failed.error;
+        assert(failed.folded == 1 && folder.calls == 2); check_acc(failure.accumulator,3,-1,1,2); check(failure.current,2);
+        release_acc(failure.accumulator); release(failure.current); remaining_count = 2;
+    } } } } } } }
+    release_values(held.borrow()); remainder(cursor.borrow(),owner.borrow(),remaining_first,remaining_count);
+}
+fn grow_fold(cursor: &alloc::vec::IntoIter<Owned>, initial: Acc<Owned>, folder: &Store, reverse: bool)
+    -> core::result::Result<core::iter::FoldProgress<Acc<Owned>>,core::iter::FoldFailure<Failure<Acc<Owned>,Owned>>> {
+    if (reverse) {
+        return core::iter::try_rfold_up_to<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>,Failure<Acc<Owned>,Owned>>(cursor,initial,folder,7);
+    }
+    return core::iter::try_fold_up_to<alloc::vec::IntoIter<Owned>,Store,Owned,Acc<Owned>,Failure<Acc<Owned>,Owned>>(cursor,initial,folder,7);
+}
+fn growth(reverse: bool) -> i32 {
+    let made: core::result::Result<alloc::vec::Vec<Owned>,i32> = source(7);
+    if (made.is_err()) { return made.unwrap_err(); }
+    let owner: alloc::vec::Vec<Owned> = made.unwrap(); let cursor = owner.take_iter();
+    let initial: Acc<Owned> = Acc { values: alloc::vec::new(), history: alloc::vec::new(), seen: 0 };
+    let folder: Store = Store { calls: 0, stop: 0 };
+    mark(71);
+    let result = grow_fold(cursor.borrow(),initial,folder.borrow(),reverse);
+    mark(103); let first: i32 = 0; let direction: i32 = 1; if (reverse) { first = 6; direction = -1; }
+    if (result.is_ok()) {
+        let progress: core::iter::FoldProgress<Acc<Owned>> = result.unwrap();
+        assert(progress.folded == 7 && !progress.exhausted && folder.calls == 7);
+        check_acc(progress.accumulator,first,direction,7,7); release_acc(progress.accumulator);
+        remainder(cursor.borrow(),owner.borrow(),0,0); return 0;
+    }
+    let failed = result.unwrap_err(); let failure: Failure<Acc<Owned>,Owned> = failed.error; let folded: i32 = failed.folded as i32;
+    assert(folded == 0 || folded == 4); assert(folder.calls == folded+1 && (failure.kind == 2 || failure.kind == 3));
+    check_acc(failure.accumulator,first,direction,folded,folded+1); check(failure.current,first+folded*direction);
+    if (failure.kind == 3) { assert(failure.accumulator.values.capacity() > folded); }
+    release_acc(failure.accumulator); release(failure.current);
+    let remaining_first: i32 = folded+1; if (reverse) { remaining_first = 0; }
+    remainder(cursor.borrow(),owner.borrow(),remaining_first,6-folded); return 4;
+}
+fn main() -> i32 {
+    let input: [i32;1] = [0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(input),1) == 1);
+    let mode: i32 = input[0]; let status: i32 = 0;
+    if (mode == 0) { let index: i32 = 0; while (index < 8) { pure(index); index += 1; } }
+    else { assert(mode == 1 || mode == 2); status = growth(mode == 2); }
+    mark(68); return status;
+}

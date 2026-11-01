@@ -4,8 +4,11 @@ use std::{
     os::unix::{ffi::OsStrExt, fs::PermissionsExt},
     process::{Command, Output, Stdio},
     time::{Duration, Instant},
+    sync::OnceLock,
 };
-fn executable() -> common::TempArtifact {
+fn executable() -> &'static common::TempArtifact {
+    static EXE: OnceLock<common::TempArtifact> = OnceLock::new();
+    EXE.get_or_init(|| {
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let entry = root.join("sample_programs/library/toml_normalize.lani");
     let roots = laniusc_compiler::compiler::EntrySourceRoots {
@@ -18,10 +21,12 @@ fn executable() -> common::TempArtifact {
         )
     })
     .unwrap_or_else(|e| panic!("toml-normalize: {e}"));
+    assert!(common::x86_jumps::is_x86_64_executable(&bytes), "TOML normalizer must produce an actual ELF64 x86-64 executable");
     let exe = common::TempArtifact::new("laniusc_toml_normalize", "executable", None);
     exe.write_bytes(bytes);
     std::fs::set_permissions(exe.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     exe
+    })
 }
 fn run(c: &mut Command) -> Output {
     common::process_output_with_timeout("toml-normalize", c, Duration::from_secs(15))
@@ -289,125 +294,33 @@ fn toml_normalize_scales_to_real_nested_configs_and_matches_python_oracle() {
     semantic_same(floats.as_bytes(), &raised.stdout);
 }
 
-fn no_leaks(events: &str) -> usize {
-    let mut live = std::collections::BTreeSet::new();
-    let mut count = 0;
-    for line in events.lines() {
-        if line.starts_with("mmap(") {
-            let result = line.rsplit(" = ").next().unwrap();
-            if result.starts_with("0x") {
-                assert!(
-                    live.insert(result.split_whitespace().next().unwrap().to_owned()),
-                    "{events}"
-                );
-                count += 1;
-            }
-        } else if let Some(tail) = line.strip_prefix("munmap(") {
-            assert!(
-                line.ends_with(" = 0") && live.remove(tail.split(',').next().unwrap()),
-                "{events}"
-            );
-        }
-    }
-    assert!(live.is_empty(), "unreleased owners: {events}");
-    count
+// Focused streaming consumer evidence replaces the old address-only fault
+// helper and its fabricated positive write return. Existing semantic/parser
+// selectors above remain available; the migration selects only relevant ones.
+fn streaming_oracle(group: &str, expected: Option<usize>) {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = common::process_output_with_timeout(
+        format!("TOML streaming normalizer {group}"),
+        Command::new("python3").arg("-B")
+            .arg(root.join("tests/fixtures/extended_toml_normalize_streaming/oracle.py"))
+            .arg(group).arg(executable().path()),
+        Duration::from_secs(85),
+    );
+    common::assert_command_success(format!("TOML streaming normalizer {group}"), &output);
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let summary = String::from_utf8(output.stdout).unwrap();
+    let prefix = match expected {
+        Some(n) => format!("toml-normalize-streaming-{group} cases={n} reached_allocations="),
+        None => format!("toml-normalize-streaming-{group} cases="),
+    };
+    assert!(summary.starts_with(&prefix), "{summary}");
+    eprint!("{summary}");
 }
 #[test]
-fn toml_normalize_cleans_up_all_observed_allocation_and_host_io_failures() {
-    let exe = executable();
-    let input =
-        file("name='Straße'\n[server]\nport=8080\nratio=1.25\ntags=['a','🙂']\n".as_bytes());
-    let trace = common::TempArtifact::new("laniusc_toml_normalize", "trace", None);
-    let execute = |fault: Option<&str>| {
-        let mut command = Command::new("strace");
-        command
-            .args(["-qq", "-o"])
-            .arg(trace.path())
-            .args(["-e", "trace=mmap,munmap,read,write"]);
-        if let Some(f) = fault {
-            command.arg("-e").arg(format!("inject={f}"));
-        }
-        let out = run(command
-            .arg(exe.path())
-            .arg("--max-nodes=64")
-            .stdin(Stdio::from(std::fs::File::open(input.path()).unwrap())));
-        let events = std::fs::read_to_string(trace.path()).unwrap();
-        no_leaks(&events);
-        if fault.is_some() {
-            assert!(events.contains("INJECTED"), "{events}");
-        }
-        (out, events)
-    };
-    let (baseline, events) = execute(None);
-    success(&baseline);
-    semantic_same(&std::fs::read(input.path()).unwrap(), &baseline.stdout);
-    let allocations = no_leaks(&events);
-    assert!(allocations >= 12, "{events}");
-    for when in 1..=allocations {
-        failure(
-            &execute(Some(&format!("mmap:error=ENOMEM:when={when}"))).0,
-            4,
-            "allocation-failure",
-        );
-    }
-    let reads = events.lines().filter(|l| l.starts_with("read(")).count();
-    for when in 1..=reads {
-        failure(
-            &execute(Some(&format!("read:error=EIO:when={when}"))).0,
-            3,
-            "io-failure stage=input",
-        );
-    }
-    let writes = events.lines().filter(|l| l.starts_with("write(")).count();
-    for when in 1..=writes {
-        for fault in [
-            format!("write:error=EIO:when={when}"),
-            format!("write:retval=0:when={when}"),
-        ] {
-            let (out, _) = execute(Some(&fault));
-            assert_eq!(out.status.code(), Some(3));
-            assert!(
-                std::str::from_utf8(&out.stderr)
-                    .unwrap()
-                    .contains("io-failure stage=output")
-            );
-            assert!(baseline.stdout.starts_with(&out.stdout));
-        }
-    }
-    for fault in ["read:error=EINTR:when=1", "write:error=EINTR:when=1"] {
-        let (out, _) = execute(Some(fault));
-        success(&out);
-        assert_eq!(out.stdout, baseline.stdout);
-    }
-    let (short, _) = execute(Some("write:retval=17:when=1"));
-    success(&short);
-    assert_eq!(short.stdout, baseline.stdout[17..]);
-    for bad in [
-        b"a=[1,2,3,\n".as_slice(),
-        b"a={b={c=1}}\na=2\n",
-        b"a='ok'\nb=\"unterminated",
-    ] {
-        input.write_bytes(bad);
-        let (out, _) = execute(None);
-        failure(&out, 2, "toml-error");
-    }
-    let full = run(Command::new("sh")
-        .args(["-c", "exec \"$1\" <\"$2\" >/dev/full", "toml-normalize"])
-        .arg(exe.path())
-        .arg(file(b"a=1").path()));
-    failure(&full, 3, "io-failure stage=output");
-    let out = run(Command::new("strace")
-        .args(["-qq", "-o"])
-        .arg(trace.path())
-        .args([
-            "-e",
-            "trace=mmap,munmap,write",
-            "-e",
-            "inject=write:error=EIO:when=1",
-        ])
-        .arg(exe.path())
-        .arg("--bad"));
-    assert_eq!(out.status.code(), Some(3));
-    assert!(out.stdout.is_empty() && out.stderr.is_empty());
-    no_leaks(&std::fs::read_to_string(trace.path()).unwrap());
-}
+fn toml_normalize_streaming_preserves_exact_wires_without_output_storage() { streaming_oracle("model", Some(14)); }
+#[test]
+fn toml_normalize_streaming_preflights_limits_and_actual_input_probes() { streaming_oracle("limits", Some(8)); }
+#[test]
+fn toml_normalize_cleans_up_all_observed_allocation_and_host_io_failures() { streaming_oracle("io", None); }
+#[test]
+fn toml_normalize_streaming_bounds_attempts_and_reports_confirmed_prefix() { streaming_oracle("budgets", Some(2)); }

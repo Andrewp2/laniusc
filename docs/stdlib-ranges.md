@@ -170,10 +170,14 @@ does not provide generic stepping for every `PartialOrd` type. Float, char,
 wide-integer-record and arbitrary record membership support does not imply
 `for` iteration support for those types. Named `RangeFrom`, `RangeTo` and
 `RangeFull` values have no corresponding loop-lowering recipe; the direct
-syntax forms above are separate. There is no range `iter`, `next`, `next_back`,
-custom `step_by`, reverse adapter or shared iterator-protocol implementation.
-Use an explicit checked loop when a custom step or descending traversal is
-needed, with a caller-chosen overflow rule and termination bound.
+syntax forms above are separate. Range values themselves have no advancing
+position. For i32, the existing [RangeI32 cursor](stdlib-iterators.md) captures
+bounds through range_i32/range_i32_inclusive and implements shared forward,
+reverse and exact-size iteration; borrowed rev and step_by adapters compose
+with it. Other scalar widths do not yet have corresponding range cursor
+factories. Generic range stepping over user-defined types remains future work.
+Use an explicit checked loop for unsupported custom-step/descending cases, with a caller-chosen
+overflow rule and termination bound.
 
 ## Logical bounds and physical storage
 
@@ -205,8 +209,9 @@ The free `core::range::start(value)` works in that context; concrete record
 method calls also have execution coverage. The comprehensive fixture therefore
 uses free accessors in its generic checker and tests accessor methods at
 concrete call sites. This documentation audit did not revalidate that older
-failure. General shared iterator dispatch remains a separate
-[compiler dependency](library-dependencies.md).
+failure. [Shared iterator dispatch and RangeI32](stdlib-iterators.md) have
+executable support; remaining [composition dependencies](library-dependencies.md)
+retain their documented narrow scopes.
 
 Focused x86_64 Linux acceptance passed 88114 bound quadruples through all four
 overlap APIs, the migrated comprehensive caller, and native partial-order

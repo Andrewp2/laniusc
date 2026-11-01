@@ -1,0 +1,60 @@
+module fixture::scale;
+import alloc::vec;
+import core::cmp;
+import core::function;
+import core::hash;
+import core::ordering;
+import core::pair;
+import core::result;
+import core::text;
+
+pub struct Key { id:i32, stamp:u64 }
+pub struct Counter { hashes:i32, comparisons:i32 }
+pub struct Query { text:core::text::Text, counter:&Counter }
+pub struct Policy {}
+pub impl Counter { pub fn borrow(&self) -> &Counter { return self; } }
+pub impl Policy { pub fn borrow(&self) -> &Policy { return self; } }
+pub fn stamp(id:i32) -> u64 { let base:u64 = 4294967296; return base+(id as u64)*1000003+17; }
+pub fn value(id:i32) -> u64 { let base:u64 = 18446700000000000000; return base-(id as u64)*999983; }
+pub fn key(id:i32) -> Key { return Key { id:id,stamp:stamp(id) }; }
+pub fn scratch() -> alloc::vec::Vec<u8> {
+    let result:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(12).unwrap(); result.try_resize(12,165).unwrap(); return result;
+}
+pub fn query(scratch:&alloc::vec::Vec<u8>,id:i32,counter:&Counter) -> Query {
+    let bytes:[u8] = scratch.as_slice(); let rest:i32 = id; let i:i32 = 5;
+    while(i>=0) { bytes[3+i]=(48+rest%10) as u8; rest=rest/10; i-=1; } assert(rest==0);
+    assert(bytes[0]==165 && bytes[1]==165 && bytes[2]==165 && bytes[9]==165 && bytes[10]==165 && bytes[11]==165);
+    let text:core::text::Text = core::text::from_utf8_range(bytes,3,6).unwrap();
+    return Query { text:text,counter:counter };
+}
+fn parsed(query:Query) -> i32 {
+    assert(query.text.byte_len()==6); let result:i32 = 0; let i:i32 = 0;
+    while(i<6) { let byte:i32 = query.text.byte_at(i).unwrap() as i32; assert(byte>=48 && byte<=57); result=result*10+byte-48; i+=1; }
+    return result;
+}
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value:Key) -> u32 { return value.id as u32; } }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { return left.id==right.id; }
+    pub fn ne(left:Key,right:Key) -> bool { return left.id!=right.id; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left:Key,right:Key) -> bool { return left.id<right.id; }
+    pub fn le(left:Key,right:Key) -> bool { return left.id<=right.id; }
+    pub fn gt(left:Key,right:Key) -> bool { return left.id>right.id; }
+    pub fn ge(left:Key,right:Key) -> bool { return left.id>=right.id; }
+}
+pub impl core::hash::Hash<Query> for Query {
+    pub fn hash(value:Query) -> u32 { value.counter.hashes+=1; return parsed(value) as u32; }
+}
+pub impl core::function::Mapper<core::pair::Pair<Key,Query>,bool> for Policy {
+    pub fn apply(&self,values:core::pair::Pair<Key,Query>) -> bool {
+        values.second.counter.comparisons+=1;
+        assert(values.first.stamp==stamp(values.first.id)); return values.first.id==parsed(values.second);
+    }
+}
+pub impl core::ordering::Comparator<Key,Query> for Policy {
+    pub fn compare(&self,left:Key,right:Query) -> core::ordering::Ordering {
+        right.counter.comparisons+=1; assert(left.stamp==stamp(left.id));
+        return core::ordering::compare_i32(left.id,parsed(right));
+    }
+}

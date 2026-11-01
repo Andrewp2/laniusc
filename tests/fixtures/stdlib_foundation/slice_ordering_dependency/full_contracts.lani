@@ -1,0 +1,207 @@
+// Checked, allocation-free ordering over live shallow values.
+module app::main;
+import core::cmp;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::result;
+import core::slice;
+
+struct IntOrder { direction:i32, calls:i32 }
+impl IntOrder { fn borrow(&self) -> &IntOrder { return self; } }
+pub impl core::ordering::Comparator<i32,i32> for IntOrder {
+    pub fn compare(&self,left:i32,right:i32) -> core::ordering::Ordering {
+        self.calls+=1;
+        let answer:core::ordering::Ordering=core::ordering::compare_i32(left,right);
+        if (self.direction<0) { return core::ordering::reverse(answer); }
+        return answer;
+    }
+}
+fn bounds<T>(result:core::result::Result<T,core::slice::ViewError>) {
+    assert(result.is_err());
+    assert(match(result.unwrap_err()) { core::slice::ViewError::Bounds -> true, core::slice::ViewError::InvalidSize -> false });
+}
+fn check_invalid(view:core::slice::View<i32>,order:&IntOrder) {
+    let before:i32=order.calls;
+    bounds(core::slice::sort_unstable_by<i32,IntOrder>(view,order));
+    bounds(core::slice::is_sorted_by<i32,IntOrder>(view,order));
+    bounds(core::slice::lower_bound_by<i32,i32,IntOrder>(view,9,order));
+    bounds(core::slice::upper_bound_by<i32,i32,IntOrder>(view,9,order));
+    bounds(core::slice::binary_search_first_by<i32,i32,IntOrder>(view,9,order));
+    bounds(core::slice::binary_search_last_by<i32,i32,IntOrder>(view,9,order));
+    bounds(core::slice::partition_lt_by<i32,i32,IntOrder>(view,9,order));
+    assert(order.calls==before);
+}
+fn admission_and_empty() {
+    let order:IntOrder=IntOrder { direction:1,calls:0 };
+    let nowhere:ptr=0;
+    let unread:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,2147483647);
+    check_invalid(core::slice::View { values:unread,start:-1,length:0 },order.borrow());
+    check_invalid(core::slice::View { values:unread,start:-1,length:1 },order.borrow());
+    check_invalid(core::slice::View { values:unread,start:0,length:-1 },order.borrow());
+    check_invalid(core::slice::View { values:unread,start:2147483647,length:1 },order.borrow());
+    let storage:[i32;3]=[17,29,41];
+    check_invalid(core::slice::View { values:storage,start:1,length:2147483647 },order.borrow());
+    assert(storage[0]==17 && storage[1]==29 && storage[2]==41);
+    // A valid zero-length view at MAX does not need readable backing.
+    let empty:core::slice::View<i32> =core::slice::View { values:unread,start:2147483647,length:0 };
+    assert(core::slice::sort_unstable_by<i32,IntOrder>(empty,order.borrow()).unwrap()==0);
+    assert(core::slice::is_sorted_by<i32,IntOrder>(empty,order.borrow()).unwrap());
+    assert(core::slice::lower_bound_by<i32,i32,IntOrder>(empty,0,order.borrow()).unwrap()==0);
+    assert(core::slice::upper_bound_by<i32,i32,IntOrder>(empty,0,order.borrow()).unwrap()==0);
+    assert(core::slice::binary_search_first_by<i32,i32,IntOrder>(empty,0,order.borrow()).unwrap().is_none());
+    assert(core::slice::binary_search_last_by<i32,i32,IntOrder>(empty,0,order.borrow()).unwrap().is_none());
+    assert(core::slice::partition_lt_by<i32,i32,IntOrder>(empty,0,order.borrow()).unwrap()==0 && order.calls==0);
+    let singleton:core::slice::View<i32> =core::slice::view_range<i32>(storage,1,1).unwrap();
+    assert(core::slice::sort_unstable_by<i32,IntOrder>(singleton,order.borrow()).unwrap()==1);
+    assert(core::slice::is_sorted_by<i32,IntOrder>(singleton,order.borrow()).unwrap() && order.calls==0);
+    assert(core::slice::binary_search_first_by<i32,i32,IntOrder>(singleton,29,order.borrow()).unwrap().unwrap()==0);
+    assert(core::slice::binary_search_last_by<i32,i32,IntOrder>(singleton,30,order.borrow()).unwrap().is_none());
+    assert(core::slice::partition_lt_by<i32,i32,IntOrder>(singleton,30,order.borrow()).unwrap()==1);
+    assert(storage[0]==17 && storage[1]==29 && storage[2]==41);
+}
+
+enum Fault { Code(i64,core::option::Option<bool>) }
+type Detail=core::option::Option<core::result::Result<[u64;2],Fault>>;
+struct Record<T> { key:i32, id:i32, wide:u64, detail:T }
+struct Lookup { key:i64, marker:core::option::Option<bool> }
+struct RecordOrder<T> { direction:i32, calls:i32 }
+impl<T> RecordOrder<T> { fn borrow(&self) -> &RecordOrder<T> { return self; } }
+pub impl<T> core::ordering::Comparator<Record<T>,Record<T>> for RecordOrder<T> {
+    pub fn compare(&self,left:Record<T>,right:Record<T>) -> core::ordering::Ordering {
+        self.calls+=1;
+        let result:core::ordering::Ordering=core::ordering::compare_i32(left.key,right.key);
+        if (self.direction<0) { return core::ordering::reverse(result); }
+        return result;
+    }
+}
+pub impl<T> core::ordering::Comparator<Record<T>,Lookup> for RecordOrder<T> {
+    pub fn compare(&self,left:Record<T>,right:Lookup) -> core::ordering::Ordering {
+        assert(right.marker.is_some() && !right.marker.unwrap()); self.calls+=1;
+        let relation:core::ordering::Ordering=core::ordering::Ordering::Equal;
+        if ((left.key as i64)<right.key) { relation=core::ordering::Ordering::Less; }
+        if ((left.key as i64)>right.key) { relation=core::ordering::Ordering::Greater; }
+        if (self.direction<0) { return core::ordering::reverse(relation); }
+        return relation;
+    }
+}
+fn key(id:i32) -> i32 {
+    if (id==0 || id==2) { return 3; }
+    if (id==1 || id==4) { return -1; }
+    if (id==3) { return 2; }
+    return 0;
+}
+fn record(id:i32) -> Record<Detail> {
+    let detail:Detail=core::option::None();
+    if (id%3==0) {
+        let words:[u64;2]=[18446744073709551615,8589934593+(id as u64)];
+        let result:core::result::Result<[u64;2],Fault> =core::result::Ok(words);
+        detail=core::option::Some(result);
+    }
+    if (id%3==1) {
+        let result:core::result::Result<[u64;2],Fault> =core::result::Err(Fault::Code(-4294967297-(id as i64),core::option::Some(false)));
+        detail=core::option::Some(result);
+    }
+    return Record { key:key(id),id:id,wide:18446744073709551615-(id as u64),detail:detail };
+}
+fn check_record(value:Record<Detail>) {
+    assert(value.key==key(value.id) && value.wide==18446744073709551615-(value.id as u64));
+    if (value.id%3==2) { assert(value.detail.is_none()); }
+    else {
+        let result:core::result::Result<[u64;2],Fault> =value.detail.unwrap();
+        if (value.id%3==0) { let words:[u64;2]=result.unwrap(); assert(words[0]==18446744073709551615 && words[1]==8589934593+(value.id as u64)); }
+        else { assert(match(result.unwrap_err()) { Fault::Code(code,flag) -> code==-4294967297-(value.id as i64) && !flag.unwrap() }); }
+    }
+}
+fn lookup(value:i64) -> Lookup { return Lookup { key:value,marker:core::option::Some(false) }; }
+fn compound_heterogeneous_and_context() {
+    // Record<Detail> deliberately has no global Ord implementation.
+    let values:[Record<Detail>;8]=[record(99),record(0),record(1),record(2),record(3),record(4),record(5),record(98)];
+    let view:core::slice::View<Record<Detail>> =core::slice::view_range<Record<Detail>>(values,1,6).unwrap();
+    let order:RecordOrder<Detail> =RecordOrder { direction:1,calls:0 };
+    assert(!core::slice::is_sorted_by<Record<Detail>,RecordOrder<Detail>>(view,order.borrow()).unwrap());
+    assert(core::slice::sort_unstable_by<Record<Detail>,RecordOrder<Detail>>(view,order.borrow()).unwrap()==6);
+    assert(core::slice::is_sorted_by<Record<Detail>,RecordOrder<Detail>>(view,order.borrow()).unwrap() && order.calls>0);
+    let expected:[i32;6]=[-1,-1,0,2,3,3]; let seen:[i32;6]=[0;6]; let index:i32=0;
+    while (index<6) { let item:Record<Detail> =values[index+1]; assert(item.key==expected[index] && item.id>=0 && item.id<6); check_record(item); seen[item.id]+=1; index+=1; }
+    index=0; while (index<6) { assert(seen[index]==1); index+=1; }
+    assert(values[0].id==99 && values[7].id==98); check_record(values[0]); check_record(values[7]);
+    assert(core::slice::lower_bound_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(-1),order.borrow()).unwrap()==0);
+    assert(core::slice::upper_bound_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(-1),order.borrow()).unwrap()==2);
+    assert(core::slice::binary_search_first_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(3),order.borrow()).unwrap().unwrap()==4);
+    assert(core::slice::binary_search_last_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(3),order.borrow()).unwrap().unwrap()==5);
+    assert(core::slice::lower_bound_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(-4294967297),order.borrow()).unwrap()==0);
+    assert(core::slice::upper_bound_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(4294967297),order.borrow()).unwrap()==6);
+    assert(core::slice::binary_search_first_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(1),order.borrow()).unwrap().is_none());
+    assert(core::slice::binary_search_last_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(1),order.borrow()).unwrap().is_none());
+    // The same payload type can use a different local order on the next call.
+    order.direction=-1;
+    assert(core::slice::sort_unstable_by<Record<Detail>,RecordOrder<Detail>>(view,order.borrow()).unwrap()==6);
+    assert(core::slice::is_sorted_by<Record<Detail>,RecordOrder<Detail>>(view,order.borrow()).unwrap());
+    assert(core::slice::lower_bound_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(3),order.borrow()).unwrap()==0);
+    assert(core::slice::upper_bound_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(3),order.borrow()).unwrap()==2);
+    assert(core::slice::binary_search_first_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(-1),order.borrow()).unwrap().unwrap()==4);
+    assert(core::slice::binary_search_last_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(-1),order.borrow()).unwrap().unwrap()==5);
+    let boundary:i32=core::slice::partition_lt_by<Record<Detail>,Lookup,RecordOrder<Detail>>(view,lookup(2),order.borrow()).unwrap();
+    assert(boundary==2); index=0;
+    while (index<6) { let item:Record<Detail> =values[index+1]; check_record(item); if (index<boundary) { assert(item.key>2); } else { assert(item.key<=2); } seen[index]=0; index+=1; }
+    index=0; while (index<6) { seen[values[index+1].id]+=1; index+=1; }
+    index=0; while (index<6) { assert(seen[index]==1); index+=1; }
+    assert(values[0].id==99 && values[7].id==98);
+}
+
+fn byte_layouts_and_natural() {
+    let stack:[u8;7]=[99,4,2,4,1,3,98]; let words:[i32;4]=[0;4];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),16);
+    assert(core::mem::slice_stride(stack)<0 && core::mem::slice_stride(packed)==1);
+    let order:core::ordering::Natural<u8> =core::ordering::Natural {};
+    let mode:i32=0;
+    while (mode<2) {
+        let data:[u8]=stack; if (mode==1) { data=packed; }
+        data[0]=99; data[1]=4; data[2]=2; data[3]=4; data[4]=1; data[5]=3; data[6]=98;
+        let view:core::slice::View<u8> =core::slice::view_range<u8>(data,1,5).unwrap();
+        assert(core::slice::sort_unstable_by<u8,core::ordering::Natural<u8>>(view,order.borrow()).unwrap()==5);
+        assert(core::slice::is_sorted_by<u8,core::ordering::Natural<u8>>(view,order.borrow()).unwrap());
+        assert(data[1]==1 && data[2]==2 && data[3]==3 && data[4]==4 && data[5]==4);
+        assert(core::slice::lower_bound_by<u8,u8,core::ordering::Natural<u8>>(view,4,order.borrow()).unwrap()==3);
+        assert(core::slice::upper_bound_by<u8,u8,core::ordering::Natural<u8>>(view,4,order.borrow()).unwrap()==5);
+        assert(core::slice::binary_search_first_by<u8,u8,core::ordering::Natural<u8>>(view,4,order.borrow()).unwrap().unwrap()==3);
+        assert(core::slice::binary_search_last_by<u8,u8,core::ordering::Natural<u8>>(view,4,order.borrow()).unwrap().unwrap()==4);
+        assert(core::slice::partition_lt_by<u8,u8,core::ordering::Natural<u8>>(view,3,order.borrow()).unwrap()==2);
+        assert(data[0]==99 && data[6]==98); mode+=1;
+    }
+    let integers:core::ordering::Natural<i32> =core::ordering::Natural {};
+    assert(core::ordering::is_less(integers.compare(-2147483648,2147483647)));
+    assert(core::ordering::is_equal(integers.compare(-2147483648,-2147483648)));
+    assert(core::ordering::is_greater(integers.compare(2147483647,-2147483648)));
+}
+struct Unit {}
+struct EqualOrder { calls:i32 }
+impl EqualOrder { fn borrow(&self) -> &EqualOrder { return self; } }
+pub impl core::ordering::Comparator<Unit,Unit> for EqualOrder {
+    pub fn compare(&self,left:Unit,right:Unit) -> core::ordering::Ordering { self.calls+=1; return core::ordering::Ordering::Equal; }
+}
+fn zero_size_and_raw_ord_wrappers() {
+    let units:[Unit;3]=[Unit {},Unit {},Unit {}]; let view:core::slice::View<Unit> =core::slice::view<Unit>(units,3).unwrap();
+    let order:EqualOrder=EqualOrder { calls:0 };
+    assert(core::slice::sort_unstable_by<Unit,EqualOrder>(view,order.borrow()).unwrap()==3);
+    assert(core::slice::is_sorted_by<Unit,EqualOrder>(view,order.borrow()).unwrap());
+    assert(core::slice::lower_bound_by<Unit,Unit,EqualOrder>(view,Unit {},order.borrow()).unwrap()==0);
+    assert(core::slice::upper_bound_by<Unit,Unit,EqualOrder>(view,Unit {},order.borrow()).unwrap()==3);
+    assert(core::slice::binary_search_first_by<Unit,Unit,EqualOrder>(view,Unit {},order.borrow()).unwrap().unwrap()==0);
+    assert(core::slice::binary_search_last_by<Unit,Unit,EqualOrder>(view,Unit {},order.borrow()).unwrap().unwrap()==2);
+    assert(core::slice::partition_lt_by<Unit,Unit,EqualOrder>(view,Unit {},order.borrow()).unwrap()==0 && order.calls>0);
+    let values:[i32;6]=[3,-2147483648,3,2147483647,0,-2147483648];
+    assert(!core::slice::is_sorted<i32>(values,6) && core::slice::sort<i32>(values,6)==6 && core::slice::is_sorted<i32>(values,6));
+    assert(values[0]==-2147483648 && values[1]==-2147483648 && values[2]==0 && values[3]==3 && values[4]==3 && values[5]==2147483647);
+    assert(core::slice::lower_bound<i32>(values,6,3)==3 && core::slice::upper_bound<i32>(values,6,3)==5);
+    assert(core::slice::binary_search_first_or<i32>(values,6,3,-7)==3 && core::slice::binary_search_last_or<i32>(values,6,3,-7)==4);
+    assert(core::slice::binary_search_first_or<i32>(values,6,1,-7)==-7 && core::slice::binary_search_last_or<i32>(values,6,1,-7)==-7);
+    assert(core::slice::partition_lt<i32>(values,6,0)==2);
+    let nowhere:ptr=0; let unread:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,2147483647);
+    assert(core::slice::sort<i32>(unread,-2147483648)==0 && core::slice::is_sorted<i32>(unread,-2147483648));
+    assert(core::slice::lower_bound<i32>(unread,-1,2)==0 && core::slice::upper_bound<i32>(unread,0,2)==0);
+    assert(core::slice::binary_search_first_or<i32>(unread,-1,2,-9)==-9 && core::slice::binary_search_last_or<i32>(unread,0,2,-9)==-9);
+    assert(core::slice::partition_lt<i32>(unread,-1,2)==0);
+}
+fn main() -> i32 { admission_and_empty(); compound_heterogeneous_and_context(); byte_layouts_and_natural(); zero_size_and_raw_ord_wrappers(); return 0; }

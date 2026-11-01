@@ -706,16 +706,25 @@ fn executable_core_function_surface_has_runtime_cases() {
         include_str!("fixtures/stdlib_foundation/float_bits.lani"),
     );
     let slice_fixtures = format!(
-        "{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("fixtures/stdlib_foundation/core_slice.lani"),
         include_str!("fixtures/stdlib_foundation/core_slice_view.lani"),
         include_str!("fixtures/stdlib_foundation/slice_view_model.lani"),
+        include_str!("fixtures/stdlib_foundation/slice_ordering/contracts.lani"),
+        include_str!("fixtures/stdlib_foundation/slice_selection/admission.lani"),
+        include_str!("fixtures/stdlib_slice_segmentation/direct/contracts.lani"),
+        include_str!("fixtures/stdlib_slice_segmentation/direct/composition.lani"),
     );
     let bitset_fixtures = format!(
         "{}\n{}\n{}",
         include_str!("fixtures/stdlib_foundation/core_bitset.lani"),
         include_str!("fixtures/stdlib_foundation/bitset_view_contracts.lani"),
         include_str!("fixtures/stdlib_foundation/bitset_owned_smoke.lani"),
+    );
+    let endian_fixtures = format!(
+        "{}\n{}",
+        include_str!("fixtures/stdlib_foundation/core_endian.lani"),
+        include_str!("fixtures/stdlib_foundation/native_endian/contracts.lani"),
     );
     let modules = [
         (
@@ -741,12 +750,12 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "base64",
             include_str!("../stdlib/core/base64.lani"),
-            include_str!("fixtures/stdlib_foundation/core_base64.lani"),
+            include_str!("fixtures/stdlib_foundation/checked_base64/contracts.lani"),
         ),
         (
             "endian",
             include_str!("../stdlib/core/endian.lani"),
-            include_str!("fixtures/stdlib_foundation/core_endian.lani"),
+            endian_fixtures.as_str(),
         ),
         (
             "bool",
@@ -816,6 +825,10 @@ fn executable_core_function_surface_has_runtime_cases() {
                 format!(".{name}(")
             };
             let covered = fixture.contains(&call)
+                // Explicit generic calls have `<...>` before the opening
+                // parenthesis. This is a source inventory anchor; the
+                // registered execution gates verify their runtime behavior.
+                || fixture.contains(&format!("{}<", call.trim_end_matches('(')))
                 // Associated factories have no receiver dot. Their runtime
                 // fixtures call Type::factory rather than module::factory.
                 || !line.starts_with("pub fn ")
@@ -886,19 +899,20 @@ fn executable_core_function_surface_has_runtime_cases() {
     }
     assert_eq!(hash_count, 12);
 
-    // Every function in core::option and core::result runs in
-    // core_option_result, free and as a method; the generic option fixtures
-    // run them again on bool payloads.
+    // Call-name inventory across the old and current executing producers.
+    // This bookkeeping check does not itself establish runtime behavior.
     let option_result_fixture = format!(
-        "{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}\n{}\n{}",
         include_str!("fixtures/stdlib_foundation/core_option_result.lani"),
         include_str!("fixtures/stdlib_foundation/option_bool.lani"),
         include_str!("fixtures/stdlib_foundation/option_generic_scalar_predicates.lani"),
         include_str!("fixtures/stdlib_foundation/option_generic_scalar_payload_functions.lani"),
+        include_str!("fixtures/stdlib_foundation/outcome_composition/contracts.lani"),
+        include_str!("fixtures/stdlib_lazy_outcomes/branches.lani"),
     );
     for (module, source, expected_functions, expected_methods) in [
-        ("option", include_str!("../stdlib/core/option.lani"), 12, 9),
-        ("result", include_str!("../stdlib/core/result.lani"), 10, 10),
+        ("option", include_str!("../stdlib/core/option.lani"), 24, 22),
+        ("result", include_str!("../stdlib/core/result.lani"), 20, 20),
     ] {
         let mut functions = 0;
         let mut methods = 0;
@@ -916,9 +930,11 @@ fn executable_core_function_surface_has_runtime_cases() {
                 .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
                 .next()
                 .expect("public function has a name");
+            let generic_call = format!("{call}{name}<");
             let call = format!("{call}{name}(");
             assert!(
-                option_result_fixture.contains(&call),
+                option_result_fixture.contains(&call)
+                    || option_result_fixture.contains(&generic_call),
                 "core::{module} {call} lacks a runtime case"
             );
         }

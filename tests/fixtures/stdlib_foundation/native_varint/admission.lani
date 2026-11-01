@@ -1,0 +1,23 @@
+module app::main;
+import core::result;
+import core::slice;
+import core::varint;
+
+fn decoded<T>(result:core::result::Result<core::varint::Decoded<T>,core::varint::Error>) -> core::varint::Decoded<T> { return result.unwrap(); }
+fn main() -> i32 {
+    let bytes:[u8;16]=[99;16]; let view:core::slice::View<u8> =core::slice::view_range<u8>(bytes,2,12).unwrap();
+    assert(core::varint::write_u32(view,1,4294967295).unwrap()==6);
+    let a:core::varint::Decoded<u32> =decoded<u32>(core::varint::read_u32(view,1));
+    assert(a.value==4294967295 && a.next==6 && bytes[3]==255 && bytes[6]==255 && bytes[7]==15);
+    assert(core::varint::write_u64(view,1,18446744073709551615).unwrap()==11);
+    let b:core::varint::Decoded<u64> =decoded<u64>(core::varint::read_u64(view,1));
+    assert(b.value==18446744073709551615 && b.next==11 && bytes[11]==255 && bytes[12]==1);
+    assert(core::varint::write_i32(view,1,-2147483648).unwrap()==6);
+    let c:core::varint::Decoded<i32> =decoded<i32>(core::varint::read_i32(view,1));
+    assert(c.value==-2147483648 && c.next==6);
+    assert(core::varint::write_i64(view,1,-9223372036854775808).unwrap()==11);
+    let d:core::varint::Decoded<i64> =decoded<i64>(core::varint::read_i64(view,1));
+    assert(d.value==-9223372036854775808 && d.next==11);
+    assert(bytes[0]==99 && bytes[1]==99 && bytes[2]==99 && bytes[13]==99 && bytes[14]==99 && bytes[15]==99);
+    return 0;
+}

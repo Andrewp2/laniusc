@@ -1,6 +1,7 @@
 // Five-u64 commands: map copies, zip copies, aliased zip, enumerate copies.
 // Return every item/state observation and the exact source/callback event log.
 module app::main;
+import core::function;
 import core::io;
 import core::iter;
 import core::option;
@@ -25,7 +26,7 @@ pub impl core::iter::Iterator<i32> for Probe {
 }
 struct Scale { calls: i32, offset: i32, log: &Log }
 impl Scale { fn borrow(&self) -> &Scale { return self; } }
-pub impl core::iter::Mapper<i32, i64> for Scale {
+pub impl core::function::Mapper<i32, i64> for Scale {
     pub fn apply(&self, value: i32) -> i64 {
         let log: &Log = self.log; log.add(3); self.calls += 1;
         return (value as i64) * 3 + (self.offset as i64);

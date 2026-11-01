@@ -1,0 +1,115 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::form;
+fn view(bytes:[u8],start:i32,length:i32) -> core::slice::View<u8> { return core::slice::View { values:bytes,start:start,length:length }; }
+fn literal(text:str,length:i32) -> core::slice::View<u8> { return view(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),length),0,length); }
+fn limits(input:i32,pairs:i32,component:i32,total:i32) -> ext::form::Limits { return ext::form::Limits { max_input_bytes:input,max_pairs:pairs,max_component_bytes:component,max_decoded_bytes:total }; }
+fn error(value:ext::form::Error,expected:i32) {
+    let actual:i32=match(value) { ext::form::Error::InvalidLimits -> 1, ext::form::Error::Bounds -> 2, ext::form::Error::InputLimit -> 3, ext::form::Error::PairLimit -> 4, ext::form::Error::ComponentLimit -> 5, ext::form::Error::DecodedLimit -> 6, ext::form::Error::OutputLimit -> 7, _ -> 0 }; assert(actual==expected);
+}
+fn capacity(value:ext::form::Error,expected:u64) { let actual:u64=match(value) { ext::form::Error::Capacity(size) -> size, _ -> 0 }; assert(actual==expected); }
+fn fill(bytes:[u8],length:i32) { let i:i32=0; while(i<length) { bytes[i]=199; i+=1; } }
+fn unchanged(bytes:[u8],length:i32) { let i:i32=0; while(i<length) { assert(bytes[i]==199); i+=1; } }
+fn parser_and_components() {
+    let null:ptr=0; let absent:[u8]=core::mem::typed_slice_from_raw_parts<u8>(null,0);
+    let bad:core::slice::View<u8> =view(absent,-1,2147483647);
+    error(ext::form::parse(bad,limits(-1,0,0,0)).unwrap_err(),1);
+    error(ext::form::parse(bad,limits(0,-1,0,0)).unwrap_err(),1);
+    error(ext::form::parse(bad,limits(0,0,-1,0)).unwrap_err(),1);
+    error(ext::form::parse(bad,limits(0,0,0,-1)).unwrap_err(),1);
+    error(ext::form::parse(bad,limits(0,0,0,0)).unwrap_err(),2);
+    error(ext::form::parse(view(absent,2147483647,1),limits(0,0,0,0)).unwrap_err(),2);
+    error(ext::form::parse(view(absent,0,-1),limits(0,0,0,0)).unwrap_err(),2);
+    error(ext::form::parse(view(absent,0,1),limits(0,0,0,0)).unwrap_err(),3);
+    let empty:ext::form::Parsed=ext::form::parse(view(absent,2147483647,0),limits(0,0,0,0)).unwrap(); assert(empty.pair_count==0 && empty.decoded_bytes==0);
+    error(ext::form::parse(literal("ab=cd",5),limits(5,0,0,0)).unwrap_err(),4);
+    error(ext::form::parse(literal("ab=cd",5),limits(5,1,1,0)).unwrap_err(),5);
+    error(ext::form::parse(literal("a=bc",4),limits(4,1,1,0)).unwrap_err(),5);
+    error(ext::form::parse(literal("ab=cd",5),limits(5,1,2,3)).unwrap_err(),6);
+    error(ext::form::parse(literal("a=b&c=d",7),limits(7,2,1,3)).unwrap_err(),6);
+    error(ext::form::parse(literal("a=b&c=d",7),limits(7,1,1,4)).unwrap_err(),4);
+    let exact:ext::form::Parsed=ext::form::parse(literal("&&%61=%62&&",11),limits(11,1,1,2)).unwrap(); assert(exact.pair_count==1 && exact.decoded_bytes==2);
+    let separators:ext::form::Parsed=ext::form::parse(literal("&&",2),limits(2,0,0,0)).unwrap(); assert(separators.pair_count==0);
+    let output:[u8;32]=[199;32]; let destination:core::slice::View<u8> =view(output,3,20);
+    error(ext::form::encode_component_into(bad,destination).unwrap_err(),2);
+    error(ext::form::decode_component_into(bad,destination).unwrap_err(),2);
+    error(ext::form::encode_component_into(view(absent,0,1),bad).unwrap_err(),2);
+    error(ext::form::decode_component_into(view(absent,0,1),bad).unwrap_err(),2);
+    error(ext::form::component_encoded_len(bad).unwrap_err(),2); error(ext::form::component_decoded_len(bad).unwrap_err(),2);
+    capacity(ext::form::encode_component_into(literal("a~",2),view(output,3,3)).unwrap_err(),4);
+    capacity(ext::form::decode_component_into(literal("%2B%G1+",7),view(output,3,4)).unwrap_err(),5);
+    unchanged(output,32);
+    assert(ext::form::component_encoded_len(view(absent,2147483647,0)).unwrap()==0);
+    assert(ext::form::component_decoded_len(view(absent,2147483647,0)).unwrap()==0);
+    assert(ext::form::encode_component_into(view(absent,2147483647,0),view(absent,2147483647,0)).unwrap()==0);
+    assert(ext::form::decode_component_into(view(absent,2147483647,0),view(absent,2147483647,0)).unwrap()==0);
+}
+fn source_bounds() {
+    let null:ptr=0; let absent:[u8]=core::mem::typed_slice_from_raw_parts<u8>(null,0);
+    let unused:core::slice::View<u8> =view(absent,0,1); let empty:core::slice::View<u8> =view(absent,0,0);
+    let pairs:[ext::form::Pair;2]=[ext::form::Pair { name:unused,value:empty },ext::form::Pair { name:empty,value:view(absent,2147483647,1) }];
+    let pair_view:core::slice::View<ext::form::Pair> =core::slice::View { values:pairs,start:0,length:2 };
+    error(ext::form::encoded_len(ext::form::PairSource::Views(pair_view)).unwrap_err(),2);
+    error(ext::form::encoding(ext::form::PairSource::Views(pair_view),0).unwrap_err(),2);
+    pairs[1]=ext::form::Pair { name:view(absent,-1,0),value:empty };
+    error(ext::form::encoded_len(ext::form::PairSource::Views(pair_view)).unwrap_err(),2);
+    let unbacked_pairs:[ext::form::Pair]=core::mem::typed_slice_from_raw_parts<ext::form::Pair>(null,0);
+    error(ext::form::encoded_len(ext::form::PairSource::Views(core::slice::View { values:unbacked_pairs,start:2147483647,length:1 })).unwrap_err(),2);
+    let spans:[ext::form::PairSpan;2]=[ext::form::PairSpan { name_start:0,name_length:1,value_length:0 };2];
+    let selected:core::slice::View<ext::form::PairSpan> =core::slice::View { values:spans,start:0,length:2 };
+    let starts:[i32;6]=[-1,0,0,2,1,0]; let names:[i32;6]=[0,-1,0,0,1,1]; let values:[i32;6]=[0,0,-1,0,0,2147483647];
+    let i:i32=0; while(i<6) {
+        spans[1]=ext::form::PairSpan { name_start:starts[i],name_length:names[i],value_length:values[i] };
+        let source:ext::form::PairSource=ext::form::PairSource::Packed(unused,selected);
+        error(ext::form::encoded_len(source).unwrap_err(),2); error(ext::form::encoding(source,0).unwrap_err(),2); i+=1;
+    }
+    let unbacked_spans:[ext::form::PairSpan]=core::mem::typed_slice_from_raw_parts<ext::form::PairSpan>(null,0);
+    error(ext::form::encoded_len(ext::form::PairSource::Packed(view(absent,-1,0),core::slice::View { values:unbacked_spans,start:0,length:1 })).unwrap_err(),2);
+    error(ext::form::encoded_len(ext::form::PairSource::Packed(empty,core::slice::View { values:unbacked_spans,start:0,length:-1 })).unwrap_err(),2);
+    let none:ext::form::PairSource=ext::form::PairSource::Views(core::slice::View { values:unbacked_pairs,start:2147483647,length:0 });
+    assert(ext::form::encoded_len(none).unwrap()==0); let zero:ext::form::Encoding=ext::form::encoding(none,0).unwrap(); assert(zero.remaining()==0);
+}
+fn generic_read<R>(reader:&R,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> where R:core::io::Read { return reader.read(destination,offset,count); }
+fn invalid(reader:&ext::form::Encoding,destination:[u8],offset:i32,count:i32) {
+    fill(destination,64); let before:u64=reader.remaining(); let result=generic_read<ext::form::Encoding>(reader,destination,offset,count);
+    assert(result.is_err()); let correct:bool=match(result.unwrap_err()) { core::io::Error::InvalidInput -> true, _ -> false }; assert(correct && reader.remaining()==before); unchanged(destination,64);
+}
+fn piece(reader:&ext::form::Encoding,destination:[u8],expected:core::slice::View<u8>,position:i32,count:i32) -> i32 {
+    fill(destination,64); let wanted:i32=count; if(wanted>expected.length-position) { wanted=expected.length-position; }
+    assert(generic_read<ext::form::Encoding>(reader,destination,3,count).unwrap()==wanted && reader.remaining()==(expected.length-position-wanted) as u64);
+    let i:i32=0; while(i<64) { if(i>=3 && i<3+wanted) { assert(destination[i]==expected.values[expected.start+position+i-3]); } else { assert(destination[i]==199); } i+=1; } return wanted;
+}
+fn streaming() {
+    let bytes:[u8;10]=[203,203,126,32,43,42,0,97,203,203]; let input:core::slice::View<u8> =view(bytes,2,6);
+    let bad:ext::form::PairSpan=ext::form::PairSpan { name_start:-1,name_length:-1,value_length:-1 };
+    let spans:[ext::form::PairSpan;6]=[bad,ext::form::PairSpan { name_start:4,name_length:1,value_length:1 },ext::form::PairSpan { name_start:0,name_length:2,value_length:2 },ext::form::PairSpan { name_start:4,name_length:1,value_length:1 },ext::form::PairSpan { name_start:6,name_length:0,value_length:0 },bad];
+    let packed:ext::form::PairSource=ext::form::PairSource::Packed(input,core::slice::View { values:spans,start:1,length:4 });
+    let empty:core::slice::View<u8> =view(bytes,8,0);
+    let pairs:[ext::form::Pair;4]=[ext::form::Pair { name:view(bytes,6,1),value:view(bytes,7,1) },ext::form::Pair { name:view(bytes,2,2),value:view(bytes,4,2) },ext::form::Pair { name:view(bytes,6,1),value:view(bytes,7,1) },ext::form::Pair { name:empty,value:empty }];
+    let views:ext::form::PairSource=ext::form::PairSource::Views(core::slice::View { values:pairs,start:0,length:4 });
+    let expected:core::slice::View<u8> =literal("%00=a&%7E+=%2B*&%00=a&=",23);
+    let native:[u8;64]=[0;64]; let words:[i32;16]=[0;16]; let positive:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),64);
+    assert(core::mem::slice_stride(native)<0 && core::mem::slice_stride(positive)==1); let mode:i32=0;
+    while(mode<2) {
+        let source:ext::form::PairSource=packed; let destination:[u8]=native; if(mode==1) { source=views; destination=positive; }
+        assert(ext::form::encoded_len(source).unwrap()==23); error(ext::form::encoding(source,22).unwrap_err(),7);
+        let cursor:ext::form::Encoding=ext::form::encoding(source,23).unwrap();
+        invalid(cursor.borrow(),destination,-1,0); invalid(cursor.borrow(),destination,0,-1); invalid(cursor.borrow(),destination,2147483647,1);
+        fill(destination,64); assert(cursor.read(destination,2147483647,0).unwrap()==0 && cursor.remaining()==23); unchanged(destination,64);
+        assert(piece(cursor.borrow(),destination,expected,0,1)==1); let fork:ext::form::Encoding=cursor;
+        invalid(cursor.borrow(),destination,2147483646,2); let position:i32=1;
+        while(position<23) { position+=piece(cursor.borrow(),destination,expected,position,2); }
+        position=1; while(position<23) { position+=piece(fork.borrow(),destination,expected,position,3); }
+        assert(piece(cursor.borrow(),destination,expected,23,3)==0 && piece(cursor.borrow(),destination,expected,23,0)==0);
+        invalid(cursor.borrow(),destination,-1,1); assert(piece(fork.borrow(),destination,expected,23,1)==0); mode+=1;
+    }
+    let saved:[u8;10]=[203,203,126,32,43,42,0,97,203,203]; let i:i32=0; while(i<10) { assert(bytes[i]==saved[i]); i+=1; }
+    let starts:[i32;6]=[-1,4,0,4,6,-1]; let names:[i32;6]=[-1,1,2,1,0,-1]; let values:[i32;6]=[-1,1,2,1,0,-1];
+    i=0; while(i<6) { let value:ext::form::PairSpan=spans[i]; assert(value.name_start==starts[i] && value.name_length==names[i] && value.value_length==values[i]); i+=1; }
+    let pair_starts:[i32;4]=[6,2,6,8]; let pair_lengths:[i32;4]=[1,2,1,0]; i=0; while(i<4) { let pair:ext::form::Pair=pairs[i]; assert(pair.name.start==pair_starts[i] && pair.name.length==pair_lengths[i] && pair.value.start==pair_starts[i]+pair_lengths[i] && pair.value.length==pair_lengths[i]); i+=1; }
+}
+fn main() -> i32 { parser_and_components(); source_bounds(); streaming(); return 0; }

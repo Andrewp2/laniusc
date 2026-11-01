@@ -1,0 +1,94 @@
+// Analytic sparse square: implicit dense shape has 4,294,967,296 cells.
+// A has diagonal 2 and adjacent diagonals 1; A*A fills two more diagonals.
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import ext::sparse;
+import ext::sparse_matrix;
+import ext::sparse_ops;
+
+fn tridiagonal(count: i32, limits: ext::sparse::Limits) -> ext::sparse_matrix::Matrix {
+    let offsets: alloc::vec::Vec<i32> = alloc::vec::with_capacity<i32>(count+1).unwrap();
+    let columns: alloc::vec::Vec<i32> = alloc::vec::with_capacity<i32>(3*count-2).unwrap();
+    let values: alloc::vec::Vec<f64> = alloc::vec::with_capacity<f64>(3*count-2).unwrap();
+    offsets.try_push(0).unwrap(); let row: i32 = 0;
+    while (row < count) {
+        if (row > 0) { columns.try_push(row-1).unwrap(); values.try_push(1.0).unwrap(); }
+        columns.try_push(row).unwrap(); values.try_push(2.0).unwrap();
+        if (row+1 < count) { columns.try_push(row+1).unwrap(); values.try_push(1.0).unwrap(); }
+        offsets.try_push(values.len()).unwrap(); row += 1;
+    }
+    let source: ext::sparse::CsrView = ext::sparse::view(count,count,offsets.as_view(),columns.as_view(),values.as_view(),limits).unwrap();
+    let out: ext::sparse_matrix::Matrix = ext::sparse_matrix::from_csr(source,limits).unwrap();
+    offsets.destroy(); columns.destroy(); values.destroy(); return out;
+}
+fn check_input(source: ext::sparse::CsrView, count: i32) {
+    let row: i32 = 0; let entry: i32 = 0;
+    while (row < count) {
+        assert(source.offsets.get(row).unwrap() == entry);
+        if (row > 0) {
+            assert(source.columns.get(entry).unwrap() == row-1 && source.values.get(entry).unwrap() == 1.0); entry += 1;
+        }
+        assert(source.columns.get(entry).unwrap() == row && source.values.get(entry).unwrap() == 2.0); entry += 1;
+        if (row+1 < count) {
+            assert(source.columns.get(entry).unwrap() == row+1 && source.values.get(entry).unwrap() == 1.0); entry += 1;
+        }
+        assert(source.offsets.get(row+1).unwrap() == entry); row += 1;
+    }
+    assert(entry == 3*count-2);
+}
+fn check_square(product: ext::sparse::CsrView, count: i32) {
+    // Coefficients follow the convolution (1,2,1)*(1,2,1), except each
+    // boundary diagonal loses the single path through the missing neighbor.
+    let row: i32 = 0; let entry: i32 = 0;
+    while (row < count) {
+        assert(product.offsets.get(row).unwrap() == entry);
+        let first: i32 = row-2; if (first < 0) { first = 0; }
+        let last: i32 = row+2; if (last >= count) { last = count-1; }
+        let column: i32 = first;
+        while (column <= last) {
+            let expected: f64 = 1.0;
+            if (column == row-1 || column == row+1) { expected = 4.0; }
+            if (column == row) { expected = 6.0; if (row == 0 || row == count-1) { expected = 5.0; } }
+            assert(product.columns.get(entry).unwrap() == column && product.values.get(entry).unwrap() == expected);
+            entry += 1; column += 1;
+        }
+        assert(product.offsets.get(row+1).unwrap() == entry); row += 1;
+    }
+    assert(entry == 5*count-6);
+}
+fn main() -> i32 {
+    let count: i32 = 65536;
+    let limits: ext::sparse::Limits = ext::sparse::default_limits();
+    let input: ext::sparse_matrix::Matrix = tridiagonal(count,limits);
+    assert(input.rows == count && input.cols == count && input.nnz() == 196606);
+    let square: ext::sparse_matrix::Matrix = ext::sparse_ops::matmul(input.view(),input.view(),limits).unwrap();
+    assert(square.rows == count && square.cols == count && square.nnz() == 327674);
+    assert(ext::sparse::validate(square.view(),limits).unwrap() == 327674);
+    check_input(input.view(),count); check_square(square.view(),count);
+    // A and both operand views expire here. The returned square owns all of
+    // its storage independently, including the newly filled outer diagonals.
+    input.destroy(); assert(input.rows == 0 && input.cols == 0 && input.nnz() == 0);
+    let x: alloc::vec::Vec<f64> = alloc::vec::with_capacity<f64>(count).unwrap();
+    x.try_resize(count,1.0).unwrap();
+    let constant: alloc::vec::Vec<f64> = ext::sparse_ops::matvec(square.view(),x.as_view(),limits).unwrap();
+    assert(constant.len() == count); let row: i32 = 0;
+    while (row < count) {
+        let expected: f64 = 16.0;
+        if (row == 1 || row == count-2) { expected = 15.0; }
+        if (row == 0 || row == count-1) { expected = 10.0; }
+        assert(constant.at(row) == expected); x.set(row,(row+1) as f64).unwrap(); row += 1;
+    }
+    constant.destroy();
+    let ramp: alloc::vec::Vec<f64> = ext::sparse_ops::matvec(square.view(),x.as_view(),limits).unwrap();
+    assert(ramp.len() == count); row = 0;
+    while (row < count) {
+        let expected: f64 = (16*(row+1)) as f64;
+        if (row == count-2) { expected = (15*count-17) as f64; }
+        if (row == count-1) { expected = (10*count-6) as f64; }
+        assert(ramp.at(row) == expected); row += 1;
+    }
+    ramp.destroy(); x.destroy(); square.destroy();
+    assert(square.rows == 0 && square.cols == 0 && square.nnz() == 0); return 0;
+}

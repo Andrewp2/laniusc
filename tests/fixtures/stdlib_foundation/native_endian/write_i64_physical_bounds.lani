@@ -1,0 +1,7 @@
+module app::main;
+import core::endian;
+fn main() -> i32 {
+    let short:[u8;7]=[0;7];
+    if (core::endian::write_i64_be(short,8,0,-9223372036854775808)) { return 1; }
+    return 2;
+}

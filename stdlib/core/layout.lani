@@ -1,0 +1,94 @@
+// Checked byte-storage arithmetic for the current 64-bit pointer profile.
+// This does not infer native type layouts, allocate storage or construct pointers.
+module core::layout;
+import core::result;
+
+pub const MAX_SIZE:usize=9223372036854775807;
+pub struct Layout { size:usize, alignment:usize }
+pub struct ArrayLayout { layout:Layout, stride:usize }
+pub struct ExtendedLayout { layout:Layout, offset:usize }
+pub enum Error { InvalidAlignment, SizeOverflow }
+
+fn valid_alignment(alignment:usize) -> bool {
+    if(alignment==0) { return false; }
+    return (alignment&(alignment-1))==0;
+}
+
+// Admit alignment before size, and subtraction before the rounded sum. A zero
+// offset needs no padding even at alignment 2^63; positive offsets may fail.
+pub fn padding_for(offset:usize,alignment:usize) -> core::result::Result<usize,Error> {
+    if(!valid_alignment(alignment)) { return core::result::Err(Error::InvalidAlignment); }
+    if(offset>MAX_SIZE) { return core::result::Err(Error::SizeOverflow); }
+    let remainder:usize=offset%alignment;
+    let padding:usize=0;
+    if(remainder!=0) { padding=alignment-remainder; }
+    if(padding>MAX_SIZE-offset) { return core::result::Err(Error::SizeOverflow); }
+    return core::result::Ok(padding);
+}
+
+// Keep the unpadded size. Validity requires its rounded size to fit MAX_SIZE.
+pub fn from_size_align(size:usize,alignment:usize) -> core::result::Result<Layout,Error> {
+    let padding:core::result::Result<usize,Error> =padding_for(size,alignment);
+    if(padding.is_err()) { return core::result::Err(padding.unwrap_err()); }
+    return core::result::Ok(Layout { size:size,alignment:alignment });
+}
+pub fn validate(layout:Layout) -> core::result::Result<Layout,Error> {
+    return from_size_align(layout.size,layout.alignment);
+}
+pub fn is_valid(layout:Layout) -> bool {
+    let checked:core::result::Result<Layout,Error> =validate(layout);
+    return checked.is_ok();
+}
+
+pub fn pad_to_align(layout:Layout) -> core::result::Result<Layout,Error> {
+    // padding_for revalidates every public field and proves the following sum.
+    let padding:core::result::Result<usize,Error> =padding_for(layout.size,layout.alignment);
+    if(padding.is_err()) { return core::result::Err(padding.unwrap_err()); }
+    let size:usize=layout.size+padding.unwrap();
+    return core::result::Ok(Layout { size:size,alignment:layout.alignment });
+}
+pub fn align_to(layout:Layout,alignment:usize) -> core::result::Result<Layout,Error> {
+    let checked:core::result::Result<Layout,Error> =validate(layout);
+    if(checked.is_err()) { return checked; }
+    if(!valid_alignment(alignment)) { return core::result::Err(Error::InvalidAlignment); }
+    let admitted:Layout=checked.unwrap();
+    let raised:usize=admitted.alignment;
+    if(alignment>raised) { raised=alignment; }
+    return from_size_align(admitted.size,raised);
+}
+
+pub fn array(element:Layout,count:usize) -> core::result::Result<ArrayLayout,Error> {
+    // Validate and compute stride even for count zero. A zero stride accepts
+    // every usize count; otherwise division admits multiplication beforehand.
+    let padded:core::result::Result<Layout,Error> =pad_to_align(element);
+    if(padded.is_err()) { return core::result::Err(padded.unwrap_err()); }
+    let admitted:Layout=padded.unwrap();
+    let stride:usize=admitted.size;
+    if(stride!=0) {
+        if(count>MAX_SIZE/stride) { return core::result::Err(Error::SizeOverflow); }
+    }
+    let layout:Layout=Layout { size:stride*count,alignment:admitted.alignment };
+    let output:ArrayLayout=ArrayLayout { layout:layout,stride:stride };
+    return core::result::Ok(output);
+}
+
+pub fn extend(left:Layout,right:Layout) -> core::result::Result<ExtendedLayout,Error> {
+    // Validate both inputs, in order, before any derived offset arithmetic.
+    let first:core::result::Result<Layout,Error> =validate(left);
+    if(first.is_err()) { return core::result::Err(first.unwrap_err()); }
+    let second:core::result::Result<Layout,Error> =validate(right);
+    if(second.is_err()) { return core::result::Err(second.unwrap_err()); }
+    let padding:core::result::Result<usize,Error> =padding_for(left.size,right.alignment);
+    if(padding.is_err()) { return core::result::Err(padding.unwrap_err()); }
+    let offset:usize=left.size+padding.unwrap();
+    if(right.size>MAX_SIZE-offset) { return core::result::Err(Error::SizeOverflow); }
+    let size:usize=offset+right.size;
+    let alignment:usize=left.alignment;
+    if(right.alignment>alignment) { alignment=right.alignment; }
+    // The sum may fit while its required trailing alignment would not. Check
+    // the complete invariant, retaining the unpadded combined size on success.
+    let combined:core::result::Result<Layout,Error> =from_size_align(size,alignment);
+    if(combined.is_err()) { return core::result::Err(combined.unwrap_err()); }
+    let output:ExtendedLayout=ExtendedLayout { layout:combined.unwrap(),offset:offset };
+    return core::result::Ok(output);
+}

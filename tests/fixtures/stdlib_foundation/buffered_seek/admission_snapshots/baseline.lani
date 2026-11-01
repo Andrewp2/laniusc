@@ -1,0 +1,227 @@
+// Fixed-capacity borrowed stream adapters with owned byte buffers.
+// Native admission: x86_64 Linux ELF via the GPU compiler; no user GPU kernels.
+// See docs/stdlib-buffered.md for ownership, failure, and lifetime contracts.
+module alloc::buffered;
+import alloc::vec;
+import core::io;
+import core::result;
+import core::slice;
+
+// One transferred allocation, not a copy. With faulted=false the range is
+// unread input / output not yet accepted by the borrowed inner. These are
+// layer-local claims; see the guide for nesting and faulted=true.
+pub struct Parts<I> {
+    inner: &I,
+    buffer: alloc::vec::Vec<u8>,
+    start: i32,
+    length: i32,
+    faulted: bool
+}
+
+pub struct Reader<R> {
+    inner: &R,
+    buffer: alloc::vec::Vec<u8>,
+    start: i32,
+    end: i32,
+    active: bool,
+    faulted: bool
+}
+
+pub struct Writer<W> {
+    inner: &W,
+    buffer: alloc::vec::Vec<u8>,
+    start: i32,
+    end: i32,
+    active: bool,
+    faulted: bool
+}
+
+fn storage(capacity: i32) -> core::result::Result<alloc::vec::Vec<u8>, core::io::Error> {
+    if (capacity <= 0) { return core::result::Err(core::io::Error::InvalidInput); }
+    let made: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = alloc::vec::with_capacity(capacity);
+    if (core::result::is_err(made)) { return core::result::Err(core::io::Error::AllocationFailed); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(made);
+    // The complete byte capacity is initialized once. This cannot allocate
+    // again after the successful reserve, and later I/O never changes len.
+    let initialized: core::result::Result<i32, alloc::vec::Error> = bytes.try_resize(capacity, 0);
+    if (core::result::is_err(initialized)) {
+        bytes.destroy();
+        return core::result::Err(core::io::Error::AllocationFailed);
+    }
+    return core::result::Ok(bytes);
+}
+
+pub fn reader<R>(inner: &R, capacity: i32) -> core::result::Result<Reader<R>, core::io::Error> where R: core::io::Read {
+    let made: core::result::Result<alloc::vec::Vec<u8>, core::io::Error> = storage(capacity);
+    if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+    return core::result::Ok(Reader { inner: inner, buffer: core::result::unwrap(made), start: 0, end: 0, active: true, faulted: false });
+}
+
+pub fn writer<W>(inner: &W, capacity: i32) -> core::result::Result<Writer<W>, core::io::Error> where W: core::io::Write {
+    let made: core::result::Result<alloc::vec::Vec<u8>, core::io::Error> = storage(capacity);
+    if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+    return core::result::Ok(Writer { inner: inner, buffer: core::result::unwrap(made), start: 0, end: 0, active: true, faulted: false });
+}
+
+pub impl<I> Parts<I> {
+    // Borrowed and read-only by convention, including when faulted=true.
+    pub fn bytes(&self) -> core::slice::View<u8> {
+        return core::slice::View { values: self.buffer.as_slice(), start: self.start, length: self.length };
+    }
+    // Explicitly discard the transferred bytes and release only this buffer.
+    // The inner stream remains borrowed and is never flushed or closed.
+    pub fn discard(&self) -> i32 {
+        let discarded: i32 = self.length;
+        self.buffer.destroy(); self.start = 0; self.length = 0; self.faulted = false;
+        return discarded;
+    }
+}
+
+pub impl<R> Reader<R> {
+    pub fn borrow(&self) -> &Reader<R> { return self; }
+    pub fn is_active(&self) -> bool { return self.active; }
+    pub fn is_faulted(&self) -> bool { return self.faulted; }
+    pub fn capacity(&self) -> i32 { return self.buffer.len(); }
+    pub fn buffered(&self) -> core::slice::View<u8> {
+        return core::slice::View { values: self.buffer.as_slice(), start: self.start, length: self.end - self.start };
+    }
+    pub fn take_parts(&self) -> core::result::Result<Parts<R>, core::io::Error> {
+        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
+        let parts: Parts<R> = Parts { inner: self.inner, buffer: self.buffer, start: self.start, length: self.end - self.start, faulted: self.faulted };
+        self.buffer = alloc::vec::new(); self.start = 0; self.end = 0; self.active = false; self.faulted = false;
+        return core::result::Ok(parts);
+    }
+    pub fn discard(&self) -> i32 {
+        let discarded: i32 = self.end - self.start;
+        self.buffer.destroy(); self.start = 0; self.end = 0; self.active = false; self.faulted = false;
+        return discarded;
+    }
+}
+
+pub impl<R> core::io::BufRead for Reader<R> where R: core::io::Read {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, core::io::Error> {
+        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (self.faulted) { return core::result::Err(core::io::Error::InvalidCount); }
+        if (self.start != self.end) { return core::result::Ok(self.buffered()); }
+        let inner: &R = self.inner;
+        let received: core::result::Result<i32, core::io::Error> = inner.read(self.buffer.as_slice(), 0, self.buffer.len());
+        if (core::result::is_err(received)) { return core::result::Err(core::result::unwrap_err(received)); }
+        let count: i32 = core::result::unwrap(received);
+        if (count < 0 || count > self.buffer.len()) {
+            self.faulted = true;
+            // Do not publish bytes from a read with an invalid returned count.
+            return core::result::Err(core::io::Error::InvalidCount);
+        }
+        self.start = 0; self.end = count;
+        // No EOF cache: another call can observe subsequently available input.
+        return core::result::Ok(self.buffered());
+    }
+    pub fn consume(&self, count: i32) -> core::result::Result<i32, core::io::Error> {
+        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (self.faulted) { return core::result::Err(core::io::Error::InvalidCount); }
+        if (count < 0 || count > self.end - self.start) { return core::result::Err(core::io::Error::InvalidInput); }
+        self.start += count;
+        if (self.start == self.end) { self.start = 0; self.end = 0; }
+        return core::result::Ok(count);
+    }
+}
+
+pub impl<R> core::io::Read for Reader<R> where R: core::io::Read {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (self.faulted) { return core::result::Err(core::io::Error::InvalidCount); }
+        if (!core::io::valid_range(offset, count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        let filled: core::result::Result<core::slice::View<u8>, core::io::Error> = self.fill_buf();
+        if (core::result::is_err(filled)) { return core::result::Err(core::result::unwrap_err(filled)); }
+        let amount: i32 = self.end - self.start;
+        if (amount > count) { amount = count; }
+        let bytes: [u8] = self.buffer.as_slice(); let index: i32 = 0;
+        while (index < amount) { destination[offset + index] = bytes[self.start + index]; index += 1; }
+        self.start += amount;
+        if (self.start == self.end) { self.start = 0; self.end = 0; }
+        return core::result::Ok(amount);
+    }
+}
+
+pub impl<W> Writer<W> {
+    pub fn borrow(&self) -> &Writer<W> { return self; }
+    pub fn is_active(&self) -> bool { return self.active; }
+    pub fn is_faulted(&self) -> bool { return self.faulted; }
+    pub fn capacity(&self) -> i32 { return self.buffer.len(); }
+    pub fn pending(&self) -> core::slice::View<u8> {
+        return core::slice::View { values: self.buffer.as_slice(), start: self.start, length: self.end - self.start };
+    }
+    fn drain(&self) -> core::result::Result<i32, core::io::Error> where W: core::io::Write {
+        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (self.faulted) { return core::result::Err(core::io::Error::InvalidCount); }
+        let inner: &W = self.inner;
+        while (self.start < self.end) {
+            let remaining: i32 = self.end - self.start;
+            let sent: core::result::Result<i32, core::io::Error> = inner.write(self.buffer.as_slice(), self.start, remaining);
+            if (core::result::is_err(sent)) { return core::result::Err(core::result::unwrap_err(sent)); }
+            let count: i32 = core::result::unwrap(sent);
+            if (count < 0 || count > remaining) {
+                self.faulted = true;
+                // This offset is the prefix last confirmed accepted by this
+                // inner, not a claim about effects of its invalid-count call.
+                return core::result::Err(core::io::Error::InvalidCount);
+            }
+            if (count == 0) { return core::result::Err(core::io::Error::WriteZero); }
+            self.start += count;
+        }
+        self.start = 0; self.end = 0;
+        return core::result::Ok(0);
+    }
+    pub fn finish(&self) -> core::result::Result<i32, core::io::Error> where W: core::io::Write {
+        let flushed: core::result::Result<i32, core::io::Error> = self.flush();
+        if (core::result::is_err(flushed)) { return core::result::Err(core::result::unwrap_err(flushed)); }
+        self.discard();
+        return core::result::Ok(0);
+    }
+    pub fn take_parts(&self) -> core::result::Result<Parts<W>, core::io::Error> {
+        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
+        let parts: Parts<W> = Parts { inner: self.inner, buffer: self.buffer, start: self.start, length: self.end - self.start, faulted: self.faulted };
+        self.buffer = alloc::vec::new(); self.start = 0; self.end = 0; self.active = false; self.faulted = false;
+        return core::result::Ok(parts);
+    }
+    pub fn discard(&self) -> i32 {
+        let discarded: i32 = self.end - self.start;
+        self.buffer.destroy(); self.start = 0; self.end = 0; self.active = false; self.faulted = false;
+        return discarded;
+    }
+}
+
+pub impl<W> core::io::Write for Writer<W> where W: core::io::Write {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        if (!self.active) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (self.faulted) { return core::result::Err(core::io::Error::InvalidCount); }
+        if (!core::io::valid_range(offset, count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        // Existing tail room batches small writes without touching the inner.
+        // If a drain is necessary, finish all old pending bytes first. An error
+        // can therefore never follow acceptance of current source bytes.
+        if (self.end == self.buffer.len()) {
+            let drained: core::result::Result<i32, core::io::Error> = self.drain();
+            if (core::result::is_err(drained)) { return core::result::Err(core::result::unwrap_err(drained)); }
+        }
+        let amount: i32 = self.buffer.len() - self.end;
+        if (amount > count) { amount = count; }
+        let bytes: [u8] = self.buffer.as_slice(); let index: i32 = 0;
+        while (index < amount) { bytes[self.end + index] = source[offset + index]; index += 1; }
+        self.end += amount;
+        return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> {
+        let drained: core::result::Result<i32, core::io::Error> = self.drain();
+        if (core::result::is_err(drained)) { return core::result::Err(core::result::unwrap_err(drained)); }
+        let inner: &W = self.inner;
+        let flushed: core::result::Result<i32, core::io::Error> = inner.flush();
+        if (core::result::is_err(flushed)) { return core::result::Err(core::result::unwrap_err(flushed)); }
+        if (core::result::unwrap(flushed) != 0) {
+            self.faulted = true;
+            return core::result::Err(core::io::Error::InvalidCount);
+        }
+        return core::result::Ok(0);
+    }
+}

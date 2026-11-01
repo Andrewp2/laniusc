@@ -1,0 +1,8 @@
+module app::main;
+import core::iter;
+struct Token { value:i32 }
+fn main() -> i32 {
+    let left:core::iter::Once<Token> =core::iter::once<Token>(Token { value:1 }); let right:core::iter::Once<Token> =core::iter::once<Token>(Token { value:1 });
+    let rejected:bool=core::iter::eq<core::iter::Once<Token>,core::iter::Once<Token>,Token>(left.borrow(),right.borrow()); // rejected_sequence_bound
+    return 0;
+}

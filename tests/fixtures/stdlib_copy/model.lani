@@ -1,0 +1,144 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+
+struct Log { words:[u64], used:i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn record(&self,id:i32,event:i32,offset:i32,count:i32,position:i32,stride:i64,payload:u64) {
+        assert(self.used<128); let at:i32=self.used*8;
+        self.words[at]=id as u64; self.words[at+1]=event as u64; self.words[at+2]=offset as u64;
+        self.words[at+3]=count as u64; self.words[at+4]=position as u64; self.words[at+5]=stride as u64;
+        self.words[at+6]=payload; self.words[at+7]=self.used as u64; self.used+=1;
+    }
+}
+fn error(event:i32) -> core::io::Error {
+    return match(-event) { 1 -> core::io::Error::Interrupted,2 -> core::io::Error::WouldBlock,
+        3 -> core::io::Error::Host(-731),4 -> core::io::Error::InvalidCount,5 -> core::io::Error::WriteZero,
+        6 -> core::io::Error::InvalidInput,7 -> core::io::Error::CountOverflow,8 -> core::io::Error::UnexpectedEof,
+        9 -> core::io::Error::LimitExceeded,_ -> core::io::Error::AllocationFailed };
+}
+fn cause(error:core::io::Error) -> i32 {
+    return match(error) { core::io::Error::Interrupted -> 1,core::io::Error::WouldBlock -> 2,
+        core::io::Error::Host(value) -> value,core::io::Error::InvalidCount -> 4,core::io::Error::WriteZero -> 5,
+        core::io::Error::InvalidInput -> 6,core::io::Error::CountOverflow -> 7,core::io::Error::UnexpectedEof -> 8,
+        core::io::Error::LimitExceeded -> 9,core::io::Error::AllocationFailed -> 10 };
+}
+fn stop(value:core::io::CopyStop) -> i32 { return match(value) { core::io::CopyStop::Eof -> 1,core::io::CopyStop::ReadLimit -> 2,core::io::CopyStop::CallLimit -> 3,core::io::CopyStop::ReadWouldBlock -> 4,core::io::CopyStop::WriteWouldBlock -> 5 }; }
+fn side(value:core::io::CopySide) -> i32 { return match(value) { core::io::CopySide::Read -> 1,core::io::CopySide::Write -> 2,core::io::CopySide::State -> 3 }; }
+struct Probe { bytes:[u8],length:i32,position:i32,id:i32,events:[i32],attempts:i32,log:&Log }
+fn probe(bytes:[u8],length:i32,id:i32,events:[i32],log:&Log) -> Probe { return Probe { bytes:bytes,length:length,position:0,id:id,events:events,attempts:0,log:log }; }
+impl Probe {
+    fn borrow(&self) -> &Probe { return self; }
+    fn event(&self,values:[u8],offset:i32,count:i32) -> i32 {
+        assert(count>0 && count<=8 && core::io::valid_range(offset,count));
+        let event:i32=99; if(self.attempts<16) { event=self.events[self.attempts]; }
+        let payload:u64=0; if(self.id==2) { let i:i32=0; while(i<count) { payload|=(values[offset+i] as u64)<<(i*8); i+=1; } }
+        self.log.record(self.id,event,offset,count,self.position,core::mem::slice_stride(values) as i64,payload);
+        self.attempts+=1; return event;
+    }
+}
+pub impl core::io::Read for Probe {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(self.id==1); let event:i32=self.event(destination,offset,count);
+        if(event<0 && event>=-10) { return core::result::Err(error(event)); }
+        if(event==-101) { return core::result::Ok(-1); } if(event==-102) { return core::result::Ok(count+1); }
+        if(event==-103) { return core::result::Ok(-2147483648); } if(event==-104) { return core::result::Ok(2147483647); }
+        assert(event>=0); let amount:i32=count; if(amount>event) { amount=event; } if(amount>self.length-self.position) { amount=self.length-self.position; }
+        let i:i32=0; while(i<amount) { destination[offset+i]=self.bytes[2+self.position+i]; i+=1; }
+        self.position+=amount; return core::result::Ok(amount);
+    }
+}
+pub impl core::io::Write for Probe {
+    pub fn write(&self,source:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(self.id==2); let event:i32=self.event(source,offset,count);
+        if(event<0 && event>=-10) { return core::result::Err(error(event)); }
+        if(event==-101) { return core::result::Ok(-1); } if(event==-102) { return core::result::Ok(count+1); }
+        if(event==-103) { return core::result::Ok(-2147483648); } if(event==-104) { return core::result::Ok(2147483647); }
+        assert(event>=0); let amount:i32=count; if(amount>event) { amount=event; } assert(self.position+amount<=self.length);
+        let i:i32=0; while(i<amount) { self.bytes[2+self.position+i]=source[offset+i]; i+=1; }
+        self.position+=amount; return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { assert(false); return core::result::Ok(0); }
+}
+fn checked(value:core::result::Result<core::io::CopyStep,core::io::CopyStepFailure>,read:u64,written:u64,calls:u64,ending:i32) {
+    assert(value.is_ok()); let actual:core::io::CopyStep=value.unwrap(); assert(actual.read==read && actual.written==written && actual.calls==calls && stop(actual.stop)==ending);
+}
+fn failure(value:core::result::Result<core::io::CopyStep,core::io::CopyStepFailure>,read:u64,written:u64,calls:u64,error:i32,which_side:i32) {
+    assert(value.is_err()); let actual:core::io::CopyStepFailure=value.unwrap_err(); assert(actual.read==read && actual.written==written && actual.calls==calls && cause(actual.cause)==error && side(actual.side)==which_side);
+}
+fn pending(copy:&core::io::Copier<Probe,Probe>,start:i32,length:i32,a:i32,b:i32) {
+    let view:core::slice::View<u8> =copy.pending(); assert(view.start==start && view.length==length);
+    if(length>0) { assert(view.values[start]==a as u8); } if(length>1) { assert(view.values[start+1]==b as u8); }
+}
+fn event(log:&Log,index:i32,id:i32,offset:i32,count:i32,position:i32,payload:u64) {
+    let at:i32=index*8; assert(index<log.used && log.words[at]==id as u64 && log.words[at+2]==offset as u64 && log.words[at+3]==count as u64 && log.words[at+4]==position as u64 && log.words[at+6]==payload);
+}
+// END SHARED TEST PROVIDERS
+
+fn receive(pointer:ptr,count:i32) -> bool {
+    let done:i32=0; while(done<count) { let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got>=0);
+        if(got==0) { assert(done==0); return false; } done+=got; } return true;
+}
+fn get(bytes:[u8],offset:i32) -> u64 { let result:u64=0; let i:i32=0; while(i<8) { result|=(bytes[offset+i] as u64)<<(i*8); i+=1; } return result; }
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { let done:i32=0; while(done<self.used) { let written:i32=std::io::write_stdout(self.pointer+(done as usize),(self.used-done) as usize); assert(written>0); done+=written; } self.used=0; }
+    fn word(&self,value:u64) { if(self.used==4096) { self.flush(); } let i:i32=0; while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; } self.used+=8; }
+}
+fn run(packet:[u8],sink:&Output) {
+    let layout:i32=get(packet,0) as i32; let length:i32=get(packet,8) as i32; let capacity:i32=get(packet,16) as i32;
+    let seed:u64=get(packet,24); let actions:i32=get(packet,32) as i32;
+    assert(layout>=0 && layout<2 && length>=0 && length<=10 && capacity>0 && capacity<=8 && actions>0 && actions<=16);
+    let source_native:[u8;16]=[0;16]; let output_native:[u8;16]=[0;16]; let scratch_native:[u8;16]=[0;16];
+    let source_words:[i32;4]=[0;4]; let output_words:[i32;4]=[0;4]; let scratch_words:[i32;4]=[0;4];
+    let source_packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(source_words),16);
+    let output_packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),16);
+    let scratch_packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(scratch_words),16);
+    let source:[u8]=source_native; let output:[u8]=output_packed; let scratch:[u8]=scratch_native;
+    if(layout==1) { source=source_packed; output=output_native; scratch=scratch_packed; }
+    if(layout==0) { assert(core::mem::slice_stride(source)<0 && core::mem::slice_stride(output)==1 && core::mem::slice_stride(scratch)<0); }
+    else { assert(core::mem::slice_stride(source)==1 && core::mem::slice_stride(output)<0 && core::mem::slice_stride(scratch)==1); }
+    let i:i32=0; while(i<16) { source[i]=(i*37+11) as u8; output[i]=177; scratch[i]=199; i+=1; }
+    source[2]=0; source[3]=255;
+    let r:[i32;16]=[99;16]; let w:[i32;16]=[99;16]; i=0;
+    while(i<16) { r[i]=get(packet,(8+i)*8) as i32; w[i]=get(packet,(24+i)*8) as i32; i+=1; }
+    let words:[u64;1024]=[0;1024]; let log:Log=Log { words:words,used:0 };
+    let reader:Probe=probe(source,length,1,r,log.borrow()); let writer:Probe=probe(output,12,2,w,log.borrow());
+    let copy:core::io::Copier<Probe,Probe> =core::io::copier(reader.borrow(),writer.borrow(),core::slice::View { values:scratch,start:3,length:capacity }).unwrap();
+    // Arithmetic-only seed: no preceding bytes are materialized or claimed.
+    copy.read=seed; copy.written=seed;
+    let index:i32=0; while(index<actions) {
+        let at:i32=(40+index*3)*8; let op:i32=get(packet,at) as i32; let bytes:u64=get(packet,at+8); let calls:u64=get(packet,at+16);
+        let kind:i32=0; let code:i32=0; let provenance:i32=0; let attempts:u64=0;
+        if(op==1) { copy.abort(); kind=2; }
+        else {
+            assert(op==0); let result:core::result::Result<core::io::CopyStep,core::io::CopyStepFailure> =copy.step(bytes,calls);
+            if(result.is_err()) { let failed:core::io::CopyStepFailure=result.unwrap_err(); kind=1; code=cause(failed.cause); provenance=side(failed.side); attempts=failed.calls;
+                assert(failed.read==copy.read_count() && failed.written==copy.written_count()); }
+            else { let value:core::io::CopyStep=result.unwrap(); code=stop(value.stop); attempts=value.calls;
+                assert(value.read==copy.read_count() && value.written==copy.written_count()); }
+        }
+        let span:core::slice::View<u8> =copy.pending();
+        sink.word(kind as u64); sink.word(code as u64); sink.word(provenance as u64); sink.word(copy.read_count()); sink.word(copy.written_count()); sink.word(attempts);
+        sink.word(copy.is_active() as u64); sink.word(copy.is_done() as u64); sink.word(copy.is_faulted() as u64);
+        sink.word(span.start as u64); sink.word(span.length as u64); sink.word(reader.position as u64); sink.word(writer.position as u64);
+        sink.word(reader.attempts as u64); sink.word(writer.attempts as u64); sink.word(log.used as u64); sink.word(core::mem::slice_stride(span.values) as u64);
+        i=0; while(i<16) { sink.word(source[i] as u64); i+=1; }
+        i=0; while(i<16) { sink.word(output[i] as u64); i+=1; }
+        i=0; while(i<16) { sink.word(scratch[i] as u64); i+=1; }
+        i=0; while(i<8) { let value:u64=256; if(i<span.length) { value=span.values[span.start+i] as u64; } sink.word(value); i+=1; }
+        i=0; while(i<log.used*8) { sink.word(words[i]); i+=1; }
+        index+=1;
+    }
+}
+fn main() -> i32 {
+    let input_words:[i32;176]=[0;176]; let pointer:ptr=core::mem::i32_array_data_ptr(input_words); let packet:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,704);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let sink:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    while(receive(pointer,704)) { run(packet,sink.borrow()); } sink.flush(); return 0;
+}

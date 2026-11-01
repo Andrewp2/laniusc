@@ -1,0 +1,14 @@
+module app::main;
+import core::ordering;
+import core::slice;
+struct Wrong {}
+impl Wrong { fn borrow(&self) -> &Wrong { return self; } }
+pub impl core::ordering::Comparator<i32,u64> for Wrong {
+    pub fn compare(&self,left:i32,right:u64) -> core::ordering::Ordering { return core::ordering::Ordering::Equal; }
+}
+fn main() -> i32 {
+    let data:[i32;2]=[1,2]; let order:Wrong=Wrong {};
+    let view:core::slice::View<i32> =core::slice::view<i32>(data,2).unwrap();
+    let rejected:i32=core::slice::lower_bound_by<i32,i32,Wrong>(view,2,order.borrow()).unwrap(); // rejected_ordering_bound
+    return 0;
+}

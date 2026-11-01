@@ -1,0 +1,370 @@
+// One bounded WebSocket binary request and one staged response.
+// Explicit numeric transport endpoint, HTTP Host authority and optional DNS TLS identity.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::slice::View;
+import core::slice::view;
+import core::time;
+import ext::cli;
+import ext::http;
+import ext::host_name;
+import ext::openssl_tls;
+import ext::openssl_websocket;
+import ext::tls_stream;
+import ext::websocket;
+import ext::websocket_stream;
+import ext::websocket_upgrade;
+import std::args;
+import std::clock;
+import std::entropy;
+import std::signal;
+import std::socket;
+import std::stream;
+
+// A transport wrapper borrows one lexical owner. Matching this enum must never
+// copy the mutable Socket or TLS Stream state into a temporary owner.
+enum Channel { Plain(&std::socket::Socket), Tls(&ext::tls_stream::Stream) }
+struct Transport { channel:Channel, deadline:core::time::Deadline, last:core::time::Instant, failed:bool, waits:i32 }
+struct Options { endpoint:View<u8>, authority:View<u8>, target:View<u8>, name:Option<View<u8>>, ca:Option<View<u8>>, count:i32, help:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return view(bytes,count).unwrap();
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let at:i32 = 0; let calls:i32 = 0;
+    while (at < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent = sink.write(bytes.values,bytes.start+at,bytes.length-at);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap(); if (count <= 0 || count > bytes.length-at) { return false; } at += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 {
+    let message = literal("websocket-once: invalid arguments or input\n",43);
+    if (status == 3) { message = literal("websocket-once: transport, trust or protocol failed\n",52); }
+    if (status == 4) { message = literal("websocket-once: allocation failed\n",34); }
+    if (status == 5) { message = literal("websocket-once: output failed\n",30); }
+    write(message,2,8); return status;
+}
+fn cleanup_note() { write(literal("websocket-once: transport cleanup failed\n",41),2,8); }
+fn wire_status(error:ext::websocket::Error, preparing:bool) -> i32 {
+    return match (error) { ext::websocket::Error::AllocationFailed -> 4, _ -> match(preparing) { true -> 2, false -> 3 } };
+}
+fn stream_status(error:ext::websocket_stream::Failure) -> i32 {
+    return match (error.cause) {
+        ext::websocket_stream::Cause::AllocationFailed -> 4,
+        ext::websocket_stream::Cause::Wire(detail) -> wire_status(detail,false),
+        ext::websocket_stream::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4, _ -> 3 },
+        _ -> 3
+    };
+}
+fn upgrade_status(error:ext::websocket_upgrade::Failure) -> i32 {
+    return match(error.cause) {
+        ext::websocket_upgrade::Cause::AllocationFailed -> 4,
+        ext::websocket_upgrade::Cause::Wire(detail) -> wire_status(detail,false),
+        ext::websocket_upgrade::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4, _ -> 3 },
+        ext::websocket_upgrade::Cause::Http(detail) -> match(detail) { ext::http::Error::AllocationFailed -> 4, _ -> 3 },
+        ext::websocket_upgrade::Cause::Stream(detail) -> stream_status(detail),
+        _ -> 3
+    };
+}
+fn tls_status(error:ext::tls_stream::Failure) -> i32 {
+    return match (error.cause) {
+        ext::tls_stream::Cause::AllocationFailed -> 4,
+        ext::tls_stream::Cause::Tls(detail) -> match(detail.cause) { ext::openssl_tls::Cause::AllocationFailed -> 4, _ -> 3 },
+        _ -> 3
+    };
+}
+fn wire_limits() -> ext::websocket::Limits {
+    let limits = ext::websocket::default_limits();
+    limits.frame_bytes = 65536; limits.message_bytes = 65536; limits.fragments = 64;
+    limits.protocols = 8; limits.http.head_bytes = 16384; limits.http.line_bytes = 8192;
+    limits.http.headers = 32; return limits;
+}
+fn frame_limits() -> ext::websocket_stream::Limits {
+    let limits = ext::websocket_stream::default_limits();
+    limits.wire = wire_limits(); limits.buffer_bytes = 65550;
+    limits.io_calls = 8192; limits.read_bytes = 1048576; limits.written_bytes = 1048576;
+    return limits;
+}
+impl Transport {
+    fn borrow(&self) -> &Transport { return self; }
+    fn check(&self) -> bool {
+        if (self.failed) { return false; }
+        let read = std::clock::monotonic_now();
+        if (read.is_err()) { self.failed = true; return false; }
+        let now = read.unwrap();
+        if (now.compare(self.last) < 0 || self.deadline.is_expired(now)) { self.failed = true; return false; }
+        self.last = now;
+        let healthy:bool = match(self.channel) { Channel::Plain(socket) -> true, Channel::Tls(stream) -> tls_check(stream) };
+        if (!healthy) { self.failed = true; } return healthy;
+    }
+    fn wait(&self, readable:bool) -> bool {
+        if (!self.check() || self.waits == 512) { return false; } self.waits += 1;
+        let ready:bool = match(self.channel) {
+            Channel::Plain(socket) -> plain_wait(socket,readable,self.deadline),
+            Channel::Tls(stream) -> stream.check().is_ok()
+        };
+        if (!ready) { self.failed = true; } return ready && self.check();
+    }
+    // Close always runs. TLS close_notify is attempted only after clean framing.
+    fn close(&self, graceful:bool) -> bool {
+        return match(self.channel) {
+            Channel::Plain(socket) -> socket.close().is_ok(),
+            Channel::Tls(stream) -> close_tls(stream,graceful)
+        };
+    }
+}
+fn plain_wait(socket:&std::socket::Socket, readable:bool, deadline:core::time::Deadline) -> bool {
+    let ready = socket.wait_until(readable,!readable,deadline);
+    return ready.is_ok() && !ready.unwrap().timed_out;
+}
+fn tls_check(stream:&ext::tls_stream::Stream) -> bool {
+    let checked = stream.check();
+    if (checked.is_err()) {
+        if (checked.unwrap_err().cleanup.is_some()) { cleanup_note(); }
+        return false;
+    }
+    return true;
+}
+fn close_tls(stream:&ext::tls_stream::Stream, graceful:bool) -> bool {
+    let healthy:bool = true;
+    if (graceful && stream.shutdown().is_err()) { healthy = false; }
+    if (stream.close().is_err()) { healthy = false; } return healthy;
+}
+pub impl core::io::Read for Transport {
+    pub fn read(&self, output:[u8], offset:i32, count:i32) -> Result<i32,core::io::Error> {
+        if (!self.check()) { return core::result::Err(core::io::Error::Host(110)); }
+        let read:Result<i32,core::io::Error> = match(self.channel) {
+            Channel::Plain(socket) -> socket.read(output,offset,count),
+            Channel::Tls(stream) -> stream.read(output,offset,count)
+        };
+        // Keep a successful transfer's count; check makes any late failure sticky.
+        self.check(); return read;
+    }
+}
+pub impl core::io::Write for Transport {
+    pub fn write(&self, input:[u8], offset:i32, count:i32) -> Result<i32,core::io::Error> {
+        if (!self.check()) { return core::result::Err(core::io::Error::Host(110)); }
+        let sent:Result<i32,core::io::Error> = match(self.channel) {
+            Channel::Plain(socket) -> socket.write(input,offset,count),
+            Channel::Tls(stream) -> stream.write(input,offset,count)
+        };
+        self.check(); return sent;
+    }
+    pub fn flush(&self) -> Result<i32,core::io::Error> {
+        if (!self.check()) { return core::result::Err(core::io::Error::Host(110)); }
+        let result:Result<i32,core::io::Error> = match(self.channel) {
+            Channel::Plain(socket) -> socket.flush(), Channel::Tls(stream) -> stream.flush()
+        };
+        self.check(); return result;
+    }
+}
+// stdin is deliberately outside the network deadline. EOF is mandatory; every
+// attempt (including EINTR) spends one of 1024 calls, plus an excess-byte probe.
+fn read_message(output:&Vec<u8>) -> i32 {
+    if (output.try_reserve(65536).is_err()) { return 4; }
+    let source = std::stream::stdin(); let scratch:[u8;4096] = [0;4096]; let calls:i32 = 0;
+    while (true) {
+        if (calls == 1024) { return 2; } calls += 1;
+        let left:i32 = 65536-output.len(); let count:i32 = left;
+        if (count > 4096) { count = 4096; } if (count == 0) { count = 1; }
+        let read = source.read(scratch,0,count);
+        if (read.is_err()) { if (core::io::is_interrupted(read.unwrap_err())) { continue; } return 2; }
+        let got = read.unwrap(); if (got < 0 || got > count) { return 2; }
+        if (got == 0) { return 0; } if (got > left) { return 2; }
+        if (output.try_extend(view(scratch,got).unwrap()).is_err()) { return 4; }
+    }
+    return 2;
+}
+fn flush(stream:&ext::websocket_stream::Stream<Transport>, transport:&Transport) -> i32 {
+    let steps:i32 = 0;
+    while (steps < 8192) {
+        steps += 1; if (!transport.check()) { return 3; }
+        let flushed = stream.flush(); if (flushed.is_err()) { return stream_status(flushed.unwrap_err()); }
+        if (flushed.unwrap()) { return match(transport.check()) { true -> 0, false -> 3 }; }
+        if (!transport.wait(false)) { return 3; }
+    }
+    return 3;
+}
+fn send(stream:&ext::websocket_stream::Stream<Transport>, transport:&Transport, entropy:&std::entropy::Budget, opcode:i32, payload:View<u8>) -> i32 {
+    let mask:[u8;4] = [0;4];
+    if (std::entropy::fill_bounded(entropy,mask,0,4).is_err()) { return 3; }
+    let queued = stream.send(true,opcode,payload,mask);
+    if (queued.is_err()) { return stream_status(queued.unwrap_err()); }
+    return flush(stream,transport);
+}
+fn conversation(stream:&ext::websocket_stream::Stream<Transport>, transport:&Transport, entropy:&std::entropy::Budget, input:View<u8>, output:&Vec<u8>) -> i32 {
+    let sent = send(stream,transport,entropy,2,input); if (sent != 0) { return sent; }
+    let captured:bool = false; let frames:i32 = 0;
+    while (frames < 256) {
+        if (!transport.check()) { return 3; }
+        let received = stream.receive(); if (received.is_err()) { return stream_status(received.unwrap_err()); }
+        if (received.unwrap().is_none()) { if (!transport.wait(true)) { return 3; } continue; }
+        frames += 1; let frame = received.unwrap().unwrap();
+        let kind:i32 = match(frame.event) {
+            ext::websocket::Event::Pending -> 0, ext::websocket::Event::Text -> 1,
+            ext::websocket::Event::Binary -> 1, ext::websocket::Event::Ping -> 2,
+            ext::websocket::Event::Pong -> 0, ext::websocket::Event::Close -> 3
+        };
+        if (kind == 1 && !captured) {
+            if (output.try_extend(frame.payload).is_err()) { return 4; } captured = true;
+            let close:[u8;2] = [3,232]; let closed = send(stream,transport,entropy,8,view(close,2).unwrap());
+            if (closed != 0) { return closed; }
+        }
+        if (kind == 2) {
+            let pong = send(stream,transport,entropy,10,frame.payload); if (pong != 0) { return pong; }
+        }
+        if (kind == 3) {
+            if (!stream.close_sent()) {
+                let closed = send(stream,transport,entropy,8,frame.payload); if (closed != 0) { return closed; }
+            }
+            if (!captured || frame.close_code != 1000 || !stream.is_closed() || !transport.check()) { return 3; }
+            return 0;
+        }
+    }
+    return 3;
+}
+fn exchange(transport:&Transport, request:View<u8>, accept:View<u8>, entropy:&std::entropy::Budget, input:View<u8>, output:&Vec<u8>) -> i32 {
+    let limits = ext::websocket_upgrade::default_limits(); limits.wire = wire_limits();
+    limits.request_bytes = 16384; limits.buffer_bytes = 65550; limits.io_calls = 4096;
+    limits.read_bytes = 1048576; limits.work = 16777216;
+    let made = ext::websocket_upgrade::client(transport,request,accept,limits);
+    if (made.is_err()) { return upgrade_status(made.unwrap_err()); }
+    let client = made.unwrap(); let status:i32 = 3; let ready:bool = false; let steps:i32 = 0;
+    while (steps < 8192 && !ready) {
+        steps += 1; if (!transport.check()) { break; }
+        let stepped = client.step(); if (stepped.is_err()) { status = upgrade_status(stepped.unwrap_err()); break; }
+        let action:i32 = match(stepped.unwrap()) {
+            ext::websocket_upgrade::Progress::Again -> 0, ext::websocket_upgrade::Progress::NeedRead -> 1,
+            ext::websocket_upgrade::Progress::NeedWrite -> 2, ext::websocket_upgrade::Progress::Ready -> 3
+        };
+        if (action == 3) { ready = true; }
+        if ((action == 1 || action == 2) && !transport.wait(action == 1)) { break; }
+    }
+    if (ready && transport.check()) {
+        let handed = client.into_stream(frame_limits());
+        if (handed.is_ok()) {
+            let stream = handed.unwrap(); status = conversation(stream.borrow(),transport,entropy,input,output); stream.destroy();
+        } else { status = upgrade_status(handed.unwrap_err()); }
+    }
+    client.destroy(); return status;
+}
+fn complete(transport:&Transport, request:View<u8>, accept:View<u8>, entropy:&std::entropy::Budget, input:View<u8>, output:&Vec<u8>) -> i32 {
+    let status:i32 = exchange(transport,request,accept,entropy,input,output);
+    // Library owners have gone away before transport cleanup or publication.
+    if (status == 0 && !transport.check()) { status = 3; }
+    if (!transport.close(status == 0)) { cleanup_note(); if (status == 0) { status = 3; } }
+    return status;
+}
+fn connected(options:&Options, endpoint:core::net::SocketAddr, deadline:core::time::Deadline, now:core::time::Instant,
+    request:View<u8>, accept:View<u8>, entropy:&std::entropy::Budget, input:View<u8>, output:&Vec<u8>) -> i32 {
+    if (options.name.is_none()) {
+        let family = match(endpoint) { core::net::SocketAddr::V4(address) -> std::socket::Family::Ipv4, core::net::SocketAddr::V6(address) -> std::socket::Family::Ipv6 };
+        let opened = std::socket::create(family,std::socket::Kind::Tcp,true);
+        if (opened.is_err()) { return 3; }
+        let socket = opened.unwrap();
+        if (socket.connect_until(endpoint,deadline).is_err()) {
+            if (socket.close().is_err()) { cleanup_note(); } return 3;
+        }
+        let transport = Transport { channel:Channel::Plain(socket.borrow()),deadline:deadline,last:now,failed:false,waits:0 };
+        // socket remains the sole owner until complete has closed it.
+        return complete(transport.borrow(),request,accept,entropy,input,output);
+    }
+    let trust:ext::openssl_tls::Trust = ext::openssl_tls::Trust::DefaultPaths;
+    if (options.ca.is_some()) { trust = ext::openssl_tls::Trust::CaFile(options.ca.unwrap()); }
+    let made = ext::openssl_tls::new(trust,ext::openssl_tls::default_limits());
+    if (made.is_err()) { return match(made.unwrap_err().cause) { ext::openssl_tls::Cause::AllocationFailed -> 4, _ -> 3 }; }
+    let context = made.unwrap(); let identity = ext::openssl_tls::Identity::Dns(options.name.unwrap());
+    if (context.validate_identity(identity).is_err()) { context.destroy(); return 2; }
+    let limits = ext::tls_stream::default_limits();
+    limits.io_calls = 16384; limits.tls_calls = 8192; limits.read_bytes = 1064960; limits.written_bytes = 1064960;
+    let made_stream = ext::tls_stream::connect_with_context_until(endpoint,context.borrow(),identity,limits,deadline);
+    context.destroy();
+    if (made_stream.is_err()) {
+        let failure = made_stream.unwrap_err(); if (failure.cleanup.is_some()) { cleanup_note(); }
+        return tls_status(failure);
+    }
+    let stream = made_stream.unwrap();
+    let transport = Transport { channel:Channel::Tls(stream.borrow()),deadline:deadline,last:now,failed:false,waits:0 };
+    // Session retains its native Context reference. Keep this Stream owner in
+    // lexical scope throughout HTTP, frames, TLS shutdown and socket close.
+    return complete(transport.borrow(),request,accept,entropy,input,output);
+}
+fn run(options:&Options) -> i32 {
+    let parsed = core::net::parse_socket(options.endpoint);
+    if (parsed.is_err() || parsed.unwrap().port() == 0 || options.target.is_empty() || options.target.get(0).unwrap() != 47 || options.target.length > 4096 || options.authority.is_empty() || options.authority.length > 1024) { return 2; }
+    if (options.ca.is_some() && options.name.is_none()) { return 2; }
+    if (options.name.is_some() && ext::host_name::check_dns(options.name.unwrap(),253).is_err()) { return 2; }
+    if (options.ca.is_some() && options.ca.unwrap().is_empty()) { return 2; }
+    let entropy = std::entropy::budget(1024); let nonce:[u8;16] = [0;16];
+    if (std::entropy::fill_bounded(entropy.borrow(),nonce,0,16).is_err()) { return 3; }
+    let start:Vec<u8> = alloc::vec::new();
+    if (start.try_extend(literal("GET ",4)).is_err() || start.try_extend(options.target).is_err() || start.try_extend(literal(" HTTP/1.1",9)).is_err()) { start.destroy(); return 4; }
+    let fields:[ext::http::Field;1] = [ext::http::Field { raw:literal("",0),name:literal("Host",4),value:options.authority,offset:0 }];
+    let encoded = ext::websocket::encode_request(start.as_view(),view(fields,1).unwrap(),view(nonce,16).unwrap(),literal("",0),wire_limits());
+    start.destroy(); if (encoded.is_err()) { return wire_status(encoded.unwrap_err(),true); }
+    let request = encoded.unwrap(); let key:[u8;24] = [0;24]; let accept:[u8;28] = [0;28];
+    if (ext::websocket::key_into(view(nonce,16).unwrap(),view(key,24).unwrap()).is_err() || ext::openssl_websocket::accept_into(view(key,24).unwrap(),view(accept,28).unwrap()).is_err()) { request.destroy(); return 3; }
+    let input:Vec<u8> = alloc::vec::new(); let status:i32 = read_message(input.borrow());
+    if (status != 0) { input.destroy(); request.destroy(); return status; }
+    let now = std::clock::monotonic_now(); if (now.is_err()) { input.destroy(); request.destroy(); return 3; }
+    let deadline = core::time::deadline_after(now.unwrap(),core::time::from_millis(5000));
+    if (deadline.is_err()) { input.destroy(); request.destroy(); return 3; }
+    let output:Vec<u8> = alloc::vec::new();
+    status = connected(options,parsed.unwrap(),deadline.unwrap(),now.unwrap(),request.as_view(),view(accept,28).unwrap(),entropy.borrow(),input.as_view(),output.borrow());
+    request.destroy(); input.destroy();
+    if (status == 0 && !write(output.as_view(),1,1024)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    let specs:[ext::cli::Spec;3] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("tls-name",8),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:3,long:literal("ca-file",7),short:0,arity:ext::cli::Arity::Required }
+    ];
+    let made = ext::cli::parser(values,view(specs,3).unwrap(),ext::cli::Ordering::Intermixed);
+    if (made.is_err()) { return report(2); }
+    let parser = made.unwrap();
+    let options = Options { endpoint:literal("",0),authority:literal("",0),target:literal("",0),name:core::option::None(),ca:core::option::None(),count:0,help:false };
+    while (true) {
+        let parsed = parser.next(); if (parsed.is_err()) { return report(2); }
+        let next = parsed.unwrap(); if (next.is_none()) { break; }
+        let operand:Option<ext::cli::Argument> = match(next.unwrap()) { ext::cli::Event::Operand(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (operand.is_some()) {
+            if (options.count == 3) { return report(2); }
+            let bytes = operand.unwrap().bytes;
+            if (options.count == 0) { options.endpoint = bytes; }
+            if (options.count == 1) { options.authority = bytes; }
+            if (options.count == 2) { options.target = bytes; } options.count += 1;
+        } else {
+            let item:Option<ext::cli::Occurrence> = match(next.unwrap()) { ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None() };
+            let found = item.unwrap();
+            if (found.id == 1) { options.help = true; }
+            if (found.id == 2) { if (options.name.is_some()) { return report(2); } options.name = core::option::Some(found.value.unwrap().bytes); }
+            if (found.id == 3) { if (options.ca.is_some()) { return report(2); } options.ca = core::option::Some(found.value.unwrap().bytes); }
+        }
+    }
+    if (options.help) {
+        let help = literal("Usage: websocket-once ENDPOINT AUTHORITY TARGET [--tls-name DNS] [--ca-file FILE]\nRead one binary message from stdin through EOF; publish the first peer message\nafter a normal WebSocket Close exchange and transport cleanup.\nLimits: 65536 message bytes, 64 fragments, 256 frames, 5-second network deadline.\n",306);
+        if (!write(help,1,64)) { return report(5); } return 0;
+    }
+    if (options.count != 3) { return report(2); }
+    let status = run(options.borrow()); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,16,32768);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, _ -> 2 }); }
+    let values = captured.unwrap(); let status = arguments(values.as_view()); values.destroy(); return status;
+}

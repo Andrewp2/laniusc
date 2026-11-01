@@ -1,0 +1,7 @@
+module app::main;
+import core::endian;
+fn main() -> i32 {
+    let short:[u8;7]=[0;7];
+    let value:u64=core::endian::read_u64_le_or(short,8,0,99);
+    if (value==0) { return 1; } return 2;
+}

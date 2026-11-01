@@ -1,0 +1,138 @@
+// Pure CSR validation and publication contracts; no owning module imports.
+module app::main;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::sparse;
+
+fn kind(error:ext::sparse::Error) -> i32 {
+    return match(error.kind) {
+        ext::sparse::ErrorKind::InvalidLimits -> 1, ext::sparse::ErrorKind::Shape -> 2,
+        ext::sparse::ErrorKind::Bounds -> 3, ext::sparse::ErrorKind::DimensionLimit -> 4,
+        ext::sparse::ErrorKind::EntryLimit -> 5, ext::sparse::ErrorKind::WorkLimit -> 6,
+        ext::sparse::ErrorKind::Offset -> 7, ext::sparse::ErrorKind::Column -> 8,
+        ext::sparse::ErrorKind::Order -> 9, ext::sparse::ErrorKind::NonFinite -> 10,
+        ext::sparse::ErrorKind::NumericalFailure -> 11, ext::sparse::ErrorKind::AllocationFailed -> 12
+    };
+}
+fn raw(rows:i32,cols:i32,offsets:[i32],offset_count:i32,columns:[i32],values:[f64],nnz:i32) -> ext::sparse::CsrView {
+    return ext::sparse::CsrView { rows:rows,cols:cols,
+        offsets:core::slice::view(offsets,offset_count).unwrap(),
+        columns:core::slice::view(columns,nnz).unwrap(),values:core::slice::view(values,nnz).unwrap() };
+}
+fn rejected(view:ext::sparse::CsrView,limits:ext::sparse::Limits,expected:i32,row:i32,entry:i32) {
+    let error:ext::sparse::Error=ext::sparse::validate(view,limits).unwrap_err();
+    assert(kind(error)==expected && error.row==row && error.entry==entry);
+}
+fn unchanged(out:[f64]) { assert(out[0]==91.0 && out[1]==92.0 && out[2]==93.0); }
+fn preflight_failed(view:ext::sparse::CsrView,x:core::slice::View<f64>,out:core::slice::View<f64>,limits:ext::sparse::Limits,expected:i32) {
+    let error:ext::sparse::ProductFailure=ext::sparse::matvec_into(view,x,out,limits).unwrap_err();
+    assert(kind(error.error)==expected && error.completed==0);
+}
+fn canonical_rows_bounds_and_zero_shapes() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let offsets:[i32;3]=[0,2,3]; let columns:[i32;3]=[0,2,1]; let values:[f64;3]=[2.0,-0.0,3.0];
+    let view:ext::sparse::CsrView=ext::sparse::view(2,3,core::slice::view(offsets,3).unwrap(),core::slice::view(columns,3).unwrap(),core::slice::view(values,3).unwrap(),limits).unwrap();
+    assert(ext::sparse::validate(view,limits).unwrap()==3);
+    let first:ext::sparse::Row=ext::sparse::row(view,0,limits).unwrap();
+    assert(first.columns.len()==2 && first.columns.get(0).unwrap()==0 && first.columns.get(1).unwrap()==2);
+    assert(first.values.get(0).unwrap()==2.0 && core::f64::to_bits(first.values.get(1).unwrap())==9223372036854775808);
+    assert(core::f64::to_bits(ext::sparse::get(view,0,1,limits).unwrap())==0);
+    assert(core::f64::to_bits(ext::sparse::get(view,0,2,limits).unwrap())==9223372036854775808);
+    assert(ext::sparse::get(view,1,1,limits).unwrap()==3.0);
+    assert(kind(ext::sparse::row(view,-1,limits).unwrap_err())==3 && kind(ext::sparse::row(view,2,limits).unwrap_err())==3);
+    assert(kind(ext::sparse::get(view,0,-1,limits).unwrap_err())==3 && kind(ext::sparse::get(view,2,0,limits).unwrap_err())==3 && kind(ext::sparse::get(view,0,3,limits).unwrap_err())==3);
+    let empty_offsets:[i32;3]=[0,0,0];
+    let wide_empty:ext::sparse::CsrView=raw(0,3,empty_offsets,1,columns,values,0);
+    let zero_cols:ext::sparse::CsrView=raw(2,0,empty_offsets,3,columns,values,0);
+    let empty:ext::sparse::CsrView=raw(0,0,empty_offsets,1,columns,values,0);
+    assert(ext::sparse::validate(wide_empty,limits).unwrap()==0 && ext::sparse::validate(zero_cols,limits).unwrap()==0 && ext::sparse::validate(empty,limits).unwrap()==0);
+    assert(ext::sparse::row(zero_cols,1,limits).unwrap().values.len()==0 && kind(ext::sparse::row(empty,0,limits).unwrap_err())==3);
+    let x:[f64;3]=[4.0,5.0,6.0]; let output:[f64;2]=[91.0,92.0];
+    assert(ext::sparse::matvec_into(wide_empty,core::slice::view(x,3).unwrap(),core::slice::view(output,0).unwrap(),limits).unwrap()==0);
+    assert(ext::sparse::matvec_into(zero_cols,core::slice::view(x,0).unwrap(),core::slice::view(output,2).unwrap(),limits).unwrap()==2 && output[0]==0.0 && output[1]==0.0);
+}
+fn metadata_limits_precede_memory_access() {
+    let nowhere:ptr=0; let absent_i:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0); let absent_f:[f64]=core::mem::typed_slice_from_raw_parts<f64>(nowhere,0);
+    let offsets:core::slice::View<i32> =core::slice::View { values:absent_i,start:0,length:3 };
+    let columns:core::slice::View<i32> =core::slice::View { values:absent_i,start:0,length:1 };
+    let values:core::slice::View<f64> =core::slice::View { values:absent_f,start:0,length:1 };
+    let view:ext::sparse::CsrView=ext::sparse::CsrView { rows:2,cols:3,offsets:offsets,columns:columns,values:values };
+    let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let invalid:ext::sparse::Limits=limits; invalid.max_dimension=-1; rejected(view,invalid,1,-1,-1);
+    invalid=limits; invalid.max_entries=-1; rejected(view,invalid,1,-1,-1);
+    let broken:ext::sparse::CsrView=view; broken.rows=-1; rejected(broken,limits,2,-1,-1);
+    broken=view; broken.cols=-1; rejected(broken,limits,2,-1,-1);
+    let capped:ext::sparse::Limits=limits; capped.max_dimension=2; rejected(view,capped,4,-1,-1);
+    capped=limits; capped.max_entries=0; rejected(view,capped,5,-1,-1);
+    capped=limits; capped.max_work=0; rejected(view,capped,6,-1,-1);
+    broken=view; broken.offsets.start=-1; rejected(broken,limits,3,-1,-1);
+    broken=view; broken.columns.length=-1; rejected(broken,limits,3,-1,-1);
+    broken=view; broken.values.start=2147483647; rejected(broken,limits,3,-1,-1);
+    broken=view; broken.offsets.length=2; rejected(broken,limits,2,-1,-1);
+    broken=view; broken.values.length=0; rejected(broken,limits,2,-1,-1);
+}
+fn structural_entry_errors_and_phase_work() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits(); let offsets:[i32;3]=[0,2,3]; let columns:[i32;3]=[0,2,1]; let values:[f64;3]=[2.0,0.0,3.0];
+    let view:ext::sparse::CsrView=raw(2,3,offsets,3,columns,values,3);
+    offsets[0]=1; rejected(view,limits,7,0,-1); offsets[0]=0;
+    offsets[1]=4; rejected(view,limits,7,0,-1); offsets[1]=2;
+    offsets[2]=2; rejected(view,limits,7,1,-1); offsets[2]=3;
+    offsets[1]=2; offsets[2]=1; rejected(view,limits,7,1,-1); offsets[2]=3;
+    columns[1]=3; rejected(view,limits,8,0,1); columns[1]=-1; rejected(view,limits,8,0,1);
+    columns[1]=0; rejected(view,limits,9,0,1); columns[0]=2; columns[1]=1; rejected(view,limits,9,0,1); columns[0]=0; columns[1]=2;
+    values[2]=core::f64::nan(); rejected(view,limits,10,1,2); values[2]=core::f64::infinity(); rejected(view,limits,10,1,2); values[2]=3.0;
+    let limited:ext::sparse::Limits=limits; limited.max_work=5; rejected(view,limited,6,-1,-1);
+    limited.max_work=6; assert(ext::sparse::validate(view,limited).unwrap()==3);
+    let no_rows:ext::sparse::CsrView=raw(0,0,offsets,1,columns,values,0);
+    offsets[0]=1; rejected(no_rows,limits,7,-1,-1); offsets[0]=0;
+}
+fn matvec_preflight_and_numerical_prefix() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits(); let offsets:[i32;4]=[0,2,3,0]; let columns:[i32;3]=[0,2,1]; let values:[f64;3]=[2.0,-0.0,3.0];
+    let view:ext::sparse::CsrView=raw(2,3,offsets,3,columns,values,3);
+    let x:[f64;3]=[4.0,5.0,6.0]; let output:[f64;3]=[91.0,92.0,93.0];
+    let xv:core::slice::View<f64> =core::slice::view(x,3).unwrap(); let ov:core::slice::View<f64> =core::slice::view(output,2).unwrap();
+    preflight_failed(view,core::slice::view(x,2).unwrap(),ov,limits,2); unchanged(output);
+    preflight_failed(view,xv,core::slice::view(output,3).unwrap(),limits,2); unchanged(output);
+    let bad:core::slice::View<f64> =xv; bad.start=-1; preflight_failed(view,bad,ov,limits,3); unchanged(output);
+    bad=ov; bad.start=-1; preflight_failed(view,xv,bad,limits,3); unchanged(output);
+    x[2]=core::f64::nan(); let nonfinite:ext::sparse::ProductFailure=ext::sparse::matvec_into(view,xv,ov,limits).unwrap_err();
+    assert(kind(nonfinite.error)==10 && nonfinite.error.row==-1 && nonfinite.error.entry==2 && nonfinite.completed==0); unchanged(output); x[2]=6.0;
+    values[2]=core::f64::infinity(); preflight_failed(view,xv,ov,limits,10); unchanged(output); values[2]=3.0;
+    let limited:ext::sparse::Limits=limits; limited.max_work=7; preflight_failed(view,xv,ov,limited,6); unchanged(output);
+    limited.max_work=8; assert(ext::sparse::matvec_into(view,xv,ov,limited).unwrap()==2 && output[0]==8.0 && output[1]==15.0 && output[2]==93.0);
+    offsets[0]=0; offsets[1]=1; offsets[2]=2; offsets[3]=3; columns[0]=0; columns[1]=0; columns[2]=1;
+    values[0]=2.0; values[1]=core::f64::MAX; values[2]=3.0; x[0]=2.0; x[1]=4.0;
+    output[0]=91.0; output[1]=92.0; output[2]=93.0;
+    let product:ext::sparse::ProductFailure=ext::sparse::matvec_into(raw(3,2,offsets,4,columns,values,3),core::slice::view(x,2).unwrap(),core::slice::view(output,3).unwrap(),limits).unwrap_err();
+    assert(kind(product.error)==11 && product.error.row==1 && product.error.entry==1 && product.completed==1 && output[0]==4.0 && output[1]==92.0 && output[2]==93.0);
+    offsets[0]=0; offsets[1]=1; offsets[2]=3; values[0]=1.0; values[1]=core::f64::MAX; values[2]=core::f64::MAX; x[0]=1.0; x[1]=1.0;
+    output[0]=91.0;
+    let sum:ext::sparse::ProductFailure=ext::sparse::matvec_into(raw(2,2,offsets,3,columns,values,3),core::slice::view(x,2).unwrap(),ov,limits).unwrap_err();
+    assert(kind(sum.error)==11 && sum.error.row==1 && sum.error.entry==2 && sum.completed==1 && output[0]==1.0 && output[1]==92.0 && output[2]==93.0);
+}
+fn borrowed_storage_layouts() {
+    let fixed_offsets:[i32;5]=[99,0,2,3,99]; let fixed_columns:[i32;5]=[99,0,2,1,99]; let fixed_values:[f64;5]=[99.0,2.0,-0.0,3.0,99.0];
+    let off_words:[i32;8]=[0;8]; let col_words:[i32;8]=[0;8]; let val_words:[i32;10]=[0;10];
+    let native_offsets:[i32]=core::mem::typed_slice_from_raw_parts<i32>(core::mem::i32_array_data_ptr(off_words),8);
+    let native_columns:[i32]=core::mem::typed_slice_from_raw_parts<i32>(core::mem::i32_array_data_ptr(col_words),8);
+    let native_values:[f64]=core::mem::typed_slice_from_storage<f64>(core::mem::i32_array_data_ptr(val_words),5);
+    assert(core::mem::slice_stride(fixed_offsets)==4 && core::mem::slice_stride(native_offsets)==4 && core::mem::slice_stride(fixed_values)==-8 && core::mem::slice_stride(native_values)==-8);
+    let mode:i32=0; let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    while (mode<2) {
+        let offsets:[i32]=fixed_offsets; let columns:[i32]=fixed_columns; let values:[f64]=fixed_values;
+        if (mode==1) { offsets=native_offsets; columns=native_columns; values=native_values; }
+        offsets[0]=99; offsets[1]=0; offsets[2]=2; offsets[3]=3; offsets[4]=99;
+        columns[0]=99; columns[1]=0; columns[2]=2; columns[3]=1; columns[4]=99;
+        values[0]=99.0; values[1]=2.0; values[2]=-0.0; values[3]=3.0; values[4]=99.0;
+        let view:ext::sparse::CsrView=ext::sparse::view(2,3,core::slice::view_range(offsets,1,3).unwrap(),core::slice::view_range(columns,1,3).unwrap(),core::slice::view_range(values,1,3).unwrap(),limits).unwrap();
+        let x:[f64;5]=[99.0,4.0,5.0,6.0,99.0]; let out:[f64;4]=[99.0,91.0,92.0,99.0];
+        assert(ext::sparse::matvec_into(view,core::slice::view_range(x,1,3).unwrap(),core::slice::view_range(out,1,2).unwrap(),limits).unwrap()==2 && out[1]==8.0 && out[2]==15.0 && out[0]==99.0 && out[3]==99.0);
+        assert(offsets[0]==99 && offsets[4]==99 && columns[0]==99 && columns[4]==99 && values[0]==99.0 && values[4]==99.0); mode+=1;
+    }
+}
+fn main() -> i32 {
+    canonical_rows_bounds_and_zero_shapes(); metadata_limits_precede_memory_access();
+    structural_entry_errors_and_phase_work(); matvec_preflight_and_numerical_prefix(); borrowed_storage_layouts(); return 0;
+}

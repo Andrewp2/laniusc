@@ -1,6 +1,8 @@
 // Allocation-free endian reads and writes over caller-backed byte views.
 module core::endian;
 import core::bits;
+import core::f32;
+import core::f64;
 import core::wide_u64;
 
 fn has_width(len: i32, offset: i32, width: i32) -> bool {
@@ -161,4 +163,129 @@ pub fn write_wide_u64_le(
     bytes[offset + 6] = core::bits::byte_at_le_or_u32(high, 2, 0);
     bytes[offset + 7] = core::bits::byte_at_le_or_u32(high, 3, 0);
     return true;
+}
+
+// Native widths use the same logical admission and actual slice indexing as
+// the represented-width family. Admit all eight bytes before either u32 part.
+pub fn read_u64_be_or(bytes:[u8],len:i32,offset:i32,fallback:u64) -> u64 {
+    if(!has_width(len,offset,8)) { return fallback; }
+    let high:u32=read_u32_be_or(bytes,len,offset,0);
+    let low:u32=read_u32_be_or(bytes,len,offset+4,0);
+    return ((high as u64)<<32)|(low as u64);
+}
+pub fn read_u64_le_or(bytes:[u8],len:i32,offset:i32,fallback:u64) -> u64 {
+    if(!has_width(len,offset,8)) { return fallback; }
+    let low:u32=read_u32_le_or(bytes,len,offset,0);
+    let high:u32=read_u32_le_or(bytes,len,offset+4,0);
+    return ((high as u64)<<32)|(low as u64);
+}
+pub fn write_u64_be(bytes:[u8],len:i32,offset:i32,value:u64) -> bool {
+    if(!has_width(len,offset,8)) { return false; }
+    let high:u32=(value>>32) as u32;
+    let low:u32=value as u32;
+    let first:bool=write_u32_be(bytes,len,offset,high);
+    let second:bool=write_u32_be(bytes,len,offset+4,low);
+    return first && second;
+}
+pub fn write_u64_le(bytes:[u8],len:i32,offset:i32,value:u64) -> bool {
+    if(!has_width(len,offset,8)) { return false; }
+    let low:u32=value as u32;
+    let high:u32=(value>>32) as u32;
+    let first:bool=write_u32_le(bytes,len,offset,low);
+    let second:bool=write_u32_le(bytes,len,offset+4,high);
+    return first && second;
+}
+
+// Signed conversions preserve the same-width two's-complement bit pattern.
+// Rejected reads return the original fallback before any unsigned decoding.
+pub fn read_i16_be_or(bytes:[u8],len:i32,offset:i32,fallback:i16) -> i16 {
+    if(!has_width(len,offset,2)) { return fallback; }
+    return read_u16_be_or(bytes,len,offset,0) as i16;
+}
+pub fn read_i16_le_or(bytes:[u8],len:i32,offset:i32,fallback:i16) -> i16 {
+    if(!has_width(len,offset,2)) { return fallback; }
+    return read_u16_le_or(bytes,len,offset,0) as i16;
+}
+pub fn write_i16_be(bytes:[u8],len:i32,offset:i32,value:i16) -> bool {
+    if(!has_width(len,offset,2)) { return false; }
+    return write_u16_be(bytes,len,offset,value as u16);
+}
+pub fn write_i16_le(bytes:[u8],len:i32,offset:i32,value:i16) -> bool {
+    if(!has_width(len,offset,2)) { return false; }
+    return write_u16_le(bytes,len,offset,value as u16);
+}
+pub fn read_i32_be_or(bytes:[u8],len:i32,offset:i32,fallback:i32) -> i32 {
+    if(!has_width(len,offset,4)) { return fallback; }
+    return read_u32_be_or(bytes,len,offset,0) as i32;
+}
+pub fn read_i32_le_or(bytes:[u8],len:i32,offset:i32,fallback:i32) -> i32 {
+    if(!has_width(len,offset,4)) { return fallback; }
+    return read_u32_le_or(bytes,len,offset,0) as i32;
+}
+pub fn write_i32_be(bytes:[u8],len:i32,offset:i32,value:i32) -> bool {
+    if(!has_width(len,offset,4)) { return false; }
+    return write_u32_be(bytes,len,offset,value as u32);
+}
+pub fn write_i32_le(bytes:[u8],len:i32,offset:i32,value:i32) -> bool {
+    if(!has_width(len,offset,4)) { return false; }
+    return write_u32_le(bytes,len,offset,value as u32);
+}
+pub fn read_i64_be_or(bytes:[u8],len:i32,offset:i32,fallback:i64) -> i64 {
+    if(!has_width(len,offset,8)) { return fallback; }
+    return read_u64_be_or(bytes,len,offset,0) as i64;
+}
+pub fn read_i64_le_or(bytes:[u8],len:i32,offset:i32,fallback:i64) -> i64 {
+    if(!has_width(len,offset,8)) { return fallback; }
+    return read_u64_le_or(bytes,len,offset,0) as i64;
+}
+pub fn write_i64_be(bytes:[u8],len:i32,offset:i32,value:i64) -> bool {
+    if(!has_width(len,offset,8)) { return false; }
+    return write_u64_be(bytes,len,offset,value as u64);
+}
+pub fn write_i64_le(bytes:[u8],len:i32,offset:i32,value:i64) -> bool {
+    if(!has_width(len,offset,8)) { return false; }
+    return write_u64_le(bytes,len,offset,value as u64);
+}
+
+// Float transfers perform no floating arithmetic or numeric integer casts.
+// Existing exact-bit helpers carry zero signs and NaN payloads unchanged.
+pub fn read_f32_be_or(bytes:[u8],len:i32,offset:i32,fallback:f32) -> f32 {
+    if(!has_width(len,offset,4)) { return fallback; }
+    let bits:u32=read_u32_be_or(bytes,len,offset,0);
+    return core::f32::from_bits(bits);
+}
+pub fn read_f32_le_or(bytes:[u8],len:i32,offset:i32,fallback:f32) -> f32 {
+    if(!has_width(len,offset,4)) { return fallback; }
+    let bits:u32=read_u32_le_or(bytes,len,offset,0);
+    return core::f32::from_bits(bits);
+}
+pub fn write_f32_be(bytes:[u8],len:i32,offset:i32,value:f32) -> bool {
+    if(!has_width(len,offset,4)) { return false; }
+    let bits:u32=core::f32::to_bits(value);
+    return write_u32_be(bytes,len,offset,bits);
+}
+pub fn write_f32_le(bytes:[u8],len:i32,offset:i32,value:f32) -> bool {
+    if(!has_width(len,offset,4)) { return false; }
+    let bits:u32=core::f32::to_bits(value);
+    return write_u32_le(bytes,len,offset,bits);
+}
+pub fn read_f64_be_or(bytes:[u8],len:i32,offset:i32,fallback:f64) -> f64 {
+    if(!has_width(len,offset,8)) { return fallback; }
+    let bits:u64=read_u64_be_or(bytes,len,offset,0);
+    return core::f64::from_bits(bits);
+}
+pub fn read_f64_le_or(bytes:[u8],len:i32,offset:i32,fallback:f64) -> f64 {
+    if(!has_width(len,offset,8)) { return fallback; }
+    let bits:u64=read_u64_le_or(bytes,len,offset,0);
+    return core::f64::from_bits(bits);
+}
+pub fn write_f64_be(bytes:[u8],len:i32,offset:i32,value:f64) -> bool {
+    if(!has_width(len,offset,8)) { return false; }
+    let bits:u64=core::f64::to_bits(value);
+    return write_u64_be(bytes,len,offset,bits);
+}
+pub fn write_f64_le(bytes:[u8],len:i32,offset:i32,value:f64) -> bool {
+    if(!has_width(len,offset,8)) { return false; }
+    let bits:u64=core::f64::to_bits(value);
+    return write_u64_le(bytes,len,offset,bits);
 }

@@ -71,7 +71,10 @@ fn caller_backed_endian_reads_and_writes_execute_on_x86() {
 #[test]
 fn every_public_endian_function_has_a_runtime_case() {
     let source = include_str!("../stdlib/core/endian.lani");
-    let fixture = include_str!("fixtures/stdlib_foundation/core_endian.lani");
+    let fixtures = [
+        include_str!("fixtures/stdlib_foundation/core_endian.lani"),
+        include_str!("fixtures/stdlib_foundation/native_endian/contracts.lani"),
+    ];
     let mut covered = 0;
     for line in source.lines() {
         let Some(tail) = line.strip_prefix("pub fn ") else {
@@ -82,8 +85,11 @@ fn every_public_endian_function_has_a_runtime_case() {
             .next()
             .expect("endian function has a name");
         let call = format!("core::endian::{name}(");
-        assert!(fixture.contains(&call), "{call} lacks a runtime case");
+        assert!(
+            fixtures.iter().any(|fixture| fixture.contains(&call)),
+            "{call} lacks a runtime case"
+        );
         covered += 1;
     }
-    assert_eq!(covered, 12);
+    assert_eq!(covered, 36);
 }

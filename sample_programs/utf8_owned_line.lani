@@ -1,25 +1,49 @@
-// Read a bounded UTF-8 line into caller storage, copy to packed owned text,
-// append a smiley, and print the text and Unicode scalar count.
+// Read one owned UTF-8 line, append a smiley, and print text/scalar count.
+// Admit 12 payload bytes plus LF and at most 64 fill/consume delegations.
+// The 1024-byte provider may read ahead; overlong input is not drained.
 module app::main;
+import alloc::buffered;
+import alloc::io;
 import alloc::string;
+import core::io;
 import core::result;
-import core::utf8;
 import std::io_byte;
 import std::io_decimal;
-import std::io_line;
 import std::io_utf8;
+import std::stream;
 
 fn main() -> i32 {
-    let line: [i32; 12] = [0; 12];
-    let length: i32 = std::io_line::read_stdin_lf_line_into_i32(line, 12);
-    if (length < 0) { return 2; }
-    if (!core::utf8::codes_are_valid(line, length)) { return 3; }
-    let bytes: [u8; 12] = [0; 12];
-    let index: i32 = 0;
-    while (index < length) { bytes[index] = line[index] as u8; index += 1; }
-    let copied: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, length);
-    if (core::result::is_err(copied)) { return 4; }
-    let text: alloc::string::String = core::result::unwrap(copied);
+    let input: std::stream::Descriptor = std::stream::stdin();
+    let allocated: core::result::Result<alloc::buffered::Reader<std::stream::Descriptor>, core::io::Error> = alloc::buffered::reader(input.borrow(), 1024);
+    if (allocated.is_err()) { return 4; }
+    let reader: alloc::buffered::Reader<std::stream::Descriptor> = allocated.unwrap();
+    let limits: alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes: 13, max_calls: 64 };
+    let received: core::result::Result<alloc::io::ReadLine, alloc::io::BufferedReadFailure> = alloc::io::read_line(reader.borrow(), limits);
+    if (received.is_err()) {
+        let failure: alloc::io::BufferedReadFailure = received.unwrap_err();
+        let status: i32 = match (failure.cause) {
+            alloc::io::ReadError::Text(text_error) -> 3,
+            alloc::io::ReadError::Storage(storage_error) -> 4,
+            _ -> 2,
+        };
+        // A terminal 13-byte payload is overlong even when it is malformed.
+        if (status == 3 && failure.bytes.len() > 12) {
+            if (failure.bytes.at(failure.bytes.len() - 1) != 10) { status = 2; }
+        }
+        failure.destroy(); reader.discard();
+        return status;
+    }
+    let record: alloc::io::ReadLine = received.unwrap();
+    reader.discard();
+    if (record.text.is_empty()) { record.destroy(); return 2; }
+    // Transfer cleanup authority; keep the record alias unused afterward.
+    let text: alloc::string::String = record.text;
+    let length: i32 = text.byte_len();
+    if (text.byte_at(length - 1).unwrap() == 10) {
+        length -= 1;
+        text.try_truncate(length).unwrap();
+    }
+    if (length > 12) { text.destroy(); return 2; }
     if (core::result::is_err(text.try_push_scalar(128578))) { text.destroy(); return 5; }
     let count: i32 = text.scalar_count();
     if (!std::io_utf8::write_stdout_bytes(text.as_bytes(), text.byte_len())) { text.destroy(); return 7; }

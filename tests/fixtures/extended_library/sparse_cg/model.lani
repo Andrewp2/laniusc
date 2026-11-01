@@ -1,0 +1,40 @@
+// Test-only transport:8u64 header n,nnz,layout,Jacobi,maxiter,reserved,rtolbits,atolbits;
+// CSR offsets(i32),columns(i32),values(f64),rhs(f64),initial(f64).
+// Output11u64 status,wrappedSparse,row,entry,attempt,stop,iters,restarts,n,rhsnorm,resnorm;
+// success appends n solution f64 bit patterns. Error stop marker is2.
+module app::main;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::sparse;
+import ext::sparse_cg;
+import std::io;
+fn read_exact(pointer:ptr,count:i32,eof:bool) -> bool { let done:i32=0; while(done<count) { let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got>=0); if(got==0) { assert(eof && done==0); return false; } done+=got; } return true; }
+fn write_all(pointer:ptr,count:i32) { let done:i32=0; while(done<count) { let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(got>0); done+=got; } }
+fn get32(bytes:[u8],offset:i32) -> i32 { let value:u32=0; let i:i32=0; while(i<4) { value|=(bytes[offset+i] as u32)<<(i*8); i+=1; } return value as i32; }
+fn get64(bytes:[u8],offset:i32) -> u64 { let value:u64=0; let i:i32=0; while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; } return value; }
+struct Output { bytes:[u8], pointer:ptr, used:i32 }
+impl Output { fn borrow(&self) -> &Output { return self; } fn flush(&self) { write_all(self.pointer,self.used); self.used=0; } fn word(&self,value:u64) { if(self.used==4096) { self.flush(); } let i:i32=0; while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; } self.used+=8; } }
+fn sparse_code(kind:ext::sparse::ErrorKind) -> i32 { return match(kind) { ext::sparse::ErrorKind::InvalidLimits->1,ext::sparse::ErrorKind::Shape->2,ext::sparse::ErrorKind::Bounds->3,ext::sparse::ErrorKind::DimensionLimit->4,ext::sparse::ErrorKind::EntryLimit->5,ext::sparse::ErrorKind::WorkLimit->6,ext::sparse::ErrorKind::Offset->7,ext::sparse::ErrorKind::Column->8,ext::sparse::ErrorKind::Order->9,ext::sparse::ErrorKind::NonFinite->10,ext::sparse::ErrorKind::NumericalFailure->11,ext::sparse::ErrorKind::AllocationFailed->12 }; }
+fn code(kind:ext::sparse_cg::ErrorKind) -> i32 { return match(kind) { ext::sparse_cg::ErrorKind::Sparse(inner)->1,ext::sparse_cg::ErrorKind::InvalidOptions->2,ext::sparse_cg::ErrorKind::Shape->3,ext::sparse_cg::ErrorKind::Bounds->4,ext::sparse_cg::ErrorKind::EntryLimit->5,ext::sparse_cg::ErrorKind::WorkLimit->6,ext::sparse_cg::ErrorKind::NonFinite->7,ext::sparse_cg::ErrorKind::NonSymmetric->8,ext::sparse_cg::ErrorKind::NonPositiveDiagonal->9,ext::sparse_cg::ErrorKind::NonPositiveCurvature->10,ext::sparse_cg::ErrorKind::Breakdown->11,ext::sparse_cg::ErrorKind::NumericalFailure->12,ext::sparse_cg::ErrorKind::AllocationFailed->13 }; }
+fn run(bytes:[u8],output:&Output) {
+ let n:i32=get64(bytes,0) as i32; let nnz:i32=get64(bytes,8) as i32; let layout:i32=get64(bytes,16) as i32; let jacobi:i32=get64(bytes,24) as i32; let maxiter:i32=get64(bytes,32) as i32;
+ let offsets:[i32;11]=[-777;11]; let columns:[i32;66]=[-777;66]; let native_values:[f64;66]=[12345.0;66]; let values_words:[i32;132]=[0;132]; let storage_values:[f64]=core::mem::typed_slice_from_storage<f64>(core::mem::i32_array_data_ptr(values_words),66);
+ let native_b:[f64;10]=[12345.0;10]; let native_x:[f64;10]=[12345.0;10]; let b_words:[i32;20]=[0;20]; let x_words:[i32;20]=[0;20]; let storage_b:[f64]=core::mem::typed_slice_from_storage<f64>(core::mem::i32_array_data_ptr(b_words),10); let storage_x:[f64]=core::mem::typed_slice_from_storage<f64>(core::mem::i32_array_data_ptr(x_words),10); assert(core::mem::slice_stride(native_values)<0 && core::mem::slice_stride(storage_values)==-8);
+ let values:[f64]=native_values; let rhs:[f64]=native_b; let initial:[f64]=native_x; if(layout==1) { values=storage_values; rhs=storage_b; initial=storage_x; } let i:i32=0; while(i<66) { values[i]=12345.0; i+=1; } i=0; while(i<10) { rhs[i]=12345.0; initial[i]=12345.0; i+=1; }
+ let cursor:i32=64; let offset_start:i32=cursor; i=0; while(i<=n) { offsets[i+1]=get32(bytes,cursor); cursor+=4; i+=1; } let column_start:i32=cursor; i=0; while(i<nnz) { columns[i+1]=get32(bytes,cursor); cursor+=4; i+=1; } let value_start:i32=cursor; i=0; while(i<nnz) { values[i+1]=core::f64::from_bits(get64(bytes,cursor)); cursor+=8; i+=1; } let rhs_start:i32=cursor; i=0; while(i<n) { rhs[i+1]=core::f64::from_bits(get64(bytes,cursor)); cursor+=8; i+=1; } let initial_start:i32=cursor; i=0; while(i<n) { initial[i+1]=core::f64::from_bits(get64(bytes,cursor)); cursor+=8; i+=1; }
+ let matrix:ext::sparse::CsrView=ext::sparse::CsrView { rows:n,cols:n,offsets:core::slice::view_range(offsets,1,n+1).unwrap(),columns:core::slice::view_range(columns,1,nnz).unwrap(),values:core::slice::view_range(values,1,nnz).unwrap() };
+ let preconditioner:ext::sparse_cg::Preconditioner=ext::sparse_cg::Preconditioner::None; if(jacobi==1) { preconditioner=ext::sparse_cg::Preconditioner::Jacobi; }
+ let options:ext::sparse_cg::Options=ext::sparse_cg::Options { max_iterations:maxiter,rtol:core::f64::from_bits(get64(bytes,48)),atol:core::f64::from_bits(get64(bytes,56)),preconditioner:preconditioner }; let limits:ext::sparse::Limits=ext::sparse::default_limits();
+ let result:core::result::Result<ext::sparse_cg::Solution,ext::sparse_cg::Error> =ext::sparse_cg::solve(matrix,core::slice::view_range(rhs,1,n).unwrap(),core::slice::view_range(initial,1,n).unwrap(),options,limits);
+ if(result.is_err()) { let error:ext::sparse_cg::Error=result.unwrap_err(); let wrapped:i32=match(error.kind) { ext::sparse_cg::ErrorKind::Sparse(inner)->sparse_code(inner),_->0 }; output.word(code(error.kind) as u64); output.word(wrapped as u64); output.word(error.row as u64); output.word(error.entry as u64); output.word(error.iteration as u64); output.word(2); output.word(0); output.word(0); output.word(0); output.word(0); output.word(0); }
+ else { let solution:ext::sparse_cg::Solution=result.unwrap(); let stop:i32=match(solution.stop) { ext::sparse_cg::Stop::Converged->0,ext::sparse_cg::Stop::IterationLimit->1 }; output.word(0); output.word(0); output.word((-1) as u64); output.word((-1) as u64); output.word((-1) as u64); output.word(stop as u64); output.word(solution.iterations as u64); output.word(solution.restarts as u64); output.word(solution.x.len() as u64); output.word(core::f64::to_bits(solution.rhs_norm)); output.word(core::f64::to_bits(solution.residual_norm)); i=0; while(i<solution.x.len()) { output.word(core::f64::to_bits(solution.x.get(i).unwrap())); i+=1; } solution.destroy(); }
+ i=0; while(i<=n) { assert(offsets[i+1]==get32(bytes,offset_start+i*4)); i+=1; } i=0; while(i<nnz) { assert(columns[i+1]==get32(bytes,column_start+i*4) && core::f64::to_bits(values[i+1])==get64(bytes,value_start+i*8)); i+=1; } i=0; while(i<n) { assert(core::f64::to_bits(rhs[i+1])==get64(bytes,rhs_start+i*8) && core::f64::to_bits(initial[i+1])==get64(bytes,initial_start+i*8)); i+=1; }
+ assert(offsets[0]==-777 && offsets[n+2]==-777 && columns[0]==-777 && columns[nnz+1]==-777 && values[0]==12345.0 && values[nnz+1]==12345.0 && rhs[0]==12345.0 && rhs[n+1]==12345.0 && initial[0]==12345.0 && initial[n+1]==12345.0);
+}
+fn main() -> i32 {
+ let input_words:[i32;1024]=[0;1024]; let pointer:ptr=core::mem::i32_array_data_ptr(input_words); let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,4096); let output_words:[i32;1024]=[0;1024]; let output_ptr:ptr=core::mem::i32_array_data_ptr(output_words); let output_bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(output_ptr,4096); let output:Output=Output { bytes:output_bytes,pointer:output_ptr,used:0 };
+ while(read_exact(pointer,64,true)) { let n:u64=get64(bytes,0); let nnz:u64=get64(bytes,8); let layout:u64=get64(bytes,16); let jacobi:u64=get64(bytes,24); let maxiter:u64=get64(bytes,32); assert(n<=8 && nnz<=64 && layout<=1 && jacobi<=1 && maxiter<=128); let length:i32=((n+1)*4+nnz*12+n*16) as i32; assert(read_exact(pointer+64,length,false)); run(bytes,output.borrow()); }
+ output.flush(); return 0;
+}

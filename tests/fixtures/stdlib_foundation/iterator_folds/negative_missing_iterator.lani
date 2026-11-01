@@ -1,0 +1,16 @@
+module app::main;
+import core::iter;
+import core::option;
+struct BackOnly {}
+impl BackOnly { fn borrow(&self) -> &BackOnly { return self; } }
+pub impl core::iter::DoubleEndedIterator<i32> for BackOnly {
+    pub fn next_back(&self) -> core::option::Option<i32> { return core::option::None(); }
+}
+struct Sum {}
+impl Sum { fn borrow(&self) -> &Sum { return self; } }
+pub impl core::iter::Folder<i32,i32> for Sum { pub fn apply(&self,accumulator:i32,value:i32) -> i32 { return accumulator+value; } }
+fn main() -> i32 {
+    let source:BackOnly=BackOnly {}; let folder:Sum=Sum {};
+    let rejected:core::option::Option<i32> =core::iter::reduce<BackOnly,Sum,i32>(source.borrow(),folder.borrow()); // rejected_fold_bound
+    return 0;
+}

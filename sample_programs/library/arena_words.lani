@@ -8,8 +8,10 @@ import alloc::vec;
 import core::cmp;
 import core::decimal;
 import core::io;
+import core::iter;
 import core::mem;
 import core::option;
+import core::ordering;
 import core::result;
 import core::slice;
 import ext::cli;
@@ -18,15 +20,10 @@ import std::stream;
 
 struct Key { bytes: core::slice::View<u8> }
 fn compare(left: Key, right: Key) -> i32 {
-    let index: i32 = 0; let count: i32 = left.bytes.len();
-    if (right.bytes.len() < count) { count = right.bytes.len(); }
-    while (index < count) {
-        let a: u8 = left.bytes.values[left.bytes.start+index];
-        let b: u8 = right.bytes.values[right.bytes.start+index];
-        if (a < b) { return -1; } if (a > b) { return 1; } index += 1;
-    }
-    if (left.bytes.len() < right.bytes.len()) { return -1; }
-    if (left.bytes.len() > right.bytes.len()) { return 1; } return 0;
+    let a: core::slice::Iter<u8> = left.bytes.iter();
+    let b: core::slice::Iter<u8> = right.bytes.iter();
+    let order: core::ordering::Ordering = core::iter::cmp<core::slice::Iter<u8>,core::slice::Iter<u8>,u8>(a.borrow(),b.borrow());
+    return core::ordering::to_i32(order);
 }
 pub impl core::cmp::Eq<Key> for Key {
     pub fn eq(left: Key, right: Key) -> bool { return compare(left,right) == 0; }

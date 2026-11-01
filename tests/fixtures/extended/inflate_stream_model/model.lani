@@ -1,0 +1,212 @@
+// Test-only resumable decoder adapter. Input and output are recycled after each step.
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::inflate;
+import ext::compression;
+import std::io;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn byte(&self,value:u8) {
+        if(self.used==4096) { self.flush(); }
+        self.bytes[self.used]=value; self.used+=1;
+    }
+    fn word(&self,value:u64) {
+        let index:i32=0;
+        while(index<8) { self.byte(((value>>(index*8))&255) as u8); index+=1; }
+    }
+}
+fn raw_code(error:ext::inflate::Error) -> i32 {
+    return match(error) { ext::inflate::Error::Bounds -> 1,ext::inflate::Error::UnexpectedEof -> 2,
+        ext::inflate::Error::InvalidBlockType -> 3,ext::inflate::Error::InvalidStoredLength -> 4,
+        ext::inflate::Error::InvalidCodeLengths -> 5,ext::inflate::Error::InvalidSymbol -> 6,
+        ext::inflate::Error::InvalidDistance -> 7,ext::inflate::Error::OutputTooSmall -> 8 };
+}
+fn frame_code(error:ext::compression::Error) -> i32 {
+    return match(error) { ext::compression::Error::Bounds -> 1,ext::compression::Error::InputLimit -> 2,
+        ext::compression::Error::OutputLimit -> 3,ext::compression::Error::MemberLimit -> 4,
+        ext::compression::Error::AllocationFailed -> 5,ext::compression::Error::CapacityOverflow -> 6,
+        ext::compression::Error::Truncated -> 7,ext::compression::Error::Header -> 8,
+        ext::compression::Error::UnsupportedMethod -> 9,ext::compression::Error::UnsupportedWindow -> 10,
+        ext::compression::Error::UnsupportedDictionary -> 11,ext::compression::Error::Checksum -> 12,
+        ext::compression::Error::SizeMismatch -> 13,ext::compression::Error::TrailingData -> 14,
+        ext::compression::Error::Deflate(error) -> 100+raw_code(error),
+        ext::compression::Error::Encode(error) -> 200 };
+}
+fn status(value:ext::inflate::Status) -> i32 {
+    return match(value) { ext::inflate::Status::NeedInput -> 1,ext::inflate::Status::NeedOutput -> 2,ext::inflate::Status::Done -> 3 };
+}
+struct Observation { read:i32,written:i32,status:i32,error:i32 }
+struct Harness { raw:ext::inflate::Decoder,framed:ext::compression::Decoder,kind:i32 }
+impl Harness {
+    fn borrow(&self) -> &Harness { return self; }
+    fn step(&self,input:core::slice::View<u8>,output:core::slice::View<u8>,final_input:bool) -> Observation {
+        if(self.kind==0) {
+            let result:core::result::Result<ext::inflate::Step,ext::inflate::Failure> = self.raw.step(input,output,final_input);
+            if(result.is_err()) { let failure:ext::inflate::Failure=result.unwrap_err(); return Observation { read:failure.read,written:failure.written,status:0,error:raw_code(failure.error) }; }
+            let progress:ext::inflate::Step=result.unwrap(); return Observation { read:progress.read,written:progress.written,status:status(progress.status),error:0 };
+        }
+        let result:core::result::Result<ext::inflate::Step,ext::compression::DecodeFailure> = self.framed.step(input,output,final_input);
+        if(result.is_err()) { let failure:ext::compression::DecodeFailure=result.unwrap_err(); return Observation { read:failure.read,written:failure.written,status:0,error:frame_code(failure.error) }; }
+        let progress:ext::inflate::Step=result.unwrap(); return Observation { read:progress.read,written:progress.written,status:status(progress.status),error:0 };
+    }
+    fn done(&self) -> bool { if(self.kind==0) { return self.raw.is_done(); } return self.framed.is_done(); }
+    fn failed(&self) -> bool { if(self.kind==0) { return self.raw.is_failed(); } return self.framed.is_failed(); }
+    fn counters(&self,output:&Output) {
+        if(self.kind==0) { output.word(0); output.word(0); output.word(0); }
+        else { output.word(self.framed.total_read()); output.word(self.framed.total_written()); output.word(self.framed.members() as u64); }
+    }
+}
+fn fill_output(destination:[u8],call:i32) {
+    let index:i32=0; while(index<520) { destination[index]=((193+call%29+index*7)&255) as u8; index+=1; }
+}
+fn output_capacity(mode:i32,call:i32) -> i32 {
+    if(mode==0) { return 509; }
+    if(mode==1) {
+        let sizes:[i32;8]=[0,1,0,3,7,0,31,509]; return sizes[call%8];
+    }
+    let sizes:[i32;6]=[0,127,509,1,509,257]; return sizes[call%6];
+}
+fn next_frontier(mode:i32,frontier:i32,length:i32,turn:i32) -> i32 {
+    if(mode==0 || mode==1) { return length; }
+    let amount:i32=1;
+    if(mode==3) { let sizes:[i32;8]=[0,1,2,0,7,31,128,509]; amount=sizes[turn%8]; }
+    if(amount>length-frontier) { amount=length-frontier; }
+    return frontier+amount;
+}
+fn emit(record:i32,pass:i32,call:i32,offered:i32,capacity:i32,final_input:bool,value:Observation,harness:&Harness,destination:[u8],output:&Output) {
+    output.word(record as u64); output.word(pass as u64); output.word(call as u64);
+    output.word(offered as u64); output.word(capacity as u64); output.word(final_input as u64);
+    output.word(value.read as u64); output.word(value.written as u64); output.word(value.status as u64); output.word(value.error as u64);
+    output.word(harness.done() as u64); output.word(harness.failed() as u64); harness.counters(output);
+    let index:i32=0; while(index<520) { output.byte(destination[index]); index+=1; }
+}
+fn stream(harness:&Harness,header:[u8],original:[u8],source:[u8],destination:[u8],pass:i32,output:&Output) {
+    let length:i32=get64(header,16) as i32;
+    let mode:i32=get64(header,56) as i32; let output_mode:i32=get64(header,72) as i32;
+    let defer_final:bool=get64(header,80)!=0;
+    if(pass==1) { mode=0; output_mode=0; defer_final=false; }
+    let frontier:i32=0;
+    if(mode==0) { frontier=length; }
+    if(mode==1) { frontier=get64(header,64) as i32; }
+    let final_input:bool=frontier==length && !defer_final;
+    let position:i32=0; let call:i32=0; let input_turn:i32=0; let finished:bool=false;
+    let index:i32=0;
+    while(index<length+8) { source[index]=((81+index*11)&255) as u8; index+=1; }
+    index=0; while(index<length) { source[4+index]=original[index]; index+=1; }
+    while(!finished) {
+        assert(call<20000); let offered:i32=frontier-position; let capacity:i32=output_capacity(output_mode,call);
+        fill_output(destination,call);
+        let input:core::slice::View<u8> =core::slice::View { values:source,start:4+position,length:offered };
+        let target:core::slice::View<u8> =core::slice::View { values:destination,start:4,length:capacity };
+        let value:Observation=harness.step(input,target,final_input);
+        assert(value.read>=0 && value.read<=offered && value.written>=0 && value.written<=capacity);
+        index=position; while(index<frontier) { assert(source[4+index]==original[index]); index+=1; }
+        emit(0,pass,call,offered,capacity,final_input,value,harness,destination,output);
+        index=position; while(index<position+value.read) { source[4+index]=((index*17+43)&255) as u8; index+=1; }
+        position+=value.read;
+        if(value.error!=0 || value.status==3) { finished=true; }
+        else {
+            assert(value.status==1 || value.status==2);
+            if(value.status==1) {
+                if(frontier==length) { final_input=true; }
+                else {
+                    frontier=next_frontier(mode,frontier,length,input_turn); input_turn+=1;
+                    if(frontier==length && !defer_final) { final_input=true; }
+                }
+            }
+        }
+        call+=1;
+    }
+    // Terminal observations must not dereference recycled bytes or mutate output.
+    fill_output(destination,call);
+    let empty:core::slice::View<u8> =core::slice::View { values:source,start:4+position,length:0 };
+    let target:core::slice::View<u8> =core::slice::View { values:destination,start:4,length:0 };
+    emit(1,pass,call,0,0,true,harness.step(empty,target,true),harness,destination,output); call+=1;
+    fill_output(destination,call);
+    let invalid:core::slice::View<u8> =core::slice::View { values:source,start:-1,length:0 };
+    emit(2,pass,call,0,0,true,harness.step(invalid,target,true),harness,destination,output);
+    output.word(4); output.word(pass as u64); output.word(position as u64); output.word(length as u64);
+    index=0; while(index<length+8) { output.byte(source[index]); index+=1; }
+}
+fn run(header:[u8],original:[u8],output:&Output) {
+    let kind:i32=get64(header,0) as i32; let layout:u64=get64(header,8);
+    let source_native:[u8;70008]=[0;70008]; let source_words:[i32;17502]=[0;17502];
+    let destination_native:[u8;520]=[0;520]; let destination_words:[i32;130]=[0;130];
+    let history_native:[u8;32776]=[0;32776]; let history_words:[i32;8194]=[0;8194];
+    let tables:[i32;715]=[0;715];
+    let source:[u8]=source_native; let destination:[u8]=destination_native; let history:[u8]=history_native;
+    if((layout&1)!=0) { source=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(source_words),70008); }
+    if((layout&2)!=0) { destination=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(destination_words),520); }
+    if((layout&4)!=0) { history=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(history_words),32776); }
+    output.word(core::mem::slice_stride(source) as i64 as u64); output.word(core::mem::slice_stride(destination) as i64 as u64);
+    output.word(core::mem::slice_stride(history) as i64 as u64); output.word(core::mem::slice_stride(tables) as i64 as u64);
+    let index:i32=0;
+    while(index<4) { history[index]=(211+index) as u8; history[32772+index]=(231+index) as u8; tables[index]=-131-index; tables[711+index]=-151-index; index+=1; }
+    let history_view:core::slice::View<u8> =core::slice::View { values:history,start:4,length:32768 };
+    let workspace:core::slice::View<i32> =core::slice::View { values:tables,start:4,length:707 };
+    let format:ext::compression::Format=ext::compression::Format::RawDeflate;
+    if(kind==2) { format=ext::compression::Format::Zlib; }
+    if(kind==3) { format=ext::compression::Format::Gzip; }
+    let limits:ext::compression::Limits=ext::compression::Limits { max_input:get64(header,32) as i32,max_output:get64(header,40) as i32,max_members:get64(header,48) as i32 };
+    let harness:Harness=Harness { raw:ext::inflate::decoder(history_view,workspace,get64(header,24) as i32).unwrap(),
+        framed:ext::compression::decoder(history_view,workspace,format,limits).unwrap(),kind:kind };
+    stream(harness.borrow(),header,original,source,destination,0,output);
+    if(get64(header,88)!=0) {
+        let reset:bool=false;
+        if(kind==0) { reset=harness.raw.reset(get64(header,24) as i32).unwrap(); }
+        else { reset=harness.framed.reset(format,limits).unwrap(); }
+        output.word(3); output.word(reset as u64); output.word(harness.done() as u64); output.word(harness.failed() as u64); harness.counters(output);
+        stream(harness.borrow(),header,original,source,destination,1,output);
+    }
+    output.word(5); index=0;
+    while(index<4) { output.byte(history[index]); output.byte(history[32772+index]); index+=1; }
+    index=0; while(index<4) { output.word(tables[index] as i64 as u64); output.word(tables[711+index] as i64 as u64); index+=1; }
+}
+fn main() -> i32 {
+    let header_words:[i32;24]=[0;24]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,96);
+    let input_words:[i32;17500]=[0;17500]; let input_pointer:ptr=core::mem::i32_array_data_ptr(input_words);
+    let input:[u8]=core::mem::typed_slice_from_raw_parts<u8>(input_pointer,70000);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    while(read_exact(header_pointer,96,true)) {
+        assert(get64(header,0)<=3 && get64(header,8)<=7 && get64(header,16)<=70000 && get64(header,56)<=3 && get64(header,64)<=get64(header,16) && get64(header,72)<=2 && get64(header,88)<=1);
+        assert(read_exact(input_pointer,get64(header,16) as i32,false)); run(header,input,output.borrow());
+    }
+    output.flush(); return 0;
+}

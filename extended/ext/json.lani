@@ -1,8 +1,10 @@
 // Owned JSON documents. RFC 8259 grammar with Unicode-scalar strings.
 // One owner frees the entire document; NodeId values borrow that owner.
 module ext::json;
+import alloc::io;
 import alloc::string;
 import core::decimal;
+import core::io;
 import core::option;
 import core::result;
 import core::text;
@@ -613,92 +615,237 @@ pub fn parse(input: alloc::string::String, options: Options) -> core::result::Re
     return core::result::Ok(parser.document);
 }
 
-struct Encoder { output: alloc::string::String, maximum: i32, failure: Error }
-impl Encoder {
-    fn push(&self, scalar: u32) -> bool {
-        let width: i32 = core::utf8::encoded_len_or(scalar, 0) as i32;
-        if (width == 0) { self.failure = error(ErrorKind::InvalidSurrogate, -1); return false; }
-        if (width > self.maximum - self.output.byte_len()) { self.failure = error(ErrorKind::OutputLimit, -1); return false; }
-        if (core::result::is_err(self.output.try_push_scalar(scalar))) { self.failure = error(ErrorKind::AllocationFailed, -1); return false; }
-        return true;
-    }
-    fn literal(&self, bytes: [u8], count: i32) -> bool {
-        let index: i32 = 0;
-        while (index < count) { if (!self.push(bytes[index] as u32)) { return false; } index += 1; }
-        return true;
-    }
-    fn raw(&self, text: alloc::string::String) -> bool {
-        if (text.byte_len() > self.maximum - self.output.byte_len()) { self.failure = error(ErrorKind::OutputLimit, -1); return false; }
-        if (core::result::is_err(self.output.try_append(text))) { self.failure = error(ErrorKind::AllocationFailed, -1); return false; }
-        return true;
-    }
-    fn quoted(&self, text: alloc::string::String) -> bool {
-        if (!self.push(34)) { return false; }
-        let offset: i32 = 0;
-        while (offset < text.byte_len()) {
-            let scalar: u32 = core::option::unwrap_or(text.scalar_at_byte(offset), 4294967295);
-            let width: i32 = core::utf8::encoded_len_or(scalar, 0) as i32;
-            if (width == 0) { self.failure = error(ErrorKind::InvalidSurrogate, -1); return false; }
-            if (scalar == 34 || scalar == 92) {
-                if (!self.push(92) || !self.push(scalar)) { return false; }
-            } else {
-                if (scalar < 32) {
-                    let prefix: [u8; 4] = [92, 117, 48, 48];
-                    if (!self.literal(prefix, 4) || !self.push(hex_digit(scalar / 16)) || !self.push(hex_digit(scalar % 16))) { return false; }
-                } else { if (!self.push(scalar)) { return false; } }
-            }
-            offset += width;
-        }
-        return self.push(34);
-    }
-    fn value(&self, node: Node) -> bool {
-        let kind: i32 = tag(node.kind);
-        if (kind == 0) { let word: [u8; 4] = [110, 117, 108, 108]; return self.literal(word, 4); }
-        if (kind == 1) {
-            if (node.flag) { let word: [u8; 4] = [116, 114, 117, 101]; return self.literal(word, 4); }
-            let word: [u8; 5] = [102, 97, 108, 115, 101]; return self.literal(word, 5);
-        }
-        if (kind == 2) { return self.raw(node.text); }
-        if (kind == 3) { return self.quoted(node.text); }
-        if (kind == 4) { return self.push(91); }
-        return self.push(123);
-    }
-    fn close(&self, kind: Kind) -> bool {
-        if (tag(kind) == 4) { return self.push(93); }
-        return self.push(125);
-    }
-    fn run(&self, document: Document) -> bool {
-        let current: NodeId = 0;
-        while (current >= 0) {
-            let node: Node = document.nodes.at(current);
-            if (node.parent >= 0) {
-                let parent: Node = document.nodes.at(node.parent);
-                if (tag(parent.kind) == 5 && (!self.quoted(node.key) || !self.push(58))) { return false; }
-            }
-            if (!self.value(node)) { return false; }
-            if (tag(node.kind) >= 4) {
-                if (node.first >= 0) { current = node.first; continue; }
-                if (!self.close(node.kind)) { return false; }
-            }
-            while (true) {
-                if (node.next >= 0) {
-                    if (!self.push(44)) { return false; }
-                    current = node.next;
-                    break;
+// The same byte machine serves preflight and emission. Links supply the
+// traversal stack: each first/next/parent edge is followed only a constant
+// number of times. A byte or escape advances once; no prefix is rescanned.
+const ENCODE_NODE: i32 = 0;
+const ENCODE_KEY: i32 = 1;
+const ENCODE_COLON: i32 = 2;
+const ENCODE_VALUE: i32 = 3;
+const ENCODE_TEXT: i32 = 4;
+const ENCODE_NUMBER: i32 = 5;
+const ENCODE_LITERAL: i32 = 6;
+const ENCODE_CHILDREN: i32 = 7;
+const ENCODE_AFTER: i32 = 8;
+struct EncodingMachine {
+    document: &Document, current: NodeId, phase: i32, offset: i32,
+    escaped: u8, escape_offset: i32, escape_length: i32,
+}
+fn encoding_machine(document: &Document) -> EncodingMachine {
+    return EncodingMachine {
+        document: document, current: 0, phase: ENCODE_NODE, offset: 0,
+        escaped: 0, escape_offset: 0, escape_length: 0,
+    };
+}
+fn hex_digit(value: u8) -> u8 { if (value < 10) { return 48 + value; } return 87 + value; }
+fn closing(kind: Kind) -> u8 { if (tag(kind) == 4) { return 93; } return 125; }
+fn literal_byte(kind: Kind, flag: bool, offset: i32) -> u8 {
+    if (tag(kind) == 0) { let word: [u8;4] = [110,117,108,108]; return word[offset]; }
+    if (flag) { let word: [u8;4] = [116,114,117,101]; return word[offset]; }
+    let word: [u8;5] = [102,97,108,115,101]; return word[offset];
+}
+impl EncodingMachine {
+    // Only valid, immutable Documents enter this machine. It never acquires
+    // cleanup authority over shallow Node/String descriptors read below.
+    fn pull(&self) -> core::option::Option<u8> {
+        while (self.current >= 0) {
+            let node: Node = self.document.nodes.at(self.current);
+            if (self.phase == ENCODE_NODE) {
+                self.phase = ENCODE_VALUE;
+                if (node.parent >= 0) {
+                    let parent: Node = self.document.nodes.at(node.parent);
+                    if (tag(parent.kind) == 5) {
+                        self.phase = ENCODE_KEY; self.offset = 0;
+                        self.escape_offset = 0; self.escape_length = 0;
+                        return core::option::Some(34);
+                    }
                 }
-                if (node.parent < 0) { current = -1; break; }
-                node = document.nodes.at(node.parent);
-                if (!self.close(node.kind)) { return false; }
+                continue;
             }
+            if (self.phase == ENCODE_KEY || self.phase == ENCODE_TEXT) {
+                if (self.escape_offset < self.escape_length) {
+                    let byte: u8 = self.escaped;
+                    if (self.escape_length == 6) {
+                        byte = 48;
+                        if (self.escape_offset == 1) { byte = 117; }
+                        if (self.escape_offset == 4) { byte = hex_digit(self.escaped / 16); }
+                        if (self.escape_offset == 5) { byte = hex_digit(self.escaped % 16); }
+                    }
+                    self.escape_offset += 1;
+                    return core::option::Some(byte);
+                }
+                let text: core::text::Text = node.text.as_text();
+                if (self.phase == ENCODE_KEY) { text = node.key.as_text(); }
+                if (self.offset == text.length) {
+                    if (self.phase == ENCODE_KEY) { self.phase = ENCODE_COLON; }
+                    else { self.phase = ENCODE_AFTER; }
+                    return core::option::Some(34);
+                }
+                let byte: u8 = text.bytes[text.start + self.offset];
+                self.offset += 1;
+                if (byte == 34 || byte == 92 || byte < 32) {
+                    self.escaped = byte; self.escape_offset = 1;
+                    self.escape_length = 2;
+                    if (byte < 32) { self.escape_length = 6; }
+                    return core::option::Some(92);
+                }
+                // Valid UTF-8 can be copied bytewise; non-ASCII bytes cannot
+                // equal any ASCII byte requiring JSON escaping.
+                return core::option::Some(byte);
+            }
+            if (self.phase == ENCODE_COLON) {
+                self.phase = ENCODE_VALUE; return core::option::Some(58);
+            }
+            if (self.phase == ENCODE_VALUE) {
+                let kind: i32 = tag(node.kind);
+                self.offset = 0;
+                if (kind <= 1) { self.phase = ENCODE_LITERAL; continue; }
+                if (kind == 2) { self.phase = ENCODE_NUMBER; continue; }
+                if (kind == 3) {
+                    self.phase = ENCODE_TEXT;
+                    self.escape_offset = 0; self.escape_length = 0;
+                    return core::option::Some(34);
+                }
+                self.phase = ENCODE_CHILDREN;
+                if (kind == 4) { return core::option::Some(91); }
+                return core::option::Some(123);
+            }
+            if (self.phase == ENCODE_NUMBER) {
+                let text: core::text::Text = node.text.as_text();
+                let byte: u8 = text.bytes[text.start + self.offset];
+                self.offset += 1;
+                if (self.offset == text.length) { self.phase = ENCODE_AFTER; }
+                return core::option::Some(byte);
+            }
+            if (self.phase == ENCODE_LITERAL) {
+                let length: i32 = 4;
+                if (tag(node.kind) == 1 && !node.flag) { length = 5; }
+                let byte: u8 = literal_byte(node.kind,node.flag,self.offset);
+                self.offset += 1;
+                if (self.offset == length) { self.phase = ENCODE_AFTER; }
+                return core::option::Some(byte);
+            }
+            if (self.phase == ENCODE_CHILDREN) {
+                if (node.first >= 0) {
+                    self.current = node.first; self.phase = ENCODE_NODE; continue;
+                }
+                self.phase = ENCODE_AFTER;
+                return core::option::Some(closing(node.kind));
+            }
+            // A completed child either advances to its next sibling or emits
+            // one parent close. Deep unwinding never needs native recursion.
+            if (node.next >= 0) {
+                self.current = node.next; self.phase = ENCODE_NODE;
+                return core::option::Some(44);
+            }
+            if (node.parent < 0) { self.current = -1; return core::option::None(); }
+            self.current = node.parent;
+            let parent: Node = self.document.nodes.at(self.current);
+            self.phase = ENCODE_AFTER;
+            return core::option::Some(closing(parent.kind));
         }
-        return true;
+        return core::option::None();
     }
 }
-fn hex_digit(value: u32) -> u32 { if (value < 10) { return 48 + value; } return 87 + value; }
+
+// A borrowed canonical byte reader. Copies fork position, including a partial
+// UTF-8 sequence or escape, but share the same immutable live Document.
+// Keep the actual Document owner, nodes, options and all text unchanged and
+// stable until every cursor copy ends. This cursor owns and destroys nothing.
+pub struct Encoding { machine: EncodingMachine, remaining_bytes: u64 }
+
+pub impl Document {
+    // Exact admitted output size. This is a CPU preflight, not a transport
+    // call quota. Valid Document/String invariants are preconditions; no
+    // physical-backing or forged/cyclic-tree validation is attempted.
+    pub fn encoded_len(&self) -> core::result::Result<u64,Error> {
+        if (self.nodes.is_empty()) { return core::result::Err(error(ErrorKind::NoRoot,-1)); }
+        let machine: EncodingMachine = encoding_machine(self);
+        let maximum: u64 = self.options.max_output_bytes as u64;
+        let total: u64 = 0;
+        while (true) {
+            let byte: core::option::Option<u8> = machine.pull();
+            if (byte.is_none()) { return core::result::Ok(total); }
+            if (total == maximum) { return core::result::Err(error(ErrorKind::OutputLimit,-1)); }
+            total += 1;
+        }
+        return core::result::Ok(total);
+    }
+    pub fn encoding(&self) -> core::result::Result<Encoding,Error> {
+        let length: core::result::Result<u64,Error> = self.encoded_len();
+        if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
+        return core::result::Ok(Encoding { machine: encoding_machine(self), remaining_bytes: length.unwrap() });
+    }
+}
+pub impl Encoding {
+    pub fn borrow(&self) -> &Encoding { return self; }
+    pub fn remaining(&self) -> u64 { return self.remaining_bytes; }
+}
+pub impl core::io::Read for Encoding {
+    // Destination must be backed and disjoint from this cursor and Document
+    // storage. Logical range rejection and zero requests have no effects.
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        if (!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (count == 0) { return core::result::Ok(0); }
+        let wanted: i32 = count;
+        if (self.remaining_bytes < count as u64) { wanted = self.remaining_bytes as i32; }
+        let completed: i32 = 0;
+        while (completed < wanted) {
+            // Preflight and immutable backing establish an infallible exact
+            // byte count. No Err can follow a destination write on this path.
+            let byte: core::option::Option<u8> = self.machine.pull();
+            destination[offset + completed] = byte.unwrap();
+            completed += 1; self.remaining_bytes -= 1;
+        }
+        return core::result::Ok(completed);
+    }
+}
+
+// Only allocation failure is reachable here for a valid admitted Encoding.
+// Keep precise existing categories for collector errors where representable;
+// unexpected internal metadata/I/O errors map to Bounds, never fake success.
+fn encoding_collection_error(cause: alloc::io::ReadError) -> Error {
+    let kind: ErrorKind = match (cause) {
+        alloc::io::ReadError::InvalidLimits -> ErrorKind::InvalidOptions,
+        alloc::io::ReadError::CallLimit -> ErrorKind::OutputLimit,
+        alloc::io::ReadError::ByteLimit -> ErrorKind::OutputLimit,
+        alloc::io::ReadError::Io(detail) -> match (detail) {
+            core::io::Error::AllocationFailed -> ErrorKind::AllocationFailed,
+            core::io::Error::LimitExceeded -> ErrorKind::OutputLimit,
+            _ -> ErrorKind::Bounds
+        },
+        alloc::io::ReadError::Storage(detail) -> match (detail) {
+            alloc::vec::Error::AllocationFailed -> ErrorKind::AllocationFailed,
+            alloc::vec::Error::CapacityOverflow -> ErrorKind::OutputLimit,
+            _ -> ErrorKind::Bounds
+        },
+        alloc::io::ReadError::Text(detail) -> match (detail) {
+            alloc::string::Error::AllocationFailed -> ErrorKind::AllocationFailed,
+            alloc::string::Error::CapacityOverflow -> ErrorKind::OutputLimit,
+            alloc::string::Error::InvalidUtf8(at) -> ErrorKind::InvalidSurrogate,
+            alloc::string::Error::InvalidScalar -> ErrorKind::InvalidSurrogate,
+            _ -> ErrorKind::Bounds
+        }
+    };
+    return error(kind,-1);
+}
 
 pub fn encode(document: Document) -> core::result::Result<alloc::string::String, Error> {
-    if (document.nodes.is_empty()) { return core::result::Err(error(ErrorKind::NoRoot, -1)); }
-    let encoder: Encoder = Encoder { output: alloc::string::new(), maximum: document.options.max_output_bytes, failure: error(ErrorKind::AllocationFailed, -1) };
-    if (!encoder.run(document)) { encoder.output.destroy(); return core::result::Err(encoder.failure); }
-    return core::result::Ok(encoder.output);
+    let prepared: core::result::Result<Encoding,Error> = document.encoding();
+    if (prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); }
+    let cursor: Encoding = prepared.unwrap();
+    let length: u64 = cursor.remaining();
+    // Exact fills require ceil(length/1024) positive reads and one EOF probe.
+    // The configured i32 output cap bounds both this sum and the byte cast.
+    let limits: alloc::io::ReadLimits = alloc::io::ReadLimits {
+        max_bytes: length as i32, max_calls: (length + 1023) / 1024 + 1,
+    };
+    let collected: core::result::Result<alloc::string::String,alloc::io::ReadFailure> = alloc::io::read_to_string<Encoding>(cursor.borrow(),limits);
+    if (collected.is_err()) {
+        let failure: alloc::io::ReadFailure = collected.unwrap_err();
+        let cause: Error = encoding_collection_error(failure.cause);
+        failure.destroy();
+        return core::result::Err(cause);
+    }
+    return core::result::Ok(collected.unwrap());
 }

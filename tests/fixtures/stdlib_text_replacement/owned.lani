@@ -1,0 +1,48 @@
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::mem;
+import core::text;
+import std::io;
+fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn literal(value:str,count:i32) -> core::text::Text { return core::text::from_utf8(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn code(error:alloc::string::Error) -> i32 { return match(error) { alloc::string::Error::Bounds -> 1,alloc::string::Error::OutputLimit -> 2,alloc::string::Error::CapacityOverflow -> 3,_ -> 4 }; }
+fn check(source:core::text::Text,needle:core::text::Text,replacement:core::text::Text,count:u64,expected:core::text::Text) {
+    mark(67); let result=alloc::string::replacen(source,needle,replacement,count,expected.byte_len()).unwrap();
+    assert(result.as_text().equals(expected) && result.byte_len()==expected.byte_len() && result.capacity()==expected.byte_len()); result.destroy(); mark(70);
+    if(expected.byte_len()>0) { mark(80); assert(code(alloc::string::replacen(source,needle,replacement,count,expected.byte_len()-1).unwrap_err())==2); mark(112); }
+}
+fn main() -> i32 {
+    mark(65); let input:alloc::vec::Vec<u8> = alloc::vec::new(); input.try_resize(32768,97).unwrap(); let replacement:alloc::vec::Vec<u8> = alloc::vec::new(); replacement.try_resize(65536,98).unwrap();
+    let actual=core::text::from_utf8(input.as_slice(),input.len()).unwrap(); let large=core::text::from_utf8(replacement.as_slice(),replacement.len()).unwrap(); mark(83);
+    let all:u64 = 18446744073709551615; let wide:u64 = 4294967296; let a=literal("a",1); let aa=literal("aa",2); let b=literal("b",1); let empty=literal("",0);
+    mark(80);
+    // Valid backing, but the complete conceptual result is exactly 2^31 bytes.
+    assert(code(alloc::string::replace(actual,a,large,0).unwrap_err())==3);
+    assert(code(alloc::string::replace(actual,a,large,2147483647).unwrap_err())==3);
+    assert(code(alloc::string::replace(actual,a,large,-1).unwrap_err())==1);
+    assert(code(alloc::string::replacen(actual,a,large,0,-1).unwrap_err())==1);
+    assert(code(alloc::string::replace(empty,empty,empty,-1).unwrap_err())==1); mark(112);
+    check(literal("aaaaa",5),aa,b,all,literal("bba",3));
+    check(a,a,aa,all,aa); // inserted text is never recursively searched
+    check(literal("banana",6),literal("ana",3),literal("X",1),all,literal("bXna",4));
+    check(literal("aaaaa",5),aa,b,0,literal("aaaaa",5));
+    check(literal("aaaaa",5),aa,b,1,literal("baaa",4));
+    check(literal("aaaaa",5),aa,b,2,literal("bba",3));
+    check(literal("aaaaa",5),aa,b,wide,literal("bba",3));
+    check(literal("abc",3),literal("longer",6),b,all,literal("abc",3));
+    check(literal("abc",3),literal("z",1),b,all,literal("abc",3));
+    check(literal("aaaa",4),aa,empty,all,empty);
+    check(empty,a,b,all,empty); check(empty,empty,b,all,b); check(empty,empty,b,0,empty);
+    let bytes:[u8;10] = [255,97,195,169,0,240,159,153,130,255]; let source=core::text::from_utf8_range(bytes,1,8).unwrap();
+    let native_empty=source.slice(0,0).unwrap(); let dash=literal("-",1);
+    check(source,native_empty,dash,all,literal("-a-é-\0-🙂-",13));
+    check(source,native_empty,dash,2,literal("-a-é\0🙂",10));
+    check(source,source.slice(4,8).unwrap(),source.slice(1,3).unwrap(),all,literal("aé\0é",6));
+    check(source,source.slice(3,4).unwrap(),source.slice(4,8).unwrap(),all,literal("aé🙂🙂",11));
+    check(source,source,native_empty,all,empty); // shrinking source fits output cap zero
+    check(source,native_empty,native_empty,all,source);
+    mark(80); assert(core::mem::slice_stride(source.bytes)<0); let expected:[u8;10] = [255,97,195,169,0,240,159,153,130,255]; let i:i32 = 0; while(i<10) { assert(bytes[i]==expected[i]); i+=1; }
+    i=0; while(i<input.len()) { assert(input.at(i)==97); i+=1; } i=0; while(i<replacement.len()) { assert(replacement.at(i)==98); i+=1; } mark(112);
+    mark(82); replacement.destroy(); input.destroy(); mark(69); mark(68); return 0;
+}

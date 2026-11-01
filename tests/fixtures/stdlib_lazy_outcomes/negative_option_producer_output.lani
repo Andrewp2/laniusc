@@ -1,0 +1,12 @@
+module app::main;
+import core::function;
+import core::option;
+import core::result;
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::function::Producer<core::option::Option<u64>> for Policy { pub fn produce(&self) -> core::option::Option<u64> { return core::option::Some(1); } }
+fn main() -> i32 {
+    let source:core::option::Option<i32> =core::option::Some(7); let policy:Policy=Policy {};
+    let rejected_outcome_bound = core::option::or_else<i32,Policy>(source,policy.borrow());
+    return 0;
+}

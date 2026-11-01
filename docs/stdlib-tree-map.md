@@ -11,7 +11,9 @@ algorithm uses portable values; storage uses the existing allocator bindings.
 
 ## Ordering and ownership
 
-Key operations require `K: core::cmp::Ord<K>` and use `K::lt`. The relation must
+Insertion and same-key operations require `K: core::cmp::Ord<K>` and use
+`K::lt`. The new borrowed point queries use an explicit `Comparator<K,Q>`
+while preserving this stored-key ordering. The relation must
 be a stable strict weak order: keys are equivalent when neither is less than
 the other. Equivalent-key `try_insert` replaces both the key and value, returning
 the previous `Entry<K, V>`. Values need no comparison implementation. Do not
@@ -42,8 +44,23 @@ Cursors borrow the map. Successful edits invalidate earlier cursors; failed
 fallible edits preserve them, contents and capacity. Owners and key backing
 must outlive cursors. `next` and `next_back` consume opposite ends without
 overlap; either returns None repeatedly after exhaustion. Range bounds are
-used during cursor construction and are not retained. Shared iterator-trait
-integration remains a separate compiler dependency.
+used during cursor construction and are not retained. Later
+[shared iterator-trait integration](stdlib-collection-iterators.md) has separate
+accepted evidence.
+
+## Borrowed point queries
+
+[Borrowed collection lookup](stdlib-borrowed-lookup.md) adds `contains_key_by`,
+`get_by`, `get_entry_by`, `remove_by` and `update_value_by` for a distinct Q.
+Their borrowed `Comparator<K,Q>` receives stored key first, query second,
+once per visited node. It must partition stored order into Less, optionally
+Equal, then Greater and identify at most one stored key class. Getters borrow
+the stored representative; removal transfers the actual entry; update retains
+the original key and reinstalls V on every normal callback return.
+`alloc::string::TextKey` supplies String/Text policy. All sixteen map/set
+methods pass the nine-group library acceptance and migrated application
+on native Linux x86_64 CPU output. Existing ordered
+bounds/ranges still take K and are not extended by this point-query contract.
 
 ## API contracts
 
@@ -57,6 +74,7 @@ integration remains a separate compiler dependency.
 | `len()`, `capacity()`, `is_empty()` | Live entry count, reserved node count and emptiness |
 | `contains_key(key)` | Whether an equivalent key exists |
 | `get(key)`, `get_entry(key)` | Optional borrowed value or complete entry |
+| `update_value(key, update)` | One lookup; missing returns None, present reinstalls callback Pair.first and returns Some(Pair.second), preserving the stored key; [current evidence](stdlib-map-updates.md) |
 | `first()`, `last()` | Optional borrowed smallest or largest entry |
 | `lower_bound(key)`, `upper_bound(key)` | First entry at least equal to, or strictly greater than, the key |
 | `iter()` | Borrowed cursor over all entries in key order |
@@ -70,6 +88,14 @@ integration remains a separate compiler dependency.
 | `try_shrink_to_fit()` | Compact to capacity equal to length; return capacity |
 | `destroy()` | Free node storage and reset the owner; repeated calls on that same owner are harmless |
 | Cursor `is_empty()`, `next()`, `next_back()` | Check exhaustion or borrow the next entry from either end |
+
+The [scoped value update](stdlib-map-updates.md) retains the exact representative
+key, node links/heights, free list, count, capacity and backing. A present value
+is lent exclusively to one callback; its latest descriptor is reinstalled on
+every normal return, including a separate Result error. End prior borrows and
+cursors first, and do not access the map or change key ordering during the
+callback. All seven new library gates pass on the finite native Linux x86_64 profile;
+the dedicated guide records their scope and the accepted 103-case application. The older receipts below do not establish this method.
 
 Errors are `InvalidCapacity` for a negative request, `CapacityOverflow` when
 the requested node storage exceeds the supported size, `AllocationFailed`,
@@ -121,6 +147,7 @@ replacement before releasing the original allocation.
 | Lookup, bounds, first/last | O(log n) |
 | New insertion | Amortized O(log n); a growth allocation also copies initialized nodes |
 | Replacement, removal, endpoint pop | O(log n) |
+| `update_value` | O(log n) lookup plus one callback and constant reinstall; no rebalance |
 | Reserve that grows storage | O(used), including holes below the initialized high-water mark; `used <= capacity` |
 | Full traversal | O(n), with no key comparisons |
 | One cursor step | O(log n) worst case; amortized O(1) during traversal |
@@ -132,7 +159,9 @@ The old `std::map` was removed after its repository callers migrated to checked
 `alloc::hash_map` owners and explicit order vectors where their output needs
 first-seen order. See [collection migration](stdlib-legacy-collections.md).
 [Ordered sets](stdlib-owned-sets.md) delegate to this map's storage and cursor
-engine. Entry APIs and lookup through a distinct borrowed key type remain work.
+engine. Broader Entry handles and heterogeneous ordered bounds/ranges remain
+work. Distinct borrowed-key point lookup has the separate contract and
+acceptance above; scoped value update retains its explicit callback policy.
 
 ## Executable evidence
 

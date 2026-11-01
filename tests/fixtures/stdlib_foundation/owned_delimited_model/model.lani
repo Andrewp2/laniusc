@@ -1,0 +1,324 @@
+// Test-only owned delimiter adapter. Provider acquisition and acknowledgement are separate.
+module app::main;
+
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+import core::option;
+import alloc::io;
+import alloc::vec;
+import alloc::string;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+
+struct Output { bytes: [u8], pointer: ptr, used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer, self.used); self.used = 0; }
+    fn word(&self, value: u64) {
+        if (self.used == 4096) { self.flush(); }
+        let index: i32 = 0;
+        while (index < 8) {
+            self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8;
+            index += 1;
+        }
+        self.used += 8;
+    }
+}
+
+fn error_code(error: core::io::Error) -> i32 {
+    return match (error) {
+        core::io::Error::InvalidInput -> 1,
+        core::io::Error::UnexpectedEof -> 2,
+        core::io::Error::WriteZero -> 3,
+        core::io::Error::InvalidCount -> 4,
+        core::io::Error::CountOverflow -> 5,
+        core::io::Error::LimitExceeded -> 6,
+        core::io::Error::Interrupted -> 7,
+        core::io::Error::WouldBlock -> 8,
+        core::io::Error::AllocationFailed -> 9,
+        core::io::Error::Host(code) -> 10,
+    };
+}
+
+fn host_code(error: core::io::Error) -> i32 {
+    return match (error) { core::io::Error::Host(code) -> code, _ -> 0 };
+}
+
+fn provider_error(code: i32) -> core::io::Error {
+    return match (code) {
+        1 -> core::io::Error::Interrupted,
+        2 -> core::io::Error::WouldBlock,
+        3 -> core::io::Error::Host(-123),
+        4 -> core::io::Error::InvalidInput,
+        10 -> core::io::Error::AllocationFailed,
+        11 -> core::io::Error::CountOverflow,
+        12 -> core::io::Error::LimitExceeded,
+        13 -> core::io::Error::UnexpectedEof,
+        14 -> core::io::Error::WriteZero,
+        15 -> core::io::Error::InvalidCount,
+        _ -> core::io::Error::Host(2147483647),
+    };
+}
+
+struct Provider {
+    source: [u8], length: i32, cursor: i32, fetched: i32,
+    fills: [i64], fill_length: i32, fill_calls: i32,
+    consumes: [i64], consume_length: i32, consume_calls: i32,
+    kinds: [i64], events: [i64], cursors: [i64], fetched_at: [i64], amounts: [i64], calls: i32
+}
+impl Provider {
+    fn borrow(&self) -> &Provider { return self; }
+    fn record(&self, kind: i64, event: i64, amount: i32) {
+        assert(self.calls < 64);
+        self.kinds[self.calls] = kind;
+        self.events[self.calls] = event;
+        self.cursors[self.calls] = self.cursor as i64;
+        self.fetched_at[self.calls] = self.fetched as i64;
+        self.amounts[self.calls] = amount as i64;
+        self.calls += 1;
+    }
+}
+
+pub impl core::io::BufRead for Provider {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>, core::io::Error> {
+        let event: i64 = 8;
+        if (self.fill_calls < self.fill_length) { event = self.fills[self.fill_calls]; }
+        self.fill_calls += 1;
+        self.record(0, event, 0);
+        if (event <= -1 && event >= -3) {
+            return core::result::Err(provider_error((-event) as i32));
+        }
+        if (event <= -8) {
+            let code: i32 = 16;
+            if (event == -9) { code = 4; }
+            if (event <= -10) { code = (-event) as i32; }
+            return core::result::Err(provider_error(code));
+        }
+        let view: core::slice::View<u8> = core::slice::View {
+            values: self.source, start: 2 + self.cursor, length: self.fetched - self.cursor
+        };
+        if (event == -4) { view.start = -1; view.length = 1; }
+        if (event == -5) { view.start = 2; view.length = -1; }
+        if (event == -6) { view.start = 2147483647; view.length = 1; }
+        if (event == -7) { view.start = -1; view.length = 0; }
+        if (event >= 0) {
+            if (self.fetched == self.cursor) {
+                let amount: i32 = event as i32;
+                if (amount > self.length - self.fetched) { amount = self.length - self.fetched; }
+                self.fetched += amount;
+            }
+            view.length = self.fetched - self.cursor;
+        }
+        return core::result::Ok(view);
+    }
+
+    pub fn consume(&self, count: i32) -> core::result::Result<i32, core::io::Error> {
+        assert(count > 0 && count <= self.fetched - self.cursor);
+        let event: i64 = 0;
+        if (self.consume_calls < self.consume_length) { event = self.consumes[self.consume_calls]; }
+        self.consume_calls += 1;
+        self.record(1, event, count);
+        if (event == 0) { self.cursor += count; return core::result::Ok(count); }
+        // Nonconforming count controls deterministically retain unread bytes.
+        // This is fixture behavior, not a rollback guarantee of the public helper.
+        if (event == 5) { return core::result::Ok(count - 1); }
+        if (event == 6) { return core::result::Ok(count + 1); }
+        if (event == 7) { return core::result::Ok(-1); }
+        if (event == 8) { return core::result::Ok(2147483647); }
+        if (event == 9) { return core::result::Ok(-2147483648); }
+        return core::result::Err(provider_error(event as i32));
+    }
+}
+
+struct Cause { kind: u64, detail: u64, payload: i32 }
+fn io_cause(value: core::io::Error) -> Cause {
+    return Cause { kind: 4, detail: error_code(value) as u64, payload: host_code(value) };
+}
+fn storage_cause(value: alloc::vec::Error) -> Cause {
+    let detail: u64 = match (value) {
+        alloc::vec::Error::Bounds -> 1, alloc::vec::Error::InvalidCapacity -> 2,
+        alloc::vec::Error::CapacityOverflow -> 3, alloc::vec::Error::AllocationFailed -> 4,
+    };
+    return Cause { kind: 5, detail: detail, payload: 0 };
+}
+fn text_cause(value: alloc::string::Error) -> Cause {
+    let detail: u64 = match (value) {
+        alloc::string::Error::InvalidUtf8(index) -> 1,
+        alloc::string::Error::InvalidScalar -> 2, alloc::string::Error::Bounds -> 3,
+        alloc::string::Error::NotCharBoundary -> 4, alloc::string::Error::CapacityOverflow -> 5,
+        alloc::string::Error::AllocationFailed -> 6,
+    };
+    let payload: i32 = match (value) { alloc::string::Error::InvalidUtf8(index) -> index, _ -> 0 };
+    return Cause { kind: 6, detail: detail, payload: payload };
+}
+fn cause(error: alloc::io::ReadError) -> Cause {
+    return match (error) {
+        alloc::io::ReadError::InvalidLimits -> Cause { kind: 1, detail: 0, payload: 0 },
+        alloc::io::ReadError::CallLimit -> Cause { kind: 2, detail: 0, payload: 0 },
+        alloc::io::ReadError::ByteLimit -> Cause { kind: 3, detail: 0, payload: 0 },
+        alloc::io::ReadError::Io(value) -> io_cause(value),
+        alloc::io::ReadError::Storage(value) -> storage_cause(value),
+        alloc::io::ReadError::Text(value) -> text_cause(value),
+    };
+}
+
+
+fn ending_code(ending: alloc::io::ReadEnding) -> u64 {
+    return match (ending) {
+        alloc::io::ReadEnding::Delimiter -> 1,
+        alloc::io::ReadEnding::Eof -> 2,
+    };
+}
+
+fn emit(provider: &Provider, before: i32, tag: u64, error: Cause, bytes: [u8], length: i32,
+        calls: u64, consumed: u64, ending: u64, output: &Output) {
+    output.word(tag); output.word(error.kind); output.word(error.detail); output.word(error.payload as i64 as u64);
+    output.word(length as u64); output.word(calls); output.word(consumed); output.word(ending);
+    output.word((provider.calls - before) as u64);
+    output.word(provider.cursor as u64); output.word(provider.fetched as u64);
+    output.word(provider.fill_calls as u64); output.word(provider.consume_calls as u64);
+    output.word(provider.calls as u64); output.word(core::mem::slice_stride(provider.source) as i64 as u64);
+    let index: i32 = 0;
+    while (index < length) { output.word(bytes[index] as u64); index += 1; }
+    index = 0;
+    while (index < 40) { output.word(provider.source[index] as u64); index += 1; }
+    index = 0;
+    while (index < provider.calls) {
+        output.word(provider.kinds[index] as u64); output.word(provider.events[index] as u64);
+        output.word(provider.cursors[index] as u64); output.word(provider.fetched_at[index] as u64);
+        output.word(provider.amounts[index] as u64); index += 1;
+    }
+}
+
+fn emit_failure(provider: &Provider, before: i32, failure: &alloc::io::BufferedReadFailure, output: &Output) {
+    let ending: u64 = 0;
+    if (failure.ending.is_some()) { ending = ending_code(failure.ending.unwrap()); }
+    emit(provider, before, 1, cause(failure.cause), failure.bytes.as_slice(), failure.bytes.len(),
+         failure.calls, failure.consumed, ending, output);
+}
+
+fn collect(provider: &Provider, limits: alloc::io::ReadLimits, text: bool, delimiter: u8, output: &Output) {
+    let before: i32 = provider.calls;
+    let no_error: Cause = Cause { kind: 0, detail: 0, payload: 0 };
+    if (text) {
+        let result: core::result::Result<alloc::io::ReadLine, alloc::io::BufferedReadFailure> =
+            alloc::io::read_line<Provider>(provider, limits);
+        if (result.is_ok()) {
+            let value: alloc::io::ReadLine = result.unwrap();
+            emit(provider, before, 0, no_error, value.text.as_bytes(), value.text.byte_len(),
+                 value.calls, value.consumed, ending_code(value.ending), output);
+            value.destroy();
+        } else {
+            let failure: alloc::io::BufferedReadFailure = result.unwrap_err();
+            emit_failure(provider, before, failure.borrow(), output);
+            failure.destroy();
+        }
+    } else {
+        let result: core::result::Result<alloc::io::ReadBytes, alloc::io::BufferedReadFailure> =
+            alloc::io::read_until<Provider>(provider, delimiter, limits);
+        if (result.is_ok()) {
+            let value: alloc::io::ReadBytes = result.unwrap();
+            emit(provider, before, 0, no_error, value.bytes.as_slice(), value.bytes.len(),
+                 value.calls, value.consumed, ending_code(value.ending), output);
+            value.destroy();
+        } else {
+            let failure: alloc::io::BufferedReadFailure = result.unwrap_err();
+            emit_failure(provider, before, failure.borrow(), output);
+            failure.destroy();
+        }
+    }
+}
+
+fn run(input: [u8], output: &Output) {
+    let source_native: [u8; 40] = [0; 40];
+    let source_words: [i32; 10] = [0; 10];
+    let source: [u8] = source_native;
+    let layout: u64 = get64(input, 16);
+    if (layout == 1) {
+        source = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(source_words), 40);
+    }
+    if (layout == 0) { assert(core::mem::slice_stride(source) < 0); }
+    else { assert(core::mem::slice_stride(source) == 1); }
+    let fills: [i64; 12] = [0; 12];
+    let consumes: [i64; 12] = [0; 12];
+    let kinds: [i64; 64] = [0; 64];
+    let events: [i64; 64] = [0; 64];
+    let cursors: [i64; 64] = [0; 64];
+    let fetched_at: [i64; 64] = [0; 64];
+    let amounts: [i64; 64] = [0; 64];
+    let length: i32 = get64(input, 32) as i32;
+    let fill_length: i32 = get64(input, 40) as i32;
+    let consume_length: i32 = get64(input, 48) as i32;
+    let index: i32 = 0;
+    while (index < 40) { source[index] = (128 + index) as u8; index += 1; }
+    index = 0;
+    while (index < length) { source[2 + index] = get64(input, 88 + index * 8) as u8; index += 1; }
+    index = 0;
+    while (index < fill_length) {
+        fills[index] = get64(input, 88 + (length + index) * 8) as i64; index += 1;
+    }
+    index = 0;
+    while (index < consume_length) {
+        consumes[index] = get64(input, 88 + (length + fill_length + index) * 8) as i64; index += 1;
+    }
+    let provider: Provider = Provider {
+        source: source, length: length, cursor: 0, fetched: 0,
+        fills: fills, fill_length: fill_length, fill_calls: 0,
+        consumes: consumes, consume_length: consume_length, consume_calls: 0,
+        kinds: kinds, events: events, cursors: cursors, fetched_at: fetched_at, amounts: amounts, calls: 0
+    };
+    let first: alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes: get64(input, 56) as i32, max_calls: get64(input, 64) };
+    let second: alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes: get64(input, 72) as i32, max_calls: get64(input, 80) };
+    collect(provider.borrow(), first, get64(input, 0) == 1, get64(input, 24) as u8, output);
+    collect(provider.borrow(), second, get64(input, 8) == 1, get64(input, 24) as u8, output);
+}
+
+fn main() -> i32 {
+    let input_words: [i32; 134] = [0; 134];
+    let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(input_pointer, 536);
+    let output_words: [i32; 1024] = [0; 1024];
+    let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words);
+    let output_bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(output_pointer, 4096);
+    let output: Output = Output { bytes: output_bytes, pointer: output_pointer, used: 0 };
+    while (read_exact(input_pointer, 88, true)) {
+        assert(get64(input, 0) <= 1 && get64(input, 8) <= 1 && get64(input, 16) <= 1);
+        assert(get64(input, 32) <= 32 && get64(input, 40) <= 12 && get64(input, 48) <= 12);
+        let words: u64 = get64(input, 32) + get64(input, 40) + get64(input, 48);
+        assert(read_exact(input_pointer + 88, (words * 8) as i32, false));
+        run(input, output.borrow());
+    }
+    output.flush();
+    return 0;
+}

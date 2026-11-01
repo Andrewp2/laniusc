@@ -91,8 +91,8 @@ fn main() -> i32 {
     if (core::result::unwrap(read) != 5 || reader.position() != 5 || reader.remaining() != 0) { return 1; }
     if (destination[0] != 99 || destination[1] != 10 || destination[5] != 14 || destination[6] != 99) { return 2; }
     if (!failure(core::io::read_exact(reader.borrow(), destination, 0, 1), 2, 0)) { return 3; }
-    if (!core::result::is_err(reader.seek(-1)) || reader.position() != 5) { return 4; }
-    if (core::result::unwrap(reader.seek(2)) != 2 || reader.remaining() != 3) { return 5; }
+    if (!core::result::is_err(reader.seek(core::io::SeekFrom::Start(18446744073709551615))) || reader.position() != 5) { return 4; }
+    if (core::result::unwrap(reader.seek(core::io::SeekFrom::Start(2))) != 2 || reader.remaining() != 3) { return 5; }
     if (!failure(core::io::read_exact(reader.borrow(), destination, 0, 5), 2, 3)) { return 6; }
     if (!core::result::is_err(core::io::slice_reader(source, -1))) { return 7; }
 
@@ -123,13 +123,13 @@ fn main() -> i32 {
     let scratch: [u8; 4] = [0; 4];
     let out: core::result::Result<core::io::SliceWriter, core::io::Error> = core::io::slice_writer(stored, 3);
     let limited: core::io::SliceWriter = core::result::unwrap(out);
-    reader.seek(0);
+    reader.seek(core::io::SeekFrom::Start(0));
     let partial: core::result::Result<u64, core::io::CopyFailure> = core::io::copy(reader.borrow(), limited.borrow(), scratch, 4);
     if (core::result::is_ok(partial)) { return 19; }
     let failed: core::io::CopyFailure = core::result::unwrap_err(partial);
     if (kind(failed.cause) != 3 || failed.read != 4 || failed.written != 3) { return 20; }
     if (reader.position() != 4 || limited.position() != 3 || stored[2] != 12) { return 21; }
-    if (!core::result::is_err(limited.seek(4)) || limited.position() != 3) { return 22; }
+    if (!core::result::is_err(limited.seek(core::io::SeekFrom::Start(4))) || limited.position() != 3) { return 22; }
     if (core::result::unwrap(limited.flush()) != 0) { return 23; }
 
     let complete_out: core::result::Result<core::io::SliceWriter, core::io::Error> = core::io::slice_writer(stored, 7);
@@ -140,7 +140,7 @@ fn main() -> i32 {
     let copied: core::result::Result<u64, core::io::CopyFailure> = core::io::copy(short.borrow(), complete.borrow(), scratch, 4);
     if (core::result::unwrap(copied) != 5 || complete.position() != 5 || stored[4] != 14) { return 24; }
 
-    reader.seek(0);
+    reader.seek(core::io::SeekFrom::Start(0));
     writer.cursor = 0;
     writer.calls = 0;
     writer.fail = true;
@@ -148,7 +148,7 @@ fn main() -> i32 {
     if (core::result::is_ok(failed_write)) { return 25; }
     let write_failure: core::io::CopyFailure = core::result::unwrap_err(failed_write);
     if (kind(write_failure.cause) != 128 || write_failure.read != 4 || write_failure.written != 3) { return 26; }
-    reader.seek(0);
+    reader.seek(core::io::SeekFrom::Start(0));
     invalid.reported = 5;
     let invalid_write: core::result::Result<u64, core::io::CopyFailure> = core::io::copy(reader.borrow(), invalid.borrow(), scratch, 4);
     if (core::result::is_ok(invalid_write)) { return 27; }

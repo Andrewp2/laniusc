@@ -1,0 +1,19 @@
+module app::main;
+import core::io;
+import core::result;
+struct SequentialWriterAndPositionalReader {}
+impl SequentialWriterAndPositionalReader {
+    fn borrow(&self) -> &SequentialWriterAndPositionalReader { return self; }
+}
+pub impl core::io::Write for SequentialWriterAndPositionalReader {
+    pub fn write(&self,source:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(count); }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+pub impl core::io::ReadAt for SequentialWriterAndPositionalReader {
+    pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+fn main() -> i32 {
+    let data:[u8;1]=[99]; let target:SequentialWriterAndPositionalReader=SequentialWriterAndPositionalReader {};
+    let rejected=core::io::write_all_at<SequentialWriterAndPositionalReader>(target.borrow(),data,0,1,0,1); // rejected_positional_bound
+    return 0;
+}

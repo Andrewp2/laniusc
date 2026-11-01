@@ -8,20 +8,24 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+Existing RGBA8 image/view operations retain their historical receipts. Nearest, Bilinear and exact Area resizing use source-first metadata admission, positive checked destination dimensions, independent packed output and cleanup on allocation failure. Source backing remains alive and immutable; Image copies do not fork cleanup authority. Nearest copies selected RGBA bytes. Filtered modes use exact alpha-weighted sums in stored sample space and round nonnegative ties upward. Exact zero weighted alpha produces transparent black; positive exact alpha determines colors even if rounded alpha is zero. Every filter preserves all bytes for unchanged dimensions. Tiled Area chooses the cheaper separable orientation for O(source plus destination pixels) work with at most 512 private four-u64 sums (16 KiB). All seven new library groups pass: four direct groups, a 626-case rational model and two resource/scale groups. The model checks 403513 output pixels and 84 relations across two layouts. Reached result/scratch allocation denials preserve source and recover in-process; five scale shapes compare all 1321000 bytes with exact cleanup and at most 16 KiB scratch, including both 65536-pixel thin directions using 64 bytes. The amended resource ledger enforces source retirement before result publication; its prior run is separate history of the same two groups. The PNG tool passes four new groups/102 cases including 22 reached application allocation denials. Two old image groups and three selected old consumer groups/346 cases pass separately, as do standalone compilation and both documented examples. Earlier 400-case consumer evidence retains its scope. Acceptance is finite Linux x86_64 CPU output from the GPU compiler; other hosts, GPU-device execution, enforced lifetimes and formal proofs remain separate. No new compiler dependency was encountered.
+
 ## Contract and evidence guides
 
 - [extended-image](../../extended-image.md)
+- [extended-image-resize](../../extended-image-resize.md)
 
-Declaration counts: enum: 1; field: 11; function: 16; impl: 1; method: 7; struct: 3; variant: 4.
+Declaration counts: enum: 2; field: 11; function: 17; impl: 1; method: 7; struct: 3; variant: 7.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/image.lani#L3)
-- [core::option](../core/option.md) · [source](../../../extended/ext/image.lani#L4)
-- [core::result](../core/result.md) · [source](../../../extended/ext/image.lani#L5)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/image.lani#L6)
+- [core::i32](../core/i32.md) · [source](../../../extended/ext/image.lani#L4)
+- [core::option](../core/option.md) · [source](../../../extended/ext/image.lani#L5)
+- [core::result](../core/result.md) · [source](../../../extended/ext/image.lani#L6)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/image.lani#L7)
 
 ## Types, fields and variants
 
@@ -29,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Rgba
 
-[Source line 8](../../../extended/ext/image.lani#L8)
+[Source line 9](../../../extended/ext/image.lani#L9)
 
 ```lanius
 pub struct Rgba
@@ -37,7 +41,7 @@ pub struct Rgba
 
 #### field: r
 
-[Source line 8](../../../extended/ext/image.lani#L8)
+[Source line 9](../../../extended/ext/image.lani#L9)
 
 ```lanius
 r: u8
@@ -45,7 +49,7 @@ r: u8
 
 #### field: g
 
-[Source line 8](../../../extended/ext/image.lani#L8)
+[Source line 9](../../../extended/ext/image.lani#L9)
 
 ```lanius
 g: u8
@@ -53,7 +57,7 @@ g: u8
 
 #### field: b
 
-[Source line 8](../../../extended/ext/image.lani#L8)
+[Source line 9](../../../extended/ext/image.lani#L9)
 
 ```lanius
 b: u8
@@ -61,7 +65,7 @@ b: u8
 
 #### field: a
 
-[Source line 8](../../../extended/ext/image.lani#L8)
+[Source line 9](../../../extended/ext/image.lani#L9)
 
 ```lanius
 a: u8
@@ -69,7 +73,7 @@ a: u8
 
 ### struct: Image
 
-[Source line 9](../../../extended/ext/image.lani#L9)
+[Source line 10](../../../extended/ext/image.lani#L10)
 
 ```lanius
 pub struct Image
@@ -77,7 +81,7 @@ pub struct Image
 
 #### field: w
 
-[Source line 9](../../../extended/ext/image.lani#L9)
+[Source line 10](../../../extended/ext/image.lani#L10)
 
 ```lanius
 w: i32
@@ -85,7 +89,7 @@ w: i32
 
 #### field: h
 
-[Source line 9](../../../extended/ext/image.lani#L9)
+[Source line 10](../../../extended/ext/image.lani#L10)
 
 ```lanius
 h: i32
@@ -93,7 +97,7 @@ h: i32
 
 #### field: storage
 
-[Source line 9](../../../extended/ext/image.lani#L9)
+[Source line 10](../../../extended/ext/image.lani#L10)
 
 ```lanius
 storage: alloc::vec::Vec<u8>
@@ -101,7 +105,7 @@ storage: alloc::vec::Vec<u8>
 
 ### struct: View
 
-[Source line 10](../../../extended/ext/image.lani#L10)
+[Source line 11](../../../extended/ext/image.lani#L11)
 
 ```lanius
 pub struct View
@@ -109,7 +113,7 @@ pub struct View
 
 #### field: bytes
 
-[Source line 10](../../../extended/ext/image.lani#L10)
+[Source line 11](../../../extended/ext/image.lani#L11)
 
 ```lanius
 bytes: core::slice::View<u8>
@@ -117,7 +121,7 @@ bytes: core::slice::View<u8>
 
 #### field: width
 
-[Source line 10](../../../extended/ext/image.lani#L10)
+[Source line 11](../../../extended/ext/image.lani#L11)
 
 ```lanius
 width: i32
@@ -125,7 +129,7 @@ width: i32
 
 #### field: height
 
-[Source line 10](../../../extended/ext/image.lani#L10)
+[Source line 11](../../../extended/ext/image.lani#L11)
 
 ```lanius
 height: i32
@@ -133,7 +137,7 @@ height: i32
 
 #### field: stride
 
-[Source line 10](../../../extended/ext/image.lani#L10)
+[Source line 11](../../../extended/ext/image.lani#L11)
 
 ```lanius
 stride: i32
@@ -141,7 +145,7 @@ stride: i32
 
 ### enum: Error
 
-[Source line 11](../../../extended/ext/image.lani#L11)
+[Source line 12](../../../extended/ext/image.lani#L12)
 
 ```lanius
 pub enum Error
@@ -149,7 +153,7 @@ pub enum Error
 
 #### variant: Dimensions
 
-[Source line 11](../../../extended/ext/image.lani#L11)
+[Source line 12](../../../extended/ext/image.lani#L12)
 
 ```lanius
 Dimensions
@@ -157,7 +161,7 @@ Dimensions
 
 #### variant: SizeOverflow
 
-[Source line 11](../../../extended/ext/image.lani#L11)
+[Source line 12](../../../extended/ext/image.lani#L12)
 
 ```lanius
 SizeOverflow
@@ -165,7 +169,7 @@ SizeOverflow
 
 #### variant: Bounds
 
-[Source line 11](../../../extended/ext/image.lani#L11)
+[Source line 12](../../../extended/ext/image.lani#L12)
 
 ```lanius
 Bounds
@@ -173,17 +177,49 @@ Bounds
 
 #### variant: AllocationFailed
 
-[Source line 11](../../../extended/ext/image.lani#L11)
+[Source line 12](../../../extended/ext/image.lani#L12)
 
 ```lanius
 AllocationFailed
+```
+
+### enum: Filter
+
+[Source line 13](../../../extended/ext/image.lani#L13)
+
+```lanius
+pub enum Filter
+```
+
+#### variant: Nearest
+
+[Source line 13](../../../extended/ext/image.lani#L13)
+
+```lanius
+Nearest
+```
+
+#### variant: Bilinear
+
+[Source line 13](../../../extended/ext/image.lani#L13)
+
+```lanius
+Bilinear
+```
+
+#### variant: Area
+
+[Source line 13](../../../extended/ext/image.lani#L13)
+
+```lanius
+Area
 ```
 
 ## Free functions and extern declarations
 
 ### function: byte_len
 
-[Source line 13](../../../extended/ext/image.lani#L13)
+[Source line 15](../../../extended/ext/image.lani#L15)
 
 ```lanius
 pub fn byte_len(width: i32, height: i32) -> core::result::Result<i32,Error>
@@ -191,7 +227,7 @@ pub fn byte_len(width: i32, height: i32) -> core::result::Result<i32,Error>
 
 ### function: valid
 
-[Source line 18](../../../extended/ext/image.lani#L18)
+[Source line 20](../../../extended/ext/image.lani#L20)
 
 ```lanius
 pub fn valid(view: View) -> bool
@@ -199,7 +235,7 @@ pub fn valid(view: View) -> bool
 
 ### function: view
 
-[Source line 26](../../../extended/ext/image.lani#L26)
+[Source line 28](../../../extended/ext/image.lani#L28)
 
 ```lanius
 pub fn view(bytes: core::slice::View<u8>, width: i32, height: i32, stride: i32) -> core::result::Result<View,Error>
@@ -207,7 +243,7 @@ pub fn view(bytes: core::slice::View<u8>, width: i32, height: i32, stride: i32) 
 
 ### function: get
 
-[Source line 41](../../../extended/ext/image.lani#L41)
+[Source line 43](../../../extended/ext/image.lani#L43)
 
 ```lanius
 pub fn get(source: View, x: i32, y: i32) -> core::option::Option<Rgba>
@@ -215,7 +251,7 @@ pub fn get(source: View, x: i32, y: i32) -> core::option::Option<Rgba>
 
 ### function: set
 
-[Source line 45](../../../extended/ext/image.lani#L45)
+[Source line 47](../../../extended/ext/image.lani#L47)
 
 ```lanius
 pub fn set(target: View, x: i32, y: i32, pixel: Rgba) -> bool
@@ -223,7 +259,7 @@ pub fn set(target: View, x: i32, y: i32, pixel: Rgba) -> bool
 
 ### function: fill
 
-[Source line 49](../../../extended/ext/image.lani#L49)
+[Source line 51](../../../extended/ext/image.lani#L51)
 
 ```lanius
 pub fn fill(target: View, pixel: Rgba) -> core::result::Result<i32,Error>
@@ -231,7 +267,7 @@ pub fn fill(target: View, pixel: Rgba) -> core::result::Result<i32,Error>
 
 ### function: new
 
-[Source line 54](../../../extended/ext/image.lani#L54)
+[Source line 56](../../../extended/ext/image.lani#L56)
 
 ```lanius
 pub fn new(width: i32, height: i32, pixel: Rgba) -> core::result::Result<Image,Error>
@@ -239,7 +275,7 @@ pub fn new(width: i32, height: i32, pixel: Rgba) -> core::result::Result<Image,E
 
 ### function: from_rgba
 
-[Source line 63](../../../extended/ext/image.lani#L63)
+[Source line 65](../../../extended/ext/image.lani#L65)
 
 ```lanius
 pub fn from_rgba(width: i32, height: i32, bytes: core::slice::View<u8>) -> core::result::Result<Image,Error>
@@ -247,7 +283,7 @@ pub fn from_rgba(width: i32, height: i32, bytes: core::slice::View<u8>) -> core:
 
 ### function: subview
 
-[Source line 83](../../../extended/ext/image.lani#L83)
+[Source line 85](../../../extended/ext/image.lani#L85)
 
 ```lanius
 pub fn subview(source: View, x: i32, y: i32, width: i32, height: i32) -> core::result::Result<View,Error>
@@ -255,7 +291,7 @@ pub fn subview(source: View, x: i32, y: i32, width: i32, height: i32) -> core::r
 
 ### function: crop
 
-[Source line 89](../../../extended/ext/image.lani#L89)
+[Source line 91](../../../extended/ext/image.lani#L91)
 
 ```lanius
 pub fn crop(source: View, x: i32, y: i32, width: i32, height: i32) -> core::result::Result<Image,Error>
@@ -263,7 +299,7 @@ pub fn crop(source: View, x: i32, y: i32, width: i32, height: i32) -> core::resu
 
 ### function: flip_horizontal
 
-[Source line 97](../../../extended/ext/image.lani#L97)
+[Source line 99](../../../extended/ext/image.lani#L99)
 
 ```lanius
 pub fn flip_horizontal(target: View) -> core::result::Result<i32,Error>
@@ -271,7 +307,7 @@ pub fn flip_horizontal(target: View) -> core::result::Result<i32,Error>
 
 ### function: flip_vertical
 
-[Source line 103](../../../extended/ext/image.lani#L103)
+[Source line 105](../../../extended/ext/image.lani#L105)
 
 ```lanius
 pub fn flip_vertical(target: View) -> core::result::Result<i32,Error>
@@ -279,7 +315,7 @@ pub fn flip_vertical(target: View) -> core::result::Result<i32,Error>
 
 ### function: rotate90
 
-[Source line 109](../../../extended/ext/image.lani#L109)
+[Source line 111](../../../extended/ext/image.lani#L111)
 
 ```lanius
 pub fn rotate90(source: View) -> core::result::Result<Image,Error>
@@ -287,7 +323,7 @@ pub fn rotate90(source: View) -> core::result::Result<Image,Error>
 
 ### function: over
 
-[Source line 120](../../../extended/ext/image.lani#L120)
+[Source line 122](../../../extended/ext/image.lani#L122)
 
 ```lanius
 pub fn over(src: Rgba, dst: Rgba) -> Rgba
@@ -295,7 +331,7 @@ pub fn over(src: Rgba, dst: Rgba) -> Rgba
 
 ### function: blit
 
-[Source line 135](../../../extended/ext/image.lani#L135)
+[Source line 137](../../../extended/ext/image.lani#L137)
 
 ```lanius
 pub fn blit(target: View, x: i32, y: i32, source: View) -> core::result::Result<i32,Error>
@@ -303,17 +339,27 @@ pub fn blit(target: View, x: i32, y: i32, source: View) -> core::result::Result<
 
 ### function: source_over
 
-[Source line 136](../../../extended/ext/image.lani#L136)
+[Source line 138](../../../extended/ext/image.lani#L138)
 
 ```lanius
 pub fn source_over(target: View, x: i32, y: i32, source: View) -> core::result::Result<i32,Error>
 ```
 
+### function: resize
+
+[Source line 287](../../../extended/ext/image.lani#L287)
+
+```lanius
+pub fn resize(source: View, width: i32, height: i32, filter: Filter) -> core::result::Result<Image,Error>
+```
+
+Checked Nearest/Bilinear/Area resize into an independent packed Image. Complete source Bounds precedes destination Dimensions/SizeOverflow, then result allocation and optional bounded Area scratch before source pixel reads. Failure releases partial allocations and preserves source; identity is a byte-preserving independent copy. Exact coordinates, alpha/rounding, manual immutable-source lifetime and O(S+D) Area contracts are in the resize guide. All seven library and four PNG-tool groups pass on the documented finite native profile.
+
 ## Implementation blocks and public methods
 
-### impl at line 71
+### impl at line 73
 
-[Source line 71](../../../extended/ext/image.lani#L71)
+[Source line 73](../../../extended/ext/image.lani#L73)
 
 ```lanius
 pub impl Image
@@ -321,7 +367,7 @@ pub impl Image
 
 #### method: borrow
 
-[Source line 72](../../../extended/ext/image.lani#L72)
+[Source line 74](../../../extended/ext/image.lani#L74)
 
 ```lanius
 pub fn borrow(&self) -> &Image
@@ -329,7 +375,7 @@ pub fn borrow(&self) -> &Image
 
 #### method: width
 
-[Source line 73](../../../extended/ext/image.lani#L73)
+[Source line 75](../../../extended/ext/image.lani#L75)
 
 ```lanius
 pub fn width(&self) -> i32
@@ -337,7 +383,7 @@ pub fn width(&self) -> i32
 
 #### method: height
 
-[Source line 74](../../../extended/ext/image.lani#L74)
+[Source line 76](../../../extended/ext/image.lani#L76)
 
 ```lanius
 pub fn height(&self) -> i32
@@ -345,7 +391,7 @@ pub fn height(&self) -> i32
 
 #### method: rgba
 
-[Source line 75](../../../extended/ext/image.lani#L75)
+[Source line 77](../../../extended/ext/image.lani#L77)
 
 ```lanius
 pub fn rgba(&self) -> core::slice::View<u8>
@@ -353,7 +399,7 @@ pub fn rgba(&self) -> core::slice::View<u8>
 
 #### method: view
 
-[Source line 76](../../../extended/ext/image.lani#L76)
+[Source line 78](../../../extended/ext/image.lani#L78)
 
 ```lanius
 pub fn view(&self) -> View
@@ -361,7 +407,7 @@ pub fn view(&self) -> View
 
 #### method: try_clone
 
-[Source line 77](../../../extended/ext/image.lani#L77)
+[Source line 79](../../../extended/ext/image.lani#L79)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<Image,Error>
@@ -369,7 +415,7 @@ pub fn try_clone(&self) -> core::result::Result<Image,Error>
 
 #### method: destroy
 
-[Source line 78](../../../extended/ext/image.lani#L78)
+[Source line 80](../../../extended/ext/image.lani#L80)
 
 ```lanius
 pub fn destroy(&self)

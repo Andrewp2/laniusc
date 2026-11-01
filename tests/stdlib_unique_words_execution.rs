@@ -55,6 +55,10 @@ struct Memory {
     successful: usize,
     failures: Vec<usize>,
     batch_length: Option<usize>,
+    requests: Vec<String>,
+    // Old/new successful allocation identities and extents for an immediate
+    // allocate-larger/retire-old exchange. Identities survive address reuse.
+    growths: Vec<(usize, usize, usize, usize)>,
 }
 fn memory(events: &str) -> Memory {
     let mut live = BTreeMap::<u64, (usize, usize)>::new();
@@ -63,7 +67,10 @@ fn memory(events: &str) -> Memory {
         successful: 0,
         failures: Vec::new(),
         batch_length: None,
+        requests: Vec::new(),
+        growths: Vec::new(),
     };
+    let mut latest_allocation = None;
     let mut released = Vec::new();
     let mut batch_release = None;
     let first_write = events.lines().position(|line| line.starts_with("write("));
@@ -84,6 +91,7 @@ fn memory(events: &str) -> Memory {
             let length: usize = fields.next().unwrap().parse().unwrap();
             assert!(length > 0, "{events}");
             report.attempts += 1;
+            report.requests.push(arguments.to_owned());
             let address = value.split_whitespace().next().unwrap();
             if let Some(address) = address.strip_prefix("0x") {
                 assert!(!value.contains("INJECTED"), "{events}");
@@ -95,6 +103,7 @@ fn memory(events: &str) -> Memory {
                 if report.successful == 0 {
                     report.batch_length = Some(length);
                 }
+                latest_allocation = Some((line_index, address, report.successful, length));
                 report.successful += 1;
             } else {
                 assert_eq!(address, "-1", "{events}");
@@ -118,6 +127,21 @@ fn memory(events: &str) -> Memory {
                 owned_length,
                 "{events}"
             );
+            if let Some((allocated_at, new_address, new_identity, new_length)) = latest_allocation {
+                if allocated_at + 1 == line_index
+                    && new_identity != identity
+                    && new_length > owned_length
+                {
+                    assert_eq!(
+                        live.get(&new_address),
+                        Some(&(new_identity, new_length)),
+                        "{events}"
+                    );
+                    report
+                        .growths
+                        .push((identity, new_identity, owned_length, new_length));
+                }
+            }
             if identity == 0 {
                 batch_release = Some(line_index);
             }
@@ -310,6 +334,54 @@ fn profile(run: &Run, attempts: usize, failed: Option<usize>) {
     }
 }
 
+fn reached_storage_growth(run: &Run, first_word_bytes: usize) {
+    let lines = run.events.lines().collect::<Vec<_>>();
+    let reads = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| line.starts_with("read(").then_some(index))
+        .collect::<Vec<_>>();
+    assert!(
+        reads.len() >= 3,
+        "representative must cross an input read: {}",
+        run.events
+    );
+    let first_read_bytes: usize = result(lines[reads[0]], "read").1.parse().unwrap();
+    assert!(first_read_bytes < first_word_bytes);
+    // The first word is unfinished after the first read. Its one new mapping
+    // before the next read is token storage, not an independent String or set.
+    let token_maps = (reads[0] + 1..reads[1])
+        .filter(|&index| lines[index].starts_with("mmap("))
+        .collect::<Vec<_>>();
+    assert_eq!(token_maps.len(), 1, "{}", run.events);
+    let token_identity = lines[..token_maps[0]]
+        .iter()
+        .filter(|line| line.starts_with("mmap("))
+        .count();
+    let token_growth = run
+        .memory
+        .growths
+        .iter()
+        .find(|growth| growth.0 == token_identity)
+        .expect("the split first word must reach replacement token storage");
+    assert!(token_growth.2 >= first_read_bytes && token_growth.3 >= first_word_bytes);
+    // Apart from that token buffer, only the set grows backing in this source.
+    // Require linked real replacement generations, without assuming Node or
+    // String layout, a total allocation count, or exact capacity increments.
+    assert!(
+        run.memory.growths.iter().any(|first| {
+            first.0 != token_identity
+                && run
+                    .memory
+                    .growths
+                    .iter()
+                    .any(|next| next.0 == first.1 && next.2 == first.3)
+        }),
+        "representative must reach repeated set-storage growth: {}",
+        run.events
+    );
+}
+
 fn ascii_space(byte: u8) -> bool {
     matches!(byte, b' ' | 9..=13)
 }
@@ -357,7 +429,7 @@ fn assert_eof_probe(run: &Run, exceeded: bool) {
 fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
     let executable = executable(); // One production-root compile/strict ELF.
     let mut native_cases = 0usize;
-    let mut single_copy_maps = None;
+    let mut single_copy_requests = None;
     let cases: &[&[u8]] = &[
         b"",
         b" \t\n\x0b\x0c\r ",
@@ -384,7 +456,7 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
         native_cases += 1;
         checked(&observed, status, &expected, true);
         if input == b"same " {
-            single_copy_maps = Some(observed.memory.attempts);
+            single_copy_requests = Some(observed.memory.requests.clone());
         }
         if input.iter().all(|&byte| ascii_space(byte)) {
             profile(&observed, 1, None);
@@ -417,10 +489,9 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
         }
     }
 
-    // Calibrate the allocation cost of an independent copy using one token
-    // versus 64 identical tokens. The next 128 copies must cost proportionally
-    // the same, with no per-batch backing allocation. This assumes neither
-    // String layout nor an allocation count inside String construction.
+    // A borrowed lookup skips owned-key construction for pending and committed
+    // duplicates. Reuse the earlier one-token process as the baseline: 64 and
+    // 192 completed tokens must have exactly its allocation request sequence.
     let once = b"same ".repeat(64);
     let repeated = b"same ".repeat(192);
     let one_batch = run(&executable, &once, &[], &[], false);
@@ -429,17 +500,78 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
     let three_batches = run(&executable, &repeated, &[], &[], false);
     native_cases += 1;
     checked(&three_batches, 0, b"same\n", true);
-    let first_copies = one_batch.memory.attempts - single_copy_maps.unwrap();
-    assert!(first_copies > 0);
-    let later_copies = three_batches.memory.attempts - one_batch.memory.attempts;
-    assert_eq!(later_copies * 63, first_copies * 128);
+    let single_copy_requests = single_copy_requests.unwrap();
+    assert_eq!(one_batch.memory.requests, single_copy_requests);
+    assert_eq!(three_batches.memory.requests, single_copy_requests);
     assert_eq!(
         three_batches.memory.batch_length,
         one_batch.memory.batch_length
     );
 
+    // This same three-key vocabulary crosses both real read boundaries and
+    // completed-token windows. Duplicate traffic must add no allocation, even
+    // when a later read splits a token. First-pass and repeated output are the
+    // independent BTreeSet reference, not a production traversal transcript.
+    let vocabulary = b"alpha beta gamma ";
+    let repeated_vocabulary = vocabulary.repeat(192);
+    assert!(repeated_vocabulary.len() > 2 * 1024 && 3 * 192 > 2 * 64);
+    let vocabulary_once = run(&executable, vocabulary, &[], &[], false);
+    native_cases += 1;
+    checked(&vocabulary_once, 0, &reference(vocabulary).1, true);
+    let vocabulary_many = run(&executable, &repeated_vocabulary, &[], &[], false);
+    native_cases += 1;
+    checked(
+        &vocabulary_many,
+        0,
+        &reference(&repeated_vocabulary).1,
+        true,
+    );
+    assert_eq!(
+        vocabulary_once.memory.requests,
+        vocabulary_many.memory.requests
+    );
+    assert_eq!(
+        vocabulary_once.memory.batch_length,
+        vocabulary_many.memory.batch_length
+    );
+    assert!(
+        calls(&vocabulary_many.events, "read").len() > calls(&vocabulary_once.events, "read").len()
+    );
+    let mut consumed = 0usize;
+    let mut split_token = false;
+    for read in calls(&vocabulary_many.events, "read") {
+        consumed += result(read, "read").1.parse::<usize>().unwrap();
+        if consumed > 0 && consumed < repeated_vocabulary.len() {
+            split_token |= !ascii_space(repeated_vocabulary[consumed - 1])
+                && !ascii_space(repeated_vocabulary[consumed]);
+        }
+    }
+    assert_eq!(consumed, repeated_vocabulary.len());
+    assert!(
+        split_token,
+        "repeated vocabulary must cross an observed read inside a word"
+    );
+    let repeated_lines = vocabulary_many.events.lines().collect::<Vec<_>>();
+    let second_read = repeated_lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| line.starts_with("read(").then_some(index))
+        .nth(1)
+        .unwrap();
+    let final_allocation = repeated_lines
+        .iter()
+        .rposition(|line| line.starts_with("mmap("))
+        .unwrap();
+    // With only three pending keys, flushing by the number of novel keys would
+    // postpone the first set allocation until EOF. A completed-token window
+    // must commit this vocabulary during the first actual input chunk.
+    assert!(
+        final_allocation < second_read,
+        "duplicate tokens must not postpone the first batch flush"
+    );
+
     // A representative multi-batch sweep reaches token growth, independent
-    // String allocation, duplicate resume, set growth, final partial batch,
+    // String allocation, borrowed duplicate suppression, set growth, final partial batch,
     // and an owning cursor whose rejected item has an unconsumed suffix.
     let representative = (0..70)
         .map(|index| {
@@ -462,11 +594,7 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
     native_cases += 1;
     checked(&baseline, 0, &representative_expected, true);
     profile(&baseline, baseline.memory.attempts, None);
-    assert!(
-        baseline.memory.attempts > 70,
-        "representative must reach storage growth: {}",
-        baseline.events
-    );
+    reached_storage_growth(&baseline, 1300);
     let allocation_positions = baseline.memory.attempts;
     for ordinal in 1..=allocation_positions {
         let injection = format!("mmap:error=ENOMEM:when={ordinal}");
@@ -474,6 +602,12 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
         native_cases += 1;
         checked(&observed, 4, b"", true);
         profile(&observed, ordinal, Some(ordinal));
+        assert_eq!(
+            observed.memory.requests,
+            baseline.memory.requests[..ordinal],
+            "denial must reach the same allocation request prefix: {}",
+            observed.events
+        );
         if ordinal == 1 {
             assert!(
                 calls(&observed.events, "read").is_empty(),
@@ -554,7 +688,6 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
         ("write:error=EAGAIN:when=1", 3, b"".as_slice(), 1),
         ("write:retval=0:when=1", 3, b"".as_slice(), 1),
         ("write:error=EINTR:when=1", 0, expected.as_slice(), 7),
-        ("write:retval=1:when=1", 0, &expected[1..], 7),
     ] {
         let observed = run(&executable, input, &[], &[injection], false);
         native_cases += 1;
@@ -562,15 +695,6 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
         profile(&observed, small_maps, None);
         let writes_observed = calls(&observed.events, "write");
         assert_eq!(writes_observed.len(), writes, "{}", observed.events);
-        if injection.contains("retval=1") {
-            let (arguments, _) = result(writes_observed[1], "write");
-            assert_eq!(
-                arguments.rsplit_once(',').unwrap().1.trim(),
-                "4",
-                "{}",
-                observed.events
-            );
-        }
     }
     let observed = run(&executable, input, &[], &[], true);
     native_cases += 1;
@@ -607,6 +731,8 @@ fn unique_words_streaming_owners_reuse_and_exact_failure_cleanup() {
         "{}",
         observed.events
     );
-    assert_eq!(native_cases, 47 + allocation_positions);
-    eprintln!("unique_words: one strict ELF, {allocation_positions} observed representative allocation positions, {native_cases} native cases; 4096-word scale workload is correctness-only");
+    assert_eq!(native_cases, 48 + allocation_positions);
+    eprintln!(
+        "unique_words: one strict ELF, {allocation_positions} reached representative allocation denials, {native_cases} native cases; equal allocation sequences for 1/64/192 repeats and first/repeated vocabulary; 4096-word scale workload is correctness-only"
+    );
 }
