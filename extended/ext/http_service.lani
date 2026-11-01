@@ -1,0 +1,326 @@
+// Sequential HTTP/1.1 service: bounded keep-alive request reader with
+// absolute head/body/idle/write deadlines, typed errors, a response writer and
+// a method/path router. One owned TCP connection is served at a time.
+module ext::http_service;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import std::clock;
+import std::socket;
+
+// Typed request/transport failures. status_for maps each to the final status
+// sent before closing, or 0 when no response is possible or useful.
+pub enum Error { Parse(ext::http::Error), HeadTooLarge, BodyTooLarge, HeadTimeout, BodyTimeout, WriteTimeout, Truncated, Io(core::io::Error), Clock, AllocationFailed, InvalidState, InvalidHeader }
+pub struct Options { limits: ext::http::Limits, buffer_bytes: i32, head_timeout_ms: i32, body_timeout_ms: i32, idle_timeout_ms: i32, write_timeout_ms: i32, max_requests: i32, drain_bytes: i32, drain_timeout_ms: i32 }
+pub struct Stats { requests: i32, responses: i32, bytes_received: u64, bytes_sent: u64, reads: u64 }
+pub struct Request { method: core::slice::View<u8>, target: core::slice::View<u8>, path: core::slice::View<u8>, query: core::slice::View<u8>, version: i32, head: ext::http::Head, body: core::slice::View<u8>, keep_alive: bool, chunked: bool }
+pub struct Connection { socket: std::socket::Socket, peer: core::net::SocketAddr, options: Options, input: alloc::vec::Vec<u8>, filled: i32, consumed: i32, body: alloc::vec::Vec<u8>, output: alloc::vec::Vec<u8>, keep_alive: bool, head_only: bool, staged: bool, body_left: u64, closed: bool, stats: Stats }
+pub struct Route { method: core::slice::View<u8>, pattern: core::slice::View<u8>, prefix: bool, id: i32 }
+pub struct Router { routes: alloc::vec::Vec<Route> }
+pub struct Hit { id: i32, rest: core::slice::View<u8> }
+pub enum Match { Found(Hit), NotFound, MethodNotAllowed }
+
+// 8 KiB heads, 1 MiB bodies; a slow head must complete within 2 s of its
+// first byte no matter how it is fragmented, and idle keep-alive lasts 5 s.
+pub fn default_options() -> Options {
+    let limits: ext::http::Limits = ext::http::Limits { head_bytes: 8192, line_bytes: 8192, headers: 64, body_bytes: 1048576, trailer_bytes: 4096, trailers: 16, chunks: 4096 };
+    return Options { limits: limits, buffer_bytes: 1179648, head_timeout_ms: 2000, body_timeout_ms: 10000, idle_timeout_ms: 5000, write_timeout_ms: 10000, max_requests: 100, drain_bytes: 65536, drain_timeout_ms: 200 };
+}
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn byte(v: core::slice::View<u8>, i: i32) -> u8 { return v.values[v.start+i]; }
+fn part(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return v.subview(start,end).unwrap(); }
+fn lower(c: u8) -> u8 { if (c >= 65 && c <= 90) { return c + 32; } return c; }
+pub fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool { if (left.len() != right.len()) { return false; } let i: i32 = 0; while (i < left.len()) { if (byte(left,i) != byte(right,i)) { return false; } i += 1; } return true; }
+pub fn same_ascii_case(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool { if (left.len() != right.len()) { return false; } let i: i32 = 0; while (i < left.len()) { if (lower(byte(left,i)) != lower(byte(right,i))) { return false; } i += 1; } return true; }
+fn ows(c: u8) -> bool { return c == 32 || c == 9; }
+// True when a comma-separated field value lists token (ASCII case-insensitive).
+pub fn has_token(value: core::slice::View<u8>, token: core::slice::View<u8>) -> bool {
+    let i: i32 = 0;
+    while (i < value.len()) {
+        while (i < value.len() && (ows(byte(value,i)) || byte(value,i) == 44)) { i += 1; }
+        let start: i32 = i; while (i < value.len() && byte(value,i) != 44) { i += 1; }
+        let end: i32 = i; while (end > start && ows(byte(value,end-1))) { end -= 1; }
+        if (end > start && same_ascii_case(part(value,start,end),token)) { return true; }
+    }
+    return false;
+}
+fn listed(head: ext::http::Head, name: core::slice::View<u8>, token: core::slice::View<u8>) -> bool {
+    let cursor: ext::http::Fields = head.headers();
+    while (true) { let next: core::option::Option<ext::http::Field> = cursor.next(); if (next.is_none()) { return false; } let item: ext::http::Field = next.unwrap(); if (ext::http::equal_name(item.name,name) && has_token(item.value,token)) { return true; } }
+    return false;
+}
+pub fn status_for(error: Error) -> i32 {
+    return match(error) {
+        Error::Parse(e) -> match(e) { ext::http::Error::Limit(n) -> 431, ext::http::Error::Unsupported(n) -> 501, ext::http::Error::AllocationFailed -> 500, _ -> 400 },
+        Error::HeadTooLarge -> 431, Error::BodyTooLarge -> 413, Error::HeadTimeout -> 408, Error::BodyTimeout -> 408, Error::Truncated -> 400,
+        Error::AllocationFailed -> 500, _ -> 0
+    };
+}
+pub fn reason(status: i32) -> core::slice::View<u8> {
+    return match(status) {
+        100 -> literal("Continue",8), 200 -> literal("OK",2), 204 -> literal("No Content",10), 206 -> literal("Partial Content",15),
+        301 -> literal("Moved Permanently",17), 304 -> literal("Not Modified",12), 400 -> literal("Bad Request",11), 403 -> literal("Forbidden",9),
+        404 -> literal("Not Found",9), 405 -> literal("Method Not Allowed",18), 408 -> literal("Request Timeout",15), 413 -> literal("Content Too Large",17),
+        416 -> literal("Range Not Satisfiable",21), 431 -> literal("Request Header Fields Too Large",31), 500 -> literal("Internal Server Error",21),
+        501 -> literal("Not Implemented",15), 503 -> literal("Service Unavailable",19), _ -> literal("Unknown",7)
+    };
+}
+fn deadline_ms(ms: i32) -> core::result::Result<core::time::Deadline,Error> {
+    let now: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (now.is_err()) { return core::result::Err(Error::Clock); }
+    let shifted: core::result::Result<core::time::Deadline,core::time::Error> = core::time::deadline_after(now.unwrap(),core::time::from_millis(ms as u64)); if (shifted.is_err()) { return core::result::Err(Error::Clock); }
+    return core::result::Ok(shifted.unwrap());
+}
+fn timed_out(error: core::io::Error) -> bool { return match(error) { core::io::Error::Host(n) -> n == 110, _ -> false }; }
+fn bytes(n: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    let made: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(n); if (made.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let v: alloc::vec::Vec<u8> = made.unwrap(); if (v.try_resize(n,0).is_err()) { v.destroy(); return core::result::Err(Error::AllocationFailed); } return core::result::Ok(v);
+}
+fn options_valid(o: Options) -> bool {
+    let l: ext::http::Limits = o.limits;
+    return l.head_bytes > 0 && l.line_bytes > 0 && l.body_bytes >= 0 && o.buffer_bytes >= l.head_bytes && o.buffer_bytes <= 1073741824 && l.body_bytes <= o.buffer_bytes
+        && o.head_timeout_ms >= 0 && o.body_timeout_ms >= 0 && o.idle_timeout_ms >= 0 && o.write_timeout_ms >= 0 && o.max_requests > 0 && o.drain_bytes >= 0 && o.drain_timeout_ms >= 0;
+}
+
+// Wait until the deadline for one connection on a borrowed nonblocking TCP
+// listener. Ok(None) means the deadline passed with no connection.
+pub fn accept_until(listener: &std::socket::Socket, options: Options, deadline: core::time::Deadline) -> core::result::Result<core::option::Option<Connection>,Error> {
+    if (!options_valid(options)) { return core::result::Err(Error::InvalidState); }
+    while (true) {
+        let ready: core::result::Result<std::socket::Ready,core::io::Error> = listener.wait_until(true,false,deadline);
+        if (ready.is_err()) { return core::result::Err(Error::Io(ready.unwrap_err())); }
+        if (ready.unwrap().timed_out) { return core::result::Ok(core::option::None()); }
+        let got: core::result::Result<std::socket::Accepted,std::socket::AcceptFailure> = listener.accept(true);
+        if (got.is_err()) {
+            let cause: core::io::Error = got.unwrap_err().cause;
+            let retry: bool = match(cause) { core::io::Error::WouldBlock -> true, core::io::Error::Interrupted -> true, core::io::Error::Host(n) -> n == 103 || n == 104, _ -> false };
+            if (retry) { continue; } return core::result::Err(Error::Io(cause));
+        }
+        let accepted: std::socket::Accepted = got.unwrap();
+        let input: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(options.buffer_bytes);
+        if (input.is_err()) { accepted.socket.close(); return core::result::Err(input.unwrap_err()); }
+        let body: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(options.limits.body_bytes);
+        if (body.is_err()) { let first: alloc::vec::Vec<u8> = input.unwrap(); first.destroy(); accepted.socket.close(); return core::result::Err(body.unwrap_err()); }
+        let stats: Stats = Stats { requests: 0, responses: 0, bytes_received: 0, bytes_sent: 0, reads: 0 };
+        return core::result::Ok(core::option::Some(Connection { socket: accepted.socket, peer: accepted.peer, options: options, input: input.unwrap(), filled: 0, consumed: 0, body: body.unwrap(), output: alloc::vec::new<u8>(), keep_alive: true, head_only: false, staged: false, body_left: 0, closed: false, stats: stats }));
+    }
+    return core::result::Err(Error::InvalidState);
+}
+
+pub impl Request {
+    pub fn borrow(&self) -> &Request { return self; }
+    pub fn header(&self, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>> {
+        let found: core::option::Option<ext::http::Field> = self.head.lookup(name); if (found.is_none()) { return core::option::None(); } return core::option::Some(found.unwrap().value);
+    }
+    pub fn is_method(&self, name: core::slice::View<u8>) -> bool { return same(self.method,name); }
+}
+
+pub impl Connection {
+    pub fn borrow(&self) -> &Connection { return self; }
+    pub fn stats(&self) -> Stats { return self.stats; }
+    pub fn will_keep_alive(&self) -> bool { return self.keep_alive && !self.closed; }
+    // The next response carries Connection: close and the owner closes after it.
+    pub fn set_close(&self) { self.keep_alive = false; }
+    fn fill(&self, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+        if (self.filled >= self.input.len()) { return core::result::Err(Error::InvalidState); }
+        let all: core::slice::View<u8> = self.input.as_view(); let room: core::slice::View<u8> = part(all,self.filled,all.len());
+        let got: core::result::Result<i32,core::io::Error> = self.socket.receive_until(room,deadline);
+        if (got.is_err()) { let e: core::io::Error = got.unwrap_err(); if (timed_out(e)) { return core::result::Ok(-1); } return core::result::Err(Error::Io(e)); }
+        let n: i32 = got.unwrap(); if (n < 0 || n > room.len()) { return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
+        self.filled += n; self.stats.bytes_received += n as u64; self.stats.reads += 1; return core::result::Ok(n);
+    }
+    fn compact(&self) {
+        if (self.consumed == 0) { return; } let all: core::slice::View<u8> = self.input.as_view(); let i: i32 = 0; let n: i32 = self.filled - self.consumed;
+        while (i < n) { all.values[all.start+i] = all.values[all.start+self.consumed+i]; i += 1; } self.filled = n; self.consumed = 0;
+    }
+    fn send_all(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.write_timeout_ms); if (deadline.is_err()) { return core::result::Err(deadline.unwrap_err()); }
+        let done: i32 = 0;
+        while (done < data.len()) {
+            let sent: core::result::Result<i32,core::io::Error> = self.socket.send_until(part(data,done,data.len()),deadline.unwrap());
+            if (sent.is_err()) { let e: core::io::Error = sent.unwrap_err(); self.keep_alive = false; if (timed_out(e)) { return core::result::Err(Error::WriteTimeout); } return core::result::Err(Error::Io(e)); }
+            let n: i32 = sent.unwrap(); if (n <= 0 || n > data.len() - done) { self.keep_alive = false; return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
+            done += n; self.stats.bytes_sent += n as u64;
+        }
+        return core::result::Ok(done);
+    }
+    // Read one complete request. Ok(None): the peer closed, or stayed idle
+    // past idle_timeout_ms, between requests. The previous Request's views are
+    // invalid after this call. An Err leaves the connection rejectable.
+    pub fn next_request(&self) -> core::result::Result<core::option::Option<Request>,Error> {
+        if (self.closed || self.staged || !self.keep_alive) { return core::result::Err(Error::InvalidState); }
+        if (self.stats.requests >= self.options.max_requests) { return core::result::Ok(core::option::None()); }
+        self.compact(); let limits: ext::http::Limits = self.options.limits;
+        if (self.filled == 0) {
+            let idle: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.idle_timeout_ms); if (idle.is_err()) { return core::result::Err(idle.unwrap_err()); }
+            let first: core::result::Result<i32,Error> = self.fill(idle.unwrap()); if (first.is_err()) { return core::result::Err(first.unwrap_err()); }
+            if (first.unwrap() <= 0) { return core::result::Ok(core::option::None()); }
+        }
+        // The head deadline is absolute from its first byte: trickled bytes never extend it.
+        let head_deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.head_timeout_ms); if (head_deadline.is_err()) { return core::result::Err(head_deadline.unwrap_err()); }
+        let head: ext::http::Head = ext::http::Head { raw: literal("",0), fields: literal("",0), field_count: 0, request: true, method: literal("",0), target: literal("",0), version: 0, status: 0, reason: literal("",0), kind: ext::http::BodyKind::Empty, content_length: 0 };
+        while (true) {
+            let window: core::slice::View<u8> = part(self.input.as_view(),0,self.filled);
+            let parsed: core::result::Result<ext::http::Head,ext::http::Error> = ext::http::parse_request_head(window,limits);
+            if (parsed.is_ok()) { head = parsed.unwrap(); break; }
+            let e: ext::http::Error = parsed.unwrap_err();
+            let incomplete: bool = match(e) { ext::http::Error::Incomplete(n) -> true, _ -> false };
+            if (!incomplete) { self.keep_alive = false; return core::result::Err(Error::Parse(e)); }
+            if (self.filled >= limits.head_bytes) { self.keep_alive = false; return core::result::Err(Error::HeadTooLarge); }
+            let got: core::result::Result<i32,Error> = self.fill(head_deadline.unwrap()); if (got.is_err()) { self.keep_alive = false; return core::result::Err(got.unwrap_err()); }
+            if (got.unwrap() < 0) { self.keep_alive = false; return core::result::Err(Error::HeadTimeout); }
+            if (got.unwrap() == 0) { self.keep_alive = false; return core::result::Err(Error::Truncated); }
+        }
+        let fixed: bool = match(head.kind) { ext::http::BodyKind::Fixed -> true, _ -> false };
+        let chunked: bool = match(head.kind) { ext::http::BodyKind::Chunked -> true, _ -> false };
+        if (fixed && head.content_length > limits.body_bytes) { self.keep_alive = false; return core::result::Err(Error::BodyTooLarge); }
+        self.keep_alive = (head.version == 11 && !listed(head,literal("connection",10),literal("close",5))) || (head.version == 10 && listed(head,literal("connection",10),literal("keep-alive",10)));
+        let continued: bool = !(head.version == 11 && listed(head,literal("expect",6),literal("100-continue",12)));
+        let body_deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.body_timeout_ms); if (body_deadline.is_err()) { return core::result::Err(body_deadline.unwrap_err()); }
+        let message: ext::http::Message = ext::http::Message { head: head, encoded_body: literal("",0), trailers: literal("",0), trailer_count: 0, consumed: 0, decoded_length: 0 };
+        while (true) {
+            let window: core::slice::View<u8> = part(self.input.as_view(),0,self.filled);
+            let parsed: core::result::Result<ext::http::Message,ext::http::Error> = ext::http::parse_request(window,false,limits);
+            if (parsed.is_ok()) { message = parsed.unwrap(); break; }
+            let e: ext::http::Error = parsed.unwrap_err();
+            let incomplete: bool = match(e) { ext::http::Error::Incomplete(n) -> true, _ -> false };
+            let limited: bool = match(e) { ext::http::Error::Limit(n) -> true, _ -> false };
+            self.keep_alive = self.keep_alive && incomplete;
+            if (limited) { return core::result::Err(Error::BodyTooLarge); }
+            if (!incomplete) { return core::result::Err(Error::Parse(e)); }
+            if (self.filled >= self.input.len()) { self.keep_alive = false; return core::result::Err(Error::BodyTooLarge); }
+            if (!continued) { continued = true; let sent: core::result::Result<i32,Error> = self.send_all(literal("HTTP/1.1 100 Continue\r\n\r\n",25)); if (sent.is_err()) { return core::result::Err(sent.unwrap_err()); } }
+            let got: core::result::Result<i32,Error> = self.fill(body_deadline.unwrap()); if (got.is_err()) { self.keep_alive = false; return core::result::Err(got.unwrap_err()); }
+            if (got.unwrap() < 0) { self.keep_alive = false; return core::result::Err(Error::BodyTimeout); }
+            if (got.unwrap() == 0) { self.keep_alive = false; return core::result::Err(Error::Truncated); }
+        }
+        let body: core::slice::View<u8> = message.encoded_body;
+        if (chunked) {
+            let decoded: core::result::Result<i32,ext::http::Error> = ext::http::decode_into(message,self.body.as_view());
+            if (decoded.is_err()) { self.keep_alive = false; return core::result::Err(Error::Parse(decoded.unwrap_err())); }
+            body = part(self.body.as_view(),0,decoded.unwrap());
+        }
+        self.consumed = message.consumed; self.stats.requests += 1;
+        if (self.stats.requests >= self.options.max_requests) { self.keep_alive = false; }
+        let target: core::slice::View<u8> = head.target; let q: i32 = 0; while (q < target.len() && byte(target,q) != 63) { q += 1; }
+        let query: core::slice::View<u8> = literal("",0); if (q < target.len()) { query = part(target,q+1,target.len()); }
+        // Absolute-form targets (RFC 9112 3.2.2) route by their path; "*" stays as is.
+        let path: core::slice::View<u8> = part(target,0,q);
+        if (!path.is_empty() && byte(path,0) != 47 && byte(path,0) != 42) {
+            let k: i32 = 0; while (k + 2 < path.len() && !(byte(path,k) == 58 && byte(path,k+1) == 47 && byte(path,k+2) == 47)) { k += 1; }
+            if (k + 2 < path.len()) { let s: i32 = k + 3; while (s < path.len() && byte(path,s) != 47) { s += 1; } if (s < path.len()) { path = part(path,s,path.len()); } else { path = literal("/",1); } }
+        }
+        self.head_only = same(head.method,literal("HEAD",4));
+        return core::result::Ok(core::option::Some(Request { method: head.method, target: target, path: path, query: query, version: head.version, head: head, body: body, keep_alive: self.keep_alive, chunked: chunked }));
+    }
+    // Response writer: begin, header*, end_head(length), then exactly length
+    // body bytes through write_body (dropped automatically for HEAD).
+    pub fn begin(&self, status: i32) -> core::result::Result<i32,Error> {
+        if (self.closed || self.staged || status < 200 || status > 599) { return core::result::Err(Error::InvalidState); }
+        self.output.clear(); self.staged = true;
+        let line: [u8;16] = [72,84,84,80,47,49,46,49,32,48,48,48,32,0,0,0];
+        line[9] = (48 + status / 100) as u8; line[10] = (48 + (status / 10) % 10) as u8; line[11] = (48 + status % 10) as u8;
+        if (self.output.try_extend(core::slice::view<u8>(line,13).unwrap()).is_err()) { return core::result::Err(Error::AllocationFailed); }
+        if (self.output.try_extend(reason(status)).is_err()) { return core::result::Err(Error::AllocationFailed); }
+        return self.raw(literal("\r\n",2));
+    }
+    fn raw(&self, v: core::slice::View<u8>) -> core::result::Result<i32,Error> { if (self.output.try_extend(v).is_err()) { return core::result::Err(Error::AllocationFailed); } return core::result::Ok(0); }
+    // Names must be tokens and values must not contain CR, LF or NUL.
+    pub fn header(&self, name: core::slice::View<u8>, value: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!self.staged || self.body_left > 0 || name.is_empty()) { return core::result::Err(Error::InvalidHeader); }
+        let i: i32 = 0; while (i < name.len()) { let c: u8 = byte(name,i); if (c <= 32 || c >= 127 || c == 58) { return core::result::Err(Error::InvalidHeader); } i += 1; }
+        i = 0; while (i < value.len()) { let c: u8 = byte(value,i); if (c == 13 || c == 10 || c == 0) { return core::result::Err(Error::InvalidHeader); } i += 1; }
+        let a: core::result::Result<i32,Error> = self.raw(name); if (a.is_err()) { return a; }
+        let b: core::result::Result<i32,Error> = self.raw(literal(": ",2)); if (b.is_err()) { return b; }
+        let c: core::result::Result<i32,Error> = self.raw(value); if (c.is_err()) { return c; }
+        return self.raw(literal("\r\n",2));
+    }
+    pub fn header_number(&self, name: core::slice::View<u8>, value: u64) -> core::result::Result<i32,Error> {
+        let digits: [u8;24] = [0;24]; let n: i32 = format_u64(value,digits); return self.header(name,core::slice::view_range<u8>(digits,24-n,n).unwrap());
+    }
+    pub fn end_head(&self, length: u64) -> core::result::Result<i32,Error> {
+        if (!self.staged || self.body_left > 0) { return core::result::Err(Error::InvalidState); }
+        let a: core::result::Result<i32,Error> = self.header_number(literal("Content-Length",14),length); if (a.is_err()) { return a; }
+        let token: core::slice::View<u8> = literal("close",5); if (self.keep_alive) { token = literal("keep-alive",10); }
+        let b: core::result::Result<i32,Error> = self.header(literal("Connection",10),token); if (b.is_err()) { return b; }
+        let c: core::result::Result<i32,Error> = self.raw(literal("\r\n",2)); if (c.is_err()) { return c; }
+        if (!self.head_only) { self.body_left = length; }
+        let sent: core::result::Result<i32,Error> = self.send_all(self.output.as_view()); if (sent.is_err()) { return sent; }
+        if (self.body_left == 0) { return self.complete(); }
+        return core::result::Ok(0);
+    }
+    pub fn write_body(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!self.staged) { return core::result::Err(Error::InvalidState); }
+        if (self.head_only) { return core::result::Ok(data.len()); }
+        if ((data.len() as u64) > self.body_left) { return core::result::Err(Error::InvalidState); }
+        let sent: core::result::Result<i32,Error> = self.send_all(data); if (sent.is_err()) { return sent; }
+        self.body_left -= data.len() as u64; if (self.body_left == 0) { return self.complete(); } return core::result::Ok(data.len());
+    }
+    fn complete(&self) -> core::result::Result<i32,Error> { self.staged = false; self.head_only = false; self.stats.responses += 1; return core::result::Ok(0); }
+    // One complete response with an optional Content-Type.
+    pub fn respond(&self, status: i32, content_type: core::slice::View<u8>, body: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        let a: core::result::Result<i32,Error> = self.begin(status); if (a.is_err()) { return a; }
+        if (!content_type.is_empty()) { let b: core::result::Result<i32,Error> = self.header(literal("Content-Type",12),content_type); if (b.is_err()) { return b; } }
+        let c: core::result::Result<i32,Error> = self.end_head(body.len() as u64); if (c.is_err()) { return c; }
+        if (body.is_empty() || self.body_left == 0) { return core::result::Ok(0); } return self.write_body(body);
+    }
+    // Answer a failed next_request with its mapped status (when any) and close.
+    pub fn reject(&self, error: Error) -> core::result::Result<i32,Error> {
+        self.keep_alive = false; let status: i32 = status_for(error); let result: core::result::Result<i32,Error> = core::result::Ok(status);
+        if (status != 0 && !self.staged && !self.closed) { self.head_only = false; let sent: core::result::Result<i32,Error> = self.respond(status,literal("text/plain",10),reason(status)); if (sent.is_err()) { result = core::result::Err(sent.unwrap_err()); } }
+        let closed: core::result::Result<i32,Error> = self.close(); if (result.is_ok() && closed.is_err()) { return closed; } return result;
+    }
+    // Half-close, drain bounded unread input briefly so the peer sees the
+    // response instead of a reset, then close and release buffers once.
+    pub fn close(&self) -> core::result::Result<i32,Error> {
+        if (self.closed) { return core::result::Ok(0); } self.closed = true;
+        let shut: core::result::Result<i32,core::io::Error> = self.socket.shutdown(std::socket::Shutdown::Write);
+        if (shut.is_ok()) {
+            let drain: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.drain_timeout_ms); let left: i32 = self.options.drain_bytes;
+            if (drain.is_ok()) {
+                let all: core::slice::View<u8> = self.input.as_view();
+                while (left > 0 && all.len() > 0) {
+                    let width: i32 = all.len(); if (width > left) { width = left; }
+                    let got: core::result::Result<i32,core::io::Error> = self.socket.receive_until(part(all,0,width),drain.unwrap());
+                    if (got.is_err() || got.unwrap() <= 0) { break; } left -= got.unwrap();
+                }
+            }
+        }
+        self.input.destroy(); self.body.destroy(); self.output.destroy();
+        let closed: core::result::Result<i32,core::io::Error> = self.socket.close(); if (closed.is_err()) { return core::result::Err(Error::Io(closed.unwrap_err())); } return core::result::Ok(0);
+    }
+}
+// Right-aligned decimal digits; returns their count.
+pub fn format_u64(value: u64, out: [u8]) -> i32 { let n: i32 = 0; let v: u64 = value; while (true) { out[23-n] = (48 + (v % 10) as u8) as u8; n += 1; v = v / 10; if (v == 0) { break; } } return n; }
+
+pub fn router() -> Router { return Router { routes: alloc::vec::new<Route>() }; }
+pub impl Router {
+    pub fn borrow(&self) -> &Router { return self; }
+    // method "*" matches any method; a GET route also answers HEAD. A prefix
+    // route matches pattern followed by anything; rest is the remainder.
+    pub fn add(&self, method: core::slice::View<u8>, pattern: core::slice::View<u8>, prefix: bool, id: i32) -> core::result::Result<i32,Error> {
+        if (pattern.is_empty() || byte(pattern,0) != 47) { return core::result::Err(Error::InvalidState); }
+        if (self.routes.try_push(Route { method: method, pattern: pattern, prefix: prefix, id: id }).is_err()) { return core::result::Err(Error::AllocationFailed); } return core::result::Ok(self.routes.len());
+    }
+    // First matching route in insertion order wins.
+    pub fn find(&self, method: core::slice::View<u8>, path: core::slice::View<u8>) -> Match {
+        let i: i32 = 0; let path_seen: bool = false;
+        while (i < self.routes.len()) {
+            let r: Route = self.routes.get(i).unwrap(); i += 1;
+            let hit: bool = false; let rest: core::slice::View<u8> = literal("",0);
+            if (r.prefix) { if (path.len() >= r.pattern.len() && same(part(path,0,r.pattern.len()),r.pattern)) { hit = true; rest = part(path,r.pattern.len(),path.len()); } }
+            else { hit = same(path,r.pattern); }
+            if (!hit) { continue; } path_seen = true;
+            let any: bool = same(r.method,literal("*",1)); let exact: bool = same(r.method,method);
+            let head: bool = same(r.method,literal("GET",3)) && same(method,literal("HEAD",4));
+            if (any || exact || head) { return Match::Found(Hit { id: r.id, rest: rest }); }
+        }
+        if (path_seen) { return Match::MethodNotAllowed; } return Match::NotFound;
+    }
+    pub fn destroy(&self) { self.routes.destroy(); }
+}
