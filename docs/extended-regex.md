@@ -385,6 +385,19 @@ This dependency is scoped to the new module shape; earlier module migrations
 and their question-mark execution receipts remain separate evidence. No compiler
 change or reduced regex capability is part of this adaptation.
 
+### Differential oracle and lazy counted repetition
+
+The [regex differential oracle](extended-regex-oracle.md) compares
+`find_iter` captures, template replacement and the grep filter with CPython
+`re`, using seeded grammar-generated patterns from the shared subset. On source
+SHA256 `a4b91551...`, five seeds agree on 60,025/60,025 find cases,
+5,000/5,000 replacements and 5,000/5,000 grep runs. The oracle found that lazy
+counted repetition with a zero minimum gave single iterations priority over a
+second iteration: `(?:a|aab){0,2}?b` on `aabb` matched `[0,4)`. Optional copies
+now nest as `(?:x(?:x)??)??`, as in RE2 and Python, and the match is `[0,3)`.
+The receipts above predate this change. An old-versus-new comparison over
+18,000 unrestricted cases found no other changed result.
+
 ### Historical engine coverage
 
 Before workspace reuse, the focused native tests compared over a thousand
