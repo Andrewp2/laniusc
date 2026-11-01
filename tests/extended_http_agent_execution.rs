@@ -15,8 +15,12 @@ fn client() -> &'static common::TempArtifact {
             stdlib_root: Some(root().join("stdlib")),
             user_roots: vec![root().join("extended")],
         };
-        // ext::url_connect resolves names through libc; no TLS libraries.
-        let options = laniusc_compiler::compiler::NativeLinkOptions::default();
+        // ext::url_connect resolves names through libc; https:// goes through
+        // ext::tls_stream, so the client links OpenSSL 3.
+        let options = laniusc_compiler::compiler::NativeLinkOptions {
+            libraries: vec!["ssl".into(), "crypto".into()],
+            ..Default::default()
+        };
         let bytes = common::run_gpu_codegen_with_timeout(path, move || {
             pollster::block_on(
                 laniusc_compiler::compiler::compile_entry_to_x86_64_with_native_link(
@@ -68,4 +72,9 @@ fn chunked_and_fixed_uploads_including_early_final_responses() {
 #[test]
 fn broken_servers_map_to_typed_errors_and_curl_exit_codes() {
     group("broken", "cases=21 connections=18 requests=1");
+}
+
+#[test]
+fn https_pools_tls_connections_and_follows_scheme_redirects() {
+    group("https", "cases=17 connections=22 requests=27");
 }
