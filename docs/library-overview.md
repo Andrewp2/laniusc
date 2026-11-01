@@ -2241,6 +2241,12 @@ allocation failures, plus a 4,096-row resource control. The
 [reduced compiler dependencies](library-context-inference-dependencies.md)
 retain original failing expressions beside native passing controls.
 
+[Table-driven Pratt parsing](extended-pratt.md) turns a binding-power table of
+atoms, prefix, infix, postfix, grouping and call kinds into postfix events. It
+uses fixed scratch, allocation-free O(n) parsing and typed errors with token
+indices. Its Python-precedence calculator sample agrees with CPython `ast` on
+100,000 generated expressions and 25,000 token-soup lines.
+
 The [regex differential oracle](extended-regex-oracle.md) runs the real
 `find_iter`, template-replacement and grep programs against CPython `re` on
 seeded grammar-generated patterns from the shared subset. Five seeds agree on
