@@ -1,0 +1,16 @@
+module app::main;
+
+// `None` in the payload is lib::opt's variant, imported with its module, as
+// laniusc reads it: the arm checks that the payload is None. The front end
+// once bound it as a name, reading the arm as `Some(_) -> 1`. The inner
+// match `None -> 1` names one of two variants, so the match is rejected
+// (laniusc compiles it, and traps on Some(Some(_))).
+import lib::opt;
+
+fn f(o: lib::opt::Opt<lib::opt::Opt<i32>>) -> i32 {
+    return match (o) { lib::opt::Some(None) -> 1, lib::opt::None -> 3 };
+}
+
+fn main() -> i32 {
+    return f(lib::opt::None());
+}

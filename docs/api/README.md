@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **314 modules**, **16525 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **316 modules**, **16610 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -266,6 +266,7 @@ Inventory: **314 modules**, **16525 declaration/member entries**. Counts include
 | [ext::https_client](ext/https_client.md) | [source](../../extended/ext/https_client.lani#L3) | 80 | Source inventory | [extended-https-client](../extended-https-client.md), [extended-https-batch](../extended-https-batch.md), [extended-https-batch-testing](../extended-https-batch-testing.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-url-client](../extended-url-client.md) |
 | [ext::https_server](ext/https_server.md) | [source](../../extended/ext/https_server.lani#L3) | 86 | Source inventory | [extended-https-server-exchange](../extended-https-server-exchange.md), [library-server-contract](../library-server-contract.md), [library-server-concurrency-plan](../library-server-concurrency-plan.md) |
 | [ext::https_server_poll](ext/https_server_poll.md) | [source](../../extended/ext/https_server_poll.lani#L2) | 29 | Source inventory | [extended-server-poll](../extended-server-poll.md), [extended-https-server-exchange](../extended-https-server-exchange.md), [library-server-contract](../library-server-contract.md) |
+| [ext::idna](ext/idna.md) | [source](../../extended/ext/idna.lani#L7) | 24 | Source inventory | [extended-idna](../extended-idna.md) |
 | [ext::image](ext/image.md) | [source](../../extended/ext/image.lani#L2) | 48 | Source inventory | [extended-image](../extended-image.md), [extended-image-resize](../extended-image-resize.md) |
 | [ext::inflate](ext/inflate.md) | [source](../../extended/ext/inflate.lani#L4) | 61 | Source inventory | [extended-inflate](../extended-inflate.md), [extended-streaming-inflate](../extended-streaming-inflate.md) |
 | [ext::json](ext/json.md) | [source](../../extended/ext/json.lani#L3) | 90 | Source inventory | [extended-json](../extended-json.md), [extended-json-streaming](../extended-json-streaming.md), [extended-json-normalize](../extended-json-normalize.md) |
@@ -320,7 +321,7 @@ Inventory: **314 modules**, **16525 declaration/member entries**. Counts include
 | [ext::unidiff](ext/unidiff.md) | [source](../../extended/ext/unidiff.lani#L3) | 79 | Source inventory | [extended-seqdiff](../extended-seqdiff.md) |
 | [ext::uri](ext/uri.md) | [source](../../extended/ext/uri.lani#L3) | 33 | Source inventory | [extended-uri](../extended-uri.md) |
 | [ext::uri_resolve](ext/uri_resolve.md) | [source](../../extended/ext/uri_resolve.lani#L3) | 8 | Source inventory | [extended-uri-resolve](../extended-uri-resolve.md) |
-| [ext::url](ext/url.md) | [source](../../extended/ext/url.lani#L5) | 66 | Source inventory | [extended-url](../extended-url.md) |
+| [ext::url](ext/url.md) | [source](../../extended/ext/url.lani#L5) | 67 | Source inventory | [extended-url](../extended-url.md) |
 | [ext::url_client](ext/url_client.md) | [source](../../extended/ext/url_client.lani#L3) | 37 | Source inventory | [extended-url-client](../extended-url-client.md), [extended-fetch-url](../extended-fetch-url.md), [library-url-client-plan](../library-url-client-plan.md) |
 | [ext::url_connect](ext/url_connect.md) | [source](../../extended/ext/url_connect.lani#L3) | 63 | Source inventory | [extended-url-client](../extended-url-client.md), [library-url-client-plan](../library-url-client-plan.md), [stdlib-resolve](../stdlib-resolve.md) |
 | [ext::url_tls](ext/url_tls.md) | [source](../../extended/ext/url_tls.lani#L3) | 40 | Source inventory | [extended-url-client](../extended-url-client.md), [extended-fetch-url](../extended-fetch-url.md), [extended-https-client](../extended-https-client.md), [library-url-client-plan](../library-url-client-plan.md) |
@@ -331,7 +332,7 @@ Inventory: **314 modules**, **16525 declaration/member entries**. Counts include
 | [ext::weighted_statistics](ext/weighted_statistics.md) | [source](../../extended/ext/weighted_statistics.lani#L4) | 63 | Source inventory | [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-statistics](../extended-statistics.md), [extended-sample-moments](../extended-sample-moments.md) |
 | [ext::wordiff](ext/wordiff.md) | [source](../../extended/ext/wordiff.lani#L3) | 18 | Source inventory | [extended-wordiff](../extended-wordiff.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
-| [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 117 | Source inventory | [extended-xz](../extended-xz.md) |
+| [ext::xz](ext/xz.md) | [source](../../extended/ext/xz.lani#L4) | 168 | Source inventory | [extended-xz](../extended-xz.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 
 ## Support and implementation data
@@ -357,6 +358,7 @@ Inventory: **314 modules**, **16525 declaration/member entries**. Counts include
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
 | [ext::distributions_erfc](ext/distributions_erfc.md) | [source](../../extended/ext/distributions_erfc.lani#L14) | 1 | Source inventory | [extended-distributions](../extended-distributions.md) |
+| [ext::idna_data](ext/idna_data.md) | [source](../../extended/ext/idna_data.lani#L12) | 9 | Source inventory | [extended-idna](../extended-idna.md) |
 | [ext::statistics_scaling](ext/statistics_scaling.md) | [source](../../extended/ext/statistics_scaling.lani#L5) | 6 | Source inventory | [extended-weighted-statistics](../extended-weighted-statistics.md), [extended-higher-statistics](../extended-higher-statistics.md) |
 | [ext::terminal_data](ext/terminal_data.md) | [source](../../extended/ext/terminal_data.lani#L6) | 1 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::unicode_case_data](ext/unicode_case_data.md) | [source](../../extended/ext/unicode_case_data.lani#L7) | 12 | Source inventory | [extended-unicode-case](../extended-unicode-case.md) |

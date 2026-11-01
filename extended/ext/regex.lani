@@ -1001,7 +1001,7 @@ pub impl Regex {
         let written: i32 = 0; let at: i32 = best_start;
         while (at >= 0 && written < best) {
             let scalar: u32 = code[at].a as u32; let width: i32 = core::utf8::encoded_len_or(scalar, 0) as i32; let k: i32 = 0;
-            while (k < width) { out[written + k] = core::utf8::encoded_byte_or(scalar, k as u32, 0); k += 1; }
+            while (k < width) { let byte: u8 = core::utf8::encoded_byte_or(scalar, k as u32, 0); out[written + k] = byte; k += 1; }
             written += width; at = self.chained(code, required, at);
         }
         seen.destroy(); stack.destroy(); needed.destroy();
@@ -1242,7 +1242,7 @@ pub impl PrefixSet {
     // The lowest rule accepting at end of text from this state, cached.
     fn final_rule(&self, state: i32) -> i32 {
         let accept = self.accept.as_slice();
-        if (accept[state * 2 + 1] == -2) { accept[state * 2 + 1] = self.best(self.resolve(state, 1, self.next_generation())); }
+        if (accept[state * 2 + 1] == -2) { let stored: i32 = self.best(self.resolve(state, 1, self.next_generation())); accept[state * 2 + 1] = stored; }
         return accept[state * 2 + 1];
     }
     // Longest prefix (anchored) or earliest match end (unanchored) over every

@@ -45,7 +45,11 @@ fn valid(start: i32, length: i32) -> bool {
 // Two-level Unicode 17 entry: ccc, decomposition and quick-check bits. The
 // generator proves every decomposable scalar has its D bit and every
 // composition's second scalar is NFC_QC=Maybe, so these filters are exact.
-fn info(value: u32) -> u32 { return ext::unicode_quick_check_data::entry(value); }
+// Every entry below U+00A0 is zero: class 0, no decomposition, quick-check Yes.
+fn info(value: u32) -> u32 {
+    if (value < 160) { return 0; }
+    return ext::unicode_quick_check_data::entry(value);
+}
 fn class_of(value: u32) -> u32 { return info(value) & 255; }
 fn mapping(value: u32, compat: bool) -> ext::unicode_normalize_data::Mapping {
     let bits: u32 = info(value);
@@ -117,6 +121,78 @@ fn primary_composite(left: u32, right: u32) -> u32 {
     return ext::unicode_normalize_data::compose(left, right);
 }
 
+// Runs longer than this are ordered by order_long_run.
+const ORDER_SHORT: i32 = 32;
+
+fn reverse_range(values: core::slice::View<u32>, low: i32, high: i32) {
+    let left: i32 = low; let right: i32 = high - 1;
+    while (left < right) {
+        let held: u32 = values.values[left];
+        values.values[left] = values.values[right]; values.values[right] = held;
+        left += 1; right -= 1;
+    }
+}
+// First absolute index in [low, high) whose key has the bit set; the range
+// is already partitioned with clear bits first. Keys sit in bits 24 to 31.
+fn first_set(values: core::slice::View<u32>, low: i32, high: i32, bit: u32) -> i32 {
+    let left: i32 = low; let right: i32 = high;
+    while (left < right) {
+        let middle: i32 = left + (right - left) / 2;
+        if (((values.values[middle] >> bit) & 1) == 0) { left = middle + 1; } else { right = middle; }
+    }
+    return left;
+}
+// Stable least-significant-digit radix sort by CCC over absolute indices
+// [low, high), in place. Scalars need 21 bits, so each CCC is packed into
+// bits 24 to 31 for the sort and stripped afterwards. Each varying CCC bit
+// gets a bottom-up stable partition whose merges swap two blocks with three
+// reversals: O(n log n) per varying bit, at most eight bits, no extra storage.
+// Charges: one unit per run scalar, then, unless the run is already in
+// order, one unit per run scalar for each merge level of each varying bit.
+fn order_long_run(values: core::slice::View<u32>, low: i32, high: i32, budget: &Budget) -> bool {
+    let count: i32 = high - low;
+    if (!budget.charge(count as u64)) { return false; }
+    let any: u32 = 0; let all: u32 = 255; let ordered: bool = true;
+    let previous: u32 = 0; let index: i32 = low;
+    while (index < high) {
+        let ccc: u32 = class_of(values.values[index]);
+        values.values[index] = values.values[index] | (ccc << 24);
+        any = any | ccc; all = all & ccc;
+        if (ccc < previous) { ordered = false; }
+        previous = ccc; index += 1;
+    }
+    let varying: u32 = any & (255 ^ all);
+    let bit: u32 = 0;
+    if (ordered) { bit = 8; }
+    while (bit < 8) {
+        if (((varying >> bit) & 1) != 0) {
+            let width: i32 = 1;
+            while (width < count) {
+                if (!budget.charge(count as u64)) { return false; }
+                let block: i32 = low;
+                while (high - block > width) {
+                    let middle: i32 = block + width;
+                    let stop: i32 = high;
+                    if (high - middle > width) { stop = middle + width; }
+                    let left: i32 = first_set(values, block, middle, bit + 24);
+                    let right: i32 = first_set(values, middle, stop, bit + 24);
+                    if (left < middle && middle < right) {
+                        reverse_range(values, left, middle);
+                        reverse_range(values, middle, right);
+                        reverse_range(values, left, right);
+                    }
+                    block = stop;
+                }
+                if (width > count - width) { width = count; } else { width = width * 2; }
+            }
+        }
+        bit += 1;
+    }
+    index = low;
+    while (index < high) { values.values[index] = values.values[index] & 16777215; index += 1; }
+    return true;
+}
+
 fn prepare(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, budget: &Budget) -> core::result::Result<Normalized, Error> {
     if (!valid(input.start, input.length) || !valid(scratch.start, scratch.length)) { return core::result::Err(Error::Bounds); }
     let compat: bool = compatibility(form);
@@ -137,24 +213,44 @@ fn prepare(input: core::text::Text, form: Form, scratch: core::slice::View<u32>,
             length += 1; part += 1;
         }
     }
-    // Stable insertion sorting implements D109's adjacent exchanges exactly:
-    // a nonstarter only crosses a strictly greater CCC; starters stay fixed.
-    let index: i32 = 1;
+    // Canonical ordering sorts each maximal run of nonstarters stably by CCC,
+    // which is exactly D109's result: starters never move, and a nonstarter
+    // only crosses a strictly greater CCC. Runs of at most ORDER_SHORT
+    // scalars use insertion sorting; longer runs use order_long_run.
+    let index: i32 = 0;
     while (index < length) {
-        if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
-        let value: u32 = scratch.values[scratch.start + index];
-        let ccc: u32 = class_of(value);
-        if (ccc != 0) {
-            let position: i32 = index;
-            while (position > 0) {
+        if (class_of(scratch.values[scratch.start + index]) == 0) {
+            if (index > 0) {
                 if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
-                let previous: u32 = scratch.values[scratch.start + position - 1];
-                if (class_of(previous) <= ccc) { break; }
-                scratch.values[scratch.start + position] = previous; position -= 1;
             }
-            scratch.values[scratch.start + position] = value;
+            index += 1;
+        } else {
+            let end: i32 = index + 1;
+            while (end < length && class_of(scratch.values[scratch.start + end]) != 0) { end += 1; }
+            if (end - index > ORDER_SHORT) {
+                if (!order_long_run(scratch, scratch.start + index, scratch.start + end, budget)) {
+                    return core::result::Err(Error::WorkLimit(budget.used));
+                }
+                index = end;
+            } else {
+                while (index < end) {
+                    if (index > 0) {
+                        if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+                    }
+                    let value: u32 = scratch.values[scratch.start + index];
+                    let ccc: u32 = class_of(value);
+                    let position: i32 = index;
+                    while (position > 0) {
+                        if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+                        let previous: u32 = scratch.values[scratch.start + position - 1];
+                        if (class_of(previous) <= ccc) { break; }
+                        scratch.values[scratch.start + position] = previous; position -= 1;
+                    }
+                    scratch.values[scratch.start + position] = value;
+                    index += 1;
+                }
+            }
         }
-        index += 1;
     }
     if (composed(form)) {
         let starter: i32 = -1; let previous_ccc: u32 = 0;

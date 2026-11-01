@@ -8,7 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_anyNested
 public import Lanius.Faithful.Gen.SelfStmtF_armsOf
-public import Lanius.Faithful.Gen.SelfStmtF_nestedOrPlain
+public import Lanius.Faithful.Gen.SelfStmtF_shadowUse
 public import Lanius.Faithful.Gen.SelfStmtF_variantArm
 import all Lanius.Faithful.Gen.SelfSrcF_variantArm
 import all Lanius.Mini.Frontend.P.variantArm

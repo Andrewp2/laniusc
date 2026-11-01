@@ -146,7 +146,7 @@ pub fn map<T, U, M>(plan: Plan, input: Shared<T>, output: Shared<U>, mapper: &M)
             while (index >= 0) {
                 let i: i32 = index * plan.chunk; let end: i32 = i + plan.chunk;
                 if (end > input.length) { end = input.length; }
-                while (i < end) { target[i] = mapper.apply(source[i]); i += 1; }
+                while (i < end) { let stored1 = mapper.apply(source[i]); target[i] = stored1; i += 1; }
                 index = claim(plan, count);
             }
             std::worker::finish(0); return core::result::Err(Error::Cancelled);
