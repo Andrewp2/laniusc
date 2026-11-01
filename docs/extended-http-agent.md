@@ -42,6 +42,7 @@ pub fn resolve(base: View<u8>, location: View<u8>, out: &Vec<u8>) -> bool;
 pub impl Agent {
     pub fn fetch(&self, request: Request) -> Result<Response,Error>;
     pub fn preconnect(&self, url: View<u8>, count: i32) -> Result<i32,Error>;
+    pub fn dial(&self, url: &ext::http_url::Url, deadline: Deadline) -> Result<Connection,Error>;
     pub fn stats(&self) -> Stats;
     pub fn idle(&self) -> i32;
     pub fn clear(&self) -> i32;
@@ -55,10 +56,18 @@ pub impl Response {
     pub fn url(&self) -> View<u8>;
     pub fn destroy(&self) -> bool;
 }
+pub impl Connection {
+    pub fn send(&self, data: View<u8>, deadline: Deadline) -> Result<i32,Error>;
+    pub fn receive(&self, space: View<u8>, deadline: Deadline) -> Result<i32,Error>;
+    pub fn is_secure(&self) -> bool;
+    pub fn is_open(&self) -> bool;
+    pub fn close(&self, graceful: bool) -> bool;
+}
 ```
 
-`View`, `Vec`, `Option` and `Result` abbreviate the `core::slice`,
-`alloc::vec`, `core::option` and `core::result` types.
+`View`, `Vec`, `Option`, `Result` and `Deadline` abbreviate the
+`core::slice`, `alloc::vec`, `core::option`, `core::result` and `core::time`
+types.
 
 - **`fetch`** sends `request.body` with a fixed length.
 - **`fetch_stream`** reads `source` until EOF and sends it as chunks of up to
@@ -242,6 +251,26 @@ the server reads the body, or the send fails with `EPIPE` or `ECONNRESET`.
 Then the agent stops uploading, reads that response and returns it. That
 connection is not pooled, because its request was never completed. A read
 error from the source fails with `Source(error)`.
+
+## Connections for upgrades
+
+`dial` opens a fresh connection to a parsed `http://` or `https://` URL's
+origin, the same way the agent opens its own: resolution, ordered connect
+attempts, and verified TLS with the agent's `trust` and `tls` options. The
+connection never enters the pool. It is for protocols that take over the
+connection after an HTTP/1.1 upgrade;
+[`ext::websocket_client`](extended-websocket-client.md) uses it. A
+`Connection` has one owner and is closed once. Each call takes its own
+absolute deadline.
+
+- `send` writes all of `data`.
+- `receive` waits for at least one byte. `Ok(0)` is a clean EOF (a TCP FIN or
+  TLS close_notify) and `Truncated(0)` is a TLS EOF without close_notify.
+  `Timeout` leaves the connection usable, over TLS too: TLS reads are tried
+  without blocking, then the socket is polled, so a quiet peer does not abort
+  the TLS stream.
+- `close(true)` sends TLS close_notify first; `close(false)` drops the
+  transport.
 
 ## Deadlines, limits and errors
 

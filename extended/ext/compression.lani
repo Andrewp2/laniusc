@@ -4,6 +4,7 @@ module ext::compression;
 import alloc::vec;
 import core::adler32;
 import core::crc32;
+import core::mem;
 import core::result;
 import core::slice;
 import ext::deflate;
@@ -26,6 +27,42 @@ fn vector_error(error: alloc::vec::Error) -> Error {
 fn resize(output: &alloc::vec::Vec<u8>, length: i32) -> core::result::Result<i32,Error> {
     let result: core::result::Result<i32,alloc::vec::Error> = output.try_resize(length,0);
     if (core::result::is_err(result)) { return core::result::Err(vector_error(core::result::unwrap_err(result))); } return core::result::Ok(length);
+}
+// Workspace words for the fast decoder: ext::inflate's fast tables plus
+// slicing-by-8 CRC32 tables. Smaller workspaces (707 words and up) keep the
+// bit-serial inflater and per-bit CRC32.
+pub fn fast_workspace_len() -> i32 { return ext::inflate::fast_workspace_len()+2048; }
+fn crc_tables(w: core::slice::View<i32>, at: i32) {
+    let index: i32 = 0;
+    while (index < 256) { w.values[w.start+at+index] = core::crc32::update_byte(0,index as u8) as i32; index += 1; }
+    let table: i32 = 1;
+    while (table < 8) {
+        index = 0;
+        while (index < 256) {
+            let previous: u32 = w.values[w.start+at+(table-1)*256+index] as u32;
+            w.values[w.start+at+table*256+index] = ((previous >> 8) ^ (w.values[w.start+at+((previous & 255) as i32)] as u32)) as i32; index += 1;
+        }
+        table += 1;
+    }
+}
+// CRC32 (unfinished state) over view[from..to) with slicing-by-8 tables.
+fn crc_fast(w: core::slice::View<i32>, at: i32, state: u32, view: core::slice::View<u8>, from: i32, to: i32) -> u32 {
+    let t: [i32] = w.values; let base: i32 = w.start+at; let current: u32 = state; let index: i32 = from;
+    let n: i32 = (to-from) >> 3;
+    if (n > 0) {
+        // Raw u64 views run downward, so walk k from n-1 for ascending bytes.
+        let data: ptr = core::mem::i32_slice_data_ptr(view.values)+((view.start+from) as usize);
+        let words: [u64] = core::mem::slice_from_raw_parts(data+(((n-1) << 3) as usize),n); let k: i32 = n-1;
+        while (k >= 0) {
+            let v: u64 = words[k] ^ (current as u64);
+            current = (t[base+1792+((v & 255) as i32)] ^ t[base+1536+(((v >> 8) & 255) as i32)] ^ t[base+1280+(((v >> 16) & 255) as i32)] ^ t[base+1024+(((v >> 24) & 255) as i32)]
+                ^ t[base+768+(((v >> 32) & 255) as i32)] ^ t[base+512+(((v >> 40) & 255) as i32)] ^ t[base+256+(((v >> 48) & 255) as i32)] ^ t[base+((v >> 56) as i32)]) as u32;
+            k -= 1;
+        }
+        index = from+(n << 3);
+    }
+    while (index < to) { current = (t[base+(((current ^ (view.values[view.start+index] as u32)) & 255) as i32)] as u32) ^ (current >> 8); index += 1; }
+    return current;
 }
 fn crc(view: core::slice::View<u8>) -> u32 {
     let state: u32 = core::crc32::INITIAL; let index: i32 = 0;
@@ -244,7 +281,8 @@ pub struct Decoder {
     raw: ext::inflate::Decoder, kind: i32, limits: Limits, phase: i32, failure: Error,
     read_total: u64, written_total: u64, completed_members: i32,
     checksum: u32, member_size: u32, header_crc: u32,
-    field: u64, field_count: i32, flags: i32, remaining: i32
+    field: u64, field_count: i32, flags: i32, remaining: i32,
+    tables: core::slice::View<i32>, crc_fast: bool, crc_ready: bool
 }
 struct Call { input: core::slice::View<u8>, output: core::slice::View<u8>, read: i32, written: i32 }
 impl Call { fn borrow(&self) -> &Call { return self; } }
@@ -263,7 +301,8 @@ pub fn decoder(history: core::slice::View<u8>, workspace: core::slice::View<i32>
         raw: core::result::unwrap(made), kind: kind, limits: limits, phase: initial_phase(kind), failure: Error::Bounds,
         read_total: 0, written_total: 0, completed_members: 0,
         checksum: 0, member_size: 0, header_crc: core::crc32::INITIAL,
-        field: 0, field_count: 0, flags: 0, remaining: 0
+        field: 0, field_count: 0, flags: 0, remaining: 0,
+        tables: workspace, crc_fast: workspace.length >= fast_workspace_len(), crc_ready: false
     });
 }
 fn progress(call: &Call, status: ext::inflate::Status) -> core::result::Result<ext::inflate::Step,DecodeFailure> {
@@ -306,8 +345,13 @@ fn account_body(state: &Decoder, call: &Call, read: i32, written: i32) {
         state.checksum = core::result::unwrap(core::adler32::update(state.checksum,part(call.output,call.written,call.written+written)));
     }
     if (state.kind == 2) {
-        let index: i32 = 0;
-        while (index < written) { state.checksum = core::crc32::update_byte(state.checksum,byte(call.output,call.written+index)); index += 1; }
+        if (state.crc_fast && core::mem::slice_stride(call.output.values) == 1) {
+            if (!state.crc_ready) { crc_tables(state.tables,ext::inflate::fast_workspace_len()); state.crc_ready = true; }
+            state.checksum = crc_fast(state.tables,ext::inflate::fast_workspace_len(),state.checksum,call.output,call.written,call.written+written);
+        } else {
+            let index: i32 = 0;
+            while (index < written) { state.checksum = core::crc32::update_byte(state.checksum,byte(call.output,call.written+index)); index += 1; }
+        }
     }
     call.written += written; state.written_total += written as u64;
     state.member_size = (((state.member_size as u64)+(written as u64)) & 4294967295) as u32;
@@ -505,7 +549,7 @@ pub fn decode(input: core::slice::View<u8>, format: Format, limits: Limits) -> c
     let history_ready: core::result::Result<i32,Error> = resize(history.borrow(),32768);
     if (core::result::is_err(history_ready)) { history.destroy(); return core::result::Err(core::result::unwrap_err(history_ready)); }
     let workspace: alloc::vec::Vec<i32> = alloc::vec::new();
-    let workspace_ready: core::result::Result<i32,alloc::vec::Error> = workspace.try_resize(ext::inflate::workspace_len(),0);
+    let workspace_ready: core::result::Result<i32,alloc::vec::Error> = workspace.try_resize(fast_workspace_len(),0);
     if (core::result::is_err(workspace_ready)) { workspace.destroy(); history.destroy(); return core::result::Err(vector_error(core::result::unwrap_err(workspace_ready))); }
     let state: Decoder = core::result::unwrap(decoder(history.as_view(),workspace.as_view(),format,limits));
     let output: alloc::vec::Vec<u8> = alloc::vec::new();

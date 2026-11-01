@@ -26,6 +26,7 @@ ext::inflate::Step { read:i32, written:i32, status:Status }
 ext::inflate::Failure { error:Error, read:i32, written:i32 }
 
 workspace_len() -> i32                 // 707 i32 elements
+fast_workspace_len() -> i32            // 8,643: adds the fast-path tables
 decoder(history:View<u8>, workspace:View<i32>, max_distance:i32)
     -> Result<Decoder,Error>
 
@@ -48,6 +49,10 @@ prefixes remain untouched.
 The workspace contains 320 code lengths, 16 literal counts, 288 literal
 symbols, 16 distance counts, 32 distance symbols, 16 code-length counts and
 19 code-length symbols. The decoder preserves actual descriptor strides.
+A workspace of at least `fast_workspace_len()` elements also holds the
+[table-driven fast path](#table-driven-fast-path)'s lookup tables at
+offsets 707 and 6,339. A 707-element workspace keeps the bit-serial decoder
+alone, with identical results and progress.
 Persistent ring position and valid-history count stay within the selected
 window. They do not depend on a cumulative signed output counter. History
 spans blocks, and overlapping copies insert each emitted byte before looking
@@ -167,8 +172,8 @@ error details.
 ## Whole-buffer entry points and allocation order
 
 `inflate::decode_into` and `decode_into_window` remain allocation-free. They
-use the same raw engine with complete caller output as history and 707 local
-i32 table entries. They need no separate 32 KiB ring allocation or second
+use the same raw engine with complete caller output as history and 8,643 local
+i32 table entries, so they take the fast path. They need no separate 32 KiB ring allocation or second
 parser. NeedOutput maps to their existing OutputTooSmall; final input exhaustion
 maps to UnexpectedEof. Their failure counts remain diagnostic, because those
 facades do not return retained decoder state. Use Decoder to resume.
@@ -218,6 +223,59 @@ The before executable SHA-256 is
 `44301cf192e224e4f1c4b2db8cf0d1d0e13becf6041fe3b0ec052004ab8c8f8d`;
 after is `9c73938e313cb6a7354ecce9f694979f0757aadc800c0c17bab985fadf49f8a0`.
 These native workloads add no GPU-compiler performance claim.
+
+## Table-driven fast path
+
+With a `fast_workspace_len()` workspace and packed (stride +1) input, output
+and history bytes, each Huffman block builds two lookup tables when its trees
+are read. The literal/length table has a 10-bit primary level and the distance
+table an 8-bit one, each with second-level subtables for longer codes. An entry
+packs the symbol's payload (literal byte or length/distance base), extra-bit
+count, kind and code length into one i32, in the manner of zlib's
+`inflate_fast` and libdeflate.
+
+The loop runs while at least 8 input bytes and 258 output bytes remain. It keeps
+a 64-bit bit buffer refilled by one unaligned word load, decodes up to three
+literals per refill, and copies matches a word at a time when the distance is
+8 or more (a repeated-byte word at distance 1, bytes otherwise). Matches older
+than the current call read from the ring as it stood when the call began; the
+ring is updated in bulk on exit. Stored blocks copy whole runs by word.
+
+On an unused code or a distance beyond the history it rewinds to the start of
+the symbol and returns to the bit-serial decoder, which reports the same error
+with the same progress. On exit it hands back unconsumed whole input bytes, so
+read counts and retained bit state match the bit-serial decoder. A
+[gzip workspace](extended-compression.md) of `ext::compression::fast_workspace_len()`
+(10,691) also holds slicing-by-8 CRC-32 tables.
+
+### Measurements
+
+Measured on the Linux x86_64 laptop (load average 14–21), compiled with the shared
+`lcc` of 2026-10-31. Each figure is the median of five processes of a
+streaming stdin-to-stdout program with 64 KiB input and 256 KiB output
+buffers and direct `std::fs` reads and writes. Every output was compared with
+the original bytes.
+
+| Input | Decoded bytes | 707 words (before) | Fast path (after) | `gzip -d` |
+| --- | --- | --- | --- | --- |
+| docs/stdlib tar, gzip -6 | 18,145,280 | 3.00 s (6.0 MB/s) | 0.20 s (91 MB/s) | 0.07 s (259 MB/s) |
+| text tar, gzip -6 | 13,281,280 | 1.98 s (6.7 MB/s) | 0.16 s (83 MB/s) | 0.05 s (266 MB/s) |
+| 50 MB zeros, raw | 50,000,000 | | 0.03 s | |
+| 20 MB random (stored), raw | 20,000,000 | | 0.02 s | |
+| 10 MB literal-heavy, raw | 10,000,000 | | 0.24 s (42 MB/s) | |
+
+Literal-heavy data is the slowest case: each literal still costs a table load,
+a byte store and the loop's bounds checks. Through `std::stream` descriptors,
+which stage 1 KiB at a time with a byte loop, the same corpus took 2.97 s
+before; the [`tgz` tool](extended-pax.md) therefore reads and writes packed
+buffers through `std::fs` directly.
+
+The fast path was checked against Python zlib and gzip by the
+[tgz oracle](../tests/fixtures/extended/tgz_oracle.py) (4,160 cases, 0
+failures, including 680 corrupted, truncated or trailer-flipped streams and the 98 MiB
+`czf | xzf` pipeline) and by the resumable-decoder model above rebuilt with a
+10,691-element workspace (1,925 cases, 2,236 passes, every byte split, eight
+stride layouts, 0 failures).
 
 ## Atomic file application and evidence
 

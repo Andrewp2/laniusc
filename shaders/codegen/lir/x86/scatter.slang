@@ -1259,6 +1259,18 @@ void main(uint3 dtid: SV_DispatchThreadID)
             c = swap ? left : immediate;
             metadata |= X86_LIR_METADATA_IMMEDIATE;
         }
+        // A 64-bit shift by a 32-bit constant below 64 cannot trap: emit
+        // `shl/shr/sar rax, imm8` (plan_specialized) without the range guard.
+        else if (op != X86_LIR_OP_IMM_I32 && right_constant && immediate <= 63u &&
+                 scalar_is_wide_integer(source.type_id) &&
+                 args.b < semantic_count &&
+                 !scalar_is_wide_integer(opt_ir_core[args.b].type_id) &&
+                 (semantic_op == SEMANTIC_LIR_OP_SHIFT_LEFT ||
+                  semantic_op == SEMANTIC_LIR_OP_SHIFT_RIGHT))
+        {
+            c = immediate;
+            metadata |= X86_LIR_METADATA_IMMEDIATE;
+        }
     }
     else if (op == X86_LIR_OP_COMPARE)
     {

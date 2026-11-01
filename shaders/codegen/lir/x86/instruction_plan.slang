@@ -990,6 +990,17 @@ uint plan_specialized(X86PlanInput input)
         bool shift = operands.a == X86_LIR_BINARY_SHL_I32 || operands.a == X86_LIR_BINARY_SHR_I32;
         bool is_signed = scalar_is_signed_integer(integer_type);
         plan_move(wide_integer, locations.b, X86_REG);
+        if (binary && shift && (metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
+        {
+            // shl/shr/sar rax, imm8: scatter admits only 64-bit shifts by a
+            // constant below 64, so no range guard is needed.
+            plan_prefixed(wide_integer, 0x48u, 3u, 0xc1u |
+                ((operands.a == X86_LIR_BINARY_SHL_I32 ? 0xe0u : is_signed ? 0xf8u : 0xe8u) << 8u) |
+                ((operands.c & 63u) << 16u));
+            plan_integer_width_normalize(integer_type);
+            plan_move(wide_integer, X86_REG, locations.result);
+            return 0u;
+        }
         if (!binary) plan_prefixed(wide_integer, 0x48u, 2u, 0xd8f7u); // neg
         else
         {

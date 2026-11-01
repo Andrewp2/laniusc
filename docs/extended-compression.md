@@ -105,8 +105,10 @@ result. It measures the raw encoding before allocating output. Consequently
 an allocation error can precede discovery that an encoded result exceeds its
 limit. The scratch vector is destroyed before returning the result.
 
-Owned decoding allocates a 32,768-byte history ring and a 707-element i32
-workspace once, then grows its result geometrically through the shared container
+Owned decoding allocates a 32,768-byte history ring and a 10,691-element i32
+workspace (`fast_workspace_len()`: the raw decoder's
+[fast-path tables](extended-streaming-inflate.md#table-driven-fast-path) plus
+slicing-by-8 CRC-32 tables) once, then grows its result geometrically through the shared container
 state. It rebuilds transient views after each possible move and resumes the
 existing bit/tree/framing state instead of replaying a member. Each gzip member
 resets logical history, so previous members never supply a backreference. A large

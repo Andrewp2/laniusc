@@ -2,6 +2,7 @@
 // A streaming decoder borrows its history and Huffman workspace; step does
 // not retain input/output views. All backing must remain live and disjoint.
 module ext::inflate;
+import core::mem;
 import core::result;
 import core::slice;
 
@@ -14,6 +15,17 @@ pub struct Step { read: i32, written: i32, status: Status }
 // Workspace layout: lengths[320], literal counts[16]/symbols[288],
 // distance counts[16]/symbols[32], code-length counts[16]/symbols[19].
 pub fn workspace_len() -> i32 { return 707; }
+// A workspace of at least fast_workspace_len() words also holds two-level
+// decode tables (10-bit literal/length and 8-bit distance roots plus
+// subtables) and enables the table-driven fast loop; see docs. Smaller
+// workspaces keep the bit-serial decoder and touch only the first 707 words.
+pub fn fast_workspace_len() -> i32 { return FAST_END; }
+const FAST_LITERAL: i32 = 707;
+const FAST_DISTANCE: i32 = 6339;
+const FAST_END: i32 = 8643;
+const LITERAL_ROOT: i32 = 10;
+const DISTANCE_ROOT: i32 = 8;
+const INVALID_ENTRY: i32 = 64;
 const LITERAL_COUNTS: i32 = 320;
 const LITERAL_SYMBOLS: i32 = 336;
 const DISTANCE_COUNTS: i32 = 624;
@@ -49,7 +61,8 @@ pub struct Decoder {
     final_block: i32, kind: i32, remaining: i32, distance: i32,
     literal_count: i32, distance_count: i32, code_count: i32, index: i32,
     literal_maximum: i32, distance_maximum: i32, code_maximum: i32,
-    symbol: i32, code: i32, first: i32, offset: i32, size: i32
+    symbol: i32, code: i32, first: i32, offset: i32, size: i32,
+    fast: bool, fast_ready: bool
 }
 // Per-call descriptors and progress never escape the engine invocation.
 struct Call { input: core::slice::View<u8>, output: core::slice::View<u8>, read: i32, written: i32 }
@@ -73,7 +86,8 @@ fn initial(history: core::slice::View<u8>, workspace: core::slice::View<i32>, ma
         buffer: 0, available: 0, final_block: 0, kind: 0, remaining: 0, distance: 0,
         literal_count: 0, distance_count: 0, code_count: 0, index: 0,
         literal_maximum: 0, distance_maximum: 0, code_maximum: 0,
-        symbol: 0, code: 0, first: 0, offset: 0, size: 1
+        symbol: 0, code: 0, first: 0, offset: 0, size: 1,
+        fast: workspace.length >= FAST_END, fast_ready: false
     };
 }
 
@@ -159,7 +173,7 @@ fn distance_base(symbol: i32) -> i32 { if (symbol < 4) { return symbol+1; } let 
 fn code_order(index: i32) -> i32 {
     let order: [i32;19] = [16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15]; return order[index];
 }
-fn end_block(state: &Decoder) { if (state.final_block != 0) { state.phase = FINISHED; } else { state.phase = HEADER_FINAL; } }
+fn end_block(state: &Decoder) { state.fast_ready = false; if (state.final_block != 0) { state.phase = FINISHED; } else { state.phase = HEADER_FINAL; } }
 
 // Append before the next distance lookup, so overlapping copies work even
 // across output chunks and ring wrap. Logical history never exceeds window.
@@ -177,12 +191,175 @@ fn previous(state: &Decoder, call: &Call) -> u8 {
     return byte(state.history,at);
 }
 
+// ---------------------------------------------------------------- fast path
+// Table entry: payload << 12 | extra << 8 | tag << 4 | bits. Tags: 0 literal
+// (payload byte) or distance (payload base), 1 length (payload base), 2 end
+// of block, 3 subtable (payload offset, extra index bits), 4 unused code.
+fn leaf(literal_table: bool, symbol: i32, bits: i32) -> i32 {
+    if (literal_table) {
+        if (symbol < 256) { return (symbol << 12) | bits; }
+        if (symbol == 256) { return 32 | bits; }
+        if (symbol <= 285) { return (length_base(symbol) << 12) | (length_extra(symbol) << 8) | 16 | bits; }
+        return INVALID_ENTRY;
+    }
+    if (symbol < 30) { return (distance_base(symbol) << 12) | (distance_extra(symbol) << 8) | bits; }
+    return INVALID_ENTRY;
+}
+// Canonical two-level table over lengths[start..start+count). The callers
+// have already validated the lengths with construct().
+fn build_table(w: core::slice::View<i32>, start: i32, count: i32, table: i32, root: i32, literal_table: bool) {
+    let longest: i32 = 0; let index: i32 = 0; let counts: [i32;16] = [0;16];
+    while (index < count) { let size: i32 = entry(w,start+index); counts[size] += 1; if (size > longest) { longest = size; } index += 1; }
+    let primary: i32 = 1 << root; index = 0;
+    while (index < primary) { put_entry(w,table+index,INVALID_ENTRY); index += 1; }
+    let next: [i32;16] = [0;16]; let code: i32 = 0; let size: i32 = 1; counts[0] = 0;
+    while (size <= 15) { code = (code+counts[size-1]) << 1; next[size] = code; size += 1; }
+    let sub: i32 = longest-root; let free: i32 = primary;
+    index = 0;
+    while (index < count) {
+        let length: i32 = entry(w,start+index);
+        if (length != 0) {
+            let value: i32 = next[length]; next[length] = value+1;
+            let reversed: i32 = 0; let bit: i32 = 0;
+            while (bit < length) { reversed = (reversed << 1) | ((value >> bit) & 1); bit += 1; }
+            if (length <= root) {
+                let item: i32 = leaf(literal_table,index,length); let slot: i32 = reversed;
+                while (slot < primary) { put_entry(w,table+slot,item); slot += 1 << length; }
+            } else {
+                let low: i32 = reversed & (primary-1); let pointer: i32 = entry(w,table+low);
+                if (((pointer >> 4) & 15) != 3) {
+                    let fill: i32 = 0; while (fill < (1 << sub)) { put_entry(w,table+free+fill,INVALID_ENTRY); fill += 1; }
+                    pointer = (free << 12) | (sub << 8) | 48 | root; put_entry(w,table+low,pointer); free += 1 << sub;
+                }
+                let item: i32 = leaf(literal_table,index,length-root); let slot: i32 = reversed >> root; let base: i32 = pointer >> 12;
+                while (slot < (1 << sub)) { put_entry(w,table+base+slot,item); slot += 1 << (length-root); }
+            }
+        }
+        index += 1;
+    }
+}
+fn data(view: core::slice::View<u8>) -> ptr { return core::mem::i32_slice_data_ptr(view.values)+(view.start as usize); }
+fn packed(view: core::slice::View<u8>) -> bool { return core::mem::slice_stride(view.values) == 1; }
+// Raw u64 views run downward: element k of words(base, at, n) is the word
+// at byte at+8*(n-1-k). One view per copy is far cheaper than one per word.
+fn words(base: ptr, at: i32, n: i32) -> [u64] { return core::mem::slice_from_raw_parts(base+(at as usize)+(((n-1) << 3) as usize),n); }
+// Copy count bytes between disjoint buffers, a word at a time; a count of
+// 8 or more finishes with one overlapping word instead of a byte tail.
+fn copy_disjoint(to: ptr, at: i32, from: ptr, source: i32, count: i32) {
+    let n: i32 = count >> 3;
+    if (n > 0) {
+        let a: [u64] = words(to,at,n); let b: [u64] = words(from,source,n); let k: i32 = 0;
+        while (k < n) { a[k] = b[k]; k += 1; }
+        if ((count & 7) != 0) { let x: [u64] = words(to,at+count-8,1); let y: [u64] = words(from,source+count-8,1); x[0] = y[0]; }
+        return;
+    }
+    let tail: [u8] = core::mem::typed_slice_from_raw_parts<u8>(to+(at as usize),count); let head: [u8] = core::mem::typed_slice_from_raw_parts<u8>(from+(source as usize),count);
+    let index: i32 = 0; while (index < count) { tail[index] = head[index]; index += 1; }
+}
+// LZ77 copy inside one buffer: ascending words when the distance is 8 or
+// more (each word reads only finished bytes), a repeated-byte word for
+// distance 1, bytes otherwise.
+fn copy_within(base: ptr, at: i32, distance: i32, count: i32) {
+    let n: i32 = count >> 3;
+    if (distance >= 8 && n > 0) {
+        let a: [u64] = words(base,at,n); let b: [u64] = words(base,at-distance,n); let k: i32 = n-1;
+        while (k >= 0) { a[k] = b[k]; k -= 1; }
+        // The final overlapping word rewrites finished bytes with equal values.
+        if ((count & 7) != 0) { let x: [u64] = words(base,at+count-8,1); let y: [u64] = words(base,at+count-8-distance,1); x[0] = y[0]; }
+        return;
+    }
+    let index: i32 = 0;
+    let all: [u8] = core::mem::typed_slice_from_raw_parts<u8>(base+((at-distance) as usize),distance+count);
+    if (distance == 1 && n > 0) {
+        let pattern: u64 = (all[0] as u64)*72340172838076673; let a: [u64] = words(base,at,n); let k: i32 = 0;
+        while (k < n) { a[k] = pattern; k += 1; }
+        index = n << 3;
+    }
+    while (index < count) { all[distance+index] = all[index]; index += 1; }
+}
+fn low_bits(value: u64, count: i32) -> i32 { return (value & ((1 << (count as u64))-1)) as i32; }
+// Whole symbols while at least 8 input bytes and 258 output bytes remain.
+// Anything unusual (unused code, distance beyond history) rewinds to the
+// symbol's start and returns true, so the bit-serial path reports it with
+// identical progress. Unconsumed whole bytes are handed back on exit.
+fn fast_loop(state: &Decoder, call: &Call) -> bool {
+    let input: core::slice::View<u8> = call.input; let output: core::slice::View<u8> = call.output;
+    let in_base: ptr = data(input); let out_base: ptr = data(output);
+    let w: [i32] = state.workspace.values; let literals: i32 = state.workspace.start+FAST_LITERAL; let distances: i32 = state.workspace.start+FAST_DISTANCE;
+    let ip: i32 = call.read; let op: i32 = call.written; let out_start: i32 = op;
+    let bits: u64 = state.buffer as u64; let count: i32 = state.available;
+    let in_limit: i32 = input.length-8; let out_limit: i32 = output.length-258;
+    let window: i32 = state.max_distance; let filled_before: i32 = state.history_filled; let head: i32 = state.history_head;
+    let ring: bool = state.ring; let hist_base: ptr = data(state.history);
+    let bailed: bool = false;
+    while (ip <= in_limit && op <= out_limit) {
+        if (count < 48) {
+            let word: [u64] = core::mem::slice_from_raw_parts(in_base+(ip as usize),1);
+            bits = bits | (word[0] << (count as u64)); let take: i32 = (63-count) >> 3; ip += take; count += take << 3;
+        }
+        let saved_bits: u64 = bits; let saved_count: i32 = count;
+        let item: i32 = w[literals+((bits & 1023) as i32)];
+        if (((item >> 4) & 15) == 3) { bits = bits >> 10; count -= 10; item = w[literals+(item >> 12)+low_bits(bits,(item >> 8) & 15)]; }
+        let tag: i32 = (item >> 4) & 15;
+        if (tag == 4) { bits = saved_bits; count = saved_count; bailed = true; break; }
+        bits = bits >> ((item & 15) as u64); count -= item & 15;
+        if (tag == 0) {
+            output.values[output.start+op] = (item >> 12) as u8; op += 1;
+            // Up to two more literals from the same refill.
+            item = w[literals+((bits & 1023) as i32)];
+            if (count < 10 || ((item >> 4) & 15) != 0) { continue; }
+            bits = bits >> ((item & 15) as u64); count -= item & 15; output.values[output.start+op] = (item >> 12) as u8; op += 1;
+            item = w[literals+((bits & 1023) as i32)];
+            if (count < 10 || ((item >> 4) & 15) != 0) { continue; }
+            bits = bits >> ((item & 15) as u64); count -= item & 15; output.values[output.start+op] = (item >> 12) as u8; op += 1;
+            continue;
+        }
+        if (tag == 2) { end_block(state); break; }
+        let extra: i32 = (item >> 8) & 15; let length: i32 = (item >> 12)+low_bits(bits,extra); bits = bits >> (extra as u64); count -= extra;
+        let near: i32 = w[distances+((bits & 255) as i32)];
+        if (((near >> 4) & 15) == 3) { bits = bits >> 8; count -= 8; near = w[distances+(near >> 12)+low_bits(bits,(near >> 8) & 15)]; }
+        if (((near >> 4) & 15) == 4) { bits = saved_bits; count = saved_count; bailed = true; break; }
+        bits = bits >> ((near & 15) as u64); count -= near & 15;
+        extra = (near >> 8) & 15; let distance: i32 = (near >> 12)+low_bits(bits,extra); bits = bits >> (extra as u64); count -= extra;
+        let produced: i32 = op-out_start; let filled: i32 = filled_before+produced; if (filled > window) { filled = window; }
+        if (distance > filled) { bits = saved_bits; count = saved_count; bailed = true; break; }
+        if (!ring || distance <= produced) { copy_within(out_base,op,distance,length); }
+        else {
+            // Older bytes come from the ring as it stood when this call began.
+            let back: i32 = distance-produced; let first: i32 = length; if (first > back) { first = back; }
+            let from: i32 = (head-back) & (window-1); let run: i32 = first; if (run > window-from) { run = window-from; }
+            copy_disjoint(out_base,op,hist_base,from,run);
+            if (first > run) { copy_disjoint(out_base,op+run,hist_base,0,first-run); }
+            if (length > first) { copy_within(out_base,op+first,distance,length-first); }
+        }
+        op += length;
+    }
+    let back: i32 = count >> 3; ip -= back; count -= back << 3;
+    state.buffer = low_bits(bits,count); state.available = count; call.read = ip;
+    append_history(state,out_base,op,op-out_start);
+    call.written = op; return bailed;
+}
+// Record the produced bytes ending at out_base[end] as history, in bulk.
+fn append_history(state: &Decoder, out_base: ptr, end: i32, produced: i32) {
+    let window: i32 = state.max_distance; let head: i32 = state.history_head;
+    if (state.ring && produced > 0) {
+        let hist_base: ptr = data(state.history);
+        let keep: i32 = produced; if (keep > window) { keep = window; }
+        let at: i32 = (head+produced-keep) & (window-1); let run: i32 = keep; if (run > window-at) { run = window-at; }
+        copy_disjoint(hist_base,at,out_base,end-keep,run);
+        if (keep > run) { copy_disjoint(hist_base,0,out_base,end-keep+run,keep-run); }
+        state.history_head = (head+produced) & (window-1);
+    }
+    let total: i32 = state.history_filled+produced; if (total > window) { total = window; } state.history_filled = total;
+}
+
 // This is the only DEFLATE parser. The private complete-output mode is used
 // for one-shot calls only; public streaming construction always uses a ring.
 fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<Step,Failure> {
     if (!valid_bytes(input) || !valid_bytes(output)) { return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 }); }
     let call: Call = Call { input: input, output: output, read: 0, written: 0 };
     if (state.phase == FAILED) { return core::result::Err(Failure { error: state.failure, read: 0, written: 0 }); }
+    let fast: bool = state.fast && packed(input) && packed(output) && packed(state.history);
     while (true) {
         if (state.phase == FINISHED) { return progress(call.borrow(),Status::Done); }
         if (state.phase == HEADER_FINAL) {
@@ -192,7 +369,7 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
         if (state.phase == HEADER_KIND) {
             let kind: i32 = bits(state,call.borrow(),2); if (kind < 0) { return missing_input(state,call.borrow(),final_input); }
             if (kind == 3) { return fail(state,call.borrow(),Error::InvalidBlockType); }
-            state.kind = kind;
+            state.kind = kind; state.fast_ready = false;
             if (kind == 0) { state.buffer = 0; state.available = 0; state.phase = STORED_LENGTH; }
             else {
                 if (kind == 1) {
@@ -216,6 +393,16 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             state.phase = STORED_COPY;
         }
         if (state.phase == STORED_COPY) {
+            if (fast) {
+                let run: i32 = state.remaining; let room: i32 = input.length-call.read; if (run > room) { run = room; }
+                room = output.length-call.written; if (run > room) { run = room; }
+                if (run > 0) {
+                    let out_base: ptr = data(output);
+                    copy_disjoint(out_base,call.written,data(input),call.read,run);
+                    call.read += run; call.written += run; state.remaining -= run;
+                    append_history(state,out_base,call.written,run);
+                }
+            }
             while (state.remaining > 0) {
                 // Preserve stored-input truncation before output exhaustion.
                 if (call.read == input.length) { return missing_input(state,call.borrow(),final_input); }
@@ -287,7 +474,16 @@ fn run(state: &Decoder, input: core::slice::View<u8>, output: core::slice::View<
             }
             state.literal_maximum = maximum(state.workspace,LITERAL_COUNTS);
             state.distance_maximum = maximum(state.workspace,DISTANCE_COUNTS);
+            if (state.fast) {
+                build_table(state.workspace,0,state.literal_count,FAST_LITERAL,LITERAL_ROOT,true);
+                build_table(state.workspace,state.literal_count,state.distance_count,FAST_DISTANCE,DISTANCE_ROOT,false);
+                state.fast_ready = true;
+            }
             reset_code(state); state.phase = LITERAL_SYMBOL;
+        }
+        if (state.phase == LITERAL_SYMBOL && fast && state.fast_ready && state.size == 1 && call.read+8 <= input.length && call.written+258 <= output.length) {
+            // A rewind leaves the symbol to the bit-serial path, which fails on it.
+            if (fast_loop(state,call.borrow())) { fast = false; }
         }
         if (state.phase == LITERAL_SYMBOL) {
             let symbol: i32 = decode_symbol(state,call.borrow(),LITERAL_COUNTS,LITERAL_SYMBOLS,state.literal_maximum);
@@ -346,7 +542,7 @@ pub impl Decoder {
         self.final_block = 0; self.kind = 0; self.remaining = 0; self.distance = 0;
         self.literal_count = 0; self.distance_count = 0; self.code_count = 0; self.index = 0;
         self.literal_maximum = 0; self.distance_maximum = 0; self.code_maximum = 0; self.symbol = 0;
-        reset_code(self); return core::result::Ok(true);
+        self.fast_ready = false; reset_code(self); return core::result::Ok(true);
     }
 }
 
@@ -357,8 +553,8 @@ pub fn decode_into_window(input: core::slice::View<u8>, output: core::slice::Vie
     if (!valid_bytes(input) || !valid_bytes(output) || !valid_window(max_distance)) {
         return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 });
     }
-    let tables: [i32;707] = [0;707];
-    let workspace: core::slice::View<i32> = core::slice::View { values: tables, start: 0, length: 707 };
+    let tables: [i32;8643] = [0;8643];
+    let workspace: core::slice::View<i32> = core::slice::View { values: tables, start: 0, length: 8643 };
     let state: Decoder = initial(output,workspace,max_distance,false);
     let result: core::result::Result<Step,Failure> = run(state.borrow(),input,output,true);
     if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
