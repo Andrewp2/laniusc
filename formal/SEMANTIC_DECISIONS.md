@@ -1608,6 +1608,20 @@ Lean's `wideDecimal` gave `none`; the self-built compiler then faulted on
 any source with such a literal instead of returning -1. `wideDecimal` gives
 the same answers as before.
 
+## Integer literal bases (decided 11-01)
+
+The verified front end reads integer literals as laniusc does: decimal
+digits, or `0x`, `0o` or `0b` (the letter in either case, as the lexer's
+`lx_base_of` takes it) and digits of base 16, 8 or 2, with `_` separators
+skipped (`lit_value` in `frontend.lani`; `intValue` in
+`Reading/Exprs.lean`). Before, only decimal digits without `_` were read,
+so such a program was rejected (found by `fuzz_oracle.py`'s EDGE_FORMS).
+The value then goes where a decimal one does: an `i32` literal below 2^31,
+the wide marker up to 2^64, a constant's value. A digit of base 2, 8 or 16
+may follow only a value at most `(2^64 - base) / base`, which is exact for
+those bases, so nothing past `2^64 - 1` is formed. An array length is still
+read only as decimal digits. A type suffix (`5u8`) is read by neither.
+
 ## `u16` views (decided 11-01)
 
 Core's raw slices had no `u16` element (`slice_from_raw_parts` of a `u16`

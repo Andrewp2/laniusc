@@ -145,7 +145,7 @@ import all Lanius.Mini.Frontend.P.hasConst
 import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.ifEff
 import all Lanius.Mini.Frontend.P.ifNotWrites
-import all Lanius.Mini.Frontend.P.intLiteral
+import all Lanius.Mini.Frontend.P.basedDigits
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.isMatchStmt
 import all Lanius.Mini.Frontend.P.isPathCall

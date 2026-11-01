@@ -136,7 +136,7 @@ def notted (e : Option SrcExpr) : Option SrcExpr :=
   | none => none
   | some x => some (SrcExpr.not x)
 
-/-- Decimal digits, below 2^64. -/
+/-- Decimal digits, below 2^64; each `_` separator is skipped. -/
 def wideDecimal (text : List Nat) (acc : Nat) : Option Nat :=
   if 18446744073709551615 < acc then
     none
@@ -144,12 +144,15 @@ def wideDecimal (text : List Nat) (acc : Nat) : Option Nat :=
     match text with
     | [] => some acc
     | b :: rest =>
-      if decide (1844674407370955161 < acc) || decide (acc = 1844674407370955161) && decide (53 < b) then
-        none
+      if b = 95 then
+        wideDecimal rest acc
       else
-        if decide (48 ≤ b) && decide (b ≤ 57) then
-          wideDecimal rest (acc * 10 + (b - 48))
-        else
+        if decide (1844674407370955161 < acc) || decide (acc = 1844674407370955161) && decide (53 < b) then
           none
+        else
+          if decide (48 ≤ b) && decide (b ≤ 57) then
+            wideDecimal rest (acc * 10 + (b - 48))
+          else
+            none
 
 end Lanius.Mini

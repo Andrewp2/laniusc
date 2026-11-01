@@ -1,11 +1,11 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Frontend.P.basedDigits
 public import Lanius.Mini.Frontend.P.flDecimal
 public import Lanius.Mini.Frontend.P.flExpFirst
 public import Lanius.Mini.Frontend.P.floatTyped
 public import Lanius.Mini.Frontend.P.hasKids
-public import Lanius.Mini.Frontend.P.intLiteral
 public import Lanius.Mini.Frontend.P.pickTy
 
 public section

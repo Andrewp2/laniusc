@@ -10,7 +10,9 @@ import all Lanius.Mini.Frontend.P.floatTyped
 import all Lanius.Mini.Frontend.P.freshId
 import all Lanius.Mini.Frontend.P.grammarPart13
 import all Lanius.Mini.Frontend.P.hasKids
-import all Lanius.Mini.Frontend.P.intLiteral
+import all Lanius.Mini.Frontend.P.basedLimit
+import all Lanius.Mini.Frontend.P.basedDigits
+import all Lanius.Mini.Frontend.P.digitBelow
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.itemOf
 import all Lanius.Mini.Frontend.P.joinInsts
@@ -101,64 +103,183 @@ theorem decimal_complete : ∀ (text : List Nat) (acc : Nat), Digits text → di
     rw [if_pos (by simpa using ds b (by simp))]
     exact decimal_complete rest _ (fun x mem => ds x (List.mem_cons_of_mem _ mem)) le
 
+/-- The value of `b` as a digit of `base`: `0`-`9`, `a`-`f` or `A`-`F`, below the base. -/
+def digitIn (base b : Nat) : Option Nat :=
+  if 48 ≤ b ∧ b ≤ 57 then (if b - 48 < base then some (b - 48) else none)
+  else if 97 ≤ b ∧ b ≤ 102 then (if b - 87 < base then some (b - 87) else none)
+  else if 65 ≤ b ∧ b ≤ 70 then (if b - 55 < base then some (b - 55) else none)
+  else none
+
+/-- The value of digits of `base` read after `acc`; each `_` (95) is a
+separator and skipped. -/
+def digitsIn (base : Nat) : Nat → List Nat → Option Nat
+  | acc, [] => some acc
+  | acc, b :: rest =>
+    if b = 95 then digitsIn base acc rest
+    else match digitIn base b with
+      | none => none
+      | some d => digitsIn base (acc * base + d) rest
+
+/-- The base a prefix letter after `0` names: 16 for `x` or `X`, 8 for `o`
+or `O`, 2 for `b` or `B`. -/
+def prefixBase (p : Nat) : Option Nat :=
+  if p = 120 ∨ p = 88 then some 16
+  else if p = 111 ∨ p = 79 then some 8
+  else if p = 98 ∨ p = 66 then some 2
+  else none
+
+/-- An integer literal's value: `0`, a prefix letter and digits of its base,
+or else decimal digits; `_` separators are skipped. -/
+def intValue : List Nat → Option Nat
+  | [] => none
+  | b :: rest =>
+    if b = 48 then
+      match rest with
+      | [] => some 0
+      | p :: ds =>
+        match prefixBase p with
+        | some k => digitsIn k 0 ds
+        | none => digitsIn 10 0 (b :: rest)
+    else digitsIn 10 0 (b :: rest)
+
+theorem baseDigit_eq (b base : Nat) : baseDigit b base = digitIn base b := by
+  unfold baseDigit digitIn digitBelow
+  simp only [Bool.and_eq_true, decide_eq_true_eq]
+
+theorem digitIn_lt {base b d : Nat} (h : digitIn base b = some d) : d < base := by
+  unfold digitIn at h
+  repeat' split at h
+  all_goals (cases h; try omega)
+
 theorem wideDecimal_sound : ∀ (text : List Nat) (acc n : Nat), wideDecimal text acc = some n →
-    Digits text ∧ n = digitsFrom acc text ∧ n ≤ 18446744073709551615
+    digitsIn 10 acc text = some n ∧ n ≤ 18446744073709551615
   | [], acc, n, h => by
     rw [wideDecimal.eq_def] at h
     by_cases big : 18446744073709551615 < acc
     · rw [if_pos big] at h; cases h
     · rw [if_neg big] at h
       cases h
-      exact ⟨by simp [Digits], rfl, by omega⟩
+      exact ⟨rfl, by omega⟩
   | b :: rest, acc, n, h => by
     rw [wideDecimal.eq_def] at h
     by_cases big : 18446744073709551615 < acc
     · rw [if_pos big] at h; cases h
     · rw [if_neg big] at h
       simp only at h
-      split at h
-      · cases h
-      by_cases dig : 48 ≤ b ∧ b ≤ 57
-      · rw [if_pos (by simpa using dig)] at h
-        obtain ⟨ds, rfl, le⟩ := wideDecimal_sound rest _ n h
-        exact ⟨fun x mem => by
-          rcases List.mem_cons.1 mem with rfl | mem
-          · exact dig
-          · exact ds x mem, rfl, le⟩
-      · rw [if_neg (by simpa using dig)] at h; cases h
+      by_cases sep : b = 95
+      · rw [if_pos sep] at h
+        obtain ⟨d, le⟩ := wideDecimal_sound rest acc n h
+        exact ⟨by rw [digitsIn, if_pos sep]; exact d, le⟩
+      · rw [if_neg sep] at h
+        split at h
+        · cases h
+        by_cases dig : 48 ≤ b ∧ b ≤ 57
+        · rw [if_pos (by simpa using dig)] at h
+          obtain ⟨d, le⟩ := wideDecimal_sound rest _ n h
+          have di : digitIn 10 b = some (b - 48) := by
+            unfold digitIn; rw [if_pos dig, if_pos (by omega)]
+          exact ⟨by rw [digitsIn, if_neg sep, di]; exact d, le⟩
+        · rw [if_neg (by simpa using dig)] at h; cases h
+
+theorem basedDigits_sound {base : Nat} (hb : base = 16 ∨ base = 8 ∨ base = 2) :
+    ∀ (text : List Nat) (acc n : Nat), basedDigits base text acc = some n → acc ≤ 18446744073709551615 →
+      digitsIn base acc text = some n ∧ n ≤ 18446744073709551615
+  | [], acc, n, h, le => by
+    rw [basedDigits.eq_def] at h
+    cases h
+    exact ⟨rfl, le⟩
+  | b :: rest, acc, n, h, le => by
+    rw [basedDigits.eq_def] at h
+    simp only at h
+    by_cases sep : b = 95
+    · rw [if_pos sep] at h
+      obtain ⟨d, le'⟩ := basedDigits_sound hb rest acc n h le
+      exact ⟨by rw [digitsIn, if_pos sep]; exact d, le'⟩
+    · rw [if_neg sep] at h
+      by_cases big : basedLimit base < acc
+      · rw [if_pos big] at h; cases h
+      · rw [if_neg big, baseDigit_eq] at h
+        cases di : digitIn base b with
+        | none => rw [di] at h; cases h
+        | some d =>
+          rw [di] at h
+          have lt := digitIn_lt di
+          have step : acc * base + d ≤ 18446744073709551615 := by
+            unfold basedLimit at big
+            rcases hb with rfl | rfl | rfl <;> simp at big <;> omega
+          obtain ⟨r, le'⟩ := basedDigits_sound hb rest _ n h step
+          exact ⟨by rw [digitsIn, if_neg sep, di]; exact r, le'⟩
+
+theorem litBase_eq (p : Nat) : litBase p = prefixBase p := by
+  unfold litBase prefixBase
+  by_cases a : p = 120 ∨ p = 88
+  · simp only [Bool.or_eq_true, decide_eq_true_eq, if_pos a]
+  · by_cases b : p = 111 ∨ p = 79
+    · simp only [Bool.or_eq_true, decide_eq_true_eq, if_neg a, if_pos b]
+    · by_cases c : p = 98 ∨ p = 66
+      · simp only [Bool.or_eq_true, decide_eq_true_eq, if_neg a, if_neg b, if_pos c]
+      · simp only [Bool.or_eq_true, decide_eq_true_eq, if_neg a, if_neg b, if_neg c]
+
+theorem prefixBase_some {p k : Nat} (h : prefixBase p = some k) : k = 16 ∨ k = 8 ∨ k = 2 := by
+  unfold prefixBase at h
+  split at h
+  · cases h; simp
+  split at h
+  · cases h; simp
+  split at h
+  · cases h; simp
+  cases h
+
+theorem litValue_sound {text : List Nat} {n : Nat} (h : litValue text = some n) :
+    intValue text = some n ∧ n < 2 ^ 64 := by
+  unfold litValue at h
+  match text, h with
+  | [], h => cases h
+  | b :: rest, h =>
+    simp only at h
+    by_cases z : b = 48
+    · rw [if_pos z] at h
+      match rest, h with
+      | [], h => cases h; exact ⟨by subst z; rfl, by omega⟩
+      | p :: ds, h =>
+        simp only [litPrefixed, litBase_eq] at h
+        cases pb : prefixBase p with
+        | none =>
+          rw [pb] at h
+          obtain ⟨d, le⟩ := wideDecimal_sound _ 0 n h
+          exact ⟨by unfold intValue; simp only [if_pos z, pb]; exact d, by omega⟩
+        | some k =>
+          rw [pb] at h
+          obtain ⟨d, le⟩ := basedDigits_sound (prefixBase_some pb) ds 0 n h (by omega)
+          exact ⟨by unfold intValue; simp only [if_pos z, pb]; exact d, by omega⟩
+    · rw [if_neg z] at h
+      obtain ⟨d, le⟩ := wideDecimal_sound _ 0 n h
+      exact ⟨by unfold intValue; simp only [if_neg z]; exact d, by omega⟩
 
 /-- An integer literal: below 2^31 it is an `i32` literal; from 2^31 to
 2^64 it is the wide marker, `Cast(Unit, Unsigned(u64, n))`, which only a
 constant's or a typed context's literal pass gives a type. -/
 inductive IntLiteral (text : List Nat) : SrcExpr → Prop
-  | small : Digits text → digitsValue text < 2 ^ 31 → IntLiteral text (.int (BitVec.ofNat 32 (digitsValue text)))
-  | wide : Digits text → 2 ^ 31 ≤ digitsValue text → digitsValue text < 2 ^ 64 →
-      IntLiteral text (.cast .unit (.unsigned .uint64 (BitVec.ofNat 64 (digitsValue text))))
+  | small {n : Nat} : intValue text = some n → n < 2 ^ 31 → IntLiteral text (.int (BitVec.ofNat 32 n))
+  | wide {n : Nat} : intValue text = some n → 2 ^ 31 ≤ n → n < 2 ^ 64 →
+      IntLiteral text (.cast .unit (.unsigned .uint64 (BitVec.ofNat 64 n)))
 
 theorem intLiteral_sound {text : List Nat} {e : SrcExpr} (h : intLiteral text = some e) : IntLiteral text e := by
   unfold intLiteral at h
-  cases hd : decimal text 0 with
+  cases hv : litValue text with
+  | none => rw [hv] at h; cases h
   | some v =>
-    rw [hd] at h
-    simp only at h
-    obtain ⟨ds, rfl, le⟩ := decimal_sound text 0 v hd
-    rw [if_pos le, Option.some.injEq] at h
-    subst h
-    exact .small ds (by unfold digitsValue; omega)
-  | none =>
-    rw [hd] at h
-    simp only [wideMarker] at h
-    cases hw : wideDecimal text 0 with
-    | none => rw [hw] at h; cases h
-    | some n =>
-      rw [hw, Option.some.injEq] at h
+    rw [hv] at h
+    simp only [litSized] at h
+    obtain ⟨iv, lt⟩ := litValue_sound hv
+    by_cases small : v ≤ 2147483647
+    · rw [if_pos small, Option.some.injEq] at h
       subst h
-      obtain ⟨ds, rfl, le⟩ := wideDecimal_sound text 0 n hw
-      refine .wide ds ?_ (by unfold digitsValue; omega)
-      apply Nat.le_of_not_lt
-      intro lt
-      rw [decimal_complete text 0 ds (by unfold digitsValue at lt; omega)] at hd
-      cases hd
+      exact .small iv (by omega)
+    · rw [if_neg small] at h
+      simp only [wideMarker, Option.some.injEq] at h
+      subst h
+      exact .wide iv (by omega) lt
 
 /-! ## Char literals -/
 
@@ -845,10 +966,10 @@ inductive WideOf : Ty → Bool → Nat → SrcExpr → Prop
 
 /-- A constant's value tokens `n` or `-` `n` as a wide literal. -/
 inductive WideConst (t : Ty) : List Token → SrcExpr → Prop
-  | pos {a : Token} {e : SrcExpr} : Digits a.text → digitsValue a.text < 2 ^ 64 →
-      WideOf t false (digitsValue a.text) e → WideConst t [a] e
-  | neg {a b : Token} {e : SrcExpr} : a.text = [45] → Digits b.text → digitsValue b.text < 2 ^ 64 →
-      WideOf t true (digitsValue b.text) e → WideConst t [a, b] e
+  | pos {a : Token} {n : Nat} {e : SrcExpr} : intValue a.text = some n → n < 2 ^ 64 →
+      WideOf t false n e → WideConst t [a] e
+  | neg {a b : Token} {n : Nat} {e : SrcExpr} : a.text = [45] → intValue b.text = some n → n < 2 ^ 64 →
+      WideOf t true n e → WideConst t [a, b] e
 
 theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wideOf t negative n = some e) :
     WideOf t negative n e := by
@@ -913,28 +1034,28 @@ theorem wideOf_sound {t : Ty} {negative : Bool} {n : Nat} {e : SrcExpr} (h : wid
     · rw [if_pos (by simpa using w)] at h; cases h
 
 theorem wideDigits_sound {t : Ty} {negative : Bool} {text : List Nat} {e : SrcExpr}
-    (h : wideDigits t negative (wideDecimal text 0) = some e) :
-    Digits text ∧ digitsValue text < 2 ^ 64 ∧ WideOf t negative (digitsValue text) e := by
+    (h : wideDigits t negative (litValue text) = some e) :
+    ∃ n, intValue text = some n ∧ n < 2 ^ 64 ∧ WideOf t negative n e := by
   unfold wideDigits at h
-  cases hw : wideDecimal text 0 with
+  cases hw : litValue text with
   | none => rw [hw] at h; cases h
   | some n =>
     rw [hw] at h
-    obtain ⟨ds, rfl, le⟩ := wideDecimal_sound text 0 n hw
-    exact ⟨ds, by unfold digitsValue; omega, wideOf_sound h⟩
+    obtain ⟨iv, lt⟩ := litValue_sound hw
+    exact ⟨n, iv, lt, wideOf_sound h⟩
 
 theorem wideConst_sound {t : Ty} {toks : List Token} {e : SrcExpr} (h : wideConst (some t) toks = some e) :
     WideConst t toks e := by
   unfold wideConst at h
   match toks, h with
   | [a], h =>
-    obtain ⟨ds, lt, w⟩ := wideDigits_sound h
+    obtain ⟨n, ds, lt, w⟩ := wideDigits_sound h
     exact .pos ds lt w
   | [a, b], h =>
     simp only [wideSigned] at h
     by_cases dash : sameText a.text dashText = true
     · rw [if_pos dash] at h
-      obtain ⟨ds, lt, w⟩ := wideDigits_sound h
+      obtain ⟨n, ds, lt, w⟩ := wideDigits_sound h
       exact .neg ((sameText_iff _ _).1 dash) ds lt w
     · rw [if_neg dash] at h; cases h
   | [], h => cases h

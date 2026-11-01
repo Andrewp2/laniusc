@@ -18,7 +18,7 @@ import all Lanius.Mini.Frontend.P.forRange
 import all Lanius.Mini.Frontend.P.freshId
 import all Lanius.Mini.Frontend.P.hasKids
 import all Lanius.Mini.Frontend.P.ifEff
-import all Lanius.Mini.Frontend.P.intLiteral
+import all Lanius.Mini.Frontend.P.basedDigits
 import all Lanius.Mini.Frontend.P.isEmptyUsize
 import all Lanius.Mini.Frontend.P.isPathCall
 import all Lanius.Mini.Frontend.P.isTryEnum

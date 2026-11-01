@@ -2959,15 +2959,7 @@ pub fn notted(e: core::option::Option<SrcExpr>) -> core::option::Option<SrcExpr>
     };
 }
 
-// extract: inline
-fn int_in_range(iv: usize) -> core::option::Option<SrcExpr> {
-    if (2147483647 >= iv) {
-        return Some(Int(iv as i32));
-    }
-    return None;
-}
-
-// Decimal digits, below 2^64.
+// Decimal digits, below 2^64; each `_` separator is skipped.
 pub fn wide_decimal(text: List<usize>, acc: usize) -> core::option::Option<usize> {
     if (acc > 18446744073709551615) {
         return None;
@@ -2980,6 +2972,9 @@ pub fn wide_decimal(text: List<usize>, acc: usize) -> core::option::Option<usize
 
 // extract: inline
 fn wide_digit(wb: usize, wrest: List<usize>, wacc: usize) -> core::option::Option<usize> {
+    if (wb == 95) {
+        return wide_decimal(wrest, wacc);
+    }
     if (wacc > 1844674407370955161 || (wacc == 1844674407370955161 && wb > 53)) {
         return None;
     }
@@ -3017,10 +3012,113 @@ pub fn wide_marker(v: core::option::Option<usize>) -> core::option::Option<SrcEx
     };
 }
 
+pub fn digit_below(d: usize, base: usize) -> core::option::Option<usize> {
+    if (base > d) {
+        return Some(d);
+    }
+    return None;
+}
+
+// The value of b as a digit of base, if it is one: `0`-`9`, `a`-`f`, `A`-`F`.
+pub fn base_digit(b: usize, base: usize) -> core::option::Option<usize> {
+    if (b >= 48 && 57 >= b) {
+        return digit_below(minus(b, 48), base);
+    }
+    if (b >= 97 && 102 >= b) {
+        return digit_below(minus(b, 87), base);
+    }
+    if (b >= 65 && 70 >= b) {
+        return digit_below(minus(b, 55), base);
+    }
+    return None;
+}
+
+// The largest value a digit of base (16, 8 or 2) may follow below 2^64.
+pub fn based_limit(base: usize) -> usize {
+    if (base == 16) {
+        return 1152921504606846975;
+    }
+    if (base == 8) {
+        return 2305843009213693951;
+    }
+    return 9223372036854775807;
+}
+
+// Digits of base (16, 8 or 2) after acc, below 2^64; each `_` is skipped.
+pub fn based_digits(base: usize, text: List<usize>, acc: usize) -> core::option::Option<usize> {
+    return match (text) {
+        Nil -> Some(acc),
+        Cons(b, rest) -> based_digit(base, b, unbox(rest), acc),
+    };
+}
+
+// extract: inline
+fn based_digit(bbase: usize, bb: usize, brest: List<usize>, bacc: usize) -> core::option::Option<usize> {
+    if (bb == 95) {
+        return based_digits(bbase, brest, bacc);
+    }
+    if (bacc > based_limit(bbase)) {
+        return None;
+    }
+    return match (base_digit(bb, bbase)) {
+        None -> None,
+        Some(d) -> based_digits(bbase, brest, plus(times(bacc, bbase), d)),
+    };
+}
+
+// The base a literal's prefix letter names: 16, 8 or 2 after `0x`, `0o` or
+// `0b` (or `0X`, `0O`, `0B`), as the lexer's `lx_base_of`.
+pub fn lit_base(p: usize) -> core::option::Option<usize> {
+    if (p == 120 || p == 88) {
+        return Some(16);
+    }
+    if (p == 111 || p == 79) {
+        return Some(8);
+    }
+    if (p == 98 || p == 66) {
+        return Some(2);
+    }
+    return None;
+}
+
+pub fn lit_prefixed(base: core::option::Option<usize>, ds: List<usize>, text: List<usize>) -> core::option::Option<usize> {
+    return match (base) {
+        None -> wide_decimal(text, 0),
+        Some(k) -> based_digits(k, ds, 0),
+    };
+}
+
+// extract: inline
+fn lit_value_at(vb: usize, vrest: List<usize>, vtext: List<usize>) -> core::option::Option<usize> {
+    if (vb == 48) {
+        return match (vrest) {
+            Nil -> Some(0),
+            Cons(p, ds) -> lit_prefixed(lit_base(p), unbox(ds), vtext),
+        };
+    }
+    return wide_decimal(vtext, 0);
+}
+
+// An integer literal's value, below 2^64: decimal digits, or a base prefix
+// and digits of that base; each `_` separator is skipped.
+pub fn lit_value(text: List<usize>) -> core::option::Option<usize> {
+    return match (text) {
+        Nil -> None,
+        Cons(b, rest) -> lit_value_at(b, unbox(rest), text),
+    };
+}
+
+pub fn lit_sized(v: usize) -> core::option::Option<SrcExpr> {
+    if (2147483647 >= v) {
+        return Some(Int(v as i32));
+    }
+    return wide_marker(Some(v));
+}
+
 pub fn int_literal(text: List<usize>) -> core::option::Option<SrcExpr> {
-    return match (decimal(text, 0)) {
-        None -> wide_marker(wide_decimal(text, 0)),
-        Some(v) -> int_in_range(v),
+    return match (lit_value(text)) {
+        None -> None,
+        Some(v) -> lit_sized(v),
     };
 }
 
@@ -4100,9 +4198,9 @@ pub fn wide_const(t: core::option::Option<Ty>, toks: List<Token>) -> core::optio
         Some(ty) -> match (toks) {
             Nil -> None,
             Cons(a, rest) -> match (unbox(rest)) {
-                Nil -> wide_digits(ty, false, wide_decimal(a.text, 0)),
+                Nil -> wide_digits(ty, false, lit_value(a.text)),
                 Cons(b, more) -> match (unbox(more)) {
-                    Nil -> wide_signed(ty, same_text(a.text, dash_text()), wide_decimal(b.text, 0)),
+                    Nil -> wide_signed(ty, same_text(a.text, dash_text()), lit_value(b.text)),
                     Cons(c, tail) -> None,
                 },
             },

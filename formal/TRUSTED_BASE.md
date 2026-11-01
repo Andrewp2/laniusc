@@ -688,6 +688,12 @@ when it is right; a stale cache entry is rejected, never used. Trusted:
     type's literal of that value (`Int` of -2^31 for `i32`, `Unsigned` up to
     the type's largest value, the cast of the `u64` literal of its bits for
     `isize`);
+  - an integer literal's value (`intValue`, `Reading/Exprs.lean`) is that of
+    its decimal digits, or of the digits of base 16, 8 or 2 after `0x`,
+    `0o` or `0b` (the letter in either case, as laniusc's lexer takes it);
+    each `_` is a separator and skipped. Below 2^31 it is an `i32` literal,
+    up to 2^64 the wide marker (`IntLiteral`); a constant's `n` or `-` `n`
+    is read the same way (`WideConst`). An array length is still decimal;
   - a char literal (`CharLiteral`) is the code of the one
     Unicode scalar value (`ScalarValue`: below 0x110000, not a surrogate)
     whose UTF-8 encoding (`utf8Encode`) its text holds between the quotes,

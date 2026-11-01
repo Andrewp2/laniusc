@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Compiler.P.arithShiftRight
+import Lanius.Mini.Frontend.P.basedDigits
 import Lanius.Mini.Frontend.P.bindsOfTys
 import Lanius.Mini.Frontend.P.compoundOf
 import Lanius.Mini.Frontend.P.consTreeTail
@@ -9,7 +10,6 @@ import Lanius.Mini.Frontend.P.floatTyped
 import Lanius.Mini.Frontend.P.forRange
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
-import Lanius.Mini.Frontend.P.intLiteral
 import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.isMatchStmt
 import Lanius.Mini.Frontend.P.matchStmtIf

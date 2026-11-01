@@ -1,6 +1,8 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+import Lanius.Mini.Frontend.P.basedLimit
+import Lanius.Mini.Frontend.P.digitBelow
 import Lanius.Mini.Frontend.P.joinInsts
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.wideMarker
@@ -12,14 +14,61 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-def intLiteral (text : List Nat) : Option SrcExpr :=
-  match decimal text 0 with
-  | none => wideMarker (wideDecimal text 0)
-  | some v =>
-    if v ≤ 2147483647 then
-      some (SrcExpr.int (BitVec.ofNat 32 v))
+/-- Digits of base (16, 8 or 2) after acc, below 2^64; each `_` is skipped. -/
+def basedDigits (base : Nat) (text : List Nat) (acc : Nat) : Option Nat :=
+  match text with
+  | [] => some acc
+  | b :: rest =>
+    if b = 95 then
+      basedDigits base rest acc
     else
-      none
+      if basedLimit base < acc then
+        none
+      else
+        match baseDigit b base with
+        | none => none
+        | some d => basedDigits base rest (acc * base + d)
+
+/-- The base a literal's prefix letter names: 16, 8 or 2 after `0x`, `0o` or `0b` (or `0X`, `0O`, `0B`), as the lexer's `lx_base_of`. -/
+def litBase (p : Nat) : Option Nat :=
+  if decide (p = 120) || decide (p = 88) then
+    some 16
+  else
+    if decide (p = 111) || decide (p = 79) then
+      some 8
+    else
+      if decide (p = 98) || decide (p = 66) then
+        some 2
+      else
+        none
+
+def litPrefixed (base : Option Nat) (ds : List Nat) (text : List Nat) : Option Nat :=
+  match base with
+  | none => wideDecimal text 0
+  | some k => basedDigits k ds 0
+
+/-- An integer literal's value, below 2^64: decimal digits, or a base prefix and digits of that base; each `_` separator is skipped. -/
+def litValue (text : List Nat) : Option Nat :=
+  match text with
+  | [] => none
+  | b :: rest =>
+    if b = 48 then
+      match rest with
+      | [] => some 0
+      | p :: ds => litPrefixed (litBase p) ds text
+    else
+      wideDecimal text 0
+
+def litSized (v : Nat) : Option SrcExpr :=
+  if v ≤ 2147483647 then
+    some (SrcExpr.int (BitVec.ofNat 32 v))
+  else
+    wideMarker (some v)
+
+def intLiteral (text : List Nat) : Option SrcExpr :=
+  match litValue text with
+  | none => none
+  | some v => litSized v
 
 /-- The closing quote, last. -/
 def charClose (code : Nat) (rest : List Nat) : Option SrcExpr :=

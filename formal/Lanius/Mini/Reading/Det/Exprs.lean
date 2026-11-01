@@ -196,12 +196,12 @@ theorem casts_unique {env : FrontEnv} : ∀ {acc : SrcExpr} {tail : CTree} {a b 
 theorem intLiteral_unique {text : List Nat} {a b : SrcExpr} (h₁ : IntLiteral text a) (h₂ : IntLiteral text b) :
     a = b := by
   cases h₁ with
-  | small _ lt => cases h₂ with
-    | small => rfl
-    | wide _ ge _ => omega
-  | wide _ ge _ => cases h₂ with
-    | small _ lt => omega
-    | wide => rfl
+  | small v lt => cases h₂ with
+    | small v' => obtain rfl := Option.some.inj (v.symm.trans v'); rfl
+    | wide v' ge _ => obtain rfl := Option.some.inj (v.symm.trans v'); omega
+  | wide v ge _ => cases h₂ with
+    | small v' lt => obtain rfl := Option.some.inj (v.symm.trans v'); omega
+    | wide v' => obtain rfl := Option.some.inj (v.symm.trans v'); rfl
 
 /-- Reads back `utf8Encode`. -/
 def utf8Decode (l : List Nat) : Nat :=
@@ -263,10 +263,10 @@ theorem wideOf_unique {t : Ty} {negative : Bool} {n : Nat} {a b : SrcExpr} (h₁
 theorem wideConst_unique {t : Ty} {toks : List Token} {a b : SrcExpr} (h₁ : WideConst t toks a)
     (h₂ : WideConst t toks b) : a = b := by
   cases h₁ with
-  | pos _ _ w => cases h₂ with
-    | pos _ _ w' => exact wideOf_unique w w'
-  | neg _ _ _ w => cases h₂ with
-    | «neg» _ _ _ w' => exact wideOf_unique w w'
+  | pos v _ w => cases h₂ with
+    | pos v' _ w' => obtain rfl := Option.some.inj (v.symm.trans v'); exact wideOf_unique w w'
+  | neg _ v _ w => cases h₂ with
+    | «neg» _ v' _ w' => obtain rfl := Option.some.inj (v.symm.trans v'); exact wideOf_unique w w'
 
 /-! Two different constructors of `ExprR` at one node: their productions clash. -/
 
