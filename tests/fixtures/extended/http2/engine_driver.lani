@@ -1,0 +1,284 @@
+// ext::http2 engine driver for engine_oracle.py: cleartext HTTP/2 with prior
+// knowledge to 127.0.0.1:PORT (argument 1; optional STREAM_WINDOW
+// CONNECTION_WINDOW BODY_BYTES LIST_BYTES follow), scripted from stdin:
+//   h NAME VALUE          add a request field to the next req
+//   req L METHOD PATH [gen:N|text:DATA] [open]   start request L (open: body
+//                         left unfinished; finish it with "more L gen:N end")
+//   more L gen:N|text:DATA [end]   queue more body on request L
+//   wait L|all MS         drive I/O until L (or every request) finishes
+//   ping MS               PING and wait for the ACK
+//   goaway                send GOAWAY(NO_ERROR)
+//   cancel L              RST_STREAM(CANCEL) on L
+//   peer                  print the peer's settings
+//   drive MS              run I/O for MS milliseconds
+//   eof MS                drive until the server closes the connection
+// Output: "resp L STATUS LENGTH FNV1A32 fields=F trailers=T" (with "f NAME
+// VALUE" lines for each field and trailer), "fail L CAUSE CODE",
+// "pong N", "peer streams=S window=W frame=F table=T", "conn CAUSE CODE"
+// when the connection fails, "timeout", "eof".
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::hpack;
+import ext::http2;
+import ext::http2_frame;
+import std::args;
+import std::clock;
+import std::socket;
+import std::stream;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn byte(v: core::slice::View<u8>, i: i32) -> u8 { return v.values[v.start+i]; }
+fn part(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return v.subview(start,end).unwrap(); }
+fn eq(v: core::slice::View<u8>, s: str, n: i32) -> bool {
+    let w: core::slice::View<u8> = literal(s,n); if (v.len() != n) { return false; }
+    let i: i32 = 0; while (i < n) { if (byte(v,i) != byte(w,i)) { return false; } i += 1; } return true;
+}
+fn starts(v: core::slice::View<u8>, s: str, n: i32) -> bool { return v.len() >= n && eq(part(v,0,n),s,n); }
+fn write_to(fd: i32, bytes: core::slice::View<u8>) -> bool {
+    let sink: std::stream::Descriptor = std::stream::from_handle(fd); let completed: i32 = 0;
+    while (completed < bytes.len()) {
+        let sent = sink.write(bytes.values,bytes.start + completed,bytes.len() - completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count: i32 = sent.unwrap(); if (count <= 0) { return false; } completed += count;
+    }
+    return true;
+}
+fn put(out: &alloc::vec::Vec<u8>, s: str, n: i32) -> bool { return out.try_extend(literal(s,n)).is_ok(); }
+fn push_number(out: &alloc::vec::Vec<u8>, value: i64) -> bool {
+    let digits: [u8;24] = [0;24]; let i: i32 = 24; let v: i64 = value; let negative: bool = v < 0; if (negative) { v = 0 - v; }
+    while (true) { i -= 1; digits[i] = (48 + v % 10) as u8; v = v / 10; if (v == 0) { break; } }
+    if (negative && out.try_push(45 as u8).is_err()) { return false; }
+    while (i < 24) { if (out.try_push(digits[i]).is_err()) { return false; } i += 1; }
+    return true;
+}
+fn hex_digit(d: u32) -> u8 { if (d < 10) { return (48 + d) as u8; } return (87 + d) as u8; }
+fn push_hex32(out: &alloc::vec::Vec<u8>, value: u32) -> bool {
+    let i: i32 = 7; while (i >= 0) { if (out.try_push(hex_digit((value >> ((i * 4) as u32)) & 15)).is_err()) { return false; } i -= 1; } return true;
+}
+fn fnv(v: core::slice::View<u8>) -> u32 {
+    let h: u32 = 2166136261; let i: i32 = 0; while (i < v.len()) { h = (h ^ (byte(v,i) as u32)) * 16777619; i += 1; } return h;
+}
+fn push_escaped(out: &alloc::vec::Vec<u8>, v: core::slice::View<u8>) -> bool {
+    let i: i32 = 0;
+    while (i < v.len() && i < 200) {
+        let c: u8 = byte(v,i);
+        if (c > 32 && c < 127 && c != 92) { if (out.try_push(c).is_err()) { return false; } }
+        else { if (!put(out,"\\x",2) || out.try_push(hex_digit(((c >> 4) & 15) as u32)).is_err() || out.try_push(hex_digit((c & 15) as u32)).is_err()) { return false; } }
+        i += 1;
+    }
+    return true;
+}
+fn number(v: core::slice::View<u8>) -> i32 {
+    if (v.len() == 0 || v.len() > 9) { return -1; } let n: i32 = 0; let i: i32 = 0;
+    while (i < v.len()) { let c: u8 = byte(v,i); if (c < 48 || c > 57) { return -1; } n = n * 10 + ((c - 48) as i32); i += 1; }
+    return n;
+}
+fn words(line: core::slice::View<u8>, out: &alloc::vec::Vec<core::slice::View<u8>>) {
+    out.clear(); let start: i32 = 0; let i: i32 = 0;
+    while (i < line.len()) { if (byte(line,i) == 32) { out.try_push(part(line,start,i)); start = i + 1; } i += 1; }
+    out.try_push(part(line,start,line.len()));
+}
+fn cause_name(c: ext::http2::Cause) -> core::slice::View<u8> {
+    return match (c) {
+        ext::http2::Cause::Protocol -> literal("protocol",8), ext::http2::Cause::Peer -> literal("peer",4), ext::http2::Cause::Refused -> literal("refused",7),
+        ext::http2::Cause::Malformed -> literal("malformed",9), ext::http2::Cause::Limit -> literal("limit",5), ext::http2::Cause::Busy -> literal("busy",4),
+        ext::http2::Cause::Closed -> literal("closed",6), ext::http2::Cause::Cancelled -> literal("cancelled",9),
+        ext::http2::Cause::InvalidRequest -> literal("invalid-request",15), ext::http2::Cause::AllocationFailed -> literal("allocation",10)
+    };
+}
+// Body spec: gen:N (N generated bytes) or text:DATA.
+fn body_of(spec: core::slice::View<u8>, out: &alloc::vec::Vec<u8>) -> bool {
+    out.clear();
+    if (starts(spec,"text:",5)) { return out.try_extend(part(spec,5,spec.len())).is_ok(); }
+    if (starts(spec,"gen:",4)) {
+        let n: i32 = number(part(spec,4,spec.len())); if (n < 0) { return false; }
+        let i: i32 = 0; while (i < n) { if (out.try_push((97 + (i * 7 + i / 251) % 26) as u8).is_err()) { return false; } i += 1; }
+        return true;
+    }
+    return false;
+}
+
+struct Driver { conn: ext::http2::Connection, socket: std::socket::Socket, labels: alloc::vec::Vec<core::slice::View<u8>>, ids: alloc::vec::Vec<i32>, reported: alloc::vec::Vec<bool>, fields: alloc::vec::Vec<ext::hpack::Header>, store: alloc::vec::Vec<u8>, body: alloc::vec::Vec<u8>, out: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<u8>, eof: bool, conn_reported: bool }
+impl Driver {
+    fn borrow(&self) -> &Driver { return self; }
+    // One round of I/O: send queued output, then wait up to the deadline for
+    // input and feed it. Returns false at EOF or a socket error.
+    fn pump(&self, deadline: core::time::Deadline) -> bool {
+        while (self.conn.output().len() > 0) {
+            let sent = self.socket.send(self.conn.output());
+            if (sent.is_err()) {
+                let blocked: bool = match (sent.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false };
+                if (!blocked) { self.eof = true; return false; }
+                let w = self.socket.wait_until(true,true,deadline); if (w.is_err() || w.unwrap().timed_out) { return true; }
+                if (w.unwrap().readable) { break; }
+                continue;
+            }
+            self.conn.sent(sent.unwrap());
+        }
+        let writing: bool = self.conn.output().len() > 0;
+        let w = self.socket.wait_until(true,writing,deadline); if (w.is_err()) { self.eof = true; return false; }
+        if (w.unwrap().timed_out || !w.unwrap().readable) { return true; }
+        let got = self.socket.receive(self.scratch.as_view());
+        if (got.is_err()) { let blocked: bool = match (got.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false }; if (blocked) { return true; } self.eof = true; return false; }
+        let n: i32 = got.unwrap(); if (n == 0) { self.eof = true; return false; }
+        self.conn.feed(part(self.scratch.as_view(),0,n));
+        self.report_connection();
+        self.flush_now();
+        return true;
+    }
+    // Best-effort send of queued output without waiting.
+    fn flush_now(&self) {
+        while (self.conn.output().len() > 0) {
+            let sent = self.socket.send(self.conn.output()); if (sent.is_err() || sent.unwrap() <= 0) { return; }
+            self.conn.sent(sent.unwrap());
+        }
+    }
+    // Send everything queued (GOAWAY after a failure) before exiting.
+    fn drain(&self, deadline: core::time::Deadline) {
+        while (self.conn.output().len() > 0 && !expired(deadline)) {
+            let sent = self.socket.send(self.conn.output());
+            if (sent.is_err()) { let blocked: bool = match (sent.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false }; if (!blocked) { return; } self.socket.wait_until(false,true,deadline); continue; }
+            self.conn.sent(sent.unwrap());
+        }
+    }
+    fn report_connection(&self) {
+        let f = self.conn.failure();
+        if (f.is_some() && !self.conn_reported) { self.conn_reported = true; let e: ext::http2::Error = f.unwrap(); put(self.out.borrow(),"conn ",5); self.out.try_extend(cause_name(e.cause)); put(self.out.borrow()," ",1); push_number(self.out.borrow(),e.code as i64); put(self.out.borrow(),"\n",1); }
+    }
+    fn label_index(&self, label: core::slice::View<u8>) -> i32 { let i: i32 = 0; while (i < self.labels.len()) { if (self.labels.at(i).len() == label.len() && eq_views(self.labels.at(i),label)) { return i; } i += 1; } return -1; }
+    fn finished(&self, i: i32) -> bool { return match (self.conn.state(self.ids.at(i))) { ext::http2::State::Open -> false, _ -> true }; }
+    fn report(&self, i: i32) {
+        if (self.reported.at(i)) { return; } self.reported.set(i, true);
+        let id: i32 = self.ids.at(i); let label: core::slice::View<u8> = self.labels.at(i);
+        let done: bool = match (self.conn.state(id)) { ext::http2::State::Done -> true, _ -> false };
+        if (!done) {
+            let e: ext::http2::Error = self.conn.stream_error(id);
+            put(self.out.borrow(),"fail ",5); self.out.try_extend(label); put(self.out.borrow()," ",1); self.out.try_extend(cause_name(e.cause)); put(self.out.borrow()," ",1); push_number(self.out.borrow(),e.code as i64); put(self.out.borrow(),"\n",1);
+            return;
+        }
+        let body: core::slice::View<u8> = self.conn.body(id);
+        put(self.out.borrow(),"resp ",5); self.out.try_extend(label); put(self.out.borrow()," ",1); push_number(self.out.borrow(),self.conn.status(id) as i64);
+        put(self.out.borrow()," ",1); push_number(self.out.borrow(),body.len() as i64); put(self.out.borrow()," ",1); push_hex32(self.out.borrow(),fnv(body));
+        put(self.out.borrow()," fields=",8); push_number(self.out.borrow(),self.conn.field_count(id) as i64); put(self.out.borrow()," trailers=",10); push_number(self.out.borrow(),self.conn.trailer_count(id) as i64); put(self.out.borrow(),"\n",1);
+        let k: i32 = 0; let total: i32 = self.conn.field_count(id) + self.conn.trailer_count(id);
+        while (k < total) { let f: ext::hpack::Header = self.conn.field(id,k); put(self.out.borrow(),"f ",2); push_escaped(self.out.borrow(),f.name); put(self.out.borrow()," ",1); push_escaped(self.out.borrow(),f.value); put(self.out.borrow(),"\n",1); k += 1; }
+    }
+}
+fn eq_views(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.len() != b.len()) { return false; } let i: i32 = 0; while (i < a.len()) { if (byte(a,i) != byte(b,i)) { return false; } i += 1; } return true; }
+fn deadline_in(ms: i32) -> core::time::Deadline { return core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis(ms as u64)).unwrap(); }
+fn expired(deadline: core::time::Deadline) -> bool { return deadline.is_expired(std::clock::monotonic_now().unwrap()); }
+
+fn run_line(d: &Driver, w: core::slice::View<core::slice::View<u8>>) -> bool {
+    let cmd: core::slice::View<u8> = w.get(0).unwrap(); let n: i32 = w.len();
+    if (eq(cmd,"h",1) && n >= 3) {
+        // Field views must outlive the request: copy into the store.
+        let name: core::slice::View<u8> = w.get(1).unwrap(); let value: core::slice::View<u8> = part(w.get(2).unwrap(),0,w.get(2).unwrap().len());
+        d.fields.try_push(ext::hpack::Header { name: name, value: value, never_indexed: false }); return true;
+    }
+    if (eq(cmd,"req",3) && n >= 4) {
+        let label: core::slice::View<u8> = w.get(1).unwrap(); let method: core::slice::View<u8> = w.get(2).unwrap(); let path: core::slice::View<u8> = w.get(3).unwrap();
+        let has_body: bool = n >= 5 && !eq(w.get(4).unwrap(),"open",4); let open: bool = eq(w.get(n-1).unwrap(),"open",4);
+        let list: alloc::vec::Vec<ext::hpack::Header> = alloc::vec::new<ext::hpack::Header>();
+        list.try_push(ext::hpack::Header { name: literal(":method",7), value: method, never_indexed: false });
+        list.try_push(ext::hpack::Header { name: literal(":scheme",7), value: literal("http",4), never_indexed: false });
+        list.try_push(ext::hpack::Header { name: literal(":authority",10), value: literal("127.0.0.1",9), never_indexed: false });
+        list.try_push(ext::hpack::Header { name: literal(":path",5), value: path, never_indexed: false });
+        list.try_extend(d.fields.as_view()); d.fields.clear();
+        let started = d.conn.start(list.as_view(), !has_body && !open, eq(method,"HEAD",4)); list.destroy();
+        if (started.is_err()) { let e: ext::http2::Error = started.unwrap_err(); put(d.out.borrow(),"start ",6); d.out.try_extend(label); put(d.out.borrow()," ",1); d.out.try_extend(cause_name(e.cause)); put(d.out.borrow(),"\n",1); return true; }
+        let id: i32 = started.unwrap();
+        d.labels.try_push(label); d.ids.try_push(id); d.reported.try_push(false);
+        if (has_body) { if (!body_of(w.get(4).unwrap(),d.body.borrow())) { return false; } d.conn.send_data(id,d.body.as_view(),!open); }
+        return true;
+    }
+    if (eq(cmd,"more",4) && n >= 3) {
+        let i: i32 = d.label_index(w.get(1).unwrap()); if (i < 0 || !body_of(w.get(2).unwrap(),d.body.borrow())) { return false; }
+        let r = d.conn.send_data(d.ids.at(i),d.body.as_view(),n >= 4 && eq(w.get(3).unwrap(),"end",3));
+        if (r.is_err()) { put(d.out.borrow(),"more-failed\n",12); }
+        return true;
+    }
+    if (eq(cmd,"wait",4) && n == 3) {
+        let all: bool = eq(w.get(1).unwrap(),"all",3); let target: i32 = -1;
+        if (!all) { target = d.label_index(w.get(1).unwrap()); if (target < 0) { return false; } }
+        let deadline: core::time::Deadline = deadline_in(number(w.get(2).unwrap()));
+        while (true) {
+            let i: i32 = 0; let pending: bool = false;
+            while (i < d.ids.len()) {
+                if (d.finished(i)) { if (all) { d.report(i); } } else { if (all || i == target) { pending = true; } }
+                i += 1;
+            }
+            if (!all && d.finished(target)) { d.report(target); break; }
+            if (!pending) { break; }
+            if (expired(deadline) || d.eof) { put(d.out.borrow(),"timeout\n",8); break; }
+            if (!d.pump(deadline)) { d.report_connection(); }
+        }
+        return true;
+    }
+    if (eq(cmd,"ping",4) && n == 2) {
+        let r = d.conn.ping(literal("pingdata",8)); if (r.is_err()) { put(d.out.borrow(),"ping-failed\n",12); return true; }
+        let deadline: core::time::Deadline = deadline_in(number(w.get(1).unwrap()));
+        while (d.conn.pings_acknowledged() < r.unwrap() && !expired(deadline) && !d.eof) { d.pump(deadline); }
+        put(d.out.borrow(),"pong ",5); push_number(d.out.borrow(),d.conn.pings_acknowledged() as i64); put(d.out.borrow(),"\n",1); return true;
+    }
+    if (eq(cmd,"goaway",6)) { d.conn.goaway(ext::http2_frame::NO_ERROR); d.pump(deadline_in(50)); return true; }
+    if (eq(cmd,"cancel",6) && n == 2) { let i: i32 = d.label_index(w.get(1).unwrap()); if (i < 0) { return false; } d.conn.cancel(d.ids.at(i)); return true; }
+    if (eq(cmd,"peer",4)) {
+        put(d.out.borrow(),"peer streams=",13); push_number(d.out.borrow(),d.conn.peer_max_streams()); put(d.out.borrow()," window=",8); push_number(d.out.borrow(),d.conn.peer_initial_window());
+        put(d.out.borrow()," frame=",7); push_number(d.out.borrow(),d.conn.peer_max_frame() as i64); put(d.out.borrow()," table=",7); push_number(d.out.borrow(),d.conn.peer_header_table()); put(d.out.borrow(),"\n",1); return true;
+    }
+    if (eq(cmd,"drive",5) && n == 2) { let deadline: core::time::Deadline = deadline_in(number(w.get(1).unwrap())); while (!expired(deadline) && !d.eof) { d.pump(deadline); } return true; }
+    if (eq(cmd,"eof",3) && n == 2) {
+        let deadline: core::time::Deadline = deadline_in(number(w.get(1).unwrap()));
+        while (!expired(deadline) && !d.eof) { d.pump(deadline); }
+        if (d.eof) { put(d.out.borrow(),"eof\n",4); } else { put(d.out.borrow(),"timeout\n",8); } return true;
+    }
+    return false;
+}
+fn read_stdin(out: &alloc::vec::Vec<u8>) -> bool {
+    let source = std::stream::stdin(); let scratch: [u8;4096] = [0;4096];
+    while (out.len() < 16777216) {
+        let got = source.read(scratch,0,4096);
+        if (got.is_err()) { if (core::io::is_interrupted(got.unwrap_err())) { continue; } return false; }
+        let n: i32 = got.unwrap(); if (n <= 0) { return true; }
+        if (out.try_extend(core::slice::view<u8>(scratch,n).unwrap()).is_err()) { return false; }
+    }
+    return false;
+}
+fn main() -> i32 {
+    let got = std::args::snapshot(1,8,4096); if (got.is_err()) { return 2; }
+    let args = got.unwrap(); if (args.len() < 1 || args.len() > 5) { return 2; }
+    let port: i32 = number(args.get(0).unwrap()); if (port <= 0) { return 2; }
+    let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); if (!read_stdin(input.borrow())) { return 2; }
+    let endpoint: core::net::SocketAddr = core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: port as u16 });
+    let made = std::socket::create(std::socket::Family::Ipv4, std::socket::Kind::Tcp, true); if (made.is_err()) { return 3; }
+    let socket: std::socket::Socket = made.unwrap();
+    if (socket.connect_until(endpoint, deadline_in(5000)).is_err()) { write_to(1,literal("error connect\n",14)); return 1; }
+    let options: ext::http2::Options = ext::http2::default_options();
+    // Optional: STREAM_WINDOW CONNECTION_WINDOW BODY_BYTES LIST_BYTES.
+    if (args.len() >= 3) { options.stream_window = number(args.get(1).unwrap()); options.connection_window = number(args.get(2).unwrap()); }
+    if (args.len() >= 4) { options.body_bytes = number(args.get(3).unwrap()); }
+    if (args.len() >= 5) { options.hpack.list_bytes = number(args.get(4).unwrap()); }
+    let made_conn = ext::http2::client(options); if (made_conn.is_err()) { return 3; }
+    let d: Driver = Driver { conn: made_conn.unwrap(), socket: socket, labels: alloc::vec::new<core::slice::View<u8>>(), ids: alloc::vec::new<i32>(), reported: alloc::vec::new<bool>(), fields: alloc::vec::new<ext::hpack::Header>(), store: alloc::vec::new<u8>(), body: alloc::vec::new<u8>(), out: alloc::vec::new<u8>(), scratch: alloc::vec::new<u8>(), eof: false, conn_reported: false };
+    if (d.scratch.try_resize(16384, 0 as u8).is_err()) { return 3; }
+    let w: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new<core::slice::View<u8>>();
+    let all: core::slice::View<u8> = input.as_view(); let start: i32 = 0; let i: i32 = 0; let status: i32 = 0;
+    while (i < all.len()) {
+        if (byte(all,i) == 10) {
+            if (i > start) { words(part(all,start,i),w.borrow()); if (!run_line(d.borrow(),w.as_view())) { put(d.out.borrow(),"bad\n",4); status = 1; } }
+            start = i + 1;
+        }
+        i += 1;
+    }
+    d.report_connection();
+    d.drain(deadline_in(500));
+    write_to(1,d.out.as_view());
+    d.conn.destroy(); d.socket.close(); return status;
+}

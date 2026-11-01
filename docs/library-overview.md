@@ -2246,7 +2246,7 @@ functional70, malformed45, slowloris12, conditional23 and concurrent39 on the
 event server plus four sequential groups, with exact server counters. TLS,
 threads, multipart ranges and allocation-failure coverage remain open.
 
-The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
+The [HTTP client agent](extended-http-agent.md) (`ext::http_agent`) is a
 synchronous `http://` and verified `https://` client over the same codec,
 `ext::http_url`, `ext::url_connect` and `ext::tls_stream`. It pools
 keep-alive cleartext and TLS connections per scheme, host and port under
@@ -2258,7 +2258,22 @@ response. The curl-like sample passes Python `http.server` oracle groups
 pool18, redirect29, upload10 and broken21, plus https17 against Python `ssl`
 origins with locally generated test certificates, with exact counters.
 Its `dial` opens an unpooled connection for protocols that take over after
-an HTTP/1.1 upgrade.
+an HTTP/1.1 upgrade. Over https it offers `h2` by ALPN and runs requests to
+an origin that selects it as streams of one [HTTP/2](extended-http2.md)
+connection; `fetch_all` multiplexes them. That h2 group (21 cases) runs
+against libnghttp2's server session over TLS.
+
+[HTTP/2](extended-http2.md) is three I/O-free modules:
+[`ext::hpack`](extended-hpack.md) (RFC 7541 with the canonical Huffman code,
+checked against the RFC Appendix C examples and both ways against
+libnghttp2's HPACK: rfc 8, nghttp2 3 and malformed 17 cases over 3,175
+blocks), `ext::http2_frame` (frame parsing with the RFC's size, stream and
+padding rules, SETTINGS checks, and writers that split HEADERS into
+CONTINUATION), and the `ext::http2` client engine (stream multiplexing under
+the peer's concurrency limit, flow control both ways, SETTINGS, PING,
+GOAWAY, RST_STREAM and response validation). The engine passes 17 cases
+against libnghttp2's server session and 46 against hand-built frames for
+every connection and stream error it must detect.
 
 The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
 uses `dial` for `ws://` and verified `wss://` URLs and the canonical

@@ -175,6 +175,17 @@ pub fn accept_connected_until(socket: std::socket::Socket, server: &ext::openssl
 // as with connect_with_context_until. The fd must be connected, nonblocking TCP.
 pub fn adopt_connected_with_context_until(socket: std::socket::Socket, context: &ext::openssl_tls::Context, identity: ext::openssl_tls::Identity, limits: Limits, deadline: core::time::Deadline)
     -> core::result::Result<Stream,Failure> {
+    return adopt(socket,context,identity,core::option::None(),limits,deadline);
+}
+// adopt_connected_with_context_until that also offers the application
+// protocols in protocols (RFC 7301 wire form, see Session.set_alpn; empty
+// offers none). Stream.selected_protocol reports the server's choice.
+pub fn adopt_connected_with_alpn_until(socket: std::socket::Socket, context: &ext::openssl_tls::Context, identity: ext::openssl_tls::Identity, protocols: core::slice::View<u8>, limits: Limits, deadline: core::time::Deadline)
+    -> core::result::Result<Stream,Failure> {
+    return adopt(socket,context,identity,core::option::Some(protocols),limits,deadline);
+}
+fn adopt(socket: std::socket::Socket, context: &ext::openssl_tls::Context, identity: ext::openssl_tls::Identity, protocols: core::option::Option<core::slice::View<u8>>, limits: Limits, deadline: core::time::Deadline)
+    -> core::result::Result<Stream,Failure> {
     let state: State = State { limits: limits, deadline: deadline, last: core::time::instant(core::time::zero()), stage: Stage::Configure, stats: Stats { io_calls: 0, tls_calls: 0, read_bytes: 0, accepted_bytes: 0, written_bytes: 0 } };
     if (limits.io_calls == 0 || limits.tls_calls == 0) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::InvalidLimits)); }
     if (!socket.is_open() || !context.is_open()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::Closed)); }
@@ -189,7 +200,12 @@ pub fn adopt_connected_with_context_until(socket: std::socket::Socket, context: 
     let before = call(state.borrow(),false); if (before.is_err()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),before.unwrap_err())); }
     let made = context.session(socket.raw_handle().unwrap(),identity);
     if (made.is_err()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::Tls(made.unwrap_err()))); }
-    return stream_from_session(state,core::option::None(),made.unwrap(),socket,context.io_bytes());
+    let session: ext::openssl_tls::Session = made.unwrap();
+    if (protocols.is_some() && protocols.unwrap().len() > 0) {
+        let offered: core::result::Result<i32,ext::openssl_tls::Error> = session.set_alpn(protocols.unwrap());
+        if (offered.is_err()) { session.destroy(); return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::Tls(offered.unwrap_err()))); }
+    }
+    return stream_from_session(state,core::option::None(),session,socket,context.io_bytes());
 }
 fn stream_from_session(state: State, context: core::option::Option<ext::openssl_tls::Context>, session: ext::openssl_tls::Session, socket: std::socket::Socket, maximum_io: i32)
     -> core::result::Result<Stream,Failure> {
@@ -220,6 +236,9 @@ pub impl Stream {
     pub fn is_open(&self) -> bool { return !self.closed && !self.stopped; }
     pub fn stats(&self) -> Stats { return self.state.stats; }
     pub fn last_failure(&self) -> core::option::Option<Failure> { return self.failure; }
+    // The application protocol the server selected by ALPN, copied into the
+    // front of output; returns its length, 0 when none was negotiated.
+    pub fn selected_protocol(&self, output: core::slice::View<u8>) -> i32 { if (self.closed) { return 0; } return self.session.selected_protocol(output); }
     // Start a new budget period on an open stream, as a connection pool does
     // for each exchange: fresh limits and deadline, counters back to zero.
     // A failed or closed stream stays failed.
