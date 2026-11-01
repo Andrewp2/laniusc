@@ -1,0 +1,545 @@
+// Streaming MessagePack codec. The Decoder accepts input in arbitrary chunks
+// and yields one event per value as soon as its header and payload are
+// buffered; containers close with a synthesized End. The Writer always emits
+// the shortest format, can patch the header of a container whose length is
+// unknown until it ends, and flushes its stable prefix to core::io::Write.
+// Errors carry u64 byte offsets. See docs/extended-msgpack.md.
+module ext::msgpack;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+pub enum Event {
+    Nil, Boolean(bool), Unsigned(u64), Integer(i64), Float32(u32), Float64(u64),
+    Str(core::slice::View<u8>), Bin(core::slice::View<u8>), Ext(i8, core::slice::View<u8>),
+    Array(u32), Map(u32), End
+}
+pub enum ErrorKind {
+    InvalidOptions, AllocationFailed, Bounds, Finished, InputLimit, OutputLimit,
+    DepthLimit, ItemLimit, StringLimit, UnexpectedEnd, InvalidByte, InvalidUtf8,
+    InvalidTimestamp, NotCanonical, TrailingData, InvalidPlacement, CountMismatch,
+    OddMap, InvalidValue,
+}
+pub struct Error { kind: ErrorKind, offset: u64 }
+pub struct Timestamp { seconds: i64, nanoseconds: u32 }
+// max_string_bytes bounds one str, bin or ext payload. canonical rejects any
+// header longer than the shortest one for its value or length (the form
+// Writer emits); timestamps validates ext type -1 payloads.
+pub struct Options { max_depth: i32, max_items: u64, max_string_bytes: i32, max_input: u64, sequence: bool, canonical: bool, timestamps: bool }
+pub struct WriterOptions { max_depth: i32, max_output_bytes: i32 }
+
+pub fn default_options() -> Options {
+    return Options { max_depth: 128, max_items: 1000000, max_string_bytes: 16777216, max_input: 67108864, sequence: false, canonical: false, timestamps: true };
+}
+pub fn default_writer_options() -> WriterOptions { return WriterOptions { max_depth: 128, max_output_bytes: 67108864 }; }
+fn error(kind: ErrorKind, offset: u64) -> Error { return Error { kind: kind, offset: offset }; }
+fn lit(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+    return core::text::from_utf8_unchecked(bytes, 0, count);
+}
+
+pub fn kind_name(kind: ErrorKind) -> core::text::Text {
+    let name: core::text::Text = match (kind) {
+        ErrorKind::InvalidOptions -> lit("InvalidOptions", 14),
+        ErrorKind::AllocationFailed -> lit("AllocationFailed", 16),
+        ErrorKind::Bounds -> lit("Bounds", 6),
+        ErrorKind::Finished -> lit("Finished", 8),
+        ErrorKind::InputLimit -> lit("InputLimit", 10),
+        ErrorKind::OutputLimit -> lit("OutputLimit", 11),
+        ErrorKind::DepthLimit -> lit("DepthLimit", 10),
+        ErrorKind::ItemLimit -> lit("ItemLimit", 9),
+        ErrorKind::StringLimit -> lit("StringLimit", 11),
+        ErrorKind::UnexpectedEnd -> lit("UnexpectedEnd", 13),
+        ErrorKind::InvalidByte -> lit("InvalidByte", 11),
+        ErrorKind::InvalidUtf8 -> lit("InvalidUtf8", 11),
+        ErrorKind::InvalidTimestamp -> lit("InvalidTimestamp", 16),
+        ErrorKind::NotCanonical -> lit("NotCanonical", 12),
+        ErrorKind::TrailingData -> lit("TrailingData", 12),
+        ErrorKind::InvalidPlacement -> lit("InvalidPlacement", 16),
+        ErrorKind::CountMismatch -> lit("CountMismatch", 13),
+        ErrorKind::OddMap -> lit("OddMap", 6),
+        ErrorKind::InvalidValue -> lit("InvalidValue", 12),
+    };
+    return name;
+}
+
+fn read_be(bytes: [u8], start: i32, width: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < width) { value = (value << 8) | (bytes[start + index] as u64); index += 1; }
+    return value;
+}
+fn valid_utf8(bytes: [u8], start: i32, length: i32) -> bool { return core::result::is_ok(core::text::from_utf8_range(bytes, start, length)); }
+
+// Decodes a timestamp extension payload (type -1): 4, 8 or 12 bytes with
+// nanoseconds at most 999999999.
+pub fn timestamp(payload: core::slice::View<u8>) -> core::result::Result<Timestamp, ErrorKind> {
+    let values: [u8] = payload.values; let start: i32 = payload.start;
+    if (payload.length == 4) { return core::result::Ok(Timestamp { seconds: read_be(values, start, 4) as i64, nanoseconds: 0 }); }
+    if (payload.length == 8) {
+        let word: u64 = read_be(values, start, 8);
+        let nanos: u64 = word >> 34;
+        if (nanos > 999999999) { return core::result::Err(ErrorKind::InvalidTimestamp); }
+        return core::result::Ok(Timestamp { seconds: (word & 17179869183) as i64, nanoseconds: nanos as u32 });
+    }
+    if (payload.length == 12) {
+        let nanos: u64 = read_be(values, start, 4);
+        if (nanos > 999999999) { return core::result::Err(ErrorKind::InvalidTimestamp); }
+        return core::result::Ok(Timestamp { seconds: read_be(values, start + 4, 8) as i64, nanoseconds: nanos as u32 });
+    }
+    return core::result::Err(ErrorKind::InvalidTimestamp);
+}
+
+// Header layout of a first byte: fixed bytes after it (including an ext type
+// byte), and the class: 0 scalar, 1 str, 2 bin, 3 ext, 4 array, 5 map, -1 invalid.
+fn extra_bytes(first: i32) -> i32 {
+    if (first <= 191 || first >= 224 || first == 192 || first == 194 || first == 195) { return 0; }
+    if (first == 196 || first == 204 || first == 208 || first == 217) { return 1; }
+    if (first == 197 || first == 205 || first == 209 || first == 218 || first == 220 || first == 222) { return 2; }
+    if (first == 198 || first == 202 || first == 206 || first == 210 || first == 219 || first == 221 || first == 223) { return 4; }
+    if (first == 203 || first == 207 || first == 211) { return 8; }
+    if (first == 199) { return 2; } if (first == 200) { return 3; } if (first == 201) { return 5; }
+    if (first >= 212 && first <= 216) { return 1; }
+    return 0;
+}
+
+pub struct Decoder {
+    options: Options, buf: alloc::vec::Vec<u8>, begin: i32, base: u64,
+    remaining: alloc::vec::Vec<u64>,
+    items: u64, roots: u64, root_done: bool, finished: bool, failure: core::option::Option<Error>,
+    current: Event, current_at: u64, ready: bool,
+}
+pub fn decoder(options: Options) -> core::result::Result<Decoder, Error> {
+    if (options.max_depth < 0 || options.max_string_bytes < 0) { return core::result::Err(error(ErrorKind::InvalidOptions, 0)); }
+    return core::result::Ok(Decoder { options: options, buf: alloc::vec::new(), begin: 0, base: 0, remaining: alloc::vec::new(),
+        items: 0, roots: 0, root_done: false, finished: false, failure: core::option::None(),
+        current: Event::End, current_at: 0, ready: false });
+}
+
+pub impl Decoder {
+    pub fn borrow(&self) -> &Decoder { return self; }
+    pub fn depth(&self) -> i32 { return self.remaining.len(); }
+    pub fn byte_offset(&self) -> u64 { return self.base + (self.begin as u64); }
+    pub fn bytes_received(&self) -> u64 { return self.base + (self.buf.len() as u64); }
+    pub fn items_read(&self) -> u64 { return self.items; }
+    pub fn roots_read(&self) -> u64 { return self.roots; }
+    pub fn has_event(&self) -> bool { return self.ready; }
+    // Str, Bin and Ext payloads borrow the decoder buffer until the next feed.
+    pub fn event(&self) -> Event { return self.current; }
+    pub fn event_offset(&self) -> u64 { return self.current_at; }
+    pub fn is_complete(&self) -> bool {
+        return self.finished && core::option::is_none(self.failure) && self.begin == self.buf.len() && self.remaining.len() == 0 && (self.root_done || self.options.sequence);
+    }
+    fn fail(&self, kind: ErrorKind, at: u64) -> core::result::Result<bool, Error> {
+        let failure: Error = error(kind, at);
+        self.failure = core::option::Some(failure); self.ready = false;
+        return core::result::Err(failure);
+    }
+    pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result<i32, Error> {
+        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        if (self.finished) { return core::result::Err(error(ErrorKind::Finished, self.bytes_received())); }
+        if (!core::io::valid_range(start, count)) { return core::result::Err(error(ErrorKind::Bounds, self.bytes_received())); }
+        if (count == 0) { return core::result::Ok(0); }
+        if (self.bytes_received() > self.options.max_input || (count as u64) > self.options.max_input - self.bytes_received()) {
+            let failure: Error = error(ErrorKind::InputLimit, self.options.max_input);
+            self.failure = core::option::Some(failure); return core::result::Err(failure);
+        }
+        let keep: i32 = self.begin; let length: i32 = self.buf.len();
+        if (keep > 0 && (keep >= 4096 || keep * 2 >= length)) {
+            let data: [u8] = self.buf.as_slice(); let at: i32 = keep;
+            while (at < length) { data[at - keep] = data[at]; at += 1; }
+            core::result::unwrap(self.buf.truncate(length - keep));
+            self.begin = 0; self.base += keep as u64;
+        }
+        let view: core::slice::View<u8> = core::slice::View { values: source, start: start, length: count };
+        if (self.buf.try_extend(view).is_err()) { return core::result::Err(error(ErrorKind::AllocationFailed, self.bytes_received())); }
+        return core::result::Ok(count);
+    }
+    pub fn finish(&self) { self.finished = true; }
+    pub fn reset(&self) {
+        self.buf.clear(); self.begin = 0; self.base = 0; self.remaining.clear();
+        self.items = 0; self.roots = 0; self.root_done = false; self.finished = false; self.failure = core::option::None();
+        self.current = Event::End; self.current_at = 0; self.ready = false;
+    }
+    pub fn destroy(&self) {
+        self.buf.destroy(); self.remaining.destroy();
+        self.buf = alloc::vec::new(); self.remaining = alloc::vec::new(); self.reset();
+    }
+    fn complete(&self) {
+        let depth: i32 = self.remaining.len();
+        if (depth == 0) { self.root_done = true; self.roots += 1; return; }
+        core::result::unwrap(self.remaining.set(depth - 1, self.remaining.at(depth - 1) - 1));
+    }
+    fn emit(&self, event: Event, at: u64) -> core::result::Result<bool, Error> {
+        self.current = event; self.current_at = at; self.ready = true;
+        return core::result::Ok(true);
+    }
+    // Ok(true): event() holds the next event. Ok(false): more input is needed,
+    // or after finish() the input is complete. Errors are sticky.
+    pub fn next(&self) -> core::result::Result<bool, Error> {
+        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        self.ready = false;
+        let at: u64 = self.byte_offset();
+        let depth: i32 = self.remaining.len();
+        if (depth > 0 && self.remaining.at(depth - 1) == 0) {
+            self.remaining.pop(); self.complete();
+            return self.emit(Event::End, at);
+        }
+        let available: i32 = self.buf.len() - self.begin;
+        if (self.root_done) {
+            if (available == 0) { return core::result::Ok(false); }
+            if (!self.options.sequence) { return self.fail(ErrorKind::TrailingData, at); }
+            self.root_done = false;
+        }
+        if (available == 0) {
+            if (self.finished && !(self.options.sequence && depth == 0)) { return self.fail(ErrorKind::UnexpectedEnd, at); }
+            return core::result::Ok(false);
+        }
+        let data: [u8] = self.buf.as_slice();
+        let first: i32 = data[self.begin] as i32;
+        if (first == 193) { return self.fail(ErrorKind::InvalidByte, at); }
+        let extra: i32 = extra_bytes(first);
+        if (available < 1 + extra) { if (self.finished) { return self.fail(ErrorKind::UnexpectedEnd, at); } return core::result::Ok(false); }
+        let head: i32 = self.begin + 1;
+        // Class 0 scalar, 1 str, 2 bin, 3 ext, 4 array, 5 map.
+        let class: i32 = 0; let length: u64 = 0; let ext_type: i8 = 0; let canonical: bool = true;
+        if (first >= 128 && first <= 143) { class = 5; length = (first - 128) as u64; }
+        if (first >= 144 && first <= 159) { class = 4; length = (first - 144) as u64; }
+        if (first >= 160 && first <= 191) { class = 1; length = (first - 160) as u64; }
+        if (first == 217 || first == 218 || first == 219) {
+            class = 1; length = read_be(data, head, extra);
+            canonical = (first == 217 && length >= 32) || (first == 218 && length > 255) || (first == 219 && length > 65535);
+        }
+        if (first == 196 || first == 197 || first == 198) {
+            class = 2; length = read_be(data, head, extra);
+            canonical = first == 196 || (first == 197 && length > 255) || (first == 198 && length > 65535);
+        }
+        if (first == 220 || first == 221) { class = 4; length = read_be(data, head, extra); canonical = (first == 220 && length >= 16) || (first == 221 && length > 65535); }
+        if (first == 222 || first == 223) { class = 5; length = read_be(data, head, extra); canonical = (first == 222 && length >= 16) || (first == 223 && length > 65535); }
+        if (first >= 212 && first <= 216) { class = 3; length = (1 << (first - 212)) as u64; ext_type = data[head] as i8; }
+        if (first >= 199 && first <= 201) {
+            class = 3; length = read_be(data, head, extra - 1); ext_type = data[head + extra - 1] as i8;
+            let fixed: bool = length == 1 || length == 2 || length == 4 || length == 8 || length == 16;
+            canonical = (first == 199 && !fixed) || (first == 200 && length > 255) || (first == 201 && length > 65535);
+        }
+        let event: Event = Event::Nil;
+        if (class == 0) {
+            if (first <= 127) { event = Event::Unsigned(first as u64); }
+            if (first >= 224) { event = Event::Integer((first - 256) as i64); }
+            if (first == 194) { event = Event::Boolean(false); }
+            if (first == 195) { event = Event::Boolean(true); }
+            if (first == 202) { event = Event::Float32(read_be(data, head, 4) as u32); }
+            if (first == 203) { event = Event::Float64(read_be(data, head, 8)); }
+            if (first >= 204 && first <= 207) {
+                let value: u64 = read_be(data, head, extra);
+                canonical = (first == 204 && value >= 128) || (first == 205 && value > 255) || (first == 206 && value > 65535) || (first == 207 && value > 4294967295);
+                event = Event::Unsigned(value);
+            }
+            if (first >= 208 && first <= 211) {
+                let raw: u64 = read_be(data, head, extra);
+                let bits: i32 = extra * 8;
+                let value: i64 = raw as i64;
+                if (bits < 64 && (raw >> (bits - 1)) == 1) { let span: i64 = 1; span = span << bits; value = (raw as i64) - span; }
+                let low: i64 = -32; if (first == 209) { low = -128; } if (first == 210) { low = -32768; } if (first == 211) { low = -2147483648; }
+                canonical = value < low;
+                if (first == 208) { canonical = value < -32; }
+                event = Event::Integer(value);
+            }
+        }
+        if (self.options.canonical && !canonical) { return self.fail(ErrorKind::NotCanonical, at); }
+        let payload: i32 = 0;
+        if (class >= 1 && class <= 3) {
+            if (length > self.options.max_string_bytes as u64) { return self.fail(ErrorKind::StringLimit, at); }
+            if (((available - 1 - extra) as u64) < length) {
+                if (self.finished) { return self.fail(ErrorKind::UnexpectedEnd, at); }
+                return core::result::Ok(false);
+            }
+            payload = length as i32;
+        }
+        if (self.items >= self.options.max_items) { return self.fail(ErrorKind::ItemLimit, at); }
+        let start: i32 = head + extra;
+        let view: core::slice::View<u8> = core::slice::View { values: data, start: start, length: payload };
+        if (class == 1 && !valid_utf8(data, start, payload)) { return self.fail(ErrorKind::InvalidUtf8, at); }
+        if (class == 3 && ext_type == -1 && self.options.timestamps && timestamp(view).is_err()) { return self.fail(ErrorKind::InvalidTimestamp, at); }
+        if (class >= 4 && depth >= self.options.max_depth) { return self.fail(ErrorKind::DepthLimit, at); }
+        self.items += 1;
+        self.begin = start + payload;
+        if (class == 1) { event = Event::Str(view); }
+        if (class == 2) { event = Event::Bin(view); }
+        if (class == 3) { event = Event::Ext(ext_type, view); }
+        if (class >= 4) {
+            let count: u64 = length; if (class == 5) { count = length * 2; }
+            if (self.remaining.try_push(count).is_err()) { return self.fail(ErrorKind::AllocationFailed, at); }
+            event = Event::Array(length as u32);
+            if (class == 5) { event = Event::Map(length as u32); }
+            return self.emit(event, at);
+        }
+        self.complete();
+        return self.emit(event, at);
+    }
+}
+
+pub enum StreamError { Pack(Error), Io(core::io::Error) }
+pub struct EventReader<R> { reader: &R, decoder: &Decoder, scratch: core::slice::View<u8>, eof: bool, reads: u64 }
+pub fn event_reader<R>(reader: &R, decoder: &Decoder, scratch: core::slice::View<u8>)
+    -> core::result::Result<EventReader<R>, Error> where R: core::io::Read {
+    if (scratch.length <= 0 || !core::io::valid_range(scratch.start, scratch.length)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    let value: EventReader<R> = EventReader { reader: reader, decoder: decoder, scratch: scratch, eof: false, reads: 0 };
+    return core::result::Ok(value);
+}
+pub impl<R> EventReader<R> {
+    pub fn borrow(&self) -> &EventReader<R> { return self; }
+    pub fn read_calls(&self) -> u64 { return self.reads; }
+    pub fn next(&self) -> core::result::Result<bool, StreamError> where R: core::io::Read {
+        while (true) {
+            let step: core::result::Result<bool, Error> = self.decoder.next();
+            if (step.is_err()) { return core::result::Err(StreamError::Pack(step.unwrap_err())); }
+            if (step.unwrap()) { return core::result::Ok(true); }
+            if (self.eof) { return core::result::Ok(false); }
+            let received: core::result::Result<i32, core::io::Error> = self.reader.read(self.scratch.values, self.scratch.start, self.scratch.length);
+            if (received.is_err()) {
+                let cause: core::io::Error = received.unwrap_err();
+                if (core::io::is_interrupted(cause)) { continue; }
+                return core::result::Err(StreamError::Io(cause));
+            }
+            let count: i32 = received.unwrap();
+            if (count < 0 || count > self.scratch.length) { return core::result::Err(StreamError::Io(core::io::Error::InvalidCount)); }
+            self.reads += 1;
+            if (count == 0) { self.eof = true; self.decoder.finish(); continue; }
+            let fed: core::result::Result<i32, Error> = self.decoder.feed(self.scratch.values, self.scratch.start, count);
+            if (fed.is_err()) { return core::result::Err(StreamError::Pack(fed.unwrap_err())); }
+        }
+        return core::result::Ok(false);
+    }
+}
+
+// Writer frames: kind 1 array, 2 map; known 1 when the length was declared.
+pub struct Writer {
+    options: WriterOptions, out: alloc::vec::Vec<u8>,
+    kinds: alloc::vec::Vec<u8>, known: alloc::vec::Vec<u8>, declared: alloc::vec::Vec<u64>, count: alloc::vec::Vec<u64>, start: alloc::vec::Vec<i32>,
+    roots: u64, flushed: u64, head: [u8; 10],
+}
+pub fn writer(options: WriterOptions) -> core::result::Result<Writer, Error> {
+    if (options.max_depth < 0 || options.max_output_bytes < 0) { return core::result::Err(error(ErrorKind::InvalidOptions, 0)); }
+    return core::result::Ok(Writer { options: options, out: alloc::vec::new(), kinds: alloc::vec::new(), known: alloc::vec::new(),
+        declared: alloc::vec::new(), count: alloc::vec::new(), start: alloc::vec::new(), roots: 0, flushed: 0, head: [0; 10] });
+}
+fn put_be(target: [u8], at: i32, value: u64, width: i32) {
+    let index: i32 = 0;
+    while (index < width) { target[at + index] = ((value >> ((width - index - 1) * 8)) & 255) as u8; index += 1; }
+}
+// Shortest header for a str (1), bin (2), array (4) or map (5) of length n.
+fn length_head(target: [u8], class: i32, length: u64) -> i32 {
+    if (class == 1 && length < 32) { target[0] = (160 + (length as i32)) as u8; return 1; }
+    if ((class == 4 || class == 5) && length < 16) { target[0] = (128 + 16 * (5 - class) + (length as i32)) as u8; return 1; }
+    let small: i32 = 217; let middle: i32 = 218; let large: i32 = 219;
+    if (class == 2) { small = 196; middle = 197; large = 198; }
+    if (class == 4) { small = 0; middle = 220; large = 221; }
+    if (class == 5) { small = 0; middle = 222; large = 223; }
+    if (length <= 255 && small != 0) { target[0] = small as u8; target[1] = length as u8; return 2; }
+    if (length <= 65535) { target[0] = middle as u8; put_be(target, 1, length, 2); return 3; }
+    target[0] = large as u8; put_be(target, 1, length, 4); return 5;
+}
+fn unsigned_head(target: [u8], value: u64) -> i32 {
+    if (value < 128) { target[0] = value as u8; return 1; }
+    if (value <= 255) { target[0] = 204; target[1] = value as u8; return 2; }
+    if (value <= 65535) { target[0] = 205; put_be(target, 1, value, 2); return 3; }
+    if (value <= 4294967295) { target[0] = 206; put_be(target, 1, value, 4); return 5; }
+    target[0] = 207; put_be(target, 1, value, 8); return 9;
+}
+fn negative_head(target: [u8], value: i64) -> i32 {
+    if (value >= -32) { target[0] = (value + 256) as u8; return 1; }
+    if (value >= -128) { target[0] = 208; target[1] = (value + 256) as u8; return 2; }
+    if (value >= -32768) { target[0] = 209; put_be(target, 1, (value + 65536) as u64, 2); return 3; }
+    if (value >= -2147483648) { target[0] = 210; put_be(target, 1, (value + 4294967296) as u64, 4); return 5; }
+    target[0] = 211; put_be(target, 1, value as u64, 8); return 9;
+}
+
+pub impl Writer {
+    pub fn borrow(&self) -> &Writer { return self; }
+    pub fn len(&self) -> i32 { return self.out.len(); }
+    pub fn depth(&self) -> i32 { return self.kinds.len(); }
+    pub fn roots_written(&self) -> u64 { return self.roots; }
+    pub fn output(&self) -> core::slice::View<u8> { return self.out.as_view(); }
+    fn reject(&self, kind: ErrorKind) -> core::result::Result<i32, Error> { return core::result::Err(error(kind, self.flushed + (self.out.len() as u64))); }
+    fn room(&self, count: i32) -> bool { return count <= self.options.max_output_bytes - self.out.len(); }
+    fn check(&self) -> core::result::Result<i32, Error> {
+        let depth: i32 = self.kinds.len();
+        if (depth == 0) { return core::result::Ok(0); }
+        let top: i32 = depth - 1;
+        if (self.known.at(top) == 1) {
+            let used: u64 = self.count.at(top); let limit: u64 = self.declared.at(top);
+            if ((self.kinds.at(top) == 1 && used == limit) || (self.kinds.at(top) == 2 && used / 2 == limit && used % 2 == 0)) { return self.reject(ErrorKind::CountMismatch); }
+        }
+        return core::result::Ok(0);
+    }
+    fn done(&self) {
+        let depth: i32 = self.kinds.len();
+        if (depth == 0) { self.roots += 1; return; }
+        core::result::unwrap(self.count.set(depth - 1, self.count.at(depth - 1) + 1));
+    }
+    fn append(&self, source: [u8], start: i32, count: i32) -> bool {
+        let view: core::slice::View<u8> = core::slice::View { values: source, start: start, length: count };
+        return self.out.try_extend(view).is_ok();
+    }
+    // Writes head bytes plus an optional payload as one item.
+    fn item(&self, width: i32, source: [u8], start: i32, count: i32) -> core::result::Result<i32, Error> {
+        let placed = self.check(); if (placed.is_err()) { return placed; }
+        if (count > self.options.max_output_bytes || !self.room(width + count)) { return self.reject(ErrorKind::OutputLimit); }
+        let at: i32 = self.out.len();
+        if (!self.append(self.head, 0, width) || !self.append(source, start, count)) { core::result::unwrap(self.out.truncate(at)); return self.reject(ErrorKind::AllocationFailed); }
+        self.done();
+        return core::result::Ok(width + count);
+    }
+    pub fn nil(&self) -> core::result::Result<i32, Error> { self.head[0] = 192; return self.item(1, self.head, 0, 0); }
+    pub fn boolean(&self, value: bool) -> core::result::Result<i32, Error> { self.head[0] = 194; if (value) { self.head[0] = 195; } return self.item(1, self.head, 0, 0); }
+    pub fn unsigned(&self, value: u64) -> core::result::Result<i32, Error> { return self.item(unsigned_head(self.head, value), self.head, 0, 0); }
+    pub fn integer(&self, value: i64) -> core::result::Result<i32, Error> {
+        if (value >= 0) { return self.unsigned(value as u64); }
+        return self.item(negative_head(self.head, value), self.head, 0, 0);
+    }
+    pub fn float32(&self, bits: u32) -> core::result::Result<i32, Error> { self.head[0] = 202; put_be(self.head, 1, bits as u64, 4); return self.item(5, self.head, 0, 0); }
+    pub fn float64(&self, bits: u64) -> core::result::Result<i32, Error> { self.head[0] = 203; put_be(self.head, 1, bits, 8); return self.item(9, self.head, 0, 0); }
+    fn blob(&self, class: i32, source: [u8], start: i32, length: i32) -> core::result::Result<i32, Error> {
+        if (!core::io::valid_range(start, length)) { return self.reject(ErrorKind::Bounds); }
+        if (class == 1 && !valid_utf8(source, start, length)) { return self.reject(ErrorKind::InvalidUtf8); }
+        return self.item(length_head(self.head, class, length as u64), source, start, length);
+    }
+    pub fn text(&self, value: core::text::Text) -> core::result::Result<i32, Error> { return self.blob(1, value.bytes, value.start, value.length); }
+    pub fn str_bytes(&self, value: core::slice::View<u8>) -> core::result::Result<i32, Error> { return self.blob(1, value.values, value.start, value.length); }
+    pub fn bin(&self, value: core::slice::View<u8>) -> core::result::Result<i32, Error> { return self.blob(2, value.values, value.start, value.length); }
+    pub fn ext(&self, kind: i8, value: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        if (!core::io::valid_range(value.start, value.length)) { return self.reject(ErrorKind::Bounds); }
+        let length: i32 = value.length; let width: i32 = 2;
+        if (length == 1) { self.head[0] = 212; }
+        if (length == 2) { self.head[0] = 213; }
+        if (length == 4) { self.head[0] = 214; }
+        if (length == 8) { self.head[0] = 215; }
+        if (length == 16) { self.head[0] = 216; }
+        let fixed: bool = length == 1 || length == 2 || length == 4 || length == 8 || length == 16;
+        if (!fixed && length <= 255) { self.head[0] = 199; self.head[1] = length as u8; width = 3; }
+        if (!fixed && length > 255 && length <= 65535) { self.head[0] = 200; put_be(self.head, 1, length as u64, 2); width = 4; }
+        if (!fixed && length > 65535) { self.head[0] = 201; put_be(self.head, 1, length as u64, 4); width = 6; }
+        self.head[width - 1] = kind as u8;
+        return self.item(width, value.values, value.start, length);
+    }
+    // Writes the shortest timestamp extension: 32-bit, 64-bit or 96-bit.
+    pub fn timestamp(&self, seconds: i64, nanoseconds: u32) -> core::result::Result<i32, Error> {
+        if (nanoseconds > 999999999) { return self.reject(ErrorKind::InvalidValue); }
+        let payload: [u8; 12] = [0; 12]; let length: i32 = 12;
+        if (seconds >= 0 && seconds < 17179869184) {
+            if (nanoseconds == 0 && seconds < 4294967296) { put_be(payload, 0, seconds as u64, 4); length = 4; }
+            else { put_be(payload, 0, ((nanoseconds as u64) << 34) | (seconds as u64), 8); length = 8; }
+        } else { put_be(payload, 0, nanoseconds as u64, 4); put_be(payload, 4, seconds as u64, 8); }
+        return self.ext(-1, core::slice::View { values: payload, start: 0, length: length });
+    }
+    fn open(&self, kind: u8, known: bool, declared: u64) -> core::result::Result<i32, Error> {
+        let placed = self.check(); if (placed.is_err()) { return placed; }
+        if (self.kinds.len() >= self.options.max_depth) { return self.reject(ErrorKind::DepthLimit); }
+        if (known && declared > 4294967295) { return self.reject(ErrorKind::InvalidValue); }
+        let at: i32 = self.out.len();
+        if (known) {
+            let width: i32 = length_head(self.head, 3 + (kind as i32), declared);
+            if (!self.room(width)) { return self.reject(ErrorKind::OutputLimit); }
+            if (!self.append(self.head, 0, width)) { return self.reject(ErrorKind::AllocationFailed); }
+        }
+        let flag: u8 = 0; if (known) { flag = 1; }
+        let pushed: i32 = 0;
+        if (self.kinds.try_push(kind).is_ok()) { pushed = 1; }
+        if (pushed == 1 && self.known.try_push(flag).is_ok()) { pushed = 2; }
+        if (pushed == 2 && self.declared.try_push(declared).is_ok()) { pushed = 3; }
+        if (pushed == 3 && self.count.try_push(0).is_ok()) { pushed = 4; }
+        if (pushed == 4 && self.start.try_push(self.out.len()).is_ok()) { pushed = 5; }
+        if (pushed < 5) {
+            if (pushed >= 1) { self.kinds.pop(); } if (pushed >= 2) { self.known.pop(); }
+            if (pushed >= 3) { self.declared.pop(); } if (pushed >= 4) { self.count.pop(); }
+            core::result::unwrap(self.out.truncate(at));
+            return self.reject(ErrorKind::AllocationFailed);
+        }
+        return core::result::Ok(self.out.len() - at);
+    }
+    pub fn begin_array_len(&self, count: u64) -> core::result::Result<i32, Error> { return self.open(1, true, count); }
+    pub fn begin_map_len(&self, pairs: u64) -> core::result::Result<i32, Error> { return self.open(2, true, pairs); }
+    // Unknown length: the shortest header is inserted when the container ends.
+    pub fn begin_array(&self) -> core::result::Result<i32, Error> { return self.open(1, false, 0); }
+    pub fn begin_map(&self) -> core::result::Result<i32, Error> { return self.open(2, false, 0); }
+    pub fn end(&self) -> core::result::Result<i32, Error> {
+        let depth: i32 = self.kinds.len();
+        if (depth == 0) { return self.reject(ErrorKind::InvalidPlacement); }
+        let top: i32 = depth - 1; let kind: u8 = self.kinds.at(top); let used: u64 = self.count.at(top);
+        if (kind == 2 && used % 2 == 1) { return self.reject(ErrorKind::OddMap); }
+        let entries: u64 = used; if (kind == 2) { entries = used / 2; }
+        let at: i32 = self.out.len();
+        if (self.known.at(top) == 1) {
+            if (entries != self.declared.at(top)) { return self.reject(ErrorKind::CountMismatch); }
+        } else {
+            if (entries > 4294967295) { return self.reject(ErrorKind::InvalidValue); }
+            let width: i32 = length_head(self.head, 3 + (kind as i32), entries);
+            if (!self.room(width)) { return self.reject(ErrorKind::OutputLimit); }
+            if (self.out.try_resize(at + width, 0).is_err()) { return self.reject(ErrorKind::AllocationFailed); }
+            let data: [u8] = self.out.as_slice(); let first: i32 = self.start.at(top); let index: i32 = at;
+            while (index > first) { index -= 1; data[index + width] = data[index]; }
+            index = 0; while (index < width) { data[first + index] = self.head[index]; index += 1; }
+        }
+        self.kinds.pop(); self.known.pop(); self.declared.pop(); self.count.pop(); self.start.pop();
+        self.done();
+        return core::result::Ok(self.out.len() - at);
+    }
+    // Writes one decoder event; End closes the innermost container.
+    pub fn event(&self, value: Event) -> core::result::Result<i32, Error> {
+        let result: core::result::Result<i32, Error> = match (value) {
+            Event::Nil -> self.nil(),
+            Event::Boolean(flag) -> self.boolean(flag),
+            Event::Unsigned(n) -> self.unsigned(n),
+            Event::Integer(n) -> self.integer(n),
+            Event::Float32(bits) -> self.float32(bits),
+            Event::Float64(bits) -> self.float64(bits),
+            Event::Str(data) -> self.str_bytes(data),
+            Event::Bin(data) -> self.bin(data),
+            Event::Ext(kind, data) -> self.ext(kind, data),
+            Event::Array(n) -> self.begin_array_len(n as u64),
+            Event::Map(n) -> self.begin_map_len(n as u64),
+            Event::End -> self.end(),
+        };
+        return result;
+    }
+    // Bytes that no later header insertion can move.
+    pub fn stable_len(&self) -> i32 {
+        let index: i32 = 0;
+        while (index < self.kinds.len()) { if (self.known.at(index) == 0) { return self.start.at(index); } index += 1; }
+        return self.out.len();
+    }
+    pub fn clear(&self) {
+        self.out.clear(); self.kinds.clear(); self.known.clear(); self.declared.clear(); self.count.clear(); self.start.clear();
+        self.roots = 0; self.flushed = 0;
+    }
+    pub fn destroy(&self) {
+        self.out.destroy(); self.kinds.destroy(); self.known.destroy(); self.declared.destroy(); self.count.destroy(); self.start.destroy();
+        self.out = alloc::vec::new(); self.kinds = alloc::vec::new(); self.known = alloc::vec::new(); self.declared = alloc::vec::new();
+        self.count = alloc::vec::new(); self.start = alloc::vec::new(); self.roots = 0; self.flushed = 0;
+    }
+}
+
+pub impl Writer {
+    // Writes the stable prefix to sink and drops it. On failure the unwritten
+    // bytes stay buffered; Failure.completed counts this call's bytes.
+    pub fn flush_to<W>(&self, sink: &W) -> core::result::Result<i32, core::io::Failure> where W: core::io::Write {
+        let count: i32 = self.stable_len();
+        if (count == 0) { return core::result::Ok(0); }
+        let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all<W>(sink, self.out.as_slice(), 0, count);
+        let done: i32 = count;
+        if (sent.is_err()) { done = sent.unwrap_err().completed; if (done < 0 || done > count) { done = 0; } }
+        if (done > 0) {
+            let bytes: [u8] = self.out.as_slice(); let length: i32 = self.out.len(); let i: i32 = done;
+            while (i < length) { bytes[i - done] = bytes[i]; i += 1; }
+            core::result::unwrap(self.out.truncate(length - done));
+            i = 0; while (i < self.start.len()) { core::result::unwrap(self.start.set(i, self.start.at(i) - done)); i += 1; }
+            self.flushed += done as u64;
+        }
+        if (sent.is_err()) { return core::result::Err(sent.unwrap_err()); }
+        return core::result::Ok(count);
+    }
+}

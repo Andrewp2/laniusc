@@ -1,0 +1,236 @@
+// Fixed-capacity least-recently-used cache. One node arena holds every entry;
+// each node sits on two intrusive lists: its hash bucket chain and the
+// recency list from newest to oldest. Construction makes the only two
+// allocations. Lookup, insertion, replacement, eviction, removal and
+// promotion are O(1) expected (bucket chains average below one node) and
+// never allocate. Keys and values are shallow copies; no destructor runs.
+// See docs/stdlib-lru-cache.md.
+module alloc::lru;
+import alloc::allocator;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed }
+pub struct Entry<K, V> { key: K, value: V }
+// Outcome of put. Replaced and Evicted transfer the displaced entry intact.
+pub enum Put<K, V> { Inserted, Replaced(Entry<K, V>), Evicted(Entry<K, V>) }
+struct Node<K, V> { item: Entry<K, V>, hash: u32, newer: i32, older: i32, chain: i32 }
+// One owner of both allocations and every stored entry.
+pub struct LruCache<K, V> { nodes: ptr, heads: ptr, limit: i32, buckets: i32, used: i32, length: i32, newest: i32, oldest: i32, free: i32 }
+// Borrowed cursor: next() yields newest first, next_back() oldest first.
+pub struct Cursor<K, V> { nodes: ptr, limit: i32, front: i32, back: i32, remaining: i32 }
+const ALIGN: usize = 8;
+const MAX_BYTES: usize = 2147483647;
+fn bucket(hash: u32, buckets: i32) -> i32 {
+    let folded: u32 = hash ^ (hash >> 16);
+    return (folded & ((buckets - 1) as u32)) as i32;
+}
+// Buckets: the least power of two at least the entry limit.
+fn bucket_count(limit: i32) -> i32 {
+    let count: i32 = 1;
+    while (count < limit) { count *= 2; }
+    return count;
+}
+// Allocate an empty cache that holds at most `limit` entries (limit >= 1).
+// Failure releases anything allocated and returns the error.
+pub fn with_capacity<K, V>(limit: i32) -> core::result::Result<LruCache<K, V>, Error> {
+    if (limit < 1) { return core::result::Err(Error::InvalidCapacity); }
+    if (limit > 1073741824) { return core::result::Err(Error::CapacityOverflow); }
+    let size: usize = core::mem::size_of<Node<K, V>>();
+    if (size > 0 && (limit as usize) > MAX_BYTES / size) { return core::result::Err(Error::CapacityOverflow); }
+    let buckets: i32 = bucket_count(limit);
+    let nodes: ptr = alloc::allocator::alloc(size * (limit as usize), ALIGN);
+    if (nodes == 0) { return core::result::Err(Error::AllocationFailed); }
+    let heads: ptr = alloc::allocator::alloc(4 * (buckets as usize), ALIGN);
+    if (heads == 0) {
+        alloc::allocator::dealloc(nodes, size * (limit as usize), ALIGN);
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let table: [i32] = core::mem::typed_slice_from_storage<i32>(heads, buckets);
+    let index: i32 = 0;
+    while (index < buckets) { table[index] = -1; index += 1; }
+    return core::result::Ok(LruCache { nodes: nodes, heads: heads, limit: limit, buckets: buckets, used: 0, length: 0, newest: -1, oldest: -1, free: -1 });
+}
+pub impl<K, V> LruCache<K, V> {
+    pub fn borrow(&self) -> &LruCache<K, V> { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn capacity(&self) -> i32 { return self.limit; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    pub fn is_full(&self) -> bool { return self.length == self.limit; }
+    fn arena(&self) -> [Node<K, V>] { return core::mem::typed_slice_from_storage(self.nodes, self.limit); }
+    fn table(&self) -> [i32] { return core::mem::typed_slice_from_storage<i32>(self.heads, self.buckets); }
+    fn find(&self, key: K, hash: u32) -> i32 where K: core::cmp::Eq<K> {
+        let nodes: [Node<K, V>] = self.arena();
+        let index: i32 = self.table()[bucket(hash, self.buckets)];
+        while (index >= 0) {
+            let node: Node<K, V> = nodes[index];
+            if (node.hash == hash && K::eq(node.item.key, key)) { return index; }
+            index = node.chain;
+        }
+        return -1;
+    }
+    // Recency list edits.
+    fn detach(&self, index: i32) {
+        let nodes: [Node<K, V>] = self.arena(); let node: Node<K, V> = nodes[index];
+        if (node.newer >= 0) { let upper: Node<K, V> = nodes[node.newer]; upper.older = node.older; nodes[node.newer] = upper; }
+        else { self.newest = node.older; }
+        if (node.older >= 0) { let lower: Node<K, V> = nodes[node.older]; lower.newer = node.newer; nodes[node.older] = lower; }
+        else { self.oldest = node.newer; }
+    }
+    fn attach_newest(&self, index: i32) {
+        let nodes: [Node<K, V>] = self.arena(); let node: Node<K, V> = nodes[index];
+        node.newer = -1; node.older = self.newest; nodes[index] = node;
+        if (self.newest >= 0) { let previous: Node<K, V> = nodes[self.newest]; previous.newer = index; nodes[self.newest] = previous; }
+        else { self.oldest = index; }
+        self.newest = index;
+    }
+    fn promote(&self, index: i32) {
+        if (index == self.newest) { return; }
+        self.detach(index); self.attach_newest(index);
+    }
+    // Bucket chain edits.
+    fn unchain(&self, index: i32) {
+        let nodes: [Node<K, V>] = self.arena(); let table: [i32] = self.table();
+        let node: Node<K, V> = nodes[index];
+        let at: i32 = bucket(node.hash, self.buckets);
+        if (table[at] == index) { table[at] = node.chain; return; }
+        let walk: i32 = table[at];
+        while (walk >= 0) {
+            let link: Node<K, V> = nodes[walk];
+            if (link.chain == index) { link.chain = node.chain; nodes[walk] = link; return; }
+            walk = link.chain;
+        }
+        assert(false);
+    }
+    fn place(&self, index: i32, item: Entry<K, V>, hash: u32) {
+        let nodes: [Node<K, V>] = self.arena(); let table: [i32] = self.table();
+        let at: i32 = bucket(hash, self.buckets);
+        nodes[index] = Node { item: item, hash: hash, newer: -1, older: -1, chain: table[at] };
+        table[at] = index;
+        self.attach_newest(index);
+    }
+    fn release(&self, index: i32) -> Entry<K, V> {
+        let nodes: [Node<K, V>] = self.arena();
+        self.unchain(index); self.detach(index);
+        let node: Node<K, V> = nodes[index];
+        node.chain = self.free; nodes[index] = node; self.free = index;
+        self.length -= 1;
+        return node.item;
+    }
+    pub fn contains(&self, key: K) -> bool where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        return self.find(key, K::hash(key)) >= 0;
+    }
+    // Read without changing recency.
+    pub fn peek(&self, key: K) -> core::option::Option<V> where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        let index: i32 = self.find(key, K::hash(key));
+        if (index < 0) { return core::option::None(); }
+        return core::option::Some(self.arena()[index].item.value);
+    }
+    // Read and make the entry the newest.
+    pub fn get(&self, key: K) -> core::option::Option<V> where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        let index: i32 = self.find(key, K::hash(key));
+        if (index < 0) { return core::option::None(); }
+        self.promote(index);
+        return core::option::Some(self.arena()[index].item.value);
+    }
+    // Make the entry the newest without reading it; false when absent.
+    pub fn touch(&self, key: K) -> bool where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        let index: i32 = self.find(key, K::hash(key));
+        if (index < 0) { return false; }
+        self.promote(index);
+        return true;
+    }
+    // Store key/value as the newest entry. An equivalent stored entry is
+    // replaced (the new key is stored) and returned; otherwise, when full,
+    // the oldest entry is evicted first and returned. Never allocates.
+    pub fn put(&self, key: K, value: V) -> Put<K, V> where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        let hash: u32 = K::hash(key);
+        let item: Entry<K, V> = Entry { key: key, value: value };
+        let index: i32 = self.find(key, hash);
+        if (index >= 0) {
+            let nodes: [Node<K, V>] = self.arena(); let node: Node<K, V> = nodes[index];
+            let previous: Entry<K, V> = node.item;
+            node.item = item; nodes[index] = node;
+            self.promote(index);
+            return Put::Replaced(previous);
+        }
+        if (self.length == self.limit) {
+            let slot: i32 = self.oldest;
+            let evicted: Entry<K, V> = self.release(slot);
+            self.free = self.arena()[slot].chain;
+            self.place(slot, item, hash); self.length += 1;
+            return Put::Evicted(evicted);
+        }
+        let slot: i32 = self.free;
+        if (slot >= 0) { self.free = self.arena()[slot].chain; }
+        else { slot = self.used; self.used += 1; }
+        self.place(slot, item, hash); self.length += 1;
+        return Put::Inserted;
+    }
+    pub fn remove(&self, key: K) -> core::option::Option<Entry<K, V>> where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+        let index: i32 = self.find(key, K::hash(key));
+        if (index < 0) { return core::option::None(); }
+        return core::option::Some(self.release(index));
+    }
+    // Remove and return the entry that put would evict next.
+    pub fn pop_oldest(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.oldest < 0) { return core::option::None(); }
+        return core::option::Some(self.release(self.oldest));
+    }
+    pub fn oldest(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.oldest < 0) { return core::option::None(); }
+        return core::option::Some(self.arena()[self.oldest].item);
+    }
+    pub fn newest(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.newest < 0) { return core::option::None(); }
+        return core::option::Some(self.arena()[self.newest].item);
+    }
+    pub fn iter(&self) -> Cursor<K, V> {
+        return Cursor { nodes: self.nodes, limit: self.limit, front: self.newest, back: self.oldest, remaining: self.length };
+    }
+    // Discard every entry shallowly, one step per entry; capacity is kept.
+    pub fn clear(&self) {
+        let nodes: [Node<K, V>] = self.arena(); let table: [i32] = self.table();
+        let index: i32 = self.newest;
+        while (index >= 0) { let node: Node<K, V> = nodes[index]; table[bucket(node.hash, self.buckets)] = -1; index = node.older; }
+        self.used = 0; self.length = 0; self.newest = -1; self.oldest = -1; self.free = -1;
+    }
+    // Release both allocations; stored keys and values are not destroyed, so
+    // drain owners with pop_oldest first. The cache is unusable afterwards.
+    pub fn destroy(&self) {
+        let size: usize = core::mem::size_of<Node<K, V>>();
+        if (self.limit > 0) {
+            alloc::allocator::dealloc(self.nodes, size * (self.limit as usize), ALIGN);
+            alloc::allocator::dealloc(self.heads, 4 * (self.buckets as usize), ALIGN);
+        }
+        self.nodes = 0; self.heads = 0; self.limit = 0; self.buckets = 0;
+        self.used = 0; self.length = 0; self.newest = -1; self.oldest = -1; self.free = -1;
+    }
+}
+pub impl<K, V> Cursor<K, V> {
+    pub fn borrow(&self) -> &Cursor<K, V> { return self; }
+}
+pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V> {
+    pub fn next(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.remaining <= 0) { self.remaining = 0; return core::option::None(); }
+        let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.nodes, self.limit);
+        let node: Node<K, V> = nodes[self.front];
+        self.front = node.older; self.remaining -= 1;
+        return core::option::Some(node.item);
+    }
+}
+pub impl<K, V> core::iter::DoubleEndedIterator<Entry<K, V>> for Cursor<K, V> {
+    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.remaining <= 0) { self.remaining = 0; return core::option::None(); }
+        let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.nodes, self.limit);
+        let node: Node<K, V> = nodes[self.back];
+        self.back = node.newer; self.remaining -= 1;
+        return core::option::Some(node.item);
+    }
+}
+pub impl<K, V> core::iter::ExactSizeIterator<Entry<K, V>> for Cursor<K, V> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining as u64; }
+}

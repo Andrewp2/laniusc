@@ -43,6 +43,8 @@ All entries below take a borrowed vector as their first argument. Reads return s
 | `try_set(index, item)` | `Result<T, Error>` containing the displaced value; invalid index gives `Bounds`. |
 | `try_insert(index, item)` | Insert before an index in `0..=len`; return new length. Invalid index gives `Bounds`, checked before `Full`. |
 | `try_remove(index)` | Preserve remaining order; return the removed value or `Bounds`. |
+| `try_swap_remove(index)` | O(1): move the last element into the hole and return the removed value, or `Bounds`. |
+| `try_extend_from_view(view)` | Append the whole view or nothing; `Full` before any write. The view may alias the active prefix. |
 | `try_swap(left, right)` | Return unchanged length on success, including swapping an index with itself; invalid indices give `Bounds`. |
 | `reverse` | Reverse the active prefix and return its length. |
 | `truncate(new_len)` | Keep exactly that prefix and return the number discarded. Requests outside `0..=len` give `Bounds`. |

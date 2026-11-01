@@ -1,6 +1,6 @@
-// Compiler finding: per-element cost of a [u8] loop. 160 M byte reads.
+// Codegen cost of a [u8] loop: 160 M byte reads. Loop disassembly: byte_loop_codegen.s.
 // laniusc: ~0.45 s over the allocation baseline (2.8 ns/byte); gcc -O0 on
-// the same C loop (byte_loop_repro.c): ~0.13 s; gcc -O2: ~0.01 s. See the Speed
+// the same C loop (byte_loop_codegen.c): ~0.13 s; gcc -O2: ~0.01 s. See the Speed
 // section of docs/extended-seqdiff.md.
 module app::main;
 import alloc::vec;
