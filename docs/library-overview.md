@@ -2239,14 +2239,16 @@ event server plus four sequential groups, with exact server counters. TLS,
 threads, multipart ranges and allocation-failure coverage remain open.
 
 The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
-synchronous cleartext client over the same codec, `ext::http_url` and
-`ext::url_connect`. It pools keep-alive connections per host and port under
+synchronous `http://` and verified `https://` client over the same codec,
+`ext::http_url`, `ext::url_connect` and `ext::tls_stream`. It pools
+keep-alive cleartext and TLS connections per scheme, host and port under
 idle-count, idle-time and use limits, discards stale ones and retries an
 idempotent request once on a fresh connection. It follows redirects with a
 hop limit, RFC 9110 method rules and cross-origin credential stripping, and
 sends fixed or chunked streamed bodies, stopping an upload on an early final
 response. The curl-like sample passes Python `http.server` oracle groups
-pool18, redirect29, upload10 and broken21 with exact counters.
+pool18, redirect29, upload10 and broken21, plus https17 against Python `ssl`
+origins with locally generated test certificates, with exact counters.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
