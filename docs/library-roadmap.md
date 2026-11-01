@@ -477,8 +477,11 @@ Over https it now offers `h2` by ALPN: an origin that selects it gets one
 stream, and `fetch_all` runs requests concurrently on it. The h2 group (21
 cases against libnghttp2's server session over TLS) covers multiplexing,
 the server's stream limit, flow-controlled uploads, CONTINUATION, trailers,
-RST_STREAM, GOAWAY, PING and HTTP/1.1 fallback. Streaming responses, `h2c`
-and server push remain open.
+RST_STREAM, GOAWAY, PING and HTTP/1.1 fallback. `fetch_to` now streams
+response bodies to a `core::io::Write` sink over HTTP/1.1 and HTTP/2, and
+the `agent-fetch` sample (std::cli) passes http12, h2 6 and proxy4 oracle
+groups against Python `http.server`, libnghttp2 and `ext::http_proxy`.
+Client `h2c`, a pull-style body reader and server push remain open.
 
 [HTTP/2](extended-http2.md) itself is [`ext::hpack`](extended-hpack.md)
 (RFC 7541 Appendix C plus differential checks against libnghttp2's HPACK in
