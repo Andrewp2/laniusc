@@ -22,7 +22,8 @@ From these, and with no other assumption than `selfCompiler_outcome`'s:
    text means;
 2. the fixpoint: `B`'s machine code for `w`, entered with the words of
    `self` and `room` words of output view, faults (every run that stops,
-   stops at a fault: out of stack, heap or output room), or returns,
+   stops at a fault), only when Core's run of `w` fails at every fuel or
+   completes with the stack window short (`SelfFaults`), or returns,
    deterministically, the length of `B`'s own words (`binaryWords`: the
    entry count, the entries, the image's length, then its bytes four to a
    word, little-endian, the last word zero-padded), with those words in the
@@ -46,8 +47,9 @@ open Lanius.Faithful.SelfCompiler
 the front end reads as the self program `prog` (`read`), and `B`, the
 verified compiler's binary for them (`compiled`): `prog` is the files' one
 reading, and `B`'s code for `w`, entered with the words of `self` and `room`
-output words (premises as in `selfCompiler_outcome`), faults, or returns
-deterministically with `B`'s own words in its output view. -/
+output words (premises as in `selfCompiler_outcome`), faults as
+`SelfFaults` allows, or returns deterministically with `B`'s own words in
+its output view. -/
 theorem selfHost_fixpoint {self : List SourceFile} {B : Binary}
     (read : sourceProgramFiles self = some prog) (compiled : compileText self = some B)
     (fit : FilesFit self) (wordsLt : (filesWords self).length < 2 ^ 31) {room limit : Nat} (roomLt : room < 2 ^ 31)
@@ -63,7 +65,7 @@ theorem selfHost_fixpoint {self : List SourceFile} {B : Binary}
     (heapAt : HeapAt window s (selfHeap (filesWords self) room limit)) (stack : StackAt B.guard window s) :
     TextReading (self.map SourceFile.source) prog ∧
     (∀ sp, TextReading (self.map SourceFile.source) sp → sp = prog) ∧
-    (Faults s ∨
+    (SelfFaults self room limit window B s ∨
       ∃ n s' results after, Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after ∧
         SelfOutput (some B) (filesWords self) s s') := by
   have reading := textBuilt_reading (sourceProgramFiles_built read)
@@ -103,7 +105,7 @@ theorem selfHost_outcome {self : List SourceFile} {B : Binary}
     (params : ∀ k (bound : k < (selfBits (filesWords files) room).length),
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = (selfBits (filesWords files) room)[k])
     (heapAt : HeapAt window s (selfHeap (filesWords files) room limit)) (stack : StackAt B.guard window s) :
-    Faults s ∨
+    SelfFaults files room limit window B s ∨
     ∃ n s' results after, Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after ∧
       SelfOutput (compileText files) (filesWords files) s s' :=
   selfCompiler_outcome (compileSource_of_text read compiled) fit wordsLt roomLt enough small

@@ -19,9 +19,8 @@ public import Lanius.Faithful.Gen.SelfStmtF_Inline_pLeTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pStructFieldsMore
-public import Lanius.Faithful.Gen.SelfStmtF_armsOf
 public import Lanius.Faithful.Gen.SelfStmtF_callParts
-public import Lanius.Faithful.Gen.SelfStmtF_collectedWith
+public import Lanius.Faithful.Gen.SelfStmtF_collect
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_consBound
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
@@ -37,7 +36,7 @@ public import Lanius.Faithful.Gen.SelfStmtF_isPathCall
 public import Lanius.Faithful.Gen.SelfStmtF_itemOf
 public import Lanius.Faithful.Gen.SelfStmtF_joinInsts
 public import Lanius.Faithful.Gen.SelfStmtF_matchTysOrNone
-public import Lanius.Faithful.Gen.SelfStmtF_namesSome
+public import Lanius.Faithful.Gen.SelfStmtF_noBlock
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_paramGoals
@@ -165,9 +164,9 @@ theorem step_eff_arms {prog : SrcProgram} {prims : Prims} {ix_eff_arms ix_minus 
   simp only [src_eff_arms] at h
   faithful [Lanius.Mini.effArms]
 
-theorem step_eff_arms_ordered {prog : SrcProgram} {prims : Prims} {ix_eff_arms_ordered ix_minus ix_arms_in_order ix_eff_arms : Nat} (fn : prog.funcs[ix_eff_arms_ordered]? = some (src_eff_arms_ordered ix_minus ix_arms_in_order ix_eff_arms)) (np : prims.isPrim ix_eff_arms_ordered = false)
+theorem step_eff_arms_ordered {prog : SrcProgram} {prims : Prims} {ix_eff_arms_ordered ix_minus ix_match_order ix_eff_arms : Nat} (fn : prog.funcs[ix_eff_arms_ordered]? = some (src_eff_arms_ordered ix_minus ix_match_order ix_eff_arms)) (np : prims.isPrim ix_eff_arms_ordered = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_arms_in_order : Certified (∀ {n : Nat}, Stmt_arms_in_order prog prims ix_arms_in_order n)) {n : Nat}
+    (ext_match_order : Certified (∀ {n : Nat}, Stmt_match_order prog prims ix_match_order n)) {n : Nat}
     (ih_eff_arms : Certified (Stmt_eff_arms prog prims ix_eff_arms n)) :
     Stmt_eff_arms_ordered prog prims ix_eff_arms_ordered (n + 1) := by
   intro x0 x1 x2 x3 x4 x5 x6 v0 v1 v2 v3 v4 v5 v6 w h r0 r1 r2 r3 r4 r5 r6

@@ -141,7 +141,10 @@ those arguments. Floating-point width and bits, indefinite forms, chunk
 boundaries and map order are preserved. The codec does not sort keys, collapse
 indefinite forms, narrow floats or normalize NaNs. Consequently this is
 **not a core-deterministic/canonical CBOR encoder**, nor a claim that every
-float uses its preferred shortest representation.
+float uses its preferred shortest representation. The allocating
+[`ext::cbor_stream`](extended-cbor-stream.md) Writer has a deterministic mode
+that sorts keys, joins chunks, uses definite lengths and narrows floats; its
+Decoder can also reject non-deterministic input, and both stream.
 
 ## Map and tag policy
 

@@ -218,7 +218,8 @@ cost remain outside that VM counter. Per-rule pattern/state/capture caps and
 the input/call caps bound their dimensions.
 
 Probes reuse the fixed workspace prepared by `scan`; they create no capture
-owner. The number of rule attempts for successful steps is `rules × steps`, plus any
+owner. The [combined DFA](#combined-dfa-matching) usually replaces them while
+charging the same accounting. The number of charged rule attempts for successful steps is `rules × steps`, plus any
 partial failing selection. Longest-prefix resolution can scan beyond the
 eventual winning token: a short rule competing with a long failing alternative
 can rescan suffixes. There is no linear whole-tokenization claim. Use explicit
@@ -249,6 +250,96 @@ language cannot establish a forged slice's true allocation length.
 
 Rule indices and input positions are zero based. Nested regex error offsets
 retain the regex module's pattern/input-relative meaning.
+
+## Combined DFA matching
+
+`compile` also builds one `ext::regex::PrefixSet`, a lazy DFA over every rule
+that has no assertion. A DFA state is the epsilon-closed set of program
+counters across all those rules. It records the lowest rule index whose Match
+instruction is in the set. ASCII bytes have a cached 128-entry transition row
+per state. A non-ASCII scalar is stepped directly from the set, using the same
+literal, class, property and dot tests as the VM. `next` runs that DFA once
+per step from the current position. The last accepting boundary gives the
+longest end, and the lowest accepting rule there gives the tie-break, which are
+exactly the per-rule results. Absence, `EmptyMatch` and `NoMatch` follow from
+the same data.
+
+Results are identical to probing each rule, including errors, their order and
+`Usage`. A rule is still probed with the Pike VM, in index order, when any of
+these holds:
+
+- it contains lookbehind, which the DFA omits (other assertions are DFA
+  state; see [Assertions in the DFA](extended-regex.md#assertions-in-the-dfa));
+- the DFA cache filled during this step;
+- the VM could reach `WorkLimit`. The DFA proves it cannot when
+  `(scanned scalars + 2) * boundary_cost <= Options.max_work`.
+  `Regex.boundary_cost()` is 1 + 2 per instruction + each class term. It
+  bounds the VM ticks at one boundary: each PC in closure, each thread, and
+  each tested term. A rule's VM search lives no longer than the combined DFA
+  scan.
+
+Admission accounting is unchanged. Each step still charges every rule one
+call and its configured `max_work`, in index order, so `SearchCallLimit` and
+`SearchWorkLimit` report the same index. When every rule is in the DFA and all
+share one allowance, a step whose whole charge fits is charged in bulk.
+
+The cache size is fixed when the lexer is compiled: 4 states per program
+counter, clamped to 64..1024 states, with 128 transitions each, plus a set
+pool of `8 * states + 2 * pcs` entries. It never reallocates, so copies of a
+Lexer and all of its cursors share it. When it fills, that step uses the VM,
+and the next step rebuilds the cache. Compilation therefore makes at least 15 more
+allocations. The earlier allocation-failure receipts below predate this
+change.
+
+### Side-by-side acceptance
+
+`tests/fixtures/extended/lexer_dfa/root/ext/lexer_vm.lani` is the previous
+lexer verbatim, renamed `ext::lexer_vm`. `compare.lani` runs both lexers on
+each generated case and writes each trace: every `id@start-end` token, the
+terminal or error with its payloads, and the final `Usage`.
+`oracle.py` generates the cases and requires byte-identical traces. Rules mix
+lexer-shaped patterns, assertions, Unicode properties and
+grammar-generated regexes. 5% of cases use rules whose DFA exceeds the cache.
+Limits sometimes cut steps, tokens, calls, reserved work or the per-search VM
+budget. `build.sh` assembles the two-module source root and compiles the
+comparator with `target/claude-work/bin/lcc`.
+
+| Seed | Identical traces | Cases with a cache rebuild | Wall time |
+| ---: | ---: | ---: | ---: |
+| 20261031 | 6,000/6,000 | 106 | 9.64 s |
+| 1 | 6,000/6,000 | 104 | 9.98 s |
+| 2 | 6,000/6,000 | 116 | 11.29 s |
+| 3 | 6,000/6,000 | 112 | 11.99 s |
+| 4 | 6,000/6,000 | 129 | 11.65 s |
+
+Across seeds, about 56% of cases lex to the end. The rest end in every error
+the step can produce: Search/WorkLimit 72–98 per seed, NoMatch, EmptyMatch,
+StepLimit, TokenLimit, SearchCallLimit and SearchWorkLimit. Log:
+`target/claude-work/s3/lexer-dfa-receipt.log`, for `lexer.lani` SHA256
+`d965dd80...` and `regex.lani` SHA256 `5aac5dd9...`.
+
+After assertions became DFA state, rules with `^` or `\b` join the combined
+DFA. The same five seeds again give 6,000/6,000 identical traces each, with
+147, 124, 135, 125 and 134 cases rebuilding the cache, in 7.9–8.4 s per seed.
+Log: `target/claude-work/s3/lexer-dfa-assert-receipt.log`, for `lexer.lani`
+SHA256 `c72015c1...` and `regex.lani` SHA256 `baac3207...`.
+
+The timings below lex a 915,606-byte corpus of 25,000 generated expression
+lines into 236,378 tokens with one cursor, with a per-search VM budget of
+10,000. They are wall time on a laptop under a load average near 19, so only
+the ratios are meaningful:
+
+| Rules | Per-rule VM (before) | Combined DFA (after) |
+| --- | ---: | ---: |
+| 18 (one per operator) | 11.76–17.17 s | 0.31–0.40 s |
+| 5 (operators folded) | 4.37–6.59 s | 0.29–0.36 s |
+
+The DFA inner loop alone scans a single 915,606-byte token in about 45 ms.
+Fixed per-token cost dominates what remains: about 0.28 µs per `run` call
+and a similar amount in `next`. Process startup is about 55 ms. The
+`pratt_calc` sample, which builds one cursor per line, drops from 6.33 s to
+1.07 s of user time on the same corpus. Its output is byte-identical, and it
+still agrees 25,000/25,000 with the CPython oracle.
 
 ## Current workspace executable acceptance
 

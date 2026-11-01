@@ -1,7 +1,7 @@
 # Connected URL client verification
 
-Status: plain/DNS/TLS producers, independent peers and the registered driver are implemented;
-compilation and runtime acceptance are pending root's serialized gates. The
+Status: the direct plain, DNS and TLS groups pass on native Linux x86_64.
+The registered Rust driver has not yet supplied a Rust-libtest receipt. The
 root-owned `public_smoke.lani` has its own separate admission receipt.
 
 `plain_probe.lani URL EXPECTED_SELECTED_INDEX` performs a canonical POST with a
@@ -29,9 +29,9 @@ not a user GPU kernel test.
 Registered Rust filter:
 `numeric_url_preserves_host_target_binary_body_and_selected_socket_without_reconnect`.
 The driver uses native linking without SSL/crypto libraries for this plain
-producer. No acceptance count is claimed until the actual gate passes.
+producer. The direct two-case group passes; see the receipts below.
 
-## DNS and TLS groups (runtime pending)
+## DNS and TLS groups
 
 `resolver_observer.c` includes the unchanged historical resolver ABI observer
 with renamed exports. Its new test-only mode returns four physically backed,
@@ -46,10 +46,10 @@ python3 -B tests/fixtures/extended/url_client/dns_oracle.py PLAIN_LINKED_PROBE O
 python3 -B tests/fixtures/extended/url_client/tls_oracle.py TLS_LINKED_PROBE OBSERVER.so
 ```
 
-The DNS group has one proposed case. It checks selected ordinal1/attempts2,
+The DNS group passes one case. It checks selected ordinal1/attempts2,
 exact preserved Host/target/body, release before fallback, and two peer proofs
-on the selected fd **generation**, including fd reuse. The TLS group has eight
-proposed cases across native TLS1.2/1.3: numeric IP with no SNI, original DNS
+on the selected fd **generation**, including fd reuse. The TLS group passes eight
+cases across native TLS1.2/1.3: numeric IP with no SNI, original DNS
 with SNI, rejected mismatching DNS before HTTP bytes, and authenticated HTTP
 truncation after the complete request. The latter failures must never open a
 third endpoint or replay the request. OpenSSL creates certificates and performs
@@ -66,7 +66,7 @@ existing linked-ELF validator keeps its original public
 return/CLI behavior. The unchanged Source ledger rejects unknown source maps
 and frees. CPU checks are separate from any native acceptance: six existing
 validator tests, nine new shared-authority tests, and 12 URL causal/wire
-controls pass. No connected native group has passed yet in this document.
+controls pass. These CPU counts are separate from the connected native groups.
 
 Registered additional filters:
 
@@ -74,3 +74,25 @@ Registered additional filters:
 - `url_tls_verifies_original_dns_or_ip_and_never_replays_after_tls_or_http_failure`
 
 The real fetch program has its own separately owned fixtures and receipts.
+
+## Direct execution receipts
+
+The groups below were run separately against compiled Lanius producers; they
+are not Rust-libtest passes or an exhaustive proof of the APIs.
+
+| Group | Cases | Receipt in `target/stdlib-work/` | Evidence directory |
+| --- | --- | --- | --- |
+| Plain HTTP | 2 | `url-client-plain-native-first.log` | `/tmp/lanius-url-client-25f8u7wi` |
+| Ordered DNS fallback | 1 | `url-client-dns-flags-retry.log` | `/tmp/lanius-url-dns-9_1o2qp0` |
+| TLS identity and post-selection failures | 8 | `url-client-tls-native-first.log` | `/tmp/lanius-url-tls-cdap36i7` |
+
+The plain producer is `b2903628`, with ELF `d4c3e0e1`; the TLS producer is
+`614f8f30`, with ELF `c94941e2`. The observer source is `c8d217cb`, with shared
+object `ec3b6d2c`. Shared native allocation authority is `458b05a9` and the
+linked-ELF validator is `2e732f23`. The plain oracle is `d09f049b`, DNS oracle
+`ca622018`, TLS oracle `6036304e`, and shared connected runner `a635ad2f`.
+
+The first DNS run completed the exchange but failed an oracle assertion that
+required decimal `F_GETFL` output. The corrected runner parses the numeric
+token (including hexadecimal) and requires `O_NONBLOCK`; the retry above and
+all eight TLS cases use that runner. No production change was needed.

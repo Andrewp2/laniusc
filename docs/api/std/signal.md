@@ -4,25 +4,28 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/std/signal.lani#L3)
+[All modules](../README.md) · [Source](../../../stdlib/std/signal.lani#L6)
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
+
+No asynchronous handlers: handled signals are blocked and read from a signalfd. Masks are per thread; use from a single-threaded process. Receivers close exactly once. Evidence is finite native Linux x86_64 CPU execution.
 
 ## Contract and evidence guides
 
 - [stdlib-signals](../../stdlib-signals.md)
 
-Declaration counts: enum: 2; function: 1; variant: 11.
+Declaration counts: enum: 5; field: 14; function: 17; impl: 4; method: 30; struct: 4; variant: 31.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::io](../core/io.md) · [source](../../../stdlib/std/signal.lani#L4)
-- [core::mem](../core/mem.md) · [source](../../../stdlib/std/signal.lani#L5)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/signal.lani#L6)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/signal.lani#L7)
-- [std::linux](linux.md) · [source](../../../stdlib/std/signal.lani#L8)
+- [core::io](../core/io.md) · [source](../../../stdlib/std/signal.lani#L7)
+- [core::mem](../core/mem.md) · [source](../../../stdlib/std/signal.lani#L8)
+- [core::option](../core/option.md) · [source](../../../stdlib/std/signal.lani#L9)
+- [core::result](../core/result.md) · [source](../../../stdlib/std/signal.lani#L10)
+- [core::slice](../core/slice.md) · [source](../../../stdlib/std/signal.lani#L11)
+- [std::linux](linux.md) · [source](../../../stdlib/std/signal.lani#L12)
 
 ## Types, fields and variants
 
@@ -30,7 +33,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Signal
 
-[Source line 10](../../../stdlib/std/signal.lani#L10)
+[Source line 16](../../../stdlib/std/signal.lani#L16)
 
 ```lanius
 pub enum Signal
@@ -38,7 +41,7 @@ pub enum Signal
 
 #### variant: Hangup
 
-[Source line 10](../../../stdlib/std/signal.lani#L10)
+[Source line 16](../../../stdlib/std/signal.lani#L16)
 
 ```lanius
 Hangup
@@ -46,7 +49,7 @@ Hangup
 
 #### variant: Interrupt
 
-[Source line 10](../../../stdlib/std/signal.lani#L10)
+[Source line 16](../../../stdlib/std/signal.lani#L16)
 
 ```lanius
 Interrupt
@@ -54,7 +57,7 @@ Interrupt
 
 #### variant: Quit
 
-[Source line 10](../../../stdlib/std/signal.lani#L10)
+[Source line 16](../../../stdlib/std/signal.lani#L16)
 
 ```lanius
 Quit
@@ -62,7 +65,7 @@ Quit
 
 #### variant: User1
 
-[Source line 10](../../../stdlib/std/signal.lani#L10)
+[Source line 16](../../../stdlib/std/signal.lani#L16)
 
 ```lanius
 User1
@@ -70,7 +73,7 @@ User1
 
 #### variant: User2
 
-[Source line 10](../../../stdlib/std/signal.lani#L10)
+[Source line 16](../../../stdlib/std/signal.lani#L16)
 
 ```lanius
 User2
@@ -78,7 +81,7 @@ User2
 
 #### variant: BrokenPipe
 
-[Source line 10](../../../stdlib/std/signal.lani#L10)
+[Source line 16](../../../stdlib/std/signal.lani#L16)
 
 ```lanius
 BrokenPipe
@@ -86,7 +89,7 @@ BrokenPipe
 
 #### variant: Alarm
 
-[Source line 10](../../../stdlib/std/signal.lani#L10)
+[Source line 16](../../../stdlib/std/signal.lani#L16)
 
 ```lanius
 Alarm
@@ -94,7 +97,7 @@ Alarm
 
 #### variant: Terminate
 
-[Source line 10](../../../stdlib/std/signal.lani#L10)
+[Source line 16](../../../stdlib/std/signal.lani#L16)
 
 ```lanius
 Terminate
@@ -102,15 +105,95 @@ Terminate
 
 #### variant: Child
 
-[Source line 10](../../../stdlib/std/signal.lani#L10)
+[Source line 16](../../../stdlib/std/signal.lani#L16)
 
 ```lanius
 Child
 ```
 
+#### variant: Abort
+
+[Source line 16](../../../stdlib/std/signal.lani#L16)
+
+```lanius
+Abort
+```
+
+#### variant: Kill
+
+[Source line 16](../../../stdlib/std/signal.lani#L16)
+
+```lanius
+Kill
+```
+
+#### variant: Segfault
+
+[Source line 16](../../../stdlib/std/signal.lani#L16)
+
+```lanius
+Segfault
+```
+
+#### variant: Continue
+
+[Source line 16](../../../stdlib/std/signal.lani#L16)
+
+```lanius
+Continue
+```
+
+#### variant: Stop
+
+[Source line 16](../../../stdlib/std/signal.lani#L16)
+
+```lanius
+Stop
+```
+
+#### variant: TerminalStop
+
+[Source line 16](../../../stdlib/std/signal.lani#L16)
+
+```lanius
+TerminalStop
+```
+
+#### variant: CpuLimit
+
+[Source line 16](../../../stdlib/std/signal.lani#L16)
+
+```lanius
+CpuLimit
+```
+
+#### variant: FileSizeLimit
+
+[Source line 16](../../../stdlib/std/signal.lani#L16)
+
+```lanius
+FileSizeLimit
+```
+
+#### variant: WindowChange
+
+[Source line 16](../../../stdlib/std/signal.lani#L16)
+
+```lanius
+WindowChange
+```
+
+#### variant: Other
+
+[Source line 16](../../../stdlib/std/signal.lani#L16)
+
+```lanius
+Other(i32)
+```
+
 ### enum: Disposition
 
-[Source line 11](../../../stdlib/std/signal.lani#L11)
+[Source line 17](../../../stdlib/std/signal.lani#L17)
 
 ```lanius
 pub enum Disposition
@@ -118,7 +201,7 @@ pub enum Disposition
 
 #### variant: Default
 
-[Source line 11](../../../stdlib/std/signal.lani#L11)
+[Source line 17](../../../stdlib/std/signal.lani#L17)
 
 ```lanius
 Default
@@ -126,18 +209,668 @@ Default
 
 #### variant: Ignore
 
-[Source line 11](../../../stdlib/std/signal.lani#L11)
+[Source line 17](../../../stdlib/std/signal.lani#L17)
 
 ```lanius
 Ignore
 ```
 
+### enum: Action
+
+[Source line 20](../../../stdlib/std/signal.lani#L20)
+
+```lanius
+pub enum Action
+```
+
+#### variant: Default
+
+[Source line 20](../../../stdlib/std/signal.lani#L20)
+
+```lanius
+Default
+```
+
+#### variant: Ignore
+
+[Source line 20](../../../stdlib/std/signal.lani#L20)
+
+```lanius
+Ignore
+```
+
+#### variant: Handler
+
+[Source line 20](../../../stdlib/std/signal.lani#L20)
+
+```lanius
+Handler
+```
+
+### enum: Error
+
+[Source line 24](../../../stdlib/std/signal.lani#L24)
+
+```lanius
+pub enum Error
+```
+
+#### variant: Host
+
+[Source line 24](../../../stdlib/std/signal.lani#L24)
+
+```lanius
+Host(i32)
+```
+
+#### variant: Bounds
+
+[Source line 24](../../../stdlib/std/signal.lani#L24)
+
+```lanius
+Bounds
+```
+
+#### variant: Closed
+
+[Source line 24](../../../stdlib/std/signal.lani#L24)
+
+```lanius
+Closed
+```
+
+#### variant: Pending
+
+[Source line 24](../../../stdlib/std/signal.lani#L24)
+
+```lanius
+Pending(i32)
+```
+
+#### variant: InvalidResult
+
+[Source line 24](../../../stdlib/std/signal.lani#L24)
+
+```lanius
+InvalidResult
+```
+
+### struct: Set
+
+[Source line 66](../../../stdlib/std/signal.lani#L66)
+
+```lanius
+pub struct Set
+```
+
+#### field: bits
+
+[Source line 66](../../../stdlib/std/signal.lani#L66)
+
+```lanius
+bits: u64
+```
+
+### struct: Delivery
+
+[Source line 158](../../../stdlib/std/signal.lani#L158)
+
+```lanius
+pub struct Delivery
+```
+
+#### field: signal
+
+[Source line 158](../../../stdlib/std/signal.lani#L158)
+
+```lanius
+signal: i32
+```
+
+#### field: code
+
+[Source line 158](../../../stdlib/std/signal.lani#L158)
+
+```lanius
+code: i32
+```
+
+#### field: pid
+
+[Source line 158](../../../stdlib/std/signal.lani#L158)
+
+```lanius
+pid: i32
+```
+
+#### field: uid
+
+[Source line 158](../../../stdlib/std/signal.lani#L158)
+
+```lanius
+uid: u32
+```
+
+#### field: status
+
+[Source line 158](../../../stdlib/std/signal.lani#L158)
+
+```lanius
+status: i32
+```
+
+#### field: errno
+
+[Source line 158](../../../stdlib/std/signal.lani#L158)
+
+```lanius
+errno: i32
+```
+
+### enum: Mode
+
+[Source line 170](../../../stdlib/std/signal.lani#L170)
+
+```lanius
+pub enum Mode
+```
+
+#### variant: Blocking
+
+[Source line 170](../../../stdlib/std/signal.lani#L170)
+
+```lanius
+Blocking
+```
+
+#### variant: Nonblocking
+
+[Source line 170](../../../stdlib/std/signal.lani#L170)
+
+```lanius
+Nonblocking
+```
+
+### struct: Receiver
+
+[Source line 171](../../../stdlib/std/signal.lani#L171)
+
+```lanius
+pub struct Receiver
+```
+
+#### field: fd
+
+[Source line 171](../../../stdlib/std/signal.lani#L171)
+
+```lanius
+fd: i32
+```
+
+#### field: set
+
+[Source line 171](../../../stdlib/std/signal.lani#L171)
+
+```lanius
+set: Set
+```
+
+#### field: blocking
+
+[Source line 171](../../../stdlib/std/signal.lani#L171)
+
+```lanius
+blocking: bool
+```
+
+### struct: Handled
+
+[Source line 229](../../../stdlib/std/signal.lani#L229)
+
+```lanius
+pub struct Handled
+```
+
+#### field: fd
+
+[Source line 229](../../../stdlib/std/signal.lani#L229)
+
+```lanius
+fd: i32
+```
+
+#### field: set
+
+[Source line 229](../../../stdlib/std/signal.lani#L229)
+
+```lanius
+set: Set
+```
+
+#### field: previous
+
+[Source line 229](../../../stdlib/std/signal.lani#L229)
+
+```lanius
+previous: Set
+```
+
+#### field: reset
+
+[Source line 229](../../../stdlib/std/signal.lani#L229)
+
+```lanius
+reset: Set
+```
+
 ## Free functions and extern declarations
+
+### function: number
+
+[Source line 27](../../../stdlib/std/signal.lani#L27)
+
+```lanius
+pub fn number(signal: Signal) -> i32
+```
+
+### function: from_number
+
+[Source line 37](../../../stdlib/std/signal.lani#L37)
+
+```lanius
+pub fn from_number(value: i32) -> core::option::Option<Signal>
+```
+
+### function: empty
+
+[Source line 67](../../../stdlib/std/signal.lani#L67)
+
+```lanius
+pub fn empty() -> Set
+```
+
+### function: full
+
+[Source line 68](../../../stdlib/std/signal.lani#L68)
+
+```lanius
+pub fn full() -> Set
+```
+
+### function: from_bits
+
+[Source line 69](../../../stdlib/std/signal.lani#L69)
+
+```lanius
+pub fn from_bits(bits: u64) -> Set
+```
+
+### function: of
+
+[Source line 70](../../../stdlib/std/signal.lani#L70)
+
+```lanius
+pub fn of(signal: Signal) -> Set
+```
+
+### function: block
+
+[Source line 102](../../../stdlib/std/signal.lani#L102)
+
+```lanius
+pub fn block(set: Set) -> core::result::Result<Set, Error>
+```
+
+### function: unblock
+
+[Source line 103](../../../stdlib/std/signal.lani#L103)
+
+```lanius
+pub fn unblock(set: Set) -> core::result::Result<Set, Error>
+```
+
+### function: set_mask
+
+[Source line 105](../../../stdlib/std/signal.lani#L105)
+
+```lanius
+pub fn set_mask(set: Set) -> core::result::Result<Set, Error>
+```
+
+### function: mask
+
+[Source line 106](../../../stdlib/std/signal.lani#L106)
+
+```lanius
+pub fn mask() -> core::result::Result<Set, Error>
+```
+
+### function: pending
+
+[Source line 108](../../../stdlib/std/signal.lani#L108)
+
+```lanius
+pub fn pending() -> core::result::Result<Set, Error>
+```
 
 ### function: set_disposition
 
-[Source line 17](../../../stdlib/std/signal.lani#L17)
+[Source line 131](../../../stdlib/std/signal.lani#L131)
 
 ```lanius
 pub fn set_disposition(signal: Signal, disposition: Disposition) -> core::result::Result<i32,core::io::Error>
+```
+
+### function: replace_disposition
+
+[Source line 143](../../../stdlib/std/signal.lani#L143)
+
+```lanius
+pub fn replace_disposition(signal: Signal, disposition: Disposition) -> core::result::Result<Action, Error>
+```
+
+### function: action
+
+[Source line 147](../../../stdlib/std/signal.lani#L147)
+
+```lanius
+pub fn action(signal: Signal) -> core::result::Result<Action, Error>
+```
+
+### function: empty_delivery
+
+[Source line 165](../../../stdlib/std/signal.lani#L165)
+
+```lanius
+pub fn empty_delivery() -> Delivery
+```
+
+### function: receiver
+
+[Source line 172](../../../stdlib/std/signal.lani#L172)
+
+```lanius
+pub fn receiver(set: Set, mode: Mode) -> core::result::Result<Receiver, Error>
+```
+
+### function: handle
+
+[Source line 230](../../../stdlib/std/signal.lani#L230)
+
+```lanius
+pub fn handle(set: Set) -> core::result::Result<Handled, Error>
+```
+
+## Implementation blocks and public methods
+
+### impl at line 72
+
+[Source line 72](../../../stdlib/std/signal.lani#L72)
+
+```lanius
+pub impl Set
+```
+
+#### method: borrow
+
+[Source line 73](../../../stdlib/std/signal.lani#L73)
+
+```lanius
+pub fn borrow(&self) -> &Set
+```
+
+#### method: bits
+
+[Source line 74](../../../stdlib/std/signal.lani#L74)
+
+```lanius
+pub fn bits(&self) -> u64
+```
+
+#### method: with
+
+[Source line 76](../../../stdlib/std/signal.lani#L76)
+
+```lanius
+pub fn with(&self, signal: Signal) -> Set
+```
+
+#### method: without
+
+[Source line 77](../../../stdlib/std/signal.lani#L77)
+
+```lanius
+pub fn without(&self, signal: Signal) -> Set
+```
+
+#### method: contains
+
+[Source line 78](../../../stdlib/std/signal.lani#L78)
+
+```lanius
+pub fn contains(&self, signal: Signal) -> bool
+```
+
+#### method: contains_number
+
+[Source line 79](../../../stdlib/std/signal.lani#L79)
+
+```lanius
+pub fn contains_number(&self, value: i32) -> bool
+```
+
+#### method: union
+
+[Source line 80](../../../stdlib/std/signal.lani#L80)
+
+```lanius
+pub fn union(&self, other: Set) -> Set
+```
+
+#### method: intersection
+
+[Source line 81](../../../stdlib/std/signal.lani#L81)
+
+```lanius
+pub fn intersection(&self, other: Set) -> Set
+```
+
+#### method: difference
+
+[Source line 82](../../../stdlib/std/signal.lani#L82)
+
+```lanius
+pub fn difference(&self, other: Set) -> Set
+```
+
+#### method: is_empty
+
+[Source line 83](../../../stdlib/std/signal.lani#L83)
+
+```lanius
+pub fn is_empty(&self) -> bool
+```
+
+#### method: count
+
+[Source line 84](../../../stdlib/std/signal.lani#L84)
+
+```lanius
+pub fn count(&self) -> i32
+```
+
+#### method: first
+
+[Source line 86](../../../stdlib/std/signal.lani#L86)
+
+```lanius
+pub fn first(&self) -> i32
+```
+
+### impl at line 159
+
+[Source line 159](../../../stdlib/std/signal.lani#L159)
+
+```lanius
+pub impl Delivery
+```
+
+#### method: borrow
+
+[Source line 160](../../../stdlib/std/signal.lani#L160)
+
+```lanius
+pub fn borrow(&self) -> &Delivery
+```
+
+#### method: named
+
+[Source line 161](../../../stdlib/std/signal.lani#L161)
+
+```lanius
+pub fn named(&self) -> core::option::Option<Signal>
+```
+
+#### method: is
+
+[Source line 162](../../../stdlib/std/signal.lani#L162)
+
+```lanius
+pub fn is(&self, signal: Signal) -> bool
+```
+
+#### method: from_user
+
+[Source line 163](../../../stdlib/std/signal.lani#L163)
+
+```lanius
+pub fn from_user(&self) -> bool
+```
+
+### impl at line 183
+
+[Source line 183](../../../stdlib/std/signal.lani#L183)
+
+```lanius
+pub impl Receiver
+```
+
+#### method: borrow
+
+[Source line 184](../../../stdlib/std/signal.lani#L184)
+
+```lanius
+pub fn borrow(&self) -> &Receiver
+```
+
+#### method: raw_fd
+
+[Source line 185](../../../stdlib/std/signal.lani#L185)
+
+```lanius
+pub fn raw_fd(&self) -> i32
+```
+
+#### method: is_open
+
+[Source line 186](../../../stdlib/std/signal.lani#L186)
+
+```lanius
+pub fn is_open(&self) -> bool
+```
+
+#### method: set
+
+[Source line 187](../../../stdlib/std/signal.lani#L187)
+
+```lanius
+pub fn set(&self) -> Set
+```
+
+#### method: read
+
+[Source line 198](../../../stdlib/std/signal.lani#L198)
+
+```lanius
+pub fn read(&self) -> core::result::Result<Delivery, Error>
+```
+
+#### method: try_read
+
+[Source line 209](../../../stdlib/std/signal.lani#L209)
+
+```lanius
+pub fn try_read(&self) -> core::result::Result<core::option::Option<Delivery>, Error>
+```
+
+#### method: close
+
+[Source line 217](../../../stdlib/std/signal.lani#L217)
+
+```lanius
+pub fn close(&self) -> core::result::Result<i32, Error>
+```
+
+### impl at line 255
+
+[Source line 255](../../../stdlib/std/signal.lani#L255)
+
+```lanius
+pub impl Handled
+```
+
+#### method: borrow
+
+[Source line 256](../../../stdlib/std/signal.lani#L256)
+
+```lanius
+pub fn borrow(&self) -> &Handled
+```
+
+#### method: raw_fd
+
+[Source line 257](../../../stdlib/std/signal.lani#L257)
+
+```lanius
+pub fn raw_fd(&self) -> i32
+```
+
+#### method: is_open
+
+[Source line 258](../../../stdlib/std/signal.lani#L258)
+
+```lanius
+pub fn is_open(&self) -> bool
+```
+
+#### method: set
+
+[Source line 259](../../../stdlib/std/signal.lani#L259)
+
+```lanius
+pub fn set(&self) -> Set
+```
+
+#### method: previous_mask
+
+[Source line 261](../../../stdlib/std/signal.lani#L261)
+
+```lanius
+pub fn previous_mask(&self) -> Set
+```
+
+#### method: try_read
+
+[Source line 263](../../../stdlib/std/signal.lani#L263)
+
+```lanius
+pub fn try_read(&self) -> core::result::Result<core::option::Option<Delivery>, Error>
+```
+
+#### method: restore
+
+[Source line 270](../../../stdlib/std/signal.lani#L270)
+
+```lanius
+pub fn restore(&self) -> core::result::Result<i32, Error>
 ```

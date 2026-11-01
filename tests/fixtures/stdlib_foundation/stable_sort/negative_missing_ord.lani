@@ -1,0 +1,10 @@
+module app::main;
+import alloc::slice;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let data:[f64;2]=[2.0,1.0];
+    let view:core::slice::View<f64> = core::slice::view<f64>(data,2).unwrap();
+    let rejected:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort<f64>(view); // rejected_stable_bound
+    return 0;
+}

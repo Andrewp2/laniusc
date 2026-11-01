@@ -8,7 +8,13 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-**No contract guide registered.** This page makes no runtime support claim.
+Owned absolute HTTP(S) URL planning over canonical URI/IP parsers and shared DNS checks. All syntax/profile/port/target checks precede allocation. Preserves authority and encoded origin-form target spelling, omits validated fragments, rejects userinfo and ambiguous legacy numeric hosts. Allocation backing is its only host effect. Url getters borrow owned storage; destroy is explicit/idempotent and invalidates getters. Direct contracts, 70 records on two layouts and 16 ownership/failure cases including four reached allocation denials pass on Linux x86_64; this is CPU execution, not a user GPU service.
+
+## Contract and evidence guides
+
+- [extended-http-url](../../extended-http-url.md)
+- [extended-url-client](../../extended-url-client.md)
+- [library-url-client-plan](../../library-url-client-plan.md)
 
 Declaration counts: enum: 3; field: 16; function: 2; impl: 1; method: 10; struct: 3; variant: 15.
 
@@ -17,16 +23,16 @@ Declaration counts: enum: 3; field: 16; function: 2; impl: 1; method: 10; struct
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_url.lani#L4)
-- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L16) · [source](../../../extended/ext/http_url.lani#L5)
+- [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L19) · [source](../../../extended/ext/http_url.lani#L5)
 - [core::net](../core/net.md) · [source](../../../extended/ext/http_url.lani#L6)
 - [core::net::IpAddr](../core/net.md) (item: enum) · [declaration](../../../stdlib/core/net.lani#L12) · [source](../../../extended/ext/http_url.lani#L7)
-- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L12) · [source](../../../extended/ext/http_url.lani#L8)
-- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L13) · [source](../../../extended/ext/http_url.lani#L9)
-- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/http_url.lani#L10)
-- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../extended/ext/http_url.lani#L11)
-- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../extended/ext/http_url.lani#L12)
-- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../extended/ext/http_url.lani#L13)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L22) · [source](../../../extended/ext/http_url.lani#L14)
+- [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/http_url.lani#L8)
+- [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L15) · [source](../../../extended/ext/http_url.lani#L9)
+- [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L16) · [source](../../../extended/ext/http_url.lani#L10)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/http_url.lani#L11)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/http_url.lani#L12)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/http_url.lani#L13)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/http_url.lani#L14)
 - [ext::host_name](host_name.md) · [source](../../../extended/ext/http_url.lani#L15)
 - [ext::uri](uri.md) · [source](../../../extended/ext/http_url.lani#L16)
 
@@ -340,6 +346,8 @@ active:bool
 pub fn default_limits() -> Limits
 ```
 
+Defaults: 16384 URL bytes and 8192 generated target bytes; both configured limits must be in 1..1048576.
+
 ### function: parse
 
 [Source line 200](../../../extended/ext/http_url.lani#L200)
@@ -347,6 +355,8 @@ pub fn default_limits() -> Limits
 ```lanius
 pub fn parse(input:View<u8>, limits:Limits) -> Result<Url,Error>
 ```
+
+Checks logical bounds, complete URI syntax and the HTTP URL profile before allocating independent URL/target storage. Typed errors retain logical raw offsets and original URI diagnostics; failure publishes no partial owner.
 
 ## Implementation blocks and public methods
 

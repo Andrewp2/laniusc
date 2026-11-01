@@ -1,0 +1,6 @@
+error[LNC0047]: type-check execution failed
+ --> tests/fixtures/extended_form_model/model.lani:101:77
+    |
+101 |     let amount:u64=match(cause) { ext::form_owned::Error::Format(format) -> match(format) {
+    |                                                                             ^^^^^ generic type instantiation reached a compiler boundary
+     = note: a nested type application could not be instantiated from its checked environment

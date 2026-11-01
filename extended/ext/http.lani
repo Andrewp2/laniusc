@@ -386,6 +386,7 @@ pub fn write_head_into(value: Head, destination: core::slice::View<u8>, limits: 
 }
 fn append(output: &alloc::vec::Vec<u8>, value: core::slice::View<u8>) -> bool { return core::result::is_ok(output.try_extend(value)); }
 fn decimal(output: &alloc::vec::Vec<u8>, value: i32) -> bool { let digits: [u8;10] = [0;10]; let i: i32 = 10; let n: i32 = value; while (true) { i -= 1; digits[i] = ((n%10)+48) as u8; n /= 10; if (n == 0) { break; } } return append(output,core::result::unwrap(core::slice::view_range(digits,i,10-i))); }
+fn decimal_digits(value: i32) -> i32 { let digits: i32 = 1; let n: i32 = value; while (n >= 10) { n /= 10; digits += 1; } return digits; }
 fn encode(start_line: core::slice::View<u8>, request: bool, method: core::slice::View<u8>, fields: core::slice::View<Field>, body: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
     if (!valid(start_line) || !valid(method) || !valid(body) || fields.start < 0 || fields.length < 0 || fields.start > 2147483647-fields.length || !limits_valid(limits)) { return core::result::Err(Error::Bounds); }
     let status: i32 = 0; if (!request && start_line.len() >= 12 && digit(byte(start_line,9)) && digit(byte(start_line,10)) && digit(byte(start_line,11))) { status = ((byte(start_line,9)-48) as i32)*100+((byte(start_line,10)-48) as i32)*10+(byte(start_line,11)-48) as i32; }
@@ -394,14 +395,35 @@ fn encode(start_line: core::slice::View<u8>, request: bool, method: core::slice:
     let extra: i32 = 1; if (omit_length) { extra = 0; if (!body.is_empty()) { return core::result::Err(Error::Malformed(0)); } }
     if (body.len() > limits.body_bytes || extra > limits.headers || fields.len() > limits.headers-extra || start_line.len() > limits.line_bytes) { return core::result::Err(Error::Limit(0)); }
     let at: i32 = 0; while (at < start_line.len()) { let c: u8 = byte(start_line,at); if (c < 32 || c == 127) { return core::result::Err(Error::Malformed(at)); } at += 1; }
-    let out: alloc::vec::Vec<u8> = alloc::vec::new(); let ok: bool = append(out.borrow(),start_line) && append(out.borrow(),literal("\r\n",2)); let i: i32 = 0;
-    while (i < fields.len() && ok) { let item: Field = core::option::unwrap(fields.get(i)); if (!valid(item.name) || !valid(item.value)) { out.destroy(); return core::result::Err(Error::Bounds); }
-        if (named(item.name,"content-length",14) || named(item.name,"transfer-encoding",17)) { out.destroy(); return core::result::Err(Error::Malformed(i)); }
-        let j: i32 = 0; if (item.name.is_empty()) { out.destroy(); return core::result::Err(Error::Malformed(i)); } while (j < item.name.len()) { if (!token(byte(item.name,j))) { out.destroy(); return core::result::Err(Error::Malformed(i)); } j += 1; }
-        j = 0; while (j < item.value.len()) { let c: u8 = byte(item.value,j); if (c == 127 || (c < 32 && c != 9)) { out.destroy(); return core::result::Err(Error::Malformed(i)); } j += 1; }
-        if (item.name.len() > limits.line_bytes-2 || item.value.len() > limits.line_bytes-2-item.name.len()) { out.destroy(); return core::result::Err(Error::Limit(i)); }
+    // Preflight serialized size before allocating or copying output. Head
+    // accounting includes both start-line CRLF and the final empty-line CRLF.
+    if (start_line.len() > limits.head_bytes || limits.head_bytes-start_line.len() < 4) { return core::result::Err(Error::Limit(0)); }
+    let head_bytes: i32 = start_line.len()+4; let i: i32 = 0;
+    while (i < fields.len()) { let item: Field = core::option::unwrap(fields.get(i)); if (!valid(item.name) || !valid(item.value)) { return core::result::Err(Error::Bounds); }
+        if (item.name.is_empty()) { return core::result::Err(Error::Malformed(i)); }
+        if (limits.line_bytes < 2 || item.name.len() > limits.line_bytes-2 || item.value.len() > limits.line_bytes-2-item.name.len()) { return core::result::Err(Error::Limit(i)); }
+        let remaining: i32 = limits.head_bytes-head_bytes;
+        if (item.name.len() > remaining) { return core::result::Err(Error::Limit(0)); }
+        remaining -= item.name.len();
+        if (remaining < 4 || item.value.len() > remaining-4) { return core::result::Err(Error::Limit(0)); }
+        if (named(item.name,"content-length",14) || named(item.name,"transfer-encoding",17)) { return core::result::Err(Error::Malformed(i)); }
+        let j: i32 = 0; while (j < item.name.len()) { if (!token(byte(item.name,j))) { return core::result::Err(Error::Malformed(i)); } j += 1; }
+        j = 0; while (j < item.value.len()) { let c: u8 = byte(item.value,j); if (c == 127 || (c < 32 && c != 9)) { return core::result::Err(Error::Malformed(i)); } j += 1; }
+        head_bytes += item.name.len()+item.value.len()+4; i += 1;
+    }
+    if (!omit_length) {
+        let line_bytes: i32 = 16+decimal_digits(body.len());
+        if (line_bytes+2 > limits.head_bytes-head_bytes) { return core::result::Err(Error::Limit(0)); }
+        if (line_bytes > limits.line_bytes) { return core::result::Err(Error::Limit(head_bytes-2+limits.line_bytes+1)); }
+        head_bytes += line_bytes+2;
+    }
+    if (body.len() > 2147483647-head_bytes) { return core::result::Err(Error::Limit(0)); }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity(head_bytes+body.len());
+    if (core::result::is_err(allocated)) { return core::result::Err(Error::AllocationFailed); }
+    let out: alloc::vec::Vec<u8> = core::result::unwrap(allocated);
+    let ok: bool = append(out.borrow(),start_line) && append(out.borrow(),literal("\r\n",2)); i = 0;
+    while (i < fields.len() && ok) { let item: Field = core::option::unwrap(fields.get(i));
         ok = append(out.borrow(),item.name) && append(out.borrow(),literal(": ",2)) && append(out.borrow(),item.value) && append(out.borrow(),literal("\r\n",2)); i += 1;
-        if (out.len() > limits.head_bytes) { out.destroy(); return core::result::Err(Error::Limit(0)); }
     }
     if (ok && !omit_length) { ok = append(out.borrow(),literal("Content-Length: ",16)) && decimal(out.borrow(),body.len()) && append(out.borrow(),literal("\r\n",2)); }
     if (ok) { ok = append(out.borrow(),literal("\r\n",2)); }

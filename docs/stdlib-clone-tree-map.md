@@ -103,12 +103,16 @@ during release. Repeating the helper on the same reset owner is harmless.
 The by-value Destroy implementation consumes its descriptor and cannot reset
 other stale copies. Old cursors, views and borrowed entries become invalid.
 
-Map accessors return borrowed shallow descriptors. Transfer the complete pair
-with remove or pop before an owning key/value mutation, then reinstall updated
-descriptors through insertion. For a nested Vec value, also transfer and
-reinstall any growing child String. A key must be outside the map while its
-ordering value changes. A popped or replaced pair belongs to the caller and
-survives destruction of the remaining map.
+Map accessors return borrowed shallow descriptors. A key must be outside the
+map while its ordering value changes: transfer its complete pair with remove
+or pop, then reinstall through insertion. Value-only growth or replacement can
+use the new [scoped update](stdlib-map-updates.md), whose callback must return
+the latest V descriptor even when its separate R is a Result error. Its current
+runtime scope is recorded separately in that guide. Growing an ordinary
+accessor copy can still leave a stale stored descriptor. For a nested Vec value,
+also transfer and reinstall any growing child String before returning the Vec.
+A popped or replaced pair belongs to the caller and survives destruction of
+the remaining map. The older clone receipts below retain their original scope.
 
 There are no implicit moves, automatic Drop or panic cleanup. Destroy must
 terminate without allocation, panic or reportable failure. Fallible resource

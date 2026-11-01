@@ -1,0 +1,139 @@
+module app::main;
+import alloc::slice;
+import core::float_order;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::result;
+import core::slice;
+
+enum Fault { Mark(i64,core::option::Option<bool>) }
+type Payload=core::option::Option<core::result::Result<[u64;2],Fault>>;
+struct Row<T> { key:i32, id:i32, stamp:u64, payload:T }
+struct Policy { direction:i32, secondary:bool, all_equal:bool, calls:i32 }
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+struct Compare<T> { policy:&Policy }
+impl<T> Compare<T> { fn borrow(&self) -> &Compare<T> { return self; } }
+pub impl<T> core::ordering::Comparator<Row<T>,Row<T>> for Compare<T> {
+    pub fn compare(&self,left:Row<T>,right:Row<T>) -> core::ordering::Ordering {
+        let policy:&Policy=self.policy; policy.calls+=1;
+        if(policy.all_equal) { return core::ordering::Ordering::Equal; }
+        let a:i32=left.key; let b:i32=right.key;
+        if(policy.secondary) { a=left.id%3; b=right.id%3; }
+        let relation:core::ordering::Ordering=core::ordering::compare_i32(a,b);
+        if(policy.direction<0) { return core::ordering::reverse(relation); } return relation;
+    }
+}
+fn row(id:i32) -> Row<Payload> {
+    let payload:Payload=core::option::None();
+    if(id%3==0) {
+        let words:[u64;2]=[18446744073709551615-(id as u64),4294967297+(id as u64)];
+        let detail:core::result::Result<[u64;2],Fault> = core::result::Ok(words);
+        payload=core::option::Some(detail);
+    }
+    if(id%3==1) {
+        let detail:core::result::Result<[u64;2],Fault> = core::result::Err(Fault::Mark(-9223372036854775808+(id as i64),core::option::Some(id%2==0)));
+        payload=core::option::Some(detail);
+    }
+    return Row { key:(id*7+3)%5,id:id,stamp:18446744073709551615-(id as u64),payload:payload };
+}
+fn intact(value:Row<Payload>) {
+    assert(value.key==(value.id*7+3)%5 && value.stamp==18446744073709551615-(value.id as u64));
+    if(value.id%3==2) { assert(value.payload.is_none()); }
+    else {
+        let detail:core::result::Result<[u64;2],Fault> = value.payload.unwrap();
+        if(value.id%3==0) {
+            let words:[u64;2]=detail.unwrap();
+            assert(words[0]==18446744073709551615-(value.id as u64) && words[1]==4294967297+(value.id as u64));
+        } else {
+            let mark:Fault=detail.unwrap_err();
+            let valid:bool=match(mark) { Fault::Mark(code,flag) -> code==-9223372036854775808+(value.id as i64) && flag.unwrap()==(value.id%2==0) };
+            assert(valid);
+        }
+    }
+}
+fn check(values:[Row<Payload>],expected:[i32],count:i32) {
+    let seen:[i32;17]=[0;17]; let i:i32=0;
+    while(i<count) {
+        let value:Row<Payload> = values[i+1]; assert(value.id==expected[i] && value.id>=0 && value.id<17);
+        intact(value); seen[value.id]+=1; i+=1;
+    }
+    i=0; while(i<count) { assert(seen[expected[i]]==1); i+=1; }
+    assert(values[0].id==99 && values[count+1].id==98); intact(values[0]); intact(values[count+1]);
+}
+fn sorted(values:core::slice::View<Row<Payload>>,order:&Compare<Payload>,policy:&Policy,count:i32,ceiling:i32) {
+    policy.calls=0;
+    let result:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort_by<Row<Payload>,Compare<Payload>>(values,order);
+    assert(result.unwrap()==count && policy.calls>0 && policy.calls<=ceiling);
+}
+fn stable_compound_representatives_and_successive_policies() {
+    let initial:Row<Payload> = row(0); let values:[Row<Payload>;19]=[initial;19];
+    let policy:Policy=Policy { direction:1,secondary:false,all_equal:false,calls:0 };
+    let order:Compare<Payload> = Compare { policy:policy.borrow() };
+    let view:core::slice::View<Row<Payload>> = core::slice::view_range<Row<Payload>>(values,1,17).unwrap();
+    assert(core::mem::slice_stride(values)<0);
+    values[0]=row(99); values[18]=row(98); let i:i32=0; while(i<17) { values[i+1]=row(i); i+=1; }
+    let ascending:[i32;17]=[1,6,11,16,4,9,14,2,7,12,0,5,10,15,3,8,13];
+    let descending:[i32;17]=[3,8,13,0,5,10,15,2,7,12,4,9,14,1,6,11,16];
+    sorted(view,order.borrow(),policy.borrow(),17,85); check(values,ascending,17);
+    sorted(view,order.borrow(),policy.borrow(),17,85); check(values,ascending,17);
+    policy.direction=-1; sorted(view,order.borrow(),policy.borrow(),17,85); check(values,descending,17);
+    // Reverse source order changes the stable representative order in ties.
+    i=0; while(i<17) { values[i+1]=row(16-i); i+=1; } policy.direction=1;
+    let reversed:[i32;17]=[16,11,6,1,14,9,4,12,7,2,15,10,5,0,13,8,3];
+    sorted(view,order.borrow(),policy.borrow(),17,85); check(values,reversed,17);
+    // Stable primary sorting preserves the prior secondary ordering in ties.
+    i=0; while(i<17) { values[i+1]=row(i); i+=1; } policy.secondary=true;
+    sorted(view,order.borrow(),policy.borrow(),17,85); policy.secondary=false;
+    sorted(view,order.borrow(),policy.borrow(),17,85);
+    let composed:[i32;17]=[6,1,16,11,9,4,14,12,7,2,0,15,10,5,3,13,8]; check(values,composed,17);
+    // Every item is comparator-equivalent, including its distinct payload.
+    let ids:[i32;9]=[6,1,16,7,3,11,5,2,13]; values[10]=row(98);
+    i=0; while(i<9) { values[i+1]=row(ids[i]); i+=1; }
+    policy.all_equal=true; let equal:core::slice::View<Row<Payload>> = core::slice::view_range<Row<Payload>>(values,1,9).unwrap();
+    sorted(equal,order.borrow(),policy.borrow(),9,36); check(values,ids,9);
+}
+
+struct ByteReverse { calls:i32 }
+impl ByteReverse { fn borrow(&self) -> &ByteReverse { return self; } }
+pub impl core::ordering::Comparator<u8,u8> for ByteReverse {
+    pub fn compare(&self,left:u8,right:u8) -> core::ordering::Ordering {
+        self.calls+=1; return core::ordering::compare_u8(right,left);
+    }
+}
+fn native_and_packed_views_preserve_outside_values() {
+    let original:[u8;12]=[199,255,0,128,1,255,0,42,1,128,42,198]; let native:[u8;12]=[0;12]; let storage:[i32;3]=[0;3];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(storage),12);
+    assert(core::mem::slice_stride(native)<0 && core::mem::slice_stride(packed)==1);
+    let ascending:[u8;10]=[0,0,1,1,42,42,128,128,255,255]; let reverse:[u8;10]=[255,255,128,128,42,42,1,1,0,0];
+    let order:ByteReverse=ByteReverse { calls:0 }; let mode:i32=0;
+    while(mode<2) {
+        let source:[u8]=native; if(mode==1) { source=packed; } let i:i32=0; while(i<12) { source[i]=original[i]; i+=1; }
+        let outer:core::slice::View<u8> = core::slice::view_range<u8>(source,0,12).unwrap();
+        let view:core::slice::View<u8> = outer.subview(1,11).unwrap();
+        let natural:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort<u8>(view); assert(natural.unwrap()==10);
+        i=0; while(i<10) { assert(source[i+1]==ascending[i]); i+=1; }
+        order.calls=0; let custom:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort_by<u8,ByteReverse>(view,order.borrow());
+        assert(custom.unwrap()==10 && order.calls>0 && order.calls<=40);
+        i=0; while(i<10) { assert(source[i+1]==reverse[i]); i+=1; }
+        assert(source[0]==199 && source[11]==198); mode+=1;
+    }
+}
+fn natural_full_width_and_total_float_keys() {
+    let numbers:[i64;9]=[5,9223372036854775807,-9223372036854775808,4294967297,-1,0,-9223372036854775808,9223372036854775807,6];
+    let view:core::slice::View<i64> = core::slice::view_range<i64>(numbers,1,7).unwrap();
+    let result:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort<i64>(view); assert(result.unwrap()==7);
+    let expected:[i64;7]=[-9223372036854775808,-9223372036854775808,-1,0,4294967297,9223372036854775807,9223372036854775807];
+    let i:i32=0; while(i<7) { assert(numbers[i+1]==expected[i]); i+=1; } assert(numbers[0]==5 && numbers[8]==6);
+    let keys:[core::float_order::TotalF64;4]=[
+        core::float_order::TotalF64 { bits:9221120237041090626 },core::float_order::TotalF64 { bits:0 },
+        core::float_order::TotalF64 { bits:9223372036854775808 },core::float_order::TotalF64 { bits:18442240474082181120 }
+    ];
+    let floats:core::slice::View<core::float_order::TotalF64> = core::slice::view<core::float_order::TotalF64>(keys,4).unwrap();
+    let total:core::result::Result<i32,alloc::slice::Error> = alloc::slice::sort<core::float_order::TotalF64>(floats); assert(total.unwrap()==4);
+    assert(keys[0].bits==18442240474082181120 && keys[1].bits==9223372036854775808 && keys[2].bits==0 && keys[3].bits==9221120237041090626);
+}
+fn main() -> i32 {
+    stable_compound_representatives_and_successive_policies(); native_and_packed_views_preserve_outside_values();
+    natural_full_width_and_total_float_keys(); return 0;
+}

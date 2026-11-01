@@ -66,7 +66,12 @@ The child marks **all** descriptors ≥3 CLOEXEC with `close_range`; only its in
 `try_observe_exit()` instead uses waitid with WNOWAIT to retain the unreaped
 leader. Its observed status is separate from the final reaped cache; repeating
 the call may return the cached observation without another syscall. It is not
-a fresh existence or ownership probe. Group authority ends on actual reaping
+a fresh existence or ownership probe. `observe_exit()` is the blocking form:
+waitid(WEXITED|WNOWAIT) retried on EINTR, returning the observed `ExitStatus`
+while the child stays unreaped, so its PID still names it (for example for a
+[process CPU-clock read](stdlib-host-clocks.md)) until `wait()`/`try_wait()`.
+`wait_with_usage()`/`try_wait_with_usage()` reap with wait4 rusage and
+`resource_usage()` calls getrusage; see [child resource usage](stdlib-child-usage.md). Group authority ends on actual reaping
 or observed ECHILD, and still requires the no-outside-reaper precondition.
 `signal_group()` and `cancel_group_and_wait()` use only a confirmed new-group
 owner; the latter attempts both that group and the still-owned positive leader
@@ -77,7 +82,9 @@ Blocking `wait()` retries EINTR. Nonblocking `try_wait()` performs one wait4(WNO
 
 `signal(0..64)` targets the owned positive child PID, including signal 0's permission/existence check. `cancel_and_wait()` closes all still-owned pipes, ignores their close errors, sends SIGKILL to the direct child, and waits; ESRCH still proceeds to wait. A different kill/wait error retains ownership for retry. Descendants/process groups are not canceled. SIGKILL cannot guarantee an immediate return from an uninterruptible kernel operation.
 
-`ChildSigpipe::Default`, the request default, restores **only SIGPIPE's disposition** in the child. `Inherit` leaves it untouched. The signal mask and other dispositions are inherited according to exec rules, including ignored dispositions. This is useful when the parent uses `std::signal` Ignore for checked writes: ordinary child programs still get conventional SIGPIPE behavior by default. It does not construct a wholly default signal environment or unblock a blocked SIGPIPE.
+`ChildSigpipe::Default`, the request default, restores **only SIGPIPE's disposition** in the child. `Inherit` leaves it untouched. The signal mask and other dispositions are inherited according to exec rules, including ignored dispositions. This is useful when the parent uses `std::signal` Ignore for checked writes: ordinary child programs still get conventional SIGPIPE behavior by default. It does not construct a wholly default signal environment.
+
+`signal_mask: ChildMask::Clear`, the request default, empties the child's blocked-signal mask before exec, so a parent that blocks signals for a [`std::signal` receiver](stdlib-signals.md#children-and-exec) does not pass them on (this also unblocks SIGPIPE). `ChildMask::Inherit` keeps the parent's mask. A failure is reported at `Stage::Signal`.
 
 Call from a single-threaded process with no asynchronous user handlers, concurrent descriptor/environment changes, external waiters, SIGCHLD Ignore, or SA_NOCLDWAIT. Those interactions require a separate process-wide synchronization policy. Observed ECHILD is safe even when this precondition was violated. The library does not install SIGCHLD handlers or mutate the parent's SIGPIPE disposition.
 

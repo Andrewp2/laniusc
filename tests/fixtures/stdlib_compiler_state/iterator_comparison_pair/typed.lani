@@ -1,0 +1,19 @@
+// Control: explicitly extract both typed values before the same constructor.
+module app::main;
+import core::option;
+import core::pair;
+
+fn make_pair<T,U>(first: core::option::Option<T>, second: core::option::Option<U>) -> core::pair::Pair<T,U> {
+    let first_value: T = core::option::unwrap<T>(first);
+    let second_value: U = core::option::unwrap<U>(second);
+    let values: core::pair::Pair<T,U> = core::pair::Pair { first: first_value, second: second_value };
+    return values;
+}
+fn main() -> i32 {
+    let first: core::option::Option<i32> = core::option::Some(17);
+    let second: core::option::Option<u64> = core::option::Some(18446744073709551615);
+    let values: core::pair::Pair<i32,u64> = make_pair<i32,u64>(first,second);
+    if (values.first != 17) { return 1; }
+    if (values.second != 18446744073709551615) { return 2; }
+    return 0;
+}

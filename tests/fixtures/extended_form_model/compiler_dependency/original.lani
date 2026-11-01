@@ -1,0 +1,19 @@
+// Candidate reduction of the observed nested match; valid program, expected 0.
+module app::main;
+import ext::form;
+import ext::form_owned;
+
+fn amount(cause:ext::form_owned::Error) -> u64 {
+    let result:u64=match(cause) { ext::form_owned::Error::Format(format) -> match(format) {
+        ext::form::Error::Capacity(required) -> required, _ -> 0 }, _ -> 0 };
+    return result;
+}
+fn main() -> i32 {
+    assert(amount(ext::form_owned::Error::Format(ext::form::Error::Capacity(0)))==0);
+    assert(amount(ext::form_owned::Error::Format(ext::form::Error::Capacity(4294967297)))==4294967297);
+    assert(amount(ext::form_owned::Error::Format(ext::form::Error::Capacity(18446744073709551615)))==18446744073709551615);
+    assert(amount(ext::form_owned::Error::Format(ext::form::Error::Bounds))==0);
+    assert(amount(ext::form_owned::Error::AllocationFailed)==0);
+    assert(amount(ext::form_owned::Error::CapacityOverflow)==0);
+    return 0;
+}

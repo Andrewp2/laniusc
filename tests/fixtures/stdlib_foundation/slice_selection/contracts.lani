@@ -1,0 +1,188 @@
+module app::main;
+import core::mem;
+import core::ordering;
+import core::result;
+import core::slice;
+
+struct IntOrder { descending:bool, calls:i32 }
+impl IntOrder { fn borrow(&self) -> &IntOrder { return self; } }
+pub impl core::ordering::Comparator<i32,i32> for IntOrder {
+    pub fn compare(&self,left:i32,right:i32) -> core::ordering::Ordering {
+        self.calls+=1; let result:core::ordering::Ordering=core::ordering::compare_i32(left,right);
+        if(self.descending) { return core::ordering::reverse(result); } return result;
+    }
+}
+fn bounds(result:core::result::Result<core::slice::View<i32>,core::slice::ViewError>) {
+    assert(result.is_err());
+    assert(match(result.unwrap_err()) { core::slice::ViewError::Bounds -> true, _ -> false });
+}
+fn invalid(view:core::slice::View<i32>,rank:i32,order:&IntOrder) {
+    let before:i32=order.calls;
+    bounds(core::slice::select_nth_unstable_by<i32,IntOrder>(view,rank,order));
+    bounds(core::slice::select_nth_unstable<i32>(view,rank));
+    assert(order.calls==before);
+}
+fn metadata_rank_and_singleton_admission() {
+    let nowhere:ptr=0; let unread:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    let order:IntOrder=IntOrder { descending:false,calls:0 };
+    invalid(core::slice::View { values:unread,start:-1,length:0 },0,order.borrow());
+    invalid(core::slice::View { values:unread,start:-1,length:1 },-2147483648,order.borrow());
+    invalid(core::slice::View { values:unread,start:0,length:-1 },2147483647,order.borrow());
+    invalid(core::slice::View { values:unread,start:2147483647,length:1 },0,order.borrow());
+    invalid(core::slice::View { values:unread,start:1,length:2147483647 },-1,order.borrow());
+    invalid(core::slice::View { values:unread,start:2147483647,length:0 },0,order.borrow());
+    let inaccessible:core::slice::View<i32> =core::slice::View { values:unread,start:0,length:3 };
+    invalid(inaccessible,-2147483648,order.borrow()); invalid(inaccessible,-1,order.borrow());
+    invalid(inaccessible,3,order.borrow()); invalid(inaccessible,2147483647,order.borrow());
+    let data:[i32;3]=[101,22,103];
+    invalid(core::slice::View { values:data,start:1,length:2147483647 },0,order.borrow());
+    invalid(core::slice::View { values:data,start:1,length:0 },0,order.borrow());
+    invalid(core::slice::View { values:data,start:1,length:1 },-1,order.borrow());
+    invalid(core::slice::View { values:data,start:1,length:1 },1,order.borrow());
+    assert(data[0]==101 && data[1]==22 && data[2]==103 && order.calls==0);
+    let one:core::slice::View<i32> =core::slice::view_range<i32>(data,1,1).unwrap();
+    let selected:core::slice::View<i32> =core::slice::select_nth_unstable_by<i32,IntOrder>(one,0,order.borrow()).unwrap();
+    assert(selected.start==1 && selected.length==1 && selected.values[1]==22 && order.calls==0);
+    selected.values[selected.start]=77;
+    let natural:core::slice::View<i32> =core::slice::select_nth_unstable<i32>(one,0).unwrap();
+    assert(natural.start==1 && natural.length==1 && natural.values[1]==77 && data[1]==77 && order.calls==0);
+    assert(data[0]==101 && data[2]==103);
+}
+
+fn original() -> [i32;17] { return [7,-2147483648,5,0,-9,7,2,2147483647,-1,5,8,0,6,2,-9,3,1]; }
+fn expected() -> [i32;17] { return [-2147483648,-9,-9,-1,0,0,1,2,2,3,5,5,6,7,7,8,2147483647]; }
+fn permutation(data:[i32],input:[i32]) {
+    let i:i32=0;
+    while(i<17) {
+        let before:i32=0; let after:i32=0; let j:i32=0;
+        while(j<17) { if(input[j]==input[i]) { before+=1; } if(data[j+1]==input[i]) { after+=1; } j+=1; }
+        assert(before==after); i+=1;
+    }
+    assert(data[0]==111111111 && data[18]==222222222);
+}
+fn partition(data:[i32],rank:i32,value:i32,descending:bool) {
+    let i:i32=0;
+    while(i<17) {
+        if(i<rank) { if(descending) { assert(data[i+1]>=value); } else { assert(data[i+1]<=value); } }
+        if(i>rank) { if(descending) { assert(data[i+1]<=value); } else { assert(data[i+1]>=value); } }
+        i+=1;
+    }
+}
+fn all_ranks_both_orders_and_repeated_alias() {
+    let input:[i32;17]=original(); let sorted:[i32;17]=expected();
+    let data:[i32;19]=[0;19]; data[0]=111111111; data[18]=222222222;
+    let view:core::slice::View<i32> =core::slice::view_range<i32>(data,1,17).unwrap();
+    let order:IntOrder=IntOrder { descending:false,calls:0 }; let mode:i32=0;
+    while(mode<3) {
+        order.descending=mode==1; let rank:i32=0;
+        while(rank<17) {
+            let i:i32=0; while(i<17) { data[i+1]=input[i]; i+=1; }
+            order.calls=0;
+            let selected:core::slice::View<i32> =core::slice::View { values:data,start:0,length:0 };
+            if(mode==2) { selected=core::slice::select_nth_unstable<i32>(view,rank).unwrap(); }
+            else { selected=core::slice::select_nth_unstable_by<i32,IntOrder>(view,rank,order.borrow()).unwrap(); assert(order.calls>0); }
+            let index:i32=rank; if(mode==1) { index=16-rank; }
+            assert(selected.start==1+rank && selected.length==1 && selected.values[selected.start]==sorted[index]);
+            partition(data,rank,sorted[index],mode==1); permutation(data,input); rank+=1;
+        }
+        mode+=1;
+    }
+    // Reuse the already permuted view; no prior arrangement is assumed.
+    let last:core::slice::View<i32> =core::slice::select_nth_unstable<i32>(view,16).unwrap();
+    assert(last.values[last.start]==2147483647); permutation(data,input);
+    let first:core::slice::View<i32> =core::slice::select_nth_unstable<i32>(view,0).unwrap();
+    assert(first.values[first.start]==-2147483648); partition(data,0,-2147483648,false); permutation(data,input);
+    let middle:core::slice::View<i32> =core::slice::select_nth_unstable<i32>(view,8).unwrap();
+    assert(middle.values[middle.start]==2); partition(data,8,2,false); permutation(data,input);
+    middle.values[middle.start]=-1234567;
+    assert(data[9]==-1234567 && data[0]==111111111 && data[18]==222222222);
+}
+
+// This payload has no Ord implementation; by-selection must need only Comparator.
+struct Tagged { key:i32, id:i32, payload:u64 }
+struct TaggedOrder { calls:i32 }
+impl TaggedOrder { fn borrow(&self) -> &TaggedOrder { return self; } }
+pub impl core::ordering::Comparator<Tagged,Tagged> for TaggedOrder {
+    pub fn compare(&self,left:Tagged,right:Tagged) -> core::ordering::Ordering {
+        self.calls+=1; return core::ordering::compare_i32(left.key,right.key);
+    }
+}
+fn tagged(id:i32,key:i32) -> Tagged { return Tagged { key:key,id:id,payload:18446744073709551615-(id as u64) }; }
+fn whole_values_without_implicit_ord() {
+    let values:[Tagged;6]=[tagged(99,999),tagged(0,2),tagged(1,1),tagged(2,2),tagged(3,0),tagged(98,998)];
+    let view:core::slice::View<Tagged> =core::slice::view_range<Tagged>(values,1,4).unwrap();
+    let order:TaggedOrder=TaggedOrder { calls:0 };
+    let selected:core::slice::View<Tagged> =core::slice::select_nth_unstable_by<Tagged,TaggedOrder>(view,2,order.borrow()).unwrap();
+    assert(selected.start==3 && selected.length==1 && selected.values[3].key==2 && order.calls>0);
+    let seen:[i32;4]=[0;4]; let keys:[i32;4]=[2,1,2,0]; let i:i32=0;
+    while(i<4) {
+        let item:Tagged=values[i+1]; assert(item.id>=0 && item.id<4);
+        assert(item.key==keys[item.id] && item.payload==18446744073709551615-(item.id as u64)); seen[item.id]+=1;
+        if(i<2) { assert(item.key<=2); } if(i>2) { assert(item.key>=2); } i+=1;
+    }
+    i=0; while(i<4) { assert(seen[i]==1); i+=1; }
+    assert(values[0].id==99 && values[0].key==999 && values[0].payload==18446744073709551516);
+    assert(values[5].id==98 && values[5].key==998 && values[5].payload==18446744073709551517);
+}
+
+fn byte_strides_guards_and_live_aliases() {
+    let stack:[u8;16]=[171;16]; let words:[i32;4]=[0;4];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),16);
+    assert(core::mem::slice_stride(stack)<0 && core::mem::slice_stride(packed)==1);
+    let input:[u8;9]=[255,0,128,7,7,1,10,2,200]; let sorted:[u8;9]=[0,1,2,7,7,10,128,200,255];
+    let order:core::ordering::Natural<u8> =core::ordering::Natural {}; let mode:i32=0;
+    while(mode<2) {
+        let data:[u8]=stack; if(mode==1) { data=packed; } let rank:i32=0;
+        while(rank<9) {
+            let i:i32=0; while(i<16) { data[i]=171; i+=1; } data[0]=99; data[10]=98;
+            i=0; while(i<9) { data[i+1]=input[i]; i+=1; }
+            let view:core::slice::View<u8> =core::slice::view_range<u8>(data,1,9).unwrap();
+            let selected:core::slice::View<u8> =core::slice::View { values:data,start:0,length:0 };
+            if(rank%2==0) { selected=core::slice::select_nth_unstable_by<u8,core::ordering::Natural<u8>>(view,rank,order.borrow()).unwrap(); }
+            else { selected=core::slice::select_nth_unstable<u8>(view,rank).unwrap(); }
+            assert(selected.start==1+rank && selected.length==1 && selected.values[selected.start]==sorted[rank]);
+            i=0; while(i<9) {
+                if(i<rank) { assert(data[i+1]<=sorted[rank]); } if(i>rank) { assert(data[i+1]>=sorted[rank]); }
+                let before:i32=0; let after:i32=0; let j:i32=0;
+                while(j<9) { if(input[j]==input[i]) { before+=1; } if(data[j+1]==input[i]) { after+=1; } j+=1; }
+                assert(before==after); i+=1;
+            }
+            selected.values[selected.start]=42; assert(data[rank+1]==42 && data[0]==99 && data[10]==98);
+            i=11; while(i<16) { assert(data[i]==171); i+=1; } rank+=1;
+        }
+        mode+=1;
+    }
+}
+
+struct Inconsistent { mode:i32, calls:i32 }
+impl Inconsistent { fn borrow(&self) -> &Inconsistent { return self; } }
+pub impl core::ordering::Comparator<i32,i32> for Inconsistent {
+    pub fn compare(&self,left:i32,right:i32) -> core::ordering::Ordering {
+        self.calls+=1;
+        if(self.mode==0) { return core::ordering::Ordering::Less; }
+        if(self.mode==1) { return core::ordering::Ordering::Greater; }
+        if(self.mode==2) { if(self.calls%2==0) { return core::ordering::Ordering::Less; } return core::ordering::Ordering::Greater; }
+        return core::ordering::Ordering::Equal;
+    }
+}
+fn returning_inconsistent_callbacks_still_finish_with_a_permutation() {
+    let input:[i32;17]=original(); let data:[i32;19]=[0;19]; data[0]=111111111; data[18]=222222222;
+    let view:core::slice::View<i32> =core::slice::view_range<i32>(data,1,17).unwrap(); let mode:i32=0;
+    while(mode<4) {
+        let rank:i32=0;
+        while(rank<17) {
+            let i:i32=0; while(i<17) { data[i+1]=input[i]; i+=1; }
+            let order:Inconsistent=Inconsistent { mode:mode,calls:0 };
+            let selected:core::slice::View<i32> =core::slice::select_nth_unstable_by<i32,Inconsistent>(view,rank,order.borrow()).unwrap();
+            assert(selected.start==rank+1 && selected.length==1 && order.calls>0); permutation(data,input);
+            // Returning callbacks guarantee progress, not rank/order/cost here.
+            rank+=8;
+        }
+        mode+=1;
+    }
+}
+
+fn main() -> i32 {
+    metadata_rank_and_singleton_admission(); all_ranks_both_orders_and_repeated_alias(); whole_values_without_implicit_ord();
+    byte_strides_guards_and_live_aliases(); returning_inconsistent_callbacks_still_finish_with_a_permutation(); return 0;
+}

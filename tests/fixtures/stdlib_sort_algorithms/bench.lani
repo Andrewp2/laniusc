@@ -1,0 +1,74 @@
+// Native timings: 100,000 u64 keys per pattern, sorted by core::slice
+// sort_unstable_by (pdqsort), sort_stable_by (run-adaptive merge with
+// galloping) and alloc::slice::sort_by (bottom-up merge). stdout, one line per
+// pattern and algorithm: pattern algorithm nanoseconds comparator-calls.
+module app::main;
+import alloc::slice;
+import alloc::vec;
+import core::mem;
+import core::ordering;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::io;
+struct Order { calls:u64 }
+impl Order { fn borrow(&self) -> &Order { return self; } }
+pub impl core::ordering::Comparator<u64,u64> for Order {
+    pub fn compare(&self,left:u64,right:u64) -> core::ordering::Ordering {
+        self.calls+=1;
+        if(left<right) { return core::ordering::Less; }
+        if(left>right) { return core::ordering::Greater; }
+        return core::ordering::Equal;
+    }
+}
+const N: i32 = 100000;
+fn key(pattern:i32,index:i32,state:u64) -> u64 {
+    let i:u64 = index as u64; let n:u64 = N as u64;
+    if(pattern==0) { return state; }
+    if(pattern==1) { return i; }
+    if(pattern==2) { return n-i; }
+    if(pattern==3) { return state%16; }
+    if(pattern==4) { if(i<n/2) { return i; } return n-i; }
+    if(pattern==5) { return i%1000; }
+    // few swaps: sorted except every 997th key
+    if(index%997==0) { return state%n; }
+    return i;
+}
+fn emit(value:u64) {
+    let storage:[i32;8]=[0;8]; let base:ptr=core::mem::i32_array_data_ptr(storage);
+    let digits:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base,24);
+    let n:i32=23; let v:u64=value; digits[n]=32;
+    if(v==0) { n-=1; digits[n]=48; }
+    while(v>0) { n-=1; digits[n]=((v%10) as u8)+48; v=v/10; }
+    assert(std::io::write_stdout(base+(n as usize),(24-n) as usize)==24-n);
+}
+fn newline() {
+    let storage:[i32;1]=[10]; let base:ptr=core::mem::i32_array_data_ptr(storage);
+    assert(std::io::write_stdout(base,1)==1);
+}
+fn run(pattern:i32,algorithm:i32) {
+    let values:alloc::vec::Vec<u64> = alloc::vec::with_capacity<u64>(N).unwrap();
+    let scratch:alloc::vec::Vec<u64> = alloc::vec::with_capacity<u64>(N/2).unwrap();
+    let state:u64=88172645463325252; let i:i32=0;
+    while(i<N) {
+        state = state ^ (state<<13); state = state ^ (state>>7); state = state ^ (state<<17);
+        values.try_push(key(pattern,i,state)).unwrap(); i+=1;
+    }
+    i=0; while(i<N/2) { scratch.try_push(0).unwrap(); i+=1; }
+    let order:Order=Order { calls:0 };
+    let start:core::time::Instant = std::clock::monotonic_now().unwrap();
+    if(algorithm==0) { core::slice::sort_unstable_by<u64,Order>(values.as_view(),order.borrow()).unwrap(); }
+    if(algorithm==1) { core::slice::sort_stable_by<u64,Order>(values.as_view(),scratch.as_view(),order.borrow()).unwrap(); }
+    if(algorithm==2) { alloc::slice::sort_by<u64,Order>(values.as_view(),order.borrow()).unwrap(); }
+    let finish:core::time::Instant = std::clock::monotonic_now().unwrap();
+    i=1; while(i<N) { assert(values.get(i-1).unwrap()<=values.get(i).unwrap()); i+=1; }
+    emit(pattern as u64); emit(algorithm as u64);
+    emit(finish.duration_since(start).unwrap().as_nanos().unwrap()); emit(order.calls); newline();
+    values.destroy(); scratch.destroy();
+}
+fn main() -> i32 {
+    let pattern:i32=0;
+    while(pattern<7) { let algorithm:i32=0; while(algorithm<3) { run(pattern,algorithm); algorithm+=1; } pattern+=1; }
+    return 0;
+}

@@ -1,0 +1,69 @@
+module fixture::support;
+import alloc::string;
+import alloc::vec;
+import core::function;
+import core::mem;
+import core::pair;
+import core::result;
+import core::text;
+import std::io;
+
+pub struct Grow { calls:i32 }
+pub impl Grow { pub fn borrow(&self) -> &Grow { return self; } }
+pub fn mark(value:i32) { let word:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(word),1)==1); }
+pub fn raw(value:str,count:i32) -> [u8] { return core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); }
+pub fn string(value:str,count:i32) -> alloc::string::String { return alloc::string::from_utf8(raw(value,count),count).unwrap(); }
+pub fn text(value:str,count:i32) -> core::text::Text { return core::text::from_utf8(raw(value,count),count).unwrap(); }
+pub fn check_string(value:alloc::string::String,wanted:str,count:i32,pointer:ptr) {
+    assert(value.bytes.storage==pointer && value.byte_len()==count);
+    let bytes:[u8] = raw(wanted,count); let i:i32 = 0;
+    while(i<count) { assert(value.byte_at(i).unwrap()==bytes[i]); i+=1; }
+}
+pub fn value() -> core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String> {
+    let data:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(3).unwrap();
+    data.try_push(1).unwrap(); data.try_push(2).unwrap(); data.try_push(3).unwrap();
+    return core::pair::Pair { first:data,second:string("seed",4) };
+}
+pub fn check_value(value:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,grown:bool,data:ptr,label:ptr) {
+    assert(value.first.storage==data && value.second.bytes.storage==label);
+    assert(value.first.at(0)==1 && value.first.at(1)==2 && value.first.at(2)==3);
+    if(grown) {
+        assert(value.first.len()==4 && value.first.capacity()==8 && value.first.at(3)==42);
+        check_string(value.second,"seed++",6,label); assert(value.second.capacity()==12);
+    } else {
+        assert(value.first.len()==3 && value.first.capacity()==3);
+        check_string(value.second,"seed",4,label); assert(value.second.capacity()==4);
+    }
+}
+pub fn query() -> alloc::vec::Vec<u8> {
+    let data:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(9).unwrap(); data.try_resize(9,165).unwrap();
+    let bytes:[u8] = data.as_slice(); let word:[u8] = raw("bravo",5); let i:i32 = 0;
+    while(i<5) { bytes[i+2]=word[i]; i+=1; } return data;
+}
+pub fn check_query(owner:&alloc::vec::Vec<u8>,pointer:ptr) {
+    assert(owner.storage==pointer && owner.len()==9 && owner.capacity()==9);
+    let bytes:[u8] = owner.as_slice(); let word:[u8] = raw("bravo",5); let i:i32 = 0;
+    assert(bytes[0]==165 && bytes[1]==165 && bytes[7]==165 && bytes[8]==165);
+    while(i<5) { assert(bytes[i+2]==word[i]); i+=1; }
+}
+pub impl core::function::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::result::Result<i32,i32>>> for Grow {
+    pub fn apply(&self,value:core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>)
+        -> core::pair::Pair<core::pair::Pair<alloc::vec::Vec<u8>,alloc::string::String>,core::result::Result<i32,i32>> {
+        mark(66); self.calls+=1;
+        // Explicit reserve requests establish these exact capacities without
+        // depending on an incidental geometric growth factor.
+        assert(value.first.try_reserve(5).unwrap()==8); value.first.try_push(42).unwrap();
+        assert(value.second.try_reserve(12).unwrap()==12); value.second.try_append_utf8(raw("++",2),2).unwrap();
+        let result:core::result::Result<i32,i32> = core::result::Err(71);
+        mark(98); return core::pair::Pair { first:value,second:result };
+    }
+}
+pub fn publish(pointer:ptr,count:i32) {
+    let used:i32 = 0; while(used<count) {
+        let n:i32 = std::io::write_stdout(pointer+(used as usize),(count-used) as usize);
+        assert(n>0 && n<=count-used); used+=n;
+    }
+}
+pub fn number(bytes:[u8],offset:i32,value:u64,width:i32) {
+    let rest:u64 = value; let i:i32 = 0; while(i<width) { bytes[offset+i]=(rest%256) as u8; rest=rest/256; i+=1; }
+}

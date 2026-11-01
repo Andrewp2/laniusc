@@ -1,5 +1,6 @@
 // Typed callback, borrowed state, composition and shallow owner contracts.
 module app::main;
+import core::function;
 import alloc::string;
 import core::iter;
 import core::slice;
@@ -23,7 +24,7 @@ pub impl core::iter::Iterator<i32> for Probe {
 }
 struct Scale { state: &Context }
 impl Scale { fn borrow(&self) -> &Scale { return self; } }
-pub impl core::iter::Mapper<i32, i64> for Scale {
+pub impl core::function::Mapper<i32, i64> for Scale {
     pub fn apply(&self, value: i32) -> i64 {
         let state: &Context = self.state;
         state.calls += 1; state.sum += value;
@@ -33,7 +34,7 @@ pub impl core::iter::Mapper<i32, i64> for Scale {
 struct Wrapped<T> { item: T, stamp: u64 }
 struct Pack<T> { state: &Context }
 impl<T> Pack<T> { fn borrow(&self) -> &Pack<T> { return self; } }
-pub impl<T> core::iter::Mapper<T, Wrapped<T>> for Pack<T> {
+pub impl<T> core::function::Mapper<T, Wrapped<T>> for Pack<T> {
     pub fn apply(&self, value: T) -> Wrapped<T> {
         let state: &Context = self.state; state.calls += 1;
         return Wrapped { item: value, stamp: 18446744073709551615 - (state.calls as u64) };
@@ -42,7 +43,7 @@ pub impl<T> core::iter::Mapper<T, Wrapped<T>> for Pack<T> {
 struct Payload { wide: u64, cells: [i32; 2], flag: core::option::Option<bool> }
 struct Maybe { state: &Context }
 impl Maybe { fn borrow(&self) -> &Maybe { return self; } }
-pub impl core::iter::Mapper<i32, core::option::Option<i32>> for Maybe {
+pub impl core::function::Mapper<i32, core::option::Option<i32>> for Maybe {
     pub fn apply(&self, value: i32) -> core::option::Option<i32> {
         let state: &Context = self.state; state.calls += 1;
         if (value == 1) { return core::option::None(); }
@@ -52,7 +53,7 @@ pub impl core::iter::Mapper<i32, core::option::Option<i32>> for Maybe {
 enum Fault { Rejected(i32) }
 struct Fallible { state: &Context }
 impl Fallible { fn borrow(&self) -> &Fallible { return self; } }
-pub impl core::iter::Mapper<i32, core::result::Result<[u64; 2], Fault>> for Fallible {
+pub impl core::function::Mapper<i32, core::result::Result<[u64; 2], Fault>> for Fallible {
     pub fn apply(&self, value: i32) -> core::result::Result<[u64; 2], Fault> {
         let state: &Context = self.state; state.calls += 1;
         if (value == 1) { return core::result::Err(Fault::Rejected(value)); }
@@ -62,12 +63,12 @@ pub impl core::iter::Mapper<i32, core::result::Result<[u64; 2], Fault>> for Fall
 }
 struct ArrayMap { marker: i32 }
 impl ArrayMap { fn borrow(&self) -> &ArrayMap { return self; } }
-pub impl core::iter::Mapper<i32, [u64; 2]> for ArrayMap {
+pub impl core::function::Mapper<i32, [u64; 2]> for ArrayMap {
     pub fn apply(&self, value: i32) -> [u64; 2] { return [18446744073709551615, value as u64]; }
 }
 struct SumPair { state: &Context }
 impl SumPair { fn borrow(&self) -> &SumPair { return self; } }
-pub impl core::iter::Mapper<core::pair::Pair<i32, i32>, i64> for SumPair {
+pub impl core::function::Mapper<core::pair::Pair<i32, i32>, i64> for SumPair {
     pub fn apply(&self, value: core::pair::Pair<i32, i32>) -> i64 {
         let state: &Context = self.state; state.calls += 1;
         return (value.first as i64) + (value.second as i64);
@@ -75,13 +76,13 @@ pub impl core::iter::Mapper<core::pair::Pair<i32, i32>, i64> for SumPair {
 }
 struct Alias { state: &Context }
 impl Alias { fn borrow(&self) -> &Alias { return self; } }
-pub impl core::iter::Mapper<alloc::string::String, alloc::string::String> for Alias {
+pub impl core::function::Mapper<alloc::string::String, alloc::string::String> for Alias {
     pub fn apply(&self, value: alloc::string::String) -> alloc::string::String {
         let state: &Context = self.state; state.calls += 1; return value;
     }
 }
 fn mapped<I, M, T, U>(source: &I, mapper: &M) -> core::iter::Map<I, M, T, U>
-    where I: core::iter::Iterator<T>, M: core::iter::Mapper<T, U> {
+    where I: core::iter::Iterator<T>, M: core::function::Mapper<T, U> {
     return core::iter::map<I, M, T, U>(source, mapper);
 }
 fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> {

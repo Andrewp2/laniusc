@@ -19,11 +19,12 @@ removed; there is no alias or second forwarding cursor.
 | `View<T>::chunks(width)` | `Result<Chunks<T>,ViewError>` | `View<T>` |
 | `View<T>::windows(width)` | `Result<Windows<T>,ViewError>` | `View<T>` |
 
-Import `core::iter` to load the shared forward implementations. `core::slice`
-defines the cursor records, constructors, borrowing, metadata and backward
-operations. `core::iter` defines their single `Iterator` implementation and
-forward `next` body. This direction keeps imports acyclic without duplicate
-inherent and trait methods with the same name and receiver.
+Import `core::iter` to load the shared implementations. `core::slice` defines
+cursor records, constructors, borrowing, metadata and skip operations.
+`core::iter` defines each `Iterator::next` body and the single
+`DoubleEndedIterator::next_back` body for `Iter<T>`. Chunks and Windows remain
+forward-only. This direction keeps imports acyclic without duplicate inherent
+and trait methods with the same name and receiver.
 
 Existing clients migrate `core::iter::SliceIter<T>` annotations and generic
 arguments to `core::slice::Iter<T>`. Direct slice-cursor clients also import

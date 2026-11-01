@@ -1,6 +1,7 @@
 // One external String owner and one heap allocation. Stored aliases remain
 // borrowed; iteration, mapping and discarding create no new release authority.
 module app::main;
+import core::function;
 import alloc::binary_heap;
 import alloc::string;
 import core::iter;
@@ -11,7 +12,7 @@ import core::text;
 
 struct Alias { calls: i32 }
 impl Alias { fn borrow(&self) -> &Alias { return self; } }
-pub impl core::iter::Mapper<alloc::string::String, alloc::string::String> for Alias {
+pub impl core::function::Mapper<alloc::string::String, alloc::string::String> for Alias {
     pub fn apply(&self, value: alloc::string::String) -> alloc::string::String {
         self.calls += 1; return value;
     }

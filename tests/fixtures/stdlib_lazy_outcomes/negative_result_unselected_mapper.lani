@@ -1,0 +1,15 @@
+module app::main;
+import core::function;
+import core::option;
+import core::result;
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::function::Mapper<i64,u64> for Policy { pub fn apply(&self,value:i64) -> u64 { return 1; } }
+struct Other {}
+impl Other { fn borrow(&self) -> &Other { return self; } }
+pub impl core::function::Mapper<i64,u64> for Other { pub fn apply(&self,value:i64) -> u64 { return 1; } }
+fn main() -> i32 {
+    let source:core::result::Result<i32,i64> =core::result::Err(-9); let policy:Policy=Policy {}; let other:Other=Other {};
+    let rejected_outcome_bound = source.map_or_else<u64,Other,Policy>(other.borrow(),policy.borrow());
+    return 0;
+}

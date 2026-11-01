@@ -1,0 +1,51 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import ext::compression;
+import ext::deflate;
+import fixture::support;
+fn format(kind:i32) -> ext::compression::Format { return match(kind) { 0 -> ext::compression::Format::RawDeflate,1 -> ext::compression::Format::Zlib,_ -> ext::compression::Format::Gzip }; }
+fn number(value:i32) { let words:[i32;1] = [value]; fixture::support::publish(core::mem::i32_array_data_ptr(words),4); }
+fn stream(encoder:&ext::compression::Encoder,workspace:&fixture::support::Workspace,input:&alloc::vec::Vec<u8>,output:&alloc::vec::Vec<u8>,kind:i32,profile:i32,total:i32) {
+    fixture::support::mark(80); encoder.reset(format(kind),ext::compression::EncodeLimits { max_input:total as u64,max_output:(total+4096) as u64 });
+    assert(encoder.total_read()==0 && encoder.total_written()==0 && !encoder.is_done() && !encoder.is_failed()); workspace.guards(); fixture::support::mark(112);
+    number(kind); number(profile); number(total);
+    let consumed:i32 = 0; let generated:i32 = 0; let available:i32 = 0; let front:i32 = 0; let calls:i32 = 0; let emitted:u64 = 0;
+    let state:u32 = 305419896; let saved:[u8;4093] = [0;4093];
+    while(!encoder.is_done()) {
+        assert(calls<4096); fixture::support::mark(80);
+        if(front==available && generated<total) {
+            available=total-generated; if(available>4093) { available=4093; } front=0;
+            let i:i32 = 0; while(i<available) {
+                let value:u8 = ((generated+i)%31) as u8;
+                if(profile==1) { state=state^(state<<13); state=state^(state>>17); state=state^(state<<5); value=(state&255) as u8; }
+                input.set(2+i,value).unwrap(); saved[i]=value; i+=1;
+            }
+            generated+=available;
+        }
+        let i:i32 = 0; while(i<8197) { output.set(i,211).unwrap(); i+=1; }
+        let capacity:i32 = 8193; if(calls==0) { capacity=0; }
+        let offered:i32 = available-front;
+        let step=encoder.step(input.as_view().subview(2+front,2+available).unwrap(),output.as_view().subview(2,2+capacity).unwrap(),generated==total).unwrap();
+        assert(step.read>=0 && step.read<=offered && step.written>=0 && step.written<=capacity);
+        assert(step.read+step.written>0 || capacity==0 || encoder.is_done());
+        i=front; while(i<available) { assert(input.at(2+i)==saved[i]); i+=1; }
+        i=0; while(i<step.read) { input.set(2+front+i,165).unwrap(); i+=1; }
+        front+=step.read; consumed+=step.read; emitted+=step.written as u64; calls+=1;
+        assert(encoder.total_read()==consumed as u64 && encoder.total_written()==emitted && !encoder.is_failed());
+        if(fixture::support::status(step.status)==1) { assert(front==available); }
+        if(fixture::support::status(step.status)==3) { assert(consumed==total && front==available); }
+        assert(input.at(0)==77 && input.at(1)==77 && input.at(4095)==77 && input.at(4096)==77 && input.at(4097)==77 && input.at(4098)==77);
+        assert(output.at(0)==211 && output.at(1)==211); i=2+step.written; while(i<8197) { assert(output.at(i)==211); i+=1; } workspace.guards();
+        fixture::support::mark(112); if(step.written>0) { number(step.written); fixture::support::publish(output.storage+2,step.written); }
+    }
+    assert(consumed==total && emitted>0); number(0);
+}
+fn main() -> i32 {
+    fixture::support::mark(65); let workspace=fixture::support::workspace(); let input:alloc::vec::Vec<u8> = alloc::vec::new(); input.try_resize(4099,77).unwrap();
+    let output:alloc::vec::Vec<u8> = alloc::vec::new(); output.try_resize(8197,211).unwrap(); fixture::support::mark(83);
+    fixture::support::mark(80); let encoder=ext::compression::encoder(workspace.input(),workspace.output(),workspace.hash(),ext::compression::Format::RawDeflate,ext::compression::default_encode_limits()).unwrap(); workspace.pristine(); fixture::support::mark(112);
+    stream(encoder.borrow(),workspace.borrow(),input.borrow(),output.borrow(),0,0,32769); stream(encoder.borrow(),workspace.borrow(),input.borrow(),output.borrow(),0,1,32769);
+    let kind:i32 = 0; while(kind<3) { let profile:i32 = 0; while(profile<2) { stream(encoder.borrow(),workspace.borrow(),input.borrow(),output.borrow(),kind,profile,1048593); profile+=1; } kind+=1; }
+    fixture::support::mark(82); output.destroy(); input.destroy(); workspace.destroy(); fixture::support::mark(69); fixture::support::mark(68); return 0;
+}

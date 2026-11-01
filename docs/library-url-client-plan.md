@@ -1,8 +1,13 @@
 # URL HTTP(S) client
 
-Status: the module and ownership contracts are frozen; implementation and
-focused integration are in progress. Workflow executable acceptance is pending.
-The full standard and extended library goal remains open.
+Status: all five modules are implemented. Direct URL contracts/models/owners,
+selected-socket adoption, plain/DNS/TLS exchanges, connector admission/failure
+groups and the real fetch program's functional groups pass on their documented
+finite Linux x86_64 profiles. Registered Rust runtime tests, complete wrapper
+allocation-failure campaigns and broader scheduling/clock cases have no pass
+claim. The [URL client guide](extended-url-client.md) records exact accepted
+receipts and remaining gaps. The full standard and extended library goal
+remains open.
 
 ## Purpose and existing boundaries
 
@@ -38,7 +43,8 @@ unresolved OpenSSL symbols such as `ERR_get_error` and `SSL_CTX_new`. Importing
 TLS sources therefore cannot be treated as an optional runtime branch of a
 plain facade. HTTPS lives in `url_tls`, so an HTTP-only program can import
 `url_client` without SSL/crypto libraries. This is a source dependency decision,
-not a compiler repair, and the plain import/link path still needs its own gate.
+not a compiler repair. The direct plain URL executable compiles and runs
+without SSL/crypto libraries; its only NEEDED library is libc.so.6.
 No combined-facade alias is retained. No compiler, IR, ABI, proof, native glue
 or custom cryptographic implementation change is planned.
 
@@ -407,16 +413,18 @@ responsibility, as in current fetch programs.
 
 ## Program migration and focused acceptance
 
-Migrate the ordinary fetch front door to `fetch URL [OPTIONS]`, preserving
+The ordinary fetch front door is now `fetch URL [OPTIONS]`, preserving
 method/body/header and bounded output behavior from `http_fetch` and verified
-CA/client-credential handling from `https_fetch`. Use `--ca-file` with default
-trust paths when omitted; reject TLS-only options on Http explicitly. Update
-direct in-repo CLI consumers, guides and their existing assertions. Keep the
-separate explicit endpoint/identity transport probe where it is testing that
-distinct policy; add no old-CLI parser or alias solely for internal consumers.
-Freeze exact CLI statuses/help/output before editing those oracles.
+CA/client-credential handling from `https_fetch`. It uses `--ca-file`, or default
+trust paths when omitted, and rejects TLS-only options on Http explicitly.
+The separate numeric endpoint/identity programs retain their distinct transport
+test policy. There is no old-CLI parser or compatibility alias. The
+[program guide](extended-fetch-url.md) records its exact CLI statuses, help,
+limits and accepted functional receipts.
 
-Acceptance is pending and split by causal boundary:
+The acceptance requirements below remain split by causal boundary. The current
+finite gates are summarized afterward; an unexercised item here is not accepted
+merely because an adjacent case passed.
 
 1. Pure URL/helper gates: independent mapping goldens for authority, port,
    numeric ambiguity, quotes/invalid bytes, path/query/fragment, case, stride,
@@ -454,10 +462,30 @@ Acceptance is pending and split by causal boundary:
    peers, plus only affected existing numeric driver groups. Do not rerun the
    broad library suite by default.
 
-Root serializes all compiler/native commands, each under two minutes. Initial
+### Current finite acceptance
+
+| Boundary | Accepted evidence | Remaining scope |
+| --- | --- | --- |
+| URL/helper | Public contracts, 70 model records on two backing layouts and 16 owner/failure cases, including four reached allocation denials | Other targets and broader profiles remain separate |
+| Driver adoption | Public smoke, one connected same-generation case and eight failure cases, including reached close EIO | These plain-adoption failures do not establish every TLS setup OOM path |
+| Plain exchange | Two direct fixed/interim-chunked numeric cases with exact binary wire and pre-exit resource checkpoints | Full wrapper allocation campaign remains open |
+| DNS selection | One controlled four-address ordered fallback case, selected ordinal one after two attempts, preserved duplicate list and retired failed socket | NSS cancellation, native internal quotas and asynchronous policy remain open |
+| Verified TLS | Eight cases across TLS 1.2/1.3, original DNS/SNI and numeric IP SAN/no SNI, identity mismatch before HTTP, authenticated truncation and no spare-endpoint/request replay | Every TLS schedule and wrapper source-OOM path is not established |
+| Connector boundaries | Twelve admission and eight failure/cleanup cases, separately: local deadlines/caps/family before attempt, refusal, reserved close credit, attempt cap/exhaustion, native EAI/system diagnostics, idempotent close and reached close EIO | Attempt-timeout fallback and arbitrary post-leaf clock faults remain unexercised by this selection |
+| Link dependency | Plain executable links/runs without SSL/crypto; TLS explicitly links native ssl/crypto | No other host target implied |
+| Real program | Separate direct groups of 24 HTTP, 33 CLI/preflight and four HTTPS functional cases | Full application source-owner/OOM/fault acceptance remains separate |
+
+Exact source identities, logs and checkpoint qualifications belong to the
+[URL](extended-http-url.md), [connected-client](extended-url-client.md),
+[fetch](extended-fetch-url.md) and fixture guides. These are direct executable
+receipts, not native Rust-libtest passes. A confirmed
+[constructor-name-resolution reduction](../tests/fixtures/compiler_dependencies/url_none_inference/README.md)
+has an executable module-qualified Option control; no general generic payload
+limitation or compiler repair is claimed by this increment.
+
+Root serializes all compiler/native commands, each under two minutes. The
 native target is Linux x86_64/glibc/OpenSSL using GPU-compiler output executed
-on CPU. Pure URL/helper target claims require their own actual executable
-receipts; no GPU-device execution claim is implied. Record finite cases,
-source/ELF identities, failure classifications and gaps before calling the
-workflow supported. This plan records the agreed implementation boundaries;
-its declarations and source presence are not runtime acceptance.
+on CPU. Pure URL/helper receipts have their own allocator/host effect scope;
+no GPU-device execution claim is implied. This plan records the agreed
+implementation boundaries; its declarations and source presence are not
+runtime acceptance.

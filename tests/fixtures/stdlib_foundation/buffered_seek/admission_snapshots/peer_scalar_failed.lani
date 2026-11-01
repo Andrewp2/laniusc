@@ -1,0 +1,106 @@
+// Allocation-free scripted peer; its logical cursor may exceed its finite data.
+module fixture::peer;
+import core::io;
+import core::mem;
+import core::result;
+import std::io;
+
+pub struct Stream {
+    data:[u8], length:i32, position:u64, chunk:i32,
+    reads:i32, writes:i32, flushes:i32, seeks:i32, log:u64,
+    last_start:u64, last_offset:i64,
+    seek_fail:i32, seek_error:i32, seek_bad:i32, seek_reply:u64,
+    write_fail:i32, write_error:i32, write_zero:i32, write_bad:i32, write_count:i32,
+    flush_fail:i32, flush_error:i32, flush_bad:i32
+}
+pub fn stream(data:[u8],length:i32,chunk:i32) -> Stream {
+    assert(length>=0 && chunk>0);
+    return Stream {
+        data:data,length:length,position:0,chunk:chunk,
+        reads:0,writes:0,flushes:0,seeks:0,log:0,last_start:0,last_offset:0,
+        seek_fail:0,seek_error:0,seek_bad:0,seek_reply:0,
+        write_fail:0,write_error:0,write_zero:0,write_bad:0,write_count:-1,
+        flush_fail:0,flush_error:0,flush_bad:0
+    };
+}
+pub fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+pub fn error(code:i32) -> core::io::Error {
+    if(code==1) { return core::io::Error::Interrupted; }
+    if(code==2) { return core::io::Error::WouldBlock; }
+    return core::io::Error::Host(77);
+}
+pub fn error_is(value:core::io::Error,code:i32) -> bool {
+    return match(value) {
+        Interrupted -> code==1, WouldBlock -> code==2,
+        Host(n) -> code==3 && n==77,
+        InvalidInput -> code==4, InvalidCount -> code==5,
+        WriteZero -> code==6, AllocationFailed -> code==7, _ -> false
+    };
+}
+pub impl Stream { pub fn borrow(&self) -> &Stream { return self; } }
+pub impl core::io::Read for Stream {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(core::io::valid_range(offset,count));
+        self.reads+=1; self.log=self.log*10+1;
+        if(self.position>=self.length as u64) { return core::result::Ok(0); }
+        let cursor:i32=self.position as i32;
+        let amount:i32=self.length-cursor;
+        if(amount>count) { amount=count; }
+        if(amount>self.chunk) { amount=self.chunk; }
+        let i:i32=0;
+        while(i<amount) { destination[offset+i]=self.data[cursor+i]; i+=1; }
+        self.position+=amount as u64;
+        return core::result::Ok(amount);
+    }
+}
+pub impl core::io::Write for Stream {
+    pub fn write(&self,source:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(core::io::valid_range(offset,count));
+        self.writes+=1; self.log=self.log*10+2;
+        if(self.writes==self.write_fail) { return core::result::Err(error(self.write_error)); }
+        if(self.writes==self.write_zero) { return core::result::Ok(0); }
+        // Malformed counts deliberately perform no physical data transfer.
+        if(self.writes==self.write_bad) { return core::result::Ok(self.write_count); }
+        if(self.position>=self.length as u64) { return core::result::Ok(0); }
+        let cursor:i32=self.position as i32;
+        let amount:i32=self.length-cursor;
+        if(amount>count) { amount=count; }
+        if(amount>self.chunk) { amount=self.chunk; }
+        let i:i32=0;
+        while(i<amount) { self.data[cursor+i]=source[offset+i]; i+=1; }
+        self.position+=amount as u64;
+        return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        self.flushes+=1; self.log=self.log*10+3;
+        if(self.flushes==self.flush_fail) { return core::result::Err(error(self.flush_error)); }
+        if(self.flushes==self.flush_bad) { return core::result::Ok(1); }
+        return core::result::Ok(0);
+    }
+}
+pub impl core::io::Seek for Stream {
+    pub fn seek(&self,from:core::io::SeekFrom) -> core::result::Result<u64,core::io::Error> {
+        self.seeks+=1;
+        let origin:i32=match(from) { Start(_) -> 4, Current(_) -> 5, End(_) -> 6 };
+        self.log=self.log*10+(origin as u64);
+        if(origin==4) {
+            self.last_start=match(from) { Start(value) -> value, _ -> 0 };
+        } else {
+            self.last_offset=match(from) { Current(value) -> value, End(value) -> value, _ -> 0 };
+        }
+        if(self.seeks==self.seek_fail) {
+            // Errors can follow actual provider effects. No rollback is implied.
+            self.position=19;
+            return core::result::Err(error(self.seek_error));
+        }
+        if(self.seeks==self.seek_bad) { self.position=self.seek_reply; return core::result::Ok(self.seek_reply); }
+        let moved:core::result::Result<u64,core::io::Error> =match(from) {
+            Start(value) -> core::result::Ok(value),
+            Current(value) -> core::io::offset_position(self.position,value),
+            End(value) -> core::io::offset_position(self.length as u64,value)
+        };
+        if(moved.is_err()) { return core::result::Err(moved.unwrap_err()); }
+        self.position=moved.unwrap();
+        return core::result::Ok(self.position);
+    }
+}

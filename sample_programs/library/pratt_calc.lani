@@ -1,0 +1,269 @@
+// Python-precedence integer expressions per stdin line, parsed by ext::pratt
+// over ext::lexer tokens. See docs/extended-pratt.md.
+module app::main;
+import alloc::vec;
+import core::i64;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::lexer;
+import ext::pratt;
+import ext::regex;
+import std::io;
+import std::io_decimal;
+import std::stream;
+
+const INT: i32 = 0; const NAME: i32 = 1; const OR: i32 = 2; const XOR: i32 = 3; const AND: i32 = 4;
+const SHL: i32 = 5; const SHR: i32 = 6; const ADD: i32 = 7; const SUB: i32 = 8; const MUL: i32 = 9;
+const DIV: i32 = 10; const MOD: i32 = 11; const INV: i32 = 12; const POW: i32 = 13; const OPEN: i32 = 14;
+const CLOSE: i32 = 15; const COMMA: i32 = 16; const KINDS: i32 = 17;
+const MAX_LINE_TOKENS: i32 = 4096;
+const MAX_INPUT: i32 = 1048576;
+
+// Error classes written as `error <class>`.
+const SYNTAX: i32 = 1; const OVERFLOW: i32 = 2; const ZERO: i32 = 3; const DOMAIN: i32 = 4; const NAMED: i32 = 5; const ARITY: i32 = 6; const LIMIT: i32 = 7;
+
+// name: -1 for an integer, otherwise 0 abs, 1 min, 2 max, 3 unknown name.
+struct Value { name: i32, value: i64 }
+struct Outcome { error: i32, value: i64 }
+
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::text::from_utf8_unchecked(bytes, 0, count);
+}
+fn rule(id: i32, pattern: str, count: i32) -> ext::lexer::Rule { return ext::lexer::Rule { id: id, pattern: text(pattern, count), skip: false }; }
+
+fn build_table() -> core::result::Result<ext::pratt::Table, ext::pratt::Error> {
+    let made = ext::pratt::table(KINDS); if (made.is_err()) { return made; }
+    let t: ext::pratt::Table = made.unwrap();
+    // Python's grammar: | < ^ < & < shifts < + - < * // % < unary - + ~ < ** < call.
+    // ** has left power above unary minus and right power below it: -2**2 is -(2**2), 2**-1 is legal.
+    let failed: bool = t.atom(INT).is_err() || t.atom(NAME).is_err()
+        || t.infix(OR, 1, 2).is_err() || t.infix(XOR, 3, 4).is_err() || t.infix(AND, 5, 6).is_err()
+        || t.infix(SHL, 7, 8).is_err() || t.infix(SHR, 7, 8).is_err()
+        || t.infix(ADD, 9, 10).is_err() || t.infix(SUB, 9, 10).is_err()
+        || t.infix(MUL, 11, 12).is_err() || t.infix(DIV, 11, 12).is_err() || t.infix(MOD, 11, 12).is_err()
+        || t.prefix(SUB, 13).is_err() || t.prefix(ADD, 13).is_err() || t.prefix(INV, 13).is_err()
+        || t.infix(POW, 15, 14).is_err()
+        || t.group(OPEN, CLOSE).is_err() || t.call(OPEN, CLOSE, COMMA, 17).is_err();
+    if (failed) { t.destroy(); return core::result::Err(ext::pratt::Error::Conflict(-1)); }
+    return core::result::Ok(t);
+}
+
+// Five rules instead of one per operator: ext::lexer probes every rule at each
+// position, so fewer rules is the main lexing cost. Operator kinds come from
+// the lexeme's bytes afterwards.
+const WIDE: i32 = 100; const SINGLE: i32 = 101;
+fn build_lexer() -> core::result::Result<ext::lexer::Lexer, ext::lexer::Error> {
+    let rules: [ext::lexer::Rule; 5] = [
+        rule(INT, "[0-9]+", 6), rule(NAME, "[a-z]+", 6), rule(WIDE, "\\*\\*|//|<<|>>", 13),
+        rule(SINGLE, "[-+*%&|^~(),]", 13), ext::lexer::Rule { id: -1, pattern: text("[ \\t]+", 6), skip: true }
+    ];
+    let view: core::slice::View<ext::lexer::Rule> = core::result::unwrap(core::slice::view(rules, 5));
+    return ext::lexer::compile(view, ext::regex::options(), ext::lexer::default_build_limits());
+}
+fn operator_kind(lexeme: core::text::Text) -> i32 {
+    let first: u8 = lexeme.byte_at(0).unwrap();
+    if (lexeme.length == 2) {
+        if (first == 42) { return POW; } if (first == 47) { return DIV; } if (first == 60) { return SHL; } return SHR;
+    }
+    if (first == 124) { return OR; } if (first == 94) { return XOR; } if (first == 38) { return AND; }
+    if (first == 43) { return ADD; } if (first == 45) { return SUB; } if (first == 42) { return MUL; }
+    if (first == 37) { return MOD; } if (first == 126) { return INV; } if (first == 40) { return OPEN; }
+    if (first == 41) { return CLOSE; } return COMMA;
+}
+
+fn fail(error: i32) -> Outcome { return Outcome { error: error, value: 0 }; }
+fn number(value: i64) -> Outcome { return Outcome { error: 0, value: value }; }
+fn checked(found: core::option::Option<i64>) -> Outcome {
+    if (found.is_none()) { return fail(OVERFLOW); }
+    return number(found.unwrap());
+}
+
+// Floor division and modulo, as in Python.
+fn floor_div(left: i64, right: i64) -> Outcome {
+    if (right == 0) { return fail(ZERO); }
+    if (left == core::i64::MIN && right == -1) { return fail(OVERFLOW); }
+    let q: i64 = left / right;
+    if ((left % right != 0) && ((left < 0) != (right < 0))) { q -= 1; }
+    return number(q);
+}
+fn floor_mod(left: i64, right: i64) -> Outcome {
+    if (right == 0) { return fail(ZERO); }
+    if (right == -1) { return number(0); }
+    let r: i64 = left % right;
+    if (r != 0 && ((r < 0) != (right < 0))) { r += right; }
+    return number(r);
+}
+fn power(base: i64, exponent: i64) -> Outcome {
+    if (exponent < 0) { return fail(DOMAIN); }
+    if (base == 0) { if (exponent == 0) { return number(1); } return number(0); }
+    if (base == 1) { return number(1); }
+    if (base == -1) { if ((exponent & 1) == 0) { return number(1); } return number(-1); }
+    if (exponent > 64) { return fail(OVERFLOW); }
+    let result: i64 = 1; let count: i64 = 0;
+    while (count < exponent) {
+        let next = core::i64::checked_mul(result, base); if (next.is_none()) { return fail(OVERFLOW); }
+        result = next.unwrap(); count += 1;
+    }
+    return number(result);
+}
+fn shift_left(value: i64, count: i64) -> Outcome {
+    if (count < 0) { return fail(DOMAIN); }
+    if (value == 0) { return number(0); }
+    if (count > 63) { return fail(OVERFLOW); }
+    let result: i64 = value; let step: i64 = 0;
+    while (step < count) {
+        let next = core::i64::checked_mul(result, 2); if (next.is_none()) { return fail(OVERFLOW); }
+        result = next.unwrap(); step += 1;
+    }
+    return number(result);
+}
+fn shift_right(value: i64, count: i64) -> Outcome {
+    if (count < 0) { return fail(DOMAIN); }
+    if (count > 63) { if (value < 0) { return number(-1); } return number(0); }
+    return number(value >> count);
+}
+fn binary(kind: i32, left: i64, right: i64) -> Outcome {
+    if (kind == ADD) { return checked(core::i64::checked_add(left, right)); }
+    if (kind == SUB) { return checked(core::i64::checked_sub(left, right)); }
+    if (kind == MUL) { return checked(core::i64::checked_mul(left, right)); }
+    if (kind == DIV) { return floor_div(left, right); }
+    if (kind == MOD) { return floor_mod(left, right); }
+    if (kind == POW) { return power(left, right); }
+    if (kind == SHL) { return shift_left(left, right); }
+    if (kind == SHR) { return shift_right(left, right); }
+    if (kind == AND) { return number(left & right); }
+    if (kind == OR) { return number(left | right); }
+    return number(left ^ right);
+}
+fn name_of(token: core::text::Text) -> i32 {
+    if (token.equals(text("abs", 3))) { return 0; }
+    if (token.equals(text("min", 3))) { return 1; }
+    if (token.equals(text("max", 3))) { return 2; }
+    return 3;
+}
+
+// Evaluate the parser's postfix events with an explicit value stack.
+fn evaluate(p: &ext::pratt::Parser, tokens: &alloc::vec::Vec<ext::pratt::Token>, line: core::text::Text, values: &alloc::vec::Vec<Value>) -> Outcome {
+    values.clear();
+    let index: i32 = 0;
+    while (index < p.event_count()) {
+        let event: ext::pratt::Event = p.event(index).unwrap();
+        let token: ext::pratt::Token = tokens.at(event.token);
+        if (event.role == ext::pratt::ATOM) {
+            let lexeme: core::text::Text = line.slice(token.start, token.end).unwrap();
+            if (event.kind == INT) {
+                let parsed = lexeme.parse_i64(); if (parsed.is_err()) { return fail(OVERFLOW); }
+                if (values.try_push(Value { name: -1, value: parsed.unwrap() }).is_err()) { return fail(LIMIT); }
+            } else {
+                let name: i32 = name_of(lexeme);
+                if (name == 3) { return fail(NAMED); }
+                if (values.try_push(Value { name: name, value: 0 }).is_err()) { return fail(LIMIT); }
+            }
+        } else { if (event.role == ext::pratt::CALL) {
+            let base: i32 = values.len() - event.arity - 1;
+            let callee: Value = values.at(base);
+            if (callee.name < 0) { return fail(NAMED); }
+            let at: i32 = base + 1;
+            while (at < values.len()) { if (values.at(at).name >= 0) { return fail(NAMED); } at += 1; }
+            let result: Outcome = fail(ARITY);
+            if (callee.name == 0) {
+                if (event.arity == 1) { result = checked(core::i64::checked_abs(values.at(base + 1).value)); }
+            } else {
+                if (event.arity >= 2) {
+                    let best: i64 = values.at(base + 1).value; at = base + 2;
+                    while (at < values.len()) {
+                        let v: i64 = values.at(at).value;
+                        if ((callee.name == 1 && v < best) || (callee.name == 2 && v > best)) { best = v; }
+                        at += 1;
+                    }
+                    result = number(best);
+                }
+            }
+            if (result.error != 0) { return result; }
+            let unused = values.truncate(base);
+            if (values.try_push(Value { name: -1, value: result.value }).is_err()) { return fail(LIMIT); }
+        } else { if (event.arity == 1) {
+            let operand: Value = values.pop().unwrap();
+            if (operand.name >= 0) { return fail(NAMED); }
+            let result: Outcome = number(operand.value);
+            if (event.kind == SUB) { result = checked(core::i64::checked_neg(operand.value)); }
+            if (event.kind == INV) { result = number(0 - operand.value - 1); }
+            if (result.error != 0) { return result; }
+            if (values.try_push(Value { name: -1, value: result.value }).is_err()) { return fail(LIMIT); }
+        } else {
+            let right: Value = values.pop().unwrap(); let left: Value = values.pop().unwrap();
+            if (left.name >= 0 || right.name >= 0) { return fail(NAMED); }
+            let result: Outcome = binary(event.kind, left.value, right.value);
+            if (result.error != 0) { return result; }
+            if (values.try_push(Value { name: -1, value: result.value }).is_err()) { return fail(LIMIT); }
+        } } }
+        index += 1;
+    }
+    let last: Value = values.pop().unwrap();
+    if (last.name >= 0) { return fail(NAMED); }
+    return number(last.value);
+}
+
+fn line_outcome(lexer: &ext::lexer::Lexer, table: &ext::pratt::Table, p: &ext::pratt::Parser, tokens: &alloc::vec::Vec<ext::pratt::Token>, values: &alloc::vec::Vec<Value>, line: core::text::Text) -> Outcome {
+    tokens.clear();
+    let scanned = lexer.scan(line, ext::lexer::default_scan_limits());
+    if (scanned.is_err()) { return fail(SYNTAX); }
+    let cursor: ext::lexer::Cursor = scanned.unwrap();
+    while (true) {
+        let next = cursor.next();
+        if (next.is_err()) { return fail(SYNTAX); }
+        let found = next.unwrap();
+        if (found.is_none()) { break; }
+        let token: ext::lexer::Token = found.unwrap();
+        if (tokens.len() == MAX_LINE_TOKENS) { cursor.destroy(); return fail(LIMIT); }
+        let kind: i32 = token.id; if (kind >= WIDE) { kind = operator_kind(token.text); }
+        if (tokens.try_push(ext::pratt::Token { kind: kind, start: token.span.start, end: token.span.end }).is_err()) { cursor.destroy(); return fail(LIMIT); }
+    }
+    let parsed = p.parse(table, tokens.as_view());
+    if (parsed.is_err()) { return fail(SYNTAX); }
+    return evaluate(p, tokens, line, values);
+}
+
+fn write_class(error: i32) {
+    std::io::write_byte(1, 101); std::io::write_byte(1, 114); std::io::write_byte(1, 114); std::io::write_byte(1, 111); std::io::write_byte(1, 114); std::io::write_byte(1, 32);
+    std::io_decimal::write_i32(1, error);
+}
+
+fn main() -> i32 {
+    let lexer_made = build_lexer(); if (lexer_made.is_err()) { return 3; }
+    let lexer: ext::lexer::Lexer = lexer_made.unwrap();
+    let table_made = build_table(); if (table_made.is_err()) { lexer.destroy(); return 3; }
+    let table: ext::pratt::Table = table_made.unwrap();
+    let parser_made = ext::pratt::parser(MAX_LINE_TOKENS); if (parser_made.is_err()) { table.destroy(); lexer.destroy(); return 4; }
+    let p: ext::pratt::Parser = parser_made.unwrap();
+    let tokens: alloc::vec::Vec<ext::pratt::Token> = alloc::vec::new();
+    let values: alloc::vec::Vec<Value> = alloc::vec::new();
+    let input: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (tokens.try_reserve(MAX_LINE_TOKENS).is_err() || values.try_reserve(MAX_LINE_TOKENS).is_err() || input.try_resize(MAX_INPUT, 0).is_err()) { return 4; }
+    let bytes: [u8] = input.as_slice();
+    let reader: std::stream::Descriptor = std::stream::stdin();
+    let length: i32 = 0;
+    while (length < MAX_INPUT) {
+        let got = reader.read(bytes, length, MAX_INPUT - length);
+        if (got.is_err()) { return 3; }
+        let count: i32 = got.unwrap(); if (count == 0) { break; }
+        length += count;
+    }
+    if (length == MAX_INPUT) { return 2; }
+    let start: i32 = 0;
+    while (start < length) {
+        let end: i32 = start;
+        while (end < length && bytes[end] != 10) { end += 1; }
+        let line: core::text::Text = core::text::from_utf8_unchecked(bytes, start, end - start);
+        let outcome: Outcome = line_outcome(lexer.borrow(), table.borrow(), p.borrow(), tokens.borrow(), values.borrow(), line);
+        if (outcome.error != 0) { write_class(outcome.error); } else { std::io_decimal::write_i64(1, outcome.value); }
+        std::io::write_byte(1, 10);
+        start = end + 1;
+    }
+    p.destroy(); table.destroy(); lexer.destroy(); tokens.destroy(); values.destroy(); input.destroy();
+    return 0;
+}

@@ -1,0 +1,311 @@
+// msgpack-json: convert between MessagePack and JSON on stdin/stdout.
+// Default: read a stream of concatenated MessagePack values and print one
+// compact JSON line per value. nil is null; integers are exact; float32 and
+// float64 use the shortest round-trip spelling of the f64 value (non-finite
+// floats become null); str is a JSON string; bin becomes unpadded base64url.
+// Map keys must be str or integers (integers become decimal strings). Ext
+// values have no JSON form and stop with UnsupportedExt.
+// --from-json: read one JSON document (numbers up to 768 bytes) and write MessagePack with the
+// shortest formats. Integers in [-2^63, 2^64) stay integers; every other
+// number becomes float64 (correctly rounded); objects keep duplicate keys.
+// Exit 0 ok, 1 usage, 2 invalid or unsupported input, 3 I/O, 4 out of memory.
+module app::main;
+import alloc::vec;
+import core::f64;
+import core::float_decimal;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cbor_stream;
+import ext::json_stream;
+import ext::msgpack;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Convert {
+    out: ext::json_stream::Writer, remaining: alloc::vec::Vec<u64>, is_map: alloc::vec::Vec<u8>,
+    text: alloc::vec::Vec<u8>, scratch: [u32; 864], number: [u8; 40], failure: i32, at: u64,
+}
+
+fn base64_digit(value: u8) -> u8 {
+    if (value < 26) { return value + 65; }
+    if (value < 52) { return value + 71; }
+    if (value < 62) { return value - 4; }
+    if (value == 62) { return 45; }
+    return 95;
+}
+
+impl Convert {
+    fn borrow(&self) -> &Convert { return self; }
+    fn text_of(&self) -> core::text::Text { return core::text::from_utf8_unchecked(self.text.as_slice(), 0, self.text.len()); }
+    fn grow(&self, value: u8) { if (self.text.try_push(value).is_err()) { self.failure = 4; } }
+    // A map entry at an even position is a key.
+    fn at_key(&self) -> bool {
+        let depth: i32 = self.remaining.len();
+        return depth > 0 && self.is_map.at(depth - 1) == 1 && self.remaining.at(depth - 1) % 2 == 0;
+    }
+    fn wrote(&self, result: core::result::Result<i32, ext::json_stream::Error>) -> bool {
+        if (result.is_err()) {
+            self.failure = 2;
+            let memory: bool = match (result.unwrap_err().kind) { ext::json_stream::ErrorKind::AllocationFailed -> true, _ -> false };
+            if (memory) { self.failure = 4; }
+            return false;
+        }
+        return self.failure == 0;
+    }
+    fn digits(&self, magnitude: u64, negative: bool) {
+        self.text.clear();
+        if (negative) { self.grow(45); }
+        let buffer: [u8; 24] = [0; 24]; let count: i32 = 0;
+        if (magnitude == 0) { buffer[0] = 48; count = 1; }
+        while (magnitude > 0) { buffer[count] = ((magnitude % 10) as u8) + 48; magnitude = magnitude / 10; count += 1; }
+        while (count > 0) { count -= 1; self.grow(buffer[count]); }
+    }
+    fn base64(&self, data: core::slice::View<u8>) {
+        self.text.clear();
+        let index: i32 = 0;
+        while (index + 2 < data.length) {
+            let a: u8 = data.values[data.start + index]; let b: u8 = data.values[data.start + index + 1]; let c: u8 = data.values[data.start + index + 2];
+            self.grow(base64_digit(a >> 2)); self.grow(base64_digit(((a & 3) << 4) | (b >> 4)));
+            self.grow(base64_digit(((b & 15) << 2) | (c >> 6))); self.grow(base64_digit(c & 63));
+            index += 3;
+        }
+        if (data.length - index == 1) { let a: u8 = data.values[data.start + index]; self.grow(base64_digit(a >> 2)); self.grow(base64_digit((a & 3) << 4)); }
+        if (data.length - index == 2) {
+            let a: u8 = data.values[data.start + index]; let b: u8 = data.values[data.start + index + 1];
+            self.grow(base64_digit(a >> 2)); self.grow(base64_digit(((a & 3) << 4) | (b >> 4))); self.grow(base64_digit((b & 15) << 2));
+        }
+    }
+    fn float(&self, bits: u64) -> bool {
+        if (((bits >> 52) & 2047) == 2047) { return self.wrote(self.out.null()); }
+        let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view(self.scratch, 864));
+        let output: core::slice::View<u8> = core::result::unwrap(core::slice::view(self.number, 40));
+        let written = core::float_decimal::format_f64_into(core::f64::from_bits(bits), output, scratch, core::float_decimal::default_format_work());
+        if (written.is_err()) { self.failure = 4; return false; }
+        return self.wrote(self.out.number(core::text::from_utf8_unchecked(self.number, 0, written.unwrap())));
+    }
+    fn completed(&self) {
+        let depth: i32 = self.remaining.len();
+        if (depth > 0) { core::result::unwrap(self.remaining.set(depth - 1, self.remaining.at(depth - 1) - 1)); }
+    }
+    fn stop(&self, code: i32, at: u64) -> bool { self.failure = code; self.at = at; return false; }
+    fn handle(&self, event: ext::msgpack::Event, at: u64) -> bool {
+        let key: bool = self.at_key();
+        let tag: i32 = match (event) {
+            ext::msgpack::Event::Nil -> 0, ext::msgpack::Event::Boolean(v) -> 1, ext::msgpack::Event::Unsigned(v) -> 2,
+            ext::msgpack::Event::Integer(v) -> 3, ext::msgpack::Event::Float32(v) -> 4, ext::msgpack::Event::Float64(v) -> 5,
+            ext::msgpack::Event::Str(v) -> 6, ext::msgpack::Event::Bin(v) -> 7, ext::msgpack::Event::Ext(k, v) -> 8,
+            ext::msgpack::Event::Array(v) -> 9, ext::msgpack::Event::Map(v) -> 10, ext::msgpack::Event::End -> 11,
+        };
+        if (tag == 11) {
+            let depth: i32 = self.remaining.len(); let map: bool = self.is_map.at(depth - 1) == 1;
+            self.remaining.pop(); self.is_map.pop();
+            let ok: bool = false;
+            if (map) { ok = self.wrote(self.out.end_object()); } else { ok = self.wrote(self.out.end_array()); }
+            if (ok) { self.completed(); }
+            return ok;
+        }
+        if (tag == 8) { return self.stop(5, at); }
+        if (key && tag != 2 && tag != 3 && tag != 6) { return self.stop(6, at); }
+        let ok: bool = true;
+        if (tag == 0) { ok = self.wrote(self.out.null()); }
+        if (tag == 1) { let flag: bool = match (event) { ext::msgpack::Event::Boolean(v) -> v, _ -> false }; ok = self.wrote(self.out.boolean(flag)); }
+        if (tag == 2 || tag == 3) {
+            let magnitude: u64 = 0; let negative: bool = false;
+            let signed: i64 = match (event) { ext::msgpack::Event::Integer(v) -> v, _ -> 0 };
+            magnitude = match (event) { ext::msgpack::Event::Unsigned(v) -> v, _ -> 0 };
+            if (tag == 3) {
+                if (signed < 0) { negative = true; magnitude = ((-(signed + 1)) as u64) + 1; } else { magnitude = signed as u64; }
+            }
+            self.digits(magnitude, negative);
+            if (key) { ok = self.wrote(self.out.key(self.text_of())); } else { ok = self.wrote(self.out.number(self.text_of())); }
+        }
+        if (tag == 4) { let bits: u32 = match (event) { ext::msgpack::Event::Float32(v) -> v, _ -> 0 }; ok = self.float(ext::cbor_stream::widen_f32(bits)); }
+        if (tag == 5) { let bits: u64 = match (event) { ext::msgpack::Event::Float64(v) -> v, _ -> 0 }; ok = self.float(bits); }
+        if (tag == 6 || tag == 7) {
+            let data: core::slice::View<u8> = match (event) { ext::msgpack::Event::Str(v) -> v, ext::msgpack::Event::Bin(v) -> v, _ -> core::slice::View { values: self.number, start: 0, length: 0 } };
+            if (tag == 6) { self.text.clear(); if (self.text.try_extend(data).is_err()) { self.failure = 4; return false; } } else { self.base64(data); }
+            if (key) { ok = self.wrote(self.out.key(self.text_of())); } else { ok = self.wrote(self.out.string(self.text_of())); }
+        }
+        if (tag == 9 || tag == 10) {
+            let count: u32 = match (event) { ext::msgpack::Event::Array(v) -> v, ext::msgpack::Event::Map(v) -> v, _ -> 0 };
+            let entries: u64 = count as u64; let flag: u8 = 0;
+            if (tag == 10) { entries = entries * 2; flag = 1; ok = self.wrote(self.out.begin_object()); } else { ok = self.wrote(self.out.begin_array()); }
+            if (!ok) { return false; }
+            if (self.remaining.try_push(entries).is_err() || self.is_map.try_push(flag).is_err()) { self.failure = 4; return false; }
+            return true;
+        }
+        if (ok) { self.completed(); }
+        return ok;
+    }
+}
+
+fn put_all(target: std::stream::Descriptor, bytes: [u8], count: i32) -> bool {
+    return core::io::write_all<std::stream::Descriptor>(target.borrow(), bytes, 0, count).is_ok();
+}
+fn report(name: core::text::Text, offset: u64) {
+    let failure: std::stream::Descriptor = std::stream::stderr();
+    let prefix: [u8; 14] = [109, 115, 103, 112, 97, 99, 107, 45, 106, 115, 111, 110, 58, 32];
+    put_all(failure, prefix, 14);
+    core::io::write_all<std::stream::Descriptor>(failure.borrow(), name.bytes, name.start, name.length);
+    let digits: [u8; 32] = [0; 32]; let reversed: [u8; 24] = [0; 24];
+    let count: i32 = 0; let value: u64 = offset;
+    if (value == 0) { reversed[0] = 48; count = 1; }
+    while (value > 0) { reversed[count] = ((value % 10) as u8) + 48; value = value / 10; count += 1; }
+    digits[0] = 32; digits[1] = 97; digits[2] = 116; digits[3] = 32;
+    let index: i32 = 0;
+    while (index < count) { digits[4 + index] = reversed[count - 1 - index]; index += 1; }
+    digits[4 + count] = 10;
+    put_all(failure, digits, 5 + count);
+}
+
+fn to_json() -> i32 {
+    let options: ext::msgpack::Options = ext::msgpack::default_options();
+    options.max_depth = 512; options.max_items = 18446744073709551615; options.sequence = true;
+    let made = ext::msgpack::decoder(options);
+    if (made.is_err()) { return 4; }
+    let decoder: ext::msgpack::Decoder = made.unwrap();
+    let json = ext::json_stream::writer(1024, 67108864);
+    if (json.is_err()) { decoder.destroy(); return 4; }
+    let convert: Convert = Convert { out: json.unwrap(), remaining: alloc::vec::new(), is_map: alloc::vec::new(),
+        text: alloc::vec::new(), scratch: [0; 864], number: [0; 40], failure: 0, at: 0 };
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let target: std::stream::Descriptor = std::stream::stdout();
+    let buffer: [u8; 4096] = [0; 4096];
+    let reader: ext::msgpack::EventReader<std::stream::Descriptor> = core::result::unwrap(ext::msgpack::event_reader<std::stream::Descriptor>(source.borrow(), decoder.borrow(), core::result::unwrap(core::slice::view(buffer, 4096))));
+    let status: i32 = 0; let roots: u64 = 0;
+    while (status == 0) {
+        let step = reader.next();
+        if (step.is_err()) {
+            status = match (step.unwrap_err()) {
+                ext::msgpack::StreamError::Pack(cause) -> 7,
+                ext::msgpack::StreamError::Io(cause) -> 3,
+            };
+            if (status == 7) {
+                let cause: ext::msgpack::Error = match (step.unwrap_err()) { ext::msgpack::StreamError::Pack(e) -> e, _ -> ext::msgpack::Error { kind: ext::msgpack::ErrorKind::Bounds, offset: 0 } };
+                report(ext::msgpack::kind_name(cause.kind), cause.offset);
+                status = match (cause.kind) { ext::msgpack::ErrorKind::AllocationFailed -> 4, _ -> 2 };
+            }
+            break;
+        }
+        if (!step.unwrap()) { break; }
+        if (convert.remaining.len() == 0 && roots > 0) { if (convert.out.next_document().is_err()) { status = 4; break; } }
+        if (!convert.handle(decoder.event(), decoder.event_offset())) {
+            status = convert.failure;
+            if (status == 5) { let name: [u8; 14] = [85, 110, 115, 117, 112, 112, 111, 114, 116, 101, 100, 69, 120, 116]; report(core::text::from_utf8_unchecked(name, 0, 14), convert.at); status = 2; }
+            if (status == 6) { let name: [u8; 14] = [85, 110, 115, 117, 112, 112, 111, 114, 116, 101, 100, 75, 101, 121]; report(core::text::from_utf8_unchecked(name, 0, 14), convert.at); status = 2; }
+            break;
+        }
+        if (convert.remaining.len() == 0) { roots += 1; }
+        if (convert.out.len() > 65536) { if (convert.out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { status = 3; } }
+    }
+    decoder.destroy();
+    if (status == 0) {
+        if (convert.out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { status = 3; }
+        let newline: [u8; 1] = [10];
+        if (status == 0 && roots > 0 && !put_all(target, newline, 1)) { status = 3; }
+    }
+    convert.out.destroy(); convert.remaining.destroy(); convert.is_map.destroy(); convert.text.destroy();
+    return status;
+}
+
+// Writes one JSON number: an integer spelling in range stays an integer.
+fn number(out: &ext::msgpack::Writer, spelled: core::text::Text, scratch: [u32]) -> core::result::Result<i32, ext::msgpack::Error> {
+    let index: i32 = 0; let negative: bool = false; let integral: bool = true; let fits: bool = true; let value: u64 = 0;
+    if (spelled.length > 0 && spelled.bytes[spelled.start] == 45) { negative = true; index = 1; }
+    while (index < spelled.length) {
+        let byte: u8 = spelled.bytes[spelled.start + index];
+        if (byte < 48 || byte > 57) { integral = false; break; }
+        let digit: u64 = (byte - 48) as u64;
+        if (value > (18446744073709551615 - digit) / 10) { fits = false; }
+        if (fits) { value = value * 10 + digit; }
+        index += 1;
+    }
+    if (integral && fits && negative && value > 9223372036854775808) { fits = false; }
+    if (integral && fits) {
+        if (!negative) { return out.unsigned(value); }
+        if (value == 0) { return out.unsigned(0); }
+        return out.integer(-((value - 1) as i64) - 1);
+    }
+    let input: core::slice::View<u8> = core::slice::View { values: spelled.bytes, start: spelled.start, length: spelled.length };
+    let limits: core::float_decimal::Limits = core::float_decimal::default_limits();
+    let parsed = core::float_decimal::parse_f64(input, core::result::unwrap(core::slice::view(scratch, 864)), limits);
+    if (parsed.is_err()) { return core::result::Err(ext::msgpack::Error { kind: ext::msgpack::ErrorKind::InvalidValue, offset: 0 }); }
+    return out.float64(core::f64::to_bits(parsed.unwrap()));
+}
+
+fn json_failure(cause: ext::json_stream::Error) -> i32 {
+    let prefix: [u8; 5] = [106, 115, 111, 110, 32];
+    let name: core::text::Text = ext::json_stream::kind_name(cause.kind);
+    let joined: [u8; 64] = [0; 64]; let i: i32 = 0;
+    while (i < 5) { joined[i] = prefix[i]; i += 1; }
+    i = 0; while (i < name.length && i < 59) { joined[5 + i] = name.bytes[name.start + i]; i += 1; }
+    report(core::text::from_utf8_unchecked(joined, 0, 5 + i), cause.offset);
+    let status: i32 = match (cause.kind) { ext::json_stream::ErrorKind::AllocationFailed -> 4, _ -> 2 };
+    return status;
+}
+
+fn from_json() -> i32 {
+    let options: ext::json_stream::Options = ext::json_stream::Options { max_depth: 512, max_string_bytes: 16777216, max_number_bytes: 768 };
+    let tokens: ext::json_stream::Tokenizer = core::result::unwrap(ext::json_stream::tokenizer(options));
+    let out: ext::msgpack::Writer = core::result::unwrap(ext::msgpack::writer(ext::msgpack::default_writer_options()));
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let target: std::stream::Descriptor = std::stream::stdout();
+    let buffer: [u8; 4096] = [0; 4096]; let scratch: [u32; 864] = [0; 864];
+    let reader: ext::json_stream::TokenReader<std::stream::Descriptor> = core::result::unwrap(ext::json_stream::token_reader<std::stream::Descriptor>(source.borrow(), tokens.borrow(), core::result::unwrap(core::slice::view(buffer, 4096))));
+    let status: i32 = 0;
+    while (status == 0) {
+        let step = reader.next();
+        if (step.is_err()) {
+            status = match (step.unwrap_err()) { ext::json_stream::StreamError::Json(cause) -> json_failure(cause), ext::json_stream::StreamError::Io(cause) -> 3 };
+            break;
+        }
+        if (!step.unwrap()) { break; }
+        let token: ext::json_stream::Token = core::option::unwrap(tokens.token());
+        let wrote: core::result::Result<i32, ext::msgpack::Error> = match (token) {
+            ext::json_stream::Token::BeginObject -> out.begin_map(),
+            ext::json_stream::Token::BeginArray -> out.begin_array(),
+            ext::json_stream::Token::EndObject -> out.end(),
+            ext::json_stream::Token::EndArray -> out.end(),
+            ext::json_stream::Token::Key -> out.text(core::result::unwrap(tokens.text())),
+            ext::json_stream::Token::Text -> out.text(core::result::unwrap(tokens.text())),
+            ext::json_stream::Token::Number -> number(out.borrow(), core::result::unwrap(tokens.text()), scratch),
+            ext::json_stream::Token::Boolean -> out.boolean(core::result::unwrap(tokens.boolean())),
+            ext::json_stream::Token::Null -> out.nil(),
+        };
+        if (wrote.is_err()) {
+            let cause: ext::msgpack::Error = wrote.unwrap_err();
+            report(ext::msgpack::kind_name(cause.kind), tokens.token_offset());
+            status = match (cause.kind) { ext::msgpack::ErrorKind::AllocationFailed -> 4, _ -> 2 };
+            break;
+        }
+        if (out.stable_len() > 65536) { if (out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { status = 3; } }
+    }
+    if (status == 0 && out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { status = 3; }
+    tokens.destroy(); out.destroy();
+    return status;
+}
+
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe, std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured = std::args::snapshot(1, 1, 256);
+    if (captured.is_err()) { return 1; }
+    let arguments = captured.unwrap();
+    let reverse: bool = false; let valid: bool = true;
+    if (arguments.len() == 1) {
+        let view: core::slice::View<u8> = core::option::unwrap(arguments.get(0));
+        valid = view.length == 11 && view.values[view.start] == 45 && view.values[view.start + 1] == 45 && view.values[view.start + 2] == 102;
+        reverse = valid;
+    }
+    arguments.destroy();
+    if (!valid) {
+        let usage: [u8; 39] = [117, 115, 97, 103, 101, 58, 32, 109, 115, 103, 112, 97, 99, 107, 95, 106, 115, 111, 110, 32, 91, 45, 45, 102, 114, 111, 109, 45, 106, 115, 111, 110, 93, 32, 60, 32, 73, 78, 10];
+        put_all(std::stream::stderr(), usage, 39);
+        return 1;
+    }
+    if (reverse) { return from_json(); }
+    return to_json();
+}

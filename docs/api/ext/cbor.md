@@ -11,6 +11,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [extended-cbor](../../extended-cbor.md)
+- [extended-cbor-stream](../../extended-cbor-stream.md)
 
 Declaration counts: enum: 2; field: 15; function: 7; impl: 1; method: 2; struct: 4; variant: 33.
 

@@ -1,0 +1,373 @@
+// Test-only ordered byte pairs, canonical wires and complete stream observations.
+module app::main;
+import alloc::string;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::io;
+import ext::form;
+import ext::form_owned;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn byte(&self,value:u8) {
+        if(self.used==4096) { self.flush(); }
+        self.bytes[self.used]=value; self.used+=1;
+    }
+    fn word(&self,value:u64) {
+        let index:i32=0;
+        while(index<8) { self.byte(((value>>(index*8))&255) as u8); index+=1; }
+    }
+}
+struct Readers { original:ext::form::Encoding,first:ext::form::Encoding,second:ext::form::Encoding,ordinal:i32 }
+impl Readers {
+    fn borrow(&self) -> &Readers { return self; }
+    fn perform(&self,op:i32,offset:i32,count:i32,destination:[u8],output:&Output) -> i32 {
+        let index:i32=0; while(index<64) { destination[index]=((157+index*13+self.ordinal*7)&255) as u8; index+=1; }
+        output.byte(op as u8); let amount:i32=0;
+        if(op>=2) {
+            assert(op<=5);
+            if(op==2) { self.second=self.first; }
+            if(op==3) { self.first=self.second; }
+            if(op==4) { self.first=self.original; }
+            if(op==5) { self.second=self.original; }
+            output.byte(2); output.word(0);
+        } else {
+            let result:core::result::Result<i32,core::io::Error> = core::result::Ok(0);
+            if(op==0) { result=self.first.read(destination,offset,count); } else { result=self.second.read(destination,offset,count); }
+            if(result.is_err()) {
+                let cause:core::io::Error=result.unwrap_err(); let code:i32=match(cause) { core::io::Error::InvalidInput -> 1, _ -> 99 };
+                output.byte(1); output.word(code as u64); amount=-1;
+            } else { amount=result.unwrap(); output.byte(0); output.word(amount as i64 as u64); }
+        }
+        output.word(self.first.remaining()); output.word(self.second.remaining());
+        index=0; while(index<64) { output.byte(destination[index]); index+=1; }
+        self.ordinal+=1; return amount;
+    }
+}
+fn status(output:&Output,code:i32,amount:u64) { output.word(code as u64); output.word(amount); }
+fn error_code(error:ext::form::Error) -> i32 {
+    return match(error) {
+        ext::form::Error::InvalidLimits -> 1, ext::form::Error::Bounds -> 2,
+        ext::form::Error::InputLimit -> 3, ext::form::Error::PairLimit -> 4,
+        ext::form::Error::ComponentLimit -> 5, ext::form::Error::DecodedLimit -> 6,
+        ext::form::Error::SizeOverflow -> 7, ext::form::Error::Capacity(_) -> 8,
+        ext::form::Error::OutputLimit -> 9
+    };
+}
+fn error_amount(cause:ext::form::Error) -> u64 {
+    return match(cause) { ext::form::Error::Capacity(required) -> required, _ -> 0 };
+}
+fn error(output:&Output,cause:ext::form::Error) {
+    status(output,error_code(cause),error_amount(cause));
+}
+fn owned_error(output:&Output,cause:ext::form_owned::Error) {
+    let code:i32=match(cause) { ext::form_owned::Error::Format(format) -> error_code(format),
+        ext::form_owned::Error::AllocationFailed -> 10, ext::form_owned::Error::CapacityOverflow -> 11 };
+    let amount:u64=match(cause) { ext::form_owned::Error::Format(format) -> error_amount(format), _ -> 0 };
+    status(output,code,amount);
+}
+fn blob(value:core::slice::View<u8>,output:&Output) {
+    output.word(value.length as u64); let i:i32=0;
+    while(i<value.length) { output.byte(value.values[value.start+i]); i+=1; }
+}
+fn text_projection(result:core::result::Result<core::text::Text,core::text::Error>,output:&Output) {
+    if(result.is_err()) {
+        let position:i32=match(result.unwrap_err()) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 };
+        assert(position>=0); status(output,1,position as u64); return;
+    }
+    let text:core::text::Text=result.unwrap(); status(output,0,0);
+    blob(core::slice::View { values:text.bytes,start:text.start,length:text.length },output);
+}
+fn pair(value:ext::form::Pair,output:&Output) {
+    blob(value.name,output); text_projection(value.name_text(),output);
+    blob(value.value,output); text_projection(value.value_text(),output);
+}
+fn optional_pair(value:core::option::Option<ext::form::Pair>,output:&Output) {
+    if(value.is_none()) { output.byte(0); return; }
+    output.byte(1); pair(value.unwrap(),output);
+}
+fn owned_snapshot(form:&ext::form_owned::Form,output:&Output) {
+    output.word(form.len() as u64); output.word(form.byte_len() as u64);
+    optional_pair(form.pair(-1),output); let i:i32=0;
+    while(i<form.len()) { optional_pair(form.pair(i),output); i+=1; }
+    optional_pair(form.pair(form.len()),output);
+    let cursor:ext::form_owned::Pairs=form.pairs(); i=0;
+    while(i<form.len()) { output.word(cursor.remaining_count()); optional_pair(cursor.next(),output); i+=1; }
+    output.word(cursor.remaining_count()); optional_pair(cursor.next(),output);
+    output.word(cursor.remaining_count()); optional_pair(cursor.next(),output);
+}
+fn exercise(seed:ext::form::Encoding,layout:i32,cut:i32,output:&Output) {
+    let readers:Readers=Readers { original:seed,first:seed,second:seed,ordinal:0 };
+    let native:[u8;64]=[0;64]; let packed:[i32;16]=[0;16]; let destination:[u8]=native;
+    if(layout==1) { destination=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed),64); }
+    output.word(core::mem::slice_stride(destination) as i64 as u64);
+    readers.perform(0,3,cut,destination,output); readers.perform(2,0,0,destination,output);
+    readers.perform(0,7,1,destination,output); readers.perform(1,9,2,destination,output);
+    readers.perform(0,2147483647,0,destination,output); readers.perform(1,-1,0,destination,output);
+    readers.perform(0,2147483647,1,destination,output); readers.perform(1,0,-1,destination,output);
+    readers.perform(3,0,0,destination,output); readers.perform(5,0,0,destination,output);
+    readers.perform(1,1,0,destination,output); readers.perform(0,2,3,destination,output);
+    let sizes:[i32;4]=[1,7,13,31]; let cursor:i32=0;
+    while(cursor<2) {
+        let turn:i32=0; let ended:bool=false;
+        while(!ended) {
+            assert(turn<=16384); let got:i32=readers.perform(cursor,3,sizes[turn%4],destination,output);
+            assert(got>=0); ended=got==0; turn+=1;
+        }
+        readers.perform(cursor,2147483647,0,destination,output); readers.perform(cursor,-1,0,destination,output);
+        readers.perform(cursor,2,3,destination,output); cursor+=1;
+    }
+    readers.perform(2,0,0,destination,output); readers.perform(1,0,1,destination,output);
+}
+fn flat(reader:ext::form::Encoding,output:&Output) {
+    let bytes:[u8;31]=[0;31]; let ended:bool=false; let steps:i32=0;
+    while(!ended) {
+        assert(steps<16384); let got:i32=reader.read(bytes,0,31).unwrap();
+        blob(core::slice::View { values:bytes,start:0,length:got },output); ended=got==0; steps+=1;
+    }
+}
+fn view_metadata(value:core::slice::View<u8>,output:&Output) {
+    output.word(value.start as u64); output.word(core::mem::slice_stride(value.values) as i64 as u64); blob(value,output);
+}
+fn views_metadata(values:core::slice::View<ext::form::Pair>,output:&Output) -> i32 {
+    output.byte(0); output.word(values.start as u64); output.word(values.length as u64); let i:i32=0;
+    while(i<values.length) {
+        let item:ext::form::Pair=values.values[values.start+i];
+        view_metadata(item.name,output); view_metadata(item.value,output); i+=1;
+    }
+    return 0;
+}
+fn packed_metadata(bytes:core::slice::View<u8>,spans:core::slice::View<ext::form::PairSpan>,output:&Output) -> i32 {
+    output.byte(1); view_metadata(bytes,output); output.word(spans.start as u64); output.word(spans.length as u64);
+    let i:i32=0;
+    while(i<spans.length) {
+        let item:ext::form::PairSpan=spans.values[spans.start+i];
+        output.word(item.name_start as u64); output.word(item.name_length as u64); output.word(item.value_length as u64); i+=1;
+    }
+    return 0;
+}
+fn source_metadata(source:ext::form::PairSource,output:&Output) {
+    let ignored:i32=match(source) {
+        ext::form::PairSource::Views(values) -> views_metadata(values,output),
+        ext::form::PairSource::Packed(bytes,spans) -> packed_metadata(bytes,spans,output)
+    };
+}
+fn serializations(views:ext::form::PairSource,packed:ext::form::PairSource,form:&ext::form_owned::Form,
+                  layout:i32,cap:u64,cut:i32,output:&Output) {
+    source_metadata(views,output); source_metadata(packed,output);
+    let a:core::result::Result<u64,ext::form::Error> = ext::form::encoded_len(views);
+    let b:core::result::Result<u64,ext::form::Error> = ext::form::encoded_len(packed);
+    if(a.is_err()) { error(output,a.unwrap_err()); } else { status(output,0,a.unwrap()); }
+    if(b.is_err()) { error(output,b.unwrap_err()); } else { status(output,0,b.unwrap()); }
+    let x:core::result::Result<ext::form::Encoding,ext::form::Error> = ext::form::encoding(views,cap);
+    let y:core::result::Result<ext::form::Encoding,ext::form::Error> = ext::form::encoding(packed,cap);
+    if(x.is_err()) { error(output,x.unwrap_err()); } else { let cursor:ext::form::Encoding=x.unwrap(); status(output,0,cursor.remaining()); }
+    if(y.is_err()) { error(output,y.unwrap_err()); } else { let cursor:ext::form::Encoding=y.unwrap(); status(output,0,cursor.remaining()); }
+    if(x.is_ok() && y.is_ok()) {
+        if(layout==0) { exercise(x.unwrap(),layout,cut,output); flat(y.unwrap(),output); }
+        else { exercise(y.unwrap(),layout,cut,output); flat(x.unwrap(),output); }
+    }
+    let owned:core::result::Result<alloc::string::String,ext::form_owned::Error> = form.encode(cap as i32);
+    if(owned.is_err()) { owned_error(output,owned.unwrap_err()); }
+    else {
+        let value:alloc::string::String=owned.unwrap(); status(output,0,value.byte_len() as u64);
+        let i:i32=0; while(i<value.byte_len()) { output.byte(value.byte_at(i).unwrap()); i+=1; } value.destroy();
+    }
+    source_metadata(views,output); source_metadata(packed,output);
+}
+fn serialize_owner(form:&ext::form_owned::Form,layout:i32,cap:u64,cut:i32,output:&Output) {
+    let empty_bytes:[u8;1]=[0];
+    let empty:core::slice::View<u8> = core::slice::View { values:empty_bytes,start:0,length:0 };
+    let item:ext::form::Pair=ext::form::Pair { name:empty,value:empty };
+    let values:[ext::form::Pair;36]=[item;36]; let i:i32=0;
+    while(i<form.len()) { assert(i<32); values[i+2]=form.pair(i).unwrap(); i+=1; }
+    let source:core::slice::View<ext::form::Pair> = core::slice::View { values:values,start:2,length:form.len() };
+    serializations(ext::form::PairSource::Views(source),form.as_pairs(),form,layout,cap,cut,output);
+}
+fn encoded_pair(value:core::option::Option<ext::form::EncodedPair>,output:&Output) {
+    if(value.is_none()) { output.byte(0); return; }
+    let item:ext::form::EncodedPair=value.unwrap(); output.byte(1);
+    output.word(item.name.start as u64); blob(item.name,output);
+    output.word(item.value.start as u64); blob(item.value,output);
+}
+fn borrowed_iteration(parsed:ext::form::Parsed,output:&Output) {
+    let seed:ext::form::Pairs=parsed.pairs(); let first:ext::form::Pairs=seed; let second:ext::form::Pairs=seed;
+    let ops:[i32;10]=[0,2,0,1,3,0,4,0,5,1]; let i:i32=0;
+    while(i<10) {
+        let op:i32=ops[i]; output.byte(op as u8);
+        if(op==0) { encoded_pair(first.next(),output); }
+        if(op==1) { encoded_pair(second.next(),output); }
+        if(op==2) { second=first; } if(op==3) { first=second; }
+        if(op==4) { first=seed; } if(op==5) { second=seed; }
+        i+=1;
+    }
+    let which:i32=0;
+    while(which<2) {
+        let done:bool=false; let steps:i32=0;
+        while(!done) {
+            assert(steps<=32); output.byte(which as u8);
+            let item:core::option::Option<ext::form::EncodedPair> = core::option::None();
+            if(which==0) { item=first.next(); } else { item=second.next(); }
+            encoded_pair(item,output); done=item.is_none(); steps+=1;
+        }
+        output.byte(which as u8);
+        if(which==0) { encoded_pair(first.next(),output); } else { encoded_pair(second.next(),output); }
+        which+=1;
+    }
+}
+fn component(input:core::slice::View<u8>,layout:i32,output:&Output) {
+    let native:[u8;8192]=[0;8192]; let words:[i32;2048]=[0;2048]; let bytes:[u8]=native;
+    if(layout==1) { bytes=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),8192); }
+    let transform:i32=0;
+    while(transform<2) {
+        let length:i32=0;
+        if(transform==0) { length=ext::form::component_encoded_len(input).unwrap() as i32; }
+        else { length=ext::form::component_decoded_len(input).unwrap(); }
+        assert(length+8<=8192); status(output,0,length as u64);
+        let variant:i32=0;
+        while(variant<2) {
+            let i:i32=0; while(i<8192) { bytes[i]=((71+i*17)&255) as u8; i+=1; }
+            let capacity:i32=length; if(variant==0 && length>0) { capacity-=1; }
+            let destination:core::slice::View<u8> = core::slice::View { values:bytes,start:3,length:capacity };
+            let result:core::result::Result<i32,ext::form::Error> = core::result::Ok(0);
+            if(transform==0) { result=ext::form::encode_component_into(input,destination); }
+            else { result=ext::form::decode_component_into(input,destination); }
+            if(result.is_err()) { error(output,result.unwrap_err()); }
+            else { status(output,0,result.unwrap() as u64); }
+            i=0; while(i<length+8) { output.byte(bytes[i]); i+=1; }
+            while(i<8192) { assert(bytes[i]==((71+i*17)&255) as u8); i+=1; }
+            variant+=1;
+        }
+        transform+=1;
+    }
+}
+fn component_pairs(input:core::slice::View<u8>,layout:i32,cap:u64,cut:i32,output:&Output) {
+    let a:i32=input.length/3; let b:i32=input.length/2;
+    let span:ext::form::PairSpan=ext::form::PairSpan { name_start:a,name_length:b-a,value_length:input.length-b };
+    let spans:[ext::form::PairSpan;6]=[span;6];
+    spans[2]=ext::form::PairSpan { name_start:0,name_length:a,value_length:b-a };
+    spans[4]=ext::form::PairSpan { name_start:input.length,name_length:0,value_length:0 };
+    let selected:core::slice::View<ext::form::PairSpan> = core::slice::View { values:spans,start:1,length:4 };
+    let empty:ext::form::Pair=ext::form::Pair { name:input,value:input };
+    let pairs:[ext::form::Pair;8]=[empty;8];
+    let form:ext::form_owned::Form=ext::form_owned::new(ext::form_owned::Limits { max_pairs:32,max_component_bytes:2048,max_decoded_bytes:4096 }).unwrap();
+    let i:i32=0;
+    while(i<4) {
+        let current:ext::form::PairSpan=spans[i+1];
+        let name:core::slice::View<u8> = core::slice::View { values:input.values,start:input.start+current.name_start,length:current.name_length };
+        let value:core::slice::View<u8> = core::slice::View { values:input.values,start:input.start+current.name_start+current.name_length,length:current.value_length };
+        let item:ext::form::Pair=ext::form::Pair { name:name,value:value }; pairs[i+2]=item;
+        form.try_append(item).unwrap(); i+=1;
+    }
+    owned_snapshot(form.borrow(),output);
+    let views:core::slice::View<ext::form::Pair> = core::slice::View { values:pairs,start:2,length:4 };
+    serializations(ext::form::PairSource::Views(views),ext::form::PairSource::Packed(input,selected),form.borrow(),layout,cap,cut,output);
+    form.destroy();
+}
+fn append_sequence(input:core::slice::View<u8>,limits:ext::form::Limits,layout:i32,cap:u64,cut:i32,output:&Output) {
+    let admitted:core::result::Result<ext::form_owned::Form,ext::form_owned::Error> = ext::form_owned::new(ext::form_owned::Limits {
+        max_pairs:limits.max_pairs,max_component_bytes:limits.max_component_bytes,max_decoded_bytes:limits.max_decoded_bytes });
+    if(admitted.is_err()) { owned_error(output,admitted.unwrap_err()); return; }
+    status(output,0,0); let form:ext::form_owned::Form=admitted.unwrap();
+    let count:i32=get64(input.values,input.start) as i32; let at:i32=input.start+8; let i:i32=0;
+    assert(count>=0 && count<=32);
+    while(i<count) {
+        assert(at+24<=input.start+input.length);
+        let op:i32=get64(input.values,at) as i32; let n:i32=get64(input.values,at+8) as i32; let m:i32=get64(input.values,at+16) as i32;
+        at+=24; assert(n>=0 && m>=0 && n+m<=input.start+input.length-at && op>=0 && op<=3); output.byte(op as u8);
+        if(op==0 || op==3) {
+            let name:core::slice::View<u8> = core::slice::View { values:input.values,start:at,length:n };
+            let value:core::slice::View<u8> = core::slice::View { values:input.values,start:at+n,length:m };
+            if(op==3) { name.start=-1; }
+            let result:core::result::Result<i32,ext::form_owned::Error> = form.try_append(ext::form::Pair { name:name,value:value });
+            if(result.is_err()) { owned_error(output,result.unwrap_err()); } else { status(output,0,result.unwrap() as u64); }
+        } else {
+            if(op==1) { form.clear(); } else { form.destroy(); }
+            status(output,0,0);
+        }
+        owned_snapshot(form.borrow(),output); serialize_owner(form.borrow(),layout,cap,cut,output);
+        at+=n+m; i+=1;
+    }
+    assert(at==input.start+input.length); form.destroy();
+}
+fn run(header:[u8],body:[u8],output:&Output) {
+    let layout:i32=get64(header,8) as i32; let length:i32=get64(header,16) as i32;
+    let native:[u8;2080]=[0;2080]; let words:[i32;520]=[0;520]; let bytes:[u8]=native;
+    if(layout==1) { bytes=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),2080); }
+    let i:i32=0; while(i<2080) { bytes[i]=((193+i*19)&255) as u8; i+=1; }
+    i=0; while(i<length) { bytes[i+3]=body[i]; i+=1; }
+    let input:core::slice::View<u8> = core::slice::View { values:bytes,start:3,length:length };
+    output.word(core::mem::slice_stride(bytes) as i64 as u64);
+    let limits:ext::form::Limits=ext::form::Limits { max_input_bytes:get64(header,24) as i64 as i32,
+        max_pairs:get64(header,32) as i64 as i32,max_component_bytes:get64(header,40) as i64 as i32,
+        max_decoded_bytes:get64(header,48) as i64 as i32 };
+    let kind:i32=get64(header,0) as i32; let cap:u64=get64(header,56); let cut:i32=get64(header,64) as i32;
+    if(kind==0) {
+        let borrowed:core::result::Result<ext::form::Parsed,ext::form::Error> = ext::form::parse(input,limits);
+        let owned:core::result::Result<ext::form_owned::Form,ext::form_owned::Error> = ext::form_owned::parse(input,limits);
+        if(borrowed.is_err()) { error(output,borrowed.unwrap_err()); }
+        else { let parsed:ext::form::Parsed=borrowed.unwrap(); status(output,0,parsed.pair_count as u64); output.word(parsed.decoded_bytes as u64); }
+        if(owned.is_err()) { owned_error(output,owned.unwrap_err()); }
+        else {
+            let form:ext::form_owned::Form=owned.unwrap(); status(output,0,form.len() as u64); output.word(form.byte_len() as u64);
+            assert(borrowed.is_ok()); borrowed_iteration(borrowed.unwrap(),output);
+            owned_snapshot(form.borrow(),output); serialize_owner(form.borrow(),layout,cap,cut,output); form.destroy();
+        }
+    } else { if(kind==1) { component(input,layout,output); component_pairs(input,layout,cap,cut,output); }
+    else { assert(kind==2); append_sequence(input,limits,layout,cap,cut,output); } }
+    i=0; while(i<2080) { output.byte(bytes[i]); i+=1; }
+}
+fn main() -> i32 {
+    let header_words:[i32;18]=[0;18]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,72);
+    assert(read_exact(header_pointer,16,false)); assert(get64(header,0)==7381244128596550764);
+    let count:i32=get64(header,8) as i32; assert(count>=0 && count<=1024);
+    let body_words:[i32;512]=[0;512]; let body_pointer:ptr=core::mem::i32_array_data_ptr(body_words);
+    let body:[u8]=core::mem::typed_slice_from_raw_parts<u8>(body_pointer,2048);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    output.word(7381244128596550764); output.word(count as u64); let i:i32=0;
+    while(i<count) {
+        assert(read_exact(header_pointer,72,false)); let length:i32=get64(header,16) as i32;
+        assert(length>=0 && length<=2048 && get64(header,8)<2 && get64(header,64)<=31);
+        assert(read_exact(body_pointer,length,false)); output.word(i as u64); run(header,body,output.borrow()); i+=1;
+    }
+    assert(!read_exact(header_pointer,1,true)); output.word(7308889636388105505); output.flush(); return 0;
+}

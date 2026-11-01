@@ -1,0 +1,146 @@
+// Explicit storage layouts composed with an arena, byte views and endian codecs.
+module app::main;
+import alloc::arena;
+import core::decimal;
+import core::endian;
+import core::io;
+import core::layout;
+import core::mem;
+import core::option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct RecordLayout { serial:usize, value:usize, stride:usize, bytes:usize, alignment:usize }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equals(value:View<u8>, expected:View<u8>) -> bool {
+    if (value.length != expected.length) { return false; }
+    let index:i32 = 0;
+    while(index < value.length) {
+        if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if ((count <= 0) || (count > bytes.length-completed)) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("layout_records: operation failed\n",33),2,8); return status; }
+fn compose_layout(count:u64) -> Result<RecordLayout,i32> {
+    let tag:Result<core::layout::Layout,core::layout::Error> = core::layout::from_size_align(1,1);
+    let serial:Result<core::layout::Layout,core::layout::Error> = core::layout::from_size_align(4,4);
+    let value:Result<core::layout::Layout,core::layout::Error> = core::layout::from_size_align(8,8);
+    if (tag.is_err() || serial.is_err() || value.is_err()) { return core::result::Err(6); }
+    let second:Result<core::layout::ExtendedLayout,core::layout::Error> = core::layout::extend(tag.unwrap(),serial.unwrap());
+    if (second.is_err()) { return core::result::Err(6); }
+    let serial_field:core::layout::ExtendedLayout = second.unwrap();
+    let third:Result<core::layout::ExtendedLayout,core::layout::Error> = core::layout::extend(serial_field.layout,value.unwrap());
+    if (third.is_err()) { return core::result::Err(6); }
+    let value_field:core::layout::ExtendedLayout = third.unwrap();
+    let padded:Result<core::layout::Layout,core::layout::Error> = core::layout::pad_to_align(value_field.layout);
+    if (padded.is_err()) { return core::result::Err(6); }
+    let repeated:Result<core::layout::ArrayLayout,core::layout::Error> = core::layout::array(padded.unwrap(),count as usize);
+    if (repeated.is_err()) { return core::result::Err(6); }
+    let storage:core::layout::ArrayLayout = repeated.unwrap();
+    if ((serial_field.offset != 4) || (value_field.offset != 8) || (storage.stride != 16) || (storage.layout.alignment != 8)) { return core::result::Err(6); }
+    if ((storage.layout.size > 2147483647) || (storage.layout.size != (count as usize)*16)) { return core::result::Err(6); }
+    return core::result::Ok(RecordLayout { serial:serial_field.offset,value:value_field.offset,stride:storage.stride,bytes:storage.layout.size,alignment:storage.layout.alignment });
+}
+fn tag_value(index:u64) -> u8 { return ((index*17+3)%256) as u8; }
+fn serial_value(index:u64) -> u32 { return ((index as u32)*65537) ^ 2779096485; }
+fn reading_value(index:u64) -> u64 { return (index*281479271743489) ^ 81985529216486895; }
+fn arena_status(error:alloc::arena::Error) -> i32 {
+    return match(error) { alloc::arena::Error::AllocationFailed -> 4, _ -> 6 };
+}
+fn store(arena:&alloc::arena::Arena, storage:RecordLayout, count:u64) -> Result<u64,i32> {
+    let allocated:Result<alloc::arena::Block,alloc::arena::Error> = arena.allocate(storage.bytes,storage.alignment);
+    if (allocated.is_err()) { return core::result::Err(arena_status(allocated.unwrap_err())); }
+    let block:alloc::arena::Block = allocated.unwrap();
+    if ((block.length != storage.bytes) || ((block.length > 0) && (block.data == 0))) { return core::result::Err(6); }
+    // This is explicit packed byte storage, not the compiler's native layout
+    // for a record or typed byte array. Keep the one arena owner live.
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(block.data,storage.bytes as i32);
+    let viewed:Result<View<u8>,core::slice::ViewError> = core::slice::view(raw,storage.bytes as i32);
+    if (viewed.is_err()) { return core::result::Err(6); } let bytes:View<u8> = viewed.unwrap();
+    if (bytes.fill(0) != bytes.length) { return core::result::Err(6); }
+    let index:u64 = 0;
+    while(index < count) {
+        let at:i32 = ((index as usize)*storage.stride) as i32;
+        if (bytes.try_set(at,tag_value(index)).is_err()) { return core::result::Err(6); }
+        if (!core::endian::write_u32_le(bytes.values,bytes.length,at+(storage.serial as i32),serial_value(index))) { return core::result::Err(6); }
+        if (!core::endian::write_u64_be(bytes.values,bytes.length,at+(storage.value as i32),reading_value(index))) { return core::result::Err(6); }
+        index += 1;
+    }
+    index = 0;
+    while(index < count) {
+        let at:i32 = ((index as usize)*storage.stride) as i32;
+        let tag = bytes.get(at); if (tag.is_none() || (tag.unwrap() != tag_value(index))) { return core::result::Err(6); }
+        let padding:i32 = 1;
+        while(padding < (storage.serial as i32)) {
+            let byte = bytes.get(at+padding);
+            if (byte.is_none() || (byte.unwrap() != 0)) { return core::result::Err(6); }
+            padding += 1;
+        }
+        let serial:u32 = core::endian::read_u32_le_or(bytes.values,bytes.length,at+(storage.serial as i32),0);
+        let value:u64 = core::endian::read_u64_be_or(bytes.values,bytes.length,at+(storage.value as i32),0);
+        if ((serial != serial_value(index)) || (value != reading_value(index))) { return core::result::Err(6); }
+        index += 1;
+    }
+    let checksum:u64 = 0; let position:i32 = 0;
+    while(position < bytes.length) {
+        let byte = bytes.get(position); if (byte.is_none()) { return core::result::Err(6); }
+        // Count <= 65536 bounds this exact sum below 2^48; no wrap occurs.
+        checksum += ((position as u64)+1)*(byte.unwrap() as u64); position += 1;
+    }
+    return core::result::Ok(checksum);
+}
+fn run(count:u64) -> i32 {
+    let composed:Result<RecordLayout,i32> = compose_layout(count);
+    if (composed.is_err()) { return composed.unwrap_err(); } let storage:RecordLayout = composed.unwrap();
+    let config = alloc::arena::Config { chunk_size:4096,max_retained:2097152,max_chunks:1 };
+    let created:Result<alloc::arena::Arena,alloc::arena::Error> = alloc::arena::new(config);
+    if (created.is_err()) { return arena_status(created.unwrap_err()); }
+    let arena = created.unwrap(); let checked:Result<u64,i32> = store(arena.borrow(),storage,count);
+    arena.destroy();
+    if (checked.is_err()) { return checked.unwrap_err(); }
+    let output:[u8;24] = [0;24];
+    if (!core::endian::write_u64_be(output,24,0,count)) { return 6; }
+    if (!core::endian::write_u64_be(output,24,8,storage.bytes as u64)) { return 6; }
+    if (!core::endian::write_u64_be(output,24,16,checked.unwrap())) { return 6; }
+    if (!write(core::slice::view(output,24).unwrap(),1,64)) { return 5; }
+    return 0;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    if (values.length != 1) { return report(2); }
+    let first:View<u8> = values.values[values.start];
+    if (equals(first,literal("--help",6)) || equals(first,literal("-h",2))) {
+        let help = literal("Usage: layout_records COUNT\nBuild and verify checked arena records, then write a 24-byte binary report.\nCOUNT is ASCII decimal 0..65536; leading zeros are allowed. No stdin is read.\nRecord layout: tag u8 at 0, serial LE u32 at 4, value BE u64 at 8; stride 16, alignment 8.\nReport: BE u64 count, total bytes, and sum of (byte position + 1) * stored byte.\nPadding bytes are zero. A sole --help or -h shows help.\n",410);
+        if (!write(help,1,64)) { return report(5); } return 0;
+    }
+    let parsed:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(first.values,first.start,first.length);
+    if (parsed.is_err()) { return report(2); } let count:u64 = parsed.unwrap();
+    if (count > 65536) { return report(2); }
+    let status:i32 = run(count); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,1,64);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status:i32 = arguments(values.as_view()); values.destroy(); return status;
+}

@@ -1,0 +1,54 @@
+// Positive control: only the callback receiver identities are split.
+module app::main;
+
+trait Compare<L,R> { fn compare(&self,left:L,right:R) -> i32; }
+struct Payload { parts:[i64;2], flag:bool }
+struct Row<T> { key:i64, words:[u64;2], payload:T }
+struct Lookup { key:i64, stamp:u64 }
+struct State { calls:i32 }
+impl State { fn borrow(&self) -> &State { return self; } }
+struct RowPolicy<T> { state:&State }
+struct KeyPolicy<T> { state:&State }
+impl<T> RowPolicy<T> { fn borrow(&self) -> &RowPolicy<T> { return self; } }
+impl<T> KeyPolicy<T> { fn borrow(&self) -> &KeyPolicy<T> { return self; } }
+
+fn relation(left:i64,right:i64) -> i32 {
+    if (left<right) { return -1; }
+    if (left>right) { return 1; }
+    return 0;
+}
+impl<T> Compare<Row<T>,Row<T>> for RowPolicy<T> {
+    fn compare(&self,left:Row<T>,right:Row<T>) -> i32 {
+        self.state.calls+=1;
+        assert(left.words[0]==18446744073709551615 && left.words[1]==4294967297);
+        assert(right.words[0]==18446744073709551615 && right.words[1]==4294967297);
+        return relation(left.key,right.key);
+    }
+}
+impl<T> Compare<Row<T>,Lookup> for KeyPolicy<T> {
+    fn compare(&self,left:Row<T>,right:Lookup) -> i32 {
+        self.state.calls+=1;
+        assert(left.words[0]==18446744073709551615 && left.words[1]==4294967297);
+        assert(right.stamp==9223372036854775825);
+        return relation(left.key,right.key);
+    }
+}
+fn invoke<C,L,R>(policy:&C,left:L,right:R) -> i32 where C:Compare<L,R> {
+    return policy.compare(left,right);
+}
+fn main() -> i32 {
+    let state:State=State { calls:0 };
+    let order:RowPolicy<Payload> =RowPolicy { state:state.borrow() };
+    let lookup:KeyPolicy<Payload> =KeyPolicy { state:state.borrow() };
+    let payload:Payload=Payload { parts:[-4294967297,8589934593],flag:true };
+    let left:Row<Payload> =Row { key:-4294967297,words:[18446744073709551615,4294967297],payload:payload };
+    let right:Row<Payload> =Row { key:8589934593,words:[18446744073709551615,4294967297],payload:payload };
+    let low:Lookup=Lookup { key:-9223372036854775808,stamp:9223372036854775825 };
+    let equal:Lookup=Lookup { key:left.key,stamp:9223372036854775825 };
+    assert(invoke<RowPolicy<Payload>,Row<Payload>,Row<Payload>>(order.borrow(),left,right)==-1);
+    assert(invoke<KeyPolicy<Payload>,Row<Payload>,Lookup>(lookup.borrow(),left,low)==1);
+    assert(invoke<KeyPolicy<Payload>,Row<Payload>,Lookup>(lookup.borrow(),left,equal)==0);
+    assert(state.calls==3 && left.payload.flag && right.payload.flag);
+    assert(left.payload.parts[0]==-4294967297 && right.payload.parts[1]==8589934593);
+    return 0;
+}

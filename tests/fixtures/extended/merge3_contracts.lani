@@ -1,0 +1,58 @@
+// API contracts for ext::merge3. Exit 0 or the failing check number.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::seqdiff;
+import ext::merge3;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let i: i32 = 0; while (i < left.len()) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn ints(values: [i32], count: i32) -> core::slice::View<i32> { return core::result::unwrap(core::slice::view(values, count)); }
+fn kinds(m: &ext::merge3::Merge) -> i32 { let code: i32 = 0; let i: i32 = 0; while (i < m.len()) { code = code * 6 + core::option::unwrap(m.chunk(i)).kind; i += 1; } return code; }
+fn lines(text: core::slice::View<u8>) -> alloc::vec::Vec<ext::seqdiff::Line> { return core::result::unwrap(ext::seqdiff::split_lines(text, ext::seqdiff::default_limits())); }
+fn render(o: str, on: i32, a: str, an: i32, b: str, bn: i32, level: ext::merge3::Level, style: ext::merge3::Style, gnu: bool) -> alloc::vec::Vec<u8> {
+    let lo: alloc::vec::Vec<ext::seqdiff::Line> = lines(literal(o, on)); let la: alloc::vec::Vec<ext::seqdiff::Line> = lines(literal(a, an)); let lb: alloc::vec::Vec<ext::seqdiff::Line> = lines(literal(b, bn));
+    let m: ext::merge3::Merge = core::result::unwrap(ext::merge3::merge_lines(lo.as_view(), la.as_view(), lb.as_view(), level, ext::seqdiff::default_limits()));
+    let labels: ext::merge3::Labels = ext::merge3::Labels { ours: literal("A", 1), base: literal("O", 1), theirs: literal("B", 1) };
+    let out: alloc::vec::Vec<u8> = core::result::unwrap(ext::merge3::write_merge(lo.as_view(), la.as_view(), lb.as_view(), m.borrow(), labels, ext::merge3::Format { style: style, gnu_identical: gnu, max_output: 100000 }));
+    m.destroy(); lo.destroy(); la.destroy(); lb.destroy(); return out;
+}
+fn main() -> i32 {
+    let limits: ext::seqdiff::Limits = ext::seqdiff::default_limits();
+    // Generic: 2 changed only by ours, 4 only by theirs, 6 by both identically.
+    let o: [i32;7] = [1,2,3,4,5,6,7]; let a: [i32;7] = [1,20,3,4,5,60,7]; let b: [i32;7] = [1,2,3,40,5,60,7];
+    let m: ext::merge3::Merge = core::result::unwrap(ext::merge3::merge3(ints(o,7), ints(a,7), ints(b,7), ext::merge3::Level::Eager, limits));
+    // chunks: 0 1 0 2 0 3 0
+    if (m.conflict_count() != 0 || m.len() != 7 || kinds(m.borrow()) != ((((1*6+0)*6+2)*6+0)*6+3)*6+0) { return 1; }
+    m.destroy();
+    let c: [i32;7] = [1,2,3,4,5,61,7];
+    let n: ext::merge3::Merge = core::result::unwrap(ext::merge3::merge3(ints(o,7), ints(a,7), ints(c,7), ext::merge3::Level::Eager, limits));
+    if (n.conflict_count() != 1 || core::option::unwrap(n.chunk(3)).kind != 4) { return 2; }
+    n.destroy();
+    // Merge-style and diff3-style markers.
+    let merged: alloc::vec::Vec<u8> = render("a\nb\nc\n", 6, "a\nX\nc\n", 6, "a\nY\nc\n", 6, ext::merge3::Level::ZealousAlnum, ext::merge3::Style::Merge, false);
+    if (!same(merged.as_view(), literal("a\n<<<<<<< A\nX\n=======\nY\n>>>>>>> B\nc\n", 36))) { return 3; } merged.destroy();
+    let d3: alloc::vec::Vec<u8> = render("a\nb\nc\n", 6, "a\nX\nc\n", 6, "a\nY\nc\n", 6, ext::merge3::Level::Eager, ext::merge3::Style::Diff3, false);
+    if (!same(d3.as_view(), literal("a\n<<<<<<< A\nX\n||||||| O\nb\n=======\nY\n>>>>>>> B\nc\n", 48))) { return 4; } d3.destroy();
+    // Zealous refinement keeps the shared first line out of the conflict.
+    let z: alloc::vec::Vec<u8> = render("a\nb\nc\n", 6, "a\nS\nX\nc\n", 8, "a\nS\nY\nc\n", 8, ext::merge3::Level::Zealous, ext::merge3::Style::Merge, false);
+    if (!same(z.as_view(), literal("a\nS\n<<<<<<< A\nX\n=======\nY\n>>>>>>> B\nc\n", 38))) { return 5; } z.destroy();
+    // GNU form for identical changes; missing final LF gets one before a marker.
+    let g: alloc::vec::Vec<u8> = render("a\nb\n", 4, "a\nX\n", 4, "a\nX\n", 4, ext::merge3::Level::Eager, ext::merge3::Style::Diff3, true);
+    if (!same(g.as_view(), literal("a\n<<<<<<< O\nb\n=======\nX\n>>>>>>> B\n", 34))) { return 6; } g.destroy();
+    let e: alloc::vec::Vec<u8> = render("a\nb", 3, "a\nX", 3, "a\nY", 3, ext::merge3::Level::Eager, ext::merge3::Style::Merge, false);
+    if (!same(e.as_view(), literal("a\n<<<<<<< A\nX\n=======\nY\n>>>>>>> B\n", 34))) { return 7; } e.destroy();
+    // Clean one-sided merge.
+    let clean: alloc::vec::Vec<u8> = render("a\nb\nc\n", 6, "a\nb\nc\n", 6, "a\nB\nc\nd\n", 8, ext::merge3::Level::ZealousAlnum, ext::merge3::Style::Merge, false);
+    if (!same(clean.as_view(), literal("a\nB\nc\nd\n", 8))) { return 8; } clean.destroy();
+    return 0;
+}

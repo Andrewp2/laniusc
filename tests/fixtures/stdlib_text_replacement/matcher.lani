@@ -1,0 +1,48 @@
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::text;
+import std::io;
+fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn literal(value:str,count:i32) -> core::text::Text { return core::text::from_utf8(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn item(value:core::pair::Pair<i32,core::text::Text>,source:core::text::Text,needle:core::text::Text,index:i32) {
+    assert(value.first==index && value.second.start==source.start+index && value.second.byte_len()==needle.byte_len());
+    assert(value.second.equals(needle) && value.second.equals(source.slice(index,index+needle.byte_len()).unwrap()));
+    assert(core::mem::slice_stride(value.second.bytes)==core::mem::slice_stride(source.bytes));
+}
+fn pull<I>(source:&I) -> core::option::Option<core::pair::Pair<i32,core::text::Text>> where I:core::iter::Iterator<core::pair::Pair<i32,core::text::Text>> { return source.next(); }
+fn check(source:core::text::Text,needle:core::text::Text,offsets:[i32],count:i32) {
+    let cursor=source.match_indices(needle); let i:i32 = 0;
+    while(i<count) { item(cursor.next().unwrap(),source,needle,offsets[i]); i+=1; }
+    assert(cursor.next().is_none() && cursor.next().is_none());
+}
+fn unicode(source:core::text::Text,needle:core::text::Text) {
+    let accents:[i32;2] = [2,11]; check(source,needle,accents,2);
+    let boundaries:[i32;7] = [0,1,2,4,7,11,13]; check(source,source.slice(13,13).unwrap(),boundaries,7);
+    let one:[i32;1] = [0]; check(source,source.slice(0,1).unwrap(),one,1); one[0]=7; check(source,source.slice(7,11).unwrap(),one,1);
+    let cursor=source.match_indices(needle); item(pull<core::text::MatchIndices>(cursor.borrow()).unwrap(),source,needle,2); let copy=cursor;
+    let selected:core::iter::Take<core::text::MatchIndices,core::pair::Pair<i32,core::text::Text>> = core::iter::take<core::text::MatchIndices,core::pair::Pair<i32,core::text::Text>>(cursor.borrow(),1);
+    item(pull<core::iter::Take<core::text::MatchIndices,core::pair::Pair<i32,core::text::Text>>>(selected.borrow()).unwrap(),source,needle,11);
+    assert(selected.next().is_none() && selected.next().is_none()); item(copy.next().unwrap(),source,needle,11); assert(copy.next().is_none() && cursor.next().is_none());
+    let untouched=source.match_indices(needle); let zero=core::iter::take<core::text::MatchIndices,core::pair::Pair<i32,core::text::Text>>(untouched.borrow(),0);
+    assert(zero.next().is_none()); item(untouched.next().unwrap(),source,needle,2);
+}
+fn main() -> i32 {
+    mark(65); mark(83); mark(80);
+    let positions:[i32;3] = [0,2,4]; check(literal("aaaaa",5),literal("aa",2),positions,2); check(literal("abab",4),literal("ab",2),positions,2);
+    check(literal("ababa",5),literal("aba",3),positions,1); check(literal("aaaaa",5),literal("b",1),positions,0);
+    check(literal("ab",2),literal("aba",3),positions,0); check(literal("",0),literal("a",1),positions,0); check(literal("",0),literal("",0),positions,1);
+    let native:[u8;15] = [255,0,97,195,169,226,130,172,240,159,153,130,195,169,255];
+    let storage:[i32;4] = [0;4]; let packed:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(storage),16);
+    let i:i32 = 0; while(i<15) { packed[i]=native[i]; i+=1; } packed[15]=177;
+    let left=core::text::from_utf8_range(native,1,13).unwrap(); let right=core::text::from_utf8_range(packed,1,13).unwrap();
+    assert(core::mem::slice_stride(left.bytes)<0 && core::mem::slice_stride(right.bytes)==1);
+    unicode(left,right.slice(2,4).unwrap()); unicode(right,left.slice(2,4).unwrap());
+    // Literal byte identity does not normalize composed and decomposed accents.
+    let decomposed:[u8;3] = [101,204,129]; let decomposed_text=core::text::from_utf8(decomposed,3).unwrap();
+    check(left,decomposed_text,positions,0); check(decomposed_text,left.slice(2,4).unwrap(),positions,0);
+    let original:[u8;15] = [255,0,97,195,169,226,130,172,240,159,153,130,195,169,255]; i=0; while(i<15) { assert(native[i]==original[i] && packed[i]==original[i]); i+=1; } assert(packed[15]==177);
+    mark(112); mark(82); mark(69); mark(68); return 0;
+}

@@ -1,0 +1,59 @@
+// One bounded byte owner; every record performs six writes and six reads.
+module app::main;
+import alloc::vec;
+import core::endian;
+import core::f32;
+import core::f64;
+import core::mem;
+import core::result;
+import std::io;
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn main() -> i32 {
+    let count:i32=32768; let length:i32=count*36+2;
+    let owner:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(length).unwrap();
+    let i:i32=0; while(i<length) { owner.try_push(211).unwrap(); i+=1; }
+    let bytes:[u8]=owner.as_slice(); let writes:i32=0; let reads:i32=0; i=0;
+    mark(80);
+    while(i<count) {
+        let at:i32=1+i*36;
+        let identifier:u64=18364758542507835392|(i as u64);
+        let half:i16=((i as u32)|32768) as i16;
+        let channel:i32=-2147483647+i;
+        let timestamp:i64=-9223372036854775807+(i as i64);
+        let first_bits:u32=2139095041+(i as u32); let second_bits:u64=18442240474082181121+(i as u64);
+        let first:f32=core::f32::from_bits(first_bits); let second:f64=core::f64::from_bits(second_bits);
+        if(i%2==0) {
+            assert(core::endian::write_u64_be(bytes,at+8,at+0,identifier));
+            assert(core::endian::write_i16_be(bytes,at+10,at+8,half));
+            assert(core::endian::write_i32_be(bytes,at+14,at+10,channel));
+            assert(core::endian::write_i64_be(bytes,at+22,at+14,timestamp));
+            assert(core::endian::write_f32_be(bytes,at+26,at+22,first));
+            assert(core::endian::write_f64_be(bytes,at+34,at+26,second));
+            assert(core::endian::read_u64_be_or(bytes,at+8,at+0,0)==identifier);
+            assert(core::endian::read_i16_be_or(bytes,at+10,at+8,0)==half);
+            assert(core::endian::read_i32_be_or(bytes,at+14,at+10,0)==channel);
+            assert(core::endian::read_i64_be_or(bytes,at+22,at+14,0)==timestamp);
+            assert(core::f32::to_bits(core::endian::read_f32_be_or(bytes,at+26,at+22,0.0))==first_bits);
+            assert(core::f64::to_bits(core::endian::read_f64_be_or(bytes,at+34,at+26,0.0))==second_bits);
+        } else {
+            assert(core::endian::write_u64_le(bytes,at+8,at+0,identifier));
+            assert(core::endian::write_i16_le(bytes,at+10,at+8,half));
+            assert(core::endian::write_i32_le(bytes,at+14,at+10,channel));
+            assert(core::endian::write_i64_le(bytes,at+22,at+14,timestamp));
+            assert(core::endian::write_f32_le(bytes,at+26,at+22,first));
+            assert(core::endian::write_f64_le(bytes,at+34,at+26,second));
+            assert(core::endian::read_u64_le_or(bytes,at+8,at+0,0)==identifier);
+            assert(core::endian::read_i16_le_or(bytes,at+10,at+8,0)==half);
+            assert(core::endian::read_i32_le_or(bytes,at+14,at+10,0)==channel);
+            assert(core::endian::read_i64_le_or(bytes,at+22,at+14,0)==timestamp);
+            assert(core::f32::to_bits(core::endian::read_f32_le_or(bytes,at+26,at+22,0.0))==first_bits);
+            assert(core::f64::to_bits(core::endian::read_f64_le_or(bytes,at+34,at+26,0.0))==second_bits);
+        }
+        writes+=6; reads+=6;
+        assert(bytes[at+34]==211 && bytes[at+35]==211); i+=1;
+    }
+    assert(bytes[0]==211 && bytes[length-1]==211 && writes==196608 && reads==196608);
+    mark(112);
+    let report:[i32;3]=[count,writes,reads]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),12)==12);
+    owner.destroy(); owner.destroy(); mark(68); return 0;
+}

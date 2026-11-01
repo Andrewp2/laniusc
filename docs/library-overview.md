@@ -1,7 +1,523 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current
-[completion increment](library-completion-plan.md) implements canonical prefix
+The full library goal remains open. The current increment makes
+`core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
+for unstable sorts and a run-adaptive stable merge sort with galloping over
+caller scratch. Both are checked against Python `sorted`, with recorded
+comparison counts and timings. The preceding increment adds inline
+fixed-capacity containers ([ring buffer and inline string](stdlib-inline-containers.md))
+and a fixed-capacity [LRU cache](stdlib-lru-cache.md) with O(1) expected
+operations, no allocation after construction and exact eviction order; one
+Python-reference model checks 11,346 commands. The preceding
+[ordered navigation increment](stdlib-ordered-navigation.md) adds predecessor
+searches, heterogeneous lower/upper/predecessor bounds and `Bound`-based
+intervals to TreeMap and TreeSet: sixteen methods plus `core::range::Bound`.
+Navigation policies may denote a contiguous Equal run of several keys, so
+`alloc::string::TextPrefix` traverses String prefix families. Exact call
+sequences are specified, and navigation allocates nothing. The same intervals
+can be removed in place or extracted, with cleanup authority, into a new
+exact-capacity owner (`remove_range`, `try_extract_range`, `try_split_off` and
+their `_by` forms). The independent 48-case model checks 7,592 policy calls as
+lawful descents, 20,923 two-ended pulls, 329 removals and 278 extractions; the
+contract fixture checks exact call counts, interval edges and unchanged
+owner fields, and the interval-edit fixture shows under an in-program
+RLIMIT_AS denial that failed extraction leaves the source unchanged. Native receipts use the prebuilt compiler; the two registered
+Rust tests type-check and await a full test-binary run.
+The [concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+The [`core::search`](stdlib-search.md) increment adds SWAR byte scans and a
+rarest-byte substring prefilter, used by `Text::find` and the parallel
+grep. A budgeted Two-Way (Crochemore–Perrin) fallback keeps the worst case
+at O(n+m). 160,456 generated cases match Python's search results. That is
+eight runs, each adding the same 57 adversarial periodic cases.
+The preceding
+[concurrency increment](stdlib-concurrency.md) adds four modules for parallel
+work on native Linux x86_64/glibc with libatomic:
+
+- `std::worker`: scoped pools of forked worker processes.
+- `std::atomic`: 4/8-byte atomic words. Each operation takes its own C11
+  order enum, and compare-exchange is strong.
+- `std::sync`: shared `MAP_SHARED` regions, futex waits with monotonic
+  deadlines, and Mutex, Condvar, Once, Lazy64 and Barrier, all without
+  poisoning.
+- `std::channel`: a bounded MPMC channel of any plain value type, with try,
+  blocking and deadline forms and endpoint-count disconnection.
+- `std::steal`: work-stealing queues, one deque per worker, with
+  pending-count termination and token cancellation that drains the pool
+  cleanly.
+- `std::parallel`: chunked `for_each`, `map`, ordered `reduce`, `scan` and
+  stable `merge_sort` over shared arrays.
+
+The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
+locked increments; 1 initializer among 16 racers; 200 barrier leaders; and
+120,000/80,000/50,000 channel messages at capacity 64/1/7 with no loss,
+duplication or per-sender FIFO violation. Those 50 runs passed, alongside
+20 runs each of a parallel word count matching `wc` and a three-stage
+pipeline. The stealing fixture runs a 524,287-task tree with every leaf
+exactly once; a parallel quicksort sorts 2,000,000 values in 0.25 s with
+eight workers, against 0.80 s with one. In-process threads remain blocked on checked callback entry, so
+`std::thread` stays unbound.
+The preceding
+The full library goal remains open. The
+[Unicode quick-check and uconv increment](extended-unicode-uconv.md) replaces
+the binary search behind `core::unicode` properties with an O(1) two-level
+table (264 distinct 128-code-point blocks). It also adds a two-level
+combining-class/quick-check table, UAX #15 `quick_check`,
+`normalize_quick_into` and `is_normalized_quick`, and a line-wise
+`uconv -x any-nfc|...|any-casefold` program. A Python `unicodedata` 15.0.0
+oracle compares all 1,114,112 code points and 20,000 generated strings across
+category, combining class, digit, flags, full casing, the four normalization
+forms and `is_normalized`. Every disagreement comes from Unicode 15→17
+assignments: 0 defects. Its registered Rust test has no receipt yet. The current
+[borrowed collection lookup](stdlib-borrowed-lookup.md) adds sixteen point
+methods across hash/tree maps and sets with explicit query laws and stored
+representative ownership. `alloc::string::TextKey` permits borrowed Text
+queries of String keys. The [word deduplicator](stdlib-unique-words.md) checks
+both committed and pending words before allocating a new key. All nine library
+groups and the migrated application's 124 native cases pass on Linux x86_64 CPU
+output, with four selected regressions recorded separately. Heterogeneous
+ordered bounds/ranges are the current increment above; caller-backed
+buffering remains separate work.
+The preceding
+[lazy Option/Result increment](stdlib-lazy-outcomes.md) adds nineteen
+free-function/method pairs over one shared `core::function::Mapper` and
+argument-free `Producer` protocol. Invocation is lazy; callback construction,
+static bounds and owner cleanup stay explicit. The
+[optional-sum consumer](stdlib-optional-sum.md) skips checked arithmetic after
+parse failure while retaining its exact output contract. All eight library
+groups pass, including all 76 branch routes in the independent model and
+actual nested-owner callback effects. The four current application groups
+pass 98 cases, and six selected migration/Option/Result regressions pass
+separately. Acceptance is finite native Linux x86_64 CPU execution; lifetime
+enforcement and the broader library goal remain open.
+The preceding
+[owned Vec editing](stdlib-vec-edit.md) adds explicit stable filtering,
+adjacent deduplication and reverse tail cleanup while retaining capacity.
+Temporary predicate borrows, exact cleanup order and zero-sized effects stay
+manual and explicit. The [sort-rows consumer](stdlib-sort-rows.md) gains
+filter/unique/limit policies. All nine library groups pass, including the
+24-case state model and complete large-owner observations. All four new
+application groups/132 cases pass with 57 reached allocation denials; three
+selected older groups/109 cases remain separate. This finite native Linux
+x86_64 increment is accepted; enforced ownership and broader work remain open.
+The preceding
+[relocatable development SDK](library-sdk.md) packages a supplied Linux x86_64
+compiler and shaders with library sources, offline contract guides, three
+examples and existing suite/vendor tools. Compiler identity, source snapshot
+and selected-resolution notice inputs stay separate. Thirty host controls, one
+trace-parser control and all four relocated native gates pass, covering six
+application executions. The guide binds these receipts to the tested debug
+snapshot and records earlier timeouts and host prerequisites. Stable releases,
+broader target support and the whole library goal remain open.
+The preceding
+[resumable TOML serializer](extended-toml-streaming.md) shares one byte machine
+across sizing, borrowed Read, owned encoding and direct caller-buffer output.
+Reader construction admits preflight and replay under the explicit 2W policy;
+caller-buffer errors preserve the complete destination without a temporary
+output allocation. The [existing normalizer](extended-toml-normalize.md) now
+uses fixed scratch and bounded publication. All five library groups pass,
+including the 280-case state model and two reached collector-allocation denials
+with same-document recovery. All four normalizer groups/64 native cases pass,
+including 25 reached allocation denials and exact call-budget observations.
+Three selected existing groups pass separately. This finite Linux x86_64 CPU
+increment is accepted; earlier TOML receipts retain their scope.
+The preceding
+[literal text matching and replacement increment](stdlib-text-replacement.md)
+adds a borrowed match cursor and bounded independent String results over the
+existing search engine. Its [stdin/stdout consumer](stdlib-literal-rewrite.md)
+validates and constructs output before publication. All five library groups
+and four application groups/94 cases pass, including the 440-case independent
+model, one library allocation denial with recovery and 12 application denials.
+Selected old regressions and standalone build/examples pass separately. This
+finite Linux x86_64 CPU increment is accepted; earlier receipts retain their
+original API/source scope.
+The preceding
+[resumable compression encoder](extended-streaming-deflate.md) adds fixed
+32 KiB blocks, retained pending output and u64 raw/zlib/gzip limits over shared
+block helpers. The [file compressor](extended-compress-file.md) uses fixed
+workspace and NoReplace publication. All five library groups and five
+application groups/99 native cases pass, including the 112-case chunk/block
+model and nine reached application allocation denials. This finite native
+Linux x86_64 increment is accepted; earlier receipts keep their source/API scope.
+The preceding
+[vector-transfer increment](stdlib-vec-transfer.md) adds whole-owner `take`,
+consuming append, suffix split and owned range extraction to `alloc::vec`.
+Ordered shallow transfer, unchanged owners on error, retained source capacity
+and manual exclusive authority are explicit. All eight library groups pass on
+Linux x86_64 CPU output from the GPU compiler, including a 56-case/3,584-action
+independent model, three reached reservation failures with same-owner recovery,
+and complete large typed outputs. The
+[CSV row-moving consumer](stdlib-move-rows.md) passes all four groups/133 native
+cases, including 40 reached allocation denials; the standalone build and both
+exact examples and five selected existing groups pass separately. This finite
+increment is accepted; protected-vector migration remains separate.
+The preceding
+[image-resize increment](extended-image-resize.md) adds Nearest, Bilinear and
+exact Area sampling to the existing RGBA8 module and
+[PNG transformation program](extended-image-tool.md). Source preservation,
+alpha-weighted rounding, byte-preserving identity and bounded tiled Area work
+are explicit. All seven library groups pass, including the 626-case independent
+model, two reached allocation failures with same-process recovery and five
+scale shapes with at most 16 KiB scratch. The application passes four groups/
+102 native cases, including 22 reached allocation denials. Two selected old
+image groups, three old consumer groups/346 cases, standalone compilation and
+both documented examples pass separately. This finite native Linux x86_64
+increment is accepted; historical receipts retain their original scopes.
+Other codec capabilities and the broader roadmap gaps remain separate work.
+The preceding
+[ordered form-byte increment](extended-form.md) adds borrowed form parsing,
+forgiving percent decoding, canonical streaming serialization and an optional
+packed Form owner. Ordered duplicates and arbitrary decoded bytes survive;
+checked Text projections retain explicit UTF-8 errors. Append preserves logical
+contents on error but may relocate backing, so prior borrows end before every
+attempt. The borrowed serializer is shared by owned output and a
+[field-selection consumer](extended-form-select.md). All nine library gates pass,
+including the 607-case independent model and six reached allocation denials with
+same-process recovery. The application passes four groups/86 native cases,
+including 20 reached allocation denials; standalone build/examples pass
+separately. This finite native Linux x86_64 increment is accepted. A reduced
+nested-error-match compiler dependency retains an executing typed-helper
+control; no production or compiler repair was needed. The preceding
+[scoped map-update increment](stdlib-map-updates.md) adds a value transformation
+to HashMap and TreeMap using Mapper<V,Pair<V,R>>. One lookup preserves the exact
+stored key and map structure; a present callback returns the latest V even when
+R is a Result error. Manual exclusive authority and cleanup remain explicit.
+All seven new library gates pass on Linux x86_64 CPU output, including the
+72-case operation model and four reached callback-allocation failures with
+latest-owner reinstall and same-process recovery. The
+[word-concordance consumer](stdlib-word-concordance.md) passes four groups/103
+native cases, including 38 reached allocation failures. Three selected old
+regressions and standalone build/exact examples also pass. This finite native
+increment is accepted; earlier map and clone receipts retain their original
+scope. The preceding
+[stream-encoding increment](library-stream-encoding-plan.md) joins a portable
+[resumable copier](stdlib-resumable-copy.md) to a borrowed
+[JSON byte reader](extended-json-streaming.md). Pending suffixes, direct-call
+quotas, exact output admission and manual immutable document lifetimes are
+explicit. Blocking copy and owned JSON encode use those same engines; the
+[normalizer](extended-json-normalize.md) publishes through fixed scratch without
+an output String. All ten new library gates pass, including separate 72-case
+transfer and 978-case ordered-document models, live backing and two reached
+owned-encoding allocation failures with recovery. The normalizer passes four
+groups/100 native cases, including 33 reached allocation failures. Three
+selected old regressions and the standalone build/exact examples also pass.
+This finite native Linux x86_64 increment is accepted.
+The preceding
+[generic slice-segmentation increment](stdlib-slice-segmentation.md) adds
+checked Split, SplitInclusive and ChunkBy factories with Mapper capabilities
+at iteration. Lazy callback order, shallow operands, borrowed aliases and
+manual lifetimes are explicit; no reverse or exact-size promise is added.
+All eight new library gates pass, including 5,496 independent model cases,
+183,248 pulls, stateful alias/copy observations and exact live-owner cleanup.
+The binary record-summary application passes four groups/94 native cases,
+including 11 reached allocation failures. Its standalone build and exact guide
+examples also pass. This finite native Linux x86_64 increment is accepted. The preceding
+[borrowed bidirectional text increment](stdlib-bidirectional-text.md) adds
+LF/CRLF lines and backward scalar/ASCII-word pulls through the canonical iterator
+traits. Mixed directions share one remainder; original scalar indices, six-byte
+ASCII whitespace and manual immutable backing remain explicit. These cursors
+make no exact-size promise. A line-summary program and a borrowed reverse-scalar
+Unicode report exercise the APIs. All seven new library gates pass, including
+4,878 independent model cases, 276,732 pulls, exact live-owner cleanup and
+allocation-free reporting with reached write-failure recovery. The canonical
+Unicode-report stdin regression also passes. Line-summary passes all four
+groups/102 native cases, including 11 reached allocation failures; standalone
+build/examples also pass. This finite native Linux x86_64 increment is accepted.
+Its previously listed generic slice-segmentation gap is the current increment
+above, with its own evidence and remaining broader slice scope.
+The preceding
+[resumable decompression increment](extended-streaming-inflate.md) preserves
+DEFLATE bits, tables, history and pending output across chunks; zlib/gzip framing
+and owned decoding use the same engine. An atomic file decompressor validates
+complete input before publication. Fixed workspace, provisional output and
+per-call final-input promises are explicit. All seven new library tests pass,
+including 1,925 model cases plus 311 reset passes, fixed backing at 2 MiB and
+4 MiB output, and 28 reached owned-decoder allocation failures. All seven
+decompress_file groups/98 native cases also pass, including eight reached
+application allocation failures and actual publication outcomes. This finite
+native Linux x86_64 increment is accepted. Existing codec regressions and the
+six-workload native comparison have separate receipts in its guide.
+The preceding
+[borrowed reader-adapter increment](stdlib-io-adapters.md) adds Take quotas and
+Chain concatenation through independent Read/BufRead implementations. Provider
+errors, permanent first-source handoff, full-width quota and manual borrowing
+have explicit contracts. All seven library tests pass, including 1,576 model
+cases / 14,544 actions and four reached allocation denials with recovery. All
+four concat_bytes groups/115 cases and standalone build/examples also pass.
+This finite native Linux x86_64 increment is accepted. Historical stream
+receipts retain their original scope.
+The preceding
+[strong-component increment](extended-graph-components.md) adds independent
+component mappings and canonical condensation graphs, with component IDs ordered
+by minimum original node and explicit admission/cleanup contracts. All six new
+library tests pass, including the 3,218-case model, 17 reached allocation denials
+and three 65,536-node shapes. All four dependency-order groups/312 cases also
+pass, as do the standalone build and documented examples. This finite native
+Linux x86_64 increment is accepted. Historical graph receipts retain their original scope.
+The preceding
+[stable-sort increment](stdlib-stable-sort.md) adds checked alloc::slice
+sorting with one typed workspace, stable equivalent-key order and explicit
+reservation errors before input reads or mutation. Core sorts retain their
+allocation-free/unstable contracts. All eight library tests and migrated
+sort_rows's four groups/123 cases pass, alongside standalone build/examples.
+This finite native Linux x86_64 increment is accepted. The preceding
+[iterator sequence increment](stdlib-iterator-sequences.md) adds equality,
+total/partial lexicographic comparison and sortedness through canonical
+Iterator/Mapper/Comparator protocols. Exact pull order, prefix witnesses,
+shared-state aliases and manual cleanup are explicit. All eight library tests,
+all 119 program cases and three migrated-consumer regressions pass, as do the
+standalone build/examples. This finite native Linux x86_64 increment is accepted.
+Historical slice and iterator evidence retains its original scope. The preceding
+[owned delimiter/line increment](stdlib-owned-delimited.md) composes BufRead
+with retained records, exact fill/consume budgets and terminal UTF-8 adoption.
+Unacknowledged staged bytes, pending provider data and manual cleanup remain
+explicit. All eight registered library tests pass, including the 15,724-case
+model and resource/guarded-failure gates. All 131 application cases and two
+line-sample migrations pass, as do two selected older admission regressions.
+The standalone program and documented examples are verified. This finite
+native Linux x86_64 increment is accepted. Source scanning confirms 21 other
+legacy line-helper consumers remain outside this increment.
+The preceding
+[directed-graph increment](extended-graph.md) defines canonical integer-only
+adjacency, shortest-hop FIFO BFS and lexicographically smallest ready-ID
+ordering. Edge deduplication is independent of numeric sparse coefficient
+policies. Work admission, error precedence and manual owners are explicit.
+All eight library tests and four application groups/183 cases pass, including
+a 4,570-case independent model and separate 65,536-node workloads. This finite
+native Linux x86_64 increment is accepted. The preceding
+[bounded owned-input increment](stdlib-owned-input.md) composes canonical Read
+with retained byte/probe failures, actual-call budgets and reserve-before-read
+growth. Validated Vec/String transfers preserve backing without copying; reader
+and cleanup ownership remain explicit. All six library tests, including the
+17,542-case model, and all 111 real-program cases pass. Selected old stream/
+String regressions pass separately. This finite native Linux x86_64 increment
+is accepted. The preceding
+[checked Base64 increment](stdlib-base64.md) replaces fallback/sentinel calls
+with four Result/View APIs and explicit standard/URL-safe, padded/unpadded
+profiles. Full preflight, indexed errors, same-base aliases and manual backing
+are explicit. All five library tests pass, including the 48,995-case model
+and guarded/physical boundaries; three selected migrated WebSocket tests and
+all 194 binary-CLI cases pass separately. This finite native Linux x86_64
+increment is accepted.
+The preceding
+[native checked-varint consolidation](stdlib-varint.md) supplies sixteen
+u32/u64/i32/i64 functions in core::varint with View-relative positions,
+typed Result/Decoded and explicit errors. Three signed/two-word codecs retire
+without aliases; unrelated wide arithmetic remains. Native admission/direct
+and independent wire/physical-boundary gates pass, as do both migrated frames
+and the 150-case CLI. This finite native Linux x86_64 increment is accepted.
+The preceding
+[shared random-source budget increment](stdlib-random-budget.md) adds a
+borrowed Source64 adapter that composes one draw allowance across existing
+samplers, fills and shuffles. Rejected/failed draws charge before delegation;
+source duration/internal host calls and manual owners remain separate.
+Malformed shuffle/choose Views reject before source or element access. Native
+admission/direct/model/owner gates, the 98-case sampling program and one
+selected existing contract regression pass. This finite native Linux x86_64
+increment is accepted.
+The preceding
+[checked slice-selection increment](stdlib-slice-selection.md) specifies
+comparator/natural nth-element selection, strict metadata/rank admission and
+an aliased one-element result. Whole-value permutation, outside guards,
+explicit bounded median-of-medians frames and manual owners are part of the
+contract. Native admission/direct gates and one selected ordering regression
+pass, as do the 11,976-case independent model, owner/scale gates and four
+real select-value groups/101 cases. All six new library gates are accepted on
+the finite native Linux x86_64 profile. Earlier ordering receipts do not
+establish these functions. The preceding
+[shared Seek increment](stdlib-seek.md) defines portable offset arithmetic,
+Seek-only helpers and canonical providers for bounded memory cursors,
+opt-in File and buffered streams. Read-ahead reconciliation, flush progress,
+reader faults and host offset limits are explicit. Portable admission/direct/
+model gates, native File gates, the 86-case reverse-records program and selected
+stream/FileOps/buffered regressions pass. Three scripted buffered gates also
+pass. This finite native Linux x86_64 increment is accepted.
+Earlier receipts do not establish these additions.
+The preceding
+[bounded delimiter-I/O increment](stdlib-delimited-io.md) adds a standalone
+BufRead protocol and read/skip helpers with byte/call caps and separate
+copied/consumed failure progress. SliceReader and the allocating buffered
+reader share the canonical protocol; fill/consume have no duplicate aliases.
+Native admission/direct contracts, the 18,000-case model and four real record-
+selection groups/91 cases pass. This finite native Linux x86_64 increment is accepted.
+Four selected buffered regressions (including the copy sample) and one
+selected stream regression pass separately.
+The preceding
+[checked storage-layout increment](stdlib-layout.md) defines eight arithmetic
+APIs for sizes, alignment, padded arrays and explicit record composition.
+Public-field revalidation, deterministic error precedence and the 64-bit
+`MAX_SIZE` profile are fixed. Direct contracts, the 18,878-case independent
+model, three selected arena regressions and the 58-case record-storage program
+pass. This finite native Linux x86_64 increment is accepted. The arena consumer
+shares relative-offset padding while retaining its
+own allocation, alignment and zero-size policies. This does not infer native
+type layout or complete memory/owner consolidation. The preceding
+[Unix stream/socket-pair increment](stdlib-unix-streams.md) specifies local
+AF_UNIX owners, borrowed pathname/abstract addresses and the existing staged
+stream/readiness contracts. One-attempt connect, exact pair publication,
+manual descriptor/path cleanup and explicit failure behavior are fixed;
+source is frozen and pair/direct/address gates pass. The real request
+application passes four groups/84 cases; all six new library tests pass across
+separate receipts. Three selected IP tests and one real TCP-application test
+also pass. This finite native Linux x86_64 increment is accepted. A narrow
+generic Result-chain dependency retains an executable typed-local control.
+Earlier IP socket receipts do not cover the added surface or replace the
+selected current regressions.
+The preceding
+[eager outcome-composition increment](stdlib-outcome-composition.md) widens
+Option/Result selection across payload or error types and adds Result
+flattening and both transpose directions. All four specialized methods pass
+native admission; broader contracts and the 2,180-case independent model
+also pass. One selected existing Result-method regression passes separately.
+Shallow copying, eager operands, original error identity and manual cleanup
+remain explicit. All five new library tests and four optional-sum application
+groups/98 cases pass, with three selected old regressions and CPU inventory
+separate. This finite native Linux x86_64 increment is accepted. The preceding
+[native numeric byte-order increment](stdlib-native-endian.md) adds 24
+concrete u64/signed/IEEE-float functions to `core::endian`, bringing its public
+surface to 36 functions. Complete logical-field admission, exact fallback
+and float encodings, explicit byte order and caller backing remain part of
+the contract. Two direct native tests pass with all 24 additions, 58 literal
+vectors and four separate physical-overclaim traps. The independent
+16,032-case model and two memory/scale gates also pass. The record-repacking
+application passes four groups/96 cases, including a 65,536-record frame.
+This finite Linux x86_64 increment is accepted; static inventory covers all
+36 names separately from runtime evidence.
+Historical twelve-function endian and existing float receipts retain their
+source/API scope. The preceding
+[advisory-locking increment](stdlib-file-locks.md) adds one-attempt borrowed
+File lock/unlock and an explicit cooperative file-patch mode. Open-description
+lifetime, duplicate sharing, failed-conversion uncertainty and manual cleanup
+are explicit; Blocking supplies no deadline and Nonblocking reports contention.
+Two native policy/fault tests, a 1,287-program/24,244-step independent model
+and four process tests pass. Four new locked file-patch groups pass 49 cases.
+This finite native Linux x86_64/local-filesystem increment is accepted.
+One selected positional contract
+and all four ordinary file-patch groups/82 cases pass as current regressions;
+they do not establish locking behavior. Earlier positional and application
+receipts do not establish this increment. The preceding
+[positional-I/O increment](stdlib-positional-io.md) adds explicit-offset
+ReadAt/WriteAt contracts, attempt-bounded exact/all helpers and staged File
+adapters. Complete logical/positional spans are admitted before callbacks;
+confirmed progress and failures are explicit. Native operations preserve
+the shared cursor and reject direct I/O and append-mode positional writes.
+Two portable contract tests pass, including one native no-service fixture
+and two capability rejections. The 11,012-case independent model and five
+native-driver tests also pass, including 30 fault schedules/24 reached
+injections. The real file-patch application passes all four groups/82 process
+cases. Selected old stream/FileOps regressions pass separately, and a focused
+amended native contract checks full-span admission before staging. This
+finite native Linux x86_64 increment is accepted. Earlier stream and file
+receipts do not establish these additions. The preceding
+[slice-ordering increment](stdlib-slice-ordering.md) adds seven checked View
+algorithms with per-call comparison policies and heterogeneous keys. One
+canonical `core::ordering::Comparator<L,R>` also serves iterator extrema;
+raw Ord APIs share the same allocation-free engines through Natural. All six
+new library gates pass, including 2,808 independent cases/44,928 actions,
+actual nested String owners and 32,768-record comparison-count coverage.
+The CSV application passes four groups/122 process cases, and three selected
+iterator migration regressions pass separately. This finite increment is
+accepted on native Linux x86_64 CPU output from the GPU compiler.
+The preceding
+[iterator reduction/bounded-fold increment](stdlib-iterator-folds.md) adds
+eight consumers using canonical Iterator/DoubleEndedIterator and Folder/
+TryFolder traits. Quotas, actual EOF observation, successful progress and
+consumed-item errors are explicit; callbacks retain their resource policy.
+All seven new library tests and four application groups pass, including
+10,696 model cases/37,104 state commands, 24 selected allocation denials and
+87 byte-summary process cases. Two dependency checks and two selected old
+regressions retain separate scopes. This finite native Linux x86_64 increment
+is accepted; prior iterator receipts remain historical. The preceding
+[sparse conjugate-gradient increment](extended-sparse-cg.md) specifies a
+solver for symmetric positive-definite CSR systems, with optional Jacobi
+preconditioning, fresh residual checks after every update and explicit
+converged/iteration-limited results. Full requested work admission, numerical
+breakdown and manual owner cleanup are part of the contract. All six new
+library gates pass, including a 1,918-case independent model, 27 reached
+allocation denials and a 65,536-row manufactured system. The graph-diffusion
+application passes all four registered gates and 154 process cases. This
+finite native Linux x86_64 increment is accepted; previous sparse receipts
+do not cover this module. The preceding
+[sparse-product increment](extended-sparse-product.md) defines canonical
+CSR-times-CSR multiplication with ordered finite binary64 accumulation,
+reusable column scratch, exact nonzero output reservation and explicit
+work/cap admission. All six new library gates pass, including the independent
+2,194-case model, 16 reached allocation denials and the 65,536-row analytic
+product. The real weighted-path application passes four registered gates
+with 122 process cases across separate original/amended-model receipts.
+This finite native Linux x86_64 increment is accepted. Earlier foundation
+receipts do not cover the new API. The preceding
+[canonical CSR increment](extended-sparse.md) adds allocation-free borrowed
+validation/lookup/matvec, independent sparse owners and sparse/dense arithmetic.
+Stored-zero rules, ordered binary64 arithmetic, work admission and manual
+backing/cleanup are explicit. Caller-output matvec can publish a completed-row
+prefix on numerical failure; owned operations release partial results.
+All six registered library gates pass, including a 3,886-case independent
+model, 33 reached operation-allocation denials and a 65,536-row analytic
+scale case. The graph application passes all four registered gates and 113
+process cases. This finite increment is accepted on native Linux x86_64.
+It is a foundation for further sparse work, with no compiler or native
+mathematics implementation change. The preceding
+[exact-size iterator increment](stdlib-exact-size-iterators.md) adds an
+explicit `remaining_count() -> u64` contract for selected finite leaves,
+metadata-preserving adapters and collection cursors. Queries do no pulls,
+callbacks, item reads, allocation, cleanup or host I/O. Zip, Chain,
+callback-dependent traversal and checked-index Enumerate are excluded for
+their documented alias, range or cardinality limits. All four library gates
+and four real byte-sampling application gates pass on native Linux x86_64;
+the independent library model covers 10,714 cases/35,922 steps and the
+application covers 95 process cases. A selected unchanged reverse model also
+passes. This finite increment is accepted; no unchecked memory trust or
+automatic ownership follows. The preceding
+[weighted-statistics](extended-weighted-statistics.md) and
+[higher-moment](extended-higher-statistics.md) increment implements portable
+binary64 summaries with named estimator conventions and atomic updates.
+All eleven new registered tests and both ordinary-statistics regressions pass
+on the finite Linux x86_64 profile, including three independent numerical
+models and the real [sample-moments CSV program](extended-sample-moments.md).
+The statistical modules allocate no memory and call no host math service;
+the program uses existing CSV, owned buffers and host streams. Finite-state
+limits, gradual underflow for weighted summaries and explicit higher-moment
+Underflow remain part of the contracts. This selected increment is accepted;
+the full numerical/library scope remains open. The preceding
+[reverse-iteration increment](stdlib-iterators.md#double-ended-traversal)
+implements paired front/back traits and a borrowed Rev adapter. All four
+registered reverse tests pass on native Linux x86_64, covering pure contracts,
+7,740 model commands, collection ownership and exact trait-bound rejection.
+The real timeline-tail program passes four more registered tests with 71
+process cases. Fusion, callback order, source lifetimes and cleanup remain
+explicit contracts; this supplies no automatic ownership or device-runtime
+claim. The preceding WebSocket server increment
+adds a [borrowed server handshake and caller policy pause](extended-websocket-upgrade.md#server-api-and-policy-boundary),
+a [real one-client TCP/TLS echo service](extended-websocket-echo.md) and
+[bounded HTTP encoder preflight](extended-http.md#executable-evidence).
+Separate raw server/client contract processes pass six/eleven scenario functions;
+all eight echo groups and one real Lanius-client integration pass. Three focused
+HTTP Rust runtime tests also pass. The two new server/echo Rust drivers have
+build admission only. Native evidence remains Linux x86_64/glibc/OpenSSL 3;
+automatic lifetime enforcement, full failure campaigns and the full library
+scope remain open. The preceding connected WebSocket increment
+adds a [borrowed client handshake](extended-websocket-upgrade.md),
+[bounded frame stream](extended-websocket-stream.md) and a real
+[one-message TCP/verified-TLS client](extended-websocket-once.md). A raw scripted
+contract executable passes eleven scenario functions in one process. The final
+client passes separate plain, rejection, CLI, I/O and TLS groups on Linux
+x86_64/glibc/OpenSSL 3. Explicit manual ownership, coalesced-byte preservation,
+per-layer quotas and caller deadline/entropy policy remain part of the
+contract. Both new Rust drivers build; direct runtime receipts remain separate
+from unrun Rust libtests. The preceding
+[wire-upgrade increment](extended-websocket.md#current-upgrade-execution)
+adds portable response validation/encoding, a narrow OpenSSL-backed Accept
+helper and an offline stdin-to-101-response tool. Its wire/provider/tool receipts
+retain their separate native profiles. The preceding
+[URL-client increment](library-url-client-plan.md) implements owned HTTP(S) URL
+planning, one ordered TCP selector and separate plain/verified-TLS facades over
+the canonical drivers. Direct URL semantics/owners, socket adoption, connected
+plain/DNS/TLS groups and connector boundary/failure groups pass on Linux
+x86_64/glibc; HTTPS uses OpenSSL 3. The real fetch program passes its separate
+functional groups. These finite receipts do not establish full wrapper/application
+allocation-failure coverage, every clock/TLS schedule or another target. All five
+new Rust drivers build; native Rust-libtest execution remains unrun. The
+preceding accepted [completion increment](library-completion-plan.md) implements canonical prefix
 parsing, portable completion, literal Bash-word decoding and reply framing.
 Portable contracts/models and selected parser regressions pass; native KV query
 semantics, owner/reached-OOM and output-failure groups also pass. The Bash 5.2/
@@ -37,6 +553,26 @@ the selected increment is accepted on the finite profile below. The accepted
 temporary directories, checked link/readlink and permission operations, and a
 real `mktemp_dir` program. All 13 selected Rust tests pass across separate
 native commands on the profile below; this completes the selected increment.
+[Generic diff and fuzzy patch](extended-seqdiff.md) (`ext::seqdiff`,
+`ext::unidiff`) diffs any `Eq`/`Hash` item sequence with linear-space Myers or
+patience, groups context hunks, and writes, parses and applies unified diffs with
+GNU-style offset/fuzz and typed per-hunk rejects. Across 1,000 generated pairs,
+the `seq-diff`/`seq-patch` tools give 878/878 minimal Myers edit lengths against
+an O(N·M) LCS, 878/878 GNU and native round trips, 878/878 real GNU `diff -u`
+applications and 333/333 distinct-line plus 328/328 repeated-line offset/fuzz
+agreements with GNU `patch` at `-F0` and `-F2`.
+[Three-way merge](extended-merge3.md) (`ext::merge3`, `seq-merge`) aligns with
+the xdiff port. It agrees byte for byte with `git merge-file` and
+`git merge-file --diff3` on all 4,000 generated triples (2,000 distinct-line,
+2,000 repeated-line), and with GNU `diff3 -m` on 2,000/2,000 distinct-line and
+1,863/2,000 repeated-line triples.
+[Word diff and diffstat](extended-wordiff.md) (`ext::wordiff`, `ext::diffstat`,
+`seq-diff --word-diff|--char-diff|--stat`, `seq-diffstat`) use a port of git's
+xdiff alignment (`Algorithm::Xdiff`). Their output is identical to git 2.43 on
+all 2,040 generated pairs for word diffs, character diffs and `--stat`, on
+1,500 `git diff --stat` reports over generated repositories and on 282
+`diff -ruN` patches.
+
 The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
 regex-text and real-application gates on the native profile below. The preceding
@@ -57,6 +593,963 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Owned delimiter and line input.**
+
+The [owned-record contract](stdlib-owned-delimited.md) adds BufRead-only
+collection with delimiter-inclusive byte caps and separate fill/consume calls.
+EOF, byte/quota rejection, reserve-before-copy and copy-before-consume progress
+are explicit. Terminal LF/EOF precedes UTF-8 validation and zero-copy String
+adoption; failed consume can leave retained but unacknowledged bytes. A first
+BufRead-only admission, direct contracts, a 15,724-case model and resource
+gates pass across eight registered library tests. All 131 application cases
+and two selected legacy-consumer migrations pass, alongside two selected older
+admission regressions. The documented standalone build/examples pass separately.
+The finite native Linux x86_64 increment is accepted.
+The executable old line helper still has unbounded overlong-record draining;
+its remaining consumers and the full library goal stay open.
+
+**Directed adjacency and dependency ordering.**
+
+The [graph contract](extended-graph.md) separates simple directed edges from
+numeric CSR: duplicate edges collapse, isolated nodes remain and self-loops
+remain real edges. One canonical validation boundary admits exact size-based
+work estimates before allocation/traversal. FIFO discovery with sorted neighbors
+fixes BFS parents; a Min heap gives the lexicographically smallest topological
+order or explicit Cycle. Query absence, Bounds and Closed stay distinct.
+All eight library tests pass, including the 4,570-case independent model,
+seven reached allocation failures and separate 65,536-node workloads. The
+[dependency-order program](extended-dependency-order.md) passes all four
+groups/183 cases. The finite native Linux x86_64 increment is accepted.
+Existing sparse and collection receipts retain their original scope.
+
+**Bounded owned input.**
+
+The [collection contract](stdlib-owned-input.md) defines Read-only byte/text
+collection with an actual EOF observation, byte-cap probe retention and one
+shared call allowance. Capacity is reserved before each ordinary read; failures
+return the admitted byte owner and precise progress. UTF-8 validation follows
+EOF, then transfers Vec backing into String without copying. The bounded
+[input-statistics program](stdlib-input-stats.md) composes these helpers and
+passes four groups/111 native cases. Public owner transfers require inactive
+aliases and manual cleanup. All six library tests
+pass, including pointer/capacity-preserving String transfer, a 17,542-case model,
+geometric growth and seven reached allocation failures. Selected existing
+stream/String regressions pass separately. Earlier alloc::io/String receipts
+retain their historical scope.
+
+**Checked Base64 profiles.**
+
+The [checked codec](stdlib-base64.md) fixes alphabet/padding policy per Profile,
+reports input-relative errors and preflights complete writes. Disjoint and
+same-selected-base/same-stride Views share one engine; other overlap and live
+physical backing remain caller obligations. Three WebSocket consumers select
+Standard and inspect Results before staged copies; OpenSSL retains the digest.
+The [binary conversion program](stdlib-base64-bytes.md) composes bounded input,
+exact output reservation and explicit publication/cleanup. All five library
+tests pass, including the 48,995-case model and both boundary gates. Three
+selected wire/transport/OpenSSL tests and all 194 CLI cases pass separately
+on native Linux x86_64. Older
+standard-padded sentinel and broad WebSocket receipts retain their source scope.
+
+**Arbitrary precision integers.**
+
+The [big integer guide](stdlib-big-integers.md) moves owned `BigUint`/`BigInt`
+from `ext` into `alloc::big_uint` and `alloc::big_int`, keeping their explicit
+ownership, `Limits` and typed `Error` contracts. Multiplication switches from
+schoolbook to window-based Karatsuba when both operands reach 32 limbs;
+division is Knuth algorithm D; `mod_pow` follows Python `pow(a, e, m)` and adds
+the `NegativeExponent` error. Radix 2-36 parsing and formatting fold
+`radix^g < 2^32` digits per pass. The [bc calculator](stdlib-bc.md) evaluates
+infix expressions over stdin; its Python oracle checked 9,526 values and 103
+diagnostics across six radices on native Linux x86_64, including operands that
+straddle the threshold, zero, negatives and division by zero (now 9,735 values
+and 326 diagnostics with modular inverses). Karatsuba runs in one workspace;
+Burnikel-Ziegler division and divide-and-conquer/power-of-two conversion make
+million-digit operations pass a separate oracle at 12-38x Python's time.
+
+**Checked native varints.**
+
+The [varint guide](stdlib-varint.md) defines one shortest base-128/ZigZag
+codec for native 32/64-bit signed/unsigned values. Metadata admission precedes
+capacity/truncation, writers preflight complete capacity, and readers preserve
+strict final-byte/canonicality precedence without partial values. Old status
+and two-word codec modules are retired, with frame consumers migrated directly.
+Native admission/direct tests, both exact frame sums and four CLI groups/150
+cases pass. All five library tests are accepted, including the 61,144-case
+independent model and guarded/physical-boundary execution. The exhaustive
+continuation-first two-byte domain is distributed across profiles, not a
+Cartesian repetition across every type/layout. Historical codec receipts keep
+their original API/source scope; the accepted profile is native Linux x86_64
+CPU output, with broader library/target/lifetime work open.
+
+**Named host clocks and child CPU time.**
+
+The [host-clock guide](stdlib-host-clocks.md) adds `std::host_clocks`: nine
+named Linux clocks plus other-process CPU clocks, typed by kind (wall
+timestamps, steady instants, CPU durations), clock resolutions, absolute
+`clock_nanosleep` waits that keep their target across EINTR, and a Boottime
+`std::clock::Monotonic` provider for suspend-inclusive deadlines. A blocking
+non-reaping `std::command::Child::observe_exit()` lets the
+[time-command](stdlib-host-clocks.md#application-time-command) program read a
+child's exact final CPU time before reaping it. The self-checking contracts
+program and the cli50/timing21/clocks48 oracle groups pass as direct runs of the
+compiled programs on native Linux x86_64; two existing command-group oracles
+pass after the observation change.
+
+**Timers and child resource usage.**
+
+The [timer guide](stdlib-timers.md) adds `std::timer`, a manual timerfd owner
+for one-shot and periodic timers on Monotonic, Boottime, Realtime and the two
+alarm clocks, armed relative, at an absolute instant or timestamp (optionally
+cancel-on-set), with blocking `wait()` and nonblocking `try_wait()` expiration
+counts that include overruns. Alarm clocks join `std::host_clocks`; their
+waits and timers report EPERM without CAP_WAKE_ALARM. The
+[resource-usage guide](stdlib-child-usage.md) adds wait4 reaps with rusage and
+getrusage totals to `std::command`. The timer and usage contracts programs, the
+[timer-ticks](stdlib-timers.md#application-timer-ticks) cli19/ticks138 groups
+and the [child-usage](stdlib-child-usage.md#application-child-usage)
+cli39/usage42 groups pass as direct runs on native Linux x86_64.
+
+**Event loop and process descriptors.**
+
+The [event-loop guide](stdlib-event-loop.md) adds `std::event`, an epoll
+owner that multiplexes pipes, sockets, timerfds and child pidfds with 64-bit
+caller tokens, level-triggered or oneshot interest, millisecond waits and
+EINTR-stable `Deadline` waits through `epoll_pwait2`. `close()` refuses while
+registrations remain. Pidfds report a child's exit before the reap and signal
+exactly that process. The contracts program and the
+[tee-children](stdlib-event-loop.md#application-tee-children) cli56/tee12571
+groups, which tee two children's output with timestamps and kill them on a
+timeout, pass as direct runs on native Linux x86_64.
+
+**Signals, resource limits and supervision.**
+
+The [signals guide](stdlib-signals.md) extends `std::signal` with sets of
+signals 1..64, the calling thread's block mask and pending set, action
+queries, and signalfd receivers that `std::event` can watch. `handle()` and
+`restore()` make a set synchronously handled and undo it. `std::command`
+children get a cleared block mask by default. The
+[resource-limit guide](stdlib-rlimit.md) adds `std::rlimit`, typed prlimit64
+limits for this or another process. The contracts program and the
+[supervise](stdlib-signals.md#application-supervise) cli50/supervise97 groups
+pass as direct runs on native Linux x86_64. The supervisor restarts a crashing
+child with backoff and forwards TERM/INT with a grace kill.
+
+**UDP deadlines and stub DNS resolution.**
+
+`std::socket` adds `send_to_until` and `receive_from_until`. The
+[resolver-config guide](stdlib-resolver-config.md) adds
+`std::resolver_config`, glibc-style resolv.conf parsing (nameservers, search
+list, ndots, timeout, attempts, rotate, edns0, use-vc, no-aaaa) and hosts
+lookups. The [stub-resolver guide](extended-stub-resolver.md) adds
+`ext::stub_resolver`, which resolves through hosts, the search list and the
+nameservers over `ext::dns_client` with ID and question validation and TCP
+fallback, and reports every exchange. The contracts program and the
+[stub-dig](extended-stub-resolver.md#application-stub-dig) cli30/dns42
+groups, run against Python fake DNS servers with malformed and truncated
+replies, pass as direct runs on native Linux x86_64.
+
+**WHATWG URL parsing.**
+
+The [URL guide](extended-url.md) adds `ext::url`, the WHATWG URL Standard
+basic URL parser and serializer with an optional base. It returns an owned
+href with spans for every getter, plus the host kind and origin. Non-ASCII and
+`xn--` domains fail with an explicit `UnsupportedIdna` instead of an
+approximation. The contracts program and the
+[url-parse](extended-url.md#application-url-parse) cli25 and whatwg9174
+groups pass as direct runs on native Linux x86_64. The whatwg group compares
+every getter with Node.js's WHATWG URL over a fixed generated corpus.
+
+**Shared random-source budgets.**
+
+The [draw-budget guide](stdlib-random-budget.md) specifies one borrowed adapter,
+shared/copy/nesting semantics, exact errors and fill-prefix/shuffle-suffix
+progress. Existing unlimited sampling remains an intentional policy. Exhaustion
+returns DrawLimit without a biased fallback; quota counts Source64 calls,
+not host calls, time or memory. All five new library tests pass, including the
+7,130-case/57,040-action independent model and actual nested-owner/stride
+checks with 41 exact releases and seven no-host-call phases. The real
+[sampling program](stdlib-sample-integers.md) passes four groups/98 native cases.
+One selected existing randomness contract passes separately; historical receipts
+keep their API/source scope. This finite native Linux x86_64 increment is accepted.
+
+**Checked slice selection.**
+
+The [selection guide](stdlib-slice-selection.md) specifies two View functions
+with one shared Comparator/Natural engine. Selection preserves a whole-value
+permutation and returns a one-slot alias at the admitted relative nth position;
+before/after partitions remain internally unordered. Deterministic groups of
+five use sixteen explicit frame slots, with at most fourteen active frames for
+the i32 domain. Native admission passes one test/6.93s: both functions,
+17-element ranks, actual returned aliases and untouched outside guards, with
+only process entry/exit in the full syscall trace. Direct contracts and three
+marked capability rejections pass two tests/7.25s. One selected existing
+checked-ordering test passes in 7.11s, two filtered. The real select-value
+program passes four groups/101 native cases in 8.60s, including three reached
+owner-allocation denials and actual EOF/last-read controls. Owner/scale gates
+pass two tests/14.53s: 57 exact owner releases/five pure phases, plus 180
+selections at three sizes through both APIs with all-host-call-free phases
+and two reused backing releases. The independent sorted-reference model
+passes one test/8.71s with 11,976 cases, three families, two backing forms and
+three record policies (source lengths at most 40; larger scale evidence is
+separate). An oracle-only native-byte-stride assumption was corrected without
+producer/production changes. This finite native Linux x86_64 increment is
+accepted. No new compiler dependency is introduced. No prior
+ordering receipt is extended to these APIs.
+
+**Shared Seek.**
+
+The [Seek guide](stdlib-seek.md) specifies u64 positions with signed-i64
+relative arithmetic and exact Start acknowledgement. Fixed memory cursors
+reject beyond-length positions; the File extension uses Linux signed-i64
+offsets, with Data/Hole remaining a separate low-level API. Buffered reader
+Current reconciles read-ahead through query/absolute seek; inner errors clear
+unread publication and fault it, while arithmetic rejection preserves bytes.
+Buffered writers flush before seeking and preserve confirmed flush effects
+on failure. Portable admission passes one test/6.30s; direct contracts and one
+missing-bound rejection pass two tests/4.74s. The independent model passes one
+test/5.01s with 17,620 cases, four families and four backing combinations.
+One selected stream regression passes two fixtures in 11.00s. The real File/
+pipe gate passes within a mixed 7.62s command whose fault test fails its tool-
+warning harness. Its final fault-only test passes in 6.19s: 18 schedules,
+five genuine controls and 13 reached injections. A selected old FileOps
+regression passes in 7.65s. The real reverse-records program passes four
+groups/86 cases in 8.00s. Buffered import now executes after private enum-
+projection helpers replaced rejected Reader-body spellings; public generic
+bounds/state behavior are unchanged. Three buffered tests pass in 9.95s,
+covering nine reader/twelve writer phases, nesting/handoff and four reached
+constructor denials with all-host-call-free pure phases and exact releases.
+Four selected existing buffered tests pass separately in 10.57s, with one
+writer-only test filtered. This finite native Linux x86_64 increment is
+accepted; historical buffered receipts retain their API/source scope. The
+full library, lifetime and target scope remains open.
+
+**Bounded delimiter I/O.**
+
+The [delimiter guide](stdlib-delimited-io.md) specifies BufRead-only helper
+bounds, arbitrary byte delimiters, explicit Delimiter/Eof/Limit endings and
+fill-plus-consume call budgets. Provider metadata is checked before EOF or
+consume-budget decisions. Copy-before-consume can expose more destination
+bytes than acknowledged logical progress; errors and limits imply no rollback
+or automatic retry. SliceReader and buffered Reader implement the same
+protocol with explicit borrowed-view lifetimes and manual ownership. One
+small admission test passes in 7.24s. Four buffered regressions pass in 9.81s,
+including the real copy sample and four reached constructor OOM sites; one
+writer-only test was filtered. One stream regression passes two native
+fixtures in 11.59s with three tests filtered. Direct contracts pass two tests
+in 7.56s: six pure scenarios and two missing-BufRead rejections, with admission
+filtered. Its trace is empty for selected memory/read/write/close services,
+without an all-syscall claim. The independent model passes 18,000 cases,
+four stride combinations and two invocations/case in 5.64s after a fixture-only
+syntax correction. The real [record selector](stdlib-select-records.md) passes
+four groups/91 cases in 8.51s, including five reached allocation denials and
+real output-prefix/EOF failures. This finite increment is accepted on native
+Linux x86_64 CPU output from the GPU compiler. Earlier receipts retain their
+scope; provider effects, lifetimes and the broader library goal stay open.
+
+**Checked storage layouts.**
+
+The [layout guide](stdlib-layout.md) specifies eight allocation-free functions
+with checked size/padding/composition and public-field revalidation. Arrays
+include the last element's stride padding; extend reports its offset without
+implicit tail padding. Zero size and high alignments are arithmetic values,
+separate from native allocator backing and its alignment/zero-size limits.
+Direct contracts pass one test/4.68s with only process-entry/exit syscalls;
+three selected arena regressions pass in 11.98s with four others filtered.
+The real [record-storage program](stdlib-layout-records.md) passes three
+groups/58 cases in 7.32s, including count 65,536, byte readback, three reached
+allocation denials and prepublication arena release. The independent library
+model passes 18,878 cases across all eight APIs and direct/mutated inputs in
+5.46s. This finite native Linux x86_64 increment is accepted; no new compiler
+dependency is introduced. Earlier memory/arena receipts do not establish this
+increment. Native layout inference, over-aligned allocation, automatic
+lifetimes and broader memory consolidation remain separate work.
+
+**Unix streams and socket pairs.**
+
+The [Unix-stream guide](stdlib-unix-streams.md) records three constructors,
+19 inherent owner methods and Read/Write/flush. Borrowed pathname names admit
+1..107 non-NUL bytes, while Linux abstract names admit 0..107 arbitrary bytes
+with significant NULs. Address validation/copying uses stack storage; stream
+transfers share the existing descriptor engine, with no library allocation.
+Pairs publish two independently owned connected endpoints together; copies,
+duplicates, shutdown and retire-before-close preserve explicit ownership.
+Connect makes one host attempt and never interprets Unix EAGAIN as IP pending
+connection success. Source `44f6739d…` has 25 added public entries (60 total).
+One registered real-pair admission passes in 7.30s with bidirectional binary
+bytes, offset views, sentinels and explicit close. The real
+[framed request program](stdlib-unix-request.md) passes four groups/84 cases:
+model 24/8.49s and CLI 19, I/O 24, rejection 17/21.50s, including two real
+five-second deadlines. The direct contract test passes in 8.11s with generic
+Read/Write through typed Result locals; the original immediate generic
+unwrap call failed compilation. The address test passes 90 probes in 6.90s:
+52 independent peers, 36 boundary/lifetime cases and two real backlog cases.
+Bounds/no-host and descriptor-lifecycle gates pass in the first mixed 13.15s
+command, which also has a fault-harness failure. The final fault-only gate
+passes in 8.40s with 63 schedules/13 genuine baselines/50 reached injections;
+three skipped-close descriptors remain until process exit, with no invented
+kernel-close claim. Exact warning/hex-result parser fixes leave production
+unchanged. All six new library tests pass across separate receipts. A
+socket-free immediate generic unwrap reproduction fails with LNC0027 while
+its typed-local control executes;
+the explicit ignored positive-test command is not a green two-test gate.
+The [dependency ledger](library-dependencies.md) preserves that narrow boundary.
+Three selected IP regressions pass in 10.93s, covering
+ownership/ordinary transport, full datagrams and absolute-deadline retry;
+old Internet connect-EAGAIN/malformed-accept groups were filtered and retain
+historical scope. One selected real TCP-application test passes in 8.86s with
+six IPv4/IPv6 exchanges at lengths 0, 257 and 1,048,576; three other tests were
+filtered. This finite increment is accepted on native Linux x86_64 CPU output
+from the GPU compiler. Address queries, Unix datagrams, seqpacket, credentials,
+ancillary descriptor passing, broader targets and automatic lifetime/proof
+work remain open.
+
+**Eager outcome composition.**
+
+The [composition guide](stdlib-outcome-composition.md) specifies type-changing
+Option `and`, Result `and`/`or`, nested flattening and both optional/fallible
+transpose directions. Result `and` retains one error type; Result `or` retains
+one success type. Both transpose functions and receiver extensions live in
+Option's existing conversion home, avoiding a reverse Result import. All
+operands are evaluated before selection; shallow copying creates no cleanup
+authority for selected or discarded resource owners.
+
+Specialized-method admission passes one native test in 4.87s. The full
+contract tables pass one test in 6.81s, and the independent model passes one
+test in 6.94s with 2,180 cases across nine operations, free/method flavors,
+exact payload bits and preserved caller inputs. One existing Result-method
+test passes nine payload combinations in 9.64s, separately from the new
+surface. One owner/memory test passes in 7.28s with six records/twelve actual
+backings, seven zero-host-call pure phases and twelve exact releases.
+The real [optional-sum application](stdlib-optional-sum.md) passes four groups
+with 98 process cases across model 33/7.26s and CLI 17, rejection 30, I/O
+18/8.02s. Five selected OOM sites, a real ten-byte output prefix followed by
+EFBIG, required-EOF failure before publication and bounded interruption
+controls retain their finite scopes. The selected Option regression passes
+one test/three old fixtures in 6.86s. Six focused new typed-call rejections
+pass one test in 7.71s; eight old Result type rejections pass a separate test
+in 6.72s. CPU surface inventory passes one test in 0.01s with runtime tests
+filtered; it establishes coverage bookkeeping. All five new library tests
+and four application groups pass. This selected increment is accepted.
+Evidence
+is selected native Linux x86_64 CPU output from the GPU compiler, without a
+device-runtime, automatic-ownership or general generic-completeness claim.
+Earlier Option/Result receipts retain their historical source/API scope.
+
+**Native numeric byte order.**
+
+The [24 new endian functions](stdlib-native-endian.md) complete multibyte
+native u64, i16/i32/i64 and f32/f64 fields alongside the existing u16/u32 and
+represented-WideU64 family. Reads return the exact caller fallback and writes
+return false before backing access on invalid complete logical bounds. Valid
+writes select only the field; physical backing/lifetime remain caller duties.
+
+Native u64 composes u32 packing; signed wrappers retain two's-complement bits.
+Float wrappers use existing exact bit-transfer APIs without arithmetic,
+preserving zero signs and NaN payload/signaling encodings as a target contract.
+The module allocates no heap storage and uses no host service or implicit
+machine byte order. Two new native tests pass in 8.33s with all 24 additions,
+58 literal vectors, exact IEEE/fallback bits, no memory services in the direct
+contract and four separate overclaim traps (101). The selected old endian
+runtime passes one test/seven fixtures in 8.48s; UTF-16 passes one test/two
+fixtures in 5.82s. The independent model passes 16,032 cases in 6.96s,
+checking read words and encoded write bytes independently without Python
+floats. Two memory tests pass in 7.73s: 672 rejected-access calls, three real
+backing forms, selected signaling-NaN generic transport, zero host calls
+inside traced pure phases and one exact owner release per fixture.
+The 32,768-record workload makes 196,608 writes and 196,608 reads;
+its instrumented whole lifecycle is separate from isolated throughput.
+The [record-repacking application](stdlib-repack-records.md) passes all four
+groups/96 cases across model27/7.80s and CLI23+rejection30+I/O16/7.62s. It
+preserves per-field integer/IEEE bytes in all four conversion pairs, validates
+high-bit counts before narrowing and executes a 65,536-record frame. Four
+selected allocation denials and exact output-prefix/EOF failures retain their
+finite owner/I/O scopes. The static 36-function call inventory passes one CPU
+test; it is bookkeeping separate from runtime acceptance. This selected
+increment is accepted on native Linux x86_64 CPU output from the GPU compiler;
+earlier twelve-function and float evidence retains its scope. The whole
+library goal, broader targets, automatic lifetimes and formal proofs remain open.
+
+**Advisory file locks.**
+
+The [whole-file lock contract](stdlib-file-locks.md) borrows a live File for
+one Linux flock call with explicit Shared/Exclusive and Blocking/Nonblocking
+choices. Only exact-zero success is accepted; errors retain the existing
+Interrupted/WouldBlock/Host mapping. No implicit retry, allocation, seek,
+sync, unlock or close is introduced. Blocking can wait indefinitely.
+
+The lock belongs to the open description shared by duplicates, with no
+reference-counted acquisitions or single-handle ownership guard. Callers
+coordinate all aliases and explicit unlock/close. Failed conversion must not
+be assumed to preserve the old lock. The local-filesystem contract coordinates
+cooperating processes; pathname replacement, writers ignoring the protocol,
+remote NFS/SMB semantics and durability retain separate limits.
+
+The real [file-patch application](stdlib-file-patch.md) adds leading `--lock`
+through its existing preflight/positional/cleanup path, acquiring nonblocking
+Exclusive before reading and attempting unlock then close after acknowledged
+acquisition. Primary patch status and secondary cleanup errors stay explicit.
+The selected existing positional contract passes in 6.74s against FileOps
+`9ca5ca58`; all four ordinary file-patch groups pass in 7.73s with 82 cases
+against app `b2a6984c`. These are current regressions of the same ordinary
+corpus. A new native policy test passes in the mixed first command (6.86s),
+whose fault test failed a tool-warning harness. The final fault-only test
+passes in 5.45s with 16 schedules/14 reached injections/two controls, including
+an exact-zero check on a 4,294,967,296 result. The independent model passes
+in 5.76s: 1,287 programs, 24,244 steps and four owner slots. Explicit unlock
+normalizes 949 WouldBlock results, including 138 failed conversions, so later
+predictions do not assume retention of a failed conversion's old mode.
+
+All four process tests pass across blocking1/5.97s and lifetime3/5.37s,
+with six native peer lifecycles and three actual syscall-73 waits observed
+before controlling-host release. The locked application passes all four
+groups/49 new cases across model15/7.73s and bounds15+faults15+protection4/7.62s.
+Host probes check exclusion during actual positional reads/writes and release
+before close. The 82 ordinary regression cases remain separate. This selected
+increment is accepted; earlier receipts preserve their source/API scope.
+No compiler/ABI/proof change or new compiler dependency is introduced. Manual
+ownership, remote-filesystem semantics and blocking cancellation/deadlines
+remain explicit limits; the whole library goal remains open.
+
+**Positional I/O.**
+
+The [portable positional family](stdlib-positional-io.md) uses explicit
+`u64` byte positions within the signed-64-bit file-length domain. It validates
+whole spans and nonnegative attempt budgets before dispatch. Empty helpers
+make no callback; short transfers advance both array/file coordinates.
+Interrupted calls spend attempts, and every failure retains only confirmed
+progress. A call quota is separate from callback duration or a host deadline.
+
+The `std::file_ops` File adapter reads packed (stride 1) destinations with one
+direct pread64 and no status probe. Writes and other layouts stage at most 1024
+bytes through stack storage and make one transfer after status validation.
+Read bytes publish only after a valid count. It leaves the shared cursor
+unchanged, rejects O_DIRECT and rejects O_APPEND for nonempty writes.
+Manual owner/backing and descriptor/status stability remain caller duties;
+matching/replacement, locking, crash durability and cleanup are not implicit.
+Two portable tests pass in 7.01s: one native no-service contract fixture and
+two exact capability rejections. A selected old stream regression passes in
+11.34s with two native fixtures. The independent portable model passes in
+4.38s with 11,012 cases, 6,836 provider calls and 652 failures after progress.
+Five native-driver tests pass in 13.11s: four fixture groups plus one CPU
+trace-parser check. Native observations include both byte strides, offsets
+above 4 GiB, shared duplicate-cursor preservation, status policies and
+30 fault schedules/24 reached injections. The actual O_DIRECT rejection
+branch executes. A focused amended native-contract test passes in 7.74s,
+checking both full 1025-byte spans at MAX−1024 before any flag or transfer
+call. This reruns one of the five native-driver identities; earlier receipts
+keep their original fixture scope. The real [file-patch application](stdlib-file-patch.md)
+passes its 24-case model in 7.18s and CLI35/preservation6/I/O17 in 7.57s:
+four registered tests and 82 unique process cases across disjoint commands.
+One selected existing FileOps regression passes in 7.12s against the final
+module. Native admission uses the retained
+[typed-local parser idiom](../tests/fixtures/stdlib_compiler_state/filesystem_imports/README.md),
+with no compiler repair claim. The selected native profile is Linux x86_64
+CPU output from the GPU compiler; portable core contracts have no host
+dependency. This selected increment is accepted. Historical receipts retain
+their scope; broader targets, automatic ownership, formal proofs and the
+whole standard/extended library remain open.
+
+**Comparator-driven slice ordering.**
+
+The [seven checked View APIs](stdlib-slice-ordering.md) provide in-place
+unstable sorting, sortedness, heterogeneous lower/upper bounds, deterministic
+first/last duplicate searches and Less-prefix partitioning. Every call rejects
+negative/overflowing logical metadata before reads, mutation or callbacks.
+Indices are view-relative; valid empty calls make no comparison. Shared
+iterative heapsort/search engines preserve the raw Ord family's existing
+signatures and nonpositive-length behavior through `Natural<T>`.
+
+`core::ordering::Comparator<L,R>` replaces the old iterator-only trait with
+no alias. Iterator min/max retain their representative/tie policies with
+`Comparator<T,T>` bounds. Comparators borrow shallow values and context;
+manual backing, stable policy, nonreentrancy and explicit cleanup remain
+caller obligations. Algorithms neither allocate nor clone/destroy owners.
+
+All six new library tests pass on native Linux x86_64 CPU output from the GPU
+compiler: three contracts (8.64s), two owner/scale gates (12.20s) and one
+independent model (6.59s). Contracts cover all seven APIs and five rejected
+capability compositions. The independent model observes 2,808 cases and
+44,928 actions across two descending-stride compound-record backings and six
+policies, checking whole-record permutation and untouched guards. Actual
+nested String owners have 29 exact releases; seven pure phases invoke no
+mapping/release services. A 32,768-record gate checks asymptotic comparison
+allowances and two exact backing releases; its 267ms whole instrumented
+lifecycle is not isolated sorting throughput or a compiler speed ratio.
+
+The retained [same-receiver compiler dependency](../tests/fixtures/stdlib_foundation/slice_ordering_dependency/README.md)
+has two passing checks (2.92s): an import-free reproduction reports LNC0027
+for distinct comparison-trait applications, and separate receiver types
+compile and execute. Current fixtures share one policy across those role
+receivers; the generic library signatures remain unchanged. The real
+[sort-rows CSV program](stdlib-sort-rows.md) passed all four registered tests
+and 122 process cases: model37/12.78s, then CLI39/rejection33/I/O13 in 9.65s.
+At that freeze it preserved visible source-row ties through an explicit
+secondary key while the library sort remained unstable. The separate
+[stable-sort migration](stdlib-stable-sort.md) has its own current receipts.
+Three selected current iterator tests pass
+in 16.23s: 1,280 four-action schedules, 320 extrema and 180 position cases,
+owner cleanup and exact capability rejections. Two unrelated tests were
+filtered; the historical lookahead application and trap were not rerun.
+This selected finite increment is accepted. Historical slice/iterator/fold
+evidence retains its original source scope; no device execution, formal proof
+or automatic ownership follows.
+
+**Allocation-backed stable sorting.**
+
+The new [alloc::slice family](stdlib-stable-sort.md) uses existing View and
+Comparator/Natural contracts with one pre-reserved typed workspace. Bounds and
+storage errors precede input reads, callbacks and mutation; scratch has no
+nested cleanup authority. Completed stable merges preserve equivalent-key
+source order and whole shallow values. Core unstable sorts are unchanged.
+All eight library tests pass, including the independent 5,946-case model,
+owner/guard/scale gates and four marked capability rejections. Migrated
+sort_rows passes four groups/123 cases; standalone build/examples also pass
+without adding cases. This finite native Linux x86_64 increment is accepted.
+
+**Iterator sequence comparisons.**
+
+The [eight sequence consumers](stdlib-iterator-sequences.md) compare actual
+remaining sources with left-before-right pulls, immediate decisive returns and
+no count or identity shortcuts. Equality uses PartialEq, total order Ord and
+partial order the existing four-variant PartialOrdering. Natural sortedness
+uses PartialOrd; custom sortedness is a bool adjacency policy. Owners remain
+manual, including values discarded by result-only consumers. All eight library
+tests pass, including the 11,502-case model and owner/guard/scale gates. All 119
+program cases and three selected migrated-consumer regressions pass separately,
+alongside the standalone build/examples. This finite native Linux x86_64
+increment is accepted; the full library goal remains open.
+
+**Iterator reductions and bounded folds.**
+
+The [eight new fold consumers](stdlib-iterator-folds.md) cover reduction
+without a synthetic initial value, reverse accumulation and resumable bounded
+folds in either direction. Reverse calls require explicit Iterator and
+DoubleEndedIterator bounds for the same item type. Callback argument order
+is always accumulator first.
+
+`FoldProgress` reports successful callback count and an observed EOF flag.
+Zero quotas touch neither source nor folder; reaching quota makes no extra
+EOF or metadata query. A fallible callback has already consumed its current
+item when `FoldFailure` reports earlier successful applications. Recovery
+must use actual owners carried in the callback error. The consumer layer
+adds no allocation, clone, destruction or source retirement; source/callback
+work and manual ownership remain separate obligations. All seven new library
+tests pass on native Linux x86_64 CPU output from the GPU compiler: three
+contract tests (9.13s), three owner/recovery tests (7.62s) and one independent
+state model (9.10s). All eight APIs execute without allocation services under
+pure callbacks; two negative groups reject eight invalid bound compositions.
+Actual nested String-owner recovery includes 24 selected setup/callback
+growth denials with full address/size cleanup. The model observes 10,696 cases
+and 37,104 state commands over four source forms in one native process,
+including exact progress/errors, polls, traces and absent metadata queries.
+
+Two selected old consumer/reverse regressions separately pass in
+7.26s/10.96s. Two dependency tests (4.39s) establish one
+[record-field inference diagnostic](../tests/fixtures/stdlib_foundation/iterator_fold_dependency/README.md)
+and one executing typed-local control, with no compiler repair claim.
+The real [byte-summary program](stdlib-byte-summary.md) passes model 40
+in 9.92s, then CLI32/bounds1/I/O14 in 9.33s: four groups and 87 unique native
+process cases. Earlier exact-size/reverse receipts keep their source scope;
+the new increment supplies no automatic ownership, arbitrary generic or
+device-execution claim.
+
+**Sparse conjugate-gradient systems.**
+
+The [CG contract](extended-sparse-cg.md) adds `ext::sparse_cg::solve` with
+`None`/`Jacobi` preconditioning, an independent solution vector and explicit
+`Stop::Converged` or `Stop::IterationLimit`. It verifies exact numerical
+symmetry and Jacobi's positive diagonals; positive definiteness remains a
+caller requirement. Ordinary binary64 dot products can overflow or break down
+even for a mathematically valid SPD system.
+
+Convergence uses the freshly recomputed `b-Ax` initially and after every
+completed update, checked before the iteration limit. Recursive/fresh
+disagreement can restart from the current iterate. The full requested
+`setup + max_iterations*step` allowance is admitted before payload reads,
+including immediately converged systems. No allocation occurs inside the
+iteration loop; scratch/error cleanup and borrowed backing remain explicit.
+All six new library gates pass on native Linux x86_64. Four contract groups
+are accepted across the mixed first command's three passes and a corrected
+admission-only rerun. The 27 reached workspace allocation denials have
+matched explicit releases by full address/size. The independent model passes
+1,918 cases across two backing forms using exact Fraction Gaussian references
+and independently checked fresh residuals/stopping. An executed scalar
+recursive-zero/fresh-one case verifies refusal or a residual-replacement
+restart. The 65,536-row/196,606-entry manufactured system converges within
+20 requested Jacobi steps under a 90,833,350 work allowance, with a separate
+band-residual check after original backing is destroyed. Its whole-process
+lifecycle timing is separate from isolated kernel throughput. The
+[graph-diffusion program](extended-graph-diffuse.md) composes CSR assembly
+with the solver and publishes only converged staged CSV. All four application
+tests pass in 17.42s: model 36, rejection 48, CLI 55 and I/O 15, totaling 154
+process cases. All six new library and four application gates are accepted
+on this finite profile. Older sparse receipt scopes are unchanged.
+
+**Sparse matrix products.**
+
+The [sparse product contract](extended-sparse-product.md) supplies a sparse
+`a.rows`-by-`b.cols` result when `a.cols==b.rows`. Full canonical input
+validation includes unused right-hand rows. Accumulation traverses increasing
+left inner columns and then each selected right row; sorted touched columns
+provide canonical output without reordering sums. Explicit zeros participate,
+computed zeros are omitted, and nonfinite intermediates fail atomically.
+The output entry cap counts actual rounded nonzeros after cancellation.
+
+Scratch storage is proportional to `b.cols` and reused across rows/passes;
+structurally empty products need only output offsets. Work admission uses the
+documented overflow-safe dominant-phase formula before scratch allocation or
+scalar multiplication. Physical backing, input immutability and owner cleanup
+remain manual. The independent model passes 2,194 cases in 7.45s across two
+backing forms with exact CSR/finite-bit comparisons and bounded exact-Fraction
+checks. The 65,536-row analytic gate passes in 8.38s: 196,606 input entries,
+327,674 output entries and 589,814 structural products. Its whole native
+lifecycle timing does not isolate kernel throughput. Four contract/denial
+gates pass in 13.11s, covering allocation-free admission rejection and 16
+reached operation-allocation errors with full address/size releases. All six
+new library tests pass on native Linux x86_64. Two selected foundation semantic
+regressions separately pass in 11.70s on the current module; other foundation
+receipts retain their old source scope. The real
+[signed weighted-path application](extended-sparse-paths.md) passes all four
+groups: model 34, rejection 37, CLI 36 and I/O 15, totaling 122 unique process
+cases. The first four-test command passes in 20.45s; its earlier 33-case model
+is superseded by the separately accepted 34-case model in 14.73s, including
+the rounded-value left-association check. The overlapping models are not
+summed as distinct cases. All six new library and four application gates are
+accepted on this finite target profile.
+Device execution and formal proofs remain unclaimed.
+
+**Canonical sparse rows and dense composition.**
+
+The [sparse family](extended-sparse.md) separates borrowed finite CSR admission
+from three-buffer owners and owned operations. Canonical rows have sorted
+unique columns and count explicitly stored zeros in `nnz`. Copy/clone/
+transpose preserve signed zeros; COO construction coalesces duplicates in
+original input order, and computed zero entries are omitted. Operations
+reject nonfinite arithmetic rather than silently substituting a zero result.
+
+Addition, subtraction, scalar/axis scaling, owned matvec, dense conversion
+and CSR-times-dense product have explicit shape/cap/work checks. Work units
+are dominant phase estimates, not cumulative instruction/time budgets.
+Every required factor/dense input is validated even if numerically unused.
+The [graph-walk program](extended-graph-walk.md) assembles and normalizes sparse
+transitions, supplies dangling self-loops, transposes and repeatedly calls
+owned matvec; it is a finite walk with no PageRank/convergence claim.
+
+All six registered library gates pass on native Linux x86_64: two semantic
+tests, two allocation-denial tests, one independent numerical model and one
+analytic scale test. The model covers 3,886 cases across 17 modes and two
+backing forms using exact finite-bit comparisons, with separate Fraction
+checks on bounded dyadic arithmetic. The 33 reached operation-allocation
+failures have matched pre-exit releases; this excludes clone input setup
+denials and does not establish every failure schedule or formal leak freedom.
+The 65,536-row tridiagonal has 196,606 entries and exercises assembly,
+transpose, addition, vector/dense products and rejection of a 4,294,967,296-cell
+dense conversion. Its whole-process lifecycle timing is not an isolated
+kernel/compiler benchmark. The real graph application passes all four
+registered tests in 16.31s: model 32, rejection 33, CLI 38 and I/O 10, totaling
+113 process cases. Its module-qualified slice calls work around the retained
+[item-import priority dependency](../tests/fixtures/stdlib_compiler_state/item_import_priority/README.md).
+All ten selected runtime gates are accepted on this finite target profile.
+No broad target, uniform accuracy or formal-proof claim follows.
+Those receipts retain the foundation source hashes in its guide. The separate
+sparse product has its own accepted runtime evidence. The selected CG solver
+has its own accepted increment; other iterative/direct solvers,
+factorizations and additional formats remain future work.
+
+**Exact remaining iterator counts.**
+
+The [exact-size protocol](stdlib-exact-size-iterators.md) requires a matching
+explicit Iterator bound and counts the actual remaining `Some` values. The
+selected leaves include Empty/Once, full i32 ranges, canonical slice/chunk/
+window cursors and collection cursors with existing constant-time remainder
+metadata. Rev/Map/Take/Skip/StepBy/Peekable propagate the contract under their
+source/callback bounds. Take/Skip/StepBy/Peekable remain forward-only; exact
+size does not add a reverse method. StepBy distinguishes its first immediate
+output from later skip-before-output blocks. Peekable includes one occupied
+cache slot without filling it, and retains its cache recovery/owner policy.
+
+Zip has no exact trait because its two borrowed sources can share progress;
+the minimum of their counts need not equal future pair count. Chain can
+exceed `u64` even with two valid source counts. Borrowed hash/tree cursors do
+not gain a traversal scan or new count fields. Existing valid-state,
+backing/lifetime, nonreentrancy and owner rules remain required. Counts are
+snapshots for safe checked planning, with no authority for unchecked writes.
+All four library gates pass across two receipts. Three nonmodel gates pass
+in 11.82s in `exact-size-runtime-accepted.log`, whose model attempt fails on
+a fixture visibility error. The corrected isolated model passes in 8.44s in
+`exact-size-model-visibility-fixed.log`: 10,714 cases/35,922 steps/18 modes,
+with counts derived by draining independent sequence/deque copies. The pure
+contract's memory-syscall trace is empty, collection backings have matched
+full-address/size releases, and five unsupported bounds reject with LNC0008.
+These are four accepted distinct gates, without a combined all-pass claim.
+
+The real [sample-bytes program](stdlib-sample-bytes.md) uses optional Rev,
+Skip, StepBy and Take, then reserves from the final exact count while retaining
+checked appends and an independent byte cap. Four registered tests pass in
+9.44s, covering model37/limits3/CLI39/I/O16: 95 process cases, including two
+reached allocation denials. Receipt is `sample-bytes-runtime-first.log`.
+The unchanged old reverse model separately passes one selected test in 7.27s
+with 7,740 commands, in `exact-size-reverse-regression.log`; no other old-suite
+rerun follows. Logs are under `target/stdlib-work/`. Core source is
+`be05d6c2…`, current pure contract `43e59a04…` and app `f2dc4738…`.
+The narrow generic Option receiver-resolution dependency has an executed
+typed-local control in the exact-size guide. No compiler production changes,
+other targets, formal proofs or automatic lifetime/destruction are claimed.
+
+**Weighted second moments and unweighted third/fourth moments.**
+
+[Weighted statistics](extended-weighted-statistics.md) separates population and
+reliability variance/covariance/stddev. Nonnegative finite real weights have a
+positive-observation count, compensated total weight, stable positive-term
+correction denominator and effective count. Zero weight validates coordinates
+then reports no change. Paired summaries add correlation and simple linear
+fit. [Higher statistics](extended-higher-statistics.md) composes ordinary
+Moments with centered M3/M4 and explicitly named population/adjusted shape
+queries. Both families publish whole scalar/merge/batch updates or an indexed
+error. Higher moments reject lost positive M4 for a nonconstant sample;
+ordinary/weighted second moments retain their stated gradual-underflow limits.
+
+The shared statistics-scaling module is implementation support, with bounded
+mantissa products and one final power-of-two scale. It supplies no arbitrary
+precision or exact-rounding contract.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| Scaling support | Two registered tests pass in 7.31s; independent Fraction references cover 1,926 cases, including 1,122 exact-bit cases; largest observed distance is two ULPs |
+| Weighted statistics | All three registered gates pass: the initial model/contract/CPU-control run takes 13.07s; the strengthened current paired-contract test separately passes in 6.03s, with an empty mmap/mremap/munmap/brk trace |
+| Weighted numerical model | 1,908 exact-input Fraction/220-digit Decimal cases cover ordered merge trees, paired fits, scaled/imbalanced/subnormal weights and explicit finite error allowances |
+| Higher statistics | Both registered runtime tests pass in 9.54s: 1,212 model cases across 51 datasets/eight modes/two backing forms, plus final Underflow and atomic-failure contracts with zero mapping calls |
+| [Sample-moments program](extended-sample-moments.md) | Four registered runtime tests pass in 9.87s and 66 process cases: model26/rejection30/CLI8/I/O2 |
+| Ordinary-statistics regression | Both original runtime tests pass in 12.06s after the shared Underflow enum extension; ordinary algorithms and gradual-underflow behavior are unchanged |
+
+The focused paired rerun replaces the earlier contract receipt; it is not a
+twelfth distinct new test. Direct and registered numerical/application runs
+overlap the same cases. One weighted gate checks the CPU oracle separately
+from runtime execution. Sources are statistics `7f83f1e8…`, support
+`775960e8…`, weighted `d3cea094…` and higher `3f224ad3…`; the strengthened
+paired contract is `add50150…`. Final receipts under `target/stdlib-work/` are
+`statistics-extension-runtime-final.log`,
+`weighted-statistics-paired-contracts-final.log` and
+`statistics-original-regression.log`.
+
+Both tested `f64` backing forms use descending descriptors; this supplies no
+positive packed-stride claim. The selected profile is accepted on native
+Linux x86_64 CPU output from the GPU compiler. Weighted higher-order and
+multivariate higher moments, broader numerical error bounds, formal proofs,
+automatic borrowed lifetime enforcement and other host/device targets remain
+open. The program's explicit storage and host-I/O layer remains separate
+from the allocation-free statistical modules.
+
+**Double-ended iteration and newest matching timeline records.**
+
+The [paired iterator protocol](stdlib-iterators.md#double-ended-traversal)
+consumes one shared non-crossing remainder. None from either end permanently
+exhausts both directions. Generic callers name `Iterator<T>` and
+`DoubleEndedIterator<T>` explicitly. Borrowed Rev swaps direction without eager
+pulls, allocation, item cache, implicit cloning or cleanup. Selected leaves and
+Map/Filter/FilterMap/Chain expose reverse pulls with their source/callback
+bounds. Take/Skip/Zip/Enumerate remain forward-only and compose after Rev.
+Stateful callbacks run in actual pull order; reverse support supplies no
+exact-size promise.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| Reverse protocol | All four registered Rust tests pass across two disjoint commands: model one in 9.40s and the other three in 11.74s |
+| Pure and independent semantics | Five primary plus four extra scenario functions in two raw processes make no mmap/munmap calls; one independent VecDeque model checks 7,740 mixed-end commands |
+| Owners and bounds | Four collection scenarios preserve borrowed aliases, explicit transfer/recovery and seven full-address/size matched backing releases; two invalid Rev bounds reject with LNC0008 |
+| Selected existing callers | Old forward contracts, slice-view and tree-map controls compile/execute after the canonical method move; the tree control retains transitive trait visibility |
+| [Timeline-tail program](stdlib-timeline-tail.md) | All four registered runtime tests pass in 9.15s, covering 71 process cases: model25/rejection24/CLI20/I/O2; earlier direct runs cover the same cases |
+
+Core source is `c2db69bc…`; contract/extra/collection producers are
+`5c682a05…`/`9f6ac75a…`/`bea024ff…`. App source/ELF are
+`6579274d…`/`aca6fc83…`. Final logs are `reverse-model-rust-first.log`,
+`reverse-contracts-rust-formatted.log` and `timeline-tail-rust-final.log` under
+`target/stdlib-work/`. All selected reverse/app acceptance is executable;
+formal proofs, automatic lifetimes/destruction, other reverse adapter families,
+new allocation-failure campaigns and other host/device targets remain open.
+
+**Borrowed WebSocket server and bounded echo service.**
+
+[`websocket_upgrade::Server<T>`](extended-websocket-upgrade.md#server-api-and-policy-boundary)
+receives and validates one HTTP upgrade head, then pauses at Request without
+response writes. Caller policy inspects borrowed target/Origin/protocol/key
+metadata and computes Accept through an established provider. Explicit accept
+copies one canonical response; partial writes and inner flush precede Ready.
+Conversion creates the server framing role over the same exclusively borrowed
+transport. Captured bytes after the request head are rejected. Destruction
+frees storage without closing the caller's transport. This extends the module;
+the original 15,585-byte client prefix is unchanged.
+
+The [echo service](extended-websocket-echo.md) listens once on a numeric IPv4/IPv6
+endpoint, publishes the bound endpoint and handles one client. It checks the
+exact `/echo` target and an optional exact Origin before 101, with canonical
+400/403/404 rejections. It echoes one completed message and mirrors a normal
+Close exchange. TLS uses configured OpenSSL credentials and explicitly
+unauthenticated clients; Origin does not authenticate a peer. One cooperative
+five-second deadline includes credentials, listen/accept, upgrade, frames and
+cleanup. Shared HTTP-server Protocol adoption and concurrent scheduling are
+separate integration work.
+
+The [shared HTTP encoder](extended-http.md) now checks bounded serialized size
+and field syntax before reserving one exact head-plus-body output capacity.
+The canonical parser remains the final start-line/head authority. This does
+not promise allocation-free rejection for every malformed input.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| Server contract | Six scenario functions in one raw process: policy pause/copying, partial I/O, blocked flush, exact response caps, retryable acceptance and typed/sticky failures; converted framing uses Role::Server |
+| Current client regression | Original eleven scenario functions pass in one raw process against the appended server module and changed HTTP encoder; old full client-app groups were not rerun |
+| HTTP encoder | Three actual Rust runtime tests pass in 12.56s after a 2.13s build, including fifteen exact-capacity valid outputs, selected allocation-free preflight rejections and denial of the one reached output allocation |
+| Echo plain/handshake/rejection/CLI | Separate direct groups pass eleven, twelve, ten and fourteen cases respectively |
+| Echo TLS/credentials/deadline | Separate direct groups pass four, three and one cases respectively; TLS covers versions 1.2/1.3 and local close-notify, and bad credentials fail before listening |
+| Echo readiness output | One separate closed-stdout case returns status 5 while the listener is owned; this does not establish leak freedom |
+| Real integration | One additional native Lanius one-message client completes an exchange with this server |
+| Driver admission | The final server/echo Rust-driver rebuild passes `--no-run` in 1.43s after adding the I/O case; this is separate from the three executed HTTP Rust tests |
+
+Current sources are upgrade `cae29596…`, HTTP `5d495716…`, server fixture
+`44292f11…` and echo app `dcdef14c…`. Raw server/client executable identities
+are `79996579…`/`cb811239…`; echo/current integration-client ELFs are
+`44d1b314…`/`798f00e9…`. Logs under `target/stdlib-work/` are
+`websocket-server-contracts-{compile,native}-first.log`,
+`websocket-transport-current-{compile,native}-first.log`,
+`http-encoder-preflight-module-first.log`,
+`websocket-echo-plain-native-first.log`,
+`websocket-echo-{handshake,rejection,cli,tls,credentials,deadline}-native-corrected-oracle.log`,
+`websocket-echo-io-native-first.log`,
+`websocket-echo-integration-native-first.log` and
+`websocket-server-driver-build-io.log`. The app guide records the corrected
+duplicate-Origin and TLS shutdown oracle expectations and precise prior scope.
+
+These finite passes establish the fresh borrowed server transport and one-client
+example. Persistent/concurrent service, existing HTTP-server/scheduler adoption,
+ws/wss URL policy, application authentication, allocation-failure/leak campaigns,
+all generic/TLS schedules, formal proofs, automatic destruction/borrow checking
+and other targets remain open. Blocking host/credential calls cannot be
+interrupted by the cooperative deadline. Sensitive operations remain in OpenSSL.
+
+**Borrowed WebSocket upgrade and frame transport.**
+
+[`websocket_upgrade::Client<T>`](extended-websocket-upgrade.md) owns immutable
+request/expected-Accept copies and retained response bytes while exclusively
+borrowing the caller's transport. Each handshake step performs at most one
+inner I/O attempt. The canonical HTTP cursor stops at the response head;
+transactional `into_stream` copies every coalesced frame byte into the
+[frame stream](extended-websocket-stream.md) before retiring handshake storage.
+A failed conversion leaves the ready client usable. These allocation-backed
+adapters import no socket, TLS, clock or entropy service of their own.
+
+The frame stream preserves partial read/write progress, counts actual inner
+read/write/flush attempts and requires inner flush before publishing a sent
+frame or local Close. WouldBlock preserves the pending suffix/phase; terminal
+I/O/quota failures are sticky. Destruction releases adapter storage without
+flushing, closing the caller transport or sending protocol Close. Borrowed
+payload views and the exclusive transport lifetime remain manual preconditions.
+
+The [websocket-once client](extended-websocket-once.md) supplies the native
+policy: explicit numeric endpoint, separate HTTP authority/target and verified
+DNS TLS identity, fresh OS entropy for nonce/masking keys, one cooperative
+network deadline, bounded messages/controls and successful Close/transport
+cleanup before stdout publication. It parses no ws/wss URL and performs no DNS
+lookup, reconnect or replay. OpenSSL owns TLS and the protocol Accept digest.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| Generic adapters | One raw x86_64 contract process executes eleven scenario functions with finite fault/quota loops: split/prefetched frames, both roles, partial I/O, malformed/EOF/sticky errors, exact limits, source mutation and failed/successful conversion |
+| Real plain client | Nine direct cases: binary/empty/text messages, fragments/Ping/Pong, coalesced frames, extended lengths and masked Close exchange |
+| Real rejection and CLI | Separate groups: twelve protocol/no-publication cases and seventeen argument/input/no-network-on-rejection cases |
+| Real I/O | Three cases: closed stdout reader, stdin failure and the original deadline while waiting for Close |
+| Real TLS client | Five cases: TLS 1.2/1.3, isolated default trust, wrong DNS identity and untrusted CA; application exchange follows authentication |
+| Driver admission | Both new Rust drivers build with `--no-run` in 2.00s; these direct executable receipts are not runtime-libtest passes |
+
+Accepted sources are stream `be16005d…`, upgrade `c8f4a42d…`, scripted producer
+`da71889b…` and final application `0ae21ee1…`. Raw/app executable hashes are
+`6d7a17ee…`/`1e946119…`. Logs under `target/stdlib-work/` are
+`websocket-transport-contracts-{compile,native}-quota-correction.log`,
+`websocket-once-plain-native-empty-upload.log`,
+`websocket-once-{rejection,cli,io,tls}-native-borrowed-owner.log` and
+`websocket-transport-driver-build-first.log`. Earlier app `5055e3ed…` had an
+unaccepted TLS owner-lifetime failure; the final app uses borrowed wrappers with
+branch-scoped owners and has the current five-group receipts. The generic
+modules did not change for that repair.
+
+Target evidence is CPU execution on Linux x86_64. The combined app links
+libssl.so.3, libcrypto.so.3 and libc.so.6 in both modes; its successful TLS
+profile supplies no device execution claim. Allocation-failure injection,
+source/fd leak campaigns, every generic transport/TLS schedule, broader server
+orchestration, ws/wss URL policy, origin/authentication policy and other host
+platforms remain open. Cooperative deadlines cannot interrupt blocking host
+calls. Formal proofs, borrow checking and automatic destruction remain future
+language/runtime work; the documented transfer/error contracts can survive
+those changes.
+
+**WebSocket HTTP/1 upgrade.**
+
+The [portable wire module](extended-websocket.md) validates HTTP/1.1 101
+responses against the original request and a caller-computed expected Accept.
+It checks singleton Upgrade/Accept, Connection tokens, one offered
+case-sensitive protocol selection and rejection of negotiated extensions.
+Returned `remaining` borrows all post-head bytes. The encoder stages one owned
+101 head; explicit Vec destruction remains required. Neither pure operation
+implements a digest or transfers a transport owner.
+
+The separate [OpenSSL helper](extended-openssl-websocket.md) computes the RFC
+Accept value using `EVP_Q_digest`, with packed input, 64-byte native scratch,
+a full-width size cell and output-atomic errors. OpenSSL performs the digest;
+the helper requires libcrypto without libssl and exposes provider failures.
+The [offline tool](extended-websocket-upgrade-program.md) reads through EOF,
+rejects trailing request bytes and writes a fully staged 101 response, with
+optional offered-protocol selection. It supplies no connected service.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| Response wire | A direct pure contract program exits zero: 34 malformed responses plus valid/OWS/selection, two layouts, trailing-frame preservation, encoder bounds/caps and caller-field checks |
+| Native Accept | 310 direct cases across two layouts and overlapping input/output; 24 injected cases separately check provider failure, wrong/full-width returned digest size and atomic errors |
+| Offline tool | Separate direct functional22, rejection30, CLI15 and I/O4 groups; no combined distinct-case count or full application allocation-failure campaign is claimed |
+| Driver admission | Both new Rust drivers build with `--no-run` in 2.09s; no runtime-libtest pass follows |
+
+The wire guide records exact source/executable identities and logs. Historical
+frame/request suites retain their earlier source scope and were not rerun.
+The borrowed client and server compositions now have their separate
+acceptance above. Shared HTTP-server/scheduler adoption, broader origin/routing/
+authentication policy, formal proofs, automatic ownership and other host/device
+targets remain open; nonce/mask entropy and deadlines are explicit policies in
+the one-message client rather than effects of the pure wire API.
+
+**URL-based HTTP and HTTPS.**
+
+The [connected-client guide](extended-url-client.md) defines five boundaries:
+allocation-free DNS byte admission, allocator-backed owned URL planning,
+synchronous resolver/TCP selection, plain HTTP and explicit OpenSSL HTTPS.
+Request preparation precedes lookup; the canonical driver adopts the selected
+socket generation. The first proven TCP connection ends fallback. TLS identity
+and Host retain the original URL name, and handshake/HTTP failure cannot replay
+onto a spare endpoint. Manual owner transfer/destruction, primary versus
+secondary cleanup errors, real leaf-call quotas and blocking NSS qualifications
+are explicit.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| [URL/helper](extended-http-url.md) | Public contracts, 70 model records on two backing layouts and 16 ownership/failure cases, including four reached allocation denials |
+| Socket adoption | Public smoke, one connected same-generation case and eight failure cases, with one reached close EIO; these plain-adoption failures do not establish every TLS setup path |
+| Connected exchange | Separate direct groups: two plain numeric HTTP cases, one controlled ordered four-address DNS fallback, eight TLS cases across TLS 1.2/1.3; exact Host/target/binary wire, original identity, no reconnect/replay and live pre-exit source/descriptor cleanup |
+| Connector | Twelve admission and eight failure/cleanup cases, separately: deadlines/caps/family before attempt, ordered fallback cap/exhaustion, reserved close credit, native EAI/system errors and reached close EIO |
+| [Real fetch](extended-fetch-url.md) | Separate functional groups of 24 HTTP, 33 CLI/preflight and four HTTPS cases; application source-owner/OOM campaign remains unclaimed |
+| Driver registration | All five new Rust drivers pass combined build admission in 4.24s; these direct executable receipts are not passing native Rust libtests |
+
+Current source hashes are helper `d7fae972…`, URL `24472542…`, connector
+`bd3a3f65…`, plain `58f4989b…` and TLS `06a6ebfa…`. The URL guide records its
+comment-only difference from the executed parser source. The connected guide
+owns exact receipt paths, native executable identities and remaining finite
+coverage gaps. The plain module links/runs without SSL/crypto; the combined
+fetch program intentionally links both. GPU compilation supplies CPU output
+here; no user-program GPU execution follows. A
+[minimal None-name collision](../tests/fixtures/compiler_dependencies/url_none_inference/README.md)
+has an executable module-qualified constructor control and is retained as a
+name-resolution dependency. Automatic ownership, formal proofs, asynchronous
+NSS, pooling/keepalive and broader connected WebSocket policies remain open;
+the generic borrowed client handoff has its separate acceptance above.
 
 **Accepted command completion.**
 
@@ -100,9 +1593,9 @@ from the GPU compiler; user-program GPU execution is not established.
 The accepted response checkpoint `68189363` and source `789143f6...` retain
 their separate historical scope below. This completes the selected CLI increment.
 Other shells, arbitrary Bash expansions, host glob memory/time bounds and the
-full library goal remain open. Resolving/URL-based connected-client policy is
-the next intended increment; existing numeric clients and URI utilities retain
-their current scope. The [dependency ledger](library-dependencies.md) remains
+full library goal remain open. The URL-based client now has its separate finite
+acceptance above; existing numeric clients and URI utilities retain their
+own scopes. The [dependency ledger](library-dependencies.md) remains
 separate from accepted finite API evidence.
 
 **Accepted response files.**
@@ -409,6 +1902,20 @@ six smaller constructor/arithmetic/propagation controls execute. No individual
 operator or aggregate shape has been isolated as the cause, and ordinary `?`
 support is not declared unavailable. Compiler repair remains separate work.
 
+**pax archives and tgz.** [`ext::pax`](extended-pax.md) adds POSIX pax `x`/`g`
+extension headers and GNU `././@LongLink` names over `ext::tar`, which now
+also reads old-GNU members and parses headers alone for streaming callers. The
+[`tgz` program](../sample_programs/library/tgz.lani) creates, lists and
+extracts gzip or plain archives as streams through 64 KiB buffers, with hard
+links, mode/mtime restore and a guard against symlinks already in the
+destination. A seeded oracle (`tests/fixtures/extended/tgz_oracle.py`) passes
+3,410 cases with 0 failures against Python `zlib`, `gzip`, `tarfile` and GNU
+tar 1.35: 2,328 codec cases (stored/fixed/dynamic blocks and 600 corrupted
+streams), 898 tree comparisons in both directions, 176 corrupted or unsafe
+archive rejections, five destination-guard cases and a 96 MiB pipeline under
+32 MiB RSS. The oracle ran directly against `lcc` executables on native Linux
+x86_64; its cargo wrapper `tests/extended_tgz_execution.rs` was not run.
+
 **Accepted bounded archive increment.**
 
 The new production code is Lanius over the existing TAR/ZIP engines,
@@ -610,11 +2117,18 @@ full scope and delivery requirements. New APIs follow the
 [owned UTF-8 String](stdlib-string.md) has executable native examples and
 allocation-failure tests.
 [Borrowed UTF-8 text](stdlib-text.md) provides subviews, splitting, scalar
-iteration and hashing without copying.
+iteration and hashing without copying. Its cursors already use the shared
+iterator protocol. The [bidirectional extension](stdlib-bidirectional-text.md)
+adds line traversal and backward scalar/word pulls; its runtime acceptance is
+established by seven new library gates. The line-summary application separately
+passes four groups/102 native cases.
 The [byte stream APIs](stdlib-streams.md) provide shared reader/writer
 contracts, owned byte buffers and native descriptor adapters.
 The [generic hash map](stdlib-hash-collections.md) provides hashed lookup,
-explicit allocation errors and returned displaced keys/values.
+explicit allocation errors and returned displaced keys/values. The new
+[scoped HashMap/TreeMap value update](stdlib-map-updates.md) preserves the stored
+key while restoring the callback's latest value descriptor. All seven new
+library gates and four word-concordance groups/103 native cases pass.
 [Opt-in deep HashMap cloning](stdlib-clone-hash-map.md) now executes with
 independent nested owners, typed key/value errors and allocation-failure cleanup.
 [Opt-in recursive deque cloning](stdlib-clone-deque.md) also executes across
@@ -691,6 +2205,28 @@ pass across separate receipts; the supervisor covers 53 cases.
 Descendants can escape a group, and deadlines do not guarantee kernel-stuck
 processes become reapable; these APIs do not provide process-tree containment.
 
+The [HTTP/1.1 service](extended-http-service.md) (`ext::http_service`)
+reads keep-alive and pipelined requests through the `ext::http` codec under
+absolute head/body/idle/write deadlines, maps typed errors to
+400/408/413/431/501/505, sends 100 Continue and Date, and provides a response
+writer with file streaming and an id-based router. A one-thread `std::event`
+server multiplexes many buffered connections, and a sequential driver shares
+the same code. The static-file sample with listings, single byte ranges and
+ETag/Last-Modified conditional requests passes Python loopback oracle groups
+functional70, malformed45, slowloris12, conditional23 and concurrent39 on the
+event server plus four sequential groups, with exact server counters. TLS,
+threads, multipart ranges and allocation-failure coverage remain open.
+
+The [HTTP/1.1 client agent](extended-http-agent.md) (`ext::http_agent`) is a
+synchronous cleartext client over the same codec, `ext::http_url` and
+`ext::url_connect`. It pools keep-alive connections per host and port under
+idle-count, idle-time and use limits, discards stale ones and retries an
+idempotent request once on a fresh connection. It follows redirects with a
+hop limit, RFC 9110 method rules and cross-origin credential stripping, and
+sends fixed or chunked streamed bodies, stopping an upload on an early final
+response. The curl-like sample passes Python `http.server` oracle groups
+pool18, redirect29, upload10 and broken21 with exact counters.
+
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
 all five direct [Exchange groups](extended-http-exchange-testing.md) passed
@@ -730,7 +2266,9 @@ five groups in 24.18 seconds, including 59 reached allocation failures and a
 stream receipts remain distinct from these selected current program gates.
 The [current concurrent-server increment](library-server-concurrency-plan.md)
 has the finite passes recorded above; its complete acceptance remains open.
-Executable worker threads also remain part of the full goal. The
+Parallel [forked workers, atomics, futex synchronization and bounded
+channels](stdlib-concurrency.md) execute separately. In-process worker
+threads remain part of the full goal. The
 [concurrency admission audit](library-concurrency-dependencies.md) records
 separate compiler/runtime boundaries. The historical execution receipts cover
 native Linux x86-64 CPU programs built by the GPU compiler.
@@ -788,8 +2326,37 @@ do not verify signatures, certificate trust or TLS peers.
 
 Optional modules use the [`extended` source root](../extended/README.md).
 [`ext::csv`](extended-csv.md) and [`ext::json`](extended-json.md)
-include executable normalizers, generated round trips and allocation-failure
-coverage.
+have earlier normalizer, generated round-trip and allocation-failure receipts
+scoped to their recorded sources. The current JSON streaming normalizer's
+acceptance status is recorded separately above.
+[`ext::json_stream`](extended-json-stream.md) tokenizes JSON from byte chunks
+of any size without a document. It validates UTF-8, rejects lone surrogates,
+keeps exact number spelling and reports typed errors with u64 byte offsets.
+Its structural writer emits the `ext::json` byte policy. The streaming
+[jq-lite](../sample_programs/jq_lite.lani) path query agrees with strict Python
+`json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
+agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
+from any `core::io::Read` source, and `Writer.flush_to` streams output to any
+`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md) now
+tries Eisel-Lemire parsing and Grisu3 shortest formatting before its exact
+big-integer path. It agrees with Python `float()` and `repr()` on 4.8 million
+generated values, about 15 to 24 times faster on typical values.
+[`ext::toml`](extended-toml.md) agrees with Python `tomllib` on 1,754
+hand-written, generated and mutated documents. The only differences are by
+policy: TOML 1.1-only syntax, and integers outside i64.
+[`ext::cbor_stream`](extended-cbor-stream.md) streams CBOR: its decoder takes
+byte chunks of any size, its writer flushes to `core::io::Write`, and both have
+an RFC 8949 core deterministic mode (sorted unique keys, definite lengths,
+shortest exact floats). Errors are typed with u64 offsets under depth, item,
+string and input limits. It agrees with all 81 hand-typed Appendix A rows and
+an independent Python implementation on 8,100 generated, mutated, limit and
+sequence cases at four chunk sizes; the
+[cbor-to-json](../sample_programs/cbor_to_json.lani) sample agrees on 700.
+[`ext::msgpack`](extended-msgpack.md) streams MessagePack the same way, with
+optional canonical-header and timestamp checks. It agrees with the installed
+Python `msgpack` package and an independent model on 8,174 format-table,
+generated, mutated, limit and stream cases; the two-way
+[msgpack-json](../sample_programs/msgpack_json.lani) sample agrees on 900.
 [Reusable CSV records and bounded stream writing](extended-csv-write.md)
 share the canonical encoder, preflight the complete record and retain exact
 accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)
@@ -798,6 +2365,23 @@ its five native groups cover independent output models, limits, I/O and
 allocation failures, plus a 4,096-row resource control. The
 [reduced compiler dependencies](library-context-inference-dependencies.md)
 retain original failing expressions beside native passing controls.
+
+[Table-driven Pratt parsing](extended-pratt.md) turns a binding-power table of
+atoms, prefix, infix, postfix, grouping and call kinds into postfix events. It
+uses fixed scratch, allocation-free O(n) parsing and typed errors with token
+indices. Its Python-precedence calculator sample agrees with CPython `ast` on
+100,000 generated expressions and 25,000 token-soup lines.
+
+The [regex differential oracle](extended-regex-oracle.md) runs the real
+`find_iter`, template-replacement and grep programs against CPython `re` on
+seeded grammar-generated patterns from the shared subset. Five seeds agree on
+60,025 find/capture cases (with named groups), 5,000 replacements, 5,000 grep
+runs, 13,853 fixed-width lookbehind cases and 15,000 capture-free lazy-DFA `is_match`/`find` cases, and five
+pathological inputs finish in about 0.2 s. It found, and the engine now fixes,
+a lazy counted-repetition priority error (`(?:a|aab){0,2}?b` on `aabb`).
+The DFA, which carries `^ $ \A \z \b \B` as look-behind bits and delayed
+accepts in its states, lets `text_grep` count any lookbehind-free pattern on a
+0.9 MB corpus in about 0.1–0.2 s instead of 2.3–3.8 s.
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent
@@ -814,7 +2398,11 @@ regex engine and validates each input once. Each nonempty cursor now owns one
 eager span workspace, reused during token selection; terminal calls can release
 it. All six current groups pass: owner/admission/contracts, 576 model cases,
 63 explicit tables and all 30 reached OOM positions. The earlier 120-position
-receipt retains its preceding per-probe scope. Competing patterns can rescan
+receipt retains its preceding per-probe scope. A combined lazy DFA over the
+lookbehind-free rules now runs each step once, with VM fallback for lookbehind,
+a full cache or a possible work limit. Its traces are byte-identical to the
+frozen per-rule lexer on 30,000 generated cases, and it is about 40 times
+faster on an 18-rule corpus. Competing patterns can rescan
 input; neither reusable scratch nor these receipts establish whole-input
 linear time.
 The [CSV-rules lexer program](extended-lex-scan.md) emits staged token spans or

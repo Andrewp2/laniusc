@@ -41,7 +41,7 @@ Signed historical checksums are not accepted.
 | `Fifo` | `6` | None |
 | `Contiguous` | `7` | File bytes |
 
-Unknown types, pax `x`/`g` headers, GNU long-name/link/sparse headers, old/GNU
+Unknown types, pax `x`/`g` headers (read and written by [`ext::pax`](extended-pax.md)), GNU long-name/link/sparse headers, old/GNU
 magic and base-256 numbers return explicit errors. Types are never guessed or
 converted into regular files. Device and FIFO sizes are preserved as metadata
 and do not imply data records. A directory's size is preserved as its POSIX
@@ -69,6 +69,15 @@ base-256 numbers and unterminated digit fields fail. Values are bounded to
 Negative or fractional times require a different archive format.
 
 ## Reader contract
+
+`reader_with(input, cursor, options)` and `writer_at(output, cursor)` resume
+at a record-aligned offset; `ext::pax` uses them after extension headers.
+`ReadOptions { full_uname, full_gname, gnu, headers_only }` (all false from
+`read_options()`, as `reader` uses) accept unterminated 32-byte owner fields,
+old-GNU magic with base-256 numbers, and header-only parsing for streaming
+callers. `Writer.add_header(meta, size)` writes one header and leaves the
+`size` data bytes and padding to the caller. The
+[pax guide](extended-pax.md#library-api) gives the details.
 
 | API | Result |
 | --- | --- |

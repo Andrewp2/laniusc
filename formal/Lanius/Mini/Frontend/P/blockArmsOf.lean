@@ -6,6 +6,7 @@ import Lanius.Mini.Frontend.P.compoundOf
 import Lanius.Mini.Frontend.P.consTreeTail
 import Lanius.Mini.Frontend.P.divergeArm
 import Lanius.Mini.Frontend.P.floatTyped
+import Lanius.Mini.Frontend.P.forRange
 import Lanius.Mini.Frontend.P.freshId
 import Lanius.Mini.Frontend.P.hasKids
 import Lanius.Mini.Frontend.P.intLiteral

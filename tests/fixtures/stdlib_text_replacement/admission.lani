@@ -1,0 +1,24 @@
+module app::main;
+import alloc::string;
+import core::iter;
+import core::mem;
+import core::text;
+import std::io;
+fn mark(value:i32) { let byte:[i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn main() -> i32 {
+    mark(65); mark(83); mark(80);
+    let bytes:[u8;7] = [255,195,169,195,169,33,255]; let text=core::text::from_utf8_range(bytes,1,5).unwrap();
+    let needle=text.slice(0,2).unwrap(); let replacement=text.slice(4,5).unwrap(); let matches=text.match_indices(needle);
+    let item=matches.next().unwrap(); assert(item.first==0 && item.second.start==1 && item.second.length==2 && item.second.equals(needle));
+    item=matches.next().unwrap(); assert(item.first==2 && item.second.start==3 && item.second.length==2 && item.second.equals(needle));
+    assert(matches.next().is_none() && matches.next().is_none());
+    let boundaries=text.match_indices(text.slice(0,0).unwrap()); let expected:[i32;4] = [0,2,4,5]; let i:i32 = 0;
+    while(i<4) { item=boundaries.next().unwrap(); assert(item.first==expected[i] && item.second.is_empty() && item.second.start==1+expected[i]); i+=1; }
+    assert(boundaries.next().is_none()); mark(112); mark(67);
+    let first=alloc::string::replacen(text,needle,replacement,1,4).unwrap(); let all=alloc::string::replace(text,needle,replacement,3).unwrap(); mark(70);
+    mark(80); let expected_first:[u8;4] = [33,195,169,33]; let first_text=core::text::from_utf8(expected_first,4).unwrap(); assert(first.as_text().equals(first_text));
+    assert(all.byte_len()==3 && all.byte_at(0).unwrap()==33 && all.byte_at(1).unwrap()==33 && all.byte_at(2).unwrap()==33);
+    let original:[u8;7] = [255,195,169,195,169,33,255]; i=0; while(i<7) { assert(bytes[i]==original[i]); i+=1; }
+    assert(core::mem::slice_stride(text.bytes)<0 && core::mem::slice_stride(first.as_bytes())==1); mark(112);
+    mark(82); first.destroy(); all.destroy(); mark(69); mark(68); return 0;
+}

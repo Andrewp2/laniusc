@@ -8,11 +8,17 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+Borrowed Encoder adds raw/zlib/gzip output with u64 EncodeLimits, consumed-byte checksums, partial deterministic header/trailer state and exact per-call counts. Whole input offers are admitted before effects; required bytes beyond output allowance latch OutputLimit, while exact-fit Done succeeds. Bounds is recoverable before terminal handling, other errors sticky until reset. Fixed workspace and Encoder/input/output disjointness remain manual. All five encoding library groups and five file-compressor groups/99 native cases pass, including the 112-case/260-pass independent model and nine reached application allocation denials. Four selected old groups and standalone examples retain separate receipts. This finite Linux x86_64 CPU increment is accepted. The following accepted receipts concern the earlier decoder increment. Resumable RawDeflate/Zlib/Gzip framing borrows 32768 history bytes and the raw 707 i32 workspace, with no allocation during step/reset. Metadata-first and sticky-error rules compose with whole-offered-span input admission, actual consumed-byte accounting and pending-byte output-limit detection. Streaming output remains provisional until validated final EOF; gzip members reset logical history/checksums. Owned decode now allocates ring/workspace once and grows output without member replay, releasing all private owners on error and publishing only after complete validation. Fixed workspace AllocationFailed may precede later malformed-format discovery after full input/limit metadata admission. The owned whole-input encoding policy and allocation order remain unchanged through shared raw block helpers. That decoder increment passed seven library tests on native Linux x86_64 CPU output: four direct groups, a 1925-case independent model with 311 reset passes and two resource groups. Fixed caller backing remains 35601 requested allocation bytes including guards at 2 MiB and 4 MiB output; 28 reached owned allocation failures preserve exact cleanup. The atomic file decompressor passes seven groups/98 native cases, including eight reached allocation failures and actual publication outcomes. Its 14 registered library/application tests are accepted on the finite native Linux x86_64 profile. Other targets, device execution, enforced lifetimes and proofs remain separate. Old whole-buffer and performance receipts retain historical source scopes.
+
 ## Contract and evidence guides
 
 - [extended-compression](../../extended-compression.md)
+- [extended-streaming-inflate](../../extended-streaming-inflate.md)
+- [extended-decompress-file](../../extended-decompress-file.md)
+- [extended-streaming-deflate](../../extended-streaming-deflate.md)
+- [extended-compress-file](../../extended-compress-file.md)
 
-Declaration counts: constant: 3; enum: 2; field: 3; function: 3; struct: 1; variant: 19.
+Declaration counts: constant: 3; enum: 2; field: 36; function: 6; impl: 2; method: 15; struct: 6; variant: 19.
 
 ## Declared imports
 
@@ -230,6 +236,310 @@ Deflate(ext::inflate::Error)
 Encode(ext::deflate::Error)
 ```
 
+### struct: EncodeLimits
+
+[Source line 79](../../../extended/ext/compression.lani#L79)
+
+```lanius
+pub struct EncodeLimits
+```
+
+#### field: max_input
+
+[Source line 79](../../../extended/ext/compression.lani#L79)
+
+```lanius
+max_input: u64
+```
+
+#### field: max_output
+
+[Source line 79](../../../extended/ext/compression.lani#L79)
+
+```lanius
+max_output: u64
+```
+
+### struct: EncodeFailure
+
+[Source line 80](../../../extended/ext/compression.lani#L80)
+
+```lanius
+pub struct EncodeFailure
+```
+
+#### field: error
+
+[Source line 80](../../../extended/ext/compression.lani#L80)
+
+```lanius
+error: Error
+```
+
+#### field: read
+
+[Source line 80](../../../extended/ext/compression.lani#L80)
+
+```lanius
+read: i32
+```
+
+#### field: written
+
+[Source line 80](../../../extended/ext/compression.lani#L80)
+
+```lanius
+written: i32
+```
+
+### struct: Encoder
+
+[Source line 89](../../../extended/ext/compression.lani#L89)
+
+```lanius
+pub struct Encoder
+```
+
+#### field: raw
+
+[Source line 90](../../../extended/ext/compression.lani#L90)
+
+```lanius
+raw: ext::deflate::Encoder
+```
+
+#### field: kind
+
+[Source line 90](../../../extended/ext/compression.lani#L90)
+
+```lanius
+kind: i32
+```
+
+#### field: limits
+
+[Source line 90](../../../extended/ext/compression.lani#L90)
+
+```lanius
+limits: EncodeLimits
+```
+
+#### field: phase
+
+[Source line 91](../../../extended/ext/compression.lani#L91)
+
+```lanius
+phase: i32
+```
+
+#### field: failure
+
+[Source line 91](../../../extended/ext/compression.lani#L91)
+
+```lanius
+failure: Error
+```
+
+#### field: read_total
+
+[Source line 91](../../../extended/ext/compression.lani#L91)
+
+```lanius
+read_total: u64
+```
+
+#### field: written_total
+
+[Source line 91](../../../extended/ext/compression.lani#L91)
+
+```lanius
+written_total: u64
+```
+
+#### field: checksum
+
+[Source line 92](../../../extended/ext/compression.lani#L92)
+
+```lanius
+checksum: u32
+```
+
+#### field: member_size
+
+[Source line 92](../../../extended/ext/compression.lani#L92)
+
+```lanius
+member_size: u32
+```
+
+#### field: field_count
+
+[Source line 92](../../../extended/ext/compression.lani#L92)
+
+```lanius
+field_count: i32
+```
+
+### struct: DecodeFailure
+
+[Source line 223](../../../extended/ext/compression.lani#L223)
+
+```lanius
+pub struct DecodeFailure
+```
+
+#### field: error
+
+[Source line 223](../../../extended/ext/compression.lani#L223)
+
+```lanius
+error: Error
+```
+
+#### field: read
+
+[Source line 223](../../../extended/ext/compression.lani#L223)
+
+```lanius
+read: i32
+```
+
+#### field: written
+
+[Source line 223](../../../extended/ext/compression.lani#L223)
+
+```lanius
+written: i32
+```
+
+### struct: Decoder
+
+[Source line 243](../../../extended/ext/compression.lani#L243)
+
+```lanius
+pub struct Decoder
+```
+
+#### field: raw
+
+[Source line 244](../../../extended/ext/compression.lani#L244)
+
+```lanius
+raw: ext::inflate::Decoder
+```
+
+#### field: kind
+
+[Source line 244](../../../extended/ext/compression.lani#L244)
+
+```lanius
+kind: i32
+```
+
+#### field: limits
+
+[Source line 244](../../../extended/ext/compression.lani#L244)
+
+```lanius
+limits: Limits
+```
+
+#### field: phase
+
+[Source line 244](../../../extended/ext/compression.lani#L244)
+
+```lanius
+phase: i32
+```
+
+#### field: failure
+
+[Source line 244](../../../extended/ext/compression.lani#L244)
+
+```lanius
+failure: Error
+```
+
+#### field: read_total
+
+[Source line 245](../../../extended/ext/compression.lani#L245)
+
+```lanius
+read_total: u64
+```
+
+#### field: written_total
+
+[Source line 245](../../../extended/ext/compression.lani#L245)
+
+```lanius
+written_total: u64
+```
+
+#### field: completed_members
+
+[Source line 245](../../../extended/ext/compression.lani#L245)
+
+```lanius
+completed_members: i32
+```
+
+#### field: checksum
+
+[Source line 246](../../../extended/ext/compression.lani#L246)
+
+```lanius
+checksum: u32
+```
+
+#### field: member_size
+
+[Source line 246](../../../extended/ext/compression.lani#L246)
+
+```lanius
+member_size: u32
+```
+
+#### field: header_crc
+
+[Source line 246](../../../extended/ext/compression.lani#L246)
+
+```lanius
+header_crc: u32
+```
+
+#### field: field
+
+[Source line 247](../../../extended/ext/compression.lani#L247)
+
+```lanius
+field: u64
+```
+
+#### field: field_count
+
+[Source line 247](../../../extended/ext/compression.lani#L247)
+
+```lanius
+field_count: i32
+```
+
+#### field: flags
+
+[Source line 247](../../../extended/ext/compression.lani#L247)
+
+```lanius
+flags: i32
+```
+
+#### field: remaining
+
+[Source line 247](../../../extended/ext/compression.lani#L247)
+
+```lanius
+remaining: i32
+```
+
 ## Constants
 
 ### constant: DEFAULT_MAX_INPUT
@@ -268,16 +578,186 @@ pub fn default_limits() -> Limits
 
 ### function: encode
 
-[Source line 47](../../../extended/ext/compression.lani#L47)
+[Source line 44](../../../extended/ext/compression.lani#L44)
 
 ```lanius
 pub fn encode(input: core::slice::View<u8>, format: Format, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error>
 ```
 
+### function: default_encode_limits
+
+[Source line 81](../../../extended/ext/compression.lani#L81)
+
+```lanius
+pub fn default_encode_limits() -> EncodeLimits
+```
+
+Returns u64 allowances of 16 MiB consumed input and 64 MiB encoded output, including container framing.
+
+### function: encoder
+
+[Source line 100](../../../extended/ext/compression.lani#L100)
+
+```lanius
+pub fn encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>, format: Format, limits: EncodeLimits) -> core::result::Result<Encoder,Error>
+```
+
+Constructs a borrowed fixed-storage raw/zlib/gzip encoder through the raw workspace admission. Metadata errors map to Bounds, capacity errors to Encode(raw error). No allocation, I/O or cleanup transfer; step/reset contracts and accepted native scope are in the streaming-encoding guide.
+
+### function: decoder
+
+[Source line 257](../../../extended/ext/compression.lani#L257)
+
+```lanius
+pub fn decoder(history: core::slice::View<u8>, workspace: core::slice::View<i32>, format: Format, limits: Limits) -> core::result::Result<Decoder,Error>
+```
+
+Constructs borrowed raw/zlib/gzip framing state with 32768 history bytes and 707 i32 table entries after limits/backing admission. Step limits entire input offers before reading, charges only consumed bytes, shares raw statuses and retains no offered views. No owner transfer.
+
 ### function: decode
 
-[Source line 167](../../../extended/ext/compression.lani#L167)
+[Source line 501](../../../extended/ext/compression.lani#L501)
 
 ```lanius
 pub fn decode(input: core::slice::View<u8>, format: Format, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
+```
+
+Owned complete-input decoding through the same persistent state with one ring/workspace allocation and geometric result growth. Workspace failures may precede later format validation. Success transfers only the result Vec; every error releases private owners and returns no partial owner.
+
+## Implementation blocks and public methods
+
+### impl at line 205
+
+[Source line 205](../../../extended/ext/compression.lani#L205)
+
+```lanius
+pub impl Encoder
+```
+
+#### method: borrow
+
+[Source line 206](../../../extended/ext/compression.lani#L206)
+
+```lanius
+pub fn borrow(&self) -> &Encoder
+```
+
+#### method: step
+
+[Source line 207](../../../extended/ext/compression.lani#L207)
+
+```lanius
+pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<ext::deflate::Step,EncodeFailure>
+```
+
+#### method: total_read
+
+[Source line 208](../../../extended/ext/compression.lani#L208)
+
+```lanius
+pub fn total_read(&self) -> u64
+```
+
+#### method: total_written
+
+[Source line 209](../../../extended/ext/compression.lani#L209)
+
+```lanius
+pub fn total_written(&self) -> u64
+```
+
+#### method: is_done
+
+[Source line 210](../../../extended/ext/compression.lani#L210)
+
+```lanius
+pub fn is_done(&self) -> bool
+```
+
+#### method: is_failed
+
+[Source line 211](../../../extended/ext/compression.lani#L211)
+
+```lanius
+pub fn is_failed(&self) -> bool
+```
+
+#### method: reset
+
+[Source line 213](../../../extended/ext/compression.lani#L213)
+
+```lanius
+pub fn reset(&self, format: Format, limits: EncodeLimits)
+```
+
+### impl at line 477
+
+[Source line 477](../../../extended/ext/compression.lani#L477)
+
+```lanius
+pub impl Decoder
+```
+
+#### method: borrow
+
+[Source line 478](../../../extended/ext/compression.lani#L478)
+
+```lanius
+pub fn borrow(&self) -> &Decoder
+```
+
+#### method: step
+
+[Source line 479](../../../extended/ext/compression.lani#L479)
+
+```lanius
+pub fn step(&self, input: core::slice::View<u8>, output: core::slice::View<u8>, final_input: bool) -> core::result::Result<ext::inflate::Step,DecodeFailure>
+```
+
+#### method: total_read
+
+[Source line 480](../../../extended/ext/compression.lani#L480)
+
+```lanius
+pub fn total_read(&self) -> u64
+```
+
+#### method: total_written
+
+[Source line 481](../../../extended/ext/compression.lani#L481)
+
+```lanius
+pub fn total_written(&self) -> u64
+```
+
+#### method: members
+
+[Source line 482](../../../extended/ext/compression.lani#L482)
+
+```lanius
+pub fn members(&self) -> i32
+```
+
+#### method: is_done
+
+[Source line 483](../../../extended/ext/compression.lani#L483)
+
+```lanius
+pub fn is_done(&self) -> bool
+```
+
+#### method: is_failed
+
+[Source line 484](../../../extended/ext/compression.lani#L484)
+
+```lanius
+pub fn is_failed(&self) -> bool
+```
+
+#### method: reset
+
+[Source line 485](../../../extended/ext/compression.lani#L485)
+
+```lanius
+pub fn reset(&self, format: Format, limits: Limits) -> core::result::Result<bool,Error>
 ```

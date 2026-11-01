@@ -1,0 +1,17 @@
+// An untyped `let` of a generic trait-method result (R: core::io::Read) gets
+// the wrong type: LNC0006 "type mismatch" at the unwrap. Expected: compiles;
+// `printf x | ./prog` exits 1. The typed let (see README) compiles and works.
+// The reported variant was LNC0027 "call resolution failed".
+module app::main;
+import core::io;
+import core::result;
+import std::stream;
+fn read_one<R>(reader: &R, bytes: [u8]) -> i32 where R: core::io::Read {
+    let got = reader.read(bytes, 0, 1);
+    return core::result::unwrap(got);
+}
+fn main() -> i32 {
+    let bytes: [u8;4] = [0;4];
+    let source: std::stream::Descriptor = std::stream::stdin();
+    return read_one<std::stream::Descriptor>(source.borrow(), bytes);
+}

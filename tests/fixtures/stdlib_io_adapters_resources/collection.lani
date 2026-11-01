@@ -1,0 +1,92 @@
+module app::main;
+import alloc::buffered;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import std::io;
+
+struct Collected { prefix:alloc::vec::Vec<u8>, rest:alloc::vec::Vec<u8>, failed:bool }
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn byte_at(index:i32) -> u8 { return ((index*29+index/251+17)%256) as u8; }
+fn check(bytes:&alloc::vec::Vec<u8>,start:i32) { let index:i32=0; while(index<bytes.len()) { assert(bytes.at(index)==byte_at(start+index)); index+=1; } }
+fn allocation(error:core::io::Error) { assert(match(error) { core::io::Error::AllocationFailed->true,_ ->false }); }
+fn storage(error:alloc::io::ReadError) {
+    let valid:bool=match(error) { alloc::io::ReadError::Storage(cause)->match(cause) { alloc::vec::Error::AllocationFailed->true,_ ->false },_ ->false }; assert(valid);
+}
+fn pipeline(first:&alloc::buffered::Reader<core::io::SliceReader>,second:&alloc::buffered::Reader<core::io::SliceReader>,mode:i32) -> Collected {
+    mark(80);
+    let joined:core::io::Chain<alloc::buffered::Reader<core::io::SliceReader>,alloc::buffered::Reader<core::io::SliceReader>> =core::io::chain(first,second);
+    let limited:core::io::Take<core::io::Chain<alloc::buffered::Reader<core::io::SliceReader>,alloc::buffered::Reader<core::io::SliceReader>>> =core::io::take(joined.borrow(),300007);
+    assert(!joined.is_first_done() && limited.limit()==300007 && first.buffered().length==0 && second.buffered().length==0); mark(112);
+    mark(67);
+    let made:core::result::Result<alloc::buffered::Reader<core::io::Take<core::io::Chain<alloc::buffered::Reader<core::io::SliceReader>,alloc::buffered::Reader<core::io::SliceReader>>>>,core::io::Error> =alloc::buffered::reader(limited.borrow(),3079);
+    mark(70);
+    if(mode==1) {
+        assert(made.is_err()); allocation(made.unwrap_err()); mark(80);
+        assert(limited.limit()==300007 && !joined.is_first_done() && first.buffered().length==0 && second.buffered().length==0); mark(112);
+        mark(67); made=alloc::buffered::reader(limited.borrow(),3079); mark(70);
+    }
+    let outer:alloc::buffered::Reader<core::io::Take<core::io::Chain<alloc::buffered::Reader<core::io::SliceReader>,alloc::buffered::Reader<core::io::SliceReader>>>> =made.unwrap();
+    mark(67); let result:core::result::Result<alloc::vec::Vec<u8>,alloc::io::ReadFailure> =alloc::io::read_to_end(outer.borrow(),alloc::io::ReadLimits { max_bytes:300007,max_calls:4096 }); mark(70);
+    let prefix:alloc::vec::Vec<u8> =alloc::vec::new(); let rest:alloc::vec::Vec<u8> =alloc::vec::new();
+    if(mode==2) {
+        assert(result.is_err()); let failure:alloc::io::ReadFailure=result.unwrap_err(); storage(failure.cause);
+        // Transfer only the retained byte owner's cleanup authority. The
+        // inactive failure/result aliases are not destroyed independently.
+        prefix=failure.bytes; mark(80); assert(failure.extra.is_none() && prefix.len()<300007);
+        check(prefix.borrow(),0);
+        // The outer buffer may hold already charged quota bytes. Every byte
+        // is either in the retained result or in that still-live buffer.
+        assert(limited.limit()==300007-(prefix.len() as u64)-(outer.buffered().length as u64)); mark(112);
+        mark(67); let resumed:core::result::Result<alloc::vec::Vec<u8>,alloc::io::ReadFailure> =alloc::io::read_to_end(outer.borrow(),alloc::io::ReadLimits { max_bytes:300007-prefix.len(),max_calls:4096 }); mark(70);
+        rest=resumed.unwrap();
+    } else { rest=result.unwrap(); }
+    mark(80); assert(prefix.len()+rest.len()==300007 && limited.limit()==0 && joined.is_first_done());
+    assert(!limited.is_faulted() && !joined.is_faulted() && !outer.is_faulted());
+    assert(outer.buffered().length==0); check(prefix.borrow(),0); check(rest.borrow(),prefix.len()); mark(112);
+    assert(outer.discard()==0); mark(80); assert(outer.discard()==0 && !outer.is_active() && first.is_active() && second.is_active()); mark(112);
+    return Collected { prefix:prefix,rest:rest,failed:mode==2 };
+}
+fn publish(bytes:&alloc::vec::Vec<u8>) {
+    let written:i32=0; let attempts:i32=0;
+    while(written<bytes.len()) { assert(attempts<1024); attempts+=1; let count:i32=bytes.len()-written;
+        let used:i32=std::io::write_stdout(bytes.storage+(written as usize),count as usize); assert(used>0 && used<=count); written+=used; }
+}
+fn main() -> i32 {
+    let header:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(header),1)==1);
+    let mode:i32=header[0]&255; assert(mode>=0 && mode<=2);
+    let first_bytes:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(196613).unwrap();
+    let second_bytes:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(131079).unwrap();
+    mark(80); let index:i32=0; while(index<196613) { first_bytes.try_push(byte_at(index)).unwrap(); index+=1; }
+    index=0; while(index<131079) { second_bytes.try_push(byte_at(196613+index)).unwrap(); index+=1; }
+    let first_source:core::io::SliceReader=core::io::slice_reader(first_bytes.as_slice(),196613).unwrap();
+    let second_source:core::io::SliceReader=core::io::slice_reader(second_bytes.as_slice(),131079).unwrap(); mark(112);
+    mark(67); let first_made:core::result::Result<alloc::buffered::Reader<core::io::SliceReader>,core::io::Error> =alloc::buffered::reader(first_source.borrow(),4093); mark(70);
+    let first:alloc::buffered::Reader<core::io::SliceReader> =first_made.unwrap();
+    mark(67); let second_made:core::result::Result<alloc::buffered::Reader<core::io::SliceReader>,core::io::Error> =alloc::buffered::reader(second_source.borrow(),2053); mark(70);
+    let second:alloc::buffered::Reader<core::io::SliceReader> =second_made.unwrap();
+    let output:Collected=pipeline(first.borrow(),second.borrow(),mode);
+    mark(80); assert(first_source.position()==196613 && second_source.position()==104703);
+    assert(first.buffered().length==0 && second.buffered().length==1309);
+    index=0; while(index<1309) { assert(second.buffered().get(index).unwrap()==byte_at(300007+index)); index+=1; } mark(112);
+    // All Chain/Take/outer-reader uses have retired. Reuse the original
+    // buffered source, including its prefetched quota suffix, without rewind.
+    mark(67); let tail_result:core::result::Result<alloc::vec::Vec<u8>,alloc::io::ReadFailure> =alloc::io::read_to_end(second.borrow(),alloc::io::ReadLimits { max_bytes:27685,max_calls:1024 }); mark(70);
+    let tail:alloc::vec::Vec<u8> =tail_result.unwrap(); mark(80);
+    assert(tail.len()==27685 && second_source.position()==131079 && second.buffered().length==0);
+    check(tail.borrow(),300007); check(first_bytes.borrow(),0); check(second_bytes.borrow(),196613); mark(112);
+    assert(first.discard()==0 && second.discard()==0);
+    mark(80); assert(first.discard()==0 && second.discard()==0);
+    assert(first_source.seek(core::io::SeekFrom::Start(0)).unwrap()==0 && second_source.seek(core::io::SeekFrom::Start(0)).unwrap()==0);
+    let probe:[u8;2]=[0,0]; assert(first_source.read(probe,0,1).unwrap()==1 && second_source.read(probe,1,1).unwrap()==1);
+    assert(probe[0]==byte_at(0) && probe[1]==byte_at(196613)); mark(112);
+    first_bytes.destroy(); second_bytes.destroy();
+    mark(80); check(output.prefix.borrow(),0); check(output.rest.borrow(),output.prefix.len()); check(tail.borrow(),300007); mark(112);
+    let report:[i32;6]=[mode,output.prefix.len(),output.rest.len(),tail.len(),104703,1309];
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),24)==24);
+    publish(output.prefix.borrow()); publish(output.rest.borrow()); publish(tail.borrow());
+    output.prefix.destroy(); output.rest.destroy(); tail.destroy();
+    mark(80); output.prefix.destroy(); output.rest.destroy(); tail.destroy(); mark(112); mark(68); return 0;
+}

@@ -13,7 +13,8 @@ established by these tests.
 
 ## Character properties
 
-`properties(value: u32) -> Properties` performs one binary search and returns:
+`properties(value: u32) -> Properties` performs one two-level table lookup
+(three fixed-width reads, no search) and returns:
 
 | Field | Meaning |
 | --- | --- |
@@ -133,19 +134,34 @@ reference.
 Run `python3 tools/unicode17/generate_properties.py` from the repository to
 regenerate the four `unicode_*_data.lani` files, or add `--check` to verify
 reproduction. The generator translates UCD records and never imports a host
-Unicode database. It expands UnicodeData First/Last ranges, fills UCD
-defaults, then compresses equal property runs into start/payload records.
-Simple mappings and full folding use separate sorted point records.
+Unicode database. It expands UnicodeData First/Last ranges and fills UCD
+defaults. Properties become a two-level table: the code point space splits into
+8,704 blocks of 128; identical blocks are stored once (264 distinct blocks);
+each entry is an index into the 136 distinct packed values. A packed value
+holds the category, combining class, nine flags, decimal digit and three
+presence bits that record whether the code point has a simple-mapping, full
+folding or Turkic folding record. Simple mappings and full folding use
+separate sorted point records; a clear presence bit skips their search.
 
 Each table is immutable printable ASCII hex in static string storage, split
 into literals of at most 4,000 bytes. A balanced chunk dispatch obtains a
-borrowed byte view. Binary searches decode fixed-width keys and payloads.
-There are no per-lookup array initializations, unbounded startup data scans,
-or allocations. A property lookup is O(log R) for R property runs; scalar
-mapping lookup is O(log M) for M mapped scalars. Table data and generated
-source size stay bounded by the selected UCD version.
+borrowed byte view. Property lookups decode three fixed-width hex fields;
+point-table searches decode fixed-width keys and payloads. There are no
+per-lookup array initializations, unbounded startup data scans, or
+allocations. A property lookup is O(1); scalar mapping lookup is O(1) for
+unmapped scalars and O(log M) for the M mapped scalars. Table data and
+generated source size stay bounded by the selected UCD version.
+
+On this laptop, querying `general_category` for all 1,114,112 code points in
+one native process took 0.42 s with the two-level table, against 1.54 s with
+the earlier run-length binary search (the loop and process start are
+included in both).
 
 ## Verification
+
+[`tools/unicode17/python_oracle.py`](../tools/unicode17/python_oracle.py)
+also checks category, combining class, decimal digit and the nine flags for
+every code point; see the [uconv and oracle guide](extended-unicode-uconv.md).
 
 `tests/stdlib_unicode_execution.rs` compiles the Lanius functions to native
 code and compares 17 exact binary fields for every one of the 1,114,112 code

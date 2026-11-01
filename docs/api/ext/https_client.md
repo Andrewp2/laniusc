@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Resumable numeric TCP/OpenSSL transport for the shared HTTP Protocol, without a second HTTP parser. Begin consumes Prepared on every result, retaining an independent native Context reference and copying identity bytes before one nonblocking socket opens. Steps never poll; TLS uses stable staged writes, independent readiness needs and explicit TLS-call/I/O/deadline budgets. Early-final closure distinguishes TLS 1.3 notification from TLS 1.2 deferral; authenticated EOF is required for close-delimited bodies. Typed metadata preserves HTTP/TLS/cleanup diagnostics. Six connected HTTPS groups pass 108 cases across three native Linux x86_64/glibc/OpenSSL 3 receipts, including 42 reached source-allocation failures and six direct-step/abort controls. The migrated HTTPS app separately passes four groups/63 cases, and affected mutual-TLS app modes pass three groups/101 cases excluding prepared-context streams. These finite receipts do not establish every TLS schedule or another target. A confirmed 14-line nested enum-pattern reduction rejects with LNC0006; its explicit two-match x86_64 control executes all four assertions. No compiler or production transport change was needed for that expression spelling.
+Resumable numeric TCP/OpenSSL transport for the shared HTTP Protocol, without a second HTTP parser. Begin consumes Prepared on every result, retaining an independent native Context reference and copying identity bytes before one nonblocking socket opens. Steps never poll; TLS uses stable staged writes, independent readiness needs and explicit TLS-call/I/O/deadline budgets. Early-final closure distinguishes TLS 1.3 notification from TLS 1.2 deferral; authenticated EOF is required for close-delimited bodies. Typed metadata preserves HTTP/TLS/cleanup diagnostics. Six connected HTTPS groups pass 108 cases across three native Linux x86_64/glibc/OpenSSL 3 receipts, including 42 reached source-allocation failures and six direct-step/abort controls. The migrated HTTPS app separately passes four groups/63 cases, and affected mutual-TLS app modes pass three groups/101 cases excluding prepared-context streams. These finite receipts do not establish every TLS schedule or another target. A confirmed 14-line nested enum-pattern reduction rejects with LNC0006; its explicit two-match x86_64 control executes all four assertions. No compiler or production transport change was needed for that expression spelling. The separate URL guide documents selected-socket adoption and Exchange.run, with eight current direct URL TLS cases kept separate from these historical numeric-driver counts.
 
 ## Contract and evidence guides
 
@@ -16,6 +16,7 @@ Resumable numeric TCP/OpenSSL transport for the shared HTTP Protocol, without a 
 - [extended-https-batch](../../extended-https-batch.md)
 - [extended-https-batch-testing](../../extended-https-batch-testing.md)
 - [extended-openssl-tls](../../extended-openssl-tls.md)
+- [extended-url-client](../../extended-url-client.md)
 
 Declaration counts: enum: 2; field: 37; function: 4; impl: 2; method: 13; struct: 4; variant: 18.
 
@@ -555,6 +556,8 @@ Consumes and disarms canonical Prepared, preserving its deadline and charged HTT
 ```lanius
 pub fn adopt_connected_with_context_until(prepared: &ext::http_client::Prepared, socket: &std::socket::Socket, context: &ext::openssl_tls::Context, identity: ext::openssl_tls::Identity, options: Options) -> core::result::Result<Exchange,Failure>
 ```
+
+Consumes Prepared and invalidates the supplied Socket owner on every result. Proves a connected nonblocking TCP socket, retains Context/identity state and starts Attach without opening, connecting or handshaking; the canonical driver owns subsequent cleanup.
 
 ### function: exchange_until
 

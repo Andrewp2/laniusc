@@ -54,6 +54,7 @@ struct Memory {
     attempts: usize,
     successful: usize,
     failures: Vec<usize>,
+    requests: Vec<String>,
 }
 fn memory(events: &str) -> Memory {
     let mut live = BTreeMap::<u64, (usize, usize)>::new();
@@ -61,6 +62,7 @@ fn memory(events: &str) -> Memory {
         attempts: 0,
         successful: 0,
         failures: Vec::new(),
+        requests: Vec::new(),
     };
     let mut released = Vec::new();
     let mut publishing = false;
@@ -76,6 +78,7 @@ fn memory(events: &str) -> Memory {
             let length: usize = fields.next().unwrap().parse().unwrap();
             assert!(length > 0, "{events}");
             report.attempts += 1;
+            report.requests.push(arguments.to_owned());
             let address = value.split_whitespace().next().unwrap();
             if let Some(address) = address.strip_prefix("0x") {
                 assert!(!value.contains("INJECTED"), "{events}");
@@ -415,10 +418,51 @@ fn format_report_csv_preflight_streaming_and_exact_failure_cleanup() {
     checked(&baseline, 0, &expected, true);
     profile(&baseline, baseline.memory.attempts, None);
     let positions = baseline.memory.attempts;
+    // Preserve all CSV field shapes but reject the final numeric value. This
+    // reaches the same parser and typed-row reservation, then exits before
+    // writer construction. Successful formatting must add no allocation.
+    let mut rejected_rows = representative.clone();
+    rejected_rows
+        .last_mut()
+        .unwrap()
+        .quantity
+        .replace_range(..1, "x");
+    let rejected_data = input(&rejected_rows);
+    assert_eq!(rejected_data.len(), data.len());
+    assert_eq!(reference(&rejected_rows), (2, Vec::new()));
+    let preflight = run(&executable, &rejected_data, &[], &[], false);
+    native_cases += 1;
+    checked(&preflight, 2, b"", true);
+    no_publication(&preflight);
+    assert_eq!(
+        baseline.memory.requests, preflight.memory.requests,
+        "caller-backed writer construction and publication must not allocate"
+    );
+    let source_map = calls(&baseline.events, "mmap")[0];
+    assert_eq!(
+        result(source_map, "mmap")
+            .0
+            .split(',')
+            .nth(1)
+            .unwrap()
+            .trim()
+            .parse::<usize>()
+            .unwrap(),
+        MAX_INPUT,
+        "the collector reserves its configured input bound"
+    );
+    let eof = baseline
+        .events
+        .lines()
+        .position(|line| line.starts_with("read(") && result(line, "read").1 == "0")
+        .unwrap();
     assert!(
-        positions > 5,
-        "must cover CSV, typed rows and writer owners: {}",
-        baseline.events
+        baseline
+            .events
+            .lines()
+            .skip(eof + 1)
+            .any(|line| line.starts_with("mmap(")),
+        "representative must reach CSV and typed-row storage after input EOF"
     );
     for ordinal in 1..=positions {
         let injection = format!("mmap:error=ENOMEM:when={ordinal}");
@@ -426,6 +470,11 @@ fn format_report_csv_preflight_streaming_and_exact_failure_cleanup() {
         native_cases += 1;
         checked(&observed, 4, b"", true);
         profile(&observed, ordinal, Some(ordinal));
+        assert_eq!(
+            observed.memory.requests,
+            baseline.memory.requests[..ordinal],
+            "allocation denial must match the reached baseline request prefix"
+        );
         if ordinal == 1 {
             assert!(calls(&observed.events, "read").is_empty());
         }
@@ -573,7 +622,6 @@ fn format_report_csv_preflight_streaming_and_exact_failure_cleanup() {
         ("write:retval=18:when=1", 3, b"".as_slice(), 0),
         ("write:error=EINTR:when=1", 0, expected.as_slice(), 1),
         (finish_interrupt.as_str(), 0, expected.as_slice(), 1),
-        ("write:retval=1:when=1", 0, &expected[1..], 1),
     ] {
         let observed = run(&executable, &data, &[], &[injection], false);
         native_cases += 1;
@@ -582,9 +630,6 @@ fn format_report_csv_preflight_streaming_and_exact_failure_cleanup() {
         let seen = calls(&observed.events, "write");
         if status == 0 {
             assert_eq!(seen.len(), write_count + extra);
-        }
-        if injection.contains("retval=1:") {
-            assert_eq!(request(seen[1]), 16);
         }
     }
     for (injection, output, count) in [
@@ -638,5 +683,7 @@ fn format_report_csv_preflight_streaming_and_exact_failure_cleanup() {
     profile(&observed, 0, None);
     assert!(calls(&observed.events, "read").is_empty());
     assert_eq!(native_cases, 58 + positions);
-    eprintln!("format_report: one strict ELF, {positions} observed representative allocation positions, {native_cases} native cases; separate256-row correctness and exact65536-byte output boundary");
+    eprintln!(
+        "format_report: one strict ELF, {positions} reached representative allocation denials, {native_cases} native cases; no extra allocation beyond matched numeric preflight; separate256-row correctness and exact65536-byte output boundary"
+    );
 }

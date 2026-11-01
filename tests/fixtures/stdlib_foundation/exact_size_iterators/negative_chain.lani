@@ -1,0 +1,12 @@
+module app::main;
+import core::iter;
+fn require_exact<I,T>(source:&I) -> u64
+    where I:core::iter::Iterator<T>, I:core::iter::ExactSizeIterator<T> {
+    return source.remaining_count();
+}
+fn main() -> i32 {
+    let left:core::iter::Empty<i32> =core::iter::empty<i32>(); let right:core::iter::Empty<i32> =core::iter::empty<i32>();
+    let chained:core::iter::Chain<core::iter::Empty<i32>,core::iter::Empty<i32>,i32> =core::iter::chain<core::iter::Empty<i32>,core::iter::Empty<i32>,i32>(left.borrow(),right.borrow());
+    let rejected:u64=require_exact<core::iter::Chain<core::iter::Empty<i32>,core::iter::Empty<i32>,i32>,i32>(chained.borrow()); // rejected_exact_count
+    return 0;
+}

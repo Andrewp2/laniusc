@@ -1,0 +1,14 @@
+// Codegen cost of a [u8] loop: 160 M byte reads. Loop disassembly: byte_loop_codegen.s.
+// laniusc: ~0.45 s over the allocation baseline (2.8 ns/byte); gcc -O0 on
+// the same C loop (byte_loop_codegen.c): ~0.13 s; gcc -O2: ~0.01 s. See the Speed
+// section of docs/extended-seqdiff.md.
+module app::main;
+import alloc::vec;
+import core::result;
+fn count_nl(data: [u8], base: i32, n: i32) -> u32 { let c: u32 = 0; let i: i32 = 0; while (i < n) { if (data[base+i] == 10) { c += 1; } i += 1; } return c; }
+fn main() -> i32 {
+    let n: i32 = 16000000; let v: alloc::vec::Vec<u8> = alloc::vec::new();
+    let r: core::result::Result<i32, alloc::vec::Error> = v.try_resize(n, 1);
+    let t: u32 = 0; let k: i32 = 0; while (k < 10) { t = t + count_nl(v.as_slice(), 0, n); k += 1; }
+    v.destroy(); return (t & 1) as i32;
+}

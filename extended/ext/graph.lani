@@ -1,0 +1,283 @@
+// Immutable directed simple graphs in canonical integer adjacency storage.
+// Copies alias one cleanup authority; borrowed views expire on destruction.
+module ext::graph;
+import alloc::vec;
+import core::cmp;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+pub struct Edge { source: i32, target: i32 }
+pub struct View {
+    nodes: i32, offsets: core::slice::View<i32>, targets: core::slice::View<i32>
+}
+pub struct Limits { max_nodes: i32, max_edges: i32, max_work: u64 }
+pub enum ErrorKind {
+    InvalidLimits, Bounds, NodeLimit, EdgeLimit, WorkLimit,
+    Offset, Source, Target, Order, AllocationFailed, Cycle, Closed
+}
+pub struct Error { kind: ErrorKind, node: i32, edge: i32 }
+pub struct Graph {
+    offsets: alloc::vec::Vec<i32>, targets: alloc::vec::Vec<i32>,
+    count: i32, active: bool
+}
+
+pub fn default_limits() -> Limits {
+    return Limits { max_nodes: 1048576, max_edges: 1048576, max_work: 100000000 };
+}
+fn error(kind: ErrorKind, node: i32, edge: i32) -> Error {
+    return Error { kind: kind, node: node, edge: edge };
+}
+fn valid<T>(values: core::slice::View<T>) -> bool {
+    return values.start >= 0 && values.length >= 0 && values.start <= 2147483647-values.length;
+}
+fn integer(values: core::slice::View<i32>, index: i32) -> i32 {
+    return values.get(index).unwrap();
+}
+fn limits_valid(limits: Limits) -> core::result::Result<bool,Error> {
+    if (limits.max_nodes < 0 || limits.max_edges < 0) {
+        return core::result::Err(error(ErrorKind::InvalidLimits,-1,-1));
+    }
+    return core::result::Ok(true);
+}
+// Common profile ceilings also preflight the i32 offset/target owner sizes.
+fn sizes(nodes: i32, edges: i32, limits: Limits) -> core::result::Result<bool,Error> {
+    if (nodes > limits.max_nodes || nodes > 536870910) {
+        return core::result::Err(error(ErrorKind::NodeLimit,-1,-1));
+    }
+    if (edges > limits.max_edges || edges > 268435455) {
+        return core::result::Err(error(ErrorKind::EdgeLimit,-1,-1));
+    }
+    return core::result::Ok(true);
+}
+fn work(amount: u64, limits: Limits) -> core::result::Result<bool,Error> {
+    if (amount > limits.max_work) {
+        return core::result::Err(error(ErrorKind::WorkLimit,-1,-1));
+    }
+    return core::result::Ok(true);
+}
+fn validation_work(nodes: i32, edges: i32) -> u64 {
+    return (nodes as u64)+1+(edges as u64);
+}
+// Metadata, hard/configured sizes, exact offset length and V admission all
+// precede every backing read. A forged physical view remains a precondition.
+fn metadata(value: View, limits: Limits) -> core::result::Result<i32,Error> {
+    limits_valid(limits)?;
+    if (value.nodes < 0 || !valid(value.offsets) || !valid(value.targets)) {
+        return core::result::Err(error(ErrorKind::Bounds,-1,-1));
+    }
+    let count: i32 = value.targets.length;
+    sizes(value.nodes,count,limits)?;
+    if (value.offsets.length != value.nodes+1) {
+        return core::result::Err(error(ErrorKind::Bounds,-1,-1));
+    }
+    work(validation_work(value.nodes,count),limits)?;
+    return core::result::Ok(count);
+}
+// Call only after metadata/work admission. Scan every offset before targets.
+fn adjacency(value: View, count: i32) -> core::result::Result<i32,Error> {
+    let first_node: i32 = -1;
+    if (value.nodes > 0) { first_node = 0; }
+    let previous: i32 = integer(value.offsets,0);
+    if (previous != 0) {
+        return core::result::Err(error(ErrorKind::Offset,first_node,-1));
+    }
+    let index: i32 = 1;
+    while (index <= value.nodes) {
+        let next: i32 = integer(value.offsets,index);
+        if (next < previous || next < 0 || next > count) {
+            return core::result::Err(error(ErrorKind::Offset,index-1,-1));
+        }
+        previous = next;
+        index += 1;
+    }
+    if (previous != count) {
+        let last_node: i32 = -1;
+        if (value.nodes > 0) { last_node = value.nodes-1; }
+        return core::result::Err(error(ErrorKind::Offset,last_node,-1));
+    }
+    let node: i32 = 0;
+    while (node < value.nodes) {
+        let edge: i32 = integer(value.offsets,node);
+        let end: i32 = integer(value.offsets,node+1);
+        let previous_target: i32 = -1;
+        while (edge < end) {
+            let target: i32 = integer(value.targets,edge);
+            if (target < 0 || target >= value.nodes) {
+                return core::result::Err(error(ErrorKind::Target,node,edge));
+            }
+            if (target <= previous_target) {
+                return core::result::Err(error(ErrorKind::Order,node,edge));
+            }
+            previous_target = target;
+            edge += 1;
+        }
+        node += 1;
+    }
+    return core::result::Ok(count);
+}
+
+pub fn validate(value: View, limits: Limits) -> core::result::Result<i32,Error> {
+    let admitted: core::result::Result<i32,Error> = metadata(value,limits);
+    if (admitted.is_err()) { return admitted; }
+    return adjacency(value,admitted.unwrap());
+}
+pub fn view(nodes: i32, offsets: core::slice::View<i32>, targets: core::slice::View<i32>, limits: Limits)
+    -> core::result::Result<View,Error> {
+    let value: View = View { nodes: nodes, offsets: offsets, targets: targets };
+    validate(value,limits)?;
+    return core::result::Ok(value);
+}
+pub fn neighbors(value: View, node: i32, limits: Limits)
+    -> core::result::Result<core::slice::View<i32>,Error> {
+    validate(value,limits)?;
+    if (node < 0 || node >= value.nodes) {
+        return core::result::Err(error(ErrorKind::Bounds,node,-1));
+    }
+    let start: i32 = integer(value.offsets,node);
+    let end: i32 = integer(value.offsets,node+1);
+    return core::result::Ok(value.targets.subview(start,end).unwrap());
+}
+
+pub impl Graph {
+    pub fn borrow(&self) -> &Graph { return self; }
+    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn node_count(&self) -> i32 { return self.count; }
+    pub fn edge_count(&self) -> i32 { return self.targets.len(); }
+    // Read-only borrow. End it before destruction; ownership is not copied.
+    pub fn view(&self) -> core::option::Option<View> {
+        if (!self.active) { return core::option::None(); }
+        return core::option::Some(View {
+            nodes: self.count, offsets: self.offsets.as_view(), targets: self.targets.as_view()
+        });
+    }
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; }
+        self.offsets.destroy();
+        self.targets.destroy();
+        self.count = 0;
+        self.active = false;
+        return true;
+    }
+}
+
+fn allocation_error(cause: alloc::vec::Error, capacity: ErrorKind) -> Error {
+    let kind: ErrorKind = match (cause) {
+        alloc::vec::Error::AllocationFailed -> ErrorKind::AllocationFailed,
+        alloc::vec::Error::InvalidCapacity -> capacity,
+        alloc::vec::Error::CapacityOverflow -> capacity,
+        alloc::vec::Error::Bounds -> ErrorKind::Bounds,
+    };
+    return error(kind,-1,-1);
+}
+// Caller admitted input and every capacity. Even nodes=0 allocates offsets[0].
+fn allocated(nodes: i32, edges: i32) -> core::result::Result<Graph,Error> {
+    let out: Graph = Graph {
+        offsets: alloc::vec::new(), targets: alloc::vec::new(), count: nodes, active: true
+    };
+    let offsets: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(nodes+1);
+    if (offsets.is_err()) {
+        return core::result::Err(allocation_error(offsets.unwrap_err(),ErrorKind::NodeLimit));
+    }
+    out.offsets = offsets.unwrap();
+    let targets: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(edges);
+    if (targets.is_err()) {
+        out.destroy();
+        return core::result::Err(allocation_error(targets.unwrap_err(),ErrorKind::EdgeLimit));
+    }
+    out.targets = targets.unwrap();
+    return core::result::Ok(out);
+}
+
+pub fn from_view(input: View, limits: Limits) -> core::result::Result<Graph,Error> {
+    let count: i32 = metadata(input,limits)?;
+    work(2*validation_work(input.nodes,count),limits)?;
+    adjacency(input,count)?;
+    let out: Graph = allocated(input.nodes,count)?;
+    out.offsets.try_extend(input.offsets).unwrap();
+    out.targets.try_extend(input.targets).unwrap();
+    return core::result::Ok(out);
+}
+
+fn less(left: Edge, right: Edge) -> bool {
+    if (left.source != right.source) { return left.source < right.source; }
+    return left.target < right.target;
+}
+pub impl core::cmp::Ord<Edge> for Edge {
+    pub fn lt(left: Edge, right: Edge) -> bool { return less(left,right); }
+    pub fn le(left: Edge, right: Edge) -> bool { return !less(right,left); }
+    pub fn gt(left: Edge, right: Edge) -> bool { return less(right,left); }
+    pub fn ge(left: Edge, right: Edge) -> bool { return !less(left,right); }
+}
+fn edge_work(nodes: i32, edges: i32) -> u64 {
+    let count: u64 = edges as u64;
+    let power: u64 = 1;
+    let height: u64 = 0;
+    while (power < count) { power *= 2; height += 1; }
+    return (nodes as u64)+1+6*count+4*count*(1+height);
+}
+
+pub fn from_edges(nodes: i32, edges: core::slice::View<Edge>, limits: Limits)
+    -> core::result::Result<Graph,Error> {
+    limits_valid(limits)?;
+    if (nodes < 0 || !valid(edges)) {
+        return core::result::Err(error(ErrorKind::Bounds,-1,-1));
+    }
+    let count: i32 = edges.length;
+    sizes(nodes,count,limits)?;
+    let capacity: i32 = (2147483647/core::mem::size_of<Edge>()) as i32;
+    if (count > capacity) {
+        return core::result::Err(error(ErrorKind::EdgeLimit,-1,-1));
+    }
+    work(edge_work(nodes,count),limits)?;
+    let index: i32 = 0;
+    while (index < count) {
+        let item: Edge = edges.get(index).unwrap();
+        if (item.source < 0 || item.source >= nodes) {
+            return core::result::Err(error(ErrorKind::Source,item.source,index));
+        }
+        if (item.target < 0 || item.target >= nodes) {
+            return core::result::Err(error(ErrorKind::Target,item.target,index));
+        }
+        index += 1;
+    }
+    let reserved: core::result::Result<alloc::vec::Vec<Edge>,alloc::vec::Error> = alloc::vec::with_capacity<Edge>(count);
+    if (reserved.is_err()) {
+        return core::result::Err(allocation_error(reserved.unwrap_err(),ErrorKind::EdgeLimit));
+    }
+    let staged: alloc::vec::Vec<Edge> = reserved.unwrap();
+    staged.try_extend(edges).unwrap();
+    core::slice::sort(staged.as_slice(),staged.len());
+    let kept: i32 = 0;
+    index = 0;
+    while (index < count) {
+        let item: Edge = staged.at(index);
+        let unique: bool = kept == 0;
+        if (kept > 0) {
+            let previous: Edge = staged.at(kept-1);
+            unique = item.source != previous.source || item.target != previous.target;
+        }
+        if (unique) { staged.set(kept,item).unwrap(); kept += 1; }
+        index += 1;
+    }
+    staged.truncate(kept).unwrap();
+    let created: core::result::Result<Graph,Error> = allocated(nodes,kept);
+    if (created.is_err()) { staged.destroy(); return created; }
+    let out: Graph = created.unwrap();
+    out.offsets.try_push(0).unwrap();
+    let node: i32 = 0;
+    index = 0;
+    while (node < nodes) {
+        while (index < kept) {
+            let item: Edge = staged.at(index);
+            if (item.source != node) { break; }
+            out.targets.try_push(item.target).unwrap();
+            index += 1;
+        }
+        out.offsets.try_push(out.targets.len()).unwrap();
+        node += 1;
+    }
+    staged.destroy();
+    return core::result::Ok(out);
+}

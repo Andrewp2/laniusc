@@ -1,0 +1,209 @@
+// Scripted contracts for the ext::cbor_stream Writer API, flushing, the
+// EventReader over core::io::Read, and feed/finish rules. Prints one line per
+// check: "NAME HEX" for output, or "NAME error KIND OFFSET".
+module app::main;
+import alloc::vec;
+import core::f64;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cbor;
+import ext::cbor_stream;
+import std::stream;
+
+struct Log { out: alloc::vec::Vec<u8> }
+fn hex_digit(value: u8) -> u8 { if (value < 10) { return value + 48; } return value + 87; }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn byte(&self, value: u8) { core::result::unwrap(self.out.try_push(value)); }
+    fn text(&self, value: core::text::Text) { let i: i32 = 0; while (i < value.length) { self.byte(value.bytes[value.start + i]); i += 1; } }
+    fn name(&self, value: str, count: i32) {
+        let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+        let i: i32 = 0; while (i < count) { self.byte(bytes[i]); i += 1; }
+        self.byte(32);
+    }
+    fn number(&self, value: u64) {
+        let digits: [u8; 24] = [0; 24]; let count: i32 = 0;
+        if (value == 0) { digits[0] = 48; count = 1; }
+        while (value > 0) { digits[count] = ((value % 10) as u8) + 48; value = value / 10; count += 1; }
+        while (count > 0) { count -= 1; self.byte(digits[count]); }
+    }
+    fn view(&self, data: core::slice::View<u8>) {
+        let i: i32 = 0;
+        while (i < data.length) { let b: u8 = data.values[data.start + i]; self.byte(hex_digit(b >> 4)); self.byte(hex_digit(b & 15)); i += 1; }
+    }
+    fn failure(&self, cause: ext::cbor_stream::Error) {
+        self.byte(101); self.byte(114); self.byte(114); self.byte(111); self.byte(114); self.byte(32);
+        self.text(ext::cbor_stream::kind_name(cause.kind)); self.byte(32); self.number(cause.offset);
+    }
+    // Ends a line: on failure the error, otherwise the writer output.
+    fn result(&self, step: core::result::Result<i32, ext::cbor_stream::Error>, writer: &ext::cbor_stream::Writer) {
+        if (step.is_err()) { self.failure(step.unwrap_err()); } else { self.view(writer.output()); }
+        self.byte(10);
+    }
+}
+
+fn options(deterministic: bool) -> ext::cbor_stream::WriterOptions {
+    let value: ext::cbor_stream::WriterOptions = ext::cbor_stream::default_writer_options();
+    value.deterministic = deterministic;
+    return value;
+}
+fn fresh(deterministic: bool) -> ext::cbor_stream::Writer { return core::result::unwrap(ext::cbor_stream::writer(options(deterministic))); }
+fn letter(bytes: [u8], value: u8) -> core::slice::View<u8> {
+    return core::slice::View { values: bytes, start: value as i32, length: 1 };
+}
+fn chain(a: core::result::Result<i32, ext::cbor_stream::Error>, b: core::result::Result<i32, ext::cbor_stream::Error>) -> core::result::Result<i32, ext::cbor_stream::Error> {
+    if (a.is_err()) { return a; } return b;
+}
+
+fn writer_checks(log: &Log) {
+    let letters: [u8; 256] = [0; 256];
+    let n: i32 = 0; while (n < 256) { letters[n] = n as u8; n += 1; }
+    let w: ext::cbor_stream::Writer = fresh(false);
+    log.name("integer_min", 11); log.result(w.integer(-9223372036854775807 - 1), w.borrow()); w.destroy();
+    w = fresh(false); log.name("unsigned_max", 12); log.result(w.unsigned(18446744073709551615), w.borrow()); w.destroy();
+    w = fresh(false); log.name("float_preserve", 14); log.result(w.float64(core::f64::to_bits(1.0)), w.borrow()); w.destroy();
+    w = fresh(true); log.name("float_shortest", 14); log.result(w.float64(core::f64::to_bits(1.0)), w.borrow()); w.destroy();
+    w = fresh(true); log.name("float_single", 12); log.result(w.float64(core::f64::to_bits(100000.0)), w.borrow()); w.destroy();
+    w = fresh(true); log.name("float_double", 12); log.result(w.float64(core::f64::to_bits(1.1)), w.borrow()); w.destroy();
+    w = fresh(true); log.name("nan_quiet", 9); log.result(w.float64(9221120237041090560), w.borrow()); w.destroy();
+    w = fresh(true); log.name("nan_payload", 11); log.result(w.float32(2139095041), w.borrow()); w.destroy();
+    w = fresh(true); log.name("subnormal_half", 14); log.result(w.float64(4499096027743125504), w.borrow()); w.destroy();
+    w = fresh(false); log.name("half_range", 10); log.result(w.float16(65536), w.borrow()); w.destroy();
+    // Deterministic maps: unknown length, unsorted keys, nested, duplicates.
+    w = fresh(true);
+    let s = chain(w.begin_map(), chain(w.text_bytes(letter(letters, 98)), chain(w.unsigned(1), chain(w.text_bytes(letter(letters, 97)), chain(w.unsigned(2), w.end())))));
+    log.name("map_sorted", 10); log.result(s, w.borrow()); w.destroy();
+    w = fresh(true);
+    s = chain(w.begin_map_len(2), chain(w.unsigned(1000), chain(w.null(), chain(w.unsigned(10), chain(w.begin_array(), chain(w.begin_text(), chain(w.text_bytes(letter(letters, 120)), chain(w.text_bytes(letter(letters, 121)), chain(w.end(), chain(w.end(), w.end()))))))))));
+    log.name("map_nested", 10); log.result(s, w.borrow()); w.destroy();
+    w = fresh(true);
+    s = chain(w.begin_map_len(2), chain(w.float64(core::f64::to_bits(1.0)), chain(w.null(), chain(w.float16(15360), chain(w.null(), w.end())))));
+    log.name("map_duplicate", 13); log.result(s, w.borrow());
+    log.name("sticky", 6); log.result(w.null(), w.borrow()); w.destroy();
+    w = fresh(false);
+    s = chain(w.begin_map(), chain(w.unsigned(1), chain(w.unsigned(2), chain(w.unsigned(1), chain(w.unsigned(3), w.end())))));
+    log.name("map_preserve_duplicate", 22); log.result(s, w.borrow()); w.destroy();
+    w = fresh(true);
+    s = chain(w.tag(1), chain(w.begin_bytes(), chain(w.bytes(letter(letters, 1)), chain(w.bytes(letter(letters, 2)), w.end()))));
+    log.name("tag_chunks", 10); log.result(s, w.borrow()); w.destroy();
+    w = fresh(false);
+    s = chain(w.tag(55799), chain(w.begin_bytes(), chain(w.bytes(letter(letters, 1)), chain(w.bytes(letter(letters, 2)), w.end()))));
+    log.name("tag_indefinite", 14); log.result(s, w.borrow()); w.destroy();
+    // Placement and count errors leave the output unchanged.
+    w = fresh(false); s = chain(w.begin_array_len(2), chain(w.unsigned(1), w.end()));
+    log.name("count_short", 11); log.result(s, w.borrow());
+    log.name("count_ok", 8); log.result(chain(w.unsigned(2), w.end()), w.borrow()); w.destroy();
+    w = fresh(false); s = chain(w.begin_array_len(1), chain(w.unsigned(1), w.unsigned(2)));
+    log.name("count_long", 10); log.result(s, w.borrow()); w.destroy();
+    w = fresh(false); s = chain(w.begin_text(), w.bytes(letter(letters, 1)));
+    log.name("chunk_type", 10); log.result(s, w.borrow()); w.destroy();
+    w = fresh(false); s = chain(w.begin_text(), w.begin_array());
+    log.name("chunk_nested", 12); log.result(s, w.borrow()); w.destroy();
+    w = fresh(false); s = chain(w.begin_map(), chain(w.unsigned(1), w.end()));
+    log.name("odd_map", 7); log.result(s, w.borrow()); w.destroy();
+    w = fresh(false); log.name("end_root", 8); log.result(w.end(), w.borrow()); w.destroy();
+    w = fresh(false); s = chain(w.unsigned(1), w.unsigned(2));
+    log.name("second_root", 11); log.result(s, w.borrow()); w.destroy();
+    let o: ext::cbor_stream::WriterOptions = options(true); o.sequence = true;
+    w = core::result::unwrap(ext::cbor_stream::writer(o)); s = chain(w.unsigned(1), w.float64(core::f64::to_bits(0.5)));
+    log.name("sequence", 8); log.result(s, w.borrow()); w.destroy();
+    w = fresh(false); s = chain(w.tag(1), w.end());
+    log.name("tag_end", 7); log.result(s, w.borrow()); w.destroy();
+    w = fresh(false); log.name("simple_reserved", 15); log.result(w.simple(24), w.borrow()); w.destroy();
+    let bad: [u8; 2] = [195, 40];
+    w = fresh(false); log.name("text_utf8", 9); log.result(w.text_bytes(core::slice::View { values: bad, start: 0, length: 2 }), w.borrow()); w.destroy();
+    o = options(false); o.max_depth = 1;
+    w = core::result::unwrap(ext::cbor_stream::writer(o)); s = chain(w.begin_array(), w.begin_array());
+    log.name("depth_limit", 11); log.result(s, w.borrow()); w.destroy();
+    o = options(false); o.max_output_bytes = 3;
+    w = core::result::unwrap(ext::cbor_stream::writer(o)); s = chain(w.begin_array(), w.unsigned(1000));
+    log.name("output_limit", 12); log.result(s, w.borrow()); w.destroy();
+}
+
+// A 3000-pair deterministic document flushed after every pair through a
+// 64 KiB slice sink, compared with the same document encoded unflushed.
+fn flush_checks(log: &Log) {
+    let flushed: ext::cbor_stream::Writer = fresh(true);
+    let whole: ext::cbor_stream::Writer = fresh(true);
+    let storage: alloc::vec::Vec<u8> = alloc::vec::new(); core::result::unwrap(storage.try_resize(65536, 0));
+    let sink: core::io::SliceWriter = core::result::unwrap(core::io::slice_writer(storage.as_slice(), 65536));
+    core::result::unwrap(flushed.begin_array_len(3000)); core::result::unwrap(whole.begin_array_len(3000));
+    let calls: u64 = 0; let index: u64 = 0; let held: i32 = 0;
+    while (index < 3000) {
+        let k: u64 = 3000 - index;
+        core::result::unwrap(chain(flushed.begin_map(), chain(flushed.unsigned(k), chain(flushed.unsigned(index), chain(flushed.negative(k), chain(flushed.null(), flushed.end()))))));
+        core::result::unwrap(chain(whole.begin_map(), chain(whole.unsigned(k), chain(whole.unsigned(index), chain(whole.negative(k), chain(whole.null(), whole.end()))))));
+        let sent = flushed.flush_to<core::io::SliceWriter>(sink.borrow());
+        if (sent.is_err()) { log.name("flush_failed", 12); log.byte(10); return; }
+        if (sent.unwrap() > 0) { calls += 1; }
+        if (flushed.len() > held) { held = flushed.len(); }
+        index += 1;
+    }
+    core::result::unwrap(flushed.end()); core::result::unwrap(whole.end());
+    core::result::unwrap(flushed.flush_to<core::io::SliceWriter>(sink.borrow()));
+    let expected: core::slice::View<u8> = whole.output();
+    let same: bool = sink.position() == expected.length;
+    let i: i32 = 0;
+    while (same && i < expected.length) { if (storage.at(i) != expected.values[expected.start + i]) { same = false; } i += 1; }
+    log.name("flush", 5); log.number(expected.length as u64); log.byte(32); log.number(calls); log.byte(32); log.number(held as u64); log.byte(32);
+    if (same) { log.name("same", 4); } else { log.name("differ", 6); }
+    log.out.pop();
+    log.byte(10);
+    // An unknown-length deterministic array pins everything until it ends.
+    let pinned: ext::cbor_stream::Writer = fresh(true);
+    core::result::unwrap(chain(pinned.begin_array(), chain(pinned.unsigned(1), pinned.unsigned(2))));
+    log.name("pinned", 6); log.number(pinned.stable_len() as u64); log.byte(32);
+    core::result::unwrap(pinned.end()); log.number(pinned.stable_len() as u64); log.byte(32); log.view(pinned.output()); log.byte(10);
+    flushed.destroy(); whole.destroy(); pinned.destroy(); storage.destroy();
+}
+
+// Decoder feeding rules and the EventReader over a SliceReader with a
+// 3-byte scratch buffer.
+fn reader_checks(log: &Log) {
+    let input: [u8; 13] = [130, 101, 104, 101, 108, 108, 111, 162, 97, 97, 1, 97, 98];
+    let source: core::io::SliceReader = core::result::unwrap(core::io::slice_reader(input, 13));
+    let decoder: ext::cbor_stream::Decoder = core::result::unwrap(ext::cbor_stream::decoder(ext::cbor_stream::default_options()));
+    let scratch: [u8; 3] = [0; 3];
+    let reader: ext::cbor_stream::EventReader<core::io::SliceReader> = core::result::unwrap(ext::cbor_stream::event_reader<core::io::SliceReader>(source.borrow(), decoder.borrow(), core::result::unwrap(core::slice::view(scratch, 3))));
+    let events: u64 = 0;
+    log.name("reader", 6);
+    while (true) {
+        let step = reader.next();
+        if (step.is_err()) {
+            let cause: ext::cbor_stream::Error = match (step.unwrap_err()) { ext::cbor_stream::StreamError::Cbor(e) -> e, ext::cbor_stream::StreamError::Io(e) -> ext::cbor_stream::Error { kind: ext::cbor_stream::ErrorKind::Bounds, offset: 0 } };
+            log.number(events); log.byte(32); log.failure(cause); break;
+        }
+        if (!step.unwrap()) { log.number(events); break; }
+        events += 1;
+    }
+    log.byte(32); log.number(reader.read_calls()); log.byte(10);
+    decoder.destroy();
+    let d: ext::cbor_stream::Decoder = core::result::unwrap(ext::cbor_stream::decoder(ext::cbor_stream::default_options()));
+    let one: [u8; 1] = [0];
+    log.name("feed_after_finish", 17); d.finish();
+    let fed = d.feed(one, 0, 1);
+    if (fed.is_err()) { log.failure(fed.unwrap_err()); } log.byte(10);
+    d.destroy();
+    let limited: ext::cbor_stream::Options = ext::cbor_stream::default_options(); limited.max_input = 2;
+    d = core::result::unwrap(ext::cbor_stream::decoder(limited));
+    let three: [u8; 3] = [25, 1, 0];
+    log.name("input_limit", 11);
+    fed = d.feed(three, 0, 3);
+    if (fed.is_err()) { log.failure(fed.unwrap_err()); } log.byte(10);
+    d.destroy();
+}
+
+fn main() -> i32 {
+    let log: Log = Log { out: alloc::vec::new() };
+    writer_checks(log.borrow());
+    flush_checks(log.borrow());
+    reader_checks(log.borrow());
+    let target: std::stream::Descriptor = std::stream::stdout();
+    if (core::io::write_all<std::stream::Descriptor>(target.borrow(), log.out.as_slice(), 0, log.out.len()).is_err()) { return 3; }
+    log.out.destroy();
+    return 0;
+}

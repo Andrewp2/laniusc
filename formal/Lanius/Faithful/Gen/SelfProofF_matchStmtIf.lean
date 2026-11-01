@@ -13,16 +13,16 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pArgsMore
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
 public import Lanius.Faithful.Gen.SelfStmtF_callParts
-public import Lanius.Faithful.Gen.SelfStmtF_compoundOf
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_consTys
 public import Lanius.Faithful.Gen.SelfStmtF_divergeArm
 public import Lanius.Faithful.Gen.SelfStmtF_fnInstRet
+public import Lanius.Faithful.Gen.SelfStmtF_forRange
 public import Lanius.Faithful.Gen.SelfStmtF_freshId
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
 public import Lanius.Faithful.Gen.SelfStmtF_matchStmtIf
-public import Lanius.Faithful.Gen.SelfStmtF_namesSome
+public import Lanius.Faithful.Gen.SelfStmtF_noBlock
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 public import Lanius.Faithful.Gen.SelfStmtF_noTrees
 public import Lanius.Faithful.Gen.SelfStmtF_repeatEff
@@ -168,18 +168,6 @@ theorem proof_match_init {prog : SrcProgram} {prims : Prims} {ix_match_init ix_p
   simp only [src_match_init] at h
   faithful [Lanius.Mini.matchInit]
 
-theorem proof_match_stmt_arms {prog : SrcProgram} {prims : Prims} {ix_match_stmt_arms ix_list_items ix_kid ix_arms_in_order : Nat} (fn : prog.funcs[ix_match_stmt_arms]? = some (src_match_stmt_arms ix_list_items ix_kid ix_arms_in_order)) (np : prims.isPrim ix_match_stmt_arms = false)
-    (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
-    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
-    (ext_arms_in_order : Certified (∀ {n : Nat}, Stmt_arms_in_order prog prims ix_arms_in_order n)) {n : Nat} :
-    Stmt_match_stmt_arms prog prims ix_match_stmt_arms n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_match_stmt_arms] at h
-  faithful [Lanius.Mini.matchStmtArms]
-
 theorem proof_match_stmt_enum {prog : SrcProgram} {prims : Prims} {ix_match_stmt_enum ix_minus ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_zip_variants ix_match_stmt_head : Nat} (fn : prog.funcs[ix_match_stmt_enum]? = some (src_match_stmt_enum ix_minus ix_kid_token ix_field_start_Token_of_mini_selfhost_Token ix_zip_variants ix_match_stmt_head)) (np : prims.isPrim ix_match_stmt_enum = false)
     (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
     (ext_kid_token : Certified (∀ {n : Nat}, Stmt_kid_token prog prims ix_kid_token n))
@@ -261,6 +249,18 @@ theorem step_some_block_arm {prog : SrcProgram} {prims : Prims} {ix_some_block_a
   rw [pcall_succ np fn] at h
   simp only [src_some_block_arm] at h
   faithful [Lanius.Mini.someBlockArm]
+
+theorem proof_stmt_arms {prog : SrcProgram} {prims : Prims} {ix_stmt_arms ix_list_items ix_kid ix_stmt_arm_order : Nat} (fn : prog.funcs[ix_stmt_arms]? = some (src_stmt_arms ix_list_items ix_kid ix_stmt_arm_order)) (np : prims.isPrim ix_stmt_arms = false)
+    (ext_list_items : Certified (∀ {n : Nat}, Stmt_list_items prog prims ix_list_items n))
+    (ext_kid : Certified (∀ {n : Nat}, Stmt_kid prog prims ix_kid n))
+    (ext_stmt_arm_order : Certified (∀ {n : Nat}, Stmt_stmt_arm_order prog prims ix_stmt_arm_order n)) {n : Nat} :
+    Stmt_stmt_arms prog prims ix_stmt_arms n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_stmt_arms] at h
+  faithful [Lanius.Mini.stmtArms]
 
 theorem step_value_arms {prog : SrcProgram} {prims : Prims} {ix_value_arms ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_is_block_arm ix_if_one : Nat} (fn : prog.funcs[ix_value_arms]? = some (src_value_arms ix_plus ix_unbox_of_mini_selfhost_List_mini_selfhost_CTree ix_value_arms ix_is_block_arm ix_if_one)) (np : prims.isPrim ix_value_arms = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))

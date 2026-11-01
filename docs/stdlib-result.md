@@ -5,9 +5,13 @@ is active, so `Ok(0)`, `Ok(false)` and an `Err` holding zero are all ordinary
 values. A result does not allocate, and it does not own storage that its
 payloads borrow.
 
-Every operation takes the result by value, so the caller's copy is never
-changed. Each exists as a free function, `core::result::is_ok(value)`, and as
+Operations take the result by value and leave its caller-side wrapper
+descriptor unchanged. A selected transformation callback may affect backing
+referenced by a shallow payload; its ownership policy is explicit below.
+Each exists as a free function, `core::result::is_ok(value)`, and as
 a method, `value.is_ok()`.
+The specialized Result-of-Option `transpose` method is defined in
+`core::option`; import that module to include the extension.
 
 ## Operations
 
@@ -20,17 +24,60 @@ a method, `value.is_ok()`.
 | `unwrap(value)`, `unwrap_err(value)` | The success value or the error; each panics (SIGILL) on the other variant. |
 | `unwrap_or(value, fallback)` | The success value, or `fallback` for an error. Never panics. |
 | `unwrap_err_or(value, fallback)` | The error, or `fallback` for a success. Never panics. |
-| `or(value, fallback)` | `value` when it is `Ok`, otherwise `fallback`; two errors give the fallback's error. |
-| `and(value, next)` | `next` when `value` is `Ok`, otherwise `value`'s error. |
+| `or<T,E,F>(value, fallback)` | Left `Ok(T)` wins; left `Err(E)` selects the eager `Result<T,F>` fallback, including its error. Both inputs share `T`. |
+| `and<T,E,U>(value, next)` | Left `Ok(T)` selects the eager `Result<U,E>` next value; left `Err(E)` preserves that error. Both inputs share `E`. |
+| `flatten<T,E>(value)` | `Ok(inner)` gives the inner `Result<T,E>`; outer `Err(e)` keeps `e`. Both error layers share `E`. |
 
-Conversions to and from `Option` are in `core::option`: `ok_or`, `ok` and
-`err`. `core::result` does not import `core::option`.
+Conversions to and from `Option` are in `core::option`: `ok_or`, `ok`, `err`,
+`transpose_to_result` and `transpose_to_option`. `core::result` does not
+import `core::option`.
 
 The `PartialEq` impls in `core::cmp` cover every integer width, `bool`, `char`,
 `f32` and `f64` (IEEE equality), `ptr` and the wide integers; a user type implements
 `core::cmp::PartialEq` for itself.
 
+## Lazy callbacks
+
+The [lazy-outcome guide](stdlib-lazy-outcomes.md) specifies 9 new operations
+in free-function and method forms, using the canonical
+`core::function::Mapper` trait. Result fallbacks receive the error payload;
+Option's argument-free fallbacks use Producer. Selected callbacks run once; skipped callbacks never run. Callback construction and
+ordinary arguments remain eager, and every static bound applies even to a
+runtime-skipped branch.
+
+Library selection does no allocation or destruction. Transformation callbacks
+have their own effects and explicit owner-transfer policy; predicates only
+borrow their payload for the call. Discarded payloads and eager fallback
+owners stay the caller's cleanup responsibility. All eight new library groups
+and the current 98-case optional-sum application pass on native Linux x86_64
+CPU output from the GPU compiler; six selected regressions pass separately.
+The new guide records exact scopes; the receipts below retain their earlier
+API scope.
+
+## Eager composition and nested methods
+
+`Result<Result<T,E>,E>.flatten()` removes one result layer; both nested error
+types must match. `Result<Option<T>,E>.transpose()` uses the extension in
+`core::option` to preserve absence, success and error as distinct states.
+The [outcome-composition guide](stdlib-outcome-composition.md) gives both
+transpose tables and the widened selection signatures.
+
+All arguments are evaluated before selection, with no promised evaluation
+order. Operations copy shallow values and do no allocation, clone or cleanup;
+owners in selected and discarded inputs retain the caller's cleanup policy.
+All four specialized Option/Result methods pass small native admission;
+broader composition contracts, the independent model and owner/memory
+observations also pass. All four real optional-sum application groups pass
+98 cases, and six focused type rejections pass separately. This selected
+composition increment is accepted on native Linux x86_64; the new guide
+records selected regressions and CPU inventory separately. The earlier
+receipts below retain their original scope.
+
 ## Targets and limits
+
+The scope and reported boundaries below predate the composition increment;
+they are not fresh reproductions or evidence for its added signatures. The
+new guide records current selected checks separately.
 
 - x86_64 Linux runs every operation for every payload type above, user
   records, slices, strings and fixed arrays.
@@ -41,13 +88,17 @@ The `PartialEq` impls in `core::cmp` cover every integer width, `bool`, `char`,
 - Borrowed payloads keep pointing at the caller's storage, which must outlive
   the result.
 
-## Verification
+## Historical verification
+
+These receipts cover the operations present at their source revision, before
+the lazy callback additions. Current coverage is listed in the
+[lazy-outcome guide](stdlib-lazy-outcomes.md).
 
 - `tests/fixtures/stdlib_foundation/core_option_result.lani` runs every free
   function and method through one generic checker for every payload type
   above, a user record, and a result whose two payload types differ.
-  `tests/stdlib_foundation_execution.rs` checks that it calls every public
-  function and method of `core::result`.
+  `tests/stdlib_foundation_execution.rs` checked its then-current public
+  function and method inventory.
 - `tests/stdlib_result_generic_execution.rs` and
   `tests/stdlib_result_methods_execution.rs` cover every state pair of the
   combinators, NaN and negative zero, string, slice and array payloads, bounds

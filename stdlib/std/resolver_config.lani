@@ -1,0 +1,189 @@
+// System resolver configuration: resolv.conf(5) nameservers, search list and
+// options, and hosts(5) lookups. Parsing is lenient like glibc's: unusable
+// lines are skipped and counted, never fatal. See docs/stdlib-resolver-config.md.
+module std::resolver_config;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+
+pub const MAX_NAMESERVERS: i32 = 3;
+pub const MAX_SEARCH: i32 = 6;
+pub const MAX_FILE_BYTES: i32 = 1048576;
+pub enum Error { Io(core::io::Error), Path, TooLarge, AllocationFailed, Bounds }
+// servers carry port 53. timeout_ms is per query and attempt.
+pub struct Config { servers: alloc::vec::Vec<core::net::SocketAddr>, names: alloc::vec::Vec<u8>, spans: alloc::vec::Vec<i32>, ndots: i32, timeout_ms: i32, attempts: i32, rotate: bool, edns0: bool, use_vc: bool, trust_ad: bool, no_aaaa: bool, ignored: i32, ignored_servers: i32, defaulted: bool }
+pub enum Family { Any, Ipv4, Ipv6 }
+// canonical is the first name on the matching line, inside the content.
+pub struct HostEntry { address: core::net::IpAddr, canonical: core::slice::View<u8>, line: i32 }
+
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647 - view.length; }
+fn at(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start + index]; }
+fn part(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::slice::View { values: view.values, start: view.start + start, length: end - start }; }
+fn blank(byte: u8) -> bool { return byte == 32 || byte == 9 || byte == 13 || byte == 11 || byte == 12; }
+fn lower(byte: u8) -> u8 { if (byte >= 65 && byte <= 90) { return byte + 32; } return byte; }
+fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool {
+    if (a.length != b.length) { return false; } let i: i32 = 0;
+    while (i < a.length) { if (lower(at(a,i)) != lower(at(b,i))) { return false; } i += 1; } return true;
+}
+fn literal(a: core::slice::View<u8>, text: str, n: i32) -> bool {
+    if (a.length != n) { return false; } let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),n);
+    let i: i32 = 0; while (i < n) { if (at(a,i) != raw[i]) { return false; } i += 1; } return true;
+}
+fn prefix(a: core::slice::View<u8>, text: str, n: i32) -> bool { if (a.length < n) { return false; } return literal(part(a,0,n),text,n); }
+fn strip_dot(name: core::slice::View<u8>) -> core::slice::View<u8> { if (name.length > 0 && at(name,name.length-1) == 46) { return part(name,0,name.length-1); } return name; }
+// A plausible domain for a search list: printable ASCII, at most 253 bytes.
+fn domain(name: core::slice::View<u8>) -> bool {
+    if (name.length < 1 || name.length > 253) { return false; } let i: i32 = 0;
+    while (i < name.length) { let c: u8 = at(name,i); if (c <= 32 || c >= 127) { return false; } i += 1; } return true;
+}
+// Tokens of one line: next(from) returns the start of the next token or -1.
+fn skip(line: core::slice::View<u8>, from: i32) -> i32 { let i: i32 = from; while (i < line.length && blank(at(line,i))) { i += 1; } if (i >= line.length) { return -1; } return i; }
+fn token_end(line: core::slice::View<u8>, from: i32) -> i32 { let i: i32 = from; while (i < line.length && !blank(at(line,i))) { i += 1; } return i; }
+fn small(value: core::slice::View<u8>, maximum: i32) -> i32 {
+    if (value.length < 1 || value.length > 6) { return -1; } let n: i32 = 0; let i: i32 = 0;
+    while (i < value.length) { let c: u8 = at(value,i); if (c < 48 || c > 57) { return -1; } n = n * 10 + ((c - 48) as i32); i += 1; }
+    if (n > maximum) { return maximum; } return n;
+}
+fn empty_config() -> Config {
+    return Config { servers: alloc::vec::new(), names: alloc::vec::new(), spans: alloc::vec::new(), ndots: 1, timeout_ms: 5000, attempts: 2, rotate: false, edns0: false, use_vc: false, trust_ad: false, no_aaaa: false, ignored: 0, ignored_servers: 0, defaulted: false };
+}
+fn server(value: core::slice::View<u8>) -> core::option::Option<core::net::SocketAddr> {
+    let plain = core::net::parse_ip(value);
+    if (plain.is_ok()) {
+        return match (plain.unwrap()) {
+            core::net::IpAddr::V4(v4) -> core::option::Some(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: v4, port: 53 })),
+            core::net::IpAddr::V6(v6) -> core::option::Some(core::net::SocketAddr::V6(core::net::SocketAddrV6 { address: v6, port: 53, scope: 0 }))
+        };
+    }
+    // A numeric %scope; interface names would need if_nametoindex.
+    let scoped = core::net::parse_scoped_ipv6(value);
+    if (scoped.is_ok()) { let s = scoped.unwrap(); return core::option::Some(core::net::SocketAddr::V6(core::net::SocketAddrV6 { address: s.address, port: 53, scope: s.scope })); }
+    return core::option::None();
+}
+fn set_search(config: &Config, line: core::slice::View<u8>, from: i32) -> bool {
+    config.names.clear(); config.spans.clear(); let at_token: i32 = skip(line,from);
+    while (at_token >= 0) {
+        let end: i32 = token_end(line,at_token); let name = strip_dot(part(line,at_token,end));
+        if (name.length > 0) {
+            if (!domain(name) || config.spans.len() >= 2 * MAX_SEARCH) { config.ignored += 1; }
+            else {
+                let start: i32 = config.names.len();
+                if (config.names.try_extend(name).is_err() || config.spans.try_push(start).is_err() || config.spans.try_push(name.length).is_err()) { return false; }
+            }
+        }
+        at_token = skip(line,end);
+    }
+    return true;
+}
+fn option_line(config: &Config, line: core::slice::View<u8>, from: i32) {
+    let at_token: i32 = skip(line,from);
+    while (at_token >= 0) {
+        let end: i32 = token_end(line,at_token); let word = part(line,at_token,end); let known: bool = true;
+        if (prefix(word,"ndots:",6)) { let n: i32 = small(part(word,6,word.length),15); if (n < 0) { known = false; } else { config.ndots = n; } }
+        else { if (prefix(word,"timeout:",8)) { let n: i32 = small(part(word,8,word.length),30); if (n < 0) { known = false; } else { if (n < 1) { n = 1; } config.timeout_ms = n * 1000; } }
+        else { if (prefix(word,"attempts:",9)) { let n: i32 = small(part(word,9,word.length),5); if (n < 0) { known = false; } else { if (n < 1) { n = 1; } config.attempts = n; } }
+        else { if (literal(word,"rotate",6)) { config.rotate = true; }
+        else { if (literal(word,"edns0",5)) { config.edns0 = true; }
+        else { if (literal(word,"use-vc",6)) { config.use_vc = true; }
+        else { if (literal(word,"trust-ad",8)) { config.trust_ad = true; }
+        else { if (literal(word,"no-aaaa",7)) { config.no_aaaa = true; } else { known = false; } } } } } } } }
+        if (!known) { config.ignored += 1; }
+        at_token = skip(line,end);
+    }
+}
+// Parse resolv.conf content. Lines starting with # or ; are comments.
+// nameserver: up to MAX_NAMESERVERS numeric addresses (extra ones counted in
+// ignored_servers); domain and search replace the search list (last wins;
+// "." entries are dropped, at most MAX_SEARCH kept); options: ndots:n (<=15),
+// timeout:n seconds (1..30), attempts:n (1..5), rotate, edns0, use-vc,
+// trust-ad, no-aaaa. Unknown keywords and options count in ignored. With no
+// usable nameserver the config holds 127.0.0.1 and defaulted is true.
+pub fn parse(content: core::slice::View<u8>) -> core::result::Result<Config, Error> {
+    if (!valid(content)) { return core::result::Err(Error::Bounds); }
+    if (content.length > MAX_FILE_BYTES) { return core::result::Err(Error::TooLarge); }
+    let config: Config = empty_config(); let begin: i32 = 0;
+    while (begin < content.length) {
+        let stop: i32 = begin; while (stop < content.length && at(content,stop) != 10) { stop += 1; }
+        let line = part(content,begin,stop); begin = stop + 1;
+        if (line.length == 0 || at(line,0) == 35 || at(line,0) == 59) { continue; }
+        let first: i32 = skip(line,0); if (first < 0) { continue; }
+        let end: i32 = token_end(line,first); let key = part(line,first,end);
+        if (literal(key,"nameserver",10)) {
+            let value_at: i32 = skip(line,end); let parsed: core::option::Option<core::net::SocketAddr> = core::option::None();
+            if (value_at >= 0) { parsed = server(part(line,value_at,token_end(line,value_at))); }
+            if (parsed.is_none()) { config.ignored += 1; }
+            else { if (config.servers.len() >= MAX_NAMESERVERS) { config.ignored_servers += 1; } else { if (config.servers.try_push(parsed.unwrap()).is_err()) { config.destroy(); return core::result::Err(Error::AllocationFailed); } } }
+        } else { if (literal(key,"search",6) || literal(key,"domain",6)) {
+            if (!set_search(config.borrow(),line,end)) { config.destroy(); return core::result::Err(Error::AllocationFailed); }
+        } else { if (literal(key,"options",7)) { option_line(config.borrow(),line,end); } else { config.ignored += 1; } } }
+    }
+    if (config.servers.is_empty()) {
+        let loopback = core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: 53 });
+        if (config.servers.try_push(loopback).is_err()) { config.destroy(); return core::result::Err(Error::AllocationFailed); }
+        config.defaulted = true;
+    }
+    return core::result::Ok(config);
+}
+pub impl Config {
+    pub fn borrow(&self) -> &Config { return self; }
+    pub fn server_count(&self) -> i32 { return self.servers.len(); }
+    pub fn server(&self, index: i32) -> core::option::Option<core::net::SocketAddr> { return self.servers.get(index); }
+    pub fn search_count(&self) -> i32 { return self.spans.len() / 2; }
+    // The index-th search domain, without a trailing dot; empty when out of range.
+    pub fn search(&self, index: i32) -> core::slice::View<u8> {
+        let all = self.names.as_view(); if (index < 0 || index >= self.search_count()) { return part(all,0,0); }
+        let start: i32 = self.spans.at(2*index); return part(all,start,start+self.spans.at(2*index+1));
+    }
+    pub fn destroy(&self) { self.servers.destroy(); self.names.destroy(); self.spans.destroy(); }
+}
+
+// hosts(5): "ADDRESS NAME [ALIAS...]", # starts a comment. Matches name or
+// any alias ignoring ASCII case and one trailing dot, in file order, keeping
+// the family requested. Returns the number of matches and writes the first
+// output.length of them. Lines with unparsable addresses never match.
+pub fn hosts_lookup(content: core::slice::View<u8>, name: core::slice::View<u8>, family: Family, output: core::slice::View<HostEntry>) -> core::result::Result<i32, Error> {
+    if (!valid(content) || !valid(name) || output.start < 0 || output.length < 0 || output.start > 2147483647 - output.length) { return core::result::Err(Error::Bounds); }
+    let wanted = strip_dot(name); if (wanted.length == 0) { return core::result::Ok(0); }
+    let found: i32 = 0; let begin: i32 = 0; let number: i32 = 0;
+    while (begin < content.length) {
+        let stop: i32 = begin; while (stop < content.length && at(content,stop) != 10) { stop += 1; }
+        let line = part(content,begin,stop); begin = stop + 1; number += 1;
+        let hash: i32 = 0; while (hash < line.length && at(line,hash) != 35) { hash += 1; } line = part(line,0,hash);
+        let first: i32 = skip(line,0); if (first < 0) { continue; }
+        let end: i32 = token_end(line,first); let parsed = core::net::parse_ip(part(line,first,end)); if (parsed.is_err()) { continue; }
+        let address: core::net::IpAddr = parsed.unwrap(); let version: i32 = address.version();
+        let keep: bool = match (family) { Family::Any -> true, Family::Ipv4 -> version == 4, Family::Ipv6 -> version == 6 };
+        if (!keep) { continue; }
+        let canonical_at: i32 = skip(line,end); if (canonical_at < 0) { continue; }
+        let canonical = part(line,canonical_at,token_end(line,canonical_at));
+        let cursor: i32 = canonical_at; let hit: bool = false;
+        while (cursor >= 0 && !hit) { let finish: i32 = token_end(line,cursor); if (same(strip_dot(part(line,cursor,finish)),wanted)) { hit = true; } cursor = skip(line,finish); }
+        if (hit) { if (found < output.length) { output.values[output.start+found] = HostEntry { address: address, canonical: canonical, line: number }; } found += 1; }
+    }
+    return core::result::Ok(found);
+}
+
+// Read a whole configuration file of at most limit bytes (1..MAX_FILE_BYTES).
+pub fn read_file(path: core::slice::View<u8>, limit: i32) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+    if (!valid(path) || limit < 1 || limit > MAX_FILE_BYTES) { return core::result::Err(Error::Bounds); }
+    let checked = core::path::from_view(path); if (checked.is_err()) { return core::result::Err(Error::Path); }
+    let opened = std::file::open(checked.unwrap(),std::file::OpenMode::Read); if (opened.is_err()) { return core::result::Err(Error::Io(opened.unwrap_err())); }
+    let file: std::file::File = opened.unwrap(); let bytes: alloc::vec::Vec<u8> = alloc::vec::new(); let used: i32 = 0;
+    while (true) {
+        if (used == limit + 1) { bytes.destroy(); file.close(); return core::result::Err(Error::TooLarge); }
+        let room: i32 = 4096; if (room > limit + 1 - used) { room = limit + 1 - used; }
+        if (bytes.try_resize(used + room,0 as u8).is_err()) { bytes.destroy(); file.close(); return core::result::Err(Error::AllocationFailed); }
+        let got = file.read(bytes.as_slice(),used,room);
+        if (got.is_err()) { if (core::io::is_interrupted(got.unwrap_err())) { continue; } bytes.destroy(); file.close(); return core::result::Err(Error::Io(got.unwrap_err())); }
+        if (got.unwrap() == 0) { break; } used += got.unwrap();
+    }
+    bytes.truncate(used); let closed = file.close();
+    if (closed.is_err()) { bytes.destroy(); return core::result::Err(Error::Io(closed.unwrap_err())); }
+    return core::result::Ok(bytes);
+}

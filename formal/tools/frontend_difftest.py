@@ -66,6 +66,7 @@ def inputs_digest(workdir):
 import run_cache  # noqa: E402
 oracle.EFFECTS = False  # set in main: effectful expressions, except with --generic
 oracle.NESTED = False  # nested struct fields: the oracle's, not yet the front end tests'
+oracle.INDEX_VALUE_CALLS = False  # the front end rejects s[i] = value when value can act
 
 HEAVY = 'target/claude-work/bin/heavy'
 UINT_LEAN = oracle.UINT_LEAN
@@ -961,11 +962,20 @@ def parse_plain(heavy, laniusc, lani_path, workdir):
     """laniusc's tree and tokens of one file (cached by its bytes and laniusc)."""
     k = run_cache.key(run_cache.file_digest(laniusc), open(lani_path, 'rb').read())
     hit = run_cache.load('parse', k)
-    if hit is not None:
-        return hit['prods'], hit['parents'], [tuple(t) for t in hit['tokens']]
-    prods, parents, tokens = parse_uncached(heavy, laniusc, lani_path, workdir)
-    run_cache.store('parse', k, dict(prods=prods, parents=parents, tokens=tokens))
-    return prods, parents, tokens
+    if hit is None:
+        # One parse of a file at a time across processes (two gates often
+        # parse the same files): the second finds the first's tree.
+        import fcntl
+        lock = run_cache.path_of('parse', k, '.lock')
+        os.makedirs(os.path.dirname(lock), exist_ok=True)
+        with open(lock, 'a') as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
+            hit = run_cache.load('parse', k)
+            if hit is None:
+                prods, parents, tokens = parse_uncached(heavy, laniusc, lani_path, workdir)
+                run_cache.store('parse', k, dict(prods=prods, parents=parents, tokens=tokens))
+                return prods, parents, tokens
+    return hit['prods'], hit['parents'], [tuple(t) for t in hit['tokens']]
 
 
 def parse_uncached(heavy, laniusc, lani_path, workdir):

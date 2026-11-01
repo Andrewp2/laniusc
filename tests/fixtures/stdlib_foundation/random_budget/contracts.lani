@@ -1,0 +1,268 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::random;
+import core::result;
+import core::slice;
+
+struct Script { words:[u64], actions:[i32], calls:i32 }
+fn script(words:[u64],actions:[i32]) -> Script { return Script { words:words,actions:actions,calls:0 }; }
+impl Script { fn borrow(&self) -> &Script { return self; } }
+fn source_error(action:i32) -> core::random::Error {
+    if(action==1) { return core::random::Error::Bounds; }
+    if(action==2) { return core::random::Error::InvalidBound; }
+    if(action==3) { return core::random::Error::InvalidRange; }
+    if(action==4) { return core::random::Error::ZeroState; }
+    if(action==5) { return core::random::Error::Host(-1234567); }
+    if(action==6) { return core::random::Error::NoProgress; }
+    if(action==7) { return core::random::Error::InvalidCount; }
+    assert(action==8); return core::random::Error::DrawLimit;
+}
+pub impl core::random::Source64 for Script {
+    pub fn draw(&self) -> core::result::Result<u64,core::random::Error> {
+        assert(self.calls<16); let index:i32=self.calls; self.calls+=1;
+        let action:i32=self.actions[index];
+        if(action!=0) { return core::result::Err(source_error(action)); }
+        return core::result::Ok(self.words[index]);
+    }
+}
+fn draw<R>(source:&R) -> core::result::Result<u64,core::random::Error> where R:core::random::Source64 { return source.draw(); }
+fn code(error:core::random::Error) -> i32 {
+    return match(error) {
+        core::random::Error::Bounds -> 1,core::random::Error::InvalidBound -> 2,
+        core::random::Error::InvalidRange -> 3,core::random::Error::ZeroState -> 4,
+        core::random::Error::Host(value) -> value,core::random::Error::NoProgress -> 6,
+        core::random::Error::InvalidCount -> 7,core::random::Error::DrawLimit -> 8
+    };
+}
+fn failed<T>(result:core::result::Result<T,core::random::Error>,expected:i32) { assert(result.is_err()); assert(code(result.unwrap_err())==expected); }
+fn partial(result:core::result::Result<i32,core::random::Failure>,expected:i32,completed:i32) {
+    assert(result.is_err()); let failure:core::random::Failure=result.unwrap_err();
+    assert(code(failure.cause)==expected && failure.completed==completed);
+}
+struct Watch { budget:&core::random::DrawBudget, calls:i32 }
+impl Watch { fn borrow(&self) -> &Watch { return self; } }
+pub impl core::random::Source64 for Watch {
+    pub fn draw(&self) -> core::result::Result<u64,core::random::Error> {
+        let budget:&core::random::DrawBudget=self.budget;
+        assert(self.calls<2 && budget.remaining()==1-(self.calls as u64)); self.calls+=1;
+        return core::result::Ok(7);
+    }
+}
+
+fn shared_copied_nested_and_full_width_counters() {
+    let words:[u64;16]=[11,22,33,44,55,66,77,88,0,0,0,0,0,0,0,0]; let actions:[i32;16]=[0;16];
+    let source:Script=script(words,actions); let budget:core::random::DrawBudget=core::random::draw_budget(3);
+    let first:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    let copied:core::random::Budgeted<Script> =first;
+    let second:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    assert(draw<core::random::Budgeted<Script>>(first.borrow()).unwrap()==11 && budget.remaining()==2);
+    assert(draw<core::random::Budgeted<Script>>(copied.borrow()).unwrap()==22 && budget.remaining()==1);
+    assert(draw<core::random::Budgeted<Script>>(second.borrow()).unwrap()==33 && budget.remaining()==0);
+    failed(draw<core::random::Budgeted<Script>>(first.borrow()),8); assert(source.calls==3 && budget.remaining()==0);
+
+    let separate_source:Script=script(words,actions); let original:core::random::DrawBudget=core::random::draw_budget(2);
+    let separate:core::random::DrawBudget=original;
+    let a:core::random::Budgeted<Script> =core::random::budgeted<Script>(separate_source.borrow(),original.borrow());
+    let b:core::random::Budgeted<Script> =core::random::budgeted<Script>(separate_source.borrow(),separate.borrow());
+    assert(draw<core::random::Budgeted<Script>>(a.borrow()).unwrap()==11 && original.remaining()==1 && separate.remaining()==2);
+    assert(draw<core::random::Budgeted<Script>>(b.borrow()).unwrap()==22 && original.remaining()==1 && separate.remaining()==1);
+    assert(draw<core::random::Budgeted<Script>>(a.borrow()).unwrap()==33 && original.remaining()==0 && separate.remaining()==1);
+    assert(draw<core::random::Budgeted<Script>>(b.borrow()).unwrap()==44 && separate.remaining()==0 && separate_source.calls==4);
+
+    let nested_source:Script=script(words,actions); let inner_budget:core::random::DrawBudget=core::random::draw_budget(1);
+    let outer_budget:core::random::DrawBudget=core::random::draw_budget(3);
+    let inner:core::random::Budgeted<Script> =core::random::budgeted<Script>(nested_source.borrow(),inner_budget.borrow());
+    let outer:core::random::Budgeted<core::random::Budgeted<Script>> =core::random::budgeted<core::random::Budgeted<Script>>(inner.borrow(),outer_budget.borrow());
+    assert(draw<core::random::Budgeted<core::random::Budgeted<Script>>>(outer.borrow()).unwrap()==11);
+    assert(inner_budget.remaining()==0 && outer_budget.remaining()==2 && nested_source.calls==1);
+    failed(draw<core::random::Budgeted<core::random::Budgeted<Script>>>(outer.borrow()),8);
+    assert(inner_budget.remaining()==0 && outer_budget.remaining()==1 && nested_source.calls==1);
+    failed(draw<core::random::Budgeted<core::random::Budgeted<Script>>>(outer.borrow()),8);
+    failed(draw<core::random::Budgeted<core::random::Budgeted<Script>>>(outer.borrow()),8);
+    assert(outer_budget.remaining()==0 && nested_source.calls==1);
+
+    let nested_errors:[i32;16]=[5;16]; let fault_source:Script=script(words,nested_errors);
+    let fault_inner_budget:core::random::DrawBudget=core::random::draw_budget(2); let fault_outer_budget:core::random::DrawBudget=core::random::draw_budget(1);
+    let fault_inner:core::random::Budgeted<Script> =core::random::budgeted<Script>(fault_source.borrow(),fault_inner_budget.borrow());
+    let fault_outer:core::random::Budgeted<core::random::Budgeted<Script>> =core::random::budgeted<core::random::Budgeted<Script>>(fault_inner.borrow(),fault_outer_budget.borrow());
+    failed(draw<core::random::Budgeted<core::random::Budgeted<Script>>>(fault_outer.borrow()),-1234567);
+    assert(fault_source.calls==1 && fault_inner_budget.remaining()==1 && fault_outer_budget.remaining()==0);
+
+    let limit:u64=1;
+    while(limit<=2) {
+        let same_source:Script=script(words,actions); let same:core::random::DrawBudget=core::random::draw_budget(limit);
+        let inside:core::random::Budgeted<Script> =core::random::budgeted<Script>(same_source.borrow(),same.borrow());
+        let outside:core::random::Budgeted<core::random::Budgeted<Script>> =core::random::budgeted<core::random::Budgeted<Script>>(inside.borrow(),same.borrow());
+        let answer:core::result::Result<u64,core::random::Error> =draw<core::random::Budgeted<core::random::Budgeted<Script>>>(outside.borrow());
+        if(limit==1) { failed(answer,8); assert(same_source.calls==0); }
+        else { assert(answer.unwrap()==11 && same_source.calls==1); }
+        assert(same.remaining()==0); limit+=1;
+    }
+    let watched_budget:core::random::DrawBudget=core::random::draw_budget(2); let watch:Watch=Watch { budget:watched_budget.borrow(),calls:0 };
+    let watched:core::random::Budgeted<Watch> =core::random::budgeted<Watch>(watch.borrow(),watched_budget.borrow());
+    assert(draw<core::random::Budgeted<Watch>>(watched.borrow()).unwrap()==7);
+    assert(draw<core::random::Budgeted<Watch>>(watched.borrow()).unwrap()==7);
+    failed(draw<core::random::Budgeted<Watch>>(watched.borrow()),8); assert(watch.calls==2 && watched_budget.remaining()==0);
+
+    let errors:[i32;16]=[5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]; let high_source:Script=script(words,errors);
+    let high:core::random::DrawBudget=core::random::draw_budget(18446744073709551615);
+    let huge:core::random::Budgeted<Script> =core::random::budgeted<Script>(high_source.borrow(),high.borrow());
+    failed(draw<core::random::Budgeted<Script>>(huge.borrow()),-1234567);
+    assert(high.remaining()==18446744073709551614 && high_source.calls==1);
+    assert(draw<core::random::Budgeted<Script>>(huge.borrow()).unwrap()==22 && high.remaining()==18446744073709551613 && high_source.calls==2);
+}
+
+fn scalar_values_and_final_draw_acceptance() {
+    let words:[u64;16]=[0,5,6,18446744073709551615,0,18446744073709551615,0,9223372036854775808,
+        0,18446744073709551615,9223372036854775808,0,18446744073709551615,9223372036854775808,9223372036854775809,0];
+    let actions:[i32;16]=[0;16]; let source:Script=script(words,actions);
+    let budget:core::random::DrawBudget=core::random::draw_budget(15);
+    let limited:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    assert(core::random::below<core::random::Budgeted<Script>>(limited.borrow(),10).unwrap()==6 && source.calls==3 && budget.remaining()==12);
+    assert(core::random::inclusive_u64<core::random::Budgeted<Script>>(limited.borrow(),18446744073709551614,18446744073709551615).unwrap()==18446744073709551615);
+    assert(core::random::inclusive_i64<core::random::Budgeted<Script>>(limited.borrow(),-9223372036854775808,9223372036854775807).unwrap()==-9223372036854775808);
+    assert(core::random::inclusive_i64<core::random::Budgeted<Script>>(limited.borrow(),-9223372036854775808,9223372036854775807).unwrap()==9223372036854775807);
+    assert(!core::random::boolean<core::random::Budgeted<Script>>(limited.borrow()).unwrap());
+    assert(core::random::boolean<core::random::Budgeted<Script>>(limited.borrow()).unwrap() && source.calls==8 && budget.remaining()==7);
+    assert(core::random::unit_f32<core::random::Budgeted<Script>>(limited.borrow()).unwrap()==0.0);
+    let fmax:f32=core::random::unit_f32<core::random::Budgeted<Script>>(limited.borrow()).unwrap();
+    assert(fmax<1.0 && fmax*16777216.0==16777215.0);
+    assert(core::random::unit_f32<core::random::Budgeted<Script>>(limited.borrow()).unwrap()==0.5);
+    assert(core::random::unit_f64<core::random::Budgeted<Script>>(limited.borrow()).unwrap()==0.0);
+    let dmax:f64=core::random::unit_f64<core::random::Budgeted<Script>>(limited.borrow()).unwrap();
+    assert(dmax<1.0 && dmax*9007199254740992.0==9007199254740991.0);
+    assert(core::random::unit_f64<core::random::Budgeted<Script>>(limited.borrow()).unwrap()==0.5);
+    assert(core::random::inclusive_u64<core::random::Budgeted<Script>>(limited.borrow(),0,18446744073709551615).unwrap()==9223372036854775809);
+    assert(source.calls==15 && budget.remaining()==0); failed(draw<core::random::Budgeted<Script>>(limited.borrow()),8); assert(source.calls==15);
+}
+
+fn exact_source_errors_and_rejection_exhaustion() {
+    let words:[u64;16]=[0;16]; let choices:[i32;2]=[7,8]; let view:core::slice::View<i32> =core::slice::view_range<i32>(choices,0,2).unwrap();
+    let action:i32=1;
+    while(action<=8) {
+        let actions:[i32;16]=[action;16]; let source:Script=script(words,actions);
+        let budget:core::random::DrawBudget=core::random::draw_budget(7);
+        let limited:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+        let expected:i32=code(source_error(action));
+        failed(core::random::below<core::random::Budgeted<Script>>(limited.borrow(),2),expected);
+        failed(core::random::inclusive_u64<core::random::Budgeted<Script>>(limited.borrow(),0,18446744073709551615),expected);
+        failed(core::random::inclusive_i64<core::random::Budgeted<Script>>(limited.borrow(),-9223372036854775808,9223372036854775807),expected);
+        failed(core::random::boolean<core::random::Budgeted<Script>>(limited.borrow()),expected);
+        failed(core::random::unit_f32<core::random::Budgeted<Script>>(limited.borrow()),expected);
+        failed(core::random::unit_f64<core::random::Budgeted<Script>>(limited.borrow()),expected);
+        failed(core::random::choose<core::random::Budgeted<Script>,i32>(limited.borrow(),view),expected);
+        assert(source.calls==7 && budget.remaining()==0 && choices[0]==7 && choices[1]==8);
+        failed(draw<core::random::Budgeted<Script>>(limited.borrow()),8); assert(source.calls==7); action+=1;
+    }
+    let rejects:[u64;16]=[0,5,6,0,18446744073709551615,0,0,0,0,0,0,0,0,0,0,0]; let actions:[i32;16]=[0;16];
+    let source:Script=script(rejects,actions); let two:core::random::DrawBudget=core::random::draw_budget(2);
+    let exhausted:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),two.borrow());
+    failed(core::random::below<core::random::Budgeted<Script>>(exhausted.borrow(),10),8);
+    assert(source.calls==2 && two.remaining()==0);
+    let one:core::random::DrawBudget=core::random::draw_budget(1); let accepted:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),one.borrow());
+    assert(core::random::below<core::random::Budgeted<Script>>(accepted.borrow(),10).unwrap()==6 && source.calls==3 && one.remaining()==0);
+    let last_two:core::random::DrawBudget=core::random::draw_budget(2); let maximum:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),last_two.borrow());
+    assert(core::random::below<core::random::Budgeted<Script>>(maximum.borrow(),18446744073709551615).unwrap()==0);
+    assert(source.calls==5 && last_two.remaining()==0);
+    let power:core::random::DrawBudget=core::random::draw_budget(1); let binary:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),power.borrow());
+    assert(core::random::below<core::random::Budgeted<Script>>(binary.borrow(),8).unwrap()==0 && source.calls==6 && power.remaining()==0);
+}
+
+fn invalid_view(view:core::slice::View<i32>,source:&core::random::Budgeted<Script>) {
+    partial(core::random::shuffle<core::random::Budgeted<Script>,i32>(source,view),1,0);
+    failed(core::random::choose<core::random::Budgeted<Script>,i32>(source,view),1);
+}
+fn no_draw_operations_and_metadata_admission() {
+    let nowhere:ptr=0; let unread_words:[u64]=core::mem::typed_slice_from_raw_parts<u64>(nowhere,0);
+    let unread_actions:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    let unread_bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let source:Script=script(unread_words,unread_actions); let zero:core::random::DrawBudget=core::random::draw_budget(0);
+    let blocked:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),zero.borrow());
+    failed(draw<core::random::Budgeted<Script>>(blocked.borrow()),8);
+    failed(core::random::below<core::random::Budgeted<Script>>(blocked.borrow(),0),2);
+    assert(core::random::below<core::random::Budgeted<Script>>(blocked.borrow(),1).unwrap()==0);
+    failed(core::random::inclusive_u64<core::random::Budgeted<Script>>(blocked.borrow(),9,8),3);
+    assert(core::random::inclusive_u64<core::random::Budgeted<Script>>(blocked.borrow(),18446744073709551615,18446744073709551615).unwrap()==18446744073709551615);
+    failed(core::random::inclusive_i64<core::random::Budgeted<Script>>(blocked.borrow(),0,-1),3);
+    assert(core::random::inclusive_i64<core::random::Budgeted<Script>>(blocked.borrow(),-9223372036854775808,-9223372036854775808).unwrap()==-9223372036854775808);
+    assert(core::random::fill<core::random::Budgeted<Script>>(blocked.borrow(),unread_bytes,2147483647,0).unwrap()==0);
+    partial(core::random::fill<core::random::Budgeted<Script>>(blocked.borrow(),unread_bytes,-1,0),1,0);
+    partial(core::random::fill<core::random::Budgeted<Script>>(blocked.borrow(),unread_bytes,0,-1),1,0);
+    partial(core::random::fill<core::random::Budgeted<Script>>(blocked.borrow(),unread_bytes,2147483647,1),1,0);
+    let empty:core::slice::View<i32> =core::slice::View { values:unread_actions,start:2147483647,length:0 };
+    assert(core::random::shuffle<core::random::Budgeted<Script>,i32>(blocked.borrow(),empty).unwrap()==0);
+    assert(core::random::choose<core::random::Budgeted<Script>,i32>(blocked.borrow(),empty).unwrap().is_none());
+    let data:[i32;3]=[99,7,98]; let one:core::slice::View<i32> =core::slice::view_range<i32>(data,1,1).unwrap();
+    assert(core::random::shuffle<core::random::Budgeted<Script>,i32>(blocked.borrow(),one).unwrap()==0);
+    assert(core::random::choose<core::random::Budgeted<Script>,i32>(blocked.borrow(),one).unwrap().unwrap()==7);
+    assert(source.calls==0 && zero.remaining()==0 && data[0]==99 && data[1]==7 && data[2]==98);
+    let budget:core::random::DrawBudget=core::random::draw_budget(1); let admitted:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    invalid_view(core::slice::View { values:unread_actions,start:-1,length:0 },admitted.borrow());
+    invalid_view(core::slice::View { values:unread_actions,start:-1,length:1 },admitted.borrow());
+    invalid_view(core::slice::View { values:unread_actions,start:0,length:-1 },admitted.borrow());
+    invalid_view(core::slice::View { values:unread_actions,start:2147483647,length:1 },admitted.borrow());
+    invalid_view(core::slice::View { values:data,start:1,length:2147483647 },admitted.borrow());
+    assert(source.calls==0 && budget.remaining()==1 && data[0]==99 && data[1]==7 && data[2]==98);
+}
+
+fn fill_prefix_and_explicit_resumption() {
+    let stack:[u8;16]=[199;16]; let backing:[i32;4]=[0;4];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(backing),16);
+    assert(core::mem::slice_stride(stack)<0 && core::mem::slice_stride(packed)==1);
+    let words:[u64;16]=[0x0706050403020100,0x0f0e0d0c0b0a0908,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    let mode:i32=0;
+    while(mode<2) {
+        let bytes:[u8]=stack; if(mode==1) { bytes=packed; } let failing:i32=0;
+        while(failing<2) {
+            let i:i32=0; while(i<16) { bytes[i]=199; i+=1; }
+            let actions:[i32;16]=[0;16]; if(failing==1) { actions[1]=5; }
+            let source:Script=script(words,actions); let budget:core::random::DrawBudget=core::random::draw_budget(1+(failing as u64));
+            let limited:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+            let expected:i32=8; if(failing==1) { expected=-1234567; }
+            partial(core::random::fill<core::random::Budgeted<Script>>(limited.borrow(),bytes,2,10),expected,8);
+            assert(source.calls==1+failing && budget.remaining()==0);
+            i=0; while(i<16) { if(i>=2 && i<10) { assert(bytes[i]==(i-2) as u8); } else { assert(bytes[i]==199); } i+=1; }
+            if(failing==0) {
+                let resume_budget:core::random::DrawBudget=core::random::draw_budget(1);
+                let resumed:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),resume_budget.borrow());
+                assert(core::random::fill<core::random::Budgeted<Script>>(resumed.borrow(),bytes,10,2).unwrap()==2);
+                assert(bytes[10]==8 && bytes[11]==9 && source.calls==2 && resume_budget.remaining()==0 && bytes[12]==199);
+            }
+            failing+=1;
+        }
+        mode+=1;
+    }
+}
+
+fn shuffle_suffix_progress_and_choose() {
+    let words:[u64;16]=[0,0,5,1,0,0,0,0,0,0,0,0,0,0,0,0]; let actions:[i32;16]=[0;16]; let limit:u64=1;
+    while(limit<=4) {
+        let source:Script=script(words,actions); let budget:core::random::DrawBudget=core::random::draw_budget(limit);
+        let limited:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+        let data:[i32;6]=[99,1,2,3,4,98]; let view:core::slice::View<i32> =core::slice::view_range<i32>(data,1,4).unwrap();
+        let result:core::result::Result<i32,core::random::Failure> =core::random::shuffle<core::random::Budgeted<Script>,i32>(limited.borrow(),view);
+        if(limit==4) { assert(result.unwrap()==3); }
+        else { let completed:i32=1; if(limit==3) { completed=2; } partial(result,8,completed); }
+        assert(source.calls==(limit as i32) && budget.remaining()==0);
+        assert(data[0]==99 && data[1]==4 && data[2]==2 && data[3]==3 && data[4]==1 && data[5]==98);
+        if(limit==4) {
+            failed(core::random::choose<core::random::Budgeted<Script>,i32>(limited.borrow(),view),8); assert(source.calls==4);
+            let next_budget:core::random::DrawBudget=core::random::draw_budget(1);
+            let next:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),next_budget.borrow());
+            assert(core::random::choose<core::random::Budgeted<Script>,i32>(next.borrow(),view).unwrap().unwrap()==4);
+            assert(source.calls==5 && next_budget.remaining()==0 && data[0]==99 && data[5]==98);
+        }
+        limit+=1;
+    }
+    let errors:[i32;16]=[0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0]; let source:Script=script(words,errors);
+    let budget:core::random::DrawBudget=core::random::draw_budget(2); let limited:core::random::Budgeted<Script> =core::random::budgeted<Script>(source.borrow(),budget.borrow());
+    let data:[i32;6]=[99,1,2,3,4,98]; let view:core::slice::View<i32> =core::slice::view_range<i32>(data,1,4).unwrap();
+    partial(core::random::shuffle<core::random::Budgeted<Script>,i32>(limited.borrow(),view),-1234567,1);
+    assert(source.calls==2 && budget.remaining()==0 && data[0]==99 && data[1]==4 && data[2]==2 && data[3]==3 && data[4]==1 && data[5]==98);
+}
+
+fn main() -> i32 {
+    shared_copied_nested_and_full_width_counters(); scalar_values_and_final_draw_acceptance(); exact_source_errors_and_rejection_exhaustion();
+    no_draw_operations_and_metadata_admission(); fill_prefix_and_explicit_resumption(); shuffle_suffix_progress_and_choose(); return 0;
+}

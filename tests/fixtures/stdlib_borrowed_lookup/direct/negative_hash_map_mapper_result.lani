@@ -1,0 +1,22 @@
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::function;
+import core::hash;
+import core::option;
+import core::ordering;
+import core::pair;
+struct Key { value:i32 }
+struct Query { value:i32 }
+struct Policy {}
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::hash::Hash<Query> for Query { pub fn hash(query:Query) -> u32 { return query.value as u32; } }
+pub impl core::function::Mapper<core::pair::Pair<Key,Query>,i32> for Policy { pub fn apply(&self,pair:core::pair::Pair<Key,Query>) -> i32 { return pair.first.value-pair.second.value; } }
+// An empty collection still requires the exact query capabilities.
+fn main() -> i32 {
+    let collection:alloc::hash_map::HashMap<Key,i32> =alloc::hash_map::new<Key,i32>(); let query:Query=Query { value:3 }; let policy:Policy=Policy {};
+    let rejected_lookup_bound = collection.get_entry_by<Query,Policy>(query,policy.borrow());
+    return 0;
+}

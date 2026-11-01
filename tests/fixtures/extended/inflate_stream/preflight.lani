@@ -1,0 +1,58 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::inflate;
+fn view(values:[u8],start:i32,length:i32) -> core::slice::View<u8> { return core::slice::View { values:values,start:start,length:length }; }
+fn is_bounds(error:ext::inflate::Error) -> bool { return match(error) { ext::inflate::Error::Bounds -> true,_ -> false }; }
+fn bounds(result:core::result::Result<ext::inflate::Step,ext::inflate::Failure>) { assert(result.is_err()); let error:ext::inflate::Failure=result.unwrap_err(); assert(is_bounds(error.error) && error.read==0 && error.written==0); }
+fn equal(history:[u8],saved:[u8],scratch:[i32],saved_scratch:[i32]) { let i:i32=0; while(i<516) { assert(history[i]==saved[i]); i+=1; } i=0; while(i<711) { assert(scratch[i]==saved_scratch[i]); i+=1; } }
+fn save(history:[u8],saved:[u8],scratch:[i32],saved_scratch:[i32]) { let i:i32=0; while(i<516) { saved[i]=history[i]; i+=1; } i=0; while(i<711) { saved_scratch[i]=scratch[i]; i+=1; } }
+fn invalid_calls(decoder:&ext::inflate::Decoder,output:[u8]) {
+    let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0); let empty:core::slice::View<u8> =view(unread,0,0);
+    bounds(decoder.step(view(unread,-1,1),view(output,1,2),true));
+    bounds(decoder.step(view(unread,0,-1),view(output,1,2),true));
+    bounds(decoder.step(view(unread,2147483647,1),view(output,1,2),true));
+    bounds(decoder.step(empty,view(unread,-1,1),true));
+    bounds(decoder.step(empty,view(unread,0,-1),true));
+    bounds(decoder.step(empty,view(unread,2147483647,1),true));
+    let i:i32=0; while(i<8) { assert(output[i]==199); i+=1; }
+}
+fn main() -> i32 {
+    let history:[u8;516]=[77;516]; let saved:[u8;516]=[0;516]; let scratch:[i32;711]=[12345;711]; let saved_scratch:[i32;711]=[0;711]; let output:[u8;8]=[199;8];
+    let workspace:core::slice::View<i32> =core::slice::View { values:scratch,start:2,length:707 };
+    let h:core::slice::View<u8> =view(history,2,512);
+    save(history,saved,scratch,saved_scratch);
+    let bad_windows:[i32;8]=[-1,0,255,257,511,513,65536,2147483647]; let i:i32=0;
+    while(i<8) { let made:core::result::Result<ext::inflate::Decoder,ext::inflate::Error> =ext::inflate::decoder(h,workspace,bad_windows[i]); assert(made.is_err() && is_bounds(made.unwrap_err())); i+=1; }
+    let short_history:core::result::Result<ext::inflate::Decoder,ext::inflate::Error> =ext::inflate::decoder(view(history,2,255),workspace,256); assert(short_history.is_err() && is_bounds(short_history.unwrap_err()));
+    let short_workspace:core::slice::View<i32> =core::slice::View { values:scratch,start:2,length:706 };
+    assert(is_bounds(ext::inflate::decoder(h,short_workspace,256).unwrap_err()));
+    let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0); let unread_words:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    assert(is_bounds(ext::inflate::decoder(view(unread,-1,512),workspace,256).unwrap_err()));
+    assert(is_bounds(ext::inflate::decoder(view(unread,0,-1),workspace,256).unwrap_err()));
+    assert(is_bounds(ext::inflate::decoder(view(unread,2147483647,512),workspace,256).unwrap_err()));
+    let bad_workspace:core::slice::View<i32> =core::slice::View { values:unread_words,start:-1,length:707 }; assert(is_bounds(ext::inflate::decoder(h,bad_workspace,256).unwrap_err()));
+    bad_workspace.start=0; bad_workspace.length=-1; assert(is_bounds(ext::inflate::decoder(h,bad_workspace,256).unwrap_err()));
+    bad_workspace.start=2147483647; bad_workspace.length=707; assert(is_bounds(ext::inflate::decoder(h,bad_workspace,256).unwrap_err()));
+    let decoder:ext::inflate::Decoder=ext::inflate::decoder(h,workspace,256).unwrap(); equal(history,saved,scratch,saved_scratch); assert(!decoder.is_done() && !decoder.is_failed());
+    invalid_calls(decoder.borrow(),output); equal(history,saved,scratch,saved_scratch);
+    // Parse a literal with no output; invalid metadata must not lose that byte.
+    let literal:[u8;3]=[115,4,0]; let step:ext::inflate::Step=decoder.step(view(literal,0,3),view(output,0,0),true).unwrap(); assert(step.read==2 && step.written==0); assert(match(step.status) { ext::inflate::Status::NeedOutput -> true,_ -> false });
+    save(history,saved,scratch,saved_scratch); invalid_calls(decoder.borrow(),output); equal(history,saved,scratch,saved_scratch);
+    assert(is_bounds(decoder.reset(1024).unwrap_err())); assert(is_bounds(decoder.reset(257).unwrap_err())); equal(history,saved,scratch,saved_scratch);
+    step=decoder.step(view(literal,2,1),view(output,2,1),true).unwrap(); assert(step.read==1 && step.written==1 && output[2]==65 && decoder.is_done()); assert(match(step.status) { ext::inflate::Status::Done -> true,_ -> false });
+    output[2]=199; save(history,saved,scratch,saved_scratch); invalid_calls(decoder.borrow(),output); equal(history,saved,scratch,saved_scratch); assert(decoder.is_done());
+    let malformed:[u8;2]=[3,2]; step=decoder.step(view(malformed,0,2),view(output,2,2),false).unwrap(); assert(step.read==0 && step.written==0 && decoder.is_done()); equal(history,saved,scratch,saved_scratch);
+    // Reset is logical only, admits a new window, and forgets previous history.
+    assert(decoder.reset(512).unwrap()); equal(history,saved,scratch,saved_scratch); assert(!decoder.is_done() && !decoder.is_failed());
+    let failure:ext::inflate::Failure=decoder.step(view(malformed,0,2),view(output,0,0),true).unwrap_err(); assert(failure.read==2 && failure.written==0); assert(match(failure.error) { ext::inflate::Error::InvalidDistance -> true,_ -> false }); assert(decoder.is_failed());
+    save(history,saved,scratch,saved_scratch); invalid_calls(decoder.borrow(),output); equal(history,saved,scratch,saved_scratch); assert(decoder.is_failed());
+    let empty:[u8;2]=[3,0]; failure=decoder.step(view(empty,0,2),view(output,2,2),true).unwrap_err(); assert(failure.read==0 && failure.written==0); assert(match(failure.error) { ext::inflate::Error::InvalidDistance -> true,_ -> false }); equal(history,saved,scratch,saved_scratch);
+    assert(is_bounds(decoder.reset(255).unwrap_err())); equal(history,saved,scratch,saved_scratch); assert(decoder.is_failed());
+    assert(decoder.reset(256).unwrap()); equal(history,saved,scratch,saved_scratch); step=decoder.step(view(empty,0,2),view(output,0,0),true).unwrap(); assert(step.read==2 && step.written==0 && decoder.is_done());
+    i=0; while(i<8) { assert(output[i]==199); i+=1; }
+    assert(history[0]==77 && history[1]==77 && history[514]==77 && history[515]==77);
+    assert(scratch[0]==12345 && scratch[1]==12345 && scratch[709]==12345 && scratch[710]==12345);
+    return 0;
+}

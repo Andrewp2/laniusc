@@ -1,0 +1,56 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::image;
+fn check(bytes:[u8],sw:i32,sh:i32,dw:i32,dh:i32,filter:ext::image::Filter,expected:[u8]) {
+    let length:i32=sw*sh*4; let saved:[u8;64]=[0;64]; assert(length<=64); let i:i32=0;
+    while(i<length) { saved[i]=bytes[i]; i+=1; }
+    let source:ext::image::View=ext::image::view(core::slice::View { values:bytes,start:0,length:length },sw,sh,sw*4).unwrap();
+    let image:ext::image::Image=ext::image::resize(source,dw,dh,filter).unwrap();
+    assert(image.width()==dw && image.height()==dh && image.view().stride==dw*4);
+    let actual:core::slice::View<u8> =image.rgba(); assert(actual.length==dw*dh*4 && core::mem::slice_stride(actual.values)==1);
+    i=0; while(i<actual.length) { assert(actual.values[actual.start+i]==expected[i]); i+=1; }
+    image.destroy(); i=0; while(i<length) { assert(bytes[i]==saved[i]); i+=1; }
+}
+fn nearest_and_transparency() {
+    let corners:[u8;16]=[10,0,0,255,20,0,0,255,30,0,0,255,40,0,0,0]; let chosen:[u8;4]=[40,0,0,0];
+    // Both coordinates are exact nearest ties: take the higher row/column,
+    // including the selected pixel's hidden RGB under zero alpha.
+    check(corners,2,2,1,1,ext::image::Filter::Nearest,chosen);
+    let hidden:[u8;4]=[73,109,211,0]; let copied:[u8;24]=[73,109,211,0,73,109,211,0,73,109,211,0,73,109,211,0,73,109,211,0,73,109,211,0]; let clear:[u8;24]=[0;24];
+    check(hidden,1,1,3,2,ext::image::Filter::Nearest,copied);
+    check(hidden,1,1,3,2,ext::image::Filter::Bilinear,clear); check(hidden,1,1,3,2,ext::image::Filter::Area,clear);
+    let low:[u8;8]=[200,100,70,0,10,20,30,1];
+    // Bilinear source coordinates are 0,1/4,3/4,1. Exact positive alpha
+    // at 1/4 rounds to zero, but its nonzero-alpha RGB must still survive.
+    let linear:[u8;16]=[0,0,0,0,10,20,30,0,10,20,30,1,10,20,30,1];
+    let area:[u8;16]=[0,0,0,0,0,0,0,0,10,20,30,1,10,20,30,1];
+    check(low,2,1,4,1,ext::image::Filter::Bilinear,linear); check(low,2,1,4,1,ext::image::Filter::Area,area);
+}
+fn exact_rounding() {
+    let pixels:[u8;16]=[0,0,0,1,255,100,50,2,10,200,90,3,200,20,240,4];
+    // D=4,A=10; colors are 1340/10,880/10,1330/10. Alpha 2.5 rounds up.
+    let expected:[u8;4]=[134,88,133,3];
+    check(pixels,2,2,1,1,ext::image::Filter::Bilinear,expected); check(pixels,2,2,1,1,ext::image::Filter::Area,expected);
+    let half:[u8;8]=[0,10,20,255,1,11,21,255]; let expanded:[u8;12]=[0,10,20,255,1,11,21,255,1,11,21,255];
+    // Exact 0.5,10.5,20.5 color ties round upward; outer samples clamp.
+    check(half,2,1,3,1,ext::image::Filter::Bilinear,expanded); check(half,2,1,3,1,ext::image::Filter::Area,expanded);
+}
+fn odd_and_mixed_axes() {
+    let row:[u8;20]=[0,255,10,255,40,215,30,255,200,55,50,255,80,175,70,255,240,15,90,255];
+    let nearest:[u8;8]=[40,215,30,255,80,175,70,255]; let bilinear:[u8;8]=[30,225,25,255,120,135,75,255]; let area:[u8;8]=[56,199,26,255,168,87,74,255];
+    // The odd source has area overlaps [2,2,1] and [1,2,2], unlike the
+    // fixed two-sample linear neighborhoods or nearest source indices1,3.
+    check(row,5,1,2,1,ext::image::Filter::Nearest,nearest); check(row,5,1,2,1,ext::image::Filter::Bilinear,bilinear); check(row,5,1,2,1,ext::image::Filter::Area,area);
+    check(row,1,5,1,2,ext::image::Filter::Nearest,nearest); check(row,1,5,1,2,ext::image::Filter::Bilinear,bilinear); check(row,1,5,1,2,ext::image::Filter::Area,area);
+    let source:[u8;24]=[0,150,0,255,100,50,20,255,10,140,3,255,110,40,23,255,20,130,6,255,120,30,26,255];
+    let linear_mixed:[u8;24]=[3,148,1,255,53,98,11,255,103,48,21,255,18,133,5,255,68,83,15,255,118,33,25,255];
+    let area_mixed:[u8;24]=[3,147,1,255,53,97,11,255,103,47,21,255,17,133,5,255,67,83,15,255,117,33,25,255];
+    check(source,2,3,3,2,ext::image::Filter::Bilinear,linear_mixed); check(source,2,3,3,2,ext::image::Filter::Area,area_mixed);
+    let transposed:[u8;24]=[0,150,0,255,10,140,3,255,20,130,6,255,100,50,20,255,110,40,23,255,120,30,26,255];
+    let linear_transposed:[u8;24]=[3,148,1,255,18,133,5,255,53,98,11,255,68,83,15,255,103,48,21,255,118,33,25,255];
+    let area_transposed:[u8;24]=[3,147,1,255,17,133,5,255,53,97,11,255,67,83,15,255,103,47,21,255,117,33,25,255];
+    check(transposed,3,2,2,3,ext::image::Filter::Bilinear,linear_transposed); check(transposed,3,2,2,3,ext::image::Filter::Area,area_transposed);
+}
+fn main() -> i32 { nearest_and_transparency(); exact_rounding(); odd_and_mixed_axes(); return 0; }

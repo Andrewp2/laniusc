@@ -480,9 +480,13 @@ inductive AssignTargetR (env : FrontEnv) (scope : List Local) (target : CTree) (
       LocalOf scope (kid target 0) l → FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j →
       FieldTyAt env.decls l.ty j t → EffR env scope (some t) value x →
       AssignTargetR env scope target v value (setFieldEff l.id j x)
+  /-- An element: Core checks the index before it evaluates the value,
+  laniusc after, so the value does not act (`effActs`: call a declared
+  function or a host service). -/
   | indexEval {l : Local} {i x : MEff} : nodeProd (kid target 1) = pPostfixIndex →
       nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l →
       EffR env scope none (kid (kid target 1) 1) i → EffR env scope (indexElem l.ty) value x →
+      effActs env.decls.fns.length x = false →
       AssignTargetR env scope target v value (setIndexEff l.id i x)
 
 theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {target : CTree} {v : Nat}
@@ -538,9 +542,12 @@ theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {t
         | none => rw [hv] at h; cases h
         | some v =>
           rw [hv] at h
-          simp only [Option.some.injEq] at h
-          subst h
-          exact .indexEval c.1 c.2 (localOf_sound hl) (effOf_sound hi) (effOf_sound hv)
+          cases w : effActs env.decls.fns.length v with
+          | true => simp [stmtUnless, w] at h
+          | false =>
+            simp only [stmtUnless, w, Bool.false_eq_true, ↓reduceIte, Option.some.injEq] at h
+            subst h
+            exact .indexEval c.1 c.2 (localOf_sound hl) (effOf_sound hi) (effOf_sound hv) w
   cases h
 
 /-- `target op= value;`: `x = x op value` or `x.f = x.f op value`, also for
@@ -1029,7 +1036,9 @@ inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
   | assign {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s = pExprStmt → AssignR env scope (kid s 0) m →
       StmtR env scope s m
   /-- `for x in a..n { body }`: `let c = a; let e = n; while (c < e) { let x = c;
-  c = c + 1; body }`, c, e and x numbered by the `for`, x's and the `in` token. -/
+  c = c + 1; body }`, c, e and x numbered by the `for`, x's and the `in` token.
+  body does not write x: laniusc's x is the counter itself, so a copy is its
+  meaning only while nothing writes it. -/
   | forRange {scope : List Local} {s : CTree} {n : Local} {a : SrcExpr} {body m : MStmt} :
       nodeProd s = pForStmt → nodeProd (kid s 3) = pForIterRangeFromStart →
       nodeProd (kid (kid s 3) 0) = pRangeStartInt → nodeProd (kid (kid s 3) 1) = pRangeExclusive →
@@ -1041,7 +1050,7 @@ inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
       LocalNamed scope (kidToken (kid (kid (kid (kid (kid s 3) 1) 1) 0) 0) 0).text n →
       IntLiteral (kidToken (kid (kid s 3) 0) 0).text a →
       BlockR env ({ name := (kidToken s 1).text, id := (kidToken s 2).start - env.base, ty := n.ty } :: scope)
-        (kid (kid s 4) 1) body →
+        (kid (kid s 4) 1) body → writesLocal body ((kidToken s 2).start - env.base) = false →
       forRange ((kidToken s 0).start - env.base) ((kidToken s 1).start - env.base) ((kidToken s 2).start - env.base)
         n.ty a n.id (some body) = some m →
       StmtR env scope s m
@@ -1351,9 +1360,13 @@ theorem stmtSound : ∀ fuel, StmtSound fuel
               | none => rw [hb] at h; simp [forRange] at h
               | some body =>
                 rw [hb] at h
+                have hw : writesLocal body ((kidToken s 2).start - env.base) = false := by
+                  cases w : writesLocal body ((kidToken s 2).start - env.base) with
+                  | false => rfl
+                  | true => simp [forRange, stmtUnless, w] at h
                 refine .forRange pf pi ps pe pb pn pp (fun mem => ?_) ((freshId_iff _ _).1 fx)
                   ((freshId_iff _ _).1 fc) ((freshId_iff _ _).1 fe) (findLocal_sound hn) (intLiteral_sound ha)
-                  (ihBlock hb) h
+                  (ihBlock hb) hw h
                 rw [(member_iff _ _).2 mem] at ng
                 cases ng
         · cases h

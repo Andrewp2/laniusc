@@ -175,6 +175,7 @@ POSIX leftmost-longest matching. No implicit normalization or casing occurs.
 | UTF-8 scalar, including NUL | Literal scalar, except metacharacters below. |
 | `xy`, `x|y` | Concatenation, alternation (prefer x). Empty branches are valid. |
 | `(x)`, `(?:x)` | Numbered capture, noncapturing group. |
+| `(?P<name>x)`, `(?<name>x)` | Named capture, numbered like `(x)`. The name matches `[A-Za-z_][A-Za-z0-9_]*` and is unique within the pattern. |
 | `x?`, `x*`, `x+` | Zero/one, zero/more, one/more. |
 | `x{n}`, `x{n,}`, `x{n,m}` | Exact, at least, or inclusive bounded count; decimal digits and no whitespace. |
 | `x??`, `x*?`, `x+?`, `x{n,m}?` | Lazy forms, also valid for exact and open counts. |
@@ -183,6 +184,7 @@ POSIX leftmost-longest matching. No implicit normalization or casing occurs.
 | `^`, `$` | Start/end of text; also after/before LF when multiline is true. |
 | `\A`, `\z` | Absolute start/end of text. |
 | `\b`, `\B` | ASCII word boundary and its complement, including EOF/BOF. |
+| `(?<=x)`, `(?<!x)` | Fixed-width lookbehind and its negation: whether `x` matches the scalars just before the current position. See [Lookbehind](#lookbehind). |
 | `\d`, `\D` | ASCII `[0-9]` and complement. |
 | `\s`, `\S` | ASCII HT, LF, FF, CR and space, and complement (VT is excluded). |
 | `\w`, `\W` | ASCII letters, digits and underscore, and complement. |
@@ -234,8 +236,9 @@ RE2/Pike cycle policy.
 Nullable branch priority still matters: `(?:|a)*` and `(?:|a)+` prefer an
 empty match on `a`.
 
-Unsupported constructs return an explicit error: lookaround, backreferences
-(including numeric and named forms), named groups, inline flags, possessive
+Unsupported constructs return an explicit error: lookahead, captures inside
+lookbehind, backreferences
+(including numeric and named forms such as `(?P=name)`), inline flags, possessive
 quantifiers, atomic groups, comments, POSIX named classes, script properties,
 byte-mode `\C`, octal escapes, `\Q...\E`, `\Z`, and unknown alphanumeric
 escapes. They are never accepted as literal approximations. Unbalanced groups,
@@ -384,6 +387,105 @@ module in a temporary source root, with verified original/control hashes.
 This dependency is scoped to the new module shape; earlier module migrations
 and their question-mark execution receipts remain separate evidence. No compiler
 change or reduced regex capability is part of this adaptation.
+
+### Named groups
+
+`Regex.group_index(name) -> i32` returns the group number of a named capture,
+or -1. `Regex.group_name(group) -> Option<Text>` borrows the name from the
+Regex's own copy, and `name_count()` counts the names. A duplicate name, an
+empty name, or a name that starts with a digit is `Syntax` at the name.
+Template replacement still accepts numeric references only.
+
+### Lookbehind
+
+`(?<=x)` holds at a position when `x` matches the `w` scalars ending there,
+and `(?<!x)` when it does not. As in Python `re`, every path through `x` must
+consume the same number of scalars `w`: alternatives must have equal widths
+and counted repeats must be exact (`{n}`, or any count of a zero-width body).
+Otherwise compilation returns `Syntax` at the `(`. Fewer than `w` scalars
+before the position fail `(?<=x)` and satisfy `(?<!x)`. The body may contain
+assertions and further lookbehind. It may not contain captures, named or
+numbered; those are `Unsupported` at the group. Lookbehind looks before the
+search start, so `find_from`, `find_iter` and `longest_prefix_from` see the
+preceding text.
+
+Lookbehind runs on the VM only. `has_lookbehind()` is true for it, so `dfa()`
+returns `Unsupported(0)` and [`ext::lexer`](extended-lexer.md) keeps such a
+rule out of its combined DFA. The body compiles to a separate sub-program of
+at most 256 instructions (`Limit(0)` beyond that). At each position where a
+thread reaches the lookbehind, the VM steps back `w` scalars and runs the
+sub-program forward with a 256-bit set of PCs per scalar. It needs no
+workspace storage and allocates nothing at search time; compilation
+allocates one temporary width table per lookbehind. Every stepped-back scalar
+and visited PC costs one tick of `max_work`. Without nesting, a search costs
+O(n · m · w · m') ticks at most, for input length n, program size m and
+sub-program size m'; each nesting level multiplies by its own w · m'. On
+`(?:(?<=(?:a|a){8})a)+b` over 20,000 `a`s the oracle's harness takes about
+0.2 s, while CPython takes about 30 s.
+
+### Capture-free DFA matching
+
+`dfa(&Regex) -> Result<Dfa, Error>` builds an unanchored lazy DFA for any
+program without lookbehind; a program with lookbehind is `Unsupported(0)`.
+`^ $ \A \z \b \B` are part of the DFA state; see
+[Assertions in the DFA](#assertions-in-the-dfa). Always pass the same Regex to its methods:
+
+| Dfa method | Contract |
+| --- | --- |
+| `is_match(&Regex, Text)`, `find_span(&Regex, Text)` | Same results and errors as `Regex.is_match` and a span search from 0. VM scratch is allocated only when the DFA cannot decide. |
+| `is_match_with(&Regex, Input, start, &Workspace)`, `find_span_with(...)` | Same as the VM's span search on that scratch, including the Bounds and WorkspaceTooSmall checks. A DFA answer publishes no span and leaves `work_used()` at 0. |
+| `cache_resets()`, `destroy()` | Observation, and release of the fixed cache. |
+
+The DFA re-adds the program entry after every scalar and stops at the first
+accepting boundary. A DFA answer is used only when the VM provably could not
+reach `WorkLimit`. Either the whole remaining input fits,
+`(remaining bytes + 2) * boundary_cost <= max_work`, or there is no match
+within the scanned scalars plus two. Otherwise, and whenever the fixed cache
+fills, the call runs the VM. `find_span` uses the DFA only to prove absence;
+when a match exists, the VM selects the leftmost-first span. The DFA cache
+has a fixed size and is shared by copies.
+
+### Combined prefix sets
+
+`prefix_set()`, `PrefixSet.add(rule, &Regex)`, `finish()` and
+`run(Input, start) -> PrefixRun` provide one anchored longest-prefix DFA over
+several lookbehind-free programs. A `PrefixRun` reports the furthest accepting
+end, the lowest rule accepting there, the scalars scanned, and `complete`.
+`complete` is false when the fixed cache filled, and the caller must then use
+the VM. `Regex.has_lookbehind()` and `Regex.boundary_cost()` support exact VM
+fallback; `Regex.has_assertion()` reports any assertion, lookbehind included.
+
+### Assertions in the DFA
+
+The construction follows RE2 and Rust's `regex-automata`. A state is a set of
+PCs plus look-behind bits for its boundary: at start of text (for `^` and
+`\A`), previous scalar is LF (for multiline `^`), and previous scalar is an
+ASCII word scalar (for `\b` and `\B`). Only the bits some rule needs are kept,
+so an assertion-free program has the same states as before. Look-behind
+assertions are decided while the state is built. `$`, `\z`, `\b` and `\B` also
+need the next scalar, so they stay in the set unresolved. A transition on
+scalar c first resolves them with c's facts (LF, word) and records the lowest
+rule accepting at that boundary; the match is reported one scalar late, as a
+delayed accept stored in the next state. End of text resolves with the
+end-of-text fact and is cached per state. `run()` takes the start state's
+look-behind bits from the scalar before `start`, so lexer steps and searches
+from an offset see the real preceding text. Multiline and dot mode are kept
+per rule. In unanchored mode an empty set is a live state, since a later
+boundary (after an LF, say) can satisfy `^` again. [`ext::lexer`](extended-lexer.md#combined-dfa-matching) owns the only
+current consumer and its acceptance evidence.
+
+### Differential oracle and lazy counted repetition
+
+The [regex differential oracle](extended-regex-oracle.md) compares
+`find_iter` captures, template replacement and the grep filter with CPython
+`re`, using seeded grammar-generated patterns from the shared subset. On source
+SHA256 `a4b91551...`, five seeds agree on 60,025/60,025 find cases,
+5,000/5,000 replacements and 5,000/5,000 grep runs. The oracle found that lazy
+counted repetition with a zero minimum gave single iterations priority over a
+second iteration: `(?:a|aab){0,2}?b` on `aabb` matched `[0,4)`. Optional copies
+now nest as `(?:x(?:x)??)??`, as in RE2 and Python, and the match is `[0,3)`.
+The receipts above predate this change. An old-versus-new comparison over
+18,000 unrestricted cases found no other changed result.
 
 ### Historical engine coverage
 

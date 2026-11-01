@@ -3,6 +3,8 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_setIndexOrEval
+public import Lanius.Faithful.Gen.SelfStmt0
+public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmtF_divergeArm
 public import Lanius.Faithful.Gen.SelfStmtF_ifEff
 public import Lanius.Faithful.Gen.SelfStmtF_pickTy
@@ -38,7 +40,9 @@ theorem proof_field_eval_stmt {prog : SrcProgram} {prims : Prims} {ix_field_eval
   simp only [src_field_eval_stmt] at h
   faithful [Lanius.Mini.fieldEvalStmt]
 
-theorem proof_set_index_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_index_or_eval ix_eff_of ix_index_elem ix_set_index_eval_of : Nat} (fn : prog.funcs[ix_set_index_or_eval]? = some (src_set_index_or_eval ix_eff_of ix_index_elem ix_set_index_eval_of)) (np : prims.isPrim ix_set_index_or_eval = false)
+theorem proof_set_index_or_eval {prog : SrcProgram} {prims : Prims} {ix_set_index_or_eval ix_field_fns_Decls_of_mini_selfhost_Decls ix_length_of_mini_selfhost_FnDecl ix_eff_of ix_index_elem ix_set_index_eval_of : Nat} (fn : prog.funcs[ix_set_index_or_eval]? = some (src_set_index_or_eval ix_field_fns_Decls_of_mini_selfhost_Decls ix_length_of_mini_selfhost_FnDecl ix_eff_of ix_index_elem ix_set_index_eval_of)) (np : prims.isPrim ix_set_index_or_eval = false)
+    (ext_field_fns_Decls_of_mini_selfhost_Decls : Certified (∀ {n : Nat}, Stmt_field_fns_Decls_of_mini_selfhost_Decls prog prims ix_field_fns_Decls_of_mini_selfhost_Decls n))
+    (ext_length_of_mini_selfhost_FnDecl : Certified (∀ {n : Nat}, Stmt_length_of_mini_selfhost_FnDecl prog prims ix_length_of_mini_selfhost_FnDecl n))
     (ext_eff_of : Certified (∀ {n : Nat}, Stmt_eff_of prog prims ix_eff_of n))
     (ext_index_elem : Certified (∀ {n : Nat}, Stmt_index_elem prog prims ix_index_elem n))
     (ext_set_index_eval_of : Certified (∀ {n : Nat}, Stmt_set_index_eval_of prog prims ix_set_index_eval_of n)) {n : Nat} :

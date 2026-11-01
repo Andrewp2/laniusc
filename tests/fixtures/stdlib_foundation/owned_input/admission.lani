@@ -1,0 +1,34 @@
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::io;
+import core::result;
+
+struct Reader { data:[u8], length:i32, cursor:i32, calls:i32 }
+impl Reader { fn borrow(&self) -> &Reader { return self; } }
+pub impl core::io::Read for Reader {
+    pub fn read(&self,out:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(offset==0 && count>0 && core::io::valid_range(offset,count)); self.calls+=1;
+        let amount:i32=self.length-self.cursor; if(amount>count) { amount=count; } if(amount>2) { amount=2; }
+        let i:i32=0; while(i<amount) { out[offset+i]=self.data[self.cursor+i]; i+=1; }
+        self.cursor+=amount; return core::result::Ok(amount);
+    }
+}
+fn bytes<R>(reader:&R) -> core::result::Result<alloc::vec::Vec<u8>,alloc::io::ReadFailure> where R:core::io::Read {
+    return alloc::io::read_to_end<R>(reader,alloc::io::ReadLimits { max_bytes:4,max_calls:3 });
+}
+fn text<R>(reader:&R) -> core::result::Result<alloc::string::String,alloc::io::ReadFailure> where R:core::io::Read {
+    return alloc::io::read_to_string<R>(reader,alloc::io::ReadLimits { max_bytes:4,max_calls:3 });
+}
+fn main() -> i32 {
+    let binary:[u8;3]=[11,0,255]; let source:Reader=Reader { data:binary,length:3,cursor:0,calls:0 };
+    let collected:alloc::vec::Vec<u8> =bytes<Reader>(source.borrow()).unwrap();
+    let actual:[u8]=collected.as_slice();
+    assert(collected.len()==3 && actual[0]==11 && actual[1]==0 && actual[2]==255 && source.cursor==3 && source.calls==3);
+    let utf8:[u8;4]=[226,130,172,0]; let characters:Reader=Reader { data:utf8,length:4,cursor:0,calls:0 };
+    let value:alloc::string::String=text<Reader>(characters.borrow()).unwrap(); let contents:[u8]=value.as_bytes();
+    assert(value.byte_len()==4 && value.scalar_count()==2 && contents[0]==226 && contents[1]==130 && contents[2]==172 && contents[3]==0);
+    assert(characters.cursor==4 && characters.calls==3);
+    collected.destroy(); value.destroy(); collected.destroy(); value.destroy(); return 0;
+}

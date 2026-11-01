@@ -1,0 +1,32 @@
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import ext::graph;
+import ext::graph_algorithms;
+
+fn main() -> i32 {
+    let limits:ext::graph::Limits=ext::graph::default_limits();
+    let edges:[ext::graph::Edge;5]=[ext::graph::Edge { source:2,target:3 },ext::graph::Edge { source:0,target:2 },
+        ext::graph::Edge { source:1,target:3 },ext::graph::Edge { source:0,target:1 },ext::graph::Edge { source:0,target:1 }];
+    let input:core::slice::View<ext::graph::Edge> =core::slice::view_range<ext::graph::Edge>(edges,0,5).unwrap();
+    let graph:ext::graph::Graph=ext::graph::from_edges(4,input,limits).unwrap();
+    assert(graph.is_open() && graph.node_count()==4 && graph.edge_count()==4);
+    let view:ext::graph::View=graph.view().unwrap(); let row:core::slice::View<i32> =ext::graph::neighbors(view,0,limits).unwrap();
+    assert(row.length==2 && row.values[row.start]==1 && row.values[row.start+1]==2);
+    let paths:ext::graph_algorithms::BfsPaths=ext::graph_algorithms::bfs(view,0,limits).unwrap();
+    let distance:core::result::Result<core::option::Option<i32>,ext::graph::Error> =paths.distance(3);
+    let predecessor:core::result::Result<core::option::Option<i32>,ext::graph::Error> =paths.predecessor(3);
+    assert(distance.unwrap().unwrap()==2 && predecessor.unwrap().unwrap()==1 && paths.predecessor(0).unwrap().is_none());
+    let order:alloc::vec::Vec<i32> =ext::graph_algorithms::topological_order(view,limits).unwrap(); let sequence:[i32]=order.as_slice();
+    assert(order.len()==4 && sequence[0]==0 && sequence[1]==1 && sequence[2]==2 && sequence[3]==3); order.destroy();
+    assert(paths.destroy() && !paths.destroy()); assert(graph.destroy() && !graph.destroy() && graph.view().is_none());
+    let cycle_edges:[ext::graph::Edge;2]=[ext::graph::Edge { source:0,target:1 },ext::graph::Edge { source:1,target:0 }];
+    let cycle_input:core::slice::View<ext::graph::Edge> =core::slice::view_range<ext::graph::Edge>(cycle_edges,0,2).unwrap();
+    let cycle:ext::graph::Graph=ext::graph::from_edges(2,cycle_input,limits).unwrap();
+    let rejected:core::result::Result<alloc::vec::Vec<i32>,ext::graph::Error> =ext::graph_algorithms::topological_order(cycle.view().unwrap(),limits);
+    let error:ext::graph::Error=rejected.unwrap_err();
+    assert(match(error.kind) { ext::graph::ErrorKind::Cycle -> true,_ -> false }); assert(error.node==-1 && error.edge==-1);
+    assert(cycle.destroy() && !cycle.destroy()); return 0;
+}

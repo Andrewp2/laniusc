@@ -11,7 +11,9 @@ algorithm uses portable values; storage uses the existing allocator bindings.
 
 ## Ordering and ownership
 
-Key operations require `K: core::cmp::Ord<K>` and use `K::lt`. The relation must
+Insertion and same-key operations require `K: core::cmp::Ord<K>` and use
+`K::lt`. The new borrowed point queries use an explicit `Comparator<K,Q>`
+while preserving this stored-key ordering. The relation must
 be a stable strict weak order: keys are equivalent when neither is less than
 the other. Equivalent-key `try_insert` replaces both the key and value, returning
 the previous `Entry<K, V>`. Values need no comparison implementation. Do not
@@ -42,8 +44,39 @@ Cursors borrow the map. Successful edits invalidate earlier cursors; failed
 fallible edits preserve them, contents and capacity. Owners and key backing
 must outlive cursors. `next` and `next_back` consume opposite ends without
 overlap; either returns None repeatedly after exhaustion. Range bounds are
-used during cursor construction and are not retained. Shared iterator-trait
-integration remains a separate compiler dependency.
+used during cursor construction and are not retained. Later
+[shared iterator-trait integration](stdlib-collection-iterators.md) has separate
+accepted evidence.
+
+## Borrowed point queries
+
+[Borrowed collection lookup](stdlib-borrowed-lookup.md) adds `contains_key_by`,
+`get_by`, `get_entry_by`, `remove_by` and `update_value_by` for a distinct Q.
+Their borrowed `Comparator<K,Q>` receives stored key first, query second,
+once per visited node. It must partition stored order into Less, optionally
+Equal, then Greater and identify at most one stored key class. Getters borrow
+the stored representative; removal transfers the actual entry; update retains
+the original key and reinstalls V on every normal callback return.
+`alloc::string::TextKey` supplies String/Text policy. All sixteen map/set
+methods pass the nine-group library acceptance and migrated application
+on native Linux x86_64 CPU output. Ordered bounds and ranges take
+heterogeneous queries separately, through the navigation contract below.
+
+## Ordered navigation
+
+[Ordered navigation](stdlib-ordered-navigation.md) adds `last_at_most`,
+`last_below`, `lower_bound_by`, `upper_bound_by`, `last_at_most_by`,
+`last_below_by`, `range_bounds` and `range_bounds_by`. Interval ends are
+`core::range::Bound<K>` (or `Bound<Q>`) values: Included, Excluded or
+Unbounded, so `Included(i32::MAX)` is reachable. Navigation policies order
+stored keys as Less*, Equal*, Greater*; unlike point lookup, an Equal run may
+hold several keys, such as a String prefix family. Calls are one per visited
+node per descent, plus one front check for a bounded range. Nothing allocates.
+The same intervals can be removed in place (`remove_range`,
+`remove_range_by`; shallow discard, capacity kept, no allocation) or moved
+with their cleanup authority to a new exact-capacity owner
+(`try_extract_range`, `try_extract_range_by`, `try_split_off`); failed
+extraction leaves the source unchanged.
 
 ## API contracts
 
@@ -57,10 +90,18 @@ integration remains a separate compiler dependency.
 | `len()`, `capacity()`, `is_empty()` | Live entry count, reserved node count and emptiness |
 | `contains_key(key)` | Whether an equivalent key exists |
 | `get(key)`, `get_entry(key)` | Optional borrowed value or complete entry |
+| `update_value(key, update)` | One lookup; missing returns None, present reinstalls callback Pair.first and returns Some(Pair.second), preserving the stored key; [current evidence](stdlib-map-updates.md) |
 | `first()`, `last()` | Optional borrowed smallest or largest entry |
 | `lower_bound(key)`, `upper_bound(key)` | First entry at least equal to, or strictly greater than, the key |
 | `iter()` | Borrowed cursor over all entries in key order |
 | `range(lower, upper)` | Result containing a cursor over `[lower, upper)`; equivalent bounds yield empty |
+| `last_at_most(key)`, `last_below(key)` | Last entry at most equal to, or strictly less than, the key |
+| `lower_bound_by`, `upper_bound_by`, `last_at_most_by`, `last_below_by` | The four searches with a `Comparator<K,Q>` query; see [ordered navigation](stdlib-ordered-navigation.md) |
+| `range_bounds(lower, upper)` | Result containing a cursor between two `Bound<K>` ends; InvalidRange only when upper is strictly less than lower |
+| `range_bounds_by(lower, upper, policy)` | Cursor between two `Bound<Q>` ends; disjoint or reversed bounds are empty |
+| `remove_range(lower, upper)`, `remove_range_by(lower, upper, policy)` | Remove the `range_bounds`/`range_bounds_by` interval shallowly, without allocation; return the count (same-key form in a Result with InvalidRange) |
+| `try_extract_range(lower, upper)`, `try_extract_range_by(lower, upper, policy)` | Move that interval with its cleanup authority into a new owner of exactly its size; Err leaves the source unchanged |
+| `try_split_off(at)` | `try_extract_range(Included(at), Unbounded)` |
 | `try_reserve(additional)` | Reserve for `len + additional`; return resulting capacity |
 | `try_insert(key, value)` | Result containing the replaced entry, or None for a new key |
 | `remove(key)` | Transfer the equivalent entry, or None |
@@ -70,6 +111,14 @@ integration remains a separate compiler dependency.
 | `try_shrink_to_fit()` | Compact to capacity equal to length; return capacity |
 | `destroy()` | Free node storage and reset the owner; repeated calls on that same owner are harmless |
 | Cursor `is_empty()`, `next()`, `next_back()` | Check exhaustion or borrow the next entry from either end |
+
+The [scoped value update](stdlib-map-updates.md) retains the exact representative
+key, node links/heights, free list, count, capacity and backing. A present value
+is lent exclusively to one callback; its latest descriptor is reinstalled on
+every normal return, including a separate Result error. End prior borrows and
+cursors first, and do not access the map or change key ordering during the
+callback. All seven new library gates pass on the finite native Linux x86_64 profile;
+the dedicated guide records their scope and the accepted 103-case application. The older receipts below do not establish this method.
 
 Errors are `InvalidCapacity` for a negative request, `CapacityOverflow` when
 the requested node storage exceeds the supported size, `AllocationFailed`,
@@ -121,6 +170,7 @@ replacement before releasing the original allocation.
 | Lookup, bounds, first/last | O(log n) |
 | New insertion | Amortized O(log n); a growth allocation also copies initialized nodes |
 | Replacement, removal, endpoint pop | O(log n) |
+| `update_value` | O(log n) lookup plus one callback and constant reinstall; no rebalance |
 | Reserve that grows storage | O(used), including holes below the initialized high-water mark; `used <= capacity` |
 | Full traversal | O(n), with no key comparisons |
 | One cursor step | O(log n) worst case; amortized O(1) during traversal |
@@ -132,7 +182,9 @@ The old `std::map` was removed after its repository callers migrated to checked
 `alloc::hash_map` owners and explicit order vectors where their output needs
 first-seen order. See [collection migration](stdlib-legacy-collections.md).
 [Ordered sets](stdlib-owned-sets.md) delegate to this map's storage and cursor
-engine. Entry APIs and lookup through a distinct borrowed key type remain work.
+engine. Broader Entry handles and heterogeneous ordered bounds/ranges remain
+work. Distinct borrowed-key point lookup has the separate contract and
+acceptance above; scoped value update retains its explicit callback policy.
 
 ## Executable evidence
 

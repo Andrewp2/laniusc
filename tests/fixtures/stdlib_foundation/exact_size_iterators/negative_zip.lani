@@ -1,0 +1,15 @@
+module app::main;
+import core::iter;
+import core::pair;
+fn require_exact<I,T>(source:&I) -> u64
+    where I:core::iter::Iterator<T>, I:core::iter::ExactSizeIterator<T> {
+    return source.remaining_count();
+}
+fn main() -> i32 {
+    // Borrowing both sides from one cursor changes joint cardinality; exact
+    // individual leaves do not make this adapter an exact-size iterator.
+    let source:core::iter::Once<i32> =core::iter::once<i32>(7);
+    let zipped:core::iter::Zip<core::iter::Once<i32>,core::iter::Once<i32>,i32,i32> =core::iter::zip<core::iter::Once<i32>,core::iter::Once<i32>,i32,i32>(source.borrow(),source.borrow());
+    let rejected:u64=require_exact<core::iter::Zip<core::iter::Once<i32>,core::iter::Once<i32>,i32,i32>,core::pair::Pair<i32,i32>>(zipped.borrow()); // rejected_exact_count
+    return 0;
+}

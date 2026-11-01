@@ -1,6 +1,7 @@
 // Select one whitespace column from bounded UTF-8 stdin, then checked-sum it.
 // Admitted x86_64 Linux ELF through the GPU compiler; see docs/stdlib-column-sum.md.
 module app::main;
+import core::function;
 import alloc::io;
 import core::decimal;
 import core::i64;
@@ -26,7 +27,7 @@ impl DataLine { fn borrow(&self) -> &DataLine { return self; } }
 impl Selection { fn borrow(&self) -> &Selection { return self; } }
 impl Total { fn borrow(&self) -> &Total { return self; } }
 
-pub impl core::iter::Mapper<core::text::Text,bool> for DataLine {
+pub impl core::function::Mapper<core::text::Text,bool> for DataLine {
     pub fn apply(&self, value: core::text::Text) -> bool {
         let trimmed: core::text::Text = value.trim_ascii();
         if (trimmed.is_empty()) { return false; }
@@ -35,7 +36,7 @@ pub impl core::iter::Mapper<core::text::Text,bool> for DataLine {
     }
 }
 
-pub impl core::iter::Mapper<core::text::Text,core::result::Result<i64,Error>> for Selection {
+pub impl core::function::Mapper<core::text::Text,core::result::Result<i64,Error>> for Selection {
     pub fn apply(&self, value: core::text::Text) -> core::result::Result<i64,Error> {
         let words: core::text::SplitAsciiWhitespace = value.split_ascii_whitespace();
         let index: u64 = 1;

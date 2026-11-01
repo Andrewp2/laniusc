@@ -1,0 +1,23 @@
+// Admit specialized methods, including Result's extension in core::option.
+module app::main;
+import core::option;
+import core::result;
+fn main() -> i32 {
+    let inner_option:core::option::Option<i64> =core::option::Some(-4294967297);
+    let nested_option:core::option::Option<core::option::Option<i64>> =core::option::Some(inner_option);
+    let flattened_option:core::option::Option<i64> =nested_option.flatten();
+    assert(flattened_option.unwrap()==-4294967297);
+    let inner_result:core::result::Result<u64,i32> =core::result::Ok(18446744073709551615);
+    let nested_result:core::result::Result<core::result::Result<u64,i32>,i32> =core::result::Ok(inner_result);
+    let flattened_result:core::result::Result<u64,i32> =nested_result.flatten();
+    assert(flattened_result.unwrap()==18446744073709551615);
+    let failed:core::result::Result<bool,u64> =core::result::Err(4294967297);
+    let optional_result:core::option::Option<core::result::Result<bool,u64>> =core::option::Some(failed);
+    let transposed_result:core::result::Result<core::option::Option<bool>,u64> =optional_result.transpose();
+    assert(transposed_result.unwrap_err()==4294967297);
+    let present:core::option::Option<u64> =core::option::Some(18446744073709551615);
+    let result_option:core::result::Result<core::option::Option<u64>,i32> =core::result::Ok(present);
+    let transposed_option:core::option::Option<core::result::Result<u64,i32>> =result_option.transpose();
+    assert(transposed_option.unwrap().unwrap()==18446744073709551615);
+    return 0;
+}

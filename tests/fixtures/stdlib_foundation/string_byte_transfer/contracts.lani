@@ -1,0 +1,154 @@
+// Native ownership, UTF-8 admission and allocation-free transfer contracts.
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+
+fn mark(value: i32) {
+    let byte: [i32; 1] = [value];
+    assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte), 1) == 1);
+}
+
+fn check_bytes(bytes: alloc::vec::Vec<u8>, expected: [u8], count: i32) {
+    assert(bytes.len() == count);
+    let index: i32 = 0;
+    while (index < count) { assert(bytes.at(index) == expected[index]); index += 1; }
+}
+
+fn valid(expected: [u8], count: i32, capacity: i32, scalars: i32) {
+    let source: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(capacity).unwrap();
+    let input: core::slice::View<u8> = core::slice::View { values: expected, start: 0, length: count };
+    source.try_extend(input).unwrap();
+    let pointer: ptr = source.storage;
+    let reserved: i32 = source.capacity();
+    assert(reserved == capacity);
+
+    mark(80);
+    let result: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8_vec(source.borrow());
+    assert(result.is_ok());
+    let text: alloc::string::String = result.unwrap();
+    assert(source.len() == 0 && source.capacity() == 0 && source.storage == 0);
+    assert(text.bytes.storage == pointer && text.capacity() == reserved);
+    assert(text.byte_len() == count && text.scalar_count() == scalars);
+    check_bytes(text.bytes, expected, count);
+    mark(112);
+
+    // The emptied Vec can acquire independent storage while String stays live.
+    assert(source.try_push(88).unwrap() == 1);
+    assert(source.at(0) == 88);
+    if (pointer != 0) { assert(source.storage != pointer); }
+    check_bytes(text.bytes, expected, count);
+    source.destroy(); source.destroy();
+
+    mark(80);
+    let recovered: alloc::vec::Vec<u8> = text.into_bytes();
+    assert(text.byte_len() == 0 && text.capacity() == 0 && text.bytes.storage == 0);
+    assert(recovered.storage == pointer && recovered.capacity() == reserved);
+    check_bytes(recovered, expected, count);
+    let readopted: alloc::string::String = alloc::string::from_utf8_vec(recovered.borrow()).unwrap();
+    assert(recovered.len() == 0 && recovered.capacity() == 0 && recovered.storage == 0);
+    assert(readopted.bytes.storage == pointer && readopted.capacity() == reserved);
+    let final_bytes: alloc::vec::Vec<u8> = readopted.into_bytes();
+    assert(readopted.byte_len() == 0 && readopted.capacity() == 0);
+    assert(final_bytes.storage == pointer && final_bytes.capacity() == reserved);
+    check_bytes(final_bytes, expected, count);
+    mark(112);
+
+    // The emptied String can allocate independently of the returned Vec.
+    assert(text.try_push_scalar(128578).unwrap() == 4);
+    assert(text.scalar_count() == 1 && text.scalar_at_byte(0).unwrap() == 128578);
+    if (pointer != 0) { assert(text.bytes.storage != pointer); }
+    check_bytes(final_bytes, expected, count);
+    text.destroy(); text.destroy();
+    final_bytes.destroy(); final_bytes.destroy();
+    recovered.destroy(); readopted.destroy(); source.destroy();
+}
+
+fn invalid(expected: [u8], count: i32, malformed: i32) {
+    let source: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(count + 11).unwrap();
+    let input: core::slice::View<u8> = core::slice::View { values: expected, start: 0, length: count };
+    source.try_extend(input).unwrap();
+    let pointer: ptr = source.storage;
+    let capacity: i32 = source.capacity();
+    mark(80);
+    let result: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8_vec(source.borrow());
+    assert(result.is_err());
+    let error: alloc::string::Error = result.unwrap_err();
+    let correct: bool = match (error) {
+        alloc::string::Error::InvalidUtf8(offset) -> offset == malformed,
+        _ -> false,
+    };
+    assert(correct && source.storage == pointer && source.capacity() == capacity);
+    check_bytes(source, expected, count);
+    mark(112);
+
+    // Repair in the retained allocation and transfer that very allocation.
+    mark(80);
+    let index: i32 = 0;
+    while (index < count) { source.set(index, 65).unwrap(); index += 1; }
+    let text: alloc::string::String = alloc::string::from_utf8_vec(source.borrow()).unwrap();
+    assert(source.len() == 0 && source.capacity() == 0 && source.storage == 0);
+    assert(text.bytes.storage == pointer && text.capacity() == capacity);
+    assert(text.byte_len() == count && text.scalar_count() == count);
+    let recovered: alloc::vec::Vec<u8> = text.into_bytes();
+    assert(recovered.storage == pointer && recovered.capacity() == capacity && recovered.len() == count);
+    index = 0;
+    while (index < count) { assert(recovered.at(index) == 65); index += 1; }
+    assert(text.byte_len() == 0 && text.capacity() == 0);
+    mark(112);
+    recovered.destroy(); recovered.destroy(); text.destroy(); source.destroy();
+}
+
+fn initialized_prefix_only(empty: bool) {
+    let source: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(8).unwrap();
+    source.try_push(65).unwrap(); source.try_push(255).unwrap();
+    let count: i32 = 1;
+    if (empty) { count = 0; }
+    source.truncate(count).unwrap();
+    let pointer: ptr = source.storage;
+    mark(80);
+    let text: alloc::string::String = alloc::string::from_utf8_vec(source.borrow()).unwrap();
+    assert(text.bytes.storage == pointer && text.capacity() == 8 && text.byte_len() == count);
+    assert(text.scalar_count() == count && source.storage == 0 && source.capacity() == 0);
+    let recovered: alloc::vec::Vec<u8> = text.into_bytes();
+    assert(recovered.storage == pointer && recovered.capacity() == 8 && recovered.len() == count);
+    if (count == 1) { assert(recovered.at(0) == 65); }
+    mark(112);
+    recovered.destroy(); text.destroy(); source.destroy();
+}
+
+fn main() -> i32 {
+    let empty: [u8; 1] = [255];
+    let ascii: [u8; 3] = [65, 98, 99];
+    let nul: [u8; 1] = [0];
+    let mixed: [u8; 12] = [0,65,194,162,226,130,172,240,159,153,130,0];
+    let boundaries: [u8; 22] = [127,194,128,223,191,224,160,128,237,159,191,239,191,191,240,144,128,128,244,143,191,191];
+    let bom: [u8; 3] = [239,187,191];
+    valid(empty, 0, 0, 0); valid(empty, 0, 17, 0);
+    valid(ascii, 3, 3, 3); valid(ascii, 3, 31, 3);
+    valid(nul, 1, 9, 1); valid(mixed, 12, 33, 6);
+    valid(boundaries, 22, 37, 8); valid(bom, 3, 15, 1);
+
+    let continuation: [u8; 1] = [128];
+    let after_nul: [u8; 4] = [65,0,128,0];
+    let overlong_two: [u8; 2] = [192,128];
+    let overlong_three: [u8; 3] = [224,128,128];
+    let overlong_four: [u8; 4] = [240,128,128,128];
+    let surrogate: [u8; 3] = [237,160,128];
+    let too_high: [u8; 4] = [244,144,128,128];
+    let bad_tail: [u8; 3] = [226,65,172];
+    let truncated: [u8; 3] = [65,240,159];
+    let first_error: [u8; 7] = [65,194,162,226,65,172,255];
+    let ff: [u8; 1] = [255];
+    let f5: [u8; 4] = [245,128,128,128];
+    invalid(continuation, 1, 0); invalid(after_nul, 4, 2);
+    invalid(overlong_two, 2, 0); invalid(overlong_three, 3, 0); invalid(overlong_four, 4, 0);
+    invalid(surrogate, 3, 0); invalid(too_high, 4, 0); invalid(bad_tail, 3, 0);
+    invalid(truncated, 3, 1); invalid(first_error, 7, 3); invalid(ff, 1, 0); invalid(f5, 4, 0);
+    initialized_prefix_only(false); initialized_prefix_only(true);
+    mark(68);
+    return 0;
+}

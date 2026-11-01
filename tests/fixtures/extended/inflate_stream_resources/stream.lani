@@ -1,0 +1,86 @@
+// Reuse one caller-owned history/table pair across streamed formats and failures.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::compression;
+import ext::inflate;
+import std::io;
+import std::stream;
+
+fn mark(value:i32) { let cell:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(cell),1)==1); }
+fn get32(bytes:[u8],offset:i32) -> i32 {
+    return ((bytes[offset] as u32)|((bytes[offset+1] as u32)<<8)|((bytes[offset+2] as u32)<<16)|((bytes[offset+3] as u32)<<24)) as i32;
+}
+fn put32(bytes:[u8],offset:i32,value:i32) {
+    let word:u32=value as u32; bytes[offset]=(word&255) as u8; bytes[offset+1]=((word>>8)&255) as u8;
+    bytes[offset+2]=((word>>16)&255) as u8; bytes[offset+3]=((word>>24)&255) as u8;
+}
+fn receive(bytes:[u8],count:i32) {
+    let source=std::stream::stdin(); let offset:i32=0;
+    while(offset<count) { let got=source.read(bytes,offset,count-offset).unwrap(); assert(got>0 && got<=count-offset); offset+=got; }
+}
+fn send(bytes:[u8],count:i32) {
+    let sink=std::stream::stdout(); let offset:i32=0;
+    while(offset<count) { let got=sink.write(bytes,offset,count-offset).unwrap(); assert(got>0 && got<=count-offset); offset+=got; }
+}
+fn code(error:ext::compression::Error) -> i32 {
+    return match(error) {
+        ext::compression::Error::Bounds -> 1, ext::compression::Error::InputLimit -> 2,
+        ext::compression::Error::OutputLimit -> 3, ext::compression::Error::MemberLimit -> 4,
+        ext::compression::Error::AllocationFailed -> 5, ext::compression::Error::CapacityOverflow -> 6,
+        ext::compression::Error::Truncated -> 7, ext::compression::Error::Header -> 8,
+        ext::compression::Error::UnsupportedMethod -> 9, ext::compression::Error::UnsupportedWindow -> 10,
+        ext::compression::Error::UnsupportedDictionary -> 11, ext::compression::Error::Checksum -> 12,
+        ext::compression::Error::SizeMismatch -> 13, ext::compression::Error::TrailingData -> 14,
+        ext::compression::Error::Deflate(detail) -> 15, ext::compression::Error::Encode(detail) -> 16
+    };
+}
+fn main() -> i32 {
+    let header:[u8;16]=[0;16]; receive(header,4); let cases:i32=get32(header,0); assert(cases>0 && cases<=16);
+    mark(65);
+    let history=alloc::vec::with_capacity<u8>(32769).unwrap(); history.try_resize(32769,165).unwrap();
+    let workspace=alloc::vec::with_capacity<i32>(708).unwrap(); workspace.try_resize(708,1515870810).unwrap();
+    mark(97);
+    let history_view=history.as_view().subview(0,32768).unwrap(); let workspace_view=workspace.as_view().subview(0,707).unwrap();
+    let initial:ext::compression::Limits=ext::compression::Limits { max_input:16777216,max_output:16777216,max_members:1024 };
+    mark(67); let decoder=ext::compression::decoder(history_view,workspace_view,ext::compression::Format::RawDeflate,initial).unwrap(); mark(99);
+    let input:[u8;4096]=[0;4096]; let output:[u8;4096]=[0;4096]; let index:i32=0;
+    while(index<cases) {
+        receive(header,16); let format_id:i32=get32(header,0); let encoded:i32=get32(header,4);
+        let expected_error:i32=get32(header,8); let expected_output:i32=get32(header,12);
+        assert(format_id>=0 && format_id<=2 && encoded>0 && encoded<=16777216 && expected_output>=0 && expected_output<=16777215);
+        let format:ext::compression::Format=ext::compression::Format::RawDeflate;
+        if(format_id==1) { format=ext::compression::Format::Zlib; } if(format_id==2) { format=ext::compression::Format::Gzip; }
+        let limits:ext::compression::Limits=ext::compression::Limits { max_input:encoded,max_output:expected_output+1,max_members:1024 };
+        mark(82); assert(decoder.reset(format,limits).unwrap()); assert(!decoder.is_done() && !decoder.is_failed());
+        assert(decoder.total_read()==0 && decoder.total_written()==0 && decoder.members()==0); mark(114);
+        let loaded:i32=0; let available:i32=0; let used:i32=0; let total_read:i32=0; let total_written:i32=0;
+        let failure:i32=0; let done:bool=false; let calls:i32=0;
+        mark(83);
+        while(!done && failure==0) {
+            if(used==available && loaded<encoded) { available=encoded-loaded; if(available>4096) { available=4096; } receive(input,available); loaded+=available; used=0; }
+            let source=core::slice::view_range(input,used,available-used).unwrap();
+            let target=core::slice::view(output,4096).unwrap(); calls+=1; assert(calls<=262144);
+            let result=decoder.step(source,target,loaded==encoded);
+            let read:i32=0; let written:i32=0;
+            if(result.is_err()) { let detail=result.unwrap_err(); read=detail.read; written=detail.written; failure=code(detail.error); }
+            else { let step=result.unwrap(); read=step.read; written=step.written; done=match(step.status) { ext::inflate::Status::Done -> true, _ -> false }; }
+            assert(read>=0 && read<=available-used && written>=0 && written<=4096);
+            used+=read; total_read+=read; total_written+=written; if(written>0) { send(output,written); }
+            assert(done || failure!=0 || read>0 || written>0 || used==available);
+        }
+        assert(loaded==encoded && total_written==expected_output && failure==expected_error);
+        assert(decoder.total_read()==(total_read as u64) && decoder.total_written()==(total_written as u64));
+        assert(history.at(32768)==165 && workspace.at(707)==1515870810);
+        let empty=core::slice::view(input,0).unwrap(); let terminal=decoder.step(empty,core::slice::view(output,0).unwrap(),true);
+        if(failure==0) { assert(decoder.is_done() && !decoder.is_failed()); let step=terminal.unwrap(); assert(step.read==0 && step.written==0); assert(match(step.status) { ext::inflate::Status::Done -> true, _ -> false }); }
+        else { assert(decoder.is_failed() && !decoder.is_done()); let detail=terminal.unwrap_err(); assert(code(detail.error)==failure && detail.read==0 && detail.written==0); }
+        mark(115);
+        put32(header,0,failure); put32(header,4,total_read); put32(header,8,total_written); put32(header,12,decoder.members()); send(header,16);
+        index+=1;
+    }
+    mark(68); history.destroy(); workspace.destroy(); mark(100); return 0;
+}

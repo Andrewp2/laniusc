@@ -1,0 +1,135 @@
+// Literal checked byte-layout arithmetic. No backing storage or pointers.
+module app::main;
+import core::layout;
+import core::result;
+
+fn check(value:core::layout::Layout,size:usize,alignment:usize) {
+    assert(value.size==size && value.alignment==alignment);
+}
+fn layout(result:core::result::Result<core::layout::Layout,core::layout::Error>,size:usize,alignment:usize) { check(result.unwrap(),size,alignment); }
+fn error<T>(result:core::result::Result<T,core::layout::Error>,expected:i32) {
+    assert(result.is_err());
+    let actual:i32=match(result.unwrap_err()) { core::layout::Error::InvalidAlignment -> 1, core::layout::Error::SizeOverflow -> 2 };
+    assert(actual==expected);
+}
+fn constructors_validation_and_copies() {
+    assert(core::layout::MAX_SIZE==9223372036854775807);
+    layout(core::layout::from_size_align(3,4),3,4);
+    layout(core::layout::from_size_align(0,1),0,1);
+    layout(core::layout::from_size_align(0,9223372036854775808),0,9223372036854775808);
+    layout(core::layout::from_size_align(9223372036854775807,1),9223372036854775807,1);
+    layout(core::layout::from_size_align(9223372036854775799,8),9223372036854775799,8);
+    layout(core::layout::from_size_align(1,4611686018427387904),1,4611686018427387904);
+    error(core::layout::from_size_align(1,9223372036854775808),2);
+    error(core::layout::from_size_align(4611686018427387905,4611686018427387904),2);
+    error(core::layout::from_size_align(9223372036854775801,8),2);
+    error(core::layout::from_size_align(9223372036854775808,1),2);
+    error(core::layout::from_size_align(18446744073709551615,1),2);
+    error(core::layout::from_size_align(0,0),1);
+    error(core::layout::from_size_align(0,3),1);
+    error(core::layout::from_size_align(18446744073709551615,6),1); // alignment precedes size
+    error(core::layout::from_size_align(0,18446744073709551615),1);
+    let forged:core::layout::Layout=core::layout::Layout { size:3,alignment:4 };
+    let checked:core::layout::Layout=core::layout::validate(forged).unwrap();
+    assert(core::layout::is_valid(forged)); check(checked,3,4);
+    forged.size=7; forged.alignment=8; check(checked,3,4);
+    layout(core::layout::validate(forged),7,8); assert(core::layout::is_valid(forged));
+    forged.alignment=3; assert(!core::layout::is_valid(forged)); error(core::layout::validate(forged),1);
+    forged.size=18446744073709551615; error(core::layout::validate(forged),1);
+    forged.alignment=1; error(core::layout::validate(forged),2); assert(!core::layout::is_valid(forged));
+    forged.size=9223372036854775807; forged.alignment=8; error(core::layout::validate(forged),2);
+    check(forged,9223372036854775807,8);
+    forged.size=0; forged.alignment=9223372036854775808;
+    layout(core::layout::validate(forged),0,9223372036854775808); assert(core::layout::is_valid(forged));
+}
+fn padding_alignment_and_unpadded_sizes() {
+    assert(core::layout::padding_for(0,8).unwrap()==0);
+    assert(core::layout::padding_for(37,8).unwrap()==3);
+    assert(core::layout::padding_for(40,8).unwrap()==0);
+    assert(core::layout::padding_for(9223372036854775807,1).unwrap()==0);
+    assert(core::layout::padding_for(9223372036854775806,2).unwrap()==0);
+    assert(core::layout::padding_for(0,9223372036854775808).unwrap()==0);
+    error(core::layout::padding_for(9223372036854775807,2),2);
+    error(core::layout::padding_for(1,9223372036854775808),2);
+    error(core::layout::padding_for(9223372036854775808,9223372036854775808),2); // zero padding still exceeds MAX
+    error(core::layout::padding_for(18446744073709551615,1),2);
+    error(core::layout::padding_for(18446744073709551615,2),2); // rounded addition would wrap
+    error(core::layout::padding_for(18446744073709551615,0),1);
+    error(core::layout::padding_for(0,3),1);
+    let input:core::layout::Layout=core::layout::Layout { size:5,alignment:4 };
+    layout(core::layout::pad_to_align(input),8,4);
+    layout(core::layout::align_to(input,1),5,4);
+    let raised:core::layout::Layout=core::layout::align_to(input,8).unwrap(); check(raised,5,8);
+    layout(core::layout::pad_to_align(raised),8,8); check(input,5,4);
+    error(core::layout::align_to(input,0),1); error(core::layout::align_to(input,6),1);
+    let zero:core::layout::Layout=core::layout::Layout { size:0,alignment:1 };
+    layout(core::layout::align_to(zero,9223372036854775808),0,9223372036854775808);
+    let high_zero:core::layout::Layout=core::layout::Layout { size:0,alignment:9223372036854775808 };
+    layout(core::layout::pad_to_align(high_zero),0,9223372036854775808);
+    let one:core::layout::Layout=core::layout::Layout { size:1,alignment:1 };
+    error(core::layout::align_to(one,9223372036854775808),2);
+    let maximum:core::layout::Layout=core::layout::Layout { size:9223372036854775807,alignment:1 };
+    error(core::layout::align_to(maximum,8),2);
+    let bad_size:core::layout::Layout=core::layout::Layout { size:18446744073709551615,alignment:1 };
+    error(core::layout::align_to(bad_size,3),2); // validate input before requested alignment
+    error(core::layout::pad_to_align(bad_size),2);
+    let bad_alignment:core::layout::Layout=core::layout::Layout { size:18446744073709551615,alignment:3 };
+    error(core::layout::align_to(bad_alignment,0),1); error(core::layout::pad_to_align(bad_alignment),1);
+}
+fn arrays_stride_and_full_width_products() {
+    let element:core::layout::Layout=core::layout::Layout { size:3,alignment:4 };
+    let triple:core::layout::ArrayLayout=core::layout::array(element,3).unwrap(); check(triple.layout,12,4); assert(triple.stride==4);
+    let empty:core::layout::ArrayLayout=core::layout::array(element,0).unwrap(); check(empty.layout,0,4); assert(empty.stride==4);
+    check(element,3,4);
+    let maximum:core::layout::Layout=core::layout::Layout { size:9223372036854775807,alignment:1 };
+    let empty_large:core::layout::ArrayLayout=core::layout::array(maximum,0).unwrap(); check(empty_large.layout,0,1); assert(empty_large.stride==9223372036854775807);
+    let single_large:core::layout::ArrayLayout=core::layout::array(maximum,1).unwrap(); check(single_large.layout,9223372036854775807,1);
+    error(core::layout::array(maximum,2),2);
+    error(core::layout::array(maximum,3),2); // an unchecked u64 product would wrap back below MAX
+    let aligned:core::layout::Layout=core::layout::Layout { size:4,alignment:8 };
+    let boundary:core::layout::ArrayLayout=core::layout::array(aligned,1152921504606846975).unwrap();
+    check(boundary.layout,9223372036854775800,8); assert(boundary.stride==8);
+    error(core::layout::array(aligned,1152921504606846976),2);
+    let two:core::layout::Layout=core::layout::Layout { size:2,alignment:1 };
+    error(core::layout::array(two,9223372036854775808),2);
+    let one:core::layout::Layout=core::layout::Layout { size:1,alignment:1 };
+    error(core::layout::array(one,18446744073709551615),2);
+    let zero:core::layout::Layout=core::layout::Layout { size:0,alignment:8 };
+    let many_zero:core::layout::ArrayLayout=core::layout::array(zero,18446744073709551615).unwrap(); check(many_zero.layout,0,8); assert(many_zero.stride==0);
+    let high_zero:core::layout::Layout=core::layout::Layout { size:0,alignment:9223372036854775808 };
+    let many_high_zero:core::layout::ArrayLayout=core::layout::array(high_zero,18446744073709551615).unwrap(); check(many_high_zero.layout,0,9223372036854775808); assert(many_high_zero.stride==0);
+    let bad:core::layout::Layout=core::layout::Layout { size:0,alignment:3 };
+    error(core::layout::array(bad,0),1); error(core::layout::array(bad,18446744073709551615),1);
+    bad.alignment=8; bad.size=9223372036854775807;
+    error(core::layout::array(bad,0),2); check(bad,9223372036854775807,8);
+}
+fn extend_offsets_rounding_and_precedence() {
+    let left:core::layout::Layout=core::layout::Layout { size:3,alignment:4 };
+    let right:core::layout::Layout=core::layout::Layout { size:2,alignment:2 };
+    let combined:core::layout::ExtendedLayout=core::layout::extend(left,right).unwrap();
+    check(combined.layout,6,4); assert(combined.offset==4); layout(core::layout::pad_to_align(combined.layout),8,4);
+    check(left,3,4); check(right,2,2);
+    let odd:core::layout::Layout=core::layout::Layout { size:5,alignment:1 };
+    let four:core::layout::Layout=core::layout::Layout { size:2,alignment:4 };
+    let at_eight:core::layout::ExtendedLayout=core::layout::extend(odd,four).unwrap(); check(at_eight.layout,10,4); assert(at_eight.offset==8);
+    let zero:core::layout::Layout=core::layout::Layout { size:0,alignment:1 };
+    let high_zero:core::layout::Layout=core::layout::Layout { size:0,alignment:9223372036854775808 };
+    let empty:core::layout::ExtendedLayout=core::layout::extend(zero,high_zero).unwrap(); check(empty.layout,0,9223372036854775808); assert(empty.offset==0);
+    let one:core::layout::Layout=core::layout::Layout { size:1,alignment:1 };
+    error(core::layout::extend(one,high_zero),2); error(core::layout::extend(high_zero,one),2);
+    let maximum:core::layout::Layout=core::layout::Layout { size:9223372036854775807,alignment:1 };
+    let append_empty:core::layout::ExtendedLayout=core::layout::extend(maximum,zero).unwrap(); check(append_empty.layout,9223372036854775807,1); assert(append_empty.offset==9223372036854775807);
+    error(core::layout::extend(maximum,one),2); error(core::layout::extend(maximum,maximum),2);
+    let aligned_maximum:core::layout::Layout=core::layout::Layout { size:9223372036854775800,alignment:8 };
+    error(core::layout::extend(aligned_maximum,one),2); // sum fits; final alignment rounding does not
+    let invalid_size:core::layout::Layout=core::layout::Layout { size:18446744073709551615,alignment:1 };
+    let invalid_alignment:core::layout::Layout=core::layout::Layout { size:0,alignment:3 };
+    error(core::layout::extend(invalid_size,invalid_alignment),2); // left error before right error
+    error(core::layout::extend(invalid_alignment,invalid_size),1);
+    error(core::layout::extend(zero,invalid_alignment),1); error(core::layout::extend(zero,invalid_size),2);
+    check(invalid_size,18446744073709551615,1); check(invalid_alignment,0,3);
+}
+fn main() -> i32 {
+    constructors_validation_and_copies(); padding_alignment_and_unpadded_sizes();
+    arrays_stride_and_full_width_products(); extend_offsets_rounding_and_precedence(); return 0;
+}

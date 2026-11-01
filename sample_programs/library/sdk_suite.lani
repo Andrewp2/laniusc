@@ -1,0 +1,55 @@
+// Explicit source-defined tests for the installed SDK's library modules.
+module app::main;
+import core::i32;
+import core::option;
+import core::result;
+import core::text;
+import test::check;
+import test::suite;
+
+fn checked_arithmetic() -> test::check::Outcome {
+    let product: core::option::Option<i32> = core::i32::checked_mul(6, 7);
+    if (core::option::is_none(product)) {
+        return test::check::fail(test::check::literal("valid product rejected", 22));
+    }
+    if (core::option::unwrap(product) != 42) {
+        return test::check::fail(test::check::literal("incorrect product", 17));
+    }
+    let overflow: core::option::Option<i32> = core::i32::checked_add(core::i32::MAX, 1);
+    return test::check::truth(core::option::is_none(overflow),
+        test::check::literal("overflow accepted", 17));
+}
+
+fn utf8_text() -> test::check::Outcome {
+    // A, e-acute, and a smiling face: three scalars occupying seven UTF-8 bytes.
+    // Both arrays remain live while their Text views are used.
+    let bytes: [u8; 7] = [65, 195, 169, 240, 159, 153, 130];
+    let needle_bytes: [u8; 2] = [195, 169];
+    let parsed: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(bytes, 7);
+    let parsed_needle: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(needle_bytes, 2);
+    if (core::result::is_err(parsed) || core::result::is_err(parsed_needle)) {
+        return test::check::fail(test::check::literal("valid UTF-8 rejected", 20));
+    }
+    let text: core::text::Text = core::result::unwrap(parsed);
+    let needle: core::text::Text = core::result::unwrap(parsed_needle);
+    let found: core::option::Option<i32> = text.find(needle);
+    if (text.byte_len() != 7 || text.scalar_count() != 3 || core::option::is_none(found)) {
+        return test::check::fail(test::check::literal("incorrect text view", 19));
+    }
+    if (core::option::unwrap(found) != 1) {
+        return test::check::fail(test::check::literal("incorrect byte index", 20));
+    }
+    return test::check::truth(core::result::is_err(text.slice(2, 3)),
+        test::check::literal("split scalar accepted", 21));
+}
+
+fn main() -> i32 {
+    let runner: test::suite::Runner = test::suite::begin_args();
+    if (runner.select(test::check::literal("checked arithmetic", 18))) {
+        runner.record(checked_arithmetic());
+    }
+    if (runner.select(test::check::literal("UTF-8 text", 10))) {
+        runner.record(utf8_text());
+    }
+    return runner.finish();
+}

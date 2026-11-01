@@ -1,0 +1,692 @@
+// WHATWG URL Standard basic URL parser and serializer, with an optional base
+// URL. The result owns its serialized href and records every component span.
+// Hosts are ASCII-only: a non-ASCII or "xn--" domain returns UnsupportedIdna
+// instead of guessing at UTS #46. See docs/extended-url.md.
+module ext::url;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum HostKind { None, Empty, Domain, Ipv4, Ipv6, Opaque }
+// MissingScheme: relative input without a usable base. MissingHost: a special
+// URL with an empty host, or credentials followed by no host.
+pub enum Error { Bounds, TooLong, InvalidUtf8, AllocationFailed, MissingScheme, MissingHost, InvalidHost, InvalidPort, InvalidIpv4, InvalidIpv6, UnsupportedIdna }
+pub const MAX_INPUT_BYTES: i32 = 16777216;
+
+// Spans index text. Absent username, password and port spans are empty.
+// query_start and fragment_start are -1 when the component is null.
+pub struct Url { text: alloc::vec::Vec<u8>, scheme_end: i32, username_start: i32, username_end: i32, password_start: i32, password_end: i32, host_start: i32, host_end: i32, kind: i32, port_value: i32, port_start: i32, port_end: i32, path_start: i32, path_end: i32, opaque: bool, query_start: i32, fragment_start: i32 }
+
+const E_BOUNDS: i32 = 1; const E_LONG: i32 = 2; const E_UTF8: i32 = 3; const E_OOM: i32 = 4; const E_SCHEME: i32 = 5; const E_MISSING_HOST: i32 = 6;
+const E_HOST: i32 = 7; const E_PORT: i32 = 8; const E_IPV4: i32 = 9; const E_IPV6: i32 = 10; const E_IDNA: i32 = 11;
+const K_NONE: i32 = 0; const K_EMPTY: i32 = 1; const K_DOMAIN: i32 = 2; const K_IPV4: i32 = 3; const K_IPV6: i32 = 4; const K_OPAQUE: i32 = 5;
+const F_SCHEME: i32 = 0; const F_USER: i32 = 1; const F_PASS: i32 = 2; const F_HOST: i32 = 3; const F_PATH: i32 = 4; const F_QUERY: i32 = 5; const F_FRAG: i32 = 6; const F_BUF: i32 = 7; const F_TMP: i32 = 8;
+const SET_C0: i32 = 0; const SET_FRAGMENT: i32 = 1; const SET_QUERY: i32 = 2; const SET_SPECIAL_QUERY: i32 = 3; const SET_PATH: i32 = 4; const SET_USERINFO: i32 = 5;
+const S_SCHEME_START: i32 = 0; const S_SCHEME: i32 = 1; const S_NO_SCHEME: i32 = 2; const S_SPECIAL_RELATIVE_OR_AUTHORITY: i32 = 3; const S_PATH_OR_AUTHORITY: i32 = 4;
+const S_RELATIVE: i32 = 5; const S_RELATIVE_SLASH: i32 = 6; const S_SPECIAL_AUTHORITY_SLASHES: i32 = 7; const S_SPECIAL_AUTHORITY_IGNORE_SLASHES: i32 = 8; const S_AUTHORITY: i32 = 9;
+const S_HOST: i32 = 10; const S_PORT: i32 = 11; const S_FILE: i32 = 12; const S_FILE_SLASH: i32 = 13; const S_FILE_HOST: i32 = 14; const S_PATH_START: i32 = 15;
+const S_PATH: i32 = 16; const S_OPAQUE_PATH: i32 = 17; const S_QUERY: i32 = 18; const S_FRAGMENT: i32 = 19;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::slice::view(raw,count).unwrap(); }
+fn at(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start + index]; }
+fn part(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::slice::View { values: view.values, start: view.start + start, length: end - start }; }
+fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool {
+    if (a.length != b.length) { return false; } let i: i32 = 0;
+    while (i < a.length) { if (at(a,i) != at(b,i)) { return false; } i += 1; }
+    return true;
+}
+fn is(view: core::slice::View<u8>, value: str, count: i32) -> bool { return same(view,literal(value,count)); }
+fn alpha(c: i32) -> bool { return (c >= 65 && c <= 90) || (c >= 97 && c <= 122); }
+fn digit(c: i32) -> bool { return c >= 48 && c <= 57; }
+fn hex_value(c: i32) -> i32 {
+    if (c >= 48 && c <= 57) { return c - 48; } if (c >= 65 && c <= 70) { return c - 55; } if (c >= 97 && c <= 102) { return c - 87; }
+    return -1;
+}
+fn lower(c: i32) -> i32 { if (c >= 65 && c <= 90) { return c + 32; } return c; }
+fn c0(c: i32) -> bool { return c < 32 || c > 126; }
+fn in_set(c: i32, set: i32) -> bool {
+    if (c0(c)) { return true; } if (set == SET_C0) { return false; }
+    if (set == SET_FRAGMENT) { return c == 32 || c == 34 || c == 60 || c == 62 || c == 96; }
+    if (c == 32 || c == 34 || c == 35 || c == 60 || c == 62) { return true; }
+    if (set == SET_QUERY) { return false; } if (set == SET_SPECIAL_QUERY) { return c == 39; }
+    if (c == 63 || c == 94 || c == 96 || c == 123 || c == 125) { return true; } if (set == SET_PATH) { return false; }
+    return c == 47 || c == 58 || c == 59 || c == 61 || c == 64 || (c >= 91 && c <= 94) || c == 124;
+}
+fn forbidden_host(c: i32) -> bool {
+    return c == 0 || c == 9 || c == 10 || c == 13 || c == 32 || c == 35 || c == 47 || c == 58 || c == 60 || c == 62 || c == 63 || c == 64
+        || c == 91 || c == 92 || c == 93 || c == 94 || c == 124;
+}
+fn forbidden_domain(c: i32) -> bool { return forbidden_host(c) || c <= 31 || c == 37 || c == 127; }
+fn special_scheme(scheme: core::slice::View<u8>) -> bool {
+    return is(scheme,"http",4) || is(scheme,"https",5) || is(scheme,"ws",2) || is(scheme,"wss",3) || is(scheme,"ftp",3) || is(scheme,"file",4);
+}
+// The scheme's default port, or -1 (file and non-special schemes).
+pub fn default_port(scheme: core::slice::View<u8>) -> i32 {
+    if (is(scheme,"http",4) || is(scheme,"ws",2)) { return 80; } if (is(scheme,"https",5) || is(scheme,"wss",3)) { return 443; }
+    if (is(scheme,"ftp",3)) { return 21; } return -1;
+}
+fn drive(view: core::slice::View<u8>) -> bool { return view.length == 2 && alpha(at(view,0) as i32) && (at(view,1) == 58 || at(view,1) == 124); }
+fn normalized_drive(view: core::slice::View<u8>) -> bool { return view.length == 2 && alpha(at(view,0) as i32) && at(view,1) == 58; }
+fn single_dot(view: core::slice::View<u8>) -> bool {
+    if (view.length == 1) { return at(view,0) == 46; }
+    return view.length == 3 && at(view,0) == 37 && at(view,1) == 50 && lower(at(view,2) as i32) == 101;
+}
+fn double_dot(view: core::slice::View<u8>) -> bool {
+    if (view.length == 2) { return at(view,0) == 46 && at(view,1) == 46; }
+    if (view.length == 4) { return (single_dot(part(view,0,1)) && single_dot(part(view,1,4))) || (single_dot(part(view,0,3)) && single_dot(part(view,3,4))); }
+    return view.length == 6 && single_dot(part(view,0,3)) && single_dot(part(view,3,6));
+}
+fn valid_utf8(view: core::slice::View<u8>) -> bool {
+    let i: i32 = 0;
+    while (i < view.length) {
+        let b: i32 = at(view,i) as i32;
+        if (b < 128) { i += 1; continue; }
+        let need: i32 = 0; let low: i32 = 128; let high: i32 = 191;
+        if (b >= 194 && b <= 223) { need = 1; }
+        if (b >= 224 && b <= 239) { need = 2; if (b == 224) { low = 160; } if (b == 237) { high = 159; } }
+        if (b >= 240 && b <= 244) { need = 3; if (b == 240) { low = 144; } if (b == 244) { high = 143; } }
+        if (need == 0 || view.length - i <= need) { return false; }
+        let first: i32 = at(view,i+1) as i32; if (first < low || first > high) { return false; }
+        let k: i32 = 2;
+        while (k <= need) { let next: i32 = at(view,i+k) as i32; if (next < 128 || next > 191) { return false; } k += 1; }
+        i += need + 1;
+    }
+    return true;
+}
+// The WHATWG IPv4 number parser over lowercase ASCII; -1 is failure. Values
+// past 2^32 saturate at 2^32 + 1 so they still fail every range check.
+fn ipv4_number(view: core::slice::View<u8>) -> i64 {
+    if (view.length == 0) { return -1; }
+    let radix: i64 = 10; let i: i32 = 0;
+    if (view.length >= 2 && at(view,0) == 48 && at(view,1) == 120) { radix = 16; i = 2; }
+    else { if (view.length >= 2 && at(view,0) == 48) { radix = 8; i = 1; } }
+    let value: i64 = 0; let limit: i64 = 4294967297;
+    while (i < view.length) {
+        let d: i32 = hex_value(at(view,i) as i32);
+        if (d < 0 || (d as i64) >= radix) { return -1; }
+        value = value * radix + (d as i64); if (value > limit) { value = limit; }
+        i += 1;
+    }
+    return value;
+}
+fn ends_in_number(view: core::slice::View<u8>) -> bool {
+    let end: i32 = view.length;
+    if (end > 0 && at(view,end-1) == 46) { end -= 1; }
+    let start: i32 = end;
+    while (start > 0 && at(view,start-1) != 46) { start -= 1; }
+    if (start == end) { return false; }
+    let all: bool = true; let i: i32 = start;
+    while (i < end) { if (!digit(at(view,i) as i32)) { all = false; } i += 1; }
+    if (all) { return true; }
+    return ipv4_number(part(view,start,end)) >= 0;
+}
+
+struct Parser {
+    input: alloc::vec::Vec<u8>, n: i32, p: i32, state: i32, buf: alloc::vec::Vec<u8>, tmp: alloc::vec::Vec<u8>,
+    at_seen: bool, password_seen: bool, inside_brackets: bool, special: bool, oom: bool,
+    scheme: alloc::vec::Vec<u8>, username: alloc::vec::Vec<u8>, password: alloc::vec::Vec<u8>, kind: i32, host: alloc::vec::Vec<u8>, port: i32,
+    opaque: bool, path: alloc::vec::Vec<u8>, ends: alloc::vec::Vec<i32>, query: alloc::vec::Vec<u8>, has_query: bool, fragment: alloc::vec::Vec<u8>, has_fragment: bool
+}
+
+impl Parser {
+    fn ch(&self, index: i32) -> i32 { if (index < 0 || index >= self.n) { return -1; } return self.input.at(index) as i32; }
+    fn put(&self, field: i32, c: i32) {
+        let value: u8 = c as u8; let ok: bool = true;
+        if (field == F_SCHEME) { ok = self.scheme.try_push(value).is_ok(); } if (field == F_USER) { ok = self.username.try_push(value).is_ok(); }
+        if (field == F_PASS) { ok = self.password.try_push(value).is_ok(); } if (field == F_HOST) { ok = self.host.try_push(value).is_ok(); }
+        if (field == F_PATH) { ok = self.path.try_push(value).is_ok(); } if (field == F_QUERY) { ok = self.query.try_push(value).is_ok(); }
+        if (field == F_FRAG) { ok = self.fragment.try_push(value).is_ok(); } if (field == F_BUF) { ok = self.buf.try_push(value).is_ok(); }
+        if (field == F_TMP) { ok = self.tmp.try_push(value).is_ok(); }
+        if (!ok) { self.oom = true; }
+    }
+    fn extend(&self, field: i32, view: core::slice::View<u8>) {
+        if (view.length == 0) { return; } let ok: bool = true;
+        if (field == F_SCHEME) { ok = self.scheme.try_extend(view).is_ok(); } if (field == F_USER) { ok = self.username.try_extend(view).is_ok(); }
+        if (field == F_PASS) { ok = self.password.try_extend(view).is_ok(); } if (field == F_HOST) { ok = self.host.try_extend(view).is_ok(); }
+        if (field == F_PATH) { ok = self.path.try_extend(view).is_ok(); } if (field == F_QUERY) { ok = self.query.try_extend(view).is_ok(); }
+        if (field == F_FRAG) { ok = self.fragment.try_extend(view).is_ok(); } if (field == F_BUF) { ok = self.buf.try_extend(view).is_ok(); }
+        if (field == F_TMP) { ok = self.tmp.try_extend(view).is_ok(); }
+        if (!ok) { self.oom = true; }
+    }
+    // Copy the run of input bytes from p that need no encoding and are not one
+    // of the state's delimiters, leaving p on its last byte. Returns false
+    // when the byte at p is not plain (the caller handles it alone).
+    fn plain_run(&self, field: i32, set: i32, slash: bool, question: bool, space: bool) -> bool {
+        let end: i32 = self.p;
+        while (end < self.n) {
+            let c: i32 = self.input.at(end) as i32;
+            if (in_set(c,set) || c == 35 || (question && c == 63) || (space && c == 32) || (slash && (c == 47 || (self.special && c == 92)))) { break; }
+            end += 1;
+        }
+        if (end == self.p) { return false; }
+        self.extend(field,part(self.input.as_view(),self.p,end)); self.p = end - 1; return true;
+    }
+    fn hex_digit(&self, field: i32, value: i32) { if (value < 10) { self.put(field,value + 48); } else { self.put(field,value + 55); } }
+    fn encode(&self, field: i32, c: i32, set: i32) {
+        if (in_set(c,set)) { self.put(field,37); self.hex_digit(field,c / 16); self.hex_digit(field,c % 16); } else { self.put(field,c); }
+    }
+    fn decimal(&self, field: i32, value: i64) {
+        if (value >= 10) { self.decimal(field,value / 10); }
+        self.put(field,((value % 10) as i32) + 48);
+    }
+    fn is_file(&self) -> bool { return is(self.scheme.as_view(),"file",4); }
+    fn set_scheme(&self, view: core::slice::View<u8>) { self.scheme.clear(); self.extend(F_SCHEME,view); self.special = special_scheme(self.scheme.as_view()); }
+    fn segment(&self, index: i32) -> core::slice::View<u8> {
+        let start: i32 = 0; if (index > 0) { start = self.ends.at(index - 1); }
+        return part(self.path.as_view(),start,self.ends.at(index));
+    }
+    fn push_segment(&self, view: core::slice::View<u8>) { self.extend(F_PATH,view); if (self.ends.try_push(self.path.len()).is_err()) { self.oom = true; } }
+    fn shorten(&self) {
+        let count: i32 = self.ends.len();
+        if (self.is_file() && count == 1 && normalized_drive(self.segment(0))) { return; }
+        if (count == 0) { return; }
+        let start: i32 = 0; if (count > 1) { start = self.ends.at(count - 2); }
+        self.ends.pop(); self.path.truncate(start);
+    }
+    fn begin_query(&self) { self.has_query = true; self.query.clear(); self.state = S_QUERY; }
+    fn begin_fragment(&self) { self.has_fragment = true; self.fragment.clear(); self.state = S_FRAGMENT; }
+    fn starts_with_drive(&self, index: i32) -> bool {
+        if (self.n - index < 2 || !alpha(self.ch(index)) || (self.ch(index+1) != 58 && self.ch(index+1) != 124)) { return false; }
+        if (self.n - index == 2) { return true; }
+        let c: i32 = self.ch(index + 2); return c == 47 || c == 92 || c == 63 || c == 35;
+    }
+    fn delimiter(&self, c: i32) -> bool { return c == -1 || c == 47 || c == 63 || c == 35 || (self.special && c == 92); }
+
+    fn copy_authority(&self, base: &Url) {
+        self.username.clear(); self.extend(F_USER,base.username()); self.password.clear(); self.extend(F_PASS,base.password());
+        self.host.clear(); self.extend(F_HOST,base.hostname()); self.kind = base.kind; self.port = base.port_value;
+    }
+    fn copy_host(&self, base: &Url) { self.host.clear(); self.extend(F_HOST,base.hostname()); self.kind = base.kind; }
+    fn copy_path(&self, base: &Url) {
+        self.path.clear(); self.ends.clear(); self.opaque = base.opaque; let view: core::slice::View<u8> = base.pathname();
+        if (base.opaque) { self.extend(F_PATH,view); return; }
+        if (view.length == 0) { return; }
+        let start: i32 = 1; let i: i32 = 1;
+        while (i <= view.length) {
+            if (i == view.length || at(view,i) == 47) { self.push_segment(part(view,start,i)); start = i + 1; }
+            i += 1;
+        }
+    }
+    fn copy_query(&self, base: &Url) {
+        self.query.clear(); self.has_query = base.query_start >= 0;
+        if (self.has_query) { self.extend(F_QUERY,base.query_view()); }
+    }
+
+    // Host parsing over buf (WHATWG "host parser"); writes host and kind.
+    fn parse_host(&self, opaque: bool) -> i32 {
+        self.host.clear(); let view: core::slice::View<u8> = self.buf.as_view(); let n: i32 = view.length;
+        if (n > 0 && at(view,0) == 91) {
+            if (at(view,n-1) != 93) { return E_IPV6; }
+            return self.parse_ipv6(part(view,1,n-1));
+        }
+        let i: i32 = 0;
+        if (opaque) {
+            while (i < n) { if (forbidden_host(at(view,i) as i32)) { return E_HOST; } i += 1; }
+            i = 0; while (i < n) { self.encode(F_HOST,at(view,i) as i32,SET_C0); i += 1; }
+            if (n == 0) { self.kind = K_EMPTY; } else { self.kind = K_OPAQUE; }
+            return 0;
+        }
+        self.tmp.clear();
+        while (i < n) {
+            let c: i32 = at(view,i) as i32;
+            if (c == 37 && i + 2 < n && hex_value(at(view,i+1) as i32) >= 0 && hex_value(at(view,i+2) as i32) >= 0) {
+                self.put(F_TMP,hex_value(at(view,i+1) as i32) * 16 + hex_value(at(view,i+2) as i32)); i += 3;
+            } else { self.put(F_TMP,c); i += 1; }
+        }
+        if (self.oom) { return E_OOM; }
+        let domain: core::slice::View<u8> = self.tmp.as_view(); i = 0;
+        while (i < domain.length) {
+            let c: i32 = at(domain,i) as i32;
+            if (c >= 128) { return E_IDNA; }
+            if (c >= 65 && c <= 90) { self.tmp.set(i,(c + 32) as u8); }
+            i += 1;
+        }
+        domain = self.tmp.as_view(); i = 0;
+        while (i < domain.length) {
+            if ((i == 0 || at(domain,i-1) == 46) && domain.length - i >= 4 && is(part(domain,i,i+4),"xn--",4)) { return E_IDNA; }
+            if (forbidden_domain(at(domain,i) as i32)) { return E_HOST; }
+            i += 1;
+        }
+        if (ends_in_number(domain)) { return self.parse_ipv4(domain); }
+        self.extend(F_HOST,domain); self.kind = K_DOMAIN; return 0;
+    }
+    fn parse_ipv4(&self, view: core::slice::View<u8>) -> i32 {
+        let end: i32 = view.length;
+        if (end > 0 && at(view,end-1) == 46) { end -= 1; }
+        let parts: i32 = 1; let i: i32 = 0;
+        while (i < end) { if (at(view,i) == 46) { parts += 1; } i += 1; }
+        if (parts > 4) { return E_IPV4; }
+        let address: i64 = 0; let index: i32 = 0; let start: i32 = 0; i = 0;
+        while (i <= end) {
+            if (i == end || at(view,i) == 46) {
+                let value: i64 = ipv4_number(part(view,start,i));
+                if (value < 0) { return E_IPV4; }
+                if (index < parts - 1) {
+                    if (value > 255) { return E_IPV4; }
+                    address += value << (((3 - index) * 8) as i64);
+                } else {
+                    let room: i64 = 1; room = room << (((5 - parts) * 8) as i64);
+                    if (value >= room) { return E_IPV4; }
+                    address += value;
+                }
+                index += 1; start = i + 1;
+            }
+            i += 1;
+        }
+        let shift: i32 = 24;
+        while (shift >= 0) { self.decimal(F_HOST,(address >> (shift as i64)) & 255); if (shift > 0) { self.put(F_HOST,46); } shift -= 8; }
+        self.kind = K_IPV4; return 0;
+    }
+    fn parse_ipv6(&self, view: core::slice::View<u8>) -> i32 {
+        let address: [i32;8] = [0;8]; let piece: i32 = 0; let compress: i32 = -1; let p: i32 = 0; let n: i32 = view.length;
+        if (n > 0 && at(view,0) == 58) {
+            if (n < 2 || at(view,1) != 58) { return E_IPV6; }
+            p = 2; piece = 1; compress = 1;
+        }
+        let done: bool = false;
+        while (p < n && !done) {
+            if (piece == 8) { return E_IPV6; }
+            if (at(view,p) == 58) {
+                if (compress >= 0) { return E_IPV6; }
+                p += 1; piece += 1; compress = piece; continue;
+            }
+            let value: i32 = 0; let length: i32 = 0;
+            while (length < 4 && p < n && hex_value(at(view,p) as i32) >= 0) { value = value * 16 + hex_value(at(view,p) as i32); p += 1; length += 1; }
+            if (p < n && at(view,p) == 46) {
+                if (length == 0) { return E_IPV6; }
+                p -= length;
+                if (piece > 6) { return E_IPV6; }
+                let seen: i32 = 0;
+                while (p < n) {
+                    let octet: i32 = -1;
+                    if (seen > 0) { if (at(view,p) == 46 && seen < 4) { p += 1; } else { return E_IPV6; } }
+                    if (p >= n || !digit(at(view,p) as i32)) { return E_IPV6; }
+                    while (p < n && digit(at(view,p) as i32)) {
+                        let number: i32 = (at(view,p) as i32) - 48;
+                        if (octet < 0) { octet = number; } else { if (octet == 0) { return E_IPV6; } octet = octet * 10 + number; }
+                        if (octet > 255) { return E_IPV6; }
+                        p += 1;
+                    }
+                    address[piece] = address[piece] * 256 + octet; seen += 1;
+                    if (seen == 2 || seen == 4) { piece += 1; }
+                }
+                if (seen != 4) { return E_IPV6; }
+                done = true;
+            } else {
+                if (p < n && at(view,p) == 58) { p += 1; if (p >= n) { return E_IPV6; } }
+                else { if (p < n) { return E_IPV6; } }
+                address[piece] = value; piece += 1;
+            }
+        }
+        if (compress >= 0) {
+            let swaps: i32 = piece - compress; piece = 7;
+            while (piece != 0 && swaps > 0) {
+                let other: i32 = compress + swaps - 1; let saved: i32 = address[piece]; address[piece] = address[other]; address[other] = saved;
+                piece -= 1; swaps -= 1;
+            }
+        } else { if (piece != 8) { return E_IPV6; } }
+        // Serialize: compress the first longest run of two or more zero pieces.
+        let best: i32 = -1; let best_length: i32 = 1; let i: i32 = 0;
+        while (i < 8) {
+            if (address[i] == 0) {
+                let j: i32 = i; while (j < 8 && address[j] == 0) { j += 1; }
+                if (j - i > best_length) { best = i; best_length = j - i; }
+                i = j;
+            } else { i += 1; }
+        }
+        self.put(F_HOST,91); i = 0;
+        while (i < 8) {
+            if (i == best) { if (i == 0) { self.put(F_HOST,58); } self.put(F_HOST,58); i += best_length; continue; }
+            let value: i32 = address[i]; let shift: i32 = 12; let started: bool = false;
+            while (shift >= 0) {
+                let d: i32 = (value >> shift) & 15;
+                if (d != 0 || started || shift == 0) { started = true; if (d < 10) { self.put(F_HOST,d + 48); } else { self.put(F_HOST,d + 87); } }
+                shift -= 4;
+            }
+            if (i != 7) { self.put(F_HOST,58); }
+            i += 1;
+        }
+        self.put(F_HOST,93); self.kind = K_IPV6; return 0;
+    }
+
+    fn step(&self, c: i32, base: &Url, has_base: bool) -> i32 {
+        let st: i32 = self.state;
+        if (st == S_SCHEME_START) {
+            if (alpha(c)) { self.put(F_BUF,lower(c)); self.state = S_SCHEME; } else { self.state = S_NO_SCHEME; self.p -= 1; }
+            return 0;
+        }
+        if (st == S_SCHEME) {
+            if (alpha(c) || digit(c) || c == 43 || c == 45 || c == 46) { self.put(F_BUF,lower(c)); return 0; }
+            if (c != 58) { self.buf.clear(); self.state = S_NO_SCHEME; self.p = -1; return 0; }
+            self.set_scheme(self.buf.as_view()); self.buf.clear();
+            if (self.is_file()) { self.state = S_FILE; return 0; }
+            if (self.special && has_base && same(base.scheme(),self.scheme.as_view())) { self.state = S_SPECIAL_RELATIVE_OR_AUTHORITY; return 0; }
+            if (self.special) { self.state = S_SPECIAL_AUTHORITY_SLASHES; return 0; }
+            if (self.ch(self.p + 1) == 47) { self.state = S_PATH_OR_AUTHORITY; self.p += 1; return 0; }
+            self.opaque = true; self.state = S_OPAQUE_PATH; return 0;
+        }
+        if (st == S_NO_SCHEME) {
+            if (!has_base) { return E_SCHEME; }
+            if (base.opaque) {
+                if (c != 35) { return E_SCHEME; }
+                self.set_scheme(base.scheme()); self.copy_path(base); self.copy_query(base); self.begin_fragment(); return 0;
+            }
+            if (is(base.scheme(),"file",4)) { self.state = S_FILE; } else { self.state = S_RELATIVE; }
+            self.p -= 1; return 0;
+        }
+        if (st == S_SPECIAL_RELATIVE_OR_AUTHORITY) {
+            if (c == 47 && self.ch(self.p + 1) == 47) { self.state = S_SPECIAL_AUTHORITY_IGNORE_SLASHES; self.p += 1; }
+            else { self.state = S_RELATIVE; self.p -= 1; }
+            return 0;
+        }
+        if (st == S_PATH_OR_AUTHORITY) { if (c == 47) { self.state = S_AUTHORITY; } else { self.state = S_PATH; self.p -= 1; } return 0; }
+        if (st == S_RELATIVE) {
+            self.set_scheme(base.scheme());
+            if (c == 47 || (self.special && c == 92)) { self.state = S_RELATIVE_SLASH; return 0; }
+            self.copy_authority(base); self.copy_path(base); self.copy_query(base);
+            if (c == 63) { self.begin_query(); return 0; }
+            if (c == 35) { self.begin_fragment(); return 0; }
+            if (c != -1) { self.has_query = false; self.query.clear(); self.shorten(); self.state = S_PATH; self.p -= 1; }
+            return 0;
+        }
+        if (st == S_RELATIVE_SLASH) {
+            if (self.special && (c == 47 || c == 92)) { self.state = S_SPECIAL_AUTHORITY_IGNORE_SLASHES; return 0; }
+            if (c == 47) { self.state = S_AUTHORITY; return 0; }
+            self.copy_authority(base); self.state = S_PATH; self.p -= 1; return 0;
+        }
+        if (st == S_SPECIAL_AUTHORITY_SLASHES) {
+            if (c == 47 && self.ch(self.p + 1) == 47) { self.p += 1; } else { self.p -= 1; }
+            self.state = S_SPECIAL_AUTHORITY_IGNORE_SLASHES; return 0;
+        }
+        if (st == S_SPECIAL_AUTHORITY_IGNORE_SLASHES) { if (c != 47 && c != 92) { self.state = S_AUTHORITY; self.p -= 1; } return 0; }
+        if (st == S_AUTHORITY) { return self.authority(c); }
+        if (st == S_HOST) {
+            if (c == 58 && !self.inside_brackets) {
+                if (self.buf.len() == 0) { return E_MISSING_HOST; }
+                let failed: i32 = self.parse_host(!self.special); if (failed != 0) { return failed; }
+                self.buf.clear(); self.state = S_PORT; return 0;
+            }
+            if (self.delimiter(c)) {
+                self.p -= 1;
+                if (self.special && self.buf.len() == 0) { return E_MISSING_HOST; }
+                let failed: i32 = self.parse_host(!self.special); if (failed != 0) { return failed; }
+                self.buf.clear(); self.state = S_PATH_START; return 0;
+            }
+            if (c == 91) { self.inside_brackets = true; } if (c == 93) { self.inside_brackets = false; }
+            self.put(F_BUF,c); return 0;
+        }
+        if (st == S_PORT) {
+            if (digit(c)) { self.put(F_BUF,c); return 0; }
+            if (!self.delimiter(c)) { return E_PORT; }
+            if (self.buf.len() > 0) {
+                let value: i32 = 0; let i: i32 = 0;
+                while (i < self.buf.len()) { value = value * 10 + ((self.buf.at(i) as i32) - 48); if (value > 65535) { return E_PORT; } i += 1; }
+                if (value == default_port(self.scheme.as_view())) { self.port = -1; } else { self.port = value; }
+                self.buf.clear();
+            }
+            self.state = S_PATH_START; self.p -= 1; return 0;
+        }
+        if (st == S_FILE) {
+            self.set_scheme(literal("file",4)); self.host.clear(); self.kind = K_EMPTY;
+            if (c == 47 || c == 92) { self.state = S_FILE_SLASH; return 0; }
+            if (has_base && is(base.scheme(),"file",4)) {
+                self.copy_host(base); self.copy_path(base); self.copy_query(base);
+                if (c == 63) { self.begin_query(); return 0; }
+                if (c == 35) { self.begin_fragment(); return 0; }
+                if (c != -1) {
+                    self.has_query = false; self.query.clear();
+                    if (!self.starts_with_drive(self.p)) { self.shorten(); } else { self.path.clear(); self.ends.clear(); }
+                    self.state = S_PATH; self.p -= 1;
+                }
+                return 0;
+            }
+            self.state = S_PATH; self.p -= 1; return 0;
+        }
+        if (st == S_FILE_SLASH) {
+            if (c == 47 || c == 92) { self.state = S_FILE_HOST; return 0; }
+            if (has_base && is(base.scheme(),"file",4)) {
+                self.copy_host(base);
+                if (!self.starts_with_drive(self.p) && !base.opaque) {
+                    let first: core::slice::View<u8> = base.first_segment();
+                    if (normalized_drive(first)) { self.push_segment(first); }
+                }
+            }
+            self.state = S_PATH; self.p -= 1; return 0;
+        }
+        if (st == S_FILE_HOST) {
+            if (c == -1 || c == 47 || c == 92 || c == 63 || c == 35) {
+                self.p -= 1;
+                if (drive(self.buf.as_view())) { self.state = S_PATH; return 0; }
+                if (self.buf.len() == 0) { self.host.clear(); self.kind = K_EMPTY; self.state = S_PATH_START; return 0; }
+                let failed: i32 = self.parse_host(false); if (failed != 0) { return failed; }
+                if (is(self.host.as_view(),"localhost",9)) { self.host.clear(); self.kind = K_EMPTY; }
+                self.buf.clear(); self.state = S_PATH_START; return 0;
+            }
+            self.put(F_BUF,c); return 0;
+        }
+        if (st == S_PATH_START) {
+            if (self.special) { self.state = S_PATH; if (c != 47 && c != 92) { self.p -= 1; } return 0; }
+            if (c == 63) { self.begin_query(); return 0; }
+            if (c == 35) { self.begin_fragment(); return 0; }
+            if (c != -1) { self.state = S_PATH; if (c != 47) { self.p -= 1; } }
+            return 0;
+        }
+        if (st == S_PATH) { return self.path_state(c); }
+        if (st == S_OPAQUE_PATH) {
+            if (c == 63) { self.begin_query(); return 0; }
+            if (c == 35) { self.begin_fragment(); return 0; }
+            if (c == 32) {
+                let next: i32 = self.ch(self.p + 1);
+                if (next == 63 || next == 35) { self.extend(F_PATH,literal("%20",3)); } else { self.put(F_PATH,32); }
+                return 0;
+            }
+            if (c != -1 && !self.plain_run(F_PATH,SET_C0,false,true,true)) { self.encode(F_PATH,c,SET_C0); }
+            return 0;
+        }
+        if (st == S_QUERY) {
+            if (c == 35) { self.begin_fragment(); return 0; }
+            let set: i32 = SET_QUERY; if (self.special) { set = SET_SPECIAL_QUERY; }
+            if (c != -1 && !self.plain_run(F_QUERY,set,false,false,false)) { self.encode(F_QUERY,c,set); }
+            return 0;
+        }
+        if (c != -1 && !self.plain_run(F_FRAG,SET_FRAGMENT,false,false,false)) { self.encode(F_FRAG,c,SET_FRAGMENT); }
+        return 0;
+    }
+    fn authority(&self, c: i32) -> i32 {
+        if (c == 64) {
+            if (self.at_seen) { let field: i32 = F_USER; if (self.password_seen) { field = F_PASS; } self.extend(field,literal("%40",3)); }
+            self.at_seen = true; let i: i32 = 0;
+            while (i < self.buf.len()) {
+                let b: i32 = self.buf.at(i) as i32;
+                if (b == 58 && !self.password_seen) { self.password_seen = true; }
+                else { if (self.password_seen) { self.encode(F_PASS,b,SET_USERINFO); } else { self.encode(F_USER,b,SET_USERINFO); } }
+                i += 1;
+            }
+            self.buf.clear(); return 0;
+        }
+        if (self.delimiter(c)) {
+            if (self.at_seen && self.buf.len() == 0) { return E_MISSING_HOST; }
+            self.p -= self.buf.len() + 1; self.buf.clear(); self.state = S_HOST; return 0;
+        }
+        self.put(F_BUF,c); return 0;
+    }
+    fn path_state(&self, c: i32) -> i32 {
+        if (c == -1 || c == 47 || (self.special && c == 92) || c == 63 || c == 35) {
+            let slash: bool = c == 47 || (self.special && c == 92); let view: core::slice::View<u8> = self.buf.as_view();
+            if (double_dot(view)) { self.shorten(); if (!slash) { self.push_segment(literal("",0)); } }
+            else {
+                if (single_dot(view)) { if (!slash) { self.push_segment(literal("",0)); } }
+                else {
+                    if (self.is_file() && self.ends.len() == 0 && drive(view)) { self.buf.set(1,58 as u8); }
+                    self.push_segment(self.buf.as_view());
+                }
+            }
+            self.buf.clear();
+            if (c == 63) { self.begin_query(); } if (c == 35) { self.begin_fragment(); }
+            return 0;
+        }
+        if (!self.plain_run(F_BUF,SET_PATH,true,true,false)) { self.encode(F_BUF,c,SET_PATH); }
+        return 0;
+    }
+
+    fn run(&self, base: &Url, has_base: bool) -> i32 {
+        while (true) {
+            let failed: i32 = self.step(self.ch(self.p),base,has_base);
+            if (failed != 0) { return failed; }
+            if (self.oom) { return E_OOM; }
+            if (self.p >= self.n) { return 0; }
+            self.p += 1;
+        }
+        return 0;
+    }
+    fn build(&self) -> core::result::Result<Url, Error> {
+        let text: alloc::vec::Vec<u8> = alloc::vec::new();
+        let total: i32 = self.scheme.len() + self.username.len() + self.password.len() + self.host.len() + self.path.len() + self.ends.len() + self.query.len() + self.fragment.len() + 24;
+        if (text.try_reserve(total).is_err()) { return core::result::Err(Error::AllocationFailed); }
+        let url = Url { text: text, scheme_end: 0, username_start: 0, username_end: 0, password_start: 0, password_end: 0, host_start: 0, host_end: 0, kind: self.kind, port_value: self.port, port_start: 0, port_end: 0, path_start: 0, path_end: 0, opaque: self.opaque, query_start: -1, fragment_start: -1 };
+        url.text.try_extend(self.scheme.as_view()); url.scheme_end = url.text.len(); url.text.try_push(58 as u8);
+        if (self.kind != K_NONE) {
+            url.text.try_extend(literal("//",2));
+            url.username_start = url.text.len(); url.text.try_extend(self.username.as_view()); url.username_end = url.text.len();
+            if (self.password.len() > 0) { url.text.try_push(58 as u8); }
+            url.password_start = url.text.len(); url.text.try_extend(self.password.as_view()); url.password_end = url.text.len();
+            if (self.username.len() > 0 || self.password.len() > 0) { url.text.try_push(64 as u8); }
+            url.host_start = url.text.len(); url.text.try_extend(self.host.as_view()); url.host_end = url.text.len();
+            if (self.port >= 0) {
+                url.text.try_push(58 as u8); url.port_start = url.text.len(); let digits: [u8;5] = [0;5]; let count: i32 = 0; let value: i32 = self.port;
+                while (count == 0 || value > 0) { digits[count] = ((value % 10) + 48) as u8; value = value / 10; count += 1; }
+                while (count > 0) { count -= 1; url.text.try_push(digits[count]); }
+            } else { url.port_start = url.text.len(); }
+            url.port_end = url.text.len();
+        } else {
+            let here: i32 = url.text.len(); url.username_start = here; url.username_end = here; url.password_start = here; url.password_end = here;
+            url.host_start = here; url.host_end = here; url.port_start = here; url.port_end = here;
+            if (!self.opaque && self.ends.len() > 1 && self.ends.at(0) == 0) { url.text.try_extend(literal("/.",2)); }
+        }
+        url.path_start = url.text.len();
+        if (self.opaque) { url.text.try_extend(self.path.as_view()); }
+        else { let i: i32 = 0; while (i < self.ends.len()) { url.text.try_push(47 as u8); url.text.try_extend(self.segment(i)); i += 1; } }
+        url.path_end = url.text.len();
+        if (self.has_query) { url.text.try_push(63 as u8); url.query_start = url.text.len(); url.text.try_extend(self.query.as_view()); }
+        if (self.has_fragment) { url.text.try_push(35 as u8); url.fragment_start = url.text.len(); url.text.try_extend(self.fragment.as_view()); }
+        return core::result::Ok(url);
+    }
+    fn destroy(&self) {
+        self.input.destroy(); self.buf.destroy(); self.tmp.destroy(); self.scheme.destroy(); self.username.destroy(); self.password.destroy();
+        self.host.destroy(); self.path.destroy(); self.ends.destroy(); self.query.destroy(); self.fragment.destroy();
+    }
+}
+
+fn error(code: i32) -> Error {
+    if (code == E_BOUNDS) { return Error::Bounds; } if (code == E_LONG) { return Error::TooLong; } if (code == E_UTF8) { return Error::InvalidUtf8; }
+    if (code == E_SCHEME) { return Error::MissingScheme; } if (code == E_MISSING_HOST) { return Error::MissingHost; } if (code == E_HOST) { return Error::InvalidHost; }
+    if (code == E_PORT) { return Error::InvalidPort; } if (code == E_IPV4) { return Error::InvalidIpv4; } if (code == E_IPV6) { return Error::InvalidIpv6; }
+    if (code == E_IDNA) { return Error::UnsupportedIdna; } return Error::AllocationFailed;
+}
+fn empty_url() -> Url {
+    return Url { text: alloc::vec::new(), scheme_end: 0, username_start: 0, username_end: 0, password_start: 0, password_end: 0, host_start: 0, host_end: 0, kind: K_NONE, port_value: -1, port_start: 0, port_end: 0, path_start: 0, path_end: 0, opaque: false, query_start: -1, fragment_start: -1 };
+}
+fn parse_from(input: core::slice::View<u8>, base: &Url, has_base: bool) -> core::result::Result<Url, Error> {
+    if (input.start < 0 || input.length < 0 || input.start > 2147483647 - input.length) { return core::result::Err(Error::Bounds); }
+    if (input.length > MAX_INPUT_BYTES) { return core::result::Err(Error::TooLong); }
+    if (!valid_utf8(input)) { return core::result::Err(Error::InvalidUtf8); }
+    let start: i32 = 0; let end: i32 = input.length;
+    while (start < end && at(input,start) <= 32) { start += 1; }
+    while (end > start && at(input,end-1) <= 32) { end -= 1; }
+    let parser = Parser { input: alloc::vec::new(), n: 0, p: 0, state: S_SCHEME_START, buf: alloc::vec::new(), tmp: alloc::vec::new(),
+        at_seen: false, password_seen: false, inside_brackets: false, special: false, oom: false,
+        scheme: alloc::vec::new(), username: alloc::vec::new(), password: alloc::vec::new(), kind: K_NONE, host: alloc::vec::new(), port: -1,
+        opaque: false, path: alloc::vec::new(), ends: alloc::vec::new(), query: alloc::vec::new(), has_query: false, fragment: alloc::vec::new(), has_fragment: false };
+    if (parser.input.try_reserve(end - start).is_err()) { parser.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let i: i32 = start; let run: i32 = start;
+    while (i <= end) {
+        if (i == end || at(input,i) == 9 || at(input,i) == 10 || at(input,i) == 13) { if (i > run) { parser.input.try_extend(part(input,run,i)); } run = i + 1; }
+        i += 1;
+    }
+    parser.n = parser.input.len();
+    let failed: i32 = parser.run(base,has_base);
+    if (failed != 0) { parser.destroy(); return core::result::Err(error(failed)); }
+    let built: core::result::Result<Url, Error> = parser.build();
+    parser.destroy(); return built;
+}
+
+// Parse an absolute URL string (UTF-8 bytes).
+pub fn parse(input: core::slice::View<u8>) -> core::result::Result<Url, Error> {
+    let none: Url = empty_url(); return parse_from(input,none.borrow(),false);
+}
+// Parse input against base, like `new URL(input, base)` given a parsed base.
+pub fn parse_with_base(input: core::slice::View<u8>, base: &Url) -> core::result::Result<Url, Error> { return parse_from(input,base,true); }
+// Whether input parses, without keeping the result.
+pub fn can_parse(input: core::slice::View<u8>) -> bool {
+    let parsed: core::result::Result<Url, Error> = parse(input); if (parsed.is_err()) { return false; }
+    let url: Url = parsed.unwrap(); url.destroy(); return true;
+}
+
+impl Url {
+    pub fn borrow(&self) -> &Url { return self; }
+    fn span(&self, start: i32, end: i32) -> core::slice::View<u8> { return part(self.text.as_view(),start,end); }
+    fn query_end(&self) -> i32 { if (self.fragment_start >= 0) { return self.fragment_start - 1; } return self.text.len(); }
+    // The serialization (the href getter).
+    pub fn href(&self) -> core::slice::View<u8> { return self.text.as_view(); }
+    // href without "#fragment".
+    pub fn href_without_fragment(&self) -> core::slice::View<u8> { if (self.fragment_start >= 0) { return self.span(0,self.fragment_start - 1); } return self.text.as_view(); }
+    pub fn scheme(&self) -> core::slice::View<u8> { return self.span(0,self.scheme_end); }
+    // scheme followed by ':'.
+    pub fn protocol(&self) -> core::slice::View<u8> { return self.span(0,self.scheme_end + 1); }
+    pub fn username(&self) -> core::slice::View<u8> { return self.span(self.username_start,self.username_end); }
+    pub fn password(&self) -> core::slice::View<u8> { return self.span(self.password_start,self.password_end); }
+    // The serialized host: IPv6 keeps its brackets.
+    pub fn hostname(&self) -> core::slice::View<u8> { return self.span(self.host_start,self.host_end); }
+    // hostname plus ":port" when the port is not the default.
+    pub fn host(&self) -> core::slice::View<u8> { return self.span(self.host_start,self.port_end); }
+    pub fn port(&self) -> core::slice::View<u8> { return self.span(self.port_start,self.port_end); }
+    // The explicit port, or -1 when it is absent or the scheme's default.
+    pub fn port_number(&self) -> i32 { return self.port_value; }
+    pub fn port_or_default(&self) -> i32 { if (self.port_value >= 0) { return self.port_value; } return default_port(self.scheme()); }
+    pub fn pathname(&self) -> core::slice::View<u8> { return self.span(self.path_start,self.path_end); }
+    pub fn has_opaque_path(&self) -> bool { return self.opaque; }
+    pub fn is_special(&self) -> bool { return special_scheme(self.scheme()); }
+    pub fn host_kind(&self) -> HostKind {
+        if (self.kind == K_EMPTY) { return HostKind::Empty; } if (self.kind == K_DOMAIN) { return HostKind::Domain; } if (self.kind == K_IPV4) { return HostKind::Ipv4; }
+        if (self.kind == K_IPV6) { return HostKind::Ipv6; } if (self.kind == K_OPAQUE) { return HostKind::Opaque; } return HostKind::None;
+    }
+    fn query_view(&self) -> core::slice::View<u8> { return self.span(self.query_start,self.query_end()); }
+    // The query without '?', or None when it is null (an empty query is Some).
+    pub fn query(&self) -> core::option::Option<core::slice::View<u8>> { if (self.query_start < 0) { return core::option::None(); } return core::option::Some(self.query_view()); }
+    pub fn fragment(&self) -> core::option::Option<core::slice::View<u8>> { if (self.fragment_start < 0) { return core::option::None(); } return core::option::Some(self.span(self.fragment_start,self.text.len())); }
+    // "?query", or empty when the query is null or empty (the search getter).
+    pub fn search(&self) -> core::slice::View<u8> { if (self.query_start < 0 || self.query_start == self.query_end()) { return self.span(0,0); } return self.span(self.query_start - 1,self.query_end()); }
+    pub fn hash(&self) -> core::slice::View<u8> { if (self.fragment_start < 0 || self.fragment_start == self.text.len()) { return self.span(0,0); } return self.span(self.fragment_start - 1,self.text.len()); }
+    fn first_segment(&self) -> core::slice::View<u8> {
+        let view: core::slice::View<u8> = self.pathname(); if (view.length == 0) { return view; }
+        let i: i32 = 1; while (i < view.length && at(view,i) != 47) { i += 1; }
+        return part(view,1,i);
+    }
+    // The ASCII serialization of the origin: scheme://host[:port] for special
+    // non-file URLs, the inner URL's origin for blob:http(s) URLs, else "null".
+    pub fn origin(&self) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+        let out: alloc::vec::Vec<u8> = alloc::vec::new();
+        if (is(self.scheme(),"blob",4)) {
+            let inner: core::result::Result<Url, Error> = parse(self.pathname());
+            if (inner.is_ok()) {
+                let url: Url = inner.unwrap(); let web: bool = is(url.scheme(),"http",4) || is(url.scheme(),"https",5);
+                if (web) { let result: core::result::Result<alloc::vec::Vec<u8>, Error> = url.origin(); url.destroy(); return result; }
+                url.destroy();
+            }
+        }
+        let ok: bool = true;
+        if (self.is_special() && !is(self.scheme(),"file",4)) {
+            ok = out.try_extend(self.scheme()).is_ok() && out.try_extend(literal("://",3)).is_ok() && out.try_extend(self.host()).is_ok();
+        } else { ok = out.try_extend(literal("null",4)).is_ok(); }
+        if (!ok) { out.destroy(); return core::result::Err(Error::AllocationFailed); }
+        return core::result::Ok(out);
+    }
+    pub fn try_clone(&self) -> core::result::Result<Url, Error> {
+        let copy: core::result::Result<alloc::vec::Vec<u8>, alloc::vec::Error> = self.text.try_clone();
+        if (copy.is_err()) { return core::result::Err(Error::AllocationFailed); }
+        return core::result::Ok(Url { text: copy.unwrap(), scheme_end: self.scheme_end, username_start: self.username_start, username_end: self.username_end, password_start: self.password_start, password_end: self.password_end, host_start: self.host_start, host_end: self.host_end, kind: self.kind, port_value: self.port_value, port_start: self.port_start, port_end: self.port_end, path_start: self.path_start, path_end: self.path_end, opaque: self.opaque, query_start: self.query_start, fragment_start: self.fragment_start });
+    }
+    pub fn destroy(&self) { self.text.destroy(); }
+}

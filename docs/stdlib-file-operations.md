@@ -96,8 +96,51 @@ Duplicates share open-file position and status flags. Their descriptor flags
 are independent. `close_on_exec`/`set_close_on_exec` inspect or change the
 descriptor flag. `status_flags` returns the Linux access/status bits;
 `set_status` changes only append/nonblocking and preserves other current bits.
-That read/modify/write is not a concurrent update primitive. No descriptor
-operation provides locking or a transaction.
+That read/modify/write is not a concurrent update primitive. These
+position/flag/duplication operations acquire no lock and provide no transaction.
+
+## Advisory whole-file locking
+
+The [locking increment](stdlib-file-locks.md) adds `lock(file, mode, wait)`
+and `unlock(file)`, borrowing a live File through one Linux flock attempt.
+Shared/Exclusive modes and Blocking/Nonblocking waits are explicit; only
+exact-zero host success is accepted. Duplicates share open-description lock
+state, acquisition is not reference counted, and failed conversion does not
+promise retention of the old mode. The caller coordinates aliases and manual
+unlock/close; no single-handle guard owns that shared state. Blocking supplies
+no deadline. Local advisory behavior, remote-filesystem qualifications and
+the file-patch cooperative mode are documented separately. Native policy and
+fault gates pass across separate receipts, including 16 fault schedules /
+14 reached injections / two controls. The independent model passes 1,287
+programs/24,244 steps, and all four process tests pass with six native peer
+lifecycles and three observed kernel waits. The cooperative file-patch mode
+passes four new groups/49 process cases. This finite local Linux x86_64
+increment is accepted; NFS/SMB, automatic ownership and broader targets remain
+outside its claim. Earlier descriptor receipts retain their original scope.
+One selected existing amended positional contract separately passes in 6.74s
+against the new FileOps module; ordinary file-patch groups pass 82 existing
+cases in 7.73s as a separate regression corpus.
+
+## Positional reads and writes
+
+The [positional-I/O increment](stdlib-positional-io.md) adds checked
+`read_at(file, destination, position)` and `write_at(file, source, position)`
+over counted byte Views, plus File implementations of `core::io::ReadAt` and
+`WriteAt`. Full logical/positional admission precedes owner/status checks;
+one transfer stages at most 1024 bytes without changing the shared cursor.
+Nonempty direct I/O is rejected, as are append-mode positional writes.
+Attempt-bounded core helpers handle repeated short transfers and confirmed
+prefix failures. Five new native-driver tests pass in 13.11s: four fixture
+groups plus one CPU trace-parser check, including 30 fault schedules and
+24 reached injections. The actual O_DIRECT rejection branch executes on the
+accepted host. A focused amended native-contract rerun passes in 7.74s,
+checking that full spans reject before the staging clamp/status/transfer;
+the five-test receipt retains its earlier fixture scope. The guide links the retained comparison/cast parser reproduction
+and equivalent typed-i64 local used for returned-count guards; no compiler
+repair is claimed. The real file-patch program passes four groups/82 process
+cases. One selected existing FileOps regression separately passes in 7.12s
+against the final typed-local module; this is not a whole-suite rerun.
+Earlier descriptor receipts do not establish these new operations.
 
 ## Metadata
 

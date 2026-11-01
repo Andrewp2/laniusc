@@ -1,0 +1,11 @@
+module app::main;
+import core::iter;
+import core::result;
+struct WrongError {}
+impl WrongError { fn borrow(&self) -> &WrongError { return self; } }
+pub impl core::iter::TryFolder<i64,i32,i32> for WrongError { pub fn try_apply(&self,accumulator:i64,value:i32) -> core::result::Result<i64,i32> { return core::result::Ok(accumulator+(value as i64)); } }
+fn main() -> i32 {
+    let source:core::iter::Once<i32> =core::iter::once<i32>(1); let folder:WrongError=WrongError {};
+    let rejected:core::result::Result<core::iter::FoldProgress<i64>,core::iter::FoldFailure<u64>> =core::iter::try_rfold_up_to<core::iter::Once<i32>,WrongError,i32,i64,u64>(source.borrow(),0,folder.borrow(),1); // rejected_fold_bound
+    return 0;
+}

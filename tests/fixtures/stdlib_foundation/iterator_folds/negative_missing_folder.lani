@@ -1,0 +1,9 @@
+module app::main;
+import core::iter;
+struct MissingFolder {}
+impl MissingFolder { fn borrow(&self) -> &MissingFolder { return self; } }
+fn main() -> i32 {
+    let source:core::iter::Once<i32> =core::iter::once<i32>(1); let folder:MissingFolder=MissingFolder {};
+    let rejected:core::iter::FoldProgress<i64> =core::iter::fold_up_to<core::iter::Once<i32>,MissingFolder,i32,i64>(source.borrow(),0,folder.borrow(),1); // rejected_fold_bound
+    return 0;
+}

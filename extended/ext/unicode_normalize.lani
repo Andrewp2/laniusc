@@ -7,11 +7,12 @@ import core::option;
 import core::result;
 import core::slice;
 import core::text;
-import core::unicode;
 import core::utf8;
 import ext::unicode_normalize_data;
+import ext::unicode_quick_check_data;
 
 pub enum Form { Nfc, Nfd, Nfkc, Nfkd }
+pub enum QuickCheck { Yes, No, Maybe }
 pub enum Error { Bounds, InvalidUtf8(i32), SizeOverflow, ScratchCapacity(i32), OutputCapacity(i32), WorkLimit(u64) }
 pub struct Normalized { bytes: i32, scalars: i32, scratch: i32, work: u64 }
 struct Budget { used: u64, limit: u64 }
@@ -41,8 +42,18 @@ pub fn maximum_decomposition_depth(form: Form) -> i32 {
 fn valid(start: i32, length: i32) -> bool {
     return start >= 0 && length >= 0 && start <= 2147483647 - length;
 }
+// Two-level Unicode 17 entry: ccc, decomposition and quick-check bits. The
+// generator proves every decomposable scalar has its D bit and every
+// composition's second scalar is NFC_QC=Maybe, so these filters are exact.
+fn info(value: u32) -> u32 { return ext::unicode_quick_check_data::entry(value); }
+fn class_of(value: u32) -> u32 { return info(value) & 255; }
 fn mapping(value: u32, compat: bool) -> ext::unicode_normalize_data::Mapping {
-    if (compat) { return ext::unicode_normalize_data::compatibility(value); }
+    let bits: u32 = info(value);
+    if (compat) {
+        if ((bits & 512) == 0) { return ext::unicode_normalize_data::Mapping { offset: 0, length: 0 }; }
+        return ext::unicode_normalize_data::compatibility(value);
+    }
+    if ((bits & 256) == 0) { return ext::unicode_normalize_data::Mapping { offset: 0, length: 0 }; }
     return ext::unicode_normalize_data::canonical(value);
 }
 fn expansion_length(value: u32, mapped: ext::unicode_normalize_data::Mapping) -> i32 {
@@ -96,6 +107,7 @@ pub fn scratch_len(input: core::text::Text, form: Form, work_limit: u64) -> core
 }
 
 fn primary_composite(left: u32, right: u32) -> u32 {
+    if (((info(right) >> 10) & 3) != 2) { return 4294967295; }
     if (left >= 4352 && left < 4371 && right >= 4449 && right < 4470) {
         return 44032 + ((left - 4352) * 21 + right - 4449) * 28;
     }
@@ -131,13 +143,13 @@ fn prepare(input: core::text::Text, form: Form, scratch: core::slice::View<u32>,
     while (index < length) {
         if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
         let value: u32 = scratch.values[scratch.start + index];
-        let ccc: u32 = core::unicode::canonical_combining_class(value);
+        let ccc: u32 = class_of(value);
         if (ccc != 0) {
             let position: i32 = index;
             while (position > 0) {
                 if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
                 let previous: u32 = scratch.values[scratch.start + position - 1];
-                if (core::unicode::canonical_combining_class(previous) <= ccc) { break; }
+                if (class_of(previous) <= ccc) { break; }
                 scratch.values[scratch.start + position] = previous; position -= 1;
             }
             scratch.values[scratch.start + position] = value;
@@ -150,7 +162,7 @@ fn prepare(input: core::text::Text, form: Form, scratch: core::slice::View<u32>,
         while (source < length) {
             if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
             let value: u32 = scratch.values[scratch.start + source];
-            let ccc: u32 = core::unicode::canonical_combining_class(value);
+            let ccc: u32 = class_of(value);
             let composite: u32 = 4294967295;
             if (starter >= 0 && (previous_ccc == 0 || previous_ccc < ccc)) {
                 composite = primary_composite(scratch.values[scratch.start + starter], value);
@@ -209,6 +221,112 @@ pub fn normalize_into(input: core::text::Text, form: Form, output: core::slice::
 // normalized: composition and blocking are resolved by the same engine.
 pub fn is_normalized(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<bool, Error> {
     let budget: Budget = Budget { used: 0, limit: work_limit };
+    let prepared: core::result::Result<Normalized, Error> = prepare(input, form, scratch, budget.borrow());
+    if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+    let result: Normalized = core::result::unwrap(prepared);
+    if (result.bytes != input.length) { return core::result::Ok(false); }
+    let index: i32 = 0; let target: i32 = 0;
+    while (index < result.scalars) {
+        let value: u32 = scratch.values[scratch.start + index];
+        let width: u32 = core::utf8::encoded_len_or(value, 0); let part: u32 = 0;
+        while (part < width) {
+            if (input.bytes[input.start + target] != core::utf8::encoded_byte_or(value, part, 0)) { return core::result::Ok(false); }
+            target += 1; part += 1;
+        }
+        index += 1;
+    }
+    return core::result::Ok(true);
+}
+
+fn form_check(bits: u32, form: Form) -> u32 {
+    return match (form) {
+        Form::Nfd -> (bits >> 8) & 1,
+        Form::Nfkd -> (bits >> 9) & 1,
+        Form::Nfc -> (bits >> 10) & 3,
+        Form::Nfkc -> (bits >> 12) & 3
+    };
+}
+// UAX #15 section 9 quick check: 0 Yes, 1 No, 2 Maybe. Validates UTF-8 and
+// charges one unit per scalar; needs no scratch.
+fn check(input: core::text::Text, form: Form, budget: &Budget) -> core::result::Result<u32, Error> {
+    if (!valid(input.start, input.length)) { return core::result::Err(Error::Bounds); }
+    let result: u32 = 0; let last: u32 = 0; let index: i32 = 0;
+    while (index < input.length) {
+        if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+        let at: i32 = input.start + index;
+        let first: u8 = input.bytes[at];
+        if (first < 128) { last = 0; index += 1; continue; }
+        let width: u32 = core::utf8::sequence_len_or(first, 0);
+        if (width == 0 || (width as i32) > input.length - index) { return core::result::Err(Error::InvalidUtf8(index)); }
+        let second: u8 = input.bytes[at + 1]; let third: u8 = 0; let fourth: u8 = 0;
+        if (width > 2) { third = input.bytes[at + 2]; }
+        if (width > 3) { fourth = input.bytes[at + 3]; }
+        let value: u32 = core::utf8::decode_or(first, second, third, fourth, width, 4294967295);
+        if (value == 4294967295) { return core::result::Err(Error::InvalidUtf8(index)); }
+        let bits: u32 = info(value); let ccc: u32 = bits & 255;
+        if (ccc != 0 && last > ccc) { result = 1; }
+        let answer: u32 = form_check(bits, form);
+        if (answer == 1) { result = 1; }
+        if (answer == 2 && result == 0) { result = 2; }
+        last = ccc; index += width as i32;
+    }
+    return core::result::Ok(result);
+}
+fn quick(code: u32) -> QuickCheck {
+    if (code == 0) { return QuickCheck::Yes; }
+    if (code == 1) { return QuickCheck::No; }
+    return QuickCheck::Maybe;
+}
+// Quick_Check over the whole input. Yes means already in the form; No means
+// not; Maybe needs the full comparison. The whole input is validated even
+// after the answer is known, so malformed UTF-8 is always reported.
+pub fn quick_check(input: core::text::Text, form: Form, work_limit: u64) -> core::result::Result<QuickCheck, Error> {
+    let budget: Budget = Budget { used: 0, limit: work_limit };
+    let code: core::result::Result<u32, Error> = check(input, form, budget.borrow());
+    if (core::result::is_err(code)) { return core::result::Err(core::result::unwrap_err(code)); }
+    return core::result::Ok(quick(core::result::unwrap(code)));
+}
+// normalize_into with the quick-check fast path: a Yes input is copied
+// verbatim (scratch untouched, Normalized.scratch = 0). Otherwise the full
+// engine runs under the same budget. Work: one unit per input scalar for the
+// check, plus one per copied byte, or plus the full engine's work.
+pub fn normalize_quick_into(input: core::text::Text, form: Form, output: core::slice::View<u8>, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<Normalized, Error> {
+    if (!valid(output.start, output.length)) { return core::result::Err(Error::Bounds); }
+    let budget: Budget = Budget { used: 0, limit: work_limit };
+    let code: core::result::Result<u32, Error> = check(input, form, budget.borrow());
+    if (core::result::is_err(code)) { return core::result::Err(core::result::unwrap_err(code)); }
+    if (core::result::unwrap(code) == 0) {
+        let scalars: i32 = budget.used as i32;
+        if (!budget.charge(input.length as u64)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+        if (output.length < input.length) { return core::result::Err(Error::OutputCapacity(input.length)); }
+        let index: i32 = 0;
+        while (index < input.length) { output.values[output.start + index] = input.bytes[input.start + index]; index += 1; }
+        return core::result::Ok(Normalized { bytes: input.length, scalars: scalars, scratch: 0, work: budget.used });
+    }
+    let prepared: core::result::Result<Normalized, Error> = prepare(input, form, scratch, budget.borrow());
+    if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+    let result: Normalized = core::result::unwrap(prepared);
+    if (output.length < result.bytes) { return core::result::Err(Error::OutputCapacity(result.bytes)); }
+    let index: i32 = 0; let target: i32 = 0;
+    while (index < result.scalars) {
+        let value: u32 = scratch.values[scratch.start + index];
+        let width: u32 = core::utf8::encoded_len_or(value, 0); let part: u32 = 0;
+        while (part < width) {
+            output.values[output.start + target] = core::utf8::encoded_byte_or(value, part, 0);
+            target += 1; part += 1;
+        }
+        index += 1;
+    }
+    return core::result::Ok(result);
+}
+// is_normalized decided by quick check when it answers Yes or No; Maybe falls
+// through to the exact comparison under the same budget.
+pub fn is_normalized_quick(input: core::text::Text, form: Form, scratch: core::slice::View<u32>, work_limit: u64) -> core::result::Result<bool, Error> {
+    let budget: Budget = Budget { used: 0, limit: work_limit };
+    let code: core::result::Result<u32, Error> = check(input, form, budget.borrow());
+    if (core::result::is_err(code)) { return core::result::Err(core::result::unwrap_err(code)); }
+    let answer: u32 = core::result::unwrap(code);
+    if (answer != 2) { return core::result::Ok(answer == 0); }
     let prepared: core::result::Result<Normalized, Error> = prepare(input, form, scratch, budget.borrow());
     if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
     let result: Normalized = core::result::unwrap(prepared);

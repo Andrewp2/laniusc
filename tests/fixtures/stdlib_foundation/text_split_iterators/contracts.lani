@@ -1,5 +1,6 @@
 // Shared Text iterator contracts over real packed and strided backing.
 module app::main;
+import core::function;
 import core::iter;
 import core::mem;
 import core::option;
@@ -8,7 +9,7 @@ import core::text;
 
 struct ByteCount { calls: i32 }
 impl ByteCount { fn borrow(&self) -> &ByteCount { return self; } }
-pub impl core::iter::Mapper<core::text::Text, i32> for ByteCount {
+pub impl core::function::Mapper<core::text::Text, i32> for ByteCount {
     pub fn apply(&self, value: core::text::Text) -> i32 {
         self.calls += 1;
         return value.byte_len();

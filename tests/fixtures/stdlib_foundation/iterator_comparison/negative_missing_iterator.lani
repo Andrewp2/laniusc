@@ -1,0 +1,9 @@
+module app::main;
+import core::iter;
+struct Absent {}
+impl Absent { fn borrow(&self) -> &Absent { return self; } }
+fn main() -> i32 {
+    let left:Absent=Absent {}; let right:core::iter::Once<i32> =core::iter::once<i32>(1);
+    let rejected:bool=core::iter::eq<Absent,core::iter::Once<i32>,i32>(left.borrow(),right.borrow()); // rejected_sequence_bound
+    return 0;
+}

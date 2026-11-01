@@ -1,0 +1,186 @@
+// A dig-like lookup through the stub resolver: reads resolv.conf and hosts,
+// prints every DNS exchange, the final status and the address records.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import ext::dns_client;
+import ext::stub_resolver;
+import std::args;
+import std::clock;
+import std::resolver_config;
+import std::signal;
+import std::stream;
+
+struct Options { resolv: core::slice::View<u8>, hosts: core::slice::View<u8>, use_hosts: bool, explicit_resolv: bool, explicit_hosts: bool, port: u16, family: ext::stub_resolver::Family, timeout: i32, attempts: i32, deadline: u64, name: core::slice::View<u8>, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Out { raw: alloc::vec::Vec<u8>, failed: bool }
+impl Out { fn borrow(&self) -> &Out { return self; } }
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn text(value: str, n: i32) -> core::text::Text { let raw = bytes(value,n); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn number(value: core::slice::View<u8>, minimum: u64, maximum: u64) -> core::option::Option<u64> {
+    if (value.length < 1 || value.length > 20) { return core::option::None(); } let index: i32 = 0;
+    while (index < value.length) { let byte: u8 = value.values[value.start+index]; if (byte < 48 || byte > 57) { return core::option::None(); } index += 1; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if (parsed.is_err() || parsed.unwrap() < minimum || parsed.unwrap() > maximum) { return core::option::None(); } return core::option::Some(parsed.unwrap());
+}
+fn option_id(value: core::slice::View<u8>) -> i32 {
+    if (equal(value,bytes("--resolv-conf",13))) { return 1; } if (equal(value,bytes("--hosts",7))) { return 2; } if (equal(value,bytes("--no-hosts",10))) { return 3; }
+    if (equal(value,bytes("--port",6))) { return 4; } if (equal(value,bytes("--family",8))) { return 5; } if (equal(value,bytes("--timeout-ms",12))) { return 6; }
+    if (equal(value,bytes("--attempts",10))) { return 7; } if (equal(value,bytes("--deadline-ms",13))) { return 8; } if (equal(value,bytes("--help",6))) { return 9; }
+    return 0;
+}
+// [OPTIONS] NAME; every option at most once, --hosts and --no-hosts exclusive.
+fn parse(args: std::args::Arguments, options: &Options) -> bool {
+    let index: i32 = 0; let seen: u32 = 0; let names: i32 = 0;
+    while (index < args.len()) {
+        let value = args.get(index).unwrap(); let id: i32 = 0;
+        if (value.length > 1 && value.values[value.start] == 45) { id = option_id(value); if (id == 0) { return false; } }
+        if (id == 0) { options.name = value; names += 1; index += 1; continue; }
+        let bit: u32 = (1 as u32) << id; if ((seen & bit) != 0) { return false; } seen |= bit;
+        if (id == 9) { options.help = true; index += 1; continue; }
+        if (id == 3) { options.use_hosts = false; index += 1; continue; }
+        if (index + 1 >= args.len()) { return false; }
+        let arg = args.get(index+1).unwrap();
+        if (id == 1) { options.resolv = arg; options.explicit_resolv = true; }
+        if (id == 2) { options.hosts = arg; options.explicit_hosts = true; }
+        if (id == 4) { let n = number(arg,1,65535); if (n.is_none()) { return false; } options.port = n.unwrap() as u16; }
+        if (id == 5) {
+            if (equal(arg,bytes("any",3))) { options.family = ext::stub_resolver::Family::Any; }
+            else { if (equal(arg,bytes("ipv4",4))) { options.family = ext::stub_resolver::Family::Ipv4; }
+            else { if (equal(arg,bytes("ipv6",4))) { options.family = ext::stub_resolver::Family::Ipv6; } else { return false; } } }
+        }
+        if (id == 6) { let n = number(arg,1,60000); if (n.is_none()) { return false; } options.timeout = n.unwrap() as i32; }
+        if (id == 7) { let n = number(arg,1,8); if (n.is_none()) { return false; } options.attempts = n.unwrap() as i32; }
+        if (id == 8) { let n = number(arg,1,600000); if (n.is_none()) { return false; } options.deadline = n.unwrap(); }
+        index += 2;
+    }
+    if (options.help) { return args.len() == 1; }
+    if ((seen & 4) != 0 && (seen & 8) != 0) { return false; }
+    return names == 1;
+}
+fn put(out: &Out, value: core::slice::View<u8>) -> bool { if (out.raw.try_extend(value).is_err()) { out.failed = true; } return true; }
+fn word(out: &Out, value: str, n: i32) -> bool { return put(out,bytes(value,n)); }
+fn decimal(out: &Out, value: i64) -> bool { let digits: [u8;24] = [0;24]; let f = core::fmt::buffer(digits,0,24).unwrap(); f.write_signed(value,core::fmt::decimal()); return put(out,core::slice::view(digits,f.finish().unwrap()).unwrap()); }
+fn flush(out: &Out) -> bool {
+    put(out,bytes("\n",1));
+    let sink = std::stream::stdout(); let ok: bool = !out.failed && core::io::write_all(sink.borrow(),out.raw.as_slice(),0,out.raw.len()).is_ok(); out.raw.clear(); out.failed = false; return ok;
+}
+fn complain(reason: str, n: i32, errno: i32) {
+    let raw: [u8;160] = [0;160]; let out = core::fmt::buffer(raw,0,160).unwrap();
+    out.write_text(text("stub-dig: ",10)); out.write_text(text(reason,n)); out.write_text(text(" errno=",7)); out.write_signed(errno as i64,core::fmt::decimal()); out.write_text(text("\n",1));
+    let sink = std::stream::stderr(); core::io::write_all(sink.borrow(),raw,0,out.finish().unwrap());
+}
+fn socket_text(out: &Out, server: core::net::SocketAddr) -> bool { let raw: [u8;64] = [0;64]; let n = server.format_into(core::slice::view(raw,64).unwrap()); if (n.is_ok()) { put(out,core::slice::view(raw,n.unwrap()).unwrap()); } return true; }
+fn ip_text(out: &Out, address: core::net::IpAddr) -> bool { let raw: [u8;64] = [0;64]; let n = address.format_into(core::slice::view(raw,64).unwrap()); if (n.is_ok()) { put(out,core::slice::view(raw,n.unwrap()).unwrap()); } return true; }
+fn type_text(out: &Out, qtype: i32) -> bool { if (qtype == 28) { return word(out,"AAAA",4); } return word(out,"A",1); }
+fn cause_text(out: &Out, cause: ext::dns_client::Cause) -> bool {
+    return match (cause) {
+        ext::dns_client::Cause::Timeout -> word(out,"timeout",7), ext::dns_client::Cause::Correlation -> word(out,"mismatch",8),
+        ext::dns_client::Cause::Truncated -> word(out,"truncated",9), ext::dns_client::Cause::Dns(e) -> word(out,"malformed",9),
+        ext::dns_client::Cause::UnexpectedEof(n) -> word(out,"eof",3), ext::dns_client::Cause::FrameLength(n) -> word(out,"frame-length",12),
+        ext::dns_client::Cause::Io(e) -> io_text(out,e), _ -> word(out,"other",5)
+    };
+}
+fn io_text(out: &Out, error: core::io::Error) -> bool { word(out,"io",2); let code: i32 = match (error) { core::io::Error::Host(n) -> n, _ -> 0 }; if (code != 0) { word(out," ",1); decimal(out,code as i64); } return true; }
+fn outcome_text(out: &Out, outcome: ext::stub_resolver::Outcome) -> bool {
+    return match (outcome) {
+        ext::stub_resolver::Outcome::Records(n) -> answer_text(out,n), ext::stub_resolver::Outcome::NoData -> word(out,"nodata",6),
+        ext::stub_resolver::Outcome::NoSuchName -> word(out,"nxdomain",8), ext::stub_resolver::Outcome::Rcode(n) -> rcode_text(out,n),
+        ext::stub_resolver::Outcome::Transport(cause) -> cause_text(out,cause)
+    };
+}
+fn answer_text(out: &Out, n: i32) -> bool { word(out,"answer ",7); return decimal(out,n as i64); }
+fn rcode_text(out: &Out, n: i32) -> bool { word(out,"rcode ",6); return decimal(out,n as i64); }
+// A missing default file is empty; an explicitly named one must be readable.
+fn load(path: core::slice::View<u8>, explicit: bool, what: str, n: i32) -> core::option::Option<alloc::vec::Vec<u8>> {
+    let read = std::resolver_config::read_file(path,std::resolver_config::MAX_FILE_BYTES);
+    if (read.is_ok()) { return core::option::Some(read.unwrap()); }
+    let errno: i32 = match (read.unwrap_err()) { std::resolver_config::Error::Io(e) -> io_errno(e), std::resolver_config::Error::TooLarge -> 27, _ -> 0 };
+    if (!explicit && errno == 2) { return core::option::Some(alloc::vec::new()); }
+    complain(what,n,errno); return core::option::None();
+}
+fn io_errno(error: core::io::Error) -> i32 { return match (error) { core::io::Error::Host(code) -> code, _ -> 5 }; }
+fn report(answer: ext::stub_resolver::Answer) -> i32 {
+    let out = Out { raw: alloc::vec::new(), failed: false }; let ok: bool = true; let index: i32 = 0;
+    while (index < answer.exchanges.len()) {
+        let e: ext::stub_resolver::Exchange = answer.exchanges.at(index);
+        word(out.borrow(),";; exchange\t",12); put(out.borrow(),answer.candidate(e.candidate)); word(out.borrow(),"\t",1); type_text(out.borrow(),e.qtype); word(out.borrow(),"\t",1);
+        socket_text(out.borrow(),e.server); if (e.tcp) { word(out.borrow(),"\ttcp\t",5); } else { word(out.borrow(),"\tudp\t",5); }
+        outcome_text(out.borrow(),e.outcome); word(out.borrow(),"\tdiscarded=",11); decimal(out.borrow(),e.discarded as i64);
+        ok = flush(out.borrow()) && ok; index += 1;
+    }
+    let status: i32 = 0;
+    word(out.borrow(),";; status\t",10);
+    let shown: bool = match (answer.status) {
+        ext::stub_resolver::Status::Found -> word(out.borrow(),"found",5), ext::stub_resolver::Status::NoSuchName -> word(out.borrow(),"nxdomain",8),
+        ext::stub_resolver::Status::NoData -> word(out.borrow(),"nodata",6), ext::stub_resolver::Status::Failed -> word(out.borrow(),"failed",6)
+    };
+    status = match (answer.status) { ext::stub_resolver::Status::Found -> 0, ext::stub_resolver::Status::Failed -> 3, _ -> 1 };
+    word(out.borrow(),"\tsource=",8);
+    shown = match (answer.source) {
+        ext::stub_resolver::Source::Numeric -> word(out.borrow(),"numeric",7), ext::stub_resolver::Source::Hosts -> word(out.borrow(),"hosts",5),
+        ext::stub_resolver::Source::Dns -> word(out.borrow(),"dns",3), ext::stub_resolver::Source::None -> word(out.borrow(),"none",4)
+    };
+    ok = flush(out.borrow()) && ok;
+    word(out.borrow(),";; name\t",8); put(out.borrow(),answer.name.as_view()); ok = flush(out.borrow()) && ok;
+    if (status == 0) {
+        word(out.borrow(),";; canonical\t",13); put(out.borrow(),answer.canonical.as_view()); ok = flush(out.borrow()) && ok;
+        index = 0;
+        while (index < answer.addresses.len()) {
+            let address: core::net::IpAddr = answer.addresses.at(index);
+            put(out.borrow(),answer.canonical.as_view()); word(out.borrow(),".\t",2); decimal(out.borrow(),answer.ttl as i64); word(out.borrow(),"\tIN\t",4);
+            if (address.version() == 6) { word(out.borrow(),"AAAA",4); } else { word(out.borrow(),"A",1); } word(out.borrow(),"\t",1); ip_text(out.borrow(),address);
+            ok = flush(out.borrow()) && ok; index += 1;
+        }
+    }
+    out.raw.destroy(); if (!ok) { complain("write failed",12,0); return 5; }
+    return status;
+}
+fn run(options: Options) -> i32 {
+    let resolv = load(options.resolv,options.explicit_resolv,"cannot read resolv.conf",23); if (resolv.is_none()) { return 4; }
+    let resolv_bytes: alloc::vec::Vec<u8> = resolv.unwrap();
+    let hosts_bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (options.use_hosts) { let hosts = load(options.hosts,options.explicit_hosts,"cannot read hosts",17); if (hosts.is_none()) { resolv_bytes.destroy(); return 4; } hosts_bytes = hosts.unwrap(); }
+    let parsed = std::resolver_config::parse(resolv_bytes.as_view()); resolv_bytes.destroy();
+    if (parsed.is_err()) { hosts_bytes.destroy(); complain("resolv.conf rejected",20,0); return 4; }
+    let config: std::resolver_config::Config = parsed.unwrap();
+    let settings: ext::stub_resolver::Options = ext::stub_resolver::default_options();
+    settings.family = options.family; settings.port = options.port; settings.hosts = options.use_hosts; settings.timeout_ms = options.timeout; settings.attempts = options.attempts;
+    let started = std::clock::monotonic_now(); let status: i32 = 5;
+    if (started.is_err()) { complain("clock failed",12,0); }
+    else {
+        let deadline = core::time::deadline_at(started.unwrap().checked_add(core::time::from_millis(options.deadline)).unwrap());
+        let looked = ext::stub_resolver::lookup(options.name,config.borrow(),hosts_bytes.as_view(),settings,deadline);
+        if (looked.is_err()) {
+            let invalid: bool = match (looked.unwrap_err()) { ext::stub_resolver::Error::InvalidName -> true, _ -> false };
+            if (invalid) { complain("invalid name",12,0); status = 2; } else { complain("lookup failed",13,0); }
+        } else { let answer = looked.unwrap(); status = report(answer); answer.destroy(); }
+    }
+    config.destroy(); hosts_bytes.destroy(); return status;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,256,65536); if (captured.is_err()) { complain("argument snapshot failed",24,0); return 2; }
+    let args = captured.unwrap();
+    let options = Options { resolv: bytes("/etc/resolv.conf",16), hosts: bytes("/etc/hosts",10), use_hosts: true, explicit_resolv: false, explicit_hosts: false, port: 0, family: ext::stub_resolver::Family::Any, timeout: 0, attempts: 0, deadline: 30000, name: bytes("",0), help: false };
+    let result: i32 = 2;
+    if (!parse(args,options.borrow())) { complain("invalid arguments; see --help",29,0); }
+    else {
+        if (options.help) {
+            let usage: str = "Usage: stub-dig [--resolv-conf PATH] [--hosts PATH | --no-hosts] [--port N] [--family any|ipv4|ipv6] [--timeout-ms N] [--attempts N] [--deadline-ms N] NAME\n";
+            let sink = std::stream::stdout(); result = 0;
+            if (core::io::write_all(sink.borrow(),core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(usage),156),0,156).is_err()) { result = 5; }
+        } else { result = run(options); }
+    }
+    args.destroy(); return result;
+}

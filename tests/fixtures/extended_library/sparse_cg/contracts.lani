@@ -1,0 +1,125 @@
+module app::main;
+import core::f64;
+import core::result;
+import core::slice;
+import ext::sparse;
+import ext::sparse_cg;
+
+fn cg_kind(error:ext::sparse_cg::Error) -> i32 {
+    return match(error.kind) {
+        ext::sparse_cg::ErrorKind::Sparse(cause) -> 1,
+        ext::sparse_cg::ErrorKind::InvalidOptions -> 2, ext::sparse_cg::ErrorKind::Shape -> 3,
+        ext::sparse_cg::ErrorKind::Bounds -> 4, ext::sparse_cg::ErrorKind::EntryLimit -> 5,
+        ext::sparse_cg::ErrorKind::WorkLimit -> 6, ext::sparse_cg::ErrorKind::NonFinite -> 7,
+        ext::sparse_cg::ErrorKind::NonSymmetric -> 8, ext::sparse_cg::ErrorKind::NonPositiveDiagonal -> 9,
+        ext::sparse_cg::ErrorKind::NonPositiveCurvature -> 10, ext::sparse_cg::ErrorKind::Breakdown -> 11,
+        ext::sparse_cg::ErrorKind::NumericalFailure -> 12, ext::sparse_cg::ErrorKind::AllocationFailed -> 13
+    };
+}
+fn cg_sparse_cause_kind(cause:ext::sparse::ErrorKind) -> i32 {
+    return match(cause) {
+        ext::sparse::ErrorKind::Bounds -> 1, ext::sparse::ErrorKind::Shape -> 2,
+        ext::sparse::ErrorKind::Offset -> 3, ext::sparse::ErrorKind::Column -> 4,
+        ext::sparse::ErrorKind::Order -> 5, ext::sparse::ErrorKind::NonFinite -> 6,
+        ext::sparse::ErrorKind::NumericalFailure -> 7, _ -> 0
+    };
+}
+fn cg_sparse_kind(error:ext::sparse_cg::Error) -> i32 {
+    return match(error.kind) { ext::sparse_cg::ErrorKind::Sparse(cause) -> cg_sparse_cause_kind(cause), _ -> 0 };
+}
+fn cg_csr(n:i32,offsets:[i32],columns:[i32],values:[f64],nnz:i32) -> ext::sparse::CsrView {
+    return ext::sparse::CsrView { rows:n,cols:n,offsets:core::slice::view(offsets,n+1).unwrap(),columns:core::slice::view(columns,nnz).unwrap(),values:core::slice::view(values,nnz).unwrap() };
+}
+fn cg_options(steps:i32,jacobi:bool) -> ext::sparse_cg::Options {
+    let options:ext::sparse_cg::Options=ext::sparse_cg::default_options(); options.max_iterations=steps; options.rtol=1e-12; options.atol=0.0;
+    options.preconditioner=ext::sparse_cg::Preconditioner::None; if (jacobi) { options.preconditioner=ext::sparse_cg::Preconditioner::Jacobi; } return options;
+}
+fn cg_error(result:core::result::Result<ext::sparse_cg::Solution,ext::sparse_cg::Error>,kind:i32,row:i32,entry:i32,iteration:i32) -> ext::sparse_cg::Error {
+    assert(result.is_err()); let error:ext::sparse_cg::Error=result.unwrap_err();
+    assert(cg_kind(error)==kind && error.row==row && error.entry==entry && error.iteration==iteration); return error;
+}
+fn cg_converged(solution:ext::sparse_cg::Solution) -> bool { return match(solution.stop) { ext::sparse_cg::Stop::Converged -> true, _ -> false }; }
+fn cg_near(a:f64,b:f64) -> bool { return core::f64::abs(a-b)<=1e-12*core::f64::max(1.0,core::f64::abs(b)); }
+
+fn both_preconditioners_last_step_and_independent_results() {
+    let defaults:ext::sparse_cg::Options=ext::sparse_cg::default_options();
+    assert(defaults.max_iterations==1000 && defaults.rtol==1e-10 && defaults.atol==0.0 && match(defaults.preconditioner) { ext::sparse_cg::Preconditioner::Jacobi -> true, _ -> false });
+    let offsets:[i32;3]=[0,1,2]; let columns:[i32;2]=[0,1]; let values:[f64;2]=[2.0,4.0]; let b:[f64;2]=[2.0,8.0]; let initial:[f64;2]=[-0.0,0.0];
+    let a:ext::sparse::CsrView=cg_csr(2,offsets,columns,values,2); let bv:core::slice::View<f64> =core::slice::view(b,2).unwrap(); let xv:core::slice::View<f64> =core::slice::view(initial,2).unwrap(); let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let diagonal:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,bv,xv,cg_options(1,true),limits).unwrap();
+    assert(cg_converged(diagonal) && diagonal.iterations==1 && diagonal.restarts==0 && diagonal.residual_norm==0.0 && diagonal.x.get(0).unwrap()==1.0 && diagonal.x.get(1).unwrap()==2.0);
+    let limited:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,bv,xv,cg_options(1,false),limits).unwrap();
+    assert(!cg_converged(limited) && limited.iterations==1 && limited.restarts==0 && limited.residual_norm>0.0);
+    let r0:f64=b[0]-2.0*limited.x.get(0).unwrap(); let r1:f64=b[1]-4.0*limited.x.get(1).unwrap();
+    assert(cg_near(limited.residual_norm,core::f64::sqrt(r0*r0+r1*r1)) && cg_near(limited.rhs_norm,core::f64::sqrt(68.0)));
+    let ordinary:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,bv,xv,cg_options(2,false),limits).unwrap();
+    assert(cg_converged(ordinary) && ordinary.iterations==2 && cg_near(ordinary.x.get(0).unwrap(),1.0) && cg_near(ordinary.x.get(1).unwrap(),2.0));
+    assert(core::f64::to_bits(initial[0])==9223372036854775808 && b[1]==8.0 && values[1]==4.0 && columns[1]==1);
+    b[0]=99.0; initial[1]=99.0; values[0]=99.0;
+    assert(diagonal.x.get(0).unwrap()==1.0 && diagonal.x.get(1).unwrap()==2.0 && cg_near(ordinary.x.get(0).unwrap(),1.0));
+    ordinary.destroy(); limited.destroy(); diagonal.destroy(); diagonal.destroy();
+}
+fn initial_zero_and_zero_iteration_outcomes() {
+    let offsets:[i32;3]=[0,1,2]; let columns:[i32;2]=[0,1]; let values:[f64;2]=[2.0,4.0]; let b:[f64;2]=[2.0,8.0]; let initial:[f64;2]=[1.0,2.0];
+    let a:ext::sparse::CsrView=cg_csr(2,offsets,columns,values,2); let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let exact:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,core::slice::view(b,2).unwrap(),core::slice::view(initial,2).unwrap(),cg_options(0,true),limits).unwrap();
+    assert(cg_converged(exact) && exact.iterations==0 && exact.residual_norm==0.0); exact.destroy();
+    initial[0]=0.9999999999999; let near:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,core::slice::view(b,2).unwrap(),core::slice::view(initial,2).unwrap(),cg_options(0,false),limits).unwrap();
+    assert(cg_converged(near) && near.iterations==0 && near.residual_norm>0.0); near.destroy();
+    b[0]=-0.0; b[1]=0.0; initial[0]=0.0; initial[1]=-0.0;
+    let zero:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,core::slice::view(b,2).unwrap(),core::slice::view(initial,2).unwrap(),cg_options(0,true),limits).unwrap();
+    assert(cg_converged(zero) && zero.iterations==0 && zero.rhs_norm==0.0 && zero.residual_norm==0.0 && core::f64::to_bits(b[0])==9223372036854775808 && core::f64::to_bits(initial[1])==9223372036854775808); zero.destroy();
+    initial[0]=1.0; initial[1]=2.0; let options:ext::sparse_cg::Options=cg_options(0,false); options.rtol=core::f64::MAX;
+    let nonzero_initial:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,core::slice::view(b,2).unwrap(),core::slice::view(initial,2).unwrap(),options,limits).unwrap();
+    assert(!cg_converged(nonzero_initial) && nonzero_initial.iterations==0 && nonzero_initial.rhs_norm==0.0 && cg_near(nonzero_initial.residual_norm,core::f64::sqrt(68.0))); nonzero_initial.destroy();
+}
+fn symmetry_diagonals_and_wrapped_input_errors() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits(); let off:[i32;3]=[0,2,3]; let col:[i32;4]=[0,1,1,0]; let vals:[f64;4]=[1.0,-0.0,1.0,0.0]; let b:[f64;2]=[1.0,2.0]; let initial:[f64;2]=[0.0,0.0];
+    let a:ext::sparse::CsrView=cg_csr(2,off,col,vals,3); let bv:core::slice::View<f64> =core::slice::view(b,2).unwrap(); let xv:core::slice::View<f64> =core::slice::view(initial,2).unwrap();
+    let unpaired_zero:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,bv,xv,cg_options(1,true),limits).unwrap(); assert(cg_converged(unpaired_zero) && unpaired_zero.iterations==1 && core::f64::to_bits(vals[1])==9223372036854775808); unpaired_zero.destroy();
+    vals[1]=1.0; cg_error(ext::sparse_cg::solve(a,bv,xv,cg_options(1,false),limits),8,0,1,-1); vals[1]=-0.0;
+    vals[2]=core::f64::infinity(); let finite:ext::sparse_cg::Error=cg_error(ext::sparse_cg::solve(a,bv,xv,cg_options(1,false),limits),1,1,2,-1); assert(cg_sparse_kind(finite)==6); vals[2]=1.0;
+    col[2]=2; let column:ext::sparse_cg::Error=cg_error(ext::sparse_cg::solve(a,bv,xv,cg_options(1,false),limits),1,1,2,-1); assert(cg_sparse_kind(column)==4); col[2]=1;
+    off[1]=4; let offset:ext::sparse_cg::Error=cg_error(ext::sparse_cg::solve(a,bv,xv,cg_options(1,false),limits),1,0,-1,-1); assert(cg_sparse_kind(offset)==3); off[1]=2;
+    col[1]=0; let order:ext::sparse_cg::Error=cg_error(ext::sparse_cg::solve(a,bv,xv,cg_options(1,false),limits),1,0,1,-1); assert(cg_sparse_kind(order)==5); col[1]=1;
+    b[1]=core::f64::nan(); cg_error(ext::sparse_cg::solve(a,bv,xv,cg_options(1,false),limits),7,-1,1,-1); b[1]=2.0;
+    initial[0]=core::f64::infinity(); cg_error(ext::sparse_cg::solve(a,bv,xv,cg_options(1,false),limits),7,-1,0,-1); initial[0]=0.0;
+    cg_error(ext::sparse_cg::solve(a,core::slice::view(b,1).unwrap(),xv,cg_options(1,false),limits),3,-1,-1,-1);
+    let bad:core::slice::View<f64> =bv; bad.start=-1; cg_error(ext::sparse_cg::solve(a,bad,xv,cg_options(1,false),limits),4,-1,-1,-1);
+    let rectangular:ext::sparse::CsrView=a; rectangular.cols=3; cg_error(ext::sparse_cg::solve(rectangular,bv,xv,cg_options(1,false),limits),3,-1,-1,-1);
+    let scalar_off:[i32;2]=[0,1]; let scalar_col:[i32;1]=[0]; let scalar_val:[f64;1]=[0.0]; let zeros:[f64;1]=[0.0];
+    let scalar:ext::sparse::CsrView=cg_csr(1,scalar_off,scalar_col,scalar_val,1); let zv:core::slice::View<f64> =core::slice::view(zeros,1).unwrap();
+    cg_error(ext::sparse_cg::solve(scalar,zv,zv,cg_options(0,true),limits),9,0,0,-1);
+    scalar_val[0]=-1.0; cg_error(ext::sparse_cg::solve(scalar,zv,zv,cg_options(0,true),limits),9,0,0,-1);
+    scalar_off[1]=0; cg_error(ext::sparse_cg::solve(cg_csr(1,scalar_off,scalar_col,scalar_val,0),zv,zv,cg_options(0,true),limits),9,0,-1,-1);
+}
+fn numerical_curvature_and_tiny_jacobi_controls() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits(); let off:[i32;2]=[0,1]; let col:[i32;1]=[0]; let val:[f64;1]=[-1.0]; let b:[f64;1]=[1.0]; let initial:[f64;1]=[0.0];
+    let a:ext::sparse::CsrView=cg_csr(1,off,col,val,1); let bv:core::slice::View<f64> =core::slice::view(b,1).unwrap(); let xv:core::slice::View<f64> =core::slice::view(initial,1).unwrap(); let strict:ext::sparse_cg::Options=cg_options(1,false); strict.rtol=0.0;
+    cg_error(ext::sparse_cg::solve(a,bv,xv,strict,limits),10,-1,-1,0);
+    val[0]=0.0; cg_error(ext::sparse_cg::solve(a,bv,xv,strict,limits),11,-1,-1,0);
+    val[0]=1.0; b[0]=1e-200; cg_error(ext::sparse_cg::solve(a,bv,xv,strict,limits),11,-1,-1,0);
+    b[0]=1e200; cg_error(ext::sparse_cg::solve(a,bv,xv,strict,limits),12,-1,-1,0); b[0]=1.0;
+    val[0]=core::f64::from_bits(1); cg_error(ext::sparse_cg::solve(a,bv,xv,strict,limits),12,-1,-1,0);
+    b[0]=core::f64::from_bits(1); let jacobi:ext::sparse_cg::Options=cg_options(1,true); jacobi.rtol=0.0;
+    let tiny:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,bv,xv,jacobi,limits).unwrap(); assert(cg_converged(tiny) && tiny.iterations==1 && tiny.x.get(0).unwrap()==1.0 && tiny.residual_norm==0.0); tiny.destroy();
+    val[0]=core::f64::MAX; b[0]=2.0; let product:ext::sparse_cg::Error=cg_error(ext::sparse_cg::solve(a,bv,xv,strict,limits),1,0,0,0); assert(cg_sparse_kind(product)==7);
+    val[0]=1.0; initial[0]=-core::f64::MAX; b[0]=core::f64::MAX; cg_error(ext::sparse_cg::solve(a,bv,xv,strict,limits),12,-1,0,-1);
+    assert(val[0]==1.0 && initial[0]==-core::f64::MAX && b[0]==core::f64::MAX);
+}
+fn invalid_options_and_exact_requested_work() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits(); let off:[i32;3]=[0,1,2]; let col:[i32;2]=[0,1]; let val:[f64;2]=[2.0,4.0]; let b:[f64;2]=[2.0,8.0]; let initial:[f64;2]=[0.0,0.0];
+    let a:ext::sparse::CsrView=cg_csr(2,off,col,val,2); let bv:core::slice::View<f64> =core::slice::view(b,2).unwrap(); let xv:core::slice::View<f64> =core::slice::view(initial,2).unwrap(); let options:ext::sparse_cg::Options=cg_options(1,true);
+    options.max_iterations=-1; cg_error(ext::sparse_cg::solve(a,bv,xv,options,limits),2,-1,-1,-1); options=cg_options(1,true);
+    options.rtol=-1.0; cg_error(ext::sparse_cg::solve(a,bv,xv,options,limits),2,-1,-1,-1); options.rtol=core::f64::nan(); cg_error(ext::sparse_cg::solve(a,bv,xv,options,limits),2,-1,-1,-1);
+    options=cg_options(1,true); options.atol=core::f64::infinity(); cg_error(ext::sparse_cg::solve(a,bv,xv,options,limits),2,-1,-1,-1); options=cg_options(1,true);
+    let tight:ext::sparse::Limits=limits; tight.max_work=215; cg_error(ext::sparse_cg::solve(a,bv,xv,options,tight),6,-1,-1,-1);
+    tight.max_work=216; let admitted:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,bv,xv,options,tight).unwrap(); assert(cg_converged(admitted) && admitted.iterations==1); admitted.destroy();
+    initial[0]=1.0; initial[1]=2.0; options.max_iterations=2147483647; tight.max_work=292057776071;
+    cg_error(ext::sparse_cg::solve(a,bv,xv,options,tight),6,-1,-1,-1); tight.max_work=292057776072;
+    let immediate:ext::sparse_cg::Solution=ext::sparse_cg::solve(a,bv,xv,options,tight).unwrap(); assert(cg_converged(immediate) && immediate.iterations==0); immediate.destroy();
+}
+fn main() -> i32 {
+    both_preconditioners_last_step_and_independent_results(); initial_zero_and_zero_iteration_outcomes();
+    symmetry_diagonals_and_wrapped_input_errors(); numerical_curvature_and_tiny_jacobi_controls(); invalid_options_and_exact_requested_work(); return 0;
+}

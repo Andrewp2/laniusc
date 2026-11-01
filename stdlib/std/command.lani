@@ -7,6 +7,7 @@ import core::mem;
 import core::option;
 import core::result;
 import core::slice;
+import core::time;
 import std::command_raw;
 import std::env;
 import std::file;
@@ -18,11 +19,24 @@ pub struct Failure { kind: Error, stage: Stage, errno: i32 }
 pub struct Limits { max_args: i32, max_env: i32, max_string: i32, max_bytes: i32, max_paths: i32 }
 pub enum Search { Exact, EnvironmentPath }
 pub enum ChildSigpipe { Default, Inherit }
+// Clear (the request default) empties the child's blocked-signal mask before
+// exec, so a parent that blocks signals for std::signal receivers does not
+// pass them on. Inherit keeps the parent's mask.
+pub enum ChildMask { Clear, Inherit }
 pub enum Group { Inherit, New }
 pub enum Stdio { Inherit, Closed, Null, Pipe, Borrowed(i32) }
-pub struct Request { program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>, cwd: core::option::Option<core::slice::View<u8>>, search: Search, sigpipe: ChildSigpipe, group: Group, stdin: Stdio, stdout: Stdio, stderr: Stdio, limits: Limits }
+pub struct Request { program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>, cwd: core::option::Option<core::slice::View<u8>>, search: Search, sigpipe: ChildSigpipe, signal_mask: ChildMask, group: Group, stdin: Stdio, stdout: Stdio, stderr: Stdio, limits: Limits }
 pub enum Startup { Unconfirmed, Unknown }
 pub struct ExitStatus { raw: i32, code: core::option::Option<i32>, signal: core::option::Option<i32>, core_dumped: bool }
+// Linux struct rusage fields, as reported by the kernel. Times have microsecond
+// granularity; max_rss_kib is the peak resident set in KiB; block counts are
+// 512-byte filesystem I/O operations. Other rusage fields are always zero on
+// Linux and are omitted.
+pub struct Usage { user: core::time::Duration, system: core::time::Duration, max_rss_kib: u64, minor_faults: u64, major_faults: u64, block_input: u64, block_output: u64, voluntary_switches: u64, involuntary_switches: u64 }
+// Final status plus the reaped child's usage, which includes the usage of its
+// own descendants that it (transitively) waited for.
+pub struct Reaped { status: ExitStatus, usage: Usage }
+pub enum UsageTarget { Process, Children, Thread }
 pub struct Child { pid: i32, input: core::option::Option<std::file::File>, output: core::option::Option<std::file::File>, error: core::option::Option<std::file::File>, startup_state: Startup, cached: core::option::Option<ExitStatus>, group_policy: Group, group_confirmed: bool, observed: core::option::Option<ExitStatus> }
 pub struct FailedStart { failure: Failure, status: ExitStatus }
 pub struct UnknownStart { child: Child, failure: Failure }
@@ -38,7 +52,7 @@ fn checked(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result
     if (!valid(bytes.start,bytes.length)) { return core::result::Err(failure(Error::Bounds,Stage::Validate,0)); } if (bytes.length > limits.max_string || bytes.length > limits.max_bytes) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); }
     let i: i32 = 0; while (i < bytes.length) { if (at(bytes,i) == 0) { return core::result::Err(failure(Error::Nul,Stage::Validate,0)); } i += 1; } return core::result::Ok(bytes.length);
 }
-fn put(raw: [u8], offset: i32, value: core::slice::View<u8>) -> i32 { let i: i32 = 0; while (i < value.length) { raw[offset+i] = at(value,i); i += 1; } raw[offset+i] = 0; return offset+i+1; }
+fn put(raw: [u8], offset: i32, value: core::slice::View<u8>) -> i32 { let i: i32 = 0; while (i < value.length) { let stored1 = at(value,i); raw[offset+i] = stored1; i += 1; } raw[offset+i] = 0; return offset+i+1; }
 fn prepare(request: Request) -> core::result::Result<Prepared,Failure> {
     let limits: Limits = request.limits; let args = request.arguments; let env = request.environment;
     if (limits.max_args < 0 || limits.max_env < 0 || limits.max_string < 0 || limits.max_bytes < 0 || limits.max_paths < 1 || !valid(args.start,args.length) || !valid(env.start,env.length)) { return core::result::Err(failure(Error::Bounds,Stage::Validate,0)); }
@@ -69,7 +83,7 @@ fn prepare(request: Request) -> core::result::Result<Prepared,Failure> {
     i = 0; while (i < args.length) { std::command_raw::store_pointer(table+(i as usize)*8,base+(offset as usize)); offset = put(raw,offset,args.values[args.start+i]); i += 1; }
     let env_at: i32 = (args.length+1)*8; i = 0; while (i < env.length) { std::command_raw::store_pointer(table+(env_at as usize)+(i as usize)*8,base+(offset as usize)); offset = put(raw,offset,env.values[env.start+i]); i += 1; }
     if (core::option::is_some(request.cwd)) { cwd = offset; offset = put(raw,offset,core::option::unwrap(request.cwd)); }
-    if (search) { let start: i32 = 0; i = 0; while (i <= path.length) { if (i == path.length || at(path,i) == 58) { path_offsets.try_push(offset).unwrap(); let j: i32 = start; while (j < i) { raw[offset] = at(path,j); offset += 1; j += 1; } if (i > start) { raw[offset] = 47; offset += 1; } offset = put(raw,offset,request.program); start = i+1; } i += 1; } }
+    if (search) { let start: i32 = 0; i = 0; while (i <= path.length) { if (i == path.length || at(path,i) == 58) { path_offsets.try_push(offset).unwrap(); let j: i32 = start; while (j < i) { let stored2 = at(path,j); raw[offset] = stored2; offset += 1; j += 1; } if (i > start) { raw[offset] = 47; offset += 1; } offset = put(raw,offset,request.program); start = i+1; } i += 1; } }
     else { path_offsets.try_push(0).unwrap(); } assert(offset as u64 == total);
     return core::result::Ok(Prepared { bytes: bytes, pointers: pointers, paths: path_offsets, cwd: cwd, env_at: env_at });
 }
@@ -82,7 +96,7 @@ fn child_failure(fd: i32, stage: i32, errno: i32) {
     while (done < 16) { let n: i64 = std::command_raw::pointer(1,fd as i64,p+(done as usize),(16-done) as i64); if (n == -4) { continue; } if (n <= 0 || n > (16-done) as i64) { break; } done += n as i32; }
     std::command_raw::terminate();
 }
-fn child_exec(prepared: Prepared, fds: [i32], error_fd: i32, sigpipe: ChildSigpipe, group: Group) {
+fn child_exec(prepared: Prepared, fds: [i32], error_fd: i32, sigpipe: ChildSigpipe, mask: ChildMask, group: Group) {
     let new_group: bool = match(group) { Group::New -> true, _ -> false };
     if (new_group) { let grouped: i64 = std::command_raw::set_group(0,0); if (grouped != 0) { let errno: i32 = 5; if (grouped < 0) { errno = (0-grouped) as i32; } child_failure(error_fd,6,errno); } }
     let n: i64 = -4; while (n == -4) { n = std::command_raw::word(436,3,4294967295,4); } if (n < 0) { child_failure(error_fd,1,(0-n) as i32); }
@@ -90,6 +104,8 @@ fn child_exec(prepared: Prepared, fds: [i32], error_fd: i32, sigpipe: ChildSigpi
         if (fds[i] < 0) { n = std::command_raw::close(i) as i64; if (n < 0 && n != -9) { child_failure(error_fd,2,(0-n) as i32); } }
         else { n = -4; while (n == -4) { n = std::command_raw::word(292,fds[i] as i64,i as i64,0); } if (n < 0) { child_failure(error_fd,2,(0-n) as i32); } } i += 1;
     }
+    let clear: bool = match(mask) { ChildMask::Clear -> true, _ -> false };
+    if (clear) { let cleared = std::signal::set_mask(std::signal::empty()); if (cleared.is_err()) { let errno: i32 = match(cleared.unwrap_err()) { std::signal::Error::Host(code) -> code, _ -> 5 }; child_failure(error_fd,5,errno); } }
     let reset: bool = match(sigpipe) { ChildSigpipe::Default -> true, _ -> false };
     if (reset) { let changed = std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Default); if (changed.is_err()) { let error = changed.unwrap_err(); let errno: i32 = match(error) { core::io::Error::Host(code) -> code, core::io::Error::Interrupted -> 4, core::io::Error::WouldBlock -> 11, _ -> 5 }; child_failure(error_fd,5,errno); } }
     let base = core::mem::i32_slice_data_ptr(prepared.bytes.as_slice()); let pointers = core::mem::i32_slice_data_ptr(prepared.pointers.as_slice());
@@ -129,7 +145,7 @@ pub fn spawn(request: Request) -> core::result::Result<Spawn,Failure> {
     }
     let channel: [i32;2] = [-1;2]; let made: i32 = std::command_raw::make_pipe(channel); if (made < 0) { close_fds(child_fds); close_fds(parent_fds); prepared.destroy(); return core::result::Err(host(Stage::Descriptors,made as i64)); }
     let pid: i64 = std::command_raw::fork(); if (pid < 0) { close_fds(child_fds); close_fds(parent_fds); std::command_raw::close(channel[0]); std::command_raw::close(channel[1]); prepared.destroy(); return core::result::Err(host(Stage::Fork,pid)); }
-    if (pid == 0) { child_exec(prepared,child_fds,channel[1],request.sigpipe,request.group); std::command_raw::terminate(); }
+    if (pid == 0) { child_exec(prepared,child_fds,channel[1],request.sigpipe,request.signal_mask,request.group); std::command_raw::terminate(); }
     close_fds(child_fds); std::command_raw::close(channel[1]); prepared.destroy(); let child: Child = make_child(pid as i32,parent_fds,Startup::Unconfirmed,request.group);
     // Both sides establish the new group before relying on it. Parent EACCES
     // means exec won the race, but only an exact getpgid result confirms the
@@ -200,14 +216,26 @@ pub impl Child {
     // Observe terminal status without consuming it. Keep the unreaped leader
     // anchor for group cancellation while descendants still hold pipe ends.
     // cached remains exclusively the already-reaped status cache.
-    pub fn try_observe_exit(&self) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
+    pub fn try_observe_exit(&self) -> core::result::Result<core::option::Option<ExitStatus>,Failure> { return self.observe(false); }
+    // Blocking form: waitid(WEXITED|WNOWAIT) retried on EINTR, leaving the
+    // terminated child unreaped so its PID still names it (for example for a
+    // CPU-clock read) until wait/try_wait performs the final reap.
+    pub fn observe_exit(&self) -> core::result::Result<ExitStatus,Failure> {
+        let observed: core::result::Result<core::option::Option<ExitStatus>,Failure> = self.observe(true);
+        if (observed.is_err()) { return core::result::Err(observed.unwrap_err()); }
+        if (observed.unwrap().is_none()) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
+        return core::result::Ok(observed.unwrap().unwrap());
+    }
+    fn observe(&self, blocking: bool) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
         if (self.cached.is_some()) { return core::result::Ok(self.cached); }
         if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
         if (self.observed.is_some()) { return core::result::Ok(self.observed); }
         // Native Linux x86_64 siginfo_t: 128 bytes, child pid at byte16,
         // status at byte24, si_code at byte8. Initialize the no-event sentinel.
         let info: [i32;32] = [0;32];
-        let n: i64 = std::command_raw::observe_exit(self.pid,core::mem::i32_array_data_ptr(info));
+        let n: i64 = -4;
+        if (blocking) { while (n == -4) { n = std::command_raw::observe_exit_blocking(self.pid,core::mem::i32_array_data_ptr(info)); } }
+        else { n = std::command_raw::observe_exit(self.pid,core::mem::i32_array_data_ptr(info)); }
         if (n < 0) {
             if (n == -10) { self.pid = 0; self.group_confirmed = false; self.observed = core::option::None(); return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
             return core::result::Err(host(Stage::Wait,n));
@@ -237,6 +265,31 @@ pub impl Child {
         let input = self.take_stdin(); if (core::option::is_some(input)) { core::option::unwrap(input).close(); }
         if (core::option::is_some(self.cached)) { return core::result::Ok(core::option::unwrap(self.cached)); } if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
         let status: [i32;1] = [0;1]; let n = std::command_raw::wait(self.pid,core::mem::i32_array_data_ptr(status),false); let result = self.record_wait(n,status[0]); if (result.is_err()) { return core::result::Err(result.unwrap_err()); } return core::result::Ok(core::option::unwrap(result.unwrap()));
+    }
+    // wait4 with rusage. Usage exists only at the reap itself: after any other
+    // wait has cached the status these return AlreadyReaped. Blocking form
+    // closes still-owned stdin like wait() and retries EINTR. If the kernel
+    // usage record is malformed the status is still cached for wait().
+    pub fn wait_with_usage(&self) -> core::result::Result<Reaped,Failure> {
+        let input = self.take_stdin(); if (core::option::is_some(input)) { core::option::unwrap(input).close(); }
+        let reaped: core::result::Result<core::option::Option<Reaped>,Failure> = self.reap_with_usage(false);
+        if (reaped.is_err()) { return core::result::Err(reaped.unwrap_err()); }
+        if (reaped.unwrap().is_none()) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
+        return core::result::Ok(reaped.unwrap().unwrap());
+    }
+    // One wait4(WNOHANG) attempt; None while running, Host errno 4 on EINTR.
+    pub fn try_wait_with_usage(&self) -> core::result::Result<core::option::Option<Reaped>,Failure> { return self.reap_with_usage(true); }
+    fn reap_with_usage(&self, nonblocking: bool) -> core::result::Result<core::option::Option<Reaped>,Failure> {
+        if (self.cached.is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Wait,0)); }
+        if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
+        let status: [i32;1] = [0;1]; let words: [i32;36] = [0;36];
+        let n: i64 = std::command_raw::wait_usage(self.pid,core::mem::i32_array_data_ptr(status),core::mem::i32_array_data_ptr(words),nonblocking);
+        if (n == 0 && nonblocking) { return core::result::Ok(core::option::None()); }
+        let recorded: core::result::Result<core::option::Option<ExitStatus>,Failure> = self.record_wait(n,status[0]);
+        if (recorded.is_err()) { return core::result::Err(recorded.unwrap_err()); }
+        let decoded: core::option::Option<Usage> = decode_usage(words);
+        if (decoded.is_none()) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
+        return core::result::Ok(core::option::Some(Reaped { status: recorded.unwrap().unwrap(), usage: decoded.unwrap() }));
     }
     pub fn signal(&self, signal: i32) -> core::result::Result<i32,Failure> {
         if (signal < 0 || signal > 64) { return core::result::Err(failure(Error::InvalidInput,Stage::Signal,0)); } if (self.pid <= 0 || core::option::is_some(self.cached)) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
@@ -274,8 +327,34 @@ pub impl Child {
     }
 }
 
+fn long_at(words: [i32], index: i32) -> i64 { return (((words[2*index+1] as u32) as u64) << 32 | ((words[2*index] as u32) as u64)) as i64; }
+fn timeval(words: [i32], index: i32) -> core::option::Option<core::time::Duration> {
+    let seconds: i64 = long_at(words,index); let micros: i64 = long_at(words,index+1);
+    if (seconds < 0 || micros < 0 || micros >= 1000000) { return core::option::None(); }
+    return core::option::Some(core::time::Duration { seconds: seconds as u64, nanos: (micros * 1000) as u32 });
+}
+// struct rusage: two timevals, then fourteen longs (maxrss at long 4).
+fn decode_usage(words: [i32]) -> core::option::Option<Usage> {
+    let user: core::option::Option<core::time::Duration> = timeval(words,0); let system: core::option::Option<core::time::Duration> = timeval(words,2);
+    if (user.is_none() || system.is_none()) { return core::option::None(); }
+    let index: i32 = 4; while (index < 18) { if (long_at(words,index) < 0) { return core::option::None(); } index += 1; }
+    return core::option::Some(Usage { user: user.unwrap(), system: system.unwrap(), max_rss_kib: long_at(words,4) as u64, minor_faults: long_at(words,8) as u64, major_faults: long_at(words,9) as u64, block_input: long_at(words,11) as u64, block_output: long_at(words,12) as u64, voluntary_switches: long_at(words,16) as u64, involuntary_switches: long_at(words,17) as u64 });
+}
+// getrusage for this process, its waited-for descendants, or the calling thread.
+pub fn resource_usage(target: UsageTarget) -> core::result::Result<Usage,Failure> {
+    let who: i64 = match (target) { UsageTarget::Process -> 0, UsageTarget::Children -> -1, UsageTarget::Thread -> 1 };
+    let words: [i32;36] = [0;36]; let n: i64 = std::command_raw::usage(who,core::mem::i32_array_data_ptr(words));
+    if (n < 0) { return core::result::Err(host(Stage::Wait,n)); } if (n != 0) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
+    let decoded: core::option::Option<Usage> = decode_usage(words); if (decoded.is_none()) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
+    return core::result::Ok(decoded.unwrap());
+}
+pub impl Usage {
+    pub fn borrow(&self) -> &Usage { return self; }
+    // user + system; saturates only beyond the Duration range.
+    pub fn cpu(&self) -> core::time::Duration { return self.user.saturating_add(self.system); }
+}
 pub fn request(program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>) -> Request {
-    return Request { program: program, arguments: arguments, environment: environment, cwd: core::option::None(), search: Search::Exact, sigpipe: ChildSigpipe::Default, group: Group::Inherit, stdin: Stdio::Inherit, stdout: Stdio::Inherit, stderr: Stdio::Inherit, limits: default_limits() };
+    return Request { program: program, arguments: arguments, environment: environment, cwd: core::option::None(), search: Search::Exact, sigpipe: ChildSigpipe::Default, signal_mask: ChildMask::Clear, group: Group::Inherit, stdin: Stdio::Inherit, stdout: Stdio::Inherit, stderr: Stdio::Inherit, limits: default_limits() };
 }
 pub struct Environment { bytes: alloc::vec::Vec<i32>, values: alloc::vec::Vec<core::slice::View<u8>> }
 pub impl Environment {

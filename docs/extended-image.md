@@ -1,7 +1,12 @@
 # RGBA8 raster images
 
 `ext::image` provides owned images and borrowed rectangular views. Production
-code is Lanius. Executable tests establish GPU-compiled x86_64 Linux behavior.
+code is Lanius. Earlier executable tests establish GPU-compiled x86_64 Linux
+behavior for the operations in their recorded scope. The new
+[three-filter resize contract](extended-image-resize.md) passes all seven
+library groups and four PNG-tool groups/102 native cases, with separate
+current-source regressions and standalone examples. Earlier receipts retain
+their original operation scope.
 
 Pixels use four bytes in red, green, blue, alpha order. Alpha is straight
 (unassociated): transparent pixels can retain nonzero color channels. Rows run
@@ -14,6 +19,7 @@ assign a color space, apply gamma correction, or perform color management.
 Rgba { r: u8, g: u8, b: u8, a: u8 }
 View { bytes: core::slice::View<u8>, width: i32, height: i32, stride: i32 }
 Error = Dimensions | SizeOverflow | Bounds | AllocationFailed
+Filter = Nearest | Bilinear | Area
 
 byte_len(width, height) -> Result<i32, Error>
 new(width, height, fill: Rgba) -> Result<Image, Error>
@@ -34,6 +40,7 @@ fill(target: View, pixel: Rgba) -> Result<i32, Error>
 subview(source: View, x, y, width, height) -> Result<View, Error>
 crop(source: View, x, y, width, height) -> Result<Image, Error>
 rotate90(source: View) -> Result<Image, Error>
+resize(source: View, width: i32, height: i32, filter: Filter) -> Result<Image, Error>
 flip_horizontal(target: View) -> Result<i32, Error>
 flip_vertical(target: View) -> Result<i32, Error>
 blit(target: View, x, y, source: View) -> Result<i32, Error>
@@ -48,6 +55,14 @@ packed byte count and copies its input. `new`, `crop`, `rotate90`, and
 `try_clone` return independent packed owners. Rotation is 90 degrees clockwise.
 The flips mutate their target in place without allocating. Successful mutation
 functions return the affected pixel count.
+
+`resize` is the new addition to this API. It returns an independent packed
+owner after full source validation, destination-size admission and allocation.
+Nearest copies selected pixels; Bilinear and Area use exact alpha-weighted
+sampling, with a byte-preserving identity rule for every filter. The
+[resize guide](extended-image-resize.md) specifies coordinates, rounding,
+failure precedence and O(source + destination pixels) Area work with bounded
+tiled scratch.
 
 `subview` borrows a region while preserving the parent row stride. The full
 requested region must fit; there is no implicit clipping. `blit` and
@@ -87,9 +102,21 @@ bytes and preserve row padding and bytes outside the view.
 
 ## Verification
 
-`tests/extended_image_execution.rs` executes coordinate checks for every width
-and height from 1 through 7, crop independence, clockwise rotation, both flips,
+Historical `tests/extended_image_execution.rs` evidence covers coordinate
+checks for every width and height from 1 through 7, crop independence,
+clockwise rotation, both flips,
 overlapping blits, exact compositing examples, padded native byte arrays,
 selected views, invalid metadata, and size overflow. `strace` allocation
 denial checks every observed allocation in construction, crop, rotation, blit,
 and source-over, including target atomicity and destruction of prior owners.
+
+Both preexisting groups were rerun against image source `daad5347...` during
+the resize increment: two tests pass in 7.44 seconds, with a separate
+1.90-second Rust build, in `target/stdlib-work/image-resize-existing-image.log`.
+This current-source regression includes the five reached allocation denials
+for the original operations. It is separate from new resizing tests, whose
+[acceptance record](extended-image-resize.md#evidence-and-target-scope) includes
+four direct groups, the 626-case independent model and two resource/scale groups
+with reached output/scratch allocation failures and same-process recovery.
+Other hosts, device execution, enforced lifetimes and formal proofs require
+separate evidence.

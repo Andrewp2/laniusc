@@ -1,0 +1,112 @@
+// Parallel fixed-string grep: `parallel_grep PATTERN < input` prints, in
+// input order, every line of stdin (at most 64 MiB) that contains PATTERN,
+// like `grep -F -e PATTERN`. Exit 0 when a line matched, 1 when none did,
+// 2 on errors or a PATTERN containing a newline (grep -F would read that as
+// several patterns). Eight workers scan 64 KiB chunks with std::parallel::for_each;
+// a line belongs to the chunk holding its first byte and is marked in a
+// shared per-byte flag array, which the parent then prints sequentially.
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::search;
+import core::slice;
+import std::args;
+import std::io;
+import std::parallel;
+import std::sync;
+
+const MAX_INPUT: i64 = 67108864;
+
+struct Grep { input: ptr, length: i32, flags: ptr, chunks: ptr, pattern: core::slice::View<u8> }
+impl Grep { pub fn borrow(&self) -> &Grep { return self; } }
+
+pub impl std::parallel::ChunkBody for Grep {
+    // Search the chunk's lines with core::search: jump to each match, mark
+    // its line start, continue after that line. The window ends at the end
+    // of the line holding the chunk's last byte, so every match found here
+    // starts in a line that begins inside this chunk.
+    pub fn run(&self, start: i32, end: i32) -> i32 {
+        let text: [u8] = core::mem::typed_slice_from_raw_parts<u8>(self.input, self.length);
+        let marks: [u8] = core::mem::typed_slice_from_raw_parts<u8>(self.flags, self.length);
+        let s: i32 = start;
+        if (s > 0 && text[s - 1] != 10) {
+            let newline: i32 = core::search::find_byte(text, s, self.length, 10);
+            if (newline < 0 || newline >= end) { return 0; }
+            s = newline + 1;
+        }
+        if (s >= end) { return 0; }
+        let limit: i32 = core::search::find_byte(text, end - 1, self.length, 10);
+        if (limit < 0) { limit = self.length; }
+        let p: core::slice::View<u8> = self.pattern;
+        while (s < end) {
+            let hit: i32 = core::search::find(text, s, limit, p.values, p.start, p.length);
+            if (hit < 0) { return 0; }
+            let line: i32 = core::search::rfind_byte(text, s, hit, 10) + 1;
+            if (line == 0) { line = s; }
+            if (line >= end) { return 0; }
+            marks[line] = 1;
+            // Per-chunk summary, so the parent skips flag scans of quiet chunks.
+            let summary: [u8] = core::mem::typed_slice_from_raw_parts<u8>(self.chunks, self.length / 65536 + 1);
+            summary[start / 65536] = 1;
+            let after: i32 = core::search::find_byte(text, hit + p.length, self.length, 10);
+            if (after < 0) { return 0; }
+            s = after + 1;
+        }
+        return 0;
+    }
+}
+
+fn main() -> i32 {
+    let arguments: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 1, 65536);
+    if (arguments.is_err() || arguments.unwrap().len() != 1) { std::io::eprintln("usage: parallel_grep PATTERN < input"); return 2; }
+    let pattern: core::slice::View<u8> = arguments.unwrap().get(0).unwrap();
+    if (pattern.length > 0 && core::search::find_byte(pattern.values, pattern.start, pattern.start + pattern.length, 10) >= 0) {
+        std::io::eprintln("parallel_grep: PATTERN must be one line"); return 2;
+    }
+    let region: std::sync::Region = std::sync::map_shared((MAX_INPUT as usize) * 2 + 1048576).unwrap();
+    let data: ptr = region.allocate(MAX_INPUT as usize).unwrap();
+    let flags: ptr = region.allocate(MAX_INPUT as usize).unwrap();
+    let chunks: ptr = region.allocate(1025).unwrap();
+    let length: i64 = 0;
+    while (true) {
+        let got: i32 = std::io::read_stdin(data + (length as usize), (MAX_INPUT - length) as usize);
+        if (got < 0) { std::io::eprintln("parallel_grep: read failed"); return 2; }
+        if (got == 0) { break; }
+        length += got as i64;
+        if (length == MAX_INPUT) { std::io::eprintln("parallel_grep: input exceeds 64 MiB"); return 2; }
+    }
+    let grep: Grep = Grep { input: data, length: length as i32, flags: flags, chunks: chunks, pattern: pattern };
+    let plan: std::parallel::Plan = std::parallel::plan(region.borrow(), 8, 65536, std::sync::token(region.borrow()).unwrap()).unwrap();
+    if (std::parallel::for_each(plan, length as i32, grep.borrow()).is_err()) { std::io::eprintln("parallel_grep: worker failed"); return 2; }
+    // Print flagged lines in order, coalescing adjacent matches into one
+    // write. Flags are scanned eight bytes at a time with core::search.
+    let text: [u8] = core::mem::typed_slice_from_raw_parts<u8>(data, length as i32);
+    let marks: [u8] = core::mem::typed_slice_from_raw_parts<u8>(flags, length as i32);
+    let n: i32 = length as i32; let s: i32 = 0; let matched: bool = false;
+    let summary: [u8] = core::mem::typed_slice_from_raw_parts<u8>(chunks, n / 65536 + 1);
+    while (s < n) {
+        // Skip to the next chunk with a match before scanning its flags.
+        let quiet: i32 = s / 65536;
+        while (quiet <= n / 65536 && summary[quiet] == 0) { quiet += 1; }
+        if (quiet > n / 65536) { break; }
+        if (quiet * 65536 > s) { s = quiet * 65536; }
+        let window: i32 = (quiet + 1) * 65536; if (window > n) { window = n; }
+        let first: i32 = core::search::find_byte(marks, s, window, 1);
+        if (first < 0) { s = window; continue; }
+        matched = true;
+        // Extend the run over following lines while their starts are flagged.
+        let stop: i32 = first;
+        while (stop < n && marks[stop] == 1) {
+            let newline: i32 = core::search::find_byte(text, stop, n, 10);
+            if (newline < 0) { stop = n; } else { stop = newline + 1; }
+        }
+        std::io::write_stdout(data + (first as usize), (stop - first) as usize);
+        if (stop == n && text[n - 1] != 10) { std::io::write_newline(1); }
+        s = stop;
+    }
+    region.unmap();
+    if (matched) { return 0; }
+    return 1;
+}

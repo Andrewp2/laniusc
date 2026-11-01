@@ -1,0 +1,23 @@
+--- model.lani
++++ model.lani
+@@ -91,16 +91,15 @@
+         ext::form::Error::OutputLimit -> 9
+     };
+ }
+-fn error_amount(cause:ext::form::Error) -> u64 {
+-    return match(cause) { ext::form::Error::Capacity(required) -> required, _ -> 0 };
+-}
+ fn error(output:&Output,cause:ext::form::Error) {
+-    status(output,error_code(cause),error_amount(cause));
++    let amount:u64=match(cause) { ext::form::Error::Capacity(required) -> required, _ -> 0 };
++    status(output,error_code(cause),amount);
+ }
+ fn owned_error(output:&Output,cause:ext::form_owned::Error) {
+     let code:i32=match(cause) { ext::form_owned::Error::Format(format) -> error_code(format),
+         ext::form_owned::Error::AllocationFailed -> 10, ext::form_owned::Error::CapacityOverflow -> 11 };
+-    let amount:u64=match(cause) { ext::form_owned::Error::Format(format) -> error_amount(format), _ -> 0 };
++    let amount:u64=match(cause) { ext::form_owned::Error::Format(format) -> match(format) {
++        ext::form::Error::Capacity(required) -> required, _ -> 0 }, _ -> 0 };
+     status(output,code,amount);
+ }
+ fn blob(value:core::slice::View<u8>,output:&Output) {

@@ -1,0 +1,29 @@
+module app::main;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+import std::socket;
+fn close(stream:&std::socket::UnixStream) { stream.close().unwrap(); stream.close().unwrap(); assert(!stream.is_open()); }
+fn main() -> i32 {
+    let pair:std::socket::UnixPair=std::socket::unix_pair(true).unwrap();
+    let duplicate:std::socket::UnixStream=pair.first.try_clone().unwrap();
+    let original:i32=pair.first.raw_handle().unwrap(); let copied:i32=duplicate.raw_handle().unwrap();
+    assert(original!=copied && copied!=pair.second.raw_handle().unwrap());
+    let transferred:i32=pair.first.take_handle().unwrap(); assert(transferred==original && pair.first.take_handle().is_none());
+    close(pair.first.borrow());
+    let adopted:std::socket::UnixStream=std::socket::unix_from_owned_handle(transferred).unwrap();
+    adopted.set_nonblocking(false).unwrap();
+    assert(!duplicate.is_nonblocking().unwrap() && pair.second.is_nonblocking().unwrap());
+    duplicate.set_nonblocking(true).unwrap(); assert(adopted.is_nonblocking().unwrap());
+    close(adopted.borrow());
+    let source:[u8;4]=[211,0,255,211]; let destination:[u8;4]=[211;4];
+    assert(pair.second.send(core::slice::view_range<u8>(source,1,2).unwrap()).unwrap()==2);
+    assert(duplicate.receive(core::slice::view_range<u8>(destination,1,2).unwrap()).unwrap()==2);
+    assert(destination[0]==211 && destination[1]==0 && destination[2]==255 && destination[3]==211);
+    let next:i32=duplicate.take_handle().unwrap(); assert(next==copied && duplicate.raw_handle().is_none()); close(duplicate.borrow());
+    let final_owner:std::socket::UnixStream=std::socket::unix_from_owned_handle(next).unwrap();
+    final_owner.shutdown(std::socket::Shutdown::Write).unwrap();
+    assert(pair.second.receive(core::slice::view_range<u8>(destination,1,1).unwrap()).unwrap()==0 && destination[1]==0);
+    assert(final_owner.flush().unwrap()==0); close(final_owner.borrow()); close(pair.second.borrow()); return 0;
+}
