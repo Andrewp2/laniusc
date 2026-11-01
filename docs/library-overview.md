@@ -46,6 +46,12 @@ work on native Linux x86_64/glibc with libatomic:
   cleanly.
 - `std::parallel`: chunked `for_each`, `map`, ordered `reduce`, `scan` and
   stable `merge_sort` over shared arrays.
+- `std::par`: stable and unstable sorts, `map` and ordered `reduce` as
+  stolen tasks on a `std::steal` pool. The sorts sort runs with
+  `core::slice` pdqsort or the stable sort, then merge them in parallel at
+  merge-path splits. A Python model oracle covers 3,003 runs with 0
+  mismatches. On 10M i64 keys, 8 workers take 1.1–1.7 s, against 7.1–9.2 s
+  for single-threaded pdqsort.
 
 The stress fixture keeps exact invariants: 1,600,000 atomic adds; 400,000
 locked increments; 1 initializer among 16 racers; 200 barrier leaders; and
@@ -227,7 +233,10 @@ above, with its own evidence and remaining broader slice scope.
 The preceding
 [resumable decompression increment](extended-streaming-inflate.md) preserves
 DEFLATE bits, tables, history and pending output across chunks; zlib/gzip framing
-and owned decoding use the same engine. An atomic file decompressor validates
+and owned decoding use the same engine. Its
+[table-driven fast path](extended-streaming-inflate.md#table-driven-fast-path)
+(10-bit primary tables with subtables, a 64-bit bit buffer, word-wide copies)
+decodes gzip at 83–91 MB/s against 6–7 MB/s before. An atomic file decompressor validates
 complete input before publication. Fixed workspace, provisional output and
 per-call final-input promises are explicit. All seven new library tests pass,
 including 1,925 model cases plus 311 reset passes, fixed backing at 2 MiB and
@@ -2260,6 +2269,16 @@ sends fixed or chunked streamed bodies, stopping an upload on an early final
 response. The curl-like sample passes Python `http.server` oracle groups
 pool18, redirect29, upload10 and broken21, plus https17 against Python `ssl`
 origins with locally generated test certificates, with exact counters.
+Its `dial` opens an unpooled connection for protocols that take over after
+an HTTP/1.1 upgrade.
+
+The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
+uses `dial` for `ws://` and verified `wss://` URLs and the canonical
+`ext::websocket` frame engine in the client role. It validates the opening
+handshake against a fresh key, masks every frame, sends and assembles
+fragmented messages, answers Pings, runs both close handshakes and fails the
+connection with 1002/1007/1009. The `ws_cat` sample passes ws (24 cases) and
+wss (26 cases) groups against a minimal asyncio RFC 6455 server.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
@@ -2371,10 +2390,11 @@ Its structural writer emits the `ext::json` byte policy. The streaming
 `json` on 2,237 cases, and [csv-to-json](../sample_programs/csv_to_json.lani)
 agrees with Python `csv` on 550 RFC 4180 cases. `TokenReader` pulls tokens
 from any `core::io::Read` source, and `Writer.flush_to` streams output to any
-`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md) now
-tries Eisel-Lemire parsing and Grisu3 shortest formatting before its exact
-big-integer path. It agrees with Python `float()` and `repr()` on 4.8 million
-generated values, about 15 to 24 times faster on typical values.
+`core::io::Write` sink. [`core::float_decimal`](stdlib-float-decimal.md)
+formats shortest decimals with Schubfach, which is exact with no fallback, in
+about 0.6 to 0.8 µs per value. It parses with an Eisel-Lemire fast path
+before its exact big-integer path, in about 0.7 to 0.8 µs per value. It
+agrees with Python `float()` and `repr()` on 4.8 million generated values.
 [`ext::toml`](extended-toml.md) agrees with Python `tomllib` on 1,754
 hand-written, generated and mutated documents. The only differences are by
 policy: TOML 1.1-only syntax, and integers outside i64.
@@ -2426,7 +2446,9 @@ searches for the pattern's required literal with `core::search` across each
 64 KiB read and runs the matcher only on the records that contain it. On
 S4's 49 MB corpus a no-match scan takes 68 ms instead of 5.2 s, against GNU
 grep's 11 ms; patterns with a literal take 85–272 ms with `-c`
-([timings](extended-text-grep.md#literal-prefilter)).
+([timings](extended-text-grep.md#literal-prefilter)). Patterns without one
+run `Dfa.match_lines` over each whole block, restarting at every record, so
+`[0-9]+$` takes 0.54 s instead of 1.8 s.
 
 [Regex splitting and replacement](extended-regex-text.md) now reuse canonical
 Search with one lazily acquired workspace. Borrowed split fields, independent

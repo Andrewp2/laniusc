@@ -6,7 +6,8 @@ OLD is a build from before the 64 KiB buffer, literal prefilter and output
 buffer; NEW is the current build. Each case runs both on the same generated
 stdin and arguments and requires identical stdout, stderr and exit status.
 Inputs mix ASCII, two- to four-byte scalars, CR, NUL, invalid UTF-8, records
-longer than one 64 KiB read, and records that straddle reads; options mix
+longer than one 64 KiB read, records that straddle reads, and runs of
+thousands of short records (dense literal hits, whole-region DFA scans); options mix
 -v, -n, -c, small --max-line and small --max-work.
 """
 import random
@@ -14,22 +15,24 @@ import subprocess
 import sys
 
 PATTERNS = ["zz", "ab", "a", "é", "日本", "b+c", "^a", "a$", r"\bab\b", "x|ab", "[0-9]+",
-            "(?<=a)b", "(?<!b)a", "a.c", "", r"\d\d", "ab?c", "c", "abc|ab", r"\p{L}+é"]
+            "(?<=a)b", "(?<!b)a", "a.c", "", r"\d\d", "ab?c", "c", "abc|ab", r"\p{L}+é",
+            r"\x{d}$", r"\x{d}", r"^\s*$", "é$", r"[^a]$", r"\bb", "^$", r"[0-9]+$", r"b\w*c"]
 PIECES = ["a", "b", "c", "ab", "abc", "é", "日本", "🙂", " ", "1", "x", "zz", "\r", "\0"]
 
 
-def record(rng):
+def record(rng, bad):
     if rng.random() < 0.02:
         return b"a" * rng.randint(60000, 140000) + rng.choice([b"", b"ab", b"zz"])
     body = "".join(rng.choice(PIECES) for _ in range(rng.randint(0, 12))).encode()
-    if rng.random() < 0.008:
+    if rng.random() < bad:
         at = rng.randint(0, len(body))
         body = body[:at] + rng.choice([b"\xff", b"\x80", b"\xc3", b"\xe6\x97"]) + body[at:]
     return body
 
 
 def case(rng):
-    lines = [record(rng) for _ in range(rng.randint(0, 40))]
+    bad = rng.choice([0, 0.0005, 0.01])
+    lines = [record(rng, bad) for _ in range(rng.randint(0, rng.choice([40, 40, 3000])))]
     if rng.random() < 0.1:
         lines += [b"a" * 50] * rng.randint(1000, 3000)
     data = b"\n".join(lines) + (b"\n" if lines and rng.random() < 0.7 else b"")

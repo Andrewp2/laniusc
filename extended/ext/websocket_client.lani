@@ -1,0 +1,362 @@
+// RFC 6455 WebSocket client for ws:// and wss:// URLs. The connection comes
+// from ext::http_agent's connection layer (resolution, connect attempts and
+// verified TLS); the opening handshake, frames, fragmentation, UTF-8 and close
+// rules come from ext::websocket's frame code, with the client role. Every
+// outgoing frame is masked with a fresh key from the OS random source.
+module ext::websocket_client;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_agent;
+import ext::http_url;
+import ext::openssl_websocket;
+import ext::websocket;
+import std::clock;
+import std::entropy;
+
+// Rejected(status): the server answered the upgrade with another status.
+// Handshake(e): an invalid 101 response. Wire(e): the server broke the frame
+// protocol; the client sent Close 1002, 1007 or 1009 and closed. Eof: the
+// transport ended without a Close.
+pub enum Error {
+    InvalidRequest, BadUrl, Url(ext::http_url::ErrorKind), UnsupportedScheme,
+    Connect(ext::http_agent::Error), Rejected(i32), Handshake(ext::websocket::Error),
+    Io(ext::http_agent::Error), Timeout, Eof, Wire(ext::websocket::Error), Closed,
+    Entropy, AllocationFailed, Clock
+}
+pub enum Kind { Text, Binary, Ping, Pong, Close }
+// data borrows the client's message storage until the next receive or destroy.
+// close_code is -1 for a Close without a code, and for other kinds.
+pub struct Message { kind: Kind, data: core::slice::View<u8>, close_code: i32 }
+// agent: connection, TLS trust and URL options. timeout_ms bounds connecting
+// plus the handshake, and each send. close_ms bounds the wait for the peer's
+// Close and then for its transport close. protocols is empty or a
+// comma-separated token list; headers are extra request fields (for example
+// Origin or Authorization).
+pub struct Options {
+    agent: ext::http_agent::Options, wire: ext::websocket::Limits, timeout_ms: i32, close_ms: i32,
+    protocols: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>
+}
+// One manual owner; destroy it once.
+pub struct Client {
+    conn: ext::http_agent::Connection, wire: ext::websocket::Connection, options: Options,
+    input: alloc::vec::Vec<u8>, start: i32, filled: i32, eof: bool,
+    masks: alloc::vec::Vec<u8>, used: i32, protocol: alloc::vec::Vec<u8>, selected: bool,
+    peer_code: i32, active: bool, open: bool
+}
+
+const MASK_POOL: i32 = 256;
+const READ_BYTES: i32 = 16384;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn byte(v: core::slice::View<u8>, i: i32) -> u8 { return v.values[v.start+i]; }
+fn part(v: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return v.subview(start,end).unwrap(); }
+fn lower(c: u8) -> u8 { if (c >= 65 && c <= 90) { return c + 32; } return c; }
+fn prefixed(v: core::slice::View<u8>, s: str, n: i32) -> bool {
+    if (v.len() < n) { return false; } let w: core::slice::View<u8> = literal(s,n); let i: i32 = 0;
+    while (i < n) { if (lower(byte(v,i)) != byte(w,i)) { return false; } i += 1; } return true;
+}
+fn deadline_ms(ms: i32) -> core::result::Result<core::time::Deadline,Error> {
+    let now: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (now.is_err()) { return core::result::Err(Error::Clock); }
+    let shifted: core::result::Result<core::time::Deadline,core::time::Error> = core::time::deadline_after(now.unwrap(),core::time::from_millis(ms as u64));
+    if (shifted.is_err()) { return core::result::Err(Error::Clock); } return core::result::Ok(shifted.unwrap());
+}
+fn transport(e: ext::http_agent::Error) -> Error { return match(e) { ext::http_agent::Error::Timeout -> Error::Timeout, _ -> Error::Io(e) }; }
+
+pub fn default_options() -> Options {
+    let limits: ext::websocket::Limits = ext::websocket::default_limits();
+    let empty: alloc::vec::Vec<ext::http::Field> = alloc::vec::new<ext::http::Field>(); let none: core::slice::View<ext::http::Field> = empty.as_view();
+    return Options { agent: ext::http_agent::default_options(), wire: limits, timeout_ms: 30000, close_ms: 2000, protocols: literal("",0), headers: none };
+}
+
+// Index just past the head's blank line, or -1.
+fn head_end(v: core::slice::View<u8>) -> i32 {
+    let i: i32 = 3;
+    while (i < v.len()) { if (byte(v,i) == 10 && byte(v,i-1) == 13 && byte(v,i-2) == 10 && byte(v,i-3) == 13) { return i + 1; } i += 1; }
+    return -1;
+}
+// "HTTP/1.x NNN" status, or 0.
+fn status_of(v: core::slice::View<u8>) -> i32 {
+    if (v.len() < 12 || !prefixed(v,"http/1.",7)) { return 0; }
+    let n: i32 = 0; let i: i32 = 9;
+    while (i < 12) { let c: u8 = byte(v,i); if (c < 48 || c > 57) { return 0; } n = n * 10 + ((c - 48) as i32); i += 1; }
+    return n;
+}
+fn grow(v: &alloc::vec::Vec<u8>, filled: i32, cap: i32) -> bool {
+    if (v.len() - filled >= READ_BYTES) { return true; }
+    let target: i32 = filled + READ_BYTES; if (target < v.len() * 2) { target = v.len() * 2; }
+    if (target > cap) { target = cap; } if (target - filled < READ_BYTES) { return false; }
+    if (v.try_resize(target,0 as u8).is_err()) { return false; } return true;
+}
+fn fail_open(conn: &ext::http_agent::Connection, input: &alloc::vec::Vec<u8>, request: &alloc::vec::Vec<u8>, error: Error) -> core::result::Result<Client,Error> {
+    conn.close(false); input.destroy(); request.destroy(); return core::result::Err(error);
+}
+
+// Open a WebSocket to a ws:// or wss:// URL. A fragment is not allowed.
+pub fn connect(url: core::slice::View<u8>, options: Options) -> core::result::Result<Client,Error> {
+    if (options.timeout_ms <= 0 || options.close_ms < 0 || options.wire.frame_bytes <= 0 || options.wire.frame_bytes > 536870912) { return core::result::Err(Error::InvalidRequest); }
+    let i: i32 = 0; while (i < url.len()) { if (byte(url,i) == 35) { return core::result::Err(Error::BadUrl); } i += 1; }
+    let http: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let ok: bool = true;
+    if (prefixed(url,"wss://",6)) { ok = http.try_extend(literal("https",5)).is_ok() && http.try_extend(part(url,3,url.len())).is_ok(); }
+    else {
+        if (prefixed(url,"ws://",5)) { ok = http.try_extend(literal("http",4)).is_ok() && http.try_extend(part(url,2,url.len())).is_ok(); }
+        else { http.destroy(); return core::result::Err(Error::UnsupportedScheme); }
+    }
+    if (!ok) { http.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let parsed: core::result::Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(http.as_view(),options.agent.url); http.destroy();
+    if (parsed.is_err()) { return core::result::Err(Error::Url(parsed.unwrap_err().kind)); }
+    let u: ext::http_url::Url = parsed.unwrap();
+    let made: core::result::Result<ext::http_agent::Agent,ext::http_agent::Error> = ext::http_agent::agent(options.agent);
+    if (made.is_err()) { u.destroy(); return core::result::Err(Error::InvalidRequest); }
+    let agent: ext::http_agent::Agent = made.unwrap();
+    let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(options.timeout_ms);
+    if (deadline.is_err()) { agent.close(); u.destroy(); return core::result::Err(deadline.unwrap_err()); }
+    let dialed: core::result::Result<ext::http_agent::Connection,ext::http_agent::Error> = agent.dial(u.borrow(),deadline.unwrap());
+    // The TLS session keeps its own reference to the agent's context.
+    agent.close();
+    if (dialed.is_err()) { u.destroy(); return core::result::Err(Error::Connect(dialed.unwrap_err())); }
+    let conn: ext::http_agent::Connection = dialed.unwrap();
+    let result: core::result::Result<Client,Error> = handshake(conn,u.borrow(),options,deadline.unwrap());
+    u.destroy(); return result;
+}
+
+fn handshake(conn: ext::http_agent::Connection, u: &ext::http_url::Url, options: Options, deadline: core::time::Deadline) -> core::result::Result<Client,Error> {
+    let input: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let request: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let nonce: [u8;16] = [0;16];
+    if (std::entropy::fill(nonce,0,16).is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Entropy); }
+    let start: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let fields: alloc::vec::Vec<ext::http::Field> = alloc::vec::new<ext::http::Field>();
+    let staged: bool = start.try_extend(literal("GET ",4)).is_ok() && start.try_extend(u.target().unwrap()).is_ok() && start.try_extend(literal(" HTTP/1.1",9)).is_ok()
+        && fields.try_push(ext::http::Field { raw: literal("",0), name: literal("Host",4), value: u.authority().unwrap(), offset: 0 }).is_ok()
+        && fields.try_extend(options.headers).is_ok();
+    if (!staged) { start.destroy(); fields.destroy(); return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::AllocationFailed); }
+    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = ext::websocket::encode_request(start.as_view(),fields.as_view(),core::slice::view<u8>(nonce,16).unwrap(),options.protocols,options.wire);
+    start.destroy(); fields.destroy();
+    if (encoded.is_err()) {
+        let e: Error = match(encoded.unwrap_err()) { ext::websocket::Error::AllocationFailed -> Error::AllocationFailed, _ -> Error::InvalidRequest };
+        return fail_open(conn.borrow(),input.borrow(),request.borrow(),e);
+    }
+    request.destroy(); request = encoded.unwrap();
+    let key: [u8;24] = [0;24]; let accept: [u8;28] = [0;28];
+    if (ext::websocket::key_into(core::slice::view<u8>(nonce,16).unwrap(),core::slice::view<u8>(key,24).unwrap()).is_err()
+        || ext::openssl_websocket::accept_into(core::slice::view<u8>(key,24).unwrap(),core::slice::view<u8>(accept,28).unwrap()).is_err()) {
+        return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Handshake(ext::websocket::Error::Handshake));
+    }
+    let sent: core::result::Result<i32,ext::http_agent::Error> = conn.borrow().send(request.as_view(),deadline);
+    if (sent.is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),transport(sent.unwrap_err())); }
+    // Read until the response head ends; later bytes are already frames.
+    let cap: i32 = options.wire.http.head_bytes + READ_BYTES; let filled: i32 = 0; let end: i32 = -1;
+    while (end < 0) {
+        if (!grow(input.borrow(),filled,cap)) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Handshake(ext::websocket::Error::Limit(filled))); }
+        let got: core::result::Result<i32,ext::http_agent::Error> = conn.borrow().receive(part(input.as_view(),filled,input.len()),deadline);
+        if (got.is_err()) {
+            let e: Error = match(got.unwrap_err()) { ext::http_agent::Error::Truncated(n) -> Error::Eof, _ -> transport(got.unwrap_err()) };
+            return fail_open(conn.borrow(),input.borrow(),request.borrow(),e);
+        }
+        if (got.unwrap() == 0) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Eof); }
+        let from: i32 = filled - 3; if (from < 0) { from = 0; }
+        filled += got.unwrap();
+        let found: i32 = head_end(part(input.as_view(),from,filled)); if (found >= 0) { end = from + found; }
+        if (end < 0 && filled > options.wire.http.head_bytes) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Handshake(ext::websocket::Error::Limit(filled))); }
+    }
+    let status: i32 = status_of(part(input.as_view(),0,end));
+    if (status != 101) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Rejected(status)); }
+    let req: core::result::Result<ext::websocket::Request,ext::websocket::Error> = ext::websocket::validate_request(request.as_view(),options.wire);
+    if (req.is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Handshake(req.unwrap_err())); }
+    let checked: core::result::Result<ext::websocket::Response,ext::websocket::Error> = ext::websocket::validate_response(part(input.as_view(),0,filled),req.unwrap(),core::slice::view<u8>(accept,28).unwrap(),options.wire);
+    if (checked.is_err()) { return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::Handshake(checked.unwrap_err())); }
+    let response: ext::websocket::Response = checked.unwrap();
+    let protocol: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); let selected: bool = response.protocol.is_some();
+    let masks: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let wire: core::result::Result<ext::websocket::Connection,ext::websocket::Error> = ext::websocket::connection(ext::websocket::Role::Client,options.wire);
+    if (wire.is_err() || (selected && protocol.try_extend(response.protocol.unwrap()).is_err()) || masks.try_resize(MASK_POOL,0 as u8).is_err()) {
+        protocol.destroy(); masks.destroy(); if (wire.is_ok()) { let w: ext::websocket::Connection = wire.unwrap(); w.destroy(); }
+        return fail_open(conn.borrow(),input.borrow(),request.borrow(),Error::AllocationFailed);
+    }
+    let head: i32 = response.head.raw.len(); request.destroy();
+    return core::result::Ok(Client { conn: conn, wire: wire.unwrap(), options: options, input: input, start: head, filled: filled, eof: false,
+        masks: masks, used: MASK_POOL, protocol: protocol, selected: selected, peer_code: -1, active: true, open: true });
+}
+
+pub impl Client {
+    pub fn borrow(&self) -> &Client { return self; }
+    // The subprotocol the server selected, if any.
+    pub fn protocol(&self) -> core::option::Option<core::slice::View<u8>> {
+        if (!self.selected) { return core::option::None(); } return core::option::Some(self.protocol.as_view());
+    }
+    // Open: neither side has started the close handshake and nothing failed.
+    pub fn is_open(&self) -> bool { return self.active && self.open && !self.wire.close_sent() && !self.wire.close_received(); }
+    pub fn is_secure(&self) -> bool { return self.conn.is_secure(); }
+    // The code from the peer's Close (-1 if none or no code).
+    pub fn peer_close_code(&self) -> i32 { return self.peer_code; }
+    fn mask(&self) -> core::result::Result<[u8;4],Error> {
+        if (self.used + 4 > MASK_POOL) {
+            let pool: core::slice::View<u8> = self.masks.as_view();
+            if (std::entropy::fill(pool.values,pool.start,MASK_POOL).is_err()) { return core::result::Err(Error::Entropy); }
+            self.used = 0;
+        }
+        let key: [u8;4] = [0;4]; let pool: core::slice::View<u8> = self.masks.as_view(); let i: i32 = 0;
+        while (i < 4) { let b: u8 = byte(pool,self.used + i); key[i] = b; i += 1; }
+        self.used += 4; return core::result::Ok(key);
+    }
+    // Stop using the transport. graceful sends TLS close_notify first.
+    fn drop_transport(&self, graceful: bool) { if (self.open) { self.open = false; self.conn.close(graceful); } }
+    fn transmit(&self, fin: bool, opcode: i32, payload: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!self.active || !self.open) { return core::result::Err(Error::Closed); }
+        let key: core::result::Result<[u8;4],Error> = self.mask(); if (key.is_err()) { return core::result::Err(key.unwrap_err()); }
+        let framed: core::result::Result<alloc::vec::Vec<u8>,ext::websocket::Error> = self.wire.send(fin,opcode,payload,key.unwrap());
+        if (framed.is_err()) {
+            return core::result::Err(match(framed.unwrap_err()) {
+                ext::websocket::Error::Closed -> Error::Closed, ext::websocket::Error::Failed -> Error::Closed,
+                ext::websocket::Error::AllocationFailed -> Error::AllocationFailed, _ -> Error::InvalidRequest
+            });
+        }
+        let frame: alloc::vec::Vec<u8> = framed.unwrap();
+        let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.timeout_ms);
+        if (deadline.is_err()) { frame.destroy(); return core::result::Err(deadline.unwrap_err()); }
+        let sent: core::result::Result<i32,ext::http_agent::Error> = self.conn.send(frame.as_view(),deadline.unwrap());
+        let length: i32 = frame.len(); frame.destroy();
+        if (sent.is_err()) { self.drop_transport(false); return core::result::Err(transport(sent.unwrap_err())); }
+        return core::result::Ok(length);
+    }
+    // One whole message.
+    pub fn send_text(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.transmit(true,1,data); }
+    pub fn send_binary(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.transmit(true,2,data); }
+    // One fragment: opcode 1 or 2 starts a message, 0 continues it; fin ends it.
+    // Controls may be sent between fragments.
+    pub fn send_fragment(&self, fin: bool, opcode: i32, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (opcode != 0 && opcode != 1 && opcode != 2) { return core::result::Err(Error::InvalidRequest); }
+        return self.transmit(fin,opcode,data);
+    }
+    // At most 125 payload bytes; the reply arrives as a Pong message.
+    pub fn ping(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.transmit(true,9,data); }
+    pub fn pong(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> { return self.transmit(true,10,data); }
+
+    // After both Close frames: wait up to close_ms for the server to close the
+    // transport, as RFC 6455 asks of clients, then close it.
+    fn finish(&self) {
+        if (!self.open) { return; }
+        let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.close_ms);
+        let rounds: i32 = 0;
+        while (deadline.is_ok() && !self.eof && rounds < 64) {
+            rounds += 1; self.start = 0; self.filled = 0;
+            if (!grow(self.input.borrow(),0,READ_BYTES * 2)) { break; }
+            let got: core::result::Result<i32,ext::http_agent::Error> = self.conn.receive(part(self.input.as_view(),0,self.input.len()),deadline.unwrap());
+            if (got.is_err() || got.unwrap() == 0) { self.eof = true; }
+        }
+        self.drop_transport(true);
+    }
+    // The connection failed: send the matching Close if possible, then close.
+    fn fail(&self, e: ext::websocket::Error) -> Error {
+        let code: i32 = match(e) { ext::websocket::Error::InvalidUtf8(n) -> 1007, ext::websocket::Error::Limit(n) -> 1009, _ -> 1002 };
+        if (self.open && !self.wire.close_sent()) {
+            let payload: [u8;2] = [(code >> 8) as u8,(code & 255) as u8];
+            self.transmit(true,8,core::slice::view<u8>(payload,2).unwrap());
+        }
+        self.drop_transport(false); return Error::Wire(e);
+    }
+
+    // The next message, waiting at most timeout_ms. Pings are answered with
+    // a Pong before they are returned. A peer Close is answered (once), the
+    // transport is closed, and Close is returned. Timeout leaves the client
+    // usable.
+    pub fn receive(&self, timeout_ms: i32) -> core::result::Result<Message,Error> {
+        if (!self.active) { return core::result::Err(Error::Closed); }
+        if (self.wire.close_received()) { return core::result::Err(Error::Closed); }
+        let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(timeout_ms);
+        if (deadline.is_err()) { return core::result::Err(deadline.unwrap_err()); }
+        while (true) {
+            if (self.start < self.filled) {
+                let stepped: core::result::Result<ext::websocket::Step,ext::websocket::Error> = self.wire.receive(part(self.input.as_view(),self.start,self.filled));
+                let incomplete: bool = stepped.is_err() && match(stepped.unwrap_err()) { ext::websocket::Error::Incomplete(n) -> true, _ -> false };
+                if (stepped.is_err() && !incomplete) { return core::result::Err(self.fail(stepped.unwrap_err())); }
+                if (!incomplete) {
+                    let step: ext::websocket::Step = stepped.unwrap(); self.start += step.consumed;
+                    let kind: i32 = match(step.event) {
+                        ext::websocket::Event::Pending -> 0, ext::websocket::Event::Text -> 1, ext::websocket::Event::Binary -> 2,
+                        ext::websocket::Event::Ping -> 9, ext::websocket::Event::Pong -> 10, ext::websocket::Event::Close -> 8
+                    };
+                    if (kind == 1) { return core::result::Ok(Message { kind: Kind::Text, data: step.payload, close_code: -1 }); }
+                    if (kind == 2) { return core::result::Ok(Message { kind: Kind::Binary, data: step.payload, close_code: -1 }); }
+                    if (kind == 10) { return core::result::Ok(Message { kind: Kind::Pong, data: step.payload, close_code: -1 }); }
+                    if (kind == 9) {
+                        if (!self.wire.close_sent()) {
+                            let answered: core::result::Result<i32,Error> = self.transmit(true,10,step.payload);
+                            if (answered.is_err()) { return core::result::Err(answered.unwrap_err()); }
+                        }
+                        return core::result::Ok(Message { kind: Kind::Ping, data: step.payload, close_code: -1 });
+                    }
+                    if (kind == 8) {
+                        self.peer_code = step.close_code;
+                        if (!self.wire.close_sent()) {
+                            // Echo the status code, without the reason.
+                            let reply: core::slice::View<u8> = part(step.payload,0,0); if (step.payload.len() >= 2) { reply = part(step.payload,0,2); }
+                            self.transmit(true,8,reply);
+                        }
+                        self.finish();
+                        return core::result::Ok(Message { kind: Kind::Close, data: step.payload, close_code: step.close_code });
+                    }
+                    continue;
+                }
+            }
+            if (self.eof) {
+                let ended: core::result::Result<i32,ext::websocket::Error> = self.wire.finish_receive();
+                self.drop_transport(false);
+                if (ended.is_err()) { return core::result::Err(Error::Eof); } return core::result::Err(Error::Closed);
+            }
+            if (!self.open) { return core::result::Err(Error::Closed); }
+            // Compact, then read more.
+            if (self.start > 0) {
+                let all: core::slice::View<u8> = self.input.as_view(); let n: i32 = self.filled - self.start; let k: i32 = 0;
+                while (k < n) { all.values[all.start+k] = all.values[all.start+self.start+k]; k += 1; }
+                self.filled = n; self.start = 0;
+            }
+            let cap: i32 = self.options.wire.frame_bytes + 14 + READ_BYTES;
+            if (!grow(self.input.borrow(),self.filled,cap)) { return core::result::Err(self.fail(ext::websocket::Error::Limit(self.filled))); }
+            let got: core::result::Result<i32,ext::http_agent::Error> = self.conn.receive(part(self.input.as_view(),self.filled,self.input.len()),deadline.unwrap());
+            if (got.is_err()) {
+                let e: ext::http_agent::Error = got.unwrap_err();
+                let ended: bool = match(e) { ext::http_agent::Error::Truncated(n) -> true, _ -> false };
+                if (ended) { self.eof = true; continue; }
+                let late: bool = match(e) { ext::http_agent::Error::Timeout -> true, _ -> false };
+                if (late) { return core::result::Err(Error::Timeout); }
+                self.drop_transport(false); return core::result::Err(Error::Io(e));
+            }
+            if (got.unwrap() == 0) { self.eof = true; } else { self.filled += got.unwrap(); }
+        }
+        return core::result::Err(Error::Closed);
+    }
+
+    // Start the close handshake with code (or no code when code < 0) and a
+    // UTF-8 reason, then wait up to close_ms for the peer's Close, answering
+    // Pings and discarding data. Returns the peer's close code.
+    pub fn close(&self, code: i32, reason: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (!self.active || !self.open) { return core::result::Err(Error::Closed); }
+        if (code >= 0 && reason.len() > 123) { return core::result::Err(Error::InvalidRequest); }
+        let payload: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        if (code >= 0) {
+            if (payload.try_push((code >> 8) as u8).is_err() || payload.try_push((code & 255) as u8).is_err() || payload.try_extend(reason).is_err()) { payload.destroy(); return core::result::Err(Error::AllocationFailed); }
+        }
+        let sent: core::result::Result<i32,Error> = self.transmit(true,8,payload.as_view()); payload.destroy();
+        if (sent.is_err()) { return core::result::Err(sent.unwrap_err()); }
+        let rounds: i32 = 0;
+        while (rounds < 1000000) {
+            rounds += 1;
+            let got: core::result::Result<Message,Error> = self.receive(self.options.close_ms);
+            if (got.is_err()) { self.drop_transport(false); return core::result::Err(got.unwrap_err()); }
+            let closed: bool = match(got.unwrap().kind) { Kind::Close -> true, _ -> false };
+            if (closed) { return core::result::Ok(self.peer_code); }
+        }
+        self.drop_transport(false); return core::result::Err(Error::Timeout);
+    }
+    // Release everything; an open transport is closed without a Close frame.
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; } self.active = false;
+        self.drop_transport(false); self.wire.destroy(); self.input.destroy(); self.masks.destroy(); self.protocol.destroy();
+        return true;
+    }
+}

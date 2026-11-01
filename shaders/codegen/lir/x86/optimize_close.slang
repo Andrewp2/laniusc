@@ -65,6 +65,19 @@ void admit(uint value, uint position, uint total, uint function_id)
         x86_liveness_work_state, x86_liveness_work_queue, required);
 }
 
+bool fusible_comparison(uint row, uint total, uint function_id)
+{
+    if (!opt_ir_node_is_executable(row, total) ||
+        function_for_node(row) != function_id) return false;
+    OptIrNodeCore core = opt_ir_core[row];
+    uint type_id = core.type_id;
+    // Integer, Boolean, char and pointer operands; COMPARE_BRANCH_FALSE has a
+    // one-word body for each (see plan_compare and plan_specialized).
+    return opt_ir_op(core) == SEMANTIC_LIR_OP_COMPARE &&
+        type_id >= 2u && type_id <= 17u && type_id != 5u &&
+        type_id != 7u && type_id != 15u;
+}
+
 void admit_dependencies(uint row, uint total)
 {
     if (!opt_ir_node_is_executable(row, total)) return;
@@ -128,7 +141,20 @@ void admit_dependencies(uint row, uint total)
     }
     else if (op == SEMANTIC_LIR_OP_IF_BEGIN ||
              op == SEMANTIC_LIR_OP_BRANCH_IF)
-        admit(operands.a, position, total, function_id);
+    {
+        // A scalar comparison read only by this branch stays dead, so scatter
+        // fuses it into the branch (COMPARE_BRANCH_FALSE: cmp; jcc) instead of
+        // materializing a Boolean with setcc and testing it. The branch then
+        // reads the comparison's operands itself.
+        uint condition = operands.a;
+        if (fusible_comparison(condition, total, function_id))
+        {
+            OptIrNodeOperands comparison = opt_ir_operands[condition];
+            admit(comparison.a, position, total, function_id);
+            admit(comparison.b, position, total, function_id);
+        }
+        else admit(condition, position, total, function_id);
+    }
 
     uint source_hir = opt_ir_source_hir[row];
     if (semantic_lir_is_call(op) && source_hir < gParams.function_capacity)

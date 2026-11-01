@@ -8660,6 +8660,16 @@ fn lowering_compiler_graph_builder(
                     "x86_register_analysis_by_function",
                     x86_register_analysis_by_function.unwrap(),
                 ),
+                PassAccess::read(
+                    "x86_position_by_semantic",
+                    x86_position_by_semantic.unwrap(),
+                ),
+                PassAccess::read("x86_function_start", x86_function_start.unwrap()),
+                PassAccess::read("x86_function_end", x86_function_end.unwrap()),
+                PassAccess::read("semantic_lir_param_total", semantic_param_total),
+                PassAccess::read("semantic_lir_params", semantic_params),
+                PassAccess::read("semantic_lir_local_total", semantic_local_total),
+                PassAccess::read("semantic_lir_locals", semantic_locals),
                 PassAccess::read_write(
                     "x86_location_by_semantic",
                     x86_location_by_semantic.unwrap(),
@@ -8667,6 +8677,10 @@ fn lowering_compiler_graph_builder(
                 PassAccess::write(
                     "x86_stack_words_by_position",
                     x86_stack_words_by_position.unwrap(),
+                ),
+                PassAccess::read_write(
+                    "x86_saved_gpr_mask_by_function",
+                    x86_saved_gpr_mask_by_function.expect("x86 saved-register resource"),
                 ),
             ],
         })?;

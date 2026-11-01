@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Synchronous HTTP/1.1 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters.
+Synchronous HTTP/1.1 client for http:// and verified https:// over ext::http framing, ext::http_url, ext::url_connect and ext::tls_stream: a keep-alive pool of cleartext and TLS connections keyed by scheme, host and port with per-host/total idle counts, idle time, Keep-Alive hints and use limits, stale probing and one idempotent retry; redirects with a hop limit, 303/301/302/307/308 method rules, RFC 3986 reference resolution and cross-origin Authorization/Cookie stripping; fixed or chunked streamed bodies with early-response handling; unpooled dial connections for HTTP/1.1 upgrades. The curl-like sample passes five oracle groups (pool 18, redirect 29, upload 10, broken 21, https 17 cases against Python ssl origins with locally generated certificates) with exact counters.
 
 ## Contract and evidence guides
 
@@ -17,7 +17,7 @@ Synchronous HTTP/1.1 client for http:// and verified https:// over ext::http fra
 - [extended-url-client](../../extended-url-client.md)
 - [extended-openssl-tls](../../extended-openssl-tls.md)
 
-Declaration counts: enum: 1; field: 51; function: 4; impl: 2; method: 14; struct: 5; variant: 18.
+Declaration counts: enum: 1; field: 53; function: 4; impl: 3; method: 21; struct: 6; variant: 18.
 
 ## Declared imports
 
@@ -644,6 +644,30 @@ hint_ms: i32
 active: bool
 ```
 
+### struct: Connection
+
+[Source line 674](../../../extended/ext/http_agent.lani#L674)
+
+```lanius
+pub struct Connection
+```
+
+#### field: conn
+
+[Source line 674](../../../extended/ext/http_agent.lani#L674)
+
+```lanius
+conn: Conn
+```
+
+#### field: active
+
+[Source line 674](../../../extended/ext/http_agent.lani#L674)
+
+```lanius
+active: bool
+```
+
 ## Free functions and extern declarations
 
 ### function: default_options
@@ -728,9 +752,17 @@ pub fn fetch(&self, request: Request) -> core::result::Result<Response,Error>
 pub fn preconnect(&self, url: core::slice::View<u8>, count: i32) -> core::result::Result<i32,Error>
 ```
 
-#### method: clear
+#### method: dial
 
 [Source line 653](../../../extended/ext/http_agent.lani#L653)
+
+```lanius
+pub fn dial(&self, url: &ext::http_url::Url, deadline: core::time::Deadline) -> core::result::Result<Connection,Error>
+```
+
+#### method: clear
+
+[Source line 661](../../../extended/ext/http_agent.lani#L661)
 
 ```lanius
 pub fn clear(&self) -> i32
@@ -738,15 +770,71 @@ pub fn clear(&self) -> i32
 
 #### method: close
 
-[Source line 654](../../../extended/ext/http_agent.lani#L654)
+[Source line 662](../../../extended/ext/http_agent.lani#L662)
 
 ```lanius
 pub fn close(&self) -> bool
 ```
 
-### impl at line 661
+### impl at line 675
 
-[Source line 661](../../../extended/ext/http_agent.lani#L661)
+[Source line 675](../../../extended/ext/http_agent.lani#L675)
+
+```lanius
+pub impl Connection
+```
+
+#### method: borrow
+
+[Source line 676](../../../extended/ext/http_agent.lani#L676)
+
+```lanius
+pub fn borrow(&self) -> &Connection
+```
+
+#### method: is_secure
+
+[Source line 677](../../../extended/ext/http_agent.lani#L677)
+
+```lanius
+pub fn is_secure(&self) -> bool
+```
+
+#### method: is_open
+
+[Source line 678](../../../extended/ext/http_agent.lani#L678)
+
+```lanius
+pub fn is_open(&self) -> bool
+```
+
+#### method: send
+
+[Source line 688](../../../extended/ext/http_agent.lani#L688)
+
+```lanius
+pub fn send(&self, data: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,Error>
+```
+
+#### method: receive
+
+[Source line 697](../../../extended/ext/http_agent.lani#L697)
+
+```lanius
+pub fn receive(&self, space: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,Error>
+```
+
+#### method: close
+
+[Source line 724](../../../extended/ext/http_agent.lani#L724)
+
+```lanius
+pub fn close(&self, graceful: bool) -> bool
+```
+
+### impl at line 732
+
+[Source line 732](../../../extended/ext/http_agent.lani#L732)
 
 ```lanius
 pub impl Response
@@ -754,7 +842,7 @@ pub impl Response
 
 #### method: borrow
 
-[Source line 662](../../../extended/ext/http_agent.lani#L662)
+[Source line 733](../../../extended/ext/http_agent.lani#L733)
 
 ```lanius
 pub fn borrow(&self) -> &Response
@@ -762,7 +850,7 @@ pub fn borrow(&self) -> &Response
 
 #### method: status
 
-[Source line 663](../../../extended/ext/http_agent.lani#L663)
+[Source line 734](../../../extended/ext/http_agent.lani#L734)
 
 ```lanius
 pub fn status(&self) -> i32
@@ -770,7 +858,7 @@ pub fn status(&self) -> i32
 
 #### method: body
 
-[Source line 664](../../../extended/ext/http_agent.lani#L664)
+[Source line 735](../../../extended/ext/http_agent.lani#L735)
 
 ```lanius
 pub fn body(&self) -> core::slice::View<u8>
@@ -778,7 +866,7 @@ pub fn body(&self) -> core::slice::View<u8>
 
 #### method: head
 
-[Source line 665](../../../extended/ext/http_agent.lani#L665)
+[Source line 736](../../../extended/ext/http_agent.lani#L736)
 
 ```lanius
 pub fn head(&self) -> core::slice::View<u8>
@@ -786,7 +874,7 @@ pub fn head(&self) -> core::slice::View<u8>
 
 #### method: url
 
-[Source line 666](../../../extended/ext/http_agent.lani#L666)
+[Source line 737](../../../extended/ext/http_agent.lani#L737)
 
 ```lanius
 pub fn url(&self) -> core::slice::View<u8>
@@ -794,7 +882,7 @@ pub fn url(&self) -> core::slice::View<u8>
 
 #### method: header
 
-[Source line 667](../../../extended/ext/http_agent.lani#L667)
+[Source line 738](../../../extended/ext/http_agent.lani#L738)
 
 ```lanius
 pub fn header(&self, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>>
@@ -802,7 +890,7 @@ pub fn header(&self, name: core::slice::View<u8>) -> core::option::Option<core::
 
 #### method: destroy
 
-[Source line 673](../../../extended/ext/http_agent.lani#L673)
+[Source line 744](../../../extended/ext/http_agent.lani#L744)
 
 ```lanius
 pub fn destroy(&self) -> bool

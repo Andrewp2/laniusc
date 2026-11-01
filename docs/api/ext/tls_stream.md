@@ -19,7 +19,7 @@ Buffered client/server TLS streams use OpenSSL 3 on Linux x86_64. connect_with_c
 - [extended-openssl-mutual-tls](../../extended-openssl-mutual-tls.md)
 - [extended-https-mutual-tls](../../extended-https-mutual-tls.md)
 
-Declaration counts: enum: 2; field: 23; function: 5; impl: 3; method: 12; struct: 4; variant: 20.
+Declaration counts: enum: 2; field: 23; function: 5; impl: 4; method: 14; struct: 4; variant: 20.
 
 ## Declared imports
 
@@ -581,12 +581,36 @@ pub fn read(&self, output: [u8], offset: i32, count: i32) -> core::result::Resul
 [Source line 390](../../../extended/ext/tls_stream.lani#L390)
 
 ```lanius
+pub impl Stream
+```
+
+#### method: try_read
+
+[Source line 395](../../../extended/ext/tls_stream.lani#L395)
+
+```lanius
+pub fn try_read(&self, output: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error>
+```
+
+#### method: wants_write
+
+[Source line 423](../../../extended/ext/tls_stream.lani#L423)
+
+```lanius
+pub fn wants_write(&self) -> bool
+```
+
+### impl at line 425
+
+[Source line 425](../../../extended/ext/tls_stream.lani#L425)
+
+```lanius
 pub impl core::io::Write for Stream
 ```
 
 #### method: write
 
-[Source line 393](../../../extended/ext/tls_stream.lani#L393)
+[Source line 428](../../../extended/ext/tls_stream.lani#L428)
 
 ```lanius
 pub fn write(&self, input: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error>
@@ -594,7 +618,7 @@ pub fn write(&self, input: [u8], offset: i32, count: i32) -> core::result::Resul
 
 #### method: flush
 
-[Source line 411](../../../extended/ext/tls_stream.lani#L411)
+[Source line 446](../../../extended/ext/tls_stream.lani#L446)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32,core::io::Error>

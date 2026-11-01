@@ -73,6 +73,21 @@ uint value_location(uint semantic_row)
                 return location;
         }
     }
+    // A (data, length, stride) parameter that is never assigned keeps its
+    // three words in its stack home for the whole call, so a read of it uses
+    // that home in place: its ALIAS copies become self-moves, which emit
+    // nothing, and every index reads the descriptor straight from the home.
+    if (opt_ir_op(core) == SEMANTIC_LIR_OP_VALUE_GET &&
+        (core.flags & SEMANTIC_LIR_FLAG_ARRAY_PAIR) != 0u)
+    {
+        uint declaration = opt_ir_operands[semantic_row].a;
+        if (declaration < gParams.token_capacity &&
+            x86_decl_analysis_by_token[declaration].definition == X86_LOCATION_INVALID)
+        {
+            uint home = x86_decl_location_by_token[declaration];
+            if (home < X86_LOCATION_PAYLOAD_MASK) return home;
+        }
+    }
     if ((allocated & X86_LOCATION_DECLARATION) != 0u)
     {
         uint declaration = allocated & X86_LOCATION_PAYLOAD_MASK;
