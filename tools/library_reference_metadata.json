@@ -385,7 +385,8 @@
       "guides": [
         "docs/stdlib-float-decimal.md",
         "docs/stdlib-float-precision.md"
-      ]
+      ],
+      "note": "Eisel-Lemire parsing and Grisu3 shortest formatting run first; when they cannot prove the result, the exact big-integer algorithm decides, so results are unchanged. Native Linux x86_64 batches agree with Python float()/repr() on 4.8M generated values (parse64 2M, parse32 500k, format64 2M, format32 300k), including subnormals, exact midpoints and extremes."
     },
     "core::float_order": {
       "guides": [
@@ -1560,7 +1561,7 @@
         "docs/extended-toml-streaming.md",
         "docs/extended-toml-normalize.md"
       ],
-      "note": "One constant-storage byte machine serves Document.encoded_len, Document.encoding, owned encode and direct encode_into. The free measure function is replaced by the encoded_len method. W counts emitted bytes, nonroot node visits and fraction scan/trim digits; sizing admits W and the other paths admit 2W for preflight/replay. This changes old owned encode W and encode_into 2W+output-bytes policy. Preflight reports the first exhausted bound in generator order: per-byte output cap precedes byte work, with node/fraction charges where encountered; there is no whole-pass output-over-work precedence. Cursor copies fork replay allowance. Borrowed Encoding implements Read only, with exact fills, inert valid zero requests, metadata rejection before EOF, independent cursor copies and immutable/disjoint backing obligations. Borrowed serialization and direct encode_into allocate no output storage; every returned encode_into error preserves the complete destination. Owned output uses the existing collector, skips allocation for empty output, and cleans partial owners on failure. The linked guides record current runtime acceptance; older parser/corpus/normalizer receipts retain their original source scope. Initial target Linux x86_64 CPU output, with other hosts/device execution/lifetime enforcement/proofs separate.",
+      "note": "One constant-storage byte machine serves Document.encoded_len, Document.encoding, owned encode and direct encode_into. The free measure function is replaced by the encoded_len method. W counts emitted bytes, nonroot node visits and fraction scan/trim digits; sizing admits W and the other paths admit 2W for preflight/replay. This changes old owned encode W and encode_into 2W+output-bytes policy. Preflight reports the first exhausted bound in generator order: per-byte output cap precedes byte work, with node/fraction charges where encountered; there is no whole-pass output-over-work precedence. Cursor copies fork replay allowance. Borrowed Encoding implements Read only, with exact fills, inert valid zero requests, metadata rejection before EOF, independent cursor copies and immutable/disjoint backing obligations. Borrowed serialization and direct encode_into allocate no output storage; every returned encode_into error preserves the complete destination. Owned output uses the existing collector, skips allocation for empty output, and cleans partial owners on failure. The linked guides record current runtime acceptance; older parser/corpus/normalizer receipts retain their original source scope. Initial target Linux x86_64 CPU output, with other hosts/device execution/lifetime enforcement/proofs separate. Python tomllib oracle (2026-10-31): 1,754 edge/generated/mutated documents agree through the normalizer (value equality in order, idempotent output, typed rejections); the only differences are 7 TOML 1.1-only inputs and 2 integers outside i64, both documented policy.",
       "declarations": {
         "encode": "Admit the shared borrowed reader under a 2W serializer budget, then collect independent String output. Empty output allocates nothing; partial output is destroyed on error and document owners are preserved. See the linked streaming guide for execution evidence.",
         "encode_into": "Validate destination metadata, preflight semantic/output limits, check capacity, reserve replay work and fill directly without output allocation. Every returned error preserves the entire destination; source/cursor/destination disjointness is a manual precondition. See the linked streaming guide for execution evidence."
@@ -2145,7 +2146,13 @@
       "guides": [
         "docs/extended-json-stream.md"
       ],
-      "note": "Byte-fed RFC 8259 tokenizer (one token per feed, arbitrary chunk splits, incremental UTF-8 validation, lone-surrogate rejection, exact number spelling, typed errors with u64 offsets, depth/string/number limits) and a structural writer emitting the ext::json compact byte policy. Native Linux x86_64 binaries from the GPU compiler agree with strict Python json on 2,237 jq-lite/bytewise cases and with Python csv on 550 csv-to-json cases; the cargo registration was not run in this session."
+      "note": "Byte-fed RFC 8259 tokenizer (one token per feed, arbitrary chunk splits, incremental UTF-8 validation, lone-surrogate rejection, exact number spelling, typed errors with u64 offsets, depth/string/number limits) and a structural writer emitting the ext::json compact byte policy. Native Linux x86_64 binaries from the GPU compiler agree with strict Python json on 2,237 jq-lite/bytewise cases and with Python csv on 550 csv-to-json cases; TokenReader (core::io::Read, caller scratch) and Writer.flush_to (core::io::Write) pass a further 572 streaming cases with 7-byte scratch. The cargo registrations were not run in this session."
+    },
+    "core::float_tables": {
+      "guides": [
+        "docs/stdlib-float-decimal.md"
+      ],
+      "note": "Generated by tools/generate_float_tables.py: 128-bit powers of five for Eisel-Lemire and 64-bit cached powers of ten for Grisu3."
     }
   }
 }

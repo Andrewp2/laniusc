@@ -8,13 +8,13 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Byte-fed RFC 8259 tokenizer (one token per feed, arbitrary chunk splits, incremental UTF-8 validation, lone-surrogate rejection, exact number spelling, typed errors with u64 offsets, depth/string/number limits) and a structural writer emitting the ext::json compact byte policy. Native Linux x86_64 binaries from the GPU compiler agree with strict Python json on 2,237 jq-lite/bytewise cases and with Python csv on 550 csv-to-json cases; the cargo registration was not run in this session.
+Byte-fed RFC 8259 tokenizer (one token per feed, arbitrary chunk splits, incremental UTF-8 validation, lone-surrogate rejection, exact number spelling, typed errors with u64 offsets, depth/string/number limits) and a structural writer emitting the ext::json compact byte policy. Native Linux x86_64 binaries from the GPU compiler agree with strict Python json on 2,237 jq-lite/bytewise cases and with Python csv on 550 csv-to-json cases; TokenReader (core::io::Read, caller scratch) and Writer.flush_to (core::io::Write) pass a further 572 streaming cases with 7-byte scratch. The cargo registrations were not run in this session.
 
 ## Contract and evidence guides
 
 - [extended-json-stream](../../extended-json-stream.md)
 
-Declaration counts: enum: 2; field: 40; function: 5; impl: 2; method: 33; struct: 5; variant: 27.
+Declaration counts: enum: 3; field: 47; function: 6; impl: 4; method: 37; struct: 6; variant: 29.
 
 ## Declared imports
 
@@ -625,6 +625,94 @@ max_depth: i32
 max_output_bytes: i32
 ```
 
+### enum: StreamError
+
+[Source line 591](../../../extended/ext/json_stream.lani#L591)
+
+```lanius
+pub enum StreamError
+```
+
+#### variant: Json
+
+[Source line 591](../../../extended/ext/json_stream.lani#L591)
+
+```lanius
+Json(Error)
+```
+
+#### variant: Io
+
+[Source line 591](../../../extended/ext/json_stream.lani#L591)
+
+```lanius
+Io(core::io::Error)
+```
+
+### struct: TokenReader
+
+[Source line 594](../../../extended/ext/json_stream.lani#L594)
+
+```lanius
+pub struct TokenReader<R>
+```
+
+#### field: reader
+
+[Source line 595](../../../extended/ext/json_stream.lani#L595)
+
+```lanius
+reader: &R
+```
+
+#### field: tokens
+
+[Source line 595](../../../extended/ext/json_stream.lani#L595)
+
+```lanius
+tokens: &Tokenizer
+```
+
+#### field: scratch
+
+[Source line 595](../../../extended/ext/json_stream.lani#L595)
+
+```lanius
+scratch: core::slice::View<u8>
+```
+
+#### field: begin
+
+[Source line 595](../../../extended/ext/json_stream.lani#L595)
+
+```lanius
+begin: i32
+```
+
+#### field: end
+
+[Source line 595](../../../extended/ext/json_stream.lani#L595)
+
+```lanius
+end: i32
+```
+
+#### field: eof
+
+[Source line 595](../../../extended/ext/json_stream.lani#L595)
+
+```lanius
+eof: bool
+```
+
+#### field: reads
+
+[Source line 595](../../../extended/ext/json_stream.lani#L595)
+
+```lanius
+reads: u64
+```
+
 ## Free functions and extern declarations
 
 ### function: default_options
@@ -665,6 +753,15 @@ pub fn writer(max_depth: i32, max_output_bytes: i32) -> core::result::Result<Wri
 
 ```lanius
 pub fn number_error(text: core::text::Text) -> i32
+```
+
+### function: token_reader
+
+[Source line 597](../../../extended/ext/json_stream.lani#L597)
+
+```lanius
+pub fn token_reader<R>(reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>)
+    -> core::result::Result<TokenReader<R>, Error> where R: core::io::Read
 ```
 
 ## Implementation blocks and public methods
@@ -947,4 +1044,52 @@ pub fn clear(&self)
 
 ```lanius
 pub fn destroy(&self)
+```
+
+### impl at line 571
+
+[Source line 571](../../../extended/ext/json_stream.lani#L571)
+
+```lanius
+pub impl Writer
+```
+
+#### method: flush_to
+
+[Source line 572](../../../extended/ext/json_stream.lani#L572)
+
+```lanius
+pub fn flush_to<W>(&self, sink: &W) -> core::result::Result<i32, core::io::Failure> where W: core::io::Write
+```
+
+### impl at line 603
+
+[Source line 603](../../../extended/ext/json_stream.lani#L603)
+
+```lanius
+pub impl<R> TokenReader<R>
+```
+
+#### method: borrow
+
+[Source line 604](../../../extended/ext/json_stream.lani#L604)
+
+```lanius
+pub fn borrow(&self) -> &TokenReader<R>
+```
+
+#### method: read_calls
+
+[Source line 606](../../../extended/ext/json_stream.lani#L606)
+
+```lanius
+pub fn read_calls(&self) -> u64
+```
+
+#### method: next
+
+[Source line 611](../../../extended/ext/json_stream.lani#L611)
+
+```lanius
+pub fn next(&self) -> core::result::Result<bool, StreamError> where R: core::io::Read
 ```

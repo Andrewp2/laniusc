@@ -1,0 +1,96 @@
+// Batch driver for core::float_decimal. argv[1] selects the mode:
+// p64/p32 read one decimal per line and print the parsed bits as hex;
+// f64/f32 read hex bits per line and print the shortest decimal.
+// Parse failures print "error"; output is flushed in 64 KiB blocks.
+module app::main;
+import alloc::vec;
+import core::f32;
+import core::f64;
+import core::float_decimal;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::stream;
+
+struct Batch { mode: i32, out: alloc::vec::Vec<u8>, line: [u8; 2048], length: i32, scratch: [u32; 864], text: [u8; 32], failed: bool }
+
+fn hex_value(byte: u8) -> u64 { if (byte >= 97) { return (byte as u64) - 87; } if (byte >= 65) { return (byte as u64) - 55; } return (byte as u64) - 48; }
+fn hex_digit(value: u64) -> u8 { if (value < 10) { return (value as u8) + 48; } return (value as u8) + 87; }
+
+impl Batch {
+    fn borrow(&self) -> &Batch { return self; }
+    fn push(&self, byte: u8) { if (self.out.try_push(byte).is_err()) { self.failed = true; } }
+    fn flush(&self) {
+        let target: std::stream::Descriptor = std::stream::stdout();
+        if (core::io::write_all<std::stream::Descriptor>(target.borrow(), self.out.as_slice(), 0, self.out.len()).is_err()) { self.failed = true; }
+        self.out.clear();
+    }
+    fn finish_line(&self) {
+        let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view(self.scratch, 864));
+        let input: core::slice::View<u8> = core::slice::View { values: self.line, start: 0, length: self.length };
+        let error: [u8; 5] = [101, 114, 114, 111, 114];
+        if (self.mode < 2) {
+            let bits: u64 = 0; let width: i32 = 16; let ok: bool = true;
+            if (self.mode == 0) {
+                let parsed = core::float_decimal::parse_f64(input, scratch, core::float_decimal::default_limits());
+                if (parsed.is_err()) { ok = false; } else { bits = core::f64::to_bits(parsed.unwrap()); }
+            } else {
+                width = 8;
+                let parsed = core::float_decimal::parse_f32(input, scratch, core::float_decimal::default_limits());
+                if (parsed.is_err()) { ok = false; } else { bits = core::f32::to_bits(parsed.unwrap()) as u64; }
+            }
+            if (!ok) { let i: i32 = 0; while (i < 5) { self.push(error[i]); i += 1; } }
+            else { let i: i32 = width; while (i > 0) { i -= 1; self.push(hex_digit((bits >> (i*4)) & 15)); } }
+        } else {
+            let bits: u64 = 0; let i: i32 = 0;
+            while (i < self.length) { bits = (bits << 4) | hex_value(self.line[i]); i += 1; }
+            let output: core::slice::View<u8> = core::result::unwrap(core::slice::view(self.text, 32));
+            let written = core::float_decimal::format_f64_into(core::f64::from_bits(bits), output, scratch, core::float_decimal::default_format_work());
+            if (self.mode == 3) { written = core::float_decimal::format_f32_into(core::f32::from_bits(bits as u32), output, scratch, core::float_decimal::default_format_work()); }
+            if (written.is_err()) { let j: i32 = 0; while (j < 5) { self.push(error[j]); j += 1; } }
+            else { let count: i32 = written.unwrap(); let j: i32 = 0; while (j < count) { self.push(self.text[j]); j += 1; } }
+        }
+        self.push(10); self.length = 0;
+        if (self.out.len() > 65536) { self.flush(); }
+    }
+}
+
+fn main() -> i32 {
+    let captured = std::args::snapshot(1, 1, 16);
+    if (captured.is_err()) { return 1; }
+    let arguments = captured.unwrap();
+    if (arguments.len() != 1) { arguments.destroy(); return 1; }
+    let view: core::slice::View<u8> = core::option::unwrap(arguments.get(0));
+    let mode: i32 = -1;
+    if (view.length == 3) {
+        let kind: u8 = view.values[view.start]; let a: u8 = view.values[view.start + 1];
+        if (kind == 112 && a == 54) { mode = 0; }
+        if (kind == 112 && a == 51) { mode = 1; }
+        if (kind == 102 && a == 54) { mode = 2; }
+        if (kind == 102 && a == 51) { mode = 3; }
+    }
+    arguments.destroy();
+    if (mode < 0) { return 1; }
+    let batch: Batch = Batch { mode: mode, out: alloc::vec::new(), line: [0; 2048], length: 0, scratch: [0; 864], text: [0; 32], failed: false };
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 1024] = [0; 1024];
+    while (!batch.failed) {
+        let received = source.read(buffer, 0, 1024);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let count: i32 = received.unwrap();
+        if (count == 0) { break; }
+        let i: i32 = 0;
+        while (i < count) {
+            let byte: u8 = buffer[i];
+            if (byte == 10) { batch.finish_line(); } else { if (batch.length < 2048) { batch.line[batch.length] = byte; batch.length += 1; } }
+            i += 1;
+        }
+    }
+    if (batch.length > 0) { batch.finish_line(); }
+    batch.flush();
+    batch.out.destroy();
+    if (batch.failed) { return 3; }
+    return 0;
+}

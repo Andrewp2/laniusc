@@ -563,3 +563,79 @@ pub impl Writer {
         self.out = alloc::vec::new(); self.stack = alloc::vec::new(); self.expect = 0;
     }
 }
+
+// Copy buffered output to a core::io::Write sink and drop the written bytes,
+// keeping the structural state, so a long document can stream through a
+// bounded buffer. On failure the unwritten suffix stays buffered for a retry;
+// Failure.completed counts the bytes this call delivered.
+pub impl Writer {
+    pub fn flush_to<W>(&self, sink: &W) -> core::result::Result<i32, core::io::Failure> where W: core::io::Write {
+        let count: i32 = self.out.len();
+        if (count == 0) { return core::result::Ok(0); }
+        let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all<W>(sink, self.out.as_slice(), 0, count);
+        if (sent.is_err()) {
+            let failure: core::io::Failure = sent.unwrap_err();
+            let done: i32 = failure.completed;
+            if (done > 0 && done <= count) {
+                let bytes: [u8] = self.out.as_slice(); let i: i32 = done;
+                while (i < count) { bytes[i - done] = bytes[i]; i += 1; }
+                core::result::unwrap(self.out.truncate(count - done));
+            }
+            return core::result::Err(failure);
+        }
+        self.out.clear();
+        return core::result::Ok(count);
+    }
+}
+
+pub enum StreamError { Json(Error), Io(core::io::Error) }
+// Pull tokens from a core::io::Read source through caller scratch. Borrows the
+// reader, tokenizer and scratch; keep them alive and unshared while driving it.
+pub struct TokenReader<R> {
+    reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>, begin: i32, end: i32, eof: bool, reads: u64,
+}
+pub fn token_reader<R>(reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>)
+    -> core::result::Result<TokenReader<R>, Error> where R: core::io::Read {
+    if (scratch.length <= 0 || !core::io::valid_range(scratch.start, scratch.length)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    let value: TokenReader<R> = TokenReader { reader: reader, tokens: tokens, scratch: scratch, begin: 0, end: 0, eof: false, reads: 0 };
+    return core::result::Ok(value);
+}
+pub impl<R> TokenReader<R> {
+    pub fn borrow(&self) -> &TokenReader<R> { return self; }
+    // Number of successful read calls, including the final zero-byte read.
+    pub fn read_calls(&self) -> u64 { return self.reads; }
+    // Ok(true): the tokenizer holds a ready token. Ok(false): the document
+    // ended and EOF validated it; later calls keep returning false.
+    // Interrupted reads are retried; other read errors are returned as Io and
+    // leave the buffered bytes in place, so next() may be called again.
+    pub fn next(&self) -> core::result::Result<bool, StreamError> where R: core::io::Read {
+        while (true) {
+            if (self.begin < self.end) {
+                let fed = self.tokens.feed(self.scratch.values, self.scratch.start + self.begin, self.end - self.begin);
+                if (fed.is_err()) { return core::result::Err(StreamError::Json(fed.unwrap_err())); }
+                let progress: Progress = fed.unwrap();
+                self.begin += progress.consumed;
+                if (progress.token) { return core::result::Ok(true); }
+                continue;
+            }
+            if (self.eof) { return core::result::Ok(false); }
+            let received: core::result::Result<i32, core::io::Error> = self.reader.read(self.scratch.values, self.scratch.start, self.scratch.length);
+            if (received.is_err()) {
+                let cause: core::io::Error = received.unwrap_err();
+                if (core::io::is_interrupted(cause)) { continue; }
+                return core::result::Err(StreamError::Io(cause));
+            }
+            let count: i32 = received.unwrap();
+            if (count < 0 || count > self.scratch.length) { return core::result::Err(StreamError::Io(core::io::Error::InvalidCount)); }
+            self.reads += 1;
+            if (count == 0) {
+                self.eof = true;
+                let ended = self.tokens.finish();
+                if (ended.is_err()) { return core::result::Err(StreamError::Json(ended.unwrap_err())); }
+                return core::result::Ok(ended.unwrap());
+            }
+            self.begin = 0; self.end = count;
+        }
+        return core::result::Ok(false);
+    }
+}
