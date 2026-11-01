@@ -82,10 +82,10 @@ class Runner:
         command = [self.executable, *arguments]
         if persistent_interrupts:
             # Summary-only tracing avoids retaining 16384 repetitive lines.
-            command = ["strace", "--kill-on-exit", "-qq", "-c", "-e", "trace=read",
+            command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-c", "-e", "trace=read",
                        "-e", "inject=read:error=EINTR:when=1+", "-o", str(prefix.with_suffix(".trace")), *command]
         elif trace:
-            traced = ["strace", "--kill-on-exit", "-qq", "-s", "64", "-e", "signal=none",
+            traced = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-s", "64", "-e", "signal=none",
                       "-e", "trace=read,write,mmap,munmap,mremap,brk,rt_sigaction",
                       "-o", str(prefix.with_suffix(".trace"))]
             if injection:

@@ -39,7 +39,7 @@ fn typed_callbacks_composition_and_shallow_owner_contracts_execute() {
     let trace = common::TempArtifact::new("laniusc_iterator_adapter", "owner_trace", None);
     let output = common::process_output_with_timeout(
         "typed adapter and owner contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"])

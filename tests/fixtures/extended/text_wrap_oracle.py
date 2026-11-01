@@ -63,7 +63,7 @@ def ledger(trace):
 with tempfile.TemporaryDirectory() as folder:
     trace=os.path.join(folder,'trace');source=b'a '*256
     def traced(fault=None,data=source,args=['--columns','2']):
-        command=['strace','-qq','-o',trace,'-e','trace=mmap,munmap,read,write']
+        command=['strace','-E','LANIUS_ALLOC=mmap','-qq','-o',trace,'-e','trace=mmap,munmap,read,write']
         if fault:command+=['-e',fault]
         r=subprocess.run(command+[exe,*args],input=data,capture_output=True,timeout=10);events=open(trace).read();return r,ledger(events),events
     baseline,count,_=traced();assert baseline.returncode==0 and count>=8,(baseline,count)

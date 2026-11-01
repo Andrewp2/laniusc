@@ -137,7 +137,7 @@ fn range_stats_run(
     closed_stdout: bool,
 ) -> (Output, String, RangeStatsTrace) {
     let trace = common::TempArtifact::new("laniusc_range_stats", "trace", None);
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command
         .args(["--kill-after=1s", "8s", "strace", "-qq", "-o"])
         .arg(trace.path())

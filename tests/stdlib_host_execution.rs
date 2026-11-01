@@ -213,7 +213,7 @@ fn std_io_write_i32_reports_partial_write_failure_on_x86() {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -237,7 +237,7 @@ fn std_io_write_i32_reports_partial_write_failure_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("signed decimal write {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=write")
@@ -271,7 +271,7 @@ fn std_io_write_u32_reports_partial_write_failure_on_x86() {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -292,7 +292,7 @@ fn std_io_write_u32_reports_partial_write_failure_on_x86() {
         {
             let output = common::short_process_output_with_timeout(
                 format!("unsigned decimal write {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=write")

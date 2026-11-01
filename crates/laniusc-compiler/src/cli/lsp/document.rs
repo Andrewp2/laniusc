@@ -1,10 +1,71 @@
-use std::path::PathBuf;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use super::LSP_LANGUAGE_ID;
 use crate::{
-    compiler::{CompileError, type_check_source_with_gpu},
+    compiler::{CompileError, type_check_entry_with_stdlib, type_check_source_with_gpu},
     formatter::format_source,
 };
+
+/// The `initializationOptions` key that names the standard-library root.
+pub(super) const LSP_STDLIB_ROOT_OPTION: &str = "stdlibRoot";
+
+/// Where the server finds the standard library for document diagnostics.
+#[derive(Clone, Debug, Default)]
+pub(super) struct LspSourceRoots {
+    /// Root passed to the loader as `laniusc check --stdlib-root` would be.
+    pub(super) stdlib_root: Option<PathBuf>,
+}
+
+impl LspSourceRoots {
+    /// Chooses the stdlib root from an `initialize` request:
+    /// `initializationOptions.stdlibRoot` (a path or `file:` URI), else a
+    /// `stdlib/` directory next to the laniusc binary, else `stdlib/` in the
+    /// workspace root (`rootUri`, `rootPath` or the first workspace folder).
+    /// With none of these the server checks each document on its own.
+    pub(super) fn from_initialize_request(request: &serde_json::Value) -> Self {
+        let params = request.get("params");
+        let configured = params
+            .and_then(|params| params.get("initializationOptions"))
+            .and_then(|options| options.get(LSP_STDLIB_ROOT_OPTION))
+            .and_then(serde_json::Value::as_str)
+            .filter(|root| !root.is_empty())
+            .map(uri_label_path);
+        let beside_binary = || {
+            std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|dir| dir.join("stdlib")))
+                .filter(|root| root.is_dir())
+        };
+        let in_workspace = || {
+            params
+                .and_then(workspace_root)
+                .map(|root| root.join("stdlib"))
+                .filter(|root| root.is_dir())
+        };
+        Self {
+            stdlib_root: configured.or_else(beside_binary).or_else(in_workspace),
+        }
+    }
+}
+
+fn workspace_root(params: &serde_json::Value) -> Option<PathBuf> {
+    let root_uri = params.get("rootUri").and_then(serde_json::Value::as_str);
+    let root_path = params.get("rootPath").and_then(serde_json::Value::as_str);
+    let first_folder = params
+        .get("workspaceFolders")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|folders| folders.first())
+        .and_then(|folder| folder.get("uri"))
+        .and_then(serde_json::Value::as_str);
+    root_uri
+        .or(root_path)
+        .or(first_folder)
+        .filter(|root| !root.is_empty())
+        .map(uri_label_path)
+}
 
 #[derive(Clone, Debug)]
 /// In-memory text for an LSP document that was explicitly opened by the client.
@@ -176,26 +237,113 @@ pub(super) fn formatting_edits(source: &str) -> Vec<serde_json::Value> {
 
 /// Type-checks one open document and returns LSP diagnostic items.
 ///
-/// This is the LSP path that may create a GPU device. It does not load source
-/// roots, compile target bytes, or inspect workspace state.
-pub(super) fn diagnostic_items(uri: &str, source: &str) -> Result<Vec<serde_json::Value>, String> {
-    match pollster::block_on(type_check_source_with_gpu(source)) {
+/// This is the LSP path that may create a GPU device. With a stdlib root the
+/// document is checked as `laniusc check --stdlib-root ROOT FILE` checks it:
+/// its imports are loaded from the root and checked unit by unit. The open
+/// text is checked, not the file: when the two differ the text is written to
+/// a private overlay file for the check. Without a root the document is
+/// checked on its own. Like `laniusc check`, both build and discard x86-64
+/// output only when the frontend check finds no impl for a call bound, since
+/// only a build selects generic impls.
+pub(super) fn diagnostic_items(
+    uri: &str,
+    source: &str,
+    roots: &LspSourceRoots,
+) -> Result<Vec<serde_json::Value>, String> {
+    let Some(stdlib_root) = roots.stdlib_root.as_deref() else {
+        return match pollster::block_on(type_check_source_with_gpu(source)) {
+            Ok(()) => Ok(Vec::new()),
+            Err(err) => compile_error_to_lsp_diagnostic_items(uri, None, err),
+        };
+    };
+    let saved_path = uri
+        .starts_with("file://")
+        .then(|| uri_label_path(uri))
+        .filter(|path| fs::read_to_string(path).is_ok_and(|saved| saved == source));
+    let (entry, overlay) = match saved_path {
+        Some(path) => (path, None),
+        None => {
+            let overlay = write_overlay(uri, source)?;
+            (overlay.clone(), Some(overlay))
+        }
+    };
+    let checked = pollster::block_on(type_check_entry_with_stdlib(&entry, stdlib_root));
+    if let Some(overlay) = overlay {
+        let _ = fs::remove_file(overlay);
+    }
+    match checked {
         Ok(()) => Ok(Vec::new()),
-        Err(err) => compile_error_to_lsp_diagnostic_items(uri, err),
+        Err(err) => compile_error_to_lsp_diagnostic_items(uri, Some(&entry), err),
     }
 }
 
+/// Writes unsaved document text where the loader can read it. The overlay
+/// keeps the document's file name so labels and module paths read the same.
+fn write_overlay(uri: &str, source: &str) -> Result<PathBuf, String> {
+    let dir = std::env::temp_dir().join(format!("laniusc-lsp-{}", std::process::id()));
+    fs::create_dir_all(&dir)
+        .map_err(|err| format!("create LSP overlay directory {}: {err}", dir.display()))?;
+    let name = uri_label_path(uri)
+        .file_name()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("document.lani"));
+    let path = dir.join(name);
+    fs::write(&path, source)
+        .map_err(|err| format!("write LSP overlay {}: {err}", path.display()))?;
+    Ok(path)
+}
+
+/// `entry` is the file checked for the document, when imports were loaded.
+/// A label in the entry is relabeled with the document's path. A label in an
+/// imported file keeps its path and moves to `relatedInformation`, and the
+/// diagnostic itself sits at the start of the document, since its range
+/// must lie in the document it is reported for.
 fn compile_error_to_lsp_diagnostic_items(
     uri: &str,
+    entry: Option<&Path>,
     err: CompileError,
 ) -> Result<Vec<serde_json::Value>, String> {
     let mut diagnostic = err.into_public_diagnostic();
+    let mut elsewhere = false;
     if let Some(label) = diagnostic.primary_label.as_mut() {
-        label.path = uri_label_path(uri);
+        if entry.is_none_or(|entry| same_file(&label.path, entry)) {
+            label.path = uri_label_path(uri);
+        } else {
+            elsewhere = true;
+        }
     }
-    serde_json::to_value(diagnostic.to_lsp_diagnostic())
-        .map(|diagnostic| vec![diagnostic])
-        .map_err(|err| format!("serialize LSP diagnostic: {err}"))
+    let lsp = diagnostic.to_lsp_diagnostic();
+    let mut value =
+        serde_json::to_value(&lsp).map_err(|err| format!("serialize LSP diagnostic: {err}"))?;
+    if elsewhere && let Some(label) = diagnostic.primary_label.as_ref() {
+        let related = serde_json::json!([{
+            "location": {
+                "uri": format!("file://{}", label.path.display()),
+                "range": value["range"].clone(),
+            },
+            "message": format!(
+                "{}:{}:{}: {}",
+                label.path.display(),
+                label.line,
+                label.column,
+                label.message
+            ),
+        }]);
+        value["relatedInformation"] = related;
+        value["range"] = serde_json::json!({
+            "start": { "line": 0, "character": 0 },
+            "end": { "line": 0, "character": 0 },
+        });
+    }
+    Ok(vec![value])
+}
+
+fn same_file(left: &Path, right: &Path) -> bool {
+    left == right
+        || matches!(
+            (fs::canonicalize(left), fs::canonicalize(right)),
+            (Ok(left), Ok(right)) if left == right
+        )
 }
 
 fn document_end_position(source: &str) -> serde_json::Value {
@@ -222,8 +370,32 @@ fn document_end_position(source: &str) -> serde_json::Value {
 
 fn uri_label_path(uri: &str) -> PathBuf {
     uri.strip_prefix("file://")
-        .map(PathBuf::from)
+        .map(|path| PathBuf::from(percent_decoded(path)))
         .unwrap_or_else(|| PathBuf::from(uri))
+}
+
+/// Decodes `%XX` escapes in a `file:` URI path (a space is `%20`).
+fn percent_decoded(path: &str) -> String {
+    let bytes = path.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let escape = (bytes[index] == b'%')
+            .then(|| path.get(index + 1..index + 3))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match escape {
+            Some(byte) => {
+                decoded.push(byte);
+                index += 3;
+            }
+            None => {
+                decoded.push(bytes[index]);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(decoded).unwrap_or_else(|_| path.to_string())
 }
 
 #[cfg(test)]
@@ -235,6 +407,7 @@ mod tests {
     fn lsp_diagnostic_items_lower_raw_compile_errors_without_internal_detail() {
         let items = compile_error_to_lsp_diagnostic_items(
             "file:///workspace/main.lani",
+            None,
             CompileError::GpuFrontend("GPU LL(1) parser rejected token: 4".to_string()),
         )
         .expect("raw compiler fallback should serialize as an LSP diagnostic");
@@ -261,6 +434,7 @@ mod tests {
     fn lsp_diagnostic_items_relabel_structured_compile_error_with_request_uri() {
         let items = compile_error_to_lsp_diagnostic_items(
             "file:///workspace/current.lani",
+            None,
             CompileError::Diagnostic(
                 Diagnostic::error("LNC0016", "syntax error").with_primary_label(
                     DiagnosticLabel::primary(

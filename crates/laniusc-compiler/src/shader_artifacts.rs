@@ -115,3 +115,50 @@ fn value(key: &str) -> Option<String> {
         (candidate == key).then(|| value.to_string())
     })
 }
+
+/// Why the kernels this process loads may not be the ones it was built with,
+/// or `None` when nothing indicates that. Kernels are read from disk at run
+/// time, so a rebuild that replaces them while an older binary runs pairs that
+/// binary's resource bindings with other kernels, which fails (or misbehaves)
+/// far from any source cause. Only failure paths call this: it reads one small
+/// file and stats the kernel directory.
+pub(crate) fn kernel_pairing_problem() -> Option<String> {
+    let root = artifact_root();
+    // build.rs records the digest of the kernels this binary was built with.
+    let built = env!("LANIUS_SHADER_BUILT_DIGEST");
+    if built != UNKNOWN {
+        let on_disk = digest();
+        if on_disk != built {
+            return Some(format!(
+                "the kernels in {} (digest {on_disk}) are not the ones this laniusc was built with (digest {built}): a later build replaced them",
+                root.display()
+            ));
+        }
+    }
+    let binary = std::env::current_exe().ok()?;
+    let built_at = std::fs::metadata(&binary).and_then(|m| m.modified()).ok()?;
+    let newer = newest_file_after(root, built_at)?;
+    Some(format!(
+        "kernel {} is newer than this laniusc binary ({}): a build is replacing the kernels",
+        newer.display(),
+        binary.display()
+    ))
+}
+
+/// Some file below `directory` modified after `time`, if any.
+fn newest_file_after(directory: &Path, time: std::time::SystemTime) -> Option<PathBuf> {
+    for entry in std::fs::read_dir(directory).ok()? {
+        let path = entry.ok()?.path();
+        if path.is_dir() {
+            if let Some(found) = newest_file_after(&path, time) {
+                return Some(found);
+            }
+        } else if std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .is_ok_and(|modified| modified > time)
+        {
+            return Some(path);
+        }
+    }
+    None
+}

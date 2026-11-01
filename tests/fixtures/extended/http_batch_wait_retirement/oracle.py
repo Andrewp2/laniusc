@@ -142,8 +142,7 @@ def run(executable):
     with tempfile.TemporaryDirectory(prefix="http-batch-wait-retirement-") as directory:
         trace = Path(directory) / "syscalls.log"
         try:
-            process = subprocess.Popen([
-                "strace", "--kill-on-exit", "-qq", "-i", "-o", str(trace), "-e",
+            process = subprocess.Popen(["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-i", "-o", str(trace), "-e",
                 "trace=mmap,munmap,socket,close,connect,getsockopt,getpeername,sendto,recvfrom,poll,shutdown,clock_gettime,read,write",
                 executable,
             ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)

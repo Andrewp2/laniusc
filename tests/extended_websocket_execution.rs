@@ -57,7 +57,7 @@ fn freed(events: &str) -> usize {
 fn websocket_contracts_cover_requests_fragments_controls_close_and_limits() {
     let exe = executable("tests/fixtures/extended/websocket_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_websocket", "trace", None);
-    let out = run(Command::new("strace")
+    let out = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,socket,connect,open,openat"])
@@ -80,7 +80,7 @@ fn websocket_allocation_errors_preserve_state_and_release_staging() {
         let exe = executable(&format!("tests/fixtures/extended/{name}.lani"));
         let trace = common::TempArtifact::new("laniusc_websocket", "trace", None);
         let execute = |when: Option<usize>, status| {
-            let mut c = Command::new("strace");
+            let mut c = crate::common::strace();
             c.args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap"]);

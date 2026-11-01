@@ -33,7 +33,7 @@ fn execute(name: &str) {
     let trace = common::TempArtifact::new("laniusc_owned_input", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "bounded owned input native contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

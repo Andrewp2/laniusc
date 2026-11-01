@@ -182,7 +182,7 @@ fn mutations_accept_strided_subviews_and_reject_invalid_paths_before_syscalls() 
     let trace = common::TempArtifact::new("laniusc_filesystem_operations", "views_trace", None);
     let exe = fixture("views");
     check(
-        &run(Command::new("strace")
+        &run(crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mkdir,rmdir,unlink,rename,mmap,munmap"])
@@ -200,7 +200,7 @@ fn mutations_accept_strided_subviews_and_reject_invalid_paths_before_syscalls() 
 
     let exe = fixture("invalid");
     check(
-        &run(Command::new("strace")
+        &run(crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mkdir,rmdir,unlink,rename,mmap,munmap"])
@@ -238,7 +238,7 @@ fn mutations_propagate_host_failures_without_retries_or_fallback_changes() {
             ("EXDEV", 18),
         ] {
             check(
-                &run(Command::new("strace")
+                &run(crate::common::strace()
                     .args(["-qq", "-o"])
                     .arg(trace.path())
                     .args(["-e", "trace=mkdir,rmdir,unlink,rename,mmap,munmap", "-e"])
@@ -311,7 +311,7 @@ fn mutations_execute_exact_path_limit_and_reject_larger_paths_without_syscalls()
         vec!["r", &source, &larger],
     ] {
         check(
-            &run(Command::new("strace")
+            &run(crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mkdir,rmdir,unlink,rename,mmap,munmap"])

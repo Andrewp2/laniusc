@@ -43,7 +43,7 @@ fn owned_stream_buffer_preserves_bytes_and_ownership_when_allocation_fails() {
     for (when, status) in [("1+", 2), ("2+", 0)] {
         let failed = common::short_process_output_with_timeout(
             "stream buffer allocation failure",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap", "-e"])
@@ -157,7 +157,7 @@ fn native_stream_copy_executes_binary_data_and_host_failures() {
     ] {
         let output = common::short_process_output_with_timeout(
             "injected stream error",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=read,write", "-e"])

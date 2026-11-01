@@ -1,9 +1,12 @@
-import Lanius.Memory
-import Lean.Elab.Tactic.Omega
+module
 
+public import Lanius.Memory
+public import Lean.Elab.Tactic.Omega
+
+@[expose] public section
 namespace Lanius.Memory
 
-private def changeBytes (base : Address) (change : List UInt8 → List UInt8)
+def changeBytes (base : Address) (change : List UInt8 → List UInt8)
     (block : Block) : Block :=
   if block.base == base then { block with bytes := change block.bytes } else block
 

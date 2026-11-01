@@ -1,6 +1,9 @@
-import Lanius.Memory.Borrow
-import Lanius.Memory.BorrowRange
+module
 
+public import Lanius.Memory.Borrow
+public import Lanius.Memory.BorrowRange
+
+@[expose] public section
 namespace Lanius.Memory
 
 variable {heap : Heap} {block : Block} {bytes values : List UInt8} {byte : UInt8}

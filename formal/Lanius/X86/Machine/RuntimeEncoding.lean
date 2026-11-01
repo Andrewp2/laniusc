@@ -1,7 +1,10 @@
-import Lanius.X86.Encoding
-import Lanius.X86.Control.Decode
-import Lanius.X86.Machine.Scalar
+module
 
+public import Lanius.X86.Encoding
+public import Lanius.X86.Control.Decode
+public import Lanius.X86.Machine.Scalar
+
+@[expose] public section
 namespace Lanius.X86.Machine
 
 open Lanius.X86

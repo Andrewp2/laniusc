@@ -1,7 +1,10 @@
-import Lanius.Mini.DecodeUnique
-import Lanius.Mini.Flags
-import Lanius.X86.Machine.RuntimeEncoding
+module
 
+public import Lanius.Mini.DecodeUnique
+public import Lanius.Mini.Flags
+public import Lanius.X86.Machine.RuntimeEncoding
+
+@[expose] public section
 /-! `Step` is a relation, but its only freedom is the flags that the Intel
 SDM leaves undefined: AF after AND, OR, XOR and TEST, and every flag after
 IMUL, NEG, the shifts and DIV. (`decode` is unique by `decode_unique`.) So two

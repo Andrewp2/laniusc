@@ -75,6 +75,11 @@ fn crc_bytes(state: u32, view: core::slice::View<u8>, from: i32, count: i32) -> 
     while (index < count) { current = core::crc32::update_byte(current,byte(view,from+index)); index += 1; }
     return current;
 }
+// CRC-32 (IEEE, as in gzip and zip) continued over bytes: begin with
+// core::crc32::INITIAL and end with core::crc32::finish.
+pub fn crc32_update(state: u32, bytes: core::slice::View<u8>) -> u32 {
+    if (bytes.start < 0 || bytes.length < 0) { return state; } return crc_bytes(state,bytes,0,bytes.length);
+}
 fn crc(view: core::slice::View<u8>) -> u32 {
     return core::crc32::finish(crc_bytes(core::crc32::INITIAL,view,0,view.length));
 }
@@ -120,6 +125,50 @@ pub fn encode(input: core::slice::View<u8>, format: Format, max_output: i32) -> 
     return core::result::Ok(output);
 }
 
+// Level 0 is encode(); levels 1-3 run the streaming level encoder (sliding
+// window, hash chains, dynamic Huffman blocks) into one buffer sized for the
+// stored-block bound, then trim it.
+pub fn encode_level(input: core::slice::View<u8>, format: Format, max_output: i32, level: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (level == 0) { return encode(input,format,max_output); }
+    if (!valid(input) || max_output < 0 || level < 0 || level > 3) { return core::result::Err(Error::Bounds); }
+    // Each 32 KiB block costs at most 5 bytes beyond its input, plus an empty
+    // final block, a carried byte and 18 bytes of framing.
+    let bound: i64 = (input.length as i64)+5*((input.length as i64)/32768+2)+19;
+    if (bound > max_output as i64) { bound = max_output as i64; }
+    let block: alloc::vec::Vec<u8> = alloc::vec::new(); let pending: alloc::vec::Vec<u8> = alloc::vec::new();
+    let scratch: alloc::vec::Vec<i32> = alloc::vec::new(); let output: alloc::vec::Vec<u8> = alloc::vec::new();
+    let grown: core::result::Result<i32,alloc::vec::Error> = block.try_resize(ext::deflate::level_window_len(),0);
+    if (core::result::is_ok(grown)) { grown = pending.try_resize(ext::deflate::level_pending_len(),0); }
+    if (core::result::is_ok(grown)) { grown = scratch.try_resize(ext::deflate::level_scratch_len(),0); }
+    if (core::result::is_ok(grown)) { grown = output.try_resize(bound as i32,0); }
+    if (core::result::is_err(grown)) {
+        block.destroy(); pending.destroy(); scratch.destroy(); output.destroy();
+        return core::result::Err(vector_error(core::result::unwrap_err(grown)));
+    }
+    let limits: EncodeLimits = EncodeLimits { max_input: input.length as u64, max_output: max_output as u64 };
+    let made: core::result::Result<Encoder,Error> = level_encoder(block.as_view(),pending.as_view(),scratch.as_view(),format,limits,level);
+    let result: core::result::Result<i32,Error> = core::result::Ok(0);
+    if (core::result::is_err(made)) { result = core::result::Err(core::result::unwrap_err(made)); }
+    else {
+        let encoder: Encoder = core::result::unwrap(made); let read: i32 = 0; let written: i32 = 0;
+        while (core::result::is_ok(result) && !encoder.borrow().is_done()) {
+            let stepped: core::result::Result<ext::deflate::Step,EncodeFailure> = encoder.borrow().step(part(input,read,input.length),part(output.as_view(),written,bound as i32),true);
+            if (core::result::is_err(stepped)) { result = core::result::Err(core::result::unwrap_err(stepped).error); }
+            else {
+                let progress: ext::deflate::Step = core::result::unwrap(stepped); read += progress.read; written += progress.written;
+                // A full buffer that is not done means the output limit.
+                if (!encoder.borrow().is_done() && written == (bound as i32)) { result = core::result::Err(Error::OutputLimit); }
+            }
+        }
+        if (core::result::is_ok(result)) { result = core::result::Ok(written); }
+    }
+    block.destroy(); pending.destroy(); scratch.destroy();
+    if (core::result::is_err(result)) { output.destroy(); return core::result::Err(core::result::unwrap_err(result)); }
+    let trimmed: core::result::Result<i32,alloc::vec::Error> = output.truncate(core::result::unwrap(result));
+    if (core::result::is_err(trimmed)) { output.destroy(); return core::result::Err(vector_error(core::result::unwrap_err(trimmed))); }
+    return core::result::Ok(output);
+}
+
 // Streaming encoding retains fixed caller workspace and scalar framing state.
 // Workspaces, this object and each call's input/output must be disjoint and
 // remain live; copies are inactive aliases, not independent encoders.
@@ -145,7 +194,12 @@ fn encode_initial_checksum(kind: i32) -> u32 {
 // Raw construction validates all workspace metadata before capacities and
 // neither reads nor initializes backing. Limits need no signed validation.
 pub fn encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>, format: Format, limits: EncodeLimits) -> core::result::Result<Encoder,Error> {
-    let made: core::result::Result<ext::deflate::Encoder,ext::deflate::Error> = ext::deflate::encoder(block,pending,scratch);
+    return level_encoder(block,pending,scratch,format,limits,0);
+}
+// Level 0 is encoder()'s output; levels 1-3 are ext::deflate::level_encoder's
+// window, hash-chain and dynamic Huffman levels (see its workspace sizes).
+pub fn level_encoder(block: core::slice::View<u8>, pending: core::slice::View<u8>, scratch: core::slice::View<i32>, format: Format, limits: EncodeLimits, level: i32) -> core::result::Result<Encoder,Error> {
+    let made: core::result::Result<ext::deflate::Encoder,ext::deflate::Error> = ext::deflate::level_encoder(block,pending,scratch,level);
     if (core::result::is_err(made)) {
         let error: ext::deflate::Error = core::result::unwrap_err(made);
         return core::result::Err(match (error) { ext::deflate::Error::Bounds -> Error::Bounds, _ -> Error::Encode(error) });

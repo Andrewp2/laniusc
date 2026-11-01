@@ -142,7 +142,7 @@ fn native_varints_respect_strides_short_prefixes_guard_pages_and_effect_free_adm
     let trace = common::TempArtifact::new("laniusc_varint_boundary", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "native varint honest memory boundaries",
-        Command::new("strace")
+        crate::common::strace()
             .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

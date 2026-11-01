@@ -115,7 +115,7 @@ fn mappings(
 fn run(fixture: &str, expected_phases: usize, expected_mappings: usize) -> Vec<u8> {
     let executable = executable(fixture);
     let trace = common::TempArtifact::new("laniusc_slice_ordering", "trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-s", "64", "-o"])
         .arg(trace.path())

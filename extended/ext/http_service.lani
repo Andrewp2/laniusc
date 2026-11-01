@@ -1,7 +1,9 @@
 // HTTP/1.1 service: bounded keep-alive request reader with absolute
 // head/body/idle/write deadlines, typed errors, a response writer, a
 // method/path router, a sequential driver and a std::event (epoll) server
-// that multiplexes many connections on one thread.
+// that multiplexes many connections on one thread. A connection that opens
+// with the HTTP/2 preface (prior-knowledge h2c) is handed to H2Connection,
+// which serves its multiplexed requests through ext::http2_server.
 module ext::http_service;
 import alloc::vec;
 import core::calendar;
@@ -12,7 +14,12 @@ import core::option;
 import core::result;
 import core::slice;
 import core::time;
+import ext::client_transport;
+import ext::hpack;
 import ext::http;
+import ext::http2;
+import ext::http2_frame;
+import ext::http2_server;
 import std::clock;
 import std::event;
 import std::file;
@@ -22,7 +29,7 @@ import std::socket;
 
 // Typed request/transport failures. status_for maps each to the final status
 // sent before closing, or 0 when no response is possible or useful.
-pub enum Error { Parse(ext::http::Error), HeadTooLarge, BodyTooLarge, HeadTimeout, BodyTimeout, WriteTimeout, Truncated, VersionNotSupported, Io(core::io::Error), Clock, AllocationFailed, InvalidState, InvalidHeader, Event(std::event::Error) }
+pub enum Error { Parse(ext::http::Error), HeadTooLarge, BodyTooLarge, HeadTimeout, BodyTimeout, WriteTimeout, Truncated, VersionNotSupported, Io(core::io::Error), Clock, AllocationFailed, InvalidState, InvalidHeader, Event(std::event::Error), Http2Preface, Http2(ext::http2::Error) }
 pub struct Options { limits: ext::http::Limits, buffer_bytes: i32, head_timeout_ms: i32, body_timeout_ms: i32, idle_timeout_ms: i32, write_timeout_ms: i32, max_requests: i32, drain_bytes: i32, drain_timeout_ms: i32, date: bool }
 pub struct Stats { requests: i32, responses: i32, bytes_received: u64, bytes_sent: u64, reads: u64 }
 pub struct Request { method: core::slice::View<u8>, target: core::slice::View<u8>, path: core::slice::View<u8>, query: core::slice::View<u8>, version: i32, head: ext::http::Head, body: core::slice::View<u8>, keep_alive: bool, chunked: bool }
@@ -40,6 +47,8 @@ const HANDLER: i32 = 3;
 const WRITE: i32 = 4;
 const DRAIN: i32 = 5;
 const CLOSED: i32 = 6;
+// An event-server slot that runs HTTP/2 (after the h2c preface).
+const H2: i32 = 7;
 
 // 8 KiB heads, 1 MiB bodies; a slow head must complete within 2 s of its
 // first byte no matter how it is fragmented, and idle keep-alive lasts 5 s.
@@ -249,8 +258,8 @@ pub impl Connection {
         return core::result::Ok(false);
     }
     fn compact(&self) {
-        if (self.consumed == 0) { return; } let all: core::slice::View<u8> = self.input.as_view(); let i: i32 = 0; let n: i32 = self.filled - self.consumed;
-        while (i < n) { all.values[all.start+i] = all.values[all.start+self.consumed+i]; i += 1; } self.filled = n; self.consumed = 0;
+        if (self.consumed == 0) { return; } let n: i32 = self.filled - self.consumed;
+        core::slice::copy_within(self.input.as_slice(), self.input.len(), self.consumed, self.filled, 0); self.filled = n; self.consumed = 0;
     }
     fn send_all(&self, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
         if (self.buffered) { return self.raw(data); }
@@ -275,6 +284,11 @@ pub impl Connection {
             self.deadline = d.unwrap(); self.phase = HEAD;
         }
         let window: core::slice::View<u8> = part(self.input.as_view(),0,self.filled);
+        // Prior-knowledge HTTP/2 (RFC 9113 3.3) opens with the preface.
+        if (self.stats.requests == 0 && self.consumed == 0) {
+            let preface: core::slice::View<u8> = ext::http2_frame::preface(); let have: i32 = self.filled; if (have > preface.len()) { have = preface.len(); }
+            if (same(part(window,0,have),part(preface,0,have))) { if (have < preface.len()) { return core::result::Ok(core::option::None()); } return core::result::Err(Error::Http2Preface); }
+        }
         let parsed: core::result::Result<ext::http::Head,ext::http::Error> = ext::http::parse_request_head(window,limits);
         if (parsed.is_err()) {
             let e: ext::http::Error = parsed.unwrap_err();
@@ -441,20 +455,51 @@ pub impl Connection {
                 let n: i32 = got.unwrap(); if (n <= 0 || n > self.output.len() - self.sent) { self.keep_alive = false; return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
                 self.sent += n; self.stats.bytes_sent += n as u64; continue;
             }
-            self.output.clear(); self.sent = 0;
-            if (self.file_left == 0) { if (self.file.is_open()) { self.file.close(); } return core::result::Ok(true); }
-            let want: i32 = 262144; if (self.file_left < 262144) { want = self.file_left as i32; }
-            if (self.output.try_resize(want,0).is_err()) { self.keep_alive = false; return core::result::Err(Error::AllocationFailed); }
-            let got: core::result::Result<i32,core::io::Error> = vec_pread(self.file,self.output,want,self.file_position);
-            if (got.is_err() || got.unwrap() <= 0 || got.unwrap() > want) { self.output.clear(); self.keep_alive = false; return core::result::Err(Error::Truncated); }
-            let n: i32 = got.unwrap(); self.output.truncate(n); self.file_position += n as u64; self.file_left -= n as u64;
+            let more: core::result::Result<bool,Error> = self.next_piece();
+            if (more.is_err()) { return core::result::Err(more.unwrap_err()); }
+            if (!more.unwrap()) { return core::result::Ok(true); }
         }
         return core::result::Ok(false);
+    }
+    // Output is all sent: load the file body's next piece into it. Ok(false)
+    // when nothing is left.
+    fn next_piece(&self) -> core::result::Result<bool,Error> {
+        self.output.clear(); self.sent = 0;
+        if (self.file_left == 0) { if (self.file.is_open()) { self.file.close(); } return core::result::Ok(false); }
+        let want: i32 = 262144; if (self.file_left < 262144) { want = self.file_left as i32; }
+        if (self.output.try_resize(want,0).is_err()) { self.keep_alive = false; return core::result::Err(Error::AllocationFailed); }
+        let got: core::result::Result<i32,core::io::Error> = vec_pread(self.file,self.output,want,self.file_position);
+        if (got.is_err() || got.unwrap() <= 0 || got.unwrap() > want) { self.output.clear(); self.keep_alive = false; return core::result::Err(Error::Truncated); }
+        let n: i32 = got.unwrap(); self.output.truncate(n); self.file_position += n as u64; self.file_left -= n as u64;
+        return core::result::Ok(true);
+    }
+    // flush_ready for a wrapped connection, whose transport sends the
+    // output: Ok(true) once all is sent.
+    fn stage_ready(&self) -> core::result::Result<bool,Error> {
+        if (self.sent < self.output.len()) { return core::result::Ok(false); }
+        let more: core::result::Result<bool,Error> = self.next_piece();
+        if (more.is_err()) { return core::result::Err(more.unwrap_err()); }
+        return core::result::Ok(!more.unwrap());
     }
     fn release(&self) -> core::result::Result<i32,Error> {
         self.closed = true; self.phase = CLOSED; if (self.file.is_open()) { self.file.close(); }
         self.input.destroy(); self.body.destroy(); self.output.destroy();
         let closed: core::result::Result<i32,core::io::Error> = self.socket.close(); if (closed.is_err()) { return core::result::Err(Error::Io(closed.unwrap_err())); } return core::result::Ok(0);
+    }
+    // After next_request returned Err(Http2Preface): move the socket and the
+    // bytes read so far into an HTTP/2 connection. This Connection is spent.
+    pub fn upgrade_h2(&self) -> core::result::Result<H2Connection,Error> {
+        if (self.closed || self.stats.requests != 0) { return core::result::Err(Error::InvalidState); }
+        let made: core::result::Result<ext::http2_server::Connection,ext::http2::Error> = ext::http2_server::server(h2_options(self.options));
+        if (made.is_err()) { return core::result::Err(h2_error(made.unwrap_err())); }
+        let scratch: core::result::Result<alloc::vec::Vec<u8>,Error> = bytes(16384);
+        if (scratch.is_err()) { let e: ext::http2_server::Connection = made.unwrap(); e.destroy(); return core::result::Err(scratch.unwrap_err()); }
+        let h: H2Connection = H2Connection { socket: self.socket, peer: self.peer, options: self.options, engine: made.unwrap(), scratch: scratch.unwrap(), taken: alloc::vec::new<i32>(), closed: false, stats: self.stats };
+        let fed: core::result::Result<i32,ext::http2::Error> = h.engine.feed(part(self.input.as_view(),self.consumed,self.filled));
+        self.closed = true; self.phase = CLOSED; if (self.file.is_open()) { self.file.close(); }
+        self.input.destroy(); self.body.destroy(); self.output.destroy();
+        if (fed.is_err()) { let sent: core::result::Result<i32,Error> = h.send_out(); h.close(); return core::result::Err(h2_error(fed.unwrap_err())); }
+        return core::result::Ok(h);
     }
     // Half-close, drain bounded unread input briefly so the peer sees the
     // response instead of a reset, then close and release buffers once.
@@ -475,6 +520,158 @@ pub impl Connection {
         return self.release();
     }
 }
+// ---- HTTP/2 (prior-knowledge h2c) ----
+// One multiplexed request. Views stay valid until the stream is answered
+// and the next call to next_request.
+pub struct H2Request { id: i32, method: core::slice::View<u8>, target: core::slice::View<u8>, path: core::slice::View<u8>, query: core::slice::View<u8>, authority: core::slice::View<u8>, body: core::slice::View<u8>, head_only: bool }
+pub struct H2Connection { socket: std::socket::Socket, peer: core::net::SocketAddr, options: Options, engine: ext::http2_server::Connection, scratch: alloc::vec::Vec<u8>, taken: alloc::vec::Vec<i32>, closed: bool, stats: Stats }
+
+// Engine settings derived from the service options: the header list limit
+// is limits.head_bytes, the body limit limits.body_bytes, and max_requests
+// streams are served before a graceful GOAWAY.
+pub fn h2_options(o: Options) -> ext::http2_server::Options {
+    let e: ext::http2_server::Options = ext::http2_server::default_options();
+    let h: ext::hpack::Limits = e.hpack; h.list_bytes = o.limits.head_bytes; e.hpack = h;
+    e.body_bytes = o.limits.body_bytes; e.max_requests = o.max_requests;
+    return e;
+}
+// The request on stream id as views into the engine's stream storage.
+fn h2_request_of(e: &ext::http2_server::Connection, id: i32) -> H2Request {
+    let target: core::slice::View<u8> = e.path(id); let q: i32 = 0; while (q < target.len() && byte(target,q) != 63) { q += 1; }
+    let query: core::slice::View<u8> = literal("",0); if (q < target.len()) { query = part(target,q+1,target.len()); }
+    let method: core::slice::View<u8> = e.method(id);
+    return H2Request { id: id, method: method, target: target, path: part(target,0,q), query: query, authority: e.authority(id), body: e.body(id), head_only: same(method,literal("HEAD",4)) };
+}
+// Queue a complete response on stream id: status, optional content-type,
+// content-length, Date when o.date, then the body unless head_only.
+fn h2_send(e: &ext::http2_server::Connection, o: Options, id: i32, head_only: bool, status: i32, content_type: core::slice::View<u8>, body: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let blank: ext::hpack::Header = ext::hpack::Header { name: literal("",0), value: literal("",0), never_indexed: false };
+    let fields: [ext::hpack::Header;3] = [blank;3]; let count: i32 = 0;
+    let digits: [u8;24] = [0;24]; let n: i32 = format_u64(body.len() as u64,digits);
+    let date: [u8;29] = [0;29];
+    if (!content_type.is_empty()) { let h: ext::hpack::Header = ext::hpack::Header { name: literal("content-type",12), value: content_type, never_indexed: false }; fields[count] = h; count += 1; }
+    let length: ext::hpack::Header = ext::hpack::Header { name: literal("content-length",14), value: core::slice::view_range<u8>(digits,24-n,n).unwrap(), never_indexed: false }; fields[count] = length; count += 1;
+    if (o.date) {
+        let clock: core::result::Result<core::time::SystemTime,std::clock::Error> = std::clock::system_now();
+        if (clock.is_err() || !format_http_date(clock.unwrap().unix_seconds(),date)) { return core::result::Err(Error::Clock); }
+        let h: ext::hpack::Header = ext::hpack::Header { name: literal("date",4), value: core::slice::view<u8>(date,29).unwrap(), never_indexed: false }; fields[count] = h; count += 1;
+    }
+    let empty: bool = body.is_empty() || head_only;
+    let started: core::result::Result<i32,ext::http2::Error> = e.respond(id,status,core::slice::view<ext::hpack::Header>(fields,count).unwrap(),empty);
+    if (started.is_err()) { return core::result::Err(h2_error(started.unwrap_err())); }
+    if (!empty) { let queued: core::result::Result<i32,ext::http2::Error> = e.send_data(id,body,true); if (queued.is_err()) { return core::result::Err(h2_error(queued.unwrap_err())); } }
+    return core::result::Ok(0);
+}
+fn h2_error(e: ext::http2::Error) -> Error { return match (e.cause) { ext::http2::Cause::AllocationFailed -> Error::AllocationFailed, _ -> Error::Http2(e) }; }
+
+pub impl H2Connection {
+    pub fn borrow(&self) -> &H2Connection { return self; }
+    pub fn stats(&self) -> Stats { return self.stats; }
+    pub fn is_open(&self) -> bool { return !self.closed && self.engine.is_open(); }
+    // Send everything the engine queued before the write deadline.
+    fn send_out(&self) -> core::result::Result<i32,Error> {
+        if (self.engine.output().len() == 0) { return core::result::Ok(0); }
+        let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.write_timeout_ms); if (deadline.is_err()) { return core::result::Err(deadline.unwrap_err()); }
+        while (self.engine.output().len() > 0) {
+            let out: core::slice::View<u8> = self.engine.output();
+            let sent: core::result::Result<i32,core::io::Error> = self.socket.send_until(out,deadline.unwrap());
+            if (sent.is_err()) { let e: core::io::Error = sent.unwrap_err(); if (timed_out(e)) { return core::result::Err(Error::WriteTimeout); } return core::result::Err(Error::Io(e)); }
+            let n: i32 = sent.unwrap(); if (n <= 0 || n > out.len()) { return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
+            self.engine.sent(n); self.stats.bytes_sent += n as u64;
+        }
+        return core::result::Ok(0);
+    }
+    // Wait for bytes until deadline and feed them. Ok(-1): timed out;
+    // Ok(0): the peer closed. A protocol error is sent before Err returns.
+    fn receive(&self, deadline: core::time::Deadline) -> core::result::Result<i32,Error> {
+        let got: core::result::Result<i32,core::io::Error> = self.socket.receive_until(self.scratch.as_view(),deadline);
+        if (got.is_err()) { let e: core::io::Error = got.unwrap_err(); if (timed_out(e)) { return core::result::Ok(-1); } return core::result::Err(Error::Io(e)); }
+        let n: i32 = got.unwrap(); if (n <= 0) { return core::result::Ok(0); }
+        self.stats.bytes_received += n as u64; self.stats.reads += 1;
+        let fed: core::result::Result<i32,ext::http2::Error> = self.engine.feed(part(self.scratch.as_view(),0,n));
+        if (fed.is_err()) { let flushed: core::result::Result<i32,Error> = self.send_out(); return core::result::Err(h2_error(fed.unwrap_err())); }
+        return core::result::Ok(n);
+    }
+    // Free streams whose responses are finished or that were reset.
+    fn sweep(&self) {
+        let i: i32 = self.taken.len() - 1;
+        while (i >= 0) {
+            let id: i32 = self.taken.at(i);
+            let open: bool = match (self.engine.state(id)) { ext::http2::State::Open -> true, _ -> false };
+            if (!open) { self.engine.release(id); self.taken.remove(i); }
+            i -= 1;
+        }
+    }
+    // The next complete request on any stream. Ok(None): the peer closed,
+    // went away, or stayed idle past idle_timeout_ms with no open stream
+    // (we then send GOAWAY). A stream whose body stalls past
+    // body_timeout_ms gives Err(BodyTimeout).
+    pub fn next_request(&self) -> core::result::Result<core::option::Option<H2Request>,Error> {
+        if (self.closed) { return core::result::Err(Error::InvalidState); }
+        while (true) {
+            self.sweep();
+            let flushed: core::result::Result<i32,Error> = self.send_out(); if (flushed.is_err()) { return core::result::Err(flushed.unwrap_err()); }
+            let next: core::option::Option<i32> = self.engine.next_request();
+            if (next.is_some()) {
+                let id: i32 = next.unwrap();
+                if (self.taken.try_push(id).is_err()) { self.engine.cancel(id); return core::result::Err(Error::AllocationFailed); }
+                self.stats.requests += 1;
+                return core::result::Ok(core::option::Some(h2_request_of(self.engine.borrow(),id)));
+            }
+            if (self.engine.finished()) { return core::result::Ok(core::option::None()); }
+            let idle: bool = self.engine.active_streams() == 0;
+            let wait: i32 = self.options.body_timeout_ms; if (idle) { wait = self.options.idle_timeout_ms; }
+            let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(wait); if (deadline.is_err()) { return core::result::Err(deadline.unwrap_err()); }
+            let got: core::result::Result<i32,Error> = self.receive(deadline.unwrap()); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+            let n: i32 = got.unwrap();
+            if (n == 0) { return core::result::Ok(core::option::None()); }
+            if (n < 0 && idle) { self.engine.goaway(ext::http2_frame::NO_ERROR); let sent: core::result::Result<i32,Error> = self.send_out(); return core::result::Ok(core::option::None()); }
+            if (n < 0) { return core::result::Err(Error::BodyTimeout); }
+        }
+        return core::result::Err(Error::InvalidState);
+    }
+    // The first request field named name (lowercase in HTTP/2).
+    pub fn header(&self, request: H2Request, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>> { return self.engine.header(request.id,name); }
+    // A complete response: status, optional content-type, content-length
+    // (and Date when options.date), then the body (dropped for HEAD). Waits
+    // for flow-control windows, taking in other streams' frames meanwhile.
+    pub fn respond(&self, request: H2Request, status: i32, content_type: core::slice::View<u8>, body: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        if (self.closed) { return core::result::Err(Error::InvalidState); }
+        let queued: core::result::Result<i32,Error> = h2_send(self.engine.borrow(),self.options,request.id,request.head_only,status,content_type,body);
+        if (queued.is_err()) { return queued; }
+        let deadline: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.write_timeout_ms); if (deadline.is_err()) { return core::result::Err(deadline.unwrap_err()); }
+        while (true) {
+            let flushed: core::result::Result<i32,Error> = self.send_out(); if (flushed.is_err()) { return core::result::Err(flushed.unwrap_err()); }
+            let open: bool = match (self.engine.state(request.id)) { ext::http2::State::Open -> true, _ -> false };
+            if (self.engine.unsent(request.id) == 0 || !open) { break; }
+            let got: core::result::Result<i32,Error> = self.receive(deadline.unwrap()); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+            if (got.unwrap() < 0) { return core::result::Err(Error::WriteTimeout); }
+            if (got.unwrap() == 0) { return core::result::Err(Error::Truncated); }
+        }
+        self.stats.responses += 1;
+        return core::result::Ok(0);
+    }
+    // Graceful shutdown: GOAWAY(NO_ERROR); open streams may still finish.
+    pub fn goaway(&self) -> core::result::Result<i32,Error> { self.engine.goaway(ext::http2_frame::NO_ERROR); return self.send_out(); }
+    // GOAWAY if none was sent, a bounded flush, then close and free.
+    pub fn close(&self) -> core::result::Result<i32,Error> {
+        if (self.closed) { return core::result::Ok(0); }
+        self.closed = true;
+        if (self.engine.is_open() && !self.engine.goaway_sent()) { self.engine.goaway(ext::http2_frame::NO_ERROR); }
+        let soon: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.drain_timeout_ms);
+        if (soon.is_ok() && self.engine.output().len() > 0) { let sent: core::result::Result<i32,core::io::Error> = self.socket.send_until(self.engine.output(),soon.unwrap()); }
+        let shut: core::result::Result<i32,core::io::Error> = self.socket.shutdown(std::socket::Shutdown::Write);
+        if (shut.is_ok() && soon.is_ok()) {
+            // Drain briefly so the peer reads our GOAWAY instead of a reset.
+            let left: i32 = self.options.drain_bytes;
+            while (left > 0) { let got: core::result::Result<i32,core::io::Error> = self.socket.receive_until(self.scratch.as_view(),soon.unwrap()); if (got.is_err() || got.unwrap() <= 0) { break; } left -= got.unwrap(); }
+        }
+        self.engine.destroy(); self.scratch.destroy(); self.taken.destroy();
+        let closed: core::result::Result<i32,core::io::Error> = self.socket.close(); if (closed.is_err()) { return core::result::Err(Error::Io(closed.unwrap_err())); }
+        return core::result::Ok(0);
+    }
+}
+
 // Right-aligned decimal digits in out[0..24]; returns their count.
 pub fn format_u64(value: u64, out: [u8]) -> i32 { let n: i32 = 0; let v: u64 = value; while (true) { out[23-n] = (48 + (v % 10) as u8) as u8; n += 1; v = v / 10; if (v == 0) { break; } } return n; }
 
@@ -510,8 +707,13 @@ pub impl Router {
 // buffered connections. next() returns a slot whose request is ready; the
 // application takes the Connection, stages one response (buffered, so it
 // never blocks), and puts it back. Slow peers only hold their own slot.
-pub struct ServerStats { connections: i32, requests: i32, rejected: i32, timeouts: i32, idle: i32, errors: i32, peak: i32 }
-pub struct Server { events: std::event::Loop, listener: std::socket::Socket, options: Options, slots: alloc::vec::Vec<Connection>, interest: alloc::vec::Vec<u32>, ready: alloc::vec::Vec<i32>, active: i32, listening: bool, stats: ServerStats }
+// After enable_h2, a connection that opens with the HTTP/2 preface runs an
+// ext::http2_server engine in its slot; next_ready then also returns its
+// requests, one per stream, answered with h2_respond (also nonblocking).
+pub struct ServerStats { connections: i32, requests: i32, rejected: i32, timeouts: i32, idle: i32, errors: i32, peak: i32, h2_connections: i32 }
+// stream 0: an HTTP/1.1 request (take/put); otherwise an HTTP/2 stream.
+pub struct Ready { slot: i32, stream: i32 }
+pub struct Server { events: std::event::Loop, listener: std::socket::Socket, options: Options, slots: alloc::vec::Vec<Connection>, interest: alloc::vec::Vec<u32>, ready: alloc::vec::Vec<i32>, active: i32, listening: bool, stats: ServerStats, engines: alloc::vec::Vec<core::option::Option<ext::http2_server::Connection>>, ready_streams: alloc::vec::Vec<i32>, h2_enabled: bool, ready_head: i32, dirty: alloc::vec::Vec<bool>, flush: alloc::vec::Vec<i32>, wrap: bool, closing: bool, wrapped: alloc::vec::Vec<bool>, holds: alloc::vec::Vec<u32>, applied: alloc::vec::Vec<u32>, notices: alloc::vec::Vec<ext::client_transport::Notice> }
 const LISTENER: u64 = 4294967295;
 
 // The listener is borrowed (its descriptor stays the caller's); it must be a
@@ -525,13 +727,14 @@ pub fn server(listener: &std::socket::Socket, options: Options, max_connections:
     let slots: core::result::Result<alloc::vec::Vec<Connection>,alloc::vec::Error> = alloc::vec::with_capacity<Connection>(max_connections);
     let interest: core::result::Result<alloc::vec::Vec<u32>,alloc::vec::Error> = alloc::vec::with_capacity<u32>(max_connections);
     let ready: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(max_connections);
-    if (slots.is_err() || interest.is_err() || ready.is_err()) { events.remove(fd.unwrap()); events.close(); return core::result::Err(Error::AllocationFailed); }
-    let s: Server = Server { events: events, listener: std::socket::Socket { handle: fd.unwrap(), domain: listener.domain, datagram: false }, options: options, slots: slots.unwrap(), interest: interest.unwrap(), ready: ready.unwrap(), active: 0, listening: true, stats: ServerStats { connections: 0, requests: 0, rejected: 0, timeouts: 0, idle: 0, errors: 0, peak: 0 } };
+    let engines: core::result::Result<alloc::vec::Vec<core::option::Option<ext::http2_server::Connection>>,alloc::vec::Error> = alloc::vec::with_capacity<core::option::Option<ext::http2_server::Connection>>(max_connections);
+    if (slots.is_err() || interest.is_err() || ready.is_err() || engines.is_err()) { events.remove(fd.unwrap()); events.close(); return core::result::Err(Error::AllocationFailed); }
+    let s: Server = Server { events: events, listener: std::socket::Socket { handle: fd.unwrap(), domain: listener.domain, datagram: false }, options: options, slots: slots.unwrap(), interest: interest.unwrap(), ready: ready.unwrap(), active: 0, listening: true, stats: ServerStats { connections: 0, requests: 0, rejected: 0, timeouts: 0, idle: 0, errors: 0, peak: 0, h2_connections: 0 }, engines: engines.unwrap(), ready_streams: alloc::vec::new<i32>(), h2_enabled: false, ready_head: 0, dirty: alloc::vec::new<bool>(), flush: alloc::vec::new<i32>(), wrap: false, closing: false, wrapped: alloc::vec::new<bool>(), holds: alloc::vec::new<u32>(), applied: alloc::vec::new<u32>(), notices: alloc::vec::new<ext::client_transport::Notice>() };
     // Closed placeholder slots; a slot is free while its connection is closed.
     let i: i32 = 0; let placeholder: std::socket::Accepted = std::socket::Accepted { socket: std::socket::Socket { handle: -1, domain: 2, datagram: false }, peer: core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(0,0,0,0), port: 0 }) };
     while (i < max_connections) {
         let c: Connection = Connection { socket: placeholder.socket, peer: placeholder.peer, options: options, input: alloc::vec::new<u8>(), filled: 0, consumed: 0, body: alloc::vec::new<u8>(), output: alloc::vec::new<u8>(), sent: 0, buffered: true, file: std::file::File { handle: -1 }, file_position: 0, file_left: 0, keep_alive: false, head_only: false, staged: false, body_left: 0, closed: true, phase: CLOSED, deadline: core::time::deadline_at(core::time::instant(core::time::zero())), continue_due: false, eof: false, current: empty_request(), stats: Stats { requests: 0, responses: 0, bytes_received: 0, bytes_sent: 0, reads: 0 } };
-        s.slots.try_push(c); s.interest.try_push(0); i += 1;
+        s.slots.try_push(c); s.interest.try_push(0); s.engines.try_push(core::option::None()); s.dirty.try_push(false); s.wrapped.try_push(false); s.holds.try_push(0); s.applied.try_push(0); i += 1;
     }
     return core::result::Ok(s);
 }
@@ -560,14 +763,29 @@ pub impl Server {
         let d: core::result::Result<core::time::Deadline,Error> = deadline_ms(self.options.write_timeout_ms); if (d.is_ok()) { c.deadline = d.unwrap(); }
         self.slots.set(slot,c); return self.drive_write(slot);
     }
+    // bits: 1 to read, 2 to write; a wrapped slot adds its transport's holds.
     fn set_interest(&self, slot: i32, bits: u32) {
-        let c: Connection = self.slots.get(slot).unwrap(); if (self.interest.get(slot).unwrap() == bits || c.closed) { return; }
-        let fd: i32 = c.socket.raw_handle().unwrap(); let interest: std::event::Interest = std::event::readable(); if (bits == 2) { interest = std::event::writable(); }
-        if (self.events.modify(fd,interest,slot as u64).is_ok()) { self.interest.set(slot,bits); }
+        let c: Connection = self.slots.get(slot).unwrap(); if (c.closed) { return; }
+        let want: u32 = 1; if (bits == 2) { want = 4; }
+        want = want | self.holds.get(slot).unwrap();
+        self.interest.set(slot,bits);
+        if (self.applied.get(slot).unwrap() == want) { return; }
+        let fd: i32 = c.socket.raw_handle().unwrap();
+        if (self.events.modify(fd,std::event::Interest { bits: want },slot as u64).is_ok()) { self.applied.set(slot,want); }
     }
+    fn notify(&self, kind: i32, slot: i32, fd: i32, bits: u32) { self.notices.try_push(ext::client_transport::Notice { kind: kind, slot: slot, fd: fd, bits: bits }); }
     fn retire(&self, slot: i32) {
         let c: Connection = self.slots.get(slot).unwrap(); if (c.closed) { return; }
+        let engine: core::option::Option<ext::http2_server::Connection> = self.engines.get(slot).unwrap();
+        if (engine.is_some()) {
+            let e: ext::http2_server::Connection = engine.unwrap(); e.destroy(); self.engines.set(slot,core::option::None());
+            let k: i32 = self.ready.len() - 1;
+            while (k >= self.ready_head) { if (self.ready.get(k).unwrap() == slot) { self.ready.remove(k); self.ready_streams.remove(k); } k -= 1; }
+        }
         let fd: core::option::Option<i32> = c.socket.raw_handle(); if (fd.is_some()) { self.events.remove(fd.unwrap()); }
+        // A wrapped socket goes to its transport, which closes it.
+        if (self.wrapped.get(slot).unwrap() && !self.closing && fd.is_some()) { self.notify(ext::client_transport::DROPPED,slot,fd.unwrap(),0); c.socket = std::socket::Socket { handle: -1, domain: c.socket.domain, datagram: false }; }
+        self.wrapped.set(slot,false); self.holds.set(slot,0); self.applied.set(slot,0);
         c.release(); self.slots.set(slot,c); self.interest.set(slot,0); self.active -= 1;
         if (!self.listening) { let lf: i32 = self.listener.raw_handle().unwrap(); if (self.events.add(lf,std::event::readable(),LISTENER).is_ok()) { self.listening = true; } }
     }
@@ -583,12 +801,16 @@ pub impl Server {
         return self.start_write(slot);
     }
     fn drive_write(&self, slot: i32) -> core::result::Result<i32,Error> {
-        let c: Connection = self.slots.get(slot).unwrap(); let flushed: core::result::Result<bool,Error> = c.flush_ready(); self.slots.set(slot,c);
+        let c: Connection = self.slots.get(slot).unwrap(); let wrapped: bool = self.wrapped.get(slot).unwrap();
+        let flushed: core::result::Result<bool,Error> = core::result::Ok(false);
+        if (wrapped) { flushed = c.stage_ready(); } else { flushed = c.flush_ready(); }
+        self.slots.set(slot,c);
         if (flushed.is_err()) { self.stats.errors += 1; self.retire(slot); return core::result::Ok(0); }
         if (!flushed.unwrap()) { self.set_interest(slot,2); return core::result::Ok(0); }
         c = self.slots.get(slot).unwrap(); let now: core::result::Result<core::time::Instant,Error> = now_instant(); if (now.is_err()) { self.retire(slot); return core::result::Ok(0); }
         if (!c.keep_alive) {
-            c.socket.shutdown(std::socket::Shutdown::Write); c.phase = DRAIN; c.filled = 0; c.consumed = 0;
+            if (wrapped) { self.notify(ext::client_transport::SHUTDOWN,slot,c.socket.raw_handle().unwrap(),0); } else { c.socket.shutdown(std::socket::Shutdown::Write); }
+            c.phase = DRAIN; c.filled = 0; c.consumed = 0;
             let d: core::result::Result<core::time::Deadline,Error> = after(now.unwrap(),self.options.drain_timeout_ms); if (d.is_ok()) { c.deadline = d.unwrap(); }
             self.slots.set(slot,c); self.set_interest(slot,1); return core::result::Ok(0);
         }
@@ -604,13 +826,19 @@ pub impl Server {
         let c: Connection = self.slots.get(slot).unwrap();
         if (c.stats.requests >= self.options.max_requests) { self.retire(slot); return core::result::Ok(0); }
         let parsed: core::result::Result<core::option::Option<Request>,Error> = c.try_parse(now); self.slots.set(slot,c);
-        if (parsed.is_err()) { return self.fail(slot,parsed.unwrap_err()); }
-        if (parsed.unwrap().is_some()) { self.stats.requests += 1; self.ready.try_push(slot); return core::result::Ok(0); }
+        if (parsed.is_err()) {
+            let preface: bool = match (parsed.unwrap_err()) { Error::Http2Preface -> true, _ -> false };
+            if (preface && self.h2_enabled) { return self.h2_start(slot,now); }
+            return self.fail(slot,parsed.unwrap_err());
+        }
+        if (parsed.unwrap().is_some()) { self.stats.requests += 1; self.ready.try_push(slot); self.ready_streams.try_push(0); return core::result::Ok(0); }
         c = self.slots.get(slot).unwrap();
         if (c.eof) { if (c.filled == 0 && c.phase == IDLE) { self.stats.idle += 1; self.retire(slot); return core::result::Ok(0); } return self.fail(slot,Error::Truncated); }
         if (c.continue_due) {
             c.continue_due = false; if (c.output.try_extend(literal("HTTP/1.1 100 Continue\r\n\r\n",25)).is_err()) { self.slots.set(slot,c); return self.fail(slot,Error::AllocationFailed); }
-            let f: core::result::Result<bool,Error> = c.flush_ready(); self.slots.set(slot,c);
+            let f: core::result::Result<bool,Error> = core::result::Ok(false);
+            if (!self.wrapped.get(slot).unwrap()) { f = c.flush_ready(); }
+            self.slots.set(slot,c);
             if (f.is_err()) { self.stats.errors += 1; self.retire(slot); return core::result::Ok(0); }
             // A tiny interim response that did not fit is finished with the final one.
         }
@@ -624,7 +852,9 @@ pub impl Server {
             if (made.is_err()) { self.stats.errors += 1; continue; }
             let c: Connection = made.unwrap(); let slot: i32 = 0; while (self.slots.get(slot).unwrap().phase != CLOSED) { slot += 1; }
             if (self.events.add(c.socket.raw_handle().unwrap(),std::event::readable(),slot as u64).is_err()) { c.release(); self.stats.errors += 1; continue; }
-            self.slots.set(slot,c); self.interest.set(slot,1); self.active += 1; self.stats.connections += 1; if (self.active > self.stats.peak) { self.stats.peak = self.active; }
+            self.slots.set(slot,c); self.interest.set(slot,1); self.applied.set(slot,1); self.holds.set(slot,0); self.wrapped.set(slot,self.wrap);
+            self.active += 1; self.stats.connections += 1; if (self.active > self.stats.peak) { self.stats.peak = self.active; }
+            if (self.wrap) { self.notify(ext::client_transport::ACCEPTED,slot,c.socket.raw_handle().unwrap(),0); }
         }
         // Full: stop watching the listener so level-triggered readiness cannot spin.
         if (self.listening) { let lf: i32 = self.listener.raw_handle().unwrap(); if (self.events.remove(lf).is_ok()) { self.listening = false; } }
@@ -632,14 +862,19 @@ pub impl Server {
     fn on_event(&self, slot: i32, event: std::event::Event, now: core::time::Instant) {
         let c: Connection = self.slots.get(slot).unwrap(); if (c.closed) { return; }
         if (c.phase == WRITE) { if (event.writable() || event.error() || event.hangup()) { self.drive_write(slot); } return; }
+        let wrapped: bool = self.wrapped.get(slot).unwrap();
+        if (c.phase == DRAIN && wrapped) { c.filled = 0; self.slots.set(slot,c); if (c.eof) { self.retire(slot); } return; }
         if (c.phase == DRAIN) {
             let all: core::slice::View<u8> = c.input.as_view(); let done: bool = false; let calls: i32 = 16;
             while (calls > 0) { calls -= 1; let got: core::result::Result<i32,core::io::Error> = c.socket.receive(all); if (got.is_err()) { done = !would_block(got.unwrap_err()); break; } if (got.unwrap() <= 0) { done = true; break; } }
             if (done) { self.retire(slot); } return;
         }
         if (c.phase == HANDLER) { return; }
-        let filled: core::result::Result<bool,Error> = c.fill_ready(); self.slots.set(slot,c);
-        if (filled.is_err()) { self.stats.errors += 1; self.retire(slot); return; }
+        if (c.phase == H2) { self.h2_event(slot,now); return; }
+        if (!wrapped) {
+            let filled: core::result::Result<bool,Error> = c.fill_ready(); self.slots.set(slot,c);
+            if (filled.is_err()) { self.stats.errors += 1; self.retire(slot); return; }
+        }
         self.advance(slot,now);
     }
     fn expire(&self, now: core::time::Instant) {
@@ -649,39 +884,257 @@ pub impl Server {
             if (c.closed || c.phase == HANDLER || !c.deadline.is_expired(now)) { continue; }
             let slot: i32 = i - 1;
             if (c.phase == IDLE) { self.stats.idle += 1; self.retire(slot); continue; }
+            if (c.phase == H2) { self.h2_expire(slot); continue; }
             if (c.phase == HEAD) { self.fail(slot,Error::HeadTimeout); continue; }
             if (c.phase == BODY) { self.fail(slot,Error::BodyTimeout); continue; }
             if (c.phase == WRITE) { self.stats.errors += 1; }
             self.retire(slot);
         }
     }
-    // Drive I/O until a request is ready (Some(slot)) or the deadline passes (None).
-    pub fn next(&self, deadline: core::time::Deadline) -> core::result::Result<core::option::Option<i32>,Error> {
-        let storage: [std::event::Event;64] = [std::event::empty_event();64]; let events: core::slice::View<std::event::Event> = core::slice::view(storage,64).unwrap();
+    // ---- HTTP/2 slots ----
+    // Hand connections that open with the HTTP/2 preface to an engine
+    // instead of closing them. Requests then come from next_ready.
+    pub fn enable_h2(&self) { self.h2_enabled = true; }
+    fn h2_start(&self, slot: i32, now: core::time::Instant) -> core::result::Result<i32,Error> {
+        let c: Connection = self.slots.get(slot).unwrap();
+        let made: core::result::Result<ext::http2_server::Connection,ext::http2::Error> = ext::http2_server::server(h2_options(self.options));
+        if (made.is_err()) { self.stats.errors += 1; self.retire(slot); return core::result::Ok(0); }
+        let e: ext::http2_server::Connection = made.unwrap();
+        let fed: core::result::Result<i32,ext::http2::Error> = e.feed(part(c.input.as_view(),c.consumed,c.filled));
+        c.filled = 0; c.consumed = 0; c.phase = H2; self.slots.set(slot,c);
+        self.engines.set(slot,core::option::Some(e)); self.stats.h2_connections += 1;
+        return self.h2_pump(slot,now);
+    }
+    // Queue new requests, send what the engine has (until the socket would
+    // block), pick the deadline and the readiness to wait for, and retire
+    // the slot once the connection is finished.
+    fn h2_pump(&self, slot: i32, now: core::time::Instant) -> core::result::Result<i32,Error> {
+        let c: Connection = self.slots.get(slot).unwrap(); let e: ext::http2_server::Connection = self.engines.get(slot).unwrap().unwrap();
+        e.collect();
         while (true) {
-            if (!self.ready.is_empty()) { let slot: i32 = self.ready.remove(0).unwrap(); return core::result::Ok(core::option::Some(slot)); }
-            let wake: core::time::Deadline = deadline; let i: i32 = 0;
-            while (i < self.slots.len()) { let c: Connection = self.slots.get(i).unwrap(); if (!c.closed && c.phase != HANDLER) { wake = earlier(wake,c.deadline); } i += 1; }
-            let got: core::result::Result<i32,std::event::Error> = self.events.wait_until(events,wake);
-            if (got.is_err()) { let e: std::event::Error = got.unwrap_err(); let eintr: bool = match(e) { std::event::Error::Host(n) -> n == 4, _ -> false }; if (eintr) { continue; } return core::result::Err(Error::Event(e)); }
-            let now: core::result::Result<core::time::Instant,Error> = now_instant(); if (now.is_err()) { return core::result::Err(now.unwrap_err()); }
-            let n: i32 = got.unwrap(); i = 0;
-            while (i < n) {
-                let event: std::event::Event = events.get(i).unwrap(); i += 1;
-                if (event.token == LISTENER) { self.accept_ready(); continue; }
-                self.on_event(event.token as i32,event,now.unwrap());
-            }
-            self.expire(now.unwrap());
-            if (self.ready.is_empty() && deadline.is_expired(now.unwrap())) { return core::result::Ok(core::option::None()); }
+            let next: core::option::Option<i32> = e.next_request(); if (next.is_none()) { break; }
+            if (self.ready.try_push(slot).is_err() || self.ready_streams.try_push(next.unwrap()).is_err()) { e.cancel(next.unwrap()); break; }
+            self.stats.requests += 1; c.stats.requests += 1;
+        }
+        let failed: bool = false; let calls: i32 = 64;
+        if (self.wrapped.get(slot).unwrap()) { calls = 0; }
+        while (e.output().len() > 0 && calls > 0) {
+            calls -= 1;
+            let sent: core::result::Result<i32,core::io::Error> = c.socket.send(e.output());
+            if (sent.is_err()) { if (!would_block(sent.unwrap_err())) { failed = true; } break; }
+            let n: i32 = sent.unwrap(); if (n <= 0 || n > e.output().len()) { failed = true; break; }
+            e.sent(n); c.stats.bytes_sent += n as u64;
+        }
+        self.engines.set(slot,core::option::Some(e));
+        let pending: bool = e.output().len() > 0;
+        let wait: i32 = self.options.idle_timeout_ms;
+        if (pending) { wait = self.options.write_timeout_ms; }
+        if (!pending && e.active_streams() > 0) { wait = self.options.body_timeout_ms; }
+        let d: core::result::Result<core::time::Deadline,Error> = after(now,wait); if (d.is_ok()) { c.deadline = d.unwrap(); }
+        self.slots.set(slot,c);
+        if (failed) { self.stats.errors += 1; self.retire(slot); return core::result::Ok(0); }
+        if (!pending && e.finished()) { self.retire(slot); return core::result::Ok(0); }
+        if (pending) { self.set_interest(slot,2); } else { self.set_interest(slot,1); }
+        return core::result::Ok(0);
+    }
+    fn h2_event(&self, slot: i32, now: core::time::Instant) {
+        let c: Connection = self.slots.get(slot).unwrap(); let e: ext::http2_server::Connection = self.engines.get(slot).unwrap().unwrap();
+        let calls: i32 = 16; let closed: bool = false; let broken: bool = false;
+        if (self.wrapped.get(slot).unwrap()) {
+            calls = 0; closed = c.eof;
+            if (c.filled > 0) { let fed: core::result::Result<i32,ext::http2::Error> = e.feed(part(c.input.as_view(),0,c.filled)); c.filled = 0; }
+        }
+        while (calls > 0 && e.is_open()) {
+            calls -= 1;
+            let got: core::result::Result<i32,core::io::Error> = c.socket.receive(c.input.as_view());
+            if (got.is_err()) { if (!would_block(got.unwrap_err())) { broken = true; } break; }
+            let n: i32 = got.unwrap(); if (n <= 0) { closed = true; break; }
+            c.stats.bytes_received += n as u64; c.stats.reads += 1;
+            let fed: core::result::Result<i32,ext::http2::Error> = e.feed(part(c.input.as_view(),0,n));
+        }
+        self.engines.set(slot,core::option::Some(e)); self.slots.set(slot,c);
+        if (broken) { self.stats.errors += 1; self.retire(slot); return; }
+        if (closed) { if (e.active_streams() > 0) { self.stats.errors += 1; } else { self.stats.idle += 1; } self.retire(slot); return; }
+        self.h2_pump(slot,now);
+    }
+    fn h2_expire(&self, slot: i32) {
+        let c: Connection = self.slots.get(slot).unwrap(); let e: ext::http2_server::Connection = self.engines.get(slot).unwrap().unwrap();
+        if (e.output().len() > 0) { self.stats.errors += 1; self.retire(slot); return; }
+        if (e.active_streams() > 0) { self.stats.timeouts += 1; self.retire(slot); return; }
+        // Idle: say GOAWAY when it fits in the socket buffer, then close.
+        self.stats.idle += 1; e.goaway(ext::http2_frame::NO_ERROR);
+        if (!self.wrapped.get(slot).unwrap()) { let sent: core::result::Result<i32,core::io::Error> = c.socket.send(e.output()); }
+        self.engines.set(slot,core::option::Some(e)); self.retire(slot);
+    }
+    // Pump every answered HTTP/2 slot except the one whose request is next.
+    fn flush_h2(&self) {
+        let keep: i32 = -1; if (self.ready_head < self.ready.len()) { keep = self.ready.get(self.ready_head).unwrap(); }
+        let now: core::result::Result<core::time::Instant,Error> = now_instant(); if (now.is_err()) { return; }
+        let j: i32 = 0;
+        while (j < self.flush.len()) {
+            let slot: i32 = self.flush.get(j).unwrap();
+            if (slot == keep) { j += 1; continue; }
+            self.flush.swap_remove(j); self.dirty.set(slot,false);
+            let c: Connection = self.slots.get(slot).unwrap();
+            if (!c.closed && c.phase == H2 && self.engines.get(slot).unwrap().is_some()) { self.h2_pump(slot,now.unwrap()); }
+        }
+    }
+    fn h2_engine(&self, ready: Ready) -> core::option::Option<ext::http2_server::Connection> {
+        if (ready.slot < 0 || ready.slot >= self.slots.len() || ready.stream <= 0) { return core::option::None(); }
+        return self.engines.get(ready.slot).unwrap();
+    }
+    // The HTTP/2 request next_ready returned; views last until h2_respond.
+    pub fn h2_request(&self, ready: Ready) -> core::result::Result<H2Request,Error> {
+        let engine: core::option::Option<ext::http2_server::Connection> = self.h2_engine(ready); if (engine.is_none()) { return core::result::Err(Error::InvalidState); }
+        let e: ext::http2_server::Connection = engine.unwrap();
+        return core::result::Ok(h2_request_of(e.borrow(),ready.stream));
+    }
+    pub fn h2_header(&self, ready: Ready, name: core::slice::View<u8>) -> core::option::Option<core::slice::View<u8>> {
+        let engine: core::option::Option<ext::http2_server::Connection> = self.h2_engine(ready); if (engine.is_none()) { return core::option::None(); }
+        let e: ext::http2_server::Connection = engine.unwrap(); return e.header(ready.stream,name);
+    }
+    // Queue the complete response (status, optional content-type,
+    // content-length, Date when options.date, body unless HEAD). The loop
+    // sends it as flow-control windows and the socket allow.
+    pub fn h2_respond(&self, ready: Ready, status: i32, content_type: core::slice::View<u8>, body: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        let engine: core::option::Option<ext::http2_server::Connection> = self.h2_engine(ready); if (engine.is_none()) { return core::result::Err(Error::InvalidState); }
+        let e: ext::http2_server::Connection = engine.unwrap();
+        let head_only: bool = same(e.method(ready.stream),literal("HEAD",4));
+        let queued: core::result::Result<i32,Error> = h2_send(e.borrow(),self.options,ready.stream,head_only,status,content_type,body);
+        self.engines.set(ready.slot,core::option::Some(e));
+        // Sent from next_ready once this connection's queued requests are
+        // answered, so one send carries many responses.
+        if (!self.dirty.get(ready.slot).unwrap()) {
+            if (self.flush.try_push(ready.slot).is_ok()) { self.dirty.set(ready.slot,true); }
+            else { let now: core::result::Result<core::time::Instant,Error> = now_instant(); if (now.is_ok()) { self.h2_pump(ready.slot,now.unwrap()); } }
+        }
+        return queued;
+    }
+    // Drive I/O until an HTTP/1.1 request is ready (Some(slot)) or the
+    // deadline passes (None). With enable_h2, use next_ready instead.
+    pub fn next(&self, deadline: core::time::Deadline) -> core::result::Result<core::option::Option<i32>,Error> {
+        if (self.h2_enabled) { return core::result::Err(Error::InvalidState); }
+        let got: core::result::Result<core::option::Option<Ready>,Error> = self.next_ready(deadline);
+        if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+        let r: core::option::Option<Ready> = got.unwrap(); if (r.is_none()) { return core::result::Ok(core::option::None()); }
+        return core::result::Ok(core::option::Some(r.unwrap().slot));
+    }
+    // Drive I/O until a request is ready or the deadline passes (None). An
+    // HTTP/1.1 request (stream 0) is served with take/put; an HTTP/2 one
+    // with h2_request and h2_respond.
+    pub fn next_ready(&self, deadline: core::time::Deadline) -> core::result::Result<core::option::Option<Ready>,Error> {
+        while (true) {
+            let r: core::option::Option<Ready> = self.pop_ready(); if (r.is_some()) { return core::result::Ok(r); }
+            let got: core::result::Result<bool,Error> = self.poll_round(deadline);
+            if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+            if (got.unwrap() && self.ready_head >= self.ready.len()) { return core::result::Ok(core::option::None()); }
         }
         return core::result::Err(Error::InvalidState);
     }
+    // The next queued request, after sending answered HTTP/2 responses.
+    pub fn pop_ready(&self) -> core::option::Option<Ready> {
+        if (!self.flush.is_empty()) { self.flush_h2(); }
+        if (self.ready_head >= self.ready.len()) { return core::option::None(); }
+        let slot: i32 = self.ready.get(self.ready_head).unwrap(); let stream: i32 = self.ready_streams.get(self.ready_head).unwrap(); self.ready_head += 1;
+        if (self.ready_head == self.ready.len()) { self.ready.clear(); self.ready_streams.clear(); self.ready_head = 0; }
+        return core::option::Some(Ready { slot: slot, stream: stream });
+    }
+    // One wait for readiness (until deadline or a connection's own) and the
+    // I/O and timeouts it brings. Ok(true) once deadline has passed.
+    pub fn poll_round(&self, deadline: core::time::Deadline) -> core::result::Result<bool,Error> {
+        let storage: [std::event::Event;64] = [std::event::empty_event();64]; let events: core::slice::View<std::event::Event> = core::slice::view(storage,64).unwrap();
+        let wake: core::time::Deadline = deadline; let i: i32 = 0;
+        while (i < self.slots.len()) { let c: Connection = self.slots.get(i).unwrap(); if (!c.closed && c.phase != HANDLER) { wake = earlier(wake,c.deadline); } i += 1; }
+        let got: core::result::Result<i32,std::event::Error> = self.events.wait_until(events,wake);
+        if (got.is_err()) { let e: std::event::Error = got.unwrap_err(); let eintr: bool = match(e) { std::event::Error::Host(n) -> n == 4, _ -> false }; if (eintr) { return core::result::Ok(false); } return core::result::Err(Error::Event(e)); }
+        let now: core::result::Result<core::time::Instant,Error> = now_instant(); if (now.is_err()) { return core::result::Err(now.unwrap_err()); }
+        let n: i32 = got.unwrap(); i = 0;
+        while (i < n) {
+            let event: std::event::Event = events.get(i).unwrap(); i += 1;
+            if (event.token == LISTENER) { self.accept_ready(); continue; }
+            let slot: i32 = event.token as i32;
+            if (self.wrapped.get(slot).unwrap()) { self.notify(ext::client_transport::READY,slot,-1,event.bits); continue; }
+            self.on_event(slot,event,now.unwrap());
+        }
+        self.expire(now.unwrap());
+        return core::result::Ok(deadline.is_expired(now.unwrap()));
+    }
+    // Leave the socket I/O of connections accepted from now on to a
+    // transport layer (ext::client_transport), such as ext::tls_clients
+    // through ext::http_service_tls. Call before serving.
+    pub fn wrap_clients(&self) -> core::result::Result<i32,Error> {
+        if (self.stats.connections > 0) { return core::result::Err(Error::InvalidState); }
+        self.wrap = true; return core::result::Ok(0);
+    }
     // Close every connection (no drain) and the loop; the listener stays open.
     pub fn close(&self) -> core::result::Result<i32,Error> {
+        self.closing = true;
         let i: i32 = 0; while (i < self.slots.len()) { self.retire(i); i += 1; }
         if (self.listening) { let lf: i32 = self.listener.raw_handle().unwrap(); self.events.remove(lf); self.listening = false; }
         let closed: core::result::Result<i32,std::event::Error> = self.events.close();
-        self.slots.destroy(); self.interest.destroy(); self.ready.destroy();
+        self.slots.destroy(); self.interest.destroy(); self.ready.destroy(); self.engines.destroy(); self.ready_streams.destroy(); self.dirty.destroy(); self.flush.destroy(); self.wrapped.destroy(); self.holds.destroy(); self.applied.destroy(); self.notices.destroy();
         if (closed.is_err()) { return core::result::Err(Error::Event(closed.unwrap_err())); } return core::result::Ok(0);
     }
+}
+
+// Wrapped connections (wrap_clients) through ext::client_transport.
+pub impl ext::client_transport::Clients for Server {
+    pub fn notice_count(&self) -> i32 { return self.notices.len(); }
+    pub fn notice(&self, i: i32) -> ext::client_transport::Notice { return self.notices.get(i).unwrap(); }
+    pub fn clear_notices(&self) { self.notices.clear(); }
+    pub fn client_open(&self, slot: i32) -> bool { return slot >= 0 && slot < self.slots.len() && !self.slots.get(slot).unwrap().closed; }
+    pub fn client_input(&self, slot: i32) -> core::slice::View<u8> {
+        if (!self.client_wants_read(slot)) { return literal("",0); }
+        let c: Connection = self.slots.get(slot).unwrap();
+        if (c.filled >= c.input.len()) { grow(c.input.borrow(),c.filled + 1,self.options.buffer_bytes); self.slots.set(slot,c); }
+        return part(c.input.as_view(),c.filled,c.input.len());
+    }
+    pub fn client_received(&self, slot: i32, count: i32) {
+        if (!self.client_open(slot)) { return; }
+        let c: Connection = self.slots.get(slot).unwrap(); if (count <= 0 || count > c.input.len() - c.filled) { return; }
+        c.filled += count; c.stats.bytes_received += count as u64; c.stats.reads += 1; self.slots.set(slot,c);
+    }
+    pub fn client_eof(&self, slot: i32) { if (!self.client_open(slot)) { return; } let c: Connection = self.slots.get(slot).unwrap(); c.eof = true; self.slots.set(slot,c); }
+    pub fn client_wants_read(&self, slot: i32) -> bool {
+        if (!self.client_open(slot)) { return false; }
+        let c: Connection = self.slots.get(slot).unwrap(); if (c.eof) { return false; }
+        if (c.phase == H2 || c.phase == DRAIN) { return true; }
+        return (c.phase == IDLE || c.phase == HEAD || c.phase == BODY) && (c.filled < c.input.len() || c.input.len() < self.options.buffer_bytes);
+    }
+    pub fn client_ready(&self, slot: i32, readable: bool, writable: bool) {
+        if (!self.client_open(slot)) { return; }
+        let now: core::result::Result<core::time::Instant,Error> = now_instant(); if (now.is_err()) { return; }
+        let bits: u32 = 0; if (readable) { bits = bits | 1; } if (writable) { bits = bits | 4; }
+        self.on_event(slot,std::event::Event { token: slot as u64, bits: bits },now.unwrap());
+    }
+    pub fn client_output(&self, slot: i32) -> core::slice::View<u8> {
+        if (!self.client_open(slot)) { return literal("",0); }
+        let c: Connection = self.slots.get(slot).unwrap();
+        if (c.phase == H2) { let engine: core::option::Option<ext::http2_server::Connection> = self.engines.get(slot).unwrap(); if (engine.is_none()) { return literal("",0); } return engine.unwrap().output(); }
+        if (c.phase == WRITE && c.sent >= c.output.len()) { let staged: core::result::Result<bool,Error> = c.stage_ready(); self.slots.set(slot,c); }
+        return part(c.output.as_view(),c.sent,c.output.len());
+    }
+    pub fn client_sent(&self, slot: i32, count: i32) {
+        if (!self.client_open(slot) || count <= 0) { return; }
+        let c: Connection = self.slots.get(slot).unwrap(); let now: core::result::Result<core::time::Instant,Error> = now_instant(); if (now.is_err()) { return; }
+        if (c.phase == H2) {
+            let e: ext::http2_server::Connection = self.engines.get(slot).unwrap().unwrap(); if (count > e.output().len()) { return; }
+            e.sent(count); self.engines.set(slot,core::option::Some(e)); c.stats.bytes_sent += count as u64; self.slots.set(slot,c);
+            if (e.output().len() == 0) { self.h2_pump(slot,now.unwrap()); }
+            return;
+        }
+        if (count > c.output.len() - c.sent) { return; }
+        c.sent += count; c.stats.bytes_sent += count as u64; self.slots.set(slot,c);
+        if (c.phase == WRITE && c.sent >= c.output.len()) { self.drive_write(slot); }
+    }
+    pub fn client_start_h2(&self, slot: i32) {
+        if (!self.client_open(slot) || !self.h2_enabled) { return; }
+        let c: Connection = self.slots.get(slot).unwrap(); if (c.phase != IDLE || c.stats.requests != 0) { return; }
+        let now: core::result::Result<core::time::Instant,Error> = now_instant(); if (now.is_ok()) { self.h2_start(slot,now.unwrap()); }
+    }
+    pub fn client_hold(&self, slot: i32, bits: u32) {
+        if (!self.client_open(slot)) { return; }
+        self.holds.set(slot,bits); self.set_interest(slot,self.interest.get(slot).unwrap());
+    }
+    pub fn client_drop(&self, slot: i32) { if (self.client_open(slot)) { self.stats.errors += 1; self.retire(slot); } }
 }

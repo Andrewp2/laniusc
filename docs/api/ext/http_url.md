@@ -32,7 +32,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../extended/ext/http_url.lani#L11)
 - [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../extended/ext/http_url.lani#L12)
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/http_url.lani#L13)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/http_url.lani#L14)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../extended/ext/http_url.lani#L14)
 - [ext::host_name](host_name.md) · [source](../../../extended/ext/http_url.lani#L15)
 - [ext::uri](uri.md) · [source](../../../extended/ext/http_url.lani#L16)
 

@@ -152,7 +152,7 @@ def library_allocations(executable):
     def execute(point=None):
         assert time.monotonic()-started < 62, "split finite OOM campaign before increasing runtime"
         trace = directory / ("baseline.trace" if point is None else f"oom-{point}.trace")
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none", "-e", "trace="+TRACE, "-o", str(trace)]
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none", "-e", "trace="+TRACE, "-o", str(trace)]
         if point is not None:
             command += ["-e", f"inject=mmap:error=ENOMEM:when={point}"]
         command.append(str(Path(executable).resolve()))
@@ -194,7 +194,7 @@ def reuse(executable):
     directory = Path(tempfile.mkdtemp(prefix="lexer-cursor-reuse-"))
     sites = profile(executable, directory)
     trace = directory / "native.trace"
-    command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none", "-e", "trace="+TRACE, "-o", str(trace), str(Path(executable).resolve())]
+    command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-e", "signal=none", "-e", "trace="+TRACE, "-o", str(trace), str(Path(executable).resolve())]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
     frames, stdout = [], bytearray()
     try:

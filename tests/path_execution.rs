@@ -182,7 +182,7 @@ fn borrowed_paths_execute_without_allocation_or_filesystem_calls() {
     ] {
         let exe = executable(fixture);
         let trace = common::TempArtifact::new("laniusc_paths", "pure_trace", None);
-        let output = run(Command::new("strace")
+        let output = run(crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
@@ -508,7 +508,7 @@ fn every_owned_path_allocation_failure_preserves_contents_and_capacity() {
     .collect();
     let trace = common::TempArtifact::new("laniusc_paths", "failure_trace", None);
     let execute = |when: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -583,7 +583,7 @@ fn path_join_program_preserves_bytes_validates_before_output_and_cleans_up_failu
     let expected = b"base/file\0tail\0/absolute\0";
     let trace = common::TempArtifact::new("laniusc_paths", "program_trace", None);
     let execute = |fault: Option<String>, status: i32| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -627,7 +627,7 @@ fn large_component_batches_use_geometric_growth_and_one_normalization_buffer() {
         for mode in [0, 1] {
             let output = common::process_output_with_timeout(
                 "large path batch",
-                Command::new("strace")
+                crate::common::strace()
                     .args(["-qq", "-o"])
                     .arg(trace.path())
                     .args(["-e", "trace=mmap,munmap"])
@@ -653,7 +653,7 @@ fn large_component_batches_use_geometric_growth_and_one_normalization_buffer() {
 fn borrowed_and_owned_path_keys_share_component_equality_and_hashing() {
     let exe = executable("tests/fixtures/stdlib_foundation/path_collections.lani");
     let trace = common::TempArtifact::new("laniusc_paths", "collection_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])

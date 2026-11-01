@@ -368,7 +368,7 @@ fn tar_program_frees_all_owners_under_allocation_and_host_io_failures() {
     ] {
         let file = input(bytes);
         let execute = |injection: Option<&str>, status| {
-            let mut command = Command::new("strace");
+            let mut command = crate::common::strace();
             command
                 .args(["-qq", "-o"])
                 .arg(trace.path())

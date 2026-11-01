@@ -137,6 +137,37 @@ theorem call_completes (pure : PureProg sp prims outside) (primsOk : PrimsOk sp 
   subst same
   exact ⟨w, v, _, hw, call, r, inv', step, grown, rem⟩
 
+/-- A call of a pure function on arguments Core completes, whose cost `h`
+fits below `2 ^ 64`, on an unbounded allocator: Core completes the call, with
+`pcall`'s value, the locals of the state after the arguments, and the heap
+grown by at most `h` and still unbounded. -/
+theorem pure_call_fwd (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims)
+    {N c h : Nat} {f : SrcFunc} {args : List Core.Expr} {values ps : List Value} {st s1 : State}
+    (found : sp.funcs[c]? = some f) (notOutside : outside.contains c = false)
+    (argsRun : Ev (fun k => evalExprs k sp.toCore st args) values s1) (inv : Inv s1)
+    (rel : VRels sp.toCore (boxElem sp prims) s1.heap (f.params.map SrcParam.ty) values ps)
+    (cost : ccall sp prims (boxCost sp) N c ps = some h)
+    (budget : s1.heap.nextAddress + h ≤ 2 ^ 64) (fr : s1.heap.remaining = none) :
+    ∃ w v st', pcall sp prims N c ps = some w ∧
+      Ev (fun k => evalExpr k sp.toCore st (.call c args)) v st' ∧
+      VRel sp.toCore (boxElem sp prims) st'.heap f.ret v w ∧ Inv st' ∧ Step s1 st' ∧
+      st'.heap.nextAddress ≤ s1.heap.nextAddress + h ∧ st'.heap.remaining = none ∧ st'.locals = s1.locals := by
+  simp only [ccall, Option.map_eq_some_iff] at cost
+  obtain ⟨⟨w, h'⟩, hq, rfl⟩ := cost
+  have len : values.length = f.params.length := by simpa using rel.length.1
+  obtain ⟨compl, completed, v, ev, cr, grown, rem⟩ :=
+    func_live pure primsOk N found notOutside len inv rel hq budget fr
+  have call := call_fwd argsRun found len ev cr
+  obtain ⟨k, hk⟩ := ev.at
+  obtain ⟨w', hw', r, inv', step⟩ := func_sim pure primsOk k found notOutside len inv
+    (Nat.le_trans grown budget) rel hk cr
+  have hw : pcall sp prims N c ps = some w := by rw [pcall_eq_qcall sp prims (boxCost sp), hq]; rfl
+  have same := (pcall_mono sp prims N hw (Nat.le_max_left N (k + 1))).symm.trans
+    (pcall_mono sp prims (k + 1) hw' (Nat.le_max_right N (k + 1)))
+  simp only [Option.some.injEq] at same
+  subst same
+  exact ⟨w, v, _, hw, call, r, inv'.restore _, step.restore _, grown, rem, rfl⟩
+
 end
 
 end Lanius.Faithful

@@ -1,5 +1,33 @@
-import Lanius.Mini.CompileCorrect
+module
 
+public import Lanius.Mini.CompileCorrect
+public import Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.Instr_pieces
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileModules
+import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.importOk
+import all Lanius.Mini.Compiler.P.importsOk
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.moduleExports
+import all Lanius.Mini.Compiler.P.moduleFirsts
+import all Lanius.Mini.Compiler.P.modulesOk
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.arities
+public import Lanius.Mini.Compiler.P.codeSize
+public import Lanius.Mini.Compiler.P.compileArgs
+
+@[expose] public section
 /-! Runs that do not return. `Stops prog depth env heap stmt n`: the run of
 `stmt` stops at a checked fault (an allocation past the heap's limit from a
 cursor within it, a

@@ -12,7 +12,7 @@ open Lanius.Faithful.SelfRep
 open Lanius.Faithful.Termination
 open Lanius.Faithful.SelfCert
 
-theorem ok_is_try_local : FnOk prog prims info (2031, ⟨4, [], 0⟩) :=
+theorem ok_is_try_local : FnOk prog prims info (2031, ⟨3, [], 0⟩) :=
   fnOk_of fn_is_try_local (by decide +kernel)
 
 theorem ok_try_local_of : FnOk prog prims info (2032, ⟨16, [], 0⟩) :=
@@ -27,10 +27,10 @@ theorem ok_try_rest : FnOk prog prims info (2034, ⟨2, [], 0⟩) :=
 theorem ok_stmt_unless : FnOk prog prims info (2035, ⟨0, [], 0⟩) :=
   fnOk_of fn_stmt_unless (by decide +kernel)
 
-theorem ok_arm_body_of : FnOk prog prims info (2036, ⟨37, [0], 0⟩) :=
+theorem ok_arm_body_of : FnOk prog prims info (2036, ⟨36, [0], 0⟩) :=
   fnOk_of fn_arm_body_of (by decide +kernel)
 
-theorem ok_set_try_or_eval : FnOk prog prims info (2037, ⟨31, [], 0⟩) :=
+theorem ok_set_try_or_eval : FnOk prog prims info (2037, ⟨30, [], 0⟩) :=
   fnOk_of fn_set_try_or_eval (by decide +kernel)
 
 theorem ok_checked_stmt : FnOk prog prims info (2038, ⟨0, [], 0⟩) :=
@@ -54,7 +54,7 @@ theorem ok_set_eval_of : FnOk prog prims info (2043, ⟨3, [], 0⟩) :=
 theorem ok_compound_eff : FnOk prog prims info (2044, ⟨3, [], 0⟩) :=
   fnOk_of fn_compound_eff (by decide +kernel)
 
-theorem ok_compound_field_eval : FnOk prog prims info (2045, ⟨31, [], 0⟩) :=
+theorem ok_compound_field_eval : FnOk prog prims info (2045, ⟨30, [], 0⟩) :=
   fnOk_of fn_compound_field_eval (by decide +kernel)
 
 theorem ok_free_shifted : FnOk prog prims info (2046, ⟨0, [], 0⟩) :=

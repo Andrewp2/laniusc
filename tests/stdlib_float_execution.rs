@@ -488,7 +488,7 @@ fn all_value_helpers_allocate_no_heap_storage_and_preserve_bit_transfers() {
     let trace = common::TempArtifact::new("laniusc_float", "noalloc-trace", None);
     let output = common::process_output_with_timeout(
         "allocation-free float utilities",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

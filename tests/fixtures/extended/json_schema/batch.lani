@@ -1,0 +1,75 @@
+// Batch driver for oracle.py. Each stdin line is DEPTH TAB WORK TAB SCHEMA
+// TAB INSTANCE (DEPTH and WORK 0 keep the defaults). Each line prints
+// "valid", "invalid" or "err KIND" for a parse, compile or validation error.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json_schema;
+import ext::json_tree;
+import std::stream;
+
+fn append(out: &alloc::vec::Vec<u8>, bytes: [u8], start: i32, length: i32) {
+    core::result::unwrap(out.try_extend(core::slice::View { values: bytes, start: start, length: length }));
+}
+fn append_text(out: &alloc::vec::Vec<u8>, text: core::text::Text) { append(out, text.bytes, text.start, text.length); }
+fn append_str(out: &alloc::vec::Vec<u8>, value: str, count: i32) {
+    append(out, core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count), 0, count);
+}
+fn number(bytes: [u8], start: i32, stop: i32) -> i64 {
+    let value: i64 = 0; let index: i32 = start;
+    while (index < stop) { value = value * 10 + ((bytes[index] - 48) as i64); index += 1; }
+    return value;
+}
+fn run(out: &alloc::vec::Vec<u8>, bytes: [u8], depth: i64, work: i64, schema_start: i32, schema_stop: i32, start: i32, stop: i32) {
+    let limits: ext::json_tree::Limits = ext::json_tree::default_limits();
+    let parsed = ext::json_tree::parse(bytes, schema_start, schema_stop - schema_start, limits);
+    if (parsed.is_err()) { append_str(out, "err ", 4); append_text(out, ext::json_tree::kind_name(parsed.unwrap_err().kind)); return; }
+    let schema_tree: ext::json_tree::Tree = parsed.unwrap();
+    let second = ext::json_tree::parse(bytes, start, stop - start, limits);
+    if (second.is_err()) { append_str(out, "err ", 4); append_text(out, ext::json_tree::kind_name(second.unwrap_err().kind)); schema_tree.destroy(); return; }
+    let instance: ext::json_tree::Tree = second.unwrap();
+    let options: ext::json_schema::Limits = ext::json_schema::default_limits();
+    if (depth > 0) { options.max_depth = depth as i32; }
+    if (work > 0) { options.max_work = work as u64; }
+    let compiled = ext::json_schema::compile(schema_tree.borrow(), options);
+    if (compiled.is_err()) { append_str(out, "err ", 4); append_text(out, ext::json_schema::kind_name(compiled.unwrap_err().kind)); }
+    else {
+        let schema: ext::json_schema::Schema = compiled.unwrap();
+        let result = schema.validate(instance.borrow());
+        if (result.is_err()) { append_str(out, "err ", 4); append_text(out, ext::json_schema::kind_name(result.unwrap_err().kind)); }
+        else { if (result.unwrap()) { append_str(out, "valid", 5); } else { append_str(out, "invalid", 7); } }
+        schema.destroy();
+    }
+    schema_tree.destroy(); instance.destroy();
+}
+fn main() -> i32 {
+    let data: alloc::vec::Vec<u8> = alloc::vec::new();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 65536] = [0; 65536];
+    while (true) {
+        let got = source.read(buffer, 0, 65536);
+        if (got.is_err()) { return 3; }
+        let n: i32 = got.unwrap();
+        if (n == 0) { break; }
+        core::result::unwrap(data.try_extend(core::slice::View { values: buffer, start: 0, length: n }));
+    }
+    let out: alloc::vec::Vec<u8> = alloc::vec::new();
+    let bytes: [u8] = data.as_slice(); let total: i32 = data.len(); let at: i32 = 0;
+    while (at < total) {
+        let stop: i32 = at;
+        while (stop < total && bytes[stop] != 10) { stop += 1; }
+        let first: i32 = at; while (first < stop && bytes[first] != 9) { first += 1; }
+        let second: i32 = first + 1; while (second < stop && bytes[second] != 9) { second += 1; }
+        let third: i32 = second + 1; while (third < stop && bytes[third] != 9) { third += 1; }
+        if (third >= stop) { return 2; }
+        run(out.borrow(), bytes, number(bytes, at, first), number(bytes, first + 1, second), second + 1, third, third + 1, stop);
+        core::result::unwrap(out.try_push(10));
+        at = stop + 1;
+    }
+    if (core::io::write_all<std::stream::Descriptor>(std::stream::stdout().borrow(), out.as_slice(), 0, out.len()).is_err()) { return 3; }
+    return 0;
+}

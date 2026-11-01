@@ -163,12 +163,9 @@ HEAD = re.compile(r'^(?:@\[[^\]]*\]\s*)?(?:private\s+|protected\s+|noncomputable
                   r'(?:def|abbrev|structure|inductive|theorem)\s+(\S+)', re.M)
 
 
-def used_modules(roots):
-    """The extracted modules (Frontend, Compiler) defining what the names
-    `roots` use, by name in each definition's own text, transitively: those
-    `grammarCert`'s kernel checks unfold, so GrammarCert imports their bodies
-    (`import all`) and no others, and an edit of another function does not
-    rebuild it."""
+def closure(roots):
+    """The extracted definitions (Frontend, Compiler) the names `roots` use, by
+    name in each definition's own text, transitively: {name: (module, text)}."""
     formal = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
     defs = {}
     for sub in ('Lanius/Mini/Frontend', 'Lanius/Mini/Compiler'):
@@ -182,20 +179,26 @@ def used_modules(roots):
                     for k, m in enumerate(ms):
                         end = ms[k + 1].start() if k + 1 < len(ms) else len(text)
                         defs.setdefault(m.group(1), (mod, text[m.start():end]))
-    seen, todo, mods = set(), list(roots), set()
+    seen, todo = {}, list(roots)
     while todo:
         name = todo.pop()
         if name in seen or name not in defs:
             continue
-        seen.add(name)
-        mod, body = defs[name]
-        mods.add(mod)
-        for w in set(re.findall(r"[A-Za-z_][A-Za-z0-9_'.]*", body)):
+        seen[name] = defs[name]
+        for w in set(re.findall(r"[A-Za-z_][A-Za-z0-9_'.]*", defs[name][1])):
             w = w.removeprefix('Lanius.Mini.')
             for k in (w, w.rsplit('.', 1)[0]):
                 if k in defs and k not in seen:
                     todo.append(k)
-    return sorted(mods)
+    return seen
+
+
+def used_modules(roots):
+    """The extracted modules defining what `roots` use (closure): those
+    `grammarCert`'s kernel checks unfold, so GrammarCert imports their bodies
+    (`import all`) and no others, and an edit of another function does not
+    rebuild it."""
+    return sorted({mod for mod, _ in closure(roots).values()})
 
 
 def lean(index, first, follow, nonterms):

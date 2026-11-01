@@ -6,6 +6,7 @@ import codegen.lir.x86.runtime_abi;
 import codegen.lowering_ir;
 import codegen.optimization_ir;
 import gpu_index;
+import hir_records;
 
 struct Params
 {
@@ -34,6 +35,8 @@ StructuredBuffer<SemanticLirAggregateElement> semantic_lir_aggregate_elements;
 StructuredBuffer<uint> semantic_lir_string_total;
 StructuredBuffer<uint> semantic_lir_function_total;
 StructuredBuffer<SemanticLirFunction> semantic_lir_functions;
+StructuredBuffer<SemanticLirParam> semantic_lir_params;
+StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> x86_live_by_semantic;
 StructuredBuffer<X86ValueAnalysis> x86_value_by_semantic;
 StructuredBuffer<X86SelectInfo> x86_select_by_semantic;
@@ -354,6 +357,40 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir,
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
 }
 
+// A C entry admits the System V integer class only: at most six
+// register parameters and a scalar or unit result (docs/library-native-c.md).
+bool c_entry_scalar(uint type, bool result)
+{
+    return type == SCALAR_I32 || type == SCALAR_U32 || type == SCALAR_I64 ||
+        type == SCALAR_U64 || type == SCALAR_ISIZE || type == SCALAR_USIZE ||
+        type == SCALAR_PTR || (result && (type == SCALAR_UNIT || type == SCALAR_UNKNOWN));
+}
+
+// A CALL row from a name (HIR name or path expression) whose callee is a fn
+// item is a function named as a value: the address of its C entry. A const
+// item named as a value also lowers to a CALL row from a name.
+bool c_entry_call(OptIrNodeCore source, uint source_hir, uint function, uint function_count)
+{
+    if (opt_ir_op(source) != SEMANTIC_LIR_OP_CALL || function >= function_count ||
+        source_hir == INVALID) return false;
+    uint kind = compact_hir_core[source_hir].kind;
+    uint callee = semantic_lir_functions[function].hir_function;
+    return (kind == 22u || kind == 33u) && callee != INVALID &&
+        compact_hir_core[callee].kind == 3u;
+}
+
+bool c_entry_signature(uint function, uint function_count)
+{
+    if (function >= function_count) return false;
+    SemanticLirFunction callee = semantic_lir_functions[function];
+    if (callee.param_count > 6u || callee.result_word_count != 0u ||
+        !c_entry_scalar(callee.result_type, true)) return false;
+    for (uint ordinal = 0u; ordinal < callee.param_count; ordinal++)
+        if (!c_entry_scalar(semantic_lir_params[callee.param_start + ordinal].type_id, false))
+            return false;
+    return true;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -386,11 +423,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
     inline_info.body_row_count = 0u;
     inline_info.schedule_start = INVALID;
     inline_info.schedule_end = INVALID;
-    if (opt_ir_op(source) == SEMANTIC_LIR_OP_CALL &&
+    // A C entry address (a function named as a value) calls nothing here.
+    bool c_entry = c_entry_call(source, source_hir, args.a, function_count);
+    if (opt_ir_op(source) == SEMANTIC_LIR_OP_CALL && !c_entry &&
         args.a < function_count)
         inline_info = x86_inline_info_by_function[args.a];
     bool inline_call = inline_info.return_value != INVALID;
-    uint call_result_words = opt_ir_op(source) == SEMANTIC_LIR_OP_CALL &&
+    uint call_result_words = c_entry ? 0u : opt_ir_op(source) == SEMANTIC_LIR_OP_CALL &&
         args.a < function_count ? semantic_lir_functions[args.a].result_word_count :
         opt_ir_op(source) == SEMANTIC_LIR_OP_CALL_SYMBOL
             ? x86_imported_call_result_words(source) :
@@ -941,7 +980,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         : source.type_id & 0xffu) | ((source.flags & ~(SEMANTIC_LIR_FLAG_NATIVE_PLACE |
             SEMANTIC_LIR_FLAG_PLACE_VIEW | SEMANTIC_LIR_FLAG_ARRAY_PAIR |
             SEMANTIC_LIR_FLAG_NATIVE_C_CALL)) << 8u) |
-        ((source.flags & SEMANTIC_LIR_FLAG_NATIVE_C_CALL) != 0u ? X86_LIR_METADATA_NATIVE_C : 0u) |
+        ((source.flags & SEMANTIC_LIR_FLAG_NATIVE_C_CALL) != 0u || c_entry
+            ? X86_LIR_METADATA_NATIVE_C : 0u) |
         (x86_semantic_type_is_aggregate(source) || copy_words != 0u ||
          imported_aggregate_result || local_aggregate_result
             ? X86_LIR_METADATA_AGGREGATE : 0u);
@@ -1420,6 +1460,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     if ((op == X86_LIR_OP_CALL || op == X86_LIR_OP_CALL_HOST ||
          op == X86_LIR_OP_PRINT_I32) && args.a == INVALID)
+        flags |= TARGET_LIR_FLAG_UNSUPPORTED;
+    if (c_entry && !c_entry_signature(args.a, function_count))
         flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     // A local call's c is its result width, zero included: the emitter
     // passes a hidden result address above two words, and the default

@@ -1,5 +1,33 @@
-import Lanius.Mini.Asm
+module
 
+public import Lanius.Mini.Asm
+public import Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.Instr_pieces
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileModules
+import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.importOk
+import all Lanius.Mini.Compiler.P.importsOk
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.moduleExports
+import all Lanius.Mini.Compiler.P.moduleFirsts
+import all Lanius.Mini.Compiler.P.modulesOk
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.UintTy_half
+public import Lanius.Mini.Compiler.P.arities
+public import Lanius.Mini.Compiler.P.codeSize
+public import Lanius.Mini.Compiler.P.compileArgs
+
+@[expose] public section
 /-! The compiler against the abstract machine: induction on expression syntax
 and on the statement derivation, with one invariant — slots below `base` hold
 the source locals. Calls are taken on trust from the source semantics of the

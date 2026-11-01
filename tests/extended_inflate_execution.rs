@@ -28,7 +28,7 @@ fn inflate_contracts_execute_strided_offset_views_bounds_windows_and_partial_pro
     let trace = common::TempArtifact::new("laniusc_inflate", "trace", None);
     let output = common::short_process_output_with_timeout(
         "inflate contracts",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([
@@ -81,7 +81,7 @@ fn batch(cases: &[Case]) -> Vec<Outcome> {
     let trace = common::TempArtifact::new("laniusc_inflate", "trace", None);
     let output = common::process_output_with_timeout(
         "inflate reference batch",
-        Command::new("strace")
+        crate::common::strace()
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args([

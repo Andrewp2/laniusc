@@ -26,7 +26,7 @@ pub struct Error { cause: Cause, phase: Phase, ssl_error: i32, code: u64, verify
 // One active owner of this SSL_CTX reference. SSL_new retains its own native
 // context reference, so destroy() does not invalidate existing sessions.
 pub struct Context { handle: ptr, limits: Limits }
-pub struct ServerContext { handle: ptr, limits: Limits, peer_required: bool }
+pub struct ServerContext { handle: ptr, limits: Limits, peer_required: bool, alpn: ptr, alpn_bytes: i32 }
 // One active manual owner. No owner-field edits, copies or concurrent calls.
 // reader/writer/counts remain allocated at fixed addresses through retries.
 pub struct Session { handle: ptr, reader: ptr, writer: ptr, counts: ptr, limits: Limits, lifecycle: Lifecycle, reading: i32, writing: i32, read_requirement: Need, write_requirement: Need, shutdown_requirement: Need, shutdown_started: bool, local_notify_sent: bool, endpoint_role: Role, peer_required: bool }
@@ -234,7 +234,7 @@ pub fn new_server(certificate_chain: core::slice::View<u8>, private_key: core::s
     if (method == 0) { let error: Error = queued(Phase::Context,0,0,0); release_credentials(nowhere,files); file.destroy(); return core::result::Err(error); }
     ERR_clear_error(); let handle: ptr = SSL_CTX_new(method);
     if (handle == 0) { let error: Error = queued(Phase::Context,0,0,0); release_credentials(nowhere,files); file.destroy(); return core::result::Err(error); }
-    let owner: ServerContext = ServerContext { handle: handle, limits: limits, peer_required: required };
+    let owner: ServerContext = ServerContext { handle: handle, limits: limits, peer_required: required, alpn: nowhere, alpn_bytes: 0 };
     let mode: i32 = 0; if (required) { mode = 3; }
     SSL_CTX_set_verify(handle,mode,nowhere);
     let policy = context_policy(handle);
@@ -243,6 +243,46 @@ pub fn new_server(certificate_chain: core::slice::View<u8>, private_key: core::s
     if (policy.is_ok()) { policy = load_credentials(handle,files); }
     if (policy.is_err()) { let error: Error = policy.unwrap_err(); release_credentials(handle,files); file.destroy(); owner.destroy(); return core::result::Err(error); }
     release_credentials(handle,files); file.destroy(); return core::result::Ok(owner);
+}
+
+// Each name is a length byte (1..255) and that many bytes.
+fn wire_list(protocols: core::slice::View<u8>) -> bool {
+    let i: i32 = 0;
+    while (i < protocols.length) {
+        let n: i32 = protocols.values[protocols.start + i] as i32;
+        if (n == 0 || i + 1 + n > protocols.length) { return false; }
+        i += 1 + n;
+    }
+    return true;
+}
+// SSL_CTX_set_alpn_select_cb's callback. arg is the server list: a u32
+// length, then the names in wire form. *out points into the client's list,
+// which OpenSSL copies. 0 is SSL_TLSEXT_ERR_OK, 3 SSL_TLSEXT_ERR_NOACK.
+fn alpn_select(session: ptr, out: ptr, out_length: ptr, input: ptr, input_length: u32, arg: ptr) -> i32 {
+    if (arg == 0 || input == 0) { return 3; }
+    let header: [u32] = core::mem::typed_slice_from_raw_parts<u32>(arg, 1); let n: i32 = header[0] as i32;
+    let server: [u8] = core::mem::typed_slice_from_raw_parts<u8>(arg + 4, n);
+    let m: i32 = input_length as i32;
+    let client: [u8] = core::mem::typed_slice_from_raw_parts<u8>(input, m);
+    let i: i32 = 0;
+    while (i < n) {
+        let size: i32 = server[i] as i32; let j: i32 = 0;
+        while (j < m) {
+            let offered: i32 = client[j] as i32;
+            if (j + 1 + offered > m) { return 3; }
+            if (offered == size) {
+                let k: i32 = 0; while (k < size && client[j + 1 + k] == server[i + 1 + k]) { k += 1; }
+                if (k == size) {
+                    let chosen: [ptr] = core::mem::typed_slice_from_raw_parts<ptr>(out, 1); chosen[0] = input + j + 1;
+                    let length: [u8] = core::mem::typed_slice_from_raw_parts<u8>(out_length, 1); length[0] = size as u8;
+                    return 0;
+                }
+            }
+            j += 1 + offered;
+        }
+        i += 1 + size;
+    }
+    return 3;
 }
 
 fn identity_bytes(identity: Identity) -> core::slice::View<u8> { return match (identity) { Identity::Dns(bytes) -> bytes, Identity::Ip(bytes) -> bytes }; }
@@ -367,10 +407,33 @@ pub impl ServerContext {
     pub fn borrow(&self) -> &ServerContext { return self; }
     pub fn is_open(&self) -> bool { return self.handle != 0; }
     pub fn io_bytes(&self) -> i32 { return self.limits.io_bytes; }
+    // Unhook the ALPN callback before its list is freed: sessions that
+    // retain the native context then negotiate without ALPN instead of
+    // reading freed memory.
     pub fn destroy(&self) {
-        let handle: ptr = self.handle;
-        let nowhere: ptr = 0; self.handle = nowhere;
+        let handle: ptr = self.handle; let list: ptr = self.alpn; let bytes: i32 = self.alpn_bytes;
+        let nowhere: ptr = 0; self.handle = nowhere; self.alpn = nowhere; self.alpn_bytes = 0;
+        if (handle != 0 && list != 0) { SSL_CTX_set_alpn_select_cb(handle, nowhere, nowhere); }
+        if (list != 0) { alloc::allocator::dealloc(list, (bytes as usize) + 4, 8); }
         if (handle != 0) { SSL_CTX_free(handle); }
+    }
+    // Accept application protocols (RFC 7301 3.2), in wire form like
+    // Session.set_alpn, most preferred first. The server picks its most
+    // preferred protocol that the client offers; with no overlap the
+    // extension goes unanswered and the handshake proceeds without ALPN.
+    // Applies to handshakes that start after the call.
+    pub fn set_alpn(&self, protocols: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        if (!self.is_open()) { return core::result::Err(local(Cause::Closed, Phase::Context)); }
+        if (!valid(protocols) || protocols.length == 0 || protocols.length > 65535 || !wire_list(protocols)) { return core::result::Err(local(Cause::Bounds, Phase::Context)); }
+        let list: ptr = alloc::allocator::alloc((protocols.length as usize) + 4, 8);
+        if (list == 0) { return core::result::Err(local(Cause::AllocationFailed, Phase::Context)); }
+        let header: [u32] = core::mem::typed_slice_from_raw_parts<u32>(list, 1); header[0] = protocols.length as u32;
+        let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(list + 4, protocols.length);
+        let i: i32 = 0; while (i < protocols.length) { raw[i] = protocols.values[protocols.start + i]; i += 1; }
+        SSL_CTX_set_alpn_select_cb(self.handle, alpn_select, list);
+        if (self.alpn != 0) { alloc::allocator::dealloc(self.alpn, (self.alpn_bytes as usize) + 4, 8); }
+        self.alpn = list; self.alpn_bytes = protocols.length;
+        return core::result::Ok(0);
     }
     // The caller accepts and keeps this connected nonblocking socket alive.
     // SSL_new retains the native context and its immutable authentication policy.
@@ -449,12 +512,7 @@ pub impl Session {
         let fresh: bool = match (self.state()) { State::Handshake -> true, _ -> false };
         if (!fresh || self.reading != 0 || self.writing != 0) { return core::result::Err(local(Cause::InvalidState, Phase::Session)); }
         if (!valid(protocols) || protocols.length > 65535) { return core::result::Err(local(Cause::Bounds, Phase::Session)); }
-        let i: i32 = 0;
-        while (i < protocols.length) {
-            let n: i32 = protocols.values[protocols.start + i] as i32;
-            if (n == 0 || i + 1 + n > protocols.length) { return core::result::Err(local(Cause::Bounds, Phase::Session)); }
-            i += 1 + n;
-        }
+        if (!wire_list(protocols)) { return core::result::Err(local(Cause::Bounds, Phase::Session)); }
         let allocated = packed(protocols, Phase::Session);
         if (allocated.is_err()) { return core::result::Err(allocated.unwrap_err()); }
         let list: Packed = allocated.unwrap();
@@ -667,6 +725,7 @@ pub extern "C" fn SSL_set_connect_state(session: ptr);
 pub extern "C" fn SSL_set_accept_state(session: ptr);
 pub extern "C" fn SSL_do_handshake(session: ptr) -> i32;
 pub extern "C" fn SSL_version(session: ptr) -> i32;
+pub extern "C" fn SSL_CTX_set_alpn_select_cb(context: ptr, callback: ptr, arg: ptr);
 pub extern "C" fn SSL_set_alpn_protos(session: ptr, protocols: ptr, length: u32) -> i32;
 pub extern "C" fn SSL_get0_alpn_selected(session: ptr, data: ptr, length: ptr);
 pub extern "C" fn SSL_get_error(session: ptr, result: i32) -> i32;

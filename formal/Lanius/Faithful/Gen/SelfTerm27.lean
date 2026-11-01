@@ -105,7 +105,7 @@ theorem ok_neg_least : FnOk prog prims info (1287, ⟨3, [], 0⟩) :=
 theorem ok_operand_want : FnOk prog prims info (1289, ⟨1, [], 0⟩) :=
   fnOk_of fn_operand_want (by decide +kernel)
 
-theorem ok_known_expr : FnOk prog prims info (1290, ⟨4, [1], 0⟩) :=
+theorem ok_known_expr : FnOk prog prims info (1290, ⟨3, [1], 0⟩) :=
   fnOk_of fn_known_expr (by decide +kernel)
 
 theorem ok_amount_want : FnOk prog prims info (1291, ⟨2, [], 0⟩) :=
@@ -123,13 +123,13 @@ theorem ok_empty_of_mini_selfhost_SrcExpr : FnOk prog prims info (1295, ⟨0, []
 theorem ok_cons_of_mini_selfhost_SrcExpr : FnOk prog prims info (1296, ⟨0, [], 0⟩) :=
   fnOk_of fn_cons_of_mini_selfhost_SrcExpr (by decide +kernel)
 
-theorem ok_first_src : FnOk prog prims info (1297, ⟨4, [], 0⟩) :=
+theorem ok_first_src : FnOk prog prims info (1297, ⟨3, [], 0⟩) :=
   fnOk_of fn_first_src (by decide +kernel)
 
 theorem ok_rest_src : FnOk prog prims info (1298, ⟨0, [], 0⟩) :=
   fnOk_of fn_rest_src (by decide +kernel)
 
-theorem ok_repeat_src : FnOk prog prims info (1299, ⟨2, [1], 0⟩) :=
+theorem ok_repeat_src : FnOk prog prims info (1299, ⟨1, [1], 0⟩) :=
   fnOk_of fn_repeat_src (by decide +kernel)
 
 theorem chunk27 : AllFns prog prims info part27 :=

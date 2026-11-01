@@ -55,6 +55,10 @@ values.destroy();
 | `try_reserve(additional)` | Reserve for `len + additional`; return resulting capacity |
 | `try_push(item)` | Append and return the new length |
 | `try_extend(view)` | Append all entries and return the new length |
+| `try_extend_from_slice(values, count)` | Append the first `count` slice entries as `try_extend` does; a negative count is `Bounds` |
+| `copy_from_slice(values, count)`, `swap_with_slice(values, count)` | Overwrite or exchange every entry with a separate slice; `count != len()` is `Bounds` |
+| `fill(value)` | Overwrite every entry; nothing is destroyed |
+| `swap(left, right)` | Exchange two entries; an invalid index is `Bounds` |
 | `set(index, item)` | Replace and return the previous entry |
 | `pop()` | Transfer the last entry, or None when empty |
 | `try_insert(index, item)` | Insert at `0..=len`, shift the suffix, return the new length |
@@ -144,6 +148,9 @@ shallow nested copies and signed-index errors.
 
 Element layout can depend on capacity, so relocation copies typed entries into
 a fresh allocation rather than reinterpreting or reallocating raw bytes.
+Relocation, extension, extraction, insertion, removal, resize and clone move
+entries through the [core::slice bulk engine](stdlib-slice-bulk.md), eight
+bytes at a time for `Vec<u8>` and `Vec<i32>` runs of 64 bytes or more.
 The allocator must support the current eight-byte alignment contract. Growth
 is geometric for push/insert/extension. Reserve and nonempty shrink copy O(n)
 entries when relocating. Clone is O(n). Push is amortized O(1); insertion and

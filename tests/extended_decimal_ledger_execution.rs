@@ -389,7 +389,7 @@ fn no_leaks(events: &str) -> usize {
 #[test]
 fn ledger_releases_every_observed_allocation_on_denial_and_io_faults() {
     assert!(
-        Command::new("strace")
+        crate::common::strace()
             .arg("-V")
             .output()
             .unwrap()
@@ -401,7 +401,7 @@ fn ledger_releases_every_observed_allocation_on_denial_and_io_faults() {
     let data = file(input);
     let trace = common::TempArtifact::new("laniusc_decimal_ledger", "trace", None);
     let execute = |injection: Option<&str>, status: i32| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -466,7 +466,7 @@ fn ledger_releases_every_observed_allocation_on_denial_and_io_faults() {
     }
     // strace suppresses the first transferred byte. Resume must emit exactly
     // the suffix once, so this catches writes that restart at the old offset.
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -484,7 +484,7 @@ fn ledger_releases_every_observed_allocation_on_denial_and_io_faults() {
     let output = run(Command::new("sh")
         .args([
             "-c",
-            "exec strace -qq -o \"$1\" -e trace=mmap,munmap,read,write \"$2\" <\"$3\" > /dev/full",
+            "exec strace -E LANIUS_ALLOC=mmap -qq -o \"$1\" -e trace=mmap,munmap,read,write \"$2\" <\"$3\" > /dev/full",
             "decimal_ledger",
         ])
         .arg(trace.path())
@@ -492,7 +492,7 @@ fn ledger_releases_every_observed_allocation_on_denial_and_io_faults() {
         .arg(data.path()));
     failure(&output, 6, "io-failure");
     no_leaks(&std::fs::read_to_string(trace.path()).unwrap());
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([

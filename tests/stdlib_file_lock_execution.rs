@@ -55,7 +55,7 @@ fn run(
     let trace = common::TempArtifact::new("laniusc_file_lock", "trace", None);
     let input = common::TempArtifact::new("laniusc_file_lock", "mode", None);
     input.write_bytes([mode.unwrap_or(0)]);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command.args(["-qq", "-n", "-s", "64", "-o"]).arg(trace.path()).args([
         "-e", "trace=openat,flock,fcntl,lseek,read,write,close,mmap,mremap,munmap,brk,fsync,fdatasync,sync,syncfs",
         "-e", "signal=none",

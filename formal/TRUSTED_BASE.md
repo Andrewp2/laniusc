@@ -39,11 +39,42 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `f221909910346588` (4,341 constants). This covers Core's
+definitions `a784f30fce5c9322` (4443 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01): the lexer
+modules keeps its hash. The last change of the hash (11-01, merge of
+review-fixes into lang): it combines lang's `u16` views
+(`b8d2e28d6f544c42`) and review-fixes' restatement of review finding 5's
+first reason (`adcfd7afcaf25cbd`), which did not change each other's
+definitions. The restatement: `SelfShort`'s first reason is
+`SelfPanics W` (`Faithful/SelfPanics.lean`): no cost at any fuel, and with
+the prelude's `plus` and `times` wrapping the pure compile has a value
+(`compileW`, through `pcall` of `progW`, which is `prog` with those two
+functions' bodies replaced by `wrapAt` and `wrapFunc`,
+`Faithful/Sim/Wrap.lean`, at `ixPlus` and `ixTimes`,
+`Faithful/Gen/SelfLiveTab.lean`). The `u16` views (11-01, merge of
+rfront's `u16` views into lang): Core's `u16` views (SEMANTIC_DECISIONS
+"`u16` views"): a raw slice of `u16` is a word view in laniusc's layout, one
+descending 8-byte word per element (`rawSliceElementAddress?` and
+`mapRawNominalSlice` take it as they take a struct or enum,
+`NativeLayout.elementStride?` is -8 and `words?` of a `[u16]` is 3), and
+`RawNominalSliceElement.word16` types it; the hash before it was
+`da057f9f0d2562a7` (Reviewer A's change kept it). Before that (11-01, review finding
+5 piece (c)): the new top theorems `selfCompiler_reason`,
+`selfHost_fixpoint_reason` and `selfHost_outcome_reason` bring in
+`SelfFaultReason` and `SelfShort` (`Faithful/SelfShort.lean`), `selfCost`,
+`consCost` and `listVal` (`Faithful/SelfLive.lean`), and through them the
+cost semantics `qcall` (`Faithful/Cost.lean`), the pure semantics it
+shares with `pcall` (`Faithful/Pure.lean`), `boxCost`
+(`Faithful/Fwd/Prim.lean`) and the prim table `prims`
+(`Faithful/Gen/SelfPureTab.lean`); no existing definition changed; merged with F12's module conversion,
+which changes no definition's meaning. Before that (11-01, F12): Core's
+semantics, the x86 model, the memory model and the self program's
+simulation became Lean `module`s, so their auxiliary definitions (matchers,
+`_proof_N`) are named per module: the same constants, with 18 hashes that
+differ only in the names of the auxiliaries they mention; no definition's
+meaning changed. Before that (11-01): the lexer
 (`Lanius/Compiler/Lexer*.lean`, `Tokens.lean`) and the reading became Lean
 `module`s, so a function's matcher is its own (`OneTokenResult.shift.match_1`)
 rather than shared with a derived `Repr` instance's; no definition's meaning
@@ -261,7 +292,7 @@ statement `00000000370c8fc9`. Under `driver_faithful`'s premises on the
 state and views, with the input and output ranges checked in Core's heap,
 Core's run of `w` never reaches an undefined trap, at any fuel (`SafeE`).
 
-### The self-built verified compiler (`Lanius/Faithful/SelfCompiler.lean`, `SelfHost.lean`)
+### The self-built verified compiler (`Lanius/Faithful/SelfCompiler.lean`, `SelfHost.lean`, `SelfShort.lean`, `SelfPanics.lean`)
 
 #### `Lanius.Faithful.SelfCompiler.selfCompiler_outcome`
 
@@ -291,6 +322,43 @@ Rests on sections 3, 4, 5, 6 and 8.
 
 statement `00000000dc4933a2`. `selfCompiler_outcome` for any files, with
 `read` and `compiled` in place of `compileSource prog = some B`.
+
+#### `Lanius.Faithful.SelfShort.selfCompiler_reason`
+
+statement `00000000803be923`. `selfCompiler_outcome`, premises unchanged,
+with `SelfFaults` replaced by `SelfFaultReason`: when the run faults
+because Core's run of `w` fails at every fuel, one of `SelfShort`'s reasons
+holds. Either the cost semantics gives the pure compile no cost at any fuel
+(`selfCost N W = none` for every `N`) because the prelude's `plus` or
+`times` panics (`SelfPanics W`: with the two wrapping, `compileW` has a
+value at some fuel), or `compileText files`'s binary has
+more words than `room`, or it has a cost and the heap limit is short:
+`limit < selfNext W room + h` for every cost `h` that `selfCost` gives
+(`W = filesWords files`). The other fault branch, Core's run completing
+within the limit with the stack window short, is as before. Rests on
+sections 3, 4, 5, 6 and 8.
+
+#### `Lanius.Faithful.SelfShort.selfHost_fixpoint_reason`
+
+statement `000000005a4ddf64`. `selfHost_fixpoint` with `SelfFaults`
+replaced by `SelfFaultReason`.
+
+#### `Lanius.Faithful.SelfShort.selfHost_outcome_reason`
+
+statement `00000000b38b3b9b`. `selfHost_outcome` with `SelfFaults`
+replaced by `SelfFaultReason`.
+
+#### `Lanius.Faithful.SelfPanics.compileW_total`
+
+statement `00000000cb6e99e6`. For any words `W`, the pure compile of the
+self program with the prelude's `plus` and `times` replaced by their
+operators, which wrap (`progW`), has a value at some fuel: `compileW N W =
+some v`, `grammar()`, then `front_end_words(grammar(), list W)` and
+`compile_words(..)` by `pcall`. Every function the compile reaches
+terminates (`SelfTerm.termOk`), is typed (`SelfPure.selfPure`) and cannot
+fail but at a call (`SelfPure.livesOk`, `LiveFn` of `Sim/Live.lean`), so
+`pcall_live` gives each call a value. Rests on section 1 only: it is about
+the pure semantics, not Core or the machine.
 
 ## 1. Lean
 
@@ -331,6 +399,8 @@ the statements, so a reader has to agree that each one says what is intended:
 | `Inv`, `Reads`, `Result`, `Readable` | `Faithful/Sim/State.lean`, `Faithful/SelfDriver.lean`, `Memory/Read.lean` | the Core state invariant (no live `i32` array views, block bases unique); an input view reading words; the driver's result (-1, or the length with the output view reading the words); readable bytes of Core's heap |
 | `SafeE` | `Faithful/Safe/Run.lean` | no fuel of Core's run reaches an undefined trap |
 | `SelfOutput`, `selfHeap`, `selfBits`, `selfNext` | `Faithful/SelfCompiler.lean` | what the self-built compiler's `w` returned in x86 memory; the heap layout and argument slots its caller sets up (the input words, then the output room, then the bump heap) |
+| `SelfFaultReason`, `SelfShort`, `selfCost`, `qcall`, `boxCost`, `prims` | `Faithful/SelfShort.lean`, `Faithful/SelfLive.lean`, `Faithful/Cost.lean`, `Faithful/Fwd/Prim.lean`, `Faithful/Gen/SelfPureTab.lean` | why the self-built compiler's `w` may fault when Core's run of it fails at every fuel: no pure cost, the output room short, or the heap limit below `selfNext` plus every cost. `selfCost` is `w`'s heap cost by the pure cost semantics `qcall` (the pure semantics of `pcall`, adding `boxCost`, the box's storage and 8 bytes of alignment, at each call of a `prims.boxed` function): one `List<i32>` box per input word, then `grammar()`, `front_end_words` and `compile_words` |
+| `SelfPanics`, `compileW`, `progW`, `wrapAt`, `wrapFunc`, `pcall`, `ixPlus`, `ixTimes` | `Faithful/SelfPanics.lean`, `Faithful/Sim/Wrap.lean`, `Faithful/Pure.lean`, `Faithful/Gen/SelfLiveTab.lean` | `SelfShort`'s first reason: no cost at any fuel, and the pure compile (`pcall` of `grammar()`, `front_end_words` and `compile_words`, as `selfCost` runs them) of `progW` has a value. `progW` is `prog` with functions `ixPlus` and `ixTimes` (the prelude's `plus` and `times`, found by name by `faithful_pure.py`) wrapped: `wrapFunc op f` is `f` with the body `return a op b` of its first two parameters, which wraps, where the prelude's panics when the result overflows |
 
 The computations the theorems are about are not trusted (section 10):
 whatever `compileSource`, `compileText`, `compileProgram`, the optimizer,
@@ -453,7 +523,15 @@ Not trusted: laniusc's lexer and parser, and the parse trees they give.
 the production ids in preorder and each node's parent), but the theorems
 mention no tree: they are about the one reading of the texts. A wrong tree
 is rejected, or it is still the parse tree of the same tokens, which is
-unique. Trusted:
+unique. So the trees the certificates and the self program's files are made
+from need not be laniusc's own runs either: `formal/tools/cert_trees.py`
+takes each file's tree from a cache keyed by the file's bytes and the text
+of the extracted definitions `grammar` uses (not laniusc's binary), or from
+an untrusted CPU parser (`fuzz_oracle.Parser`), and asks laniusc only for a
+file neither gives a tree for. Every tree, from any of them, is checked by
+the validator before it is used, and a tree the validator accepts is the
+one parse tree of the tokens (`Lanius.Mini.Unique`), the tree laniusc gives
+when it is right; a stale cache entry is rejected, never used. Trusted:
 
 - **The lexer.** `Lanius.Compiler.Lexer.lexCanonical`
   (`Lanius/Compiler/LexerCanonical.lean`) is the meaning of Lanius's lexical
@@ -794,8 +872,8 @@ unless these are assumed:
 - **The prelude table** (`PRELUDE_FNS`, `PRELUDE_TYPES` in `extract.py`,
   and the same table in `extract.lani`). Assumed: `boxed` and `unbox` are
   the identity, `plus`/`times`/`minus` are `Nat` `+`/`*`/`-` on every run
-  that returns (they panic instead of wrapping, and `minus` panics when
-  `b > a`), and `max_of` is `max`. The prelude bodies are the only code
+  that returns (`plus` and `times` panic instead of wrapping; `minus`
+  returns 0 when `b > a`, as `Nat` `-` does), and `max_of` is `max`. The prelude bodies are the only code
   that touches raw memory (`alloc`, `typed_slice_from_storage`).
 - **laniusc and the Lanius runtime** (allocation, panics, stack depth) on
   this program.

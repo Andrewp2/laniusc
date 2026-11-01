@@ -217,7 +217,7 @@ fn run(
     let trace = common::TempArtifact::new("laniusc_file_seek", "trace", None);
     let input = common::TempArtifact::new("laniusc_file_seek", "mode", None);
     input.write_bytes([mode.unwrap_or(0)]);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
         .arg(trace.path())

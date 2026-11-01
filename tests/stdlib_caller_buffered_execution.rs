@@ -1,7 +1,7 @@
 //! Caller-backed buffering: borrowed state, handoff, errors, and capabilities.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, process::Command, time::Duration};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf, time::Duration};
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/stdlib_caller_buffered/direct").join(name)
@@ -26,7 +26,7 @@ fn execute(name: &str, expected_allocations: usize) {
     let trace = common::TempArtifact::new("laniusc_caller_buffered", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "caller-backed buffering contracts",
-        Command::new("strace").args(["-qq", "-o"]).arg(trace.path())
+        crate::common::strace().args(["-qq", "-o"]).arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"]).arg(executable.path()),
         Duration::from_secs(15),
     );

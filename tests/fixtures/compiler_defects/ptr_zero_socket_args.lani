@@ -1,0 +1,13 @@
+// The std::socket shape of ptr_zero_local.lani: null() inside a syscall
+// argument array after another call. Expected exit 11 (the second element
+// is a null pointer, the third too); was 22 before 2026-11-01.
+module app::main;
+enum A { W(i64), P(ptr) }
+fn null() -> ptr { let value: ptr = 0; return value; }
+fn address(value: ptr) -> A { return A::P(value); }
+fn word(value: i64) -> A { return A::W(value); }
+fn check(a: A) -> i32 { return match (a) { A::P(p) -> { if (p == 0) { return 1; } return 2; }, _ -> 3 }; }
+fn main() -> i32 {
+    let c: [A;3] = [word(5), address(null()), address(null())];
+    return check(c[1]) * 10 + check(c[2]);
+}

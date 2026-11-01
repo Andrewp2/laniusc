@@ -12,19 +12,28 @@ import core::search;
 import core::slice;
 import core::text;
 import core::utf8;
+import core::path;
 import ext::cli;
+import ext::fnmatch;
+import ext::gitignore;
 import ext::regex;
 import std::args;
+import std::directory;
+import std::file;
+import std::file_ops;
 import std::fs;
 import std::stream;
 
-struct Options { invert: bool, numbers: bool, count: bool, max_line: i32, regex: ext::regex::Options, help: bool }
+struct Options { invert: bool, numbers: bool, count: bool, max_line: i32, regex: ext::regex::Options, help: bool, recursive: bool, gitignore: bool, line_set: bool, work_set: bool }
 impl Options { fn borrow(&self) -> &Options { return self; } }
-struct Diagnostic { stage: i32, reason: i32, line: u64, offset: i32, argument: i32 }
+// path: the file a failure belongs to, when named.
+struct Diagnostic { stage: i32, reason: i32, line: u64, offset: i32, argument: i32, path: core::slice::View<u8>, named: bool }
 impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
-struct Pattern { value: core::option::Option<ext::cli::Argument> }
+// The pattern operand, then the file operands.
+struct Pattern { value: core::option::Option<ext::cli::Argument>, files: alloc::vec::Vec<ext::cli::Argument> }
 impl Pattern { fn borrow(&self) -> &Pattern { return self; } }
-struct Progress { selected: u64 }
+// hidden: a selected record was not written because the file is binary.
+struct Progress { selected: u64, hidden: bool }
 impl Progress { fn borrow(&self) -> &Progress { return self; } }
 fn literal(value: str, count: i32) -> core::slice::View<u8> {
     let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
@@ -128,13 +137,24 @@ fn valid_utf8(bytes: [u8], from: i32, to: i32) -> bool {
     }
     return true;
 }
+// The next size of an input buffer of size current holding length bytes:
+// room for a 64 KiB read, at least doubling so a long record costs linear
+// copying. The doubling stops below the i32 limit.
+fn grown_size(current: i32, length: i32) -> i32 {
+    let wanted: i32 = length + 65536;
+    if (current <= 1073741823 && current * 2 > wanted) { return current * 2; }
+    return wanted;
+}
 // Selected records collect in one fixed 64 KiB output area, allocated at
 // the first selected record and written when the next piece would not fit,
 // at the end, and before any error is reported. A piece of 64 KiB or more is
 // written straight from the input buffer. The 32 bytes before the area hold
 // the last line number in decimal, right-aligned in [0, 20) with `width`
 // digits, so the next number is usually one carry away.
-struct Output { bytes: alloc::vec::Vec<u8>, used: i32, number: u64, width: i32 }
+// label[0, label_length) ("path:") goes before each selected record when
+// file names are shown.
+// close: an unterminated last record gets a LF (file operands, as GNU grep).
+struct Output { bytes: alloc::vec::Vec<u8>, used: i32, number: u64, width: i32, label: alloc::vec::Vec<u8>, label_length: i32, close: bool }
 impl Output { fn borrow(&self) -> &Output { return self; } }
 fn flush(output: &Output) -> bool {
     let ok: bool = write_range(output.bytes.storage,32,output.used); output.used = 0; return ok;
@@ -194,9 +214,11 @@ fn emit(bytes: [u8], start: i32, end: i32, terminated: bool, options: Options, p
     if (progress.selected == 18446744073709551615) { return fail(diagnostic,2,5); } progress.selected += 1;
     if (options.count) { return 0; }
     diagnostic.stage = 4;
+    if (output.label_length > 0) { let status: i32 = put(output,output.label.as_slice(),0,output.label_length,diagnostic); if (status != 0) { return status; } }
     if (options.numbers) { let status: i32 = put_number(output,diagnostic.line,diagnostic); if (status != 0) { return status; } }
     let count: i32 = end - start; if (terminated) { count += 1; }
-    return put(output,bytes,start,count,diagnostic);
+    let status: i32 = put(output,bytes,start,count,diagnostic); if (status != 0 || terminated || !output.close) { return status; }
+    let ending: core::slice::View<u8> = literal("\n",1); return put(output,ending.values,0,1,diagnostic);
 }
 fn record(bytes: [u8], start: i32, end: i32, terminated: bool, regex: &ext::regex::Regex, matcher: &Matcher, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
     diagnostic.stage = 2; diagnostic.offset = 0;
@@ -223,8 +245,62 @@ fn record(bytes: [u8], start: i32, end: i32, terminated: bool, regex: &ext::rege
 // occurrence at or after the last search start within [.., end), or end.
 // exact: the pattern is that literal alone and the literal has no CR or LF,
 // so a valid record containing it matches.
-struct Filter { needle: [u8], length: i32, cost: i64, limit: i64, hit: i32, end: i32, exact: bool }
+// rare and other are the needle offsets find_pair probes (other's byte
+// differs from rare's whenever the needle has two distinct bytes).
+struct Filter { needle: [u8], length: i32, cost: i64, limit: i64, hit: i32, end: i32, exact: bool, rare: i32, other: i32 }
 impl Filter { fn borrow(&self) -> &Filter { return self; } }
+// The first start of the filter literal in [from, to), or -1: the answer of
+// core::search::find, with its probe bytes. Eight starts per step: a start
+// survives when its bytes at both probe offsets match, tested in two word
+// views shifted by those offsets; survivors get a full compare. Compares
+// past core::search's linear budget hand the rest to core::search::find,
+// which then switches to Two-Way.
+fn find_pair(bytes: [u8], from: i32, to: i32, filter: &Filter) -> i32 {
+    let length: i32 = filter.length;
+    if (length < 2 || from < 0 || to - from < length) { return core::search::find(bytes,from,to,filter.needle,0,length); }
+    let needle: [u8] = filter.needle; let rare: i32 = filter.rare; let other: i32 = filter.other;
+    let ones: u64 = 72340172838076673; let highs: u64 = 9259542123273814144; let all: u64 = 18446744073709551615;
+    let first: u64 = (needle[rare] as u64) * ones; let second: u64 = (needle[other] as u64) * ones;
+    let last: i32 = to - length; let s: i32 = from; let compares: i32 = 0;
+    let groups: i32 = (last - from + 1) / 8;
+    if (groups > 0) {
+        // Storage views of u64 run downward: element groups - 1 - k holds the
+        // eight bytes at offset 8k. Loads stay below to: s + 7 <= last.
+        let base: ptr = core::mem::i32_slice_data_ptr(bytes) + (from as usize);
+        let one: [u64] = core::mem::typed_slice_from_storage<u64>(base + (rare as usize), groups);
+        let two: [u64] = core::mem::typed_slice_from_storage<u64>(base + (other as usize), groups);
+        let k: i32 = groups - 1;
+        while (k >= 0) {
+            // Two words without the rarer byte are skipped at once.
+            if (k >= 1) {
+                let x0: u64 = one[k] ^ first; let x1: u64 = one[k - 1] ^ first;
+                if (((((x0 - ones) & (x0 ^ all)) | ((x1 - ones) & (x1 ^ all))) & highs) == 0) { k -= 2; continue; }
+            }
+            let x: u64 = one[k] ^ first; let y: u64 = two[k] ^ second;
+            // Every lane equal in both is marked; borrow marks are filtered
+            // by the compare.
+            let marks: u64 = (x - ones) & (x ^ all) & highs;
+            if (marks != 0) { marks = marks & (y - ones) & (y ^ all); }
+            while (marks != 0) {
+                let lane: i32 = 0; let rest: u64 = marks; while ((rest & 128) == 0) { rest = rest >> 8; lane += 1; }
+                let start: i32 = from + (groups - 1 - k) * 8 + lane;
+                let j: i32 = 0; while (j < length && bytes[start + j] == needle[j]) { j += 1; }
+                if (j == length) { return start; }
+                compares += 1;
+                if ((compares as i64) * (length as i64) > 4 * ((start - from + 1) as i64) + 256) { return core::search::find(bytes,start + 1,to,needle,0,length); }
+                marks = marks & (marks - 1);
+            }
+            k -= 1;
+        }
+        s = from + groups * 8;
+    }
+    while (s <= last) {
+        let j: i32 = 0; while (j < length && bytes[s + j] == needle[j]) { j += 1; }
+        if (j == length) { return s; }
+        s += 1;
+    }
+    return -1;
+}
 fn line(bytes: [u8], start: i32, end: i32, terminated: bool, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
     if (filter.length > 0 && ((end - start) as i64 + 2) * filter.cost <= filter.limit) {
         if (filter.hit < start) {
@@ -244,21 +320,393 @@ fn line(bytes: [u8], start: i32, end: i32, terminated: bool, regex: &ext::regex:
 // an allocation failure like any other, reported at the pattern stage.
 struct Matcher { dfa: ext::regex::Dfa, ready: bool }
 impl Matcher { fn borrow(&self) -> &Matcher { return self; } }
-fn search(regex: &ext::regex::Regex, options: Options, diagnostic: &Diagnostic) -> i32 {
+fn search(regex: &ext::regex::Regex, options: Options, pattern: &Pattern, globs: &Globs, diagnostic: &Diagnostic) -> i32 {
     let built = ext::regex::dfa(regex);
     let matcher: Matcher = Matcher { dfa: ext::regex::Dfa { set: ext::regex::prefix_set(), cost: 0, limit: 0 }, ready: false };
     if (core::result::is_ok(built)) { matcher.dfa = core::result::unwrap(built); matcher.ready = true; }
     else { let error: ext::regex::Error = core::result::unwrap_err(built); let unsupported: bool = match (error) { ext::regex::Error::Unsupported(at) -> true, _ -> false }; if (!unsupported) { return regex_error(error,diagnostic); } }
-    let status: i32 = scan(regex, matcher.borrow(), options, diagnostic);
+    let storage: [i32;64] = [0;64]; let needle: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let filter: Filter = Filter { needle: needle, length: 0, cost: 0, limit: 0, hit: -1, end: 0, exact: false, rare: 0, other: 0 };
+    let status: i32 = prepare(regex,needle,filter.borrow(),diagnostic);
+    if (status == 0) {
+        if (pattern.files.len() == 0 && !options.recursive) { status = scan(regex, matcher.borrow(), filter.borrow(), options, diagnostic); }
+        else { status = files(regex, matcher.borrow(), filter.borrow(), options, pattern, globs, diagnostic); }
+    }
     matcher.dfa.destroy(); return status;
 }
 // Records are cut from one buffer filled 64 KiB at a time; the unfinished
 // tail moves to the front before the next read.
-fn scan(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, diagnostic: &Diagnostic) -> i32 {
-    let output: Output = Output { bytes: alloc::vec::new(), used: 0, number: 0, width: 0 };
-    let status: i32 = records(regex,matcher,options,output.borrow(),diagnostic);
+fn scan(regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let output: Output = Output { bytes: alloc::vec::new(), used: 0, number: 0, width: 0, label: alloc::vec::new(), label_length: 0, close: false };
+    let status: i32 = records(regex,matcher,filter,options,output.borrow(),diagnostic);
     if (output.used > 0 && !flush(output.borrow())) { diagnostic.stage = 4; status = fail(diagnostic,3,7); }
     output.bytes.destroy(); return status;
+}
+// ---- Files and directories ----
+// --include (1), --exclude (2) and --exclude-dir (3) patterns, in command
+// line order.
+struct Glob { kind: i32, bytes: core::slice::View<u8> }
+struct Globs { items: alloc::vec::Vec<Glob> }
+impl Globs { fn borrow(&self) -> &Globs { return self; } }
+fn glob_match(pattern: core::slice::View<u8>, name: core::slice::View<u8>, command_line: bool) -> bool {
+    let whole: core::result::Result<bool,ext::fnmatch::Error> = ext::fnmatch::matches(pattern,name,0);
+    if (core::result::is_ok(whole) && core::result::unwrap(whole)) { return true; }
+    if (!command_line) { return false; }
+    // A command-line name also matches by any suffix that follows a '/'.
+    let i: i32 = 0;
+    while (i + 1 < name.length) {
+        if (name.values[name.start + i] == 47 && name.values[name.start + i + 1] != 47) {
+            let suffix: core::slice::View<u8> = core::slice::View { values: name.values, start: name.start + i + 1, length: name.length - i - 1 };
+            let found: core::result::Result<bool,ext::fnmatch::Error> = ext::fnmatch::matches(pattern,suffix,0);
+            if (core::result::is_ok(found) && core::result::unwrap(found)) { return true; }
+        }
+        i += 1;
+    }
+    return false;
+}
+// GNU grep's rule: the last --include or --exclude that matches decides;
+// with none matching, a file is skipped when the first of them is --include.
+fn file_skipped(globs: &Globs, name: core::slice::View<u8>, command_line: bool) -> bool {
+    let first: i32 = 0; let last: i32 = 0; let i: i32 = 0;
+    while (i < globs.items.len()) {
+        let glob: Glob = globs.items.at(i); i += 1;
+        if (glob.kind == 3) { continue; }
+        if (first == 0) { first = glob.kind; }
+        if (glob_match(glob.bytes,name,command_line)) { last = glob.kind; }
+    }
+    if (last != 0) { return last == 2; }
+    return first == 1;
+}
+fn directory_skipped(globs: &Globs, name: core::slice::View<u8>, command_line: bool) -> bool {
+    let i: i32 = 0;
+    while (i < globs.items.len()) { let glob: Glob = globs.items.at(i); i += 1; if (glob.kind == 3 && glob_match(glob.bytes,name,command_line)) { return true; } }
+    return false;
+}
+// An open directory of the walk: its reader, the path length before its
+// name was appended and the rule count before its .gitignore was added.
+struct Level { reader: std::directory::Reader, length: i32, rules: i32 }
+// State of a file search: the reused file buffer, the current path, the
+// gitignore rules of the open directories, and the outcome so far.
+struct Run { buffer: alloc::vec::Vec<u8>, path: alloc::vec::Vec<u8>, levels: alloc::vec::Vec<Level>, rules: ext::gitignore::Rules, names: bool, any: bool, failed: bool }
+impl Run { fn borrow(&self) -> &Run { return self; } }
+fn view_of(bytes: alloc::vec::Vec<u8>) -> core::slice::View<u8> { return bytes.as_view(); }
+// "text-grep: PATH: message" on stderr.
+fn notice(path: core::slice::View<u8>, message: core::slice::View<u8>) -> bool {
+    let sink: std::stream::Descriptor = std::stream::stderr();
+    if (core::result::is_err(core::io::write_all(sink.borrow(),literal("text-grep: ",11).values,0,11))) { return false; }
+    if (core::result::is_err(core::io::write_all(sink.borrow(),path.values,path.start,path.length))) { return false; }
+    if (core::result::is_err(core::io::write_all(sink.borrow(),literal(": ",2).values,0,2))) { return false; }
+    return core::result::is_ok(core::io::write_all(sink.borrow(),message.values,message.start,message.length));
+}
+// A failure that ends the search of one file: reported with its path, and
+// the search goes on. Output and allocation failures end everything.
+fn file_failure(run: &Run, path: core::slice::View<u8>, status: i32, diagnostic: &Diagnostic, output: &Output) -> i32 {
+    if (status == 4 || (status == 3 && diagnostic.stage == 4)) { return status; }
+    if (output.used > 0 && !flush(output)) { diagnostic.stage = 4; return fail(diagnostic,3,7); }
+    run.failed = true; diagnostic.path = path; diagnostic.named = true;
+    let written: bool = write_diagnostic(diagnostic.borrow());
+    diagnostic.named = false; diagnostic.line = 0; diagnostic.offset = -1; diagnostic.argument = -1;
+    if (!written) { return 3; }
+    return 0;
+}
+// "label count\n" into the output area.
+fn put_count(output: &Output, value: u64, diagnostic: &Diagnostic) -> i32 {
+    if (output.label_length > 0) { let status: i32 = put(output,output.label.as_slice(),0,output.label_length,diagnostic); if (status != 0) { return status; } }
+    let status: i32 = reserve(output,21,diagnostic); if (status != 0) { return status; }
+    let target: [u8] = output.bytes.as_slice(); let digits: [u8;20] = [0;20]; let count: i32 = 0; let rest: u64 = value;
+    while (count == 0 || rest > 0) { digits[count] = (48 + rest % 10) as u8; rest = rest / 10; count += 1; }
+    let at: i32 = 32 + output.used; while (count > 0) { count -= 1; target[at] = digits[count]; at += 1; }
+    target[at] = 10; output.used = at + 1 - 32; return 0;
+}
+fn text_match(bytes: [u8], start: i32, end: i32, regex: &ext::regex::Regex, matcher: &Matcher) -> core::result::Result<bool,ext::regex::Error> {
+    let input: core::text::Text = core::text::from_utf8_unchecked(bytes,start,end - start);
+    if (matcher.ready) { return matcher.dfa.is_match_input(regex,ext::regex::input_unchecked(input)); }
+    return regex.is_match(input);
+}
+// Length of the valid UTF-8 prefix of bytes[from, to).
+fn valid_prefix(bytes: [u8], from: i32, to: i32) -> i32 {
+    let i: i32 = first_non_ascii(bytes,from,to);
+    while (i < to) {
+        let width: i32 = core::utf8::sequence_len_or(bytes[i], 0) as i32;
+        if (width == 0 || width > to - i || core::result::is_err(core::text::from_utf8_range(bytes, i, width))) { return i - from; }
+        i = first_non_ascii(bytes, i + width, to);
+    }
+    return to - from;
+}
+// A record with encoding errors matches when one of its valid pieces does;
+// each piece is searched as a record of its own. The first piece is
+// searched even when empty, later ones only when nonempty.
+fn pieces_match(bytes: [u8], start: i32, end: i32, regex: &ext::regex::Regex, matcher: &Matcher, diagnostic: &Diagnostic) -> i32 {
+    let at: i32 = start;
+    while (true) {
+        let length: i32 = valid_prefix(bytes,at,end);
+        if (at == start || length > 0) {
+            let found: core::result::Result<bool,ext::regex::Error> = text_match(bytes,at,at + length,regex,matcher);
+            if (core::result::is_err(found)) { return regex_error(core::result::unwrap_err(found),diagnostic); }
+            if (core::result::unwrap(found)) { return -1; }
+        }
+        at += length; if (at >= end) { return 0; }
+        at += 1;
+    }
+    return 0;
+}
+// A file with NUL bytes or encoding errors, record by record: NUL also ends
+// records, as in GNU grep. Selected records are written only when the file
+// has no NUL and the record is valid UTF-8; the others set progress.hidden.
+fn binary(bytes: [u8], length: i32, nul: bool, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    let position: i32 = 0; let newline: i32 = -1; let zero: i32 = -1; let hit: i32 = -1;
+    while (position < length) {
+        if (filter.length > 0 && hit < position) { hit = find_pair(bytes,position,length,filter); if (hit < 0) { hit = length; } }
+        // The next LF and NUL are found once and reused until passed.
+        if (newline < position) { newline = core::search::find_byte(bytes,position,length,10); if (newline < 0) { newline = length; } }
+        if (nul && zero < position) { zero = core::search::find_byte(bytes,position,length,0); if (zero < 0) { zero = length; } }
+        let end: i32 = newline; let lf: bool = newline < length;
+        if (nul && zero < end) { end = zero; lf = false; }
+        if (end - position > options.max_line) { diagnostic.stage = 2; diagnostic.offset = options.max_line; return fail(diagnostic,2,9); }
+        let text_end: i32 = end; if (lf && text_end > position && bytes[text_end - 1] == 13) { text_end -= 1; }
+        diagnostic.stage = 3; diagnostic.offset = 0;
+        let found: i32 = 0;
+        // A record without the required literal cannot match, under the
+        // same bound as line().
+        let absent: bool = filter.length > 0 && ((text_end - position) as i64 + 2) * filter.cost <= filter.limit && hit + filter.length > text_end;
+        if (!absent) { found = pieces_match(bytes,position,text_end,regex,matcher,diagnostic); }
+        if (found > 0) { return found; }
+        let selected: bool = found < 0; if (options.invert) { selected = !selected; }
+        if (selected) {
+            if (nul || !valid_utf8(bytes,position,end)) {
+                if (progress.selected == 18446744073709551615) { return fail(diagnostic,2,5); } progress.selected += 1; progress.hidden = true;
+                // Nothing of a file with NUL is written: without --count
+                // one selected record decides the outcome.
+                if (nul && !options.count) { return 0; }
+            } else { let status: i32 = emit(bytes,position,end,lf,options,progress,output,diagnostic); if (status != 0) { return status; } }
+        }
+        if (diagnostic.line == 18446744073709551615) { return fail(diagnostic,2,5); } diagnostic.line += 1;
+        position = end + 1;
+    }
+    return 0;
+}
+// The records of one whole file in bytes[0, length). A clean file goes
+// through block() in windows of about 64 KiB that end at a LF.
+fn contents(bytes: [u8], length: i32, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    // No record can match when the required literal is nowhere in the
+    // file and no record can exceed --max-line or reach WorkLimit; the
+    // file is then not validated or split at all.
+    if (!options.invert && filter.length > 0 && length <= options.max_line && ((length as i64) + 2) * filter.cost <= filter.limit && find_pair(bytes,0,length,filter) < 0) { return 0; }
+    let nul: bool = core::search::find_byte(bytes,0,length,0) >= 0;
+    if (nul || newlines_if_valid(bytes,0,length) < 0) { return binary(bytes,length,nul,regex,matcher,filter,options,progress,output,diagnostic); }
+    let position: i32 = 0; let cursor: Cursor = Cursor { start: 0 };
+    while (position < length) {
+        let end: i32 = position + 65536;
+        if (end >= length) { end = length; } else { let newline: i32 = core::search::find_byte(bytes,end,length,10); if (newline < 0) { end = length; } else { end = newline + 1; } }
+        filter.hit = -1; filter.end = end;
+        let status: i32 = block(bytes,position,end,regex,matcher,filter,options,progress,output,diagnostic,cursor.borrow());
+        if (status != 0) { return status; }
+        if (end == length) { position = cursor.start; break; }
+        position = cursor.start;
+    }
+    if (length - position > options.max_line) { diagnostic.stage = 2; diagnostic.offset = options.max_line; return fail(diagnostic,2,9); }
+    if (length > position) { filter.hit = -1; filter.end = length; return line(bytes,position,length,false,regex,matcher,filter,options,progress,output,diagnostic); }
+    return 0;
+}
+// Searches the open file fd, shown as path. Returns 0, or a status that
+// ends the whole search.
+fn search_file(run: &Run, fd: i32, path: core::slice::View<u8>, named: bool, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    let length: i32 = 0; let failed: bool = false;
+    while (true) {
+        if (run.buffer.len() < length + 65536) {
+            if (length > 2147483647 - 131072) { failed = true; break; }
+            let grown: core::result::Result<i32,alloc::vec::Error> = run.buffer.try_resize(grown_size(run.buffer.len(),length), 0);
+            if (core::result::is_err(grown)) { std::fs::close(fd); return fail(diagnostic,4,8); }
+        }
+        let count: i32 = std::fs::read(fd, run.buffer.storage + (length as usize), 65536 as usize);
+        if (count == -4) { continue; }
+        if (count < 0 || count > 65536) { failed = true; break; }
+        if (count == 0) { break; }
+        length += count;
+    }
+    std::fs::close(fd);
+    if (failed) { diagnostic.stage = 2; diagnostic.offset = length; return file_failure(run,path,fail(diagnostic,3,7),diagnostic,output); }
+    output.label_length = 0;
+    if (named) {
+        output.label.clear();
+        if (core::result::is_err(output.label.try_extend(path)) || core::result::is_err(output.label.try_push(58))) { return fail(diagnostic,4,8); }
+        output.label_length = path.length + 1;
+    }
+    let progress: Progress = Progress { selected: 0, hidden: false }; diagnostic.line = 1;
+    let status: i32 = contents(run.buffer.as_slice(),length,regex,matcher,filter,options,progress.borrow(),output,diagnostic);
+    if (status != 0) { diagnostic.line = 0; let ended: i32 = file_failure(run,path,status,diagnostic,output); output.label_length = 0; return ended; }
+    if (options.count) { diagnostic.stage = 4; let written: i32 = put_count(output,progress.selected,diagnostic); if (written != 0) { return written; } }
+    output.label_length = 0; diagnostic.line = 0;
+    if (progress.selected > 0) { run.any = true; }
+    if (progress.hidden && !options.count) {
+        if (output.used > 0 && !flush(output)) { diagnostic.stage = 4; return fail(diagnostic,3,7); }
+        if (!notice(path,literal("binary file matches\n",20))) { return 3; }
+    }
+    return 0;
+}
+fn open_failure(run: &Run, path: core::slice::View<u8>, diagnostic: &Diagnostic, output: &Output) -> i32 {
+    diagnostic.stage = 2; diagnostic.offset = -1; return file_failure(run,path,fail(diagnostic,3,7),diagnostic,output);
+}
+// A directory that could not be opened: its read buffer not allocated
+// ends the search, anything else is reported for its path.
+fn directory_failure(run: &Run, path: core::slice::View<u8>, error: std::directory::Error, diagnostic: &Diagnostic, output: &Output) -> i32 {
+    let allocation: bool = match (error) { std::directory::Error::AllocationFailed -> true, _ -> false };
+    if (allocation) { return fail(diagnostic,4,8); }
+    return open_failure(run,path,diagnostic,output);
+}
+// The bytes of the .gitignore in the directory fd, added with paths of
+// that directory starting at base. A missing file adds nothing.
+fn load_rules(run: &Run, fd: i32, base: i32, diagnostic: &Diagnostic, output: &Output) -> i32 {
+    let name: core::path::Path = core::result::unwrap(core::path::from_view(literal(".gitignore",10)));
+    let opened = std::file_ops::open_at(fd,name,std::file_ops::options());
+    if (core::result::is_err(opened)) { return 0; }
+    let file: std::file::File = core::result::unwrap(opened); let handle: i32 = core::option::unwrap(file.raw_handle());
+    let length: i32 = 0; let failed: bool = false;
+    while (true) {
+        if (run.buffer.len() < length + 65536) { if (core::result::is_err(run.buffer.try_resize(grown_size(run.buffer.len(),length), 0))) { std::fs::close(handle); return fail(diagnostic,4,8); } }
+        let count: i32 = std::fs::read(handle, run.buffer.storage + (length as usize), 65536 as usize);
+        if (count == -4) { continue; }
+        if (count < 0 || count > 65536) { failed = true; break; }
+        if (count == 0) { break; }
+        length += count;
+        if (length > 16777216) { break; }
+    }
+    std::fs::close(handle);
+    // An unreadable .gitignore is reported like an unreadable file, and
+    // none of its rules apply.
+    if (failed) {
+        let shown: alloc::vec::Vec<u8> = alloc::vec::new(); let base_length: i32 = run.path.len();
+        let built: bool = core::result::is_ok(shown.try_extend(run.path.as_view()));
+        if (built && base_length > 0 && run.path.at(base_length - 1) != 47) { built = core::result::is_ok(shown.try_push(47)); }
+        if (built) { built = core::result::is_ok(shown.try_extend(literal(".gitignore",10))); }
+        if (!built) { shown.destroy(); return fail(diagnostic,4,8); }
+        diagnostic.stage = 2; diagnostic.offset = length;
+        let status: i32 = file_failure(run,shown.as_view(),fail(diagnostic,3,7),diagnostic,output); shown.destroy(); return status;
+    }
+    let added = run.rules.add(core::result::unwrap(run.buffer.as_view().subview(0,length)),base);
+    if (core::result::is_err(added)) { return fail(diagnostic,4,8); }
+    return 0;
+}
+// Walks the directory at root (shown with the prefix display) depth first,
+// entries in the order the filesystem returns them, as GNU grep's fts walk
+// does. Symbolic links and special files below root are skipped.
+fn walk(run: &Run, root: core::slice::View<u8>, display: core::slice::View<u8>, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, globs: &Globs, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    run.path.clear();
+    if (core::result::is_err(run.path.try_extend(root)) || core::result::is_err(run.path.try_extend(literal("/.",2)))) { return fail(diagnostic,4,8); }
+    let reader: std::directory::Reader = std::directory::empty_directory();
+    let target = core::path::from_view(run.path.as_view());
+    if (core::result::is_err(target)) { return open_failure(run,display,diagnostic,output); }
+    let opened = std::directory::open_into(core::result::unwrap(target),32768,reader.borrow());
+    if (core::result::is_err(opened)) { return directory_failure(run,display,core::result::unwrap_err(opened),diagnostic,output); }
+    run.path.clear(); if (core::result::is_err(run.path.try_extend(display))) { return fail(diagnostic,4,8); }
+    // A display that is empty or ends with '/' takes names without a '/'.
+    let rules_before: i32 = run.rules.len();
+    if (options.gitignore) {
+        let base: i32 = run.path.len(); if (base > 0 && run.path.at(base - 1) != 47) { base += 1; }
+        let status: i32 = load_rules(run,core::option::unwrap(reader.raw_handle()),base,diagnostic,output); if (status != 0) { let closed = reader.close(); return status; }
+    }
+    if (core::result::is_err(run.levels.try_push(Level { reader: reader, length: run.path.len(), rules: rules_before }))) { let closed = reader.close(); return fail(diagnostic,4,8); }
+    while (run.levels.len() > 0) {
+        let index: i32 = run.levels.len() - 1; let level: Level = run.levels.at(index);
+        let current: std::directory::Reader = level.reader; let next = current.next(); level.reader = current; core::result::unwrap(run.levels.set(index,level));
+        let finished: bool = core::result::is_err(next);
+        if (finished) {
+            core::result::unwrap(run.path.truncate(level.length));
+            let status: i32 = open_failure(run,run.path.as_view(),diagnostic,output); if (status != 0) { close_levels(run); return status; }
+        } else { if (core::option::is_none(core::result::unwrap(next))) { finished = true; } }
+        if (finished) {
+            let popped: Level = core::option::unwrap(run.levels.pop()); let closing: std::directory::Reader = popped.reader; let closed = closing.close();
+            run.rules.truncate(popped.rules);
+            if (run.levels.len() > 0) { let parent: Level = run.levels.at(run.levels.len() - 1); core::result::unwrap(run.path.truncate(parent.length)); }
+            continue;
+        }
+        let entry: std::directory::Entry = core::option::unwrap(core::result::unwrap(next));
+        core::result::unwrap(run.path.truncate(level.length));
+        let parent_length: i32 = run.path.len();
+        if (parent_length > 0 && run.path.at(parent_length - 1) != 47) { if (core::result::is_err(run.path.try_push(47))) { close_levels(run); return fail(diagnostic,4,8); } }
+        if (core::result::is_err(run.path.try_extend(entry.name))) { close_levels(run); return fail(diagnostic,4,8); }
+        let fd: i32 = core::option::unwrap(current.raw_handle());
+        let name: core::path::Path = core::result::unwrap(core::path::from_view(entry.name));
+        let kind: std::file_ops::Kind = entry.kind;
+        let unknown: bool = match (kind) { std::file_ops::Kind::Unknown -> true, _ -> false };
+        if (unknown) {
+            let metadata: std::file_ops::Metadata = std::file_ops::empty_metadata();
+            if (core::result::is_err(std::file_ops::metadata_at_into(fd,name,false,metadata.borrow()))) { let status: i32 = open_failure(run,run.path.as_view(),diagnostic,output); if (status != 0) { close_levels(run); return status; } continue; }
+            kind = std::file_ops::kind(metadata.mode);
+        }
+        let directory: bool = match (kind) { std::file_ops::Kind::Directory -> true, _ -> false };
+        let regular: bool = match (kind) { std::file_ops::Kind::Regular -> true, _ -> false };
+        if (directory) {
+            if (directory_skipped(globs,entry.name,false)) { continue; }
+            if (options.gitignore) {
+                if (entry.name.length == 4 && entry.name.values[entry.name.start] == 46 && entry.name.values[entry.name.start + 1] == 103 && entry.name.values[entry.name.start + 2] == 105 && entry.name.values[entry.name.start + 3] == 116) { continue; }
+                if (run.rules.check(run.path.as_view(),true) == ext::gitignore::IGNORED) { continue; }
+            }
+            if (run.levels.len() >= 512) { diagnostic.stage = 2; let status: i32 = file_failure(run,run.path.as_view(),fail(diagnostic,2,5),diagnostic,output); if (status != 0) { close_levels(run); return status; } continue; }
+            let child: std::directory::Reader = std::directory::empty_directory();
+            let entered = std::directory::open_at_into(fd,name,32768,child.borrow());
+            if (core::result::is_err(entered)) { let status: i32 = directory_failure(run,run.path.as_view(),core::result::unwrap_err(entered),diagnostic,output); if (status != 0) { close_levels(run); return status; } continue; }
+            let before: i32 = run.rules.len();
+            if (options.gitignore) { let status: i32 = load_rules(run,core::option::unwrap(child.raw_handle()),run.path.len() + 1,diagnostic,output); if (status != 0) { let closed = child.close(); close_levels(run); return status; } }
+            if (core::result::is_err(run.levels.try_push(Level { reader: child, length: run.path.len(), rules: before }))) { let closed = child.close(); close_levels(run); return fail(diagnostic,4,8); }
+            continue;
+        }
+        if (!regular) { continue; }
+        if (file_skipped(globs,entry.name,false)) { continue; }
+        if (options.gitignore && run.rules.check(run.path.as_view(),false) == ext::gitignore::IGNORED) { continue; }
+        let options_read: std::file_ops::OpenOptions = std::file_ops::options(); options_read.no_follow = true;
+        let file = std::file_ops::open_at(fd,name,options_read);
+        if (core::result::is_err(file)) { let status: i32 = open_failure(run,run.path.as_view(),diagnostic,output); if (status != 0) { close_levels(run); return status; } continue; }
+        let opened_file: std::file::File = core::result::unwrap(file);
+        let status: i32 = search_file(run,core::option::unwrap(opened_file.raw_handle()),run.path.as_view(),true,regex,matcher,filter,options,output,diagnostic);
+        if (status != 0) { close_levels(run); return status; }
+    }
+    return 0;
+}
+fn close_levels(run: &Run) {
+    while (run.levels.len() > 0) { let popped: Level = core::option::unwrap(run.levels.pop()); let closing: std::directory::Reader = popped.reader; let closed = closing.close(); }
+}
+// One command-line operand: a file is searched, a directory walked with -r.
+fn operand_path(run: &Run, path: core::slice::View<u8>, implicit: bool, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, globs: &Globs, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    let checked = core::path::from_view(path);
+    if (core::result::is_err(checked)) { return open_failure(run,path,diagnostic,output); }
+    let metadata: std::file_ops::Metadata = std::file_ops::empty_metadata();
+    if (core::result::is_err(std::file_ops::metadata_into(core::result::unwrap(checked),true,metadata.borrow()))) { return open_failure(run,path,diagnostic,output); }
+    let directory: bool = match (std::file_ops::kind(metadata.mode)) { std::file_ops::Kind::Directory -> true, _ -> false };
+    if (directory) {
+        if (!options.recursive) { diagnostic.stage = 2; diagnostic.offset = -1; return file_failure(run,path,fail(diagnostic,2,10),diagnostic,output); }
+        if (!implicit && directory_skipped(globs,path,true)) { return 0; }
+        let display: core::slice::View<u8> = path; if (implicit) { display = core::slice::View { values: path.values, start: path.start, length: 0 }; }
+        return walk(run,path,display,regex,matcher,filter,options,globs,output,diagnostic);
+    }
+    if (file_skipped(globs,path,true)) { return 0; }
+    let file = std::file_ops::open(core::result::unwrap(checked),std::file_ops::options());
+    if (core::result::is_err(file)) { return open_failure(run,path,diagnostic,output); }
+    let opened_file: std::file::File = core::result::unwrap(file);
+    return search_file(run,core::option::unwrap(opened_file.raw_handle()),path,run.names,regex,matcher,filter,options,output,diagnostic);
+}
+fn files(regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, pattern: &Pattern, globs: &Globs, diagnostic: &Diagnostic) -> i32 {
+    // As in GNU grep, --invert with an empty pattern selects nothing and
+    // reads nothing.
+    let source: ext::cli::Argument = core::option::unwrap(pattern.value);
+    if (options.invert && source.bytes.length == 0) { return 1; }
+    // Whole files are in memory: records may reach the accepted maximum
+    // unless --max-line says otherwise.
+    let limits: Options = options; if (!limits.line_set) { limits.max_line = 67108864; }
+    let output: Output = Output { bytes: alloc::vec::new(), used: 0, number: 0, width: 0, label: alloc::vec::new(), label_length: 0, close: true };
+    let run: Run = Run { buffer: alloc::vec::new(), path: alloc::vec::new(), levels: alloc::vec::new(), rules: ext::gitignore::rules(), names: pattern.files.len() > 1, any: false, failed: false };
+    let status: i32 = 0;
+    if (pattern.files.len() == 0) { status = operand_path(run.borrow(),literal(".",1),true,regex,matcher,filter,limits,globs,output.borrow(),diagnostic); }
+    let i: i32 = 0;
+    while (status == 0 && i < pattern.files.len()) {
+        let item: ext::cli::Argument = pattern.files.at(i); i += 1;
+        status = operand_path(run.borrow(),item.bytes,false,regex,matcher,filter,limits,globs,output.borrow(),diagnostic);
+    }
+    if (status == 0 && output.used > 0 && !flush(output.borrow())) { diagnostic.stage = 4; status = fail(diagnostic,3,7); }
+    output.bytes.destroy(); output.label.destroy(); run.buffer.destroy(); run.path.destroy(); run.levels.destroy(); run.rules.destroy();
+    if (status != 0) { return status; }
+    if (run.failed) { diagnostic.reason = -1; return 2; }
+    if (run.any) { return 0; } return 1;
 }
 // Selects (for --invert) every record in bytes[from, to), which match_lines
 // found valid and not matching; to is a record start.
@@ -279,7 +727,7 @@ fn tally(progress: &Progress, n: u64, diagnostic: &Diagnostic) -> i32 {
 fn gap(bytes: [u8], from: i32, to: i32, n: u64, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
     if (options.count) { return tally(progress,n,diagnostic); }
     diagnostic.stage = 4; diagnostic.offset = 0;
-    if (options.numbers) { return numbered(bytes,from,to,progress,output,diagnostic); }
+    if (options.numbers || output.label_length > 0) { return numbered(bytes,from,to,options.numbers,progress,output,diagnostic); }
     if (progress.selected > 18446744073709551615 - n || diagnostic.line > 18446744073709551615 - n) { return fail(diagnostic,2,5); }
     // A block of 4 KiB or more is written straight from the input buffer.
     if (to - from >= 4096) {
@@ -291,15 +739,18 @@ fn gap(bytes: [u8], from: i32, to: i32, n: u64, options: Options, progress: &Pro
 // "N:record\n" for each record of bytes[from, to), N from diagnostic.line,
 // in one loop: the line number advances by one increment with carry in the
 // digits kept in front of the output area.
-fn numbered(bytes: [u8], from: i32, to: i32, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+fn numbered(bytes: [u8], from: i32, to: i32, numbers: bool, progress: &Progress, output: &Output, diagnostic: &Diagnostic) -> i32 {
+    let label: [u8] = output.label.as_slice(); let named: i32 = output.label_length;
     let status: i32 = reserve(output,0,diagnostic); if (status != 0) { return status; }
     let target: [u8] = output.bytes.as_slice(); let at: i32 = 32 + output.used;
     let position: i32 = from;
     while (position < to) {
         let newline: i32 = core::search::find_byte(bytes,position,to,10); let length: i32 = newline + 1 - position;
         if (progress.selected == 18446744073709551615) { output.used = at - 32; return fail(diagnostic,2,5); } progress.selected += 1;
-        if (at + 21 + length > 65568) { output.used = at - 32; if (!flush(output)) { return fail(diagnostic,3,7); } at = 32; }
+        if (at + 21 + named + length > 65568) { output.used = at - 32; if (!flush(output)) { return fail(diagnostic,3,7); } at = 32; }
+        if (named > 0) { copy(label,0,target,at,named); at += named; }
         let value: u64 = diagnostic.line;
+        if (numbers) {
         if (output.width > 0 && value == output.number + 1) {
             let i: i32 = 19; let carrying: bool = true;
             while (carrying) {
@@ -314,7 +765,8 @@ fn numbered(bytes: [u8], from: i32, to: i32, progress: &Progress, output: &Outpu
         output.number = value;
         let k: i32 = 20 - output.width; while (k < 20) { target[at] = target[k]; at += 1; k += 1; }
         target[at] = 58; at += 1;
-        if (length > 65536 - 21) {
+        }
+        if (length > 65536 - 21 - named) {
             output.used = at - 32; if (!flush(output)) { return fail(diagnostic,3,7); } at = 32;
             if (!write_range(core::mem::i32_slice_data_ptr(bytes),position,length)) { return fail(diagnostic,3,7); }
         } else { copy(bytes,position,target,at,length); at += length; }
@@ -323,24 +775,182 @@ fn numbered(bytes: [u8], from: i32, to: i32, progress: &Progress, output: &Outpu
     }
     output.used = at - 32; return 0;
 }
-fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, output: &Output, diagnostic: &Diagnostic) -> i32 {
-    let storage: [i32;64] = [0;64]; let needle: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+// The records of bytes[from, length): complete ones through the fast paths
+// below, then record by record. cursor.start gets the start of the
+// unterminated tail. Returns 0 or a failure status.
+struct Cursor { start: i32 }
+impl Cursor { fn borrow(&self) -> &Cursor { return self; } }
+fn block(bytes: [u8], from: i32, length: i32, regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, progress: &Progress, output: &Output, diagnostic: &Diagnostic, cursor: &Cursor) -> i32 {
+    let start: i32 = from;
+    // Fast path: find the required literal across the complete records
+    // and run the matcher only on the records containing it. Valid when
+    // no record here can exceed the line limit or let the matcher reach
+    // WorkLimit. Each gap between hit records gets one pass that checks
+    // UTF-8 and counts its lines; at an invalid gap the record-by-record
+    // loop below takes over, which locates the error. record() checks
+    // the hit records themselves. With --invert the gap records are the
+    // selected ones.
+    let region: i32 = core::search::rfind_byte(bytes,from,length,10) + 1; if (region < from) { region = from; }
+    let dense: bool = false;
+    if (filter.length > 0 && region - from <= options.max_line && (((region - from) as i64) + 2) * filter.cost <= filter.limit) {
+        let position: i32 = from; let hits: i32 = 0;
+        let hit: i32 = find_pair(bytes,from,region,filter);
+        // Counting a pure literal: one validating line count for the
+        // whole region, then only the hits, each skipped to its LF.
+        if (options.count && filter.exact) {
+            let total: i64 = newlines_if_valid(bytes,from,region);
+            if (total >= 0) {
+                let found: u64 = 0;
+                while (hit >= 0) {
+                    found += 1; let newline: i32 = core::search::find_byte(bytes,hit,region,10);
+                    hit = find_pair(bytes,newline + 1,region,filter);
+                }
+                if (options.invert) { found = (total as u64) - found; }
+                let status: i32 = count_block(progress,found,total as u64,diagnostic);
+                if (status != 0) { return status; }
+                hit = -1; position = region;
+            }
+        }
+        while (position < region || hit >= 0) {
+            // Hit records denser than one per 256 bytes cost more one by one
+            // than one DFA pass; the line scan below takes the rest.
+            if (!filter.exact && matcher.ready && hits >= 32 && (hits as i64) * 256 > (position - from) as i64) { dense = true; break; }
+            let first: i32 = region;
+            if (hit >= 0) { first = core::search::rfind_byte(bytes,position,hit,10) + 1; if (first < position) { first = position; } }
+            // Without --invert the gap and the hit record are checked and
+            // counted in one pass; an invalid range takes the split path.
+            if (hit >= 0 && !options.invert) {
+                let ending: i32 = core::search::find_byte(bytes,hit,region,10);
+                let both: i64 = newlines_if_valid(bytes,position,ending + 1);
+                if (both > 0) {
+                    if (diagnostic.line > 18446744073709551615 - ((both - 1) as u64)) { return fail(diagnostic,2,5); } diagnostic.line += (both - 1) as u64;
+                    let verdict: i32 = 2; let status: i32 = 0;
+                    if (filter.exact) { verdict = 1; } else { if (matcher.ready) { verdict = matcher.dfa.match_lines(bytes,first,ending + 1).status; } }
+                    if (verdict == 1) { diagnostic.stage = 3; diagnostic.offset = 0; status = emit(bytes,first,ending,true,options,progress,output,diagnostic); }
+                    else { if (verdict == 2) { status = record(bytes,first,ending,true,regex,matcher,options,progress,output,diagnostic); } }
+                    hits += 1;
+                    if (status != 0) { return status; }
+                    if (diagnostic.line == 18446744073709551615) { return fail(diagnostic,2,5); } diagnostic.line += 1;
+                    position = ending + 1;
+                    hit = find_pair(bytes,position,region,filter);
+                    continue;
+                }
+            }
+            let skipped: i64 = newlines_if_valid(bytes,position,first);
+            if (skipped < 0) { break; }
+            if (options.invert) {
+                // The records between hits lack the literal: all selected.
+                let selected: i32 = gap(bytes,position,first,skipped as u64,options,progress,output,diagnostic);
+                if (selected != 0) { return selected; }
+            } else {
+                if (diagnostic.line > 18446744073709551615 - (skipped as u64)) { return fail(diagnostic,2,5); } diagnostic.line += skipped as u64;
+            }
+            position = first;
+            if (hit < 0) { break; }
+            let newline: i32 = core::search::find_byte(bytes,hit,region,10);
+            let status: i32 = 0;
+            let decided: i32 = 2;
+            if (filter.exact) { decided = 1; } else { if (matcher.ready) { decided = matcher.dfa.match_lines(bytes,first,newline + 1).status; } }
+            if (decided != 2 && valid_utf8(bytes,first,newline)) {
+                diagnostic.stage = 3; diagnostic.offset = 0;
+                if ((decided == 1) != options.invert) { status = emit(bytes,first,newline,true,options,progress,output,diagnostic); }
+            }
+            else { status = record(bytes,first,newline,true,regex,matcher,options,progress,output,diagnostic); }
+            hits += 1;
+            if (status != 0) { return status; }
+            if (diagnostic.line == 18446744073709551615) { return fail(diagnostic,2,5); } diagnostic.line += 1;
+            position = newline + 1;
+            hit = find_pair(bytes,position,region,filter);
+        }
+        start = position;
+    }
+    // Without a literal, the DFA runs over the whole region in one pass,
+    // restarting at each record. Selected records, and records it cannot
+    // decide, are cut out here; an undecided record goes through record(),
+    // which also reports a UTF-8 error at its exact offset.
+    if (matcher.ready && region - from <= options.max_line && ((start == from && filter.length == 0) || dense)) {
+        let position: i32 = start;
+        while (position < region) {
+            if (options.count) {
+                // Counting needs no stop at matching records.
+                let counted: ext::regex::LineScan = matcher.dfa.count_lines(bytes,position,region);
+                let chosen: u64 = counted.matched as u64; if (options.invert) { chosen = (counted.lines - counted.matched) as u64; }
+                let status: i32 = count_block(progress,chosen,counted.lines as u64,diagnostic);
+                if (status != 0) { return status; }
+                position = counted.start;
+                if (counted.status == 0) { break; }
+                let newline: i32 = core::search::find_byte(bytes,position,region,10);
+                status = record(bytes,position,newline,true,regex,matcher,options,progress,output,diagnostic);
+                if (status != 0) { return status; }
+                if (diagnostic.line == 18446744073709551615) { return fail(diagnostic,2,5); } diagnostic.line += 1;
+                position = newline + 1;
+                continue;
+            }
+            let scan: ext::regex::LineScan = matcher.dfa.match_lines(bytes,position,region);
+            if (options.invert) {
+                // Every record before scan.start was searched and missed.
+                let status: i32 = gap(bytes,position,scan.start,scan.lines as u64,options,progress,output,diagnostic);
+                if (status != 0) { return status; }
+            } else {
+                if (diagnostic.line > 18446744073709551615 - (scan.lines as u64)) { return fail(diagnostic,2,5); } diagnostic.line += scan.lines as u64;
+            }
+            position = scan.start;
+            if (scan.status == 0) { break; }
+            let newline: i32 = core::search::find_byte(bytes,position,region,10);
+            let status: i32 = 0;
+            if (scan.status == 1 && valid_utf8(bytes,position,newline)) {
+                diagnostic.stage = 3; diagnostic.offset = 0;
+                if (!options.invert) { status = emit(bytes,position,newline,true,options,progress,output,diagnostic); }
+            } else { status = record(bytes,position,newline,true,regex,matcher,options,progress,output,diagnostic); }
+            if (status != 0) { return status; }
+            if (diagnostic.line == 18446744073709551615) { return fail(diagnostic,2,5); } diagnostic.line += 1;
+            position = newline + 1;
+        }
+        start = position;
+    }
+    while (true) {
+        let newline: i32 = core::search::find_byte(bytes,start,length,10); if (newline < 0) { break; }
+        if (newline - start > options.max_line) { diagnostic.stage = 2; diagnostic.offset = options.max_line; return fail(diagnostic,2,9); }
+        let status: i32 = line(bytes,start,newline,true,regex,matcher,filter,options,progress,output,diagnostic);
+        if (status != 0) { return status; }
+        if (diagnostic.line == 18446744073709551615) { return fail(diagnostic,2,5); } diagnostic.line += 1;
+        start = newline + 1;
+    }
+    cursor.start = start; return 0;
+}
+// The required-literal prefilter of regex, its literal in needle (256 bytes).
+fn prepare(regex: &ext::regex::Regex, needle: [u8], filter: &Filter, diagnostic: &Diagnostic) -> i32 {
     let required: core::result::Result<i32,ext::regex::Error> = core::result::Ok(0);
     if (!regex.has_lookbehind()) { required = regex.required_literal(needle,256); }
     if (core::result::is_err(required)) { return regex_error(core::result::unwrap_err(required),diagnostic); }
-    let filter: Filter = Filter { needle: needle, length: core::result::unwrap(required), cost: regex.boundary_cost(), limit: regex.search_work_limit() as i64, hit: -1, end: 0, exact: false };
+    filter.needle = needle; filter.length = core::result::unwrap(required); filter.cost = regex.boundary_cost(); filter.limit = regex.search_work_limit() as i64;
+    filter.hit = -1; filter.end = 0; filter.exact = false; filter.rare = 0; filter.other = 0;
+    // Probe offsets as core::search::find chooses them.
+    if (filter.length >= 2) {
+        let k: i32 = 1;
+        while (k < filter.length) { if (core::search::rank(needle[k]) < core::search::rank(needle[filter.rare])) { filter.rare = k; } k += 1; }
+        filter.other = -1; k = 0;
+        while (k < filter.length) {
+            if (needle[k] != needle[filter.rare] && (filter.other < 0 || core::search::rank(needle[k]) < core::search::rank(needle[filter.other]))) { filter.other = k; }
+            k += 1;
+        }
+        if (filter.other < 0) { filter.other = filter.length - 1; if (filter.other == filter.rare) { filter.other = 0; } }
+    }
     if (filter.length > 0 && regex.literal_length() == filter.length) {
         filter.exact = true; let k: i32 = 0;
         while (k < filter.length) { if (needle[k] == 10 || needle[k] == 13) { filter.exact = false; } k += 1; }
     }
+    return 0;
+}
+fn records(regex: &ext::regex::Regex, matcher: &Matcher, filter: &Filter, options: Options, output: &Output, diagnostic: &Diagnostic) -> i32 {
     let buffer: alloc::vec::Vec<u8> = alloc::vec::new();
-    let source: std::stream::Descriptor = std::stream::stdin(); let progress: Progress = Progress { selected: 0 }; diagnostic.line = 1;
+    let source: std::stream::Descriptor = std::stream::stdin(); let progress: Progress = Progress { selected: 0, hidden: false }; diagnostic.line = 1;
     let length: i32 = 0;
     while (true) {
         diagnostic.stage = 2; diagnostic.offset = length;
         // The buffer only grows; its bytes beyond length are scratch.
         let grown: core::result::Result<i32,alloc::vec::Error> = core::result::Ok(0);
-        if (buffer.len() < length + 65536) { grown = buffer.try_resize(length + 65536, 0); }
+        if (buffer.len() < length + 65536) { grown = buffer.try_resize(grown_size(buffer.len(),length), 0); }
         if (core::result::is_err(grown)) {
             let allocation: bool = match (core::result::unwrap_err(grown)) { alloc::vec::Error::AllocationFailed -> true, _ -> false }; buffer.destroy();
             if (allocation) { return fail(diagnostic,4,8); } return fail(diagnostic,2,5);
@@ -351,153 +961,56 @@ fn records(regex: &ext::regex::Regex, matcher: &Matcher, options: Options, outpu
         if (count == -4) { continue; }
         if (count < 0 || count > 65536) { buffer.destroy(); return fail(diagnostic,3,7); }
         if (count == 0) { break; }
-        length += count; filter.hit = -1; filter.end = length; let start: i32 = 0;
-        // Fast path: find the required literal across the complete records
-        // and run the matcher only on the records containing it. Valid when
-        // no record here can exceed the line limit or let the matcher reach
-        // WorkLimit. Each gap between hit records gets one pass that checks
-        // UTF-8 and counts its lines; at an invalid gap the record-by-record
-        // loop below takes over, which locates the error. record() checks
-        // the hit records themselves. With --invert the gap records are the
-        // selected ones.
-        let region: i32 = length; while (region > 0 && bytes[region - 1] != 10) { region -= 1; }
-        let dense: bool = false;
-        if (filter.length > 0 && region <= options.max_line && ((region as i64) + 2) * filter.cost <= filter.limit) {
-            let position: i32 = 0; let hits: i32 = 0;
-            let hit: i32 = core::search::find(bytes,0,region,filter.needle,0,filter.length);
-            // Counting a pure literal: one validating line count for the
-            // whole region, then only the hits, each skipped to its LF.
-            if (options.count && filter.exact) {
-                let total: i64 = newlines_if_valid(bytes,0,region);
-                if (total >= 0) {
-                    let found: u64 = 0;
-                    while (hit >= 0) {
-                        found += 1; let newline: i32 = core::search::find_byte(bytes,hit,region,10);
-                        hit = core::search::find(bytes,newline + 1,region,filter.needle,0,filter.length);
-                    }
-                    if (options.invert) { found = (total as u64) - found; }
-                    let status: i32 = count_block(progress.borrow(),found,total as u64,diagnostic);
-                    if (status != 0) { buffer.destroy(); return status; }
-                    hit = -1; position = region;
-                }
-            }
-            while (position < region || hit >= 0) {
-                // Hit records denser than one per 256 bytes cost more one by one
-                // than one DFA pass; the line scan below takes the rest.
-                if (!filter.exact && matcher.ready && hits >= 32 && (hits as i64) * 256 > position as i64) { dense = true; break; }
-                let first: i32 = region;
-                if (hit >= 0) { first = core::search::rfind_byte(bytes,position,hit,10) + 1; if (first < position) { first = position; } }
-                let skipped: i64 = newlines_if_valid(bytes,position,first);
-                if (skipped < 0) { break; }
-                if (options.invert) {
-                    // The records between hits lack the literal: all selected.
-                    let selected: i32 = gap(bytes,position,first,skipped as u64,options,progress.borrow(),output,diagnostic);
-                    if (selected != 0) { buffer.destroy(); return selected; }
-                } else {
-                    if (diagnostic.line > 18446744073709551615 - (skipped as u64)) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += skipped as u64;
-                }
-                position = first;
-                if (hit < 0) { break; }
-                let newline: i32 = core::search::find_byte(bytes,hit,region,10);
-                let status: i32 = 0;
-                let decided: i32 = 2;
-                if (filter.exact) { decided = 1; } else { if (matcher.ready) { decided = matcher.dfa.match_lines(bytes,first,newline + 1).status; } }
-                if (decided != 2 && valid_utf8(bytes,first,newline)) {
-                    diagnostic.stage = 3; diagnostic.offset = 0;
-                    if ((decided == 1) != options.invert) { status = emit(bytes,first,newline,true,options,progress.borrow(),output,diagnostic); }
-                }
-                else { status = record(bytes,first,newline,true,regex,matcher,options,progress.borrow(),output,diagnostic); }
-                hits += 1;
-                if (status != 0) { buffer.destroy(); return status; }
-                if (diagnostic.line == 18446744073709551615) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
-                position = newline + 1;
-                hit = core::search::find(bytes,position,region,filter.needle,0,filter.length);
-            }
-            start = position;
+        length += count; filter.hit = -1; filter.end = length;
+        // A read without LF only extends the unfinished record in front.
+        if (core::search::find_byte(bytes,length - count,length,10) < 0) {
+            if (length > options.max_line) { buffer.destroy(); diagnostic.stage = 2; diagnostic.offset = options.max_line; return fail(diagnostic,2,9); }
+            continue;
         }
-        // Without a literal, the DFA runs over the whole region in one pass,
-        // restarting at each record. Selected records, and records it cannot
-        // decide, are cut out here; an undecided record goes through record(),
-        // which also reports a UTF-8 error at its exact offset.
-        if (matcher.ready && region <= options.max_line && ((start == 0 && filter.length == 0) || dense)) {
-            let position: i32 = start;
-            while (position < region) {
-                if (options.count) {
-                    // Counting needs no stop at matching records.
-                    let counted: ext::regex::LineScan = matcher.dfa.count_lines(bytes,position,region);
-                    let chosen: u64 = counted.matched as u64; if (options.invert) { chosen = (counted.lines - counted.matched) as u64; }
-                    let status: i32 = count_block(progress.borrow(),chosen,counted.lines as u64,diagnostic);
-                    if (status != 0) { buffer.destroy(); return status; }
-                    position = counted.start;
-                    if (counted.status == 0) { break; }
-                    let newline: i32 = core::search::find_byte(bytes,position,region,10);
-                    status = record(bytes,position,newline,true,regex,matcher,options,progress.borrow(),output,diagnostic);
-                    if (status != 0) { buffer.destroy(); return status; }
-                    if (diagnostic.line == 18446744073709551615) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
-                    position = newline + 1;
-                    continue;
-                }
-                let scan: ext::regex::LineScan = matcher.dfa.match_lines(bytes,position,region);
-                if (options.invert) {
-                    // Every record before scan.start was searched and missed.
-                    let status: i32 = gap(bytes,position,scan.start,scan.lines as u64,options,progress.borrow(),output,diagnostic);
-                    if (status != 0) { buffer.destroy(); return status; }
-                } else {
-                    if (diagnostic.line > 18446744073709551615 - (scan.lines as u64)) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += scan.lines as u64;
-                }
-                position = scan.start;
-                if (scan.status == 0) { break; }
-                let newline: i32 = core::search::find_byte(bytes,position,region,10);
-                let status: i32 = 0;
-                if (scan.status == 1 && valid_utf8(bytes,position,newline)) {
-                    diagnostic.stage = 3; diagnostic.offset = 0;
-                    if (!options.invert) { status = emit(bytes,position,newline,true,options,progress.borrow(),output,diagnostic); }
-                } else { status = record(bytes,position,newline,true,regex,matcher,options,progress.borrow(),output,diagnostic); }
-                if (status != 0) { buffer.destroy(); return status; }
-                if (diagnostic.line == 18446744073709551615) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
-                position = newline + 1;
-            }
-            start = position;
-        }
-        while (true) {
-            let newline: i32 = core::search::find_byte(bytes,start,length,10); if (newline < 0) { break; }
-            if (newline - start > options.max_line) { buffer.destroy(); diagnostic.stage = 2; diagnostic.offset = options.max_line; return fail(diagnostic,2,9); }
-            let status: i32 = line(bytes,start,newline,true,regex,matcher,filter.borrow(),options,progress.borrow(),output,diagnostic);
-            if (status != 0) { buffer.destroy(); return status; }
-            if (diagnostic.line == 18446744073709551615) { buffer.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
-            start = newline + 1;
-        }
+        let cursor: Cursor = Cursor { start: 0 };
+        let status: i32 = block(bytes,0,length,regex,matcher,filter,options,progress.borrow(),output,diagnostic,cursor.borrow());
+        if (status != 0) { buffer.destroy(); return status; }
+        let start: i32 = cursor.start;
         if (length - start > options.max_line) { buffer.destroy(); diagnostic.stage = 2; diagnostic.offset = options.max_line; return fail(diagnostic,2,9); }
         let i: i32 = start; while (i < length) { bytes[i - start] = bytes[i]; i += 1; }
         length -= start;
     }
     let status: i32 = 0;
-    if (length > 0) { filter.hit = -1; filter.end = length; status = line(buffer.as_slice(),0,length,false,regex,matcher,filter.borrow(),options,progress.borrow(),output,diagnostic); }
+    if (length > 0) { filter.hit = -1; filter.end = length; status = line(buffer.as_slice(),0,length,false,regex,matcher,filter,options,progress.borrow(),output,diagnostic); }
     buffer.destroy(); if (status != 0) { return status; }
     if (output.used > 0 && !flush(output)) { diagnostic.stage = 4; diagnostic.offset = -1; return fail(diagnostic,3,7); }
     if (options.count) { diagnostic.stage = 4; diagnostic.offset = -1; if (!write_number(progress.selected,text("\n",1))) { return fail(diagnostic,3,7); } }
     if (progress.selected == 0) { return 1; } return 0;
 }
-fn option(options: &Options, item: ext::cli::Occurrence, diagnostic: &Diagnostic) -> bool {
+// 0, 2 for an invalid argument or 4 when a list could not grow.
+fn option(options: &Options, globs: &Globs, item: ext::cli::Occurrence, diagnostic: &Diagnostic) -> i32 {
     diagnostic.argument = item.at.argument; diagnostic.offset = item.at.byte;
-    if (item.id == 1) { options.invert = true; return true; } if (item.id == 2) { options.numbers = true; return true; }
-    if (item.id == 3) { options.count = true; return true; } if (item.id == 9) { options.help = true; return true; }
+    if (item.id == 1) { options.invert = true; return 0; } if (item.id == 2) { options.numbers = true; return 0; }
+    if (item.id == 3) { options.count = true; return 0; } if (item.id == 9) { options.help = true; return 0; }
+    if (item.id == 10) { options.recursive = true; return 0; } if (item.id == 14) { options.gitignore = true; return 0; }
     let value: ext::cli::Argument = core::option::unwrap(item.value); diagnostic.argument = value.at.argument; diagnostic.offset = value.at.byte;
+    if (item.id >= 11 && item.id <= 13) { if (core::result::is_err(globs.items.try_push(Glob { kind: item.id - 10, bytes: value.bytes }))) { return 4; } return 0; }
     let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.bytes.values,value.bytes.start,value.bytes.len());
-    if (core::result::is_err(parsed)) { return false; } let number: u64 = core::result::unwrap(parsed);
-    if (number > 2147483647 as u64) { return false; }
-    if (item.id == 4) { if (number > 67108864 as u64) { return false; } options.max_line = number as i32; }
-    if (item.id == 5) { if (number > 65536 as u64) { return false; } options.regex.max_pattern_bytes = number as i32; }
-    if (item.id == 6) { if (number < 4 || number > 65536 as u64) { return false; } options.regex.max_states = number as i32; }
-    if (item.id == 7) { if (number > 128 as u64) { return false; } options.regex.max_captures = number as i32; }
-    if (item.id == 8) { if (number == 0) { return false; } options.regex.max_work = number as i32; } return true;
+    if (core::result::is_err(parsed)) { return 2; } let number: u64 = core::result::unwrap(parsed);
+    if (number > 2147483647 as u64) { return 2; }
+    if (item.id == 4) { if (number > 67108864 as u64) { return 2; } options.max_line = number as i32; options.line_set = true; }
+    if (item.id == 5) { if (number > 65536 as u64) { return 2; } options.regex.max_pattern_bytes = number as i32; }
+    if (item.id == 6) { if (number < 4 || number > 65536 as u64) { return 2; } options.regex.max_states = number as i32; }
+    if (item.id == 7) { if (number > 128 as u64) { return 2; } options.regex.max_captures = number as i32; }
+    if (item.id == 8) { if (number == 0) { return 2; } options.regex.max_work = number as i32; options.work_set = true; } return 0;
 }
-fn operand(pattern: &Pattern, item: ext::cli::Argument, diagnostic: &Diagnostic) -> bool {
+fn operand(pattern: &Pattern, item: ext::cli::Argument, diagnostic: &Diagnostic) -> i32 {
     diagnostic.argument = item.at.argument; diagnostic.offset = item.at.byte;
-    if (core::option::is_some(pattern.value)) { return false; } pattern.value = core::option::Some(item); return true;
+    if (core::option::is_some(pattern.value)) { if (core::result::is_err(pattern.files.try_push(item))) { return 4; } return 0; } pattern.value = core::option::Some(item); return 0;
 }
 fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
-    let specs: [ext::cli::Spec;9] = [
+    let pattern: Pattern = Pattern { value: core::option::None(), files: alloc::vec::new() };
+    let globs: Globs = Globs { items: alloc::vec::new() };
+    let status: i32 = parsed(arguments,pattern.borrow(),globs.borrow(),diagnostic);
+    pattern.files.destroy(); globs.items.destroy(); return status;
+}
+fn parsed(arguments: std::args::Arguments, pattern: &Pattern, globs: &Globs, diagnostic: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;14] = [
         ext::cli::Spec { id: 1, long: literal("invert",6), short: 118, arity: ext::cli::Arity::Flag },
         ext::cli::Spec { id: 2, long: literal("line-number",11), short: 110, arity: ext::cli::Arity::Flag },
         ext::cli::Spec { id: 3, long: literal("count",5), short: 99, arity: ext::cli::Arity::Flag },
@@ -506,12 +1019,16 @@ fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
         ext::cli::Spec { id: 6, long: literal("max-states",10), short: 0, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 7, long: literal("max-groups",10), short: 0, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 8, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
-        ext::cli::Spec { id: 9, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+        ext::cli::Spec { id: 9, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 10, long: literal("recursive",9), short: 114, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 11, long: literal("include",7), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 12, long: literal("exclude",7), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 13, long: literal("exclude-dir",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 14, long: literal("gitignore",9), short: 0, arity: ext::cli::Arity::Flag }
     ];
-    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,9));
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,14));
     let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
-    let options: Options = Options { invert: false, numbers: false, count: false, max_line: 1048576, regex: ext::regex::options(), help: false };
-    let pattern: Pattern = Pattern { value: core::option::None() };
+    let options: Options = Options { invert: false, numbers: false, count: false, max_line: 1048576, regex: ext::regex::options(), help: false, recursive: false, gitignore: false, line_set: false, work_set: false };
     while (true) {
         let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
         if (core::result::is_err(event)) {
@@ -519,11 +1036,11 @@ fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
             diagnostic.argument = location.argument; diagnostic.offset = location.byte; return fail(diagnostic,2,0);
         }
         let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
-        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(value) -> option(options.borrow(),value,diagnostic), ext::cli::Event::Operand(value) -> operand(pattern.borrow(),value,diagnostic) };
-        if (!valid) { return fail(diagnostic,2,0); }
+        let valid: i32 = match (core::option::unwrap(next)) { ext::cli::Event::Option(value) -> option(options.borrow(),globs,value,diagnostic), ext::cli::Event::Operand(value) -> operand(pattern,value,diagnostic) };
+        if (valid == 4) { return fail(diagnostic,4,8); } if (valid != 0) { return fail(diagnostic,2,0); }
     }
     if (options.help) {
-        let usage: core::slice::View<u8> = literal("Usage: text-grep [-v|--invert] [-n|--line-number] [-c|--count] [--max-line N] [--max-pattern N] [--max-states N] [--max-groups N] [--max-work N] [--] PATTERN\n",158);
+        let usage: core::slice::View<u8> = literal("Usage: text-grep [-v|--invert] [-n|--line-number] [-c|--count] [-r|--recursive] [--include GLOB] [--exclude GLOB] [--exclude-dir GLOB] [--gitignore] [--max-line N] [--max-pattern N] [--max-states N] [--max-groups N] [--max-work N] [--] PATTERN [FILE...]\n",254);
         diagnostic.stage = 4; if (!write_part(usage)) { return fail(diagnostic,3,7); } return 0;
     }
     if (core::option::is_none(pattern.value)) { diagnostic.argument = -1; diagnostic.offset = -1; return fail(diagnostic,2,0); }
@@ -531,19 +1048,26 @@ fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
     if (argument.bytes.len() > options.regex.max_pattern_bytes) { return fail(diagnostic,2,5); }
     let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(argument.bytes.values,argument.bytes.start,argument.bytes.len());
     if (core::result::is_err(checked)) { diagnostic.offset = match (core::result::unwrap_err(checked)) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 }; return fail(diagnostic,2,2); }
+    // File operands are searched whole, so without --max-work a record's
+    // budget is the accepted maximum.
+    if ((options.recursive || pattern.files.len() > 0) && !options.work_set) { options.regex.max_work = 2147483647; }
     let compiled: core::result::Result<ext::regex::Regex,ext::regex::Error> = ext::regex::compile(core::result::unwrap(checked),options.regex);
     if (core::result::is_err(compiled)) { return regex_error(core::result::unwrap_err(compiled),diagnostic); }
     let regex: ext::regex::Regex = core::result::unwrap(compiled); diagnostic.argument = -1;
-    let status: i32 = search(regex.borrow(),options,diagnostic); regex.destroy(); return status;
+    let status: i32 = search(regex.borrow(),options,pattern,globs,diagnostic); regex.destroy(); return status;
 }
-fn write_diagnostic(diagnostic: Diagnostic) -> bool {
+fn write_diagnostic(diagnostic: &Diagnostic) -> bool {
+    if (diagnostic.named) {
+        let sink: std::stream::Descriptor = std::stream::stderr();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),literal("text-grep: ",11).values,0,11)) || core::result::is_err(core::io::write_all(sink.borrow(),diagnostic.path.values,diagnostic.path.start,diagnostic.path.length))) { return false; }
+    }
     let storage: [i32;64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
-    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,256)); format.write_text(text("text-grep: ",11));
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,256)); if (diagnostic.named) { format.write_text(text(": ",2)); } else { format.write_text(text("text-grep: ",11)); }
     if (diagnostic.reason == 0) { format.write_text(text("invalid-arguments",17)); } if (diagnostic.reason == 2) { format.write_text(text("invalid-utf8",12)); }
     if (diagnostic.reason == 3) { format.write_text(text("invalid-regex",13)); } if (diagnostic.reason == 4) { format.write_text(text("unsupported-regex",17)); }
     if (diagnostic.reason == 5) { format.write_text(text("resource-limit",14)); } if (diagnostic.reason == 6) { format.write_text(text("work-limit",10)); }
     if (diagnostic.reason == 7) { format.write_text(text("io-failure",10)); } if (diagnostic.reason == 8) { format.write_text(text("allocation-failure",18)); }
-    if (diagnostic.reason == 9) { format.write_text(text("line-limit",10)); }
+    if (diagnostic.reason == 9) { format.write_text(text("line-limit",10)); } if (diagnostic.reason == 10) { format.write_text(text("is-a-directory",14)); }
     format.write_text(text(" stage=",7)); if (diagnostic.stage == 0) { format.write_text(text("arguments",9)); } if (diagnostic.stage == 1) { format.write_text(text("pattern",7)); }
     if (diagnostic.stage == 2) { format.write_text(text("input",5)); } if (diagnostic.stage == 3) { format.write_text(text("search",6)); } if (diagnostic.stage == 4) { format.write_text(text("output",6)); }
     if (diagnostic.line != 0) { format.write_text(text(" line=",6)); format.write_unsigned(diagnostic.line,core::fmt::decimal()); }
@@ -553,9 +1077,10 @@ fn write_diagnostic(diagnostic: Diagnostic) -> bool {
     return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,count));
 }
 fn main() -> i32 {
-    let diagnostic: Diagnostic = Diagnostic { stage: 0, reason: 0, line: 0, offset: -1, argument: -1 };
+    let diagnostic: Diagnostic = Diagnostic { stage: 0, reason: 0, line: 0, offset: -1, argument: -1, path: literal("",0), named: false };
     let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,64,69632); let status: i32 = 0;
     if (core::result::is_err(captured)) { status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(diagnostic.borrow(),4,8), std::args::Error::HostRead(at) -> fail(diagnostic.borrow(),3,7), _ -> fail(diagnostic.borrow(),2,0) }; }
     else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,diagnostic.borrow()); arguments.destroy(); }
-    if (status > 1 && !write_diagnostic(diagnostic)) { return 3; } return status;
+    // A file search reports each failure itself.
+    if (status > 1 && diagnostic.reason >= 0 && !write_diagnostic(diagnostic.borrow())) { return 3; } return status;
 }

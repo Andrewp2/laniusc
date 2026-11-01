@@ -219,7 +219,7 @@ fn consumer_releases_all_observed_allocations_and_handles_io_faults() {
     let input = file(b"0,0\n4,0\n4,4\n0,4\n2,2\n");
     let trace = common::TempArtifact::new("laniusc_shape_hull", "trace", None);
     let execute = |fault: Option<String>| {
-        let mut c = Command::new("strace");
+        let mut c = crate::common::strace();
         c.args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,read,write"]);

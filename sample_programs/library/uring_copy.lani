@@ -1,0 +1,80 @@
+// uring_copy SRC DST: copy SRC to DST through std::uring, like `cp SRC DST`
+// for one file (DST is created with mode 0666 & ~umask, or truncated).
+// Both opens go in one submission, linked so a missing SRC cancels the DST
+// open and leaves DST untouched. Eight 128 KiB positional reads stay in
+// flight and each block is written at its own offset as soon as it arrives,
+// so writes overlap too (Ring::transfer). Both closes go in one final
+// submission; a failed close of DST is an error, as it can lose data.
+// Errors print "uring_copy: NAME: errno N" and exit 1.
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::io;
+import std::uring;
+
+const BLOCK: i32 = 131072;
+const DEPTH: i32 = 8;
+const PATH_SLOT: i32 = 4096;
+
+fn complain(name: core::slice::View<u8>, code: i32) -> i32 {
+    std::io::write_text(2, "uring_copy: ");
+    let i: i32 = 0;
+    while (i < name.length) { std::io::write_byte(2, name.values[name.start + i] as i32); i += 1; }
+    std::io::write_text(2, ": errno "); std::io::write_i32(2, code); std::io::write_newline(2);
+    return 1;
+}
+
+fn main() -> i32 {
+    let arguments: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 2, 16384);
+    if (arguments.is_err() || arguments.unwrap().len() != 2) { std::io::eprintln("usage: uring_copy SRC DST"); return 1; }
+    let names: std::args::Arguments = arguments.unwrap();
+    let source: core::slice::View<u8> = names.get(0).unwrap();
+    let target: core::slice::View<u8> = names.get(1).unwrap();
+    let ring: std::uring::Ring = std::uring::setup(16).unwrap();
+    let buffer_bytes: usize = (BLOCK as usize) * (DEPTH as usize);
+    let buffers: ptr = std::uring::map_buffers(buffer_bytes + 2 * (PATH_SLOT as usize)).unwrap();
+    let source_slot: ptr = buffers + buffer_bytes;
+    let target_slot: ptr = source_slot + (PATH_SLOT as usize);
+    if (std::uring::stage_path(source, source_slot, PATH_SLOT).is_err()) { return complain(source, 36); }
+    if (std::uring::stage_path(target, target_slot, PATH_SLOT).is_err()) { return complain(target, 36); }
+    // O_RDONLY | O_CLOEXEC, then O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC.
+    ring.openat(std::uring::AT_FDCWD, source_slot, 524288, 0, 0);
+    ring.link_last();
+    ring.openat(std::uring::AT_FDCWD, target_slot, 524865, 438, 1);
+    let input: i32 = -1; let output: i32 = -1;
+    let k: i32 = 0;
+    while (k < 2) {
+        let c: std::uring::Completion = ring.wait().unwrap();
+        if (c.user_data() == 0) { input = c.result(); } else { output = c.result(); }
+        k += 1;
+    }
+    if (input < 0) {
+        if (output >= 0) { ring.close(output, 3); ring.wait(); }
+        return complain(source, 0 - input);
+    }
+    if (output < 0) { ring.close(input, 2); ring.wait(); return complain(target, 0 - output); }
+    let stream: bool = !std::uring::seekable(input);
+    let copied: core::result::Result<i64, std::uring::Error> = ring.transfer(input, output, buffers, BLOCK, DEPTH, stream, 0);
+    let status: i32 = 0;
+    if (copied.is_err()) {
+        status = match (copied.unwrap_err()) {
+            std::uring::Error::Read(code) -> complain(source, code),
+            std::uring::Error::Write(code) -> complain(target, code),
+            _ -> complain(source, 22),
+        };
+    }
+    ring.close(input, 2);
+    ring.close(output, 3);
+    k = 0;
+    while (k < 2) {
+        let c: std::uring::Completion = ring.wait().unwrap();
+        if (c.user_data() == 3 && c.failed() && status == 0) { status = complain(target, c.errno()); }
+        k += 1;
+    }
+    ring.destroy();
+    return status;
+}

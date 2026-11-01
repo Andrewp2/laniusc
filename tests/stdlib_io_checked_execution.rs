@@ -90,7 +90,7 @@ fn checked_stdin_retries_short_host_reads_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -103,7 +103,7 @@ fn checked_stdin_retries_short_host_reads_on_x86() {
         let trace = common::TempArtifact::new("laniusc_std_io_checked", "read_trace", None);
         let output = common::short_process_output_with_timeout(
             "checked short host read",
-            std::process::Command::new("strace")
+            crate::common::strace()
                 .arg("-qq")
                 .arg("-o")
                 .arg(trace.path())
@@ -137,7 +137,7 @@ fn checked_streams_report_host_errors_and_zero_progress_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -156,7 +156,7 @@ fn checked_streams_report_host_errors_and_zero_progress_on_x86() {
                 let trace = common::TempArtifact::new("laniusc_std_io_checked", "trace", None);
                 let output = common::short_process_output_with_timeout(
                     format!("checked {name} {fault}"),
-                    std::process::Command::new("strace")
+                    crate::common::strace()
                         .arg("-qq")
                         .arg("-o")
                         .arg(trace.path())
@@ -191,7 +191,7 @@ fn checked_streams_retry_short_writes_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -206,7 +206,7 @@ fn checked_streams_retry_short_writes_on_x86() {
             let trace = common::TempArtifact::new("laniusc_std_io_checked", "short_trace", None);
             let output = common::short_process_output_with_timeout(
                 format!("checked short {name} write"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-o")
                     .arg(trace.path())
@@ -269,7 +269,7 @@ fn checked_stdin_to_stdout_copy_reports_failures_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -290,7 +290,7 @@ fn checked_stdin_to_stdout_copy_reports_failures_on_x86() {
             let trace = common::TempArtifact::new("laniusc_std_io_checked", "copy_trace", None);
             let output = common::short_process_output_with_timeout(
                 format!("checked copy {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-o")
                     .arg(trace.path())
@@ -320,7 +320,7 @@ fn checked_stdin_to_stdout_copy_handles_short_transfers_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -337,7 +337,7 @@ fn checked_stdin_to_stdout_copy_handles_short_transfers_on_x86() {
             let trace = common::TempArtifact::new("laniusc_std_io_checked", "short_trace", None);
             let output = common::short_process_output_with_timeout(
                 format!("checked copy {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-o")
                     .arg(trace.path())
@@ -403,7 +403,7 @@ fn checked_stdin_read_to_end_reports_faults_and_retries_short_reads_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace").arg("-V").output().is_err() {
+        if crate::common::strace().arg("-V").output().is_err() {
             return;
         }
         let executable = write_executable(&bytes, "read_to_end_faults");
@@ -418,7 +418,7 @@ fn checked_stdin_read_to_end_reports_faults_and_retries_short_reads_on_x86() {
             let trace = common::TempArtifact::new("laniusc_std_io_checked", "end_trace", None);
             let output = common::short_process_output_with_timeout(
                 format!("checked read to end {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-o")
                     .arg(trace.path())

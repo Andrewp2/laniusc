@@ -1,0 +1,18 @@
+// Reported as a miscompile: a store through
+// `core::mem::typed_slice_from_raw_parts<u64>(p, n)` at index 1 wrote just
+// below p and segfaulted. Not a compiler defect: core::mem documents that raw
+// views of types other than i32 and u8 use descending eight-byte words
+// (stride -8 for u64), so element 1 of a raw view at p is p - 8. Storage that
+// starts at p is viewed with typed_slice_from_storage, which starts element
+// zero at the top. This program uses it and exits 79: all = [0, 7, 9, 0].
+module app::main;
+import alloc::allocator;
+import core::mem;
+fn main() -> i32 {
+    let p: ptr = alloc::allocator::alloc(32, 8);
+    let all: [u64] = core::mem::typed_slice_from_storage<u64>(p, 4); all[0] = 0; all[1] = 0; all[2] = 0; all[3] = 0;
+    let cells: [u64] = core::mem::typed_slice_from_storage<u64>(p + 8, 2); cells[0] = 7; cells[1] = 9;
+    let r: i32 = (all[1] * 10 + all[2]) as i32;
+    if (all[0] != 0 || all[3] != 0) { r = 100; }
+    return r;
+}

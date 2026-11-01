@@ -1574,3 +1574,85 @@ byte at `pointer + i`.
 The verified compiler lowers `s[i]` of a byte view to a bounds check and a
 zero-extending byte load (`LoadByte`, `movzx`), and `s[i] = v` to a byte
 store (`StoreByte`, `mov byte`) after the same check; `slice_stride` is 1.
+
+## The prelude's `minus` truncates (decided 11-01, review finding 5)
+
+The self program's prelude (`compiler.lani`, `frontend.lani`) had `minus(a,
+b)` panic when `b > a` ("used only where a >= b", which nothing checked).
+It now returns 0 there, which is Lean's truncated `Nat` subtraction, the
+meaning the extraction gives it (`PRELUDE_FNS`: `-`). So no run of the self
+program can stop at a `minus`, and the 287 `minus` calls the compile makes
+are no longer places its pure meaning can fail. `plus` and `times` still
+panic on a result past `2 ^ 64`: `usize` has no room for it and Lean's
+`Nat` has, so they are where the self program and its Lean definitions can
+part (`selfCompiler_reason`'s "no pure cost"). `extract.lani`'s and
+`mut_pilot.lani`'s own preludes are unchanged; their Lean meaning is the
+same `-` either way.
+
+With it, `wide_digit` (`frontend.lani`) returns `None` before the multiply
+that would pass `2 ^ 64` (`acc > 1844674407370955161`, or equal with a digit
+above 5). Before, it checked `acc` only on the next digit, so a 20-digit
+literal such as `99999999999999999999` panicked in `times` or `plus` where
+Lean's `wideDecimal` gave `none`; the self-built compiler then faulted on
+any source with such a literal instead of returning -1. `wideDecimal` gives
+the same answers as before.
+
+## `u16` views (decided 11-01)
+
+Core's raw slices had no `u16` element (`slice_from_raw_parts` of a `u16`
+pointer trapped `typeMismatch`), so the verified compiler lowered no
+function with a `[u16]`, among them `core::utf16`'s, which
+`core::utf16_bytes` and `core::transcode` call. The request was a two-byte
+packed view, but laniusc does not lay `[u16]` out that way:
+`stdlib/core/mem.lani` packs only `i32` (stride +4) and `u8` (+1), and every
+other scalar is one descending 8-byte word. Measured with laniusc:
+`slice_stride` of `typed_slice_from_storage<u16>(p, 2)` is -8, and so is the
+stride of a `[u16; 2]` local passed as a `[u16]`. A packed view would make
+Core disagree with laniusc on every `[u16]` built from storage, so a raw
+slice of `u16` is a word view, as point 2 of "Addressed locals" says for
+every scalar but `i32` and `u8`:
+
+- `NativeLayout.elementStride?` of `u16` is -8 (its one native word) and a
+  `[u16]` value is the usual 3 words. `rawSliceElementAddress?` is the
+  struct and enum rule with one word: element `i`'s word is at
+  `pointer - 8 * i`.
+- `mapRawNominalSlice` checks the view's words in one live block, as for a
+  struct or enum view.
+- An element is read and written as a `u16` value is everywhere else in
+  native layout (`readNativeValue`, `writeNativeValue`: the word's low 4
+  bytes, a value above 65535 is `typeMismatch`); it is not a byte view
+  (`isByte` stays `u8` only).
+- `typedSliceFromRawParts` types it (`RawNominalSliceElement.word16`).
+
+The verified compiler lowers it on the word-element path (`word_element`
+accepts `u16`): `s[i]` is a bounds check and a 32-bit load at
+`pointer - 8 * i`, `s[i] = v` a 32-bit store there after the same check,
+and `slice_stride` is -8. The other one-word scalars (`u32`, `u64`, `i64`,
+`bool`, `char`, `ptr`, ...) have the same layout in laniusc and are later
+work.
+
+## laniusc's process exit is `exit_group`; the verified compiler's stays `exit` (decided 11-01)
+
+laniusc's x86 runtime now ends a process with Linux syscall 231,
+`exit_group`, instead of 60, `exit`. This covers the `exit` service
+(`std::process::exit`) and allocation failure
+(`shaders/codegen/lir/x86/runtime_abi.slang`), the inline exits of failed
+safety guards such as bounds checks, status 101 (`emit_exit` in
+`safety_emit.slang`), and the static entry wrapper's exit after `main`
+(`emit.slang`).
+With `std::pthread`, `exit` ended only the calling thread. A worker that
+failed a bounds check vanished, `pthread_join` returned, and `main` went on
+to exit 0 (`tests/fixtures/stdlib_execution/concurrency/thread_exit.lani`).
+The native-link CRT bridge returns into glibc, whose `exit` already uses
+`exit_group`, so it is unchanged.
+
+The verified compiler keeps `mov eax, 60; syscall` (`lani/mini/compiler.lani`'s
+entry, `Lanius/Mini/Process.lean`'s `Exits`, `exit_steps` and the start bytes
+`[72, 137, 199, 184, 60, 0, 0, 0, 15, 5]`). Its programs have one thread:
+it emits no C entries and links no pthread. For a one-thread process, `exit`
+and `exit_group` end the same process with the same status, so `Exits` is
+exact for every program it compiles. Switching it would change the self
+source, the process theorems and the self-hosting fixpoint for no
+observable difference. It should switch when the verified compiler admits
+threads. The change is the byte 60 -> 231 in the entry and the immediate
+in `Exits.number` and `exit_steps`.

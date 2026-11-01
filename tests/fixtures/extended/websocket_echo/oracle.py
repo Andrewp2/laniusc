@@ -212,7 +212,7 @@ class Runner:
         command = [self.executable, *map(str, arguments)]
         trace = self.directory / f"{name}.trace"
         if no_network:
-            command = ["strace", "-qq", "-f", "-o", str(trace), "-e", "trace=network", *command]
+            command = ["strace","-E","LANIUS_ALLOC=mmap", "-qq", "-f", "-o", str(trace), "-e", "trace=network", *command]
         if closed_reader:
             read_fd, write_fd = os.pipe()
             os.close(read_fd)

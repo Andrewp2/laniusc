@@ -37,8 +37,8 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L15) · [source](../../../stdlib/std/file_ops.lani#L8)
 - [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L16) · [source](../../../stdlib/std/file_ops.lani#L9)
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../stdlib/std/file_ops.lani#L10)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../stdlib/std/file_ops.lani#L11)
-- [core::slice::view](../core/slice.md) (item: function) · [declaration](../../../stdlib/core/slice.lani#L44) · [source](../../../stdlib/std/file_ops.lani#L12)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L25) · [source](../../../stdlib/std/file_ops.lani#L11)
+- [core::slice::view](../core/slice.md) (item: function) · [declaration](../../../stdlib/core/slice.lani#L45) · [source](../../../stdlib/std/file_ops.lani#L12)
 - [std::file::File](file.md) (item: struct) · [declaration](../../../stdlib/std/file.lani#L26) · [source](../../../stdlib/std/file_ops.lani#L13)
 - [std::file::from_owned_handle](file.md) (item: function) · [declaration](../../../stdlib/std/file.lani#L63) · [source](../../../stdlib/std/file_ops.lani#L14)
 - [std::linux](linux.md) · [source](../../../stdlib/std/file_ops.lani#L15)
@@ -617,7 +617,7 @@ complete:bool
 
 ### enum: LockMode
 
-[Source line 326](../../../stdlib/std/file_ops.lani#L326)
+[Source line 334](../../../stdlib/std/file_ops.lani#L334)
 
 ```lanius
 pub enum LockMode
@@ -625,7 +625,7 @@ pub enum LockMode
 
 #### variant: Shared
 
-[Source line 326](../../../stdlib/std/file_ops.lani#L326)
+[Source line 334](../../../stdlib/std/file_ops.lani#L334)
 
 ```lanius
 Shared
@@ -633,7 +633,7 @@ Shared
 
 #### variant: Exclusive
 
-[Source line 326](../../../stdlib/std/file_ops.lani#L326)
+[Source line 334](../../../stdlib/std/file_ops.lani#L334)
 
 ```lanius
 Exclusive
@@ -641,7 +641,7 @@ Exclusive
 
 ### enum: LockWait
 
-[Source line 327](../../../stdlib/std/file_ops.lani#L327)
+[Source line 335](../../../stdlib/std/file_ops.lani#L335)
 
 ```lanius
 pub enum LockWait
@@ -649,7 +649,7 @@ pub enum LockWait
 
 #### variant: Blocking
 
-[Source line 327](../../../stdlib/std/file_ops.lani#L327)
+[Source line 335](../../../stdlib/std/file_ops.lani#L335)
 
 ```lanius
 Blocking
@@ -657,7 +657,7 @@ Blocking
 
 #### variant: Nonblocking
 
-[Source line 327](../../../stdlib/std/file_ops.lani#L327)
+[Source line 335](../../../stdlib/std/file_ops.lani#L335)
 
 ```lanius
 Nonblocking
@@ -977,7 +977,7 @@ Accepted on the finite native Linux x86_64 profile; see separate fixture/fault/m
 
 ### function: lock
 
-[Source line 333](../../../stdlib/std/file_ops.lani#L333)
+[Source line 341](../../../stdlib/std/file_ops.lani#L341)
 
 ```lanius
 pub fn lock(file:&File,mode:LockMode,wait:LockWait) -> Result<i32,Error>
@@ -987,7 +987,7 @@ Accepted on the finite native Linux x86_64/local-filesystem profile; native, ind
 
 ### function: unlock
 
-[Source line 343](../../../stdlib/std/file_ops.lani#L343)
+[Source line 351](../../../stdlib/std/file_ops.lani#L351)
 
 ```lanius
 pub fn unlock(file:&File) -> Result<i32,Error>
@@ -1021,9 +1021,9 @@ pub fn borrow(&self) -> &Metadata
 pub fn has(&self,fields:u32) -> bool
 ```
 
-### impl at line 285
+### impl at line 293
 
-[Source line 285](../../../stdlib/std/file_ops.lani#L285)
+[Source line 293](../../../stdlib/std/file_ops.lani#L293)
 
 ```lanius
 pub impl core::io::ReadAt for File
@@ -1031,15 +1031,15 @@ pub impl core::io::ReadAt for File
 
 #### method: read_at
 
-[Source line 286](../../../stdlib/std/file_ops.lani#L286)
+[Source line 294](../../../stdlib/std/file_ops.lani#L294)
 
 ```lanius
 pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64) -> Result<i32,Error>
 ```
 
-### impl at line 291
+### impl at line 299
 
-[Source line 291](../../../stdlib/std/file_ops.lani#L291)
+[Source line 299](../../../stdlib/std/file_ops.lani#L299)
 
 ```lanius
 pub impl core::io::WriteAt for File
@@ -1047,15 +1047,15 @@ pub impl core::io::WriteAt for File
 
 #### method: write_at
 
-[Source line 292](../../../stdlib/std/file_ops.lani#L292)
+[Source line 300](../../../stdlib/std/file_ops.lani#L300)
 
 ```lanius
 pub fn write_at(&self,source:[u8],offset:i32,count:i32,position:u64) -> Result<i32,Error>
 ```
 
-### impl at line 301
+### impl at line 309
 
-[Source line 301](../../../stdlib/std/file_ops.lani#L301)
+[Source line 309](../../../stdlib/std/file_ops.lani#L309)
 
 ```lanius
 pub impl core::io::Seek for File
@@ -1063,7 +1063,7 @@ pub impl core::io::Seek for File
 
 #### method: seek
 
-[Source line 302](../../../stdlib/std/file_ops.lani#L302)
+[Source line 310](../../../stdlib/std/file_ops.lani#L310)
 
 ```lanius
 pub fn seek(&self,from:core::io::SeekFrom) -> Result<u64,Error>

@@ -151,7 +151,7 @@ fn dns_library_and_cli_cleanup_each_allocation_and_io_failure_without_partial_ou
             source.path()
         };
         let execute = |fault: Option<String>, status| {
-            let mut c = Command::new("strace");
+            let mut c = crate::common::strace();
             c.args(["-qq", "-o"])
                 .arg(trace.path())
                 .args(["-e", "trace=mmap,munmap,read,write,socket,connect"]);

@@ -1,6 +1,84 @@
-import Lanius.Faithful.Safe.Run
-import Lanius.Faithful.Sim.Boxed
+module
 
+public import Lanius.Faithful.Safe.Run
+public import Lanius.Faithful.Sim.Boxed
+public import Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.FArith_opcode
+import all Lanius.Mini.Compiler.P.FloatTy_rex
+import all Lanius.Mini.Compiler.P.Instr_pieces
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.SrcExpr_guard
+import all Lanius.Mini.Compiler.P.SrcType_size
+import all Lanius.Mini.Compiler.P.UintTy_half
+import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.UintTy_mask
+import all Lanius.Mini.Compiler.P.applyGuard
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.arithUint
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.armBodyScope
+import all Lanius.Mini.Compiler.P.armPayload
+import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.compileModules
+import all Lanius.Mini.Compiler.P.conjunction
+import all Lanius.Mini.Compiler.P.consArgs
+import all Lanius.Mini.Compiler.P.elementAddress
+import all Lanius.Mini.Compiler.P.elementBase
+import all Lanius.Mini.Compiler.P.enumVariants
+import all Lanius.Mini.Compiler.P.equality
+import all Lanius.Mini.Compiler.P.evalDivide
+import all Lanius.Mini.Compiler.P.evalDivideSint
+import all Lanius.Mini.Compiler.P.evalNot
+import all Lanius.Mini.Compiler.P.evalSame
+import all Lanius.Mini.Compiler.P.floatApply
+import all Lanius.Mini.Compiler.P.guardAnd
+import all Lanius.Mini.Compiler.P.hostRandomCode
+import all Lanius.Mini.Compiler.P.imageLimit
+import all Lanius.Mini.Compiler.P.importOk
+import all Lanius.Mini.Compiler.P.importsOk
+import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Compiler.P.iteThen
+import all Lanius.Mini.Compiler.P.leftTrue
+import all Lanius.Mini.Compiler.P.loadAtBytes
+import all Lanius.Mini.Compiler.P.lowerAddress
+import all Lanius.Mini.Compiler.P.lowerApply
+import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.lowerReturn
+import all Lanius.Mini.Compiler.P.lowerSetCallArgs
+import all Lanius.Mini.Compiler.P.lowerSetValues
+import all Lanius.Mini.Compiler.P.lowerShift
+import all Lanius.Mini.Compiler.P.lowerSlice
+import all Lanius.Mini.Compiler.P.lowerTagged
+import all Lanius.Mini.Compiler.P.matchDst
+import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.moduleExports
+import all Lanius.Mini.Compiler.P.moduleFirsts
+import all Lanius.Mini.Compiler.P.modulesOk
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.repeatType
+import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.sintToUint
+import all Lanius.Mini.Compiler.P.storeArray
+import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.storeWordElement
+import all Lanius.Mini.Compiler.P.structFields
+import all Lanius.Mini.Compiler.P.usizeWidth
+import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.wordElement
+import all Lanius.Mini.Compiler.P.wordStride
+import all Lanius.Mini.Compiler.P.wordWidth
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.storeArray
+public import Lanius.Mini.Compiler.P.wordElement
+
+@[expose] public section
 /-! # The prims trap only definedly
 
 `size_of<T>` and `typed_slice_from_storage<T>` make views Core can check:
@@ -17,21 +95,21 @@ open Lanius.Semantics (State Completion evalExpr evalExprs execStmt restoreLocal
 /-! ## Raw views of word elements -/
 
 theorem map_zero {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat}
-    (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (hw : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (hw : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) : mapRawNominalSlice P s T a 0 = .done (.rawSlice T a (Int.toNat 0)) s := by
   have nz : (w == 0) = false := by simp only [beq_eq_false_iff_ne]; omega
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ <;>
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl <;>
   · simp only [mapRawNominalSlice, Semantics.isByte, hw, nz]
     rfl
 
 theorem map_one {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat}
-    (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (hw : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (hw : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) (room : a + 8 * w ≤ 2 ^ 64) (range : s.heap.checkRange a (8 * w) 8 = .ok ()) :
     mapRawNominalSlice P s T (a + 8 * w - 8) 1 = .done (.rawSlice T (a + 8 * w - 8) (Int.toNat 1)) s := by
   have nz : (w == 0) = false := by simp only [beq_eq_false_iff_ne]; omega
   have first : a + 8 * w - 8 + 8 - 8 * w = a := by omega
   have fits : ¬ (a + 8 * w - 8 + 8 < 8 * w) := by omega
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ <;>
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl <;>
   · simp [mapRawNominalSlice, Semantics.isByte, hw, nz, NativeLayout.wordBytes, first, fits, range, Nat.mul_comm w 8]
 
 /-! ## Raw stores and allocations -/
@@ -207,10 +285,10 @@ theorem SafeS.of_bound {sp : SrcProgram} {st : State} {s : SrcStmt} (views : st.
   fun k r s' h bound => safe (Nat.le_trans ((execStmt_trap_grows h) views).2 bound) k r s' h bound
 
 theorem valueWords_pos {P : Core.Program} {T : Core.Ty} {w : Nat}
-    (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (hw : NativeLayout.valueWords? P T = some w) :
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (hw : NativeLayout.valueWords? P T = some w) :
     0 < w := by
   rw [NativeLayout.valueWords?, show NativeLayout.maxDepth = (NativeLayout.maxDepth - 1) + 1 by decide] at hw
-  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩
+  rcases kind with ⟨id, rfl⟩ | ⟨id, rfl⟩ | rfl
   · rw [NativeLayout.words?] at hw
     simp only [bind, Option.bind_eq_some_iff] at hw
     obtain ⟨_, _, _, _, hw⟩ := hw
@@ -221,6 +299,8 @@ theorem valueWords_pos {P : Core.Program} {T : Core.Ty} {w : Nat}
     simp only [bind, Option.bind_eq_some_iff] at hw
     obtain ⟨_, _, _, _, hw⟩ := hw
     simp only [Option.some.injEq] at hw
+    omega
+  · simp only [NativeLayout.words?, Option.some.injEq] at hw
     omega
 
 section
@@ -379,10 +459,10 @@ section
 variable {sp : SrcProgram} {prims : Prims}
 
 theorem raw_read_of {P : Core.Program} {s : State} {T : Core.Ty} {a w : Nat} {v : Value}
-    (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (words : NativeLayout.valueWords? P T = some w)
+    (kind : (∃ id, T = .structure id) ∨ (∃ id, T = .enumeration id) ∨ T = .scalar (.unsigned .u16)) (words : NativeLayout.valueWords? P T = some w)
     (pos : 0 < w) (h : Semantics.readNativeValue NativeLayout.maxDepth P s.heap T (a + 8 * w - 8) = .ok v) :
     Semantics.readRawSliceIndex P s T (a + 8 * w - 8) 1 0 = .ok v := by
-  have nb : Semantics.isByte T = false := by rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> rfl
+  have nb : Semantics.isByte T = false := by rcases kind with ⟨_, rfl⟩ | ⟨_, rfl⟩ | rfl <;> rfl
   simp only [Semantics.readRawSliceIndex, show ¬ (0 ≥ 1) by decide, if_false,
     elementAddress_zero kind words pos, Semantics.readRawElement, nb, Bool.false_eq_true, ↓reduceIte]
   exact h
@@ -554,7 +634,7 @@ theorem boxed_safe {t : SrcType} {id sizeOf slice panic : Nat} {values ps : List
   -- the write: the value's store fits in the storage
   refine safeS_seq (safeS_expression fun k r s h bound => ?_) fun {k s} h => ?_
   · obtain ⟨rfl, ⟨bad, -⟩ | write⟩ := set_raw_trap (P := sp.toCore) (pos := 0) inv4.views
-      (by rcases kind with ⟨_, h⟩ | ⟨_, h⟩ <;> simp [h, Semantics.isByte]) view4
+      (by rcases kind with ⟨_, h⟩ | ⟨_, h⟩ | h <;> simp [h, Semantics.isByte]) view4
       (known_value (.signed .i32 0)) x4 (by simp [Semantics.integerIndex]) (fun _ => elementAddress_zero kind hw pos) h
     · exact absurd bad (by decide)
     replace write := write.2

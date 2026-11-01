@@ -54,6 +54,7 @@ fn run_stdio(mut input: impl BufRead, mut output: impl Write) -> Result<(), CliE
     let mut initialize_received = false;
     let mut shutdown_received = false;
     let mut documents = HashMap::<String, OpenDocument>::new();
+    let mut roots = document::LspSourceRoots::default();
     loop {
         let body = match protocol::read_framed_body(&mut input)? {
             FrameRead::Body(body) => body,
@@ -156,6 +157,7 @@ fn run_stdio(mut input: impl BufRead, mut output: impl Write) -> Result<(), CliE
         match method {
             "initialize" => {
                 initialize_received = true;
+                roots = document::LspSourceRoots::from_initialize_request(&request);
                 let response = capabilities::initialize_response(id);
                 protocol::write_response(&mut output, &response)?;
             }
@@ -284,7 +286,7 @@ fn run_stdio(mut input: impl BufRead, mut output: impl Write) -> Result<(), CliE
                                 protocol::write_response(&mut output, &response)?;
                                 continue;
                             };
-                            match document::diagnostic_items(&uri, &document.text) {
+                            match document::diagnostic_items(&uri, &document.text, &roots) {
                                 Ok(items) => {
                                     let response = serde_json::json!({
                                         "jsonrpc": "2.0",

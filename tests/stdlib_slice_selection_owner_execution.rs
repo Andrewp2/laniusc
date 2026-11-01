@@ -127,7 +127,7 @@ fn run(name: &str, phases: usize, owners: usize) -> Vec<u8> {
     let trace = common::TempArtifact::new("laniusc_slice_selection", "all_syscalls", None);
     let output = common::process_output_with_timeout(
         "slice selection finite native lifecycle",
-        Command::new("strace")
+        crate::common::strace()
             .args(["--kill-on-exit", "-qq", "-s", "64", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=all", "-e", "signal=none"])

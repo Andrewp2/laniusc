@@ -367,7 +367,7 @@ fn lexer_explicit_assertion_nullable_capture_validation_and_limit_tables() {
 fn lexer_build_and_input_admission_validate_bounds_exact_caps_and_cleanup() {
     let file = executable("admission.lani");
     let trace = common::TempArtifact::new("laniusc_lexer", "admission_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])
@@ -461,7 +461,7 @@ fn ledger(executable: &Path, trace: &str) -> usize {
 fn longest_prefix_and_lexer_contracts_preserve_context_priority_progress_and_budgets() {
     let file = executable("contracts.lani");
     let trace = common::TempArtifact::new("laniusc_lexer", "contracts_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])

@@ -64,7 +64,7 @@ def environment():
 def query(executable, prefix, complete=(), cwd=None, trace=None, end=b"1", trim=b""):
     command = [os.fsencode(executable), b"--lanius-complete-bash", end, trim, prefix, *complete]
     if trace is not None:
-        command = [b"strace", b"--kill-on-exit", b"-qq", b"-s", b"4096",
+        command = [b"strace", b"-E", b"LANIUS_ALLOC=mmap", b"--kill-on-exit", b"-qq", b"-s", b"4096",
                    b"-e", b"trace=%file,read", b"-o", os.fsencode(trace), *command]
     result = subprocess.run(command, cwd=cwd, env=environment(), input=b"",
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=4)

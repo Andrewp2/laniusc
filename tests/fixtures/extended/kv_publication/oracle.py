@@ -51,7 +51,7 @@ def rule(syscall, ordinal, error, repeat=False):
 
 
 def command(executable, trace, rules=(), delay=None, string_limit=4096):
-    values = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", str(string_limit),
+    values = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-i", "-s", str(string_limit),
               "-e", "signal=none", "-e", "trace=" + LEDGER.TRACE, "-o", str(trace)]
     for item in rules:
         end = "..%d" % item["last"] if "last" in item else ""

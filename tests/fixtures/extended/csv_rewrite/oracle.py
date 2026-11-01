@@ -192,7 +192,7 @@ def io_failures(directory):
         result, _ = run(b"a\n", options=("--max-read-calls", 4, "--max-write-calls", 4), expected=expected,
                         output=encode([["a"]]) if expected == 0 else b"", report=False,
                         diagnostic=fault != "inject=write:error=EINTR:when=1+",
-                        command=("strace", "-qq", "-o", trace, "-e", "trace=read,write,mmap,munmap", "-e", fault))
+                        command=("strace", "-E", "LANIUS_ALLOC=mmap", "-qq", "-o", trace, "-e", "trace=read,write,mmap,munmap", "-e", fault))
         events = trace.read_text()
         assert "INJECTED" in events
         allocations(events)
@@ -234,7 +234,7 @@ def resources(directory):
     global CASES
     source = encode([["a", "b"], ["x" * 257, 'é,"' * 47]])
     trace = directory / "alloc.trace"
-    command = ("strace", "-qq", "-o", trace, "-e", "trace=mmap,munmap")
+    command = ("strace", "-E", "LANIUS_ALLOC=mmap", "-qq", "-o", trace, "-e", "trace=mmap,munmap")
     baseline, _ = run(source, (1, 0, 1), command=command)
     count, _, _ = allocations(trace.read_text())
     assert count >= 10, count

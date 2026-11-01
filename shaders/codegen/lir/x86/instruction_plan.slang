@@ -36,6 +36,7 @@ struct X86PlanInput
     bool specialized;        // x86_is_specialized_instruction(core, operands)
     bool footer;             // last row of a function without explicit return
     bool skip_body;          // emission only: the row's body writes no bytes
+    uint c_entry_narrow_mask; // emission only: 32-bit parameters of a C entry's callee
 };
 
 static const uint X86_PLAN_INVALID = 0xffffffffu;
@@ -173,13 +174,23 @@ void plan_restore_registers(uint mask, uint first_slot)
     }
 }
 
-// The shared 48-byte body of an overlapping-safe qword copy from [RDX] to
+// The shared 58-byte body of an overlapping-safe qword copy from [RDX] to
 // [RAX], downward-growing words; the caller has already pushed RDI and RSI.
+// The copy runs backward (DF=1) only when the two ranges overlap with the
+// destination above the source (0 <= RAX - RDX < 8 * words). Disjoint
+// copies always run forward: a DF=1 `rep movsq` is a slow microcoded loop
+// (3-4x on Zen 3), and a disjoint copy took it whenever the destination
+// happened to lie above the source, as every element store from a stack
+// temporary does on a thread stack mapped below the heap.
 void plan_memmove_tail(uint words)
 {
     uint offset = 0u - (words - 1u) * 8u;
-    // cmp rax, rdx; jbe +18; mov rdi, rax; mov rsi, rdx; mov ecx, words
-    plan_bytes_words(4u, 0x76d03948u, 0xc7894812u, 0xb9d68948u);
+    plan_bytes(3u, 0xc18948u); // mov rcx, rax
+    plan_bytes(3u, 0xd12948u); // sub rcx, rdx
+    plan_bytes_word(3u, 0xf98148u, words * 8u); // cmp rcx, 8 * words
+    // jae +18; mov rdi, rax; mov rsi, rdx; mov ecx, words
+    plan_bytes_word(4u, 0x89481273u, 0xd68948c7u);
+    plan_bytes(1u, 0xb9u);
     // std; rep movsq; cld; jmp +23; lea rdi, [rax + offset]
     plan_bytes_words(4u, words, 0xa548f3fdu, 0x4817ebfcu);
     plan_bytes_word(2u, 0xb88du, offset);
@@ -262,6 +273,42 @@ void plan_footer(X86PlanInput input)
         plan_bytes(1u, 0xc9u); // leave
     }
     plan_bytes(1u, 0xc3u);
+}
+
+// The address of a System V entry for the callee (a function named as a
+// value, docs/language-ergonomics.md "C callbacks"). The entry is emitted in
+// line and jumped over: it saves the callee-saved registers, aligns the
+// stack as crt_entry does, loads R15 with the process vector that crt_entry
+// maps at its fixed address (0x100000000000, crt_entry.s), so the entry also
+// runs on a thread a C library created, zero-extends 32-bit register
+// arguments as Lanius callers do, and calls the function's ordinary body. Its
+// length does not depend on the parameters, so byte counting needs no mask.
+static const uint X86_C_ENTRY_BYTES = 58u;
+void plan_c_entry(X86PlanInput input)
+{
+    plan_bytes_word(3u, 0x058d48u, 2u);                  // lea rax, [rip + 2]
+    plan_bytes(2u, 0xebu | (X86_C_ENTRY_BYTES << 8u)); // jmp over the entry
+    plan_bytes(2u, 0x5553u);                           // push rbx; push rbp
+    plan_bytes(4u, 0x55415441u);                       // push r12; push r13
+    plan_bytes(4u, 0x57415641u);                       // push r14; push r15
+    plan_bytes(4u, 0x08ec8348u);                       // sub rsp, 8
+    plan_bytes_words(2u, 0xbf49u, 0u, 0x1000u);        // movabs r15, 0x100000000000
+    uint mask = input.c_entry_narrow_mask;
+    // mov edi,edi; mov esi,esi; mov edx,edx; mov ecx,ecx, or a 2-byte nop.
+    plan_bytes(2u, (mask & 1u) != 0u ? 0xff89u : 0x9066u);
+    plan_bytes(2u, (mask & 2u) != 0u ? 0xf689u : 0x9066u);
+    plan_bytes(2u, (mask & 4u) != 0u ? 0xd289u : 0x9066u);
+    plan_bytes(2u, (mask & 8u) != 0u ? 0xc989u : 0x9066u);
+    // mov r8d,r8d; mov r9d,r9d, or a 3-byte nop.
+    plan_bytes(3u, (mask & 16u) != 0u ? 0xc08945u : 0x001f0fu);
+    plan_bytes(3u, (mask & 32u) != 0u ? 0xc98945u : 0x001f0fu);
+    plan_op(X86_OP_BYTES | (1u << 8u) | X86_BYTES_ONE_WORD |
+        (X86_RESOLVE_ROW << 13u) | X86_BYTES_REL, 0xe8u, input.callee_row, 0u);
+    plan_bytes(4u, 0x08c48348u);                       // add rsp, 8
+    plan_bytes(4u, 0x5e415f41u);                       // pop r15; pop r14
+    plan_bytes(4u, 0x5c415d41u);                       // pop r13; pop r12
+    plan_bytes(3u, 0xc35b5du);                         // pop rbp; pop rbx; ret
+    plan_move64(X86_REG, input.locations.result);
 }
 
 // Results of CALL and CALL_SYMBOL after the call (and stack release).
@@ -665,6 +712,10 @@ void plan_ordinary(X86PlanInput input)
             (metadata & (X86_LIR_METADATA_AGGREGATE | X86_LIR_METADATA_WIDE)) != 0u,
             locations.a, destination);
         if (stack_argument) plan_bytes(1u, 0x50u); // push rax
+    }
+    else if (op == X86_LIR_OP_CALL && (metadata & X86_LIR_METADATA_NATIVE_C) != 0u)
+    {
+        if (input.callee_row != X86_PLAN_INVALID) plan_c_entry(input);
     }
     else if (op == X86_LIR_OP_CALL || op == X86_LIR_OP_CALL_SYMBOL)
     {

@@ -199,7 +199,7 @@ fn every_tree_map_allocation_failure_preserves_contents_capacity_and_cursors() {
     let exe = fixture("tree_map_failure");
     let trace = common::TempArtifact::new("laniusc_tree_map", "failure_trace", None);
     let execute = |when: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -235,7 +235,7 @@ fn adversarial_orders_keep_logarithmic_searches_and_reuse_nodes() {
         let trace = common::TempArtifact::new("laniusc_tree_map", "workload_trace", None);
         let output = common::process_output_with_timeout(
             "balanced tree workload",
-            Command::new("strace")
+            crate::common::strace()
                 .args(["-qq", "-o"])
                 .arg(trace.path())
                 .args([
@@ -265,7 +265,7 @@ fn adversarial_orders_keep_logarithmic_searches_and_reuse_nodes() {
 fn empty_owners_and_invalid_requests_do_not_allocate() {
     let exe = fixture("tree_map_empty");
     let trace = common::TempArtifact::new("laniusc_tree_map", "empty_trace", None);
-    let output = run(Command::new("strace")
+    let output = run(crate::common::strace()
         .args(["-qq", "-o"])
         .arg(trace.path())
         .args([
@@ -385,7 +385,7 @@ fn word_count_allocation_and_io_failures_release_every_allocation() {
     data.write_bytes(input);
     let trace = common::TempArtifact::new("laniusc_tree_map", "word_fault_trace", None);
     let execute = |injection: Option<String>, status: i32| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -436,7 +436,7 @@ fn sorted_bulk_construction_has_linear_comparison_cost() {
     let exe = fixture("tree_map_bulk");
     for repeated in [false, true] {
         let trace = common::TempArtifact::new("laniusc_tree_map", "bulk_trace", None);
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

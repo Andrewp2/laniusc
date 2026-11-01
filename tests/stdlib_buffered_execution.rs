@@ -115,7 +115,7 @@ fn memory_trace(text: String) -> Trace {
 
 fn run(executable: &common::TempArtifact, fault: Option<usize>, expected_exit: i32) -> Trace {
     let trace = common::TempArtifact::new("laniusc_buffered", "memory_trace", None);
-    let mut command = Command::new("strace");
+    let mut command = crate::common::strace();
     command
         .args(["-qq", "-o"])
         .arg(trace.path())
@@ -212,7 +212,7 @@ fn sample_run(
     let source = common::TempArtifact::new("laniusc_buffered", "copy_input", None);
     source.write_bytes(input);
     let trace = common::TempArtifact::new("laniusc_buffered", "copy_trace", None);
-    let mut command = Command::new("timeout");
+    let mut command = crate::common::traced_timeout();
     command
         .args(["--kill-after=1s", "8s", "strace", "-qq", "-o"])
         .arg(trace.path())

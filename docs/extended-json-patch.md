@@ -19,7 +19,13 @@ Tree.root() / code(node) / kind(node) / text(node) / key(node) / child(node, ind
 Tree.first_child(node) / next_sibling(node) / parent(node) / child_count(node) / destroy()
 ext::json_tree::equal(left: &Tree, a: i32, right: &Tree, b: i32) -> bool
 ext::json_tree::numbers_equal(left: Text, right: Text) -> bool
+ext::json_tree::number_compare(left: Text, right: Text) -> i32   // -1, 0, 1 by value
+ext::json_tree::number_is_integer(text) / number_count(text, limit) / number_digits(text)
+ext::json_tree::number_is_multiple(value: Text, divisor: Text) -> bool   // divisor up to 18 digits
 ```
+
+The number helpers do exact decimal arithmetic on spellings, for
+[`ext::json_schema`](extended-json-schema.md).
 
 - **Parsing:** `parse` reads one JSON text, with scalar roots allowed. An `ext::json_stream` error becomes `Parse` with the stream error kind in `cause` and its byte offset. A repeated key in one object is `DuplicateKey` at the second key's offset, because a patch can only name a member whose key is unique.
 - **Nodes:** a node is an `i32` id in an arena. Kind codes are 0 null, 1 false, 2 true, 3 number, 4 string, 5 array and 6 object. `text` returns a number's spelling or a string's decoded UTF-8. `key` returns a member's key. Both borrow the tree until it changes.

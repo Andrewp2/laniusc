@@ -138,7 +138,7 @@ fn every_composition_allocation_failure_preserves_owners_and_frees_storage() {
     let exe = fixture("text_composition_failure");
     let trace = common::TempArtifact::new("laniusc_text_composition", "trace", None);
     let execute = |when: Option<usize>| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())
@@ -254,7 +254,7 @@ fn normalizer_executes_limits_validation_allocation_and_partial_io_failures() {
     input.write_bytes(source.as_bytes());
     let trace = common::TempArtifact::new("laniusc_text_composition", "normalizer_trace", None);
     let traced = |injection: Option<String>, status: i32, prefix: usize| {
-        let mut command = Command::new("strace");
+        let mut command = crate::common::strace();
         command
             .args(["-qq", "-o"])
             .arg(trace.path())

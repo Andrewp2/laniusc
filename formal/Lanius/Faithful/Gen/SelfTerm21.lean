@@ -96,7 +96,7 @@ theorem ok_width_of : FnOk prog prims info (1016, ⟨2, [], 0⟩) :=
 theorem ok_address_below : FnOk prog prims info (1017, ⟨0, [], 0⟩) :=
   fnOk_of fn_address_below (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_Expr : FnOk prog prims info (1018, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_Expr : FnOk prog prims info (1018, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_Expr (by decide +kernel)
 
 theorem ok_store_types : FnOk prog prims info (1019, ⟨3, [0], 0⟩) :=

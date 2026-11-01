@@ -75,7 +75,7 @@ class Runner(base.Runner):
         if prepend:
             arguments = ["--lock", *arguments]
         prefix = self.directory / name
-        command = ["strace", "--kill-on-exit", "-qq", "-xx", "-s", "32", "-e", "signal=none",
+        command = ["strace","-E","LANIUS_ALLOC=mmap", "--kill-on-exit", "-qq", "-xx", "-s", "32", "-e", "signal=none",
                    "-e", "trace=" + base.TRACE, "-o", str(prefix.with_suffix(".trace"))]
         injections = [] if injection is None else (list(injection) if isinstance(injection[0], tuple) else [injection])
         for call, ordinal, failure in injections:

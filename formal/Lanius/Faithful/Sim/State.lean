@@ -1,6 +1,9 @@
-import Lanius.Faithful.Sim.Inv
-import Lanius.Faithful.Sim.Rel
+module
 
+public import Lanius.Faithful.Sim.Inv
+public import Lanius.Faithful.Sim.Rel
+
+@[expose] public section
 /-! # Core states the pure subset runs through
 
 `Inv`: no i32 views, cell ids below `nextCell`, heap blocks below the cursor

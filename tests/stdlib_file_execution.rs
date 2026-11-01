@@ -242,7 +242,7 @@ fn std_file_write_all_bytes_to_path_reports_host_failures_on_x86() {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -266,7 +266,7 @@ fn std_file_write_all_bytes_to_path_reports_host_failures_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("path write {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=write,close")
@@ -417,7 +417,7 @@ fn std_file_read_to_end_into_buffer_handles_host_failures_on_x86() {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -444,7 +444,7 @@ fn std_file_read_to_end_into_buffer_handles_host_failures_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("read-to-end {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=read,close")
@@ -694,7 +694,7 @@ fn std_file_wide_decimal_reports_host_failures_on_x86() {
         {
             use std::os::unix::fs::PermissionsExt;
 
-            if std::process::Command::new("strace")
+            if crate::common::strace()
                 .arg("-V")
                 .output()
                 .is_err()
@@ -728,7 +728,7 @@ fn std_file_wide_decimal_reports_host_failures_on_x86() {
             ] {
                 let output = common::short_process_output_with_timeout(
                     format!("wide decimal file {name} {injection}"),
-                    std::process::Command::new("strace")
+                    crate::common::strace()
                         .arg("-qq")
                         .arg("-e")
                         .arg("trace=read,write,close")
@@ -819,7 +819,7 @@ fn std_file_write_i32_decimal_reports_host_failures_on_x86() {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -843,7 +843,7 @@ fn std_file_write_i32_decimal_reports_host_failures_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("decimal file write {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=write,close")
@@ -884,7 +884,7 @@ fn std_file_write_u32_decimal_reports_host_failures_on_x86() {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -909,7 +909,7 @@ fn std_file_write_u32_decimal_reports_host_failures_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("unsigned file write {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=write,close")
@@ -949,7 +949,7 @@ fn std_file_read_i32_decimal_or_handles_host_failures_on_x86() {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -970,7 +970,7 @@ fn std_file_read_i32_decimal_or_handles_host_failures_on_x86() {
         for injection in ["read:error=EIO:when=1", "close:error=EIO:when=1"] {
             let output = common::short_process_output_with_timeout(
                 format!("decimal file {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=read,close")
@@ -1005,7 +1005,7 @@ fn std_file_read_u32_decimal_or_handles_host_failures_on_x86() {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -1027,7 +1027,7 @@ fn std_file_read_u32_decimal_or_handles_host_failures_on_x86() {
         for injection in ["read:error=EIO:when=1", "close:error=EIO:when=1"] {
             let output = common::short_process_output_with_timeout(
                 format!("unsigned file read {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=read,close")

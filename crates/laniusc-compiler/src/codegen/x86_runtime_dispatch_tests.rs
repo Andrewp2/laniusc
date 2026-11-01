@@ -17,7 +17,7 @@ use crate::gpu::{
 
 const PRODUCER: &str = "codegen/lir/x86/runtime_dispatch_args";
 const EMITTER: &str = "codegen/lir/x86/runtime_emit";
-const CAPACITY: usize = 2208;
+const CAPACITY: usize = 3360;
 const CANARY: u8 = 0xa5;
 
 fn words(values: &[u32]) -> Vec<u8> {
@@ -75,7 +75,7 @@ fn runtime_literal_bytes() -> Vec<u8> {
     }
     assert_eq!(
         result.len(),
-        2095,
+        3257,
         "update the boundary cases when the runtime grows"
     );
     result
@@ -243,7 +243,7 @@ fn physical_gpu_runtime_dispatch_covers_tail_and_resets_invalid_work() {
     // Check invalid input against poisoned X/Y/Z before any valid producer
     // invocation can normalize them. Keep this producer-only so a regression
     // cannot turn the deliberately poisoned words into a large dispatch.
-    let (actual_args, actual) = run(1, 0, 2095, CAPACITY as u32, false);
+    let (actual_args, actual) = run(1, 0, 3257, CAPACITY as u32, false);
     assert_eq!(actual_args, [0, 1, 1]);
     assert!(actual.iter().all(|byte| *byte == CANARY));
 
@@ -252,7 +252,7 @@ fn physical_gpu_runtime_dispatch_covers_tail_and_resets_invalid_work() {
         (2049, 3, CAPACITY as u32, [9, 1, 1]),
         // End exactly at the logical capacity while retaining physical suffix
         // canaries; neither side of a partial packed word may be clobbered.
-        (2095, 5, 2100, [9, 1, 1]),
+        (3257, 5, 3262, [13, 1, 1]),
     ] {
         let (actual_args, actual) = run(0, offset, length, capacity, true);
         assert_eq!(actual_args, dimensions, "length {length}");
@@ -274,7 +274,7 @@ fn physical_gpu_runtime_dispatch_covers_tail_and_resets_invalid_work() {
     }
 
     for (status, offset, length, capacity) in [
-        (1, 5, 2095, CAPACITY as u32),
+        (1, 5, 3257, CAPACITY as u32),
         (0, CAPACITY as u32 + 1, 0, CAPACITY as u32),
         (0, 5, CAPACITY as u32 - 4, CAPACITY as u32),
         (0, u32::MAX, 2, CAPACITY as u32),

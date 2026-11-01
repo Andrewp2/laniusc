@@ -124,7 +124,8 @@ comma outside quotes), CR and LF inside quotes, and complete valid UTF-8
 sequences. The record vector grows to the same capacity that one push per
 byte reaches, and any byte that could change state, fail or hit a limit
 still goes through the byte-at-a-time path, so results, errors, offsets and
-capacities are unchanged. Measured on 2026-11-01, minimum of 3 interleaved
+capacities are unchanged. A failed run reservation is `AllocationFailed`, as
+a failed single-byte push is; it is not retried byte by byte. Measured on 2026-11-01, minimum of 3 interleaved
 runs, against the previous lang build:
 
 | Workload | Before | After |

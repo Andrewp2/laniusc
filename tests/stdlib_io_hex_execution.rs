@@ -64,7 +64,7 @@ fn hexadecimal_stream_writer_reports_partial_failures_on_x86() {
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -86,7 +86,7 @@ fn hexadecimal_stream_writer_reports_partial_failures_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("hex write {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=write")
@@ -188,7 +188,7 @@ fn bounded_hexadecimal_stdin_reader_reports_host_failure_on_x86() {
 
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
-        if std::process::Command::new("strace")
+        if crate::common::strace()
             .arg("-V")
             .output()
             .is_err()
@@ -206,7 +206,7 @@ fn bounded_hexadecimal_stdin_reader_reports_host_failure_on_x86() {
         ] {
             let output = common::short_process_output_with_timeout(
                 format!("hex read {injection}"),
-                std::process::Command::new("strace")
+                crate::common::strace()
                     .arg("-qq")
                     .arg("-e")
                     .arg("trace=read")

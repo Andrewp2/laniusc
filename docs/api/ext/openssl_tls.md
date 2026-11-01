@@ -20,7 +20,7 @@ Client, server and mutual TLS delegate to OpenSSL 3 libssl/libcrypto on Linux x8
 - [extended-https-client](../../extended-https-client.md)
 - [extended-https-batch-testing](../../extended-https-batch-testing.md)
 
-Declaration counts: constant: 1; enum: 12; extern function: 43; field: 30; function: 4; impl: 3; method: 31; struct: 5; variant: 60.
+Declaration counts: constant: 1; enum: 12; extern function: 44; field: 32; function: 4; impl: 3; method: 32; struct: 5; variant: 60.
 
 ## Declared imports
 
@@ -766,6 +766,22 @@ limits: Limits
 peer_required: bool
 ```
 
+#### field: alpn
+
+[Source line 29](../../../extended/ext/openssl_tls.lani#L29)
+
+```lanius
+alpn: ptr
+```
+
+#### field: alpn_bytes
+
+[Source line 29](../../../extended/ext/openssl_tls.lani#L29)
+
+```lanius
+alpn_bytes: i32
+```
+
 ### struct: Session
 
 [Source line 32](../../../extended/ext/openssl_tls.lani#L32)
@@ -940,7 +956,7 @@ pub fn new_server(certificate_chain: core::slice::View<u8>, private_key: core::s
 
 ### extern function: TLS_client_method
 
-[Source line 639](../../../extended/ext/openssl_tls.lani#L639)
+[Source line 697](../../../extended/ext/openssl_tls.lani#L697)
 
 ```lanius
 pub extern "C" fn TLS_client_method() -> ptr;
@@ -950,7 +966,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: TLS_server_method
 
-[Source line 640](../../../extended/ext/openssl_tls.lani#L640)
+[Source line 698](../../../extended/ext/openssl_tls.lani#L698)
 
 ```lanius
 pub extern "C" fn TLS_server_method() -> ptr;
@@ -960,7 +976,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_new
 
-[Source line 641](../../../extended/ext/openssl_tls.lani#L641)
+[Source line 699](../../../extended/ext/openssl_tls.lani#L699)
 
 ```lanius
 pub extern "C" fn SSL_CTX_new(method: ptr) -> ptr;
@@ -970,7 +986,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_up_ref
 
-[Source line 642](../../../extended/ext/openssl_tls.lani#L642)
+[Source line 700](../../../extended/ext/openssl_tls.lani#L700)
 
 ```lanius
 pub extern "C" fn SSL_CTX_up_ref(context: ptr) -> i32;
@@ -980,7 +996,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_free
 
-[Source line 643](../../../extended/ext/openssl_tls.lani#L643)
+[Source line 701](../../../extended/ext/openssl_tls.lani#L701)
 
 ```lanius
 pub extern "C" fn SSL_CTX_free(context: ptr);
@@ -990,7 +1006,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_verify
 
-[Source line 644](../../../extended/ext/openssl_tls.lani#L644)
+[Source line 702](../../../extended/ext/openssl_tls.lani#L702)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_verify(context: ptr, mode: i32, callback: ptr);
@@ -1000,7 +1016,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_verify_depth
 
-[Source line 645](../../../extended/ext/openssl_tls.lani#L645)
+[Source line 703](../../../extended/ext/openssl_tls.lani#L703)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_verify_depth(context: ptr, depth: i32);
@@ -1010,7 +1026,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_purpose
 
-[Source line 646](../../../extended/ext/openssl_tls.lani#L646)
+[Source line 704](../../../extended/ext/openssl_tls.lani#L704)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_purpose(context: ptr, purpose: i32) -> i32;
@@ -1020,7 +1036,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_num_tickets
 
-[Source line 647](../../../extended/ext/openssl_tls.lani#L647)
+[Source line 705](../../../extended/ext/openssl_tls.lani#L705)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_num_tickets(context: ptr, tickets: usize) -> i32;
@@ -1030,7 +1046,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_ctrl
 
-[Source line 648](../../../extended/ext/openssl_tls.lani#L648)
+[Source line 706](../../../extended/ext/openssl_tls.lani#L706)
 
 ```lanius
 pub extern "C" fn SSL_CTX_ctrl(context: ptr, command: i32, argument: i64, pointer: ptr) -> i64;
@@ -1040,7 +1056,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_options
 
-[Source line 649](../../../extended/ext/openssl_tls.lani#L649)
+[Source line 707](../../../extended/ext/openssl_tls.lani#L707)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_options(context: ptr, options: u64) -> u64;
@@ -1050,7 +1066,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_clear_options
 
-[Source line 650](../../../extended/ext/openssl_tls.lani#L650)
+[Source line 708](../../../extended/ext/openssl_tls.lani#L708)
 
 ```lanius
 pub extern "C" fn SSL_CTX_clear_options(context: ptr, options: u64) -> u64;
@@ -1060,7 +1076,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_default_verify_paths
 
-[Source line 651](../../../extended/ext/openssl_tls.lani#L651)
+[Source line 709](../../../extended/ext/openssl_tls.lani#L709)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_default_verify_paths(context: ptr) -> i32;
@@ -1070,7 +1086,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_load_verify_locations
 
-[Source line 652](../../../extended/ext/openssl_tls.lani#L652)
+[Source line 710](../../../extended/ext/openssl_tls.lani#L710)
 
 ```lanius
 pub extern "C" fn SSL_CTX_load_verify_locations(context: ptr, file: ptr, directory: ptr) -> i32;
@@ -1080,7 +1096,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_default_passwd_cb
 
-[Source line 653](../../../extended/ext/openssl_tls.lani#L653)
+[Source line 711](../../../extended/ext/openssl_tls.lani#L711)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_default_passwd_cb(context: ptr, callback: ptr);
@@ -1090,7 +1106,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_set_default_passwd_cb_userdata
 
-[Source line 654](../../../extended/ext/openssl_tls.lani#L654)
+[Source line 712](../../../extended/ext/openssl_tls.lani#L712)
 
 ```lanius
 pub extern "C" fn SSL_CTX_set_default_passwd_cb_userdata(context: ptr, userdata: ptr);
@@ -1100,7 +1116,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_use_certificate_chain_file
 
-[Source line 655](../../../extended/ext/openssl_tls.lani#L655)
+[Source line 713](../../../extended/ext/openssl_tls.lani#L713)
 
 ```lanius
 pub extern "C" fn SSL_CTX_use_certificate_chain_file(context: ptr, file: ptr) -> i32;
@@ -1110,7 +1126,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_use_PrivateKey_file
 
-[Source line 656](../../../extended/ext/openssl_tls.lani#L656)
+[Source line 714](../../../extended/ext/openssl_tls.lani#L714)
 
 ```lanius
 pub extern "C" fn SSL_CTX_use_PrivateKey_file(context: ptr, file: ptr, format: i32) -> i32;
@@ -1120,7 +1136,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_CTX_check_private_key
 
-[Source line 657](../../../extended/ext/openssl_tls.lani#L657)
+[Source line 715](../../../extended/ext/openssl_tls.lani#L715)
 
 ```lanius
 pub extern "C" fn SSL_CTX_check_private_key(context: ptr) -> i32;
@@ -1130,7 +1146,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_new
 
-[Source line 658](../../../extended/ext/openssl_tls.lani#L658)
+[Source line 716](../../../extended/ext/openssl_tls.lani#L716)
 
 ```lanius
 pub extern "C" fn SSL_new(context: ptr) -> ptr;
@@ -1140,7 +1156,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_free
 
-[Source line 659](../../../extended/ext/openssl_tls.lani#L659)
+[Source line 717](../../../extended/ext/openssl_tls.lani#L717)
 
 ```lanius
 pub extern "C" fn SSL_free(session: ptr);
@@ -1150,7 +1166,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set_hostflags
 
-[Source line 660](../../../extended/ext/openssl_tls.lani#L660)
+[Source line 718](../../../extended/ext/openssl_tls.lani#L718)
 
 ```lanius
 pub extern "C" fn SSL_set_hostflags(session: ptr, flags: u32);
@@ -1160,7 +1176,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set1_host
 
-[Source line 661](../../../extended/ext/openssl_tls.lani#L661)
+[Source line 719](../../../extended/ext/openssl_tls.lani#L719)
 
 ```lanius
 pub extern "C" fn SSL_set1_host(session: ptr, host: ptr) -> i32;
@@ -1170,7 +1186,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_ctrl
 
-[Source line 662](../../../extended/ext/openssl_tls.lani#L662)
+[Source line 720](../../../extended/ext/openssl_tls.lani#L720)
 
 ```lanius
 pub extern "C" fn SSL_ctrl(session: ptr, command: i32, argument: i64, pointer: ptr) -> i64;
@@ -1180,7 +1196,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_get0_param
 
-[Source line 663](../../../extended/ext/openssl_tls.lani#L663)
+[Source line 721](../../../extended/ext/openssl_tls.lani#L721)
 
 ```lanius
 pub extern "C" fn SSL_get0_param(session: ptr) -> ptr;
@@ -1190,7 +1206,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: X509_VERIFY_PARAM_set1_ip_asc
 
-[Source line 664](../../../extended/ext/openssl_tls.lani#L664)
+[Source line 722](../../../extended/ext/openssl_tls.lani#L722)
 
 ```lanius
 pub extern "C" fn X509_VERIFY_PARAM_set1_ip_asc(parameters: ptr, ip: ptr) -> i32;
@@ -1200,7 +1216,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set_fd
 
-[Source line 665](../../../extended/ext/openssl_tls.lani#L665)
+[Source line 723](../../../extended/ext/openssl_tls.lani#L723)
 
 ```lanius
 pub extern "C" fn SSL_set_fd(session: ptr, fd: i32) -> i32;
@@ -1210,7 +1226,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set_connect_state
 
-[Source line 666](../../../extended/ext/openssl_tls.lani#L666)
+[Source line 724](../../../extended/ext/openssl_tls.lani#L724)
 
 ```lanius
 pub extern "C" fn SSL_set_connect_state(session: ptr);
@@ -1220,7 +1236,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_set_accept_state
 
-[Source line 667](../../../extended/ext/openssl_tls.lani#L667)
+[Source line 725](../../../extended/ext/openssl_tls.lani#L725)
 
 ```lanius
 pub extern "C" fn SSL_set_accept_state(session: ptr);
@@ -1230,7 +1246,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_do_handshake
 
-[Source line 668](../../../extended/ext/openssl_tls.lani#L668)
+[Source line 726](../../../extended/ext/openssl_tls.lani#L726)
 
 ```lanius
 pub extern "C" fn SSL_do_handshake(session: ptr) -> i32;
@@ -1240,7 +1256,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_version
 
-[Source line 669](../../../extended/ext/openssl_tls.lani#L669)
+[Source line 727](../../../extended/ext/openssl_tls.lani#L727)
 
 ```lanius
 pub extern "C" fn SSL_version(session: ptr) -> i32;
@@ -1248,9 +1264,19 @@ pub extern "C" fn SSL_version(session: ptr) -> i32;
 
 Extern declaration; binding availability is not inferred.
 
+### extern function: SSL_CTX_set_alpn_select_cb
+
+[Source line 728](../../../extended/ext/openssl_tls.lani#L728)
+
+```lanius
+pub extern "C" fn SSL_CTX_set_alpn_select_cb(context: ptr, callback: ptr, arg: ptr);
+```
+
+Extern declaration; binding availability is not inferred.
+
 ### extern function: SSL_set_alpn_protos
 
-[Source line 670](../../../extended/ext/openssl_tls.lani#L670)
+[Source line 729](../../../extended/ext/openssl_tls.lani#L729)
 
 ```lanius
 pub extern "C" fn SSL_set_alpn_protos(session: ptr, protocols: ptr, length: u32) -> i32;
@@ -1260,7 +1286,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_get0_alpn_selected
 
-[Source line 671](../../../extended/ext/openssl_tls.lani#L671)
+[Source line 730](../../../extended/ext/openssl_tls.lani#L730)
 
 ```lanius
 pub extern "C" fn SSL_get0_alpn_selected(session: ptr, data: ptr, length: ptr);
@@ -1270,7 +1296,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_get_error
 
-[Source line 672](../../../extended/ext/openssl_tls.lani#L672)
+[Source line 731](../../../extended/ext/openssl_tls.lani#L731)
 
 ```lanius
 pub extern "C" fn SSL_get_error(session: ptr, result: i32) -> i32;
@@ -1280,7 +1306,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_get_verify_result
 
-[Source line 673](../../../extended/ext/openssl_tls.lani#L673)
+[Source line 732](../../../extended/ext/openssl_tls.lani#L732)
 
 ```lanius
 pub extern "C" fn SSL_get_verify_result(session: ptr) -> i64;
@@ -1290,7 +1316,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_get0_peer_certificate
 
-[Source line 674](../../../extended/ext/openssl_tls.lani#L674)
+[Source line 733](../../../extended/ext/openssl_tls.lani#L733)
 
 ```lanius
 pub extern "C" fn SSL_get0_peer_certificate(session: ptr) -> ptr;
@@ -1300,7 +1326,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_read_ex
 
-[Source line 675](../../../extended/ext/openssl_tls.lani#L675)
+[Source line 734](../../../extended/ext/openssl_tls.lani#L734)
 
 ```lanius
 pub extern "C" fn SSL_read_ex(session: ptr, output: ptr, length: usize, count: ptr) -> i32;
@@ -1310,7 +1336,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_write_ex
 
-[Source line 676](../../../extended/ext/openssl_tls.lani#L676)
+[Source line 735](../../../extended/ext/openssl_tls.lani#L735)
 
 ```lanius
 pub extern "C" fn SSL_write_ex(session: ptr, input: ptr, length: usize, count: ptr) -> i32;
@@ -1320,7 +1346,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: SSL_shutdown
 
-[Source line 677](../../../extended/ext/openssl_tls.lani#L677)
+[Source line 736](../../../extended/ext/openssl_tls.lani#L736)
 
 ```lanius
 pub extern "C" fn SSL_shutdown(session: ptr) -> i32;
@@ -1330,7 +1356,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: ERR_clear_error
 
-[Source line 678](../../../extended/ext/openssl_tls.lani#L678)
+[Source line 737](../../../extended/ext/openssl_tls.lani#L737)
 
 ```lanius
 pub extern "C" fn ERR_clear_error();
@@ -1340,7 +1366,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: ERR_get_error
 
-[Source line 679](../../../extended/ext/openssl_tls.lani#L679)
+[Source line 738](../../../extended/ext/openssl_tls.lani#L738)
 
 ```lanius
 pub extern "C" fn ERR_get_error() -> u64;
@@ -1350,7 +1376,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: OPENSSL_cleanse
 
-[Source line 680](../../../extended/ext/openssl_tls.lani#L680)
+[Source line 739](../../../extended/ext/openssl_tls.lani#L739)
 
 ```lanius
 pub extern "C" fn OPENSSL_cleanse(storage: ptr, length: usize);
@@ -1360,7 +1386,7 @@ Extern declaration; binding availability is not inferred.
 
 ### extern function: __errno_location
 
-[Source line 683](../../../extended/ext/openssl_tls.lani#L683)
+[Source line 742](../../../extended/ext/openssl_tls.lani#L742)
 
 ```lanius
 pub extern "C" fn __errno_location() -> ptr;
@@ -1370,9 +1396,9 @@ Extern declaration; binding availability is not inferred.
 
 ## Implementation blocks and public methods
 
-### impl at line 304
+### impl at line 344
 
-[Source line 304](../../../extended/ext/openssl_tls.lani#L304)
+[Source line 344](../../../extended/ext/openssl_tls.lani#L344)
 
 ```lanius
 pub impl Context
@@ -1380,7 +1406,7 @@ pub impl Context
 
 #### method: io_bytes
 
-[Source line 305](../../../extended/ext/openssl_tls.lani#L305)
+[Source line 345](../../../extended/ext/openssl_tls.lani#L345)
 
 ```lanius
 pub fn io_bytes(&self) -> i32
@@ -1388,7 +1414,7 @@ pub fn io_bytes(&self) -> i32
 
 #### method: borrow
 
-[Source line 306](../../../extended/ext/openssl_tls.lani#L306)
+[Source line 346](../../../extended/ext/openssl_tls.lani#L346)
 
 ```lanius
 pub fn borrow(&self) -> &Context
@@ -1396,7 +1422,7 @@ pub fn borrow(&self) -> &Context
 
 #### method: is_open
 
-[Source line 307](../../../extended/ext/openssl_tls.lani#L307)
+[Source line 347](../../../extended/ext/openssl_tls.lani#L347)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -1404,7 +1430,7 @@ pub fn is_open(&self) -> bool
 
 #### method: validate_identity
 
-[Source line 309](../../../extended/ext/openssl_tls.lani#L309)
+[Source line 349](../../../extended/ext/openssl_tls.lani#L349)
 
 ```lanius
 pub fn validate_identity(&self, identity: Identity) -> core::result::Result<i32, Error>
@@ -1412,7 +1438,7 @@ pub fn validate_identity(&self, identity: Identity) -> core::result::Result<i32,
 
 #### method: retain
 
-[Source line 315](../../../extended/ext/openssl_tls.lani#L315)
+[Source line 355](../../../extended/ext/openssl_tls.lani#L355)
 
 ```lanius
 pub fn retain(&self) -> core::result::Result<Context, Error>
@@ -1420,7 +1446,7 @@ pub fn retain(&self) -> core::result::Result<Context, Error>
 
 #### method: destroy
 
-[Source line 322](../../../extended/ext/openssl_tls.lani#L322)
+[Source line 362](../../../extended/ext/openssl_tls.lani#L362)
 
 ```lanius
 pub fn destroy(&self)
@@ -1428,15 +1454,15 @@ pub fn destroy(&self)
 
 #### method: session
 
-[Source line 329](../../../extended/ext/openssl_tls.lani#L329)
+[Source line 369](../../../extended/ext/openssl_tls.lani#L369)
 
 ```lanius
 pub fn session(&self, fd: i32, identity: Identity) -> core::result::Result<Session, Error>
 ```
 
-### impl at line 366
+### impl at line 406
 
-[Source line 366](../../../extended/ext/openssl_tls.lani#L366)
+[Source line 406](../../../extended/ext/openssl_tls.lani#L406)
 
 ```lanius
 pub impl ServerContext
@@ -1444,7 +1470,7 @@ pub impl ServerContext
 
 #### method: borrow
 
-[Source line 367](../../../extended/ext/openssl_tls.lani#L367)
+[Source line 407](../../../extended/ext/openssl_tls.lani#L407)
 
 ```lanius
 pub fn borrow(&self) -> &ServerContext
@@ -1452,7 +1478,7 @@ pub fn borrow(&self) -> &ServerContext
 
 #### method: is_open
 
-[Source line 368](../../../extended/ext/openssl_tls.lani#L368)
+[Source line 408](../../../extended/ext/openssl_tls.lani#L408)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -1460,7 +1486,7 @@ pub fn is_open(&self) -> bool
 
 #### method: io_bytes
 
-[Source line 369](../../../extended/ext/openssl_tls.lani#L369)
+[Source line 409](../../../extended/ext/openssl_tls.lani#L409)
 
 ```lanius
 pub fn io_bytes(&self) -> i32
@@ -1468,23 +1494,31 @@ pub fn io_bytes(&self) -> i32
 
 #### method: destroy
 
-[Source line 370](../../../extended/ext/openssl_tls.lani#L370)
+[Source line 413](../../../extended/ext/openssl_tls.lani#L413)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
+#### method: set_alpn
+
+[Source line 425](../../../extended/ext/openssl_tls.lani#L425)
+
+```lanius
+pub fn set_alpn(&self, protocols: core::slice::View<u8>) -> core::result::Result<i32, Error>
+```
+
 #### method: session
 
-[Source line 377](../../../extended/ext/openssl_tls.lani#L377)
+[Source line 440](../../../extended/ext/openssl_tls.lani#L440)
 
 ```lanius
 pub fn session(&self, fd: i32) -> core::result::Result<Session, Error>
 ```
 
-### impl at line 427
+### impl at line 490
 
-[Source line 427](../../../extended/ext/openssl_tls.lani#L427)
+[Source line 490](../../../extended/ext/openssl_tls.lani#L490)
 
 ```lanius
 pub impl Session
@@ -1492,7 +1526,7 @@ pub impl Session
 
 #### method: borrow
 
-[Source line 428](../../../extended/ext/openssl_tls.lani#L428)
+[Source line 491](../../../extended/ext/openssl_tls.lani#L491)
 
 ```lanius
 pub fn borrow(&self) -> &Session
@@ -1500,7 +1534,7 @@ pub fn borrow(&self) -> &Session
 
 #### method: is_open
 
-[Source line 429](../../../extended/ext/openssl_tls.lani#L429)
+[Source line 492](../../../extended/ext/openssl_tls.lani#L492)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -1508,7 +1542,7 @@ pub fn is_open(&self) -> bool
 
 #### method: state
 
-[Source line 430](../../../extended/ext/openssl_tls.lani#L430)
+[Source line 493](../../../extended/ext/openssl_tls.lani#L493)
 
 ```lanius
 pub fn state(&self) -> State
@@ -1516,7 +1550,7 @@ pub fn state(&self) -> State
 
 #### method: role
 
-[Source line 431](../../../extended/ext/openssl_tls.lani#L431)
+[Source line 494](../../../extended/ext/openssl_tls.lani#L494)
 
 ```lanius
 pub fn role(&self) -> Role
@@ -1524,7 +1558,7 @@ pub fn role(&self) -> Role
 
 #### method: pending_read_bytes
 
-[Source line 432](../../../extended/ext/openssl_tls.lani#L432)
+[Source line 495](../../../extended/ext/openssl_tls.lani#L495)
 
 ```lanius
 pub fn pending_read_bytes(&self) -> i32
@@ -1532,7 +1566,7 @@ pub fn pending_read_bytes(&self) -> i32
 
 #### method: pending_write_bytes
 
-[Source line 433](../../../extended/ext/openssl_tls.lani#L433)
+[Source line 496](../../../extended/ext/openssl_tls.lani#L496)
 
 ```lanius
 pub fn pending_write_bytes(&self) -> i32
@@ -1540,7 +1574,7 @@ pub fn pending_write_bytes(&self) -> i32
 
 #### method: read_need
 
-[Source line 434](../../../extended/ext/openssl_tls.lani#L434)
+[Source line 497](../../../extended/ext/openssl_tls.lani#L497)
 
 ```lanius
 pub fn read_need(&self) -> Need
@@ -1548,7 +1582,7 @@ pub fn read_need(&self) -> Need
 
 #### method: write_need
 
-[Source line 435](../../../extended/ext/openssl_tls.lani#L435)
+[Source line 498](../../../extended/ext/openssl_tls.lani#L498)
 
 ```lanius
 pub fn write_need(&self) -> Need
@@ -1556,7 +1590,7 @@ pub fn write_need(&self) -> Need
 
 #### method: negotiated_version
 
-[Source line 438](../../../extended/ext/openssl_tls.lani#L438)
+[Source line 501](../../../extended/ext/openssl_tls.lani#L501)
 
 ```lanius
 pub fn negotiated_version(&self) -> i32
@@ -1564,7 +1598,7 @@ pub fn negotiated_version(&self) -> i32
 
 #### method: set_alpn
 
-[Source line 447](../../../extended/ext/openssl_tls.lani#L447)
+[Source line 510](../../../extended/ext/openssl_tls.lani#L510)
 
 ```lanius
 pub fn set_alpn(&self, protocols: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -1572,7 +1606,7 @@ pub fn set_alpn(&self, protocols: core::slice::View<u8>) -> core::result::Result
 
 #### method: selected_protocol
 
-[Source line 471](../../../extended/ext/openssl_tls.lani#L471)
+[Source line 529](../../../extended/ext/openssl_tls.lani#L529)
 
 ```lanius
 pub fn selected_protocol(&self, output: core::slice::View<u8>) -> i32
@@ -1580,7 +1614,7 @@ pub fn selected_protocol(&self, output: core::slice::View<u8>) -> i32
 
 #### method: quiesce_read
 
-[Source line 486](../../../extended/ext/openssl_tls.lani#L486)
+[Source line 544](../../../extended/ext/openssl_tls.lani#L544)
 
 ```lanius
 pub fn quiesce_read(&self) -> core::result::Result<bool, Error>
@@ -1588,7 +1622,7 @@ pub fn quiesce_read(&self) -> core::result::Result<bool, Error>
 
 #### method: destroy
 
-[Source line 496](../../../extended/ext/openssl_tls.lani#L496)
+[Source line 554](../../../extended/ext/openssl_tls.lani#L554)
 
 ```lanius
 pub fn destroy(&self)
@@ -1596,7 +1630,7 @@ pub fn destroy(&self)
 
 #### method: handshake
 
-[Source line 510](../../../extended/ext/openssl_tls.lani#L510)
+[Source line 568](../../../extended/ext/openssl_tls.lani#L568)
 
 ```lanius
 pub fn handshake(&self) -> core::result::Result<Handshake, Error>
@@ -1604,7 +1638,7 @@ pub fn handshake(&self) -> core::result::Result<Handshake, Error>
 
 #### method: read_into
 
-[Source line 545](../../../extended/ext/openssl_tls.lani#L545)
+[Source line 603](../../../extended/ext/openssl_tls.lani#L603)
 
 ```lanius
 pub fn read_into(&self, output: core::slice::View<u8>) -> core::result::Result<Read, Error>
@@ -1612,7 +1646,7 @@ pub fn read_into(&self, output: core::slice::View<u8>) -> core::result::Result<R
 
 #### method: write
 
-[Source line 586](../../../extended/ext/openssl_tls.lani#L586)
+[Source line 644](../../../extended/ext/openssl_tls.lani#L644)
 
 ```lanius
 pub fn write(&self, input: core::slice::View<u8>) -> core::result::Result<Write, Error>
@@ -1620,7 +1654,7 @@ pub fn write(&self, input: core::slice::View<u8>) -> core::result::Result<Write,
 
 #### method: retry_write
 
-[Source line 599](../../../extended/ext/openssl_tls.lani#L599)
+[Source line 657](../../../extended/ext/openssl_tls.lani#L657)
 
 ```lanius
 pub fn retry_write(&self) -> core::result::Result<Write, Error>
@@ -1628,7 +1662,7 @@ pub fn retry_write(&self) -> core::result::Result<Write, Error>
 
 #### method: shutdown
 
-[Source line 625](../../../extended/ext/openssl_tls.lani#L625)
+[Source line 683](../../../extended/ext/openssl_tls.lani#L683)
 
 ```lanius
 pub fn shutdown(&self) -> core::result::Result<Shutdown, Error>
@@ -1636,7 +1670,7 @@ pub fn shutdown(&self) -> core::result::Result<Shutdown, Error>
 
 #### method: shutdown_write
 
-[Source line 630](../../../extended/ext/openssl_tls.lani#L630)
+[Source line 688](../../../extended/ext/openssl_tls.lani#L688)
 
 ```lanius
 pub fn shutdown_write(&self) -> core::result::Result<Shutdown, Error>

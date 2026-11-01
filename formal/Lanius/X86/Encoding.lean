@@ -1,5 +1,8 @@
-import Lanius.X86.Register
+module
 
+public import Lanius.X86.Register
+
+@[expose] public section
 namespace Lanius.X86.Encoding
 
 /-- The backend's one-byte and 0F-escaped opcode maps. This is an encoding

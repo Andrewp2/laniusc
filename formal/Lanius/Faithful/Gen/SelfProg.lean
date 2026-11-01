@@ -4302,7 +4302,7 @@ def tail_core_mem_size_of_of_mini_selfhost_SrcType : List SrcFunc :=
 def tail_within_layout : List SrcFunc :=
   src_within_layout 75 165 166 168 476 477 :: tail_core_mem_size_of_of_mini_selfhost_SrcType
 def tail_word_element : List SrcFunc :=
-  src_word_element 475 :: tail_within_layout
+  src_word_element 313 475 :: tail_within_layout
 def tail_SrcType_is_uint : List SrcFunc :=
   src_SrcType_is_uint 474 :: tail_word_element
 def tail_SrcType_is_i32 : List SrcFunc :=
@@ -4818,7 +4818,7 @@ def tail_SrcStmt_returns : List SrcFunc :=
 def tail_SrcType_is_unit : List SrcFunc :=
   src_SrcType_is_unit :: tail_SrcStmt_returns
 def tail_minus : List SrcFunc :=
-  src_minus 50 :: tail_SrcType_is_unit
+  src_minus :: tail_SrcType_is_unit
 def tail_round_join : List SrcFunc :=
   src_round_join 51 75 :: tail_minus
 def tail_pack_round : List SrcFunc :=
@@ -4994,7 +4994,7 @@ abbrev src52 : SrcFunc := src_length_of_usize 52 75 76
 abbrev src53 : SrcFunc := src_usize_words 5 9 53 76
 abbrev src54 : SrcFunc := src_pack_round 5 54 56 77 78 79 80
 abbrev src55 : SrcFunc := src_round_join 51 75
-abbrev src56 : SrcFunc := src_minus 50
+abbrev src56 : SrcFunc := src_minus
 abbrev src57 : SrcFunc := src_SrcType_is_unit
 abbrev src58 : SrcFunc := src_SrcStmt_returns 58 81
 abbrev src59 : SrcFunc := src_unbox_of_mini_selfhost_List_mini_selfhost_SrcFunc 82
@@ -5252,7 +5252,7 @@ abbrev src310 : SrcFunc := src_is_one
 abbrev src311 : SrcFunc := src_boxed_of_mini_selfhost_Expr 50 472 473
 abbrev src312 : SrcFunc := src_SrcType_is_i32
 abbrev src313 : SrcFunc := src_SrcType_is_uint 474
-abbrev src314 : SrcFunc := src_word_element 475
+abbrev src314 : SrcFunc := src_word_element 313 475
 abbrev src315 : SrcFunc := src_within_layout 75 165 166 168 476 477
 abbrev src316 : SrcFunc := src_core_mem_size_of_of_mini_selfhost_SrcType
 abbrev src317 : SrcFunc := src_is_array_local

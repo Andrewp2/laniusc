@@ -1,5 +1,15 @@
-import Lanius.Mini.Semantics
+module
 
+public import Lanius.Mini.Semantics
+public import Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.codeSize
+
+@[expose] public section
 /-! The abstract target: an accumulator (rax), frame slots, and a program
 counter that is a byte offset into the function's code. Each `Instr` is one
 fixed byte sequence of the real backend (`Lanius.Mini.Bytes`) whose length is
