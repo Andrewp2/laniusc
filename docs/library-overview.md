@@ -60,8 +60,9 @@ duplication or per-sender FIFO violation. Those 50 runs passed, alongside
 20 runs each of a parallel word count matching `wc` and a three-stage
 pipeline. The stealing fixture runs a 524,287-task tree with every leaf
 exactly once; a parallel quicksort sorts 2,000,000 values in 0.25 s with
-eight workers, against 0.80 s with one. In-process threads remain blocked on checked callback entry, so
-`std::thread` stays unbound.
+eight workers, against 0.80 s with one. C callback entry now exists (a function named as a value,
+[C callbacks](language-ergonomics.md#c-callbacks)) and a fixture starts and joins a pthread running
+Lanius code, but `std::thread` is not yet bound to it.
 The preceding
 The full library goal remains open. The
 [Unicode quick-check and uconv increment](extended-unicode-uconv.md) replaces

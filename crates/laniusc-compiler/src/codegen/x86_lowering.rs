@@ -156,12 +156,14 @@ impl X86LirPage {
 }
 
 impl GpuX86LirStage {
-    pub(crate) fn new(
+    pub(crate) fn new<'a>(
         device: &wgpu::Device,
         graph: &CompilerGraph,
         workspace: &CompilerGraphWorkspace,
         capacities: LoweringCapacities,
-        opt: GpuOptIrView<'_>,
+        opt: GpuOptIrView<'a>,
+        // A CALL row from a name is a C callback address (lir/x86/scatter).
+        hir_core: &'a LaniusBuffer<crate::parser::buffers::HirCore>,
         include_object: bool,
         kernels: &KernelRegistry,
     ) -> Result<Self> {
@@ -330,6 +332,7 @@ impl GpuX86LirStage {
         let mut resources = ResourceMap::new();
         resources.register_graph_bindings(graph, &graph_bindings);
         opt.register(graph, &mut resources)?;
+        resources.graph_buffer(graph, "hir.core", hir_core)?;
         let context = (graph, &allocations);
         let count_params = (0..semantic_capacity.div_ceil(SEMANTIC_LIR_PAGE_ROWS))
             .map(|page_id| {
@@ -1353,12 +1356,20 @@ mod tests {
             &kernels,
         )
         .unwrap();
+        // No row comes from a name: kind 0 HIR rows with no parent.
+        let hir_core = storage_ro_from_bytes::<crate::parser::buffers::HirCore>(
+            &gpu.device,
+            "test.x86_stage.hir_core",
+            &record_bytes(&[[0, u32::MAX, 0, 0]; 4]),
+            4,
+        );
         let stage = GpuX86LirStage::new(
             &gpu.device,
             &graph,
             &workspace,
             capacities,
             optimizer.output(semantic),
+            &hir_core,
             true,
             &kernels,
         )
