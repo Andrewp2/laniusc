@@ -1,0 +1,85 @@
+// h2c service for the oracle: listens on 127.0.0.1 (port printed on the
+// first line) and serves connections one at a time. A connection that opens
+// with the HTTP/2 preface is upgraded and its multiplexed requests answered
+// like engine_pipe.lani: "/big/N" answers N bytes, anything else echoes the
+// method, path, x-tag field and body. HTTP/1.1 requests get "h1 PATH".
+// It exits after argument 1 connections (default 1000).
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http_service;
+import std::args;
+import std::clock;
+import std::socket;
+import std::stream;
+
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn write_output(bytes: core::slice::View<u8>) -> bool {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    return core::io::write_all(sink.borrow(), bytes.values, bytes.start, bytes.len()).is_ok();
+}
+fn number(v: core::slice::View<u8>, from: i32) -> i32 { let n: i32 = 0; let i: i32 = from; while (i < v.len()) { let d: i32 = v.values[v.start + i] as i32 - 48; if (d < 0 || d > 9) { return n; } n = n * 10 + d; i += 1; } return n; }
+fn serve_h2(h: &ext::http_service::H2Connection) {
+    while (true) {
+        let next = h.next_request(); if (next.is_err()) { return; }
+        let maybe: core::option::Option<ext::http_service::H2Request> = next.unwrap(); if (maybe.is_none()) { return; }
+        let r: ext::http_service::H2Request = maybe.unwrap();
+        let body: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+        let p: core::slice::View<u8> = r.path;
+        let big: bool = p.len() > 5 && p.values[p.start + 1] == 98 && p.values[p.start + 4] == 47;
+        if (big) { let n: i32 = number(p, 5); let i: i32 = 0; while (i < n) { let c: u8 = (97 + i % 26) as u8; body.try_push(c); i += 1; } }
+        if (!big) {
+            body.try_extend(r.method); body.try_push(32); body.try_extend(r.target); body.try_push(32);
+            let tag = h.header(r, literal("x-tag",5)); if (tag.is_some()) { body.try_extend(tag.unwrap()); } body.try_push(32);
+            body.try_extend(r.body);
+        }
+        let sent = h.respond(r, 200, literal("text/plain",10), body.as_view());
+        body.destroy();
+        if (sent.is_err()) { return; }
+    }
+}
+fn main() -> i32 {
+    let limit: i32 = 1000;
+    let captured = std::args::snapshot(1,4,64); if (captured.is_err()) { return 2; }
+    let args = captured.unwrap(); if (args.len() > 0) { limit = number(args.get(0).unwrap(), 0); }
+    let endpoint = core::net::parse_socket(literal("127.0.0.1:0",11)); if (endpoint.is_err()) { return 2; }
+    let opened = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true); if (opened.is_err()) { return 3; }
+    let listener = opened.unwrap(); listener.set_option(std::socket::Setting::ReuseAddress,1);
+    if (listener.bind(endpoint.unwrap()).is_err() || listener.listen(64).is_err()) { listener.close(); return 3; }
+    let actual = listener.local_addr(); if (actual.is_err()) { listener.close(); return 3; }
+    let startup: [u8;96] = [0;96]; let formatted = actual.unwrap().format_into(core::slice::view(startup,95).unwrap()); if (formatted.is_err()) { listener.close(); return 3; }
+    let length = formatted.unwrap(); startup[length] = 10; if (!write_output(core::slice::view(startup,length+1).unwrap())) { listener.close(); return 5; }
+    let options: ext::http_service::Options = ext::http_service::default_options();
+    options.limits.body_bytes = 200000; options.date = false; options.idle_timeout_ms = 2000;
+    let served: i32 = 0; let upgraded: i32 = 0;
+    while (served < limit) {
+        let now = std::clock::monotonic_now(); if (now.is_err()) { break; }
+        let wait = core::time::deadline_after(now.unwrap(),core::time::from_millis(30000)); if (wait.is_err()) { break; }
+        let got = ext::http_service::accept_until(listener.borrow(),options,wait.unwrap());
+        if (got.is_err()) { break; } let maybe = got.unwrap(); if (maybe.is_none()) { break; }
+        let conn: ext::http_service::Connection = maybe.unwrap(); served += 1;
+        let first = conn.next_request();
+        if (first.is_err()) {
+            let preface: bool = match (first.unwrap_err()) { ext::http_service::Error::Http2Preface -> true, _ -> false };
+            if (!preface) { conn.reject(first.unwrap_err()); continue; }
+            let made = conn.upgrade_h2(); if (made.is_err()) { continue; }
+            let h: ext::http_service::H2Connection = made.unwrap(); upgraded += 1;
+            serve_h2(h.borrow()); h.close(); continue;
+        }
+        let request = first.unwrap();
+        if (request.is_some()) {
+            let r: ext::http_service::Request = request.unwrap();
+            let body: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); body.try_extend(literal("h1 ",3)); body.try_extend(r.target);
+            conn.set_close(); conn.respond(200, literal("text/plain",10), body.as_view()); body.destroy();
+        }
+        conn.close();
+    }
+    listener.close();
+    return 0;
+}
