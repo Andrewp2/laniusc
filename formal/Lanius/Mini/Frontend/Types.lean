@@ -143,6 +143,8 @@ structure Decls where
   imports : List ImportDecl
   aliases : List AliasDecl
   impls : List ImplDecl
+  /-- the paths of the files' `module` items: a module that declares only traits, say, is still a module -/
+  homes : List (List (List Nat))
   deriving Repr
 
 /-- A struct's fields: spellings and type expressions. -/
@@ -364,6 +366,17 @@ structure VariantTy where
 structure WildSplit where
   init : List CTree
   wild : CTree
+  deriving Repr
+
+/-- A variant's arm, and whether it is or holds the wildcard's. -/
+structure ArmUse where
+  arm : CTree
+  used : Bool
+  deriving Repr
+
+structure ArmsUse where
+  arms : List CTree
+  used : Bool
   deriving Repr
 
 /-- Arguments read so far, and the type parameters they bind. -/

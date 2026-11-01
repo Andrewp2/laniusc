@@ -132,14 +132,14 @@ def hostWriteCode (fd : BitVec 64) (slot : Nat) : Stmt :=
   let looped : Stmt := Stmt.seq (Stmt.loop (Expr.compare Word.u64 CmpOp.ne (Expr.var count) (Expr.lit 0)) body) (Stmt.assign slot (Expr.binary Word.s32 BinOp.add (Expr.var (slot + 2)) (Expr.lit 0)))
   Stmt.seq (Stmt.assign (slot + 2) (Expr.var count)) looped
 
-/-- read_stdin(pointer, count), pointer and count in slot and slot + 1: reads of at most MAX_RW_COUNT bytes from fd 0 to the pointer until none are left to ask for or a read delivers fewer than it asked for (standard input is used up), then the total as i32. -/
+/-- read_stdin(pointer, count), pointer and count in slot and slot + 1: reads of at most MAX_RW_COUNT bytes from fd 0 to the pointer until none are left to ask for or a read delivers none (standard input is used up), then the total as i32. A read may deliver fewer bytes than it asked for, as a pipe or terminal does, so a short read does not end the loop. -/
 def hostReadCode (slot : Nat) : Stmt :=
   let count : Nat := slot + 1
   let total : Nat := slot + 2
   let chunk : Nat := slot + 3
   let got : Nat := slot + 4
   let pick : Stmt := Stmt.ite (Expr.compare Word.u64 CmpOp.lt (Expr.var count) (Expr.lit 2147479552)) (Stmt.assign chunk (Expr.var count)) (Stmt.assign chunk (Expr.lit 2147479552))
-  let stop : Stmt := Stmt.ite (Expr.compare Word.u64 CmpOp.ne (Expr.var got) (Expr.var chunk)) (Stmt.assign count (Expr.lit 0)) Stmt.skip
+  let stop : Stmt := Stmt.ite (Expr.compare Word.u64 CmpOp.eq (Expr.var got) (Expr.lit 0)) (Stmt.assign count (Expr.lit 0)) Stmt.skip
   let tally : Stmt := Stmt.seq (Stmt.assign total (Expr.binary Word.u64 BinOp.add (Expr.var total) (Expr.var got))) stop
   let advance : Stmt := Stmt.seq (Stmt.assign slot (Expr.binary Word.u64 BinOp.add (Expr.var slot) (Expr.var got))) (Stmt.seq (Stmt.assign count (Expr.binary Word.u64 BinOp.sub (Expr.var count) (Expr.var got))) tally)
   let read : Stmt := Stmt.seq (Stmt.sys Syscall.read got (Expr.lit 0 :: Expr.var slot :: [Expr.var chunk])) advance

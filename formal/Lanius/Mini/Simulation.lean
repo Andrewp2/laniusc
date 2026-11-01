@@ -1976,11 +1976,11 @@ theorem read_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot
     have address : m.slots (slot + 1) + frame.heapBase =
         frame.heapBase + BitVec.ofNat 64 (m.slots (slot + 1)).toNat := by
       rw [BitVec.ofNat_toNat, BitVec.setWidth_eq, BitVec.add_comm]
-    let bytes := m.heap.io.input.take (m.slots (slot + 2)).toNat
-    have bytes5 : s5.io.input.take (s5.registers 2).toNat = bytes := by rw [io5, r2]
-    let s6 := s5.syscalled (BitVec.ofNat 64 (s5.io.input.take (s5.registers 2).toNat).length) 0
-      (writeBytes s5.memory (s5.registers 6) (s5.io.input.take (s5.registers 2).toNat))
-      { s5.io with input := s5.io.input.drop (s5.registers 2).toNat }
+    let bytes := m.heap.io.readBytes (m.slots (slot + 2)).toNat
+    have bytes5 : s5.io.readBytes (s5.registers 2).toNat = bytes := by rw [io5, r2]
+    let s6 := s5.syscalled (BitVec.ofNat 64 (s5.io.readBytes (s5.registers 2).toNat).length) 0
+      (writeBytes s5.memory (s5.registers 6) (s5.io.readBytes (s5.registers 2).toNat))
+      (s5.io.afterRead (s5.registers 2).toNat)
     have kernel : Kernel s5 s6 := .read r0 (by rw [r7]; exact fdOk) (by rw [r2]; exact countOk) 0
     have t6 : Lanius.X86.Machine.Step s5 s6 := .syscalled c5.prefix kernel
     have limitSmall : frame.heapTop < 2 ^ 62 := fits.topSmall
@@ -1988,7 +1988,7 @@ theorem read_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot
       rw [← rel.top]; exact inside
     have memory6 : s6.memory = writeBytes s.memory (frame.heapBase + BitVec.ofNat 64 (m.slots (slot + 1)).toNat)
         bytes := by
-      show writeBytes s5.memory (s5.registers 6) (s5.io.input.take (s5.registers 2).toNat) = _
+      show writeBytes s5.memory (s5.registers 6) (s5.io.readBytes (s5.registers 2).toNat) = _
       rw [bytes5, r6, address, memory5]
     have away : ∀ address, ¬frame.InHeap address → s6.memory address = s.memory address := by
       intro address outside
@@ -2035,8 +2035,8 @@ theorem read_simulates (rel : Rel frame s m) (fits : frame.Fits) (inFrame : slot
     have acc7 : s7.registers 0 = BitVec.ofNat 64 bytes.length := by
       rw [← bytes5]
       simp [s7, s6, State.move64, State.syscalled, r11Register]
-    have io7 : s7.io = { m.heap.io with input := m.heap.io.input.drop (m.slots (slot + 2)).toNat } := by
-      show { s5.io with input := s5.io.input.drop (s5.registers 2).toNat } = _
+    have io7 : s7.io = m.heap.io.afterRead (m.slots (slot + 2)).toNat := by
+      show s5.io.afterRead (s5.registers 2).toNat = _
       rw [io5, r2]
     refine ⟨7, s7, .cons t1 (.cons t2 (.cons t3 (.cons t4 (.cons t5 (.cons t6 (.cons t7 (.refl _))))))), det, ?_⟩
     exact

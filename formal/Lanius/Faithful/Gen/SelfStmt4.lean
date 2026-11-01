@@ -67,6 +67,10 @@ abbrev Stmt_cons_of_mini_selfhost_Local (prog : SrcProgram) (prims : Prims) (ix 
   ∀ {x0 : Lanius.Mini.Local} {x1 : List Lanius.Mini.Local} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepLocal x0 v0 → (RepList 231 RepLocal) x1 v1 →
     (RepList 231 RepLocal) (x0 :: x1) w
 
+abbrev Stmt_cons_of_mini_selfhost_MFunc (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Lanius.Mini.MFunc} {x1 : List Lanius.Mini.MFunc} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepMFunc x0 v0 → (RepList 167 RepMFunc) x1 v1 →
+    (RepList 167 RepMFunc) (x0 :: x1) w
+
 abbrev Stmt_cons_of_mini_selfhost_Sig (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Sig} {x1 : List Lanius.Mini.Sig} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSig x0 v0 → (RepList 96 RepSig) x1 v1 →
     (RepList 96 RepSig) (x0 :: x1) w

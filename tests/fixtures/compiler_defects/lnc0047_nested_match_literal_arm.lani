@@ -1,0 +1,23 @@
+// LNC0047 "a nested type application could not be instantiated from its
+// checked environment": an integer literal arm of a match that is itself an
+// arm result of an outer match got no expected type, so it defaulted to i32,
+// the inner match never joined its i64 arms, and the outer arm stayed
+// unresolved. The literal now takes the outer match's context. Exits 0.
+module app::main;
+enum Kind { A, B }
+struct Info { kind: Kind, size: i32, end: i32, wide: i64 }
+enum Scan { More, Ready(Info) }
+fn main() -> i32 {
+    let s: Scan = Scan::Ready(Info { kind: Kind::B, size: 3, end: 4, wide: 5 });
+    let t: Scan = Scan::Ready(Info { kind: Kind::A, size: 3, end: 4, wide: 5 });
+    // The original shape: a cast-sum arm beside a literal arm.
+    let n: i64 = match(s) { Scan::Ready(h) -> match(h.kind) { Kind::B -> (h.end as i64) + (h.size as i64), _ -> 0 }, _ -> 0 };
+    // A plain i64 field beside a literal.
+    let w: i64 = match(t) { Scan::Ready(h) -> match(h.kind) { Kind::B -> h.wide, _ -> 9 }, _ -> 0 };
+    // Literal-only inner arms take the annotation too.
+    let k: i64 = match(s) { Scan::Ready(h) -> match(h.kind) { Kind::B -> 7, _ -> 0 }, _ -> 1 };
+    // Two levels of nesting.
+    let d: i64 = match(s) { Scan::Ready(h) -> match(h.kind) { Kind::B -> match(h.kind) { Kind::B -> h.wide, _ -> 2 }, _ -> 3 }, _ -> 4 };
+    if (n != 7 || w != 9 || k != 7 || d != 5) { return 1; }
+    return 0;
+}

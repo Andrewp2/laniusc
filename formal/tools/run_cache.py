@@ -10,6 +10,7 @@ binary and the stdlib. Failures are never stored.
 import hashlib
 import json
 import os
+import threading
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CACHE = os.path.join(ROOT, 'target/claude-work/cache')
@@ -137,7 +138,8 @@ def store_file(kind, k, source):
 
 def write_bytes(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = f'{path}.{os.getpid()}.tmp'
+    # Per thread too: two threads of one process may store the same key.
+    tmp = f'{path}.{os.getpid()}.{threading.get_ident()}.tmp'
     with open(tmp, 'wb') as f:
         f.write(data)
     os.replace(tmp, path)

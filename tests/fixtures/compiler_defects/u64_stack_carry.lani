@@ -1,0 +1,31 @@
+module app::main;
+// Performance defect: u64 arithmetic goes through stack slots.
+// Expected exit 10 (Python: c = ((f*(j+7)+c) mod 2**64) >> 32, then c & 127).
+//
+// Before 2026-10-31 the x86_64 backend register-allocated only unit, bool,
+// i32, u32, char and pointers (scalar_gpr_type in decl_slots_scatter.slang,
+// scalar_gpr_result in allocation_words.slang), so `carry`, `wide` and
+// `factor` lived at -0xNN(%rbp). Loop body before (0.42 s, 4.2 ns/iteration):
+//   mov -0xb8(%rbp),%rax; mov %rax,-0x30(%rbp)     factor copied every pass
+//   mov -0x58(%rbp),%rax; mov -0x60(%rbp),%rcx; add %rcx,%rax; mov %rax,-0x68(%rbp)
+//   mov -0x68(%rbp),%rax; mov %rax,-0x100(%rbp)    wide = ...
+//   mov $0x20,%eax; mov %eax,-0x78(%rbp)           constant shift amount
+//   cmp $0x3f,%ecx; jbe ok; mov $0x66,%edi; mov $0x3c,%eax; syscall
+//   shr %cl,%rax; mov %rax,-0x80(%rbp); mov -0x80(%rbp),%rax; mov %rax,-0xd0(%rbp)
+// After 64-bit declarations became register-eligible (0.31 s): factor stays
+// in rsi, carry in r10 and wide in r8, but every expression temporary still
+// takes a stack slot, `>> 32` still loads 32 from a slot and range-checks it
+// at run time, and `j < n` still goes setl/movzbl/store/load/test/je.
+fn mix(n: i32, factor: u64) -> u64 {
+    let carry: u64 = 0;
+    let j: i32 = 0;
+    while (j < n) {
+        let wide: u64 = factor * ((j as u64) + 7) + carry;
+        carry = wide >> 32;
+        j += 1;
+    }
+    return carry;
+}
+fn main() -> i32 {
+    return (mix(100000000, 2654435761) & 127) as i32;
+}

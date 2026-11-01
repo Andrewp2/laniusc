@@ -47,10 +47,6 @@ abbrev Stmt_concat_of_mini_selfhost_Expr (prog : SrcProgram) (prims : Prims) (ix
   ∀ {x0 : List Lanius.Mini.Expr} {x1 : List Lanius.Mini.Expr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 92 RepExpr) x0 v0 → (RepList 92 RepExpr) x1 v1 →
     (RepList 92 RepExpr) (x0 ++ x1) w
 
-abbrev Stmt_concat_of_mini_selfhost_MFunc (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.MFunc} {x1 : List Lanius.Mini.MFunc} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 167 RepMFunc) x0 v0 → (RepList 167 RepMFunc) x1 v1 →
-    (RepList 167 RepMFunc) (x0 ++ x1) w
-
 abbrev Stmt_concat_of_mini_selfhost_SrcType (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {x1 : List Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 73 RepSrcType) x0 v0 → (RepList 73 RepSrcType) x1 v1 →
     (RepList 73 RepSrcType) (x0 ++ x1) w
