@@ -1,0 +1,119 @@
+// Parallel quicksort over work-stealing queues. Sorts 2,000,000 pseudo-random
+// i64 values in a shared Region with eight workers, then checks the result is
+// ordered and is a permutation (count, sum and xor unchanged). Prints
+// "sorted N" on success; per-run steal counts go to stderr.
+// Each task partitions its span, pushes the smaller side and keeps the larger
+// one; spans of at most 4096 values sort sequentially.
+// Build: laniusc --native-link --native-library atomic --stdlib-root stdlib
+module app::main;
+import core::mem;
+import core::result;
+import std::io;
+import std::steal;
+import std::sync;
+import std::worker;
+
+const N: i32 = 2000000;
+const WORKERS: i32 = 8;
+const CUTOFF: i64 = 4096;
+
+struct Span { lo: i64, hi: i64 }
+
+fn swap(values: [i64], a: i64, b: i64) { let t: i64 = values[a as i32]; values[a as i32] = values[b as i32]; values[b as i32] = t; }
+
+// Hoare partition of [lo, hi) around a median of three. Returns p with
+// lo < p < hi: every value in [lo, p) <= every value in [p, hi).
+fn partition(values: [i64], lo: i64, hi: i64) -> i64 {
+    let mid: i64 = lo + (hi - lo) / 2;
+    if (values[mid as i32] < values[lo as i32]) { swap(values, mid, lo); }
+    if (values[(hi - 1) as i32] < values[lo as i32]) { swap(values, hi - 1, lo); }
+    if (values[(hi - 1) as i32] < values[mid as i32]) { swap(values, hi - 1, mid); }
+    let pivot: i64 = values[mid as i32];
+    let i: i64 = lo - 1; let j: i64 = hi;
+    while (true) {
+        i += 1; while (values[i as i32] < pivot) { i += 1; }
+        j -= 1; while (values[j as i32] > pivot) { j -= 1; }
+        if (i >= j) { return j + 1; }
+        swap(values, i, j);
+    }
+    return lo + 1;
+}
+
+fn insertion(values: [i64], lo: i64, hi: i64) {
+    let i: i64 = lo + 1;
+    while (i < hi) {
+        let v: i64 = values[i as i32]; let j: i64 = i - 1;
+        while (j >= lo && values[j as i32] > v) { values[(j + 1) as i32] = values[j as i32]; j -= 1; }
+        values[(j + 1) as i32] = v; i += 1;
+    }
+}
+
+fn sequential(values: [i64], lo: i64, hi: i64) {
+    let low: i64 = lo; let high: i64 = hi;
+    while (high - low > 24) {
+        let p: i64 = partition(values, low, high);
+        // Recurse on the smaller side to bound depth; loop on the larger.
+        if (p - low < high - p) { sequential(values, low, p); low = p; }
+        else { sequential(values, p, high); high = p; }
+    }
+    insertion(values, low, high);
+}
+
+fn run(values: [i64], queues: std::steal::Queues<Span>, me: i32) -> i32 {
+    while (true) {
+        let next: std::steal::Next<Span> = queues.next(me).unwrap();
+        let span: Span = match (next) { std::steal::Next::Task(span) -> span, std::steal::Next::Finished -> Span { lo: -1, hi: -1 }, std::steal::Next::Cancelled -> Span { lo: -1, hi: -1 } };
+        if (span.lo < 0) { return 0; }
+        let lo: i64 = span.lo; let hi: i64 = span.hi;
+        while (hi - lo > CUTOFF) {
+            let p: i64 = partition(values, lo, hi);
+            let small: Span = Span { lo: lo, hi: p }; let keep: Span = Span { lo: p, hi: hi };
+            if (p - lo > hi - p) { small = Span { lo: p, hi: hi }; keep = Span { lo: lo, hi: p }; }
+            // A full deque returns the span; sort it inline instead.
+            if (queues.push(me, small).is_err()) { sequential(values, small.lo, small.hi); }
+            lo = keep.lo; hi = keep.hi;
+        }
+        sequential(values, lo, hi);
+        if (queues.done(me).is_err()) { return 2; }
+    }
+    return 3;
+}
+
+fn main() -> i32 {
+    let region: std::sync::Region = std::sync::map_shared((N as usize) * 8 + 4194304).unwrap();
+    let storage: ptr = region.allocate((N as usize) * 8).unwrap();
+    let values: [i64] = core::mem::typed_slice_from_storage<i64>(storage, N);
+    let state: i64 = 88172645463325252; let sum: i64 = 0; let mix: i64 = 0;
+    let i: i32 = 0;
+    while (i < N) {
+        state = state ^ (state << 13); state = state ^ (state >> 7); state = state ^ (state << 17);
+        let v: i64 = state % 1000000007;
+        values[i] = v; sum = sum + v; mix = mix ^ v; i += 1;
+    }
+    let queues: std::steal::Queues<Span> = std::steal::queues<Span>(region.borrow(), WORKERS, 1024).unwrap();
+    queues.push(0, Span { lo: 0, hi: N as i64 }).unwrap();
+    let pool: std::worker::Pool = std::worker::pool(WORKERS).unwrap();
+    let w: i32 = 0;
+    while (w < WORKERS) {
+        let role: std::worker::Role = pool.spawn().unwrap();
+        let me: i32 = match (role) { std::worker::Role::Child(index) -> index, std::worker::Role::Parent(index) -> -1 };
+        if (me >= 0) { return std::worker::finish(run(values, queues, me)); }
+        w += 1;
+    }
+    let summary: std::worker::Summary = pool.join_all().unwrap();
+    pool.destroy();
+    if (summary.failed != 0) { std::io::eprintln("parallel_quicksort: worker failed"); return 4; }
+    let after_sum: i64 = values[0]; let after_mix: i64 = values[0]; i = 1;
+    while (i < N) {
+        if (values[i - 1] > values[i]) { std::io::eprintln("parallel_quicksort: not sorted"); return 5; }
+        after_sum = after_sum + values[i]; after_mix = after_mix ^ values[i]; i += 1;
+    }
+    if (after_sum != sum || after_mix != mix) { std::io::eprintln("parallel_quicksort: not a permutation"); return 6; }
+    let tasks: u64 = 0; let stolen: u64 = 0; w = 0;
+    while (w < WORKERS) { let s: std::steal::Stats = queues.stats(w); tasks += s.executed; stolen += s.stolen; w += 1; }
+    std::io::write_text(1, "sorted "); std::io::write_i32(1, N); std::io::write_newline(1);
+    std::io::write_text(2, "tasks "); std::io::write_i32(2, tasks as i32);
+    std::io::write_text(2, " stolen "); std::io::write_i32(2, stolen as i32); std::io::write_newline(2);
+    region.unmap();
+    return 0;
+}

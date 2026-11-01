@@ -188,9 +188,10 @@
         "docs/stdlib-owned-input.md",
         "docs/stdlib-text-replacement.md",
         "docs/stdlib-literal-rewrite.md",
-        "docs/stdlib-borrowed-lookup.md"
+        "docs/stdlib-borrowed-lookup.md",
+        "docs/stdlib-ordered-navigation.md"
       ],
-      "note": "Module-level TextKey is a reusable zero-sized policy with borrow(), Mapper<Pair<String,Text>,bool> and Comparator<String,Text>. It compares exact case-sensitive UTF-8 bytes, including NUL, using String.as_text and existing Text equality/order; String and Text already hash the same bytes. It owns no query backing, performs no normalization and supplies no extra lifetime validation. Actual independent query backing and returned String/value owners execute in both map-family resource gates. All nine borrowed-lookup library groups and the migrated unique_words application (124 native cases) pass on Linux x86_64 CPU output from the GPU compiler; four selected old regressions are separate. Query laws, physical backing, call-scoped observations and manual cleanup remain caller obligations. No GPU-device, automatic-lifetime or compiler-repair claim follows. Earlier API/source scopes follow. Literal replace/replacen construct independent results through the public Text match cursor, measuring before one exact nonempty reservation. Negative output caps return Bounds; complete-result CapacityOverflow precedes OutputLimit and AllocationFailed. Zero-count/no-match results still copy; empty output allocates nothing. All inputs may alias each other and remain immutable through both passes. All five literal-replacement library groups and four application groups/94 cases pass on native Linux x86_64, with the 440-case independent model and reached allocation failures. Selected existing regressions and standalone examples remain separate. Earlier String receipts retain their own source/API scope. Existing UTF-8 copying construction, edits and explicit cleanup remain. New from_utf8_vec validates initialized bytes before transferring Vec backing/capacity without allocation or copying; invalid UTF-8 preserves its complete owner and reports the first malformed-sequence offset. into_bytes reverses the transfer and leaves an empty reusable String. End views and keep shallow aliases inactive; the destination assumes cleanup authority. The new transfer gate and one selected existing String regression (three old fixtures) pass on native Linux x86_64. The transfer memory/write filter observes no allocation/release/write inside validation/transfer phases, without an all-host-call claim. Linked guides separate collector/model/resource/application receipts and historical String scope; no automatic lifetime or proof follows.",
+      "note": "Module-level TextPrefix is a zero-sized Comparator<String,Text> for ordered navigation: Strings beginning with the query bytes are Equal, others keep unsigned byte order, so range_bounds_by(Included(p), Included(p)) traverses one prefix family. It is not a point-lookup policy; use TextKey for get_by. Module-level TextKey is a reusable zero-sized policy with borrow(), Mapper<Pair<String,Text>,bool> and Comparator<String,Text>. It compares exact case-sensitive UTF-8 bytes, including NUL, using String.as_text and existing Text equality/order; String and Text already hash the same bytes. It owns no query backing, performs no normalization and supplies no extra lifetime validation. Actual independent query backing and returned String/value owners execute in both map-family resource gates. All nine borrowed-lookup library groups and the migrated unique_words application (124 native cases) pass on Linux x86_64 CPU output from the GPU compiler; four selected old regressions are separate. Query laws, physical backing, call-scoped observations and manual cleanup remain caller obligations. No GPU-device, automatic-lifetime or compiler-repair claim follows. Earlier API/source scopes follow. Literal replace/replacen construct independent results through the public Text match cursor, measuring before one exact nonempty reservation. Negative output caps return Bounds; complete-result CapacityOverflow precedes OutputLimit and AllocationFailed. Zero-count/no-match results still copy; empty output allocates nothing. All inputs may alias each other and remain immutable through both passes. All five literal-replacement library groups and four application groups/94 cases pass on native Linux x86_64, with the 440-case independent model and reached allocation failures. Selected existing regressions and standalone examples remain separate. Earlier String receipts retain their own source/API scope. Existing UTF-8 copying construction, edits and explicit cleanup remain. New from_utf8_vec validates initialized bytes before transferring Vec backing/capacity without allocation or copying; invalid UTF-8 preserves its complete owner and reports the first malformed-sequence offset. into_bytes reverses the transfer and leaves an empty reusable String. End views and keep shallow aliases inactive; the destination assumes cleanup authority. The new transfer gate and one selected existing String regression (three old fixtures) pass on native Linux x86_64. The transfer memory/write filter observes no allocation/release/write inside validation/transfer phases, without an all-host-call claim. Linked guides separate collector/model/resource/application receipts and historical String scope; no automatic lifetime or proof follows.",
       "declarations": {
         "from_utf8_vec": "O(n) UTF-8 validation precedes an O(1) transfer of existing Vec backing/capacity. Err preserves the complete Vec; Ok empties it and returns String with sole cleanup authority. End live borrows and keep shallow aliases inactive.",
         "replace": "Replace every original leftmost nonoverlapping literal match with an independent String result under max_output. Empty needles select scalar boundaries. Complete u64 sizing precedes exact allocation; errors preserve inputs. Accepted on native Linux x86_64.",
@@ -207,13 +208,22 @@
         "docs/stdlib-latest-values.md",
         "docs/stdlib-exact-size-iterators.md",
         "docs/stdlib-map-updates.md",
-        "docs/stdlib-borrowed-lookup.md"
+        "docs/stdlib-borrowed-lookup.md",
+        "docs/stdlib-ordered-navigation.md"
       ],
-      "note": "Borrowed contains_key_by/get_by/get_entry_by/remove_by/update_value_by use a borrowed Comparator<K,Q>, stored key first, once per visited node. Query comparisons must partition stored order as Less, optional Equal, Greater and identify at most one stored class. Getters borrow actual representatives, removal transfers them, and updates reinstall V even when R is Err. Ordered bounds/ranges still take K; same-key searches retain query-first natural lt effects. All nine borrowed-lookup library groups and the migrated unique_words application (124 native cases) pass on Linux x86_64 CPU output from the GPU compiler; four selected old regressions are separate. Query laws, physical backing, call-scoped observations and manual cleanup remain caller obligations. No GPU-device, automatic-lifetime or compiler-repair claim follows. Earlier API/source scopes follow. Scoped update_value performs one lookup, preserves the exact stored key and structure, and reinstalls Pair.first before returning Some(Pair.second), including when R is a Result error. Manual callback exclusivity and ownership are required. All seven new library gates and four word-concordance groups/103 native cases pass on the finite native Linux x86_64 profile; the map-update guide defines exact scope. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope.",
+      "note": "Ordered navigation adds last_at_most/last_below, heterogeneous lower_bound_by/upper_bound_by/last_at_most_by/last_below_by and range_bounds/range_bounds_by over core::range::Bound ends. Navigation policies order stored keys as Less*, Equal*, Greater*; an Equal run may hold several keys. Each descent calls the policy once per visited node; a bounded range adds one front check before its upper descent. range_bounds returns InvalidRange only for strictly reversed same-key values; disjoint or reversed heterogeneous bounds are empty. Nothing allocates; returned entries are shallow borrowed copies. The 48-case model and exact-call/allocation contracts pass natively through the prebuilt compiler; see the ordered-navigation guide for scope. Borrowed contains_key_by/get_by/get_entry_by/remove_by/update_value_by use a borrowed Comparator<K,Q>, stored key first, once per visited node. Query comparisons must partition stored order as Less, optional Equal, Greater and identify at most one stored class. Getters borrow actual representatives, removal transfers them, and updates reinstall V even when R is Err. Same-key searches retain query-first natural lt effects. All nine borrowed-lookup library groups and the migrated unique_words application (124 native cases) pass on Linux x86_64 CPU output from the GPU compiler; four selected old regressions are separate. Query laws, physical backing, call-scoped observations and manual cleanup remain caller obligations. No GPU-device, automatic-lifetime or compiler-repair claim follows. Earlier API/source scopes follow. Scoped update_value performs one lookup, preserves the exact stored key and structure, and reinstalls Pair.first before returning Some(Pair.second), including when R is a Result error. Manual callback exclusivity and ownership are required. All seven new library gates and four word-concordance groups/103 native cases pass on the finite native Linux x86_64 profile; the map-update guide defines exact scope. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope. Interval edits: remove_range/remove_range_by remove exactly the range_bounds/range_bounds_by interval shallowly (no destructor, no allocation, capacity kept) and return the count; try_extract_range/try_extract_range_by/try_split_off move it with cleanup authority into one new exact-capacity owner (none allocated when empty) and leave the source unchanged on any Err.",
       "declarations": {
         "key_contains_by": "Internal typed KeyStorage bridge used by TreeSet.contains_by. Ordinary callers use the set owner method; this is not an erased-container API. The bridge retains the matching query-policy bounds and representative ownership contract.",
         "key_get_by": "Internal typed KeyStorage bridge used by TreeSet.get_by. Ordinary callers use the set owner method; this is not an erased-container API. The bridge retains the matching query-policy bounds and representative ownership contract.",
-        "key_remove_by": "Internal typed KeyStorage bridge used by TreeSet.remove_by. Ordinary callers use the set owner method; this is not an erased-container API. The bridge retains the matching query-policy bounds and representative ownership contract."
+        "key_remove_by": "Internal typed KeyStorage bridge used by TreeSet.remove_by. Ordinary callers use the set owner method; this is not an erased-container API. The bridge retains the matching query-policy bounds and representative ownership contract.",
+        "key_navigate": "Internal typed KeyStorage bridge used by TreeSet.last_at_most/last_below (modes 2/3). Ordinary callers use the set owner method; this is not an erased-container API. It retains the matching navigation bounds, call sequence and representative contract.",
+        "key_navigate_by": "Internal typed KeyStorage bridge used by the four TreeSet _by searches (modes 0-3: first >=, first >, last <=, last <). Ordinary callers use the set owner method; this is not an erased-container API. It retains the matching navigation bounds, call sequence and representative contract.",
+        "key_range_bounds": "Internal typed KeyStorage bridge used by TreeSet.range_bounds. Ordinary callers use the set owner method; this is not an erased-container API. It retains the matching navigation bounds, call sequence and representative contract.",
+        "key_range_bounds_by": "Internal typed KeyStorage bridge used by TreeSet.range_bounds_by. Ordinary callers use the set owner method; this is not an erased-container API. It retains the matching navigation bounds, call sequence and representative contract.",
+        "key_remove_range": "Internal typed KeyStorage bridge used by TreeSet.remove_range. Ordinary callers use the set owner method; this is not an erased-container API. It retains the matching interval, policy calls and representative ownership contract.",
+        "key_remove_range_by": "Internal typed KeyStorage bridge used by TreeSet.remove_range_by. Ordinary callers use the set owner method; this is not an erased-container API. It retains the matching interval, policy calls and representative ownership contract.",
+        "key_extract_range": "Internal typed KeyStorage bridge used by TreeSet.try_extract_range and try_split_off. Ordinary callers use the set owner method; this is not an erased-container API. It retains the matching interval, policy calls and representative ownership contract.",
+        "key_extract_range_by": "Internal typed KeyStorage bridge used by TreeSet.try_extract_range_by. Ordinary callers use the set owner method; this is not an erased-container API. It retains the matching interval, policy calls and representative ownership contract."
       }
     },
     "alloc::tree_set": {
@@ -224,9 +234,10 @@
         "docs/stdlib-owning-tree.md",
         "docs/stdlib-replacement-sinks.md",
         "docs/stdlib-exact-size-iterators.md",
-        "docs/stdlib-borrowed-lookup.md"
+        "docs/stdlib-borrowed-lookup.md",
+        "docs/stdlib-ordered-navigation.md"
       ],
-      "note": "Borrowed contains_by/get_by/remove_by use Comparator<T,Q> through the shared TreeMap engine. The stored-first comparison must agree with stored ordering and identify one equivalence class. Getters borrow actual representatives; removal transfers them without adopting or destroying the query. alloc::string::TextKey supplies String/Text policy; ordered bounds/ranges retain the existing T contract. All nine borrowed-lookup library groups and the migrated unique_words application (124 native cases) pass on Linux x86_64 CPU output from the GPU compiler; four selected old regressions are separate. Query laws, physical backing, call-scoped observations and manual cleanup remain caller obligations. No GPU-device, automatic-lifetime or compiler-repair claim follows. Earlier API/source scopes follow. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink stores the incoming representative and returns the old one, using canonical try_replace. Existing duplicate-preserving insertion/sink policy is unchanged; the new replacement facade has finite model/owner/reached-OOM acceptance in the linked guide."
+      "note": "Ordered navigation adds last_at_most/last_below, heterogeneous lower_bound_by/upper_bound_by/last_at_most_by/last_below_by and range_bounds/range_bounds_by over core::range::Bound ends. Navigation policies order stored keys as Less*, Equal*, Greater*; an Equal run may hold several keys. Each descent calls the policy once per visited node; a bounded range adds one front check before its upper descent. range_bounds returns InvalidRange only for strictly reversed same-key values; disjoint or reversed heterogeneous bounds are empty. Nothing allocates; returned entries are shallow borrowed copies. The 48-case model and exact-call/allocation contracts pass natively through the prebuilt compiler; see the ordered-navigation guide for scope. Borrowed contains_by/get_by/remove_by use Comparator<T,Q> through the shared TreeMap engine. The stored-first comparison must agree with stored ordering and identify one equivalence class. Getters borrow actual representatives; removal transfers them without adopting or destroying the query. alloc::string::TextKey supplies String/Text policy. All nine borrowed-lookup library groups and the migrated unique_words application (124 native cases) pass on Linux x86_64 CPU output from the GPU compiler; four selected old regressions are separate. Query laws, physical backing, call-scoped observations and manual cleanup remain caller obligations. No GPU-device, automatic-lifetime or compiler-repair claim follows. Earlier API/source scopes follow. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink stores the incoming representative and returns the old one, using canonical try_replace. Existing duplicate-preserving insertion/sink policy is unchanged; the new replacement facade has finite model/owner/reached-OOM acceptance in the linked guide. Interval edits: remove_range/remove_range_by remove exactly the range_bounds/range_bounds_by interval shallowly (no destructor, no allocation, capacity kept) and return the count; try_extract_range/try_extract_range_by/try_split_off move it with cleanup authority into one new exact-capacity owner (none allocated when empty) and leave the source unchanged on any Err."
     },
     "alloc::vec": {
       "guides": [
@@ -374,7 +385,8 @@
       "guides": [
         "docs/stdlib-float-decimal.md",
         "docs/stdlib-float-precision.md"
-      ]
+      ],
+      "note": "Eisel-Lemire parsing and Grisu3 shortest formatting run first; when they cannot prove the result, the exact big-integer algorithm decides, so results are unchanged. Native Linux x86_64 batches agree with Python float()/repr() on 4.8M generated values (parse64 2M, parse32 500k, format64 2M, format32 300k), including subnormals, exact midpoints and extremes."
     },
     "core::float_order": {
       "guides": [
@@ -618,8 +630,10 @@
     },
     "core::range": {
       "guides": [
-        "docs/stdlib-ranges.md"
-      ]
+        "docs/stdlib-ranges.md",
+        "docs/stdlib-ordered-navigation.md"
+      ],
+      "note": "Bound<T> (Included, Excluded, Unbounded) names one interval end for ordered collections and compares nothing itself; the ordered-navigation guide defines TreeMap/TreeSet interpretation."
     },
     "core::result": {
       "guides": [
@@ -648,6 +662,11 @@
       "guides": [
         "docs/library-host-prerequisites.md",
         "docs/library-host-operation-support.md"
+      ]
+    },
+    "core::search": {
+      "guides": [
+        "docs/stdlib-search.md"
       ]
     },
     "core::set": {
@@ -699,9 +718,10 @@
         "docs/stdlib-text-split-iterators.md",
         "docs/stdlib-bidirectional-text.md",
         "docs/stdlib-text-replacement.md",
-        "docs/stdlib-literal-rewrite.md"
+        "docs/stdlib-literal-rewrite.md",
+        "docs/stdlib-ordered-navigation.md"
       ],
-      "note": "Literal MatchIndices yields canonical Pair<i32,Text> through forward Iterator: original Text-relative byte indices and source subviews with retained stride. Empty needles match scalar boundaries including both ends; cursors are fused and copies fork positions over immutable borrowed backing. No reverse or ExactSize promise is added. All five literal-replacement library groups and four application groups/94 cases pass on native Linux x86_64, with the 440-case independent model and reached allocation failures. Selected existing regressions and standalone examples remain separate. Earlier Text receipts retain their own source/API scope. Text scalars and split cursors already use canonical Iterator and borrowed adapters. The earlier bidirectional increment adds Text.lines and DoubleEndedIterator for Lines, Scalars and SplitAsciiWhitespace. All seven new library gates pass: six native tests and one group of three ExactSize rejections. The independent model checks 4878 cases, 276732 pulls, 129686 items and 77262 cursor copies across three families/two actual layouts. Live owner tests verify exact setup/releases and no traversal allocations; the canonical report function preserves input, uses fixed staging and recovers a reached write failure. The canonical Unicode-report stdin regression also passes. Line-summary passes all four groups/102 native cases, including 11 reached allocation failures, plus standalone build/examples. Continuous output-budget faults establish 131072 payload attempts and the exact limit-message requests, then exhaust all 64 diagnostic attempts with final status 3; successful status-2 output-limit reporting is not directly exercised. A reduced chained generic Option method call still rejects LNC0027 while its typed-match control executes; no compiler repair is claimed. Front/back pulls share one remainder and None from either end fuses both. Lines consume LF/CRLF, omit terminators and a phantom final item, retain leading/repeated empty lines and keep lone CR as content. Scalar byte_index remains relative to the original selected Text. Words keep exactly HT/LF/VT/FF/CR/space; NUL and non-ASCII whitespace remain content. Those bidirectional cursor constructors are inert; their traversal is allocation-free with constant cursor storage and linear complete traversal, preserving actual stride and offsets. Literal MatchIndices instead retains the existing O(source bytes * needle bytes) worst-case search bound. No ExactSize capability, owner transfer, backing validation or automatic lifetime enforcement is added. Copies fork leaf positions over the same immutable backing; borrowed adapter copies share their source. The initial target is native Linux x86_64 CPU output, with other hosts/device execution/proofs separate. Earlier forward receipts retain their original source/API scope."
+      "note": "TextPrefix is a zero-sized Comparator<Text,Text> for ordered navigation: stored Text beginning with the query bytes is Equal, others keep unsigned byte order, so range_bounds_by(Included(p), Included(p)) traverses one prefix family; it is not a point-lookup policy. Text.compare is a direct unsigned byte loop (same results as the core::iter ordering engine, faster on Text-keyed collections). Literal MatchIndices yields canonical Pair<i32,Text> through forward Iterator: original Text-relative byte indices and source subviews with retained stride. Empty needles match scalar boundaries including both ends; cursors are fused and copies fork positions over immutable borrowed backing. No reverse or ExactSize promise is added. All five literal-replacement library groups and four application groups/94 cases pass on native Linux x86_64, with the 440-case independent model and reached allocation failures. Selected existing regressions and standalone examples remain separate. Earlier Text receipts retain their own source/API scope. Text scalars and split cursors already use canonical Iterator and borrowed adapters. The earlier bidirectional increment adds Text.lines and DoubleEndedIterator for Lines, Scalars and SplitAsciiWhitespace. All seven new library gates pass: six native tests and one group of three ExactSize rejections. The independent model checks 4878 cases, 276732 pulls, 129686 items and 77262 cursor copies across three families/two actual layouts. Live owner tests verify exact setup/releases and no traversal allocations; the canonical report function preserves input, uses fixed staging and recovers a reached write failure. The canonical Unicode-report stdin regression also passes. Line-summary passes all four groups/102 native cases, including 11 reached allocation failures, plus standalone build/examples. Continuous output-budget faults establish 131072 payload attempts and the exact limit-message requests, then exhaust all 64 diagnostic attempts with final status 3; successful status-2 output-limit reporting is not directly exercised. A reduced chained generic Option method call still rejects LNC0027 while its typed-match control executes; no compiler repair is claimed. Front/back pulls share one remainder and None from either end fuses both. Lines consume LF/CRLF, omit terminators and a phantom final item, retain leading/repeated empty lines and keep lone CR as content. Scalar byte_index remains relative to the original selected Text. Words keep exactly HT/LF/VT/FF/CR/space; NUL and non-ASCII whitespace remain content. Those bidirectional cursor constructors are inert; their traversal is allocation-free with constant cursor storage and linear complete traversal, preserving actual stride and offsets. Literal MatchIndices instead retains the existing O(source bytes * needle bytes) worst-case search bound. No ExactSize capability, owner transfer, backing validation or automatic lifetime enforcement is added. Copies fork leaf positions over the same immutable backing; borrowed adapter copies share their source. The initial target is native Linux x86_64 CPU output, with other hosts/device execution/proofs separate. Earlier forward receipts retain their original source/API scope."
     },
     "core::time": {
       "guides": [
@@ -735,7 +755,8 @@
     },
     "core::unicode": {
       "guides": [
-        "docs/stdlib-unicode.md"
+        "docs/stdlib-unicode.md",
+        "docs/extended-unicode-uconv.md"
       ]
     },
     "core::unicode_case_data": {
@@ -754,7 +775,8 @@
     },
     "core::unicode_properties_data": {
       "guides": [
-        "docs/stdlib-unicode.md"
+        "docs/stdlib-unicode.md",
+        "docs/extended-unicode-uconv.md"
       ],
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
@@ -881,8 +903,15 @@
     },
     "ext::cbor": {
       "guides": [
-        "docs/extended-cbor.md"
+        "docs/extended-cbor.md",
+        "docs/extended-cbor-stream.md"
       ]
+    },
+    "ext::cbor_stream": {
+      "guides": [
+        "docs/extended-cbor-stream.md"
+      ],
+      "note": "Allocating streaming RFC 8949 codec over ext::cbor events: a chunk-fed Decoder (sticky typed errors with u64 offsets, depth/item/string/input limits, CBOR sequences), EventReader over core::io::Read, and a buffered Writer with flush_to core::io::Write. Optional core deterministic mode (section 4.2.1) rejects or produces non-preferred heads, indefinite lengths, non-shortest floats and unsorted or duplicate keys. Native Linux x86_64 binaries agree with all 81 hand-typed Appendix A rows and an independent Python implementation on 1,500 generated, 3,000 mutated, 2,400 limit and 1,200 sequence cases at four chunk sizes; the cbor-to-json sample agrees on 700 cases. The cargo registrations were not run in this session."
     },
     "ext::cli": {
       "guides": [
@@ -960,7 +989,8 @@
       "guides": [
         "docs/extended-csv.md",
         "docs/extended-csv-write.md",
-        "docs/extended-csv-rewrite.md"
+        "docs/extended-csv-rewrite.md",
+        "docs/extended-json-stream.md"
       ],
       "note": "Reusable record construction, complete preflight and the shared canonical encoding cursor execute through the GPU compiler on Linux x86_64. Staged growth preserves contents, capacities and borrowed views on allocation failure, including self-alias append. Legacy materializing encoders share the same quoting cursor; their focused regression groups pass."
     },
@@ -1024,6 +1054,12 @@
       "guides": [
         "docs/extended-dns-client.md"
       ]
+    },
+    "ext::stub_resolver": {
+      "guides": [
+        "docs/extended-stub-resolver.md"
+      ],
+      "note": "No caching and no NSS: hosts content then DNS. Answers own their storage; destroy once. Evidence is finite native Linux x86_64 CPU execution against loopback fake servers."
     },
     "ext::form": {
       "guides": [
@@ -1097,7 +1133,7 @@
         "docs/extended-statistics.md",
         "docs/extended-sample-moments.md"
       ],
-      "note": "Portable unweighted binary64 central M3/M4 composed with existing ordinary Moments. Explicit population skewness/Pearson and excess kurtosis and adjusted Fisher\u2013Pearson skewness/excess kurtosis; updates and borrowed batches publish all orders atomically, including higher-specific Underflow when nonconstant M4 rounds nonpositive. Both registered runtime tests pass on Linux x86_64 in 9.54 seconds: 1,212 exact-input Fraction/Decimal cases across 51 datasets/eight modes/two descending f64 backing forms, plus atomic/count/view/Underflow contracts with zero mapping calls. An initial positive-stride assertion was corrected in the fixture to the documented descriptor, without a compiler change. The real CSV application passes four registered tests/66 cases against current dependencies. No allocation or host math; finite numerical limits, manual backing lifetimes, positive-subnormal accuracy limits and unclaimed other targets/formal proofs remain explicit."
+      "note": "Portable unweighted binary64 central M3/M4 composed with existing ordinary Moments. Explicit population skewness/Pearson and excess kurtosis and adjusted Fisher–Pearson skewness/excess kurtosis; updates and borrowed batches publish all orders atomically, including higher-specific Underflow when nonconstant M4 rounds nonpositive. Both registered runtime tests pass on Linux x86_64 in 9.54 seconds: 1,212 exact-input Fraction/Decimal cases across 51 datasets/eight modes/two descending f64 backing forms, plus atomic/count/view/Underflow contracts with zero mapping calls. An initial positive-stride assertion was corrected in the fixture to the documented descriptor, without a compiler change. The real CSV application passes four registered tests/66 cases against current dependencies. No allocation or host math; finite numerical limits, manual backing lifetimes, positive-subnormal accuracy limits and unclaimed other targets/formal proofs remain explicit."
     },
     "ext::host_name": {
       "guides": [
@@ -1166,6 +1202,14 @@
         "docs/library-server-contract.md"
       ],
       "note": "Plain factory/driver adapter over the single server_poll engine and http_server::Exchange. Factory, caller-owned listener and handler stay live unchanged through Server destruction. The actual plain health/echo program passes two causal native cases: held partial-head with queued refill and held 4 MiB response reader with real EAGAIN before healthy-sibling completion. Both enforce at most two active accepted owners and three sockets including the listener, with complete responses, EOF and acceptance-order reports. A separate traced 64-connection observation transfers 4,194,304 body bytes with eight-client demand, active/socket peaks four/five, 1,224 verified source allocations and 1,165,325 peak live requested source bytes in 3.346761 seconds. These source metrics exclude native heaps, bootstrap, kernel memory and RSS. Current plain application groups pass matrix 30, quota 1, limits 16, boundaries 25 and faults 41 across separate receipts, with 23 reached source-allocation positions. These 113 process-case invocations include the standalone quota repeated inside faults and are not distinct coverage. Historical sequential receipts retain their own scope. The thin serve_until helper does not require A:Destroy; both helpers pass a native empty-report transfer control with a non-Destroy application error type (21.84 seconds). The empty-report helper scope remains separate from the accepted three-profile populated E/A control."
+    },
+    "ext::http_service": {
+      "guides": [
+        "docs/extended-http-service.md",
+        "docs/extended-http.md",
+        "docs/stdlib-event-loop.md"
+      ],
+      "note": "Keep-alive HTTP/1.1 service over the ext::http codec: absolute head/body/idle/write deadlines, typed errors with status_for (400/408/413/431/501/505), pipelining, chunked bodies, 100 Continue, Date, a response writer with file streaming and an id-based router. A one-thread std::event Server multiplexes buffered connections; a sequential driver shares the code. The static-file sample (listings, ranges, ETag/Last-Modified conditional requests) passes nine Python loopback oracle groups with exact server counters."
     },
     "ext::http_url": {
       "guides": [
@@ -1282,6 +1326,11 @@
         "docs/extended-log.md"
       ]
     },
+    "ext::merge3": {
+      "guides": [
+        "docs/extended-merge3.md"
+      ]
+    },
     "ext::openssl_digest": {
       "guides": [
         "docs/extended-openssl-digest.md",
@@ -1319,9 +1368,19 @@
         "docs/extended-parse.md"
       ]
     },
+    "ext::pratt": {
+      "guides": [
+        "docs/extended-pratt.md"
+      ]
+    },
     "ext::patch": {
       "guides": [
         "docs/extended-patch.md"
+      ]
+    },
+    "ext::pax": {
+      "guides": [
+        "docs/extended-pax.md"
       ]
     },
     "ext::percent": {
@@ -1342,6 +1401,7 @@
     "ext::regex": {
       "guides": [
         "docs/extended-regex.md",
+        "docs/extended-regex-oracle.md",
         "docs/extended-regex-text.md",
         "docs/extended-lexer.md",
         "docs/library-regex-workspace-plan.md"
@@ -1365,6 +1425,11 @@
     "ext::schema": {
       "guides": [
         "docs/extended-schema.md"
+      ]
+    },
+    "ext::seqdiff": {
+      "guides": [
+        "docs/extended-seqdiff.md"
       ]
     },
     "ext::server_poll": {
@@ -1476,7 +1541,8 @@
     },
     "ext::tar": {
       "guides": [
-        "docs/extended-tar.md"
+        "docs/extended-tar.md",
+        "docs/extended-pax.md"
       ]
     },
     "ext::terminal": {
@@ -1513,7 +1579,7 @@
         "docs/extended-toml-streaming.md",
         "docs/extended-toml-normalize.md"
       ],
-      "note": "One constant-storage byte machine serves Document.encoded_len, Document.encoding, owned encode and direct encode_into. The free measure function is replaced by the encoded_len method. W counts emitted bytes, nonroot node visits and fraction scan/trim digits; sizing admits W and the other paths admit 2W for preflight/replay. This changes old owned encode W and encode_into 2W+output-bytes policy. Preflight reports the first exhausted bound in generator order: per-byte output cap precedes byte work, with node/fraction charges where encountered; there is no whole-pass output-over-work precedence. Cursor copies fork replay allowance. Borrowed Encoding implements Read only, with exact fills, inert valid zero requests, metadata rejection before EOF, independent cursor copies and immutable/disjoint backing obligations. Borrowed serialization and direct encode_into allocate no output storage; every returned encode_into error preserves the complete destination. Owned output uses the existing collector, skips allocation for empty output, and cleans partial owners on failure. The linked guides record current runtime acceptance; older parser/corpus/normalizer receipts retain their original source scope. Initial target Linux x86_64 CPU output, with other hosts/device execution/lifetime enforcement/proofs separate.",
+      "note": "One constant-storage byte machine serves Document.encoded_len, Document.encoding, owned encode and direct encode_into. The free measure function is replaced by the encoded_len method. W counts emitted bytes, nonroot node visits and fraction scan/trim digits; sizing admits W and the other paths admit 2W for preflight/replay. This changes old owned encode W and encode_into 2W+output-bytes policy. Preflight reports the first exhausted bound in generator order: per-byte output cap precedes byte work, with node/fraction charges where encountered; there is no whole-pass output-over-work precedence. Cursor copies fork replay allowance. Borrowed Encoding implements Read only, with exact fills, inert valid zero requests, metadata rejection before EOF, independent cursor copies and immutable/disjoint backing obligations. Borrowed serialization and direct encode_into allocate no output storage; every returned encode_into error preserves the complete destination. Owned output uses the existing collector, skips allocation for empty output, and cleans partial owners on failure. The linked guides record current runtime acceptance; older parser/corpus/normalizer receipts retain their original source scope. Initial target Linux x86_64 CPU output, with other hosts/device execution/lifetime enforcement/proofs separate. Python tomllib oracle (2026-10-31): 1,754 edge/generated/mutated documents agree through the normalizer (value equality in order, idempotent output, typed rejections); the only differences are 7 TOML 1.1-only inputs and 2 integers outside i64, both documented policy.",
       "declarations": {
         "encode": "Admit the shared borrowed reader under a 2W serializer budget, then collect independent String output. Empty output allocates nothing; partial output is destroyed on error and document owners are preserved. See the linked streaming guide for execution evidence.",
         "encode_into": "Validate destination metadata, preflight semantic/output limits, check capacity, reserve replay work and fill directly without output allocation. Every returned error preserves the entire destination; source/cursor/destination disjointness is a manual precondition. See the linked streaming guide for execution evidence."
@@ -1521,12 +1587,21 @@
     },
     "ext::unicode_case": {
       "guides": [
-        "docs/extended-unicode-case.md"
+        "docs/extended-unicode-case.md",
+        "docs/extended-unicode-uconv.md"
       ]
     },
     "ext::unicode_case_data": {
       "guides": [
         "docs/extended-unicode-case.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_case_fast_data": {
+      "guides": [
+        "docs/extended-unicode-case.md",
+        "docs/extended-unicode-uconv.md"
       ],
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
@@ -1562,12 +1637,21 @@
     },
     "ext::unicode_normalize": {
       "guides": [
-        "docs/extended-unicode-normalize.md"
+        "docs/extended-unicode-normalize.md",
+        "docs/extended-unicode-uconv.md"
       ]
     },
     "ext::unicode_normalize_data": {
       "guides": [
         "docs/extended-unicode-normalize.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_quick_check_data": {
+      "guides": [
+        "docs/extended-unicode-normalize.md",
+        "docs/extended-unicode-uconv.md"
       ],
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
@@ -1595,6 +1679,11 @@
       ],
       "role": "support",
       "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unidiff": {
+      "guides": [
+        "docs/extended-seqdiff.md"
+      ]
     },
     "ext::uri": {
       "guides": [
@@ -1729,6 +1818,11 @@
         "docs/stdlib-process-context.md"
       ]
     },
+    "std::atomic": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "std::atomic_file": {
       "guides": [
         "docs/stdlib-atomic-files.md",
@@ -1737,16 +1831,42 @@
       ],
       "note": "Bounded sequential publication implemented in Lanius over TempFile and existing Linux descriptor calls. Keep one in-place manual owner; destination bytes are copied before effects. Replace/NoReplace commit syncs and closes the file once, renames once, immediately records Published/disarms deletion, then syncs the anchored directory. Receipts preserve NotPublished/Published/Unconfirmed visibility, confirmed bytes, current resources and separate primary/latest/cleanup errors. Cached commit is inert; explicit directory-sync retry never writes or renames. Failed removal retains recovery ownership; cleanup never unlinks the destination. Native Linux x86_64/kernel 7.0.0-38-generic/ext4 under /tmp passes owner 9, bounds 25, publication 6 and faults 26: 66 process invocations across four groups including baselines; preliminary smoke overlaps. A live-anchor Published checkpoint precedes ACK-controlled explicit sync retry. The bounds retry fixes only the oracle owned-fd write selector and reuses the unchanged probe ELF. Thirty-six CPU ledger controls and Rust --no-run admission are separate from native execution. Actual source/fd ownership is observed before exit. Parent mutation authority must be exclusive/cooperative; attempts/bytes are bounded, blocking time is not. No hostile-directory, network-filesystem, locking, universal power-loss or automatic-destructor guarantee; no new runtime binding or crypto implementation."
     },
+    "std::channel": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "std::clock": {
       "guides": [
         "docs/stdlib-time.md"
       ]
     },
+    "std::event": {
+      "guides": [
+        "docs/stdlib-event-loop.md"
+      ],
+      "note": "Manual epoll and pidfd owners: remove registrations before close, which is refused otherwise; descriptors close exactly once, never retried. Level-triggered unless oneshot. Evidence is finite native Linux x86_64 CPU execution."
+    },
+    "std::timer": {
+      "guides": [
+        "docs/stdlib-timers.md"
+      ],
+      "note": "Manual timerfd owner: close exactly once, never retried. Clock, kind and setting checks precede host calls. Alarm timers need CAP_WAKE_ALARM. Evidence is finite native Linux x86_64 CPU execution."
+    },
+    "std::host_clocks": {
+      "guides": [
+        "docs/stdlib-host-clocks.md",
+        "docs/stdlib-time.md"
+      ],
+      "note": "Kind checks (wall/steady/CPU), PID bounds and waitability are decided before any host call. Absolute waits use clock_nanosleep(TIMER_ABSTIME) and retry EINTR with the same target. ProcessCpuOf names a child only while it is unreaped. Evidence is finite native Linux x86_64 CPU execution."
+    },
     "std::command": {
       "guides": [
         "docs/stdlib-command.md",
         "docs/stdlib-command-groups.md",
-        "docs/stdlib-run-group.md"
+        "docs/stdlib-run-group.md",
+        "docs/stdlib-host-clocks.md",
+        "docs/stdlib-child-usage.md"
       ],
       "note": "Process-group creation is explicit. Group signaling requires the confirmed original group and an owned, unreaped leader; non-reaping terminal observations do not consume that anchor. Final reaping or lost-child evidence revokes it. Copied Child descriptors do not grant independent wait or signal authority. The guides define startup uncertainty, cancellation limits and current target/execution evidence."
     },
@@ -1865,6 +1985,11 @@
       "profile": "Unbound host declarations",
       "note": "The direct legacy network service declarations are unbound. Metadata helpers describe that unavailable service; executable owned sockets use std::socket over std::linux separately."
     },
+    "std::parallel": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "std::poll": {
       "guides": [
         "docs/stdlib-poll.md"
@@ -1907,7 +2032,20 @@
     "std::signal": {
       "guides": [
         "docs/stdlib-signals.md"
-      ]
+      ],
+      "note": "No asynchronous handlers: handled signals are blocked and read from a signalfd. Masks are per thread; use from a single-threaded process. Receivers close exactly once. Evidence is finite native Linux x86_64 CPU execution."
+    },
+    "std::resolver_config": {
+      "guides": [
+        "docs/stdlib-resolver-config.md"
+      ],
+      "note": "Lenient glibc-style parsing; unusable lines are counted, not errors. Config owns its lists; destroy once. Evidence is finite native Linux x86_64 CPU execution."
+    },
+    "std::rlimit": {
+      "guides": [
+        "docs/stdlib-rlimit.md"
+      ],
+      "note": "prlimit64 for getrlimit/setrlimit/prlimit; soft <= hard is checked before the call. An unprivileged hard-limit reduction is permanent. Evidence is finite native Linux x86_64 CPU execution."
     },
     "std::socket": {
       "guides": [
@@ -1922,9 +2060,19 @@
         "unix_from_owned_handle": "Adopts an exclusively owned live Unix-stream descriptor. Rejects a negative number only; family, type, state and flags are caller preconditions. It does not duplicate the descriptor or set CLOEXEC."
       }
     },
+    "std::steal": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "std::stream": {
       "guides": [
         "docs/stdlib-streams.md"
+      ]
+    },
+    "std::sync": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
       ]
     },
     "std::thread": {
@@ -1933,7 +2081,7 @@
         "docs/library-host-prerequisites.md"
       ],
       "profile": "Unbound host declarations",
-      "note": "Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads."
+      "note": "Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads. Parallel work executes through std::worker forked processes; see docs/stdlib-concurrency.md."
     },
     "std::temp_dir": {
       "guides": [
@@ -1980,6 +2128,11 @@
       "profile": "Protected legacy",
       "note": "Protected active formal vector specification/template contract and a remaining binary-heap backing dependency. The mini compiler and extractor use List; the dependency ledger records the formal contract and separate heap-migration compiler dependency. Legacy failure/owner policies differ from alloc::vec; ordinary programs use alloc::vec. This source inventory creates no compatibility alias or new support promise."
     },
+    "std::worker": {
+      "guides": [
+        "docs/stdlib-concurrency.md"
+      ]
+    },
     "test::assert": {
       "guides": [
         "docs/stdlib-development.md"
@@ -2012,6 +2165,18 @@
       "guides": [
         "docs/stdlib-development.md"
       ]
+    },
+    "ext::json_stream": {
+      "guides": [
+        "docs/extended-json-stream.md"
+      ],
+      "note": "Byte-fed RFC 8259 tokenizer (one token per feed, arbitrary chunk splits, incremental UTF-8 validation, lone-surrogate rejection, exact number spelling, typed errors with u64 offsets, depth/string/number limits) and a structural writer emitting the ext::json compact byte policy. Native Linux x86_64 binaries from the GPU compiler agree with strict Python json on 2,237 jq-lite/bytewise cases and with Python csv on 550 csv-to-json cases; TokenReader (core::io::Read, caller scratch) and Writer.flush_to (core::io::Write) pass a further 572 streaming cases with 7-byte scratch. The cargo registrations were not run in this session."
+    },
+    "core::float_tables": {
+      "guides": [
+        "docs/stdlib-float-decimal.md"
+      ],
+      "note": "Generated by tools/generate_float_tables.py: 128-bit powers of five for Eisel-Lemire and 64-bit cached powers of ten for Grisu3."
     }
   }
 }

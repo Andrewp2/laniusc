@@ -34,7 +34,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../extended/ext/cli_response_files.lani#L14)
 - [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/cli_response_files.lani#L15)
 - [ext::cli_response::Provider](cli_response.md) (items in separate namespaces: trait, variant; no use-site resolution) · [trait declaration](../../../extended/ext/cli_response.lani#L17) · [variant declaration](../../../extended/ext/cli_response.lani#L31) · [source](../../../extended/ext/cli_response_files.lani#L16)
-- [std::file::File](../std/file.md) (item: struct) · [declaration](../../../stdlib/std/file.lani#L25) · [source](../../../extended/ext/cli_response_files.lani#L17)
+- [std::file::File](../std/file.md) (item: struct) · [declaration](../../../stdlib/std/file.lani#L26) · [source](../../../extended/ext/cli_response_files.lani#L17)
 - [std::file_ops](../std/file_ops.md) · [source](../../../extended/ext/cli_response_files.lani#L18)
 
 ## Types, fields and variants

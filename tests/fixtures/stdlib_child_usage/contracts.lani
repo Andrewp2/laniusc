@@ -1,0 +1,46 @@
+// Self-checking wait4/getrusage contracts. Exit 0 means every assertion held.
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::command;
+
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn start(program: str, n: i32, delay: str, m: i32) -> std::command::Child {
+    let parts: [core::slice::View<u8>;2] = [bytes(program,n),bytes(delay,m)]; let none: [core::slice::View<u8>;0] = [];
+    let request = std::command::request(bytes(program,n),core::slice::view(parts,2).unwrap(),core::slice::view(none,0).unwrap());
+    let spawned = std::command::spawn(request).unwrap();
+    return match (spawned) { std::command::Spawn::Child(child) -> child, _ -> fail_child() };
+}
+fn fail_child() -> std::command::Child { assert(false); return fail_child(); }
+fn kind(failure: std::command::Failure) -> i32 { return match (failure.kind) { std::command::Error::AlreadyReaped -> 1, std::command::Error::LostChild -> 2, _ -> 0 }; }
+fn main() -> i32 {
+    let before: std::command::Usage = std::command::resource_usage(std::command::UsageTarget::Children).unwrap();
+    assert(before.cpu().is_zero() && before.max_rss_kib == 0);
+    // Nonblocking usage reap: None while running, then the blocking reap.
+    let child: std::command::Child = start("/bin/sleep",10,"0.05",4); let pid: i32 = child.id().unwrap();
+    let early = child.try_wait_with_usage().unwrap(); assert(early.is_none() && child.id().unwrap() == pid);
+    let reaped: std::command::Reaped = child.wait_with_usage().unwrap();
+    assert(reaped.status.code.unwrap() == 0 && reaped.usage.max_rss_kib > 0 && reaped.usage.voluntary_switches >= 1 && child.id().is_none());
+    assert(reaped.usage.cpu().compare(reaped.usage.user) >= 0 && reaped.usage.user.nanos % 1000 == 0 && reaped.usage.system.nanos % 1000 == 0);
+    // Usage exists only at the reap itself.
+    let again = child.wait_with_usage(); assert(again.is_err() && kind(again.unwrap_err()) == 1);
+    let polled = child.try_wait_with_usage(); assert(polled.is_err() && kind(polled.unwrap_err()) == 1);
+    assert(child.wait().unwrap().code.unwrap() == 0);
+    // A plain wait consumes the usage; an observation does not.
+    let plain: std::command::Child = start("/bin/sleep",10,"0",1); assert(plain.wait().unwrap().code.unwrap() == 0);
+    let late = plain.wait_with_usage(); assert(late.is_err() && kind(late.unwrap_err()) == 1);
+    let observed: std::command::Child = start("/bin/sleep",10,"0.01",4);
+    assert(observed.observe_exit().unwrap().code.unwrap() == 0 && observed.id().is_some());
+    let after_observe: std::command::Reaped = observed.wait_with_usage().unwrap(); assert(after_observe.status.code.unwrap() == 0 && after_observe.usage.max_rss_kib > 0);
+    // Children totals cover every reaped child; process totals cover this one.
+    let children: std::command::Usage = std::command::resource_usage(std::command::UsageTarget::Children).unwrap();
+    let summed: core::time::Duration = reaped.usage.cpu().saturating_add(after_observe.usage.cpu());
+    assert(children.cpu().compare(summed) >= 0 && children.max_rss_kib >= reaped.usage.max_rss_kib);
+    let thread: std::command::Usage = std::command::resource_usage(std::command::UsageTarget::Thread).unwrap();
+    let process: std::command::Usage = std::command::resource_usage(std::command::UsageTarget::Process).unwrap();
+    assert(process.max_rss_kib > 0 && thread.cpu().compare(process.cpu()) <= 0 && process.minor_faults > 0);
+    return 0;
+}

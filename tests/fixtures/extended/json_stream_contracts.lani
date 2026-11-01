@@ -1,0 +1,173 @@
+// ext::json_stream contracts. Mode "bytes": read stdin (<= 64 KiB), feed the
+// tokenizer one byte per call and copy every token through the writer; print
+// the compact document or "error KIND OFFSET". Mode "writer": scripted writer
+// misuse and limit checks; prints "writer ok" or the first failing check.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json_stream;
+import std::args;
+import std::stream;
+
+fn literal(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+    return core::text::from_utf8_unchecked(bytes, 0, count);
+}
+fn put(text: core::text::Text) -> bool {
+    let target: std::stream::Descriptor = std::stream::stdout();
+    return core::io::write_all<std::stream::Descriptor>(target.borrow(), text.bytes, text.start, text.length).is_ok();
+}
+fn put_u64(value: u64) {
+    let reversed: [u8; 24] = [0; 24]; let digits: [u8; 24] = [0; 24]; let count: i32 = 0;
+    if (value == 0) { reversed[0] = 48; count = 1; }
+    while (value > 0) { reversed[count] = ((value % 10) as u8) + 48; value = value / 10; count += 1; }
+    let index: i32 = 0;
+    while (index < count) { digits[index] = reversed[count - 1 - index]; index += 1; }
+    put(core::text::from_utf8_unchecked(digits, 0, count));
+}
+fn report(error: ext::json_stream::Error) -> i32 {
+    put(literal("error ", 6)); put(ext::json_stream::kind_name(error.kind)); put(literal(" ", 1));
+    put_u64(error.offset); put(literal("\n", 1));
+    return 2;
+}
+
+fn bytewise() -> i32 {
+    let input: alloc::vec::Vec<u8> = alloc::vec::new();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let buffer: [u8; 1024] = [0; 1024];
+    while (true) {
+        let received = source.read(buffer, 0, 1024);
+        if (received.is_err()) { return 3; }
+        let count: i32 = received.unwrap();
+        if (count == 0) { break; }
+        let index: i32 = 0;
+        while (index < count) { if (input.try_push(buffer[index]).is_err()) { return 4; } index += 1; }
+        if (input.len() > 65536) { return 4; }
+    }
+    let tokens: ext::json_stream::Tokenizer = core::result::unwrap(ext::json_stream::tokenizer(ext::json_stream::Options { max_depth: 512, max_string_bytes: 16777216, max_number_bytes: 1048576 }));
+    let out: ext::json_stream::Writer = core::result::unwrap(ext::json_stream::writer(512, 16777216));
+    let bytes: [u8] = input.as_slice();
+    let position: i32 = 0; let empty_checked: bool = false;
+    while (position < input.len()) {
+        // An empty feed is never EOF and never produces a token.
+        if (!empty_checked) {
+            let none = tokens.feed(bytes, position, 0);
+            if (none.is_err() || none.unwrap().token || none.unwrap().consumed != 0) { return 5; }
+            empty_checked = true;
+        }
+        let fed = tokens.feed(bytes, position, 1);
+        if (fed.is_err()) { return report(fed.unwrap_err()); }
+        let progress: ext::json_stream::Progress = fed.unwrap();
+        position += progress.consumed;
+        if (progress.token) {
+            let copied = out.token(tokens.borrow());
+            if (copied.is_err()) { return report(copied.unwrap_err()); }
+        }
+    }
+    let ended = tokens.finish();
+    if (ended.is_err()) { return report(ended.unwrap_err()); }
+    if (ended.unwrap()) {
+        let copied = out.token(tokens.borrow());
+        if (copied.is_err()) { return report(copied.unwrap_err()); }
+    }
+    // EOF is sticky: repeated finish is false, further input is Finished.
+    let again = tokens.finish();
+    if (again.is_err() || again.unwrap()) { return 6; }
+    let space: [u8; 1] = [32];
+    let late = tokens.feed(space, 0, 1);
+    if (late.is_ok()) { return 7; }
+    if (!out.is_complete() || !tokens.is_complete()) { return 8; }
+    put(out.output_text()); put(literal("\n", 1));
+    tokens.destroy(); out.destroy(); input.destroy();
+    return 0;
+}
+
+// Mode "stream": TokenReader over stdin with 7 bytes of scratch; tokens are
+// copied to a writer that flushes to stdout whenever 32 bytes are buffered.
+fn streamed() -> i32 {
+    let tokens: ext::json_stream::Tokenizer = core::result::unwrap(ext::json_stream::tokenizer(ext::json_stream::Options { max_depth: 512, max_string_bytes: 16777216, max_number_bytes: 1048576 }));
+    let out: ext::json_stream::Writer = core::result::unwrap(ext::json_stream::writer(512, 16777216));
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let target: std::stream::Descriptor = std::stream::stdout();
+    let scratch: [u8; 7] = [0; 7];
+    let reader: ext::json_stream::TokenReader<std::stream::Descriptor> = core::result::unwrap(ext::json_stream::token_reader<std::stream::Descriptor>(source.borrow(), tokens.borrow(), core::result::unwrap(core::slice::view(scratch, 7))));
+    while (true) {
+        let step: core::result::Result<bool, ext::json_stream::StreamError> = reader.next();
+        if (step.is_err()) {
+            let status: i32 = match (step.unwrap_err()) { ext::json_stream::StreamError::Json(cause) -> 2, ext::json_stream::StreamError::Io(cause) -> 3 };
+            return status;
+        }
+        if (!step.unwrap()) { break; }
+        let copied = out.token(tokens.borrow());
+        if (copied.is_err()) { return report(copied.unwrap_err()); }
+        if (out.len() > 32) { if (out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { return 3; } }
+    }
+    let again: core::result::Result<bool, ext::json_stream::StreamError> = reader.next();
+    if (again.is_err() || again.unwrap()) { return 6; }
+    if (!out.is_complete()) { return 8; }
+    if (out.flush_to<std::stream::Descriptor>(target.borrow()).is_err()) { return 3; }
+    if (out.len() != 0) { return 9; }
+    let newline: [u8; 1] = [10]; put(core::text::from_utf8_unchecked(newline, 0, 1));
+    tokens.destroy(); out.destroy();
+    return 0;
+}
+
+fn fail(check: i32) -> i32 { put(literal("writer check ", 13)); put_u64(check as u64); put(literal(" failed\n", 8)); return 1; }
+
+fn writer_checks() -> i32 {
+    let w: ext::json_stream::Writer = core::result::unwrap(ext::json_stream::writer(2, 64));
+    if (w.end_array().is_ok()) { return fail(1); }
+    if (w.key(literal("k", 1)).is_ok()) { return fail(2); }
+    if (w.number(literal("01", 2)).is_ok()) { return fail(3); }
+    if (w.number(literal("1.", 2)).is_ok()) { return fail(4); }
+    if (w.number(literal("", 0)).is_ok()) { return fail(5); }
+    if (w.len() != 0) { return fail(6); }
+    let quote_key: [u8; 3] = [97, 34, 98];
+    if (w.begin_object().is_err()) { return fail(7); }
+    if (w.string(literal("v", 1)).is_ok()) { return fail(8); }
+    if (w.end_array().is_ok()) { return fail(9); }
+    if (w.key(core::text::from_utf8_unchecked(quote_key, 0, 3)).is_err()) { return fail(10); }
+    if (w.key(literal("x", 1)).is_ok()) { return fail(11); }
+    if (w.begin_array().is_err()) { return fail(12); }
+    let depth = w.begin_array();
+    if (depth.is_ok()) { return fail(13); }
+    if (!ext::json_stream::kind_name(depth.unwrap_err().kind).equals(literal("DepthLimit", 10))) { return fail(14); }
+    if (w.number(literal("-0.5e+3", 7)).is_err()) { return fail(15); }
+    if (w.boolean(true).is_err() || w.null().is_err()) { return fail(16); }
+    if (w.end_array().is_err() || w.end_object().is_err()) { return fail(17); }
+    if (!w.is_complete()) { return fail(18); }
+    if (w.null().is_ok()) { return fail(19); }
+    let expected: [u8; 28] = [123, 34, 97, 92, 34, 98, 34, 58, 91, 45, 48, 46, 53, 101, 43, 51, 44, 116, 114, 117, 101, 44, 110, 117, 108, 108, 93, 125];
+    if (!w.output_text().equals(core::text::from_utf8_unchecked(expected, 0, 28))) { return fail(20); }
+    let before: i32 = w.len();
+    let invalid: [u8; 2] = [195, 40];
+    if (w.next_document().is_err()) { return fail(21); }
+    if (w.string(core::text::from_utf8_unchecked(invalid, 0, 2)).is_ok()) { return fail(22); }
+    let long = w.string(literal("this string is far too long for the remaining output budget", 59));
+    if (long.is_ok()) { return fail(23); }
+    if (!ext::json_stream::kind_name(long.unwrap_err().kind).equals(literal("OutputLimit", 11))) { return fail(24); }
+    if (w.len() != before + 1) { return fail(25); }
+    let control: [u8; 3] = [1, 10, 127];
+    if (w.string(core::text::from_utf8_unchecked(control, 0, 3)).is_err()) { return fail(26); }
+    put(w.output_text()); put(literal("\n", 1));
+    w.destroy();
+    put(literal("writer ok\n", 10));
+    return 0;
+}
+
+fn main() -> i32 {
+    let captured = std::args::snapshot(1, 1, 64);
+    if (captured.is_err()) { return 1; }
+    let arguments = captured.unwrap();
+    let mode: i32 = 0;
+    if (arguments.len() == 1) { let view: core::slice::View<u8> = core::option::unwrap(arguments.get(0)); if (view.length == 6) { mode = 1; } if (view.length == 3) { mode = 2; } }
+    arguments.destroy();
+    if (mode == 1) { return writer_checks(); }
+    if (mode == 2) { return streamed(); }
+    return bytewise();
+}

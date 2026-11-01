@@ -1,0 +1,96 @@
+// Native 32/64-bit atomic words with explicit C11 memory orders, through
+// GCC libatomic. Link with --native-link --native-library atomic.
+// See docs/stdlib-concurrency.md for the storage, order and ABI contract.
+module std::atomic;
+import core::mem;
+
+// Each enum admits only the orders C11 allows for that operation, so an
+// invalid order is unrepresentable instead of a runtime error.
+pub enum Load { Relaxed, Acquire, SeqCst }
+pub enum Store { Relaxed, Release, SeqCst }
+pub enum Ordering { Relaxed, Acquire, Release, AcqRel, SeqCst }
+// Swapped(previous) when previous equalled expected and desired was stored;
+// Failed(actual) otherwise. The exchange is strong: no spurious failure.
+pub enum Exchange { Swapped(u64), Failed(u64) }
+
+extern "C" fn __atomic_load_4(object: ptr, order: i32) -> u32;
+extern "C" fn __atomic_store_4(object: ptr, value: u32, order: i32);
+extern "C" fn __atomic_exchange_4(object: ptr, value: u32, order: i32) -> u32;
+extern "C" fn __atomic_fetch_add_4(object: ptr, value: u32, order: i32) -> u32;
+extern "C" fn __atomic_fetch_sub_4(object: ptr, value: u32, order: i32) -> u32;
+extern "C" fn __atomic_fetch_and_4(object: ptr, value: u32, order: i32) -> u32;
+extern "C" fn __atomic_fetch_or_4(object: ptr, value: u32, order: i32) -> u32;
+extern "C" fn __atomic_fetch_xor_4(object: ptr, value: u32, order: i32) -> u32;
+extern "C" fn __atomic_load_8(object: ptr, order: i32) -> u64;
+extern "C" fn __atomic_store_8(object: ptr, value: u64, order: i32);
+extern "C" fn __atomic_exchange_8(object: ptr, value: u64, order: i32) -> u64;
+extern "C" fn __atomic_fetch_add_8(object: ptr, value: u64, order: i32) -> u64;
+extern "C" fn __atomic_fetch_sub_8(object: ptr, value: u64, order: i32) -> u64;
+extern "C" fn __atomic_fetch_and_8(object: ptr, value: u64, order: i32) -> u64;
+extern "C" fn __atomic_fetch_or_8(object: ptr, value: u64, order: i32) -> u64;
+extern "C" fn __atomic_fetch_xor_8(object: ptr, value: u64, order: i32) -> u64;
+// The C _Bool result is discarded (void is ABI-compatible on System V x86-64;
+// the native profile does not admit _Bool). Success is recovered exactly from
+// the expected slot: a strong exchange rewrites it only on failure, and then
+// only with an actual value different from the expected one.
+extern "C" fn __atomic_compare_exchange_4(object: ptr, expected: ptr, desired: u32, success: i32, failure: i32);
+extern "C" fn __atomic_compare_exchange_8(object: ptr, expected: ptr, desired: u64, success: i32, failure: i32);
+
+// GCC __ATOMIC_* codes. Consume is not offered.
+pub fn load_code(order: Load) -> i32 { return match (order) { Load::Relaxed -> 0, Load::Acquire -> 2, Load::SeqCst -> 5 }; }
+pub fn store_code(order: Store) -> i32 { return match (order) { Store::Relaxed -> 0, Store::Release -> 3, Store::SeqCst -> 5 }; }
+pub fn order_code(order: Ordering) -> i32 {
+    return match (order) { Ordering::Relaxed -> 0, Ordering::Acquire -> 2, Ordering::Release -> 3, Ordering::AcqRel -> 4, Ordering::SeqCst -> 5 };
+}
+
+// A borrowed word. address must be nonzero, aligned to the word size and
+// valid for the whole use; every concurrent access must go through atomics.
+pub struct Atomic32 { address: ptr }
+pub struct Atomic64 { address: ptr }
+pub fn at32(address: ptr) -> Atomic32 { return Atomic32 { address: address }; }
+pub fn at64(address: ptr) -> Atomic64 { return Atomic64 { address: address }; }
+
+pub impl Atomic32 {
+    pub fn address(&self) -> ptr { return self.address; }
+    pub fn load(&self, order: Load) -> u32 { return __atomic_load_4(self.address, load_code(order)); }
+    pub fn store(&self, value: u32, order: Store) { __atomic_store_4(self.address, value, store_code(order)); }
+    pub fn swap(&self, value: u32, order: Ordering) -> u32 { return __atomic_exchange_4(self.address, value, order_code(order)); }
+    pub fn fetch_add(&self, value: u32, order: Ordering) -> u32 { return __atomic_fetch_add_4(self.address, value, order_code(order)); }
+    pub fn fetch_sub(&self, value: u32, order: Ordering) -> u32 { return __atomic_fetch_sub_4(self.address, value, order_code(order)); }
+    pub fn fetch_and(&self, value: u32, order: Ordering) -> u32 { return __atomic_fetch_and_4(self.address, value, order_code(order)); }
+    pub fn fetch_or(&self, value: u32, order: Ordering) -> u32 { return __atomic_fetch_or_4(self.address, value, order_code(order)); }
+    pub fn fetch_xor(&self, value: u32, order: Ordering) -> u32 { return __atomic_fetch_xor_4(self.address, value, order_code(order)); }
+    pub fn compare_exchange(&self, expected: u32, desired: u32, success: Ordering, failure: Load) -> Exchange {
+        let scratch: [i32; 2] = [0; 2];
+        let slot: ptr = core::mem::i32_array_data_ptr(scratch);
+        __atomic_store_4(slot, expected, 0);
+        __atomic_compare_exchange_4(self.address, slot, desired, order_code(success), load_code(failure));
+        let actual: u32 = __atomic_load_4(slot, 0);
+        if (actual == expected) { return Exchange::Swapped(actual as u64); }
+        return Exchange::Failed(actual as u64);
+    }
+}
+
+pub impl Atomic64 {
+    pub fn address(&self) -> ptr { return self.address; }
+    pub fn load(&self, order: Load) -> u64 { return __atomic_load_8(self.address, load_code(order)); }
+    pub fn store(&self, value: u64, order: Store) { __atomic_store_8(self.address, value, store_code(order)); }
+    pub fn swap(&self, value: u64, order: Ordering) -> u64 { return __atomic_exchange_8(self.address, value, order_code(order)); }
+    pub fn fetch_add(&self, value: u64, order: Ordering) -> u64 { return __atomic_fetch_add_8(self.address, value, order_code(order)); }
+    pub fn fetch_sub(&self, value: u64, order: Ordering) -> u64 { return __atomic_fetch_sub_8(self.address, value, order_code(order)); }
+    pub fn fetch_and(&self, value: u64, order: Ordering) -> u64 { return __atomic_fetch_and_8(self.address, value, order_code(order)); }
+    pub fn fetch_or(&self, value: u64, order: Ordering) -> u64 { return __atomic_fetch_or_8(self.address, value, order_code(order)); }
+    pub fn fetch_xor(&self, value: u64, order: Ordering) -> u64 { return __atomic_fetch_xor_8(self.address, value, order_code(order)); }
+    pub fn compare_exchange(&self, expected: u64, desired: u64, success: Ordering, failure: Load) -> Exchange {
+        let scratch: [i32; 2] = [0; 2];
+        let slot: ptr = core::mem::i32_array_data_ptr(scratch);
+        __atomic_store_8(slot, expected, 0);
+        __atomic_compare_exchange_8(self.address, slot, desired, order_code(success), load_code(failure));
+        let actual: u64 = __atomic_load_8(slot, 0);
+        if (actual == expected) { return Exchange::Swapped(actual); }
+        return Exchange::Failed(actual);
+    }
+}
+
+pub fn swapped(result: Exchange) -> bool { return match (result) { Exchange::Swapped(value) -> true, Exchange::Failed(value) -> false }; }
+pub fn observed(result: Exchange) -> u64 { return match (result) { Exchange::Swapped(value) -> value, Exchange::Failed(value) -> value }; }

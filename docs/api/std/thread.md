@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `std`. Role: module. Profile: **Unbound host declarations**.
 
-Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads.
+Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads. Parallel work executes through std::worker forked processes; see docs/stdlib-concurrency.md.
 
 ## Contract and evidence guides
 

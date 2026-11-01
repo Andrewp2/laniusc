@@ -1,0 +1,219 @@
+// Table-driven Pratt (binding-power) expression parsing into postfix events.
+// See docs/extended-pratt.md.
+module ext::pratt;
+import alloc::vec;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice;
+
+pub const ATOM: i32 = 0;
+pub const PREFIX: i32 = 1;
+pub const INFIX: i32 = 2;
+pub const POSTFIX: i32 = 3;
+pub const CALL: i32 = 4;
+pub const MAX_KINDS: i32 = 65536;
+pub const MAX_POWER: i32 = 1000000;
+
+pub enum Error {
+    InvalidKind(i32), InvalidPower(i32), Conflict(i32), AllocationFailed, Bounds, WorkspaceTooSmall,
+    UnknownToken(i32), ExpectedOperand(i32), ExpectedOperator(i32), UnexpectedEnd(i32),
+    Unmatched(i32), Unclosed(i32), MisplacedSeparator(i32)
+}
+// Caller token: `kind` selects the table entry; start/end are opaque to the parser.
+pub struct Token { kind: i32, start: i32, end: i32 }
+// One postfix event. `token` indexes the token slice; for CALL it is the
+// opening token and `arity` is the argument count.
+pub struct Event { role: i32, kind: i32, token: i32, arity: i32 }
+pub struct Spec { atom: bool, prefix: i32, left: i32, right: i32, postfix: i32, group_close: i32, call_close: i32, call_power: i32, close: bool, separator: bool }
+pub struct Table { specs: alloc::vec::Vec<Spec> }
+struct Frame { role: i32, kind: i32, token: i32, power: i32, close: i32, arity: i32 }
+pub struct Parser { events: alloc::vec::Vec<Event>, stack: alloc::vec::Vec<Frame>, capacity: i32 }
+
+fn empty_spec() -> Spec { return Spec { atom: false, prefix: 0, left: 0, right: 0, postfix: 0, group_close: -1, call_close: -1, call_power: 0, close: false, separator: false }; }
+fn valid_power(power: i32) -> bool { return power >= 1 && power <= MAX_POWER; }
+// Operand position allows exactly one of atom, prefix and group opening.
+fn operand_used(s: Spec) -> bool { return s.atom || s.prefix > 0 || s.group_close >= 0; }
+// Operator position allows exactly one of infix, postfix, call opening, separator and closing.
+fn operator_used(s: Spec) -> bool { return s.left > 0 || s.postfix > 0 || s.call_close >= 0 || s.separator || s.close; }
+
+pub fn table(kinds: i32) -> Result<Table, Error> {
+    if (kinds < 1 || kinds > MAX_KINDS) { return Err(Error::InvalidKind(kinds)); }
+    let output = Table { specs: alloc::vec::new() };
+    if (output.specs.try_reserve(kinds).is_err()) { return Err(Error::AllocationFailed); }
+    let index: i32 = 0;
+    while (index < kinds) {
+        if (output.specs.try_push(empty_spec()).is_err()) { output.destroy(); return Err(Error::AllocationFailed); }
+        index += 1;
+    }
+    return Ok(output);
+}
+
+pub impl Table {
+    pub fn borrow(&self) -> &Table { return self; }
+    pub fn kind_count(&self) -> i32 { return self.specs.len(); }
+    pub fn destroy(&self) { self.specs.destroy(); }
+    fn spec(&self, kind: i32) -> Option<Spec> {
+        if (kind < 0 || kind >= self.specs.len()) { return core::option::None(); }
+        return self.specs.get(kind);
+    }
+    fn store(&self, kind: i32, s: Spec) -> Result<i32, Error> {
+        if (self.specs.set(kind, s).is_err()) { return Err(Error::InvalidKind(kind)); }
+        return Ok(kind);
+    }
+    // A complete operand, such as a number or name.
+    pub fn atom(&self, kind: i32) -> Result<i32, Error> {
+        let found = self.spec(kind); if (found.is_none()) { return Err(Error::InvalidKind(kind)); }
+        let s: Spec = found.unwrap(); if (operand_used(s)) { return Err(Error::Conflict(kind)); }
+        s.atom = true; return self.store(kind, s);
+    }
+    // Prefix operator; its operand continues while later left powers exceed `right`.
+    pub fn prefix(&self, kind: i32, right: i32) -> Result<i32, Error> {
+        let found = self.spec(kind); if (found.is_none()) { return Err(Error::InvalidKind(kind)); }
+        if (!valid_power(right)) { return Err(Error::InvalidPower(right)); }
+        let s: Spec = found.unwrap(); if (operand_used(s)) { return Err(Error::Conflict(kind)); }
+        s.prefix = right; return self.store(kind, s);
+    }
+    // Binary operator. left > right associates to the right; left < right to the left.
+    pub fn infix(&self, kind: i32, left: i32, right: i32) -> Result<i32, Error> {
+        let found = self.spec(kind); if (found.is_none()) { return Err(Error::InvalidKind(kind)); }
+        if (!valid_power(left)) { return Err(Error::InvalidPower(left)); }
+        if (!valid_power(right)) { return Err(Error::InvalidPower(right)); }
+        let s: Spec = found.unwrap(); if (operator_used(s)) { return Err(Error::Conflict(kind)); }
+        s.left = left; s.right = right; return self.store(kind, s);
+    }
+    pub fn postfix(&self, kind: i32, left: i32) -> Result<i32, Error> {
+        let found = self.spec(kind); if (found.is_none()) { return Err(Error::InvalidKind(kind)); }
+        if (!valid_power(left)) { return Err(Error::InvalidPower(left)); }
+        let s: Spec = found.unwrap(); if (operator_used(s)) { return Err(Error::Conflict(kind)); }
+        s.postfix = left; return self.store(kind, s);
+    }
+    fn closer(&self, close: i32) -> Result<i32, Error> {
+        let found = self.spec(close); if (found.is_none()) { return Err(Error::InvalidKind(close)); }
+        let s: Spec = found.unwrap();
+        if (s.close) { return Ok(close); }
+        if (operator_used(s)) { return Err(Error::Conflict(close)); }
+        s.close = true; return self.store(close, s);
+    }
+    // Parenthesized grouping in operand position; emits no event of its own.
+    pub fn group(&self, open: i32, close: i32) -> Result<i32, Error> {
+        let found = self.spec(open); if (found.is_none()) { return Err(Error::InvalidKind(open)); }
+        let s: Spec = found.unwrap(); if (operand_used(s) || open == close) { return Err(Error::Conflict(open)); }
+        let made = self.closer(close); if (made.is_err()) { return made; }
+        s.group_close = close; return self.store(open, s);
+    }
+    // Call or index in operator position: callee, arguments, then CALL with arity.
+    pub fn call(&self, open: i32, close: i32, separator: i32, left: i32) -> Result<i32, Error> {
+        let found = self.spec(open); if (found.is_none()) { return Err(Error::InvalidKind(open)); }
+        if (!valid_power(left)) { return Err(Error::InvalidPower(left)); }
+        let s: Spec = found.unwrap(); if (operator_used(s) || open == close || open == separator || close == separator) { return Err(Error::Conflict(open)); }
+        let sep_found = self.spec(separator); if (sep_found.is_none()) { return Err(Error::InvalidKind(separator)); }
+        let sep: Spec = sep_found.unwrap();
+        if (!sep.separator && operator_used(sep)) { return Err(Error::Conflict(separator)); }
+        let made = self.closer(close); if (made.is_err()) { return made; }
+        s.call_close = close; s.call_power = left;
+        let stored = self.store(open, s); if (stored.is_err()) { return stored; }
+        sep.separator = true; return self.store(separator, sep);
+    }
+}
+
+// Fixed-capacity scratch: parses at most `capacity` tokens without allocating.
+pub fn parser(capacity: i32) -> Result<Parser, Error> {
+    if (capacity < 0 || capacity > 16777216) { return Err(Error::Bounds); }
+    let output = Parser { events: alloc::vec::new(), stack: alloc::vec::new(), capacity: capacity };
+    if (output.events.try_reserve(capacity).is_err()) { return Err(Error::AllocationFailed); }
+    if (output.stack.try_reserve(capacity).is_err()) { output.events.destroy(); return Err(Error::AllocationFailed); }
+    return Ok(output);
+}
+
+pub impl Parser {
+    pub fn borrow(&self) -> &Parser { return self; }
+    pub fn capacity(&self) -> i32 { return self.capacity; }
+    pub fn event_count(&self) -> i32 { return self.events.len(); }
+    pub fn event(&self, index: i32) -> Option<Event> { return self.events.get(index); }
+    pub fn events(&self) -> core::slice::View<Event> { return self.events.as_view(); }
+    pub fn destroy(&self) { self.events.destroy(); self.stack.destroy(); self.capacity = 0; }
+    fn emit(&self, role: i32, kind: i32, token: i32, arity: i32) -> bool {
+        return self.events.try_push(Event { role: role, kind: kind, token: token, arity: arity }).is_ok();
+    }
+    // Emit pending operators whose right power is at least `power`; stop at a group or call.
+    fn reduce(&self, power: i32) -> bool {
+        while (!self.stack.is_empty()) {
+            let top: Frame = self.stack.at(self.stack.len() - 1);
+            if (top.role != PREFIX && top.role != INFIX) { return true; }
+            if (top.power < power) { return true; }
+            let unused = self.stack.pop();
+            let arity: i32 = 1; if (top.role == INFIX) { arity = 2; }
+            if (!self.emit(top.role, top.kind, top.token, arity)) { return false; }
+        }
+        return true;
+    }
+    fn push(&self, frame: Frame) -> bool { return self.stack.try_push(frame).is_ok(); }
+    // Parse one complete expression. Returns the event count; on error no events remain.
+    pub fn parse(&self, table: &Table, tokens: core::slice::View<Token>) -> Result<i32, Error> {
+        self.events.clear(); self.stack.clear();
+        if (tokens.start < 0 || tokens.length < 0 || tokens.start > 2147483647 - tokens.length) { return Err(Error::Bounds); }
+        if (tokens.length > self.capacity || self.events.capacity() < tokens.length || self.stack.capacity() < tokens.length) { return Err(Error::WorkspaceTooSmall); }
+        let result = self.run(table, tokens);
+        if (result.is_err()) { self.events.clear(); }
+        self.stack.clear();
+        return result;
+    }
+    fn run(&self, table: &Table, tokens: core::slice::View<Token>) -> Result<i32, Error> {
+        let operand: bool = true; let index: i32 = 0;
+        while (index < tokens.length) {
+            let kind: i32 = tokens.values[tokens.start + index].kind;
+            let found = table.spec(kind); if (found.is_none()) { return Err(Error::UnknownToken(index)); }
+            let s: Spec = found.unwrap();
+            if (operand) {
+                if (s.atom) { if (!self.emit(ATOM, kind, index, 0)) { return Err(Error::AllocationFailed); } operand = false; }
+                else { if (s.prefix > 0) { if (!self.push(Frame { role: PREFIX, kind: kind, token: index, power: s.prefix, close: -1, arity: 0 })) { return Err(Error::AllocationFailed); } }
+                else { if (s.group_close >= 0) { if (!self.push(Frame { role: 0, kind: kind, token: index, power: 0, close: s.group_close, arity: 0 })) { return Err(Error::AllocationFailed); } }
+                else {
+                    // Only an empty call `f()` closes in operand position.
+                    if (!s.close || self.stack.is_empty()) { return Err(Error::ExpectedOperand(index)); }
+                    let top: Frame = self.stack.at(self.stack.len() - 1);
+                    if (top.role != CALL || top.close != kind || top.token != index - 1) { return Err(Error::ExpectedOperand(index)); }
+                    let unused = self.stack.pop();
+                    if (!self.emit(CALL, top.kind, top.token, 0)) { return Err(Error::AllocationFailed); }
+                    operand = false;
+                } } }
+            } else {
+                if (s.left > 0) {
+                    if (!self.reduce(s.left)) { return Err(Error::AllocationFailed); }
+                    if (!self.push(Frame { role: INFIX, kind: kind, token: index, power: s.right, close: -1, arity: 0 })) { return Err(Error::AllocationFailed); }
+                    operand = true;
+                } else { if (s.postfix > 0) {
+                    if (!self.reduce(s.postfix)) { return Err(Error::AllocationFailed); }
+                    if (!self.emit(POSTFIX, kind, index, 1)) { return Err(Error::AllocationFailed); }
+                } else { if (s.call_close >= 0) {
+                    if (!self.reduce(s.call_power)) { return Err(Error::AllocationFailed); }
+                    if (!self.push(Frame { role: CALL, kind: kind, token: index, power: 0, close: s.call_close, arity: 0 })) { return Err(Error::AllocationFailed); }
+                    operand = true;
+                } else { if (s.separator) {
+                    if (!self.reduce(0)) { return Err(Error::AllocationFailed); }
+                    if (self.stack.is_empty()) { return Err(Error::MisplacedSeparator(index)); }
+                    let top: Frame = self.stack.at(self.stack.len() - 1);
+                    if (top.role != CALL) { return Err(Error::MisplacedSeparator(index)); }
+                    top.arity += 1; let unused = self.stack.set(self.stack.len() - 1, top);
+                    operand = true;
+                } else { if (s.close) {
+                    if (!self.reduce(0)) { return Err(Error::AllocationFailed); }
+                    if (self.stack.is_empty()) { return Err(Error::Unmatched(index)); }
+                    let top: Frame = self.stack.at(self.stack.len() - 1);
+                    if (top.close != kind) { return Err(Error::Unmatched(index)); }
+                    let unused = self.stack.pop();
+                    if (top.role == CALL) { if (!self.emit(CALL, top.kind, top.token, top.arity + 1)) { return Err(Error::AllocationFailed); } }
+                } else { return Err(Error::ExpectedOperator(index)); } } } } }
+            }
+            index += 1;
+        }
+        if (operand) { return Err(Error::UnexpectedEnd(index)); }
+        if (!self.reduce(0)) { return Err(Error::AllocationFailed); }
+        if (!self.stack.is_empty()) { return Err(Error::Unclosed(self.stack.at(self.stack.len() - 1).token)); }
+        return Ok(self.events.len());
+    }
+}

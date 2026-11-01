@@ -1,0 +1,641 @@
+// Byte-fed JSON tokenizer and structural token writer. The tokenizer accepts
+// arbitrary chunks, validates UTF-8 and RFC 8259 grammar incrementally, keeps
+// exact number spelling and reports typed errors with u64 byte offsets. The
+// writer emits the compact ext::json byte policy. See docs/extended-json-stream.md.
+module ext::json_stream;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::utf8;
+
+pub enum Token { BeginObject, EndObject, BeginArray, EndArray, Key, Text, Number, Boolean, Null }
+pub enum ErrorKind {
+    UnexpectedByte, UnexpectedEnd, InvalidUtf8, ControlCharacter, InvalidEscape,
+    InvalidSurrogate, InvalidNumber, TrailingInput, DepthLimit, StringLimit,
+    NumberLimit, OutputLimit, InvalidPlacement, AllocationFailed, InvalidOptions,
+    Bounds, Finished, OffsetOverflow,
+}
+pub struct Error { kind: ErrorKind, offset: u64 }
+pub struct Options { max_depth: i32, max_string_bytes: i32, max_number_bytes: i32 }
+pub struct Progress { consumed: i32, token: bool }
+
+pub fn default_options() -> Options {
+    return Options { max_depth: 128, max_string_bytes: 16777216, max_number_bytes: 1048576 };
+}
+fn error(kind: ErrorKind, offset: u64) -> Error { return Error { kind: kind, offset: offset }; }
+fn lit(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), count);
+    return core::text::from_utf8_unchecked(bytes, 0, count);
+}
+
+// Stable names for diagnostics and tests.
+pub fn kind_name(kind: ErrorKind) -> core::text::Text {
+    let name: core::text::Text = match (kind) {
+        ErrorKind::UnexpectedByte -> lit("UnexpectedByte", 14),
+        ErrorKind::UnexpectedEnd -> lit("UnexpectedEnd", 13),
+        ErrorKind::InvalidUtf8 -> lit("InvalidUtf8", 11),
+        ErrorKind::ControlCharacter -> lit("ControlCharacter", 16),
+        ErrorKind::InvalidEscape -> lit("InvalidEscape", 13),
+        ErrorKind::InvalidSurrogate -> lit("InvalidSurrogate", 16),
+        ErrorKind::InvalidNumber -> lit("InvalidNumber", 13),
+        ErrorKind::TrailingInput -> lit("TrailingInput", 13),
+        ErrorKind::DepthLimit -> lit("DepthLimit", 10),
+        ErrorKind::StringLimit -> lit("StringLimit", 11),
+        ErrorKind::NumberLimit -> lit("NumberLimit", 11),
+        ErrorKind::OutputLimit -> lit("OutputLimit", 11),
+        ErrorKind::InvalidPlacement -> lit("InvalidPlacement", 16),
+        ErrorKind::AllocationFailed -> lit("AllocationFailed", 16),
+        ErrorKind::InvalidOptions -> lit("InvalidOptions", 14),
+        ErrorKind::Bounds -> lit("Bounds", 6),
+        ErrorKind::Finished -> lit("Finished", 8),
+        ErrorKind::OffsetOverflow -> lit("OffsetOverflow", 14),
+    };
+    return name;
+}
+
+fn token_of(tag: i32) -> Token {
+    if (tag == 0) { return Token::BeginObject; }
+    if (tag == 1) { return Token::EndObject; }
+    if (tag == 2) { return Token::BeginArray; }
+    if (tag == 3) { return Token::EndArray; }
+    if (tag == 4) { return Token::Key; }
+    if (tag == 5) { return Token::Text; }
+    if (tag == 6) { return Token::Number; }
+    if (tag == 7) { return Token::Boolean; }
+    return Token::Null;
+}
+fn space(byte: u8) -> bool { return byte == 32 || byte == 9 || byte == 10 || byte == 13; }
+fn digit(byte: u8) -> bool { return byte >= 48 && byte <= 57; }
+fn hex(byte: u8) -> i32 {
+    if (byte >= 48 && byte <= 57) { return (byte as i32) - 48; }
+    if (byte >= 65 && byte <= 70) { return (byte as i32) - 55; }
+    if (byte >= 97 && byte <= 102) { return (byte as i32) - 87; }
+    return -1;
+}
+// Number phases: 1 after '-', 2 leading zero, 3 integer digits, 4 after '.',
+// 5 fraction digits, 6 after 'e', 7 after exponent sign, 8 exponent digits.
+// Returns the next phase, or 0 when byte cannot extend the number.
+fn number_next(phase: i32, byte: u8) -> i32 {
+    if (phase == 0) { if (byte == 45) { return 1; } if (byte == 48) { return 2; } if (digit(byte)) { return 3; } return 0; }
+    if (phase == 1) { if (byte == 48) { return 2; } if (digit(byte)) { return 3; } return 0; }
+    if (phase == 2 || phase == 3 || phase == 5) {
+        if (phase == 3 && digit(byte)) { return 3; }
+        if (phase == 5 && digit(byte)) { return 5; }
+        if (byte == 46 && phase != 5) { return 4; }
+        if (byte == 101 || byte == 69) { return 6; }
+        return 0;
+    }
+    if (phase == 4) { if (digit(byte)) { return 5; } return 0; }
+    if (phase == 6) { if (byte == 43 || byte == 45) { return 7; } if (digit(byte)) { return 8; } return 0; }
+    if (phase == 7 || phase == 8) { if (digit(byte)) { return 8; } return 0; }
+    return 0;
+}
+fn number_terminal(phase: i32) -> bool { return phase == 2 || phase == 3 || phase == 5 || phase == 8; }
+
+// Grammar expectations between tokens.
+// 0 root value, 1 value, 2 value or ']', 3 key or '}', 4 key, 5 ':',
+// 6 ',' or close, 7 complete root.
+// Lexical states: 0 between tokens, 1 string body, 2 after '\', 3 \u digits,
+// 4 '\' of a low surrogate, 5 'u' of a low surrogate, 6 number, 7 literal.
+pub struct Tokenizer {
+    options: Options, text: alloc::vec::Vec<u8>, stack: alloc::vec::Vec<u8>,
+    failure: core::option::Option<Error>, offset: u64, tokens: u64,
+    expect: i32, lex: i32, tag: i32, ready: bool, finished: bool, flag: bool,
+    start: u64, is_key: bool, escape_start: u64, hex_count: i32, hex_value: i32,
+    high: i32, high_start: u64, phase: i32, literal: i32, literal_index: i32,
+    utf8_width: u32, utf8_used: u32, utf8_start: u64, first: u8, second: u8, third: u8,
+}
+
+pub fn tokenizer(options: Options) -> core::result::Result<Tokenizer, Error> {
+    if (options.max_depth < 0 || options.max_string_bytes < 0 || options.max_number_bytes < 0) {
+        return core::result::Err(error(ErrorKind::InvalidOptions, 0));
+    }
+    return core::result::Ok(Tokenizer { options: options, text: alloc::vec::new(), stack: alloc::vec::new(),
+        failure: core::option::None(), offset: 0, tokens: 0,
+        expect: 0, lex: 0, tag: 0, ready: false, finished: false, flag: false,
+        start: 0, is_key: false, escape_start: 0, hex_count: 0, hex_value: 0,
+        high: -1, high_start: 0, phase: 0, literal: 0, literal_index: 0,
+        utf8_width: 0, utf8_used: 0, utf8_start: 0, first: 0, second: 0, third: 0 });
+}
+
+fn literal_byte(which: i32, index: i32) -> u8 {
+    if (which == 0) { let word: [u8; 4] = [116, 114, 117, 101]; return word[index]; }
+    if (which == 1) { let word: [u8; 5] = [102, 97, 108, 115, 101]; return word[index]; }
+    let word: [u8; 4] = [110, 117, 108, 108]; return word[index];
+}
+fn literal_len(which: i32) -> i32 { if (which == 1) { return 5; } return 4; }
+
+pub impl Tokenizer {
+    pub fn borrow(&self) -> &Tokenizer { return self; }
+    pub fn byte_offset(&self) -> u64 { return self.offset; }
+    pub fn tokens_read(&self) -> u64 { return self.tokens; }
+    pub fn has_token(&self) -> bool { return self.ready; }
+    // Container depth after the ready token; a root scalar has depth zero.
+    pub fn depth(&self) -> i32 { return self.stack.len(); }
+    pub fn is_complete(&self) -> bool { return self.finished; }
+    pub fn token(&self) -> core::option::Option<Token> {
+        if (!self.ready) { return core::option::None(); }
+        return core::option::Some(token_of(self.tag));
+    }
+    // Byte offset of the ready token's first byte (its opening quote, sign,
+    // digit, letter or bracket).
+    pub fn token_offset(&self) -> u64 { return self.start; }
+    pub fn boolean(&self) -> core::result::Result<bool, Error> {
+        if (!self.ready || self.tag != 7) { return core::result::Err(error(ErrorKind::Bounds, self.offset)); }
+        return core::result::Ok(self.flag);
+    }
+    // Decoded key/string UTF-8 or exact number spelling. Borrowed: valid until
+    // the next nonempty feed, reset or destroy.
+    pub fn text(&self) -> core::result::Result<core::text::Text, Error> {
+        if (!self.ready || self.tag < 4 || self.tag > 6) { return core::result::Err(error(ErrorKind::Bounds, self.offset)); }
+        return core::result::Ok(core::text::from_utf8_unchecked(self.text.as_slice(), 0, self.text.len()));
+    }
+    fn fail(&self, kind: ErrorKind, at: u64) -> i32 {
+        self.failure = core::option::Some(error(kind, at)); self.ready = false;
+        return -1;
+    }
+    fn emit(&self, tag: i32) { self.tag = tag; self.ready = true; self.tokens += 1; }
+    fn after_value(&self) {
+        if (self.stack.is_empty()) { self.expect = 7; } else { self.expect = 6; }
+    }
+    fn push_text(&self, byte: u8, limit: i32, kind: ErrorKind) -> i32 {
+        if (self.text.len() >= limit) { return self.fail(kind, self.start); }
+        if (core::result::is_err(self.text.try_push(byte))) { return self.fail(ErrorKind::AllocationFailed, self.offset); }
+        return 0;
+    }
+    fn push_scalar(&self, scalar: u32) -> i32 {
+        let width: u32 = core::utf8::encoded_len_or(scalar, 0);
+        if ((width as i32) > self.options.max_string_bytes - self.text.len()) { return self.fail(ErrorKind::StringLimit, self.start); }
+        let index: u32 = 0;
+        while (index < width) {
+            if (core::result::is_err(self.text.try_push(core::utf8::encoded_byte_or(scalar, index, 0)))) {
+                return self.fail(ErrorKind::AllocationFailed, self.offset);
+            }
+            index += 1;
+        }
+        return 0;
+    }
+    fn open(&self, kind: u8, tag: i32, next: i32) -> i32 {
+        if (self.stack.len() >= self.options.max_depth) { return self.fail(ErrorKind::DepthLimit, self.offset); }
+        if (core::result::is_err(self.stack.try_push(kind))) { return self.fail(ErrorKind::AllocationFailed, self.offset); }
+        self.start = self.offset; self.expect = next; self.emit(tag);
+        return 1;
+    }
+    fn close(&self, tag: i32) -> i32 {
+        self.stack.pop(); self.start = self.offset; self.after_value(); self.emit(tag);
+        return 1;
+    }
+    fn begin_value(&self, byte: u8) -> i32 {
+        self.text.clear(); self.start = self.offset;
+        if (byte == 123) { return self.open(2, 0, 3); }
+        if (byte == 91) { return self.open(1, 2, 2); }
+        if (byte == 34) { self.lex = 1; self.is_key = false; return 0; }
+        if (byte == 45 || digit(byte)) {
+            self.lex = 6; self.phase = number_next(0, byte);
+            return self.push_text(byte, self.options.max_number_bytes, ErrorKind::NumberLimit);
+        }
+        let which: i32 = -1;
+        if (byte == 116) { which = 0; }
+        if (byte == 102) { which = 1; }
+        if (byte == 110) { which = 2; }
+        if (which < 0) { return self.fail(ErrorKind::UnexpectedByte, self.offset); }
+        self.lex = 7; self.literal = which; self.literal_index = 1;
+        return 0;
+    }
+    fn accept_utf8(&self, byte: u8) -> i32 {
+        if (self.utf8_used == 0) {
+            let width: u32 = core::utf8::sequence_len_or(byte, 0);
+            if (width == 0) { return self.fail(ErrorKind::InvalidUtf8, self.offset); }
+            if (width > 1) {
+                self.utf8_width = width; self.utf8_used = 1;
+                self.utf8_start = self.offset; self.first = byte; self.second = 0; self.third = 0;
+            }
+            return 0;
+        }
+        if (!core::utf8::is_continuation_byte(byte)) { return self.fail(ErrorKind::InvalidUtf8, self.utf8_start); }
+        if (self.utf8_used == 1) { self.second = byte; }
+        if (self.utf8_used == 2) { self.third = byte; }
+        self.utf8_used += 1;
+        if (self.utf8_used == self.utf8_width) {
+            let scalar: u32 = core::utf8::decode_or(self.first, self.second, self.third, byte, self.utf8_width, 4294967295);
+            if (scalar == 4294967295) { return self.fail(ErrorKind::InvalidUtf8, self.utf8_start); }
+            self.utf8_used = 0;
+        }
+        return 0;
+    }
+    fn string_byte(&self, byte: u8) -> i32 {
+        if (self.lex == 1) {
+            if (self.utf8_used == 0) {
+                if (byte == 34) {
+                    self.lex = 0;
+                    if (self.is_key) { self.expect = 5; self.emit(4); } else { self.after_value(); self.emit(5); }
+                    return 1;
+                }
+                if (byte == 92) { self.escape_start = self.offset; self.lex = 2; return 0; }
+                if (byte < 32) { return self.fail(ErrorKind::ControlCharacter, self.offset); }
+            }
+            if (byte >= 128 || self.utf8_used != 0) { if (self.accept_utf8(byte) < 0) { return -1; } }
+            return self.push_text(byte, self.options.max_string_bytes, ErrorKind::StringLimit);
+        }
+        if (self.lex == 2) {
+            if (byte == 117) { self.lex = 3; self.hex_count = 0; self.hex_value = 0; return 0; }
+            let decoded: i32 = -1;
+            if (byte == 34 || byte == 92 || byte == 47) { decoded = byte as i32; }
+            if (byte == 98) { decoded = 8; }
+            if (byte == 102) { decoded = 12; }
+            if (byte == 110) { decoded = 10; }
+            if (byte == 114) { decoded = 13; }
+            if (byte == 116) { decoded = 9; }
+            if (decoded < 0) { return self.fail(ErrorKind::InvalidEscape, self.offset); }
+            self.lex = 1;
+            return self.push_text(decoded as u8, self.options.max_string_bytes, ErrorKind::StringLimit);
+        }
+        if (self.lex == 3) {
+            let value: i32 = hex(byte);
+            if (value < 0) { return self.fail(ErrorKind::InvalidEscape, self.offset); }
+            self.hex_value = self.hex_value * 16 + value; self.hex_count += 1;
+            if (self.hex_count < 4) { return 0; }
+            let unit: i32 = self.hex_value;
+            if (self.high >= 0) {
+                if (unit < 56320 || unit > 57343) { return self.fail(ErrorKind::InvalidSurrogate, self.high_start); }
+                let scalar: u32 = (65536 + (self.high - 55296) * 1024 + unit - 56320) as u32;
+                self.high = -1; self.lex = 1;
+                return self.push_scalar(scalar);
+            }
+            if (unit >= 55296 && unit <= 56319) { self.high = unit; self.high_start = self.escape_start; self.lex = 4; return 0; }
+            if (unit >= 56320 && unit <= 57343) { return self.fail(ErrorKind::InvalidSurrogate, self.escape_start); }
+            self.lex = 1;
+            return self.push_scalar(unit as u32);
+        }
+        if (self.lex == 4) {
+            if (byte != 92) { return self.fail(ErrorKind::InvalidSurrogate, self.high_start); }
+            self.lex = 5; return 0;
+        }
+        if (byte != 117) { return self.fail(ErrorKind::InvalidSurrogate, self.high_start); }
+        self.lex = 3; self.hex_count = 0; self.hex_value = 0;
+        return 0;
+    }
+    // 0 consumed, 1 consumed and token ready, 2 token ready without consuming
+    // byte (a number delimiter), -1 failed.
+    fn step(&self, byte: u8) -> i32 {
+        if (self.lex == 6) {
+            let next: i32 = number_next(self.phase, byte);
+            if (next != 0) { self.phase = next; return self.push_text(byte, self.options.max_number_bytes, ErrorKind::NumberLimit); }
+            if (!number_terminal(self.phase) || digit(byte)) { return self.fail(ErrorKind::InvalidNumber, self.start); }
+            self.lex = 0; self.after_value(); self.emit(6);
+            return 2;
+        }
+        if (self.lex == 7) {
+            if (byte != literal_byte(self.literal, self.literal_index)) { return self.fail(ErrorKind::UnexpectedByte, self.offset); }
+            self.literal_index += 1;
+            if (self.literal_index < literal_len(self.literal)) { return 0; }
+            self.lex = 0; self.after_value();
+            if (self.literal == 2) { self.emit(8); } else { self.flag = self.literal == 0; self.emit(7); }
+            return 1;
+        }
+        if (self.lex != 0) { return self.string_byte(byte); }
+        if (space(byte)) { return 0; }
+        if (self.expect == 7) { return self.fail(ErrorKind::TrailingInput, self.offset); }
+        if (self.expect == 5) {
+            if (byte != 58) { return self.fail(ErrorKind::UnexpectedByte, self.offset); }
+            self.expect = 1; return 0;
+        }
+        let top: u8 = 0;
+        if (!self.stack.is_empty()) { top = self.stack.at(self.stack.len() - 1); }
+        if (self.expect == 6) {
+            if (byte == 44) { if (top == 2) { self.expect = 4; } else { self.expect = 1; } return 0; }
+            if (byte == 93 && top == 1) { return self.close(3); }
+            if (byte == 125 && top == 2) { return self.close(1); }
+            return self.fail(ErrorKind::UnexpectedByte, self.offset);
+        }
+        if (self.expect == 3 || self.expect == 4) {
+            if (byte == 125 && self.expect == 3) { return self.close(1); }
+            if (byte != 34) { return self.fail(ErrorKind::UnexpectedByte, self.offset); }
+            self.text.clear(); self.start = self.offset; self.lex = 1; self.is_key = true;
+            return 0;
+        }
+        if (self.expect == 2 && byte == 93) { return self.close(3); }
+        return self.begin_value(byte);
+    }
+    // Stops after at most one token. A number ends at the following byte,
+    // which is not consumed; feed the remainder next. An empty feed is not EOF.
+    pub fn feed(&self, source: [u8], start: i32, count: i32) -> core::result::Result<Progress, Error> {
+        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        if (!core::io::valid_range(start, count)) { return core::result::Err(error(ErrorKind::Bounds, self.offset)); }
+        if (count == 0) { return core::result::Ok(Progress { consumed: 0, token: false }); }
+        if (self.finished) { return core::result::Err(error(ErrorKind::Finished, self.offset)); }
+        self.ready = false;
+        let consumed: i32 = 0;
+        while (consumed < count) {
+            if (self.offset == 18446744073709551615) {
+                self.fail(ErrorKind::OffsetOverflow, self.offset);
+                return core::result::Err(core::option::unwrap(self.failure));
+            }
+            let outcome: i32 = self.step(source[start + consumed]);
+            if (outcome < 0) { return core::result::Err(core::option::unwrap(self.failure)); }
+            if (outcome == 2) { return core::result::Ok(Progress { consumed: consumed, token: true }); }
+            consumed += 1; self.offset += 1;
+            if (outcome == 1) { return core::result::Ok(Progress { consumed: consumed, token: true }); }
+        }
+        return core::result::Ok(Progress { consumed: consumed, token: false });
+    }
+    // Explicit EOF. Returns true only when EOF completes a root number token.
+    pub fn finish(&self) -> core::result::Result<bool, Error> {
+        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        if (self.finished) { return core::result::Ok(false); }
+        if (self.lex == 6) {
+            if (!number_terminal(self.phase)) { self.fail(ErrorKind::InvalidNumber, self.start); return core::result::Err(core::option::unwrap(self.failure)); }
+            self.lex = 0; self.after_value();
+            if (self.expect != 7) { self.fail(ErrorKind::UnexpectedEnd, self.offset); return core::result::Err(core::option::unwrap(self.failure)); }
+            self.emit(6); self.finished = true;
+            return core::result::Ok(true);
+        }
+        if (self.lex == 1 && self.utf8_used != 0) { self.fail(ErrorKind::InvalidUtf8, self.utf8_start); return core::result::Err(core::option::unwrap(self.failure)); }
+        if (self.lex != 0 || self.expect != 7) { self.fail(ErrorKind::UnexpectedEnd, self.offset); return core::result::Err(core::option::unwrap(self.failure)); }
+        self.finished = true; self.ready = false;
+        return core::result::Ok(false);
+    }
+    // Retain buffer capacities; clear state, counters, error and EOF.
+    pub fn reset(&self) {
+        self.text.clear(); self.stack.clear(); self.failure = core::option::None();
+        self.offset = 0; self.tokens = 0; self.expect = 0; self.lex = 0; self.tag = 0;
+        self.ready = false; self.finished = false; self.flag = false; self.start = 0;
+        self.is_key = false; self.escape_start = 0; self.hex_count = 0; self.hex_value = 0;
+        self.high = -1; self.high_start = 0; self.phase = 0; self.literal = 0; self.literal_index = 0;
+        self.utf8_width = 0; self.utf8_used = 0; self.utf8_start = 0; self.first = 0; self.second = 0; self.third = 0;
+    }
+    pub fn destroy(&self) {
+        self.text.destroy(); self.stack.destroy();
+        self.text = alloc::vec::new(); self.stack = alloc::vec::new();
+        self.reset();
+    }
+}
+
+// Writer expectations: 0 root value, 1 member value, 2 first element or ']',
+// 3 later element or ']', 4 first key or '}', 5 later key or '}', 6 complete.
+pub struct Writer {
+    out: alloc::vec::Vec<u8>, stack: alloc::vec::Vec<u8>, expect: i32,
+    max_depth: i32, max_output_bytes: i32,
+}
+pub fn writer(max_depth: i32, max_output_bytes: i32) -> core::result::Result<Writer, Error> {
+    if (max_depth < 0 || max_output_bytes < 0) { return core::result::Err(error(ErrorKind::InvalidOptions, 0)); }
+    return core::result::Ok(Writer { out: alloc::vec::new(), stack: alloc::vec::new(), expect: 0,
+        max_depth: max_depth, max_output_bytes: max_output_bytes });
+}
+// Offset of the first invalid byte of a complete JSON number, or -1.
+pub fn number_error(text: core::text::Text) -> i32 {
+    if (text.length == 0) { return 0; }
+    let phase: i32 = 0; let index: i32 = 0;
+    while (index < text.length) {
+        phase = number_next(phase, text.bytes[text.start + index]);
+        if (phase == 0) { return index; }
+        index += 1;
+    }
+    if (!number_terminal(phase)) { return text.length; }
+    return -1;
+}
+fn hex_digit(value: u8) -> u8 { if (value < 10) { return value + 48; } return value + 87; }
+
+pub impl Writer {
+    pub fn borrow(&self) -> &Writer { return self; }
+    pub fn len(&self) -> i32 { return self.out.len(); }
+    pub fn depth(&self) -> i32 { return self.stack.len(); }
+    pub fn is_complete(&self) -> bool { return self.expect == 6; }
+    // Borrowed output bytes; valid until the next writer mutation.
+    pub fn output(&self) -> core::slice::View<u8> { return self.out.as_view(); }
+    pub fn output_text(&self) -> core::text::Text { return core::text::from_utf8_unchecked(self.out.as_slice(), 0, self.out.len()); }
+    fn byte(&self, value: u8) -> bool {
+        if (self.out.len() >= self.max_output_bytes) { return false; }
+        return core::result::is_ok(self.out.try_push(value));
+    }
+    fn rollback(&self, before: i32) -> core::result::Result<i32, Error> {
+        let reached: bool = self.out.len() >= self.max_output_bytes;
+        core::result::unwrap(self.out.truncate(before));
+        if (reached) { return core::result::Err(error(ErrorKind::OutputLimit, before as u64)); }
+        return core::result::Err(error(ErrorKind::AllocationFailed, before as u64));
+    }
+    // Writes a separator if needed. Returns false for an invalid placement.
+    fn place(&self, value: bool, key: bool) -> i32 {
+        if (key) {
+            if (self.expect == 4) { return 0; }
+            if (self.expect == 5) { if (!self.byte(44)) { return 1; } return 0; }
+            return 2;
+        }
+        if (!value) { return 2; }
+        if (self.expect == 0 || self.expect == 1 || self.expect == 2) { return 0; }
+        if (self.expect == 3) { if (!self.byte(44)) { return 1; } return 0; }
+        return 2;
+    }
+    fn placed(&self) {
+        if (self.stack.is_empty()) { self.expect = 6; return; }
+        if (self.stack.at(self.stack.len() - 1) == 1) { self.expect = 3; } else { self.expect = 5; }
+    }
+    fn begin(&self, kind: u8, opening: u8, next: i32) -> core::result::Result<i32, Error> {
+        let before: i32 = self.out.len();
+        let placed: i32 = self.place(true, false);
+        if (placed == 2) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
+        if (placed == 1) { return self.rollback(before); }
+        if (self.stack.len() >= self.max_depth) { core::result::unwrap(self.out.truncate(before)); return core::result::Err(error(ErrorKind::DepthLimit, before as u64)); }
+        if (!self.byte(opening)) { return self.rollback(before); }
+        if (core::result::is_err(self.stack.try_push(kind))) { core::result::unwrap(self.out.truncate(before)); return core::result::Err(error(ErrorKind::AllocationFailed, before as u64)); }
+        self.expect = next;
+        return core::result::Ok(self.out.len());
+    }
+    fn end(&self, kind: u8, closing: u8) -> core::result::Result<i32, Error> {
+        let before: i32 = self.out.len();
+        let open: bool = (kind == 1 && (self.expect == 2 || self.expect == 3)) || (kind == 2 && (self.expect == 4 || self.expect == 5));
+        if (!open) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
+        if (!self.byte(closing)) { return self.rollback(before); }
+        self.stack.pop(); self.placed();
+        return core::result::Ok(self.out.len());
+    }
+    pub fn begin_array(&self) -> core::result::Result<i32, Error> { return self.begin(1, 91, 2); }
+    pub fn begin_object(&self) -> core::result::Result<i32, Error> { return self.begin(2, 123, 4); }
+    pub fn end_array(&self) -> core::result::Result<i32, Error> { return self.end(1, 93); }
+    pub fn end_object(&self) -> core::result::Result<i32, Error> { return self.end(2, 125); }
+    // Escapes quote, backslash and C0 controls (lowercase \u00xx); other
+    // scalars keep their UTF-8 bytes, matching ext::json encoding.
+    fn quoted(&self, text: core::text::Text) -> bool {
+        if (!self.byte(34)) { return false; }
+        let index: i32 = 0;
+        while (index < text.length) {
+            let value: u8 = text.bytes[text.start + index];
+            if (value == 34 || value == 92) {
+                if (!self.byte(92) || !self.byte(value)) { return false; }
+            } else {
+                if (value < 32) {
+                    if (!self.byte(92) || !self.byte(117) || !self.byte(48) || !self.byte(48) ||
+                        !self.byte(hex_digit(value / 16)) || !self.byte(hex_digit(value % 16))) { return false; }
+                } else {
+                    if (!self.byte(value)) { return false; }
+                }
+            }
+            index += 1;
+        }
+        return self.byte(34);
+    }
+    fn checked(&self, text: core::text::Text) -> core::result::Result<i32, Error> {
+        let valid = core::text::from_utf8_range(text.bytes, text.start, text.length);
+        if (valid.is_err()) {
+            let failure: Error = match (valid.unwrap_err()) {
+                core::text::Error::InvalidUtf8(at) -> error(ErrorKind::InvalidUtf8, at as u64),
+                _ -> error(ErrorKind::Bounds, 0),
+            };
+            return core::result::Err(failure);
+        }
+        return core::result::Ok(text.length);
+    }
+    pub fn key(&self, text: core::text::Text) -> core::result::Result<i32, Error> {
+        let valid = self.checked(text);
+        if (valid.is_err()) { return valid; }
+        let before: i32 = self.out.len();
+        let placed: i32 = self.place(false, true);
+        if (placed == 2) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
+        if (placed == 1 || !self.quoted(text) || !self.byte(58)) { return self.rollback(before); }
+        self.expect = 1;
+        return core::result::Ok(self.out.len());
+    }
+    fn scalar(&self, text: core::text::Text, kind: i32) -> core::result::Result<i32, Error> {
+        let before: i32 = self.out.len();
+        let placed: i32 = self.place(true, false);
+        if (placed == 2) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
+        if (placed == 1) { return self.rollback(before); }
+        let ok: bool = true;
+        if (kind == 0) { ok = self.quoted(text); }
+        else {
+            let index: i32 = 0;
+            while (ok && index < text.length) { ok = self.byte(text.bytes[text.start + index]); index += 1; }
+        }
+        if (!ok) { return self.rollback(before); }
+        self.placed();
+        return core::result::Ok(self.out.len());
+    }
+    pub fn string(&self, text: core::text::Text) -> core::result::Result<i32, Error> {
+        let valid = self.checked(text);
+        if (valid.is_err()) { return valid; }
+        return self.scalar(text, 0);
+    }
+    // The text must be one complete RFC 8259 number; its spelling is kept.
+    pub fn number(&self, text: core::text::Text) -> core::result::Result<i32, Error> {
+        if (text.length < 0 || text.start < 0) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        let bad: i32 = number_error(text);
+        if (bad >= 0) { return core::result::Err(error(ErrorKind::InvalidNumber, bad as u64)); }
+        return self.scalar(text, 1);
+    }
+    pub fn boolean(&self, value: bool) -> core::result::Result<i32, Error> {
+        if (value) { let word: [u8; 4] = [116, 114, 117, 101]; return self.scalar(core::text::from_utf8_unchecked(word, 0, 4), 1); }
+        let word: [u8; 5] = [102, 97, 108, 115, 101]; return self.scalar(core::text::from_utf8_unchecked(word, 0, 5), 1);
+    }
+    pub fn null(&self) -> core::result::Result<i32, Error> {
+        let word: [u8; 4] = [110, 117, 108, 108]; return self.scalar(core::text::from_utf8_unchecked(word, 0, 4), 1);
+    }
+    // Copy the tokenizer's ready token.
+    pub fn token(&self, source: &Tokenizer) -> core::result::Result<i32, Error> {
+        if (!source.ready) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        let tag: i32 = source.tag;
+        if (tag == 0) { return self.begin_object(); }
+        if (tag == 1) { return self.end_object(); }
+        if (tag == 2) { return self.begin_array(); }
+        if (tag == 3) { return self.end_array(); }
+        let view: core::text::Text = core::text::from_utf8_unchecked(source.text.as_slice(), 0, source.text.len());
+        if (tag == 4) { return self.key(view); }
+        if (tag == 5) { return self.string(view); }
+        if (tag == 6) { return self.scalar(view, 1); }
+        if (tag == 7) { return self.boolean(source.flag); }
+        return self.null();
+    }
+    // JSON Lines: after a complete root value, append LF and accept another root.
+    pub fn next_document(&self) -> core::result::Result<i32, Error> {
+        let before: i32 = self.out.len();
+        if (self.expect != 6) { return core::result::Err(error(ErrorKind::InvalidPlacement, before as u64)); }
+        if (!self.byte(10)) { return self.rollback(before); }
+        self.expect = 0;
+        return core::result::Ok(self.out.len());
+    }
+    // Retain capacity; forget output and structure.
+    pub fn clear(&self) { self.out.clear(); self.stack.clear(); self.expect = 0; }
+    pub fn destroy(&self) {
+        self.out.destroy(); self.stack.destroy();
+        self.out = alloc::vec::new(); self.stack = alloc::vec::new(); self.expect = 0;
+    }
+}
+
+// Copy buffered output to a core::io::Write sink and drop the written bytes,
+// keeping the structural state, so a long document can stream through a
+// bounded buffer. On failure the unwritten suffix stays buffered for a retry;
+// Failure.completed counts the bytes this call delivered.
+pub impl Writer {
+    pub fn flush_to<W>(&self, sink: &W) -> core::result::Result<i32, core::io::Failure> where W: core::io::Write {
+        let count: i32 = self.out.len();
+        if (count == 0) { return core::result::Ok(0); }
+        let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all<W>(sink, self.out.as_slice(), 0, count);
+        if (sent.is_err()) {
+            let failure: core::io::Failure = sent.unwrap_err();
+            let done: i32 = failure.completed;
+            if (done > 0 && done <= count) {
+                let bytes: [u8] = self.out.as_slice(); let i: i32 = done;
+                while (i < count) { bytes[i - done] = bytes[i]; i += 1; }
+                core::result::unwrap(self.out.truncate(count - done));
+            }
+            return core::result::Err(failure);
+        }
+        self.out.clear();
+        return core::result::Ok(count);
+    }
+}
+
+pub enum StreamError { Json(Error), Io(core::io::Error) }
+// Pull tokens from a core::io::Read source through caller scratch. Borrows the
+// reader, tokenizer and scratch; keep them alive and unshared while driving it.
+pub struct TokenReader<R> {
+    reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>, begin: i32, end: i32, eof: bool, reads: u64,
+}
+pub fn token_reader<R>(reader: &R, tokens: &Tokenizer, scratch: core::slice::View<u8>)
+    -> core::result::Result<TokenReader<R>, Error> where R: core::io::Read {
+    if (scratch.length <= 0 || !core::io::valid_range(scratch.start, scratch.length)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    let value: TokenReader<R> = TokenReader { reader: reader, tokens: tokens, scratch: scratch, begin: 0, end: 0, eof: false, reads: 0 };
+    return core::result::Ok(value);
+}
+pub impl<R> TokenReader<R> {
+    pub fn borrow(&self) -> &TokenReader<R> { return self; }
+    // Number of successful read calls, including the final zero-byte read.
+    pub fn read_calls(&self) -> u64 { return self.reads; }
+    // Ok(true): the tokenizer holds a ready token. Ok(false): the document
+    // ended and EOF validated it; later calls keep returning false.
+    // Interrupted reads are retried; other read errors are returned as Io and
+    // leave the buffered bytes in place, so next() may be called again.
+    pub fn next(&self) -> core::result::Result<bool, StreamError> where R: core::io::Read {
+        while (true) {
+            if (self.begin < self.end) {
+                let fed = self.tokens.feed(self.scratch.values, self.scratch.start + self.begin, self.end - self.begin);
+                if (fed.is_err()) { return core::result::Err(StreamError::Json(fed.unwrap_err())); }
+                let progress: Progress = fed.unwrap();
+                self.begin += progress.consumed;
+                if (progress.token) { return core::result::Ok(true); }
+                continue;
+            }
+            if (self.eof) { return core::result::Ok(false); }
+            let received: core::result::Result<i32, core::io::Error> = self.reader.read(self.scratch.values, self.scratch.start, self.scratch.length);
+            if (received.is_err()) {
+                let cause: core::io::Error = received.unwrap_err();
+                if (core::io::is_interrupted(cause)) { continue; }
+                return core::result::Err(StreamError::Io(cause));
+            }
+            let count: i32 = received.unwrap();
+            if (count < 0 || count > self.scratch.length) { return core::result::Err(StreamError::Io(core::io::Error::InvalidCount)); }
+            self.reads += 1;
+            if (count == 0) {
+                self.eof = true;
+                let ended = self.tokens.finish();
+                if (ended.is_err()) { return core::result::Err(StreamError::Json(ended.unwrap_err())); }
+                return core::result::Ok(ended.unwrap());
+            }
+            self.begin = 0; self.end = count;
+        }
+        return core::result::Ok(false);
+    }
+}

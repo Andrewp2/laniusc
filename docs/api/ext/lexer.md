@@ -16,7 +16,7 @@ Ordered UTF-8 token rules reuse the canonical regex engine's anchored longest-pr
 - [extended-lex-scan](../../extended-lex-scan.md)
 - [library-regex-workspace-plan](../../library-regex-workspace-plan.md)
 
-Declaration counts: enum: 1; field: 32; function: 3; impl: 2; method: 10; struct: 8; variant: 17.
+Declaration counts: enum: 1; field: 39; function: 3; impl: 2; method: 10; struct: 8; variant: 17.
 
 ## Declared imports
 
@@ -401,9 +401,25 @@ skip: bool
 regex: ext::regex::Regex
 ```
 
+#### field: combined
+
+[Source line 23](../../../extended/ext/lexer.lani#L23)
+
+```lanius
+combined: bool
+```
+
+#### field: cost
+
+[Source line 23](../../../extended/ext/lexer.lani#L23)
+
+```lanius
+cost: i64
+```
+
 ### struct: Lexer
 
-[Source line 24](../../../extended/ext/lexer.lani#L24)
+[Source line 26](../../../extended/ext/lexer.lani#L26)
 
 ```lanius
 pub struct Lexer
@@ -411,7 +427,7 @@ pub struct Lexer
 
 #### field: rules
 
-[Source line 24](../../../extended/ext/lexer.lani#L24)
+[Source line 26](../../../extended/ext/lexer.lani#L26)
 
 ```lanius
 rules: alloc::vec::Vec<CompiledRule>
@@ -419,7 +435,7 @@ rules: alloc::vec::Vec<CompiledRule>
 
 #### field: states
 
-[Source line 24](../../../extended/ext/lexer.lani#L24)
+[Source line 26](../../../extended/ext/lexer.lani#L26)
 
 ```lanius
 states: i32
@@ -427,15 +443,23 @@ states: i32
 
 #### field: workspace_states
 
-[Source line 24](../../../extended/ext/lexer.lani#L24)
+[Source line 26](../../../extended/ext/lexer.lani#L26)
 
 ```lanius
 workspace_states: i32
 ```
 
+#### field: prefix
+
+[Source line 26](../../../extended/ext/lexer.lani#L26)
+
+```lanius
+prefix: ext::regex::PrefixSet
+```
+
 ### struct: Cursor
 
-[Source line 27](../../../extended/ext/lexer.lani#L27)
+[Source line 31](../../../extended/ext/lexer.lani#L31)
 
 ```lanius
 pub struct Cursor
@@ -443,15 +467,47 @@ pub struct Cursor
 
 #### field: rules
 
-[Source line 27](../../../extended/ext/lexer.lani#L27)
+[Source line 31](../../../extended/ext/lexer.lani#L31)
 
 ```lanius
 rules: alloc::vec::Vec<CompiledRule>
 ```
 
+#### field: prefix
+
+[Source line 31](../../../extended/ext/lexer.lani#L31)
+
+```lanius
+prefix: ext::regex::PrefixSet
+```
+
+#### field: uniform
+
+[Source line 31](../../../extended/ext/lexer.lani#L31)
+
+```lanius
+uniform: bool
+```
+
+#### field: allowance
+
+[Source line 31](../../../extended/ext/lexer.lani#L31)
+
+```lanius
+allowance: i64
+```
+
+#### field: cost
+
+[Source line 31](../../../extended/ext/lexer.lani#L31)
+
+```lanius
+cost: i64
+```
+
 #### field: input
 
-[Source line 27](../../../extended/ext/lexer.lani#L27)
+[Source line 31](../../../extended/ext/lexer.lani#L31)
 
 ```lanius
 input: ext::regex::Input
@@ -459,7 +515,7 @@ input: ext::regex::Input
 
 #### field: limits
 
-[Source line 27](../../../extended/ext/lexer.lani#L27)
+[Source line 31](../../../extended/ext/lexer.lani#L31)
 
 ```lanius
 limits: ScanLimits
@@ -467,7 +523,7 @@ limits: ScanLimits
 
 #### field: used
 
-[Source line 27](../../../extended/ext/lexer.lani#L27)
+[Source line 31](../../../extended/ext/lexer.lani#L31)
 
 ```lanius
 used: Usage
@@ -475,7 +531,7 @@ used: Usage
 
 #### field: at
 
-[Source line 27](../../../extended/ext/lexer.lani#L27)
+[Source line 31](../../../extended/ext/lexer.lani#L31)
 
 ```lanius
 at: i32
@@ -483,7 +539,7 @@ at: i32
 
 #### field: done
 
-[Source line 27](../../../extended/ext/lexer.lani#L27)
+[Source line 31](../../../extended/ext/lexer.lani#L31)
 
 ```lanius
 done: bool
@@ -491,7 +547,7 @@ done: bool
 
 #### field: workspace
 
-[Source line 27](../../../extended/ext/lexer.lani#L27)
+[Source line 31](../../../extended/ext/lexer.lani#L31)
 
 ```lanius
 workspace: core::option::Option<ext::regex::Workspace>
@@ -501,7 +557,7 @@ workspace: core::option::Option<ext::regex::Workspace>
 
 ### function: default_build_limits
 
-[Source line 29](../../../extended/ext/lexer.lani#L29)
+[Source line 33](../../../extended/ext/lexer.lani#L33)
 
 ```lanius
 pub fn default_build_limits() -> BuildLimits
@@ -509,7 +565,7 @@ pub fn default_build_limits() -> BuildLimits
 
 ### function: default_scan_limits
 
-[Source line 30](../../../extended/ext/lexer.lani#L30)
+[Source line 34](../../../extended/ext/lexer.lani#L34)
 
 ```lanius
 pub fn default_scan_limits() -> ScanLimits
@@ -517,7 +573,7 @@ pub fn default_scan_limits() -> ScanLimits
 
 ### function: compile
 
-[Source line 42](../../../extended/ext/lexer.lani#L42)
+[Source line 46](../../../extended/ext/lexer.lani#L46)
 
 ```lanius
 pub fn compile(rules: core::slice::View<Rule>, options: ext::regex::Options, limits: BuildLimits) -> core::result::Result<Lexer,Error>
@@ -525,9 +581,9 @@ pub fn compile(rules: core::slice::View<Rule>, options: ext::regex::Options, lim
 
 ## Implementation blocks and public methods
 
-### impl at line 70
+### impl at line 80
 
-[Source line 70](../../../extended/ext/lexer.lani#L70)
+[Source line 80](../../../extended/ext/lexer.lani#L80)
 
 ```lanius
 pub impl Lexer
@@ -535,7 +591,7 @@ pub impl Lexer
 
 #### method: borrow
 
-[Source line 71](../../../extended/ext/lexer.lani#L71)
+[Source line 81](../../../extended/ext/lexer.lani#L81)
 
 ```lanius
 pub fn borrow(&self) -> &Lexer
@@ -543,7 +599,7 @@ pub fn borrow(&self) -> &Lexer
 
 #### method: rule_count
 
-[Source line 72](../../../extended/ext/lexer.lani#L72)
+[Source line 82](../../../extended/ext/lexer.lani#L82)
 
 ```lanius
 pub fn rule_count(&self) -> i32
@@ -551,7 +607,7 @@ pub fn rule_count(&self) -> i32
 
 #### method: state_count
 
-[Source line 73](../../../extended/ext/lexer.lani#L73)
+[Source line 83](../../../extended/ext/lexer.lani#L83)
 
 ```lanius
 pub fn state_count(&self) -> i32
@@ -559,7 +615,7 @@ pub fn state_count(&self) -> i32
 
 #### method: destroy
 
-[Source line 74](../../../extended/ext/lexer.lani#L74)
+[Source line 84](../../../extended/ext/lexer.lani#L84)
 
 ```lanius
 pub fn destroy(&self)
@@ -567,15 +623,15 @@ pub fn destroy(&self)
 
 #### method: scan
 
-[Source line 79](../../../extended/ext/lexer.lani#L79)
+[Source line 89](../../../extended/ext/lexer.lani#L89)
 
 ```lanius
 pub fn scan(&self, text: core::text::Text, limits: ScanLimits) -> core::result::Result<Cursor,Error>
 ```
 
-### impl at line 100
+### impl at line 118
 
-[Source line 100](../../../extended/ext/lexer.lani#L100)
+[Source line 118](../../../extended/ext/lexer.lani#L118)
 
 ```lanius
 pub impl Cursor
@@ -583,7 +639,7 @@ pub impl Cursor
 
 #### method: borrow
 
-[Source line 101](../../../extended/ext/lexer.lani#L101)
+[Source line 119](../../../extended/ext/lexer.lani#L119)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor
@@ -591,7 +647,7 @@ pub fn borrow(&self) -> &Cursor
 
 #### method: position
 
-[Source line 102](../../../extended/ext/lexer.lani#L102)
+[Source line 120](../../../extended/ext/lexer.lani#L120)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -599,7 +655,7 @@ pub fn position(&self) -> i32
 
 #### method: usage
 
-[Source line 103](../../../extended/ext/lexer.lani#L103)
+[Source line 121](../../../extended/ext/lexer.lani#L121)
 
 ```lanius
 pub fn usage(&self) -> Usage
@@ -607,7 +663,7 @@ pub fn usage(&self) -> Usage
 
 #### method: destroy
 
-[Source line 104](../../../extended/ext/lexer.lani#L104)
+[Source line 122](../../../extended/ext/lexer.lani#L122)
 
 ```lanius
 pub fn destroy(&self)
@@ -615,7 +671,7 @@ pub fn destroy(&self)
 
 #### method: next
 
-[Source line 109](../../../extended/ext/lexer.lani#L109)
+[Source line 127](../../../extended/ext/lexer.lani#L127)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Token>,Error>

@@ -1,0 +1,249 @@
+// uconv-style Unicode 17.0.0 transform of UTF-8 stdin, one line at a time.
+// usage: uconv [-x any-nfc|any-nfd|any-nfkc|any-nfkd|any-lower|any-upper|any-title|any-casefold]
+//              [--check] [--max-input-bytes N]
+// Each LF-terminated line is transformed independently: LF is a starter that
+// never composes, reorders, or joins a casing context or word, so line-wise
+// results equal whole-text results. Normalization uses the quick-check fast
+// path: a line already in the form is written straight from the input.
+// --check (normalization only) writes nothing to stdout and exits 1 when some
+// line is not in the form, reporting its 1-based number on stderr.
+// Exit 0 success, 1 check failed, 2 arguments/invalid UTF-8/limit, 3 I/O, 4 allocation.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::unicode_case;
+import ext::unicode_normalize;
+import std::args;
+import std::stream;
+
+struct Options { transform: i32, check: bool, input: i32, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+// [pending, pending_end) of input is already in the form; it is written in
+// one piece, straight from the input, before any later output.
+struct State { output: alloc::vec::Vec<u8>, scratch: alloc::vec::Vec<u32>, sink: alloc::vec::Vec<u8>, used: i32, failed: bool, fast: i32, slow: i32, input: [u8], pending: i32, pending_end: i32 }
+impl State {
+    fn borrow(&self) -> &State { return self; }
+    fn flush(&self) {
+        if (self.used == 0 || self.failed) { self.used = 0; return; }
+        let out: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(out.borrow(), self.sink.as_slice(), 0, self.used))) { self.failed = true; }
+        self.used = 0;
+    }
+    fn emit(&self) {
+        if (self.pending_end <= self.pending) { return; }
+        self.flush();
+        let out: std::stream::Descriptor = std::stream::stdout();
+        if (!self.failed && core::result::is_err(core::io::write_all(out.borrow(), self.input, self.pending, self.pending_end - self.pending))) { self.failed = true; }
+        self.pending = self.pending_end;
+    }
+    fn write(&self, data: [u8], start: i32, count: i32) {
+        self.emit();
+        if (count > 65536) { self.flush(); let out: std::stream::Descriptor = std::stream::stdout();
+            if (!self.failed && core::result::is_err(core::io::write_all(out.borrow(), data, start, count))) { self.failed = true; } return; }
+        if (self.used + count > 65536) { self.flush(); }
+        let target: [u8] = self.sink.as_slice(); let index: i32 = 0;
+        while (index < count) { target[self.used + index] = data[start + index]; index += 1; }
+        self.used += count;
+    }
+}
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count);
+    return core::result::unwrap(core::slice::view(bytes, count));
+}
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let index: i32 = 0;
+    while (index < left.len()) { if (left.values[left.start + index] != right.values[right.start + index]) { return false; } index += 1; }
+    return true;
+}
+fn say(message: str, count: i32) {
+    let sink: std::stream::Descriptor = std::stream::stderr(); let bytes: core::slice::View<u8> = literal(message, count);
+    core::io::write_all(sink.borrow(), bytes.values, bytes.start, count);
+}
+fn say_number(prefix: str, count: i32, value: i64) {
+    let storage: [i32;32] = [0;32];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage), 128);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes, 0, 128));
+    let text: core::slice::View<u8> = literal(prefix, count);
+    format.write_text(core::text::from_utf8_unchecked(text.values, text.start, count));
+    format.write_signed(value, core::fmt::decimal());
+    format.write_text(core::text::from_utf8_unchecked(literal("\n", 1).values, 0, 1));
+    let size: i32 = core::result::unwrap(format.finish()); let sink: std::stream::Descriptor = std::stream::stderr();
+    core::io::write_all(sink.borrow(), bytes, 0, size);
+}
+// 0-3: NFC NFD NFKC NFKD; 4-7: lower upper title fold.
+fn form_of(transform: i32) -> ext::unicode_normalize::Form {
+    if (transform == 1) { return ext::unicode_normalize::Form::Nfd; }
+    if (transform == 2) { return ext::unicode_normalize::Form::Nfkc; }
+    if (transform == 3) { return ext::unicode_normalize::Form::Nfkd; }
+    return ext::unicode_normalize::Form::Nfc;
+}
+fn kind_of(transform: i32) -> ext::unicode_case::Kind {
+    if (transform == 5) { return ext::unicode_case::Kind::Upper; }
+    if (transform == 6) { return ext::unicode_case::Kind::Title; }
+    if (transform == 7) { return ext::unicode_case::Kind::Fold; }
+    return ext::unicode_case::Kind::Lower;
+}
+fn ensure_bytes(buffer: &alloc::vec::Vec<u8>, count: i32) -> bool {
+    if (buffer.len() >= count) { return true; }
+    if (core::result::is_err(buffer.try_reserve(count - buffer.len()))) { return false; }
+    return core::result::is_ok(buffer.try_resize(count, 0));
+}
+fn ensure_scalars(buffer: &alloc::vec::Vec<u32>, count: i32) -> bool {
+    if (buffer.len() >= count) { return true; }
+    if (core::result::is_err(buffer.try_reserve(count - buffer.len()))) { return false; }
+    return core::result::is_ok(buffer.try_resize(count, 0));
+}
+// Returns 0 written, 1 not normalized (check), 2 limit, 4 allocation, or
+// 5: already in the form, so the caller extends the pending input run.
+fn line(input: core::text::Text, options: Options, state: &State) -> i32 {
+    let work: u64 = 1000000000 as u64;
+    if (options.transform < 4) {
+        let form: ext::unicode_normalize::Form = form_of(options.transform);
+        let quick: ext::unicode_normalize::QuickCheck = core::result::unwrap(ext::unicode_normalize::quick_check(input, form, work));
+        let yes: bool = match (quick) { ext::unicode_normalize::QuickCheck::Yes -> true, _ -> false };
+        if (yes) { state.fast += 1; return 5; }
+        state.slow += 1;
+        let required: core::result::Result<i32, ext::unicode_normalize::Error> = ext::unicode_normalize::scratch_len(input, form, work);
+        if (core::result::is_err(required)) { return 2; }
+        if (!ensure_scalars(state.scratch.borrow(), core::result::unwrap(required))) { return 4; }
+        if (options.check) {
+            let normal: core::result::Result<bool, ext::unicode_normalize::Error> = ext::unicode_normalize::is_normalized(input, form, state.scratch.as_view(), work);
+            if (core::result::is_err(normal)) { return 2; }
+            if (core::result::unwrap(normal)) { return 0; }
+            return 1;
+        }
+        let measured: core::result::Result<ext::unicode_normalize::Normalized, ext::unicode_normalize::Error> = ext::unicode_normalize::measure(input, form, state.scratch.as_view(), work);
+        if (core::result::is_err(measured)) { return 2; }
+        if (!ensure_bytes(state.output.borrow(), core::result::unwrap(measured).bytes)) { return 4; }
+        let done: core::result::Result<ext::unicode_normalize::Normalized, ext::unicode_normalize::Error> = ext::unicode_normalize::normalize_into(input, form, state.output.as_view(), state.scratch.as_view(), work);
+        if (core::result::is_err(done)) { return 2; }
+        state.write(state.output.as_slice(), 0, core::result::unwrap(done).bytes);
+        return 0;
+    }
+    let kind: ext::unicode_case::Kind = kind_of(options.transform);
+    let measured: core::result::Result<ext::unicode_case::Report, ext::unicode_case::Error> = ext::unicode_case::measure(input, kind, ext::unicode_case::Locale::Root, work);
+    if (core::result::is_err(measured)) { return 2; }
+    if (!ensure_bytes(state.output.borrow(), core::result::unwrap(measured).bytes)) { return 4; }
+    let done: core::result::Result<ext::unicode_case::Report, ext::unicode_case::Error> = ext::unicode_case::transform_into(input, kind, ext::unicode_case::Locale::Root, state.output.as_view(), work);
+    if (core::result::is_err(done)) { return 2; }
+    state.write(state.output.as_slice(), 0, core::result::unwrap(done).bytes);
+    return 0;
+}
+fn run(data: [u8], total: i32, options: Options) -> i32 {
+    let checked: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(data, total);
+    if (core::result::is_err(checked)) {
+        let offset: i32 = match (core::result::unwrap_err(checked)) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 };
+        say_number("uconv: invalid-utf8 byte=", 25, offset as i64); return 2;
+    }
+    let state: State = State { output: alloc::vec::new<u8>(), scratch: alloc::vec::new<u32>(), sink: alloc::vec::new<u8>(), used: 0, failed: false, fast: 0, slow: 0, input: data, pending: 0, pending_end: 0 };
+    if (!ensure_bytes(state.sink.borrow(), 65536)) { return 4; }
+    let status: i32 = 0; let start: i32 = 0; let number: i64 = 1;
+    while (start < total && status == 0) {
+        let end: i32 = start;
+        while (end < total && data[end] != 10 as u8) { end += 1; }
+        let result: i32 = line(core::text::from_utf8_unchecked(data, start, end - start), options, state.borrow());
+        if (result == 1) { say_number("uconv: not-normalized line=", 27, number); status = 1; }
+        if (result == 2) { say("uconv: resource-limit\n", 22); status = 2; }
+        if (result == 4) { say("uconv: allocation-failure\n", 26); status = 4; }
+        let next: i32 = end;
+        if (end < total) { next = end + 1; }
+        if (result == 5) { if (!options.check) { state.pending_end = next; } }
+        else { if (status == 0 && end < total && !options.check) { state.write(data, end, 1); } state.pending = next; state.pending_end = next; }
+        start = end + 1; number += 1;
+    }
+    if (status == 0) { state.emit(); }
+    state.flush();
+    if (status == 0 && state.failed) { say("uconv: io-failure\n", 18); status = 3; }
+    state.output.destroy(); state.scratch.destroy(); state.sink.destroy();
+    return status;
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 2) { options.check = true; return true; }
+    if (item.id == 4) { options.help = true; return true; }
+    let bytes: core::slice::View<u8> = core::option::unwrap(item.value).bytes;
+    if (item.id == 3) {
+        let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values, bytes.start, bytes.len());
+        if (core::result::is_err(parsed)) { return false; }
+        let value: u64 = core::result::unwrap(parsed);
+        if (value > 67108864 as u64) { return false; }
+        options.input = value as i32; return true;
+    }
+    if (equal(bytes, literal("any-nfc", 7))) { options.transform = 0; return true; }
+    if (equal(bytes, literal("any-nfd", 7))) { options.transform = 1; return true; }
+    if (equal(bytes, literal("any-nfkc", 8))) { options.transform = 2; return true; }
+    if (equal(bytes, literal("any-nfkd", 8))) { options.transform = 3; return true; }
+    if (equal(bytes, literal("any-lower", 9))) { options.transform = 4; return true; }
+    if (equal(bytes, literal("any-upper", 9))) { options.transform = 5; return true; }
+    if (equal(bytes, literal("any-title", 9))) { options.transform = 6; return true; }
+    if (equal(bytes, literal("any-casefold", 12))) { options.transform = 7; return true; }
+    return false;
+}
+fn process(arguments: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec;4] = [
+        ext::cli::Spec { id: 1, long: literal("transform", 9), short: 120, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("check", 5), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 3, long: literal("max-input-bytes", 15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("help", 4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let specification: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs, 4));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(), specification, ext::cli::Ordering::Intermixed));
+    let options: Options = Options { transform: 0, check: false, input: 16777216, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>, ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) { say("uconv: invalid-arguments\n", 25); return 2; }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event);
+        if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(), item), _ -> false };
+        if (!valid) { say("uconv: invalid-arguments\n", 25); return 2; }
+    }
+    if (options.check && options.transform >= 4) { say("uconv: invalid-arguments\n", 25); return 2; }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: uconv [-x any-nfc|any-nfd|any-nfkc|any-nfkd|any-lower|any-upper|any-title|any-casefold] [--check] [--max-input-bytes N]\n", 127);
+        let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(sink.borrow(), usage.values, usage.start, usage.len()))) { return 3; }
+        return 0;
+    }
+    // Read straight into a doubling Vec: each Descriptor read fills the
+    // free tail directly, so input costs one copy per byte (linear).
+    let buffer: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let used: i32 = 0; let status: i32 = 0;
+    let source: std::stream::Descriptor = std::stream::stdin();
+    while (status == 0) {
+        if (used == buffer.len()) {
+            let grow: i32 = 65536;
+            if (buffer.len() > grow) { grow = buffer.len(); }
+            if (grow > options.input + 1 - used) { grow = options.input + 1 - used; }
+            if (grow <= 0) { status = 2; break; }
+            if (!ensure_bytes(buffer.borrow(), used + grow)) { status = 4; break; }
+        }
+        let got: core::result::Result<i32, core::io::Error> = source.read(buffer.as_slice(), used, buffer.len() - used);
+        if (core::result::is_err(got)) {
+            if (!core::io::is_interrupted(core::result::unwrap_err(got))) { status = 3; }
+        } else {
+            let count: i32 = core::result::unwrap(got);
+            if (count == 0) { break; }
+            used += count;
+            if (used > options.input) { status = 2; }
+        }
+    }
+    if (status == 2) { say("uconv: resource-limit\n", 22); }
+    if (status == 3) { say("uconv: input-failure\n", 21); }
+    if (status == 4) { say("uconv: allocation-failure\n", 26); }
+    if (status == 0) { status = run(buffer.as_slice(), used, options); }
+    buffer.destroy(); return status;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 16, 4096);
+    if (core::result::is_err(captured)) { say("uconv: invalid-arguments\n", 25); return 2; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let status: i32 = process(arguments); arguments.destroy(); return status;
+}
