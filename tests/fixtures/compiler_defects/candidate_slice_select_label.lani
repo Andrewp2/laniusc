@@ -1,0 +1,14 @@
+// CANDIDATE, NOT REPRODUCED: reported LNC0008 labels pointing at
+// core/slice.lani:899 (select_nth_unstable). This compiles and exits 1.
+module app::main;
+import core::cmp;
+import core::result;
+import core::slice;
+fn first<T>(view: core::slice::View<T>) -> T where T: core::cmp::Ord<T> {
+    let picked: core::slice::View<T> = core::result::unwrap(core::slice::select_nth_unstable<T>(view,0));
+    return picked.values[picked.start];
+}
+fn main() -> i32 {
+    let values: [i32;3] = [3, 1, 2];
+    return first<i32>(core::result::unwrap(core::slice::view(values,3)));
+}

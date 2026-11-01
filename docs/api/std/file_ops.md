@@ -39,8 +39,8 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L17) · [source](../../../stdlib/std/file_ops.lani#L10)
 - [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../stdlib/std/file_ops.lani#L11)
 - [core::slice::view](../core/slice.md) (item: function) · [declaration](../../../stdlib/core/slice.lani#L44) · [source](../../../stdlib/std/file_ops.lani#L12)
-- [std::file::File](file.md) (item: struct) · [declaration](../../../stdlib/std/file.lani#L25) · [source](../../../stdlib/std/file_ops.lani#L13)
-- [std::file::from_owned_handle](file.md) (item: function) · [declaration](../../../stdlib/std/file.lani#L62) · [source](../../../stdlib/std/file_ops.lani#L14)
+- [std::file::File](file.md) (item: struct) · [declaration](../../../stdlib/std/file.lani#L26) · [source](../../../stdlib/std/file_ops.lani#L13)
+- [std::file::from_owned_handle](file.md) (item: function) · [declaration](../../../stdlib/std/file.lani#L63) · [source](../../../stdlib/std/file_ops.lani#L14)
 - [std::linux](linux.md) · [source](../../../stdlib/std/file_ops.lani#L15)
 
 ## Types, fields and variants

@@ -4,7 +4,7 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/core/unicode_properties_data.lani#L6)
+[All modules](../README.md) · [Source](../../../stdlib/core/unicode_properties_data.lani#L8)
 
 Layer: `core`. Role: support/implementation data. Profile: **Source inventory**.
 
@@ -13,30 +13,23 @@ Implementation support/data module. Its declarations are inventoried for discove
 ## Contract and evidence guides
 
 - [stdlib-unicode](../../stdlib-unicode.md)
+- [extended-unicode-uconv](../../extended-unicode-uconv.md)
 
-Declaration counts: function: 2.
+Declaration counts: function: 1.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::mem](mem.md) · [source](../../../stdlib/core/unicode_properties_data.lani#L7)
-- [core::unicode_table](unicode_table.md) · [source](../../../stdlib/core/unicode_properties_data.lani#L8)
+- [core::mem](mem.md) · [source](../../../stdlib/core/unicode_properties_data.lani#L9)
+- [core::unicode_table](unicode_table.md) · [source](../../../stdlib/core/unicode_properties_data.lani#L10)
 
 ## Free functions and extern declarations
 
-### function: find
+### function: packed
 
-[Source line 97](../../../stdlib/core/unicode_properties_data.lani#L97)
-
-```lanius
-pub fn find(value: u32) -> i32
-```
-
-### function: read
-
-[Source line 106](../../../stdlib/core/unicode_properties_data.lani#L106)
+[Source line 135](../../../stdlib/core/unicode_properties_data.lani#L135)
 
 ```lanius
-pub fn read(index: i32, offset: i32, width: i32) -> u32
+pub fn packed(value: u32) -> u32
 ```

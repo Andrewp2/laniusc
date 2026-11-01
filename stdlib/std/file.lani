@@ -18,6 +18,7 @@ import std::io_checked;
 import std::io_decimal;
 import core::path;
 import std::stream;
+import alloc::io;
 
 // Explicit, single-owner x86_64 Linux file handles. Copying this record does
 // not duplicate the descriptor. There is no automatic destructor: close every
@@ -67,6 +68,13 @@ pub fn from_owned_handle(handle: i32) -> core::result::Result<File, core::io::Er
 pub impl File {
     pub fn borrow(&self) -> &File { return self; }
     pub fn is_open(&self) -> bool { return self.handle >= 0; }
+    // Append the rest of the file to `output` with direct host reads; see
+    // std::stream::read_to_end.
+    pub fn read_to_end(&self, output: &alloc::io::Buffer) -> core::result::Result<u64, core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        let descriptor: std::stream::Descriptor = std::stream::from_handle(self.handle);
+        return std::stream::read_to_end(descriptor.borrow(), output);
+    }
     // Borrowed identifier; do not close it, retain it past close, or adopt it.
     pub fn raw_handle(&self) -> core::option::Option<i32> {
         if (self.handle < 0) { return core::option::None(); }

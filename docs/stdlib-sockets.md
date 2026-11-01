@@ -102,6 +102,16 @@ UDP uses separate whole-message operations:
   Lengths above 65,535 or malformed endpoint metadata return `InvalidCount`.
   A datagram may already have been consumed when validation fails; caller
   output remains unchanged until the complete reply has been validated.
+- `send_to_until(view,address,deadline)` and `receive_from_until(view,deadline)`
+  do the same before an absolute `Deadline`. EAGAIN and EINTR wait for
+  readiness against that deadline, and expiry returns `Host(110)` (ETIMEDOUT),
+  as `connect_until` does. A receive waits first, so an expired deadline
+  returns `Host(110)` without consuming a datagram. Use a nonblocking socket:
+  on a blocking one, a datagram discarded after a readiness report (for
+  example on a checksum error) could leave the call blocked.
+  [Resolver contracts](stdlib-resolver-config.md#evidence) check timeouts on
+  nonblocking and blocking sockets, a zero-length datagram and an expired
+  deadline.
 
 The cap is a common non-jumbogram IPv4/IPv6 policy. Smaller path MTUs, socket
 buffers and other network errors remain real host results. No fragmentation,

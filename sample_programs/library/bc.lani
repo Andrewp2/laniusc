@@ -1,0 +1,275 @@
+// bc-like arbitrary precision integer calculator over stdin. See docs/stdlib-bc.md.
+// Each line is one expression; its value is printed in the output base.
+module app::main;
+import alloc::big_int;
+import alloc::big_uint;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import std::args;
+import std::stream;
+
+struct Options { ibase: i32, obase: i32, max_line: i32, max_depth: i32, limits: alloc::big_uint::Limits, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+// error codes: 1 syntax, 2 invalid-digit, 3 division-by-zero, 4 negative-exponent,
+// 5 invalid-exponent, 6 limb-limit, 7 work-limit, 8 output-limit, 9 allocation-failure,
+// 10 nesting-limit, 11 invalid-shift, 12 line-limit, 13 io-failure, 14 unknown-function,
+// 15 invalid-arguments
+struct Parser { line: core::slice::View<u8>, pos: i32, depth: i32, error: i32, at: i32, ibase: i32, max_depth: i32, limits: alloc::big_uint::Limits, quit: bool }
+impl Parser { fn borrow(&self) -> &Parser { return self; } }
+struct Report { line: u64, failures: u64, argument: i32 }
+impl Report { fn borrow(&self) -> &Report { return self; } }
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text { let bytes: core::slice::View<u8> = literal(value,count); return core::text::from_utf8_unchecked(bytes.values,bytes.start,count); }
+fn byte(value: core::slice::View<u8>, at: i32) -> u8 { return value.values[value.start+at]; }
+fn whitespace(value: u8) -> bool { return value == 32 || value == 9 || value == 13; }
+fn lower(value: u8) -> bool { return value >= 97 && value <= 122; }
+fn digit_byte(value: u8) -> bool { return (value >= 48 && value <= 57) || (value >= 65 && value <= 90); }
+fn digit_value(value: u8) -> i32 { if (value <= 57) { return (value-48) as i32; } return (value-65) as i32+10; }
+
+fn skip(p: &Parser) { while (p.pos < p.line.len() && whitespace(byte(p.line,p.pos))) { p.pos += 1; } }
+// Next significant byte, or -1 at the end of the line or a # comment.
+fn peek(p: &Parser) -> i32 { skip(p); if (p.pos >= p.line.len()) { return -1; } let current: u8 = byte(p.line,p.pos); if (current == 35) { return -1; } return current as i32; }
+fn peek2(p: &Parser) -> i32 { if (p.pos+1 >= p.line.len()) { return -1; } return byte(p.line,p.pos+1) as i32; }
+fn fail(p: &Parser, kind: i32, at: i32) -> core::result::Result<alloc::big_int::BigInt,i32> { p.error = kind; p.at = at; return core::result::Err(kind); }
+fn code(error: alloc::big_uint::Error) -> i32 {
+    return match (error) { alloc::big_uint::Error::LimbLimit -> 6, alloc::big_uint::Error::WorkLimit -> 7, alloc::big_uint::Error::OutputLimit -> 8, alloc::big_uint::Error::AllocationFailed -> 9, alloc::big_uint::Error::DivisionByZero -> 3, alloc::big_uint::Error::NegativeExponent -> 4, alloc::big_uint::Error::InvalidDigit -> 2, alloc::big_uint::Error::NotInvertible -> 16, _ -> 1 };
+}
+fn checked(p: &Parser, value: core::result::Result<alloc::big_int::BigInt,alloc::big_uint::Error>, at: i32) -> core::result::Result<alloc::big_int::BigInt,i32> {
+    if (core::result::is_err(value)) { return fail(p,code(core::result::unwrap_err(value)),at); }
+    return core::result::Ok(core::result::unwrap(value));
+}
+fn number(p: &Parser) -> core::result::Result<alloc::big_int::BigInt,i32> {
+    let start: i32 = p.pos;
+    while (p.pos < p.line.len() && digit_byte(byte(p.line,p.pos))) {
+        if (digit_value(byte(p.line,p.pos)) >= p.ibase) { return fail(p,2,p.pos); } p.pos += 1;
+    }
+    let digits: core::slice::View<u8> = core::result::unwrap(p.line.subview(start,p.pos));
+    return checked(p,alloc::big_int::parse(digits,p.ibase,p.limits),start);
+}
+fn is_name(p: &Parser, start: i32, end: i32, name: str, length: i32) -> bool {
+    if (end-start != length) { return false; } let expected: core::slice::View<u8> = literal(name,length); let index: i32 = 0;
+    while (index < length) { if (byte(p.line,start+index) != byte(expected,index)) { return false; } index += 1; } return true;
+}
+fn expect(p: &Parser, value: i32) -> bool { if (peek(p) != value) { p.error = 1; p.at = p.pos; return false; } p.pos += 1; return true; }
+// name(args...): gcd(a,b), abs(a), modpow(a,e,m), modinv(a,m).
+fn call(p: &Parser) -> core::result::Result<alloc::big_int::BigInt,i32> {
+    let start: i32 = p.pos; while (p.pos < p.line.len() && lower(byte(p.line,p.pos))) { p.pos += 1; } let end: i32 = p.pos;
+    let kind: i32 = 0; let arity: i32 = 0;
+    if (is_name(p,start,end,"abs",3)) { kind = 1; arity = 1; } if (is_name(p,start,end,"gcd",3)) { kind = 2; arity = 2; } if (is_name(p,start,end,"modpow",6)) { kind = 3; arity = 3; } if (is_name(p,start,end,"modinv",6)) { kind = 4; arity = 2; }
+    if (kind == 0) { return fail(p,14,start); }
+    if (!expect(p,40)) { return core::result::Err(1); }
+    if (p.depth >= p.max_depth) { return fail(p,10,start); } p.depth += 1;
+    let first: core::result::Result<alloc::big_int::BigInt,i32> = binary(p,0); if (core::result::is_err(first)) { return first; }
+    let a: alloc::big_int::BigInt = core::result::unwrap(first); let b: alloc::big_int::BigInt = alloc::big_int::zero(); let c: alloc::big_int::BigInt = alloc::big_int::zero();
+    if (arity >= 2) {
+        if (!expect(p,44)) { a.destroy(); return core::result::Err(1); }
+        let second: core::result::Result<alloc::big_int::BigInt,i32> = binary(p,0); if (core::result::is_err(second)) { a.destroy(); return second; } b = core::result::unwrap(second);
+    }
+    if (arity == 3) {
+        if (!expect(p,44)) { b.destroy(); a.destroy(); return core::result::Err(1); }
+        let third: core::result::Result<alloc::big_int::BigInt,i32> = binary(p,0); if (core::result::is_err(third)) { b.destroy(); a.destroy(); return third; } c = core::result::unwrap(third);
+    }
+    if (!expect(p,41)) { c.destroy(); b.destroy(); a.destroy(); return core::result::Err(1); } p.depth -= 1;
+    let result: core::result::Result<alloc::big_int::BigInt,alloc::big_uint::Error> = core::result::Err(alloc::big_uint::Error::Bounds);
+    if (kind == 1) { result = a.abs(p.limits); } if (kind == 2) { result = a.gcd(b.borrow(),p.limits); } if (kind == 3) { result = a.mod_pow(b.borrow(),c.borrow(),p.limits); } if (kind == 4) { result = a.mod_inverse(b.borrow(),p.limits); }
+    c.destroy(); b.destroy(); a.destroy(); return checked(p,result,start);
+}
+fn primary(p: &Parser) -> core::result::Result<alloc::big_int::BigInt,i32> {
+    let current: i32 = peek(p);
+    if (current == 40) {
+        let start: i32 = p.pos; if (p.depth >= p.max_depth) { return fail(p,10,start); } p.depth += 1; p.pos += 1;
+        let inner: core::result::Result<alloc::big_int::BigInt,i32> = binary(p,0); if (core::result::is_err(inner)) { return inner; }
+        let value: alloc::big_int::BigInt = core::result::unwrap(inner);
+        if (!expect(p,41)) { value.destroy(); return core::result::Err(1); } p.depth -= 1; return core::result::Ok(value);
+    }
+    if (current >= 0 && digit_byte(current as u8)) { return number(p); }
+    if (current >= 0 && lower(current as u8)) { return call(p); }
+    return fail(p,1,p.pos);
+}
+// ^ binds tighter than unary minus, as in Python and mathematics (bc differs): -2^2 is -4.
+fn unary(p: &Parser) -> core::result::Result<alloc::big_int::BigInt,i32> {
+    let current: i32 = peek(p);
+    if (current == 45 || current == 43) {
+        let start: i32 = p.pos; if (p.depth >= p.max_depth) { return fail(p,10,start); } p.depth += 1; p.pos += 1;
+        let inner: core::result::Result<alloc::big_int::BigInt,i32> = unary(p); p.depth -= 1; if (core::result::is_err(inner)) { return inner; }
+        let value: alloc::big_int::BigInt = core::result::unwrap(inner); if (current == 43) { return core::result::Ok(value); }
+        let negated: core::result::Result<alloc::big_int::BigInt,alloc::big_uint::Error> = value.neg(p.limits); value.destroy(); return checked(p,negated,start);
+    }
+    return power(p);
+}
+// Right associative: 2^3^2 = 2^9.
+fn power(p: &Parser) -> core::result::Result<alloc::big_int::BigInt,i32> {
+    let based: core::result::Result<alloc::big_int::BigInt,i32> = primary(p); if (core::result::is_err(based)) { return based; }
+    let base: alloc::big_int::BigInt = core::result::unwrap(based);
+    if (peek(p) != 94) { return core::result::Ok(base); }
+    let at: i32 = p.pos; p.pos += 1;
+    if (p.depth >= p.max_depth) { base.destroy(); return fail(p,10,at); } p.depth += 1;
+    let raised: core::result::Result<alloc::big_int::BigInt,i32> = unary(p); p.depth -= 1; if (core::result::is_err(raised)) { base.destroy(); return raised; }
+    let exponent: alloc::big_int::BigInt = core::result::unwrap(raised);
+    if (exponent.sign() < 0) { exponent.destroy(); base.destroy(); return fail(p,4,at); }
+    let small: core::result::Result<u64,alloc::big_uint::Error> = exponent.to_u64(); exponent.destroy();
+    if (core::result::is_err(small) || core::result::unwrap(small) > 4294967295) { base.destroy(); return fail(p,5,at); }
+    let result: core::result::Result<alloc::big_int::BigInt,alloc::big_uint::Error> = base.pow(core::result::unwrap(small) as u32,p.limits); base.destroy(); return checked(p,result,at);
+}
+// Precedence, lowest first: | ; & ; << >> ; + - ; * / % ; unary ; ^.
+fn operator(p: &Parser, level: i32) -> i32 {
+    let current: i32 = peek(p);
+    if (level == 0 && current == 124) { return 1; }
+    if (level == 1 && current == 38) { return 2; }
+    if (level == 2 && current == 60 && peek2(p) == 60) { return 3; }
+    if (level == 2 && current == 62 && peek2(p) == 62) { return 4; }
+    if (level == 3 && current == 43) { return 5; } if (level == 3 && current == 45) { return 6; }
+    if (level == 4 && current == 42) { return 7; } if (level == 4 && current == 47) { return 8; } if (level == 4 && current == 37) { return 9; }
+    return 0;
+}
+fn apply(p: &Parser, op: i32, left: &alloc::big_int::BigInt, right: &alloc::big_int::BigInt, at: i32) -> core::result::Result<alloc::big_int::BigInt,i32> {
+    if (op == 1) { return checked(p,left.bit_or(right,p.limits),at); }
+    if (op == 2) { return checked(p,left.bit_and(right,p.limits),at); }
+    if (op == 3 || op == 4) {
+        if (right.sign() < 0) { return fail(p,11,at); }
+        let count: core::result::Result<u64,alloc::big_uint::Error> = right.to_u64(); if (core::result::is_err(count)) { return fail(p,11,at); }
+        if (op == 3) { return checked(p,left.shl(core::result::unwrap(count),p.limits),at); } return checked(p,left.shr(core::result::unwrap(count),p.limits),at);
+    }
+    if (op == 5) { return checked(p,left.add(right,p.limits),at); }
+    if (op == 6) { return checked(p,left.sub(right,p.limits),at); }
+    if (op == 7) { return checked(p,left.mul(right,p.limits),at); }
+    let divided: core::result::Result<alloc::big_int::DivRem,alloc::big_uint::Error> = left.div_rem(right,p.limits);
+    if (core::result::is_err(divided)) { return fail(p,code(core::result::unwrap_err(divided)),at); }
+    let pair: alloc::big_int::DivRem = core::result::unwrap(divided);
+    if (op == 8) { pair.remainder.destroy(); return core::result::Ok(pair.quotient); }
+    pair.quotient.destroy(); return core::result::Ok(pair.remainder);
+}
+fn binary(p: &Parser, level: i32) -> core::result::Result<alloc::big_int::BigInt,i32> {
+    if (level == 5) { return unary(p); }
+    let first: core::result::Result<alloc::big_int::BigInt,i32> = binary(p,level+1); if (core::result::is_err(first)) { return first; }
+    let left: alloc::big_int::BigInt = core::result::unwrap(first);
+    while (true) {
+        let op: i32 = operator(p,level); if (op == 0) { break; }
+        let at: i32 = p.pos; p.pos += 1; if (op == 3 || op == 4) { p.pos += 1; }
+        let second: core::result::Result<alloc::big_int::BigInt,i32> = binary(p,level+1); if (core::result::is_err(second)) { left.destroy(); return second; }
+        let right: alloc::big_int::BigInt = core::result::unwrap(second);
+        let combined: core::result::Result<alloc::big_int::BigInt,i32> = apply(p,op,left.borrow(),right.borrow(),at); right.destroy(); left.destroy();
+        if (core::result::is_err(combined)) { return combined; } left = core::result::unwrap(combined);
+    }
+    return core::result::Ok(left);
+}
+
+fn write_bytes(sink: std::stream::Descriptor, value: core::slice::View<u8>) -> bool { return core::result::is_ok(core::io::write_all(sink.borrow(),value.values,value.start,value.len())); }
+fn write_error(report: &Report, kind: i32, at: i32) -> bool {
+    let storage: [i32;64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,256)); format.write_text(text("bc: ",4));
+    if (kind == 1) { format.write_text(text("syntax-error",12)); } if (kind == 2) { format.write_text(text("invalid-digit",13)); }
+    if (kind == 3) { format.write_text(text("division-by-zero",16)); } if (kind == 4) { format.write_text(text("negative-exponent",17)); }
+    if (kind == 5) { format.write_text(text("invalid-exponent",16)); } if (kind == 6) { format.write_text(text("limb-limit",10)); }
+    if (kind == 7) { format.write_text(text("work-limit",10)); } if (kind == 8) { format.write_text(text("output-limit",12)); }
+    if (kind == 9) { format.write_text(text("allocation-failure",18)); } if (kind == 10) { format.write_text(text("nesting-limit",13)); }
+    if (kind == 11) { format.write_text(text("invalid-shift",13)); } if (kind == 12) { format.write_text(text("line-limit",10)); }
+    if (kind == 13) { format.write_text(text("io-failure",10)); } if (kind == 14) { format.write_text(text("unknown-function",16)); }
+    if (kind == 15) { format.write_text(text("invalid-arguments",17)); } if (kind == 16) { format.write_text(text("not-invertible",14)); }
+    if (report.line != 0) { format.write_text(text(" line=",6)); format.write_unsigned(report.line,core::fmt::decimal()); }
+    if (report.argument >= 0) { format.write_text(text(" argument=",10)); format.write_signed(report.argument as i64,core::fmt::decimal()); }
+    if (at >= 0) { format.write_text(text(" byte=",6)); format.write_signed(at as i64,core::fmt::decimal()); }
+    format.write_text(text("\n",1)); let size: core::result::Result<i32,core::fmt::Error> = format.finish(); if (core::result::is_err(size)) { return false; }
+    let sink: std::stream::Descriptor = std::stream::stderr(); return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,core::result::unwrap(size)));
+}
+// 0 continue, 1 quit, 13 fatal output failure.
+fn statement(line: core::slice::View<u8>, options: Options, report: &Report) -> i32 {
+    let p: Parser = Parser { line: line, pos: 0, depth: 0, error: 0, at: -1, ibase: options.ibase, max_depth: options.max_depth, limits: options.limits, quit: false };
+    let first: i32 = peek(p.borrow()); if (first < 0) { return 0; }
+    let start: i32 = p.pos; let end: i32 = p.pos; while (end < line.len() && lower(byte(line,end))) { end += 1; }
+    if (is_name(p.borrow(),start,end,"quit",4)) { p.pos = end; if (peek(p.borrow()) < 0) { return 1; } }
+    p.pos = start;
+    let evaluated: core::result::Result<alloc::big_int::BigInt,i32> = binary(p.borrow(),0);
+    if (core::result::is_ok(evaluated) && peek(p.borrow()) >= 0) { let extra: alloc::big_int::BigInt = core::result::unwrap(evaluated); extra.destroy(); evaluated = fail(p.borrow(),1,p.pos); }
+    if (core::result::is_err(evaluated)) { report.failures += 1; if (!write_error(report,p.error,p.at)) { return 13; } return 0; }
+    let value: alloc::big_int::BigInt = core::result::unwrap(evaluated);
+    let formatted: core::result::Result<alloc::vec::Vec<u8>,alloc::big_uint::Error> = value.format_radix(options.obase,options.limits); value.destroy();
+    if (core::result::is_err(formatted)) { report.failures += 1; if (!write_error(report,code(core::result::unwrap_err(formatted)),start)) { return 13; } return 0; }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(formatted);
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let written: bool = write_bytes(sink,bytes.as_view()) && write_bytes(sink,literal("\n",1)); bytes.destroy();
+    if (!written) { return 13; } return 0;
+}
+// Returns the process status: 0 all lines succeeded, 1 some line failed, 3 fatal.
+fn calculate(options: Options, report: &Report) -> i32 {
+    let line: alloc::vec::Vec<u8> = alloc::vec::new(); let storage: [i32;1024] = [0;1024];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),4096); let source: std::stream::Descriptor = std::stream::stdin(); report.line = 1;
+    let done: bool = false; let status: i32 = 0;
+    while (!done) {
+        let received: core::result::Result<i32,core::io::Error> = source.read(bytes,0,4096);
+        if (core::result::is_err(received)) { let error: core::io::Error = core::result::unwrap_err(received); if (core::io::is_interrupted(error)) { continue; } line.destroy(); write_error(report,13,-1); return 3; }
+        let count: i32 = core::result::unwrap(received); if (count == 0) { break; } let index: i32 = 0;
+        while (index < count) {
+            let current: u8 = bytes[index];
+            if (current == 10) {
+                status = statement(line.as_view(),options,report); line.clear();
+                if (status != 0) { done = true; break; } report.line += 1;
+            } else {
+                if (line.len() == options.max_line) { let at: i32 = line.len(); line.destroy(); write_error(report,12,at); return 3; }
+                let pushed: core::result::Result<i32,alloc::vec::Error> = line.try_push(current);
+                if (core::result::is_err(pushed)) { line.destroy(); write_error(report,9,-1); return 3; }
+            } index += 1;
+        }
+    }
+    if (!done) { status = statement(line.as_view(),options,report); }
+    line.destroy();
+    if (status == 13) { return 3; } if (report.failures > 0) { return 1; } return 0;
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 7) { options.help = true; return true; }
+    let value: ext::cli::Argument = core::option::unwrap(item.value);
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.bytes.values,value.bytes.start,value.bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let number: u64 = core::result::unwrap(parsed);
+    if (item.id == 3) { options.limits.max_work = number; return true; }
+    if (number > 2147483647 as u64) { return false; }
+    if (item.id == 1 || item.id == 2) { if (number < 2 || number > 36) { return false; } if (item.id == 1) { options.ibase = number as i32; } else { options.obase = number as i32; } }
+    if (item.id == 4) { if (number > 536870911 as u64) { return false; } options.limits.max_limbs = number as i32; }
+    if (item.id == 5) { options.limits.max_output = number as i32; } if (item.id == 6) { options.max_line = number as i32; } return true;
+}
+fn process(arguments: std::args::Arguments, report: &Report) -> i32 {
+    let specs: [ext::cli::Spec;7] = [
+        ext::cli::Spec { id: 1, long: literal("ibase",5), short: 105, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("obase",5), short: 111, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("max-limbs",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-output",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("max-line",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,7));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { ibase: 10, obase: 10, max_line: 1048576, max_depth: 256, limits: alloc::big_uint::Limits { max_limbs: 65536, max_work: 1000000000, max_output: 1048576 }, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) {
+            let at: ext::cli::Location = match (core::result::unwrap_err(event)) { ext::cli::Error::UnknownOption(at) -> at, ext::cli::Error::MissingValue(at) -> at, ext::cli::Error::UnexpectedValue(at) -> at, _ -> ext::cli::Location { argument: -1, byte: -1 } };
+            report.argument = at.argument; write_error(report,15,at.byte); return 2;
+        }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), ext::cli::Event::Operand(item) -> false };
+        if (!valid) { write_error(report,15,-1); return 2; }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: bc [--ibase N] [--obase N] [--max-limbs N] [--max-work N] [--max-output N] [--max-line N]\nstdin: one integer expression per line; operators | & << >> + - * / % ^, unary -, ( ), abs gcd modpow modinv, quit\n",212);
+        let sink: std::stream::Descriptor = std::stream::stdout(); if (!write_bytes(sink,usage)) { return 3; } return 0;
+    }
+    report.argument = -1; return calculate(options,report);
+}
+fn main() -> i32 {
+    let report: Report = Report { line: 0, failures: 0, argument: -1 };
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    if (core::result::is_err(captured)) { write_error(report.borrow(),15,-1); return 2; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured); let status: i32 = process(arguments,report.borrow()); arguments.destroy(); return status;
+}

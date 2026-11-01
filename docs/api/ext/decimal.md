@@ -24,8 +24,8 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result](../core/result.md) · [source](../../../extended/ext/decimal.lani#L7)
 - [core::slice](../core/slice.md) · [source](../../../extended/ext/decimal.lani#L8)
 - [core::text](../core/text.md) · [source](../../../extended/ext/decimal.lani#L9)
-- [ext::big_int](big_int.md) · [source](../../../extended/ext/decimal.lani#L10)
-- [ext::big_uint](big_uint.md) · [source](../../../extended/ext/decimal.lani#L11)
+- [alloc::big_int](../alloc/big_int.md) · [source](../../../extended/ext/decimal.lani#L10)
+- [alloc::big_uint](../alloc/big_uint.md) · [source](../../../extended/ext/decimal.lani#L11)
 
 ## Types, fields and variants
 
@@ -292,7 +292,7 @@ pub struct Decimal
 [Source line 17](../../../extended/ext/decimal.lani#L17)
 
 ```lanius
-coefficient: ext::big_int::BigInt
+coefficient: alloc::big_int::BigInt
 ```
 
 #### field: digits
@@ -374,7 +374,7 @@ pub fn from_u64(value: u64, limits: Limits) -> core::result::Result<Decimal, Err
 [Source line 383](../../../extended/ext/decimal.lani#L383)
 
 ```lanius
-pub fn from_coefficient(coefficient: &ext::big_int::BigInt, exponent: i32, limits: Limits) -> core::result::Result<Decimal, Error>
+pub fn from_coefficient(coefficient: &alloc::big_int::BigInt, exponent: i32, limits: Limits) -> core::result::Result<Decimal, Error>
 ```
 
 ## Implementation blocks and public methods
@@ -568,7 +568,7 @@ pub fn reduce(&self, limits: Limits) -> core::result::Result<Decimal, Error>
 [Source line 493](../../../extended/ext/decimal.lani#L493)
 
 ```lanius
-pub fn to_big_int(&self, rounding: Rounding, limits: Limits) -> core::result::Result<ext::big_int::BigInt, Error>
+pub fn to_big_int(&self, rounding: Rounding, limits: Limits) -> core::result::Result<alloc::big_int::BigInt, Error>
 ```
 
 #### method: to_i64

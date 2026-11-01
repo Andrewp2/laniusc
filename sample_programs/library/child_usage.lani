@@ -1,0 +1,131 @@
+// Run one command, reap it with wait4 and report its kernel resource usage
+// (CPU split, peak RSS, faults, block I/O and context switches) as one
+// structured record on stderr. The usage includes descendants the child
+// itself waited for, unlike time-command's process CPU clock.
+module app::main;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import std::args;
+import std::command;
+import std::signal;
+import std::stream;
+
+struct Options { first: i32, json: bool, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Report { pid: i32, code: i32, signal: i32, usage: std::command::Usage, children: core::time::Duration }
+impl Report { fn borrow(&self) -> &Report { return self; } }
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn text(value: str, n: i32) -> core::text::Text { let raw = bytes(value,n); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn parse(args: std::args::Arguments, options: &Options) -> bool {
+    let index: i32 = 0; let seen: u32 = 0;
+    while (index < args.len()) {
+        let value = args.get(index).unwrap();
+        if (equal(value,bytes("--",2))) { index += 1; break; }
+        if (value.length == 0 || value.values[value.start] != 45 || equal(value,bytes("-",1))) { break; }
+        let id: i32 = 0;
+        if (equal(value,bytes("--format",8))) { id = 1; } if (equal(value,bytes("--help",6))) { id = 3; }
+        if (id == 0) { return false; } let bit: u32 = (1 as u32) << id; if ((seen & bit) != 0) { return false; } seen |= bit;
+        if (id == 3) { options.help = true; index += 1; continue; }
+        if (index+1 >= args.len()) { return false; } let format = args.get(index+1).unwrap();
+        if (equal(format,bytes("json",4))) { options.json = true; } else { if (equal(format,bytes("tsv",3))) { options.json = false; } else { return false; } }
+        index += 2;
+    }
+    options.first = index;
+    if (options.help) { return args.len() == 1; }
+    return index < args.len();
+}
+fn publish(raw: [u8], count: i32, error: bool) -> bool {
+    let sink = std::stream::stdout(); if (error) { sink = std::stream::stderr(); }
+    return core::io::write_all(sink.borrow(),raw,0,count).is_ok();
+}
+fn fail(reason: str, n: i32, errno: i32) -> i32 {
+    let raw: [u8;160] = [0;160]; let out = core::fmt::buffer(raw,0,160).unwrap();
+    out.write_text(text("child-usage: ",13)); out.write_text(text(reason,n)); out.write_text(text(" errno=",7)); out.write_signed(errno as i64,core::fmt::decimal()); out.write_text(text("\n",1));
+    publish(raw,out.finish().unwrap(),true); return 125;
+}
+fn nanos(span: core::time::Duration) -> u64 { let total: core::result::Result<u64, core::time::Error> = span.as_nanos(); if (total.is_err()) { return 18446744073709551615; } return total.unwrap(); }
+// Field order is fixed; TSV prints "-" where JSON prints null.
+fn field(out: &core::fmt::Formatter, json: bool, first: bool, name: str, n: i32) {
+    if (json) { if (first) { out.write_text(text("{\"",2)); } else { out.write_text(text(",\"",2)); } out.write_text(text(name,n)); out.write_text(text("\":",2)); }
+    else { if (!first) { out.write_text(text("\t",1)); } }
+}
+fn optional(out: &core::fmt::Formatter, json: bool, value: i32) {
+    if (value >= 0) { out.write_signed(value as i64,core::fmt::decimal()); } else { if (json) { out.write_text(text("null",4)); } else { out.write_text(text("-",1)); } }
+}
+fn word(out: &core::fmt::Formatter, json: bool, value: str, n: i32) {
+    if (json) { out.write_text(text("\"",1)); } out.write_text(text(value,n)); if (json) { out.write_text(text("\"",1)); }
+}
+fn count(out: &core::fmt::Formatter, json: bool, name: str, n: i32, value: u64) { field(out,json,false,name,n); out.write_unsigned(value,core::fmt::decimal()); }
+fn emit(report: &Report, json: bool) -> bool {
+    let raw: [u8;768] = [0;768]; let out = core::fmt::buffer(raw,0,768).unwrap(); let usage: std::command::Usage = report.usage;
+    if (!json) { out.write_text(text("pid\tstatus\tcode\tsignal\tuser_ns\tsystem_ns\tcpu_ns\tmax_rss_kib\tminor_faults\tmajor_faults\tblock_input\tblock_output\tvoluntary_switches\tinvoluntary_switches\tchildren_cpu_ns\n",167)); }
+    field(out.borrow(),json,true,"pid",3); out.write_signed(report.pid as i64,core::fmt::decimal());
+    field(out.borrow(),json,false,"status",6); if (report.code >= 0) { word(out.borrow(),json,"exited",6); } else { word(out.borrow(),json,"signaled",8); }
+    field(out.borrow(),json,false,"code",4); optional(out.borrow(),json,report.code);
+    field(out.borrow(),json,false,"signal",6); optional(out.borrow(),json,report.signal);
+    count(out.borrow(),json,"user_ns",7,nanos(usage.user)); count(out.borrow(),json,"system_ns",9,nanos(usage.system)); count(out.borrow(),json,"cpu_ns",6,nanos(usage.cpu()));
+    count(out.borrow(),json,"max_rss_kib",11,usage.max_rss_kib); count(out.borrow(),json,"minor_faults",12,usage.minor_faults); count(out.borrow(),json,"major_faults",12,usage.major_faults);
+    count(out.borrow(),json,"block_input",11,usage.block_input); count(out.borrow(),json,"block_output",12,usage.block_output);
+    count(out.borrow(),json,"voluntary_switches",18,usage.voluntary_switches); count(out.borrow(),json,"involuntary_switches",20,usage.involuntary_switches);
+    count(out.borrow(),json,"children_cpu_ns",15,nanos(report.children));
+    if (json) { out.write_text(text("}",1)); } out.write_text(text("\n",1));
+    let finished: core::result::Result<i32, core::fmt::Error> = out.finish(); if (finished.is_err()) { return false; }
+    return publish(raw,finished.unwrap(),true);
+}
+fn measure(child: std::command::Child, options: Options) -> i32 {
+    let pid: i32 = child.id().unwrap_or(0);
+    let reaped: core::result::Result<std::command::Reaped, std::command::Failure> = child.wait_with_usage();
+    if (reaped.is_err()) { if (child.id().is_some()) { child.wait(); } return fail("wait failed",11,reaped.unwrap_err().errno); }
+    // Every reaped child of this process so far: only this one.
+    let all: core::result::Result<std::command::Usage, std::command::Failure> = std::command::resource_usage(std::command::UsageTarget::Children);
+    if (all.is_err()) { return fail("getrusage failed",16,all.unwrap_err().errno); }
+    let value: std::command::Reaped = reaped.unwrap(); let status: std::command::ExitStatus = value.status;
+    let report = Report { pid: pid, code: -1, signal: -1, usage: value.usage, children: all.unwrap().cpu() }; let result: i32 = 125;
+    if (status.code.is_some()) { report.code = status.code.unwrap(); result = report.code; }
+    else { if (status.signal.is_none()) { return fail("unrecognized status",19,0); } report.signal = status.signal.unwrap(); result = 128 + report.signal; }
+    if (!emit(report.borrow(),options.json)) { return 125; }
+    return result;
+}
+fn launch(args: std::args::Arguments, options: Options) -> i32 {
+    let captured = std::command::snapshot_environment(std::command::default_limits()); if (captured.is_err()) { return fail("environment snapshot failed",27,captured.unwrap_err().errno); }
+    let environment = captured.unwrap();
+    let all = args.as_view(); let tail: core::slice::View<core::slice::View<u8>> = core::slice::View { values: all.values, start: all.start+options.first, length: all.length-options.first };
+    let request = std::command::request(args.get(options.first).unwrap(),tail,environment.as_view()); request.search = std::command::Search::EnvironmentPath;
+    let spawned = std::command::spawn(request); environment.destroy();
+    if (spawned.is_err()) { return fail("spawn failed",12,spawned.unwrap_err().errno); }
+    return match (spawned.unwrap()) {
+        std::command::Spawn::Child(child) -> measure(child,options),
+        std::command::Spawn::Unknown(value) -> unknown(value),
+        std::command::Spawn::Failed(value) -> rejected(value)
+    };
+}
+fn unknown(value: std::command::UnknownStart) -> i32 {
+    let child: std::command::Child = value.child; child.cancel_and_wait();
+    return fail("startup unknown",15,value.failure.errno);
+}
+fn rejected(value: std::command::FailedStart) -> i32 {
+    let errno: i32 = value.failure.errno; fail("cannot execute",14,errno);
+    if (errno == 2 || errno == 20) { return 127; } return 126;
+}
+fn process(args: std::args::Arguments) -> i32 {
+    let options = Options { first: 0, json: true, help: false };
+    if (!parse(args,options.borrow())) { fail("invalid arguments; see --help",29,0); return 125; }
+    if (options.help) {
+        let usage: str = "Usage: child-usage [--format json|tsv] -- PROGRAM [ARG...]\n";
+        if (!publish(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(usage),59),59,false)) { return 125; } return 0;
+    }
+    return launch(args,options);
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 125; }
+    let captured = std::args::snapshot(1,4096,1048576);
+    if (captured.is_err()) { return fail("argument snapshot failed",24,0); }
+    let args = captured.unwrap(); let result: i32 = process(args); args.destroy(); return result;
+}

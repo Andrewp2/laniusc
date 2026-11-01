@@ -72,6 +72,17 @@ fn main() -> i32 {
                 if (core::option::is_some(core::result::unwrap(cursor.next())) || core::option::is_some(core::result::unwrap(cursor.next()))) { return 2; }
                 cursor.destroy();
             }
+            // Flag 4 appends |name,... for groups 1.. (- when unnamed).
+            if ((flags & 4) != 0) {
+                std::io::write_byte(1, 124); let g: i32 = 1;
+                while (g < regex.group_count()) {
+                    if (g > 1) { std::io::write_byte(1, 44); }
+                    let name = regex.group_name(g);
+                    if (core::option::is_none(name)) { std::io::write_byte(1, 45); }
+                    else { let t: core::text::Text = core::option::unwrap(name); let k: i32 = 0; while (k < t.length) { std::io::write_byte(1, t.bytes[t.start + k] as i32); k += 1; } }
+                    g += 1;
+                }
+            }
             regex.destroy();
         }
         std::io::write_byte(1, 10);

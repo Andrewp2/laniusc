@@ -1,0 +1,279 @@
+// Ordered navigation and bounded ranges driven by an independent sorted model.
+// stdin: 8-word little-endian commands; stdout: tagged response words.
+module app::main;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::range;
+import core::result;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32) -> bool {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);
+        assert(got>=0);
+        if(got==0) { assert(done==0); return false; }
+        done+=got;
+    }
+    return true;
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) {
+        let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(got>0); done+=got;
+    }
+}
+fn get64(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let i:i32=0;
+    while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; }
+    return value;
+}
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn word(&self,value:u64) {
+        if(self.used==4096) { self.flush(); }
+        let i:i32=0; while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; }
+        self.used+=8;
+    }
+}
+const STAMP_VALUE: u64 = 12297829382473034410;
+const CALL: u64 = 192;
+const RESULT: u64 = 208;
+const PULLS: u64 = 224;
+struct Key { identity:i32,stamp:u64 }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { return left.identity==right.identity; }
+    pub fn ne(left:Key,right:Key) -> bool { return left.identity!=right.identity; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left:Key,right:Key) -> bool { return left.identity<right.identity; }
+    pub fn le(left:Key,right:Key) -> bool { return left.identity<=right.identity; }
+    pub fn gt(left:Key,right:Key) -> bool { return left.identity>right.identity; }
+    pub fn ge(left:Key,right:Key) -> bool { return left.identity>=right.identity; }
+}
+// A band query: stored identities below low are Less, above high Greater,
+// otherwise Equal. The role tags which bound of an operation is searched.
+struct Band { low:i32,high:i32,role:u64 }
+struct Policy { output:&Output,calls:u64 }
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::ordering::Comparator<Key,Band> for Policy {
+    pub fn compare(&self,stored:Key,query:Band) -> core::ordering::Ordering {
+        let output:&Output=self.output; self.calls+=1;
+        output.word(CALL); output.word(stored.identity as i64 as u64); output.word(stored.stamp); output.word(query.role);
+        if(stored.identity<query.low) { return core::ordering::Less; }
+        if(stored.identity>query.high) { return core::ordering::Greater; }
+        return core::ordering::Equal;
+    }
+}
+fn emit_bool_word(value:bool,output:&Output) { if(value) { output.word(1); } else { output.word(0); } }
+fn signed(word:u64) -> i32 { return word as i64 as i32; }
+fn key_bound(kind:u64,value:u64,stamp:u64) -> core::range::Bound<Key> {
+    let key:Key=Key { identity:signed(value),stamp:stamp };
+    if(kind==0) { return core::range::Bound::Included(key); }
+    if(kind==1) { return core::range::Bound::Excluded(key); }
+    return core::range::Bound::Unbounded;
+}
+fn band_bound(kind:u64,low:u64,high:u64,role:u64) -> core::range::Bound<Band> {
+    let band:Band=Band { low:signed(low),high:signed(high),role:role };
+    if(kind==0) { return core::range::Bound::Included(band); }
+    if(kind==1) { return core::range::Bound::Excluded(band); }
+    return core::range::Bound::Unbounded;
+}
+fn emit_map(found:core::option::Option<alloc::tree_map::Entry<Key,u64>>,output:&Output) {
+    if(found.is_none()) { output.word(0); return; }
+    let entry:alloc::tree_map::Entry<Key,u64> = found.unwrap();
+    assert(entry.value==(entry.key.stamp^STAMP_VALUE));
+    output.word(1); output.word(entry.key.identity as i64 as u64); output.word(entry.key.stamp);
+}
+fn emit_set(found:core::option::Option<Key>,output:&Output) {
+    if(found.is_none()) { output.word(0); return; }
+    let key:Key=found.unwrap(); output.word(1); output.word(key.identity as i64 as u64); output.word(key.stamp);
+}
+// Pull bit i of mask chooses next_back for pull i; afterwards both ends are
+// checked for fused exhaustion.
+fn pull_map(cursor:&alloc::tree_map::Cursor<Key,u64>,mask:u64,output:&Output) {
+    output.word(PULLS); let pull:i32=0;
+    while(true) {
+        let back:bool=pull<64 && ((mask>>(pull as u64))&1)==1;
+        let item:core::option::Option<alloc::tree_map::Entry<Key,u64>> = core::option::None();
+        if(back) { item=cursor.next_back(); } else { item=cursor.next(); }
+        if(back) { output.word(2); } else { output.word(3); }
+        emit_map(item,output);
+        if(item.is_none()) { break; }
+        pull+=1; assert(pull<=4096);
+    }
+    assert(cursor.is_empty() && cursor.next().is_none() && cursor.next_back().is_none());
+}
+fn pull_set(cursor:&alloc::tree_set::Cursor<Key>,mask:u64,output:&Output) {
+    output.word(PULLS); let pull:i32=0;
+    while(true) {
+        let back:bool=pull<64 && ((mask>>(pull as u64))&1)==1;
+        let item:core::option::Option<Key> = core::option::None();
+        if(back) { item=cursor.next_back(); } else { item=cursor.next(); }
+        if(back) { output.word(2); } else { output.word(3); }
+        emit_set(item,output);
+        if(item.is_none()) { break; }
+        pull+=1; assert(pull<=4096);
+    }
+    assert(cursor.is_empty() && cursor.next().is_none() && cursor.next_back().is_none());
+}
+fn map_command(owner:&alloc::tree_map::TreeMap<Key,u64>,policy:&Policy,words:[u64;8],output:&Output) {
+    let op:u64=words[0];
+    if(op==1) {
+        let key:Key=Key { identity:signed(words[1]),stamp:words[2] };
+        let old:core::option::Option<alloc::tree_map::Entry<Key,u64>> = owner.try_insert(key,words[2]^STAMP_VALUE).unwrap();
+        emit_map(old,output); return;
+    }
+    if(op==2) { emit_map(owner.remove(Key { identity:signed(words[1]),stamp:0 }),output); return; }
+    if(op==3) {
+        let key:Key=Key { identity:signed(words[2]),stamp:words[3] }; let mode:u64=words[1];
+        let found:core::option::Option<alloc::tree_map::Entry<Key,u64>> = core::option::None();
+        if(mode==0) { found=owner.lower_bound(key); }
+        if(mode==1) { found=owner.upper_bound(key); }
+        if(mode==2) { found=owner.last_at_most(key); }
+        if(mode==3) { found=owner.last_below(key); }
+        emit_map(found,output); return;
+    }
+    if(op==4) {
+        let band:Band=Band { low:signed(words[2]),high:signed(words[3]),role:0 }; let mode:u64=words[1];
+        let found:core::option::Option<alloc::tree_map::Entry<Key,u64>> = core::option::None();
+        if(mode==0) { found=owner.lower_bound_by<Band,Policy>(band,policy); }
+        if(mode==1) { found=owner.upper_bound_by<Band,Policy>(band,policy); }
+        if(mode==2) { found=owner.last_at_most_by<Band,Policy>(band,policy); }
+        if(mode==3) { found=owner.last_below_by<Band,Policy>(band,policy); }
+        output.word(RESULT); emit_map(found,output); return;
+    }
+    if(op==5) {
+        let range:core::result::Result<alloc::tree_map::Cursor<Key,u64>,alloc::tree_map::Error> =
+            owner.range_bounds(key_bound(words[1],words[2],words[5]),key_bound(words[3],words[4],words[5]));
+        if(range.is_err()) { output.word(RESULT); output.word(1); return; }
+        output.word(RESULT); output.word(0);
+        let cursor:alloc::tree_map::Cursor<Key,u64> = range.unwrap(); pull_map(cursor.borrow(),words[6],output); return;
+    }
+    if(op==6) {
+        let lower:core::range::Bound<Band> = band_bound(words[1]&3,words[2],words[3],0);
+        let upper:core::range::Bound<Band> = band_bound((words[1]>>2)&3,words[4],words[5],1);
+        let cursor:alloc::tree_map::Cursor<Key,u64> = owner.range_bounds_by<Band,Policy>(lower,upper,policy);
+        output.word(RESULT); pull_map(cursor.borrow(),words[6],output); return;
+    }
+    if(op==7) { output.word(owner.len() as u64); let all:alloc::tree_map::Cursor<Key,u64> = owner.iter(); pull_map(all.borrow(),0,output); return; }
+    if(op==8) { owner.clear(); output.word(0); return; }
+    if(op>=9 && op<=13) {
+        let before:i32=owner.capacity();
+        if(op==9 || op==10) {
+            let removed:i32=0; let failed:bool=false;
+            if(op==9) {
+                let result:core::result::Result<i32,alloc::tree_map::Error> = owner.remove_range(key_bound(words[1],words[2],0),key_bound(words[3],words[4],0));
+                if(result.is_err()) { failed=true; } else { removed=result.unwrap(); }
+            } else {
+                removed=owner.remove_range_by<Band,Policy>(band_bound(words[1]&3,words[2],words[3],0),band_bound((words[1]>>2)&3,words[4],words[5],1),policy);
+            }
+            output.word(RESULT); if(failed) { output.word(1); return; }
+            output.word(0); output.word(removed as u64); emit_bool_word(owner.capacity()==before,output); return;
+        }
+        let moved:core::result::Result<alloc::tree_map::TreeMap<Key,u64>,alloc::tree_map::Error> = core::result::Err(alloc::tree_map::Error::InvalidRange);
+        if(op==11) { moved=owner.try_extract_range(key_bound(words[1],words[2],0),key_bound(words[3],words[4],0)); }
+        if(op==12) { moved=owner.try_extract_range_by<Band,Policy>(band_bound(words[1]&3,words[2],words[3],0),band_bound((words[1]>>2)&3,words[4],words[5],1),policy); }
+        if(op==13) { moved=owner.try_split_off(Key { identity:signed(words[1]),stamp:0 }); }
+        output.word(RESULT); if(moved.is_err()) { output.word(1); return; }
+        let taken:alloc::tree_map::TreeMap<Key,u64> = moved.unwrap();
+        output.word(0); output.word(taken.len() as u64); emit_bool_word(taken.capacity()==taken.len(),output); emit_bool_word(owner.capacity()==before,output);
+        let all:alloc::tree_map::Cursor<Key,u64> = taken.iter(); pull_map(all.borrow(),0,output); taken.destroy(); return;
+    }
+    assert(false);
+}
+fn set_command(owner:&alloc::tree_set::TreeSet<Key>,policy:&Policy,words:[u64;8],output:&Output) {
+    let op:u64=words[0];
+    if(op==1) { emit_set(owner.try_replace(Key { identity:signed(words[1]),stamp:words[2] }).unwrap(),output); return; }
+    if(op==2) { emit_set(owner.remove(Key { identity:signed(words[1]),stamp:0 }),output); return; }
+    if(op==3) {
+        let key:Key=Key { identity:signed(words[2]),stamp:words[3] }; let mode:u64=words[1];
+        let found:core::option::Option<Key> = core::option::None();
+        if(mode==0) { found=owner.lower_bound(key); }
+        if(mode==1) { found=owner.upper_bound(key); }
+        if(mode==2) { found=owner.last_at_most(key); }
+        if(mode==3) { found=owner.last_below(key); }
+        emit_set(found,output); return;
+    }
+    if(op==4) {
+        let band:Band=Band { low:signed(words[2]),high:signed(words[3]),role:0 }; let mode:u64=words[1];
+        let found:core::option::Option<Key> = core::option::None();
+        if(mode==0) { found=owner.lower_bound_by<Band,Policy>(band,policy); }
+        if(mode==1) { found=owner.upper_bound_by<Band,Policy>(band,policy); }
+        if(mode==2) { found=owner.last_at_most_by<Band,Policy>(band,policy); }
+        if(mode==3) { found=owner.last_below_by<Band,Policy>(band,policy); }
+        output.word(RESULT); emit_set(found,output); return;
+    }
+    if(op==5) {
+        let range:core::result::Result<alloc::tree_set::Cursor<Key>,alloc::tree_map::Error> =
+            owner.range_bounds(key_bound(words[1],words[2],words[5]),key_bound(words[3],words[4],words[5]));
+        if(range.is_err()) { output.word(RESULT); output.word(1); return; }
+        output.word(RESULT); output.word(0);
+        let cursor:alloc::tree_set::Cursor<Key> = range.unwrap(); pull_set(cursor.borrow(),words[6],output); return;
+    }
+    if(op==6) {
+        let lower:core::range::Bound<Band> = band_bound(words[1]&3,words[2],words[3],0);
+        let upper:core::range::Bound<Band> = band_bound((words[1]>>2)&3,words[4],words[5],1);
+        let cursor:alloc::tree_set::Cursor<Key> = owner.range_bounds_by<Band,Policy>(lower,upper,policy);
+        output.word(RESULT); pull_set(cursor.borrow(),words[6],output); return;
+    }
+    if(op==7) { output.word(owner.len() as u64); let all:alloc::tree_set::Cursor<Key> = owner.iter(); pull_set(all.borrow(),0,output); return; }
+    if(op==8) { owner.clear(); output.word(0); return; }
+    if(op>=9 && op<=13) {
+        let before:i32=owner.capacity();
+        if(op==9 || op==10) {
+            let removed:i32=0; let failed:bool=false;
+            if(op==9) {
+                let result:core::result::Result<i32,alloc::tree_map::Error> = owner.remove_range(key_bound(words[1],words[2],0),key_bound(words[3],words[4],0));
+                if(result.is_err()) { failed=true; } else { removed=result.unwrap(); }
+            } else {
+                removed=owner.remove_range_by<Band,Policy>(band_bound(words[1]&3,words[2],words[3],0),band_bound((words[1]>>2)&3,words[4],words[5],1),policy);
+            }
+            output.word(RESULT); if(failed) { output.word(1); return; }
+            output.word(0); output.word(removed as u64); emit_bool_word(owner.capacity()==before,output); return;
+        }
+        let moved:core::result::Result<alloc::tree_set::TreeSet<Key>,alloc::tree_map::Error> = core::result::Err(alloc::tree_map::Error::InvalidRange);
+        if(op==11) { moved=owner.try_extract_range(key_bound(words[1],words[2],0),key_bound(words[3],words[4],0)); }
+        if(op==12) { moved=owner.try_extract_range_by<Band,Policy>(band_bound(words[1]&3,words[2],words[3],0),band_bound((words[1]>>2)&3,words[4],words[5],1),policy); }
+        if(op==13) { moved=owner.try_split_off(Key { identity:signed(words[1]),stamp:0 }); }
+        output.word(RESULT); if(moved.is_err()) { output.word(1); return; }
+        let taken:alloc::tree_set::TreeSet<Key> = moved.unwrap();
+        output.word(0); output.word(taken.len() as u64); emit_bool_word(taken.capacity()==taken.len(),output); emit_bool_word(owner.capacity()==before,output);
+        let all:alloc::tree_set::Cursor<Key> = taken.iter(); pull_set(all.borrow(),0,output); taken.destroy(); return;
+    }
+    assert(false);
+}
+fn main() -> i32 {
+    let output_storage:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_storage);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    let input_storage:[i32;16]=[0;16]; let input_pointer:ptr=core::mem::i32_array_data_ptr(input_storage);
+    let input:[u8]=core::mem::typed_slice_from_raw_parts<u8>(input_pointer,64);
+    let policy:Policy=Policy { output:output.borrow(),calls:0 };
+    let map:alloc::tree_map::TreeMap<Key,u64> = alloc::tree_map::new<Key,u64>();
+    let set:alloc::tree_set::TreeSet<Key> = alloc::tree_set::new<Key>();
+    let family:u64=0; let commands:u64=0;
+    while(read_exact(input_pointer,64)) {
+        let words:[u64;8]=[0;8]; let i:i32=0;
+        while(i<8) { words[i]=get64(input,i*8); i+=1; }
+        commands+=1;
+        if(words[0]==0) {
+            map.destroy(); set.destroy(); family=words[1];
+            map=alloc::tree_map::new<Key,u64>(); set=alloc::tree_set::new<Key>();
+            output.word(0);
+        } else {
+            if(family==0) { map_command(map.borrow(),policy.borrow(),words,output.borrow()); }
+            else { set_command(set.borrow(),policy.borrow(),words,output.borrow()); }
+        }
+    }
+    map.destroy(); set.destroy();
+    output.word(255); output.word(commands); output.word(policy.calls); output.flush();
+    return 0;
+}
