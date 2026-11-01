@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-seqdiff](../../extended-seqdiff.md)
 
-Declaration counts: enum: 2; field: 25; function: 15; impl: 5; method: 20; struct: 7; variant: 8.
+Declaration counts: enum: 2; field: 36; function: 20; impl: 7; method: 24; struct: 9; variant: 8.
 
 ## Declared imports
 
@@ -321,7 +321,7 @@ hash: u32
 
 ### struct: Split
 
-[Source line 246](../../../extended/ext/seqdiff.lani#L246)
+[Source line 323](../../../extended/ext/seqdiff.lani#L323)
 
 ```lanius
 pub struct Split
@@ -329,7 +329,7 @@ pub struct Split
 
 #### field: before
 
-[Source line 246](../../../extended/ext/seqdiff.lani#L246)
+[Source line 323](../../../extended/ext/seqdiff.lani#L323)
 
 ```lanius
 before: core::slice::View<u8>
@@ -337,7 +337,7 @@ before: core::slice::View<u8>
 
 #### field: after
 
-[Source line 246](../../../extended/ext/seqdiff.lani#L246)
+[Source line 323](../../../extended/ext/seqdiff.lani#L323)
 
 ```lanius
 after: core::slice::View<u8>
@@ -345,7 +345,7 @@ after: core::slice::View<u8>
 
 #### field: before_starts
 
-[Source line 246](../../../extended/ext/seqdiff.lani#L246)
+[Source line 323](../../../extended/ext/seqdiff.lani#L323)
 
 ```lanius
 before_starts: alloc::vec::Vec<i32>
@@ -353,7 +353,7 @@ before_starts: alloc::vec::Vec<i32>
 
 #### field: after_starts
 
-[Source line 246](../../../extended/ext/seqdiff.lani#L246)
+[Source line 323](../../../extended/ext/seqdiff.lani#L323)
 
 ```lanius
 after_starts: alloc::vec::Vec<i32>
@@ -361,10 +361,114 @@ after_starts: alloc::vec::Vec<i32>
 
 #### field: classes
 
-[Source line 246](../../../extended/ext/seqdiff.lani#L246)
+[Source line 323](../../../extended/ext/seqdiff.lani#L323)
 
 ```lanius
 classes: Classes
+```
+
+### struct: Classes3
+
+[Source line 383](../../../extended/ext/seqdiff.lani#L383)
+
+```lanius
+pub struct Classes3
+```
+
+#### field: base
+
+[Source line 383](../../../extended/ext/seqdiff.lani#L383)
+
+```lanius
+base: alloc::vec::Vec<i32>
+```
+
+#### field: ours
+
+[Source line 383](../../../extended/ext/seqdiff.lani#L383)
+
+```lanius
+ours: alloc::vec::Vec<i32>
+```
+
+#### field: theirs
+
+[Source line 383](../../../extended/ext/seqdiff.lani#L383)
+
+```lanius
+theirs: alloc::vec::Vec<i32>
+```
+
+#### field: count
+
+[Source line 383](../../../extended/ext/seqdiff.lani#L383)
+
+```lanius
+count: i32
+```
+
+### struct: Split3
+
+[Source line 390](../../../extended/ext/seqdiff.lani#L390)
+
+```lanius
+pub struct Split3
+```
+
+#### field: base
+
+[Source line 390](../../../extended/ext/seqdiff.lani#L390)
+
+```lanius
+base: core::slice::View<u8>
+```
+
+#### field: ours
+
+[Source line 390](../../../extended/ext/seqdiff.lani#L390)
+
+```lanius
+ours: core::slice::View<u8>
+```
+
+#### field: theirs
+
+[Source line 390](../../../extended/ext/seqdiff.lani#L390)
+
+```lanius
+theirs: core::slice::View<u8>
+```
+
+#### field: base_starts
+
+[Source line 390](../../../extended/ext/seqdiff.lani#L390)
+
+```lanius
+base_starts: alloc::vec::Vec<i32>
+```
+
+#### field: ours_starts
+
+[Source line 390](../../../extended/ext/seqdiff.lani#L390)
+
+```lanius
+ours_starts: alloc::vec::Vec<i32>
+```
+
+#### field: theirs_starts
+
+[Source line 390](../../../extended/ext/seqdiff.lani#L390)
+
+```lanius
+theirs_starts: alloc::vec::Vec<i32>
+```
+
+#### field: classes
+
+[Source line 390](../../../extended/ext/seqdiff.lani#L390)
+
+```lanius
+classes: Classes3
 ```
 
 ## Free functions and extern declarations
@@ -385,9 +489,25 @@ pub fn default_limits() -> Limits
 pub fn line(bytes: core::slice::View<u8>) -> Line
 ```
 
+### function: copy_bytes
+
+[Source line 119](../../../extended/ext/seqdiff.lani#L119)
+
+```lanius
+pub fn copy_bytes(target: ptr, source: core::slice::View<u8>)
+```
+
+### function: line_starts
+
+[Source line 278](../../../extended/ext/seqdiff.lani#L278)
+
+```lanius
+pub fn line_starts(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<i32>, Error>
+```
+
 ### function: split_lines
 
-[Source line 217](../../../extended/ext/seqdiff.lani#L217)
+[Source line 294](../../../extended/ext/seqdiff.lani#L294)
 
 ```lanius
 pub fn split_lines(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<Line>, Error>
@@ -395,7 +515,7 @@ pub fn split_lines(input: core::slice::View<u8>, limits: Limits) -> core::result
 
 ### function: empty_split
 
-[Source line 259](../../../extended/ext/seqdiff.lani#L259)
+[Source line 336](../../../extended/ext/seqdiff.lani#L336)
 
 ```lanius
 pub fn empty_split() -> Split
@@ -403,15 +523,31 @@ pub fn empty_split() -> Split
 
 ### function: split_classify
 
-[Source line 271](../../../extended/ext/seqdiff.lani#L271)
+[Source line 348](../../../extended/ext/seqdiff.lani#L348)
 
 ```lanius
 pub fn split_classify(a: core::slice::View<u8>, b: core::slice::View<u8>, limits: Limits) -> core::result::Result<Split, Error>
 ```
 
+### function: classify_lines3
+
+[Source line 396](../../../extended/ext/seqdiff.lani#L396)
+
+```lanius
+pub fn classify_lines3(o: core::slice::View<Line>, a: core::slice::View<Line>, b: core::slice::View<Line>, limits: Limits) -> core::result::Result<Classes3, Error>
+```
+
+### function: split_classify3
+
+[Source line 424](../../../extended/ext/seqdiff.lani#L424)
+
+```lanius
+pub fn split_classify3(o: core::slice::View<u8>, a: core::slice::View<u8>, b: core::slice::View<u8>, limits: Limits) -> core::result::Result<Split3, Error>
+```
+
 ### function: classify
 
-[Source line 312](../../../extended/ext/seqdiff.lani#L312)
+[Source line 471](../../../extended/ext/seqdiff.lani#L471)
 
 ```lanius
 pub fn classify<T>(a: core::slice::View<T>, b: core::slice::View<T>, limits: Limits) -> core::result::Result<Classes, Error> where T: core::cmp::Eq<T>, T: core::hash::Hash<T>
@@ -419,7 +555,7 @@ pub fn classify<T>(a: core::slice::View<T>, b: core::slice::View<T>, limits: Lim
 
 ### function: myers
 
-[Source line 571](../../../extended/ext/seqdiff.lani#L571)
+[Source line 730](../../../extended/ext/seqdiff.lani#L730)
 
 ```lanius
 pub fn myers<T>(a: core::slice::View<T>, b: core::slice::View<T>, limits: Limits) -> core::result::Result<Script, Error> where T: core::cmp::Eq<T>
@@ -427,7 +563,7 @@ pub fn myers<T>(a: core::slice::View<T>, b: core::slice::View<T>, limits: Limits
 
 ### function: myers_classes
 
-[Source line 583](../../../extended/ext/seqdiff.lani#L583)
+[Source line 742](../../../extended/ext/seqdiff.lani#L742)
 
 ```lanius
 pub fn myers_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits) -> core::result::Result<Script, Error>
@@ -435,7 +571,7 @@ pub fn myers_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, limit
 
 ### function: patience_classes
 
-[Source line 646](../../../extended/ext/seqdiff.lani#L646)
+[Source line 805](../../../extended/ext/seqdiff.lani#L805)
 
 ```lanius
 pub fn patience_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, classes: i32, limits: Limits) -> core::result::Result<Script, Error>
@@ -443,7 +579,7 @@ pub fn patience_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, cl
 
 ### function: xdiff_classes
 
-[Source line 832](../../../extended/ext/seqdiff.lani#L832)
+[Source line 991](../../../extended/ext/seqdiff.lani#L991)
 
 ```lanius
 pub fn xdiff_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, limits: Limits) -> core::result::Result<Script, Error>
@@ -451,7 +587,7 @@ pub fn xdiff_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, limit
 
 ### function: classify_lines
 
-[Source line 912](../../../extended/ext/seqdiff.lani#L912)
+[Source line 1071](../../../extended/ext/seqdiff.lani#L1071)
 
 ```lanius
 pub fn classify_lines(a: core::slice::View<Line>, b: core::slice::View<Line>, limits: Limits) -> core::result::Result<Classes, Error>
@@ -459,15 +595,23 @@ pub fn classify_lines(a: core::slice::View<Line>, b: core::slice::View<Line>, li
 
 ### function: diff
 
-[Source line 966](../../../extended/ext/seqdiff.lani#L966)
+[Source line 1125](../../../extended/ext/seqdiff.lani#L1125)
 
 ```lanius
 pub fn diff<T>(a: core::slice::View<T>, b: core::slice::View<T>, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error> where T: core::cmp::Eq<T>, T: core::hash::Hash<T>
 ```
 
+### function: diff_classes
+
+[Source line 1132](../../../extended/ext/seqdiff.lani#L1132)
+
+```lanius
+pub fn diff_classes(a: core::slice::View<i32>, b: core::slice::View<i32>, classes: i32, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error>
+```
+
 ### function: diff_split
 
-[Source line 982](../../../extended/ext/seqdiff.lani#L982)
+[Source line 1143](../../../extended/ext/seqdiff.lani#L1143)
 
 ```lanius
 pub fn diff_split(split: &Split, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error>
@@ -475,7 +619,7 @@ pub fn diff_split(split: &Split, algorithm: Algorithm, limits: Limits) -> core::
 
 ### function: diff_lines
 
-[Source line 983](../../../extended/ext/seqdiff.lani#L983)
+[Source line 1144](../../../extended/ext/seqdiff.lani#L1144)
 
 ```lanius
 pub fn diff_lines(a: core::slice::View<Line>, b: core::slice::View<Line>, algorithm: Algorithm, limits: Limits) -> core::result::Result<Script, Error>
@@ -483,7 +627,7 @@ pub fn diff_lines(a: core::slice::View<Line>, b: core::slice::View<Line>, algori
 
 ### function: hunks
 
-[Source line 1001](../../../extended/ext/seqdiff.lani#L1001)
+[Source line 1162](../../../extended/ext/seqdiff.lani#L1162)
 
 ```lanius
 pub fn hunks(script: &Script, context: i32) -> core::result::Result<alloc::vec::Vec<Hunk>, Error>
@@ -531,9 +675,9 @@ pub impl core::hash::Hash<Line> for Line
 pub fn hash(value: Line) -> u32
 ```
 
-### impl at line 247
+### impl at line 324
 
-[Source line 247](../../../extended/ext/seqdiff.lani#L247)
+[Source line 324](../../../extended/ext/seqdiff.lani#L324)
 
 ```lanius
 pub impl Split
@@ -541,7 +685,7 @@ pub impl Split
 
 #### method: borrow
 
-[Source line 248](../../../extended/ext/seqdiff.lani#L248)
+[Source line 325](../../../extended/ext/seqdiff.lani#L325)
 
 ```lanius
 pub fn borrow(&self) -> &Split
@@ -549,7 +693,7 @@ pub fn borrow(&self) -> &Split
 
 #### method: before_len
 
-[Source line 249](../../../extended/ext/seqdiff.lani#L249)
+[Source line 326](../../../extended/ext/seqdiff.lani#L326)
 
 ```lanius
 pub fn before_len(&self) -> i32
@@ -557,7 +701,7 @@ pub fn before_len(&self) -> i32
 
 #### method: after_len
 
-[Source line 250](../../../extended/ext/seqdiff.lani#L250)
+[Source line 327](../../../extended/ext/seqdiff.lani#L327)
 
 ```lanius
 pub fn after_len(&self) -> i32
@@ -565,7 +709,7 @@ pub fn after_len(&self) -> i32
 
 #### method: before_line
 
-[Source line 251](../../../extended/ext/seqdiff.lani#L251)
+[Source line 328](../../../extended/ext/seqdiff.lani#L328)
 
 ```lanius
 pub fn before_line(&self, index: i32) -> core::slice::View<u8>
@@ -573,7 +717,7 @@ pub fn before_line(&self, index: i32) -> core::slice::View<u8>
 
 #### method: after_line
 
-[Source line 252](../../../extended/ext/seqdiff.lani#L252)
+[Source line 329](../../../extended/ext/seqdiff.lani#L329)
 
 ```lanius
 pub fn after_line(&self, index: i32) -> core::slice::View<u8>
@@ -581,7 +725,7 @@ pub fn after_line(&self, index: i32) -> core::slice::View<u8>
 
 #### method: before_lines
 
-[Source line 254](../../../extended/ext/seqdiff.lani#L254)
+[Source line 331](../../../extended/ext/seqdiff.lani#L331)
 
 ```lanius
 pub fn before_lines(&self) -> core::result::Result<alloc::vec::Vec<Line>, Error>
@@ -589,7 +733,7 @@ pub fn before_lines(&self) -> core::result::Result<alloc::vec::Vec<Line>, Error>
 
 #### method: after_lines
 
-[Source line 255](../../../extended/ext/seqdiff.lani#L255)
+[Source line 332](../../../extended/ext/seqdiff.lani#L332)
 
 ```lanius
 pub fn after_lines(&self) -> core::result::Result<alloc::vec::Vec<Line>, Error>
@@ -597,15 +741,63 @@ pub fn after_lines(&self) -> core::result::Result<alloc::vec::Vec<Line>, Error>
 
 #### method: destroy
 
-[Source line 256](../../../extended/ext/seqdiff.lani#L256)
+[Source line 333](../../../extended/ext/seqdiff.lani#L333)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 348
+### impl at line 384
 
-[Source line 348](../../../extended/ext/seqdiff.lani#L348)
+[Source line 384](../../../extended/ext/seqdiff.lani#L384)
+
+```lanius
+pub impl Classes3
+```
+
+#### method: borrow
+
+[Source line 385](../../../extended/ext/seqdiff.lani#L385)
+
+```lanius
+pub fn borrow(&self) -> &Classes3
+```
+
+#### method: destroy
+
+[Source line 386](../../../extended/ext/seqdiff.lani#L386)
+
+```lanius
+pub fn destroy(&self)
+```
+
+### impl at line 391
+
+[Source line 391](../../../extended/ext/seqdiff.lani#L391)
+
+```lanius
+pub impl Split3
+```
+
+#### method: borrow
+
+[Source line 392](../../../extended/ext/seqdiff.lani#L392)
+
+```lanius
+pub fn borrow(&self) -> &Split3
+```
+
+#### method: destroy
+
+[Source line 393](../../../extended/ext/seqdiff.lani#L393)
+
+```lanius
+pub fn destroy(&self)
+```
+
+### impl at line 507
+
+[Source line 507](../../../extended/ext/seqdiff.lani#L507)
 
 ```lanius
 pub impl Classes
@@ -613,7 +805,7 @@ pub impl Classes
 
 #### method: borrow
 
-[Source line 349](../../../extended/ext/seqdiff.lani#L349)
+[Source line 508](../../../extended/ext/seqdiff.lani#L508)
 
 ```lanius
 pub fn borrow(&self) -> &Classes
@@ -621,15 +813,15 @@ pub fn borrow(&self) -> &Classes
 
 #### method: destroy
 
-[Source line 350](../../../extended/ext/seqdiff.lani#L350)
+[Source line 509](../../../extended/ext/seqdiff.lani#L509)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 989
+### impl at line 1150
 
-[Source line 989](../../../extended/ext/seqdiff.lani#L989)
+[Source line 1150](../../../extended/ext/seqdiff.lani#L1150)
 
 ```lanius
 pub impl Script
@@ -637,7 +829,7 @@ pub impl Script
 
 #### method: borrow
 
-[Source line 990](../../../extended/ext/seqdiff.lani#L990)
+[Source line 1151](../../../extended/ext/seqdiff.lani#L1151)
 
 ```lanius
 pub fn borrow(&self) -> &Script
@@ -645,7 +837,7 @@ pub fn borrow(&self) -> &Script
 
 #### method: len
 
-[Source line 991](../../../extended/ext/seqdiff.lani#L991)
+[Source line 1152](../../../extended/ext/seqdiff.lani#L1152)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -653,7 +845,7 @@ pub fn len(&self) -> i32
 
 #### method: distance
 
-[Source line 992](../../../extended/ext/seqdiff.lani#L992)
+[Source line 1153](../../../extended/ext/seqdiff.lani#L1153)
 
 ```lanius
 pub fn distance(&self) -> i32
@@ -661,7 +853,7 @@ pub fn distance(&self) -> i32
 
 #### method: before_len
 
-[Source line 993](../../../extended/ext/seqdiff.lani#L993)
+[Source line 1154](../../../extended/ext/seqdiff.lani#L1154)
 
 ```lanius
 pub fn before_len(&self) -> i32
@@ -669,7 +861,7 @@ pub fn before_len(&self) -> i32
 
 #### method: after_len
 
-[Source line 994](../../../extended/ext/seqdiff.lani#L994)
+[Source line 1155](../../../extended/ext/seqdiff.lani#L1155)
 
 ```lanius
 pub fn after_len(&self) -> i32
@@ -677,7 +869,7 @@ pub fn after_len(&self) -> i32
 
 #### method: step
 
-[Source line 995](../../../extended/ext/seqdiff.lani#L995)
+[Source line 1156](../../../extended/ext/seqdiff.lani#L1156)
 
 ```lanius
 pub fn step(&self, index: i32) -> core::result::Result<Edit, Error>
@@ -685,7 +877,7 @@ pub fn step(&self, index: i32) -> core::result::Result<Edit, Error>
 
 #### method: destroy
 
-[Source line 996](../../../extended/ext/seqdiff.lani#L996)
+[Source line 1157](../../../extended/ext/seqdiff.lani#L1157)
 
 ```lanius
 pub fn destroy(&self)
