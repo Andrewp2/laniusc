@@ -24,7 +24,7 @@ theorem ok_lx_symbol : FnOk prog prims info (1034, ⟨13, [], 0⟩) :=
 theorem ok_lx_token_text : FnOk prog prims info (1039, ⟨2, [], 0⟩) :=
   fnOk_of fn_lx_token_text (by decide +kernel)
 
-theorem ok_lx_take : FnOk prog prims info (1040, ⟨2, [0], 0⟩) :=
+theorem ok_lx_take : FnOk prog prims info (1040, ⟨1, [0], 0⟩) :=
   fnOk_of fn_lx_take (by decide +kernel)
 
 theorem ok_lx_keyword : FnOk prog prims info (1041, ⟨1, [1], 0⟩) :=
@@ -33,7 +33,7 @@ theorem ok_lx_keyword : FnOk prog prims info (1041, ⟨1, [1], 0⟩) :=
 theorem ok_picks : FnOk prog prims info (1042, ⟨5, [], 0⟩) :=
   fnOk_of fn_picks (by decide +kernel)
 
-theorem ok_get_of_mini_selfhost_Rule : FnOk prog prims info (1043, ⟨2, [0], 0⟩) :=
+theorem ok_get_of_mini_selfhost_Rule : FnOk prog prims info (1043, ⟨1, [0], 0⟩) :=
   fnOk_of fn_get_of_mini_selfhost_Rule (by decide +kernel)
 
 theorem ok_attach_node : FnOk prog prims info (1044, ⟨6, [1], 2⟩) :=
@@ -45,7 +45,7 @@ theorem ok_concat_of_mini_selfhost_CTree : FnOk prog prims info (1045, ⟨0, [0]
 theorem ok_struct_decl_fields : FnOk prog prims info (1046, ⟨3, [], 0⟩) :=
   fnOk_of fn_struct_decl_fields (by decide +kernel)
 
-theorem ok_fields_of : FnOk prog prims info (1047, ⟨6, [0], 0⟩) :=
+theorem ok_fields_of : FnOk prog prims info (1047, ⟨5, [0], 0⟩) :=
   fnOk_of fn_fields_of (by decide +kernel)
 
 theorem ok_empty_of_mini_selfhost_List_mini_selfhost_CTree : FnOk prog prims info (1048, ⟨0, [], 0⟩) :=
@@ -57,10 +57,10 @@ theorem ok_cons_variant : FnOk prog prims info (1049, ⟨2, [], 0⟩) :=
 theorem ok_variant_payload : FnOk prog prims info (1050, ⟨4, [], 0⟩) :=
   fnOk_of fn_variant_payload (by decide +kernel)
 
-theorem ok_param_spelling_at : FnOk prog prims info (1051, ⟨5, [1], 1⟩) :=
+theorem ok_param_spelling_at : FnOk prog prims info (1051, ⟨4, [1], 1⟩) :=
   fnOk_of fn_param_spelling_at (by decide +kernel)
 
-theorem ok_method_decl : FnOk prog prims info (1052, ⟨7, [], 0⟩) :=
+theorem ok_method_decl : FnOk prog prims info (1052, ⟨6, [], 0⟩) :=
   fnOk_of fn_method_decl (by decide +kernel)
 
 theorem ok_cons_of_mini_selfhost_ImplDecl : FnOk prog prims info (1053, ⟨0, [], 0⟩) :=
