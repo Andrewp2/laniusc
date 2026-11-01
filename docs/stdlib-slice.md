@@ -11,6 +11,10 @@ metadata. Its [comparator-driven ordering APIs](stdlib-slice-ordering.md)
 share sort/search engines with the raw Ord functions documented here; raw
 signatures, fallbacks and nonpositive-length behavior remain unchanged.
 
+Copies, fills, swaps, `memchr` and `memcmp` move packed byte views eight
+bytes at a time; see [bulk operations](stdlib-slice-bulk.md) for layouts,
+thresholds and timings.
+
 The separate [alloc::slice stable-sort family](stdlib-stable-sort.md) adds
 checked View sorting with one typed workspace and explicit reservation errors.
 Its selected native Linux x86_64 gates and migrated application pass. It does not change the
@@ -42,7 +46,8 @@ The wide integers implement the required traits in `core::wide_i64` and
 
 | Needs | Functions |
 | --- | --- |
-| nothing | `first`, `first_or`, `last_or`, `get_or`, `set`, `swap`, `fill`, `reverse_in_place`, `rotate_left`, `rotate_right`, `copy_within`, `copy_nonoverlapping_prefix`, `copy_nonoverlapping_range`, `insert`, `push`, `remove_at` |
+| nothing | `first`, `first_or`, `last_or`, `get_or`, `set`, `swap`, `fill`, `fill_range`, `reverse_in_place`, `rotate_left`, `rotate_right`, `copy_within`, `copy_nonoverlapping_prefix`, `copy_nonoverlapping_range`, `copy_from_slice`, `swap_with_slice`, `insert`, `push`, `remove_at` |
+| `[u8]` only | `memchr`, `memcmp` |
 | `PartialEq` | `contains`, `count`, `index_of_or`, `last_index_of_or`, `starts_with`, `ends_with`, `equals`, `index_of_subslice`, `last_index_of_subslice`, `dedup_adjacent`, `retain_not_equal` |
 | `Ord` | `compare_lexicographic`, `min_or`, `max_or`, `is_sorted`, `sort`, `lower_bound`, `upper_bound`, `binary_search_first_or`, `binary_search_last_or`, `partition_lt` |
 | `SaturatingAdd` | `sum(values, len, initial)` |

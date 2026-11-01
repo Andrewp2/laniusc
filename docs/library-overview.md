@@ -1,7 +1,12 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment makes
-`core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
+The full library goal remains open. The current increment adds
+[bulk slice and vector operations](stdlib-slice-bulk.md): `copy_from_slice`,
+`swap_with_slice`, `fill_range`, `memchr` and `memcmp` in `core::slice`, and
+`try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and
+`swap` on `alloc::vec::Vec`. Packed byte runs move eight bytes at a time:
+a 4 KiB copy runs 5x faster than the element loop and a fill 38x faster.
+The preceding increment makes `core::slice` sorting adaptive: [pattern-defeating quicksort](stdlib-sort-algorithms.md)
 for unstable sorts and a run-adaptive stable merge sort with galloping over
 caller scratch. Both are checked against Python `sorted`, with recorded
 comparison counts and timings. The preceding increment adds inline

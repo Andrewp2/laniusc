@@ -2701,7 +2701,9 @@ borrowed point lookup has the current increment above.
   programs use it. The protected vector remains heap backing and under active
   formal vector specification/template contracts; the mini compiler and
   extractor use `List`. The recorded heap migration compiler reduction retains
-  its historical scope.
+  its historical scope. [Bulk operations](stdlib-slice-bulk.md) add
+  `try_extend_from_slice`, `copy_from_slice`, `swap_with_slice`, `fill` and
+  `swap`, and move `Vec<u8>`/`Vec<i32>` runs eight bytes at a time.
 - Owned deque: [`alloc::deque`](stdlib-deque.md) replaces the old std module and
   its unchanged-owner failure convention. It executes both-end edits, rotations,
   borrowed views/cursors, alias-safe extension, split and clone. A 6,000-command

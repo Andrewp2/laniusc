@@ -23,7 +23,7 @@ Five inherent Destroy-bound editing methods retain backing/capacity: retain_dest
 - [stdlib-vec-edit](../../stdlib-vec-edit.md)
 - [stdlib-sort-rows](../../stdlib-sort-rows.md)
 
-Declaration counts: constant: 1; enum: 2; field: 7; function: 3; impl: 6; method: 55; struct: 2; variant: 5.
+Declaration counts: constant: 1; enum: 2; field: 7; function: 3; impl: 6; method: 60; struct: 2; variant: 5.
 
 ## Declared imports
 
@@ -187,7 +187,7 @@ pub const MAX_CAPACITY: i32 = 2147483647;
 
 ### function: new
 
-[Source line 26](../../../stdlib/alloc/vec.lani#L26)
+[Source line 31](../../../stdlib/alloc/vec.lani#L31)
 
 ```lanius
 pub fn new<T>() -> Vec<T>
@@ -195,7 +195,7 @@ pub fn new<T>() -> Vec<T>
 
 ### function: with_capacity
 
-[Source line 28](../../../stdlib/alloc/vec.lani#L28)
+[Source line 33](../../../stdlib/alloc/vec.lani#L33)
 
 ```lanius
 pub fn with_capacity<T>(capacity: i32) -> core::result::Result<Vec<T>, Error>
@@ -203,7 +203,7 @@ pub fn with_capacity<T>(capacity: i32) -> core::result::Result<Vec<T>, Error>
 
 ### function: from_view
 
-[Source line 35](../../../stdlib/alloc/vec.lani#L35)
+[Source line 40](../../../stdlib/alloc/vec.lani#L40)
 
 ```lanius
 pub fn from_view<T>(values: core::slice::View<T>) -> core::result::Result<Vec<T>, Error>
@@ -211,9 +211,9 @@ pub fn from_view<T>(values: core::slice::View<T>) -> core::result::Result<Vec<T>
 
 ## Implementation blocks and public methods
 
-### impl at line 60
+### impl at line 65
 
-[Source line 60](../../../stdlib/alloc/vec.lani#L60)
+[Source line 65](../../../stdlib/alloc/vec.lani#L65)
 
 ```lanius
 pub impl<T> Vec<T>
@@ -221,7 +221,7 @@ pub impl<T> Vec<T>
 
 #### method: borrow
 
-[Source line 61](../../../stdlib/alloc/vec.lani#L61)
+[Source line 66](../../../stdlib/alloc/vec.lani#L66)
 
 ```lanius
 pub fn borrow(&self) -> &Vec<T>
@@ -229,7 +229,7 @@ pub fn borrow(&self) -> &Vec<T>
 
 #### method: len
 
-[Source line 62](../../../stdlib/alloc/vec.lani#L62)
+[Source line 67](../../../stdlib/alloc/vec.lani#L67)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -237,7 +237,7 @@ pub fn len(&self) -> i32
 
 #### method: capacity
 
-[Source line 63](../../../stdlib/alloc/vec.lani#L63)
+[Source line 68](../../../stdlib/alloc/vec.lani#L68)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -245,7 +245,7 @@ pub fn capacity(&self) -> i32
 
 #### method: is_empty
 
-[Source line 64](../../../stdlib/alloc/vec.lani#L64)
+[Source line 69](../../../stdlib/alloc/vec.lani#L69)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -253,7 +253,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: as_slice
 
-[Source line 66](../../../stdlib/alloc/vec.lani#L66)
+[Source line 71](../../../stdlib/alloc/vec.lani#L71)
 
 ```lanius
 pub fn as_slice(&self) -> [T]
@@ -261,7 +261,7 @@ pub fn as_slice(&self) -> [T]
 
 #### method: as_view
 
-[Source line 67](../../../stdlib/alloc/vec.lani#L67)
+[Source line 72](../../../stdlib/alloc/vec.lani#L72)
 
 ```lanius
 pub fn as_view(&self) -> core::slice::View<T>
@@ -269,7 +269,7 @@ pub fn as_view(&self) -> core::slice::View<T>
 
 #### method: iter
 
-[Source line 72](../../../stdlib/alloc/vec.lani#L72)
+[Source line 77](../../../stdlib/alloc/vec.lani#L77)
 
 ```lanius
 pub fn iter(&self) -> core::slice::Iter<T>
@@ -277,7 +277,7 @@ pub fn iter(&self) -> core::slice::Iter<T>
 
 #### method: take
 
-[Source line 78](../../../stdlib/alloc/vec.lani#L78)
+[Source line 83](../../../stdlib/alloc/vec.lani#L83)
 
 ```lanius
 pub fn take(&self) -> Vec<T>
@@ -285,7 +285,7 @@ pub fn take(&self) -> Vec<T>
 
 #### method: take_iter
 
-[Source line 85](../../../stdlib/alloc/vec.lani#L85)
+[Source line 90](../../../stdlib/alloc/vec.lani#L90)
 
 ```lanius
 pub fn take_iter(&self) -> IntoIter<T>
@@ -293,7 +293,7 @@ pub fn take_iter(&self) -> IntoIter<T>
 
 #### method: get
 
-[Source line 90](../../../stdlib/alloc/vec.lani#L90)
+[Source line 95](../../../stdlib/alloc/vec.lani#L95)
 
 ```lanius
 pub fn get(&self, index: i32) -> core::option::Option<T>
@@ -301,7 +301,7 @@ pub fn get(&self, index: i32) -> core::option::Option<T>
 
 #### method: get_or
 
-[Source line 94](../../../stdlib/alloc/vec.lani#L94)
+[Source line 99](../../../stdlib/alloc/vec.lani#L99)
 
 ```lanius
 pub fn get_or(&self, index: i32, fallback: T) -> T
@@ -309,7 +309,7 @@ pub fn get_or(&self, index: i32, fallback: T) -> T
 
 #### method: at
 
-[Source line 95](../../../stdlib/alloc/vec.lani#L95)
+[Source line 100](../../../stdlib/alloc/vec.lani#L100)
 
 ```lanius
 pub fn at(&self, index: i32) -> T
@@ -317,7 +317,7 @@ pub fn at(&self, index: i32) -> T
 
 #### method: first
 
-[Source line 99](../../../stdlib/alloc/vec.lani#L99)
+[Source line 104](../../../stdlib/alloc/vec.lani#L104)
 
 ```lanius
 pub fn first(&self) -> core::option::Option<T>
@@ -325,7 +325,7 @@ pub fn first(&self) -> core::option::Option<T>
 
 #### method: last
 
-[Source line 100](../../../stdlib/alloc/vec.lani#L100)
+[Source line 105](../../../stdlib/alloc/vec.lani#L105)
 
 ```lanius
 pub fn last(&self) -> core::option::Option<T>
@@ -333,7 +333,7 @@ pub fn last(&self) -> core::option::Option<T>
 
 #### method: try_reserve
 
-[Source line 120](../../../stdlib/alloc/vec.lani#L120)
+[Source line 124](../../../stdlib/alloc/vec.lani#L124)
 
 ```lanius
 pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error>
@@ -341,7 +341,7 @@ pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error>
 
 #### method: try_push
 
-[Source line 137](../../../stdlib/alloc/vec.lani#L137)
+[Source line 141](../../../stdlib/alloc/vec.lani#L141)
 
 ```lanius
 pub fn try_push(&self, item: T) -> core::result::Result<i32, Error>
@@ -349,15 +349,55 @@ pub fn try_push(&self, item: T) -> core::result::Result<i32, Error>
 
 #### method: try_extend
 
-[Source line 149](../../../stdlib/alloc/vec.lani#L149)
+[Source line 153](../../../stdlib/alloc/vec.lani#L153)
 
 ```lanius
 pub fn try_extend(&self, values: core::slice::View<T>) -> core::result::Result<i32, Error>
 ```
 
+#### method: try_extend_from_slice
+
+[Source line 185](../../../stdlib/alloc/vec.lani#L185)
+
+```lanius
+pub fn try_extend_from_slice(&self, values: [T], count: i32) -> core::result::Result<i32, Error>
+```
+
+#### method: copy_from_slice
+
+[Source line 194](../../../stdlib/alloc/vec.lani#L194)
+
+```lanius
+pub fn copy_from_slice(&self, values: [T], count: i32) -> core::result::Result<i32, Error>
+```
+
+#### method: swap_with_slice
+
+[Source line 203](../../../stdlib/alloc/vec.lani#L203)
+
+```lanius
+pub fn swap_with_slice(&self, values: [T], count: i32) -> core::result::Result<i32, Error>
+```
+
+#### method: fill
+
+[Source line 210](../../../stdlib/alloc/vec.lani#L210)
+
+```lanius
+pub fn fill(&self, value: T)
+```
+
+#### method: swap
+
+[Source line 213](../../../stdlib/alloc/vec.lani#L213)
+
+```lanius
+pub fn swap(&self, left: i32, right: i32) -> core::result::Result<i32, Error>
+```
+
 #### method: try_append
 
-[Source line 183](../../../stdlib/alloc/vec.lani#L183)
+[Source line 222](../../../stdlib/alloc/vec.lani#L222)
 
 ```lanius
 pub fn try_append(&self, other: &Vec<T>) -> core::result::Result<i32, Error>
@@ -365,7 +405,7 @@ pub fn try_append(&self, other: &Vec<T>) -> core::result::Result<i32, Error>
 
 #### method: try_split_off
 
-[Source line 200](../../../stdlib/alloc/vec.lani#L200)
+[Source line 239](../../../stdlib/alloc/vec.lani#L239)
 
 ```lanius
 pub fn try_split_off(&self, at: i32) -> core::result::Result<Vec<T>, Error>
@@ -373,7 +413,7 @@ pub fn try_split_off(&self, at: i32) -> core::result::Result<Vec<T>, Error>
 
 #### method: try_extract_range
 
-[Source line 206](../../../stdlib/alloc/vec.lani#L206)
+[Source line 245](../../../stdlib/alloc/vec.lani#L245)
 
 ```lanius
 pub fn try_extract_range(&self, start: i32, end: i32) -> core::result::Result<Vec<T>, Error>
@@ -381,7 +421,7 @@ pub fn try_extract_range(&self, start: i32, end: i32) -> core::result::Result<Ve
 
 #### method: set
 
-[Source line 225](../../../stdlib/alloc/vec.lani#L225)
+[Source line 262](../../../stdlib/alloc/vec.lani#L262)
 
 ```lanius
 pub fn set(&self, index: i32, item: T) -> core::result::Result<T, Error>
@@ -389,7 +429,7 @@ pub fn set(&self, index: i32, item: T) -> core::result::Result<T, Error>
 
 #### method: pop
 
-[Source line 230](../../../stdlib/alloc/vec.lani#L230)
+[Source line 267](../../../stdlib/alloc/vec.lani#L267)
 
 ```lanius
 pub fn pop(&self) -> core::option::Option<T>
@@ -397,7 +437,7 @@ pub fn pop(&self) -> core::option::Option<T>
 
 #### method: try_insert
 
-[Source line 235](../../../stdlib/alloc/vec.lani#L235)
+[Source line 272](../../../stdlib/alloc/vec.lani#L272)
 
 ```lanius
 pub fn try_insert(&self, index: i32, item: T) -> core::result::Result<i32, Error>
@@ -405,7 +445,7 @@ pub fn try_insert(&self, index: i32, item: T) -> core::result::Result<i32, Error
 
 #### method: remove
 
-[Source line 244](../../../stdlib/alloc/vec.lani#L244)
+[Source line 281](../../../stdlib/alloc/vec.lani#L281)
 
 ```lanius
 pub fn remove(&self, index: i32) -> core::result::Result<T, Error>
@@ -413,7 +453,7 @@ pub fn remove(&self, index: i32) -> core::result::Result<T, Error>
 
 #### method: swap_remove
 
-[Source line 250](../../../stdlib/alloc/vec.lani#L250)
+[Source line 287](../../../stdlib/alloc/vec.lani#L287)
 
 ```lanius
 pub fn swap_remove(&self, index: i32) -> core::result::Result<T, Error>
@@ -421,7 +461,7 @@ pub fn swap_remove(&self, index: i32) -> core::result::Result<T, Error>
 
 #### method: truncate
 
-[Source line 255](../../../stdlib/alloc/vec.lani#L255)
+[Source line 292](../../../stdlib/alloc/vec.lani#L292)
 
 ```lanius
 pub fn truncate(&self, length: i32) -> core::result::Result<i32, Error>
@@ -429,7 +469,7 @@ pub fn truncate(&self, length: i32) -> core::result::Result<i32, Error>
 
 #### method: clear
 
-[Source line 260](../../../stdlib/alloc/vec.lani#L260)
+[Source line 297](../../../stdlib/alloc/vec.lani#L297)
 
 ```lanius
 pub fn clear(&self)
@@ -437,7 +477,7 @@ pub fn clear(&self)
 
 #### method: retain_destroy
 
-[Source line 266](../../../stdlib/alloc/vec.lani#L266)
+[Source line 303](../../../stdlib/alloc/vec.lani#L303)
 
 ```lanius
 pub fn retain_destroy<P>(&self, predicate: &P) -> i32
@@ -446,7 +486,7 @@ pub fn retain_destroy<P>(&self, predicate: &P) -> i32
 
 #### method: dedup_by_destroy
 
-[Source line 284](../../../stdlib/alloc/vec.lani#L284)
+[Source line 321](../../../stdlib/alloc/vec.lani#L321)
 
 ```lanius
 pub fn dedup_by_destroy<P>(&self, same: &P) -> i32
@@ -455,7 +495,7 @@ pub fn dedup_by_destroy<P>(&self, same: &P) -> i32
 
 #### method: dedup_destroy
 
-[Source line 304](../../../stdlib/alloc/vec.lani#L304)
+[Source line 341](../../../stdlib/alloc/vec.lani#L341)
 
 ```lanius
 pub fn dedup_destroy(&self) -> i32
@@ -464,7 +504,7 @@ pub fn dedup_destroy(&self) -> i32
 
 #### method: truncate_destroy
 
-[Source line 320](../../../stdlib/alloc/vec.lani#L320)
+[Source line 357](../../../stdlib/alloc/vec.lani#L357)
 
 ```lanius
 pub fn truncate_destroy(&self, length: i32) -> core::result::Result<i32, Error>
@@ -473,7 +513,7 @@ pub fn truncate_destroy(&self, length: i32) -> core::result::Result<i32, Error>
 
 #### method: clear_destroy
 
-[Source line 327](../../../stdlib/alloc/vec.lani#L327)
+[Source line 364](../../../stdlib/alloc/vec.lani#L364)
 
 ```lanius
 pub fn clear_destroy(&self) where T: core::clone::Destroy<T>
@@ -481,7 +521,7 @@ pub fn clear_destroy(&self) where T: core::clone::Destroy<T>
 
 #### method: try_resize
 
-[Source line 329](../../../stdlib/alloc/vec.lani#L329)
+[Source line 366](../../../stdlib/alloc/vec.lani#L366)
 
 ```lanius
 pub fn try_resize(&self, length: i32, fill: T) -> core::result::Result<i32, Error>
@@ -489,7 +529,7 @@ pub fn try_resize(&self, length: i32, fill: T) -> core::result::Result<i32, Erro
 
 #### method: try_shrink_to_fit
 
-[Source line 338](../../../stdlib/alloc/vec.lani#L338)
+[Source line 374](../../../stdlib/alloc/vec.lani#L374)
 
 ```lanius
 pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error>
@@ -497,7 +537,7 @@ pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error>
 
 #### method: try_clone
 
-[Source line 343](../../../stdlib/alloc/vec.lani#L343)
+[Source line 379](../../../stdlib/alloc/vec.lani#L379)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<Vec<T>, Error>
@@ -505,7 +545,7 @@ pub fn try_clone(&self) -> core::result::Result<Vec<T>, Error>
 
 #### method: destroy
 
-[Source line 351](../../../stdlib/alloc/vec.lani#L351)
+[Source line 386](../../../stdlib/alloc/vec.lani#L386)
 
 ```lanius
 pub fn destroy(&self)
@@ -513,7 +553,7 @@ pub fn destroy(&self)
 
 #### method: reverse
 
-[Source line 356](../../../stdlib/alloc/vec.lani#L356)
+[Source line 391](../../../stdlib/alloc/vec.lani#L391)
 
 ```lanius
 pub fn reverse(&self)
@@ -521,7 +561,7 @@ pub fn reverse(&self)
 
 #### method: index_of
 
-[Source line 360](../../../stdlib/alloc/vec.lani#L360)
+[Source line 395](../../../stdlib/alloc/vec.lani#L395)
 
 ```lanius
 pub fn index_of(&self, item: T) -> i32 where T: core::cmp::PartialEq<T>
@@ -529,7 +569,7 @@ pub fn index_of(&self, item: T) -> i32 where T: core::cmp::PartialEq<T>
 
 #### method: contains
 
-[Source line 365](../../../stdlib/alloc/vec.lani#L365)
+[Source line 400](../../../stdlib/alloc/vec.lani#L400)
 
 ```lanius
 pub fn contains(&self, item: T) -> bool where T: core::cmp::PartialEq<T>
@@ -537,7 +577,7 @@ pub fn contains(&self, item: T) -> bool where T: core::cmp::PartialEq<T>
 
 #### method: sort
 
-[Source line 366](../../../stdlib/alloc/vec.lani#L366)
+[Source line 401](../../../stdlib/alloc/vec.lani#L401)
 
 ```lanius
 pub fn sort(&self) where T: core::cmp::Ord<T>
@@ -545,7 +585,7 @@ pub fn sort(&self) where T: core::cmp::Ord<T>
 
 #### method: is_sorted
 
-[Source line 367](../../../stdlib/alloc/vec.lani#L367)
+[Source line 402](../../../stdlib/alloc/vec.lani#L402)
 
 ```lanius
 pub fn is_sorted(&self) -> bool where T: core::cmp::Ord<T>
@@ -553,7 +593,7 @@ pub fn is_sorted(&self) -> bool where T: core::cmp::Ord<T>
 
 #### method: lower_bound
 
-[Source line 368](../../../stdlib/alloc/vec.lani#L368)
+[Source line 403](../../../stdlib/alloc/vec.lani#L403)
 
 ```lanius
 pub fn lower_bound(&self, item: T) -> i32 where T: core::cmp::Ord<T>
@@ -561,7 +601,7 @@ pub fn lower_bound(&self, item: T) -> i32 where T: core::cmp::Ord<T>
 
 #### method: upper_bound
 
-[Source line 369](../../../stdlib/alloc/vec.lani#L369)
+[Source line 404](../../../stdlib/alloc/vec.lani#L404)
 
 ```lanius
 pub fn upper_bound(&self, item: T) -> i32 where T: core::cmp::Ord<T>
@@ -569,74 +609,10 @@ pub fn upper_bound(&self, item: T) -> i32 where T: core::cmp::Ord<T>
 
 #### method: binary_search
 
-[Source line 370](../../../stdlib/alloc/vec.lani#L370)
+[Source line 405](../../../stdlib/alloc/vec.lani#L405)
 
 ```lanius
 pub fn binary_search(&self, item: T) -> i32 where T: core::cmp::Ord<T>
-```
-
-### impl at line 373
-
-[Source line 373](../../../stdlib/alloc/vec.lani#L373)
-
-```lanius
-pub impl<T> IntoIter<T>
-```
-
-#### method: borrow
-
-[Source line 374](../../../stdlib/alloc/vec.lani#L374)
-
-```lanius
-pub fn borrow(&self) -> &IntoIter<T>
-```
-
-#### method: remaining
-
-[Source line 375](../../../stdlib/alloc/vec.lani#L375)
-
-```lanius
-pub fn remaining(&self) -> i32
-```
-
-#### method: capacity
-
-[Source line 376](../../../stdlib/alloc/vec.lani#L376)
-
-```lanius
-pub fn capacity(&self) -> i32
-```
-
-#### method: is_empty
-
-[Source line 377](../../../stdlib/alloc/vec.lani#L377)
-
-```lanius
-pub fn is_empty(&self) -> bool
-```
-
-#### method: as_view
-
-[Source line 384](../../../stdlib/alloc/vec.lani#L384)
-
-```lanius
-pub fn as_view(&self) -> core::slice::View<T>
-```
-
-#### method: try_finish
-
-[Source line 388](../../../stdlib/alloc/vec.lani#L388)
-
-```lanius
-pub fn try_finish(&self) -> core::option::Option<IntoIterError>
-```
-
-#### method: take_remaining
-
-[Source line 397](../../../stdlib/alloc/vec.lani#L397)
-
-```lanius
-pub fn take_remaining(&self) -> Vec<T>
 ```
 
 ### impl at line 408
@@ -644,20 +620,84 @@ pub fn take_remaining(&self) -> Vec<T>
 [Source line 408](../../../stdlib/alloc/vec.lani#L408)
 
 ```lanius
+pub impl<T> IntoIter<T>
+```
+
+#### method: borrow
+
+[Source line 409](../../../stdlib/alloc/vec.lani#L409)
+
+```lanius
+pub fn borrow(&self) -> &IntoIter<T>
+```
+
+#### method: remaining
+
+[Source line 410](../../../stdlib/alloc/vec.lani#L410)
+
+```lanius
+pub fn remaining(&self) -> i32
+```
+
+#### method: capacity
+
+[Source line 411](../../../stdlib/alloc/vec.lani#L411)
+
+```lanius
+pub fn capacity(&self) -> i32
+```
+
+#### method: is_empty
+
+[Source line 412](../../../stdlib/alloc/vec.lani#L412)
+
+```lanius
+pub fn is_empty(&self) -> bool
+```
+
+#### method: as_view
+
+[Source line 419](../../../stdlib/alloc/vec.lani#L419)
+
+```lanius
+pub fn as_view(&self) -> core::slice::View<T>
+```
+
+#### method: try_finish
+
+[Source line 423](../../../stdlib/alloc/vec.lani#L423)
+
+```lanius
+pub fn try_finish(&self) -> core::option::Option<IntoIterError>
+```
+
+#### method: take_remaining
+
+[Source line 432](../../../stdlib/alloc/vec.lani#L432)
+
+```lanius
+pub fn take_remaining(&self) -> Vec<T>
+```
+
+### impl at line 443
+
+[Source line 443](../../../stdlib/alloc/vec.lani#L443)
+
+```lanius
 pub impl<T> core::iter::Iterator<T> for IntoIter<T>
 ```
 
 #### method: next
 
-[Source line 410](../../../stdlib/alloc/vec.lani#L410)
+[Source line 445](../../../stdlib/alloc/vec.lani#L445)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 417
+### impl at line 452
 
-[Source line 417](../../../stdlib/alloc/vec.lani#L417)
+[Source line 452](../../../stdlib/alloc/vec.lani#L452)
 
 ```lanius
 pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T>
@@ -665,15 +705,15 @@ pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T>
 
 #### method: next_back
 
-[Source line 419](../../../stdlib/alloc/vec.lani#L419)
+[Source line 454](../../../stdlib/alloc/vec.lani#L454)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
 ```
 
-### impl at line 426
+### impl at line 461
 
-[Source line 426](../../../stdlib/alloc/vec.lani#L426)
+[Source line 461](../../../stdlib/alloc/vec.lani#L461)
 
 ```lanius
 pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T>
@@ -681,15 +721,15 @@ pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T>
 
 #### method: remaining_count
 
-[Source line 427](../../../stdlib/alloc/vec.lani#L427)
+[Source line 462](../../../stdlib/alloc/vec.lani#L462)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 431
+### impl at line 466
 
-[Source line 431](../../../stdlib/alloc/vec.lani#L431)
+[Source line 466](../../../stdlib/alloc/vec.lani#L466)
 
 ```lanius
 pub impl<T> core::iter::TrySink<T, Error> for Vec<T>
@@ -697,7 +737,7 @@ pub impl<T> core::iter::TrySink<T, Error> for Vec<T>
 
 #### method: try_accept
 
-[Source line 432](../../../stdlib/alloc/vec.lani#L432)
+[Source line 467](../../../stdlib/alloc/vec.lani#L467)
 
 ```lanius
 pub fn try_accept(&self, item: T) -> core::option::Option<Error>
