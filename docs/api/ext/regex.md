@@ -18,7 +18,7 @@ One ordered Pike engine now supports reusable fixed-capacity Workspace storage a
 - [extended-lexer](../../extended-lexer.md)
 - [library-regex-workspace-plan](../../library-regex-workspace-plan.md)
 
-Declaration counts: enum: 1; field: 87; function: 8; impl: 8; method: 61; struct: 14; variant: 8.
+Declaration counts: enum: 1; field: 88; function: 8; impl: 8; method: 62; struct: 14; variant: 8.
 
 ## Declared imports
 
@@ -861,7 +861,7 @@ complete: bool
 
 ### struct: Dfa
 
-[Source line 1464](../../../extended/ext/regex.lani#L1464)
+[Source line 1470](../../../extended/ext/regex.lani#L1470)
 
 ```lanius
 pub struct Dfa
@@ -869,7 +869,7 @@ pub struct Dfa
 
 #### field: set
 
-[Source line 1464](../../../extended/ext/regex.lani#L1464)
+[Source line 1470](../../../extended/ext/regex.lani#L1470)
 
 ```lanius
 set: PrefixSet
@@ -877,7 +877,7 @@ set: PrefixSet
 
 #### field: cost
 
-[Source line 1464](../../../extended/ext/regex.lani#L1464)
+[Source line 1470](../../../extended/ext/regex.lani#L1470)
 
 ```lanius
 cost: i64
@@ -885,7 +885,7 @@ cost: i64
 
 #### field: limit
 
-[Source line 1464](../../../extended/ext/regex.lani#L1464)
+[Source line 1470](../../../extended/ext/regex.lani#L1470)
 
 ```lanius
 limit: i64
@@ -893,7 +893,7 @@ limit: i64
 
 ### struct: LineScan
 
-[Source line 1475](../../../extended/ext/regex.lani#L1475)
+[Source line 1482](../../../extended/ext/regex.lani#L1482)
 
 ```lanius
 pub struct LineScan
@@ -901,7 +901,7 @@ pub struct LineScan
 
 #### field: start
 
-[Source line 1475](../../../extended/ext/regex.lani#L1475)
+[Source line 1482](../../../extended/ext/regex.lani#L1482)
 
 ```lanius
 start: i32
@@ -909,15 +909,23 @@ start: i32
 
 #### field: lines
 
-[Source line 1475](../../../extended/ext/regex.lani#L1475)
+[Source line 1482](../../../extended/ext/regex.lani#L1482)
 
 ```lanius
 lines: i32
 ```
 
+#### field: matched
+
+[Source line 1482](../../../extended/ext/regex.lani#L1482)
+
+```lanius
+matched: i32
+```
+
 #### field: status
 
-[Source line 1475](../../../extended/ext/regex.lani#L1475)
+[Source line 1482](../../../extended/ext/regex.lani#L1482)
 
 ```lanius
 status: i32
@@ -983,7 +991,7 @@ pub fn search_set() -> PrefixSet
 
 ### function: dfa
 
-[Source line 1476](../../../extended/ext/regex.lani#L1476)
+[Source line 1505](../../../extended/ext/regex.lani#L1505)
 
 ```lanius
 pub fn dfa(regex: &Regex) -> Result<Dfa, Error>
@@ -1463,9 +1471,9 @@ pub fn finish(&self) -> Result<i32, Error>
 pub fn run(&self, input: Input, start: i32) -> PrefixRun
 ```
 
-### impl at line 1483
+### impl at line 1512
 
-[Source line 1483](../../../extended/ext/regex.lani#L1483)
+[Source line 1512](../../../extended/ext/regex.lani#L1512)
 
 ```lanius
 pub impl Dfa
@@ -1473,7 +1481,7 @@ pub impl Dfa
 
 #### method: borrow
 
-[Source line 1484](../../../extended/ext/regex.lani#L1484)
+[Source line 1513](../../../extended/ext/regex.lani#L1513)
 
 ```lanius
 pub fn borrow(&self) -> &Dfa
@@ -1481,7 +1489,7 @@ pub fn borrow(&self) -> &Dfa
 
 #### method: destroy
 
-[Source line 1485](../../../extended/ext/regex.lani#L1485)
+[Source line 1514](../../../extended/ext/regex.lani#L1514)
 
 ```lanius
 pub fn destroy(&self)
@@ -1489,7 +1497,7 @@ pub fn destroy(&self)
 
 #### method: cache_resets
 
-[Source line 1486](../../../extended/ext/regex.lani#L1486)
+[Source line 1515](../../../extended/ext/regex.lani#L1515)
 
 ```lanius
 pub fn cache_resets(&self) -> i32
@@ -1497,7 +1505,7 @@ pub fn cache_resets(&self) -> i32
 
 #### method: is_match_with
 
-[Source line 1497](../../../extended/ext/regex.lani#L1497)
+[Source line 1526](../../../extended/ext/regex.lani#L1526)
 
 ```lanius
 pub fn is_match_with(&self, regex: &Regex, input: Input, start: i32, scratch: &Workspace) -> Result<bool, Error>
@@ -1505,7 +1513,7 @@ pub fn is_match_with(&self, regex: &Regex, input: Input, start: i32, scratch: &W
 
 #### method: find_span_with
 
-[Source line 1505](../../../extended/ext/regex.lani#L1505)
+[Source line 1534](../../../extended/ext/regex.lani#L1534)
 
 ```lanius
 pub fn find_span_with(&self, regex: &Regex, input: Input, start: i32, scratch: &Workspace) -> Result<Option<Span>, Error>
@@ -1513,15 +1521,23 @@ pub fn find_span_with(&self, regex: &Regex, input: Input, start: i32, scratch: &
 
 #### method: match_lines
 
-[Source line 1520](../../../extended/ext/regex.lani#L1520)
+[Source line 1551](../../../extended/ext/regex.lani#L1551)
 
 ```lanius
 pub fn match_lines(&self, bytes: [u8], from: i32, to: i32) -> LineScan
 ```
 
+#### method: count_lines
+
+[Source line 1558](../../../extended/ext/regex.lani#L1558)
+
+```lanius
+pub fn count_lines(&self, bytes: [u8], from: i32, to: i32) -> LineScan
+```
+
 #### method: is_match_input
 
-[Source line 1526](../../../extended/ext/regex.lani#L1526)
+[Source line 1564](../../../extended/ext/regex.lani#L1564)
 
 ```lanius
 pub fn is_match_input(&self, regex: &Regex, checked: Input) -> Result<bool, Error>
@@ -1529,7 +1545,7 @@ pub fn is_match_input(&self, regex: &Regex, checked: Input) -> Result<bool, Erro
 
 #### method: is_match
 
-[Source line 1532](../../../extended/ext/regex.lani#L1532)
+[Source line 1570](../../../extended/ext/regex.lani#L1570)
 
 ```lanius
 pub fn is_match(&self, regex: &Regex, text: core::text::Text) -> Result<bool, Error>
@@ -1537,7 +1553,7 @@ pub fn is_match(&self, regex: &Regex, text: core::text::Text) -> Result<bool, Er
 
 #### method: find_span
 
-[Source line 1538](../../../extended/ext/regex.lani#L1538)
+[Source line 1576](../../../extended/ext/regex.lani#L1576)
 
 ```lanius
 pub fn find_span(&self, regex: &Regex, text: core::text::Text) -> Result<Option<Span>, Error>

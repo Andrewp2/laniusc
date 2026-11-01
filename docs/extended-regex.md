@@ -517,7 +517,13 @@ that leave the start state must be at most three values, or lie in a range of
 at most 48. A word with a high bit, or with one of those bytes, goes back to
 the byte loop. Skipped words have their LFs counted, and the last LF in them
 starts the next record. The setup is computed once per cache generation and
-kept in `meta[14..18)`.
+kept in `meta[14..18)`. Because the scan reads eight bytes at a time, `bytes`
+must be packed byte storage, such as a `Vec<u8>`, and not a stack array.
+`Dfa.count_lines(bytes, from, to)` is the same scan without the stop at
+matching records. Each match counts in `LineScan.matched`, and the rest of
+its record is only checked for valid UTF-8, eight bytes at a time. The scan
+then goes on after the record's LF. It stops only at an undecided record
+(`status` 2) or at `to` (`status` 0).
 `Dfa.is_match_input(&Regex, Input)` is `is_match` for text the caller
 has already validated, and `ext::regex::input_unchecked(Text)` builds that
 `Input` without another pass. Passing invalid text through it is a caller
