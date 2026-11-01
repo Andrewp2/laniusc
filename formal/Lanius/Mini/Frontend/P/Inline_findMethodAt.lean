@@ -2,6 +2,7 @@ module
 
 public import Lanius.Mini.Frontend.Types
 public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Compiler.P.matchVariants
 public import Lanius.Mini.Frontend.P.blockArmsOf
 public import Lanius.Mini.Frontend.P.compoundOf
 public import Lanius.Mini.Frontend.P.consBinder
@@ -45,7 +46,7 @@ namespace Lanius.Mini
 @[expose] def Inline.binderOf (env : FrontEnv) (scope : List Local) (p : CTree) (t : Ty) (pats : List CTree) (payload : List Ty) : Option Bound :=
   let path : CTree := kid p 0
   let tok : Token := kidToken (kid path 0) 0
-  if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) && freshId scope (tok.start - env.base) then
+  if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) && !(anyVariant env.decls.types tok.text) && freshId scope (tok.start - env.base) then
     consBinder (tok.start - env.base) (bindersOf env (({ name := tok.text, id := tok.start - env.base, ty := t } : Local) :: scope) pats payload)
   else
     none

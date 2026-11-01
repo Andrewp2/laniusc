@@ -526,6 +526,10 @@ unique. Trusted:
     value spells none of the first arm's other binders (`ColsQuiet`); h is
     the binder spelled `[0]`, which no source can spell. No arm's value is
     a block (`BlockValue`). SEMANTIC_DECISIONS "Nested patterns";
+  - (F11b) a payload pattern binds a name only when no enum of the program
+    has a variant so spelled (`BindersR`'s `NoVariant`): laniusc reads one
+    that resolves to a variant as a check. SEMANTIC_DECISIONS "Payload
+    names that are variants";
   - `x.f` is `Field` when `x` is a local, and otherwise the call of the
     projection `fn(v: T) -> F { return v.f; }` on `x`, an instance numbered
     like any other;

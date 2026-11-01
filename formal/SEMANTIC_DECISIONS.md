@@ -1415,6 +1415,30 @@ its value. The inner match is read again, nested or not.
   naming a variant, their patterns, the column and the inner arms are each
   determined by the tree (`nestedOrder_unique`, `matchOrder_unique`).
 
+## Payload names that are variants (decided 10-31, F11b)
+
+laniusc reads a payload pattern whose name resolves to a variant as a check
+of that payload, not a binder: `match_payload_binding`
+(`shaders/codegen/lir/semantic/local_mark.slang`) binds a payload pattern
+only when its resolved declaration is no variant, and
+`shaders/codegen/lir/semantic/match_reference.slang` lowers one that names a
+variant as a check of the payload's discriminant. So with `import
+core::option;`, `Some(None) -> 1` matches only `Some(None)` (laniusc runs
+`Some(Some(7))` past it). The front end once bound such a name: a payload
+binder had only to be spelled unlike the module's own types, aliases,
+constants and variants (`module_globals`), so an imported variant's bare
+name was a binder and the arm read as `Some(_) -> 1`, a wrong reading.
+
+Now a payload pattern spelled like a variant of any enum of the program is
+never a binder (`any_variant`; `BindersR`'s `NoVariant`). This covers every
+name laniusc resolves to a variant (its own module's, an imported module's,
+an item import's, or one the payload's type gives), and more: a payload name
+spelled like some variant nowhere visible is not read either, a reading the
+front end leaves out. Such a pattern is a nested pattern, read as the check
+it is (SEMANTIC_DECISIONS "Nested patterns"; cases bare_variant_payload,
+reject_bare_variant, which was misread). Variants are spelled with a capital
+letter in the stdlib and `extended/`, so no binder there is affected.
+
 ## Oracle comparisons of laniusc's programs and `extended/` (decided 10-31, F11)
 
 - Traps agree as traps: laniusc's checked traps exit 101 (bounds), 102

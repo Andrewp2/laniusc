@@ -6200,6 +6200,18 @@ pub fn cons_binder(id: usize, rest: core::option::Option<Bound>) -> core::option
     };
 }
 
+// Some enum of the program has a variant spelled name. laniusc reads a
+// payload pattern whose name resolves to a variant as a check of that
+// payload, not a binder (match_payload_binding in
+// shaders/codegen/lir/semantic/local_mark.slang); a payload pattern spelled
+// like any variant is never read as a binder.
+pub fn any_variant(types: List<TypeDecl>, name: List<usize>) -> bool {
+    return match (types) {
+        Nil -> false,
+        Cons(t, rest) -> (t.is_enum && member(t.variants, name)) || any_variant(unbox(rest), name),
+    };
+}
+
 // One plain name pattern per payload type, each a fresh local.
 pub fn binders_of(env: FrontEnv, scope: List<Local>, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     return match (payload) {
@@ -6218,7 +6230,7 @@ pub fn binders_of(env: FrontEnv, scope: List<Local>, pats: List<CTree>, payload:
 fn binder_of(env: FrontEnv, scope: List<Local>, p: CTree, t: Ty, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     let path: CTree = kid(p, 0);
     let tok: Token = kid_token(kid(path, 0), 0);
-    if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text) && fresh_id(scope, minus(tok.start, env.base))) {
+    if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text) && !any_variant(env.decls.types, tok.text) && fresh_id(scope, minus(tok.start, env.base))) {
         return cons_binder(minus(tok.start, env.base), binders_of(env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), pats, payload));
     }
     return None;
@@ -6495,11 +6507,11 @@ pub fn arms_of(fuel: usize, env: FrontEnv, scope: List<Local>, owner: TypeDecl, 
 // SEMANTIC_DECISIONS "Nested patterns".
 
 // A payload pattern that binds a name, as binder_of reads one: a plain
-// one-segment name that is no global's.
+// one-segment name that is no global's and no variant's.
 pub fn binder_name_ok(env: FrontEnv, name: core::option::Option<List<usize>>) -> bool {
     return match (name) {
         None -> false,
-        Some(n) -> !member(env.globals, n),
+        Some(n) -> !member(env.globals, n) && !any_variant(env.decls.types, n),
     };
 }
 
