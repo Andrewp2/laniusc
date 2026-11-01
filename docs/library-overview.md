@@ -2257,6 +2257,16 @@ sends fixed or chunked streamed bodies, stopping an upload on an early final
 response. The curl-like sample passes Python `http.server` oracle groups
 pool18, redirect29, upload10 and broken21, plus https17 against Python `ssl`
 origins with locally generated test certificates, with exact counters.
+Its `dial` opens an unpooled connection for protocols that take over after
+an HTTP/1.1 upgrade.
+
+The [WebSocket client](extended-websocket-client.md) (`ext::websocket_client`)
+uses `dial` for `ws://` and verified `wss://` URLs and the canonical
+`ext::websocket` frame engine in the client role. It validates the opening
+handshake against a fresh key, masks every frame, sends and assembles
+fragmented messages, answers Pings, runs both close handshakes and fails the
+connection with 1002/1007/1009. The `ws_cat` sample passes ws (24 cases) and
+wss (26 cases) groups against a minimal asyncio RFC 6455 server.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
 Prepared request staging and caller-driven Exchange steps. At `480432e8`,
