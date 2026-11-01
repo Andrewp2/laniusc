@@ -17,7 +17,7 @@ CACHE = os.path.join(ROOT, 'target/claude-work/cache')
 
 class lean_lock:
     """Held while Lean builds or runs: this worktree's lock (no two builds of
-    one checkout at once) and one of four machine-wide slots in the common git
+    one checkout at once) and one of six machine-wide slots in the common git
     directory, those after the first taken only while 5 GB are available. Every Lean
     scope runs in lean.slice (SLICE), which caps all of them together.
     With LEAN_LOCK_HELD=1 the caller already holds them
@@ -39,7 +39,7 @@ class lean_lock:
         self.held.append(own)
         common = git_dir('--git-common-dir')
         while True:
-            for i, name in enumerate(('lean.lock', 'lean.lock.2', 'lean.lock.3', 'lean.lock.4')):
+            for i, name in enumerate(('lean.lock', 'lean.lock.2', 'lean.lock.3', 'lean.lock.4', 'lean.lock.5', 'lean.lock.6')):
                 if i and available_gb() < 5:
                     continue
                 f = open(os.path.join(common, name), 'a')
