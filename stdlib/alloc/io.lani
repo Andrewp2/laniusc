@@ -2,6 +2,7 @@
 // into this buffer. Allocation or limit errors preserve the previous bytes.
 module alloc::io;
 import core::io;
+import core::mem;
 import core::option;
 import core::result;
 import core::slice;
@@ -319,6 +320,29 @@ pub impl Buffer {
     }
 
     pub fn clear(&self) { self.bytes.clear(); }
+
+    // Raw append window for host reads. Ensure room for `count` more bytes
+    // (within the limit) and return the address of the first unused byte;
+    // Vec<u8> storage is packed bytes. Bytes written there become part of the
+    // buffer only through commit_raw. Any later reservation or growth
+    // invalidates the address.
+    pub fn reserve_raw(&self, count: i32) -> core::result::Result<ptr, core::io::Error> {
+        if (count < 0) { return core::result::Err(core::io::Error::InvalidInput); }
+        let length: i32 = self.bytes.len();
+        if (count > self.maximum - length) { return core::result::Err(core::io::Error::LimitExceeded); }
+        if (length + count > self.bytes.capacity()) {
+            let target: i32 = self.bytes.capacity();
+            if (target <= self.maximum / 2) { target = target * 2; } else { target = self.maximum; }
+            if (target < length + count) { target = length + count; }
+            if (core::result::is_err(self.bytes.try_reserve(target - length))) { return core::result::Err(core::io::Error::AllocationFailed); }
+        }
+        return core::result::Ok(self.bytes.storage + (length as usize));
+    }
+    // Accept `count` bytes written at the last reserve_raw address.
+    pub fn commit_raw(&self, count: i32) -> core::result::Result<i32, core::io::Error> {
+        if (count < 0 || count > self.bytes.capacity() - self.bytes.len()) { return core::result::Err(core::io::Error::InvalidCount); }
+        self.bytes.length += count; return core::result::Ok(self.bytes.length);
+    }
 
     pub fn destroy(&self) {
         self.bytes.destroy();

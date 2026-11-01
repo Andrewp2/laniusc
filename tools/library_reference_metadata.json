@@ -1307,6 +1307,11 @@
         "docs/extended-log.md"
       ]
     },
+    "ext::merge3": {
+      "guides": [
+        "docs/extended-merge3.md"
+      ]
+    },
     "ext::openssl_digest": {
       "guides": [
         "docs/extended-openssl-digest.md",

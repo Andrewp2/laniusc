@@ -34,7 +34,7 @@ fn read_file(name: core::slice::View<u8>, output: &alloc::io::Buffer) -> bool {
     let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(core::result::unwrap(checked), std::file::OpenMode::Read);
     if (core::result::is_err(opened)) { return false; }
     let file: std::file::File = core::result::unwrap(opened);
-    let copied: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(file.borrow(), output);
+    let copied: core::result::Result<u64, core::io::Error> = file.read_to_end(output);
     let closed: core::result::Result<i32, core::io::Error> = file.close();
     return core::result::is_ok(copied) && core::result::is_ok(closed);
 }
