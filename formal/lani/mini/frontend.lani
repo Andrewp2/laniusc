@@ -10929,11 +10929,13 @@ pub fn operand_want(op: SrcOp, want: core::option::Option<SrcType>, a: core::opt
     return either_ty(either_ty(a, b), want);
 }
 
-// A shift's amount has a type of its own; a bare amount takes the shifted
-// value's type.
+// A shift's amount has a type of its own, never the shifted value's; a bare
+// amount (literals only: a constant reads as a literal of its type) is i32,
+// as laniusc types it (and Rust): `(1 as u32) << ((0 - 6) / 4 & 7)` shifts
+// by 7, and `a << (200 + 59)` with `a: u8` by 259, an invalid shift.
 pub fn amount_want(op: SrcOp, want: core::option::Option<SrcType>, a: core::option::Option<SrcType>, b: core::option::Option<SrcType>) -> core::option::Option<SrcType> {
     if (shift_op(op)) {
-        return either_ty(b, either_ty(a, want));
+        return either_ty(b, Some(I32));
     }
     return operand_want(op, want, a, b);
 }

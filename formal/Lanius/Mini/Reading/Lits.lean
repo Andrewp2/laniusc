@@ -17,7 +17,8 @@ store, an arm's result type, Bool for conditions, asserts and `!`; an
 operator's operands expect the type of whichever operand has one
 (`knownExpr`, `knownEff`), or else, for arithmetic, the operator's expected
 type (`operandWant`); a shift's value expects its own type or else the
-shift's, and its amount its own type or else the value's (`amountWant`), so
+shift's, and its amount its own type or else `i32`, as laniusc types a bare
+amount (`amountWant`), so
 `h | (1 << n)` reads the `1` at `h`'s type. The operand of `as`, an index and the heap
 operations' operands expect nothing. `ClosedProgram`: the closed functions
 with their literals typed, accepted when no wide marker is left untyped. -/

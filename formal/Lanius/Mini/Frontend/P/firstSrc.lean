@@ -3,6 +3,7 @@ module
 public import Lanius.Mini.Frontend.Types
 import Lanius.Mini.Frontend.P.nullConst
 import Lanius.Mini.Frontend.P.scalarOf
+import Lanius.Mini.Frontend.P.shrFirst
 import Lanius.Mini.Frontend.P.sintAt
 import Lanius.Mini.Frontend.P.unitTy
 import Lanius.Mini.Frontend.P.wideOf
@@ -67,10 +68,10 @@ def operandWant (op : SrcOp) (want : Option SrcType) (a : Option SrcType) (b : O
     else
       eitherTy (eitherTy a b) want
 
-/-- A shift's amount has a type of its own; a bare amount takes the shifted value's type. -/
+/-- A shift's amount has a type of its own, never the shifted value's; a bare amount (literals only: a constant reads as a literal of its type) is i32, as laniusc types it (and Rust): `(1 as u32) << ((0 - 6) / 4 & 7)` shifts by 7, and `a << (200 + 59)` with `a: u8` by 259, an invalid shift. -/
 def amountWant (op : SrcOp) (want : Option SrcType) (a : Option SrcType) (b : Option SrcType) : Option SrcType :=
   if shiftOp op then
-    eitherTy b (eitherTy a want)
+    eitherTy b (some SrcType.i32)
   else
     operandWant op want a b
 

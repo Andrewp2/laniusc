@@ -27,7 +27,7 @@ def compileFuncs (arities : List Arity) (funcs : List Func) : Option (List Code)
       | none => none
       | some codes => some (code :: codes)
 
-/-- Little-endian bytes of a 32-bit field. -/
+/-- Little-endian bytes of a 32-bit field. A shift amount is cast to the value's type: a bare one is an i32, which the pure semantics' check does not take for an unsigned value. -/
 def le32 (value : BitVec 32) : List UInt8 :=
   let bits : BitVec 32 := value
   UInt8.ofNat bits.toNat :: UInt8.ofNat (bits >>> 8).toNat :: UInt8.ofNat (bits >>> 16).toNat :: [UInt8.ofNat (bits >>> 24).toNat]

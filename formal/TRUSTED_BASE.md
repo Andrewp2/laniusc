@@ -39,11 +39,13 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `0a8b076940111a78` (4,330 constants). This covers Core's
+definitions `469c547ecb9be173` (4,330 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (10-31, F11b): `picks`
+modules keeps its hash. The last change of the hash (10-31, F11b):
+`amountWant` reads a bare shift amount at `i32`, as laniusc does, not at
+the shifted value's type (section 4). Before that (10-31, F11b): `picks`
 allows a method's type arguments `.f<...>` where `generic_open` holds
 (section 4, "One reading"). Before that (10-31, F11b): the
 reading of patterns: a payload name spelled like a variant is never a
@@ -634,8 +636,10 @@ unique. Trusted:
     cast of the `u64` literal of its two's complement bits; any other
     rejects the program;
   - a bare literal operand of a shift takes the shifted
-    value's type, or else the shift's expected type, and a bare amount the
-    value's (`amountWant`), as a shift's type is its left operand's;
+    value's type, or else the shift's expected type, as a shift's type is
+    its left operand's, and a bare amount (literals only; a constant reads
+    as a literal of its type) is `i32`, as laniusc types it (`amountWant`;
+    10-31, F11b: it was the value's, a reading bug fuzz_oracle.py found);
   - `&self` is read as `self`: the method takes the impl's
     type by value (`PatternOf.selfRef`, `paramToken`). laniusc's `&self`
     may write the caller's value (`self.n = ..` reaches the caller), so a
