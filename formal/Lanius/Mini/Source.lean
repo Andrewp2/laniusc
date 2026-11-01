@@ -286,12 +286,25 @@ def SrcType.Holds : SrcType → Value → BitVec 64 → Prop
 
 /-- A place a reference or a borrowed slice names, held in frame memory:
 Core's cell `cell` at the projection path `projections` holds a value of
-`ty`, whose representation is in the mini heap from `address` (`FrameCorr`). -/
+`ty`, whose representation is in the mini heap from `address` (`FrameCorr`).
+A `sliced` place is an array passed as a slice, laid out as a slice's
+elements (`Addressed.view`); the others take one word per slot. -/
 structure Addressed where
   cell : Nat
   projections : List Lanius.Core.ValueProjection
   ty : SrcType
   address : Nat
+  sliced : Bool
+
+/-- The pointer of a slice of a sliced place: its lowest byte for packed
+`i32` and `u8` elements, which run up from it, and its top word for the
+others, whose words run down from it (SEMANTIC_DECISIONS "Addressed locals"
+point 2). -/
+def Addressed.pointer (x : Addressed) : Nat :=
+  match x.ty with
+  | .array .i32 _ => x.address
+  | .array (.uint .uint8) _ => x.address
+  | _ => x.address + 8 * (x.ty.size - 1)
 
 variable {places : List Addressed}
 

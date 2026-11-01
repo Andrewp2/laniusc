@@ -39,11 +39,15 @@ stopping at the computations the theorems are about (`compileSource`,
 `linkObjects`, `elfFile`, `sourceProgramFiles`, `compileWords`,
 `frontEndWords` and the self program `Lanius.Faithful.Self.prog`, which are
 not trusted, section 10), with each one's type and body:
-definitions `c1629d03f01a2c36` (4,477 constants). This covers Core's
+definitions `30cfc8a1287e8470` (4,477 constants). This covers Core's
 semantics, the x86 model, the reading of source text, the Linux model and
 the statements' own definitions (section 2). A private name is hashed
 without its module, so a definition that only moves between generated
-modules keeps its hash. The last change of the hash (11-01, merge of lang
+modules keeps its hash. The last change of the hash (11-01, step 3.3 of
+array-to-slice arguments): `Addressed` (`Mini/Source.lean`) has a field
+`sliced`, which marks an array passed as a slice, laid out as a slice's
+elements in frame memory; no constructor of `SrcType.HoldsAt` reads it yet.
+The hash before it was `c1629d03f01a2c36`. Before that (11-01, merge of lang
 into rfront's step 3.1 of array-to-slice arguments, lang `6415d962ec6a970a`
 and step 3.1 `779c1a8a7e04e0c6`, which did not change each other's
 definitions): `SrcType.HoldsAt` and `FieldsHold` take a list
