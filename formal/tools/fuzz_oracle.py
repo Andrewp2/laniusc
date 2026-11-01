@@ -23,7 +23,12 @@ alone with --seed S --first k --count 1.
    loops with break and continue, a while's condition sometimes more than
    its counter; `?`;
    recursion; traits with impls, generic functions with bounds and where
-   clauses, inherent methods; arrays by value. Every loop is bounded and
+   clauses, inherent methods; arrays by value. Slices (in some programs,
+   all of one length): views of the heap made by `fill<T>` (SLICE_FNS:
+   every element set first) of i32, u8, structs and enums, as locals,
+   parameters, results and struct fields; element reads in expressions,
+   `s[i].f`, matches on `s[i]`, stores through the view (a parameter's
+   too, so callers see them), and in- and out-of-range indexes. Every loop is bounded and
    recursion is on a counter below 16, and a cost bound on calls in loops
    keeps a run short. Most divisors, shift amounts and indexes are made
    safe; a few are left as they come, so the traps are tested too.
@@ -83,7 +88,10 @@ in target/claude-work/fuzz/found/):
 And gaps of the verified compiler, which rejects (never miscompiles): a
 store of a struct, enum or array into a field, `bool as` an integer, a
 constant whose value is a parenthesized wide literal, type arguments
-inferred from an expression that is not a local.
+inferred from an expression that is not a local; for slices, raw views of
+scalars other than i32 and u8, of an element holding an array or a slice
+(`flat`), a slice local assigned after its let, `for` over a slice, and
+`s.len()` (laniusc rejects that too, LNC0027).
 
 Prints a summary; exits nonzero on a disagreement.
 """
@@ -124,6 +132,40 @@ INT_NAMES = list(INTS)
 OPTION = 'core::option::Option<'
 RESULT = 'core::result::Result<'
 
+# Slices: views of heap storage made by `fill` (every element set, so no
+# read sees memory nothing wrote), in laniusc's one layout (SEMANTIC_DECISIONS.md,
+# "Addressed locals" point 2): i32 and u8 packed upward from the pointer,
+# every other element as native words running down from it, so a
+# descending view starts at the top of its block (core::mem's
+# typed_slice_from_storage). Each raw slice is made by a let, the only
+# place the front end reads one.
+SLICE_FNS = '''fn put<T>(s: [T], length: i32, v: T) -> [T] {
+    let i: i32 = 0;
+    while (i < length) {
+        s[i] = v;
+        i = i + 1;
+    }
+    return s;
+}
+
+fn fill<T>(length: i32, v: T) -> [T] {
+    let nowhere: ptr = 0;
+    let probe: [T] = slice_from_raw_parts(nowhere, 0);
+    let stride: isize = slice_stride(probe);
+    let mag: usize = (stride as usize);
+    if (stride < 0) {
+        mag = ((0 - stride) as usize);
+    }
+    let bytes: usize = mag * (length as usize);
+    let p: ptr = alloc::allocator::alloc(bytes + (8 as usize), (8 as usize));
+    if (stride >= 0 || length == 0) {
+        let s: [T] = slice_from_raw_parts(p, length);
+        return put<T>(s, length, v);
+    }
+    let d: [T] = slice_from_raw_parts(p + (bytes - (8 as usize)), length);
+    return put<T>(d, length, v);
+}'''
+
 OUT_HEX = '''fn out_hex(v: u64) {
     let i: i32 = 0;
     while (i < 16) {
@@ -159,6 +201,12 @@ def is_int(t):
 def array_parts(t):
     m = re.fullmatch(r'\[(.+); (\d+)\]', t)
     return (m.group(1), int(m.group(2))) if m else None
+
+
+def slice_of(t):
+    """The element type of a slice type `[T]`, else None."""
+    m = re.fullmatch(r'\[([^;\[\]]+)\]', t) if t else None
+    return m.group(1) if m else None
 
 
 def option_of(t):
@@ -247,7 +295,7 @@ class Gen:
         # The program's feature weights: each program leans its own way.
         self.w = {k: rng.choice([0.3, 1, 1, 2, 4]) for k in
                   ('arith', 'shift', 'div', 'cast', 'struct', 'enum', 'array', 'match', 'loop', 'try', 'rec', 'nest',
-                   'trait', 'call', 'emit', 'tap', 'edge')}
+                   'trait', 'call', 'emit', 'tap', 'edge', 'slice')}
         # Some programs write one literal in a form the verified front end
         # does not read (hex, `_`, a suffix) or out of its type's range
         # (EDGE_FORMS): both compilers should reject it, and neither panic.
@@ -256,6 +304,10 @@ class Gen:
         self.tags = 0
         self.depth = rng.choice([2, 2, 3, 4])  # how deep a statement's expressions nest
         self.safe = rng.choice([0.99, 0.97, 0.93])  # how often a divisor, shift or index is made safe
+        # Some programs use slices, all of one length (so an index is in
+        # range but for the few self.index leaves wild).
+        self.slices = rng.random() < 0.35
+        self.slen = rng.choice([1, 2, 3, 4, 4, 8])
 
     def name(self, prefix):
         self.counter += 1
@@ -282,9 +334,30 @@ class Gen:
     def scalar_type(self):
         return 'bool' if self.chance(0.15) else self.int_type()
 
+    def slice_elems(self):
+        """The element types of slices: those the verified compiler has a
+        raw view of (i32, u8 bytes, structs and enums; not yet the other
+        scalars)."""
+        return ['i32', 'u8'] + [x for x in sorted(self.structs) + sorted(self.enums)
+                                if '<' not in x and self.flat(x)]
+
+    def flat(self, t, seen=()):
+        """Whether t holds no array or slice, through fields and payloads:
+        compileSource lowers no raw view of an element that does."""
+        if array_parts(t) or slice_of(t):
+            return False
+        if t in seen:
+            return True
+        inner = [ft for _, ft in self.structs.get(t, [])] + [pt for _, ps in self.enums.get(t, []) for pt in ps]
+        o, r = option_of(t), result_of(t)
+        inner += [o] if o else list(r) if r else []
+        return all(self.flat(x, seen + (t,)) for x in inner)
+
     def value_type(self, depth=1):
         """A type for a local, a parameter or a result."""
         opts = [(6, 'int'), (1, 'bool')]
+        if self.slices and depth > 0:
+            opts.append((1.5 * self.w['slice'], 'slice'))
         if self.structs:
             opts.append((2 * self.w['struct'], 'struct'))
         if self.enums:
@@ -304,6 +377,8 @@ class Gen:
             return self.rng.choice(sorted(self.enums))
         if k == 'array':
             return f'[{self.scalar_type()}; {self.rng.choice([1, 2, 3, 4, 4, 4, 5, 8, 16])}]'
+        if k == 'slice':
+            return f'[{self.rng.choice(self.slice_elems())}]'
         if k == 'option':
             return f'{OPTION}{self.value_type(0)}>'
         return f'{RESULT}{self.value_type(0)}, {self.err}>'
@@ -391,6 +466,11 @@ class Gen:
             a = array_parts(vt)
             if a and a[0] == t:
                 out.append(f'{n}[{self.index(s, a[1])}]')
+            e = slice_of(vt)
+            if e == t:
+                out.append(f'{n}[{self.index(s, self.slen)}]')
+            elif e in self.structs:
+                out += [f'{n}[{self.index(s, self.slen)}].{f}' for f, ft in self.structs[e] if ft == t]
         return out
 
     def index(self, s, n, d=1):
@@ -478,6 +558,18 @@ class Gen:
     def scrutinees(self, s, d):
         """(text, type) of enum, Option or Result values to match on."""
         out = [(n, vt) for n, vt in s.vars() if vt in self.enums or option_of(vt) or result_of(vt)]
+        out += [(f'{n}[{self.index(s, self.slen)}]', slice_of(vt)) for n, vt in s.vars()
+                if slice_of(vt) in self.enums and self.chance(0.5)]
+        # fields: of a struct local, of a struct element
+        def matchable(t):
+            return t in self.enums or option_of(t) or result_of(t)
+        for n, vt in s.vars():
+            if vt in self.structs:
+                out += [(f'{n}.{f}', ft) for f, ft in self.structs[vt] if matchable(ft) and self.chance(0.5)]
+            e = slice_of(vt)
+            if e in self.structs:
+                out += [(f'{n}[{self.index(s, self.slen)}].{f}', ft) for f, ft in self.structs[e]
+                        if matchable(ft) and self.chance(0.4)]
         if d > 0:
             for f in self.fns:
                 if (f.ret in self.enums or option_of(f.ret) or result_of(f.ret)) and f.cost * s.mult <= 4000 \
@@ -727,6 +819,8 @@ class Gen:
         for n, vt in s.vars():
             if vt in self.structs:
                 names += [f'{n}.{f}' for f, ft in self.structs[vt] if ft == t]
+            if slice_of(vt) == t:
+                names.append(f'{n}[{self.index(s, self.slen)}]')
         calls = self.calls_to(s, t) if d > 0 else []
         k = self.pick([(3 if names else 0, 'name'), (2 * self.w['call'] if calls else 0, 'call'), (3, 'make')])
         if k == 'name':
@@ -736,6 +830,9 @@ class Gen:
         if t in self.structs:
             fields = ', '.join(f'{f}: {self.expr(s, ft, d - 1)}' for f, ft in self.structs[t])
             return f'{t.split("<")[0]} {{ {fields} }}'
+        e = slice_of(t)
+        if e:
+            return f'fill<{e}>({self.slen}, {self.expr(s, e, d - 1)})'
         a = array_parts(t)
         if a:
             et, n = a
@@ -776,6 +873,8 @@ class Gen:
             opts.append((1.5 * w['struct'], 'field'))
         if any(array_parts(vt) for _, vt in s.vars()):
             opts.append((1.5 * w['array'], 'store'))
+        if any(slice_of(vt) for _, vt in s.vars()):
+            opts.append((2 * w['slice'], 'store'))
         if d > 0:
             opts += [(2, 'if'), (1.5 * w['loop'], 'while'), (w['loop'], 'for'), (0.3, 'block')]
             if s.ret:
@@ -837,7 +936,7 @@ class Gen:
         return out
 
     def assignable(self, s, pred):
-        return [n for n, t in s.vars(pred) if n.startswith('l')]
+        return [n for n, t in s.vars(pred) if n.startswith('l') and not slice_of(t)]
 
     def s_assign(self, s, d, ind):
         names = self.assignable(s, lambda t: True)
@@ -879,20 +978,29 @@ class Gen:
 
     def s_store(self, s, d, ind):
         cands = [(n, vt) for n, vt in s.vars() if array_parts(vt) and n in self.assignable(s, lambda t: True)]
+        # a store into a slice writes through the view: a parameter's too
+        cands += [(n, vt) for n, vt in s.vars() if slice_of(vt)]
         if not cands:
             return self.s_emit(s, d, ind)
         n, vt = self.rng.choice(cands)
-        et, size = array_parts(vt)
+        if slice_of(vt):
+            et, size = slice_of(vt), self.slen
+        else:
+            et, size = array_parts(vt)
         i = self.index(s, size)
         # Past the end, Core traps before it evaluates the value and laniusc
         # after (the docstring's store order, counted as known), so the front
         # end reads no store whose value calls a function (effActs).
-        v = self.lit(et)
+        v = None
         for _ in range(4):
             e = self.expr(s, et, self.depth)
             if not CALL.search(e):
                 v = e
                 break
+        if v is None:
+            v = self.lit(et) if is_int(et) or et == 'bool' else self.agg_expr(s, et, 0)
+            if CALL.search(v):
+                return self.s_emit(s, d, ind)
         return [ind + f'{n}[{i}] = {v};']
 
     def s_emit(self, s, d, ind):
@@ -1071,6 +1179,10 @@ class Gen:
                 ft = f'[{self.int_type()}; {self.rng.choice([2, 3, 4])}]'
             elif k < 0.28 and self.enums:
                 ft = self.rng.choice(sorted(self.enums))
+            elif k < 0.34 and self.slices:
+                ft = self.rng.choice(['[i32]', '[u8]'])
+            elif k < 0.4:
+                ft = f'{OPTION}{self.scalar_type()}>'
             else:
                 ft = self.scalar_type()
             fields.append((f'q{i}', ft))
@@ -1265,10 +1377,11 @@ class Gen:
         rng = self.rng
         for _ in range(rng.randrange(0, 3)):
             self.add_const()
-        for _ in range(rng.randrange(0, 3)):
-            self.add_struct()
-        for _ in range(rng.randrange(0, 3)):
-            self.add_enum()
+        # structs and enums interleaved, so that a field may hold an enum and a payload a struct
+        decls = ['struct'] * rng.randrange(0, 3) + ['enum'] * rng.randrange(0, 3)
+        rng.shuffle(decls)
+        for k in decls:
+            self.add_struct() if k == 'struct' else self.add_enum()
         if self.chance(0.4):
             self.add_struct()
         if self.chance(0.4):
@@ -1301,7 +1414,11 @@ class Gen:
                 body.append(f'    out_hex(({n} as u64));')
         body.append(f'    return {self.int_expr(s, "i32", 2)};')
         items = self.items + [OUT_HEX.rstrip('\n'), 'fn main() -> i32 {\n' + '\n'.join(body) + '\n}']
-        return 'module app::main;\n\n' + ''.join(f'import {m};\n' for m in IMPORTS) + '\n' + \
+        imports = IMPORTS
+        if any('fill<' in x for x in items):
+            imports = IMPORTS + ['alloc::allocator']
+            items = [SLICE_FNS] + items
+        return 'module app::main;\n\n' + ''.join(f'import {m};\n' for m in imports) + '\n' + \
             '\n\n'.join(items) + '\n'
 
 
