@@ -64,7 +64,8 @@ void emit_header_and_wrapper(X86ArtifactLayout layout)
     uint main_pos = layout.body_offset + layout.entrypoint_body_offset;
     emit_u8(cursor, 0xe8u); emit_u32(cursor, main_pos - cursor - 4u);
     emit_u8(cursor, 0x89u); emit_u8(cursor, 0xc7u);
-    emit_u8(cursor, 0xb8u); emit_u32(cursor, 60u);
+    // exit_group (231), not exit (60): every thread of the process ends.
+    emit_u8(cursor, 0xb8u); emit_u32(cursor, 231u);
     emit_u8(cursor, 0x0fu); emit_u8(cursor, 0x05u);
 }
 
