@@ -1,0 +1,63 @@
+// A whole input held in memory with its line ends found up front, for the
+// text tools that read line by line from one or more inputs (paste, join,
+// comm, tail): line i is bytes [start(i), stop(i)), and ended(i) tells
+// whether an end byte follows it (only the last line can lack one). A
+// cursor lets several operands share one input, as several "-" operands
+// share standard input in GNU's tools. See docs/extended-textutils.md.
+module ext::text_source;
+import alloc::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::text_lines;
+
+pub struct Source {
+    mem: alloc::io::Buffer, w: ext::text_lines::Words, ends: ext::text_lines::Starts,
+    length: i32, lines: i32, opened: bool, failed: bool, cursor: i32, eol: u8,
+}
+pub impl Source {
+    pub fn borrow(&self) -> &Source { return self; }
+    pub fn view(&self) -> core::slice::View<u8> { return core::slice::View { values: self.w.values, start: self.w.start, length: self.length }; }
+    pub fn start(&self, i: i32) -> i32 { if (i == 0) { return 0; } return (self.ends.at[i-1] >> 1) + 1; }
+    pub fn stop(&self, i: i32) -> i32 { if (i < self.ends.count) { return self.ends.at[i] >> 1; } return self.length; }
+    pub fn ended(&self, i: i32) -> bool { return i < self.ends.count; }
+    pub fn byte(&self, at: i32) -> u8 { return self.w.values[self.w.start+at]; }
+    pub fn destroy(&self) { self.ends.destroy(); self.w.destroy(); self.mem.destroy(); self.opened = false; }
+}
+
+fn ts_empty(fail: bool) -> Source {
+    let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(16));
+    let view: core::slice::View<u8> = core::slice::View { values: mem.as_bytes(), start: 0, length: 0 };
+    let w: ext::text_lines::Words = core::result::unwrap(ext::text_lines::words(view));
+    return Source { mem: mem, w: w, ends: core::result::unwrap(ext::text_lines::byte_positions(w.borrow(), 10, 10)), length: 0, lines: 0, opened: false, failed: fail, cursor: 0, eol: 10 };
+}
+
+// Read all of fd (not closed here). failed is set when reading fails or
+// memory runs out; the bytes read so far are kept.
+pub fn read(fd: i32, eol: u8) -> Source {
+    let made: core::result::Result<alloc::io::Buffer, core::io::Error> = alloc::io::with_limit(2000000000);
+    if (core::result::is_err(made)) { return ts_empty(true); }
+    let mem: alloc::io::Buffer = core::result::unwrap(made);
+    let ok: bool = ext::text_lines::read_all(fd, mem.borrow());
+    let n: i32 = mem.len();
+    let view: core::slice::View<u8> = core::slice::View { values: mem.as_bytes(), start: 0, length: n };
+    let wm: core::result::Result<ext::text_lines::Words, ext::text_lines::Error> = ext::text_lines::words(view);
+    if (core::result::is_err(wm)) { mem.destroy(); return ts_empty(true); }
+    let w: ext::text_lines::Words = core::result::unwrap(wm);
+    let em: core::result::Result<ext::text_lines::Starts, ext::text_lines::Error> = ext::text_lines::byte_positions(w.borrow(), eol, eol);
+    if (core::result::is_err(em)) { w.destroy(); mem.destroy(); return ts_empty(true); }
+    let ends: ext::text_lines::Starts = core::result::unwrap(em);
+    let lines: i32 = ends.count;
+    if (n > 0 && (lines == 0 || (ends.at[lines-1] >> 1) != n - 1)) { lines += 1; }
+    return Source { mem: mem, w: w, ends: ends, length: n, lines: lines, opened: true, failed: !ok, cursor: 0, eol: eol };
+}
+
+// Open and read a named input ("-" is standard input). opened is false when
+// it cannot be opened.
+pub fn load(name: core::slice::View<u8>, eol: u8) -> Source {
+    let fd: i32 = ext::text_lines::open_input(name);
+    if (fd < 0) { return ts_empty(false); }
+    let s: Source = read(fd, eol);
+    ext::text_lines::close_input(fd);
+    return s;
+}

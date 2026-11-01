@@ -1,0 +1,82 @@
+// GNU `head` under LC_ALL=C: the first N lines or bytes of an input, or all
+// but the last N (-n -N, -c -N). Leading counts stream: reading stops once
+// the count is reached. Eliding counts hold the whole input. Lines end with
+// `eol` (LF, or NUL for -z), and a final line without one still counts.
+// See docs/extended-textutils.md.
+module ext::text_head;
+import alloc::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::text_lines;
+import ext::text_source;
+
+pub struct Options { lines: bool, count: u64, elide: bool, eol: u8 }
+pub fn default_options() -> Options { return Options { lines: true, count: 10, elide: false, eol: 10 }; }
+
+// Status of one input: 0, 1 (read error) or 2 (write error).
+const CHUNK: i32 = 262144;
+
+// Bytes [0, k) of the chunk at p hold `want` more eol bytes at most: the
+// length up to and including the want-th eol, or -1 when there are fewer
+// (then want drops by the number seen; returned in `left`).
+struct Scan { cut: i32, left: u64 }
+fn th_scan(p: ptr, k: i32, eol: u8, want: u64) -> Scan {
+    let view: core::slice::View<u8> = core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(p, k), start: 0, length: k };
+    let w: ext::text_lines::Words = core::result::unwrap(ext::text_lines::words(view));
+    let ws: [u64] = w.words; let nw: i32 = w.nw; let low: u64 = ext::text_lines::LOW7; let all: u64 = ext::text_lines::ALL;
+    let ranks: u64 = ext::text_lines::RANKS; let pe: u64 = (eol as u64) * ext::text_lines::ONES;
+    let left: u64 = want; let q: i32 = 0;
+    while (q <= nw) {
+        let x: u64 = w.tail; if (q < nw) { x = ws[nw-1-q]; }
+        let xe: u64 = x ^ pe; let m: u64 = (((xe & low) + low) | xe | low) ^ all;
+        while (m != 0) {
+            let bit: u64 = m & (0 - m); m = m ^ bit;
+            let pos: i32 = q * 8 + ((((bit >> 7) * ranks) >> 56) as i32) - 1;
+            if (pos >= k) { break; }
+            left -= 1;
+            if (left == 0) { w.destroy(); return Scan { cut: pos + 1, left: 0 }; }
+        }
+        q += 1;
+    }
+    w.destroy();
+    return Scan { cut: -1, left: left };
+}
+
+// Copy the first o.count lines or bytes of fd to standard output.
+pub fn leading(fd: i32, o: Options) -> i32 {
+    if (o.count == 0) { return 0; }
+    let mem: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(CHUNK + 16));
+    let p: ptr = core::result::unwrap(mem.reserve_raw(CHUNK + 16));
+    let left: u64 = o.count; let status: i32 = 0;
+    while (left > 0) {
+        let room: i32 = CHUNK; if (!o.lines && left < (room as u64)) { room = left as i32; }
+        let got: i32 = ext::text_lines::read_some(fd, p, room);
+        if (got < 0) { status = 1; break; }
+        if (got == 0) { break; }
+        let take: i32 = got;
+        if (o.lines) {
+            let sc: Scan = th_scan(p, got, o.eol, left);
+            if (sc.cut >= 0) { take = sc.cut; left = 0; } else { left = sc.left; }
+        } else { left -= got as u64; }
+        if (!ext::text_lines::write_all(1, p, take)) { status = 2; break; }
+    }
+    mem.destroy();
+    return status;
+}
+
+// Copy all but the last o.count lines or bytes of fd.
+pub fn eliding(fd: i32, o: Options) -> i32 {
+    let s: ext::text_source::Source = ext::text_source::read(fd, o.eol);
+    let keep: i32 = 0;
+    if (o.lines) {
+        if ((s.lines as u64) > o.count) { keep = s.start(s.lines - (o.count as i32)); }
+    } else {
+        if ((s.length as u64) > o.count) { keep = s.length - (o.count as i32); }
+    }
+    let status: i32 = 0; if (s.failed) { status = 1; }
+    let v: core::slice::View<u8> = s.view();
+    if (keep > 0 && !ext::text_lines::write_all(1, core::mem::i32_slice_data_ptr(v.values) + (v.start as usize), keep)) { status = 2; }
+    s.destroy();
+    return status;
+}

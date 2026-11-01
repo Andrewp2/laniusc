@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **350 modules**, **18484 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **353 modules**, **18526 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -330,9 +330,12 @@ Inventory: **350 modules**, **18484 declaration/member entries**. Counts include
 | [ext::table](ext/table.md) | [source](../../extended/ext/table.lani#L2) | 27 | Source inventory | [extended-table](../extended-table.md) |
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 91 | Source inventory | [extended-tar](../extended-tar.md), [extended-pax](../extended-pax.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
+| [ext::text_args](ext/text_args.md) | [source](../../extended/ext/text_args.lani#L4) | 14 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_cut](ext/text_cut.md) | [source](../../extended/ext/text_cut.lani#L7) | 38 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_head](ext/text_head.md) | [source](../../extended/ext/text_head.lani#L6) | 8 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_lines](ext/text_lines.md) | [source](../../extended/ext/text_lines.lani#L6) | 87 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_sort](ext/text_sort.md) | [source](../../extended/ext/text_sort.lani#L19) | 43 | Source inventory | [extended-textutils](../extended-textutils.md) |
+| [ext::text_source](ext/text_source.md) | [source](../../extended/ext/text_source.lani#L7) | 20 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_tr](ext/text_tr.md) | [source](../../extended/ext/text_tr.lani#L8) | 47 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_uniq](ext/text_uniq.md) | [source](../../extended/ext/text_uniq.lani#L10) | 33 | Source inventory | [extended-textutils](../extended-textutils.md) |
 | [ext::text_wc](ext/text_wc.md) | [source](../../extended/ext/text_wc.lani#L8) | 22 | Source inventory | [extended-textutils](../extended-textutils.md) |
