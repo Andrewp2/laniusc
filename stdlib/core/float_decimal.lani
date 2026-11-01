@@ -98,6 +98,7 @@ fn config(single: bool) -> Config {
     return Config { fraction_bits: 52, bias: 1023, fraction_mask: 4503599627370495, sign: 9223372036854775808, infinity: 9218868437227405312, nan: 9221120237041090560, max_finite: 9218868437227405311, digits: 17, max_order: 309, min_order: -325,
         el_min_exponent: -1023, el_infinite: 2047, el_smallest: -342, el_largest: 308, el_round_min: -4, el_round_max: 23 };
 }
+impl Config { fn borrow(&self) -> &Config { return self; } }
 // Fast paths. Each either returns the exact correctly rounded result or
 // reports failure, in which case the exact big-integer algorithm runs.
 struct Wide { high: u64, low: u64 }
@@ -114,16 +115,20 @@ fn binary_power(q: i32) -> i32 {
 }
 // Eisel-Lemire: w * 10^q (w nonzero, at most 19 digits) to positive IEEE bits,
 // or u64::MAX when the truncated 128-bit product cannot decide the rounding.
-fn eisel_lemire(q: i32, digits: u64, cfg: Config) -> u64 {
+fn eisel_lemire(q: i32, digits: u64, cfg: &Config) -> u64 {
     let fail: u64 = 18446744073709551615;
     if (digits == 0 || q < cfg.el_smallest) { return 0; }
     if (q > cfg.el_largest) { return cfg.infinity; }
+    // Normalize with a fixed number of steps (a bit loop takes up to 63).
     let w: u64 = digits; let zeros: i32 = 0;
-    while ((w >> 63) == 0) { w = w << 1; zeros += 1; }
+    if ((w >> 32) == 0) { w = w << 32; zeros += 32; } if ((w >> 48) == 0) { w = w << 16; zeros += 16; }
+    if ((w >> 56) == 0) { w = w << 8; zeros += 8; } if ((w >> 60) == 0) { w = w << 4; zeros += 4; }
+    if ((w >> 62) == 0) { w = w << 2; zeros += 2; } if ((w >> 63) == 0) { w = w << 1; zeros += 1; }
     let mask: u64 = fail >> (cfg.fraction_bits+3);
-    let first: Wide = multiply_wide(w,core::float_tables::pow5_high(q)); let low: u64 = first.low; let high: u64 = first.high;
+    let power: core::float_tables::Power = core::float_tables::pow5(q);
+    let first: Wide = multiply_wide(w,power.high); let low: u64 = first.low; let high: u64 = first.high;
     if ((high & mask) == mask) {
-        let second: Wide = multiply_wide(w,core::float_tables::pow5_low(q));
+        let second: Wide = multiply_wide(w,power.low);
         if (low > fail-second.high) { low = second.high-(fail-low)-1; high += 1; } else { low += second.high; }
     }
     if (low == fail && (q < -27 || q > 55)) { return fail; }
@@ -144,95 +149,78 @@ fn eisel_lemire(q: i32, digits: u64, cfg: Config) -> u64 {
     if (power2 >= cfg.el_infinite) { return cfg.infinity; }
     return ((power2 as u64) << cfg.fraction_bits) | mantissa;
 }
-struct DiyFp { f: u64, e: i32 }
-fn normalized(f: u64, e: i32) -> DiyFp {
-    let value: u64 = f; let exponent: i32 = e;
-    while ((value >> 56) == 0) { value = value << 8; exponent -= 8; }
-    while ((value >> 63) == 0) { value = value << 1; exponent -= 1; }
-    return DiyFp { f: value, e: exponent };
-}
-// Rounded high 64 bits of the 128-bit product x * y (the DiyFp product's
-// significand; its exponent is x.e + y.e + 64).
-fn times(x: u64, y: u64) -> u64 {
-    let mask: u64 = 4294967295;
-    let a: u64 = x >> 32; let b: u64 = x & mask; let c: u64 = y >> 32; let d: u64 = y & mask;
-    let ac: u64 = a*c; let bc: u64 = b*c; let ad: u64 = a*d; let bd: u64 = b*d;
-    let middle: u64 = (bd >> 32) + (ad & mask) + (bc & mask) + 2147483648;
-    return ac + (ad >> 32) + (bc >> 32) + (middle >> 32);
-}
-struct Shortest { ok: bool, coefficient: u64, exponent: i32 }
-fn weed(coefficient: u64, distance_high: u64, unsafe_interval: u64, rest_in: u64, ten_kappa: u64, unit: u64) -> Shortest {
-    let rest: u64 = rest_in; let digits: u64 = coefficient;
-    let small: u64 = distance_high-unit; let big: u64 = distance_high+unit;
-    while (rest < small && unsafe_interval-rest >= ten_kappa && (rest+ten_kappa < small || small-rest >= rest+ten_kappa-small)) { digits -= 1; rest += ten_kappa; }
-    let fail: Shortest = Shortest { ok: false, coefficient: 0, exponent: 0 };
-    if (rest < big && unsafe_interval-rest >= ten_kappa && (rest+ten_kappa < big || big-rest > rest+ten_kappa-big)) { return fail; }
-    if (2*unit <= rest && rest <= unsafe_interval-4*unit) { return Shortest { ok: true, coefficient: digits, exponent: 0 }; }
-    return fail;
-}
-// core::float_tables::cached_exponent(index) without the table scan: the
-// binary exponent of the normalized 64-bit significand of 10^(-348 + 8i).
-// Equal to the table for every index in [0, CACHED_COUNT).
-fn cached_binary(index: i32) -> i32 { return binary_power(-348+8*index)-126; }
-// Grisu3 (Loitsch 2010): shortest digits inside a conservatively narrowed
-// interval, verified closest; ok is false when the 64-bit error bound cannot
-// prove the result, and the exact algorithm decides instead.
-// Takes the three Config fields it reads as scalars (cheaper than copying
-// the whole Config per call); the dyadic split is inlined.
-fn grisu(absolute: u64, fraction_bits: i32, bias: i32, fraction_mask: u64) -> Shortest {
-    let fail: Shortest = Shortest { ok: false, coefficient: 0, exponent: 0 };
-    let fraction: u64 = absolute & fraction_mask; let biased: i32 = (absolute >> fraction_bits) as i32;
-    let mantissa: u64 = fraction; let binary: i32 = 1-bias-fraction_bits;
-    if (biased != 0) { let hidden: u64 = 1; hidden = hidden << fraction_bits; mantissa = hidden | fraction; binary = biased-bias-fraction_bits; }
-    let w: DiyFp = normalized(mantissa,binary);
-    let plus: DiyFp = normalized((mantissa << 1)+1,binary-1);
-    let minus: DiyFp = DiyFp { f: (mantissa << 1)-1, e: binary-1 };
-    if (fraction == 0 && biased > 1) { minus = DiyFp { f: (mantissa << 2)-1, e: binary-2 }; }
-    minus = DiyFp { f: minus.f << (minus.e-plus.e), e: plus.e };
-    let lowest: i32 = -60-(w.e+64); let highest: i32 = -32-(w.e+64);
-    let index: i32 = ((lowest+1220)*10)/266-1; if (index < 0) { index = 0; }
-    while (index < core::float_tables::CACHED_COUNT-1 && cached_binary(index) < lowest) { index += 1; }
-    while (index > 0 && cached_binary(index) > highest) { index -= 1; }
-    let ten: DiyFp = DiyFp { f: core::float_tables::cached_significand(index), e: cached_binary(index) };
-    if (ten.e < lowest || ten.e > highest) { return fail; }
-    let scaled_f: u64 = times(w.f,ten.f); let scaled_e: i32 = w.e+ten.e+64; let low_f: u64 = times(minus.f,ten.f); let high_f: u64 = times(plus.f,ten.f);
-    let unit: u64 = 1;
-    let too_low: u64 = low_f-unit; let too_high: u64 = high_f+unit; let unsafe_interval: u64 = too_high-too_low;
-    let shift: i32 = 0-scaled_e; let one: u64 = 1; one = one << shift;
-    let integrals: u64 = too_high >> shift; let fractionals: u64 = too_high & (one-1);
-    let divisor: u64 = 1; let kappa: i32 = 1;
-    if (integrals == 0) { divisor = 0; kappa = 0; } else {
-        if (integrals >= 100000) { divisor = 100000; kappa = 6; }
-        while (divisor*10 <= integrals) { divisor *= 10; kappa += 1; }
+// Schubfach (R. Giulietti, "The Schubfach way to render doubles", 2020):
+// the shortest decimal inside the rounding interval of c * 2^q, closest to
+// it and ties to an even coefficient. Exact for every finite nonzero
+// binary64 and binary32 value, so no fallback runs. The products of c with
+// the 126-bit core::float_tables::schubfach_g are formed from u64 pieces.
+// floor(q log10 2), floor(log10(3/4 2^q)) and floor(e log2 10) for the
+// exponent ranges used here.
+fn flog10pow2(q: i32) -> i32 { let m: i64 = 661971961083; return (((q as i64)*m) >> 41) as i32; }
+fn flog10_three_quarters_pow2(q: i32) -> i32 { let m: i64 = 661971961083; let a: i64 = 274743187321; return (((q as i64)*m-a) >> 41) as i32; }
+fn flog2pow10(e: i32) -> i32 { let m: i64 = 913124641741; return (((e as i64)*m) >> 38) as i32; }
+// Round to odd of a 192-bit product over 2^127, given its two high words:
+// the sticky bit reads bits 64..126 only, since the bits below carry the
+// error of the rounded-up g (as in the reference implementation).
+fn round_odd(high: u64, middle: u64) -> u64 { let sticky: u64 = 0; if ((middle << 1) != 0) { sticky = 1; } return (high << 1) | (middle >> 63) | sticky; }
+struct Shortest { coefficient: u64, exponent: i32 }
+fn schubfach(c: u64, q: i32, c_min: u64, q_min: i32) -> Shortest {
+    let out: u64 = c & 1; let cb: u64 = c << 2; let k: i32 = 0; let lower: i32 = 2;
+    // A power of two above the minimum exponent has a closer lower neighbor.
+    if (c != c_min || q == q_min) { k = flog10pow2(q); } else { k = flog10_three_quarters_pow2(q); lower = 1; }
+    let h: i32 = q+flog2pow10(0-k)+2;
+    let g: core::float_tables::Power = core::float_tables::schubfach_g(k);
+    // g * (cb << h) as words p2:p1:p0.
+    let cp: u64 = cb << h;
+    let first: Wide = multiply_wide(g.low,cp); let second: Wide = multiply_wide(g.high,cp);
+    let p0: u64 = first.low; let p1: u64 = second.low+first.high; let p2: u64 = second.high; if (p1 < second.low) { p2 += 1; }
+    // The interval ends: g * ((cb - lower) << h) and g * ((cb + 2) << h),
+    // that is the product minus g << (h + lower - 1) and plus g << (h + 1).
+    let e: i32 = h+lower-1;
+    let l0: u64 = g.low << e; let l1: u64 = (g.high << e) | (g.low >> (64-e)); let l2: u64 = g.high >> (64-e);
+    let borrow: u64 = 0; if (p0 < l0) { borrow = 1; }
+    let t1: u64 = p1-l1; let borrow_high: u64 = 0; if (p1 < l1 || t1 < borrow) { borrow_high = 1; }
+    let d1: u64 = t1-borrow; let d2: u64 = p2-l2-borrow_high;
+    let f: i32 = h+1;
+    let u0: u64 = g.low << f; let u1: u64 = (g.high << f) | (g.low >> (64-f)); let u2: u64 = g.high >> (64-f);
+    let s0: u64 = p0+u0; let carry: u64 = 0; if (s0 < p0) { carry = 1; }
+    let t2: u64 = p1+u1; let carry_high: u64 = 0; if (t2 < p1) { carry_high = 1; }
+    let s1: u64 = t2+carry; if (s1 < t2) { carry_high = 1; } let s2: u64 = p2+u2+carry_high;
+    let vb: u64 = round_odd(p2,p1); let vbl: u64 = round_odd(d2,d1); let vbr: u64 = round_odd(s2,s1);
+    let s: u64 = vb >> 2;
+    // One digit fewer: at most one multiple of 10^(k+1) lies in the interval.
+    if (s >= 10) {
+        let sp10: u64 = (s/10)*10; let tp10: u64 = sp10+10;
+        let upin: bool = vbl+out <= (sp10 << 2); let wpin: bool = (tp10 << 2)+out <= vbr;
+        if (upin != wpin) { if (upin) { return Shortest { coefficient: sp10, exponent: k }; } return Shortest { coefficient: tp10, exponent: k }; }
     }
-    let coefficient: u64 = 0; let count: i32 = 0; let decimal: i32 = 0-core::float_tables::cached_decimal(index);
-    // Every integral step's rest is at least fractionals, so when that is
-    // already outside the unsafe interval no integral digit can stop the
-    // generation: take the whole integral part as the first kappa digits.
-    if (fractionals >= unsafe_interval) { coefficient = integrals; count = kappa; kappa = 0; }
-    while (kappa > 0) {
-        let quotient: u64 = integrals/divisor; coefficient = coefficient*10+quotient; count += 1; integrals = integrals-quotient*divisor; kappa -= 1;
-        let rest: u64 = (integrals << shift)+fractionals;
-        if (rest < unsafe_interval) {
-            let result: Shortest = weed(coefficient,too_high-scaled_f,unsafe_interval,rest,divisor << shift,unit);
-            result.exponent = decimal+kappa; return result;
-        }
-        // divisor <= 10^9 < 2^32, where (n * 3435973837) >> 35 == n / 10.
-        divisor = (divisor*3435973837) >> 35;
+    let t: u64 = s+1;
+    let uin: bool = vbl+out <= (s << 2); let win: bool = (t << 2)+out <= vbr;
+    if (uin != win) { if (uin) { return Shortest { coefficient: s, exponent: k }; } return Shortest { coefficient: t, exponent: k }; }
+    // Both candidates are inside: the closer one, ties to even.
+    let middle: u64 = (s+t) << 1;
+    if (vb < middle || (vb == middle && (s & 1) == 0)) { return Shortest { coefficient: s, exponent: k }; }
+    return Shortest { coefficient: t, exponent: k };
+}
+// Shortest digits of a finite nonzero value from its absolute bits, with
+// trailing zeros removed.
+fn shortest(absolute: u64, fraction_bits: i32, bias: i32) -> Shortest {
+    let hidden: u64 = 1; hidden = hidden << fraction_bits;
+    let fraction: u64 = absolute & (hidden-1); let biased: i32 = (absolute >> fraction_bits) as i32;
+    let q_min: i32 = 1-bias-fraction_bits;
+    let found: Shortest = Shortest { coefficient: 0, exponent: 0 };
+    if (biased == 0) { found = schubfach(fraction,q_min,hidden,q_min); }
+    else {
+        let c: u64 = hidden | fraction; let q: i32 = biased-bias-fraction_bits;
+        // An integer below 2^(fraction_bits+1) is its own shortest spelling.
+        let integral: bool = false;
+        if (q < 0 && 0-q <= fraction_bits) { let whole: u64 = c >> (0-q); if ((whole << (0-q)) == c) { found = Shortest { coefficient: whole, exponent: 0 }; integral = true; } }
+        if (!integral) { found = schubfach(c,q,hidden,q_min); }
     }
-    // Fractional digits; step k scales unit by 10^k, so it is computed only
-    // at the end. kappa runs from 0 down to count-19.
-    let mask: u64 = one-1; let last: i32 = count-19;
-    while (kappa > last) {
-        fractionals *= 10; unsafe_interval *= 10;
-        coefficient = coefficient*10+(fractionals >> shift); fractionals = fractionals & mask; kappa -= 1;
-        if (fractionals < unsafe_interval) {
-            unit = power10(0-kappa);
-            let result: Shortest = weed(coefficient,(too_high-scaled_f)*unit,unsafe_interval,fractionals,one,unit);
-            result.exponent = decimal+kappa; return result;
-        }
-    }
-    return fail;
+    let coefficient: u64 = found.coefficient; let exponent: i32 = found.exponent;
+    while (coefficient%10000 == 0) { coefficient /= 10000; exponent += 4; }
+    while (coefficient%10 == 0) { coefficient /= 10; exponent += 1; }
+    return Shortest { coefficient: coefficient, exponent: exponent };
 }
 struct Dyadic { mantissa: u64, exponent: i32 }
 fn dyadic(bits: u64, cfg: Config) -> Dyadic {
@@ -264,20 +252,27 @@ fn parse_bits(input: core::slice::View<u8>, scratch: core::slice::View<u32>, lim
     let at: i32 = 0; let sign: u64 = 0;
     if (at < input.length && (input.values[input.start+at] == 43 || input.values[input.start+at] == 45)) { if (input.values[input.start+at] == 45) { sign = cfg.sign; } at += 1; }
     let known: i32 = special(input,at); if (known == 1) { return core::result::Ok(sign | cfg.infinity); } if (known == 2) { return core::result::Ok(sign | cfg.nan); }
-    let numerator: Big = big(scratch,0); numerator.set(0,budget.borrow()); let denominator: Big = big(scratch,1); let temporary: Big = big(scratch,2); let shifted: Big = big(scratch,3);
-    let digits: i32 = 0; let significant: i32 = 0; let fast: u64 = 0; let fraction: i32 = 0; let dot: bool = false; let nonzero: bool = false;
-    // First pass: syntax, digit counts and the leading 19 significant digits.
-    // The exact numerator is built only if the fast path cannot decide.
-    let mantissa_start: i32 = at;
-    while (at < input.length) {
-        let byte: u8 = input.values[input.start+at];
+    // First pass: syntax and the leading 19 significant digits; the counts
+    // follow from the positions of the dot and the first nonzero digit. The
+    // exact numerator is built only if the fast path cannot decide.
+    let values: [u8] = input.values; let base: i32 = input.start; let end: i32 = input.length;
+    let mantissa_start: i32 = at; let dot_at: i32 = -1; let first: i32 = -1; let fast: u64 = 0; let taken: i32 = 0;
+    while (at < end) {
+        let byte: u8 = values[base+at];
         if (byte >= 48 && byte <= 57) {
-            if (digits == limits.max_digits) { return core::result::Err(Error::DigitLimit); } digits += 1; if (dot) { fraction += 1; }
-            if (byte != 48) { nonzero = true; } if (nonzero) { significant += 1; if (significant <= 19) { fast = fast*10+((byte-48) as u64); } }
+            if (first < 0 && byte != 48) { first = at; }
+            if (first >= 0 && taken < 19) { fast = fast*10+((byte-48) as u64); taken += 1; }
             at += 1;
-        } else { if (byte == 46 && !dot) { dot = true; at += 1; } else { break; } }
+        } else { if (byte == 46 && dot_at < 0) { dot_at = at; at += 1; } else { break; } }
     }
-    let mantissa_end: i32 = at;
+    let mantissa_end: i32 = at; let dot: bool = dot_at >= 0;
+    let digits: i32 = mantissa_end-mantissa_start; if (dot) { digits -= 1; }
+    // The scan stops at the first byte that is not part of the mantissa, so
+    // a digit count over the limit is reported before any later syntax error.
+    if (digits > limits.max_digits) { return core::result::Err(Error::DigitLimit); }
+    let fraction: i32 = 0; if (dot) { fraction = mantissa_end-dot_at-1; }
+    let nonzero: bool = first >= 0; let significant: i32 = 0;
+    if (nonzero) { significant = mantissa_end-first; if (dot_at > first) { significant -= 1; } }
     if (digits == 0) { return core::result::Err(Error::Invalid(at)); }
     let exponent: i32 = 0;
     if (at < input.length && (input.values[input.start+at] == 101 || input.values[input.start+at] == 69)) {
@@ -293,14 +288,15 @@ fn parse_bits(input: core::slice::View<u8>, scratch: core::slice::View<u32>, lim
     budget.pay(100); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
     if (significant <= 19) {
         // All significant digits fit in fast, so the value is fast * 10^exponent.
-        let quick: u64 = eisel_lemire(exponent,fast,cfg);
+        let quick: u64 = eisel_lemire(exponent,fast,cfg.borrow());
         if (quick != 18446744073709551615) { return core::result::Ok(sign | quick); }
     } else {
         // The value lies in [fast, fast+1) * 10^q; equal roundings decide it.
         let q: i32 = exponent+(significant-19);
-        let below: u64 = eisel_lemire(q,fast,cfg); let above: u64 = eisel_lemire(q,fast+1,cfg);
+        let below: u64 = eisel_lemire(q,fast,cfg.borrow()); let above: u64 = eisel_lemire(q,fast+1,cfg.borrow());
         if (below != 18446744073709551615 && below == above) { return core::result::Ok(sign | below); }
     }
+    let numerator: Big = big(scratch,0); numerator.set(0,budget.borrow()); let denominator: Big = big(scratch,1); let temporary: Big = big(scratch,2); let shifted: Big = big(scratch,3);
     let index: i32 = mantissa_start;
     while (index < mantissa_end) {
         let byte: u8 = input.values[input.start+index];
@@ -343,9 +339,6 @@ fn decimal_digit(groups: core::slice::View<u32>, count: i32, first: i32, index: 
     if (index >= first) { group = count-2-(index-first)/9; position = (index-first)%9; width = 9; }
     return ((groups.values[groups.start+group] as u64)/power10(width-position-1))%10;
 }
-fn inside(value: Big, lower: Big, upper: Big, inclusive: bool, budget: &Budget) -> bool {
-    let low: i32 = value.compare(lower,budget); let high: i32 = value.compare(upper,budget); return (low > 0 || (inclusive && low == 0)) && (high < 0 || (inclusive && high == 0));
-}
 fn prepare(bits: u64, cfg: Config, scratch: core::slice::View<u32>, work: u64) -> core::result::Result<Decimal,Error> {
     let checked: core::result::Result<i32,Error> = storage(scratch); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
     let budget: Budget = Budget { left: work, failed: false }; budget.pay(1); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
@@ -353,42 +346,8 @@ fn prepare(bits: u64, cfg: Config, scratch: core::slice::View<u32>, work: u64) -
     if (absolute >= cfg.infinity) { let kind: i32 = 1; if (absolute > cfg.infinity) { kind = 2; negative = false; } return core::result::Ok(Decimal { coefficient: 0, exponent: 0, negative: negative, special: kind }); }
     if (absolute == 0) { return core::result::Ok(Decimal { coefficient: 0, exponent: 0, negative: negative, special: 0 }); }
     budget.pay(100); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
-    let fast: Shortest = grisu(absolute,cfg.fraction_bits,cfg.bias,cfg.fraction_mask);
-    if (fast.ok) {
-        let coefficient: u64 = fast.coefficient; let decimal_exponent: i32 = fast.exponent;
-        while (coefficient%10 == 0) { coefficient /= 10; decimal_exponent += 1; }
-        return core::result::Ok(Decimal { coefficient: coefficient, exponent: decimal_exponent, negative: negative, special: 0 });
-    }
-    // Normal powers of two (except the min-normal transition) have a lower
-    // half-width interval. Midpoints belong to this value iff m2 is even.
-    let value: Dyadic = dyadic(absolute,cfg); let central: u64 = value.mantissa*4; let mm_shift: u64 = 1;
-    if ((absolute & cfg.fraction_mask) == 0 && (absolute >> cfg.fraction_bits) > 1) { mm_shift = 0; }
-    let exponent: i32 = value.exponent-2; let scale: i32 = 0;
-    let unit: Big = big(scratch,0); let exact: Big = big(scratch,1); let lower: Big = big(scratch,2); let upper: Big = big(scratch,3); let temporary: Big = big(scratch,4); let candidate: Big = big(scratch,5);
-    unit.set(1,budget.borrow()); if (exponent < 0) { scale = 0-exponent; unit.power(5,scale,budget.borrow()); } else { unit.shift(exponent,budget.borrow()); }
-    if (budget.failed) { return core::result::Err(Error::WorkLimit); }
-    exact.product(unit,central,budget.borrow()); lower.product(unit,central-1-mm_shift,budget.borrow()); upper.product(unit,central+2,budget.borrow()); temporary.copy(exact,budget.borrow());
-    let groups: core::slice::View<u32> = core::result::unwrap(scratch.subview(768,864)); let count: i32 = 0;
-    while (temporary.length > 0) { assert(count < 96); groups.values[groups.start+count] = temporary.divide(1000000000,budget.borrow()); count += 1; if (budget.failed) { return core::result::Err(Error::WorkLimit); } }
-    let first: i32 = digits(groups.values[groups.start+count-1] as u64); let total: i32 = (count-1)*9+first;
-    unit.set(1,budget.borrow()); unit.power(10,total-1,budget.borrow()); if (budget.failed) { return core::result::Err(Error::WorkLimit); }
-    let prefix: u64 = 0; let precision: i32 = 1; let inclusive: bool = (value.mantissa & 1) == 0;
-    while (precision <= cfg.digits && precision <= total) {
-        prefix = prefix*10+decimal_digit(groups,count,first,precision-1); temporary.product(unit,prefix,budget.borrow()); candidate.copy(temporary,budget.borrow()); candidate.add(unit,budget.borrow());
-        // Both neighbors matter: the nearest decimal candidate can lie outside
-        // an asymmetric interval while the other remains inside it.
-        let floor_ok: bool = inside(temporary,lower,upper,inclusive,budget.borrow()); let ceil_ok: bool = inside(candidate,lower,upper,inclusive,budget.borrow());
-        if (budget.failed) { return core::result::Err(Error::WorkLimit); }
-        if (floor_ok || ceil_ok) {
-            let coefficient: u64 = prefix;
-            if (!floor_ok) { coefficient += 1; }
-            else { if (ceil_ok) { candidate.copy(exact,budget.borrow()); candidate.subtract(temporary,budget.borrow()); candidate.multiply_small(2,budget.borrow()); let side: i32 = candidate.compare(unit,budget.borrow()); if (side > 0 || (side == 0 && (prefix & 1) != 0)) { coefficient += 1; } } }
-            let decimal_exponent: i32 = total-precision-scale; while (coefficient%10 == 0) { coefficient /= 10; decimal_exponent += 1; }
-            if (budget.failed) { return core::result::Err(Error::WorkLimit); } return core::result::Ok(Decimal { coefficient: coefficient, exponent: decimal_exponent, negative: negative, special: 0 });
-        }
-        unit.divide(10,budget.borrow()); precision += 1;
-    }
-    assert(false); return core::result::Err(Error::Bounds);
+    let found: Shortest = shortest(absolute,cfg.fraction_bits,cfg.bias);
+    return core::result::Ok(Decimal { coefficient: found.coefficient, exponent: found.exponent, negative: negative, special: 0 });
 }
 // Whether a finite nonzero value whose coefficient has count digits is
 // shorter in scientific notation.
@@ -416,12 +375,24 @@ fn digit(value: u64, count: i32, index: i32) -> u8 { return (48+(value/power10(c
 // (pair * 205) >> 11 == pair / 10 for pair < 100.
 fn spell(value: u64, count: i32, out: [u8], end: i32) -> u64 {
     let rest: u64 = value; let at: i32 = end; let left: i32 = count;
+    while (left >= 8) { let next: u64 = rest/100000000; spell8(rest-next*100000000,out,at); at -= 8; left -= 8; rest = next; }
     while (left > 1) {
         let next: u64 = rest/100; let pair: u64 = rest-next*100; let tens: u64 = (pair*205) >> 11;
         out[at-1] = (48+pair-tens*10) as u8; out[at-2] = (48+tens) as u8; at -= 2; left -= 2; rest = next;
     }
     if (left == 1) { let next: u64 = rest/10; out[at-1] = (48+rest-next*10) as u8; rest = next; }
     return rest;
+}
+// The 8 digits of value < 10^8, leading zeros included, into out[end-8, end)
+// without a loop: x / 10^4 = (x * 109951163) >> 40 for x < 10^8, and
+// x / 100 = (x * 5243) >> 19 for x < 10^4.
+fn spell8(value: u64, out: [u8], end: i32) {
+    let high: u64 = (value*109951163) >> 40; let low: u64 = value-high*10000;
+    let a: u64 = (high*5243) >> 19; let b: u64 = high-a*100; let c: u64 = (low*5243) >> 19; let d: u64 = low-c*100;
+    let t: u64 = (a*205) >> 11; out[end-8] = (48+t) as u8; out[end-7] = (48+a-t*10) as u8;
+    t = (b*205) >> 11; out[end-6] = (48+t) as u8; out[end-5] = (48+b-t*10) as u8;
+    t = (c*205) >> 11; out[end-4] = (48+t) as u8; out[end-3] = (48+c-t*10) as u8;
+    t = (d*205) >> 11; out[end-2] = (48+t) as u8; out[end-1] = (48+d-t*10) as u8;
 }
 // Digits are spelled straight into their final positions.
 fn render(value: Decimal, output: core::slice::View<u8>, count: i32, sci: bool) {
@@ -452,18 +423,14 @@ fn format_bits_into(bits: u64, cfg: Config, output: core::slice::View<u8>, scrat
     // Conversion and all fallible checks precede the first output write.
     if (!valid(output)) { return core::result::Err(Error::Bounds); }
     // Shortcut for prepare()'s common case: valid scratch, enough work and a
-    // finite nonzero value Grisu proves; the same Decimal without the
-    // Result and budget plumbing. special -1 marks "not converted yet".
+    // finite nonzero value; the same Decimal without the Result and budget
+    // plumbing. special -1 marks "not converted yet".
     let value: Decimal = Decimal { coefficient: 0, exponent: 0, negative: false, special: -1 };
     if (work >= 101 && scratch.start >= 0 && scratch.length >= SCRATCH_LEN && scratch.start <= 2147483647-scratch.length) {
         let absolute: u64 = bits & (cfg.sign-1);
         if (absolute != 0 && absolute < cfg.infinity) {
-            let fast: Shortest = grisu(absolute,cfg.fraction_bits,cfg.bias,cfg.fraction_mask);
-            if (fast.ok) {
-                let coefficient: u64 = fast.coefficient; let decimal_exponent: i32 = fast.exponent;
-                while (coefficient%10 == 0) { coefficient /= 10; decimal_exponent += 1; }
-                value = Decimal { coefficient: coefficient, exponent: decimal_exponent, negative: (bits & cfg.sign) != 0, special: 0 };
-            }
+            let found: Shortest = shortest(absolute,cfg.fraction_bits,cfg.bias);
+            value = Decimal { coefficient: found.coefficient, exponent: found.exponent, negative: (bits & cfg.sign) != 0, special: 0 };
         }
     }
     if (value.special < 0) {
@@ -471,6 +438,25 @@ fn format_bits_into(bits: u64, cfg: Config, output: core::slice::View<u8>, scrat
         value = core::result::unwrap(converted);
     }
     return finish(value,output);
+}
+// finish() for a finite value with a nonzero coefficient, without building
+// a Decimal: the size written, or -size when output is too short (nothing
+// is written then). Exponents of binary64 values have at most 3 digits.
+fn place(coefficient: u64, exponent: i32, negative: bool, output: core::slice::View<u8>) -> i32 {
+    let count: i32 = digits(coefficient);
+    let sci_exponent: i32 = exponent+count-1; let magnitude: i32 = sci_exponent; if (magnitude < 0) { magnitude = 0-magnitude; }
+    let sci_size: i32 = count+2; if (magnitude >= 10) { sci_size += 1; } if (magnitude >= 100) { sci_size += 1; }
+    if (count > 1) { sci_size += 1; } if (sci_exponent < 0) { sci_size += 1; }
+    let fixed: i32 = count+exponent; if (exponent < 0) { if (count+exponent > 0) { fixed = count+1; } else { fixed = 2-exponent; } }
+    let sci: bool = sci_size < fixed; let size: i32 = fixed; if (sci) { size = sci_size; } if (negative) { size += 1; }
+    if (output.length < size) { return 0-size; }
+    render(Decimal { coefficient: coefficient, exponent: exponent, negative: negative, special: 0 },output,count,sci);
+    return size;
+}
+fn placed(coefficient: u64, exponent: i32, negative: bool, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let size: i32 = place(coefficient,exponent,negative,output);
+    if (size < 0) { return core::result::Err(Error::Capacity(0-size)); }
+    return core::result::Ok(size);
 }
 // Lay out and write a converted value; the capacity check precedes writing.
 fn finish(value: Decimal, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
@@ -480,20 +466,27 @@ fn finish(value: Decimal, output: core::slice::View<u8>) -> core::result::Result
 }
 pub fn format_f32_len(value: f32, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_len(core::f32::to_bits(value) as u64,config(true),scratch,max_work); }
 pub fn format_f64_len(value: f64, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_len(core::f64::to_bits(value),config(false),scratch,max_work); }
-pub fn format_f32_into(value: f32, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> { return format_bits_into(core::f32::to_bits(value) as u64,config(true),output,scratch,max_work); }
+pub fn format_f32_into(value: f32, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> {
+    // As format_f64_into, with the binary32 constants.
+    let bits: u64 = core::f32::to_bits(value) as u64;
+    if (valid(output) && max_work >= 101 && scratch.start >= 0 && scratch.length >= SCRATCH_LEN && scratch.start <= 2147483647-scratch.length) {
+        let absolute: u64 = bits & 2147483647;
+        if (absolute != 0 && absolute < 2139095040) {
+            let found: Shortest = shortest(absolute,23,127);
+            return placed(found.coefficient,found.exponent,absolute != bits,output);
+        }
+    }
+    return format_bits_into(bits,config(true),output,scratch,max_work);
+}
 pub fn format_f64_into(value: f64, output: core::slice::View<u8>, scratch: core::slice::View<u32>, max_work: u64) -> core::result::Result<i32,Error> {
-    // format_bits_into's Grisu shortcut with the binary64 constants inline
+    // format_bits_into's shortcut with the binary64 constants inline
     // (no Config to build and copy); anything else takes the general path.
     let bits: u64 = core::f64::to_bits(value);
     if (valid(output) && max_work >= 101 && scratch.start >= 0 && scratch.length >= SCRATCH_LEN && scratch.start <= 2147483647-scratch.length) {
         let absolute: u64 = bits & 9223372036854775807;
         if (absolute != 0 && absolute < 9218868437227405312) {
-            let fast: Shortest = grisu(absolute,52,1023,4503599627370495);
-            if (fast.ok) {
-                let coefficient: u64 = fast.coefficient; let decimal_exponent: i32 = fast.exponent;
-                while (coefficient%10 == 0) { coefficient /= 10; decimal_exponent += 1; }
-                return finish(Decimal { coefficient: coefficient, exponent: decimal_exponent, negative: absolute != bits, special: 0 }, output);
-            }
+            let found: Shortest = shortest(absolute,52,1023);
+            return placed(found.coefficient,found.exponent,absolute != bits,output);
         }
     }
     return format_bits_into(bits,config(false),output,scratch,max_work);

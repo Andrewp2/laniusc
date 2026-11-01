@@ -142,3 +142,26 @@ instructions per byte, and why a `Result` return and check costs about
 100 instructions against about 8 for a `bool` return. The S5 fast paths
 (`Writer.fast_*`, `Decoder.advance`) work around the Result cost; only the
 compiler can fix the per-byte cost.
+
+## Diagnostic defects
+
+| File | Defect | Expected | Actual |
+| --- | --- | --- | --- |
+| `stdlib_stray_body_diagnostic.lani` | a stray function body (`let stray: i32 = 2; return stray;` then `}`) at top level of a stdlib module, `core::float_decimal` | LNC0016 "syntax error" at the stray line | LNC0008 "unsatisfied trait bound" at `stdlib/core/result.lani:93` (`and_then`'s `Mapper<T,Result<U,E>>` bound), which names neither the file nor the line |
+
+The program compiles and exits 0 against the real stdlib. To reproduce,
+insert the stray lines into a copy of the stdlib:
+
+```sh
+D=target/claude-work/stdlib_stray; rm -rf $D; cp -r stdlib $D
+sed -i '0,/^fn decimal_digit/{/^fn decimal_digit/i\    let stray: i32 = 2; return stray;\n}
+}' $D/core/float_decimal.lani
+target/claude-work/bin/lcc --stdlib-root $D -o target/claude-work/defect \
+  tests/fixtures/compiler_defects/stdlib_stray_body_diagnostic.lani
+```
+
+The same stray lines in a module under `--source-root` (`app::bad`), or in a
+new stdlib module that nothing else imports (`core::straybad`), are reported
+correctly as LNC0016 at the stray line. This misreport cost a bisection
+during the S5 Schubfach work. The stray lines were left by deleting only the
+first line of a removed function.

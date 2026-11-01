@@ -285,7 +285,7 @@ by side:
 
 After the speed work, `cbor_to_json` costs about 200 ns per small item:
 about 80 ns to decode, and the rest to dispatch and write JSON. A shortest
-binary64 float costs about 1.1 µs more. Where the time went, and what
+binary64 float costs about 0.7 µs more. Where the time went, and what
 changed:
 
 - `Decoder.next()` called `Vec` methods for its frame stack and key records
@@ -297,11 +297,11 @@ changed:
   numbers that need no escapes are copied in one checked loop, and the
   `fast_` methods skip the `Result`.
 - `core::float_decimal` shortest formatting dropped from about 2.5 µs to
-  about 1.1 µs per value. Grisu takes three `Config` fields as scalars. Its
-  digit loops use one division per integral digit, and none when no integral
-  digit can end the output. The power-of-ten table lookup became a branch
-  tree of constants. Digits are spelled two per division straight into
-  place.
+  about 0.7 µs per value. A tuned Grisu3 came first, then Schubfach with
+  binary-search tables and eight-digit spelling replaced it; see
+  [the float guide](stdlib-float-decimal.md#algorithms-and-speed). With
+  Schubfach, the 4.66 MB document converts in 0.485 s, against 0.532 s with
+  the tuned Grisu3.
 - Byte loops still cost about 60–140 instructions per byte, because every
   slice index copies the slice descriptor and multiplies by a run-time
   stride. This is a compiler defect, recorded in
