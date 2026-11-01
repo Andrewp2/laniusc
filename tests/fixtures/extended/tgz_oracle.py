@@ -1,11 +1,11 @@
-"""Python zlib/gzip/tarfile oracles for compress-bytes and tgz.
+"""Python zlib/gzip/lzma/tarfile oracles for compress-bytes and tgz.
 
 usage: python3 -I tgz_oracle.py TGZ COMPRESS_BYTES WORKDIR [--quick]
 
 Every generated case is deterministic (seeded). Prints one count line per
 group and exits nonzero on any disagreement.
 """
-import gzip, hashlib, io, os, random, resource, shutil, stat, subprocess, sys, tarfile, zlib
+import gzip, hashlib, io, lzma, os, random, resource, shutil, stat, subprocess, sys, tarfile, zlib
 GNU_TAR = shutil.which("tar")
 
 TGZ, CODEC, WORK = sys.argv[1:4]
@@ -23,6 +23,10 @@ def fail(msg):
     failures.append(msg)
     if len(failures) < 20:
         print("FAIL", msg, file=sys.stderr)
+
+
+SUFFIX = {"": "", "z": ".gz", "J": ".xz"}
+LABEL = {"": "", "z": " (gzip)", "J": " (xz)"}
 
 
 def run(argv, data=b"", cwd=None):
@@ -240,9 +244,9 @@ def tar_group(rng):
         expected["top"] = ("d", stat.S_IMODE(st.st_mode), int(st.st_mtime))
         expected_groups = groups(os.path.join(src, "top"), "top/")
         # Lanius create -> Python tarfile read.
-        for gz in (False, True):
-            archive = os.path.join(base, "lanius.tar" + (".gz" if gz else ""))
-            code, _, err = run([TGZ, "-c" + ("z" if gz else "") + "f", archive, "-C", src, "top"])
+        for gz in ("", "z", "J"):
+            archive = os.path.join(base, "lanius.tar" + SUFFIX[gz])
+            code, _, err = run([TGZ, "-c" + gz + "f", archive, "-C", src, "top"])
             if code != 0:
                 fail(f"tgz create case={case} gz={gz} rc={code} {err!r}")
                 continue
@@ -252,7 +256,7 @@ def tar_group(rng):
                 fail(f"tarfile rejected lanius case={case}: {e}")
                 continue
             if got == expected and tar_groups(archive) == expected_groups:
-                bump("tar: Lanius create -> Python tarfile" + (" (gzip)" if gz else ""))
+                bump("tar: Lanius create -> Python tarfile" + LABEL[gz])
             else:
                 fail(f"tarfile view differs case={case} gz={gz}: {sorted(set(got) ^ set(expected))[:4]}")
             # Lanius list must match Python names in order.
@@ -266,15 +270,15 @@ def tar_group(rng):
                 fail(f"list differs case={case}")
         # Python create (ustar and pax, plain and gzip) -> Lanius extract.
         for fmt, label in ((tarfile.PAX_FORMAT, "pax"), (tarfile.USTAR_FORMAT, "ustar"), (tarfile.GNU_FORMAT, "gnu")):
-            for gz in (False, True):
-                archive = os.path.join(base, f"py-{label}.tar" + (".gz" if gz else ""))
+            for gz in ("", "z", "J"):
+                archive = os.path.join(base, f"py-{label}.tar" + SUFFIX[gz])
                 try:
-                    with tarfile.open(archive, "w:gz" if gz else "w", format=fmt) as t:
+                    with tarfile.open(archive, {"": "w", "z": "w:gz", "J": "w:xz"}[gz], format=fmt) as t:
                         t.add(os.path.join(src, "top"), arcname="top")
                 except ValueError:
                     bump(f"tar: Python {label} cannot represent tree (skipped)")
                     continue
-                out = os.path.join(base, f"out-{label}-{int(gz)}")
+                out = os.path.join(base, f"out-{label}-{gz}")
                 os.makedirs(out)
                 code, _, err = run([TGZ, "-xf", archive, "-C", out])
                 if code != 0:
@@ -282,7 +286,7 @@ def tar_group(rng):
                     continue
                 got = {k: v for k, v in snapshot(out).items()}
                 if got == expected and groups(out) == expected_groups:
-                    bump(f"tar: Python {label} create -> Lanius extract" + (" (gzip)" if gz else ""))
+                    bump(f"tar: Python {label} create -> Lanius extract" + LABEL[gz])
                 else:
                     fail(f"extract differs {label} gz={gz} case={case}: {sorted(set(got) ^ set(expected))[:4]}")
         # Lanius create -> Lanius extract round trip.
@@ -296,26 +300,35 @@ def tar_group(rng):
         # GNU tar as a second oracle: its gnu/pax/ustar output -> tgz, and tgz -> GNU tar.
         if GNU_TAR:
             for fmt in ("gnu", "pax", "ustar"):
-                for gz in (False, True):
-                    archive = os.path.join(base, f"gnu-{fmt}.tar" + (".gz" if gz else ""))
-                    code, _, err = run([GNU_TAR, "--format=" + fmt, "-c" + ("z" if gz else "") + "f", archive, "-C", src, "top"])
+                for gz in ("", "z", "J"):
+                    archive = os.path.join(base, f"gnu-{fmt}.tar" + SUFFIX[gz])
+                    code, _, err = run([GNU_TAR, "--format=" + fmt, "-c" + gz + "f", archive, "-C", src, "top"])
                     if code != 0:
                         bump(f"tar: GNU tar {fmt} cannot represent tree (skipped)")
                         continue
-                    out = os.path.join(base, f"out-gnu-{fmt}-{int(gz)}")
+                    out = os.path.join(base, f"out-gnu-{fmt}-{gz}")
                     os.makedirs(out)
                     code, _, err = run([TGZ, "-xf", archive, "-C", out])
                     if code == 0 and snapshot(out) == expected and groups(out) == expected_groups:
-                        bump(f"tar: GNU tar {fmt} create -> Lanius extract" + (" (gzip)" if gz else ""))
+                        bump(f"tar: GNU tar {fmt} create -> Lanius extract" + LABEL[gz])
                     else:
                         fail(f"gnu tar {fmt} gz={gz} case={case} rc={code} {err!r}")
-            out = os.path.join(base, "out-by-gnu")
-            os.makedirs(out)
-            code, _, err = run([GNU_TAR, "-xpzf", os.path.join(base, "lanius.tar.gz"), "-C", out])
-            if code == 0 and snapshot(out) == expected and groups(out) == expected_groups:
-                bump("tar: Lanius create -> GNU tar extract")
-            else:
-                fail(f"gnu tar extract of lanius case={case} rc={code} {err!r}")
+            for gz in ("z", "J"):
+                out = os.path.join(base, "out-by-gnu" + gz)
+                os.makedirs(out)
+                code, _, err = run([GNU_TAR, "-xp" + gz + "f", os.path.join(base, "lanius.tar" + SUFFIX[gz]), "-C", out])
+                if code == 0 and snapshot(out) == expected and groups(out) == expected_groups:
+                    bump("tar: Lanius create -> GNU tar extract" + LABEL[gz])
+                else:
+                    fail(f"gnu tar extract of lanius gz={gz} case={case} rc={code} {err!r}")
+        # Lanius xz create -> Lanius extract.
+        out = os.path.join(base, "out-self-xz")
+        os.makedirs(out)
+        code, _, _ = run([TGZ, "-xJf", os.path.join(base, "lanius.tar.xz"), "-C", out])
+        if code == 0 and snapshot(out) == expected and groups(out) == expected_groups:
+            bump("tar: Lanius create -> Lanius extract (xz)")
+        else:
+            fail(f"self xz round trip case={case}")
         shutil.rmtree(base)
     # Global pax header and explicit pax records written by Python.
     base = os.path.join(WORK, "global")
@@ -397,6 +410,29 @@ def corrupt_group(rng):
             bump("reject: truncated gzip")
         else:
             fail("truncated gzip accepted")
+    # xz-compressed tar: every flip or cut must be rejected before any output.
+    xzs = [lzma.compress(good, preset=6), lzma.compress(good, check=lzma.CHECK_CRC32, preset=0)]
+    for i in range(20 if QUICK else 80):
+        stream = xzs[i % 2]
+        blob = bytearray(stream)
+        blob[rng.randrange(len(blob))] ^= 1 << rng.randrange(8)
+        archive = os.path.join(base, "bad.txz")
+        for label, data in (("xz byte flip", bytes(blob)), ("truncated xz", stream[:rng.randrange(1, len(stream))]),
+                            ("xz trailing garbage", stream + b"\x01")):
+            with open(archive, "wb") as h:
+                h.write(data)
+            out = os.path.join(base, "out")
+            shutil.rmtree(out, ignore_errors=True)
+            os.makedirs(out)
+            code, _, _ = run([TGZ, "-xf", archive, "-C", out])
+            try:
+                python_ok = lzma.LZMADecompressor().decompress(data) == good
+            except lzma.LZMAError:
+                python_ok = False
+            if code == 2 and os.listdir(out) == []:
+                bump(f"reject: {label}" + (" (Python tolerant)" if python_ok else " (Python also rejects)"))
+            else:
+                fail(f"{label} rc={code}")
     for bad in ("../evil", "/abs/evil", "a/../../evil", "./../evil", "a/./b"):
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as t:
