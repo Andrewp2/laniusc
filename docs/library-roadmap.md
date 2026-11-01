@@ -481,7 +481,10 @@ edge cases. Python's `h2`/`hpack` and `nghttpd` are not installed, so
 libnghttp2 through ctypes is the independent peer.
 The [HTTP/2 server engine](extended-http2-server.md) (`ext::http2_server`)
 is its I/O-free counterpart, and [`ext::http_service`](extended-http-service.md#http2-h2c)
-runs it for prior-knowledge h2c beside HTTP/1.1 on one listener. A
+runs it for prior-knowledge h2c beside HTTP/1.1 on one listener. The
+event server multiplexes h2c connections on its loop as well; a load test
+of 100 concurrent h2c clients (20 multiplexed requests each) and 100
+HTTP/1.1 keep-alive clients passes with every body and counter checked. A
 libnghttp2 client session through ctypes passes 6 session cases and 18
 malformed-frame cases, both against the engine over a pipe and against the
 service over TCP. HTTP/2 over TLS waits on C callback support, which

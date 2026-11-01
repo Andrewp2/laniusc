@@ -2305,7 +2305,9 @@ pseudo-fields and fields, buffers bodies under flow control, answers 413 and
 431 itself, and sends responses within the client's windows.
 [`ext::http_service`](extended-http-service.md#http2-h2c) hands connections
 that open with the preface to it (prior-knowledge h2c) and keeps serving
-HTTP/1.1 on the same listener. A libnghttp2 client session through ctypes
+HTTP/1.1 on the same listener. The event server multiplexes h2c
+connections on its loop as well, and a load test of 100 concurrent h2c
+clients against 100 HTTP/1.1 clients checks every body and counter. A libnghttp2 client session through ctypes
 passes 6 session cases and 18 malformed-frame cases, both against the engine
 over a pipe and against the service over TCP. HTTP/2 over TLS waits on C
 callback support for OpenSSL's ALPN selection.

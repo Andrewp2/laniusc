@@ -10,7 +10,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 **No contract guide registered.** This page makes no runtime support claim.
 
-Declaration counts: field: 42; function: 2; impl: 1; method: 41; struct: 2.
+Declaration counts: field: 42; function: 2; impl: 1; method: 42; struct: 2.
 
 ## Declared imports
 
@@ -705,9 +705,17 @@ pub fn stream_error(&self, id: i32) -> ext::http2::Error
 pub fn release(&self, id: i32) -> bool
 ```
 
+#### method: collect
+
+[Source line 614](../../../extended/ext/http2_server.lani#L614)
+
+```lanius
+pub fn collect(&self) -> i32
+```
+
 #### method: cancel
 
-[Source line 612](../../../extended/ext/http2_server.lani#L612)
+[Source line 619](../../../extended/ext/http2_server.lani#L619)
 
 ```lanius
 pub fn cancel(&self, id: i32) -> bool
@@ -715,7 +723,7 @@ pub fn cancel(&self, id: i32) -> bool
 
 #### method: ping
 
-[Source line 618](../../../extended/ext/http2_server.lani#L618)
+[Source line 625](../../../extended/ext/http2_server.lani#L625)
 
 ```lanius
 pub fn ping(&self, opaque: core::slice::View<u8>) -> core::result::Result<i32,ext::http2::Error>
@@ -723,7 +731,7 @@ pub fn ping(&self, opaque: core::slice::View<u8>) -> core::result::Result<i32,ex
 
 #### method: goaway
 
-[Source line 625](../../../extended/ext/http2_server.lani#L625)
+[Source line 632](../../../extended/ext/http2_server.lani#L632)
 
 ```lanius
 pub fn goaway(&self, code: i32) -> bool
@@ -731,7 +739,7 @@ pub fn goaway(&self, code: i32) -> bool
 
 #### method: destroy
 
-[Source line 631](../../../extended/ext/http2_server.lani#L631)
+[Source line 638](../../../extended/ext/http2_server.lani#L638)
 
 ```lanius
 pub fn destroy(&self) -> bool

@@ -152,8 +152,10 @@ and `nghttpd` are not installed. It runs against two programs:
 
 - `pipe`: `engine_pipe.lani`, which runs the engine over stdin/stdout with
   `max_streams` 8 and 64 KiB windows;
-- `tcp`: `h2c_service.lani`, the `ext::http_service` h2c driver on a
-  loopback listener with the default engine options.
+- `tcp`: `h2c_service.lani`, the `ext::http_service` sequential h2c
+  driver on a loopback listener with the default engine options. The same
+  mode also runs against `h2c_events.lani`, the event server with
+  `enable_h2`.
 
 Each mode runs:
 
@@ -187,7 +189,33 @@ http2-server-engine nghttp2=6 raw=18
 http2-server-h2c nghttp2=6 raw=18 http1=1
 ```
 
-`tests/extended_http2_server_execution.rs` compiles both programs and checks
-these lines. Until S8's `null()` fix for `std::socket` lands, the `tcp`
-program fails its first receive with EFAULT. The run above used a stdlib
-whose `socket.lani` passes `word(0)` for the null address.
+`tests/extended_http2_server_execution.rs` compiles the programs and checks
+these lines.
+
+### Load test
+
+`load.py` runs two phases against `h2c_events.lani` on one event loop and
+checks every body:
+
+1. 100 concurrent h2c clients, each a libnghttp2 session with 20
+   multiplexed requests;
+2. 100 concurrent HTTP/1.1 keep-alive clients with 20 sequential requests
+   each.
+
+It then checks the server's counters (`connections=200 h2=100
+requests=4000 errors=0`, with a peak of at least 100 connections). On the
+3070 laptop, under load from other jobs, typical runs were:
+
+| Phase | Wall time | Rate | Server CPU |
+| --- | --- | --- | --- |
+| h2c | 0.49–0.58 s | 3,500–4,100 req/s | 0.49 s |
+| HTTP/1.1 | 0.16–0.20 s | 10,000–12,000 req/s | 0.17 s |
+
+A request costs the server about three times as much CPU over HTTP/2 as
+over HTTP/1.1, about 245 µs against 85 µs. The engine copies its stream
+records on every access and scans them linearly, and shifts its input and
+output buffers byte by byte. Those are the first places to optimize. The
+Python client side also costs more for h2c: 0.34 s of CPU against 0.12 s. With the shared `lcc` compiler build of 1 November 14:00, the `tcp`
+programs still fail their first receive with EFAULT on unpatched `lang`,
+even after S8's fe60937c2 was merged. The runs above used a stdlib whose
+`socket.lani` passes `word(0)` instead of `address(null())`.
