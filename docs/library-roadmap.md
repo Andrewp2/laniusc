@@ -1000,6 +1000,14 @@ the rest of the family scope above stays open.
   `tests/stdlib_ordered_navigation_execution.rs` (four negative fixtures).
   The library APIs and their bounds are unaffected; no library workaround is
   applied.
+- **A user function named `print` is replaced by the built-in i32 printer.**
+  `fn print(value: u64) -> i32 { return 7; }` called with 4,534,056,964
+  prints `239089668` (the low 32 bits as i32) and returns 10, the built-in's
+  byte count; the user body never runs and no redefinition diagnostic is
+  given. Reproduction:
+  `tests/fixtures/compiler_defects/user_fn_print_replaced_by_builtin.lani`
+  (expected exit 7 with no output). Workaround: use another name; methods
+  named print are unaffected. `lru_scale.lani` renamed its printer.
 
 ## Current work
 

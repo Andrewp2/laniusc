@@ -1,6 +1,6 @@
 // Cost per LRU operation at a small and a large capacity. The same mixed
 // workload (put with eviction, get hits and misses, touch, remove) runs at
-// 1,024 and 1,048,576 entries; stdout gets the microseconds of each run, so a
+// 1,024 and 1,048,576 entries; stdout gets the nanoseconds of each run, so a
 // caller can compare per-operation time. The run asserts exact final counts.
 module app::main;
 import alloc::lru;
@@ -41,10 +41,11 @@ fn workload(limit:i32) -> u64 {
     let finish:core::time::Instant = std::clock::monotonic_now().unwrap();
     assert(cache.len()==limit && evicted>0 && hits>0);
     cache.destroy();
-    let nanos:u64 = finish.duration_since(start).unwrap().as_nanos().unwrap();
-    return nanos/1000;
+    return finish.duration_since(start).unwrap().as_nanos().unwrap();
 }
-fn print(value:u64) {
+// Not named print: that name resolves to the built-in i32 printer
+// (tests/fixtures/compiler_defects/user_fn_print_replaced_by_builtin.lani).
+fn emit(value:u64) {
     let storage:[i32;8]=[0;8]; let base:ptr=core::mem::i32_array_data_ptr(storage);
     let digits:[u8]=core::mem::typed_slice_from_raw_parts<u8>(base,24);
     let n:i32=23; let v:u64=value; digits[n]=10;
@@ -55,7 +56,7 @@ fn print(value:u64) {
     assert(storage[5]==storage[5]);
 }
 fn main() -> i32 {
-    print(workload(1024));
-    print(workload(1048576));
+    emit(workload(1024));
+    emit(workload(1048576));
     return 0;
 }

@@ -1,0 +1,20 @@
+// laniusc defect: a user function named `print` is silently replaced by the
+// built-in print_i32 runtime routine. No redefinition diagnostic is given.
+//
+// Build: laniusc --stdlib-root stdlib user_fn_print_replaced_by_builtin.lani -o out
+// Expected: no output, exit status 7 (the user function's result), or a
+//           compile-time error rejecting the name.
+// Actual (lang, laniusc built 2026-10-28, native x86_64): prints "239089668"
+//           and a newline, which is the low 32 bits of the u64 argument
+//           printed as i32, and exits with 10, the byte count the built-in
+//           returns. The user body never runs.
+//
+// Symptom seen in practice: a u64 decimal printer named `print` showed
+// values above 2^31 truncated or negative. Renaming the function avoids it.
+// Methods named print (impl blocks) are not affected.
+module app::main;
+fn print(value:u64) -> i32 { return 7; }
+fn main() -> i32 {
+    let big:u64=4534056964;
+    return print(big);
+}

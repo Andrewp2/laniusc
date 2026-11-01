@@ -86,7 +86,7 @@ the old length. The oracle and native process take 0.21 s.
 
 `tests/fixtures/stdlib_fixed_capacity_lru/direct/lru_scale.lani` runs the same
 four-million-operation mix (puts with eviction, gets, touches, removes) at
-1,024 and 1,048,576 entries and prints microseconds. On the laptop target
+1,024 and 1,048,576 entries and prints nanoseconds. On the laptop target
 it measured 1.78 s and 3.53 s: 0.44 and 0.88 µs per operation for a 1,024
 times larger cache whose 52 MB arena no longer fits in the CPU caches.
 
