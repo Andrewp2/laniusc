@@ -213,6 +213,7 @@ class Gen:
                    'trait', 'call', 'emit', 'tap')}
         self.taps = {}      # type -> an identity function that writes a tag to stderr first
         self.tags = 0
+        self.depth = rng.choice([2, 2, 3, 4])  # how deep a statement's expressions nest
         self.safe = rng.choice([0.99, 0.97, 0.93])  # how often a divisor, shift or index is made safe
 
     def name(self, prefix):
@@ -261,7 +262,7 @@ class Gen:
         if k == 'enum':
             return self.rng.choice(sorted(self.enums))
         if k == 'array':
-            return f'[{self.scalar_type()}; {self.rng.choice([1, 2, 3, 4, 4, 4, 5, 8])}]'
+            return f'[{self.scalar_type()}; {self.rng.choice([1, 2, 3, 4, 4, 4, 5, 8, 16])}]'
         if k == 'option':
             return f'{OPTION}{self.value_type(0)}>'
         return f'{RESULT}{self.value_type(0)}, {self.err}>'
@@ -631,7 +632,7 @@ class Gen:
         return out
 
     def ret_value(self, s):
-        return self.expr(s, s.ret, 2)
+        return self.expr(s, s.ret, self.depth)
 
     def stmt(self, s, d, ind):
         w = self.w
@@ -669,7 +670,7 @@ class Gen:
             out = self.let_match(s, name, d, ind)
             if out:
                 return out
-        e = self.expr(s, t, 2)
+        e = self.expr(s, t, self.depth)
         s.bind(name, t)
         return [ind + f'let {name}: {t} = {e};']
 
@@ -690,7 +691,7 @@ class Gen:
             for b, bt in binders:
                 s.bind(b, bt)
             if i == value_arm:
-                out.append(ind + f'    {pat} -> {self.expr(s, t, 2)},')
+                out.append(ind + f'    {pat} -> {self.expr(s, t, self.depth)},')
             else:
                 out.append(ind + f'    {pat} -> {{')
                 out += self.block(s, self.rng.randrange(2), d - 1, ind + '        ', 'return')
@@ -709,7 +710,7 @@ class Gen:
             return self.s_let(s, d, ind)
         n = self.rng.choice(names)
         t = dict(s.vars())[n]
-        return [ind + f'{n} = {self.expr(s, t, 2)};']
+        return [ind + f'{n} = {self.expr(s, t, self.depth)};']
 
     def s_compound(self, s, d, ind):
         names = self.assignable(s, is_int)
@@ -723,7 +724,7 @@ class Gen:
         elif op in ('<<', '>>'):
             e = str(self.rng.randrange(INTS[t][0])) if self.chance(self.safe) else self.int_expr(s, t, 1)
         else:
-            e = self.int_expr(s, t, 2)
+            e = self.int_expr(s, t, self.depth)
         return [ind + f'{n} {op}= {e};']
 
     def s_field(self, s, d, ind):
@@ -739,7 +740,7 @@ class Gen:
         if is_int(ft) and self.chance(0.3):
             op = self.rng.choice(['+', '-', '^', '|'])
             return [ind + f'{n}.{f} {op}= {self.int_expr(s, ft, 1)};']
-        return [ind + f'{n}.{f} = {self.expr(s, ft, 2)};']
+        return [ind + f'{n}.{f} = {self.expr(s, ft, self.depth)};']
 
     def s_store(self, s, d, ind):
         cands = [(n, vt) for n, vt in s.vars() if array_parts(vt) and n in self.assignable(s, lambda t: True)]
@@ -750,12 +751,12 @@ class Gen:
         i = self.index(s, size)
         # Past the end, Core traps before it evaluates the value and laniusc
         # after (the docstring's store order): a value with no output keeps the two alike.
-        v = self.lit(et) if self.wild else self.expr(s, et, 2)
+        v = self.lit(et) if self.wild else self.expr(s, et, self.depth)
         return [ind + f'{n}[{i}] = {v};']
 
     def s_emit(self, s, d, ind):
         t = self.int_type()
-        e = self.int_expr(s, t, 2, True)
+        e = self.int_expr(s, t, self.depth, True)
         if self.chance(0.2):
             return [ind + f'out_err(({e} as u32));']
         return [ind + f'out_hex(({e} as u64));']
@@ -764,7 +765,7 @@ class Gen:
         return [ind + f'std::io::write_byte({self.rng.choice([1, 2])}, {self.int_expr(s, "i32", 1)});']
 
     def s_if(self, s, d, ind):
-        out = [ind + f'if ({self.bool_expr(s, 2)}) {{']
+        out = [ind + f'if ({self.bool_expr(s, self.depth)}) {{']
         out += self.block(s, self.rng.randrange(1, 4), d - 1, ind + '    ', self.jump_tail(s))
         if self.chance(0.5):
             out.append(ind + '} else {')
@@ -780,13 +781,13 @@ class Gen:
         return None
 
     def s_early(self, s, d, ind):
-        out = [ind + f'if ({self.bool_expr(s, 2)}) {{']
+        out = [ind + f'if ({self.bool_expr(s, self.depth)}) {{']
         out += self.block(s, self.rng.randrange(0, 2), d - 1, ind + '    ', 'return')
         out.append(ind + '}')
         return out
 
     def s_jump(self, s, d, ind):
-        out = [ind + f'if ({self.bool_expr(s, 2)}) {{']
+        out = [ind + f'if ({self.bool_expr(s, self.depth)}) {{']
         out += self.block(s, self.rng.randrange(0, 2), d - 1, ind + '    ', self.rng.choice(['break', 'continue']))
         out.append(ind + '}')
         return out
@@ -978,7 +979,7 @@ class Gen:
         if kind == 'rec':
             # the base case, then the body, then the recursive call
             body.append(f'    if (a0 <= 0) {{')
-            body.append(f'        return {self.expr(s, ret, 2)};')
+            body.append(f'        return {self.expr(s, ret, self.depth)};')
             body.append('    }')
             f.cost = 16
             self.fns.append(f)  # visible to itself, for its own call
@@ -1182,70 +1183,70 @@ class Parser:
         return [int(t.split(':')[0]) for t in toks]
 
     def parse(self, kinds):
-        """(prods, parents) of the file with these token kinds, or None."""
-        import threading
-        result = []
+        """(prods, parents) of the file with these token kinds, or None.
 
-        def run():
-            sys.setrecursionlimit(1 << 20)
-            self.kinds, self.n = kinds, len(kinds)
-            for end, tree in self.nt(self.start, (0, 0)):
-                if end == (self.n, 0):
-                    result.append(tree)
-                    return
-        threading.stack_size(1 << 29)
-        t = threading.Thread(target=run)
-        t.start()
-        t.join()
-        if not result:
-            return None
-        prods, parents, todo = [], [], [(result[0], 4294967295)]
-        while todo:
-            (p, kids), up = todo.pop()
-            parents.append(up)
+        A leftmost derivation with an explicit stack: its expansions come in
+        preorder, so each is the next (production, parent) of the tree. A
+        choice point (several productions for a lookahead) keeps the rest of
+        its alternatives with the stack (a linked list, so shared), the
+        position and the tree's length to go back to."""
+        n, gt, shr, pred, rhs = len(kinds), self.gt, self.shr, self.pred, self.rhs
+        prods, parents, choices = [], [], []
+        stack, pos = ((self.start, 4294967295), None), (0, 0)
+
+        def expand(p, up, rest):
             me = len(prods)
             prods.append(p)
-            todo += [(k, me) for k in reversed(kids)]
-        return prods, parents
+            parents.append(up)
+            for x in reversed(rhs[p]):
+                rest = ((x, me) if isinstance(x, str) else x, rest)
+            return rest
 
-    def look(self, pos):
-        i, half = pos
-        if half:
-            return [self.gt]
-        if i >= self.n:
-            return [-1]
-        k = self.kinds[i]
-        return [k, self.gt] if k == self.shr else [k]
-
-    def nt(self, name, pos):
-        seen = []
-        for k in self.look(pos):
-            for p in self.pred.get((name, k), []):
-                if p not in seen:
-                    seen.append(p)
-        for p in seen:
-            for end, kids in self.seq(self.rhs[p], 0, pos):
-                yield end, (p, kids)
-
-    def seq(self, rhs, j, pos):
-        if j == len(rhs):
-            yield pos, []
-            return
-        x = rhs[j]
-        if isinstance(x, str):
-            for mid, tree in self.nt(x, pos):
-                for end, rest in self.seq(rhs, j + 1, mid):
-                    yield end, [tree] + rest
-            return
-        i, half = pos
-        if half:
-            if x == self.gt:
-                yield from self.seq(rhs, j + 1, (i + 1, 0))
-            return
-        if i < self.n and self.kinds[i] == x:
-            yield from self.seq(rhs, j + 1, (i + 1, 0))
-        if i < self.n and x == self.gt and self.kinds[i] == self.shr:
-            yield from self.seq(rhs, j + 1, (i, 1))
+        while True:
+            if stack is None:
+                if pos == (n, 0):
+                    return prods, parents
+                ok = False
+            else:
+                top, rest = stack
+                i, half = pos
+                ok = True
+                if isinstance(top, int):
+                    if half:
+                        ok = top == gt
+                        pos = (i + 1, 0)
+                    elif i < n and kinds[i] == top:
+                        pos = (i + 1, 0)
+                    elif i < n and top == gt and kinds[i] == shr:
+                        pos = (i, 1)
+                    else:
+                        ok = False
+                    stack = rest
+                else:
+                    name, up = top
+                    cands = []
+                    for k in ([gt] if half else [-1] if i >= n else [kinds[i], gt] if kinds[i] == shr else [kinds[i]]):
+                        for p in pred.get((name, k), ()):
+                            if p not in cands:
+                                cands.append(p)
+                    if not cands:
+                        ok = False
+                    else:
+                        if len(cands) > 1:
+                            choices.append([cands, 1, stack, pos, len(prods)])
+                        stack = expand(cands[0], up, rest)
+            if ok:
+                continue
+            while choices and choices[-1][1] >= len(choices[-1][0]):
+                choices.pop()
+            if not choices:
+                return None
+            c = choices[-1]
+            cands, j, stack, pos, size = c
+            c[1] = j + 1
+            del prods[size:], parents[size:]
+            (name, up), rest = stack
+            stack = expand(cands[j], up, rest)
 
 
 # ---------------------------------------------------------------- the verified compiler
